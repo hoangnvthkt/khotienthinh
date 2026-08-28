@@ -8,8 +8,18 @@ const projections = readFileSync(join(
 const commands = readFileSync(join(
   process.cwd(), 'supabase/migrations/20260828091551_hrm_personnel_profile_commands.sql',
 ), 'utf8');
+const personaSmoke = readFileSync(join(
+  process.cwd(), 'supabase/tests/hrm_personnel_profile_persona_smoke.sql',
+), 'utf8');
 
 describe('HRM personnel profile API migrations', () => {
+  it('exercises the eight public projections through the authenticated database role', () => {
+    expect(personaSmoke).toContain('set local role authenticated');
+    expect(personaSmoke).toContain('reset role');
+    expect(personaSmoke).toContain('perform public.get_hrm_employee_overview(v_employee_id)');
+    expect(personaSmoke).toContain('perform public.get_hrm_employee_qualifications_documents(v_employee_id)');
+  });
+
   it.each([
     'get_hrm_employee_overview', 'get_hrm_employee_personal_contact',
     'get_hrm_employee_work_organization', 'get_hrm_employee_attendance_leave',

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { hrmSensitiveProjectionService } from './hrmSensitiveProjectionService';
 import type {
   FleetLocation,
   FleetSystemSetting,
@@ -810,8 +811,8 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
       ? supabase.from('users').select('id, name, avatar').in('id', requesterIds)
       : Promise.resolve({ data: [], error: null }),
     requesterIds.length > 0
-      ? supabase.from('employees').select('user_id, full_name, avatar_url').in('user_id', requesterIds)
-      : Promise.resolve({ data: [], error: null }),
+      ? hrmSensitiveProjectionService.lookupEmployees({ userIds: requesterIds })
+      : Promise.resolve([]),
     Promise.all(visibleBookings.map(async booking => {
       const response = await supabase.rpc('get_vehicle_booking_assignment_display', {
         p_booking_id: booking.id,
@@ -827,14 +828,14 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
   const bookingMap = new Map(visibleBookings.map(booking => [booking.id, booking]));
   const tripLogMap = new Map((tRes.data || []).map((t: any) => [t.booking_id, t]));
   const requesterUserMap = new Map((requestersRes.data || []).map((requester: any) => [requester.id, requester]));
-  const requesterEmployeeMap = new Map((requesterEmployeesRes.data || []).map((employee: any) => [employee.user_id, employee]));
+  const requesterEmployeeMap = new Map(requesterEmployeesRes.map(employee => [employee.userId, employee]));
   const requesterMap = new Map(requesterIds.map(requesterId => {
     const appUser = requesterUserMap.get(requesterId) as { name?: string | null; avatar?: string | null } | undefined;
-    const employee = requesterEmployeeMap.get(requesterId) as { full_name?: string | null; avatar_url?: string | null } | undefined;
+    const employee = requesterEmployeeMap.get(requesterId);
     return [requesterId, {
       id: requesterId,
-      name: employee?.full_name?.trim() || appUser?.name?.trim() || 'Chưa có thông tin',
-      avatar: employee?.avatar_url || appUser?.avatar || null,
+      name: employee?.fullName?.trim() || appUser?.name?.trim() || 'Chưa có thông tin',
+      avatar: employee?.avatarUrl || appUser?.avatar || null,
     }];
   }));
   const displayMap = new Map(displayResults.map(result => [
@@ -1520,13 +1521,13 @@ export async function fetchVehicleTimelineEvents(startIso: string, endIso: strin
     const userIdsToFetch = [...new Set([...requesterIds, ...operatorUserIds])];
 
     if (userIdsToFetch.length > 0) {
-      const [usersRes, employeesRes] = await Promise.all([
+      const [usersRes, employees] = await Promise.all([
         supabase.from('users').select('id, name, avatar, phone').in('id', userIdsToFetch),
-        supabase.from('employees').select('id, user_id, full_name, phone').in('user_id', userIdsToFetch),
+        hrmSensitiveProjectionService.lookupEmployees({ userIds: userIdsToFetch }),
       ]);
       const empPhoneMap = new Map<string, string>();
-      (employeesRes.data || []).forEach((e: any) => {
-        if (e.user_id && e.phone) empPhoneMap.set(e.user_id, e.phone);
+      employees.forEach(employee => {
+        if (employee.userId && employee.phone) empPhoneMap.set(employee.userId, employee.phone);
       });
       (usersRes.data || []).forEach((u: any) => {
         const phone = empPhoneMap.get(u.id) || u.phone || null;
@@ -1595,4 +1596,3 @@ export async function fetchVehicleTimelineEvents(startIso: string, endIso: strin
 
   return events;
 }
-

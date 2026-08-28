@@ -428,24 +428,6 @@ export const hrmSharedCatalogService = {
     throwIfError(error, 'Không thể cập nhật người quản lý trực tiếp.');
   },
 
-  async assignEmployee(input: {
-    employeeId: string;
-    slotId: string;
-    effectiveFrom: string;
-    note?: string;
-    actorId?: string | null;
-  }): Promise<HrmEmployeeSlotAssignment> {
-    const { data, error } = await supabase.rpc('assign_hrm_employee_to_slot', {
-      p_employee_id: input.employeeId,
-      p_slot_id: input.slotId,
-      p_effective_from: input.effectiveFrom,
-      p_note: input.note?.trim() || null,
-      p_actor_id: input.actorId || null,
-    });
-    throwIfError(error, 'Không thể phân bổ nhân sự vào slot.');
-    return mapAssignment(Array.isArray(data) ? data[0] : data);
-  },
-
   async archiveSlot(slotId: string, actorId?: string | null): Promise<void> {
     const { error } = await supabase.from('hrm_org_position_slots')
       .update({ status: 'ARCHIVED', effective_to: new Date().toISOString().slice(0, 10), updated_by: actorId || null })

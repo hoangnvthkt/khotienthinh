@@ -37,6 +37,7 @@ describe('permissionService', () => {
 
     expect(canPerform(technicalAdmin, 'hrm.employee.view_sensitive')).toBe(false);
     expect(canPerform(technicalAdmin, 'hrm.compensation.view')).toBe(false);
+    expect(canPerform(technicalAdmin, 'system.hrm.manage')).toBe(false);
   });
 
   it('allows a technical admin to use HRM permissions from an effective source', () => {
@@ -144,9 +145,10 @@ describe('permissionService', () => {
     expect(canViewRoute(workflowUser, '/wf/builder/template-1')).toBe(false);
   });
 
-  it('falls back to adminSubModules/adminModules for legacy manage access', () => {
-    expect(canPerform(user({ adminSubModules: { HRM: ['/hrm/employees'] } }), 'system.hrm.manage')).toBe(true);
-    expect(canPerform(user({ adminModules: ['HRM'] }), 'system.hrm.manage')).toBe(true);
+  it('does not fall back to HRM module-admin aliases', () => {
+    expect(canPerform(user({ adminSubModules: { HRM: ['/hrm/employees'] } }), 'system.hrm.manage')).toBe(false);
+    expect(canPerform(user({ adminModules: ['HRM'] }), 'system.hrm.manage')).toBe(false);
+    expect(getInheritedPermissionCodes(user({ adminModules: ['HRM'] }))).not.toContain('system.hrm.manage');
   });
 
   it('reports inherited legacy permission codes for read-only UI badges', () => {

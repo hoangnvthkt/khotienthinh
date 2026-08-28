@@ -169,6 +169,9 @@ const isVehicleBookingModule = (moduleCodeOrLegacyKey: string): boolean =>
 const isVehicleBookingRoute = (route: string): boolean =>
   route === '/booking/vehicle' || route.startsWith('/booking/vehicle/');
 
+const isHrmPermissionCode = (permissionCode: string): boolean =>
+  permissionCode.startsWith('hrm.') || permissionCode.startsWith('system.hrm.');
+
 export const userHasPermissionGrant = (
   user: Pick<User, 'permissionGrants'> | null | undefined,
   permissionCode: string,
@@ -197,12 +200,12 @@ export const canPerform = (
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN && !permissionCode.startsWith('hrm.')) return true;
+  if (user.role === Role.ADMIN && !isHrmPermissionCode(permissionCode)) return true;
   if (userHasPermissionGrant(user, permissionCode, scope)) return true;
 
-  // HRM is a business-data boundary. A technical administrator must receive
-  // an effective HR/HR Manage source before legacy module flags are considered.
-  if (user.role === Role.ADMIN && permissionCode.startsWith('hrm.')) return false;
+  // HRM is a business-data boundary. Every persona, including technical admins,
+  // must receive an effective hrm.* source; legacy aliases/module flags never authorize HRM.
+  if (isHrmPermissionCode(permissionCode)) return false;
 
   const action = getPermissionActionByCode(permissionCode);
   if (!action) return false;
@@ -251,7 +254,7 @@ export const canViewRoute = (
     action.action.startsWith('view') &&
     (
       userHasPermissionGrant(user, action.permissionCode, scope) ||
-      (module.legacyModuleKey ? canOpenLegacyRoute(user, module.legacyModuleKey, route) : false)
+      (!isHrmRoute && module.legacyModuleKey ? canOpenLegacyRoute(user, module.legacyModuleKey, route) : false)
     )
   ));
 };
@@ -275,7 +278,7 @@ export const canManageRoute = (
     action.action === 'manage' &&
     (
       userHasPermissionGrant(user, action.permissionCode, scope) ||
-      (module.legacyModuleKey ? canManageLegacyRoute(user, module.legacyModuleKey, route) : false)
+      (!isHrmRoute && module.legacyModuleKey ? canManageLegacyRoute(user, module.legacyModuleKey, route) : false)
     )
   ));
 };
@@ -294,11 +297,11 @@ export const getInheritedPermissionCodes = (
   if (user.role === Role.ADMIN) {
     return getAllPermissionActions()
       .map(action => action.permissionCode)
-      .filter(permissionCode => !permissionCode.startsWith('hrm.'));
+      .filter(permissionCode => !isHrmPermissionCode(permissionCode));
   }
 
   return getAllPermissionActions()
-    .filter(action => hasLegacyPermission(user, action))
+    .filter(action => !isHrmPermissionCode(action.permissionCode) && hasLegacyPermission(user, action))
     .map(action => action.permissionCode);
 };
 

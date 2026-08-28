@@ -8,7 +8,7 @@ import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
-import { usePermission } from '../../hooks/usePermission';
+import { canPerform } from '../../lib/permissions/permissionService';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -21,8 +21,7 @@ import HrmPersonnelImportExportPanel from '../../components/hrm/HrmPersonnelImpo
 
 const Employees: React.FC = () => {
     const { employees, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/hrm/employees');
+    const canCRUD = canPerform(user, 'hrm.employee.edit_profile');
     useModuleData('hrm');
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');

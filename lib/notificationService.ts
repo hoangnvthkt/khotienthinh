@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Role } from '../types';
 import { projectStaffService } from './projectStaffService';
+import { hrmSensitiveProjectionService } from './hrmSensitiveProjectionService';
 import {
   DEFAULT_ALERT_RULES,
   getDefaultAlertRule,
@@ -863,13 +864,10 @@ export const notificationService = {
           const reminderMin = checkInMin - reminderLeadMin;
           if (currentTimeMin < reminderMin || currentTimeMin > checkInMin) continue;
 
-          const locFilter = loc.type === 'office' ? 'office_id' : 'construction_site_id';
-          const { data: employees } = await supabase
-            .from('employees')
-            .select('id, full_name, user_id')
-            .eq('status', 'Đang làm việc')
-            .eq(locFilter, loc.id);
-          if (!employees?.length) continue;
+          const employees = (await hrmSensitiveProjectionService.listEmployees()).filter(employee =>
+            employee.status === 'Đang làm việc'
+            && (loc.type === 'office' ? employee.officeId === loc.id : employee.constructionSiteId === loc.id));
+          if (!employees.length) continue;
 
           const empIds = employees.map((e: any) => e.id);
           const { data: checkedIn } = await supabase
@@ -888,9 +886,9 @@ export const notificationService = {
           const leaveIds = new Set((onLeave || []).map((l: any) => l.employeeId));
 
           for (const emp of employees) {
-            if (checkedInIds.has(emp.id) || leaveIds.has(emp.id) || !emp.user_id) continue;
+            if (checkedInIds.has(emp.id) || leaveIds.has(emp.id) || !emp.userId) continue;
             alertCount += await notifyRule('attendance_reminder', {
-              employeeUserId: emp.user_id,
+              employeeUserId: emp.userId,
               type: 'warning',
               category: 'attendance',
               title: '⏰ Nhắc nhở chấm công',
@@ -915,33 +913,32 @@ export const notificationService = {
         const daysBeforeWarning = getRuleNumber(contractRule, 'daysBeforeWarning', 30);
         const criticalDays = getRuleNumber(contractRule, 'criticalDays', 7);
         const warningDate = new Date(Date.now() + daysBeforeWarning * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const { data: contracts } = await supabase
-          .from('hrm_labor_contracts')
-          .select('id, employee_id, contract_number, effective_to, type')
-          .eq('status', 'active')
-          .lte('effective_to', warningDate)
-          .gte('effective_to', today);
+        const contracts = (await hrmSensitiveProjectionService.listLaborContracts())
+          .filter(contract => contract.status === 'active'
+            && Boolean(contract.endDate)
+            && contract.endDate! <= warningDate
+            && contract.endDate! >= today);
 
-        const empIds = (contracts || []).map((c: any) => c.employee_id);
-        const { data: emps } = empIds.length
-          ? await supabase.from('employees').select('id, full_name').in('id', empIds)
-          : { data: [] as any[] };
-        const empMap = new Map((emps || []).map((e: any) => [e.id, e.full_name]));
+        const empIds = contracts.map(contract => contract.employeeId);
+        const employees = empIds.length
+          ? await hrmSensitiveProjectionService.lookupEmployees({ employeeIds: empIds })
+          : [];
+        const empMap = new Map(employees.map(employee => [employee.id, employee.fullName]));
 
-        for (const c of (contracts || [])) {
-          const daysLeft = Math.ceil((new Date(c.effective_to).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-          const empName = empMap.get(c.employee_id) || 'N/A';
+        for (const contract of contracts) {
+          const daysLeft = Math.ceil((new Date(contract.endDate!).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+          const empName = empMap.get(contract.employeeId) || 'N/A';
           alertCount += await notifyRule('contract_expiry', {
             type: daysLeft <= criticalDays ? 'error' : 'warning',
             category: 'hrm',
             title: daysLeft <= criticalDays ? '🚨 Hợp đồng LĐ sắp hết hạn!' : '📝 Hợp đồng LĐ cần gia hạn',
-            message: `${empName} — HĐ ${c.contract_number || c.type}: còn ${daysLeft} ngày (hết hạn ${c.effective_to})`,
+            message: `${empName} — HĐ ${contract.contractNumber || contract.type}: còn ${daysLeft} ngày (hết hạn ${contract.endDate})`,
             severity: daysLeft <= criticalDays ? 'critical' : 'warning',
             icon: '📝',
             link: '/hrm/contracts',
             sourceType: 'hrm',
-            sourceId: `contract_expiry_${c.id}`,
-            metadata: { contractId: c.id, employeeId: c.employee_id, daysLeft, endDate: c.effective_to },
+            sourceId: `contract_expiry_${contract.id}`,
+            metadata: { contractId: contract.id, employeeId: contract.employeeId, daysLeft, endDate: contract.endDate },
           });
         }
       }
@@ -982,24 +979,21 @@ export const notificationService = {
       const birthdayRule = getRule(rules, 'employee_birthday');
       if (birthdayRule.isEnabled) {
         const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const { data: allEmployees } = await supabase
-          .from('employees')
-          .select('id, full_name, date_of_birth')
-          .eq('status', 'Đang làm việc')
-          .not('date_of_birth', 'is', null);
-        for (const emp of (allEmployees || [])) {
-          if (!emp.date_of_birth || emp.date_of_birth.slice(5) !== monthDay) continue;
+        const allEmployees = (await hrmSensitiveProjectionService.listEmployees())
+          .filter(employee => employee.status === 'Đang làm việc' && employee.dateOfBirth);
+        for (const employee of allEmployees) {
+          if (!employee.dateOfBirth || employee.dateOfBirth.slice(5) !== monthDay) continue;
           alertCount += await notifyRule('employee_birthday', {
             type: 'info',
             category: 'hrm',
             title: '🎂 Sinh nhật nhân viên',
-            message: `Hôm nay là sinh nhật ${emp.full_name}! Hãy gửi lời chúc mừng nhé 🎉`,
+            message: `Hôm nay là sinh nhật ${employee.fullName}! Hãy gửi lời chúc mừng nhé 🎉`,
             severity: 'info',
             icon: '🎂',
             link: '/hrm/employees',
             sourceType: 'hrm',
-            sourceId: `birthday_${emp.id}_${today}`,
-            metadata: { employeeId: emp.id, birthday: emp.date_of_birth },
+            sourceId: `birthday_${employee.id}_${today}`,
+            metadata: { employeeId: employee.id, birthday: employee.dateOfBirth },
           });
         }
       }
@@ -1012,19 +1006,17 @@ export const notificationService = {
       if (payrollRule.isEnabled && now.getDate() >= getRuleNumber(payrollRule, 'startDay', 25)) {
         const currentMonth = now.getMonth() + 1;
         const currentYear = now.getFullYear();
-        const { data: activeEmps } = await supabase
-          .from('employees')
-          .select('id, full_name')
-          .eq('status', 'Đang làm việc');
-        const { data: payrolls } = await supabase
-          .from('hrm_payrolls')
-          .select('"employeeId"')
-          .eq('month', currentMonth)
-          .eq('year', currentYear);
-        const paidEmpIds = new Set((payrolls || []).map((p: any) => p.employeeId));
-        const missingPayroll = (activeEmps || []).filter((e: any) => !paidEmpIds.has(e.id));
+        const [activeEmployees, payrolls] = await Promise.all([
+          hrmSensitiveProjectionService.listEmployees(),
+          hrmSensitiveProjectionService.listPayrolls(),
+        ]);
+        const paidEmpIds = new Set(payrolls
+          .filter(payroll => payroll.month === currentMonth && payroll.year === currentYear)
+          .map(payroll => payroll.employeeId));
+        const missingPayroll = activeEmployees
+          .filter(employee => employee.status === 'Đang làm việc' && !paidEmpIds.has(employee.id));
         if (missingPayroll.length > 0) {
-          const names = missingPayroll.slice(0, 3).map((e: any) => e.full_name).join(', ');
+          const names = missingPayroll.slice(0, 3).map(employee => employee.fullName).join(', ');
           const extra = missingPayroll.length > 3 ? ` và ${missingPayroll.length - 3} NV khác` : '';
           alertCount += await notifyRule('missing_payroll', {
             type: 'warning',

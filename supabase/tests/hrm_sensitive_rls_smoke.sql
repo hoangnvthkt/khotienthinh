@@ -27,8 +27,8 @@ declare
   v_admin_id uuid := public.current_app_user_id();
   v_summary jsonb;
   v_applied jsonb;
-  v_without_role integer;
-  v_with_role integer;
+  v_documents jsonb;
+  v_blocked boolean;
 begin
   v_summary := public.get_user_hr_authorization(v_admin_id);
   if v_summary ->> 'hrRole' is not null then
@@ -40,10 +40,14 @@ begin
     );
   end if;
 
-  select count(*)::integer into v_without_role from public.hrm_documents;
-  if v_without_role <> 0 then
-    raise exception 'TECHNICAL_ADMIN_READS_HR_DOCUMENTS_WITHOUT_ROLE: %', v_without_role;
-  end if;
+  v_blocked := false;
+  begin perform public.list_hrm_documents(null,null,null,null,10);
+  exception when others then v_blocked := position('HRM_DOCUMENT_VIEW_REQUIRED' in sqlerrm) > 0; end;
+  if not v_blocked then raise exception 'TECHNICAL_ADMIN_PROJECTION_NOT_BLOCKED'; end if;
+  v_blocked := false;
+  begin perform count(*) from public.hrm_documents;
+  exception when insufficient_privilege then v_blocked := true; end;
+  if not v_blocked then raise exception 'TECHNICAL_ADMIN_RAW_DOCUMENT_READ_NOT_BLOCKED'; end if;
 
   v_applied := public.set_user_hr_business_role(
     v_admin_id, 'HR_MANAGE', null,
@@ -52,10 +56,12 @@ begin
     v_summary ->> 'fingerprint'
   );
 
-  select count(*)::integer into v_with_role from public.hrm_documents;
-  if v_with_role = 0 then
-    raise exception 'HR_MANAGE_CANNOT_READ_HR_DOCUMENTS';
-  end if;
+  v_documents := public.list_hrm_documents(null,null,null,null,10);
+  if jsonb_typeof(v_documents) <> 'array' then raise exception 'HR_MANAGE_DOCUMENT_PROJECTION_INVALID'; end if;
+  v_blocked := false;
+  begin perform count(*) from public.hrm_documents;
+  exception when insufficient_privilege then v_blocked := true; end;
+  if not v_blocked then raise exception 'HR_MANAGE_RAW_DOCUMENT_READ_NOT_BLOCKED'; end if;
 
   perform public.set_user_hr_business_role(
     v_admin_id, 'NONE', null,

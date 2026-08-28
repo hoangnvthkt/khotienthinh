@@ -87,6 +87,29 @@ const toCamel = (row: any): HrmDocument => ({
   updatedAt: row.updated_at,
 });
 
+const toCommandPayload = (doc: HrmDocument) => ({
+  id: doc.id,
+  docType: doc.docType,
+  docCategory: doc.docCategory,
+  employeeId: doc.employeeId || null,
+  title: doc.title,
+  docNumber: doc.docNumber || null,
+  description: doc.description || null,
+  sender: doc.sender || null,
+  receiver: doc.receiver || null,
+  signedBy: doc.signedBy || null,
+  assignedTo: doc.assignedTo || null,
+  docDate: doc.docDate || null,
+  deadline: doc.deadline || null,
+  status: doc.status,
+  fileName: doc.fileName,
+  fileType: doc.fileType,
+  fileSize: doc.fileSize,
+  storagePath: doc.storagePath,
+  tags: doc.tags || [],
+  uploadedBy: doc.uploadedBy || null,
+});
+
 // ==================== SERVICE ====================
 export const hrmDocumentService = {
   // ---- Category CRUD ----
@@ -168,30 +191,35 @@ export const hrmDocumentService = {
     }
 
     // Step 2: Insert metadata record (match proven documentService pattern)
-    const doc = {
+    const doc: HrmDocument = {
       id: crypto.randomUUID(),
-      doc_type: meta.docType,
-      doc_category: meta.docCategory,
-      employee_id: meta.employeeId || null,
+      docType: meta.docType,
+      docCategory: meta.docCategory,
+      employeeId: meta.employeeId,
       title: meta.title,
-      doc_number: meta.docNumber || null,
-      description: meta.description || null,
-      sender: meta.sender || null,
-      receiver: meta.receiver || null,
-      signed_by: meta.signedBy || null,
-      assigned_to: meta.assignedTo || null,
-      doc_date: meta.docDate || null,
-      deadline: meta.deadline || null,
+      docNumber: meta.docNumber,
+      description: meta.description,
+      sender: meta.sender,
+      receiver: meta.receiver,
+      signedBy: meta.signedBy,
+      assignedTo: meta.assignedTo,
+      docDate: meta.docDate,
+      deadline: meta.deadline,
       status: meta.status || 'active',
-      file_name: file.name,
-      file_type: file.type || 'application/octet-stream',
-      file_size: file.size,
-      storage_path: storagePath,
+      fileName: file.name,
+      fileType: file.type || 'application/octet-stream',
+      fileSize: file.size,
+      storagePath,
       tags: meta.tags || [],
-      uploaded_by: meta.uploadedBy || null,
+      uploadedBy: meta.uploadedBy,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase.from('hrm_documents').insert(doc).select().single();
+    const { data, error } = await supabase.rpc('upsert_hrm_document_metadata', {
+      p_document: toCommandPayload(doc),
+      p_reason: 'Tải tài liệu HRM lên kho hồ sơ riêng tư',
+    });
     if (error) {
       console.error('DB insert error:', error);
       alert('Lỗi lưu thông tin tài liệu: ' + error.message);
@@ -202,47 +230,62 @@ export const hrmDocumentService = {
   },
 
   async search(query: string, docTypeFilter?: string): Promise<HrmDocument[]> {
-    const { data, error } = await supabase.rpc('search_hrm_documents', {
-      search_text: query || '',
-      doc_type_filter: docTypeFilter || null,
+    const { data, error } = await supabase.rpc('list_hrm_documents', {
+      p_doc_type: docTypeFilter || null,
+      p_category: null,
+      p_employee_id: null,
+      p_search: query || null,
+      p_limit: 200,
     });
     if (error) { console.error('Search error:', error); return []; }
     return (data || []).map(toCamel);
   },
 
   async list(docType?: string, category?: string): Promise<HrmDocument[]> {
-    let query = supabase.from('hrm_documents').select('*').order('created_at', { ascending: false }).limit(200);
-    if (docType) query = query.eq('doc_type', docType);
-    if (category && category !== 'all') query = query.eq('doc_category', category);
-    const { data } = await query;
+    const { data, error } = await supabase.rpc('list_hrm_documents', {
+      p_doc_type: docType || null,
+      p_category: category && category !== 'all' ? category : null,
+      p_employee_id: null,
+      p_search: null,
+      p_limit: 200,
+    });
+    if (error) throw new Error(error.message || 'Không thể tải tài liệu HRM.');
     return (data || []).map(toCamel);
   },
 
   async listByEmployee(employeeId: string): Promise<HrmDocument[]> {
-    const { data } = await supabase.from('hrm_documents')
-      .select('*')
-      .eq('employee_id', employeeId)
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.rpc('list_hrm_documents', {
+      p_doc_type: null,
+      p_category: null,
+      p_employee_id: employeeId,
+      p_search: null,
+      p_limit: 200,
+    });
+    if (error) throw new Error(error.message || 'Không thể tải tài liệu nhân sự.');
     return (data || []).map(toCamel);
   },
 
-  async updateStatus(id: string, status: string): Promise<void> {
-    await supabase.from('hrm_documents').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+  async updateStatus(doc: HrmDocument, status: string): Promise<void> {
+    const { error } = await supabase.rpc('upsert_hrm_document_metadata', {
+      p_document: toCommandPayload({ ...doc, status }),
+      p_reason: `Cập nhật trạng thái tài liệu HRM thành ${status}`,
+    });
+    if (error) throw new Error(error.message || 'Không thể cập nhật trạng thái tài liệu.');
   },
 
   async remove(doc: HrmDocument): Promise<void> {
-    await supabase.storage.from(BUCKET).remove([doc.storagePath]);
-    await supabase.from('hrm_documents').delete().eq('id', doc.id);
-  },
-
-  getPublicUrl(storagePath: string): string {
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
-    return data.publicUrl;
+    const { error: storageError } = await supabase.storage.from(BUCKET).remove([doc.storagePath]);
+    if (storageError) throw new Error(storageError.message || 'Không thể xóa file tài liệu riêng tư.');
+    const { error } = await supabase.rpc('delete_hrm_document_metadata', {
+      p_document_id: doc.id,
+      p_reason: 'Xóa tài liệu HRM theo thao tác quản lý',
+    });
+    if (error) throw new Error(error.message || 'Không thể xóa thông tin tài liệu.');
   },
 
   async getSignedUrl(storagePath: string): Promise<string> {
     const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 3600);
-    if (error || !data?.signedUrl) return this.getPublicUrl(storagePath);
+    if (error || !data?.signedUrl) throw new Error(error?.message || 'Không thể tạo liên kết tài liệu riêng tư.');
     return data.signedUrl;
   },
 
@@ -264,10 +307,9 @@ export const hrmDocumentService = {
   },
 
   async getNextDocNumber(type: 'incoming' | 'outgoing'): Promise<string> {
-    const { count } = await supabase.from('hrm_documents')
-      .select('id', { count: 'exact', head: true })
-      .eq('doc_type', type)
-      .gte('created_at', `${new Date().getFullYear()}-01-01`);
-    return this.generateDocNumber(type, (count || 0) + 1);
+    const documents = await this.list(type);
+    const year = String(new Date().getFullYear());
+    const count = documents.filter(document => document.createdAt?.startsWith(year)).length;
+    return this.generateDocNumber(type, count + 1);
   },
 };

@@ -215,15 +215,21 @@ describe('vehicle booking RPC contract', () => {
         }),
       };
     });
-    supabaseMocks.rpc.mockResolvedValue({
-      data: [{
-        assignment_id: 'assignment-1',
-        fulfillment_type: 'INTERNAL_WITH_DRIVER',
-        vehicle_code: 'TS-002',
-        vehicle_name: 'Xe tải thùng',
-      }],
+    supabaseMocks.rpc.mockImplementation(async (name: string) => ({
+      data: name === 'lookup_hrm_employee_directory'
+        ? [{
+            id: 'employee-1', user_id: 'requester-1', employee_code: 'TT001',
+            full_name: 'Nguyễn Văn An', title: '', phone: '', email: '',
+            avatar_url: 'employee.jpg', status: 'Đang làm việc',
+          }]
+        : [{
+            assignment_id: 'assignment-1',
+            fulfillment_type: 'INTERNAL_WITH_DRIVER',
+            vehicle_code: 'TS-002',
+            vehicle_name: 'Xe tải thùng',
+          }],
       error: null,
-    });
+    }));
 
     const [result] = await fetchDriverTodayAssignments('app-user-id');
 

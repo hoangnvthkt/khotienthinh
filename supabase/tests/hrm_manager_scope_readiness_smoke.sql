@@ -76,4 +76,10 @@ begin
 end;
 $$;
 
+-- Prove the public boundary works with the same database role used by PostgREST,
+-- not only while the smoke harness owns the transaction.
+set local role authenticated;
+select public.get_hrm_manager_scope_readiness();
+reset role;
+
 rollback;

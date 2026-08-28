@@ -51,8 +51,8 @@ import {
 } from '../lib/projectTransactionMapping';
 import { canPerform } from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
-import { toEmployeeProfileUpdatePayload } from '../lib/hrmEmployeeProfileModel';
 import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
+import { hrmSensitiveProjectionService } from '../lib/hrmSensitiveProjectionService';
 import { mapEmployeeFromDb } from '../lib/employeeSelfService';
 import { upsertRowsById } from '../lib/collectionState';
 import { useAuth } from './AuthContext';
@@ -106,7 +106,7 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   admin: ['app_settings', 'users'],
   'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
   wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
-  hrm: ['employees', 'org_units', 'hrm_attendance'],
+  hrm: ['org_units', 'hrm_attendance'],
 };
 
 interface AppContextType {
@@ -973,11 +973,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (auditSessionsData) setAuditSessions(auditSessionsData);
           markModuleLoaded('wms-core');
         } else if (module === 'hrm') {
+          const canViewPayroll = canPerform(user, 'hrm.payroll.view');
+          const canViewContracts = canPerform(user, 'hrm.contract.view');
+          const canViewCompensation = canPerform(user, 'hrm.compensation.view');
           const [
             empData, areasData, officesData, empTypesData, positionsData, salaryData, schedulesData, constructionSitesData, orgUnitsData,
             leaveBalData, leaveReqData, attendData, payrollData, contractData, payrollTplData, holidayData, salaryHistData, shiftTypesData, empShiftsData
           ] = await Promise.all([
-            fetchTableHelper('employees'),
+            hrmSensitiveProjectionService.listEmployees(),
             fetchTableHelper('hrm_areas'),
             fetchTableHelper('hrm_offices'),
             fetchTableHelper('hrm_employee_types'),
@@ -989,17 +992,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             fetchTableHelper('hrm_leave_balances'),
             fetchTableHelper('hrm_leave_requests'),
             fetchTableHelper('hrm_attendance'),
-            fetchTableHelper('hrm_payrolls'),
-            fetchTableHelper('hrm_labor_contracts'),
+            canViewPayroll ? hrmSensitiveProjectionService.listPayrolls() : Promise.resolve([]),
+            canViewContracts ? hrmSensitiveProjectionService.listLaborContracts() : Promise.resolve([]),
             fetchTableHelper('hrm_payroll_templates'),
             fetchTableHelper('hrm_holidays'),
-            fetchTableHelper('hrm_salary_history'),
+            canViewCompensation ? hrmSensitiveProjectionService.listSalaryHistory() : Promise.resolve([]),
             fetchTableHelper('hrm_shift_types'),
             fetchTableHelper('hrm_employee_shifts'),
           ]);
           {
             const requiredEmployees = requireModuleData(module, 'employees', empData);
-            setEmployees(requiredEmployees.map(mapEmployeeFromDb));
+            setEmployees(requiredEmployees);
           }
           if (areasData) setHrmAreas(areasData);
           if (officesData) setHrmOffices(officesData);
@@ -1047,37 +1050,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (leaveLogData) setLeaveLogs(leaveLogData);
           if (attendData) setAttendanceRecords(attendData);
           if (payrollData) setPayrollRecords(payrollData);
-          if (contractData) setLaborContracts(contractData.map((contract: any) => ({
-            id: contract.id,
-            employeeId: contract.employee_id,
-            contractNumber: contract.contract_number,
-            type: contract.type,
-            status: contract.status,
-            startDate: contract.effective_from,
-            endDate: contract.effective_to,
-            baseSalary: Number(contract.base_salary || 0),
-            allowancePosition: Number(contract.allowance_position || 0),
-            allowanceOther: Number(contract.allowance_other || 0),
-            signedBy: contract.signed_by,
-            note: contract.note,
-            createdAt: contract.created_at,
-          })));
+          if (contractData) setLaborContracts(contractData);
           if (payrollTplData) setPayrollTemplates(payrollTplData);
           if (holidayData) setHolidays(holidayData);
-          if (salaryHistData) setSalaryHistory(salaryHistData.map((salary: any) => ({
-            id: salary.id,
-            employeeId: salary.employee_id,
-            contractId: salary.contract_id,
-            changeDate: salary.effective_from,
-            effectiveDate: salary.effective_from,
-            previousSalary: Number(salary.previous_salary || 0),
-            newSalary: Number(salary.new_salary || 0),
-            previousAllowance: Number(salary.previous_allowance || 0),
-            newAllowance: Number(salary.new_allowance || 0),
-            reason: salary.reason,
-            changedBy: salary.changed_by_legacy,
-            createdAt: salary.created_at,
-          })));
+          if (salaryHistData) setSalaryHistory(salaryHistData);
           if (shiftTypesData) setShiftTypes(shiftTypesData.map((s: any) => ({
             id: s.id, name: s.name,
             startTime: s.start_time, endTime: s.end_time,
@@ -2800,18 +2776,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let persistedEmployee = newEmployee;
     if (isSupabaseConfigured) {
       try {
-        const payload = {
-          id: newEmployee.id,
-          employee_code: newEmployee.employeeCode || null,
-          ...toEmployeeProfileUpdatePayload(newEmployee),
-        };
-        const { data, error } = await supabase
-          .from('employees')
-          .upsert(payload, { onConflict: 'email', ignoreDuplicates: false })
-          .select('*')
-          .single();
-        if (error) throw error;
-        persistedEmployee = mapEmployeeFromDb(data);
+        persistedEmployee = await hrmSensitiveProjectionService.createEmployee(
+          newEmployee,
+          'Tạo hồ sơ nhân sự từ màn hình quản lý',
+        );
       } catch (err) {
         logApiError('addEmployee', err);
         throw err;
@@ -2856,19 +2824,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const removeEmployee = async (id: string) => {
     const e = employees.find(emp => emp.id === id);
-    setEmployees(prev => prev.filter(emp => emp.id !== id));
     try {
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('employees').delete().eq('id', id);
-        if (error) {
-          logApiError('removeEmployee', error);
-          throw error;
-        }
+        await hrmSensitiveProjectionService.archiveEmployee(
+          id,
+          'Lưu hồ sơ nhân sự đã nghỉ việc',
+        );
       }
-      if (e) logActivity('SYSTEM', 'Xóa nhân sự', `Đã xóa hồ sơ nhân sự: ${e.fullName}`, 'DANGER');
+      setEmployees(prev => prev.map(emp => emp.id === id ? { ...emp, status: 'Đã nghỉ việc' } : emp));
+      if (e) logActivity('SYSTEM', 'Lưu hồ sơ nhân sự', `Đã chuyển nghỉ việc: ${e.fullName}`, 'INFO');
     } catch (error: any) {
-      // Restore employee back to state on exception
-      if (e) setEmployees(prev => [...prev, e]);
       logApiError('removeEmployee', error);
       throw error;
     }
@@ -2997,6 +2962,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addHrmItem = async (table: string, item: any) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
+    if (table === 'hrm_payrolls' && isSupabaseConfigured) {
+      const persisted = await hrmSensitiveProjectionService.upsertPayroll(
+        item,
+        `Tạo phiếu lương ${String(item.month).padStart(2, '0')}/${item.year}`,
+      );
+      setter((prev: any[]) => [...prev, persisted]);
+      return;
+    }
     setter((prev: any[]) => [...prev, item]);
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).insert(toDbItem(table, item));
@@ -3010,6 +2983,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateHrmItem = async (table: string, item: any) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
+    if (table === 'hrm_payrolls' && isSupabaseConfigured) {
+      const persisted = await hrmSensitiveProjectionService.upsertPayroll(
+        item,
+        `Cập nhật phiếu lương ${String(item.month).padStart(2, '0')}/${item.year}`,
+      );
+      setter((prev: any[]) => prev.map((row: any) => row.id === persisted.id ? persisted : row));
+      return;
+    }
     setter((prev: any[]) => prev.map((i: any) => i.id === item.id ? item : i));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).update(toDbItem(table, item)).eq('id', item.id);
@@ -3023,6 +3004,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeHrmItem = async (table: string, id: string) => {
     const setter = hrmSetterMap[table];
     if (!setter) return;
+    if (table === 'hrm_payrolls' && isSupabaseConfigured) {
+      await hrmSensitiveProjectionService.deletePayroll(id, 'Xóa phiếu lương đang ở trạng thái nháp');
+      setter((prev: any[]) => prev.filter((row: any) => row.id !== id));
+      return;
+    }
     setter((prev: any[]) => prev.filter((i: any) => i.id !== id));
     if (isSupabaseConfigured) {
       const { error } = await supabase.from(table).delete().eq('id', id);

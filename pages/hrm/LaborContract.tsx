@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useTheme } from '../../context/ThemeContext';
-import { usePermission } from '../../hooks/usePermission';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
@@ -34,8 +33,7 @@ const LaborContractPage: React.FC = () => {
   const { employees, laborContracts, salaryHistory, user, loadModuleData } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
-  const { canManage } = usePermission();
-  const canCRUD = canManage('/hrm/contracts');
+  const canCRUD = canPerform(user, 'hrm.contract.manage');
   const canManageCompensation = canPerform(user, 'hrm.compensation.manage');
   const toast = useToast();
   const confirm = useConfirm();

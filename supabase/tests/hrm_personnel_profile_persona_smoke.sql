@@ -30,12 +30,21 @@ begin
   where employee.status = 'Đang làm việc'
     and account.id <> v_admin.id
     and account.is_active and account.account_status = 'ACTIVE'
+    and account.role <> 'ADMIN'
+    and not exists (
+      select 1
+      from public.principal_role_assignments hr_assignment
+      join public.role_permission_templates hr_template on hr_template.id = hr_assignment.role_template_id
+      where hr_assignment.principal_type='user' and hr_assignment.principal_id=account.id
+        and hr_assignment.status='ACTIVE' and hr_template.code in ('HR','HR_MANAGE')
+    )
   order by employee.employee_code limit 1;
   select account.* into v_employee_user
   from public.users account where account.id = v_employee.user_id;
   if v_admin.id is null or v_employee.id is null then
     raise exception 'HRM_PROFILE_PERSONA_FIXTURES_NOT_FOUND';
   end if;
+  perform set_config('hrm.smoke_employee_id', v_employee.id::text, true);
 
   perform set_config('request.jwt.claim.sub', v_employee_user.auth_id::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object(
@@ -121,5 +130,24 @@ begin
   end if;
 end;
 $$;
+
+-- Exercise every public projection through PostgREST's database role without
+-- emitting the returned personnel payload into smoke logs.
+set local role authenticated;
+do $$
+declare
+  v_employee_id uuid := current_setting('hrm.smoke_employee_id')::uuid;
+begin
+  perform public.get_hrm_employee_overview(v_employee_id);
+  perform public.get_hrm_employee_personal_contact(v_employee_id);
+  perform public.get_hrm_employee_work_organization(v_employee_id);
+  perform public.get_hrm_employee_attendance_leave(v_employee_id);
+  perform public.get_hrm_employee_contract_employment(v_employee_id);
+  perform public.get_hrm_employee_legal_insurance(v_employee_id);
+  perform public.get_hrm_employee_compensation_tax_bank(v_employee_id);
+  perform public.get_hrm_employee_qualifications_documents(v_employee_id);
+end;
+$$;
+reset role;
 
 rollback;

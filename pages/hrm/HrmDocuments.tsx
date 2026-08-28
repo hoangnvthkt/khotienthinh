@@ -31,7 +31,7 @@ const TAB_CONFIG: { key: DocTab; label: string; icon: React.ReactNode; color: st
   { key: 'outgoing', label: 'Công văn đi', icon: <Send size={16} />, color: 'from-violet-500 to-purple-500' },
 ];
 
-import { usePermission } from '../../hooks/usePermission';
+import { canPerform } from '../../lib/permissions/permissionService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -40,8 +40,7 @@ const HrmDocuments: React.FC = () => {
   useModuleData('hrm');
   const { employees, user } = useApp();
   const { theme } = useTheme();
-  const { canManage } = usePermission();
-  const canCRUD = canManage('/hrm/documents');
+  const canCRUD = canPerform(user, 'hrm.document.manage');
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -53,6 +52,7 @@ const HrmDocuments: React.FC = () => {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<HrmDocument | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [thumbnailUrls, setThumbnailUrls] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -96,6 +96,13 @@ const HrmDocuments: React.FC = () => {
     try {
       const docs = await hrmDocumentService.list(activeTab, filterCategory !== 'all' ? filterCategory : undefined);
       setDocuments(docs);
+      const thumbnails = await Promise.all(docs
+        .filter(doc => hrmDocumentService.isImage(doc.fileType))
+        .map(async doc => {
+          try { return [doc.id, await hrmDocumentService.getSignedUrl(doc.storagePath)] as const; }
+          catch { return [doc.id, ''] as const; }
+        }));
+      setThumbnailUrls(Object.fromEntries(thumbnails));
     } finally {
       setIsSearching(false);
     }
@@ -223,7 +230,7 @@ const HrmDocuments: React.FC = () => {
   };
 
   const handleStatusChange = async (doc: HrmDocument, newStatus: string) => {
-    await hrmDocumentService.updateStatus(doc.id, newStatus);
+    await hrmDocumentService.updateStatus(doc, newStatus);
     await loadDocs();
   };
 
@@ -385,8 +392,7 @@ const HrmDocuments: React.FC = () => {
               {filteredDocuments.map(doc => {
                 const fi = getFileIcon(doc.fileType);
                 const catConfig = categories.find(c => c.key === doc.docCategory);
-                const isImg = hrmDocumentService.isImage(doc.fileType);
-                const thumbUrl = isImg ? hrmDocumentService.getPublicUrl(doc.storagePath) : null;
+                const thumbUrl = thumbnailUrls[doc.id] || null;
                 const emp = doc.employeeId ? employeeMap.get(doc.employeeId) : null;
                 const statusConfig = DOC_STATUS_CONFIG[doc.status] || DOC_STATUS_CONFIG.active;
                 const isOverdue = doc.deadline && new Date(doc.deadline) < new Date() && doc.status !== 'completed';

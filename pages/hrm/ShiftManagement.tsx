@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Users, Calendar, Settings, Check
 } from 'lucide-react';
 import { HrmShiftType, HrmEmployeeShift } from '../../types';
-import { usePermission } from '../../hooks/usePermission';
+import { canPerform } from '../../lib/permissions/permissionService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -21,11 +21,10 @@ const SHIFT_COLORS = [
 const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 const ShiftManagement: React.FC = () => {
-  const { employees, shiftTypes, employeeShifts, addHrmItem, updateHrmItem, removeHrmItem } = useApp();
+  const { employees, shiftTypes, employeeShifts, addHrmItem, updateHrmItem, removeHrmItem, user } = useApp();
   useModuleData('hrm');
   const { isDark } = useTheme();
-  const { canManage } = usePermission();
-  const canCRUD = canManage('/hrm/shifts');
+  const canCRUD = canPerform(user, 'hrm.master_data.manage');
   const toast = useToast();
   const confirm = useConfirm();
 

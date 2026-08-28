@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Employee, AssetStatus } from '../../types';
 import { X, User as UserIcon, Briefcase, Phone, Edit2, Landmark, FolderOpen, FileText, Eye, ExternalLink } from 'lucide-react';
 import { hrmDocumentService, HrmDocument, DocCategory } from '../../lib/hrmDocumentService';
-import { usePermission } from '../../hooks/usePermission';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 interface EmployeeDetailModalProps {
     employee: Employee;
@@ -15,8 +15,8 @@ type TabKey = 'personal' | 'work' | 'contact' | 'assets' | 'documents';
 
 const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose, onEdit }) => {
     const { user, users, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, orgUnits, assets, assetAssignments, assetCategories } = useApp();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/hrm/employees');
+    const canCRUD = canPerform(user, 'hrm.employee.edit_profile');
+    const canViewDocuments = canPerform(user, 'hrm.document.view');
     const canEditEmployee = canCRUD || employee.userId === user.id;
     const [activeTab, setActiveTab] = useState<TabKey>('personal');
 
@@ -36,7 +36,7 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
         { key: 'work', label: 'Công Việc', icon: <Briefcase size={15} /> },
         { key: 'contact', label: 'Liên Hệ', icon: <Phone size={15} /> },
         { key: 'assets', label: 'Tài Sản', icon: <Landmark size={15} /> },
-        { key: 'documents', label: 'Hồ Sơ', icon: <FolderOpen size={15} /> },
+        ...(canViewDocuments ? [{ key: 'documents' as const, label: 'Hồ Sơ', icon: <FolderOpen size={15} /> }] : []),
     ];
 
     // Documents linked to this employee
@@ -56,8 +56,8 @@ const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onC
     }, [employee.id]);
 
     useEffect(() => {
-        if (activeTab === 'documents') loadEmpDocs();
-    }, [activeTab, loadEmpDocs]);
+        if (activeTab === 'documents' && canViewDocuments) loadEmpDocs();
+    }, [activeTab, canViewDocuments, loadEmpDocs]);
 
     const getCatLabel = (key: string) => {
         const cat = docCategories.find(c => c.key === key);

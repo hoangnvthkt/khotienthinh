@@ -84,7 +84,9 @@ const baseActions = (legacyModuleKey: string): readonly PermissionActionDefiniti
 };
 
 const systemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
-  .filter(moduleKey => Boolean(routesByLegacyModule[moduleKey]))
+  // HRM is governed exclusively by the explicit hrm.* registry below. Keeping a
+  // parallel system.hrm.* module would reintroduce the retired module-admin path.
+  .filter(moduleKey => moduleKey !== 'HRM' && Boolean(routesByLegacyModule[moduleKey]))
   .map((moduleKey, index) => ({
     code: `system.${toSnakeCode(moduleKey)}`,
     label: moduleLabels[moduleKey] || moduleKey,

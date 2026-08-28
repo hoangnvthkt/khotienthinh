@@ -7,7 +7,7 @@ import {
 
 const GLOBAL_SCOPE: readonly PermissionScopeType[] = ['global'];
 const WMS_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'own', 'assigned'];
-const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department', 'direct_reports', 'org_unit', 'assigned'];
+const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'direct_reports', 'org_unit', 'assigned'];
 const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department'];
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
 const ASSET_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'department', 'assigned'];
@@ -115,16 +115,13 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     sortOrder: 40,
     modules: [
       module('hrm.employee', 'Nhân viên', 'HRM', ['/hrm/dashboard', '/hrm/employees', '/org-map'], 10, actions('hrm.employee', 'HRM', '/hrm/employees', HRM_SCOPE, [
-        ['view', 'Xem', 10],
-        ['create', 'Tạo', 20],
-        ['edit', 'Sửa', 30],
-        ['view_directory', 'Xem danh bạ', 40, ['global']],
-        ['view_profile', 'Xem hồ sơ cá nhân', 50],
-        ['edit_profile', 'Sửa hồ sơ cá nhân', 60],
-        ['view_sensitive', 'Xem hồ sơ hạn chế', 70, ['global']],
-        ['edit_sensitive', 'Sửa hồ sơ hạn chế', 80, ['global']],
-        ['import', 'Nhập hồ sơ', 90, ['global']],
-        ['export', 'Xuất hồ sơ', 100, ['global']],
+        ['view_directory', 'Xem danh bạ', 10, ['global']],
+        ['view_profile', 'Xem hồ sơ cá nhân', 20],
+        ['edit_profile', 'Sửa hồ sơ cá nhân', 30],
+        ['view_sensitive', 'Xem hồ sơ hạn chế', 40, ['global']],
+        ['edit_sensitive', 'Sửa hồ sơ hạn chế', 50, ['global']],
+        ['import', 'Nhập hồ sơ', 60, ['global']],
+        ['export', 'Xuất hồ sơ', 70, ['global']],
       ])),
       module('hrm.organization', 'Tổ chức', 'HRM', ['/org-map', '/settings/hrm-shared-catalog'], 15, actions('hrm.organization', 'HRM', '/org-map', HRM_SCOPE, [
         ['view', 'Xem tổ chức', 10, ['global', 'org_unit']],
