@@ -5,7 +5,9 @@ export type PermissionScopeType =
   | 'project'
   | 'construction_site'
   | 'warehouse'
-  | 'department';
+  | 'department'
+  | 'direct_reports'
+  | 'org_unit';
 
 export interface PermissionScope {
   scopeType?: PermissionScopeType;

@@ -4,7 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { Role, type User, type UserPermissionGrant } from '../../types';
+import { Role, type User } from '../../types';
 import {
   AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
@@ -76,19 +76,25 @@ const profileRow = {
   assigned_warehouse_id: null,
 };
 
-const permissionGrant: UserPermissionGrant = {
-  id: 'grant-1',
-  userId: PROFILE_ID,
-  permissionCode: 'inventory.items.view',
-  scopeType: 'global',
-  scopeId: '*',
-  isActive: true,
+const effectivePermissionSource = {
+  permission_code: 'hrm.employee.view_sensitive',
+  source_type: 'business_role',
+  source_id: 'role-assignment-1',
+  source_code: 'HR',
+  source_label: 'HR',
+  scope_type: 'global',
+  scope_id: '*',
+  starts_at: '2026-08-28T00:00:00.000Z',
+  expires_at: null,
+  risk_level: 'HIGH',
+  is_business_approval: true,
+  metadata: { template_version: 1 },
 };
 
 const makeGateway = (overrides: Partial<AuthProfileGateway> = {}): AuthProfileGateway => ({
   verifySession: vi.fn(async () => ({ id: AUTH_ID })),
   loadActiveProfileByAuthId: vi.fn(async () => profileRow),
-  loadPermissionGrants: vi.fn(async () => [permissionGrant]),
+  loadEffectivePermissionSources: vi.fn(async () => [effectivePermissionSource]),
   loadSignatureUrl: vi.fn(async () => 'https://example.com/signature.png'),
   ...overrides,
 });
@@ -121,7 +127,30 @@ describe('fail-closed auth state', () => {
       role: Role.EMPLOYEE,
       isActive: true,
       signatureUrl: 'https://example.com/signature.png',
-      permissionGrants: [permissionGrant],
+      permissionGrants: [{
+        userId: PROFILE_ID,
+        permissionCode: 'hrm.employee.view_sensitive',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+        grantedBy: undefined,
+        grantedAt: '2026-08-28T00:00:00.000Z',
+        expiresAt: undefined,
+      }],
+      effectivePermissionSources: [{
+        permissionCode: 'hrm.employee.view_sensitive',
+        sourceType: 'business_role',
+        sourceId: 'role-assignment-1',
+        sourceCode: 'HR',
+        sourceLabel: 'HR',
+        scopeType: 'global',
+        scopeId: '*',
+        startsAt: '2026-08-28T00:00:00.000Z',
+        expiresAt: undefined,
+        riskLevel: 'HIGH',
+        isBusinessApproval: true,
+        metadata: { template_version: 1 },
+      }],
     });
   });
 

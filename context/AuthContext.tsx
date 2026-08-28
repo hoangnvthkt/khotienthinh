@@ -28,7 +28,6 @@ import {
   authReducer,
   authenticateMockUser,
   createInitialAuthState,
-  mapUserPermissionGrantRow,
   parseStoredMockUser,
   resolveCandidateSession,
   serializeMockUser,
@@ -115,14 +114,12 @@ const authGateway: AuthProfileGateway = {
     if (error) throw error;
     return data;
   },
-  loadPermissionGrants: async (userId) => {
-    const { data, error } = await supabase
-      .from('user_permission_grants')
-      .select('id,user_id,permission_code,scope_type,scope_id,is_active,granted_by,granted_at,expires_at')
-      .eq('user_id', userId)
-      .eq('is_active', true);
+  loadEffectivePermissionSources: async (userId) => {
+    const { data, error } = await supabase.rpc('get_effective_permission_sources', {
+      p_target_user_id: userId,
+    });
     if (error) throw error;
-    return (data || []).map(mapUserPermissionGrantRow);
+    return data || [];
   },
   loadSignatureUrl: async (userId) => {
     try {

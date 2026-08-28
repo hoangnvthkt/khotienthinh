@@ -28,6 +28,32 @@ describe('permissionService', () => {
     expect(canPerform(user({ role: Role.ADMIN }), 'project.daily_log.approve')).toBe(true);
   });
 
+  it('does not give a technical admin implicit HRM access', () => {
+    const technicalAdmin = user({
+      role: Role.ADMIN,
+      adminModules: ['HRM'],
+    });
+
+    expect(canPerform(technicalAdmin, 'hrm.employee.view_sensitive')).toBe(false);
+    expect(canPerform(technicalAdmin, 'hrm.compensation.view')).toBe(false);
+  });
+
+  it('allows a technical admin to use HRM permissions from an effective source', () => {
+    const hrAdmin = user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        id: 'hr-role-source',
+        userId: 'user-1',
+        permissionCode: 'hrm.employee.view_sensitive',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    });
+
+    expect(canPerform(hrAdmin, 'hrm.employee.view_sensitive')).toBe(true);
+  });
+
   it('uses active scoped grants before legacy fallback', () => {
     const grantedUser = user({
       permissionGrants: [{
@@ -127,5 +153,16 @@ describe('permissionService', () => {
     expect(isPermissionActionScopeAllowed('analytics.export', { scopeType: 'global', scopeId: '*' })).toBe(true);
     expect(isPermissionActionScopeAllowed('analytics.export', { scopeType: 'warehouse', scopeId: 'wh-1' })).toBe(false);
     expect(isPermissionActionScopeAllowed('unknown.permission', { scopeType: 'global', scopeId: '*' })).toBe(false);
+  });
+
+  it('supports direct-report and organization-unit scopes for HRM', () => {
+    expect(isPermissionActionScopeAllowed('hrm.employee.view_profile', {
+      scopeType: 'direct_reports',
+      scopeId: '*',
+    })).toBe(true);
+    expect(isPermissionActionScopeAllowed('hrm.organization.view', {
+      scopeType: 'org_unit',
+      scopeId: 'unit-1',
+    })).toBe(true);
   });
 });

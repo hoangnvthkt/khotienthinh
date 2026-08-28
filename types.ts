@@ -137,13 +137,31 @@ export interface User {
   reactivatedBy?: string;
   reactivationReason?: string;
   permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
+  effectivePermissionSources?: EffectivePermissionSource[];
+}
+
+export type HrmBusinessRoleCode = 'HR' | 'HR_MANAGE';
+
+export interface EffectivePermissionSource {
+  permissionCode: string;
+  sourceType: string;
+  sourceId?: string;
+  sourceCode?: string;
+  sourceLabel?: string;
+  scopeType: UserPermissionGrant['scopeType'];
+  scopeId: string;
+  startsAt?: string;
+  expiresAt?: string;
+  riskLevel?: string;
+  isBusinessApproval: boolean;
+  metadata: Record<string, unknown>;
 }
 
 export interface UserPermissionGrant {
   id?: string;
   userId: string;
   permissionCode: string;
-  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department';
+  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department' | 'direct_reports' | 'org_unit';
   scopeId: string;
   isActive?: boolean;
   grantedBy?: string;

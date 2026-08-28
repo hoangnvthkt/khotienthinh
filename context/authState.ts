@@ -1,5 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
-import { Role, type User, type UserPermissionGrant } from '../types';
+import { Role, type EffectivePermissionSource, type User, type UserPermissionGrant } from '../types';
 
 export type AuthStatus =
   | 'initializing'
@@ -40,7 +40,7 @@ export type AuthAction =
 export interface AuthProfileGateway {
   verifySession(session: Session): Promise<{ id: string }>;
   loadActiveProfileByAuthId(authId: string): Promise<unknown | null>;
-  loadPermissionGrants(userId: string): Promise<UserPermissionGrant[]>;
+  loadEffectivePermissionSources(userId: string): Promise<unknown[]>;
   loadSignatureUrl(userId: string): Promise<string | undefined>;
 }
 
@@ -272,6 +272,36 @@ export const mapUserPermissionGrantRow = (row: any): UserPermissionGrant => ({
   expiresAt: row.expires_at ?? row.expiresAt,
 });
 
+export const mapEffectivePermissionSourceRow = (row: any): EffectivePermissionSource => ({
+  permissionCode: row.permission_code ?? row.permissionCode,
+  sourceType: row.source_type ?? row.sourceType,
+  sourceId: row.source_id ?? row.sourceId ?? undefined,
+  sourceCode: row.source_code ?? row.sourceCode ?? undefined,
+  sourceLabel: row.source_label ?? row.sourceLabel ?? undefined,
+  scopeType: row.scope_type ?? row.scopeType ?? 'global',
+  scopeId: row.scope_id ?? row.scopeId ?? '*',
+  startsAt: row.starts_at ?? row.startsAt ?? undefined,
+  expiresAt: row.expires_at ?? row.expiresAt ?? undefined,
+  riskLevel: row.risk_level ?? row.riskLevel ?? undefined,
+  isBusinessApproval: row.is_business_approval ?? row.isBusinessApproval ?? false,
+  metadata: row.metadata ?? {},
+});
+
+const effectiveSourceToGrant = (
+  userId: string,
+  source: EffectivePermissionSource,
+): UserPermissionGrant => ({
+  id: source.sourceId,
+  userId,
+  permissionCode: source.permissionCode,
+  scopeType: source.scopeType,
+  scopeId: source.scopeId,
+  isActive: true,
+  grantedBy: undefined,
+  grantedAt: source.startsAt,
+  expiresAt: source.expiresAt,
+});
+
 export const mapUserProfileRow = (row: any): User => ({
   id: row.id,
   authId: row.auth_id ?? row.authId,
@@ -376,13 +406,15 @@ export const resolveCandidateSession = async (
   }
 
   try {
-    const [permissionGrants, signatureUrl] = await Promise.all([
-      gateway.loadPermissionGrants(mappedUser.id),
+    const [permissionSourceRows, signatureUrl] = await Promise.all([
+      gateway.loadEffectivePermissionSources(mappedUser.id),
       gateway.loadSignatureUrl(mappedUser.id),
     ]);
+    const effectivePermissionSources = permissionSourceRows.map(mapEffectivePermissionSourceRow);
     return {
       ...mappedUser,
-      permissionGrants,
+      effectivePermissionSources,
+      permissionGrants: effectivePermissionSources.map(source => effectiveSourceToGrant(mappedUser.id, source)),
       signatureUrl,
     };
   } catch (cause) {

@@ -174,8 +174,12 @@ export const canPerform = (
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
+  if (user.role === Role.ADMIN && !permissionCode.startsWith('hrm.')) return true;
   if (userHasPermissionGrant(user, permissionCode, scope)) return true;
+
+  // HRM is a business-data boundary. A technical administrator must receive
+  // an effective HR/HR Manage source before legacy module flags are considered.
+  if (user.role === Role.ADMIN && permissionCode.startsWith('hrm.')) return false;
 
   const action = getPermissionActionByCode(permissionCode);
   if (!action) return false;
@@ -256,7 +260,11 @@ export const getInheritedPermissionCodes = (
   user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules'> | null | undefined,
 ): readonly string[] => {
   if (!user) return [];
-  if (user.role === Role.ADMIN) return getAllPermissionActions().map(action => action.permissionCode);
+  if (user.role === Role.ADMIN) {
+    return getAllPermissionActions()
+      .map(action => action.permissionCode)
+      .filter(permissionCode => !permissionCode.startsWith('hrm.'));
+  }
 
   return getAllPermissionActions()
     .filter(action => hasLegacyPermission(user, action))

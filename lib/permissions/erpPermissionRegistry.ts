@@ -7,7 +7,7 @@ import {
 
 const GLOBAL_SCOPE: readonly PermissionScopeType[] = ['global'];
 const WMS_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'own', 'assigned'];
-const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department', 'assigned'];
+const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department', 'direct_reports', 'org_unit', 'assigned'];
 const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department'];
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
 const ASSET_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'department', 'assigned'];
@@ -118,10 +118,28 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem', 10],
         ['create', 'Tạo', 20],
         ['edit', 'Sửa', 30],
+        ['view_directory', 'Xem danh bạ', 40, ['global']],
+        ['view_profile', 'Xem hồ sơ cá nhân', 50],
+        ['edit_profile', 'Sửa hồ sơ cá nhân', 60],
+        ['view_sensitive', 'Xem hồ sơ hạn chế', 70, ['global']],
+        ['edit_sensitive', 'Sửa hồ sơ hạn chế', 80, ['global']],
+        ['import', 'Nhập hồ sơ', 90, ['global']],
+        ['export', 'Xuất hồ sơ', 100, ['global']],
+      ])),
+      module('hrm.organization', 'Tổ chức', 'HRM', ['/org-map', '/settings/hrm-shared-catalog'], 15, actions('hrm.organization', 'HRM', '/org-map', HRM_SCOPE, [
+        ['view', 'Xem tổ chức', 10, ['global', 'org_unit']],
+        ['manage', 'Quản lý tổ chức', 20, ['global', 'org_unit']],
+      ])),
+      module('hrm.staffing', 'Định biên', 'HRM', ['/org-map', '/settings/hrm-shared-catalog'], 18, actions('hrm.staffing', 'HRM', '/org-map', HRM_SCOPE, [
+        ['view', 'Xem định biên', 10, ['global', 'org_unit']],
+        ['manage', 'Điều chỉnh định biên', 20, ['global', 'org_unit']],
+        ['assign', 'Phân bổ nhân sự', 30, ['global', 'org_unit']],
+        ['set_manager', 'Đặt quản lý đơn vị', 40, ['global', 'org_unit']],
       ])),
       module('hrm.attendance', 'Chấm công', 'HRM', ['/hrm/checkin', '/hrm/attendance'], 20, actions('hrm.attendance', 'HRM', '/hrm/attendance', HRM_SCOPE, [
         ['view', 'Xem', 10],
         ['edit', 'Sửa', 20],
+        ['approve', 'Duyệt/chốt công', 30],
       ])),
       module('hrm.leave', 'Nghỉ phép', 'HRM', ['/hrm/leave'], 30, actions('hrm.leave', 'HRM', '/hrm/leave', HRM_SCOPE, [
         ['view', 'Xem', 10],
@@ -130,6 +148,19 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('hrm.payroll', 'Bảng lương', 'HRM', ['/hrm/payroll'], 40, actions('hrm.payroll', 'HRM', '/hrm/payroll', HRM_SCOPE, [
         ['view', 'Xem', 10],
         ['manage', 'Quản trị', 20],
+        ['export', 'Xuất bảng lương', 30, ['global']],
+      ])),
+      module('hrm.contract', 'Hợp đồng', 'HRM', ['/hrm/contracts', '/hrm/employees'], 42, actions('hrm.contract', 'HRM', '/hrm/contracts', HRM_SCOPE, [
+        ['view', 'Xem hợp đồng', 10, ['global']],
+        ['manage', 'Quản lý hợp đồng', 20, ['global']],
+      ])),
+      module('hrm.document', 'Hồ sơ tài liệu', 'HRM', ['/hrm/documents', '/hrm/employees'], 44, actions('hrm.document', 'HRM', '/hrm/documents', HRM_SCOPE, [
+        ['view', 'Xem tài liệu', 10, ['global']],
+        ['manage', 'Quản lý tài liệu', 20, ['global']],
+      ])),
+      module('hrm.compensation', 'Đãi ngộ', 'HRM', ['/hrm/payroll', '/hrm/employees'], 46, actions('hrm.compensation', 'HRM', '/hrm/payroll', HRM_SCOPE, [
+        ['view', 'Xem đãi ngộ', 10, ['global']],
+        ['manage', 'Quản lý đãi ngộ', 20, ['global']],
       ])),
       module('hrm.master_data', 'Danh mục nhân sự', 'HRM', ['/hrm/shifts', '/hrm/contracts', '/hrm/documents', '/hrm/reports', '/hrm/ranking'], 50, actions('hrm.master_data', 'HRM', '/hrm/shifts', HRM_SCOPE, [
         ['view', 'Xem', 10],
