@@ -1047,10 +1047,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (leaveLogData) setLeaveLogs(leaveLogData);
           if (attendData) setAttendanceRecords(attendData);
           if (payrollData) setPayrollRecords(payrollData);
-          if (contractData) setLaborContracts(contractData);
+          if (contractData) setLaborContracts(contractData.map((contract: any) => ({
+            id: contract.id,
+            employeeId: contract.employee_id,
+            contractNumber: contract.contract_number,
+            type: contract.type,
+            status: contract.status,
+            startDate: contract.effective_from,
+            endDate: contract.effective_to,
+            baseSalary: Number(contract.base_salary || 0),
+            allowancePosition: Number(contract.allowance_position || 0),
+            allowanceOther: Number(contract.allowance_other || 0),
+            signedBy: contract.signed_by,
+            note: contract.note,
+            createdAt: contract.created_at,
+          })));
           if (payrollTplData) setPayrollTemplates(payrollTplData);
           if (holidayData) setHolidays(holidayData);
-          if (salaryHistData) setSalaryHistory(salaryHistData);
+          if (salaryHistData) setSalaryHistory(salaryHistData.map((salary: any) => ({
+            id: salary.id,
+            employeeId: salary.employee_id,
+            contractId: salary.contract_id,
+            changeDate: salary.effective_from,
+            effectiveDate: salary.effective_from,
+            previousSalary: Number(salary.previous_salary || 0),
+            newSalary: Number(salary.new_salary || 0),
+            previousAllowance: Number(salary.previous_allowance || 0),
+            newAllowance: Number(salary.new_allowance || 0),
+            reason: salary.reason,
+            changedBy: salary.changed_by_legacy,
+            createdAt: salary.created_at,
+          })));
           if (shiftTypesData) setShiftTypes(shiftTypesData.map((s: any) => ({
             id: s.id, name: s.name,
             startTime: s.start_time, endTime: s.end_time,

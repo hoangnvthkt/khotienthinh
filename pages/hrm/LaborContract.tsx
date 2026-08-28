@@ -14,6 +14,8 @@ import {
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { canPerform } from '../../lib/permissions/permissionService';
+import { hrmContractService } from '../../lib/hrmContractService';
 
 const STATUS_LABELS: Record<LaborContractStatus, string> = {
   active: 'Hiệu lực', expired: 'Hết hạn', terminated: 'Chấm dứt', renewed: 'Đã gia hạn',
@@ -29,11 +31,12 @@ const asDraftNumber = (value: string) => value as unknown as number;
 const readLocaleNumber = (value: unknown) => parseNonNegativeLocaleNumber(value ?? 0);
 
 const LaborContractPage: React.FC = () => {
-  const { employees, laborContracts, salaryHistory, addHrmItem, updateHrmItem } = useApp();
+  const { employees, laborContracts, salaryHistory, user, loadModuleData } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
   const { canManage } = usePermission();
   const canCRUD = canManage('/hrm/contracts');
+  const canManageCompensation = canPerform(user, 'hrm.compensation.manage');
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -89,55 +92,38 @@ const LaborContractPage: React.FC = () => {
     expired: laborContracts.filter(c => c.status === 'expired').length,
   }), [laborContracts, expiringSoon]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const normalizedForm = {
       ...form,
       baseSalary: readLocaleNumber(form.baseSalary),
       allowancePosition: readLocaleNumber(form.allowancePosition),
       allowanceOther: readLocaleNumber(form.allowanceOther),
     };
-    if (!normalizedForm.employeeId || !normalizedForm.contractNumber || !normalizedForm.startDate || normalizedForm.baseSalary <= 0) return;
-    if (editId) {
-      // Auto-log salary change if salary or allowance changed
-      const oldContract = laborContracts.find(c => c.id === editId);
-      if (oldContract && (oldContract.baseSalary !== normalizedForm.baseSalary || (oldContract.allowancePosition || 0) !== normalizedForm.allowancePosition)) {
-        addHrmItem('hrm_salary_history', {
-          id: crypto.randomUUID(),
-          employeeId: normalizedForm.employeeId,
-          contractId: editId,
-          changeDate: new Date().toISOString().split('T')[0],
-          previousSalary: oldContract.baseSalary,
-          newSalary: normalizedForm.baseSalary,
-          previousAllowance: oldContract.allowancePosition || 0,
-          newAllowance: normalizedForm.allowancePosition,
-          reason: 'Cập nhật hợp đồng',
-          createdAt: new Date().toISOString(),
-        });
-      }
-      updateHrmItem('hrm_labor_contracts', { ...normalizedForm, id: editId, status: 'active' as LaborContractStatus });
-    } else {
-      const newId = crypto.randomUUID();
-      addHrmItem('hrm_labor_contracts', {
-        ...normalizedForm, id: newId, status: 'active' as LaborContractStatus,
-        createdAt: new Date().toISOString(),
-      });
-      // Log initial salary
-      addHrmItem('hrm_salary_history', {
-        id: crypto.randomUUID(),
+    if (!normalizedForm.employeeId || !normalizedForm.contractNumber || !normalizedForm.startDate) return;
+    if (canManageCompensation && normalizedForm.baseSalary <= 0) return;
+    try {
+      await hrmContractService.upsert({
+        id: editId,
         employeeId: normalizedForm.employeeId,
-        contractId: newId,
-        changeDate: normalizedForm.startDate,
-        previousSalary: 0,
-        newSalary: normalizedForm.baseSalary,
-        previousAllowance: 0,
-        newAllowance: normalizedForm.allowancePosition,
-        reason: 'Hợp đồng mới: ' + normalizedForm.contractNumber,
-        createdAt: new Date().toISOString(),
+        contractNumber: normalizedForm.contractNumber,
+        type: normalizedForm.type,
+        status: 'active',
+        startDate: normalizedForm.startDate,
+        endDate: normalizedForm.endDate,
+        signedBy: normalizedForm.signedBy,
+        note: normalizedForm.note,
+        baseSalary: canManageCompensation ? normalizedForm.baseSalary : null,
+        allowancePosition: canManageCompensation ? normalizedForm.allowancePosition : null,
+        allowanceOther: canManageCompensation ? normalizedForm.allowanceOther : null,
+        reason: `${editId ? 'Cập nhật' : 'Tạo'} hợp đồng ${normalizedForm.contractNumber}`,
       });
+      await loadModuleData('hrm', true);
+      setShowModal(false);
+      resetForm();
+      toast.success(editId ? 'Cập nhật hợp đồng lao động' : 'Tạo hợp đồng lao động mới');
+    } catch (error) {
+      toast.error('Không cập nhật được hợp đồng', error instanceof Error ? error.message : 'Vui lòng thử lại.');
     }
-    setShowModal(false);
-    resetForm();
-    toast.success(editId ? 'Cập nhật hợp đồng lao động' : 'Tạo hợp đồng lao động mới');
   };
 
   const handleEdit = (c: LaborContract) => {
@@ -154,8 +140,13 @@ const LaborContractPage: React.FC = () => {
   const handleTerminate = async (c: LaborContract) => {
     const ok = await confirm({ targetName: c.contractNumber, title: 'Chấm dứt hợp đồng lao động', warningText: 'Hành động này sẽ đổi trạng thái HĐ thành “Chấm dứt” không thể hoàn tác.' });
     if (!ok) return;
-    updateHrmItem('hrm_labor_contracts', { ...c, status: 'terminated' });
-    toast.success('Chấm dứt hợp đồng thành công', c.contractNumber);
+    try {
+      await hrmContractService.terminate(c);
+      await loadModuleData('hrm', true);
+      toast.success('Chấm dứt hợp đồng thành công', c.contractNumber);
+    } catch (error) {
+      toast.error('Không chấm dứt được hợp đồng', error instanceof Error ? error.message : 'Vui lòng thử lại.');
+    }
   };
 
   const fmtMoney = (v: number) => v.toLocaleString('vi-VN') + 'đ';
@@ -379,21 +370,21 @@ const LaborContractPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Lương cơ bản *</label>
-                <input type="text" inputMode="decimal" value={String(form.baseSalary)} onChange={e => setForm({ ...form, baseSalary: asDraftNumber(e.target.value) })}
-                  className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" placeholder="VNĐ / tháng" />
+                <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">Lương cơ bản {canManageCompensation ? '*' : '(chỉ xem)'}</label>
+                <input type="text" inputMode="decimal" value={String(form.baseSalary)} disabled={!canManageCompensation} onChange={e => setForm({ ...form, baseSalary: asDraftNumber(e.target.value) })}
+                  className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none disabled:cursor-not-allowed disabled:opacity-60" placeholder="VNĐ / tháng" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">PC Chức vụ</label>
-                  <input type="text" inputMode="decimal" value={String(form.allowancePosition)} onChange={e => setForm({ ...form, allowancePosition: asDraftNumber(e.target.value) })}
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  <input type="text" inputMode="decimal" value={String(form.allowancePosition)} disabled={!canManageCompensation} onChange={e => setForm({ ...form, allowancePosition: asDraftNumber(e.target.value) })}
+                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none disabled:cursor-not-allowed disabled:opacity-60" />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-500 uppercase mb-1 block">PC Khác</label>
-                  <input type="text" inputMode="decimal" value={String(form.allowanceOther)} onChange={e => setForm({ ...form, allowanceOther: asDraftNumber(e.target.value) })}
-                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none" />
+                  <input type="text" inputMode="decimal" value={String(form.allowanceOther)} disabled={!canManageCompensation} onChange={e => setForm({ ...form, allowanceOther: asDraftNumber(e.target.value) })}
+                    className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 outline-none disabled:cursor-not-allowed disabled:opacity-60" />
                 </div>
               </div>
 

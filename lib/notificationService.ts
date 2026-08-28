@@ -917,31 +917,31 @@ export const notificationService = {
         const warningDate = new Date(Date.now() + daysBeforeWarning * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const { data: contracts } = await supabase
           .from('hrm_labor_contracts')
-          .select('id, "employeeId", "contractNumber", "endDate", type')
+          .select('id, employee_id, contract_number, effective_to, type')
           .eq('status', 'active')
-          .lte('"endDate"', warningDate)
-          .gte('"endDate"', today);
+          .lte('effective_to', warningDate)
+          .gte('effective_to', today);
 
-        const empIds = (contracts || []).map((c: any) => c.employeeId);
+        const empIds = (contracts || []).map((c: any) => c.employee_id);
         const { data: emps } = empIds.length
           ? await supabase.from('employees').select('id, full_name').in('id', empIds)
           : { data: [] as any[] };
         const empMap = new Map((emps || []).map((e: any) => [e.id, e.full_name]));
 
         for (const c of (contracts || [])) {
-          const daysLeft = Math.ceil((new Date(c.endDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-          const empName = empMap.get(c.employeeId) || 'N/A';
+          const daysLeft = Math.ceil((new Date(c.effective_to).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+          const empName = empMap.get(c.employee_id) || 'N/A';
           alertCount += await notifyRule('contract_expiry', {
             type: daysLeft <= criticalDays ? 'error' : 'warning',
             category: 'hrm',
             title: daysLeft <= criticalDays ? '🚨 Hợp đồng LĐ sắp hết hạn!' : '📝 Hợp đồng LĐ cần gia hạn',
-            message: `${empName} — HĐ ${c.contractNumber || c.type}: còn ${daysLeft} ngày (hết hạn ${c.endDate})`,
+            message: `${empName} — HĐ ${c.contract_number || c.type}: còn ${daysLeft} ngày (hết hạn ${c.effective_to})`,
             severity: daysLeft <= criticalDays ? 'critical' : 'warning',
             icon: '📝',
             link: '/hrm/contracts',
             sourceType: 'hrm',
             sourceId: `contract_expiry_${c.id}`,
-            metadata: { contractId: c.id, employeeId: c.employeeId, daysLeft, endDate: c.endDate },
+            metadata: { contractId: c.id, employeeId: c.employee_id, daysLeft, endDate: c.effective_to },
           });
         }
       }

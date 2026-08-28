@@ -118,7 +118,7 @@ const AssetProfile = React.lazy(() => import('./pages/ts/AssetProfile'));
 
 // Employee Profile pages
 const EmployeeDirectory = React.lazy(() => import('./pages/ep/EmployeeDirectory'));
-const EmployeeProfilePage = React.lazy(() => import('./pages/ep/EmployeeProfile'));
+const EmployeeProfilePage = React.lazy(() => import('./pages/ep/HrmPersonnelProfile'));
 
 // 3D Org Map
 const OrgMap3D = React.lazy(() => import('./pages/orgmap/OrgMap3D'));
