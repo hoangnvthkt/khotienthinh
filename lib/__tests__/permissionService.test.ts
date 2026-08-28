@@ -6,6 +6,7 @@ import {
   canViewRoute,
   getInheritedPermissionCodes,
   getLegacyModuleAssignmentCount,
+  isDirectPermissionGrantAllowed,
   isPermissionActionScopeAllowed,
   userHasPermissionGrant,
 } from '../permissions/permissionService';
@@ -52,6 +53,20 @@ describe('permissionService', () => {
     });
 
     expect(canPerform(hrAdmin, 'hrm.employee.view_sensitive')).toBe(true);
+  });
+
+  it('does not let a technical admin open an HRM route without an effective HR permission', () => {
+    expect(canViewRoute(user({ role: Role.ADMIN }), '/hrm/payroll')).toBe(false);
+    expect(canViewRoute(user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        userId: 'user-1',
+        permissionCode: 'hrm.payroll.view',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    }), '/hrm/payroll')).toBe(true);
   });
 
   it('uses active scoped grants before legacy fallback', () => {
@@ -164,5 +179,13 @@ describe('permissionService', () => {
       scopeType: 'org_unit',
       scopeId: 'unit-1',
     })).toBe(true);
+  });
+
+  it('requires governed HR templates for sensitive and HR Manage-only actions', () => {
+    expect(isDirectPermissionGrantAllowed('hrm.employee.view_sensitive')).toBe(false);
+    expect(isDirectPermissionGrantAllowed('hrm.compensation.manage')).toBe(false);
+    expect(isDirectPermissionGrantAllowed('hrm.staffing.manage')).toBe(false);
+    expect(isDirectPermissionGrantAllowed('hrm.employee.view_profile')).toBe(true);
+    expect(isDirectPermissionGrantAllowed('project.daily_log.approve')).toBe(true);
   });
 });

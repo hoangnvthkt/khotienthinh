@@ -179,7 +179,25 @@ begin
   from app_private.resolve_effective_permission_sources(
     p_target_user_id, null, null, null, now()
   ) source_row
-  where source_row.permission_code like 'hrm.%';
+  where source_row.permission_code like 'hrm.%'
+    and not (v_target.role = 'ADMIN' and source_row.source_type = 'LEGACY')
+    and (
+      source_row.permission_code <> all(array[
+        'hrm.organization.manage',
+        'hrm.staffing.manage', 'hrm.staffing.assign', 'hrm.staffing.set_manager',
+        'hrm.employee.view_sensitive', 'hrm.employee.edit_sensitive',
+        'hrm.employee.import', 'hrm.employee.export',
+        'hrm.contract.view', 'hrm.contract.manage',
+        'hrm.document.view', 'hrm.document.manage',
+        'hrm.compensation.view', 'hrm.compensation.manage',
+        'hrm.payroll.manage', 'hrm.payroll.export',
+        'hrm.master_data.manage'
+      ]::text[])
+      or (
+        source_row.source_type = 'ROLE'
+        and source_row.source_code in ('HR', 'HR_MANAGE')
+      )
+    );
 
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', history_row.id,

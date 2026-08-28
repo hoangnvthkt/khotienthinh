@@ -35,6 +35,15 @@ type HealthFinding = {
   userName?: string;
   enforcementStatus?: string;
   issueCode?: string;
+  roleCode?: string;
+  scopeType?: string;
+  scopeId?: string;
+  grantee?: string;
+  activeEmployees?: number;
+  assignedEmployees?: number;
+  missingAssignments?: number;
+  overlappingPrimaryAssignments?: number;
+  unitsWithoutManager?: number;
 };
 
 type PermissionHealthSummary = {
@@ -63,6 +72,14 @@ const CHECK_LABELS: Record<string, string> = {
   projectsWithoutScopedGrants: 'Dự án thiếu scoped grant',
   warehousesWithoutScopedGrants: 'Kho thiếu scoped grant',
   departmentsWithoutScopedGrants: 'Phòng ban thiếu scoped grant',
+  anonSensitiveSelect: 'Anon đọc dữ liệu HR nhạy cảm',
+  hrmSensitiveBroadRead: 'Policy đọc rộng HR C2–C4',
+  hrmRawTableExposure: 'Raw table HR bị expose',
+  hrmLegacyAdminPolicies: 'HR policy/RPC còn dùng module-admin',
+  hrSensitiveGrantOutsideApprovedTemplate: 'Quyền HR nhạy cảm ngoài template',
+  hrAdminImplicitBypass: 'System Admin bypass HR',
+  hrTemplateDefinitionDrift: 'HR template bị drift',
+  hrmManagerReadiness: 'Dữ liệu quản lý chưa sẵn sàng',
   roomActionsNotConnected: 'Room/action chưa nối đủ',
   roomFallbackOnlyUsers: 'User chỉ có PBAC fallback',
   roomInactiveLegacyPbacGrants: 'PBAC lưu để audit, không còn hiệu lực',
@@ -110,6 +127,12 @@ const formatDateTime = (value?: string) => {
 };
 
 const describeFinding = (finding: HealthFinding) => {
+  if (finding.activeEmployees !== undefined) {
+    return `Primary assignment ${finding.assignedEmployees || 0}/${finding.activeEmployees}; thiếu ${finding.missingAssignments || 0}; chồng lấn ${finding.overlappingPrimaryAssignments || 0}; đơn vị thiếu manager ${finding.unitsWithoutManager || 0}`;
+  }
+  if (finding.roleCode && finding.permissionCode) {
+    return `${finding.roleCode} / ${finding.permissionCode} / ${finding.issueCode || 'drift'}`;
+  }
   if (finding.roomCode) {
     const action = finding.actionCode ? `.${finding.actionCode}` : '';
     const actor = finding.userName || finding.userId;
@@ -118,7 +141,7 @@ const describeFinding = (finding: HealthFinding) => {
   if (finding.policy) return `${finding.schema}.${finding.table} / ${finding.policy}`;
   if (finding.privilege) return `${finding.schema}.${finding.table} / ${finding.privilege}`;
   if (finding.function) return `${finding.schema}.${finding.function}(${finding.identityArguments || ''})`;
-  if (finding.permissionCode) return `${finding.permissionCode} (${finding.moduleCode || '-'})`;
+  if (finding.permissionCode) return `${finding.permissionCode} (${finding.moduleCode || finding.userId || '-'})`;
   if (finding.projectId) return `project:${finding.projectId}`;
   if (finding.warehouseId) return `warehouse:${finding.warehouseId}`;
   if (finding.columns?.length) return `${finding.schema}.${finding.table} / ${finding.columns.join(', ')}`;

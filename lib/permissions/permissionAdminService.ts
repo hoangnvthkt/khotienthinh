@@ -1,5 +1,6 @@
 import { UserPermissionGrant } from '../../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
+import { isDirectPermissionGrantAllowed } from './permissionService';
 
 const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
   id: row.id,
@@ -30,6 +31,12 @@ export const replaceUserPermissionGrants = async (
   grants: readonly UserPermissionGrant[],
 ): Promise<void> => {
   if (!isSupabaseConfigured || !userId) return;
+  const blockedGrant = grants.find(grant =>
+    grant.isActive !== false && !isDirectPermissionGrantAllowed(grant.permissionCode)
+  );
+  if (blockedGrant) {
+    throw new Error(`${blockedGrant.permissionCode} chỉ được cấp qua template HR hoặc HR Manage.`);
+  }
   const payload = grants
     .filter(grant => grant.isActive !== false)
     .map(grant => ({

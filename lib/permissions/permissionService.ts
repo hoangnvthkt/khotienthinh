@@ -12,6 +12,29 @@ import { PermissionActionDefinition, PermissionScope } from './permissionTypes';
 
 const DEFAULT_SCOPE: Required<PermissionScope> = { scopeType: 'global', scopeId: '*' };
 
+const HRM_TEMPLATE_ONLY_PERMISSIONS = new Set([
+  'hrm.organization.manage',
+  'hrm.staffing.manage',
+  'hrm.staffing.assign',
+  'hrm.staffing.set_manager',
+  'hrm.employee.view_sensitive',
+  'hrm.employee.edit_sensitive',
+  'hrm.employee.import',
+  'hrm.employee.export',
+  'hrm.contract.view',
+  'hrm.contract.manage',
+  'hrm.document.view',
+  'hrm.document.manage',
+  'hrm.compensation.view',
+  'hrm.compensation.manage',
+  'hrm.payroll.manage',
+  'hrm.payroll.export',
+  'hrm.master_data.manage',
+]);
+
+export const isDirectPermissionGrantAllowed = (permissionCode: string): boolean =>
+  !HRM_TEMPLATE_ONLY_PERMISSIONS.has(permissionCode);
+
 const routeMatches = (pattern: string, route: string): boolean =>
   pattern === route || (pattern.includes(':') && !!matchPath({ path: pattern, end: true }, route));
 
@@ -212,16 +235,20 @@ export const canViewRoute = (
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
   if (isVehicleBookingRoute(route)) return true;
   if (route === '/da' && hasAnyActiveProjectGrant(user)) return true;
 
   const routeModules = getPermissionModules().filter(module =>
     (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route))
   );
-  if (routeModules.length === 0) return false;
-  return routeModules.some(module => module.actions.some(action =>
-    action.action === 'view' &&
+  const isHrmRoute = routeModules.some(module => module.code.startsWith('hrm.'));
+  if (user.role === Role.ADMIN && !isHrmRoute) return true;
+  const eligibleModules = isHrmRoute
+    ? routeModules.filter(module => module.code.startsWith('hrm.'))
+    : routeModules;
+  if (eligibleModules.length === 0) return false;
+  return eligibleModules.some(module => module.actions.some(action =>
+    action.action.startsWith('view') &&
     (
       userHasPermissionGrant(user, action.permissionCode, scope) ||
       (module.legacyModuleKey ? canOpenLegacyRoute(user, module.legacyModuleKey, route) : false)
@@ -235,12 +262,16 @@ export const canManageRoute = (
   scope?: PermissionScope,
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
 
   const routeModules = getPermissionModules().filter(module =>
     (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route))
   );
-  return routeModules.some(module => module.actions.some(action =>
+  const isHrmRoute = routeModules.some(module => module.code.startsWith('hrm.'));
+  if (user.role === Role.ADMIN && !isHrmRoute) return true;
+  const eligibleModules = isHrmRoute
+    ? routeModules.filter(module => module.code.startsWith('hrm.'))
+    : routeModules;
+  return eligibleModules.some(module => module.actions.some(action =>
     action.action === 'manage' &&
     (
       userHasPermissionGrant(user, action.permissionCode, scope) ||
