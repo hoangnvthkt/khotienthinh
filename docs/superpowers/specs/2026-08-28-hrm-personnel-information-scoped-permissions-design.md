@@ -2,7 +2,7 @@
 
 **Ngày:** 28/08/2026
 
-**Trạng thái:** Bản đặc tả đề nghị duyệt
+**Trạng thái:** Đã duyệt định hướng; đang chờ xác nhận bản cập nhật ngày 28/08/2026
 
 **Phạm vi:** Hồ sơ nhân sự, Danh mục dùng chung HRM, Sơ đồ tổng quan, Định biên & nhân sự, Permission Health và RLS/RPC liên quan HRM
 
@@ -34,7 +34,9 @@ Khi có khác biệt trong phạm vi HRM, tài liệu này thay thế các quy�
 
 - Một cờ `canManage` hoặc `is_module_admin('HRM')` không còn đủ để quản lý toàn bộ Danh mục dùng chung HRM.
 - “Authenticated được đọc tất cả” không áp dụng cho hồ sơ nhân sự, định biên chi tiết, hợp đồng, chứng từ, chấm công, nghỉ phép, ngân hàng hoặc lương.
-- Quản lý đơn vị được phép đề xuất định biên nhưng không mặc định có quyền phê duyệt, phân bổ nhân sự hoặc đặt manager slot.
+- Trong quy mô hiện tại, Trưởng đơn vị chính là Quản lý trực tiếp; không tạo thêm persona hoặc scope “Quản lý đơn vị” độc lập.
+- Chưa triển khai workflow đề xuất/phê duyệt định biên. HR nhận thông tin từ các luồng khác và trực tiếp tạo hoặc điều chỉnh định biên bằng RPC có audit.
+- Không tách HR specialist, HR manager và Payroll thành các persona riêng. Một template HR thống nhất được cấp các action nghiệp vụ cần thiết.
 - Fallback `users.manager_id` chỉ là cơ chế chuyển tiếp có theo dõi, không phải nguồn quản lý trực tiếp đích.
 
 Các quyết định về cách hiển thị slot gộp, lưu lịch sử và tương thích dữ liệu trong hai tài liệu ngày 18/08 vẫn còn hiệu lực nếu không mâu thuẫn với tài liệu này.
@@ -95,7 +97,7 @@ Tám broad write policy hiện tại nằm ở `hrm_doc_categories`, `hrm_docume
 
 - Tạo bộ khung thông tin đủ dùng cho hồ sơ nhân sự, báo cáo, workflow, chấm công, nghỉ phép, hợp đồng và payroll về sau.
 - Giữ một nguồn sự thật cho tổ chức/vị trí và một nguồn lịch sử cho các thay đổi có hiệu lực.
-- Cho nhân viên, quản lý trực tiếp, quản lý đơn vị, HR, payroll và lãnh đạo thấy đúng phần dữ liệu cần thiết.
+- Cho ba nhóm vận hành chính — Nhân viên, Quản lý trực tiếp và HR — thấy và quản lý đúng phần dữ liệu cần thiết.
 - Chặn direct API bypass bằng RLS/RPC, không dựa vào việc ẩn nút frontend.
 - Cắt giảm policy rộng HRM đồng thời với triển khai chức năng, không để nợ bảo mật sang giai đoạn cuối.
 - Cho phép nhập dữ liệu từ workbook theo quy trình staging, kiểm tra và audit.
@@ -148,8 +150,8 @@ Giữ `employees`, `org_units`, slot và assignment làm lõi; tách dữ liệu
 | C0 | Danh mục tham chiếu | loại hợp đồng, level, vị trí, loại nhân sự | Authenticated được đọc nếu cần vận hành; ghi theo action quản trị danh mục. |
 | C1 | Danh bạ nội bộ | tên, mã nhân viên, avatar, chức danh hiển thị, đơn vị, email/điện thoại công việc | Nhân viên được đọc projection an toàn; không đọc row thô. |
 | C2 | Cá nhân | ngày sinh, địa chỉ, liên hệ riêng, người liên hệ khẩn cấp, trình độ | Chính chủ và HR theo scope; quản lý chỉ thấy allowlist nghiệp vụ. |
-| C3 | Hạn chế HR | hợp đồng, hồ sơ pháp lý, thuế, bảo hiểm, người phụ thuộc, tài liệu | HR có action và scope; quản lý không mặc định được xem. |
-| C4 | Đặc biệt nhạy cảm | lương, phụ cấp, tài khoản ngân hàng, payroll result | Payroll/HR được cấp riêng; system admin và quản lý không tự động có quyền. |
+| C3 | Hạn chế HR | hợp đồng, hồ sơ pháp lý, thuế, bảo hiểm, người phụ thuộc, tài liệu | Chỉ HR được xem và quản lý trong V1. |
+| C4 | Đặc biệt nhạy cảm | lương, phụ cấp, tài khoản ngân hàng, payroll result | Chỉ HR được xem và quản lý trong V1. |
 
 Một trường có độ nhạy cao hơn sẽ quyết định policy của row/table chứa nó. Không hạ độ nhạy bằng cách đặt chung với dữ liệu danh bạ.
 
@@ -162,10 +164,10 @@ Một trường có độ nhạy cao hơn sẽ quyết định policy của row/
 | Tổng quan | Thông tin hiện tại, trạng thái hoàn thiện, thâm niên, vị trí, hợp đồng hiện tại, phép còn lại | Projection/RPC | Chỉ đọc; không lưu lặp. |
 | Cá nhân & liên hệ | Họ tên, ngày sinh, giới tính, liên hệ, địa chỉ, khẩn cấp | `employees` + private profile/address/contact | Own hoặc HR scoped. |
 | Công việc & tổ chức | Đơn vị, vị trí, level, chức danh hiển thị, quản lý, địa điểm, chuyên môn | Slot assignment + catalog | Tổ chức/vị trí chỉ đổi qua luồng phân bổ. |
-| Hợp đồng & quá trình làm việc | Hợp đồng, thử việc, bổ nhiệm, điều chuyển, tăng lương, nghỉ việc | Contract + employment event | HR scoped; sự kiện có hiệu lực. |
+| Hợp đồng & quá trình làm việc | Hợp đồng, thử việc, bổ nhiệm, điều chuyển, tăng lương, nghỉ việc | Contract + employment event | Chỉ HR; sự kiện có hiệu lực. |
 | Chấm công & nghỉ phép | Lịch làm việc, công, đơn nghỉ, số dư và ledger phép | Attendance/leave domains | Own, manager scope hoặc HR. |
-| Lương, thuế & ngân hàng | Compensation plan, mức hiệu lực, thuế, tài khoản nhận lương, payroll snapshot | Compensation/tax/bank/payroll | Action C4 riêng. |
-| Pháp lý & bảo hiểm | CCCD/hộ chiếu, BHXH, bảo hiểm, người phụ thuộc | Identity/insurance/dependent | C3; dữ liệu hiển thị có masking. |
+| Lương, thuế & ngân hàng | Compensation plan, mức hiệu lực, thuế, tài khoản nhận lương, payroll snapshot | Compensation/tax/bank/payroll | Chỉ HR; vẫn dùng action C4 riêng ở backend. |
+| Pháp lý & bảo hiểm | CCCD/hộ chiếu, BHXH, bảo hiểm, người phụ thuộc | Identity/insurance/dependent | Chỉ HR; dữ liệu hiển thị có masking khi cần. |
 | Trình độ & hồ sơ | Học vấn, chứng chỉ, năng lực, tài liệu đính kèm | Qualification/certification/document | C2/C3 tùy loại tài liệu. |
 
 Sheet `Nhóm` được đổi nghĩa thành tab `Công việc & tổ chức`; `Tổng quan` là projection; `Lương`, `Legals` và `Times` được phân rã theo miền thay vì giữ một hàng rộng.
@@ -235,38 +237,35 @@ Level E1–E11 mô tả khung vị trí/nghề nghiệp, không phải role bả
 - `work_location`: văn phòng/công trường/nhà máy nơi làm việc; không đồng nhất với đơn vị tổ chức.
 - `org_unit`: đơn vị quản trị trong cây tổ chức.
 
-### 9.3 Workflow định biên
+### 9.3 Quản lý định biên trong V1
 
-Mọi thay đổi số lượng định biên đi qua `hrm_staffing_change_requests`:
+V1 không tạo `hrm_staffing_change_requests` và không triển khai trạng thái đề xuất/phê duyệt định biên. HR nhận thông tin đã thống nhất từ email, họp, quyết định hoặc các luồng nghiệp vụ khác rồi trực tiếp tạo hoặc điều chỉnh định biên.
 
-```text
-DRAFT → SUBMITTED → APPROVED | REJECTED → APPLIED
-```
-
-- Quản lý đơn vị có `hrm.staffing.propose` trong scope hợp lệ được tạo/gửi đề xuất.
-- HR manager có `hrm.staffing.approve` được duyệt hoặc từ chối.
-- Người đề xuất không tự duyệt cùng một yêu cầu, trừ override được cấu hình riêng, có lý do và audit.
-- Khi duyệt, RPC khóa nhóm slot, kiểm tra invariant rồi tạo/lưu trữ slot trong một transaction.
+- Chỉ HR có `hrm.staffing.manage` được tăng/giảm định biên.
+- RPC `adjust_hrm_staffing` hiện có được giữ, nhưng thay điều kiện Admin/HRM module-admin bằng permission action HR và kiểm tra scope.
+- Mỗi lần điều chỉnh bắt buộc có `reason`; có thể kèm `source_type`, `source_id` hoặc `source_reference` để truy vết luồng cung cấp thông tin.
+- RPC khóa nhóm slot, kiểm tra invariant rồi tạo/lưu trữ slot trong một transaction.
 - Không giảm định biên xuống dưới số người đang bố trí.
-- Thao tác nhập nền bằng migration không dùng workflow người dùng nhưng phải có manifest và đối soát.
+- Audit lưu người thao tác, thời điểm, đơn vị/vị trí, số lượng trước/sau, lý do và nguồn tham chiếu.
+- Thao tác nhập nền bằng migration phải có manifest và đối soát.
 
-RPC `adjust_hrm_staffing` trực tiếp hiện có được đánh dấu legacy và ngừng cấp execute cho client sau khi workflow mới hoạt động.
+Workflow đề xuất/phê duyệt chỉ được xem xét lại khi quy mô hoặc yêu cầu kiểm soát nội bộ tăng; không tạo bảng/action dự phòng trong V1.
 
 ### 9.4 Workflow phân bổ
 
-- Gán/chuyển người vào slot trống cần `hrm.staffing.assign`.
+- Gán/chuyển người vào slot trống cần `hrm.staffing.assign`; action này được cấp cho template HR.
 - Kết thúc phân bổ hiện tại và tạo phân bổ mới trong một transaction.
 - Một nhân viên chỉ có một `PRIMARY` đang hiệu lực; một slot chỉ có một người giữ `PRIMARY` hoặc `ACTING` đang hiệu lực.
 - `ACTING` giữ manager slot được hưởng manager relationship trong đúng thời gian hiệu lực và phải được audit.
 - `SECONDARY` không tạo quyền quản lý mặc định.
-- Đặt manager slot cần `hrm.staffing.set_manager`, độc lập với quyền assign.
+- Đặt manager slot cần `hrm.staffing.set_manager`; action vẫn tách ở backend để audit nhưng được cấp chung cho template HR.
 
 ### 9.5 Quản lý trực tiếp
 
-Thứ tự resolve đích:
+Trong quy mô hiện tại, người giữ manager slot của đơn vị chính là Trưởng đơn vị và đồng thời là Quản lý trực tiếp của nhân sự trong đơn vị. Không tạo thêm persona “Quản lý đơn vị”. Thứ tự resolve đích:
 
-1. Người đang giữ slot được `reports_to_slot_id` chỉ định.
-2. Người đang giữ `manager_slot_id` của đơn vị.
+1. Người đang giữ slot được `reports_to_slot_id` chỉ định; mặc định slot này là manager slot của đơn vị.
+2. Người đang giữ `manager_slot_id` của đơn vị nếu slot nhân sự chưa cấu hình tuyến báo cáo.
 3. Manager slot gần nhất ở đơn vị cha.
 4. Không resolve được thì trả trạng thái thiếu dữ liệu; không suy đoán theo chức danh.
 
@@ -278,33 +277,31 @@ Thứ tự resolve đích:
 
 | Persona | Được xem/quản lý mặc định | Không mặc định được phép |
 | --- | --- | --- |
-| Nhân viên | danh bạ an toàn, sơ đồ cơ bản, hồ sơ/công/phép/payroll của mình | dữ liệu riêng hoặc lương của người khác |
-| Quản lý trực tiếp | direct reports, thông tin công việc, công/phép cần duyệt | CCCD, ngân hàng, lương và hồ sơ pháp lý |
-| Quản lý đơn vị | subtree được quản lý, số liệu định biên, gửi đề xuất | tự duyệt định biên, tự gán người, xem lương |
-| HR specialist | hồ sơ/contract/legal/time theo grant | payroll nếu chưa được cấp action C4 |
-| HR manager | quản trị tổ chức, duyệt định biên, phân bổ, đặt manager | không vượt invariant hoặc audit |
-| Payroll | compensation, thuế, ngân hàng, payroll theo scope | sửa cơ cấu tổ chức nếu không có grant riêng |
-| Lãnh đạo | tổng hợp/global và projection có masking | raw table C3/C4 nếu không có grant riêng |
-| System admin | vận hành kỹ thuật | tự động đọc dữ liệu C3/C4 |
+| Nhân viên | danh bạ an toàn, sơ đồ cơ bản, hồ sơ cá nhân C2 của mình, công/phép của mình | C3 pháp lý/hợp đồng và C4 lương/ngân hàng, kể cả của chính mình trong V1 |
+| Quản lý trực tiếp | quyền như nhân viên; thêm direct reports, thông tin công việc và công/phép cần duyệt | C3/C4 của cấp dưới, điều chỉnh định biên, phân bổ nhân sự |
+| HR | toàn bộ nghiệp vụ HRM: hồ sơ, pháp lý, hợp đồng, lương, payroll, tổ chức, định biên, phân bổ và danh mục | không vượt invariant, audit hoặc tự tạo quyền ngoài HRM |
 
-Persona là template cấp quyền, không phải một nhánh bypass trong RLS.
+HR là một persona/template thống nhất; không tách HR specialist, HR manager hoặc Payroll trong V1. Các action backend vẫn tách nhỏ để RLS, audit và khả năng mở rộng rõ ràng, nhưng template HR hiện tại được cấp toàn bộ action HR cần thiết.
+
+Template HR chỉ là cách cấp đồng bộ các grant chuẩn vào permission foundation; RLS/RPC vẫn kiểm active grant trong `user_permission_grants`. Không dùng tên phòng ban, chức danh, level hoặc metadata user để suy ra một actor thuộc HR.
+
+System admin là vai trò kỹ thuật bên ngoài ba persona nghiệp vụ. System admin không tự động nhận template HR và không được đọc C3/C4 nếu không đồng thời được cấp HR theo quy trình nghiệp vụ.
 
 Ma trận mặc định dưới đây là điểm bắt đầu của template; grant thực tế vẫn phải có action, scope và thời gian hiệu lực:
 
-| Nhóm dữ liệu/thao tác | Nhân viên | QL trực tiếp | QL đơn vị | HR specialist | HR manager | Payroll | Lãnh đạo | System admin |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Danh bạ C1 | Toàn công ty, projection an toàn | Như nhân viên | Như nhân viên | Theo grant | Toàn công ty | Theo nhu cầu | Toàn công ty | Không tự động |
-| Hồ sơ C2 | Own | Allowlist direct reports | Allowlist subtree | Org/subtree/global theo grant | Global | Own hoặc theo grant | Tổng hợp/masked | Không tự động |
-| Pháp lý/hợp đồng C3 | Own theo section được mở | Không | Không | Org/subtree/global theo grant | Global | Phần phục vụ payroll theo grant | Masked/aggregate | Không tự động |
-| Lương/ngân hàng C4 | Own payroll statement | Không | Không | Không mặc định | Theo grant riêng | Org/subtree/global theo grant | Aggregate theo grant | Không tự động |
-| Xem định biên | Own unit hoặc projection chung | Direct unit | Org subtree | Theo grant | Global | Không mặc định | Global | Không tự động |
-| Đề xuất định biên | Không | Không mặc định | Org subtree | Theo grant | Global | Không | Không mặc định | Không tự động |
-| Duyệt định biên | Không | Không | Không | Không mặc định | Theo grant | Không | Theo grant riêng | Không tự động |
-| Phân bổ nhân sự | Không | Không | Không mặc định | Theo grant | Global | Không | Không | Không tự động |
-| Đặt manager slot | Không | Không | Không | Không mặc định | Theo grant | Không | Không | Không tự động |
-| Duyệt công/phép | Own submit/view | Direct reports/assigned | Subtree nếu được cấp | Theo grant | Global | Theo kỳ payroll nếu được cấp | Không mặc định | Không tự động |
+| Nhóm dữ liệu/thao tác | Nhân viên | Quản lý trực tiếp | HR | System admin thuần kỹ thuật |
+| --- | --- | --- | --- | --- |
+| Danh bạ C1 | Toàn công ty, projection an toàn | Như nhân viên | Toàn công ty | Không tự động |
+| Hồ sơ C2 | Own | Allowlist direct reports | Toàn công ty | Không tự động |
+| Pháp lý/hợp đồng C3 | Không | Không | Toàn công ty | Không |
+| Lương/ngân hàng C4 | Không | Không | Toàn công ty | Không |
+| Xem định biên | Projection chung hoặc đơn vị của mình | Đơn vị trực tiếp quản lý | Toàn công ty | Không tự động |
+| Điều chỉnh định biên | Không | Không | Có, qua RPC và audit | Không |
+| Phân bổ nhân sự | Không | Không | Có | Không |
+| Đặt manager slot | Không | Không | Có | Không |
+| Duyệt công/phép | Own submit/view | Direct reports/assigned | Toàn công ty | Không |
 
-“Không tự động” không có nghĩa là cấm tuyệt đối; actor chỉ được làm khi có grant nghiệp vụ riêng và audit. “Không” trong template nghĩa là persona đó không nên được cấp action trong luồng thông thường.
+“Không tự động” nghĩa là chỉ có thể truy cập phần không nhạy cảm khi được cấp action nghiệp vụ riêng. C3/C4 là HR-only trong V1; không cấp ngoại lệ cho system admin, nhân viên, quản lý hoặc persona khác.
 
 ### 10.2 Permission action đích
 
@@ -313,8 +310,7 @@ Ma trận mặc định dưới đây là điểm bắt đầu của template; g
 | Organization | `hrm.organization.view` | Xem sơ đồ/projection tổ chức. |
 | Organization | `hrm.organization.manage` | Tạo/sửa/lưu trữ đơn vị theo scope. |
 | Staffing | `hrm.staffing.view` | Xem định biên và tình trạng bố trí. |
-| Staffing | `hrm.staffing.propose` | Đề xuất thay đổi định biên. |
-| Staffing | `hrm.staffing.approve` | Duyệt thay đổi định biên. |
+| Staffing | `hrm.staffing.manage` | HR trực tiếp tăng/giảm định biên qua RPC có audit. |
 | Staffing | `hrm.staffing.assign` | Gán/chuyển/kết thúc phân bổ. |
 | Staffing | `hrm.staffing.set_manager` | Chỉ định manager slot. |
 | Employee | `hrm.employee.view_directory` | Xem projection danh bạ C1. |
@@ -339,7 +335,14 @@ Ma trận mặc định dưới đây là điểm bắt đầu của template; g
 | Master data | `hrm.master_data.manage` | Quản lý danh mục C0. |
 | Export | `hrm.employee.export`, `hrm.payroll.export` | Export là quyền riêng, không suy từ view. |
 
-Ba permission legacy `hrm.employee.view/create/edit` được adapter tạm sang `directory/profile` phù hợp. Không adapter `hrm.master_data.manage` thành quyền organization/staffing hoặc sensitive data.
+Grant template V1:
+
+- Nhân viên: directory global; profile/attendance/leave ở scope `own` theo action được mở.
+- Quản lý trực tiếp: kế thừa Nhân viên; thêm profile/attendance/leave ở scope `direct_reports` hoặc `assigned`.
+- HR: toàn bộ action trong bảng ở scope `global`, bao gồm organization, staffing, C3, C4, payroll và export.
+- System admin thuần kỹ thuật: không nhận grant HRM từ vai trò admin.
+
+Ba permission legacy `hrm.employee.view/create/edit` được adapter tạm sang `directory/profile` phù hợp. Không adapter `hrm.master_data.manage` thành quyền organization/staffing hoặc sensitive data. Ba global grant HRM hiện hữu phải được rà lại và thay bằng template phù hợp trước khi C3/C4 hoạt động.
 
 ### 10.3 Scope đích
 
@@ -348,11 +351,10 @@ Ba permission legacy `hrm.employee.view/create/edit` được adapter tạm sang
 | `own` | Employee liên kết với actor hiện tại. |
 | `direct_reports` | Nhân sự báo cáo trực tiếp qua slot relationship đang hiệu lực. |
 | `org_unit` | Một đơn vị cụ thể, không tự bao gồm đơn vị con. |
-| `org_subtree` | Một đơn vị và toàn bộ cây con tại thời điểm kiểm tra. |
 | `assigned` | Subject/workflow đang được giao trực tiếp cho actor. |
 | `global` | Toàn công ty; chỉ cấp có chủ đích và audit. |
 
-`department` được giữ làm adapter tương thích, map một-một sang `org_unit`; code mới không tiếp tục mở rộng ý nghĩa của `department`.
+`department` được giữ làm adapter tương thích, map một-một sang `org_unit`; code mới không tiếp tục mở rộng ý nghĩa của `department`. `org_subtree` chưa đưa vào V1; nếu cơ cấu nhiều tầng phát sinh nhu cầu thật, scope này được bổ sung bằng một thay đổi thiết kế riêng.
 
 ### 10.4 Chuỗi quyết định quyền
 
@@ -367,7 +369,7 @@ session hợp lệ
 → thực thi và ghi audit
 ```
 
-Admin override, nếu có, là RPC riêng, bắt buộc lý do; không được là `OR is_admin()` rải trong policy C3/C4.
+Admin override không áp dụng cho C3/C4 trong V1. Nếu một system admin cần làm nghiệp vụ HR, người đó phải được cấp template HR qua quy trình nghiệp vụ; không dùng `OR is_admin()` trong policy C3/C4.
 
 ### 10.5 Helper và ranh giới database
 
@@ -426,7 +428,7 @@ Upload file
 → parse vào staging riêng theo import batch
 → validate cấu trúc/kiểu/danh mục/trùng khóa
 → dry-run và báo lỗi theo sheet/dòng/cột
-→ người có quyền xác nhận
+→ HR có quyền import xác nhận
 → apply bằng RPC transaction theo domain
 → audit + đối soát
 ```
@@ -457,6 +459,7 @@ Upload file
 | `organizationReadiness` | High | Nhân sự active thiếu primary slot hoặc đơn vị quản lý thiếu manager chain. |
 | `legacyManagerFallback` | Medium | Quyết định quản lý còn dùng `users.manager_id`. |
 | `permissionRegistryDrift` | High | Code/policy dùng action không có registry hoặc action nhạy cảm chưa enforced. |
+| `hrSensitiveGrantOutsideHrTemplate` | Critical | Grant C3/C4 đang hoạt động được cấp ngoài template HR đã phê duyệt. |
 
 ### 13.2 Allowlist policy rộng
 
@@ -492,8 +495,7 @@ Trước khi đóng mỗi lát cắt HRM:
 canViewOrganization
 canManageOrganization
 canViewStaffing
-canProposeStaffing
-canApproveStaffing
+canManageStaffing
 canAssignEmployee
 canSetManager
 canViewMasterData
@@ -513,7 +515,7 @@ Mỗi nút và mỗi API call kiểm action tương ứng. UI disable/ẩn chỉ
 ### 14.3 Màn hình cấp quyền
 
 - Chọn persona/template rồi preview grant cụ thể.
-- Với `org_unit`/`org_subtree`, bắt buộc chọn đơn vị.
+- Với `org_unit`, bắt buộc chọn đơn vị.
 - Hiển thị thời gian hiệu lực, người cấp, lý do và mức dữ liệu C0–C4.
 - Cảnh báo khi cấp `global`, export, sensitive hoặc payroll.
 - Không gắn permission tự động theo level E1–E11.
@@ -552,16 +554,16 @@ Mỗi nút và mỗi API call kiểm action tương ứng. UI disable/ẩn chỉ
 
 ### Phase 3 — Scope tổ chức và làm sạch dữ liệu
 
-- Thêm `direct_reports`, `org_unit`, `org_subtree` vào permission model.
+- Thêm `direct_reports` và `org_unit` vào permission model; chưa triển khai `org_subtree`.
 - Hoàn thiện primary assignment và manager slot.
-- Chỉ bật manager-scoped mutations cho đơn vị đạt readiness; nơi chưa đạt tiếp tục deny và hiển thị remediation.
+- Chỉ bật quyền xem/duyệt theo `direct_reports` cho đơn vị đạt readiness; Quản lý trực tiếp không có staffing mutation.
 - Theo dõi rồi loại fallback `users.manager_id`.
 
-### Phase 4 — Workflow định biên và capability UI
+### Phase 4 — Quản lý định biên trực tiếp và capability UI
 
-- Thêm staffing change request và approve/apply RPC.
+- Harden `adjust_hrm_staffing` bằng `hrm.staffing.manage`, reason/source reference và audit.
 - Tách các capability của `SettingsHrmSharedCatalog`.
-- Ngừng direct staffing adjustment từ client.
+- Chỉ template HR được gọi staffing/assignment/set-manager RPC.
 
 ### Phase 5 — Hồ sơ nhân sự mở rộng
 
@@ -592,10 +594,9 @@ Mỗi nút và mỗi API call kiểm action tương ứng. UI disable/ẩn chỉ
 - `anon` không đọc/ghi C1–C4 và không execute mutation HRM.
 - Employee chỉ đọc/sửa allowlist own.
 - Direct manager chỉ truy cập direct reports, không truy cập peer hoặc người ở subtree khác.
-- Org manager truy cập đúng subtree khi có grant; bị deny với unit ngoài scope.
-- HR specialist không đọc payroll nếu thiếu action C4.
-- Payroll không sửa organization nếu thiếu staffing action.
-- System admin không tự động đọc C3/C4.
+- Employee và Direct manager không đọc được C3/C4, kể cả C3/C4 của chính Employee trong V1.
+- HR đọc và quản lý được C3/C4 qua action thuộc template HR.
+- System admin thuần kỹ thuật bị deny C3/C4.
 - Grant hết hạn bị deny.
 - Quyền đúng action nhưng sai scope bị deny.
 - Direct REST table call và RPC bypass bị chặn.
@@ -605,8 +606,8 @@ Mỗi nút và mỗi API call kiểm action tương ứng. UI disable/ẩn chỉ
 - Không tạo primary assignment hoặc occupant trùng hiệu lực.
 - Không tạo reporting/org cycle.
 - Không giảm headcount dưới occupied count.
-- Người đề xuất không tự duyệt request.
-- Approve/apply tạo đúng slot trong một transaction và audit đầy đủ.
+- `adjust_hrm_staffing` từ chối actor không thuộc HR.
+- Điều chỉnh định biên yêu cầu lý do, ghi nguồn tham chiếu nếu có, tạo đúng slot trong một transaction và audit đầy đủ.
 - Acting manager chỉ có scope trong thời gian acting.
 - Manager resolver đi theo thứ tự mục 9.5.
 
@@ -641,8 +642,9 @@ Với baseline hiện tại 3/45 primary assignment và 10/22 manager slot, cổ
 
 - Tám tab hồ sơ dùng đúng nguồn dữ liệu, không lưu lặp giá trị suy ra.
 - Organization fields chỉ thay đổi qua phân bổ.
-- Quản lý đề xuất được định biên đúng scope nhưng không tự duyệt/gán người nếu thiếu action.
-- Employee, manager, HR, payroll, executive và system admin nhận đúng projection theo ma trận.
+- Quản lý trực tiếp xem/duyệt đúng direct reports nhưng không điều chỉnh định biên hoặc phân bổ nhân sự.
+- HR trực tiếp tạo/điều chỉnh định biên, phân bổ nhân sự và đặt manager slot với audit.
+- Nhân viên, Quản lý trực tiếp, HR và system admin nhận đúng projection theo ma trận ba persona và ranh giới kỹ thuật.
 - Import workbook có staging, dry-run, lỗi theo cell, audit và dữ liệu mẫu giả danh.
 
 ### 19.3 Nghiệm thu bảo mật
@@ -650,6 +652,7 @@ Với baseline hiện tại 3/45 primary assignment và 10/22 manager slot, cổ
 - Không còn 8 broad write policy HRM hiện tại.
 - Không còn `anon SELECT` trên bảng HRM C1–C4.
 - Không còn broad read C2–C4 cho public/authenticated.
+- C3/C4 chỉ trả dữ liệu cho actor có template HR; Employee, Quản lý trực tiếp và system admin thuần kỹ thuật đều bị deny.
 - C0 read rộng chỉ tồn tại trong allowlist có owner và review date.
 - Permission Health không còn Critical/High trong lát cắt đã cutover.
 - Không có raw sensitive payload bị tải về client khi UI không hiển thị.
@@ -659,8 +662,8 @@ Với baseline hiện tại 3/45 primary assignment và 10/22 manager slot, cổ
 1. **Không sao chép nguyên Excel vào database.** Workbook tối ưu cho nhập/đọc theo hàng; database phải tối ưu cho lịch sử, toàn vẹn và phân quyền.
 2. **Không coi cấp bậc là quyền.** E-level là dữ liệu nghề nghiệp; gắn thẳng với quyền sẽ khiến luân chuyển/chức danh làm thay đổi truy cập ngoài ý muốn.
 3. **Không cho quản lý xem toàn bộ hồ sơ cấp dưới.** Nhu cầu quản lý công việc không đồng nghĩa với nhu cầu xem định danh, ngân hàng hoặc lương.
-4. **Không cho system admin mặc định xem lương/CCCD.** Quản trị kỹ thuật và nghiệp vụ HR/payroll là hai trách nhiệm khác nhau.
-5. **Không để một cờ quản trị cho toàn HRM.** Tạo đơn vị, đề xuất định biên, duyệt định biên, gán người, xem lương và sửa danh mục có mức rủi ro khác nhau.
+4. **Chỉ HR được xem C3/C4 trong V1.** Nhân viên không xem lương/pháp lý của chính mình qua HRM V1; Quản lý trực tiếp và system admin cũng bị deny. Mở self-service sau này phải là thay đổi thiết kế được duyệt riêng.
+5. **Một template HR không đồng nghĩa với một action kỹ thuật.** Tạo đơn vị, điều chỉnh định biên, gán người, xem lương và sửa danh mục vẫn dùng action riêng để RLS và audit rõ ràng; các action chỉ được cấp chung cho persona HR hiện tại.
 6. **Không bật scope quản lý khi dữ liệu tổ chức chưa sạch.** Cho phép trên dữ liệu 3/45 assignment sẽ tạo quyết định quyền sai hoặc fallback quá rộng.
 7. **Không sửa Permission Health bằng cách ẩn finding.** Chỉ allowlist catalog C0 có hồ sơ ngoại lệ; policy C2–C4 phải được thay thực sự.
 8. **Không để cột lương “đề xuất/hợp đồng/hiện tại/thực trả” nhập nhằng.** Mỗi khái niệm phải có nguồn, ngày hiệu lực và người duyệt riêng.
@@ -686,12 +689,11 @@ Với baseline hiện tại 3/45 primary assignment và 10/22 manager slot, cổ
 - Supabase table security/Data API: <https://supabase.com/docs/guides/database/tables#table-security>
 - Postgres Row Security Policies: <https://www.postgresql.org/docs/current/ddl-rowsecurity.html>
 
-## 23. Quyết định cần người dùng duyệt
+## 23. Quyết định đã được người dùng duyệt
 
-Bản đặc tả đề nghị duyệt ba quyết định sản phẩm sau trước khi viết implementation plan:
+1. Dùng mô hình 8 tab tại mục 8.1 thay cho 6 sheet nguồn.
+2. Chỉ có ba persona vận hành chính: Nhân viên, Quản lý trực tiếp và HR. Trưởng đơn vị chính là Quản lý trực tiếp; HR không tách specialist/manager/payroll.
+3. Chưa triển khai tính năng đề xuất/phê duyệt định biên. HR nhận thông tin từ các luồng khác và trực tiếp tạo/điều chỉnh định biên có lý do, nguồn tham chiếu và audit.
+4. C3 pháp lý/hợp đồng và C4 lương/ngân hàng chỉ HR được xem trong V1. Quản lý trực tiếp và system admin không được xem; Employee self-service cho C3/C4 cũng chưa triển khai.
 
-1. Chọn mô hình 8 tab tại mục 8.1 thay cho 6 sheet nguồn.
-2. Chọn separation of duties: quản lý đơn vị chỉ đề xuất định biên; HR duyệt và quyền assign/set-manager được cấp riêng.
-3. Chọn nguyên tắc bảo mật: quản lý không mặc định xem lương/pháp lý của cấp dưới và system admin không mặc định xem C3/C4.
-
-Sau khi ba quyết định được duyệt, bước tiếp theo là viết implementation plan theo phase 0–6; chưa triển khai migration trước mốc duyệt này.
+Sau khi người dùng xác nhận bản cập nhật phản ánh đúng bốn quyết định trên, bước tiếp theo là viết implementation plan theo phase 0–6; chưa triển khai migration trước mốc xác nhận này.
