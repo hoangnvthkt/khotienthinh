@@ -26,7 +26,9 @@ export interface HrmStaffingPanelProps {
   positions: HrmSharedPosition[];
   assignments?: HrmEmployeeSlotAssignment[];
   employees?: HrmSharedEmployee[];
-  canManage: boolean;
+  canAdjust: boolean;
+  canAssign: boolean;
+  canSetManager: boolean;
   onAdjust(row?: HrmStaffingRow): void;
   onAssign(row: HrmStaffingRow): void;
   onSetManager(row: HrmStaffingRow): void;
@@ -45,7 +47,9 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
   positions,
   assignments = [],
   employees = [],
-  canManage,
+  canAdjust,
+  canAssign,
+  canSetManager,
   onAdjust,
   onAssign,
   onSetManager,
@@ -88,7 +92,7 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
               Mỗi dòng là một vị trí nghiệp vụ. Hệ thống tự quản lý slot kỹ thuật phía sau.
             </p>
           </div>
-          {canManage && rows.length > 0 && (
+          {canAdjust && rows.length > 0 && (
             <button
               type="button"
               onClick={() => onAdjust()}
@@ -114,7 +118,7 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
           <p className="mt-1 max-w-sm text-sm font-medium text-slate-500">
             Chọn vị trí công việc và số lượng cần có cho đơn vị này.
           </p>
-          {canManage && (
+          {canAdjust && (
             <button
               type="button"
               onClick={() => onAdjust()}
@@ -174,17 +178,17 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
                       </button>
                     </div>
                     <div className="flex items-center justify-end gap-2">
-                      {canManage && (
+                      {(canAdjust || canAssign || canSetManager) && (
                         <>
-                          <button
-                            type="button"
-                            onClick={() => onAdjust(row)}
-                            className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
-                            title="Điều chỉnh định biên"
-                          >
-                            <PencilLine size={15} />
-                          </button>
-                          {!row.isManager && row.plannedCount === 1 && (
+                          {canAdjust && <button
+                              type="button"
+                              onClick={() => onAdjust(row)}
+                              className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                              title="Điều chỉnh định biên"
+                            >
+                              <PencilLine size={15} />
+                            </button>}
+                          {canSetManager && !row.isManager && row.plannedCount === 1 && (
                             <button
                               type="button"
                               onClick={() => onSetManager(row)}
@@ -194,7 +198,7 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
                               <Crown size={15} />
                             </button>
                           )}
-                          <button
+                          {canAssign && <button
                             type="button"
                             onClick={() => onAssign(row)}
                             disabled={!hasOccupants && row.vacantCount === 0}
@@ -202,7 +206,7 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
                           >
                             {hasOccupants ? <ArrowRightLeft size={14} /> : <UserPlus size={14} />}
                             {hasOccupants ? 'Chuyển vị trí' : 'Phân bổ nhân sự'}
-                          </button>
+                          </button>}
                         </>
                       )}
                     </div>
@@ -258,7 +262,7 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
                       <p className="mt-0.5 text-[11px] text-slate-400">
                         Vị trí này hiện còn trống {selectedOccupantsRow.vacantCount} chỉ tiêu.
                       </p>
-                      {canManage && (
+                      {canAssign && (
                         <button
                           type="button"
                           onClick={() => {
@@ -329,7 +333,7 @@ const HrmStaffingPanel: React.FC<HrmStaffingPanelProps> = ({
                 Đã bố trí: {selectedOccupantsRow.occupiedCount} / {selectedOccupantsRow.plannedCount}
               </span>
               <div className="flex items-center gap-2">
-                {canManage && (
+                {canAssign && (
                   <button
                     type="button"
                     onClick={() => {

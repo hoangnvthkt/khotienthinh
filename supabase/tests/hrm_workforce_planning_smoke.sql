@@ -15,13 +15,23 @@ declare
   v_manager_slot_id uuid;
   v_blocked boolean := false;
   v_count integer;
+  v_summary jsonb;
 begin
-  select * into v_admin
-  from public.users
-  where role = 'ADMIN'
-    and coalesce(is_active, true)
-    and coalesce(account_status, 'ACTIVE') = 'ACTIVE'
-  order by created_at
+  select user_row.* into v_admin
+  from public.users user_row
+  join public.principal_role_assignments assignment_row
+    on assignment_row.principal_type = 'user'
+   and assignment_row.principal_id = user_row.id
+   and assignment_row.status = 'ACTIVE'
+   and assignment_row.starts_at <= now()
+   and (assignment_row.expires_at is null or assignment_row.expires_at > now())
+  join public.role_permission_templates template
+    on template.id = assignment_row.role_template_id
+   and template.code = 'SYSTEM_ADMIN'
+  where user_row.role = 'ADMIN'
+    and coalesce(user_row.is_active, true)
+    and coalesce(user_row.account_status, 'ACTIVE') = 'ACTIVE'
+  order by user_row.created_at
   limit 1;
   if v_admin.id is null then
     raise exception 'HRM_WORKFORCE_SMOKE_ADMIN_NOT_FOUND';
@@ -63,6 +73,13 @@ begin
     from public.hrm_positions approved
     where approved.is_active
       and approved.source <> 'legacy'
+      and not exists (
+        select 1 from public.hrm_org_position_slots existing_slot
+        where existing_slot.org_unit_id = v_org_unit_id
+          and existing_slot.position_id = approved.id
+          and existing_slot.status = 'ACTIVE'
+          and existing_slot.source = 'workforce_plan'
+      )
     order by approved.sort_order, approved.id
     limit 2
   ) position;
@@ -97,9 +114,30 @@ begin
   select * into v_employee_one from public.employees where id = v_employee_ids[1];
   select * into v_employee_two from public.employees where id = v_employee_ids[2];
 
+  begin
+    perform public.adjust_hrm_staffing(
+      v_org_unit_id, v_position_one.id, v_position_one.level_code,
+      null, 2, 'Smoke: Admin kỹ thuật phải bị chặn', 'smoke-workforce'
+    );
+  exception when others then
+    v_blocked := position('HRM_STAFFING_MANAGE_REQUIRED' in sqlerrm) > 0;
+  end;
+  if not v_blocked then
+    raise exception 'HRM_WORKFORCE_TECHNICAL_ADMIN_NOT_BLOCKED';
+  end if;
+
+  v_summary := public.get_user_hr_authorization(v_admin.id);
+  perform public.set_user_hr_business_role(
+    v_admin.id, 'HR_MANAGE', null,
+    'Smoke: tự cấp HR Manage để kiểm thử workforce',
+    '[{"ruleCode":"HRM_ADMIN_SELF_GRANT","accepted":true}]'::jsonb,
+    v_summary ->> 'fingerprint'
+  );
+  v_blocked := false;
+
   perform public.adjust_hrm_staffing(
     v_org_unit_id, v_position_one.id, v_position_one.level_code,
-    null, 2, 'Smoke: tạo định biên hai người'
+    null, 2, 'Smoke: tạo định biên hai người', 'smoke-workforce'
   );
   select count(*)::integer into v_count
   from public.hrm_org_position_slots slot
@@ -116,7 +154,7 @@ begin
   perform public.assign_hrm_employee_to_staffing(
     v_employee_one.id, v_org_unit_id, v_position_one.id,
     v_position_one.level_code, null, current_date,
-    'Smoke: phân bổ nhân sự'
+    'Smoke: phân bổ nhân sự', 'smoke-workforce'
   );
   if not exists (
     select 1
@@ -141,7 +179,7 @@ begin
   begin
     perform public.adjust_hrm_staffing(
       v_org_unit_id, v_position_one.id, v_position_one.level_code,
-      null, 0, 'Smoke: thao tác phải bị chặn'
+      null, 0, 'Smoke: thao tác phải bị chặn', 'smoke-workforce'
     );
   exception when others then
     v_blocked := position('HRM_STAFFING_HAS_OCCUPIED_OR_MANAGER_SLOTS' in sqlerrm) > 0;
@@ -151,19 +189,20 @@ begin
   end if;
 
   perform public.unassign_hrm_employee_from_organization(
-    v_employee_one.id, current_date, 'Smoke: gỡ phân bổ'
+    v_employee_one.id, current_date, 'Smoke: gỡ phân bổ', 'smoke-workforce'
   );
   perform public.adjust_hrm_staffing(
     v_org_unit_id, v_position_one.id, v_position_one.level_code,
-    null, 0, 'Smoke: giảm định biên sau khi gỡ người'
+    null, 0, 'Smoke: giảm định biên sau khi gỡ người', 'smoke-workforce'
   );
 
   perform public.adjust_hrm_staffing(
     v_org_unit_id, v_position_one.id, v_position_one.level_code,
-    null, 1, 'Smoke: tạo vị trí quản lý'
+    null, 1, 'Smoke: tạo vị trí quản lý', 'smoke-workforce'
   );
   perform public.set_hrm_unit_manager_staffing(
-    v_org_unit_id, v_position_one.id, v_position_one.level_code, null
+    v_org_unit_id, v_position_one.id, v_position_one.level_code, null,
+    'Smoke: đặt quản lý trực tiếp', 'smoke-workforce'
   );
   select manager_slot_id into v_manager_slot_id
   from public.org_units where id = v_org_unit_id;
@@ -174,16 +213,16 @@ begin
   perform public.assign_hrm_employee_to_staffing(
     v_employee_one.id, v_org_unit_id, v_position_one.id,
     v_position_one.level_code, null, current_date,
-    'Smoke: bố trí quản lý'
+    'Smoke: bố trí quản lý', 'smoke-workforce'
   );
   perform public.adjust_hrm_staffing(
     v_org_unit_id, v_position_two.id, v_position_two.level_code,
-    null, 1, 'Smoke: tạo vị trí cấp dưới'
+    null, 1, 'Smoke: tạo vị trí cấp dưới', 'smoke-workforce'
   );
   perform public.assign_hrm_employee_to_staffing(
     v_employee_two.id, v_org_unit_id, v_position_two.id,
     v_position_two.level_code, null, current_date,
-    'Smoke: bố trí cấp dưới'
+    'Smoke: bố trí cấp dưới', 'smoke-workforce'
   );
 
   if app_private.resolve_slot_direct_manager(v_employee_two.user_id)

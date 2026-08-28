@@ -195,6 +195,7 @@ const AppRoutes: React.FC = () => {
           <Route path="users" element={<Navigate to="/settings" replace />} />
           <Route path="settings" element={<Settings />} />
           <Route path="settings/permission-health" element={<Settings />} />
+          <Route path="settings/hrm-shared-catalog" element={<Settings />} />
           <Route path="misa-export" element={<MisaExport />} />
           <Route path="hrm" element={<Navigate to="/my-profile" replace />} />
           <Route path="hrm/employees" element={<Employees />} />

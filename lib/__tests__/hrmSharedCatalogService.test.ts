@@ -110,12 +110,13 @@ describe('hrmSharedCatalogService', () => {
 
     const result = await hrmSharedCatalogService.adjustStaffing({
       orgUnitId: 'u1', positionId: 'p1', levelCode: 'E4',
-      reportsToSlotId: null, targetCount: 3, note: 'Định biên QLDA',
+      reportsToSlotId: null, targetCount: 3, note: 'Định biên QLDA', sourceReference: 'manual-admin',
     });
 
     expect(rpc).toHaveBeenCalledWith('adjust_hrm_staffing', {
       p_org_unit_id: 'u1', p_position_id: 'p1', p_level_code: 'E4',
       p_reports_to_slot_id: null, p_target_count: 3, p_note: 'Định biên QLDA',
+      p_source_reference: 'manual-admin',
     });
     expect(result).toEqual(expect.objectContaining({ targetCount: 3, occupiedCount: 1, vacantCount: 2 }));
     expect(result).not.toHaveProperty('code');
@@ -132,13 +133,14 @@ describe('hrmSharedCatalogService', () => {
 
     const result = await hrmSharedCatalogService.assignEmployeeToStaffing({
       employeeId: 'e1', orgUnitId: 'u1', positionId: 'p1', levelCode: 'E4',
-      reportsToSlotId: null, effectiveFrom: '2026-08-18', note: 'Điều chuyển chính thức',
+      reportsToSlotId: null, effectiveFrom: '2026-08-18', note: 'Điều chuyển chính thức', sourceReference: 'manual-admin',
     });
 
     expect(rpc).toHaveBeenCalledWith('assign_hrm_employee_to_staffing', {
       p_employee_id: 'e1', p_org_unit_id: 'u1', p_position_id: 'p1',
       p_level_code: 'E4', p_reports_to_slot_id: null,
       p_effective_from: '2026-08-18', p_note: 'Điều chuyển chính thức',
+      p_source_reference: 'manual-admin',
     });
     expect(result).toEqual(expect.objectContaining({ status: 'ASSIGNED', employeeId: 'e1', slotId: 's1' }));
   });
@@ -150,11 +152,12 @@ describe('hrmSharedCatalogService', () => {
     });
 
     const result = await hrmSharedCatalogService.unassignEmployeeFromOrganization({
-      employeeId: 'e1', effectiveTo: '2026-08-18', note: 'Chờ phân bổ lại',
+      employeeId: 'e1', effectiveTo: '2026-08-18', note: 'Chờ phân bổ lại', sourceReference: 'manual-admin',
     });
 
     expect(rpc).toHaveBeenCalledWith('unassign_hrm_employee_from_organization', {
       p_employee_id: 'e1', p_effective_to: '2026-08-18', p_note: 'Chờ phân bổ lại',
+      p_source_reference: 'manual-admin',
     });
     expect(result).toEqual(expect.objectContaining({ status: 'PENDING', employeeId: 'e1' }));
   });
@@ -167,11 +170,13 @@ describe('hrmSharedCatalogService', () => {
 
     const result = await hrmSharedCatalogService.setUnitManagerStaffing({
       orgUnitId: 'u1', positionId: 'p-manager', levelCode: 'E7', reportsToSlotId: null,
+      reason: 'Bổ nhiệm quản lý đơn vị', sourceReference: 'manual-admin',
     });
 
     expect(rpc).toHaveBeenCalledWith('set_hrm_unit_manager_staffing', {
       p_org_unit_id: 'u1', p_position_id: 'p-manager',
       p_level_code: 'E7', p_reports_to_slot_id: null,
+      p_reason: 'Bổ nhiệm quản lý đơn vị', p_source_reference: 'manual-admin',
     });
     expect(result).toEqual({ orgUnitId: 'u1', managerSlotId: 's-manager' });
   });
@@ -180,7 +185,8 @@ describe('hrmSharedCatalogService', () => {
     rpc.mockResolvedValueOnce({ data: null, error: {} });
 
     await expect(hrmSharedCatalogService.adjustStaffing({
-      orgUnitId: 'u1', positionId: 'p1', targetCount: 1, note: '',
+      orgUnitId: 'u1', positionId: 'p1', targetCount: 1,
+      note: 'Điều chỉnh theo kế hoạch', sourceReference: 'manual-admin',
     })).rejects.toThrow('Không thể điều chỉnh định biên nhân sự.');
   });
 

@@ -16,6 +16,11 @@ const throwIfError = (error: { message?: string } | null, fallback: string) => {
   if (error) throw new Error(error.message || fallback);
 };
 
+const requireMutationContext = (reason: string, sourceReference: string) => {
+  if (reason.trim().length < 10) throw new Error('Lý do thay đổi phải có ít nhất 10 ký tự.');
+  if (!sourceReference.trim()) throw new Error('Thay đổi nhân sự phải có nguồn tham chiếu.');
+};
+
 const mapCodeItem = (row: any): HrmSharedCodeItem => ({
   id: row.id,
   code: row.code,
@@ -200,7 +205,9 @@ export const hrmSharedCatalogService = {
     reportsToSlotId?: string | null;
     targetCount: number;
     note: string;
+    sourceReference: string;
   }): Promise<HrmStaffingMutationResult> {
+    requireMutationContext(input.note, input.sourceReference);
     const { data, error } = await supabase.rpc('adjust_hrm_staffing', {
       p_org_unit_id: input.orgUnitId,
       p_position_id: input.positionId,
@@ -208,6 +215,7 @@ export const hrmSharedCatalogService = {
       p_reports_to_slot_id: input.reportsToSlotId || null,
       p_target_count: input.targetCount,
       p_note: input.note.trim() || null,
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể điều chỉnh định biên nhân sự.');
     return mapStaffingMutationResult(Array.isArray(data) ? data[0] : data);
@@ -221,7 +229,9 @@ export const hrmSharedCatalogService = {
     reportsToSlotId?: string | null;
     effectiveFrom: string;
     note: string;
+    sourceReference: string;
   }): Promise<HrmEmployeeOrganizationSummary> {
+    requireMutationContext(input.note, input.sourceReference);
     const { data, error } = await supabase.rpc('assign_hrm_employee_to_staffing', {
       p_employee_id: input.employeeId,
       p_org_unit_id: input.orgUnitId,
@@ -230,6 +240,7 @@ export const hrmSharedCatalogService = {
       p_reports_to_slot_id: input.reportsToSlotId || null,
       p_effective_from: input.effectiveFrom,
       p_note: input.note.trim() || null,
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể phân bổ hoặc chuyển vị trí nhân sự.');
     return mapEmployeeOrganizationSummary(Array.isArray(data) ? data[0] : data);
@@ -239,11 +250,14 @@ export const hrmSharedCatalogService = {
     employeeId: string;
     effectiveTo: string;
     note: string;
+    sourceReference: string;
   }): Promise<HrmEmployeeOrganizationSummary> {
+    requireMutationContext(input.note, input.sourceReference);
     const { data, error } = await supabase.rpc('unassign_hrm_employee_from_organization', {
       p_employee_id: input.employeeId,
       p_effective_to: input.effectiveTo,
       p_note: input.note.trim() || null,
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể gỡ nhân sự khỏi cơ cấu tổ chức.');
     return mapEmployeeOrganizationSummary(Array.isArray(data) ? data[0] : data);
@@ -254,12 +268,17 @@ export const hrmSharedCatalogService = {
     positionId: string;
     levelCode?: string | null;
     reportsToSlotId?: string | null;
+    reason: string;
+    sourceReference: string;
   }): Promise<{ orgUnitId: string; managerSlotId: string | null }> {
+    requireMutationContext(input.reason, input.sourceReference);
     const { data, error } = await supabase.rpc('set_hrm_unit_manager_staffing', {
       p_org_unit_id: input.orgUnitId,
       p_position_id: input.positionId,
       p_level_code: input.levelCode || null,
       p_reports_to_slot_id: input.reportsToSlotId || null,
+      p_reason: input.reason.trim(),
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể thiết lập quản lý trực tiếp.');
     const row = Array.isArray(data) ? data[0] : data;

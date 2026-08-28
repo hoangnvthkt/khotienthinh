@@ -185,6 +185,7 @@ const Employees: React.FC = () => {
             reportsToSlotId: input.row.reportsToSlotId,
             effectiveFrom: input.effectiveFrom,
             note: input.note,
+            sourceReference: 'employee-directory',
         });
         await refreshOrganizationAndEmployees();
         setAssignmentDialogOpen(false);
@@ -192,7 +193,10 @@ const Employees: React.FC = () => {
     };
 
     const handleUnassignEmployee = async (input: { employeeId: string; effectiveTo: string; note: string }) => {
-        await hrmSharedCatalogService.unassignEmployeeFromOrganization(input);
+        await hrmSharedCatalogService.unassignEmployeeFromOrganization({
+            ...input,
+            sourceReference: 'employee-directory',
+        });
         await refreshOrganizationAndEmployees();
         setAssignmentDialogOpen(false);
         toast.success('Nhân sự đã chuyển về trạng thái chờ phân bổ');
