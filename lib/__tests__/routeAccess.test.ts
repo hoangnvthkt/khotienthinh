@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Role, User } from '../../types';
+import { Role, User, UserPermissionGrant } from '../../types';
 import { canAccessRoute, getRouteModuleKey, isAuthenticatedOpenRoute } from '../routeAccess';
 
 const user = (allowedModules?: string[]): User => ({
@@ -9,6 +9,35 @@ const user = (allowedModules?: string[]): User => ({
   role: Role.EMPLOYEE,
   allowedModules,
 });
+
+const persona = (
+  role: Role,
+  grants: Array<[UserPermissionGrant['permissionCode'], UserPermissionGrant['scopeType']]>,
+): User => ({
+  id: 'persona-1',
+  name: 'Persona',
+  email: 'persona@example.com',
+  role,
+  allowedModules: [],
+  adminModules: [],
+  allowedSubModules: {},
+  adminSubModules: {},
+  permissionGrants: grants.map(([permissionCode, scopeType]) => ({
+    userId: 'persona-1',
+    permissionCode,
+    scopeType,
+    scopeId: '*',
+    isActive: true,
+  })),
+});
+
+const businessUser = persona(Role.EMPLOYEE, [
+  ['hrm.employee.view_directory', 'global'],
+  ['hrm.employee.view_profile', 'own'],
+  ['hrm.employee.edit_profile', 'own'],
+  ['hrm.attendance.view', 'own'],
+  ['hrm.leave.view', 'own'],
+]);
 
 describe('chat route access', () => {
   it('maps the chat route to the CHAT module', () => {
@@ -77,5 +106,59 @@ describe('request detail route access', () => {
       adminModules: [],
       permissionGrants: [],
     }, '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe(true);
+  });
+});
+
+describe('HRM employee self-service route access', () => {
+  it('opens employee self-service routes from own-scoped grants', () => {
+    expect(canAccessRoute(businessUser, '/employee-dashboard')).toBe(true);
+    expect(canAccessRoute(businessUser, '/my-profile')).toBe(true);
+    expect(canAccessRoute(businessUser, '/hrm/employees')).toBe(true);
+    expect(canAccessRoute(businessUser, '/hrm/checkin')).toBe(true);
+    expect(canAccessRoute(businessUser, '/hrm/attendance')).toBe(true);
+    expect(canAccessRoute(businessUser, '/hrm/leave')).toBe(true);
+  });
+
+  it('keeps HR-wide and sensitive routes closed to a business user', () => {
+    for (const route of [
+      '/hrm/dashboard',
+      '/hrm/shifts',
+      '/hrm/payroll',
+      '/hrm/contracts',
+      '/hrm/documents',
+      '/hrm/reports',
+      '/hrm/ranking',
+      '/settings/hrm-shared-catalog',
+    ]) {
+      expect(canAccessRoute(businessUser, route), route).toBe(false);
+    }
+  });
+
+  it('opens the HR dashboard only from an effective governed HR permission', () => {
+    const hr = persona(Role.EMPLOYEE, [
+      ['hrm.employee.view_sensitive', 'global'],
+    ]);
+    const hrManage = persona(Role.EMPLOYEE, [
+      ['hrm.employee.view_sensitive', 'global'],
+      ['hrm.compensation.manage', 'global'],
+    ]);
+    const technicalAdmin = persona(Role.ADMIN, []);
+
+    expect(canAccessRoute(hr, '/hrm/dashboard')).toBe(true);
+    expect(canAccessRoute(hrManage, '/hrm/dashboard')).toBe(true);
+    expect(canAccessRoute(technicalAdmin, '/hrm/dashboard')).toBe(false);
+    expect(canAccessRoute(technicalAdmin, '/settings/hrm-shared-catalog')).toBe(false);
+  });
+
+  it('allows global HR grants to satisfy own routes without widening own grants to global', () => {
+    const globalAttendance = persona(Role.EMPLOYEE, [
+      ['hrm.attendance.view', 'global'],
+    ]);
+    const ownSensitive = persona(Role.EMPLOYEE, [
+      ['hrm.employee.view_sensitive', 'own'],
+    ]);
+
+    expect(canAccessRoute(globalAttendance, '/hrm/attendance')).toBe(true);
+    expect(canAccessRoute(ownSensitive, '/hrm/dashboard')).toBe(false);
   });
 });
