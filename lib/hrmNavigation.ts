@@ -1,11 +1,7 @@
-import { User } from '../types';
 import { canPerform } from './permissions/permissionService';
 import { canAccessRoute } from './routeAccess';
 
-type HrmNavigationUser = Pick<
-  User,
-  'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules' | 'permissionGrants'
->;
+type HrmNavigationUser = NonNullable<Parameters<typeof canAccessRoute>[0]>;
 
 export interface HrmNavigationItem {
   to: string;
