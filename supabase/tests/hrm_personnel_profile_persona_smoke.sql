@@ -66,6 +66,14 @@ begin
   perform set_config('request.jwt.claims', jsonb_build_object(
     'role','authenticated','sub',v_admin.auth_id,'email',v_admin.email
   )::text, true);
+  v_summary := public.get_user_hr_authorization(v_admin.id);
+  if v_summary ->> 'hrRole' is not null then
+    v_summary := public.set_user_hr_business_role(
+      v_admin.id, 'NONE', null,
+      'Smoke: tạm thu hồi HR role để kiểm tra Admin kỹ thuật',
+      '[]'::jsonb, v_summary ->> 'fingerprint'
+    );
+  end if;
   v_blocked := false;
   begin perform public.get_hrm_employee_compensation_tax_bank(v_employee.id);
   exception when others then v_blocked := position('HRM_PROFILE_SECTION_ACCESS_DENIED' in sqlerrm) > 0; end;

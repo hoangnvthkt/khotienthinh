@@ -39,6 +39,16 @@ begin
   );
 
   v_summary := public.get_user_hr_authorization(v_admin.id);
+  if v_summary ->> 'hrRole' is not null then
+    v_summary := public.set_user_hr_business_role(
+      v_admin.id,
+      'NONE',
+      null,
+      'Smoke: tạm thu hồi HR role đã có trước kiểm thử',
+      '[]'::jsonb,
+      v_summary ->> 'fingerprint'
+    );
+  end if;
   v_preview := public.preview_user_hr_business_role(v_admin.id, 'HR_MANAGE', null);
 
   if v_preview ->> 'fingerprint' is distinct from v_summary ->> 'fingerprint'
