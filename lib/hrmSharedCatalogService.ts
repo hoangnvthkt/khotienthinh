@@ -16,6 +16,13 @@ const throwIfError = (error: { message?: string } | null, fallback: string) => {
   if (error) throw new Error(error.message || fallback);
 };
 
+const loadEmployeeDirectoryRows = async (): Promise<any[]> => {
+  const { data, error } = await supabase.rpc('list_hrm_employee_directory');
+  throwIfError(error, 'Không thể tải danh bạ nhân sự.');
+  if (!Array.isArray(data)) throw new Error('Không thể tải danh bạ nhân sự.');
+  return data;
+};
+
 const requireMutationContext = (reason: string, sourceReference: string) => {
   if (reason.trim().length < 10) throw new Error('Lý do thay đổi phải có ít nhất 10 ký tự.');
   if (!sourceReference.trim()) throw new Error('Thay đổi nhân sự phải có nguồn tham chiếu.');
@@ -145,12 +152,15 @@ export const hrmSharedCatalogService = {
   async load(): Promise<HrmSharedCatalogBundle> {
     const tables = [
       'org_units', 'hrm_org_position_slots', 'hrm_employee_slot_assignments',
-      'employees', 'hrm_positions', 'hrm_position_groups', 'hrm_position_levels',
+      'hrm_positions', 'hrm_position_groups', 'hrm_position_levels',
       'hrm_competency_groups', 'hrm_competency_levels', 'hrm_catalog_items',
     ] as const;
-    const responses = await Promise.all(tables.map(table => supabase.from(table).select('*')));
+    const [responses, employees] = await Promise.all([
+      Promise.all(tables.map(table => supabase.from(table).select('*'))),
+      loadEmployeeDirectoryRows(),
+    ]);
     responses.forEach((response, index) => throwIfError(response.error, `Không thể tải ${tables[index]}.`));
-    const [orgs, slots, assignments, employees, positions, positionGroups, positionLevels,
+    const [orgs, slots, assignments, positions, positionGroups, positionLevels,
       competencyGroups, competencyLevels, catalogItems] = responses.map(response => response.data || []);
     const catalog = (key: string) => (catalogItems as any[])
       .filter(row => row.catalog_key === key && row.is_active !== false)
@@ -179,12 +189,15 @@ export const hrmSharedCatalogService = {
   >> {
     const tables = [
       'org_units', 'hrm_org_position_slots', 'hrm_employee_slot_assignments',
-      'employees', 'hrm_positions',
+      'hrm_positions',
     ] as const;
-    const responses = await Promise.all(tables.map(table => supabase.from(table).select('*')));
+    const [responses, employees] = await Promise.all([
+      Promise.all(tables.map(table => supabase.from(table).select('*'))),
+      loadEmployeeDirectoryRows(),
+    ]);
     responses.forEach((response, index) =>
       throwIfError(response.error, `Không thể tải ${tables[index]}.`));
-    const [orgs, slots, assignments, employees, positions] = responses
+    const [orgs, slots, assignments, positions] = responses
       .map(response => response.data || []);
 
     return {

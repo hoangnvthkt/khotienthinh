@@ -17,7 +17,6 @@ describe('hrmSharedCatalogService', () => {
       org_units: [{ id: 'u1', code: 'K1', name: 'Khối VP', type: 'custom', parent_id: null, order_index: 1, is_active: true }],
       hrm_org_position_slots: [{ id: 's1', code: 'K1-HCNS-01', org_unit_id: 'u1', position_id: 'p1', slot_type: 'STANDARD', status: 'ACTIVE', effective_from: '2026-08-18', sort_order: 1, source: 'manual' }],
       hrm_employee_slot_assignments: [],
-      employees: [{ id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A', status: 'Đang làm việc', org_unit_id: 'u1', position_id: 'p1' }],
       hrm_positions: [{ id: 'p1', code: 'TP', name: 'Trưởng phòng', group_code: 'QL', level_code: 'E7', is_active: true, sort_order: 1, source: 'catalog' }],
       hrm_position_groups: [{ id: 'g1', code: 'CG', name: 'Chuyên gia', is_active: true, sort_order: 7 }],
       hrm_position_levels: [{ id: 'l1', code: 'E7', name: 'Level E7', is_active: true, sort_order: 7 }],
@@ -32,6 +31,10 @@ describe('hrmSharedCatalogService', () => {
     from.mockImplementation((table: string) => ({
       select: vi.fn().mockResolvedValue({ data: rows[table] || [], error: null }),
     }));
+    rpc.mockResolvedValue({
+      data: [{ id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A', status: 'Đang làm việc', org_unit_id: 'u1', position_id: 'p1' }],
+      error: null,
+    });
 
     const bundle = await hrmSharedCatalogService.load();
 
@@ -41,6 +44,9 @@ describe('hrmSharedCatalogService', () => {
     expect(bundle.educationLevels.map(item => item.code)).toEqual(['DH']);
     expect(bundle.contractTypes.map(item => item.code)).toEqual(['36T']);
     expect(bundle.positionGroups[0].code).toBe('CG');
+    expect(bundle.employees[0].id).toBe('e1');
+    expect(rpc).toHaveBeenCalledWith('list_hrm_employee_directory');
+    expect(from.mock.calls.map(([table]) => table)).not.toContain('employees');
   });
 
   it('saves a new position slot using database column names', async () => {
@@ -195,19 +201,22 @@ describe('hrmSharedCatalogService', () => {
       org_units: [{ id: 'u1', name: 'QLDA', type: 'department', is_active: true }],
       hrm_org_position_slots: [],
       hrm_employee_slot_assignments: [],
-      employees: [{ id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A', status: 'Đang làm việc' }],
       hrm_positions: [{ id: 'p1', name: 'Chuyên viên', is_active: true }],
     };
     from.mockImplementation((table: string) => ({
       select: vi.fn().mockResolvedValue({ data: rows[table] || [], error: null }),
     }));
+    rpc.mockResolvedValue({
+      data: [{ id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A', status: 'Đang làm việc' }],
+      error: null,
+    });
 
     const bundle = await hrmSharedCatalogService.loadOrganizationBundle();
 
     expect(from.mock.calls.map(([table]) => table)).toEqual([
-      'org_units', 'hrm_org_position_slots', 'hrm_employee_slot_assignments',
-      'employees', 'hrm_positions',
+      'org_units', 'hrm_org_position_slots', 'hrm_employee_slot_assignments', 'hrm_positions',
     ]);
+    expect(rpc).toHaveBeenCalledWith('list_hrm_employee_directory');
     expect(bundle.employees[0].id).toBe('e1');
     expect(bundle).not.toHaveProperty('competencyGroups');
   });
