@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard, Bell, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
@@ -22,6 +23,7 @@ import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialR
 import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
 import { canViewModule } from '../lib/permissions/permissionService';
+import { getHrmNavigationItems } from '../lib/hrmNavigation';
 import { useAuth } from '../context/AuthContext';
 import {
   canAccessVehicleApprovalQueue,
@@ -60,6 +62,22 @@ const MODULE_CONFIG = [
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
 
+const HRM_NAV_ICONS: Record<string, LucideIcon> = {
+  '/employee-dashboard': LayoutDashboard,
+  '/my-profile': User,
+  '/hrm/dashboard': LayoutDashboard,
+  '/hrm/employees': Users,
+  '/hrm/checkin': MapPin,
+  '/hrm/attendance': Calendar,
+  '/hrm/shifts': Clock,
+  '/hrm/leave': CalendarOff,
+  '/hrm/payroll': DollarSign,
+  '/hrm/contracts': FileSignature,
+  '/hrm/documents': FolderOpen,
+  '/hrm/reports': BarChart3,
+  '/hrm/ranking': Award,
+};
+
 // Sidebar states: 'home' | 'apps' | AppKey
 type SidebarView = 'home' | 'apps' | AppKey;
 
@@ -87,7 +105,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const detectAppFromUrl = (): AppKey | null => {
     const p = location.pathname;
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
-    if (p.startsWith('/hrm') || p === '/my-profile') return 'HRM';
+    if (p.startsWith('/hrm') || p === '/my-profile' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/procurement')) return 'PROCUREMENT';
@@ -229,20 +247,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/reports', icon: History, label: 'Báo cáo WMS' },
       { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN] },
     ],
-    HRM: [
-      { to: '/my-profile', icon: User, label: 'Hồ sơ cá nhân' },
-      { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },
-      { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
-      { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
-      { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
-      { to: '/hrm/shifts', icon: Clock, label: 'Ca làm việc' },
-      { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
-      { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
-      { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
-      { to: '/hrm/documents', icon: FolderOpen, label: 'Hồ sơ & Công văn' },
-      { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
-      { to: '/hrm/ranking', icon: Award, label: 'Xếp hạng NV' },
-    ],
+    HRM: getHrmNavigationItems(user).map(item => ({
+      ...item,
+      icon: HRM_NAV_ICONS[item.to],
+    })),
     WF: [
       { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },

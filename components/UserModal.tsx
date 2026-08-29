@@ -106,7 +106,7 @@ const SUB_MODULE_CONFIG: Record<string, { to: string; label: string; icon: any }
   HRM: [
     { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },
     { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
-    { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
+    { to: '/hrm/employees', icon: Users, label: 'Danh bạ nhân sự' },
     { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
     { to: '/hrm/shifts', icon: Clock, label: 'Ca làm việc' },
     { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
