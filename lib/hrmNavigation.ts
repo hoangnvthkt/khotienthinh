@@ -30,6 +30,16 @@ const HRM_NAVIGATION_ITEMS = [
   { to: '/hrm/ranking', employeeLabel: 'Xếp hạng NV', hrLabel: 'Xếp hạng NV' },
 ] as const;
 
+const EMPLOYEE_DASHBOARD_QUICK_LINKS = [
+  { to: '/hrm/checkin', label: 'Check-in' },
+  { to: '/hrm/leave', label: 'Nghỉ phép' },
+  { to: '/wf', label: 'Quy trình' },
+  { to: '/rq', label: 'Yêu cầu' },
+  { to: '/chat', label: 'Tin nhắn' },
+  { to: '/ai', label: 'Trợ lý AI' },
+  { to: '/my-profile', label: 'Hồ sơ' },
+] as const;
+
 export const getHrmNavigationItems = (user: HrmNavigationUser): HrmNavigationItem[] => {
   const isHrPersona = canPerform(user, 'hrm.employee.view_sensitive', GLOBAL_SCOPE);
   return HRM_NAVIGATION_ITEMS
@@ -39,3 +49,11 @@ export const getHrmNavigationItems = (user: HrmNavigationUser): HrmNavigationIte
       label: isHrPersona ? item.hrLabel : item.employeeLabel,
     }));
 };
+
+export const getEmployeeDashboardQuickLinks = (
+  user: HrmNavigationUser,
+  chatEnabled: boolean,
+): HrmNavigationItem[] => EMPLOYEE_DASHBOARD_QUICK_LINKS
+  .filter(item => item.to !== '/chat' || chatEnabled)
+  .filter(item => canAccessRoute(user, item.to))
+  .map(item => ({ ...item }));

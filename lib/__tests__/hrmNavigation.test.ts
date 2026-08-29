@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User, UserPermissionGrant } from '../../types';
-import { getHrmNavigationItems } from '../hrmNavigation';
+import { getEmployeeDashboardQuickLinks, getHrmNavigationItems } from '../hrmNavigation';
 
 const persona = (
   grants: Array<[UserPermissionGrant['permissionCode'], UserPermissionGrant['scopeType']]>,
@@ -100,5 +100,39 @@ describe('HRM navigation', () => {
       { to: '/employee-dashboard', label: 'Tổng quan của tôi' },
       { to: '/my-profile', label: 'Hồ sơ của tôi' },
     ]);
+  });
+});
+
+describe('Employee Dashboard quick links', () => {
+  it('returns only reachable self-service links for a business user', () => {
+    expect(getEmployeeDashboardQuickLinks(businessUser, false)).toEqual([
+      { to: '/hrm/checkin', label: 'Check-in' },
+      { to: '/hrm/leave', label: 'Nghỉ phép' },
+      { to: '/my-profile', label: 'Hồ sơ' },
+    ]);
+  });
+
+  it('includes optional app links only when their route is accessible', () => {
+    const crossAppUser: User = {
+      ...businessUser,
+      allowedModules: ['HRM', 'WF', 'RQ', 'AI', 'CHAT'],
+    };
+
+    expect(getEmployeeDashboardQuickLinks(crossAppUser, true)).toEqual([
+      { to: '/hrm/checkin', label: 'Check-in' },
+      { to: '/hrm/leave', label: 'Nghỉ phép' },
+      { to: '/wf', label: 'Quy trình' },
+      { to: '/rq', label: 'Yêu cầu' },
+      { to: '/chat', label: 'Tin nhắn' },
+      { to: '/ai', label: 'Trợ lý AI' },
+      { to: '/my-profile', label: 'Hồ sơ' },
+    ]);
+  });
+
+  it('never exposes Employee V1 payroll or contract shortcuts', () => {
+    const routes = getEmployeeDashboardQuickLinks(hrManageUser, true).map(item => item.to);
+
+    expect(routes).not.toContain('/hrm/payroll');
+    expect(routes).not.toContain('/hrm/contracts');
   });
 });
