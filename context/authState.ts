@@ -81,6 +81,35 @@ export class AuthAttemptCoordinator {
   }
 }
 
+export class KeyedSingleFlightCoordinator<K, T> {
+  private activeKey: K | undefined;
+  private activeRequest: Promise<T> | null = null;
+
+  run(key: K, operation: () => Promise<T>): Promise<T> {
+    if (this.activeRequest && Object.is(this.activeKey, key)) {
+      return this.activeRequest;
+    }
+
+    let request: Promise<T>;
+    try {
+      request = operation();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    this.activeKey = key;
+    this.activeRequest = request;
+
+    const clearRequest = () => {
+      if (this.activeRequest === request) {
+        this.activeKey = undefined;
+        this.activeRequest = null;
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
+  }
+}
+
 export interface AuthEpochSnapshot {
   epoch: number;
   accessToken: string;

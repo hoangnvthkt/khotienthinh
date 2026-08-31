@@ -75,6 +75,60 @@ export const isWorkflowStepAssignedToUser = (
   return Boolean(node.config?.assigneeRole && node.config.assigneeRole === user.role);
 };
 
+export const canUserActOnWorkflowStep = ({
+  instance,
+  node,
+  user,
+  templateManagerIds = [],
+  firstTaskNodeId,
+  logs = [],
+}: {
+  instance: WorkflowInstance;
+  node: Pick<WorkflowNode, 'id' | 'config' | 'type'> | null | undefined;
+  user: Pick<User, 'id' | 'role'>;
+  templateManagerIds?: string[];
+  firstTaskNodeId?: string | null;
+  logs?: WorkflowInstanceLog[];
+}): boolean => {
+  if (!node || instance.status !== WorkflowInstanceStatus.RUNNING) return false;
+  if (node.type === WorkflowNodeType.START || node.type === WorkflowNodeType.END) return false;
+  if (user.role === Role.ADMIN || templateManagerIds.includes(user.id)) return true;
+  if (isWorkflowStepAssignedToUser(instance, node, user)) return true;
+  if (instance.createdBy !== user.id || instance.currentNodeId !== firstTaskNodeId) return false;
+  return logs.some(log =>
+    log.instanceId === instance.id
+    && log.action === WorkflowInstanceAction.REVISION_REQUESTED
+  );
+};
+
+export const buildInitialWorkflowStepAssignees = (
+  firstTaskNodeId: string | null | undefined,
+  assigneeUserIds: string | string[] | null | undefined,
+): Record<string, string[]> | null => {
+  const normalized = normalizeStepAssigneeIds(assigneeUserIds);
+  if (!firstTaskNodeId || normalized.length === 0) return null;
+  return { [firstTaskNodeId]: normalized };
+};
+
+export const getWorkflowProcessErrorMessage = (
+  error: { code?: string; message?: string } | null | undefined,
+): string => {
+  const message = String(error?.message || '').toLowerCase();
+  if (message.includes('user is not allowed to process current workflow step')) {
+    return 'Bạn không phải người được phân công xử lý bước hiện tại.';
+  }
+  if (message.includes('workflow instance is not running')) {
+    return 'Phiếu đã được người khác xử lý hoặc không còn ở trạng thái đang chạy.';
+  }
+  if (message.includes('request_workflow_use_request_module')) {
+    return 'Phiếu này phải được xử lý trong module Yêu cầu.';
+  }
+  if (error?.code === '57014' || message.includes('statement timeout')) {
+    return 'Hệ thống xử lý quá thời gian. Vui lòng tải lại trạng thái phiếu trước khi thử lại.';
+  }
+  return 'Không xử lý được phiếu. Vui lòng thử lại.';
+};
+
 const getUserLabel = (user: User) => user.name || user.username || user.email || user.id;
 
 const employeeBelongsToDepartment = (employee: Employee, orgUnitId: string) =>

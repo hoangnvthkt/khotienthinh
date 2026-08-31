@@ -25,6 +25,7 @@ import {
   AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
   AuthResolutionError,
+  KeyedSingleFlightCoordinator,
   authReducer,
   authenticateMockUser,
   createInitialAuthState,
@@ -157,6 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const stateRef = useRef<AuthState>(state);
   const attemptsRef = useRef(new AuthAttemptCoordinator());
   const authEpochRef = useRef(new AuthoritativeAuthEpoch());
+  const profileRefreshesRef = useRef(new KeyedSingleFlightCoordinator<string, User>());
 
   const dispatchAuth = useCallback((action: Parameters<typeof authReducer>[1]) => {
     stateRef.current = authReducer(stateRef.current, action);
@@ -365,22 +367,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await loadCurrentSession();
   }, [loadCurrentSession]);
 
-  const refreshProfile = useCallback(async (): Promise<User> => {
+  const refreshProfile = useCallback((): Promise<User> => {
     if (!isSupabaseConfigured) {
-      const mockUser = loadStoredMockUser() || stateRef.current.user;
-      if (!mockUser) throw new Error('Không có hồ sơ mock đang đăng nhập.');
-      dispatchAuth({ type: 'AUTHENTICATED', session: null, user: mockUser });
-      return mockUser;
+      return profileRefreshesRef.current.run('mock-profile', async () => {
+        const mockUser = loadStoredMockUser() || stateRef.current.user;
+        if (!mockUser) throw new Error('Không có hồ sơ mock đang đăng nhập.');
+        dispatchAuth({ type: 'AUTHENTICATED', session: null, user: mockUser });
+        return mockUser;
+      });
     }
 
     const session = stateRef.current.session;
-    if (!session) throw new Error('Không có phiên đăng nhập để tải lại hồ sơ.');
-    const authEpoch = authEpochRef.current.captureCandidate(session.access_token);
-    if (!authEpoch) {
-      throw new Error('Auth refresh was superseded by a newer auth event');
-    }
-    const attempt = attemptsRef.current.begin();
-    return commitCandidateSession(session, attempt, authEpoch, false);
+    if (!session) return Promise.reject(new Error('Không có phiên đăng nhập để tải lại hồ sơ.'));
+    return profileRefreshesRef.current.run(session.access_token, async () => {
+      const authEpoch = authEpochRef.current.captureCandidate(session.access_token);
+      if (!authEpoch) {
+        throw new Error('Auth refresh was superseded by a newer auth event');
+      }
+      const attempt = attemptsRef.current.begin();
+      return commitCandidateSession(session, attempt, authEpoch, false);
+    });
   }, [commitCandidateSession, dispatchAuth]);
 
   useEffect(() => {

@@ -23,9 +23,12 @@ import { supabase } from '../../lib/supabase';
 import { useCelebration } from '../../components/Celebration';
 import { loadXlsx } from '../../lib/loadXlsx';
 import {
+    canUserActOnWorkflowStep,
     getWorkflowAssigneeDisplay,
+    getWorkflowStepSelectionMode,
     isWorkflowStepAssignedToUser,
     resolveCurrentWorkflowAssignees,
+    resolveWorkflowStepAssigneeCandidates,
 } from '../../lib/workflowAssignmentResolver';
 import {
     canSeeMaterialRequestWorkflowOnKanban,
@@ -649,9 +652,37 @@ const WorkflowInstances: React.FC = () => {
     const [newTitle, setNewTitle] = useState('');
     const [newNote, setNewNote] = useState('');
     const [customFormData, setCustomFormData] = useState<Record<string, any>>({});
+    const [initialAssigneeIds, setInitialAssigneeIds] = useState<string[]>([]);
 
     const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
     const selectedCustomFields: WorkflowCustomField[] = selectedTemplate?.customFields || [];
+    const selectedFirstTaskNode = useMemo(() => {
+        if (!selectedTemplateId) return null;
+        const startNode = nodes.find(node => node.templateId === selectedTemplateId && node.type === WorkflowNodeType.START);
+        const firstEdge = startNode
+            ? edges.find(edge => edge.templateId === selectedTemplateId && edge.sourceNodeId === startNode.id)
+            : null;
+        return firstEdge ? nodes.find(node => node.id === firstEdge.targetNodeId) || null : null;
+    }, [edges, nodes, selectedTemplateId]);
+    const initialAssigneeCandidates = useMemo(() => resolveWorkflowStepAssigneeCandidates({
+        node: selectedFirstTaskNode,
+        instance: { createdBy: user.id } as WorkflowInstance,
+        users,
+        employees,
+        orgUnits,
+    }), [employees, orgUnits, selectedFirstTaskNode, user.id, users]);
+    const initialAssigneeSelectionMode = getWorkflowStepSelectionMode(selectedFirstTaskNode);
+    const initialCandidateIdsKey = initialAssigneeCandidates.map(candidate => candidate.id).join('|');
+    const requiresInitialAssignee = Boolean(selectedFirstTaskNode && selectedFirstTaskNode.type !== WorkflowNodeType.END);
+
+    useEffect(() => {
+        const candidateIds = initialAssigneeCandidates.map(candidate => candidate.id);
+        setInitialAssigneeIds(previous => {
+            const validPrevious = previous.filter(id => candidateIds.includes(id));
+            if (validPrevious.length > 0) return validPrevious;
+            return candidateIds.length === 1 ? [candidateIds[0]] : [];
+        });
+    }, [initialCandidateIdsKey, selectedTemplateId]);
 
     // Action state
     const [actionComment, setActionComment] = useState('');
@@ -836,7 +867,13 @@ const WorkflowInstances: React.FC = () => {
         setIsSubmitting(true);
         try {
             const formData = { ...customFormData, note: newNote };
-            const result = await createInstance(selectedTemplateId, newTitle.trim(), user.id, formData);
+            const result = await createInstance(
+                selectedTemplateId,
+                newTitle.trim(),
+                user.id,
+                formData,
+                initialAssigneeIds,
+            );
             if (!result) {
                 setIsSubmitting(false);
                 showToast('error', 'Tạo phiếu thất bại. Kiểm tra lại mẫu quy trình có đủ các bước (Bắt đầu/Kết thúc) chưa.');
@@ -847,6 +884,7 @@ const WorkflowInstances: React.FC = () => {
             setNewTitle('');
             setNewNote('');
             setCustomFormData({});
+            setInitialAssigneeIds([]);
             loadedFormDataIdsRef.current.add(result.id);
             setActiveTab('mine');
             showToast('success', `Phiếu "${result.title}" đã được tạo thành công!`);
@@ -860,6 +898,25 @@ const WorkflowInstances: React.FC = () => {
     const handleSelectTemplate = (tid: string) => {
         setSelectedTemplateId(tid);
         setCustomFormData({});
+        setInitialAssigneeIds([]);
+    };
+
+    const openCreateModal = () => {
+        setSelectedTemplateId('');
+        setNewTitle('');
+        setNewNote('');
+        setCustomFormData({});
+        setInitialAssigneeIds([]);
+        setShowCreateModal(true);
+    };
+
+    const toggleInitialAssignee = (candidateId: string) => {
+        setInitialAssigneeIds(previous => {
+            if (initialAssigneeSelectionMode === 'single') return [candidateId];
+            return previous.includes(candidateId)
+                ? previous.filter(id => id !== candidateId)
+                : [...previous, candidateId];
+        });
     };
 
     // ==================== WORD EXPORT ====================
@@ -1009,9 +1066,9 @@ const WorkflowInstances: React.FC = () => {
                 }
             }
 
-            const ok = await processInstance(instanceId, action, user.id, actionComment);
-            if (!ok) {
-                showToast('error', 'Thao tác quy trình thất bại. Vui lòng thử lại.');
+            const result = await processInstance(instanceId, action, user.id, actionComment);
+            if (!result.ok) {
+                showToast('error', result.errorMessage || 'Thao tác quy trình thất bại. Vui lòng thử lại.');
                 return;
             }
 
@@ -1152,30 +1209,20 @@ const WorkflowInstances: React.FC = () => {
 
     // Check if user can approve current node
     const canActOnInstance = (instance: WorkflowInstance): boolean => {
-        if (instance.status !== WorkflowInstanceStatus.RUNNING || !instance.currentNodeId) return false;
         const currentNode = nodes.find(n => n.id === instance.currentNodeId);
-        if (!currentNode) return false;
-        if (currentNode.type === WorkflowNodeType.START || currentNode.type === WorkflowNodeType.END) return false;
-        if (user.role === Role.ADMIN) return true;
-        // Managers can act on all instances of their templates
         const tmpl = templates.find(t => t.id === instance.templateId);
-        if (tmpl?.managers?.includes(user.id)) return true;
-        if (isWorkflowStepAssignedToUser(instance, currentNode, user)) return true;
-        // Allow creator to act on first step after REVISION_REQUESTED
-        if (instance.createdBy === user.id) {
-            const templateEdgesLocal = edges.filter(e => e.templateId === instance.templateId);
-            const startNode = nodes.find(n => n.templateId === instance.templateId && n.type === WorkflowNodeType.START);
-            if (startNode) {
-                const firstEdge = templateEdgesLocal.find(e => e.sourceNodeId === startNode.id);
-                if (firstEdge && firstEdge.targetNodeId === instance.currentNodeId) {
-                    // Check if there was a REVISION_REQUESTED log for this instance
-                    const instanceLogs = logs.filter(l => l.instanceId === instance.id);
-                    const hasRevision = instanceLogs.some(l => l.action === WorkflowInstanceAction.REVISION_REQUESTED);
-                    if (hasRevision) return true;
-                }
-            }
-        }
-        return false;
+        const startNode = nodes.find(n => n.templateId === instance.templateId && n.type === WorkflowNodeType.START);
+        const firstTaskNodeId = startNode
+            ? edges.find(edge => edge.templateId === instance.templateId && edge.sourceNodeId === startNode.id)?.targetNodeId
+            : null;
+        return canUserActOnWorkflowStep({
+            instance,
+            node: currentNode,
+            user,
+            templateManagerIds: tmpl?.managers,
+            firstTaskNodeId,
+            logs: getInstanceLogs(instance.id),
+        });
     };
 
     useEffect(() => {
@@ -1324,13 +1371,7 @@ const WorkflowInstances: React.FC = () => {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setSelectedTemplateId('');
-                                    setNewTitle('');
-                                    setNewNote('');
-                                    setCustomFormData({});
-                                    setShowCreateModal(true);
-                                }}
+                                onClick={openCreateModal}
                                 disabled={nonMaterialActiveTemplates.length === 0}
                                 title="Tạo phiếu mới"
                                 className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white hover:bg-emerald-600 transition disabled:opacity-50"
@@ -1611,7 +1652,7 @@ const WorkflowInstances: React.FC = () => {
                                 </button>
                             </div>
                             <button
-                                onClick={() => setShowCreateModal(true)}
+                                onClick={openCreateModal}
                                 disabled={nonMaterialActiveTemplates.length === 0}
                                 className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20 disabled:opacity-50"
                             >
@@ -1719,8 +1760,8 @@ const WorkflowInstances: React.FC = () => {
                                 navigate(`/wf/instances/${instance.id}`);
                             }}
                             onDragComplete={async (instanceId, action, comment, assigneeIds) => {
-                                const ok = await processInstance(instanceId, action, user.id, comment, assigneeIds);
-                                if (!ok) showToast('error', 'Không xử lý được phiếu.');
+                                const result = await processInstance(instanceId, action, user.id, comment, assigneeIds);
+                                if (!result.ok) showToast('error', result.errorMessage || 'Không xử lý được phiếu.');
                             }}
                         />
                     ) : (
@@ -1813,6 +1854,49 @@ const WorkflowInstances: React.FC = () => {
                                 />
                             </div>
 
+                            {selectedTemplateId && (
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                        Người xử lý bước đầu *
+                                    </label>
+                                    {selectedFirstTaskNode && initialAssigneeCandidates.length > 0 ? (
+                                        <div className="space-y-2">
+                                            <p className="text-xs text-slate-500">
+                                                Bước “{selectedFirstTaskNode.label}” · {initialAssigneeSelectionMode === 'multiple' ? 'có thể chọn nhiều người' : 'chọn một người'}
+                                            </p>
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                {initialAssigneeCandidates.map(candidate => {
+                                                    const checked = initialAssigneeIds.includes(candidate.id);
+                                                    return (
+                                                        <button
+                                                            type="button"
+                                                            key={candidate.id}
+                                                            onClick={() => toggleInitialAssignee(candidate.id)}
+                                                            className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${checked
+                                                                ? 'border-indigo-500 bg-indigo-50 text-indigo-800 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-100'
+                                                                : 'border-slate-200 bg-white/60 text-slate-700 hover:border-indigo-200 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-200'
+                                                                }`}
+                                                        >
+                                                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${checked ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 dark:border-slate-500'}`}>
+                                                                {checked && <CheckCircle size={13} />}
+                                                            </span>
+                                                            <span className="min-w-0">
+                                                                <span className="block truncate text-sm font-black">{candidate.name}</span>
+                                                                <span className="block truncate text-[11px] text-slate-400">{candidate.sublabel}</span>
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+                                            Mẫu quy trình chưa cấu hình người nhận hợp lệ cho bước đầu.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Dynamic Custom Fields */}
                             {selectedCustomFields.length > 0 && (
                                 <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">
@@ -1840,7 +1924,7 @@ const WorkflowInstances: React.FC = () => {
                             <button onClick={() => setShowCreateModal(false)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button
                                 onClick={handleCreate}
-                                disabled={isSubmitting || !selectedTemplateId || !newTitle.trim() || selectedCustomFields.some(f => f.required && !customFormData[f.name])}
+                                disabled={isSubmitting || !selectedTemplateId || !newTitle.trim() || !selectedFirstTaskNode || (requiresInitialAssignee && initialAssigneeIds.length === 0) || selectedCustomFields.some(f => f.required && !customFormData[f.name])}
                                 className="flex-1 px-5 py-3 bg-accent text-white rounded-xl font-bold text-base hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
                             >
                                 {isSubmitting ? (

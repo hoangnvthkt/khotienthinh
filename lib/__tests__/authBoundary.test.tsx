@@ -8,6 +8,7 @@ import { Role, type User } from '../../types';
 import {
   AuthoritativeAuthEpoch,
   AuthAttemptCoordinator,
+  KeyedSingleFlightCoordinator,
   authReducer,
   authenticateMockUser,
   createInitialAuthState,
@@ -209,6 +210,39 @@ describe('fail-closed auth state', () => {
     expect(attempts.isCurrent(signOutAttempt)).toBe(true);
     expect(signedOutState.status).toBe('anonymous');
     expect(signedOutState.user).toBeNull();
+  });
+
+  it('shares one profile verification when realtime and the save flow refresh the same token concurrently', async () => {
+    const coordinator = new KeyedSingleFlightCoordinator<string, User>();
+    let finishVerification!: (user: User) => void;
+    let verificationCount = 0;
+    const verification = () => {
+      verificationCount += 1;
+      return new Promise<User>((resolve) => {
+        finishVerification = resolve;
+      });
+    };
+
+    const saveRefresh = coordinator.run('access-token', verification);
+    const realtimeRefresh = coordinator.run('access-token', verification);
+
+    expect(realtimeRefresh).toBe(saveRefresh);
+    expect(verificationCount).toBe(1);
+
+    finishVerification({ ...profileRow, authId: AUTH_ID } as unknown as User);
+    await expect(Promise.all([saveRefresh, realtimeRefresh])).resolves.toHaveLength(2);
+  });
+
+  it('starts a fresh profile verification after the previous single-flight request settles', async () => {
+    const coordinator = new KeyedSingleFlightCoordinator<string, number>();
+    let verificationCount = 0;
+    const verify = async () => {
+      verificationCount += 1;
+      return verificationCount;
+    };
+
+    await expect(coordinator.run('access-token', verify)).resolves.toBe(1);
+    await expect(coordinator.run('access-token', verify)).resolves.toBe(2);
   });
 
   it('gives synchronous auth events priority over stale refresh work', () => {

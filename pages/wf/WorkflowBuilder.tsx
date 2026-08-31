@@ -343,28 +343,22 @@ const WorkflowBuilder: React.FC = () => {
     }, [selectedWorkflowUserIds, users]);
 
     const peopleHydrationStale = users.length <= 1 || missingSelectedUserIds.length > 0;
-    const peopleHydrationLoading = moduleLoadState.admin === 'loading' || moduleLoadState.hrm === 'loading';
-    const peopleHydrationError = moduleLoadErrors.admin || moduleLoadErrors.hrm || null;
+    const peopleHydrationLoading = moduleLoadState['workflow-people'] === 'loading';
+    const peopleHydrationError = moduleLoadErrors['workflow-people'] || null;
 
     useEffect(() => {
         if (!templateId || !peopleHydrationStale || peopleHydrationLoading) return;
         const reloadKey = `${users.length <= 1 ? 'few-users' : ''}|${[...missingSelectedUserIds].sort().join('|')}`;
         if (lastPeopleReloadKeyRef.current === reloadKey) return;
         lastPeopleReloadKeyRef.current = reloadKey;
-        Promise.all([
-            loadModuleData('admin', true),
-            loadModuleData('hrm', orgUnits.length === 0),
-        ]).catch(error => {
+        loadModuleData('workflow-people', true).catch(error => {
             console.warn('Workflow people reload failed:', error);
         });
     }, [loadModuleData, missingSelectedUserIds, orgUnits.length, peopleHydrationLoading, peopleHydrationStale, templateId, users.length]);
 
     const retryPeopleHydration = () => {
         lastPeopleReloadKeyRef.current = '';
-        Promise.all([
-            loadModuleData('admin', true),
-            loadModuleData('hrm', true),
-        ]).catch(error => {
+        loadModuleData('workflow-people', true).catch(error => {
             console.warn('Workflow people retry failed:', error);
         });
     };

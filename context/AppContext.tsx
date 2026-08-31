@@ -89,10 +89,10 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
-export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin';
+export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin' | 'workflow-people';
 export type ModuleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'da', 'ts', 'ex', 'admin'];
+const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'da', 'ts', 'ex', 'admin', 'workflow-people'];
 
 const createModuleLoadState = (status: ModuleLoadStatus = 'idle') =>
   APP_MODULES.reduce((acc, module) => {
@@ -104,6 +104,7 @@ const BASE_REALTIME_TABLES = ['app_settings'] as const;
 
 const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   admin: ['app_settings', 'users'],
+  'workflow-people': ['users', 'org_units'],
   'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
   wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
   hrm: ['org_units', 'hrm_attendance'],
@@ -907,7 +908,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
         };
 
-        if (module === 'admin') {
+        if (module === 'workflow-people') {
+          const [usersData, sigData, employeesData, orgUnitsData] = await Promise.all([
+            fetchTableHelper('users'),
+            fetchTableHelper('user_signatures'),
+            hrmSensitiveProjectionService.listEmployees(),
+            fetchTableHelper('org_units'),
+          ]);
+          const requiredUsers = requireModuleData(module, 'users', usersData);
+          if (requiredUsers.length === 0) throw new Error('Danh sách người dùng đang trống bất thường.');
+          const signatureByUserId = new Map<string, string>();
+          for (const signature of sigData || []) {
+            const { data: urlData } = supabase.storage.from('workflow-templates').getPublicUrl(signature.image_path);
+            if (urlData?.publicUrl) signatureByUserId.set(signature.user_id, urlData.publicUrl);
+          }
+          const mappedUsers = requiredUsers.map(mapUserFromDb).map((candidate: User) => ({
+            ...candidate,
+            ...(signatureByUserId.has(candidate.id) ? { signatureUrl: signatureByUserId.get(candidate.id) } : {}),
+            ...(candidate.id === user.id ? { permissionGrants: user.permissionGrants || [] } : {}),
+          }));
+          setUsers(mappedUsers);
+          setEmployees(requireModuleData(module, 'employees', employeesData));
+          setOrgUnits(requireModuleData(module, 'org_units', orgUnitsData).map((unit: any) => ({
+            id: unit.id,
+            name: unit.name,
+            type: unit.type,
+            customTypeLabel: unit.customTypeLabel || undefined,
+            parentId: unit.parent_id,
+            description: unit.description,
+            orderIndex: unit.order_index,
+            createdAt: unit.created_at,
+          })));
+        } else if (module === 'admin') {
           const [settingsData, usersData, sigData] = await Promise.all([
             fetchTableHelper('app_settings', supabase.from('app_settings').select('*').maybeSingle()),
             fetchTableHelper('users'),
