@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as workflowAssignmentResolver from '../workflowAssignmentResolver';
-import { User, WorkflowInstance, WorkflowNode } from '../../types';
+import { Role, User, WorkflowInstance, WorkflowInstanceAction, WorkflowInstanceLog, WorkflowNode } from '../../types';
 
 type ResolveCurrentWorkflowAssignees = (
   instance: WorkflowInstance,
@@ -21,6 +21,34 @@ const resolveCurrentWorkflowAssignees = (
 const getWorkflowAssigneeDisplay = (
   workflowAssignmentResolver as unknown as Record<string, unknown>
 ).getWorkflowAssigneeDisplay as GetWorkflowAssigneeDisplay | undefined;
+
+type CanUserActOnWorkflowStep = (input: {
+  instance: WorkflowInstance;
+  node: Pick<WorkflowNode, 'id' | 'config'> | null | undefined;
+  user: Pick<User, 'id' | 'role'>;
+  templateManagerIds?: string[];
+  firstTaskNodeId?: string | null;
+  logs?: WorkflowInstanceLog[];
+}) => boolean;
+
+type BuildInitialWorkflowStepAssignees = (
+  firstTaskNodeId: string | null | undefined,
+  assigneeUserIds: string | string[] | null | undefined,
+) => Record<string, string[]> | null;
+
+type GetWorkflowProcessErrorMessage = (error: { code?: string; message?: string } | null | undefined) => string;
+
+const canUserActOnWorkflowStep = (
+  workflowAssignmentResolver as unknown as Record<string, unknown>
+).canUserActOnWorkflowStep as CanUserActOnWorkflowStep | undefined;
+
+const buildInitialWorkflowStepAssignees = (
+  workflowAssignmentResolver as unknown as Record<string, unknown>
+).buildInitialWorkflowStepAssignees as BuildInitialWorkflowStepAssignees | undefined;
+
+const getWorkflowProcessErrorMessage = (
+  workflowAssignmentResolver as unknown as Record<string, unknown>
+).getWorkflowProcessErrorMessage as GetWorkflowProcessErrorMessage | undefined;
 
 const users = [
   { id: 'user-1', name: 'Nguyễn Văn An', avatar: 'an.jpg' },
@@ -121,5 +149,75 @@ describe('getWorkflowAssigneeDisplay', () => {
     expect(display.visibleAssignees.map(user => user.id)).toEqual(['user-2', 'user-1']);
     expect(display.label).toBe('Trần Thị Bình +2');
     expect(display.overflowCount).toBe(1);
+  });
+});
+
+describe('workflow step authorization', () => {
+  const creator = { id: 'creator-1', role: Role.EMPLOYEE } as User;
+  const firstNode = { id: 'current-step', config: {} } as WorkflowNode;
+
+  it('does not let the creator approve an unassigned first step before a revision request', () => {
+    expect(canUserActOnWorkflowStep).toBeTypeOf('function');
+    if (!canUserActOnWorkflowStep) return;
+
+    expect(canUserActOnWorkflowStep({
+      instance: { ...runningInstance, stepAssignees: {} },
+      node: firstNode,
+      user: creator,
+      firstTaskNodeId: firstNode.id,
+      logs: [],
+    })).toBe(false);
+  });
+
+  it('lets the creator handle the first step after it was returned for revision', () => {
+    expect(canUserActOnWorkflowStep).toBeTypeOf('function');
+    if (!canUserActOnWorkflowStep) return;
+
+    const revisionLog = {
+      id: 'log-1',
+      instanceId: runningInstance.id,
+      nodeId: 'later-step',
+      action: WorkflowInstanceAction.REVISION_REQUESTED,
+      actedBy: 'reviewer-1',
+      comment: 'Bổ sung hồ sơ',
+      createdAt: '2026-08-30T00:00:00.000Z',
+    } as WorkflowInstanceLog;
+
+    expect(canUserActOnWorkflowStep({
+      instance: { ...runningInstance, stepAssignees: {} },
+      node: firstNode,
+      user: creator,
+      firstTaskNodeId: firstNode.id,
+      logs: [revisionLog],
+    })).toBe(true);
+  });
+});
+
+describe('initial workflow assignment', () => {
+  it('normalizes and persists the selected recipients for the first task node', () => {
+    expect(buildInitialWorkflowStepAssignees).toBeTypeOf('function');
+    if (!buildInitialWorkflowStepAssignees) return;
+
+    expect(buildInitialWorkflowStepAssignees('first-step', ['user-2', 'user-1', 'user-2']))
+      .toEqual({ 'first-step': ['user-2', 'user-1'] });
+  });
+
+  it('refuses to build a running first step without a concrete recipient', () => {
+    expect(buildInitialWorkflowStepAssignees).toBeTypeOf('function');
+    if (!buildInitialWorkflowStepAssignees) return;
+
+    expect(buildInitialWorkflowStepAssignees('first-step', [])).toBeNull();
+  });
+});
+
+describe('workflow process errors', () => {
+  it('turns the database step-assignee denial into an actionable message', () => {
+    expect(getWorkflowProcessErrorMessage).toBeTypeOf('function');
+    if (!getWorkflowProcessErrorMessage) return;
+
+    expect(getWorkflowProcessErrorMessage({
+      code: 'P0001',
+      message: 'user is not allowed to process current workflow step',
+    })).toBe('Bạn không phải người được phân công xử lý bước hiện tại.');
   });
 });

@@ -14,7 +14,7 @@ import {
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
-import { usePermission } from '../../hooks/usePermission';
+import { canPerform } from '../../lib/permissions/permissionService';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { attendanceProposalService } from '../../lib/attendanceProposalService';
 import { getApiErrorMessage } from '../../lib/apiError';
@@ -48,8 +48,10 @@ const getAttendancePhotos = (record: AttendanceRecord) => {
 const Attendance: React.FC = () => {
   const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
   useModuleData('hrm');
-  const { isAdmin } = usePermission();
-  const canEditAttendance = isAdmin;
+  const canViewAllAttendance = canPerform(user, 'hrm.attendance.view');
+  const canEditAttendance = canPerform(user, 'hrm.attendance.edit');
+  const canApproveAttendance = canPerform(user, 'hrm.attendance.approve')
+    || canPerform(user, 'hrm.attendance.approve', { scopeType: 'direct_reports', scopeId: '*' });
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
 
@@ -625,9 +627,9 @@ const Attendance: React.FC = () => {
     locationOptions.find(location => location.id === pLocationId && location.type === pLocationType) || null
   ), [locationOptions, pLocationId, pLocationType]);
   const proposalTargetOptions = useMemo(() => {
-    if (isAdmin) return activeEmployees;
+    if (canEditAttendance) return activeEmployees;
     return currentEmployee ? [currentEmployee] : [];
-  }, [activeEmployees, currentEmployee, isAdmin]);
+  }, [activeEmployees, currentEmployee, canEditAttendance]);
   const defaultProposalLocation = useMemo(() => {
     if (!currentEmployee) return null;
     if (currentEmployee.constructionSiteId) return { id: currentEmployee.constructionSiteId, type: 'construction_site' as const };
@@ -640,7 +642,7 @@ const Attendance: React.FC = () => {
   const managedOfficeIds = useMemo(() => hrmOffices.filter(o => o.managerId === user.id).map(o => o.id), [hrmOffices, user.id]);
   // Filter proposals: admin sees all, managers see proposals for their sites/offices, others see their own
   const filteredProposals = useMemo(() => {
-    if (isAdmin) return attendanceProposals;
+    if (canViewAllAttendance) return attendanceProposals;
     const myEmpId = currentEmployee?.id;
     return attendanceProposals.filter(p => {
       if (p.proposerEmployeeId === myEmpId || p.targetEmployeeId === myEmpId) return true;
@@ -648,7 +650,7 @@ const Attendance: React.FC = () => {
       if (p.locationType === 'office' && p.locationId && managedOfficeIds.includes(p.locationId)) return true;
       return false;
     });
-  }, [attendanceProposals, currentEmployee, isAdmin, managedSiteIds, managedOfficeIds]);
+  }, [attendanceProposals, currentEmployee, canViewAllAttendance, managedSiteIds, managedOfficeIds]);
 
   const pendingCount = useMemo(() => filteredProposals.filter(p => p.proposalStatus === 'pending').length, [filteredProposals]);
 
@@ -666,7 +668,7 @@ const Attendance: React.FC = () => {
 
   const handleCreateProposal = async () => {
     if (!currentEmployee || !pTargetEmployeeId || !pDate || !pReason) return;
-    if (!isAdmin && pTargetEmployeeId !== currentEmployee.id) {
+    if (!canEditAttendance && pTargetEmployeeId !== currentEmployee.id) {
       alert('Nhân viên chỉ được tự đề xuất chấm công cho chính mình.');
       return;
     }
@@ -674,7 +676,7 @@ const Attendance: React.FC = () => {
       alert('Vui lòng chọn Công trường/Văn phòng để hệ thống chuyển đúng người quản lý duyệt.');
       return;
     }
-    if (!isAdmin && !selectedProposalLocation.managerId) {
+    if (!canEditAttendance && !selectedProposalLocation.managerId) {
       alert('Địa điểm này chưa có người quản lý duyệt chấm công. Vui lòng báo quản trị cập nhật manager.');
       return;
     }
@@ -725,7 +727,7 @@ const Attendance: React.FC = () => {
   };
 
   const canApprove = (proposal: AttendanceProposal): boolean => {
-    if (isAdmin) return true;
+    if (canApproveAttendance) return true;
     if (proposal.locationType === 'construction_site' && proposal.locationId && managedSiteIds.includes(proposal.locationId)) return true;
     if (proposal.locationType === 'office' && proposal.locationId && managedOfficeIds.includes(proposal.locationId)) return true;
     return false;
@@ -872,7 +874,7 @@ const Attendance: React.FC = () => {
         <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-orange-400"></span><span className="text-[9px] font-bold text-muted-foreground">½ ngày</span></div>
         <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm ring-2 ring-red-400"></span><span className="text-[9px] font-bold text-muted-foreground">Vắng</span></div>
         <span className="text-[10px] text-muted-foreground font-bold ml-2">• Click ô để xem chi tiết</span>
-        {isAdmin && <span className="text-[10px] text-destructive font-bold ml-1">• Chuột phải để xóa</span>}
+        {canEditAttendance && <span className="text-[10px] text-destructive font-bold ml-1">• Chuột phải để xóa</span>}
       </div>
       )}
 
@@ -1582,7 +1584,7 @@ const Attendance: React.FC = () => {
                 )}
 
                 {/* Right: admin edit */}
-                {isAdmin && (
+                {canEditAttendance && (
                   <div className="flex items-center gap-2">
                     {editMode ? (
                       <>

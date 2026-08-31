@@ -9,7 +9,17 @@ import {
 } from '../types';
 import { notificationService } from '../lib/notificationService';
 import { auditService } from '../lib/auditService';
-import { normalizeStepAssigneeIds } from '../lib/workflowAssignmentResolver';
+import {
+    buildInitialWorkflowStepAssignees,
+    getWorkflowProcessErrorMessage,
+    normalizeStepAssigneeIds,
+} from '../lib/workflowAssignmentResolver';
+
+export interface WorkflowProcessResult {
+    ok: boolean;
+    errorCode?: string;
+    errorMessage?: string;
+}
 
 interface WorkflowContextType {
     templates: WorkflowTemplate[];
@@ -31,12 +41,12 @@ interface WorkflowContextType {
     getTemplateEdges: (templateId: string) => WorkflowEdge[];
 
     // Instances
-    createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>) => Promise<WorkflowInstance | null>;
+    createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>, firstAssigneeUserIds?: string | string[]) => Promise<WorkflowInstance | null>;
     loadInstanceFormData: (instanceId: string) => Promise<Record<string, any> | null>;
     updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any> }) => Promise<boolean>;
     deleteInstance: (instanceId: string) => Promise<boolean>;
     cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
-    processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string, nextAssigneeUserIds?: string | string[]) => Promise<boolean>;
+    processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string, nextAssigneeUserIds?: string | string[]) => Promise<WorkflowProcessResult>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
     getInstanceLogs: (instanceId: string) => WorkflowInstanceLog[];
     updateInstanceWatchers: (instanceId: string, watchers: string[]) => Promise<boolean>;
@@ -403,7 +413,13 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     // ---- Instances ----
 
-    const createInstance = async (templateId: string, title: string, userId: string, formData: Record<string, any> = {}): Promise<WorkflowInstance | null> => {
+    const createInstance = async (
+        templateId: string,
+        title: string,
+        userId: string,
+        formData: Record<string, any> = {},
+        firstAssigneeUserIds?: string | string[],
+    ): Promise<WorkflowInstance | null> => {
         // Find the START node of this template
         const templateNodes = getTemplateNodes(templateId);
         const templateEdges = getTemplateEdges(templateId);
@@ -413,6 +429,14 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Find next node after START
         const startEdge = templateEdges.find(e => e.sourceNodeId === startNode.id);
         const firstTaskNodeId = startEdge ? startEdge.targetNodeId : null;
+        const firstTaskNode = templateNodes.find(node => node.id === firstTaskNodeId);
+        const initialStepAssignees = firstTaskNode?.type === WorkflowNodeType.END
+            ? {}
+            : buildInitialWorkflowStepAssignees(firstTaskNodeId, firstAssigneeUserIds);
+        if (!initialStepAssignees) {
+            console.error('Workflow first task requires at least one concrete assignee');
+            return null;
+        }
 
         // Auto-copy default watchers from template
         const tmpl = templates.find(t => t.id === templateId);
@@ -432,6 +456,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             status: 'RUNNING',
             form_data: formData,
             watchers: tmpl?.defaultWatchers || [],
+            step_assignees: initialStepAssignees,
         }).select(WORKFLOW_INSTANCE_LIST_SELECT).single();
 
         if (error || !data) { console.error(error); return null; }
@@ -508,18 +533,22 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         userId: string,
         comment: string = '',
         nextAssigneeUserIds?: string | string[],
-    ): Promise<boolean> => {
+    ): Promise<WorkflowProcessResult> => {
         const normalizedNextAssigneeIds = normalizeStepAssigneeIds(nextAssigneeUserIds);
         // IMPORTANT: Fetch fresh data from DB to avoid stale React state closure issues
-        const { data: freshInstance } = await supabase
+        const { data: freshInstance, error: freshInstanceError } = await supabase
             .from('workflow_instances')
             .select(WORKFLOW_INSTANCE_LIST_SELECT)
             .eq('id', instanceId)
             .single();
         
-        if (!freshInstance || !freshInstance.current_node_id) {
-            console.error('processInstance: instance not found or no current_node_id', instanceId);
-            return false;
+        if (freshInstanceError || !freshInstance || !freshInstance.current_node_id) {
+            console.error('processInstance: instance not found or no current_node_id', freshInstanceError || instanceId);
+            return {
+                ok: false,
+                errorCode: freshInstanceError?.code,
+                errorMessage: getWorkflowProcessErrorMessage(freshInstanceError || undefined),
+            };
         }
 
         const templateId = freshInstance.template_id;
@@ -551,7 +580,11 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
         if (processError) {
             console.error('processInstance RPC error:', processError);
-            return false;
+            return {
+                ok: false,
+                errorCode: processError.code,
+                errorMessage: getWorkflowProcessErrorMessage(processError),
+            };
         }
 
         let processedRow = Array.isArray(processedData) ? processedData[0] : processedData;
@@ -721,7 +754,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             }
         } catch (err) { console.error('WF notification error:', err); }
 
-        return true;
+        return { ok: true };
     };
 
     const getInstanceLogs = (instanceId: string) => logs.filter(l => l.instanceId === instanceId);

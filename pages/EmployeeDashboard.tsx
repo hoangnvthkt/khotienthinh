@@ -7,7 +7,7 @@ import {
     User as UserIcon, Briefcase, Calendar, MapPin, Clock,
     Award, Hash, ChevronRight, Shield, TrendingUp,
     CheckCircle2, AlertCircle, FileText, GitBranch, Inbox,
-    CalendarOff, DollarSign, MessageCircle, Bot,
+    CalendarOff, MessageCircle, Bot,
     ClipboardList, ArrowRight, Zap, Sparkles, CalendarCheck,
     Timer, CircleDot, XCircle, CheckCheck
 } from 'lucide-react';
@@ -16,7 +16,7 @@ import { AnimatedNumber, LastUpdated } from '../components/LiveDashboardWidgets'
 import DailyMissions from '../components/DailyMissions';
 import { getTimeGreeting, getRandomQuote } from '../lib/funMessages';
 import { isChatEnabled } from '../lib/featureFlags';
-import { canAccessRoute } from '../lib/routeAccess';
+import { getEmployeeDashboardQuickLinks } from '../lib/hrmNavigation';
 import { buildRequestRoute } from '../lib/requestRoutes';
 
 // ═══════════════════════════════════════════════════════
@@ -27,8 +27,8 @@ const EmployeeDashboard: React.FC = () => {
     const navigate = useNavigate();
     const {
         user, employees, hrmPositions, hrmOffices, orgUnits,
-        attendanceRecords, leaveRequests, leaveBalances, payrollRecords,
-        laborContracts, assets, assetAssignments,
+        attendanceRecords, leaveRequests, leaveBalances,
+        assets, assetAssignments,
         loadModuleData, hrmConstructionSites, lastRealtimeEvent,
     } = useApp();
     const { instances: wfInstances, templates: wfTemplates, nodes: wfNodes } = useWorkflow();
@@ -134,12 +134,6 @@ const EmployeeDashboard: React.FC = () => {
         return assets.filter(a => a.assignedToUserId === user.id);
     }, [assets, user.id]);
 
-    // ─── Labor Contract ───
-    const myContract = useMemo(() => {
-        if (!employee) return null;
-        return laborContracts.find(c => c.employeeId === employee.id && c.status === 'active');
-    }, [laborContracts, employee]);
-
     // ─── Combined Todo Count ───
     const totalTodos = myWorkflowTodos.length + myRequestTodos.length;
 
@@ -198,6 +192,20 @@ const EmployeeDashboard: React.FC = () => {
             onClick: () => navigate('/rq'),
         },
     ];
+
+    const quickLinkPresentation: Record<string, { icon: React.ReactNode; gradient: string; shadow: string }> = {
+        '/hrm/checkin': { icon: <MapPin size={17} />, gradient: 'from-emerald-500 to-green-600', shadow: 'shadow-emerald-500/20' },
+        '/hrm/leave': { icon: <CalendarOff size={17} />, gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/20' },
+        '/wf': { icon: <GitBranch size={17} />, gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/20' },
+        '/rq': { icon: <Inbox size={17} />, gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/20' },
+        '/chat': { icon: <MessageCircle size={17} />, gradient: 'from-pink-500 to-rose-600', shadow: 'shadow-pink-500/20' },
+        '/ai': { icon: <Bot size={17} />, gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/20' },
+        '/my-profile': { icon: <UserIcon size={17} />, gradient: 'from-slate-500 to-slate-700', shadow: 'shadow-slate-500/20' },
+    };
+    const quickLinks = getEmployeeDashboardQuickLinks(user, isChatEnabled).map(link => ({
+        ...link,
+        ...quickLinkPresentation[link.to],
+    }));
 
     const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
         RUNNING: { icon: <Timer size={12} />, color: 'text-blue-500 bg-blue-500/10', label: 'Đang chạy' },
@@ -579,28 +587,6 @@ const EmployeeDashboard: React.FC = () => {
                 </SectionCard>
             )}
 
-            {/* ═══════════ CONTRACT INFO ═══════════ */}
-            {myContract && (
-                <SectionCard title="Hợp đồng lao động" icon={<FileText size={14} />} action={{ label: 'Chi tiết', onClick: () => navigate('/hrm/contracts') }}>
-                    <button
-                        onClick={() => navigate('/hrm/contracts')}
-                        className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 group text-left"
-                    >
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-indigo-500/20">
-                            <FileText size={17} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="text-sm font-bold text-slate-700 dark:text-slate-200">{myContract.contractNumber || 'HĐLĐ'}</div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">
-                                {myContract.type === 'definite' ? 'Có thời hạn' : myContract.type === 'indefinite' ? 'Không thời hạn' : myContract.type}
-                                {myContract.endDate && ` • Đến ${fmtDate(myContract.endDate)}`}
-                            </div>
-                        </div>
-                        <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md shrink-0">Hiệu lực</span>
-                    </button>
-                </SectionCard>
-            )}
-
             {/* ═══════════ MY ASSETS ═══════════ */}
             {myAssets.length > 0 && (
                 <SectionCard title="Tài sản được cấp" icon={<Shield size={14} />} action={{ label: 'Xem tất cả', onClick: () => navigate('/ts/catalog') }}>
@@ -637,16 +623,7 @@ const EmployeeDashboard: React.FC = () => {
                     <Sparkles size={12} className="text-indigo-400" /> Truy cập nhanh
                 </h3>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                    {[
-                        { icon: <MapPin size={17} />, label: 'Check-in', to: '/hrm/checkin', gradient: 'from-emerald-500 to-green-600', shadow: 'shadow-emerald-500/20' },
-                        { icon: <CalendarOff size={17} />, label: 'Nghỉ phép', to: '/hrm/leave', gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/20' },
-                        { icon: <DollarSign size={17} />, label: 'Bảng lương', to: '/hrm/payroll', gradient: 'from-amber-500 to-orange-500', shadow: 'shadow-amber-500/20' },
-                        { icon: <GitBranch size={17} />, label: 'Quy trình', to: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/20' },
-                        { icon: <Inbox size={17} />, label: 'Yêu cầu', to: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/20' },
-                        ...(isChatEnabled && canAccessRoute(user, '/chat') ? [{ icon: <MessageCircle size={17} />, label: 'Tin nhắn', to: '/chat', gradient: 'from-pink-500 to-rose-600', shadow: 'shadow-pink-500/20' }] : []),
-                        { icon: <Bot size={17} />, label: 'Trợ lý AI', to: '/ai', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/20' },
-                        { icon: <UserIcon size={17} />, label: 'Hồ sơ', to: '/my-profile', gradient: 'from-slate-500 to-slate-700', shadow: 'shadow-slate-500/20' },
-                    ].map((link, i) => (
+                    {quickLinks.map((link, i) => (
                         <button
                             key={i}
                             onClick={() => navigate(link.to)}

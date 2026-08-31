@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 import { getKnowledgeBaseCapabilities } from '../lib/permissions/globalModulePermissions';
+import { canPerform } from '../lib/permissions/permissionService';
+import { hrmDocumentService } from '../lib/hrmDocumentService';
 
 interface RagDocument {
   id: string;
@@ -134,10 +136,16 @@ const KnowledgeBase: React.FC = () => {
     setSyncing(true);
     try {
       // Sync from hrm_documents
-      const { data: hrmDocs } = await supabase
-        .from('hrm_documents')
-        .select('id, title, file_name, file_type, file_size, storage_path')
-        .not('storage_path', 'is', null);
+      const hrmDocs = canPerform(user, 'hrm.document.view')
+        ? (await hrmDocumentService.list()).map(document => ({
+            id: document.id,
+            title: document.title,
+            file_name: document.fileName,
+            file_type: document.fileType,
+            file_size: document.fileSize,
+            storage_path: document.storagePath,
+          }))
+        : [];
 
       // Sync from project_documents  
       const { data: projDocs } = await supabase

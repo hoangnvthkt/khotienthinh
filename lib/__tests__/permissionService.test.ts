@@ -6,6 +6,7 @@ import {
   canViewRoute,
   getInheritedPermissionCodes,
   getLegacyModuleAssignmentCount,
+  isDirectPermissionGrantAllowed,
   isPermissionActionScopeAllowed,
   userHasPermissionGrant,
 } from '../permissions/permissionService';
@@ -26,6 +27,47 @@ const user = (overrides: Partial<User> = {}): User => ({
 describe('permissionService', () => {
   it('allows admins to perform every registered permission', () => {
     expect(canPerform(user({ role: Role.ADMIN }), 'project.daily_log.approve')).toBe(true);
+  });
+
+  it('does not give a technical admin implicit HRM access', () => {
+    const technicalAdmin = user({
+      role: Role.ADMIN,
+      adminModules: ['HRM'],
+    });
+
+    expect(canPerform(technicalAdmin, 'hrm.employee.view_sensitive')).toBe(false);
+    expect(canPerform(technicalAdmin, 'hrm.compensation.view')).toBe(false);
+    expect(canPerform(technicalAdmin, 'system.hrm.manage')).toBe(false);
+  });
+
+  it('allows a technical admin to use HRM permissions from an effective source', () => {
+    const hrAdmin = user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        id: 'hr-role-source',
+        userId: 'user-1',
+        permissionCode: 'hrm.employee.view_sensitive',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    });
+
+    expect(canPerform(hrAdmin, 'hrm.employee.view_sensitive')).toBe(true);
+  });
+
+  it('does not let a technical admin open an HRM route without an effective HR permission', () => {
+    expect(canViewRoute(user({ role: Role.ADMIN }), '/hrm/payroll')).toBe(false);
+    expect(canViewRoute(user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        userId: 'user-1',
+        permissionCode: 'hrm.payroll.view',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    }), '/hrm/payroll')).toBe(true);
   });
 
   it('uses active scoped grants before legacy fallback', () => {
@@ -103,9 +145,10 @@ describe('permissionService', () => {
     expect(canViewRoute(workflowUser, '/wf/builder/template-1')).toBe(false);
   });
 
-  it('falls back to adminSubModules/adminModules for legacy manage access', () => {
-    expect(canPerform(user({ adminSubModules: { HRM: ['/hrm/employees'] } }), 'system.hrm.manage')).toBe(true);
-    expect(canPerform(user({ adminModules: ['HRM'] }), 'system.hrm.manage')).toBe(true);
+  it('does not fall back to HRM module-admin aliases', () => {
+    expect(canPerform(user({ adminSubModules: { HRM: ['/hrm/employees'] } }), 'system.hrm.manage')).toBe(false);
+    expect(canPerform(user({ adminModules: ['HRM'] }), 'system.hrm.manage')).toBe(false);
+    expect(getInheritedPermissionCodes(user({ adminModules: ['HRM'] }))).not.toContain('system.hrm.manage');
   });
 
   it('reports inherited legacy permission codes for read-only UI badges', () => {
@@ -127,5 +170,24 @@ describe('permissionService', () => {
     expect(isPermissionActionScopeAllowed('analytics.export', { scopeType: 'global', scopeId: '*' })).toBe(true);
     expect(isPermissionActionScopeAllowed('analytics.export', { scopeType: 'warehouse', scopeId: 'wh-1' })).toBe(false);
     expect(isPermissionActionScopeAllowed('unknown.permission', { scopeType: 'global', scopeId: '*' })).toBe(false);
+  });
+
+  it('supports direct-report and organization-unit scopes for HRM', () => {
+    expect(isPermissionActionScopeAllowed('hrm.employee.view_profile', {
+      scopeType: 'direct_reports',
+      scopeId: '*',
+    })).toBe(true);
+    expect(isPermissionActionScopeAllowed('hrm.organization.view', {
+      scopeType: 'org_unit',
+      scopeId: 'unit-1',
+    })).toBe(true);
+  });
+
+  it('requires governed HR templates for sensitive and HR Manage-only actions', () => {
+    expect(isDirectPermissionGrantAllowed('hrm.employee.view_sensitive')).toBe(false);
+    expect(isDirectPermissionGrantAllowed('hrm.compensation.manage')).toBe(false);
+    expect(isDirectPermissionGrantAllowed('hrm.staffing.manage')).toBe(false);
+    expect(isDirectPermissionGrantAllowed('hrm.employee.view_profile')).toBe(true);
+    expect(isDirectPermissionGrantAllowed('project.daily_log.approve')).toBe(true);
   });
 });

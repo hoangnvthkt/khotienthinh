@@ -20,4 +20,12 @@ describe('request workspace', () => {
     expect(getRequestWorkspaceMode(1279, true)).toBe('DESKTOP_MASTER_DETAIL');
     expect(getRequestWorkspaceMode(1280, false)).toBe('DESKTOP_TABLE');
   });
+
+  it('shows the stored avatars for request creators and active approvers', () => {
+    const table = readFileSync('components/request/RequestTable.tsx', 'utf8');
+
+    expect(table).toContain('user.avatarUrl');
+    expect(table).toContain('<RequestUserIdentity user={item.creator} />');
+    expect(table).toContain('<RequestUserAvatar user={approver} className="h-6 w-6" />');
+  });
 });

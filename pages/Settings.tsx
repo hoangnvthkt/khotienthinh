@@ -49,6 +49,7 @@ import {
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 import { canPerform } from '../lib/permissions/permissionService';
+import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { warehouseSiteBindingService } from '../lib/warehouseSiteBindingService';
 
@@ -114,13 +115,16 @@ const Settings: React.FC = () => {
     saveSignature, deleteSignature, loadModuleData
   } = useApp();
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
-  const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser);
   const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
-  const canManageHrmSharedCatalog = canPerform(currentUser, 'system.hrm.manage');
+  const hrmSharedCatalogCapabilities = getHrmSharedCatalogCapabilities(currentUser);
+  const canViewHrmSharedCatalog = hrmSharedCatalogCapabilities.canViewOrganization
+    || hrmSharedCatalogCapabilities.canViewMasterData;
+  const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser)
+    || canViewHrmSharedCatalog;
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
   useModuleData('admin', hasSettingsManagementAccess);
   useModuleData('wms', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('master-data') || canOpenSettingsFeature('loss-norms') || canOpenSettingsFeature('users'));
-  useModuleData('hrm', canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('hrm-master-data') || canOpenSettingsFeature('org-chart') || canOpenSettingsFeature('work-groups'));
+  useModuleData('hrm', canViewHrmSharedCatalog || canOpenSettingsFeature('warehouses') || canOpenSettingsFeature('work-groups'));
   useModuleData('ts', isSettingsAdmin);
   useModuleData('ex', isSettingsAdmin);
   useModuleData('da', canOpenSettingsFeature('project-master-data') || canOpenSettingsFeature('g8-cost-norms') || canOpenSettingsFeature('inspection-templates') || canOpenSettingsFeature('work-groups'));
@@ -137,7 +141,13 @@ const Settings: React.FC = () => {
     logScope: 'settings.materialCatalog',
   });
 
-  const [activeTab, setActiveTab] = useState(location.pathname === '/settings/permission-health' ? 'permission-health' : 'general');
+  const [activeTab, setActiveTab] = useState(
+    location.pathname === '/settings/permission-health'
+      ? 'permission-health'
+      : location.pathname === '/settings/hrm-shared-catalog'
+        ? 'hrm-master-data'
+        : 'general',
+  );
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [isWhModalOpen, setIsWhModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1105,14 +1115,17 @@ const Settings: React.FC = () => {
     ? canViewPermissionHealth
     : tab.adminOnly
       ? isSettingsAdmin
-      : canOpenSettingsFeature(tab.id as SettingsFeatureId) ||
-        (tab.id === 'hrm-master-data' && canOpenSettingsFeature('org-chart')));
+      : tab.id === 'hrm-master-data'
+        ? canViewHrmSharedCatalog
+        : canOpenSettingsFeature(tab.id as SettingsFeatureId));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
     if (tabId === 'permission-health') {
       navigate('/settings/permission-health');
-    } else if (location.pathname === '/settings/permission-health') {
+    } else if (tabId === 'hrm-master-data') {
+      navigate('/settings/hrm-shared-catalog');
+    } else if (location.pathname !== '/settings') {
       navigate('/settings');
     }
   };
@@ -1135,6 +1148,8 @@ const Settings: React.FC = () => {
   useEffect(() => {
     if (location.pathname === '/settings/permission-health') {
       setActiveTab('permission-health');
+    } else if (location.pathname === '/settings/hrm-shared-catalog') {
+      setActiveTab('hrm-master-data');
     }
   }, [location.pathname]);
 
@@ -1776,7 +1791,7 @@ const Settings: React.FC = () => {
           {activeSettingsTab === 'hrm-master-data' && (
             <SettingsHrmSharedCatalog
               actorId={currentUser.id}
-              canManage={canManageHrmSharedCatalog}
+              capabilities={hrmSharedCatalogCapabilities}
             />
           )}
 

@@ -13,6 +13,7 @@ import UserAccountStatusModal from '../../components/UserAccountStatusModal';
 import { isChatEnabled } from '../../lib/featureFlags';
 import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settingsPermissions';
 import { useToast } from '../../context/ToastContext';
+import HrmAuthorizationPanel from '../../components/permissions/HrmAuthorizationPanel';
 
 interface SettingsUsersProps {
   users: User[];
@@ -625,6 +626,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
               <div className="flex border-b border-slate-200 bg-slate-50 px-6 gap-2 pt-2">
                 {([
                   ['account', 'Thông tin chung', Shield],
+                  ['security', 'Phân quyền', ShieldCheck],
                   ['edit', 'Chỉnh sửa', Edit],
                   ['password', 'Mật khẩu', Key],
                   ['schedule', 'Kho phụ trách', MapPin],
@@ -708,6 +710,13 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                       Mở Form chỉnh sửa tài khoản
                     </button>
                   </div>
+                )}
+
+                {drawerActiveTab === 'security' && (
+                  <HrmAuthorizationPanel
+                    currentUserId={currentUser.id}
+                    targetUserId={drawerUser.id}
+                  />
                 )}
 
                 {drawerActiveTab === 'password' && (

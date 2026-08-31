@@ -167,6 +167,10 @@ describe('permissionRegistry', () => {
       'analytics',
     ]));
 
+    expect(moduleCodes).not.toContain('system.hrm');
+    expect(actionCodes).not.toContain('system.hrm.view');
+    expect(actionCodes).not.toContain('system.hrm.manage');
+
     expect(moduleCodes).toEqual(expect.arrayContaining([
       'wms.inventory',
       'wms.request',
@@ -205,7 +209,8 @@ describe('permissionRegistry', () => {
 
     expect(actionByCode['wms.inventory.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse']));
     expect(actionByCode['wms.request.create'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned', 'warehouse']));
-    expect(actionByCode['hrm.employee.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department', 'assigned']));
+    expect(actionByCode['hrm.employee.view_profile'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'direct_reports', 'org_unit', 'assigned']));
+    expect(actionByCode['hrm.employee.view_profile'].scopeTypes).not.toContain('department');
     expect(actionByCode['expense.expense_record.edit_own'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department']));
     expect(actionByCode['workflow.instance.act_assigned'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned']));
     expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));

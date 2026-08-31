@@ -16,6 +16,18 @@ const throwIfError = (error: { message?: string } | null, fallback: string) => {
   if (error) throw new Error(error.message || fallback);
 };
 
+const loadEmployeeDirectoryRows = async (): Promise<any[]> => {
+  const { data, error } = await supabase.rpc('list_hrm_employee_directory');
+  throwIfError(error, 'Không thể tải danh bạ nhân sự.');
+  if (!Array.isArray(data)) throw new Error('Không thể tải danh bạ nhân sự.');
+  return data;
+};
+
+const requireMutationContext = (reason: string, sourceReference: string) => {
+  if (reason.trim().length < 10) throw new Error('Lý do thay đổi phải có ít nhất 10 ký tự.');
+  if (!sourceReference.trim()) throw new Error('Thay đổi nhân sự phải có nguồn tham chiếu.');
+};
+
 const mapCodeItem = (row: any): HrmSharedCodeItem => ({
   id: row.id,
   code: row.code,
@@ -140,12 +152,15 @@ export const hrmSharedCatalogService = {
   async load(): Promise<HrmSharedCatalogBundle> {
     const tables = [
       'org_units', 'hrm_org_position_slots', 'hrm_employee_slot_assignments',
-      'employees', 'hrm_positions', 'hrm_position_groups', 'hrm_position_levels',
+      'hrm_positions', 'hrm_position_groups', 'hrm_position_levels',
       'hrm_competency_groups', 'hrm_competency_levels', 'hrm_catalog_items',
     ] as const;
-    const responses = await Promise.all(tables.map(table => supabase.from(table).select('*')));
+    const [responses, employees] = await Promise.all([
+      Promise.all(tables.map(table => supabase.from(table).select('*'))),
+      loadEmployeeDirectoryRows(),
+    ]);
     responses.forEach((response, index) => throwIfError(response.error, `Không thể tải ${tables[index]}.`));
-    const [orgs, slots, assignments, employees, positions, positionGroups, positionLevels,
+    const [orgs, slots, assignments, positions, positionGroups, positionLevels,
       competencyGroups, competencyLevels, catalogItems] = responses.map(response => response.data || []);
     const catalog = (key: string) => (catalogItems as any[])
       .filter(row => row.catalog_key === key && row.is_active !== false)
@@ -174,12 +189,15 @@ export const hrmSharedCatalogService = {
   >> {
     const tables = [
       'org_units', 'hrm_org_position_slots', 'hrm_employee_slot_assignments',
-      'employees', 'hrm_positions',
+      'hrm_positions',
     ] as const;
-    const responses = await Promise.all(tables.map(table => supabase.from(table).select('*')));
+    const [responses, employees] = await Promise.all([
+      Promise.all(tables.map(table => supabase.from(table).select('*'))),
+      loadEmployeeDirectoryRows(),
+    ]);
     responses.forEach((response, index) =>
       throwIfError(response.error, `Không thể tải ${tables[index]}.`));
-    const [orgs, slots, assignments, employees, positions] = responses
+    const [orgs, slots, assignments, positions] = responses
       .map(response => response.data || []);
 
     return {
@@ -200,7 +218,9 @@ export const hrmSharedCatalogService = {
     reportsToSlotId?: string | null;
     targetCount: number;
     note: string;
+    sourceReference: string;
   }): Promise<HrmStaffingMutationResult> {
+    requireMutationContext(input.note, input.sourceReference);
     const { data, error } = await supabase.rpc('adjust_hrm_staffing', {
       p_org_unit_id: input.orgUnitId,
       p_position_id: input.positionId,
@@ -208,6 +228,7 @@ export const hrmSharedCatalogService = {
       p_reports_to_slot_id: input.reportsToSlotId || null,
       p_target_count: input.targetCount,
       p_note: input.note.trim() || null,
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể điều chỉnh định biên nhân sự.');
     return mapStaffingMutationResult(Array.isArray(data) ? data[0] : data);
@@ -221,7 +242,9 @@ export const hrmSharedCatalogService = {
     reportsToSlotId?: string | null;
     effectiveFrom: string;
     note: string;
+    sourceReference: string;
   }): Promise<HrmEmployeeOrganizationSummary> {
+    requireMutationContext(input.note, input.sourceReference);
     const { data, error } = await supabase.rpc('assign_hrm_employee_to_staffing', {
       p_employee_id: input.employeeId,
       p_org_unit_id: input.orgUnitId,
@@ -230,6 +253,7 @@ export const hrmSharedCatalogService = {
       p_reports_to_slot_id: input.reportsToSlotId || null,
       p_effective_from: input.effectiveFrom,
       p_note: input.note.trim() || null,
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể phân bổ hoặc chuyển vị trí nhân sự.');
     return mapEmployeeOrganizationSummary(Array.isArray(data) ? data[0] : data);
@@ -239,11 +263,14 @@ export const hrmSharedCatalogService = {
     employeeId: string;
     effectiveTo: string;
     note: string;
+    sourceReference: string;
   }): Promise<HrmEmployeeOrganizationSummary> {
+    requireMutationContext(input.note, input.sourceReference);
     const { data, error } = await supabase.rpc('unassign_hrm_employee_from_organization', {
       p_employee_id: input.employeeId,
       p_effective_to: input.effectiveTo,
       p_note: input.note.trim() || null,
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể gỡ nhân sự khỏi cơ cấu tổ chức.');
     return mapEmployeeOrganizationSummary(Array.isArray(data) ? data[0] : data);
@@ -254,12 +281,17 @@ export const hrmSharedCatalogService = {
     positionId: string;
     levelCode?: string | null;
     reportsToSlotId?: string | null;
+    reason: string;
+    sourceReference: string;
   }): Promise<{ orgUnitId: string; managerSlotId: string | null }> {
+    requireMutationContext(input.reason, input.sourceReference);
     const { data, error } = await supabase.rpc('set_hrm_unit_manager_staffing', {
       p_org_unit_id: input.orgUnitId,
       p_position_id: input.positionId,
       p_level_code: input.levelCode || null,
       p_reports_to_slot_id: input.reportsToSlotId || null,
+      p_reason: input.reason.trim(),
+      p_source_reference: input.sourceReference.trim(),
     });
     throwIfError(error, 'Không thể thiết lập quản lý trực tiếp.');
     const row = Array.isArray(data) ? data[0] : data;
@@ -407,24 +439,6 @@ export const hrmSharedCatalogService = {
       .update({ manager_slot_id: managerSlotId })
       .eq('id', orgUnitId);
     throwIfError(error, 'Không thể cập nhật người quản lý trực tiếp.');
-  },
-
-  async assignEmployee(input: {
-    employeeId: string;
-    slotId: string;
-    effectiveFrom: string;
-    note?: string;
-    actorId?: string | null;
-  }): Promise<HrmEmployeeSlotAssignment> {
-    const { data, error } = await supabase.rpc('assign_hrm_employee_to_slot', {
-      p_employee_id: input.employeeId,
-      p_slot_id: input.slotId,
-      p_effective_from: input.effectiveFrom,
-      p_note: input.note?.trim() || null,
-      p_actor_id: input.actorId || null,
-    });
-    throwIfError(error, 'Không thể phân bổ nhân sự vào slot.');
-    return mapAssignment(Array.isArray(data) ? data[0] : data);
   },
 
   async archiveSlot(slotId: string, actorId?: string | null): Promise<void> {

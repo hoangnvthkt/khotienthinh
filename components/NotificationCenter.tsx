@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Bell, X, Check, CheckCheck, Trash2, AlertTriangle, Info, CheckCircle2, XCircle,
     RefreshCw, ChevronDown, ExternalLink, Clock
@@ -215,19 +216,63 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     }, [isOpen]);
 
     // Calculate panel position from bell button
-    const toggleOpen = () => {
-        if (!isActive) return;
-        if (!isOpen && bellRef.current) {
-            const rect = bellRef.current.getBoundingClientRect();
-            // Position panel below bell, aligned to bell's left edge
-            // If too close to right edge, shift left
-            const panelWidth = 384; // w-96 = 24rem = 384px
-            let left = rect.left;
+    const calculatePanelPos = useCallback(() => {
+        if (!bellRef.current) return;
+        const rect = bellRef.current.getBoundingClientRect();
+        const panelWidth = Math.min(384, window.innerWidth - 32);
+        const panelEstimatedHeight = Math.min(window.innerHeight * 0.75, 540);
+
+        // Find sidebar element if exists
+        const sidebarEl = bellRef.current.closest('aside') || document.querySelector('aside');
+        const sidebarRect = sidebarEl ? sidebarEl.getBoundingClientRect() : null;
+        const isInLeftSidebar = !isMobileViewport && rect.left < 340;
+
+        let left = rect.left;
+        let top = rect.bottom + 8;
+
+        if (isInLeftSidebar) {
+            // Position to the right of the entire sidebar width without overlapping the sidebar
+            const sidebarRight = sidebarRect ? sidebarRect.right : rect.right;
+            left = Math.max(sidebarRight + 12, rect.right + 12);
+            top = Math.max(16, rect.top - 8);
+
+            // If it exceeds right edge of screen
+            if (left + panelWidth > window.innerWidth - 16) {
+                left = window.innerWidth - panelWidth - 16;
+            }
+        } else {
+            // Standard dropdown below button
             if (left + panelWidth > window.innerWidth - 16) {
                 left = window.innerWidth - panelWidth - 16;
             }
             if (left < 8) left = 8;
-            setPanelPos({ top: rect.bottom + 8, left });
+        }
+
+        // Ensure vertical bounds fit within viewport
+        if (top + panelEstimatedHeight > window.innerHeight - 16) {
+            top = Math.max(16, window.innerHeight - panelEstimatedHeight - 16);
+        }
+        if (top < 16) top = 16;
+
+        setPanelPos({ top, left });
+    }, [isMobileViewport]);
+
+    // Recalculate on resize/scroll if open
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleReposition = () => calculatePanelPos();
+        window.addEventListener('resize', handleReposition);
+        window.addEventListener('scroll', handleReposition, true);
+        return () => {
+            window.removeEventListener('resize', handleReposition);
+            window.removeEventListener('scroll', handleReposition, true);
+        };
+    }, [isOpen, calculatePanelPos]);
+
+    const toggleOpen = () => {
+        if (!isActive) return;
+        if (!isOpen) {
+            calculatePanelPos();
         }
         setIsOpen(!isOpen);
     };
@@ -322,11 +367,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                 )}
             </button>
 
-            {/* Fixed-position Dropdown Panel (portal-like) */}
-            {isOpen && (
+            {/* Fixed-position Dropdown Panel rendered via Portal to escape any stacking context / backdrop-filter issues */}
+            {isOpen && typeof document !== 'undefined' && createPortal(
                 <div
                     ref={panelRef}
-                    className="fixed w-96 max-h-[70vh] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-[9999] flex flex-col overflow-hidden"
+                    className="fixed w-96 max-h-[70vh] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 z-[999999] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
                     style={{ top: panelPos.top, left: panelPos.left }}
                 >
                     {/* Header */}
@@ -463,7 +508,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                             Xem tất cả thông báo <ExternalLink size={12} />
                         </button>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );

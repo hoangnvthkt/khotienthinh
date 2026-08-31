@@ -1,30 +1,27 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
-import { Employee, LeaveBalance } from '../../types';
-import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon, Upload, Download, Loader2, RefreshCcw, FileSpreadsheet } from 'lucide-react';
+import { Employee } from '../../types';
+import { Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, Building, Briefcase, Users, LayoutGrid, List, User as UserIcon } from 'lucide-react';
 import EmployeeModal from '../../components/hrm/EmployeeModal';
 import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
-import { usePermission } from '../../hooks/usePermission';
-import { loadXlsx } from '../../lib/loadXlsx';
+import { canPerform } from '../../lib/permissions/permissionService';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
-import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
-import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { employeeSelfService } from '../../lib/employeeSelfService';
 import HrmEmployeeAssignmentDialog from '../../components/hrm/organization/HrmEmployeeAssignmentDialog';
 import { buildHrmStaffingRows, getHrmEmployeeOrganizationSummary } from '../../lib/hrmSharedCatalogModel';
 import { hrmSharedCatalogService } from '../../lib/hrmSharedCatalogService';
 import type { HrmSharedCatalogBundle, HrmStaffingRow } from '../../types/hrmSharedCatalog';
+import HrmPersonnelImportExportPanel from '../../components/hrm/HrmPersonnelImportExportPanel';
 
 const Employees: React.FC = () => {
-    const { employees, users, addEmployee, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, addHrmItem, hrmAreas, hrmOffices, hrmPositions, hrmConstructionSites, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, orgUnits, user, loadModuleData } = useApp();
-    const { canManage } = usePermission();
-    const canCRUD = canManage('/hrm/employees');
+    const { employees, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
+    const canCRUD = canPerform(user, 'hrm.employee.edit_profile');
     useModuleData('hrm');
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
@@ -32,10 +29,6 @@ const Employees: React.FC = () => {
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
     const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
-    const [importing, setImporting] = useState(false);
-    const [exporting, setExporting] = useState(false);
-    const [importMode, setImportMode] = useState<ExcelImportMode>('create');
-    const [importPreview, setImportPreview] = useState<ExcelImportPreview<Employee> | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [organizationBundle, setOrganizationBundle] = useState<Pick<
         HrmSharedCatalogBundle,
@@ -43,8 +36,6 @@ const Employees: React.FC = () => {
     > | null>(null);
     const [organizationLoading, setOrganizationLoading] = useState(false);
     const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
-    const importInputRef = useRef<HTMLInputElement>(null);
-    const importModeRef = useRef<ExcelImportMode>('create');
     const [viewMode, setViewMode] = useState<'grid' | 'table'>(() => {
         return (localStorage.getItem('emp_view_mode') as 'grid' | 'table') || 'grid';
     });
@@ -185,6 +176,7 @@ const Employees: React.FC = () => {
             reportsToSlotId: input.row.reportsToSlotId,
             effectiveFrom: input.effectiveFrom,
             note: input.note,
+            sourceReference: 'employee-directory',
         });
         await refreshOrganizationAndEmployees();
         setAssignmentDialogOpen(false);
@@ -192,229 +184,18 @@ const Employees: React.FC = () => {
     };
 
     const handleUnassignEmployee = async (input: { employeeId: string; effectiveTo: string; note: string }) => {
-        await hrmSharedCatalogService.unassignEmployeeFromOrganization(input);
+        await hrmSharedCatalogService.unassignEmployeeFromOrganization({
+            ...input,
+            sourceReference: 'employee-directory',
+        });
         await refreshOrganizationAndEmployees();
         setAssignmentDialogOpen(false);
         toast.success('Nhân sự đã chuyển về trạng thái chờ phân bổ');
     };
 
-    const pick = (row: Record<string, any>, keys: string[]) => {
-        for (const key of keys) {
-            const value = row[key];
-            if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
-        }
-        return '';
-    };
-
-    const normalizeDate = (value: string) => {
-        if (!value) return '';
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) return value;
-        return date.toISOString().slice(0, 10);
-    };
-
-    const normalizeGender = (value: string): Employee['gender'] => {
-        const normalized = value.trim().toLowerCase();
-        if (normalized === 'nữ' || normalized === 'nu' || normalized === 'female') return 'Nữ';
-        if (normalized === 'khác' || normalized === 'khac' || normalized === 'other') return 'Khác';
-        return 'Nam';
-    };
-
-    const normalizeStatus = (value: string): Employee['status'] => {
-        const normalized = value.trim().toLowerCase();
-        if (normalized === 'đã nghỉ việc' || normalized === 'da nghi viec' || normalized === 'nghỉ việc' || normalized === 'inactive') return 'Đã nghỉ việc';
-        return 'Đang làm việc';
-    };
-
-    const findLinkedUser = (value: string) => {
-        const accountKey = value.trim().toLowerCase();
-        if (!accountKey) return undefined;
-        return users.find(u =>
-            u.id.toLowerCase() === accountKey ||
-            u.username?.toLowerCase() === accountKey ||
-            u.email.toLowerCase() === accountKey
-        );
-    };
-
-    const openEmployeeImport = (mode: ExcelImportMode) => {
-        importModeRef.current = mode;
-        setImportMode(mode);
-        importInputRef.current?.click();
-    };
-
-    const handleDownloadEmployeeTemplate = async () => {
-        try {
-            const XLSX = await loadXlsx();
-            const createHeaders = [
-                'Mã nhân sự *', 'Họ tên *', 'Giới tính', 'SĐT', 'Email',
-                'Ngày sinh', 'Ngày vào làm', 'Ngày chính thức', 'Trạng thái', 'Tài khoản hệ thống',
-            ];
-            const createRows = [
-                ['NS-001', 'Nguyễn Văn A', 'Nam', '0900000000', 'a@example.com', '1990-01-01', '2026-05-01', '2026-07-01', 'Đang làm việc', ''],
-            ];
-            const updateHeaders = ['Mã nhân sự *', 'SĐT', 'Email', 'Trạng thái', 'Tài khoản hệ thống'];
-            const updateRows = [['NS-001', '', '', '', '']];
-            const guideRows = [
-                ['Nội dung', 'Hướng dẫn'],
-                ['Nhập mới', 'Dùng sheet Nhap_moi. Mã nhân sự đã tồn tại sẽ bị báo lỗi.'],
-                ['Cập nhật', 'Dùng sheet Cap_nhat hoặc file chỉ gồm Mã nhân sự và các cột muốn sửa.'],
-                ['Ô trống', 'Trong chế độ Cập nhật, ô trống nghĩa là không đổi dữ liệu.'],
-                ['Xóa giá trị', 'Dùng token __CLEAR__ cho các cột cho phép xoá như email, SĐT, tài khoản hệ thống.'],
-            ];
-            const wb = XLSX.utils.book_new();
-            const createWs = XLSX.utils.aoa_to_sheet([createHeaders, ...createRows]);
-            createWs['!cols'] = createHeaders.map(() => ({ wch: 20 }));
-            const updateWs = XLSX.utils.aoa_to_sheet([updateHeaders, ...updateRows]);
-            updateWs['!cols'] = updateHeaders.map(() => ({ wch: 20 }));
-            const guideWs = XLSX.utils.aoa_to_sheet(guideRows);
-            guideWs['!cols'] = [{ wch: 18 }, { wch: 90 }];
-            XLSX.utils.book_append_sheet(wb, createWs, 'Nhap_moi');
-            XLSX.utils.book_append_sheet(wb, updateWs, 'Cap_nhat');
-            XLSX.utils.book_append_sheet(wb, guideWs, 'Huong_dan');
-            const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = 'Mau_import_nhan_su.xlsx';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            toast.success('Đã tải file mẫu nhân sự');
-        } catch (err) {
-            logApiError('employees.template', err);
-            toast.error('Không thể tạo file mẫu', getApiErrorMessage(err, 'Không thể tạo file Excel mẫu nhân sự.'));
-        }
-    };
-
-    const buildEmployeePreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => buildImportPreview<Employee>({
-        mode,
-        keyLabel: 'Mã nhân sự',
-        keyAliases: ['Mã nhân sự *', 'Mã nhân sự', 'Mã NV', 'Ma NV', 'employeeCode', 'employee_code'],
-        existingRecords: employees,
-        getRecordKey: emp => emp.employeeCode,
-        createBaseRecord: employeeCode => ({
-            id: crypto.randomUUID(),
-            employeeCode,
-            fullName: '',
-            title: '',
-            gender: 'Nam',
-            phone: '',
-            email: '',
-            status: 'Đang làm việc',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        }),
-        fields: [
-            { key: 'fullName', label: 'Họ tên', aliases: ['Họ tên *', 'Họ tên', 'Ho ten', 'Họ và tên', 'Tên nhân sự', 'fullName'], requiredOnCreate: true },
-            { key: 'gender', label: 'Giới tính', aliases: ['Giới tính', 'Gioi tinh', 'gender'], normalize: value => normalizeGender(String(value)) },
-            { key: 'phone', label: 'SĐT', aliases: ['SĐT', 'SDT', 'Số điện thoại', 'phone'], clearable: true },
-            {
-                key: 'email',
-                label: 'Email',
-                aliases: ['Email', 'email'],
-                clearable: true,
-                validate: (value, row) => {
-                    const email = String(value || '').trim().toLowerCase();
-                    if (!email) return undefined;
-                    const code = pick(row, ['Mã nhân sự *', 'Mã nhân sự', 'Mã NV', 'Ma NV', 'employeeCode', 'employee_code']);
-                    const owner = employees.find(emp => emp.email?.toLowerCase() === email && emp.employeeCode.toLowerCase() !== code.toLowerCase());
-                    return owner ? `Email đang thuộc nhân sự ${owner.employeeCode}.` : undefined;
-                },
-            },
-            { key: 'dateOfBirth', label: 'Ngày sinh', aliases: ['Ngày sinh', 'Ngay sinh', 'dateOfBirth'], clearable: true, normalize: value => normalizeDate(String(value)) },
-            { key: 'startDate', label: 'Ngày vào làm', aliases: ['Ngày vào làm', 'Ngay vao lam', 'startDate'], clearable: true, normalize: value => normalizeDate(String(value)) },
-            { key: 'officialDate', label: 'Ngày chính thức', aliases: ['Ngày chính thức', 'Ngay chinh thuc', 'officialDate'], clearable: true, normalize: value => normalizeDate(String(value)) },
-            { key: 'status', label: 'Trạng thái', aliases: ['Trạng thái', 'Trang thai', 'status'], normalize: value => normalizeStatus(String(value)) },
-            {
-                key: 'userId',
-                label: 'Tài khoản hệ thống',
-                aliases: ['Tài khoản hệ thống', 'Tai khoan he thong', 'Tên đăng nhập', 'Email tài khoản', 'userEmail'],
-                clearable: true,
-                normalize: value => findLinkedUser(String(value))?.id,
-                validate: (value, row) => {
-                    const raw = pick(row, ['Tài khoản hệ thống', 'Tai khoan he thong', 'Tên đăng nhập', 'Email tài khoản', 'userEmail']);
-                    return raw && !value ? `Không tìm thấy tài khoản hệ thống "${raw}".` : undefined;
-                },
-            },
-        ],
-    }, rows);
-
-    const handleImportEmployees = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        e.target.value = '';
-        if (!file) return;
-
-        setImporting(true);
-        try {
-            const rows = await parseExcelRows(file, importModeRef.current === 'create' ? 'Nhap_moi' : 'Cap_nhat');
-            if (rows.length === 0) { toast.warning('File rỗng', 'File Excel không có dữ liệu nhân sự.'); return; }
-            setImportPreview(buildEmployeePreview(importModeRef.current, rows));
-        } catch (err: any) {
-            logApiError('employees.import', err);
-            toast.error('Không thể đọc file nhân sự', getApiErrorMessage(err, 'Không thể đọc file Excel nhân sự.'));
-        } finally {
-            setImporting(false);
-        }
-    };
-
-    const handleConfirmEmployeeImport = async () => {
-        if (!importPreview) return;
-        setImporting(true);
-        try {
-            const records = applyImportChanges(importPreview);
-            if (records.length === 0) {
-                toast.warning('Không có thay đổi', 'File không có dòng hợp lệ cần ghi dữ liệu.');
-                return;
-            }
-            const currentYear = new Date().getFullYear();
-            const currentMonth = new Date().getMonth() + 1;
-            if (importPreview.mode === 'create') {
-                for (const record of records) {
-                    const linkedUser = record.userId ? users.find(u => u.id === record.userId) : undefined;
-                    const employee: Employee = {
-                        ...record,
-                        avatarUrl: record.avatarUrl || linkedUser?.avatar,
-                        updatedAt: new Date().toISOString(),
-                    };
-                    await addEmployee(employee);
-                    addHrmItem('hrm_leave_balances', {
-                        id: crypto.randomUUID(),
-                        employeeId: employee.id,
-                        year: currentYear,
-                        initialDays: 12,
-                        monthlyAccrual: 1,
-                        accruedDays: currentMonth,
-                        usedPaidDays: 0,
-                        usedUnpaidDays: 0,
-                        lastAccrualMonth: currentMonth,
-                    } as LeaveBalance);
-                }
-                toast.success('Import nhân sự thành công', `${records.length} hồ sơ đã được thêm.`);
-            } else {
-                const changedRows = importPreview.rows.filter(row => row.status === 'update' && row.existingRecord && row.nextRecord);
-                for (const row of changedRows) {
-                    await updateEmployee({ ...row.existingRecord!, ...row.nextRecord!, updatedAt: new Date().toISOString() });
-                }
-                toast.success('Cập nhật nhân sự thành công', `${changedRows.length} hồ sơ đã được cập nhật.`);
-            }
-            setImportPreview(null);
-        } catch (err: any) {
-            logApiError('employees.import.apply', err);
-            toast.error('Không thể ghi dữ liệu nhân sự', getApiErrorMessage(err, 'Không thể ghi dữ liệu nhân sự lên Supabase.'));
-        } finally {
-            setImporting(false);
-        }
-    };
-
     // Helper to get position name
     const getPositionName = (positionId?: string) => positionId ? hrmPositions.find(p => p.id === positionId)?.name : null;
     const getOfficeName = (officeId?: string) => officeId ? hrmOffices.find(o => o.id === officeId)?.name : null;
-    const getAreaName = (areaId?: string) => areaId ? hrmAreas.find(a => a.id === areaId)?.name : null;
-    const getEmployeeTypeName = (typeId?: string) => typeId ? hrmEmployeeTypes.find(t => t.id === typeId)?.name : null;
-    const getSalaryPolicyName = (spId?: string) => spId ? hrmSalaryPolicies.find(s => s.id === spId)?.name : null;
-    const getWorkScheduleName = (wsId?: string) => wsId ? hrmWorkSchedules.find(w => w.id === wsId)?.name : null;
 
     const getConstructionSiteName = (csId?: string) => {
         if (!csId) return null;
@@ -426,134 +207,6 @@ const Employees: React.FC = () => {
     const getDepartmentName = (deptId?: string) => {
         if (!deptId) return null;
         return orgUnits.find(u => u.id === deptId)?.name || null;
-    };
-
-    const handleExportEmployees = async () => {
-        if (employees.length === 0) {
-            toast.warning('Không có dữ liệu', 'Không có hồ sơ nhân sự nào để xuất.');
-            return;
-        }
-        setExporting(true);
-        try {
-            const XLSX = await loadXlsx();
-
-            const sortedEmployees = [...employees].sort((a, b) => {
-                const codeCompare = (a.employeeCode || '').localeCompare(b.employeeCode || '', 'vi', { numeric: true });
-                if (codeCompare !== 0) return codeCompare;
-                return (a.fullName || '').localeCompare(b.fullName || '', 'vi');
-            });
-
-            const headers = [
-                'STT',
-                'Mã nhân sự',
-                'Họ và tên',
-                'Chức danh',
-                'Vị trí / Chức vụ',
-                'Phòng ban',
-                'Văn phòng / Chi nhánh',
-                'Khu vực',
-                'Công trường',
-                'Nhà máy',
-                'Loại nhân sự',
-                'Chính sách lương',
-                'Lịch làm việc',
-                'Giới tính',
-                'Ngày sinh',
-                'Tình trạng hôn nhân',
-                'Số điện thoại',
-                'Email',
-                'Ngày vào làm',
-                'Ngày chính thức',
-                'Trạng thái',
-                'Tài khoản hệ thống',
-            ];
-
-            const rows = sortedEmployees.map((emp, idx) => {
-                const position = getPositionName(emp.positionId);
-                const office = getOfficeName(emp.officeId);
-                const area = getAreaName(emp.areaId);
-                const constructionSite = getConstructionSiteName(emp.constructionSiteId);
-                const department = getDepartmentName(emp.departmentId);
-                const factory = orgUnits.find(u => u.id === emp.factoryId)?.name || '';
-                const empType = getEmployeeTypeName(emp.employeeTypeId);
-                const salaryPolicy = getSalaryPolicyName(emp.salaryPolicyId);
-                const workSchedule = getWorkScheduleName(emp.workScheduleId);
-                const linkedUser = emp.userId ? users.find(u => u.id === emp.userId) : undefined;
-                const userAccount = linkedUser ? `${linkedUser.name} (${linkedUser.email || linkedUser.username || ''})` : '';
-
-                return [
-                    idx + 1,
-                    emp.employeeCode || '',
-                    emp.fullName || '',
-                    emp.title || '',
-                    position || '',
-                    department || '',
-                    office || '',
-                    area || '',
-                    constructionSite || '',
-                    factory || '',
-                    empType || '',
-                    salaryPolicy || '',
-                    workSchedule || '',
-                    emp.gender || '',
-                    emp.dateOfBirth || '',
-                    emp.maritalStatus || '',
-                    emp.phone || '',
-                    emp.email || '',
-                    emp.startDate || '',
-                    emp.officialDate || '',
-                    emp.status || '',
-                    userAccount,
-                ];
-            });
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-
-            ws['!cols'] = [
-                { wch: 6 },  // STT
-                { wch: 14 }, // Mã nhân sự
-                { wch: 25 }, // Họ và tên
-                { wch: 20 }, // Chức danh
-                { wch: 20 }, // Vị trí / Chức vụ
-                { wch: 20 }, // Phòng ban
-                { wch: 20 }, // Văn phòng
-                { wch: 16 }, // Khu vực
-                { wch: 22 }, // Công trường
-                { wch: 20 }, // Nhà máy
-                { wch: 18 }, // Loại nhân sự
-                { wch: 20 }, // Chính sách lương
-                { wch: 20 }, // Lịch làm việc
-                { wch: 10 }, // Giới tính
-                { wch: 14 }, // Ngày sinh
-                { wch: 18 }, // Tình trạng HN
-                { wch: 15 }, // SĐT
-                { wch: 26 }, // Email
-                { wch: 14 }, // Ngày vào làm
-                { wch: 14 }, // Ngày chính thức
-                { wch: 16 }, // Trạng thái
-                { wch: 30 }, // Tài khoản hệ thống
-            ];
-
-            XLSX.utils.book_append_sheet(wb, ws, 'Danh_sach_nhan_su');
-            const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `Danh_sach_nhan_su_${new Date().toISOString().slice(0, 10)}.xlsx`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            toast.success('Xuất danh sách nhân sự thành công', `Đã xuất ${sortedEmployees.length} hồ sơ nhân sự ra file Excel.`);
-        } catch (err: any) {
-            logApiError('employees.export', err);
-            toast.error('Không thể xuất file Excel', getApiErrorMessage(err, 'Đã xảy ra lỗi khi tạo file Excel danh sách nhân sự.'));
-        } finally {
-            setExporting(false);
-        }
     };
 
     return (
@@ -572,6 +225,11 @@ const Employees: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap">
+                    <HrmPersonnelImportExportPanel
+                        user={user}
+                        employeeIds={employees.map(employee => employee.id)}
+                        onApplied={() => loadModuleData('hrm', true)}
+                    />
                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
                         <button onClick={() => toggleView('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-600'}`} title="Dạng thẻ">
                             <LayoutGrid size={16} />
@@ -580,60 +238,14 @@ const Employees: React.FC = () => {
                             <List size={16} />
                         </button>
                     </div>
-                    <button
-                        onClick={handleExportEmployees}
-                        disabled={exporting || employees.length === 0}
-                        className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 px-3.5 py-2.5 rounded-xl transition-all hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-sm font-bold justify-center disabled:opacity-60 shadow-sm"
-                        title="Xuất toàn bộ danh sách nhân sự ra file Excel"
-                    >
-                        {exporting ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
-                        <span>Xuất Excel</span>
-                    </button>
                     {canCRUD && (
-                        <>
-                            <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportEmployees} className="hidden" />
-                            <button
-                                onClick={handleDownloadEmployeeTemplate}
-                                disabled={importing}
-                                className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-3 py-2.5 rounded-xl transition-all hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-bold justify-center disabled:opacity-60"
-                            >
-                                <Download size={16} />
-                                <span>Mẫu</span>
-                            </button>
-                            <button
-                                onClick={() => openEmployeeImport('create')}
-                                disabled={importing}
-                                className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-xl transition-all hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-bold justify-center disabled:opacity-60"
-                            >
-                                {importing && importMode === 'create' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                                <span>Nhập mới</span>
-                            </button>
-                            <button
-                                onClick={() => openEmployeeImport('update')}
-                                disabled={importing}
-                                className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-900/60 text-amber-700 dark:text-amber-300 px-4 py-2.5 rounded-xl transition-all hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-bold justify-center disabled:opacity-60"
-                            >
-                                {importing && importMode === 'update' ? <Loader2 size={16} className="animate-spin" /> : <RefreshCcw size={16} />}
-                                <span>Cập nhật</span>
-                            </button>
-                            <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
-                                <Plus size={18} />
-                                <span>Thêm Mới</span>
-                            </button>
-                        </>
+                        <button onClick={handleAdd} className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 text-sm font-bold flex-1 sm:flex-initial justify-center">
+                            <Plus size={18} />
+                            <span>Thêm Mới</span>
+                        </button>
                     )}
                 </div>
             </div>
-
-            {importPreview && (
-                <ExcelImportReviewModal
-                    title={importPreview.mode === 'create' ? 'Preview nhập mới nhân sự' : 'Preview cập nhật nhân sự'}
-                    preview={importPreview}
-                    loading={importing}
-                    onClose={() => setImportPreview(null)}
-                    onConfirm={handleConfirmEmployeeImport}
-                />
-            )}
 
             {/* Search */}
             <div className="relative">

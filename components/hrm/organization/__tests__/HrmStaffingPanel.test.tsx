@@ -46,7 +46,9 @@ describe('HRM organization workforce planning UI', () => {
           staffingRow({ key: 'u-ql-da|p2|E5|', positionId: 'p2', plannedCount: 1, occupiedCount: 1, vacantCount: 0 }),
         ]}
         positions={[position(), position({ id: 'p2', name: 'Chuyên viên' })]}
-        canManage
+        canAdjust
+        canAssign
+        canSetManager
         onAdjust={() => undefined}
         onAssign={() => undefined}
         onSetManager={() => undefined}
@@ -99,7 +101,9 @@ describe('HRM organization workforce planning UI', () => {
         unit={unit}
         rows={[]}
         positions={[position()]}
-        canManage
+        canAdjust
+        canAssign
+        canSetManager
         onAdjust={() => undefined}
         onAssign={() => undefined}
         onSetManager={() => undefined}

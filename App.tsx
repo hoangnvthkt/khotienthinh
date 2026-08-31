@@ -28,6 +28,7 @@ import { selectApplicationShell } from './context/authState';
 import { UserSessionTelemetryHost } from './hooks/useUserSessionTelemetry';
 import { DailyLoginXpHost } from './hooks/useDailyLoginXp';
 import { shouldWarmWorkflowData } from './lib/workflowWarmup';
+import { getWorkflowWarmupModules } from './lib/appDataWarmupPolicy';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -118,7 +119,7 @@ const AssetProfile = React.lazy(() => import('./pages/ts/AssetProfile'));
 
 // Employee Profile pages
 const EmployeeDirectory = React.lazy(() => import('./pages/ep/EmployeeDirectory'));
-const EmployeeProfilePage = React.lazy(() => import('./pages/ep/EmployeeProfile'));
+const EmployeeProfilePage = React.lazy(() => import('./pages/ep/HrmPersonnelProfile'));
 
 // 3D Org Map
 const OrgMap3D = React.lazy(() => import('./pages/orgmap/OrgMap3D'));
@@ -195,6 +196,7 @@ const AppRoutes: React.FC = () => {
           <Route path="users" element={<Navigate to="/settings" replace />} />
           <Route path="settings" element={<Settings />} />
           <Route path="settings/permission-health" element={<Settings />} />
+          <Route path="settings/hrm-shared-catalog" element={<Settings />} />
           <Route path="misa-export" element={<MisaExport />} />
           <Route path="hrm" element={<Navigate to="/my-profile" replace />} />
           <Route path="hrm/employees" element={<Employees />} />
@@ -331,13 +333,11 @@ const AppDataWarmup: React.FC = () => {
     }
 
     if (pathname.startsWith('/wf')) {
-      const forceAdmin = users.length <= 1;
-      const forceHrm = employees.length === 0 || orgUnits.length === 0;
-      setActiveRealtimeModules(['admin', 'hrm']);
-      Promise.all([
-        loadModuleData('admin', forceAdmin),
-        loadModuleData('hrm', forceHrm),
-      ]).catch(err => console.warn('Workflow people lazy load failed:', err));
+      const forcePeople = users.length <= 1 || employees.length === 0 || orgUnits.length === 0;
+      const workflowModules = getWorkflowWarmupModules(pathname);
+      setActiveRealtimeModules(workflowModules);
+      Promise.all(workflowModules.map(module => loadModuleData(module, forcePeople)))
+        .catch(err => console.warn('Workflow people lazy load failed:', err));
       return;
     }
 
@@ -376,8 +376,7 @@ const AppDataWarmup: React.FC = () => {
       if (now - lastFocusRefreshAtRef.current < 60_000) return;
       lastFocusRefreshAtRef.current = now;
       Promise.all([
-        loadModuleData('admin', true),
-        loadModuleData('hrm', true),
+        loadModuleData('workflow-people', true),
         refreshWorkflowData(),
       ]).catch(err => console.warn('Workflow focus refresh failed:', err));
     };
@@ -401,14 +400,12 @@ const AppDataWarmup: React.FC = () => {
     const previous = previousRealtimeStatusRef.current;
     previousRealtimeStatusRef.current = realtimeStatus;
     if (realtimeStatus !== 'connected' || previous === 'connected') return;
-    const adminFresh = moduleLoadedAt.admin && Date.now() - moduleLoadedAt.admin < 60_000;
-    const hrmFresh = moduleLoadedAt.hrm && Date.now() - moduleLoadedAt.hrm < 60_000;
+    const peopleFresh = moduleLoadedAt['workflow-people'] && Date.now() - moduleLoadedAt['workflow-people'] < 60_000;
     Promise.all([
-      loadModuleData('admin', !adminFresh),
-      loadModuleData('hrm', !hrmFresh),
+      loadModuleData('workflow-people', !peopleFresh),
       refreshWorkflowData(),
     ]).catch(err => console.warn('Workflow realtime recovery refresh failed:', err));
-  }, [loadModuleData, moduleLoadedAt.admin, moduleLoadedAt.hrm, pathname, realtimeStatus, refreshWorkflowData]);
+  }, [loadModuleData, moduleLoadedAt['workflow-people'], pathname, realtimeStatus, refreshWorkflowData]);
 
   useEffect(() => {
     if (isChatEnabled && !isChatV2Enabled && pathname === '/chat') {

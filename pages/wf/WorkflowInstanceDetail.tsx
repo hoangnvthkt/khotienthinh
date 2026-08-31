@@ -21,9 +21,9 @@ import {
     WorkflowPrintTemplate,
 } from '../../types';
 import {
+    canUserActOnWorkflowStep,
     getWorkflowAssigneeDisplay,
     getWorkflowStepSelectionMode,
-    isWorkflowStepAssignedToUser,
     resolveCurrentWorkflowAssignees,
     resolveWorkflowStepAssigneeCandidates,
 } from '../../lib/workflowAssignmentResolver';
@@ -441,6 +441,8 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         return orderedNodes.filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END);
     }, [orderedNodes]);
 
+    const firstTaskNodeId = orderedSteps[0]?.id || null;
+
     const nextNode = useMemo(() => {
         if (!currentNode) return null;
         const nextEdge = edges.find(edge => edge.sourceNodeId === currentNode.id);
@@ -457,14 +459,16 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     }, [currentNode, edges, nodes]);
 
     const canAct = useMemo(() => {
-        if (!instance || !currentNode || instance.status !== WorkflowInstanceStatus.RUNNING) return false;
-        if (currentNode.type === WorkflowNodeType.START || currentNode.type === WorkflowNodeType.END) return false;
-        if (user.role === Role.ADMIN) return true;
-        if (template?.managers?.includes(user.id)) return true;
-        if (isWorkflowStepAssignedToUser(instance, currentNode, user)) return true;
-        if (instance.createdBy === user.id && revisionNode?.id === currentNode.id) return true;
-        return false;
-    }, [instance, currentNode, user, template, revisionNode]);
+        if (!instance) return false;
+        return canUserActOnWorkflowStep({
+            instance,
+            node: currentNode,
+            user,
+            templateManagerIds: template?.managers,
+            firstTaskNodeId,
+            logs: instanceLogs,
+        });
+    }, [instance, currentNode, user, template?.managers, firstTaskNodeId, instanceLogs]);
 
     const transitionTargetNode = activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? revisionNode : nextNode;
     const transitionCandidates = useMemo(() => {
@@ -731,15 +735,15 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         }
 
         setActionError('');
-        const ok = await processInstance(
+        const result = await processInstance(
             id,
             action,
             user.id,
             actionComment,
             action === WorkflowInstanceAction.REJECTED ? [] : selectedAssigneeIds,
         );
-        if (!ok) {
-            setActionError('Không xử lý được phiếu. Vui lòng thử lại.');
+        if (!result.ok) {
+            setActionError(result.errorMessage || 'Không xử lý được phiếu. Vui lòng thử lại.');
             return false;
         }
         setActionComment('');

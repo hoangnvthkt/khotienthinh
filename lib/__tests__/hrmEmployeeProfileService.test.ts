@@ -1,10 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Employee } from '../../types';
 
-const eq = vi.hoisted(() => vi.fn());
-const update = vi.hoisted(() => vi.fn((_payload: Record<string, unknown>) => ({ eq })));
-const from = vi.hoisted(() => vi.fn(() => ({ update })));
-vi.mock('../supabase', () => ({ supabase: { from } }));
+const rpc = vi.hoisted(() => vi.fn());
+vi.mock('../supabase', () => ({ supabase: { rpc } }));
 
 import { hrmEmployeeProfileService } from '../hrmEmployeeProfileService';
 
@@ -16,27 +14,28 @@ const employee: Employee = {
 
 describe('hrmEmployeeProfileService', () => {
   beforeEach(() => {
-    from.mockClear();
-    update.mockClear();
-    eq.mockReset();
+    rpc.mockReset();
   });
 
-  it('updates only profile-managed columns for the selected employee', async () => {
-    eq.mockResolvedValueOnce({ error: null });
+  it('uses the explicit governed C2 command instead of a raw table update', async () => {
+    rpc.mockResolvedValueOnce({ error: null });
 
     await hrmEmployeeProfileService.update(employee);
 
-    expect(from).toHaveBeenCalledWith('employees');
-    expect(eq).toHaveBeenCalledWith('id', 'e1');
-    const payload = update.mock.calls[0][0];
-    expect(payload).toMatchObject({ full_name: 'Nguyễn A' });
-    expect(payload).not.toHaveProperty('org_unit_id');
-    expect(payload).not.toHaveProperty('position_id');
-    expect(payload).not.toHaveProperty('title');
+    expect(rpc).toHaveBeenCalledWith('update_hrm_employee_core_profile', expect.objectContaining({
+      p_employee_id: 'e1',
+      p_full_name: 'Nguyễn A',
+      p_phone: '0900000000',
+      p_reason: 'Cập nhật hồ sơ nhân sự TT001',
+    }));
+    const payload = rpc.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('p_org_unit_id');
+    expect(payload).not.toHaveProperty('p_position_id');
+    expect(payload).not.toHaveProperty('p_salary_policy_id');
   });
 
   it('uses a Vietnamese fallback database error', async () => {
-    eq.mockResolvedValueOnce({ error: {} });
+    rpc.mockResolvedValueOnce({ error: {} });
 
     await expect(hrmEmployeeProfileService.update(employee))
       .rejects.toThrow('Không thể cập nhật hồ sơ nhân sự.');

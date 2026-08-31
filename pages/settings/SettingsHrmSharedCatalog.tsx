@@ -11,6 +11,7 @@ import {
   hrmSharedCatalogService,
   type HrmCodeCatalogTable,
 } from '../../lib/hrmSharedCatalogService';
+import type { HrmSharedCatalogCapabilities } from '../../lib/hrmSharedCatalogCapabilities';
 import HrmEmployeeAssignmentDialog from '../../components/hrm/organization/HrmEmployeeAssignmentDialog';
 import HrmOrgChartOverview from '../../components/hrm/organization/HrmOrgChartOverview';
 import HrmStaffingDialog from '../../components/hrm/organization/HrmStaffingDialog';
@@ -75,9 +76,12 @@ const CatalogCard: React.FC<{
   </section>
 );
 
-interface SettingsHrmSharedCatalogProps { actorId: string; canManage: boolean; }
+interface SettingsHrmSharedCatalogProps {
+  actorId: string;
+  capabilities: HrmSharedCatalogCapabilities;
+}
 
-const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ canManage }) => {
+const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ capabilities }) => {
   const toast = useToast();
   const [bundle, setBundle] = useState(EMPTY_BUNDLE);
   const [loading, setLoading] = useState(true);
@@ -196,6 +200,7 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
       reportsToSlotId: input.reportsToSlotId,
       targetCount: input.targetCount,
       note: input.note,
+      sourceReference: 'manual-admin',
     });
     setStaffingDialogRow(undefined);
     toast.success('Đã cập nhật định biên nhân sự');
@@ -216,6 +221,7 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
       reportsToSlotId: input.row.reportsToSlotId,
       effectiveFrom: input.effectiveFrom,
       note: input.note,
+      sourceReference: 'manual-admin',
     });
     setAssignmentDialogRow(null);
     toast.success('Đã phân bổ nhân sự vào cơ cấu tổ chức');
@@ -223,12 +229,16 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
   };
 
   const setUnitManagerStaffing = async (row: HrmStaffingRow) => {
+    const reason = window.prompt('Nhập lý do đặt quản lý trực tiếp (ít nhất 10 ký tự):')?.trim();
+    if (!reason) return;
     try {
       await hrmSharedCatalogService.setUnitManagerStaffing({
         orgUnitId: row.orgUnitId,
         positionId: row.positionId,
         levelCode: row.levelCode,
         reportsToSlotId: row.reportsToSlotId,
+        reason,
+        sourceReference: 'manual-admin',
       });
       toast.success('Đã thiết lập vị trí quản lý trực tiếp');
       await reload();
@@ -276,6 +286,10 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
   };
 
   const updateForm = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }));
+  const canManageCatalog = capabilities.canManageMasterData;
+  const visibleViews = VIEW_ITEMS.filter(item => item.id === 'organization'
+    ? capabilities.canViewOrganization
+    : capabilities.canViewMasterData);
   const plannedCount = staffingRows.reduce((total, row) => total + row.plannedCount, 0);
   const statCards = [
     { label: 'Đơn vị tổ chức', value: bundle.orgUnits.length, note: 'K1-K3 đang hoạt động', icon: Building2, tone: 'bg-indigo-50 text-indigo-600' },
@@ -302,12 +316,12 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
       </div>
 
       <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        {VIEW_ITEMS.map(item => <button key={item.id} onClick={() => setView(item.id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition ${view === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}><item.icon size={15} /> {item.label}</button>)}
+        {visibleViews.map(item => <button key={item.id} onClick={() => setView(item.id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black transition ${view === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}><item.icon size={15} /> {item.label}</button>)}
       </div>
 
       {loading ? <div className="flex min-h-80 items-center justify-center rounded-3xl border border-slate-200 bg-white"><Loader2 size={28} className="animate-spin text-indigo-600" /></div> : (
         <>
-          {view === 'organization' && (
+          {view === 'organization' && capabilities.canViewOrganization && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative min-w-64 flex-1">
@@ -322,7 +336,7 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
                     <ChevronsUp size={14} /> Thu gọn
                   </button>
                 </div>
-                {canManage && <button onClick={() => openUnit(selectedUnit)} className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-black text-white hover:bg-slate-800"><Plus size={15} /> Thêm đơn vị trực thuộc</button>}
+                {capabilities.canManageOrganization && <button onClick={() => openUnit(selectedUnit)} className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-xs font-black text-white hover:bg-slate-800"><Plus size={15} /> Thêm đơn vị trực thuộc</button>}
               </div>
               <div aria-label="Định biên & nhân sự" className="grid items-start gap-4 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,2fr)]">
                 <HrmOrgChartOverview
@@ -332,14 +346,16 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
                   expansionCommand={treeExpansion}
                   onSelectUnit={unit => setSelectedUnitId(unit.id)}
                 />
-                {selectedUnit ? (
+                {selectedUnit && capabilities.canViewStaffing ? (
                   <HrmStaffingPanel
                     unit={selectedUnit}
                     rows={selectedUnitRows}
                     positions={approvedPositions}
                     assignments={bundle.assignments}
                     employees={bundle.employees}
-                    canManage={canManage}
+                    canAdjust={capabilities.canAdjustStaffing}
+                    canAssign={capabilities.canAssignEmployee}
+                    canSetManager={capabilities.canSetManager}
                     onAdjust={row => setStaffingDialogRow(row || null)}
                     onAssign={row => setAssignmentDialogRow(row)}
                     onSetManager={row => void setUnitManagerStaffing(row)}
@@ -353,7 +369,7 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
             </div>
           )}
 
-          {view === 'positions' && (
+          {view === 'positions' && capabilities.canViewMasterData && (
             <div className="space-y-4">
               {legacyPositions.length > 0 && (
                 <details className="overflow-hidden rounded-3xl border border-amber-200 bg-amber-50/40 shadow-sm">
@@ -374,8 +390,8 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
                             <p className="mt-1 truncate text-xs font-semibold text-slate-500">{employeeTitles.length ? employeeTitles.slice(0, 3).join(' · ') : 'Không còn nhân viên trực tiếp'}</p>
                           </div>
                           <div className="flex gap-2 text-[11px] font-black"><span className="rounded-lg bg-white px-2 py-1.5 text-slate-600">{employees.length} nhân viên</span><span className="rounded-lg bg-white px-2 py-1.5 text-slate-600">{slots.length} slot</span></div>
-                          {canManage ? <select className={inputClass} value={legacyTargetById[position.id] || ''} onChange={event => setLegacyTargetById(current => ({ ...current, [position.id]: event.target.value }))}><option value="">Chọn vị trí mới...</option>{approvedPositions.map(target => <option key={target.id} value={target.id}>{target.code || 'Chưa có mã'} - {target.name} ({target.groupCode || 'chưa nhóm'}, {target.levelCode || 'chưa cấp bậc'})</option>)}</select> : <span className="text-xs font-semibold text-slate-400">Cần quyền quản trị HRM</span>}
-                          {canManage && <button onClick={() => void migrateLegacyPosition(position)} disabled={!legacyTargetById[position.id] || migrationBusyId === position.id} className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-3 py-2.5 text-xs font-black text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40">{migrationBusyId === position.id && <Loader2 size={14} className="animate-spin" />} Chuyển</button>}
+                          {canManageCatalog ? <select className={inputClass} value={legacyTargetById[position.id] || ''} onChange={event => setLegacyTargetById(current => ({ ...current, [position.id]: event.target.value }))}><option value="">Chọn vị trí mới...</option>{approvedPositions.map(target => <option key={target.id} value={target.id}>{target.code || 'Chưa có mã'} - {target.name} ({target.groupCode || 'chưa nhóm'}, {target.levelCode || 'chưa cấp bậc'})</option>)}</select> : <span className="text-xs font-semibold text-slate-400">Cần quyền quản trị HRM</span>}
+                          {canManageCatalog && <button onClick={() => void migrateLegacyPosition(position)} disabled={!legacyTargetById[position.id] || migrationBusyId === position.id} className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-3 py-2.5 text-xs font-black text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40">{migrationBusyId === position.id && <Loader2 size={14} className="animate-spin" />} Chuyển</button>}
                         </div>
                       );
                     })}
@@ -385,11 +401,11 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
               <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-100 p-5">
                   <div><h3 className="font-black text-slate-800">Vị trí công việc</h3><p className="mt-1 text-xs font-medium text-slate-400">Mỗi vị trí gắn nhóm VTCV và cấp bậc E1-E11.</p></div>
-                  {canManage && <button onClick={() => openPosition()} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white"><Plus size={15} /> Thêm vị trí</button>}
+                  {canManageCatalog && <button onClick={() => openPosition()} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white"><Plus size={15} /> Thêm vị trí</button>}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400"><tr><th className="px-5 py-3">Mã</th><th className="px-5 py-3">Tên vị trí</th><th className="px-5 py-3">Nhóm VTCV</th><th className="px-5 py-3">Cấp bậc</th><th className="px-5 py-3">Đơn vị gợi ý</th>{canManage && <th className="px-5 py-3 text-right">Thao tác</th>}</tr></thead>
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-400"><tr><th className="px-5 py-3">Mã</th><th className="px-5 py-3">Tên vị trí</th><th className="px-5 py-3">Nhóm VTCV</th><th className="px-5 py-3">Cấp bậc</th><th className="px-5 py-3">Đơn vị gợi ý</th>{canManageCatalog && <th className="px-5 py-3 text-right">Thao tác</th>}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
                       {approvedPositions.map(position => (
                         <tr key={position.id} className="hover:bg-slate-50">
@@ -398,7 +414,7 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
                           <td className="px-5 py-3 text-slate-500">{position.groupCode || 'Chưa có'}</td>
                           <td className="px-5 py-3"><span className="rounded-lg bg-indigo-50 px-2 py-1 text-xs font-black text-indigo-700">{position.levelCode || 'Chưa có'}</span></td>
                           <td className="px-5 py-3 text-slate-500">{position.suggestedOrgUnitCode || 'Để trống'}</td>
-                          {canManage && <td className="px-5 py-3"><div className="flex justify-end gap-1"><button onClick={() => openPosition(position)} className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Sửa vị trí"><Pencil size={15} /></button><button onClick={() => void archivePosition(position)} disabled={saving} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="Ngưng sử dụng"><Trash2 size={15} /></button></div></td>}
+                          {canManageCatalog && <td className="px-5 py-3"><div className="flex justify-end gap-1"><button onClick={() => openPosition(position)} className="rounded-lg p-2 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Sửa vị trí"><Pencil size={15} /></button><button onClick={() => void archivePosition(position)} disabled={saving} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40" title="Ngưng sử dụng"><Trash2 size={15} /></button></div></td>}
                         </tr>
                       ))}
                     </tbody>
@@ -408,11 +424,11 @@ const SettingsHrmSharedCatalog: React.FC<SettingsHrmSharedCatalogProps> = ({ can
             </div>
           )}
 
-          {view === 'job-framework' && <div className="grid gap-4 lg:grid-cols-2"><CatalogCard title="Nhóm vị trí công việc" note="Bao gồm nhóm CG đã bổ sung" items={bundle.positionGroups} canManage={canManage} onAdd={() => openCode('Nhóm vị trí công việc', 'hrm_position_groups')} /><CatalogCard title="Cấp bậc E1-E11" note="Không sử dụng mã L1-L11" items={bundle.positionLevels} canManage={canManage} onAdd={() => openCode('Cấp bậc', 'hrm_position_levels')} /></div>}
+          {view === 'job-framework' && <div className="grid gap-4 lg:grid-cols-2"><CatalogCard title="Nhóm vị trí công việc" note="Bao gồm nhóm CG đã bổ sung" items={bundle.positionGroups} canManage={canManageCatalog} onAdd={() => openCode('Nhóm vị trí công việc', 'hrm_position_groups')} /><CatalogCard title="Cấp bậc E1-E11" note="Không sử dụng mã L1-L11" items={bundle.positionLevels} canManage={canManageCatalog} onAdd={() => openCode('Cấp bậc', 'hrm_position_levels')} /></div>}
 
-          {view === 'competency' && <div className="grid gap-4 lg:grid-cols-2"><CatalogCard title="Nhóm năng lực" note="Nhóm năng lực dùng chung" items={bundle.competencyGroups} canManage={canManage} onAdd={() => openCode('Nhóm năng lực', 'hrm_competency_groups')} /><CatalogCard title="Cấp độ năng lực" note="C6 đã ngưng sử dụng theo xác nhận" items={bundle.competencyLevels.filter(item => item.code !== 'C6')} canManage={canManage} onAdd={() => openCode('Cấp độ năng lực', 'hrm_competency_levels')} /></div>}
+          {view === 'competency' && <div className="grid gap-4 lg:grid-cols-2"><CatalogCard title="Nhóm năng lực" note="Nhóm năng lực dùng chung" items={bundle.competencyGroups} canManage={canManageCatalog} onAdd={() => openCode('Nhóm năng lực', 'hrm_competency_groups')} /><CatalogCard title="Cấp độ năng lực" note="C6 đã ngưng sử dụng theo xác nhận" items={bundle.competencyLevels.filter(item => item.code !== 'C6')} canManage={canManageCatalog} onAdd={() => openCode('Cấp độ năng lực', 'hrm_competency_levels')} /></div>}
 
-          {view === 'employee-catalogs' && <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><CatalogCard title="Trạng thái làm việc" note="Trạng thái hồ sơ nhân sự" items={bundle.employmentStatuses} canManage={canManage} onAdd={() => openCatalog('Trạng thái làm việc', 'employment_status')} /><CatalogCard title="Loại hợp đồng" note="Mã 36T chỉ giữ một bản ghi" items={bundle.contractTypes} canManage={canManage} onAdd={() => openCatalog('Loại hợp đồng', 'labor_contract_type')} /><CatalogCard title="Trình độ" note="Trình độ học vấn/chuyên môn" items={bundle.educationLevels} canManage={canManage} onAdd={() => openCatalog('Trình độ', 'education_level')} /><CatalogCard title="Trạng thái BHXH" note="Danh mục bảo hiểm xã hội" items={bundle.socialInsuranceStatuses} canManage={canManage} onAdd={() => openCatalog('Trạng thái BHXH', 'social_insurance_status')} /></div>}
+          {view === 'employee-catalogs' && <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"><CatalogCard title="Trạng thái làm việc" note="Trạng thái hồ sơ nhân sự" items={bundle.employmentStatuses} canManage={canManageCatalog} onAdd={() => openCatalog('Trạng thái làm việc', 'employment_status')} /><CatalogCard title="Loại hợp đồng" note="Mã 36T chỉ giữ một bản ghi" items={bundle.contractTypes} canManage={canManageCatalog} onAdd={() => openCatalog('Loại hợp đồng', 'labor_contract_type')} /><CatalogCard title="Trình độ" note="Trình độ học vấn/chuyên môn" items={bundle.educationLevels} canManage={canManageCatalog} onAdd={() => openCatalog('Trình độ', 'education_level')} /><CatalogCard title="Trạng thái BHXH" note="Danh mục bảo hiểm xã hội" items={bundle.socialInsuranceStatuses} canManage={canManageCatalog} onAdd={() => openCatalog('Trạng thái BHXH', 'social_insurance_status')} /></div>}
         </>
       )}
 

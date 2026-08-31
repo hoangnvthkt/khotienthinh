@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard, Bell, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
@@ -22,6 +23,7 @@ import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialR
 import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
 import { canViewModule } from '../lib/permissions/permissionService';
+import { getHrmNavigationItems } from '../lib/hrmNavigation';
 import { useAuth } from '../context/AuthContext';
 import {
   canAccessVehicleApprovalQueue,
@@ -41,24 +43,40 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
-  { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory' },
-  { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile' },
-  { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf' },
-  { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', route: '/da' },
-  { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', route: '/procurement' },
-  { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard' },
-  { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq' },
-  { key: 'EX' as const, icon: BarChart3, label: 'Chi phí', shortLabel: 'CP', route: '/expense' },
-  { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage' },
-  { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base' },
-  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', route: '/ai' },
-  { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep' },
-  { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners' },
-  { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq' },
-  { key: 'VEHICLE_BOOKING' as const, icon: Car, label: 'Đặt xe', shortLabel: 'CAR', route: '/booking/vehicle' },
+  { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25' },
+  { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile', gradient: 'from-purple-500 to-pink-600', shadow: 'shadow-purple-500/25' },
+  { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
+  { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', route: '/da', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/25' },
+  { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', route: '/procurement', gradient: 'from-emerald-600 to-teal-700', shadow: 'shadow-emerald-600/25' },
+  { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
+  { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
+  { key: 'EX' as const, icon: Calculator, label: 'Chi phí', shortLabel: 'CP', route: '/expense', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
+  { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' },
+  { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base', gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-600/25' },
+  { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
+  { key: 'EP' as const, icon: IdCard, label: 'Hồ sơ NV', shortLabel: 'EP', route: '/ep', gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/25' },
+  { key: 'HD' as const, icon: FileSignature, label: 'Hợp đồng', shortLabel: 'HĐ', route: '/hd/partners', gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
+  { key: 'TENDER_AI' as const, icon: Bot, label: 'Tender AI', shortLabel: 'TAI', route: '/tender-ai/boq', gradient: 'from-indigo-600 to-purple-700', shadow: 'shadow-indigo-600/25' },
+  { key: 'VEHICLE_BOOKING' as const, icon: Car, label: 'Đặt xe', shortLabel: 'CAR', route: '/booking/vehicle', gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/25' },
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
+
+const HRM_NAV_ICONS: Record<string, LucideIcon> = {
+  '/employee-dashboard': LayoutDashboard,
+  '/my-profile': User,
+  '/hrm/dashboard': LayoutDashboard,
+  '/hrm/employees': Users,
+  '/hrm/checkin': MapPin,
+  '/hrm/attendance': Calendar,
+  '/hrm/shifts': Clock,
+  '/hrm/leave': CalendarOff,
+  '/hrm/payroll': DollarSign,
+  '/hrm/contracts': FileSignature,
+  '/hrm/documents': FolderOpen,
+  '/hrm/reports': BarChart3,
+  '/hrm/ranking': Award,
+};
 
 // Sidebar states: 'home' | 'apps' | AppKey
 type SidebarView = 'home' | 'apps' | AppKey;
@@ -87,7 +105,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const detectAppFromUrl = (): AppKey | null => {
     const p = location.pathname;
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
-    if (p.startsWith('/hrm') || p === '/my-profile') return 'HRM';
+    if (p.startsWith('/hrm') || p === '/my-profile' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/procurement')) return 'PROCUREMENT';
@@ -229,20 +247,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/reports', icon: History, label: 'Báo cáo WMS' },
       { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN] },
     ],
-    HRM: [
-      { to: '/my-profile', icon: User, label: 'Hồ sơ cá nhân' },
-      { to: '/hrm/dashboard', icon: LayoutDashboard, label: 'Dashboard NS' },
-      { to: '/hrm/checkin', icon: MapPin, label: 'Check-in' },
-      { to: '/hrm/employees', icon: Users, label: 'Hồ sơ nhân sự' },
-      { to: '/hrm/attendance', icon: Calendar, label: 'Chấm công' },
-      { to: '/hrm/shifts', icon: Clock, label: 'Ca làm việc' },
-      { to: '/hrm/leave', icon: CalendarOff, label: 'Nghỉ phép' },
-      { to: '/hrm/payroll', icon: DollarSign, label: 'Bảng lương' },
-      { to: '/hrm/contracts', icon: FileSignature, label: 'Hợp đồng LĐ' },
-      { to: '/hrm/documents', icon: FolderOpen, label: 'Hồ sơ & Công văn' },
-      { to: '/hrm/reports', icon: BarChart3, label: 'Báo cáo NS' },
-      { to: '/hrm/ranking', icon: Award, label: 'Xếp hạng NV' },
-    ],
+    HRM: getHrmNavigationItems(user).map(item => ({
+      ...item,
+      icon: HRM_NAV_ICONS[item.to],
+    })),
     WF: [
       { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },
@@ -489,6 +497,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     {orderedModules.map((mod, idx) => {
                       const ModIcon = mod.icon;
                       const isActiveModule = detectAppFromUrl() === mod.key;
+                      const gradient = mod.gradient || 'from-indigo-500 to-purple-600';
+                      const shadow = mod.shadow || 'shadow-indigo-500/20';
                       return (
                         <button
                           key={mod.key}
@@ -498,10 +508,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                           onDrop={() => handleDrop(idx)}
                           onDragEnd={handleDragEnd}
                           onClick={() => { handleModuleClick(mod); toggle(); }}
-                          className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-xl transition-all ${dragOverIdx === idx ? 'ring-2 ring-teal-500 scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? 'bg-teal-700 text-white shadow-sm border border-teal-800' : 'bg-zinc-50/80 dark:bg-zinc-900/40 border border-zinc-200/80 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}
+                          className={`flex flex-col items-center gap-1.5 py-2 px-1 rounded-xl transition-all ${dragOverIdx === idx ? 'ring-2 ring-indigo-500 scale-105' : ''} ${dragIdx === idx ? 'opacity-40' : ''} ${isActiveModule ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-300 dark:border-indigo-800 shadow-xs' : 'bg-white/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
                         >
-                          <ModIcon size={20} className={isActiveModule ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'} />
-                          <span className={`text-[9px] font-bold leading-tight text-center ${isActiveModule ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'}`}>{mod.shortLabel}</span>
+                          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shadow-md ${shadow}`}>
+                            <ModIcon size={20} />
+                          </div>
+                          <span className={`text-[9px] font-bold leading-tight text-center truncate w-full ${isActiveModule ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}>{mod.shortLabel}</span>
                         </button>
                       );
                     })}
@@ -800,6 +812,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                   {orderedModules.map((mod, idx) => {
                     const ModIcon = mod.icon;
                     const isActiveModule = detectAppFromUrl() === mod.key;
+                    const gradient = mod.gradient || 'from-indigo-500 to-purple-600';
+                    const shadow = mod.shadow || 'shadow-indigo-500/20';
                     return (
                       <button
                         key={mod.key}
@@ -810,17 +824,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         onDragEnd={handleDragEnd}
                         onClick={() => handleModuleClick(mod)}
                         title={collapsed ? mod.label : undefined}
-                        className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group border ${isActiveModule ? 'bg-teal-700 text-white border-teal-800 shadow-sm' : 'bg-zinc-50/80 dark:bg-zinc-900/40 border-zinc-200/80 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'} ${dragOverIdx === idx ? 'ring-2 ring-teal-500 scale-[1.02]' : ''} ${dragIdx === idx ? 'opacity-40' : ''}`}
+                        className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${collapsed ? 'px-2' : 'px-3'} py-2 rounded-xl transition-all group border ${isActiveModule ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 shadow-xs' : 'bg-white/80 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:shadow-xs'} ${dragOverIdx === idx ? 'ring-2 ring-indigo-500 scale-[1.02]' : ''} ${dragIdx === idx ? 'opacity-40' : ''}`}
                       >
                         {!collapsed && (
-                          <GripVertical size={14} className={`shrink-0 cursor-grab active:cursor-grabbing ${isActiveModule ? 'text-teal-200' : 'text-zinc-400 dark:text-zinc-600'}`} />
+                          <GripVertical size={14} className={`shrink-0 cursor-grab active:cursor-grabbing ${isActiveModule ? 'text-indigo-400' : 'text-slate-300 dark:text-slate-600'}`} />
                         )}
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${isActiveModule ? 'bg-teal-800/60 text-white' : 'bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 group-hover:bg-teal-700/10 group-hover:text-teal-700 dark:group-hover:text-teal-400'}`}>
-                          <ModIcon size={16} />
+                        <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center text-white shrink-0 shadow-md ${shadow} group-hover:scale-110 transition-transform`}>
+                          <ModIcon size={18} />
                         </div>
                         {!collapsed && (
                           <div className="text-left min-w-0 flex-1">
-                            <span className={`text-sm font-semibold block truncate ${isActiveModule ? 'text-white' : 'text-zinc-800 dark:text-zinc-200'}`}>{mod.label}</span>
+                            <span className={`text-sm font-bold block truncate ${isActiveModule ? 'text-indigo-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>{mod.label}</span>
                           </div>
                         )}
                       </button>
@@ -845,9 +859,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
               {/* Active module header */}
               {!collapsed && (
-                <div className="mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-teal-700 text-white shadow-sm border border-teal-800">
-                  <activeModule.icon size={18} />
-                  <span className="text-sm font-semibold">{activeModule.label}</span>
+                <div className="mx-1 mb-2 px-3 py-2 rounded-xl flex items-center gap-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-white shadow-xs border border-slate-200 dark:border-slate-700">
+                  <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${activeModule.gradient || 'from-indigo-500 to-purple-600'} flex items-center justify-center text-white shadow-sm shrink-0`}>
+                    <activeModule.icon size={16} />
+                  </div>
+                  <span className="text-sm font-bold truncate">{activeModule.label}</span>
                 </div>
               )}
 
