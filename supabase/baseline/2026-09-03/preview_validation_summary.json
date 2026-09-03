@@ -1,0 +1,44 @@
+{
+  "validated_at": "2026-09-03T07:57:22Z",
+  "production_project_ref": "ftciqmqhmfvjtwoycswe",
+  "preview": {
+    "branch_id": "92d6c56f-89c1-4cd4-9d87-485b092a9cb7",
+    "branch_name": "baseline-vioo-final",
+    "project_ref": "dszfompmijwqypeqdpaa",
+    "with_data": false,
+    "persistent": false,
+    "initial_control_plane_status": "MIGRATIONS_FAILED",
+    "initial_failure_reason": "origin/main still contained the non-bootstrap-capable historical chain when the branch was provisioned"
+  },
+  "manual_baseline_validation": {
+    "migration": "20260903063714_cloud_schema_baseline_v2.sql",
+    "applied_with_single_transaction": true,
+    "exit_status": 0,
+    "migration_ledger_rows": 0,
+    "migration_ledger_note": "Expected for direct psql validation; the ledger is exercised by Git/Cloud integration after push.",
+    "application_relations": 432,
+    "managed_policies": 83,
+    "managed_application_triggers": 1,
+    "active_cron_jobs": 0
+  },
+  "comparison": {
+    "production_object_count": 21099,
+    "preview_object_count": 21099,
+    "production_fingerprint_sha256": "fba1645de106bfeb879669a7ee945991bd6a941cbc05c909538e3165b1124541",
+    "preview_fingerprint_sha256": "fba1645de106bfeb879669a7ee945991bd6a941cbc05c909538e3165b1124541",
+    "fingerprint_diff_lines": 0,
+    "configuration_diff_lines_after_expected_cron_disable": 0
+  },
+  "preview_replacement_history": [
+    {
+      "branch_name": "baseline-vioo",
+      "branch_id": "057503dd-ee69-4ae8-aa0c-40b2b1a5019d",
+      "result": "deleted after transactional retries exposed connection, platform-default-privilege, search-path, and cron API compatibility issues"
+    },
+    {
+      "branch_name": "baseline-vioo-v2",
+      "branch_id": "21cb00c2-ceca-4fea-a278-6cd4a5fbac8a",
+      "result": "deleted after proving the corrected managed ACL renderer reduced the fingerprint diff to zero"
+    }
+  ]
+}

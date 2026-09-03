@@ -1,0 +1,7 @@
+ set_config
+------------
+
+(1 row)
+
+psql:supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql:111650: ERROR:  function is_admin() does not exist
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.

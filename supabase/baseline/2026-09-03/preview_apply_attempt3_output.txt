@@ -1,0 +1,6 @@
+ set_config
+------------
+
+(1 row)
+
+psql:supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql:111592: ERROR:  permission denied to change default privileges

@@ -1,4 +1,9 @@
 -- Managed-schema application policies and triggers.
+set search_path = public, app_private, private, extensions, auth, storage, pg_catalog;
+revoke all privileges on table auth.users from anon, authenticated, service_role;
+revoke all privileges on table storage.objects from anon, authenticated, service_role;
+grant DELETE, UPDATE on table storage.objects to anon;
+grant DELETE, INSERT, SELECT, UPDATE on table storage.objects to authenticated;
 drop policy if exists "Allow delete from project-attachments" on storage.objects;
 create policy "Allow delete from project-attachments" on storage.objects as PERMISSIVE for DELETE to public using (((bucket_id = 'project-attachments'::text) AND (split_part(name, '/'::text, 1) <> 'quality'::text)));
 drop policy if exists "Allow public read from avatars" on storage.objects;
@@ -169,3 +174,4 @@ drop policy if exists workflow_templates_upload on storage.objects;
 create policy workflow_templates_upload on storage.objects as PERMISSIVE for INSERT to anon, authenticated with check ((bucket_id = 'workflow-templates'::text));
 drop trigger if exists on_auth_user_profile_sync on auth.users;
 CREATE TRIGGER on_auth_user_profile_sync AFTER INSERT OR UPDATE OF email, raw_user_meta_data ON auth.users FOR EACH ROW EXECUTE FUNCTION sync_auth_user_profile();
+select pg_catalog.set_config('search_path', '', false);

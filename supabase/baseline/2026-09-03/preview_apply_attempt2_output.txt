@@ -1,0 +1,3 @@
+psql:supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql:16: ERROR:  canceling statement due to statement timeout
+CONTEXT:  SQL statement "drop extension pg_net"
+PL/pgSQL function inline_code_block line 10 at SQL statement

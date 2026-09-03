@@ -1,0 +1,16 @@
+ set_config
+------------
+
+(1 row)
+
+ set_config
+------------
+
+(1 row)
+
+ schedule
+----------
+        1
+(1 row)
+
+psql:supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql:112285: ERROR:  permission denied for table job

@@ -44,7 +44,7 @@ of the new baseline after the candidate is generated.
 - Migration history CSV SHA-256:
   `87fdac4f9126c04e298185ff4da353aae17e4816bba357934c9103e754077902`
 - Schema fingerprint SHA-256:
-  `2f789ab044c72ae8c4d1877e9c0524ae25f504f87366b351fe4e9f26d22f272d`
+  `fba1645de106bfeb879669a7ee945991bd6a941cbc05c909538e3165b1124541`
 - Active migration manifest SHA-256:
   `c4b344c05053fb0259b7f16f93dc6fa3f59473834694133b0dd06d882cef62f4`
 

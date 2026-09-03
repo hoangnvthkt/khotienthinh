@@ -83,12 +83,10 @@ from (
   union all
 
   select format(
-    'select cron.schedule(%L, %L, %L);%supdate cron.job set active = false where jobname = %L;',
+    'select cron.alter_job(cron.schedule(%L, %L, %L), active := false);',
     jobname,
     schedule,
-    command,
-    E'\n',
-    jobname
+    command
   ), '08:' || coalesce(jobname, jobid::text)
   from cron.job
 ) rendered

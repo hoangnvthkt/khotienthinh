@@ -23,7 +23,6 @@ with fingerprint_objects as (
     'column',
     format('%I.%I.%I', n.nspname, c.relname, a.attname),
     md5(concat_ws('|',
-      a.attnum,
       pg_catalog.format_type(a.atttypid, a.atttypmod),
       a.attnotnull,
       a.attidentity,
@@ -66,7 +65,7 @@ with fingerprint_objects as (
   select
     'routine',
     format('%I.%I(%s)', n.nspname, p.proname, pg_get_function_identity_arguments(p.oid)),
-    md5(pg_get_functiondef(p.oid))
+    md5(regexp_replace(pg_get_functiondef(p.oid), '[ \t]+(\n|$)', E'\\1', 'g'))
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname in ('public', 'app_private', 'private')

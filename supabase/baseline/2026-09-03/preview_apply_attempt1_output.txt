@@ -1,0 +1,8 @@
+ set_config
+------------
+
+(1 row)
+
+psql:supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql:107065: could not receive data from server: Operation timed out
+SSL SYSCALL error: Operation timed out
+psql:supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql:107065: error: connection to server was lost

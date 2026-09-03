@@ -479,9 +479,8 @@ insert into app_private.permission_hardening_settings (key, value) values ('proj
 insert into app_private.permission_hardening_settings (key, value) values ('system_admin_business_approval_bypass_disabled', 'false'::jsonb) on conflict (key) do update set value = excluded.value;
 insert into app_private.hrm_manager_scope_settings (singleton, is_enabled, reason) values ('t', 'f', NULL) on conflict (singleton) do update set is_enabled = excluded.is_enabled, reason = excluded.reason;
 insert into public.fleet_system_settings (id, booking_buffer_minutes, late_cancellation_cutoff_minutes, feedback_auto_close_hours, home_base_warning_radius_meters, on_time_tolerance_minutes, max_evidence_image_mb, trip_reminder_minutes, require_handover_for_self_drive, allow_dispatch_approval_override, require_direct_manager_approval) values ('1', '30', '120', '24', '500', '15', '5.0', '60', 't', 't', 't') on conflict (id) do update set booking_buffer_minutes = excluded.booking_buffer_minutes, late_cancellation_cutoff_minutes = excluded.late_cancellation_cutoff_minutes, feedback_auto_close_hours = excluded.feedback_auto_close_hours, home_base_warning_radius_meters = excluded.home_base_warning_radius_meters, on_time_tolerance_minutes = excluded.on_time_tolerance_minutes, max_evidence_image_mb = excluded.max_evidence_image_mb, trip_reminder_minutes = excluded.trip_reminder_minutes, require_handover_for_self_drive = excluded.require_handover_for_self_drive, allow_dispatch_approval_override = excluded.allow_dispatch_approval_override, require_direct_manager_approval = excluded.require_direct_manager_approval;
-select cron.schedule('cleanup-expired-hrm-imports', '17 2 * * *', 'select app_private.cleanup_expired_hrm_import_batches()');
-update cron.job set active = false where jobname = 'cleanup-expired-hrm-imports';
-select cron.schedule('process-request-notifications-every-minute', '* * * * *', '
+select cron.alter_job(cron.schedule('cleanup-expired-hrm-imports', '17 2 * * *', 'select app_private.cleanup_expired_hrm_import_batches()'), active := false);
+select cron.alter_job(cron.schedule('process-request-notifications-every-minute', '* * * * *', '
     select net.http_post(
       url := ''https://ftciqmqhmfvjtwoycswe.supabase.co/functions/v1/process-request-notifications'',
       headers := jsonb_build_object(
@@ -495,11 +494,7 @@ select cron.schedule('process-request-notifications-every-minute', '* * * * *', 
       body := jsonb_build_object(''limit'', 50),
       timeout_milliseconds := 10000
     ) as request_id;
-  ');
-update cron.job set active = false where jobname = 'process-request-notifications-every-minute';
-select cron.schedule('project-workflow-sla-reminders', '*/10 * * * *', 'select public.process_project_workflow_sla_reminders();');
-update cron.job set active = false where jobname = 'project-workflow-sla-reminders';
-select cron.schedule('vehicle-booking-feedback-auto-close', '*/5 * * * *', 'select app_private.process_feedback_auto_close();');
-update cron.job set active = false where jobname = 'vehicle-booking-feedback-auto-close';
-select cron.schedule('vehicle-booking-notification-outbox', '* * * * *', 'select app_private.process_vehicle_notification_outbox(50);');
-update cron.job set active = false where jobname = 'vehicle-booking-notification-outbox';
+  '), active := false);
+select cron.alter_job(cron.schedule('project-workflow-sla-reminders', '*/10 * * * *', 'select public.process_project_workflow_sla_reminders();'), active := false);
+select cron.alter_job(cron.schedule('vehicle-booking-feedback-auto-close', '*/5 * * * *', 'select app_private.process_feedback_auto_close();'), active := false);
+select cron.alter_job(cron.schedule('vehicle-booking-notification-outbox', '* * * * *', 'select app_private.process_vehicle_notification_outbox(50);'), active := false);

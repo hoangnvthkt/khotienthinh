@@ -1,6 +1,21 @@
 -- Application extension layout captured from the production source of truth.
 -- Fresh Supabase branches provision pg_net in `extensions`; this legacy project
 -- owns it in `public`, so an empty branch must recreate it before app DDL runs.
+set statement_timeout = 0;
+set lock_timeout = 0;
+set idle_in_transaction_session_timeout = 0;
+set transaction_timeout = 0;
+
+-- Supabase preview projects start with broad role defaults. Neutralize those
+-- defaults while objects are restored so the explicit ACL statements from the
+-- production dump, rather than preview-project defaults, determine access.
+alter default privileges for role postgres in schema public
+  revoke all on tables from anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  revoke all on sequences from anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  revoke all on functions from anon, authenticated, service_role;
+
 do $$
 begin
   if exists (
@@ -111584,10 +111599,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 -- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
 
 
 --
@@ -111604,10 +111615,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIO
 -- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
 
 
 --
@@ -111624,10 +111631,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES 
 -- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO postgres;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO anon;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
-ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON TABLES TO service_role;
 
 
 --
@@ -111635,6 +111638,11 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 --
 
 -- Managed-schema application policies and triggers.
+set search_path = public, app_private, private, extensions, auth, storage, pg_catalog;
+revoke all privileges on table auth.users from anon, authenticated, service_role;
+revoke all privileges on table storage.objects from anon, authenticated, service_role;
+grant DELETE, UPDATE on table storage.objects to anon;
+grant DELETE, INSERT, SELECT, UPDATE on table storage.objects to authenticated;
 drop policy if exists "Allow delete from project-attachments" on storage.objects;
 create policy "Allow delete from project-attachments" on storage.objects as PERMISSIVE for DELETE to public using (((bucket_id = 'project-attachments'::text) AND (split_part(name, '/'::text, 1) <> 'quality'::text)));
 drop policy if exists "Allow public read from avatars" on storage.objects;
@@ -111805,6 +111813,7 @@ drop policy if exists workflow_templates_upload on storage.objects;
 create policy workflow_templates_upload on storage.objects as PERMISSIVE for INSERT to anon, authenticated with check ((bucket_id = 'workflow-templates'::text));
 drop trigger if exists on_auth_user_profile_sync on auth.users;
 CREATE TRIGGER on_auth_user_profile_sync AFTER INSERT OR UPDATE OF email, raw_user_meta_data ON auth.users FOR EACH ROW EXECUTE FUNCTION sync_auth_user_profile();
+select pg_catalog.set_config('search_path', '', false);
 -- Allowlisted non-secret baseline configuration.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types, type, versioning_status) select x.id, x.name, x.public, x.file_size_limit, x.allowed_mime_types, x.type, x.versioning_status from jsonb_populate_record(null::storage.buckets, '{"id": "asset-images", "name": "asset-images", "type": "STANDARD", "public": true, "file_size_limit": 5242880, "versioning_status": "DISABLED", "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"]}'::jsonb) x on conflict (id) do update set name = excluded.name, public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types, type = excluded.type, versioning_status = excluded.versioning_status;
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types, type, versioning_status) select x.id, x.name, x.public, x.file_size_limit, x.allowed_mime_types, x.type, x.versioning_status from jsonb_populate_record(null::storage.buckets, '{"id": "avatars", "name": "avatars", "type": "STANDARD", "public": true, "file_size_limit": null, "versioning_status": "DISABLED", "allowed_mime_types": null}'::jsonb) x on conflict (id) do update set name = excluded.name, public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types, type = excluded.type, versioning_status = excluded.versioning_status;
@@ -112286,9 +112295,8 @@ insert into app_private.permission_hardening_settings (key, value) values ('proj
 insert into app_private.permission_hardening_settings (key, value) values ('system_admin_business_approval_bypass_disabled', 'false'::jsonb) on conflict (key) do update set value = excluded.value;
 insert into app_private.hrm_manager_scope_settings (singleton, is_enabled, reason) values ('t', 'f', NULL) on conflict (singleton) do update set is_enabled = excluded.is_enabled, reason = excluded.reason;
 insert into public.fleet_system_settings (id, booking_buffer_minutes, late_cancellation_cutoff_minutes, feedback_auto_close_hours, home_base_warning_radius_meters, on_time_tolerance_minutes, max_evidence_image_mb, trip_reminder_minutes, require_handover_for_self_drive, allow_dispatch_approval_override, require_direct_manager_approval) values ('1', '30', '120', '24', '500', '15', '5.0', '60', 't', 't', 't') on conflict (id) do update set booking_buffer_minutes = excluded.booking_buffer_minutes, late_cancellation_cutoff_minutes = excluded.late_cancellation_cutoff_minutes, feedback_auto_close_hours = excluded.feedback_auto_close_hours, home_base_warning_radius_meters = excluded.home_base_warning_radius_meters, on_time_tolerance_minutes = excluded.on_time_tolerance_minutes, max_evidence_image_mb = excluded.max_evidence_image_mb, trip_reminder_minutes = excluded.trip_reminder_minutes, require_handover_for_self_drive = excluded.require_handover_for_self_drive, allow_dispatch_approval_override = excluded.allow_dispatch_approval_override, require_direct_manager_approval = excluded.require_direct_manager_approval;
-select cron.schedule('cleanup-expired-hrm-imports', '17 2 * * *', 'select app_private.cleanup_expired_hrm_import_batches()');
-update cron.job set active = false where jobname = 'cleanup-expired-hrm-imports';
-select cron.schedule('process-request-notifications-every-minute', '* * * * *', '
+select cron.alter_job(cron.schedule('cleanup-expired-hrm-imports', '17 2 * * *', 'select app_private.cleanup_expired_hrm_import_batches()'), active := false);
+select cron.alter_job(cron.schedule('process-request-notifications-every-minute', '* * * * *', '
     select net.http_post(
       url := ''https://ftciqmqhmfvjtwoycswe.supabase.co/functions/v1/process-request-notifications'',
       headers := jsonb_build_object(
@@ -112302,13 +112310,9 @@ select cron.schedule('process-request-notifications-every-minute', '* * * * *', 
       body := jsonb_build_object(''limit'', 50),
       timeout_milliseconds := 10000
     ) as request_id;
-  ');
-update cron.job set active = false where jobname = 'process-request-notifications-every-minute';
-select cron.schedule('project-workflow-sla-reminders', '*/10 * * * *', 'select public.process_project_workflow_sla_reminders();');
-update cron.job set active = false where jobname = 'project-workflow-sla-reminders';
-select cron.schedule('vehicle-booking-feedback-auto-close', '*/5 * * * *', 'select app_private.process_feedback_auto_close();');
-update cron.job set active = false where jobname = 'vehicle-booking-feedback-auto-close';
-select cron.schedule('vehicle-booking-notification-outbox', '* * * * *', 'select app_private.process_vehicle_notification_outbox(50);');
-update cron.job set active = false where jobname = 'vehicle-booking-notification-outbox';
+  '), active := false);
+select cron.alter_job(cron.schedule('project-workflow-sla-reminders', '*/10 * * * *', 'select public.process_project_workflow_sla_reminders();'), active := false);
+select cron.alter_job(cron.schedule('vehicle-booking-feedback-auto-close', '*/5 * * * *', 'select app_private.process_feedback_auto_close();'), active := false);
+select cron.alter_job(cron.schedule('vehicle-booking-notification-outbox', '* * * * *', 'select app_private.process_vehicle_notification_outbox(50);'), active := false);
 
 -- VIOO CLOUD SCHEMA BASELINE V2 COMPLETE
