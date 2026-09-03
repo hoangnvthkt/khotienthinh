@@ -19,7 +19,7 @@ describe('PurchaseDeliveryBatchEditor UI contract', () => {
   });
 
   it('uses practical draft wording for a purchase batch', () => {
-    expect(editorSource).toContain('Nhu cầu MR');
+    expect(editorSource).toContain('Nhu cầu Công trường');
     expect(editorSource).toContain('Ghi chú đợt mua');
     expect(editorSource).toContain('Lưu nháp đợt mua');
   });

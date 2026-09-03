@@ -13,7 +13,7 @@ describe('PurchaseOrderCockpit practical material flow', () => {
   });
 
   it('shows only the four factual quantity totals', () => {
-    expect(source).toContain('Nhu cầu MR');
+    expect(source).toContain('Nhu cầu Công trường');
     expect(source).toContain('Đã duyệt đặt');
     expect(source).toContain('Đã thực nhập');
     expect(source).toContain('Còn lại / Vượt');
