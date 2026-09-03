@@ -31,6 +31,27 @@ import type {
   OperatorUnavailabilityReason,
   VehicleTimelineEvent
 } from '../types/vehicleBooking';
+import { clampPageSize, takeCursorPage, type CursorPage } from './supabasePagination';
+
+export interface VehicleBookingCursor {
+  createdAt: string;
+  id: string;
+}
+
+export type VehicleBookingListPage = CursorPage<VehicleBooking, VehicleBookingCursor>;
+
+const VEHICLE_BOOKING_SELECT = 'id,booking_code,requester_user_id,trip_owner_user_id,requester_employee_id_snapshot,department_id_snapshot,manager_user_id_snapshot,manager_resolution_status,manager_approval_route,manager_bypass_confirmed_by_user_id,manager_bypass_confirmed_at,requested_pickup_at,expected_return_at,trip_type,pickup_location_text,destination_text,route_stops,purpose,passenger_count,requested_mode,preferred_vehicle_asset_id,preferred_driver_user_id,note,status,submitted_at,approved_by_user_id,approved_at,approval_source,approval_note,cancelled_by_user_id,cancelled_at,close_reason,close_note,created_at,updated_at';
+const VEHICLE_PARTICIPANT_SELECT = 'id,booking_id,user_id,employee_id,participant_name,is_external,created_at';
+const VEHICLE_ASSIGNMENT_SELECT = 'id,booking_id,version,is_active,fulfillment_type,vehicle_asset_id,operator_user_id,operator_type,reserved_start_at,reserved_end_at,released_at,superseded_at,superseded_by_user_id,supersede_reason,home_base_id_snapshot,handover_officer_user_id,allow_non_home_base_return,non_home_base_return_reason,external_service_type,external_provider_name,external_driver_name,external_driver_phone,external_vehicle_plate,external_estimated_cost,external_actual_cost,external_currency,external_receipt_path,dispatch_reason_code,operator_confirmation_status,operator_confirmed_at,operator_decline_reason,assigned_by_user_id,assigned_at,assignment_note,created_at,updated_at';
+const VEHICLE_TRIP_LOG_SELECT = 'id,booking_id,assignment_id,assignment_version_snapshot,vehicle_asset_id_snapshot,operator_user_id_snapshot,trip_status,started_by_user_id,departed_home_base_at,actual_pickup_at,start_odometer,start_photo_path,start_latitude,start_longitude,start_accuracy_m,start_location_capture_failed,start_location_failure_reason,finished_by_user_id,actual_return_at,end_odometer,end_photo_path,end_latitude,end_longitude,end_accuracy_m,end_location_capture_failed,end_location_failure_reason,distance_km,vehicle_condition_end,issue_note,created_at,updated_at';
+const VEHICLE_HANDOVER_SELECT = 'id,booking_id,assignment_id,assignment_version_snapshot,vehicle_asset_id_snapshot,operator_user_id_snapshot,event_type,officer_user_id,confirmed_at,confirmed_on_behalf,override_reason,note,created_at';
+const VEHICLE_FEEDBACK_SELECT = 'id,booking_id,respondent_user_id,status,rating,positive_tags,submitted_at,created_at,updated_at';
+const VEHICLE_DRIVER_AUTH_SELECT = 'id,user_id,employee_id,authorization_type,license_number,license_class,license_expiry,license_front_photo_path,license_back_photo_path,health_check_expiry_date,allowed_vehicle_types,status,approved_by_user_id,approved_at,note,created_at,updated_at';
+const FLEET_LOCATION_SELECT = 'id,name,address,latitude,longitude,source_type,source_id,active,created_at,updated_at';
+const VEHICLE_UNAVAILABILITY_SELECT = 'id,vehicle_asset_id,start_at,end_at,reason_code,note,created_by_user_id,created_at';
+const OPERATOR_UNAVAILABILITY_SELECT = 'id,operator_user_id,start_at,end_at,reason_code,note,created_by_user_id,created_at';
+const FLEET_SETTINGS_SELECT = 'id,booking_buffer_minutes,late_cancellation_cutoff_minutes,feedback_auto_close_hours,home_base_warning_radius_meters,on_time_tolerance_minutes,trip_reminder_minutes,max_evidence_image_mb,require_handover_for_self_drive,allow_dispatch_approval_override,require_direct_manager_approval,created_at,updated_at';
+const VEHICLE_OPERATION_LIMIT = 1000;
 import type {
   VehicleBookingSubmissionPreviewRoute,
   VehicleBookingSubmissionRoute,
@@ -582,23 +603,39 @@ export async function resolvePrivateEvidencePreviewItems(
 // DATA QUERY FETCHERS
 // ============================================================================
 
-export async function fetchMyBookings(requesterAppUserId: string): Promise<VehicleBooking[]> {
-  const { data, error } = await supabase
+export async function fetchMyBookingsPage(
+  requesterAppUserId: string,
+  options: { limit?: number; cursor?: VehicleBookingCursor } = {},
+): Promise<VehicleBookingListPage> {
+  const limit = clampPageSize(options.limit, 50, 100);
+  let query = supabase
     .from('vehicle_bookings')
-    .select('*')
+    .select(VEHICLE_BOOKING_SELECT)
     .eq('requester_user_id', requesterAppUserId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit + 1);
+  if (options.cursor) {
+    query = query.or(`created_at.lt.${options.cursor.createdAt},and(created_at.eq.${options.cursor.createdAt},id.lt.${options.cursor.id})`);
+  }
 
+  const { data, error } = await query;
   if (error) throw error;
-  return (data || []) as VehicleBooking[];
+  return takeCursorPage((data || []) as VehicleBooking[], limit, row => ({ createdAt: row.created_at, id: row.id }));
+}
+
+export async function fetchMyBookings(requesterAppUserId: string): Promise<VehicleBooking[]> {
+  const page = await fetchMyBookingsPage(requesterAppUserId, { limit: 100 });
+  return page.items;
 }
 
 export async function fetchPendingApprovals(): Promise<VehicleBooking[]> {
   const { data, error } = await supabase
     .from('vehicle_bookings')
-    .select('*')
+    .select(VEHICLE_BOOKING_SELECT)
     .eq('status', 'PENDING_APPROVAL')
-    .order('requested_pickup_at', { ascending: true });
+    .order('requested_pickup_at', { ascending: true })
+    .limit(VEHICLE_OPERATION_LIMIT);
 
   if (error) throw error;
   return (data || []) as VehicleBooking[];
@@ -629,9 +666,10 @@ export async function setVehicleBookingDispatchers(userIds: string[]): Promise<v
 export async function fetchWaitingDispatchBookings(): Promise<VehicleBooking[]> {
   const { data, error } = await supabase
     .from('vehicle_bookings')
-    .select('*')
+    .select(VEHICLE_BOOKING_SELECT)
     .in('status', ['PENDING_APPROVAL', 'WAITING_DISPATCH'])
-    .order('requested_pickup_at', { ascending: true });
+    .order('requested_pickup_at', { ascending: true })
+    .limit(VEHICLE_OPERATION_LIMIT);
 
   if (error) throw error;
   return (data || []) as VehicleBooking[];
@@ -647,12 +685,12 @@ export async function fetchVehicleBookingDetails(bookingId: string): Promise<{
   assignmentDisplay: VehicleBookingAssignmentDisplay | null;
 }> {
   const [bRes, pRes, aRes, tRes, hRes, fRes, dRes] = await Promise.all([
-    supabase.from('vehicle_bookings').select('*').eq('id', bookingId).single(),
-    supabase.from('vehicle_booking_participants').select('*').eq('booking_id', bookingId),
-    supabase.from('vehicle_booking_assignments').select('*').eq('booking_id', bookingId).order('version', { ascending: false }),
-    supabase.from('vehicle_trip_logs').select('*').eq('booking_id', bookingId).maybeSingle(),
-    supabase.from('vehicle_handover_logs').select('*').eq('booking_id', bookingId).order('confirmed_at', { ascending: false }),
-    supabase.from('vehicle_booking_feedback').select('*').eq('booking_id', bookingId).maybeSingle(),
+    supabase.from('vehicle_bookings').select(VEHICLE_BOOKING_SELECT).eq('id', bookingId).single(),
+    supabase.from('vehicle_booking_participants').select(VEHICLE_PARTICIPANT_SELECT).eq('booking_id', bookingId).limit(VEHICLE_OPERATION_LIMIT),
+    supabase.from('vehicle_booking_assignments').select(VEHICLE_ASSIGNMENT_SELECT).eq('booking_id', bookingId).order('version', { ascending: false }).limit(VEHICLE_OPERATION_LIMIT),
+    supabase.from('vehicle_trip_logs').select(VEHICLE_TRIP_LOG_SELECT).eq('booking_id', bookingId).maybeSingle(),
+    supabase.from('vehicle_handover_logs').select(VEHICLE_HANDOVER_SELECT).eq('booking_id', bookingId).order('confirmed_at', { ascending: false }).limit(VEHICLE_OPERATION_LIMIT),
+    supabase.from('vehicle_booking_feedback').select(VEHICLE_FEEDBACK_SELECT).eq('booking_id', bookingId).maybeSingle(),
     supabase.rpc('get_vehicle_booking_assignment_display', { p_booking_id: bookingId }),
   ]);
 
@@ -692,8 +730,9 @@ export async function fetchFleetVehicleTypeOptions(): Promise<FleetVehicleTypeOp
 export async function fetchDriverAuthorizations(): Promise<VehicleDriverAuthorization[]> {
   const { data, error } = await supabase
     .from('vehicle_driver_authorizations')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select(VEHICLE_DRIVER_AUTH_SELECT)
+    .order('created_at', { ascending: false })
+    .limit(VEHICLE_OPERATION_LIMIT);
 
   if (error) throw error;
   return (data || []) as VehicleDriverAuthorization[];
@@ -730,9 +769,10 @@ export async function setFleetVehicleAssetImage(assetId: string, imageUrl: strin
 export async function fetchFleetLocations(): Promise<FleetLocation[]> {
   const { data, error } = await supabase
     .from('fleet_locations')
-    .select('*')
+    .select(FLEET_LOCATION_SELECT)
     .eq('active', true)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    .limit(VEHICLE_OPERATION_LIMIT);
 
   if (error) throw error;
   return (data || []) as FleetLocation[];
@@ -741,8 +781,9 @@ export async function fetchFleetLocations(): Promise<FleetLocation[]> {
 export async function fetchVehicleUnavailabilityPeriods(): Promise<VehicleUnavailabilityPeriod[]> {
   const { data, error } = await supabase
     .from('vehicle_unavailability_periods')
-    .select('*')
-    .order('start_at', { ascending: false });
+    .select(VEHICLE_UNAVAILABILITY_SELECT)
+    .order('start_at', { ascending: false })
+    .limit(VEHICLE_OPERATION_LIMIT);
   if (error) throw error;
   return (data || []) as VehicleUnavailabilityPeriod[];
 }
@@ -750,8 +791,9 @@ export async function fetchVehicleUnavailabilityPeriods(): Promise<VehicleUnavai
 export async function fetchOperatorUnavailabilityPeriods(): Promise<OperatorUnavailabilityPeriod[]> {
   const { data, error } = await supabase
     .from('operator_unavailability_periods')
-    .select('*')
-    .order('start_at', { ascending: false });
+    .select(OPERATOR_UNAVAILABILITY_SELECT)
+    .order('start_at', { ascending: false })
+    .limit(VEHICLE_OPERATION_LIMIT);
   if (error) throw error;
   return (data || []) as OperatorUnavailabilityPeriod[];
 }
@@ -759,7 +801,7 @@ export async function fetchOperatorUnavailabilityPeriods(): Promise<OperatorUnav
 export async function fetchFleetSystemSettings(): Promise<FleetSystemSetting> {
   const { data, error } = await supabase
     .from('fleet_system_settings')
-    .select('*')
+    .select(FLEET_SETTINGS_SELECT)
     .eq('id', 1)
     .single();
 
@@ -778,19 +820,20 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
 
   const { data: assignments, error } = await supabase
     .from('vehicle_booking_assignments')
-    .select('*')
+    .select(VEHICLE_ASSIGNMENT_SELECT)
     .eq('operator_user_id', operatorAppUserId)
     .eq('is_active', true)
     .lt('reserved_start_at', endIso)
-    .order('reserved_start_at', { ascending: true });
+    .order('reserved_start_at', { ascending: true })
+    .limit(VEHICLE_OPERATION_LIMIT);
 
   if (error) throw error;
   if (!assignments || assignments.length === 0) return [];
 
   const bookingIds = assignments.map(a => a.booking_id);
   const [bRes, tRes] = await Promise.all([
-    supabase.from('vehicle_bookings').select('*').in('id', bookingIds),
-    supabase.from('vehicle_trip_logs').select('*').in('booking_id', bookingIds),
+    supabase.from('vehicle_bookings').select(VEHICLE_BOOKING_SELECT).in('id', bookingIds).limit(VEHICLE_OPERATION_LIMIT),
+    supabase.from('vehicle_trip_logs').select(VEHICLE_TRIP_LOG_SELECT).in('booking_id', bookingIds).limit(VEHICLE_OPERATION_LIMIT),
   ]);
 
   if (bRes.error) throw bRes.error;
@@ -808,7 +851,7 @@ export async function fetchDriverTodayAssignments(operatorAppUserId: string): Pr
   const requesterIds = [...new Set(visibleBookings.map(booking => booking.requester_user_id))];
   const [requestersRes, requesterEmployeesRes, displayResults] = await Promise.all([
     requesterIds.length > 0
-      ? supabase.from('users').select('id, name, avatar').in('id', requesterIds)
+      ? supabase.from('users').select('id, name, avatar').in('id', requesterIds).limit(VEHICLE_OPERATION_LIMIT)
       : Promise.resolve({ data: [], error: null }),
     requesterIds.length > 0
       ? hrmSensitiveProjectionService.lookupEmployees({ userIds: requesterIds })
@@ -907,17 +950,18 @@ export function selectVehicleHandoverQueue(input: {
 export async function fetchVehicleHandoverQueue(): Promise<VehicleHandoverQueueItem[]> {
   const { data: assignments, error: assignmentError } = await supabase
     .from('vehicle_booking_assignments')
-    .select('*')
+    .select(VEHICLE_ASSIGNMENT_SELECT)
     .eq('is_active', true)
-    .eq('fulfillment_type', 'INTERNAL_SELF_DRIVE');
+    .eq('fulfillment_type', 'INTERNAL_SELF_DRIVE')
+    .limit(VEHICLE_OPERATION_LIMIT);
   if (assignmentError) throw assignmentError;
   if (!assignments?.length) return [];
 
   const bookingIds = assignments.map(assignment => assignment.booking_id);
   const assignmentIds = assignments.map(assignment => assignment.id);
   const [bookingResult, handoverResult] = await Promise.all([
-    supabase.from('vehicle_bookings').select('*').in('id', bookingIds).in('status', ['ASSIGNED', 'COMPLETED']),
-    supabase.from('vehicle_handover_logs').select('*').in('assignment_id', assignmentIds),
+    supabase.from('vehicle_bookings').select(VEHICLE_BOOKING_SELECT).in('id', bookingIds).in('status', ['ASSIGNED', 'COMPLETED']).limit(VEHICLE_OPERATION_LIMIT),
+    supabase.from('vehicle_handover_logs').select(VEHICLE_HANDOVER_SELECT).in('assignment_id', assignmentIds).limit(VEHICLE_OPERATION_LIMIT),
   ]);
   if (bookingResult.error) throw bookingResult.error;
   if (handoverResult.error) throw handoverResult.error;
@@ -1481,19 +1525,21 @@ export async function fetchVehicleTimelineEvents(startIso: string, endIso: strin
   const [assignmentsRes, unavailRes] = await Promise.all([
     supabase
       .from('vehicle_booking_assignments')
-      .select('*')
+      .select(VEHICLE_ASSIGNMENT_SELECT)
       .eq('is_active', true)
       .is('released_at', null)
       .not('vehicle_asset_id', 'is', null)
       .lt('reserved_start_at', endIso)
       .gt('reserved_end_at', startIso)
-      .order('reserved_start_at', { ascending: true }),
+      .order('reserved_start_at', { ascending: true })
+      .limit(VEHICLE_OPERATION_LIMIT),
     supabase
       .from('vehicle_unavailability_periods')
-      .select('*')
+      .select(VEHICLE_UNAVAILABILITY_SELECT)
       .lt('start_at', endIso)
       .gt('end_at', startIso)
-      .order('start_at', { ascending: true }),
+      .order('start_at', { ascending: true })
+      .limit(VEHICLE_OPERATION_LIMIT),
   ]);
 
   if (assignmentsRes.error) throw assignmentsRes.error;
@@ -1512,8 +1558,9 @@ export async function fetchVehicleTimelineEvents(startIso: string, endIso: strin
   if (bookingIds.length > 0) {
     const { data: bookingsData, error: bError } = await supabase
       .from('vehicle_bookings')
-      .select('*')
-      .in('id', bookingIds);
+      .select(VEHICLE_BOOKING_SELECT)
+      .in('id', bookingIds)
+      .limit(VEHICLE_OPERATION_LIMIT);
     if (bError) throw bError;
     (bookingsData || []).forEach((b: VehicleBooking) => bookingsMap.set(b.id, b));
 
@@ -1522,7 +1569,7 @@ export async function fetchVehicleTimelineEvents(startIso: string, endIso: strin
 
     if (userIdsToFetch.length > 0) {
       const [usersRes, employees] = await Promise.all([
-        supabase.from('users').select('id, name, avatar, phone').in('id', userIdsToFetch),
+        supabase.from('users').select('id, name, avatar, phone').in('id', userIdsToFetch).limit(VEHICLE_OPERATION_LIMIT),
         hrmSensitiveProjectionService.lookupEmployees({ userIds: userIdsToFetch }),
       ]);
       const empPhoneMap = new Map<string, string>();

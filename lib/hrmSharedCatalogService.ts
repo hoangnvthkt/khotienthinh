@@ -148,6 +148,34 @@ export type HrmCodeCatalogTable =
   | 'hrm_competency_groups'
   | 'hrm_competency_levels';
 
+const HRM_CATALOG_LIMIT = 1000;
+const HRM_TABLE_PROJECTIONS = {
+  org_units: 'id,code,name,type,customTypeLabel,parent_id,block_code,manager_slot_id,description,order_index,is_active',
+  hrm_org_position_slots: 'id,code,org_unit_id,position_id,level_code,reports_to_slot_id,slot_type,status,description,effective_from,effective_to,sort_order,source,created_at,updated_at',
+  hrm_employee_slot_assignments: 'id,employee_id,slot_id,assignment_type,status,effective_from,effective_to,note,source',
+  hrm_positions: 'id,code,name,group_code,level_code,suggested_org_unit_code,is_active,sort_order,source',
+  hrm_position_groups: 'id,code,name,description,is_active,sort_order',
+  hrm_position_levels: 'id,code,name,description,group_code,is_active,sort_order',
+  hrm_competency_groups: 'id,code,name,description,is_active,sort_order',
+  hrm_competency_levels: 'id,code,name,description,is_active,sort_order',
+  hrm_catalog_items: 'id,catalog_key,code,name,description,is_active,sort_order',
+} as const;
+
+type HrmCatalogTableName = keyof typeof HRM_TABLE_PROJECTIONS;
+
+const loadCappedCatalogTable = async (table: HrmCatalogTableName) => {
+  const { data, error } = await (supabase as any)
+    .from(table)
+    .select(HRM_TABLE_PROJECTIONS[table])
+    .limit(HRM_CATALOG_LIMIT);
+  throwIfError(error, `Không thể tải ${table}.`);
+  const rows = data || [];
+  if (rows.length >= HRM_CATALOG_LIMIT) {
+    throw new Error(`Danh mục ${table} đã đạt giới hạn an toàn ${HRM_CATALOG_LIMIT} dòng.`);
+  }
+  return rows;
+};
+
 export const hrmSharedCatalogService = {
   async load(): Promise<HrmSharedCatalogBundle> {
     const tables = [
@@ -156,12 +184,11 @@ export const hrmSharedCatalogService = {
       'hrm_competency_groups', 'hrm_competency_levels', 'hrm_catalog_items',
     ] as const;
     const [responses, employees] = await Promise.all([
-      Promise.all(tables.map(table => supabase.from(table).select('*'))),
+      Promise.all(tables.map(loadCappedCatalogTable)),
       loadEmployeeDirectoryRows(),
     ]);
-    responses.forEach((response, index) => throwIfError(response.error, `Không thể tải ${tables[index]}.`));
     const [orgs, slots, assignments, positions, positionGroups, positionLevels,
-      competencyGroups, competencyLevels, catalogItems] = responses.map(response => response.data || []);
+      competencyGroups, competencyLevels, catalogItems] = responses;
     const catalog = (key: string) => (catalogItems as any[])
       .filter(row => row.catalog_key === key && row.is_active !== false)
       .map(mapCodeItem).sort(bySortOrder);
@@ -192,13 +219,10 @@ export const hrmSharedCatalogService = {
       'hrm_positions',
     ] as const;
     const [responses, employees] = await Promise.all([
-      Promise.all(tables.map(table => supabase.from(table).select('*'))),
+      Promise.all(tables.map(loadCappedCatalogTable)),
       loadEmployeeDirectoryRows(),
     ]);
-    responses.forEach((response, index) =>
-      throwIfError(response.error, `Không thể tải ${tables[index]}.`));
-    const [orgs, slots, assignments, positions] = responses
-      .map(response => response.data || []);
+    const [orgs, slots, assignments, positions] = responses;
 
     return {
       orgUnits: (orgs as any[]).filter(row => row.is_active !== false).map(mapOrgUnit),

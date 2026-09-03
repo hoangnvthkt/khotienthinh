@@ -6,6 +6,7 @@ const supabaseMocks = vi.hoisted(() => ({
   select: vi.fn(),
   eq: vi.fn(),
   order: vi.fn(),
+  limit: vi.fn(),
   getUser: vi.fn(),
 }));
 
@@ -76,11 +77,13 @@ describe('vehicle booking RPC contract', () => {
       data: { user: { id: 'auth-user-id' } },
       error: null,
     });
-    supabaseMocks.order.mockResolvedValue({
+    supabaseMocks.limit.mockResolvedValue({
       data: [{ id: 'booking-1', requester_user_id: 'app-user-id' }],
       error: null,
     });
-    supabaseMocks.eq.mockReturnValue({ order: supabaseMocks.order });
+    const defaultQuery = { order: supabaseMocks.order, limit: supabaseMocks.limit, or: vi.fn() };
+    supabaseMocks.order.mockReturnValue(defaultQuery);
+    supabaseMocks.eq.mockReturnValue(defaultQuery);
     supabaseMocks.select.mockReturnValue({ eq: supabaseMocks.eq });
     supabaseMocks.from.mockReturnValue({ select: supabaseMocks.select });
   });
@@ -154,12 +157,14 @@ describe('vehicle booking RPC contract', () => {
       gte: vi.fn(),
       lt: vi.fn(),
       order: vi.fn(),
+      limit: vi.fn(),
     };
     query.select.mockReturnValue(query);
     query.eq.mockReturnValue(query);
     query.gte.mockReturnValue(query);
     query.lt.mockReturnValue(query);
-    query.order.mockResolvedValue({ data: [], error: null });
+    query.order.mockReturnValue(query);
+    query.limit.mockResolvedValue({ data: [], error: null });
     supabaseMocks.from.mockReturnValue(query);
 
     const result = await fetchDriverTodayAssignments('app-user-id');
@@ -196,21 +201,24 @@ describe('vehicle booking RPC contract', () => {
         query.eq = vi.fn().mockReturnValue(query);
         query.gte = vi.fn().mockReturnValue(query);
         query.lt = vi.fn().mockReturnValue(query);
-        query.order = vi.fn().mockResolvedValue({ data: [assignment], error: null });
+        query.order = vi.fn().mockReturnValue(query);
+        query.limit = vi.fn().mockResolvedValue({ data: [assignment], error: null });
         return query;
       }
 
       return {
         select: vi.fn().mockReturnValue({
-          in: vi.fn().mockResolvedValue({
-            data: table === 'vehicle_bookings'
-              ? [booking]
-              : table === 'vehicle_trip_logs'
-                ? [tripLog]
-                : table === 'employees'
-                  ? [{ user_id: 'requester-1', full_name: 'Nguyễn Văn An', avatar_url: 'employee.jpg' }]
-                  : [{ id: 'requester-1', name: 'Admin An', avatar: 'requester.jpg' }],
-            error: null,
+          in: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue({
+              data: table === 'vehicle_bookings'
+                ? [booking]
+                : table === 'vehicle_trip_logs'
+                  ? [tripLog]
+                  : table === 'employees'
+                    ? [{ user_id: 'requester-1', full_name: 'Nguyễn Văn An', avatar_url: 'employee.jpg' }]
+                    : [{ id: 'requester-1', name: 'Admin An', avatar: 'requester.jpg' }],
+              error: null,
+            }),
           }),
         }),
       };
@@ -265,9 +273,9 @@ describe('vehicle booking RPC contract', () => {
             return { maybeSingle: vi.fn().mockResolvedValue(result) };
           }
           if (table === 'vehicle_booking_assignments' || table === 'vehicle_handover_logs') {
-            return { order: vi.fn().mockResolvedValue(result) };
+            return { order: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue(result) }) };
           }
-          return Promise.resolve(result);
+          return { limit: vi.fn().mockResolvedValue(result) };
         },
       }),
     }));

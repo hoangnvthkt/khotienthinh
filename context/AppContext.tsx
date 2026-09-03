@@ -288,6 +288,11 @@ const mapInventoryItemFromDb = (i: any): InventoryItem => ({
 });
 
 const INVENTORY_FETCH_PAGE_SIZE = 1000;
+const ASSET_OPERATION_LIMIT = 1000;
+const ASSET_ASSIGNMENT_SELECT = 'id,asset_id,type,user_id,user_name,from_user_id,from_user_name,date,note,performed_by,performed_by_name,created_at,dept_name,site_name,qty';
+const ASSET_MAINTENANCE_SELECT = 'id,asset_id,type,description,cost,estimated_cost,actual_cost,vendor,invoice_number,start_date,end_date,status,performed_by,performed_by_name,note,attachments';
+const ASSET_TRANSFER_SELECT = 'id,code,asset_id,asset_code,asset_name,qty,from_warehouse_id,from_site_id,from_dept_id,from_location_label,to_warehouse_id,to_site_id,to_dept_id,to_location_label,received_by_user_id,received_by_name,date,reason,status,performed_by,performed_by_name,note,created_at';
+const ASSET_LOCATION_STOCK_SELECT = 'id,asset_id,warehouse_id,construction_site_id,dept_id,qty,assigned_to_user_id,assigned_to_name,note,updated_at';
 
 const fetchAllInventoryItemRows = async (): Promise<any[] | null> => {
   const rows: any[] = [];
@@ -1109,10 +1114,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const [assetsData, assetCatData, assetAssignData, assetMaintData, assetLocationData, assetTxData] = await Promise.all([
             fetchTableHelper('assets'),
             fetchTableHelper('asset_categories'),
-            fetchTableHelper('asset_assignments', supabase.from('asset_assignments').select('*').order('date', { ascending: false })),
-            fetchTableHelper('asset_maintenances', supabase.from('asset_maintenances').select('*').order('start_date', { ascending: false })),
-            fetchTableHelper('asset_location_stocks'),
-            fetchTableHelper('asset_transfers', supabase.from('asset_transfers').select('*').order('date', { ascending: false })),
+            fetchTableHelper('asset_assignments', supabase.from('asset_assignments').select(ASSET_ASSIGNMENT_SELECT).order('date', { ascending: false }).limit(ASSET_OPERATION_LIMIT)),
+            fetchTableHelper('asset_maintenances', supabase.from('asset_maintenances').select(ASSET_MAINTENANCE_SELECT).order('start_date', { ascending: false }).limit(ASSET_OPERATION_LIMIT)),
+            fetchTableHelper('asset_location_stocks', supabase.from('asset_location_stocks').select(ASSET_LOCATION_STOCK_SELECT).limit(ASSET_OPERATION_LIMIT)),
+            fetchTableHelper('asset_transfers', supabase.from('asset_transfers').select(ASSET_TRANSFER_SELECT).order('date', { ascending: false }).limit(ASSET_OPERATION_LIMIT)),
           ]);
           if (assetsData) setAssets(assetsData.map((a: any) => ({
             ...a, categoryId: a.category_id, serialNumber: a.serial_number,
@@ -3265,8 +3270,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const { data: stockRows, error: stockError } = await supabase
         .from('asset_location_stocks')
-        .select('*')
-        .eq('asset_id', asset.id);
+        .select(ASSET_LOCATION_STOCK_SELECT)
+        .eq('asset_id', asset.id)
+        .limit(ASSET_OPERATION_LIMIT);
       if (stockError) throw stockError;
 
       setAssetLocationStocks(prev => [
@@ -3406,8 +3412,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const transfer = mapAssetTransferFromDb(data);
     const { data: stockRows, error: stockError } = await supabase
       .from('asset_location_stocks')
-      .select('*')
-      .eq('asset_id', args.assetId);
+      .select(ASSET_LOCATION_STOCK_SELECT)
+      .eq('asset_id', args.assetId)
+      .limit(ASSET_OPERATION_LIMIT);
     if (stockError) throw stockError;
 
     setAssetTransfers(prev => [transfer, ...prev.filter(t => t.id !== transfer.id)]);

@@ -29,7 +29,9 @@ describe('hrmSharedCatalogService', () => {
       ],
     };
     from.mockImplementation((table: string) => ({
-      select: vi.fn().mockResolvedValue({ data: rows[table] || [], error: null }),
+      select: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({ data: rows[table] || [], error: null }),
+      }),
     }));
     rpc.mockResolvedValue({
       data: [{ id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A', status: 'Đang làm việc', org_unit_id: 'u1', position_id: 'p1' }],
@@ -204,7 +206,9 @@ describe('hrmSharedCatalogService', () => {
       hrm_positions: [{ id: 'p1', name: 'Chuyên viên', is_active: true }],
     };
     from.mockImplementation((table: string) => ({
-      select: vi.fn().mockResolvedValue({ data: rows[table] || [], error: null }),
+      select: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue({ data: rows[table] || [], error: null }),
+      }),
     }));
     rpc.mockResolvedValue({
       data: [{ id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A', status: 'Đang làm việc' }],

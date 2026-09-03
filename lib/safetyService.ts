@@ -32,6 +32,16 @@ const EQUIPMENT_TABLE = 'safety_equipment';
 const EQUIPMENT_DOCUMENT_TABLE = 'safety_equipment_documents';
 const TEAM_TABLE = 'safety_teams';
 
+const SAFETY_ISSUE_SELECT = 'id,project_id,construction_site_id,code,title,type,severity,status,area,description,before_photos,after_photos,attachments,assigned_to_user_id,assigned_to_name,due_at,resolved_at,closed_at,contractor_id,equipment_id,worker_id,source_inspection_id,source_inspection_item_id,created_by,created_at,updated_at';
+const SAFETY_COMMENT_SELECT = 'id,project_id,construction_site_id,issue_id,body,attachments,created_by,created_by_name,created_at,updated_at';
+const SAFETY_STATUS_LOG_SELECT = 'id,project_id,construction_site_id,issue_id,from_status,to_status,reason,metadata,created_by,created_at';
+const SAFETY_INSPECTION_SELECT = 'id,project_id,construction_site_id,code,template_id,inspection_date,area,inspector_user_id,inspector_name,status,summary,score,attachments,created_by,created_at,updated_at';
+const SAFETY_INSPECTION_ITEM_SELECT = 'id,project_id,construction_site_id,inspection_id,template_item_id,item_name,requirement,result,risk_level,note,photos,assigned_to_user_id,assigned_to_name,due_at,generated_issue_id,sort_order,created_by,created_at,updated_at';
+const SAFETY_CONTRACTOR_SELECT = 'id,project_id,construction_site_id,name,code,representative_name,representative_phone,work_scope,status,documents_status,violation_count,note,attachments,created_by,created_at,updated_at';
+const SAFETY_EQUIPMENT_SELECT = 'id,project_id,construction_site_id,subcontractor_id,owner_name,equipment_code,name,model,serial_number,operator_worker_id,operator_name,inspection_expiry_date,status,documents_status,attachments,note,created_by,created_at,updated_at';
+const SAFETY_EQUIPMENT_DOCUMENT_SELECT = 'id,project_id,construction_site_id,equipment_id,document_type,name,status,is_done,done_by,done_at,sort_order,issue_date,expiry_date,attachments,note,created_by,created_at,updated_at';
+const SAFETY_TEAM_SELECT = 'id,project_id,construction_site_id,subcontractor_id,code,name,supervisor_name,supervisor_phone,status,note,attachments,created_by,created_at,updated_at';
+
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const safeStorageFileName = (name: string): string => {
@@ -342,10 +352,10 @@ export const safetyService = {
     const pageSize = params.pageSize || 25;
     const from = (page - 1) * pageSize;
     const readTo = params.includeTotal ? from + pageSize - 1 : from + pageSize;
-    const baseIssueQuery = params.includeTotal
-      ? supabase.from(ISSUE_TABLE).select('*', { count: 'exact' })
-      : supabase.from(ISSUE_TABLE).select('*');
-    let query = scopeQuery(
+    const baseIssueQuery: any = params.includeTotal
+      ? supabase.from(ISSUE_TABLE).select(SAFETY_ISSUE_SELECT, { count: 'exact' }).limit(pageSize + 1)
+      : supabase.from(ISSUE_TABLE).select(SAFETY_ISSUE_SELECT).limit(pageSize + 1);
+    let query: any = scopeQuery(
       baseIssueQuery.order('created_at', { ascending: false }),
       params.projectId,
       params.constructionSiteId,
@@ -470,9 +480,10 @@ export const safetyService = {
   async listComments(issueId: string): Promise<SafetyComment[]> {
     const { data, error } = await supabase
       .from(COMMENT_TABLE)
-      .select('*')
+      .select(SAFETY_COMMENT_SELECT)
       .eq('issue_id', issueId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(500);
     if (error) throw error;
     return Promise.all((data || []).map(hydrateComment));
   },
@@ -480,9 +491,10 @@ export const safetyService = {
   async listStatusLogs(issueId: string) {
     const { data, error } = await supabase
       .from(LOG_TABLE)
-      .select('*')
+      .select(SAFETY_STATUS_LOG_SELECT)
       .eq('issue_id', issueId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(500);
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -506,7 +518,7 @@ export const safetyService = {
     const { data, error } = await scopeQuery(
       supabase
         .from(INSPECTION_TABLE)
-        .select('*')
+        .select(SAFETY_INSPECTION_SELECT)
         .order('inspection_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(100),
@@ -520,9 +532,10 @@ export const safetyService = {
   async getInspectionItems(inspectionId: string): Promise<SafetyInspectionItem[]> {
     const { data, error } = await supabase
       .from(INSPECTION_ITEM_TABLE)
-      .select('*')
+      .select(SAFETY_INSPECTION_ITEM_SELECT)
       .eq('inspection_id', inspectionId)
-      .order('sort_order', { ascending: true });
+      .order('sort_order', { ascending: true })
+      .limit(1000);
     if (error) throw error;
     return Promise.all((data || []).map(hydrateInspectionItem));
   },
@@ -562,7 +575,7 @@ export const safetyService = {
       sortOrder: item.sortOrder ?? index + 1,
       createdBy: input.createdBy,
     }));
-    const { data: itemRows, error: itemError } = await supabase.from(INSPECTION_ITEM_TABLE).insert(itemPayloads).select();
+    const { data: itemRows, error: itemError } = await supabase.from(INSPECTION_ITEM_TABLE).insert(itemPayloads).select(SAFETY_INSPECTION_ITEM_SELECT).limit(1000);
     if (itemError) throw itemError;
     return {
       inspection,
@@ -618,7 +631,7 @@ export const safetyService = {
 
   async listContractors(projectId: string, constructionSiteId?: string | null): Promise<SafetySubcontractor[]> {
     const { data, error } = await scopeQuery(
-      supabase.from(CONTRACTOR_TABLE).select('*').order('created_at', { ascending: false }).limit(100),
+      supabase.from(CONTRACTOR_TABLE).select(SAFETY_CONTRACTOR_SELECT).order('created_at', { ascending: false }).limit(100),
       projectId,
       constructionSiteId,
     );
@@ -664,7 +677,7 @@ export const safetyService = {
 
   async listEquipment(projectId: string, constructionSiteId?: string | null): Promise<SafetyEquipment[]> {
     const { data, error } = await scopeQuery(
-      supabase.from(EQUIPMENT_TABLE).select('*').order('created_at', { ascending: false }).limit(100),
+      supabase.from(EQUIPMENT_TABLE).select(SAFETY_EQUIPMENT_SELECT).order('created_at', { ascending: false }).limit(100),
       projectId,
       constructionSiteId,
     );
@@ -676,10 +689,11 @@ export const safetyService = {
     if (equipmentIds.length > 0) {
       const { data: documentRows, error: documentError } = await supabase
         .from(EQUIPMENT_DOCUMENT_TABLE)
-        .select('*')
+        .select(SAFETY_EQUIPMENT_DOCUMENT_SELECT)
         .in('equipment_id', equipmentIds)
         .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(1000);
       if (documentError) throw documentError;
       const documents = await Promise.all((documentRows || []).map(hydrateEquipmentDocument));
       documents.forEach(document => {
@@ -753,17 +767,18 @@ export const safetyService = {
 
     const { data: freshRow, error: freshError } = await supabase
       .from(EQUIPMENT_TABLE)
-      .select('*')
+      .select(SAFETY_EQUIPMENT_SELECT)
       .eq('id', equipmentId)
       .single();
     if (freshError) throw freshError;
 
     const { data: documentRows, error: documentError } = await supabase
       .from(EQUIPMENT_DOCUMENT_TABLE)
-      .select('*')
+      .select(SAFETY_EQUIPMENT_DOCUMENT_SELECT)
       .eq('equipment_id', equipmentId)
       .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(1000);
     if (documentError) throw documentError;
 
     const equipment = await hydrateEquipment(
@@ -821,7 +836,7 @@ export const safetyService = {
 
   async listTeams(projectId: string, constructionSiteId?: string | null): Promise<SafetyTeam[]> {
     const { data, error } = await scopeQuery(
-      supabase.from(TEAM_TABLE).select('*').order('created_at', { ascending: false }).limit(100),
+      supabase.from(TEAM_TABLE).select(SAFETY_TEAM_SELECT).order('created_at', { ascending: false }).limit(100),
       projectId,
       constructionSiteId,
     );

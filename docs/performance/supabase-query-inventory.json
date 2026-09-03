@@ -1,11 +1,11 @@
 {
   "version": 1,
   "summary": {
-    "findings": 616,
-    "errors": 616,
-    "wildcardLists": 285,
-    "missingResultPolicies": 331,
-    "unclassified": 586
+    "findings": 538,
+    "errors": 538,
+    "wildcardLists": 247,
+    "missingResultPolicies": 291,
+    "unclassified": 508
   },
   "findings": [
     {
@@ -113,7 +113,7 @@
     {
       "fingerprint": "32794a1fb7a0c61bcf6f",
       "file": "context/AppContext.tsx",
-      "line": 298,
+      "line": 303,
       "table": "items",
       "projection": "*",
       "modifiers": [
@@ -131,7 +131,7 @@
     {
       "fingerprint": "5f3d1385906e24149fbe",
       "file": "context/AppContext.tsx",
-      "line": 826,
+      "line": 831,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -146,7 +146,7 @@
     {
       "fingerprint": "6c144e793399dfc9550b",
       "file": "context/AppContext.tsx",
-      "line": 826,
+      "line": 831,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -161,7 +161,7 @@
     {
       "fingerprint": "7ed93a46218a0bdcaabd",
       "file": "context/AppContext.tsx",
-      "line": 896,
+      "line": 901,
       "table": "warehouse_types",
       "projection": "*",
       "modifiers": [
@@ -177,7 +177,7 @@
     {
       "fingerprint": "b350f83fc3cc0fdb642d",
       "file": "context/AppContext.tsx",
-      "line": 896,
+      "line": 901,
       "table": "warehouse_types",
       "projection": "*",
       "modifiers": [
@@ -193,7 +193,7 @@
     {
       "fingerprint": "d2142d7c6c679499193e",
       "file": "context/AppContext.tsx",
-      "line": 967,
+      "line": 972,
       "table": "warehouse_types",
       "projection": "*",
       "modifiers": [
@@ -209,7 +209,7 @@
     {
       "fingerprint": "9a405214f4b057971306",
       "file": "context/AppContext.tsx",
-      "line": 967,
+      "line": 972,
       "table": "warehouse_types",
       "projection": "*",
       "modifiers": [
@@ -225,7 +225,7 @@
     {
       "fingerprint": "a89540afce281a5a485e",
       "file": "context/AppContext.tsx",
-      "line": 978,
+      "line": 983,
       "table": "audit_sessions",
       "projection": "*",
       "modifiers": [
@@ -241,104 +241,8 @@
     {
       "fingerprint": "34fc00a7e9ca3f28075d",
       "file": "context/AppContext.tsx",
-      "line": 978,
+      "line": 983,
       "table": "audit_sessions",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ed1abf3e06bb13b664cc",
-      "file": "context/AppContext.tsx",
-      "line": 1112,
-      "table": "asset_assignments",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "5903baadb8845711a08c",
-      "file": "context/AppContext.tsx",
-      "line": 1112,
-      "table": "asset_assignments",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ba2d48811939b16b90c3",
-      "file": "context/AppContext.tsx",
-      "line": 1113,
-      "table": "asset_maintenances",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "0deb2e0c801214a00457",
-      "file": "context/AppContext.tsx",
-      "line": 1113,
-      "table": "asset_maintenances",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "9f7db2915dca59f807db",
-      "file": "context/AppContext.tsx",
-      "line": 1115,
-      "table": "asset_transfers",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "db839efa0bf46ccf92c8",
-      "file": "context/AppContext.tsx",
-      "line": 1115,
-      "table": "asset_transfers",
       "projection": "*",
       "modifiers": [
         "from",
@@ -353,7 +257,7 @@
     {
       "fingerprint": "49c0d485e44e2f50e372",
       "file": "context/AppContext.tsx",
-      "line": 1172,
+      "line": 1177,
       "table": "project_transactions",
       "projection": "*",
       "modifiers": [
@@ -369,7 +273,7 @@
     {
       "fingerprint": "5b58df3c1496a5d3dae2",
       "file": "context/AppContext.tsx",
-      "line": 1172,
+      "line": 1177,
       "table": "project_transactions",
       "projection": "*",
       "modifiers": [
@@ -385,7 +289,7 @@
     {
       "fingerprint": "74143cc9366a9322bee1",
       "file": "context/AppContext.tsx",
-      "line": 1635,
+      "line": 1640,
       "table": "items",
       "projection": "*",
       "modifiers": [
@@ -401,7 +305,7 @@
     {
       "fingerprint": "1ec2de00df7e3e02f683",
       "file": "context/AppContext.tsx",
-      "line": 1635,
+      "line": 1640,
       "table": "items",
       "projection": "*",
       "modifiers": [
@@ -417,7 +321,7 @@
     {
       "fingerprint": "c245451f006260d7cc3d",
       "file": "context/AppContext.tsx",
-      "line": 1638,
+      "line": 1643,
       "table": "transactions",
       "projection": "*",
       "modifiers": [
@@ -433,7 +337,7 @@
     {
       "fingerprint": "b698de3ae815721ef012",
       "file": "context/AppContext.tsx",
-      "line": 1638,
+      "line": 1643,
       "table": "transactions",
       "projection": "*",
       "modifiers": [
@@ -449,7 +353,7 @@
     {
       "fingerprint": "fbe21e4563bb573d6862",
       "file": "context/AppContext.tsx",
-      "line": 1641,
+      "line": 1646,
       "table": "requests",
       "projection": "*",
       "modifiers": [
@@ -465,7 +369,7 @@
     {
       "fingerprint": "c4bec7186262dd0704b1",
       "file": "context/AppContext.tsx",
-      "line": 1641,
+      "line": 1646,
       "table": "requests",
       "projection": "*",
       "modifiers": [
@@ -481,7 +385,7 @@
     {
       "fingerprint": "d8e86c014e34332fd5e0",
       "file": "context/AppContext.tsx",
-      "line": 2377,
+      "line": 2382,
       "table": "material_request_fulfillment_batches",
       "projection": "id,status,transaction_id",
       "modifiers": [
@@ -497,7 +401,7 @@
     {
       "fingerprint": "e2961cddf86962b9e10d",
       "file": "context/AppContext.tsx",
-      "line": 2378,
+      "line": 2383,
       "table": "purchase_order_request_lines",
       "projection": "id,purchase_order_id,purchase_order_line_id",
       "modifiers": [
@@ -513,7 +417,7 @@
     {
       "fingerprint": "f3a3e5b2290f60089843",
       "file": "context/AppContext.tsx",
-      "line": 2396,
+      "line": 2401,
       "table": "purchase_orders",
       "projection": "id,status,items",
       "modifiers": [
@@ -529,7 +433,7 @@
     {
       "fingerprint": "c6e0e2e39262e4a945cf",
       "file": "context/AppContext.tsx",
-      "line": 2449,
+      "line": 2454,
       "table": "requests",
       "projection": "id",
       "modifiers": [
@@ -546,7 +450,7 @@
     {
       "fingerprint": "7155d2dec5e354f9d3ed",
       "file": "context/AppContext.tsx",
-      "line": 3189,
+      "line": 3194,
       "table": "project_transactions",
       "projection": "id",
       "modifiers": [
@@ -558,70 +462,6 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "9cf6f539aee58119735c",
-      "file": "context/AppContext.tsx",
-      "line": 3266,
-      "table": "asset_location_stocks",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "87e01b0a0900e362aae4",
-      "file": "context/AppContext.tsx",
-      "line": 3266,
-      "table": "asset_location_stocks",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ecfeece08334c72c6673",
-      "file": "context/AppContext.tsx",
-      "line": 3407,
-      "table": "asset_location_stocks",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8804134d69798b2b092c",
-      "file": "context/AppContext.tsx",
-      "line": 3407,
-      "table": "asset_location_stocks",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {
@@ -4072,66 +3912,6 @@
         "eq",
         "from",
         "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "3f2cdef28231aa31ff82",
-      "file": "lib/hrmSharedCatalogService.ts",
-      "line": 159,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "1d4a73b92e5d04ad79ac",
-      "file": "lib/hrmSharedCatalogService.ts",
-      "line": 159,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "80a96d0b505f6de46030",
-      "file": "lib/hrmSharedCatalogService.ts",
-      "line": 195,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d1e2b73d3a8328dbd38d",
-      "file": "lib/hrmSharedCatalogService.ts",
-      "line": 195,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
         "select"
       ],
       "classification": null,
@@ -7929,340 +7709,6 @@
       "severity": "error"
     },
     {
-      "fingerprint": "72aa20dc527adc1e7d68",
-      "file": "lib/safetyService.ts",
-      "line": 346,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "fd995ef7a00bfff877a7",
-      "file": "lib/safetyService.ts",
-      "line": 346,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "72aa20dc527adc1e7d68",
-      "file": "lib/safetyService.ts",
-      "line": 347,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "fd995ef7a00bfff877a7",
-      "file": "lib/safetyService.ts",
-      "line": 347,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6f1f599bf435c17a3623",
-      "file": "lib/safetyService.ts",
-      "line": 471,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "b751a97f640d1b3efc73",
-      "file": "lib/safetyService.ts",
-      "line": 471,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ae4e9c460ff8914de437",
-      "file": "lib/safetyService.ts",
-      "line": 481,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "38f24c1456adf3732a7c",
-      "file": "lib/safetyService.ts",
-      "line": 481,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "35a17e3298aa1945ba57",
-      "file": "lib/safetyService.ts",
-      "line": 507,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "limit",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "f4767d48362496918ad3",
-      "file": "lib/safetyService.ts",
-      "line": 521,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8297a757adbc3c2584ee",
-      "file": "lib/safetyService.ts",
-      "line": 521,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e045f49fc9cc0e3d15ca",
-      "file": "lib/safetyService.ts",
-      "line": 565,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "insert",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "4dc7007e1398cf8f1182",
-      "file": "lib/safetyService.ts",
-      "line": 565,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "insert",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "cac1b544fb10c89620a3",
-      "file": "lib/safetyService.ts",
-      "line": 621,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "limit",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "95755e7c35823a771f00",
-      "file": "lib/safetyService.ts",
-      "line": 667,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "limit",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "781323ded2ff14108c55",
-      "file": "lib/safetyService.ts",
-      "line": 677,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "556d9dd689985e20d5cc",
-      "file": "lib/safetyService.ts",
-      "line": 677,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "47f9461bed2e5bf2fab8",
-      "file": "lib/safetyService.ts",
-      "line": 761,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "31e4c1a9c37f357af943",
-      "file": "lib/safetyService.ts",
-      "line": 761,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "adaa650f62a8c53658ef",
-      "file": "lib/safetyService.ts",
-      "line": 824,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "limit",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "290719717b27f67f828a",
       "file": "lib/siteCashSettlementService.ts",
       "line": 143,
@@ -9134,676 +8580,6 @@
       "severity": "error"
     },
     {
-      "fingerprint": "1cabf3809f194ce954e5",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 586,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "23e6259b53c7e972a3dd",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 586,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "766c78231994da2f9d2c",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 597,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "a7437edb7c0adcac2d60",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 597,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "f2d96b3b3de437490066",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 630,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6874ee4d9e9e50d0930f",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 630,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e7837c15716f180ee53c",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 651,
-      "table": "vehicle_booking_participants",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8ca4e34aea09c03ad32d",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 651,
-      "table": "vehicle_booking_participants",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "f18c572b911a9adca6d0",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 652,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "f52adcee25715ca3d66c",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 652,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8e765154f6539054262b",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 654,
-      "table": "vehicle_handover_logs",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "bf14b88913931faa92ce",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 654,
-      "table": "vehicle_handover_logs",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8346e39320177723de29",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 693,
-      "table": "vehicle_driver_authorizations",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "01bb445799ada2790c46",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 693,
-      "table": "vehicle_driver_authorizations",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "2b28979768e7aae27f2e",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 731,
-      "table": "fleet_locations",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "4f2f450ef24697f3b41f",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 731,
-      "table": "fleet_locations",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "a755fab947858a2d2bf6",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 742,
-      "table": "vehicle_unavailability_periods",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6ca9fc75e3069f841489",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 742,
-      "table": "vehicle_unavailability_periods",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "21e4d39bd014522086d7",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 751,
-      "table": "operator_unavailability_periods",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ac615454053ab5d7cd9c",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 751,
-      "table": "operator_unavailability_periods",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "7a8a5d8a409ef1b36b02",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 779,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "lt",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "0db611b6a94421fe7fa6",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 779,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "lt",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "25e28e8b93151ff837e9",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 792,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "4b5b7e6105c7ec5257e7",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 792,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "45ec0fa0b092f6d0d7b8",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 793,
-      "table": "vehicle_trip_logs",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6caa7f86f513dafc0184",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 793,
-      "table": "vehicle_trip_logs",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "9cd8ce6d9957b2b8b5c9",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 811,
-      "table": "users",
-      "projection": "id, name, avatar",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "f3ce238f627650645e37",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 908,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e48eb764465801c97f57",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 908,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "0bc008966954670b9c06",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 919,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d08d380a220ca8ca92e7",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 919,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "9ed20789b7ed8cb36324",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 920,
-      "table": "vehicle_handover_logs",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "69fb59c9513715451f2d",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 920,
-      "table": "vehicle_handover_logs",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ca06fcc85f38519e854f",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1482,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "gt",
-        "is",
-        "lt",
-        "not",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "3889ad4e2d9cfaf3691d",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1482,
-      "table": "vehicle_booking_assignments",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "gt",
-        "is",
-        "lt",
-        "not",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "83dcbba7d40e02d88051",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1491,
-      "table": "vehicle_unavailability_periods",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "gt",
-        "lt",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "fd3f63b6bed30babf8c0",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1491,
-      "table": "vehicle_unavailability_periods",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "gt",
-        "lt",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "fe6a771fac259cdb348d",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1513,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "fba5b8954c4bc6a54001",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1513,
-      "table": "vehicle_bookings",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "15668dbd310af0c05d45",
-      "file": "lib/vehicleBookingService.ts",
-      "line": 1525,
-      "table": "users",
-      "projection": "id, name, avatar, phone",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
       "fingerprint": "c012a29c59b67fc026bd",
       "file": "lib/warehouseSiteBindingService.ts",
       "line": 10,
@@ -10026,77 +8802,6 @@
       "classification": null,
       "owner": null,
       "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "7fff581b724474b50ce7",
-      "file": "pages/booking/DispatcherWorkbenchPage.tsx",
-      "line": 112,
-      "table": "vehicle_booking_assignments",
-      "projection": "booking_id, vehicle_asset_id, operator_user_id, reserved_start_at, reserved_end_at, is_active, released_at",
-      "modifiers": [
-        "eq",
-        "from",
-        "gt",
-        "is",
-        "lt",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "df2d5e34f11aa3560aa5",
-      "file": "pages/booking/DispatcherWorkbenchPage.tsx",
-      "line": 119,
-      "table": "vehicle_unavailability_periods",
-      "projection": "vehicle_asset_id, start_at, end_at",
-      "modifiers": [
-        "from",
-        "gt",
-        "lt",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6e7924ebc899cc53656d",
-      "file": "pages/booking/DispatcherWorkbenchPage.tsx",
-      "line": 124,
-      "table": "operator_unavailability_periods",
-      "projection": "operator_user_id, start_at, end_at",
-      "modifiers": [
-        "from",
-        "gt",
-        "lt",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ea882c1c5ffadbeb55f4",
-      "file": "pages/booking/DispatcherWorkbenchPage.tsx",
-      "line": 130,
-      "table": "vehicle_booking_assignments",
-      "projection": "booking_id, is_active, operator_confirmation_status",
-      "modifiers": [
-        "eq",
-        "from",
-        "in",
-        "map",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
       "severity": "error"
     },
     {

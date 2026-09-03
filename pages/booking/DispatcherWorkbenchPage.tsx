@@ -115,23 +115,27 @@ const DispatcherWorkbenchPage: React.FC = () => {
           .eq('is_active', true)
           .is('released_at', null)
           .lt('reserved_start_at', rangeEnd)
-          .gt('reserved_end_at', rangeStart),
+          .gt('reserved_end_at', rangeStart)
+          .limit(1000),
         supabase
           .from('vehicle_unavailability_periods')
           .select('vehicle_asset_id, start_at, end_at')
           .lt('start_at', rangeEnd)
-          .gt('end_at', rangeStart),
+          .gt('end_at', rangeStart)
+          .limit(1000),
         supabase
           .from('operator_unavailability_periods')
           .select('operator_user_id, start_at, end_at')
           .lt('start_at', rangeEnd)
-          .gt('end_at', rangeStart),
+          .gt('end_at', rangeStart)
+          .limit(1000),
         bList.length > 0
           ? supabase
               .from('vehicle_booking_assignments')
               .select('booking_id, is_active, operator_confirmation_status')
               .in('booking_id', bList.map(booking => booking.id))
               .eq('operator_confirmation_status', 'DECLINED')
+              .limit(1000)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (activeAssignments.error) throw activeAssignments.error;
