@@ -150,6 +150,25 @@ describe('HRM employee self-service route access', () => {
     expect(canAccessRoute(technicalAdmin, '/settings/hrm-shared-catalog')).toBe(false);
   });
 
+  it('opens the shared HRM catalog only for governed HR personas', () => {
+    const hr = persona(Role.EMPLOYEE, [
+      ['hrm.organization.view', 'global'],
+      ['hrm.master_data.view', 'global'],
+    ]);
+    const hrManage = persona(Role.EMPLOYEE, [
+      ['hrm.organization.view', 'global'],
+      ['hrm.organization.manage', 'global'],
+      ['hrm.master_data.view', 'global'],
+      ['hrm.master_data.manage', 'global'],
+    ]);
+    const technicalAdmin = persona(Role.ADMIN, []);
+
+    expect(canAccessRoute(hr, '/settings/hrm-shared-catalog')).toBe(true);
+    expect(canAccessRoute(hrManage, '/settings/hrm-shared-catalog')).toBe(true);
+    expect(canAccessRoute(businessUser, '/settings/hrm-shared-catalog')).toBe(false);
+    expect(canAccessRoute(technicalAdmin, '/settings/hrm-shared-catalog')).toBe(false);
+  });
+
   it('allows global HR grants to satisfy own routes without widening own grants to global', () => {
     const globalAttendance = persona(Role.EMPLOYEE, [
       ['hrm.attendance.view', 'global'],

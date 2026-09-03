@@ -36,6 +36,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/hrm/documents':   'HRM',
   '/hrm/reports':     'HRM',
   '/hrm/ranking':     'HRM',
+  '/settings/hrm-shared-catalog': 'HRM',
 
   // ── WORKFLOW ──────────────────────────────────────────
   '/wf/dashboard':  'WF',

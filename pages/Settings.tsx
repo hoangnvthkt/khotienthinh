@@ -50,6 +50,7 @@ import {
 import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 import { canPerform } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
+import { canAccessRoute } from '../lib/routeAccess';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { warehouseSiteBindingService } from '../lib/warehouseSiteBindingService';
 
@@ -117,8 +118,7 @@ const Settings: React.FC = () => {
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
   const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
   const hrmSharedCatalogCapabilities = getHrmSharedCatalogCapabilities(currentUser);
-  const canViewHrmSharedCatalog = hrmSharedCatalogCapabilities.canViewOrganization
-    || hrmSharedCatalogCapabilities.canViewMasterData;
+  const canViewHrmSharedCatalog = canAccessRoute(currentUser, '/settings/hrm-shared-catalog');
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser)
     || canViewHrmSharedCatalog;
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
