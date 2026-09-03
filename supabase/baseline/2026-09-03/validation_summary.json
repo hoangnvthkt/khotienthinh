@@ -1,0 +1,46 @@
+{
+  "validated_at": "2026-09-03T08:06:26Z",
+  "production_project_ref": "ftciqmqhmfvjtwoycswe",
+  "candidate": {
+    "git_branch": "chore/supabase-cloud-baseline-20260903",
+    "commit": "bcb81dd8aa61dc7c45b09aa17443a3b388b82f58",
+    "baseline_blob": "c44b97247ab41d2124395d8e86329987d0930451",
+    "active_migrations": [
+      "20260903063714_cloud_schema_baseline_v2.sql",
+      "20260903063821_perf02_query_indexes.sql"
+    ]
+  },
+  "full_candidate_attempt": {
+    "branch_id": "cbac80cc-5b22-458d-8c05-8f8798988f40",
+    "git_branch": "chore/supabase-cloud-baseline-20260903",
+    "result": "baseline_applied_perf02_pending",
+    "migration_ledger_versions": [
+      "20260903063714"
+    ],
+    "perf02_error": "SQLSTATE 25001: CREATE INDEX CONCURRENTLY cannot be executed within a pipeline",
+    "note": "The failed preview was deleted after evidence capture. PERF02 remains intentionally pending for a standalone non-pipeline production deployment."
+  },
+  "baseline_only_integration": {
+    "git_branch": "chore/supabase-cloud-baseline-integration",
+    "commit": "0ef29aa",
+    "baseline_blob": "c44b97247ab41d2124395d8e86329987d0930451",
+    "difference_from_candidate": "Integration-only branch removes the pending PERF02 migration and is not merged to main.",
+    "branch_id": "b387b40a-4e21-459a-81c0-42563f045e22",
+    "branch_name": "baseline-vioo-git",
+    "project_ref": "oymkraihhqahqvzahhtx",
+    "with_data": false,
+    "persistent": false,
+    "branch_status": "FUNCTIONS_DEPLOYED",
+    "preview_project_status": "ACTIVE_HEALTHY",
+    "action_run_id": "4dc6ef8bf8404df39af5e1be96a71804",
+    "all_action_steps_exited": true,
+    "migration_ledger_versions": [
+      "20260903063714"
+    ],
+    "fingerprint_object_count": 21099,
+    "fingerprint_sha256": "fba1645de106bfeb879669a7ee945991bd6a941cbc05c909538e3165b1124541",
+    "fingerprint_diff_lines": 0,
+    "configuration_diff_lines_after_expected_cron_disable": 0,
+    "active_cron_jobs": 0
+  }
+}

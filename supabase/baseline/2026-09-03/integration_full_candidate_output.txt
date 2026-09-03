@@ -1,0 +1,53 @@
+2026/09/03 08:00:11 INFO Cloning git repo... git_ref=chore/supabase-cloud-baseline-20260903
+2026/09/03 08:00:16 INFO Checking service health... project_ref=ggwoytxvysdvafmfvzdy
+2026/09/03 08:00:18 INFO Configuring services for development branch...
+2026/09/03 08:00:18 INFO Reading project config... project_ref=ggwoytxvysdvafmfvzdy
+Remote DB config is up to date.
+Remote API config is up to date.
+Updating Auth service with config: diff remote[auth] local[auth]
+--- remote[auth]
++++ local[auth]
+@@ -1,6 +1,6 @@
+ enabled = true
+-site_url = "https://khotienthinh.vercel.app"
+-additional_redirect_urls = ["https://khotienthinh.vercel.app/**", "http://localhost:3000/**"]
++site_url = "http://127.0.0.1:3000"
++additional_redirect_urls = ["https://127.0.0.1:3000"]
+ jwt_expiry = 3600
+ jwt_issuer = "http://127.0.0.1:54321/auth/v1"
+ enable_refresh_token_rotation = true
+@@ -31,8 +31,8 @@
+ [mfa]
+ max_enrolled_factors = 10
+ [mfa.totp]
+-enroll_enabled = true
+-verify_enabled = true
++enroll_enabled = false
++verify_enabled = false
+ [mfa.phone]
+ enroll_enabled = false
+ verify_enabled = false
+@@ -50,10 +50,10 @@
+ [email]
+ enable_signup = true
+ double_confirm_changes = true
+-enable_confirmations = true
++enable_confirmations = false
+ secure_password_change = false
+-max_frequency = "1m0s"
+-otp_length = 8
++max_frequency = "1s"
++otp_length = 6
+ otp_expiry = 3600
+ [email.template]
+ [email.notification]
+Remote Storage config is up to date.
+2026/09/03 08:00:25 INFO Checking service health... project_ref=ggwoytxvysdvafmfvzdy
+2026/09/03 08:00:28 INFO Connecting to database... host=[2406:da18:1691:a200::566]:5432
+2026/09/03 08:00:30 INFO Applying migration... file=20260903063714_cloud_schema_baseline_v2.sql
+2026/09/03 08:00:42 INFO Applying migration... file=20260903063821_perf02_query_indexes.sql
+2026/09/03 08:00:45 ERROR: CREATE INDEX CONCURRENTLY cannot be executed within a pipeline (SQLSTATE 25001)
+At statement: 1
+create index concurrently if not exists idx_transactions_target_wh_date_id_perf02
+  on public.transactions (target_warehouse_id, date desc, id desc)
+  where target_warehouse_id is not null
