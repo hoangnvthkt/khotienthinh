@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { DashboardLayout, WidgetConfig, DEFAULT_LAYOUT } from './widgetRegistry';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════
 //  DASHBOARD SERVICE — CRUD for layouts
@@ -18,11 +20,11 @@ const fromDb = (row: any): DashboardLayout => ({
 export const dashboardService = {
   /** Get user's dashboard layouts */
   async getLayouts(userId: string): Promise<DashboardLayout[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('dashboard_layouts')
-      .select('*')
+      .select(getSupabaseProjection('dashboard_layouts'))
       .eq('user_id', userId)
-      .order('is_default', { ascending: false });
+      .order('is_default', { ascending: false }), { label: "lib/dashboardService.ts:22", maxRows: 20_000, orderBy: getSupabaseOrderColumns('dashboard_layouts') });
     if (error) { console.error('dashboardService.getLayouts error:', error); return []; }
     return (data || []).map(fromDb);
   },

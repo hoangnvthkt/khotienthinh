@@ -36,6 +36,7 @@ import {
 } from '../../lib/projectDashboardMetricsService';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { fromDb } from '../../lib/dbMapping';
+import { getSupabaseProjection } from '../../lib/supabaseProjections';
 
 interface FastConsDashboardProps {
   constructionSiteId: string;
@@ -684,7 +685,7 @@ const PlannedVsActualSCurvePanel: React.FC<{
         }
         const { data, error } = await supabase
           .from('weekly_progress_snapshots')
-          .select('*')
+          .select(getSupabaseProjection('weekly_progress_snapshots'))
           .eq('scope_key', scopeKey)
           .order('week_start', { ascending: true })
           .limit(24);

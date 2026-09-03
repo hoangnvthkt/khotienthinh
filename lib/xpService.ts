@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseProjection } from './supabaseProjections';
 
 // ══════════════════════════════════════════
 //  XP SERVICE — Gamification Engine
@@ -145,7 +146,7 @@ export const xpService = {
   async getRecentEvents(userId: string, limit = 20): Promise<XPEvent[]> {
     const { data, error } = await supabase
       .from('xp_events')
-      .select('*')
+      .select(getSupabaseProjection('xp_events'))
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -165,7 +166,7 @@ export const xpService = {
   async getLeaderboard(limit = 10): Promise<UserXP[]> {
     const { data, error } = await supabase
       .from('user_xp')
-      .select('*')
+      .select(getSupabaseProjection('user_xp'))
       .order('total_xp', { ascending: false })
       .limit(limit);
     if (error) return [];

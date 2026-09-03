@@ -19,6 +19,7 @@ import type {
   CustomMaterialWorkbookRowPreview,
   CustomMaterialWorkbookSheetPreview,
 } from '../types';
+import { getSupabaseProjection } from './supabaseProjections';
 
 const MAPPING_PROFILE_TABLE = 'custom_material_import_mapping_profiles';
 
@@ -524,7 +525,7 @@ const listMappingProfiles = async (templateKey: CustomMaterialTemplateKey, signa
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase
     .from(MAPPING_PROFILE_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(MAPPING_PROFILE_TABLE))
     .eq('scope_type', 'company')
     .eq('scope_id', 'default')
     .eq('template_key', templateKey)

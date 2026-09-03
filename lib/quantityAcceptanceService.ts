@@ -17,6 +17,8 @@ import { auditService } from './auditService';
 import { approvalService } from './approvalService';
 import { User } from '../types';
 import { projectSubmissionService } from './projectSubmissionService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'quantity_acceptances';
 const ITEM_TABLE = 'quantity_acceptance_items';
@@ -50,11 +52,11 @@ const roundPercent = (value?: number | null) => Math.round(Number(value || 0) * 
 
 async function fetchItems(acceptanceIds: string[]): Promise<Record<string, QuantityAcceptanceItem[]>> {
   if (acceptanceIds.length === 0) return {};
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(ITEM_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(ITEM_TABLE))
     .in('acceptance_id', acceptanceIds)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }), { label: "lib/quantityAcceptanceService.ts:54", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ITEM_TABLE) });
   if (error) {
     console.warn('quantity_acceptance_items unavailable', error.message);
     return {};
@@ -187,12 +189,12 @@ async function assertAcceptanceAmountsWithinContract(params: {
 }): Promise<void> {
   const contractItems = await contractItemService.listByContract(params.contractId, params.contractType);
   const contractItemMap = new Map(contractItems.map(item => [item.id, item]));
-  const { data: approvedRows, error } = await supabase
+  const { data: approvedRows, error } = await fetchAllSupabaseRows(supabase
     .from(TABLE)
     .select('id')
     .eq('contract_id', params.contractId)
     .eq('contract_type', params.contractType)
-    .eq('status', 'approved');
+    .eq('status', 'approved'), { label: "lib/quantityAcceptanceService.ts:191", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
   if (error) throw error;
 
   const previousIds = (approvedRows || [])
@@ -233,12 +235,12 @@ async function syncContractCompletedQuantities(
   if (uniqueIds.length === 0) return;
   const contractItems = await contractItemService.listByContract(contractId, contractType);
   const contractItemMap = new Map(contractItems.map(item => [item.id, item]));
-  const { data: approvedRows, error } = await supabase
+  const { data: approvedRows, error } = await fetchAllSupabaseRows(supabase
     .from(TABLE)
     .select('id')
     .eq('contract_id', contractId)
     .eq('contract_type', contractType)
-    .eq('status', 'approved');
+    .eq('status', 'approved'), { label: "lib/quantityAcceptanceService.ts:237", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
   if (error) throw error;
   const itemMap = await fetchItems((approvedRows || []).map(row => row.id));
   const approvedItems = Object.values(itemMap).flat();
@@ -271,12 +273,12 @@ async function collectVerifiedVolumeMapping(params: {
   const contractItemIds = new Set(contractItems.map(item => item.id));
   let logQuery = supabase
     .from('daily_logs')
-    .select('*')
+    .select(getSupabaseProjection('daily_logs'))
     .eq('status', 'verified')
     .gte('date', params.periodStart)
     .lte('date', params.periodEnd);
   logQuery = params.projectId ? logQuery.eq('project_id', params.projectId) : logQuery.eq('construction_site_id', params.constructionSiteId);
-  const { data: logs, error } = await logQuery;
+  const { data: logs, error } = await fetchAllSupabaseRows(logQuery, { label: "lib/quantityAcceptanceService.ts:273", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_logs') });
   if (error) throw error;
 
   const scopeId = params.projectId || params.constructionSiteId;
@@ -288,7 +290,7 @@ async function collectVerifiedVolumeMapping(params: {
       projectId: params.projectId || scopeId,
       constructionSiteId: params.constructionSiteId,
     }),
-    params.projectId ? workBoqQuery.eq('project_id', params.projectId) : workBoqQuery.eq('construction_site_id', params.constructionSiteId),
+    params.projectId ? fetchAllSupabaseRows(workBoqQuery.eq('project_id', params.projectId), { label: "lib/quantityAcceptanceService.ts:284", maxRows: 20_000, orderBy: getSupabaseOrderColumns('project_work_boq_items') }) : fetchAllSupabaseRows(workBoqQuery.eq('construction_site_id', params.constructionSiteId), { label: "lib/quantityAcceptanceService.ts:284", maxRows: 20_000, orderBy: getSupabaseOrderColumns('project_work_boq_items') }),
   ]);
   if (workBoqRows.error) throw workBoqRows.error;
 
@@ -391,19 +393,19 @@ async function collectInternalVerifiedVolumeMapping(params: {
 }) {
   let logQuery = supabase
     .from('daily_logs')
-    .select('*')
+    .select(getSupabaseProjection('daily_logs'))
     .eq('status', 'verified')
     .gte('date', params.periodStart)
     .lte('date', params.periodEnd);
   logQuery = params.projectId ? logQuery.eq('project_id', params.projectId) : logQuery.eq('construction_site_id', params.constructionSiteId);
-  const { data: logs, error } = await logQuery;
+  const { data: logs, error } = await fetchAllSupabaseRows(logQuery, { label: "lib/quantityAcceptanceService.ts:393", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_logs') });
   if (error) throw error;
 
   const workBoqQuery = supabase
     .from('project_work_boq_items')
     .select('id, name, source_task_id, wbs_code, unit, planned_qty, unit_price, total_amount');
   const [workBoqRows, ganttCatalog] = await Promise.all([
-    params.projectId ? workBoqQuery.eq('project_id', params.projectId) : workBoqQuery.eq('construction_site_id', params.constructionSiteId),
+    params.projectId ? fetchAllSupabaseRows(workBoqQuery.eq('project_id', params.projectId), { label: "lib/quantityAcceptanceService.ts:403", maxRows: 20_000, orderBy: getSupabaseOrderColumns('project_work_boq_items') }) : fetchAllSupabaseRows(workBoqQuery.eq('construction_site_id', params.constructionSiteId), { label: "lib/quantityAcceptanceService.ts:403", maxRows: 20_000, orderBy: getSupabaseOrderColumns('project_work_boq_items') }),
     loadQuantityAcceptanceGanttCatalog({
       projectId: params.projectId || params.constructionSiteId,
       constructionSiteId: params.constructionSiteId,
@@ -517,13 +519,13 @@ export const quantityAcceptanceService = {
     contractType: ContractItemType,
     scope: QuantityAcceptanceScope = DEFAULT_SCOPE,
   ): Promise<QuantityAcceptance[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('contract_id', contractId)
       .eq('contract_type', contractType)
       .eq('acceptance_scope', scope)
-      .order('period_number', { ascending: true });
+      .order('period_number', { ascending: true }), { label: "lib/quantityAcceptanceService.ts:521", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     const acceptances = (data || []).map(normalize);
     const itemMap = await fetchItems(acceptances.map(a => a.id));
@@ -533,11 +535,11 @@ export const quantityAcceptanceService = {
   async listBySite(constructionSiteId: string, scope: QuantityAcceptanceScope = DEFAULT_SCOPE, projectId?: string | null): Promise<QuantityAcceptance[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('acceptance_scope', scope)
       .order('created_at', { ascending: false });
     query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/quantityAcceptanceService.ts:535", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     const acceptances = (data || []).map(normalize);
     const itemMap = await fetchItems(acceptances.map(a => a.id));

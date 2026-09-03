@@ -99,6 +99,7 @@ const query = (response: { data?: any; error?: any } = { data: [], error: null }
     delete: vi.fn(() => api),
     update: vi.fn(() => api),
     upsert: vi.fn(() => api),
+    limit: vi.fn(() => api),
     maybeSingle: vi.fn(() => Promise.resolve(response)),
     single: vi.fn(() => Promise.resolve(response)),
     then: (resolve: any, reject: any) => Promise.resolve(response).then(resolve, reject),

@@ -64,6 +64,8 @@ import { fetchAllPages } from '../lib/supabasePagination';
 import { isPerf02RequestPagingEnabled, isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../lib/supabaseCompleteRead';
 
 interface AppSettings {
   name: string;
@@ -302,7 +304,7 @@ const fetchAllInventoryItemRows = async (): Promise<any[] | null> => {
     while (true) {
       let query = supabase
         .from('items')
-        .select('*')
+        .select(getSupabaseProjection('items'))
         .order('id', { ascending: true })
         .limit(INVENTORY_FETCH_PAGE_SIZE);
       if (lastId) query = query.gt('id', lastId);
@@ -828,7 +830,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ==================== LAZY MODULE DATA LOADING ====================
   const fetchTableHelper = async (table: string, query?: any) => {
     try {
-      const resolvedQuery = query ?? supabase.from(table).select('*');
+      const resolvedQuery = query ?? fetchAllSupabaseRows(supabase.from(table).select(getSupabaseProjection(table)), { label: "context/AppContext.tsx:832", maxRows: 10_000, orderBy: getSupabaseOrderColumns(table) });
       const { data, error } = await resolvedQuery;
       if (error) {
         if (isTransientSupabaseError(error)) showSystemSlowMessage();
@@ -898,7 +900,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const [itemsData, whData, whTypeData, reqData] = await Promise.all([
             fetchAllInventoryItemRows(),
             fetchTableHelper('warehouses'),
-            fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
+            fetchTableHelper('warehouse_types', fetchAllSupabaseRows(supabase.from('warehouse_types').select(getSupabaseProjection('warehouse_types')).order('sort_order', { ascending: true }).order('name', { ascending: true }), { label: "context/AppContext.tsx:902", maxRows: 10_000, orderBy: getSupabaseOrderColumns('warehouse_types') })),
             isPerf02RequestPagingEnabled ? Promise.resolve(null) : fetchLegacyWmsRequests(),
           ]);
           setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
@@ -969,7 +971,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const [itemsData, whData, whTypeData, supData, txData, reqData, actPage, catData, unitData, lossNormsData, auditSessionsData] = await Promise.all([
             fetchAllInventoryItemRows(),
             fetchTableHelper('warehouses'),
-            fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
+            fetchTableHelper('warehouse_types', fetchAllSupabaseRows(supabase.from('warehouse_types').select(getSupabaseProjection('warehouse_types')).order('sort_order', { ascending: true }).order('name', { ascending: true }), { label: "context/AppContext.tsx:973", maxRows: 10_000, orderBy: getSupabaseOrderColumns('warehouse_types') })),
             fetchTableHelper('suppliers'),
             isPerf02WmsPagingEnabled ? Promise.resolve(null) : fetchLegacyWmsTransactions(),
             isPerf02RequestPagingEnabled ? Promise.resolve(null) : fetchLegacyWmsRequests(),
@@ -980,7 +982,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             fetchTableHelper('categories'),
             fetchTableHelper('units'),
             fetchTableHelper('loss_norms'),
-            fetchTableHelper('audit_sessions', supabase.from('audit_sessions').select('*').order('date', { ascending: false })),
+            fetchTableHelper('audit_sessions', fetchAllSupabaseRows(supabase.from('audit_sessions').select(getSupabaseProjection('audit_sessions')).order('date', { ascending: false }), { label: "context/AppContext.tsx:984", maxRows: 10_000, orderBy: getSupabaseOrderColumns('audit_sessions') })),
           ]);
           setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
           setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
@@ -1174,7 +1176,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const [constructionSitesData, projectFinancesData, projectTxData] = await Promise.all([
             fetchTableHelper('hrm_construction_sites'),
             fetchTableHelper('project_finances'),
-            fetchTableHelper('project_transactions', supabase.from('project_transactions').select('*').order('date', { ascending: false })),
+            fetchTableHelper('project_transactions', fetchAllSupabaseRows(supabase.from('project_transactions').select(getSupabaseProjection('project_transactions')).order('date', { ascending: false }), { label: "context/AppContext.tsx:1178", maxRows: 10_000, orderBy: getSupabaseOrderColumns('project_transactions') })),
           ]);
           if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
           if (projectFinancesData) setProjectFinances(projectFinancesData.map(normalizeProjectFinance));
@@ -1637,13 +1639,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const [itemsResult, transactionsResult, requestsResult] = await Promise.all([
       itemIds.length > 0
-        ? supabase.from('items').select('*').in('id', itemIds)
+        ? fetchAllSupabaseRows(supabase.from('items').select(getSupabaseProjection('items')).in('id', itemIds), { label: "context/AppContext.tsx:1641", maxRows: 10_000, orderBy: getSupabaseOrderColumns('items') })
         : Promise.resolve({ data: null, error: null } as any),
       transactionIds.length > 0
-        ? supabase.from('transactions').select('*').in('id', transactionIds)
+        ? fetchAllSupabaseRows(supabase.from('transactions').select(getSupabaseProjection('transactions')).in('id', transactionIds), { label: "context/AppContext.tsx:1644", maxRows: 10_000, orderBy: getSupabaseOrderColumns('transactions') })
         : Promise.resolve({ data: null, error: null } as any),
       requestIds.length > 0
-        ? supabase.from('requests').select('*').in('id', requestIds)
+        ? fetchAllSupabaseRows(supabase.from('requests').select(getSupabaseProjection('requests')).in('id', requestIds), { label: "context/AppContext.tsx:1647", maxRows: 10_000, orderBy: getSupabaseOrderColumns('requests') })
         : Promise.resolve({ data: null, error: null } as any),
     ]);
 
@@ -2379,8 +2381,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSupabaseConfigured) {
       const [{ data: batchRows, error: batchError }, { data: poLinkRows, error: poLinkError }, { data: txRows, error: txError }] = await Promise.all([
-        supabase.from('material_request_fulfillment_batches').select('id,status,transaction_id').eq('material_request_id', id),
-        supabase.from('purchase_order_request_lines').select('id,purchase_order_id,purchase_order_line_id').eq('material_request_id', id),
+        fetchAllSupabaseRows(supabase.from('material_request_fulfillment_batches').select('id,status,transaction_id').eq('material_request_id', id), { label: "context/AppContext.tsx:2383", maxRows: 10_000, orderBy: getSupabaseOrderColumns('material_request_fulfillment_batches') }),
+        fetchAllSupabaseRows(supabase.from('purchase_order_request_lines').select('id,purchase_order_id,purchase_order_line_id').eq('material_request_id', id), { label: "context/AppContext.tsx:2384", maxRows: 10_000, orderBy: getSupabaseOrderColumns('purchase_order_request_lines') }),
         supabase.from('transactions').select('id').eq('related_request_id', id).limit(1),
       ]);
       if (batchError && batchError.code !== '42P01') throw batchError;
@@ -2398,10 +2400,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const linkedPoIds = Array.from(new Set(poLinks.map((link: any) => link.purchase_order_id).filter(Boolean)));
         let linkedPoRows: any[] = [];
         if (linkedPoIds.length > 0) {
-          const { data, error: linkedPoError } = await supabase
+          const { data, error: linkedPoError } = await fetchAllSupabaseRows(supabase
             .from('purchase_orders')
             .select('id,status,items')
-            .in('id', linkedPoIds);
+            .in('id', linkedPoIds), { label: "context/AppContext.tsx:2402", maxRows: 10_000, orderBy: getSupabaseOrderColumns('purchase_orders') });
           if (linkedPoError && linkedPoError.code !== '42P01') throw linkedPoError;
           linkedPoRows = data || [];
         }

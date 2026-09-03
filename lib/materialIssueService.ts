@@ -15,6 +15,8 @@ import {
 } from '../types';
 import { fromDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const ORDER_TABLE = 'material_issue_orders';
 const LINE_TABLE = 'material_issue_lines';
@@ -139,10 +141,10 @@ async function hydrateOrders(orderRows: any[]): Promise<MaterialIssueOrder[]> {
     { data: settlementRows, error: settlementError },
   ] =
     await Promise.all([
-      supabase.from(LINE_TABLE).select('*').in('issue_order_id', orderIds).order('created_at', { ascending: true }),
-      supabase.from(RECEIPT_TABLE).select('*').in('issue_order_id', orderIds).order('received_at', { ascending: true }),
-      supabase.from(RETURN_TABLE).select('*').in('issue_order_id', orderIds).order('created_at', { ascending: true }),
-      supabase.from(SETTLEMENT_TABLE).select('*').in('issue_order_id', orderIds).order('created_at', { ascending: true }),
+      fetchAllSupabaseRows(supabase.from(LINE_TABLE).select(getSupabaseProjection(LINE_TABLE)).in('issue_order_id', orderIds).order('created_at', { ascending: true }), { label: "lib/materialIssueService.ts:143", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(RECEIPT_TABLE).select(getSupabaseProjection(RECEIPT_TABLE)).in('issue_order_id', orderIds).order('received_at', { ascending: true }), { label: "lib/materialIssueService.ts:144", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RECEIPT_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(RETURN_TABLE).select(getSupabaseProjection(RETURN_TABLE)).in('issue_order_id', orderIds).order('created_at', { ascending: true }), { label: "lib/materialIssueService.ts:145", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RETURN_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(SETTLEMENT_TABLE).select(getSupabaseProjection(SETTLEMENT_TABLE)).in('issue_order_id', orderIds).order('created_at', { ascending: true }), { label: "lib/materialIssueService.ts:146", maxRows: 20_000, orderBy: getSupabaseOrderColumns(SETTLEMENT_TABLE) }),
     ]);
 
   if (lineError) throw lineError;
@@ -161,13 +163,13 @@ async function hydrateOrders(orderRows: any[]): Promise<MaterialIssueOrder[]> {
   ] =
     await Promise.all([
       receiptIds.length
-        ? supabase.from(RECEIPT_LINE_TABLE).select('*').in('receipt_id', receiptIds).order('created_at', { ascending: true })
+        ? fetchAllSupabaseRows(supabase.from(RECEIPT_LINE_TABLE).select(getSupabaseProjection(RECEIPT_LINE_TABLE)).in('receipt_id', receiptIds).order('created_at', { ascending: true }), { label: "lib/materialIssueService.ts:165", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RECEIPT_LINE_TABLE) })
         : Promise.resolve({ data: [], error: null } as any),
       returnIds.length
-        ? supabase.from(RETURN_LINE_TABLE).select('*').in('issue_return_id', returnIds).order('created_at', { ascending: true })
+        ? fetchAllSupabaseRows(supabase.from(RETURN_LINE_TABLE).select(getSupabaseProjection(RETURN_LINE_TABLE)).in('issue_return_id', returnIds).order('created_at', { ascending: true }), { label: "lib/materialIssueService.ts:168", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RETURN_LINE_TABLE) })
         : Promise.resolve({ data: [], error: null } as any),
       settlementIds.length
-        ? supabase.from(SETTLEMENT_LINE_TABLE).select('*').in('settlement_id', settlementIds).order('created_at', { ascending: true })
+        ? fetchAllSupabaseRows(supabase.from(SETTLEMENT_LINE_TABLE).select(getSupabaseProjection(SETTLEMENT_LINE_TABLE)).in('settlement_id', settlementIds).order('created_at', { ascending: true }), { label: "lib/materialIssueService.ts:171", maxRows: 20_000, orderBy: getSupabaseOrderColumns(SETTLEMENT_LINE_TABLE) })
         : Promise.resolve({ data: [], error: null } as any),
     ]);
 
@@ -247,7 +249,7 @@ export const materialIssueService = {
 
     let query = supabase
       .from(ORDER_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(ORDER_TABLE))
       .order('created_at', { ascending: false });
 
     if (options.projectId) query = query.eq('project_id', options.projectId);

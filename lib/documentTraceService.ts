@@ -12,6 +12,8 @@ import type {
 } from '../types';
 import { fromDb } from './dbMapping';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export const DOCUMENT_QR_PARAM = 'docQr';
 
@@ -463,10 +465,10 @@ const loadTraceNodes = async (seeds: DocumentTraceSeed[]): Promise<DocumentTrace
 
   for (const [type, ids] of byType.entries()) {
     const config = traceNodeConfig[type];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(config.table)
-      .select('*')
-      .in('id', Array.from(ids));
+      .select(getSupabaseProjection(config.table))
+      .in('id', Array.from(ids)), { label: "lib/documentTraceService.ts:467", maxRows: 50_000, orderBy: getSupabaseOrderColumns(config.table) });
     if (error) {
       if (error.code === '42P01' || error.code === '42703') continue;
       throw error;
@@ -478,16 +480,16 @@ const loadTraceNodes = async (seeds: DocumentTraceSeed[]): Promise<DocumentTrace
 
 const loadLinksForSeed = async (seed: DocumentTraceSeed): Promise<ProjectDocumentLink[]> => {
   const [sourceResult, targetResult] = await Promise.all([
-    supabase
+    fetchAllSupabaseRows(supabase
       .from('project_document_links')
-      .select('*')
+      .select(getSupabaseProjection('project_document_links'))
       .eq('source_type', seed.type)
-      .eq('source_id', seed.id),
-    supabase
+      .eq('source_id', seed.id), { label: "lib/documentTraceService.ts:482", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_document_links') }),
+    fetchAllSupabaseRows(supabase
       .from('project_document_links')
-      .select('*')
+      .select(getSupabaseProjection('project_document_links'))
       .eq('target_type', seed.type)
-      .eq('target_id', seed.id),
+      .eq('target_id', seed.id), { label: "lib/documentTraceService.ts:487", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_document_links') }),
   ]);
   if (sourceResult.error && sourceResult.error.code !== '42P01') throw sourceResult.error;
   if (targetResult.error && targetResult.error.code !== '42P01') throw targetResult.error;
@@ -524,20 +526,20 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   };
 
   if (seed.type === 'supplier_contract') {
-    const { data: noteRows } = await supabase
+    const { data: noteRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_direct_delivery_notes')
-      .select('*')
-      .eq('supplier_contract_id', seed.id);
+      .select(getSupabaseProjection('supplier_direct_delivery_notes'))
+      .eq('supplier_contract_id', seed.id), { label: "lib/documentTraceService.ts:528", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_direct_delivery_notes') });
     (noteRows || []).forEach((note: any) => {
       push('supplier_contract', seed.id, 'supplier_direct_delivery_note', note.id, 'delivery_note', {
         amount: note.total_amount,
       });
     });
 
-    const { data: statementRows } = await supabase
+    const { data: statementRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_delivery_statements')
-      .select('*')
-      .eq('supplier_contract_id', seed.id);
+      .select(getSupabaseProjection('supplier_delivery_statements'))
+      .eq('supplier_contract_id', seed.id), { label: "lib/documentTraceService.ts:538", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_delivery_statements') });
     (statementRows || []).forEach((statement: any) => {
       if (statement.payable_document_id) {
         push('supplier_delivery_statement', statement.id, 'supplier_payable_document', statement.payable_document_id, 'recognizes', {
@@ -550,7 +552,7 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   if (seed.type === 'supplier_direct_delivery_note') {
     const { data: noteRows } = await supabase
       .from('supplier_direct_delivery_notes')
-      .select('*')
+      .select(getSupabaseProjection('supplier_direct_delivery_notes'))
       .eq('id', seed.id)
       .limit(1);
     const note = noteRows?.[0];
@@ -560,10 +562,10 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
       });
     }
 
-    const { data: lineRows } = await supabase
+    const { data: lineRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_direct_delivery_lines')
-      .select('*')
-      .eq('delivery_note_id', seed.id);
+      .select(getSupabaseProjection('supplier_direct_delivery_lines'))
+      .eq('delivery_note_id', seed.id), { label: "lib/documentTraceService.ts:564", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_direct_delivery_lines') });
     (lineRows || []).forEach((line: any) => {
       if (line.wms_import_transaction_id) {
         push('supplier_direct_delivery_note', seed.id, 'wms_transaction', line.wms_import_transaction_id, 'wms_import', {
@@ -577,20 +579,20 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
       }
     });
 
-    const { data: statementLineRows } = await supabase
+    const { data: statementLineRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_delivery_statement_lines')
       .select('statement_id')
-      .eq('delivery_note_id', seed.id);
+      .eq('delivery_note_id', seed.id), { label: "lib/documentTraceService.ts:581", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_delivery_statement_lines') });
     (statementLineRows || []).forEach((line: any) => {
       push('supplier_direct_delivery_note', seed.id, 'supplier_delivery_statement', line.statement_id, 'statement');
     });
   }
 
   if (seed.type === 'wms_transaction') {
-    const { data: lineRows } = await supabase
+    const { data: lineRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_direct_delivery_lines')
-      .select('*')
-      .or(`wms_import_transaction_id.eq.${seed.id},wms_export_transaction_id.eq.${seed.id}`);
+      .select(getSupabaseProjection('supplier_direct_delivery_lines'))
+      .or(`wms_import_transaction_id.eq.${seed.id},wms_export_transaction_id.eq.${seed.id}`), { label: "lib/documentTraceService.ts:591", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_direct_delivery_lines') });
     (lineRows || []).forEach((line: any) => {
       if (line.wms_import_transaction_id) {
         push('supplier_direct_delivery_note', line.delivery_note_id, 'wms_transaction', line.wms_import_transaction_id, 'wms_import', {
@@ -608,7 +610,7 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   if (seed.type === 'supplier_delivery_statement') {
     const { data: statementRows } = await supabase
       .from('supplier_delivery_statements')
-      .select('*')
+      .select(getSupabaseProjection('supplier_delivery_statements'))
       .eq('id', seed.id)
       .limit(1);
     const statement = statementRows?.[0];
@@ -618,21 +620,21 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
       });
     }
 
-    const { data: statementLineRows } = await supabase
+    const { data: statementLineRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_delivery_statement_lines')
       .select('delivery_note_id')
-      .eq('statement_id', seed.id);
+      .eq('statement_id', seed.id), { label: "lib/documentTraceService.ts:622", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_delivery_statement_lines') });
     (statementLineRows || []).forEach((line: any) => {
       push('supplier_direct_delivery_note', line.delivery_note_id, 'supplier_delivery_statement', seed.id, 'statement');
     });
   }
 
   if (seed.type === 'purchase_order' || seed.type === 'site_direct_purchase' || seed.type === 'supplier_delivery_statement') {
-    const { data: payableRows } = await supabase
+    const { data: payableRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_payable_documents')
-      .select('*')
+      .select(getSupabaseProjection('supplier_payable_documents'))
       .eq('source_type', seed.type)
-      .eq('source_id', seed.id);
+      .eq('source_id', seed.id), { label: "lib/documentTraceService.ts:632", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_payable_documents') });
     (payableRows || []).forEach((document: any) => {
       push(seed.type, seed.id, 'supplier_payable_document', document.id, 'recognizes', {
         amount: document.recognized_amount,
@@ -641,11 +643,11 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   }
 
   if (seed.type === 'site_direct_purchase') {
-    const { data: settlementRows } = await supabase
+    const { data: settlementRows } = await fetchAllSupabaseRows(supabase
       .from('site_cash_settlement_lines')
-      .select('*')
+      .select(getSupabaseProjection('site_cash_settlement_lines'))
       .eq('source_type', 'site_direct_purchase')
-      .eq('source_id', seed.id);
+      .eq('source_id', seed.id), { label: "lib/documentTraceService.ts:645", maxRows: 50_000, orderBy: getSupabaseOrderColumns('site_cash_settlement_lines') });
     (settlementRows || []).forEach((line: any) => {
       push('site_direct_purchase', seed.id, 'site_cash_settlement_batch', line.settlement_batch_id, 'settled_by', {
         amount: line.approved_amount,
@@ -656,7 +658,7 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   if (seed.type === 'supplier_payable_document') {
     const { data: docRows } = await supabase
       .from('supplier_payable_documents')
-      .select('*')
+      .select(getSupabaseProjection('supplier_payable_documents'))
       .eq('id', seed.id)
       .limit(1);
     const doc = docRows?.[0];
@@ -668,20 +670,20 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
       });
     }
 
-    const { data: allocationRows } = await supabase
+    const { data: allocationRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_payment_allocations')
-      .select('*')
-      .eq('payable_document_id', seed.id);
+      .select(getSupabaseProjection('supplier_payment_allocations'))
+      .eq('payable_document_id', seed.id), { label: "lib/documentTraceService.ts:672", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_payment_allocations') });
     (allocationRows || []).forEach((allocation: any) => {
       push('supplier_payable_document', seed.id, 'supplier_payment_batch', allocation.payment_batch_id, 'paid_by', {
         allocatedAmount: allocation.allocated_amount,
       });
     });
 
-    const { data: invoiceLinkRows } = await supabase
+    const { data: invoiceLinkRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_invoice_payable_links')
-      .select('*')
-      .eq('payable_document_id', seed.id);
+      .select(getSupabaseProjection('supplier_invoice_payable_links'))
+      .eq('payable_document_id', seed.id), { label: "lib/documentTraceService.ts:682", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_invoice_payable_links') });
     (invoiceLinkRows || []).forEach((link: any) => {
       push('supplier_payable_document', seed.id, 'supplier_invoice', link.invoice_id, 'invoiced_by', {
         allocatedGrossAmount: link.allocated_gross_amount,
@@ -690,10 +692,10 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   }
 
   if (seed.type === 'supplier_invoice') {
-    const { data: invoiceLinkRows } = await supabase
+    const { data: invoiceLinkRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_invoice_payable_links')
-      .select('*')
-      .eq('invoice_id', seed.id);
+      .select(getSupabaseProjection('supplier_invoice_payable_links'))
+      .eq('invoice_id', seed.id), { label: "lib/documentTraceService.ts:694", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_invoice_payable_links') });
     (invoiceLinkRows || []).forEach((link: any) => {
       push('supplier_payable_document', link.payable_document_id, 'supplier_invoice', seed.id, 'invoiced_by', {
         allocatedGrossAmount: link.allocated_gross_amount,
@@ -702,10 +704,10 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   }
 
   if (seed.type === 'supplier_payment_batch') {
-    const { data: allocationRows } = await supabase
+    const { data: allocationRows } = await fetchAllSupabaseRows(supabase
       .from('supplier_payment_allocations')
-      .select('*')
-      .eq('payment_batch_id', seed.id);
+      .select(getSupabaseProjection('supplier_payment_allocations'))
+      .eq('payment_batch_id', seed.id), { label: "lib/documentTraceService.ts:706", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_payment_allocations') });
     (allocationRows || []).forEach((allocation: any) => {
       push('supplier_payable_document', allocation.payable_document_id, 'supplier_payment_batch', seed.id, 'paid_by', {
         allocatedAmount: allocation.allocated_amount,
@@ -714,7 +716,7 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
 
     const { data: batchRows } = await supabase
       .from('supplier_payment_batches')
-      .select('*')
+      .select(getSupabaseProjection('supplier_payment_batches'))
       .eq('id', seed.id)
       .limit(1);
     const batch = batchRows?.[0];
@@ -722,10 +724,10 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
   }
 
   if (seed.type === 'site_cash_settlement_batch') {
-    const { data: lineRows } = await supabase
+    const { data: lineRows } = await fetchAllSupabaseRows(supabase
       .from('site_cash_settlement_lines')
-      .select('*')
-      .eq('settlement_batch_id', seed.id);
+      .select(getSupabaseProjection('site_cash_settlement_lines'))
+      .eq('settlement_batch_id', seed.id), { label: "lib/documentTraceService.ts:726", maxRows: 50_000, orderBy: getSupabaseOrderColumns('site_cash_settlement_lines') });
     (lineRows || []).forEach((line: any) => {
       if (line.source_type === 'site_direct_purchase') {
         push('site_direct_purchase', line.source_id, 'site_cash_settlement_batch', seed.id, 'settled_by', {
@@ -736,7 +738,7 @@ const loadFallbackLinks = async (seed: DocumentTraceSeed): Promise<ProjectDocume
 
     const { data: batchRows } = await supabase
       .from('site_cash_settlement_batches')
-      .select('*')
+      .select(getSupabaseProjection('site_cash_settlement_batches'))
       .eq('id', seed.id)
       .limit(1);
     const batch = batchRows?.[0];
@@ -796,7 +798,7 @@ export const resolveDocumentQr = async (raw: string | DocumentQrPayload): Promis
 
   const { data, error } = await supabase
     .from(config.table)
-    .select('*')
+    .select(getSupabaseProjection(config.table))
     .eq('id', payload.id)
     .eq(tokenColumn, payload.token)
     .limit(1);

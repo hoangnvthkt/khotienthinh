@@ -8,6 +8,8 @@ import type {
   CostNormResourceRecord,
 } from './costNormImportService';
 import type { CostNormResourceType } from './import/types';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../supabaseProjections';
+import { fetchAllSupabaseRows } from '../supabaseCompleteRead';
 
 const LIBRARY_TABLE = 'cost_norm_libraries';
 const ITEM_TABLE = 'cost_norm_items';
@@ -227,7 +229,7 @@ const buildPreview = (
 const getActiveLibraries = async () => {
   const { data, error } = await supabase
     .from(LIBRARY_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(LIBRARY_TABLE))
     .eq('status', 'active')
     .order('created_at', { ascending: false })
     .limit(100);
@@ -254,7 +256,7 @@ const getNormItemWithLibrary = async (normItemId: string) => {
 
   const componentRows = await fetchPaged<any>((from, to) => supabase
     .from(COMPONENT_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(COMPONENT_TABLE))
     .eq('norm_item_id', normItemId)
     .order('line_index', { ascending: true })
     .range(from, to) as any);
@@ -262,7 +264,7 @@ const getNormItemWithLibrary = async (normItemId: string) => {
   const resourceRows = (await Promise.all(chunk(resourceIds).map(ids =>
     fetchPaged<any>((from, to) => supabase
       .from(RESOURCE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(RESOURCE_TABLE))
       .in('id', ids)
       .range(from, to) as any)
   ))).flat();
@@ -303,7 +305,7 @@ const getEstimatesByMapping = async (mappingId: string) => {
   if (!mappingId) return [];
   const rows = await fetchPaged<any>((from, to) => supabase
     .from(ESTIMATE_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(ESTIMATE_TABLE))
     .eq('mapping_id', mappingId)
     .order('line_index', { ascending: true })
     .range(from, to) as any);
@@ -316,7 +318,7 @@ const getMaterialRowsByIds = async (ids: string[]) => {
   const rows = (await Promise.all(chunk(usableIds).map(batch =>
     fetchPaged<any>((from, to) => supabase
       .from(MATERIAL_BUDGET_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(MATERIAL_BUDGET_TABLE))
       .in('id', batch)
       .range(from, to) as any)
   ))).flat();
@@ -365,7 +367,7 @@ export const g8NormConsumptionService = {
 
     let request: any = supabase
       .from(ITEM_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(ITEM_TABLE))
       .in('library_id', libraryIds)
       .order('code', { ascending: true })
       .limit(limit);
@@ -405,7 +407,7 @@ export const g8NormConsumptionService = {
     const rows = (await Promise.all(chunk(ids).map(batch =>
       fetchPaged<any>((from, to) => supabase
         .from(MAPPING_TABLE)
-        .select('*')
+        .select(getSupabaseProjection(MAPPING_TABLE))
         .in('work_boq_item_id', batch)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
@@ -484,7 +486,7 @@ export const g8NormConsumptionService = {
     const { data: mappingRows, error: mappingError } = await supabase
       .from(MAPPING_TABLE)
       .upsert(mappingPayload, { onConflict: 'id' })
-      .select('*');
+      .select(getSupabaseProjection(MAPPING_TABLE));
     if (mappingError) throw mappingError;
     const rawMappingRow = (mappingRows || [])[0] || mappingPayload;
     const mappedRow = mapMappingRow(rawMappingRow);
@@ -521,7 +523,7 @@ export const g8NormConsumptionService = {
     const { data: estimateData, error: estimateError } = await supabase
       .from(ESTIMATE_TABLE)
       .upsert(estimateRows, { onConflict: 'id' })
-      .select('*');
+      .select(getSupabaseProjection(ESTIMATE_TABLE));
     if (estimateError) throw estimateError;
     let estimates = (estimateData || []).map(mapEstimateRow);
     const estimateByComponentId = new Map(estimates.map(row => [row.costNormComponentId || '', row]));
@@ -569,7 +571,7 @@ export const g8NormConsumptionService = {
       const { data: materialData, error: materialError } = await supabase
         .from(MATERIAL_BUDGET_TABLE)
         .upsert(materialRows, { onConflict: 'id' })
-        .select('*');
+        .select(getSupabaseProjection(MATERIAL_BUDGET_TABLE));
       if (materialError) throw materialError;
       materialBudgetItems = (materialData || []).map(fromDb) as MaterialBudgetItem[];
     }
@@ -587,7 +589,7 @@ export const g8NormConsumptionService = {
     const { data: refreshedEstimateData, error: refreshedEstimateError } = await supabase
       .from(ESTIMATE_TABLE)
       .upsert(estimateUpdates, { onConflict: 'id' })
-      .select('*');
+      .select(getSupabaseProjection(ESTIMATE_TABLE));
     if (refreshedEstimateError) throw refreshedEstimateError;
     estimates = (refreshedEstimateData || []).map(mapEstimateRow);
 
@@ -633,11 +635,11 @@ export const g8NormConsumptionService = {
 
   async getGeneratedMaterialRows(mappingId: string): Promise<MaterialBudgetItem[]> {
     if (!isSupabaseConfigured || !mappingId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(MATERIAL_BUDGET_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(MATERIAL_BUDGET_TABLE))
       .eq('source_norm_mapping_id', mappingId)
-      .eq('source_type', 'g8_norm');
+      .eq('source_type', 'g8_norm'), { label: "lib/costNorm/g8NormConsumptionService.ts:637", maxRows: 50_000, orderBy: getSupabaseOrderColumns(MATERIAL_BUDGET_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb) as MaterialBudgetItem[];
   },

@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface ProjectDocument {
   id: string;
@@ -146,13 +148,13 @@ export const documentService = {
   async list(projectIdOrSiteId: string, category?: string, constructionSiteId?: string | null): Promise<ProjectDocument[]> {
     let query = supabase
       .from('project_documents')
-      .select('*')
+      .select(getSupabaseProjection('project_documents'))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('created_at', { ascending: false });
     if (category && category !== 'all') {
       query = query.eq('category', category);
     }
-    const { data } = await query;
+    const { data } = await fetchAllSupabaseRows(query, { label: "lib/documentService.ts:148", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_documents') });
     return dedupeRowsById(data || []).map(toCamel);
   },
 

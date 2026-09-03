@@ -11,6 +11,8 @@ import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
 import { approvalService } from './approvalService';
 import { projectSubmissionService } from './projectSubmissionService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'contract_variations';
 const ITEM_TABLE = 'contract_variation_items';
@@ -22,11 +24,11 @@ const normalize = (row: any): ContractVariation => ({
 
 async function fetchItems(variationIds: string[]): Promise<Record<string, ContractVariationItem[]>> {
   if (variationIds.length === 0) return {};
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(ITEM_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(ITEM_TABLE))
     .in('variation_id', variationIds)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }), { label: "lib/variationService.ts:26", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ITEM_TABLE) });
   if (error) {
     console.warn('contract_variation_items unavailable', error.message);
     return {};
@@ -57,13 +59,13 @@ async function replaceItems(variationId: string, items: ContractVariationItem[])
 
 export const variationService = {
   async listByContract(contractId: string, contractType: ContractItemType): Promise<ContractVariation[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('contract_id', contractId)
       .eq('contract_type', contractType)
       .order('version_number', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/variationService.ts:61", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     const variations = (data || []).map(normalize);
     const itemMap = await fetchItems(variations.map(v => v.id));

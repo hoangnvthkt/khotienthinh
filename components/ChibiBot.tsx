@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { X, Send, Loader2, ChevronDown, Bot, Sparkles, Trash2, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { escapeHtml } from '../lib/safeHtml';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../lib/supabaseCompleteRead';
 
 // ══════════════════════════════════════════
 //  CHIBI BOT 🤖 — Virtual AI Assistant Mascot
@@ -420,10 +422,10 @@ const ChibiBot: React.FC<ChibiBotProps> = ({ userName, userId }) => {
   // ─── Load random messages from DB ──────────────────
   useEffect(() => {
     const fetchMessages = async () => {
-      const { data } = await supabase
+      const { data } = await fetchAllSupabaseRows(supabase
         .from('chatbot_messages')
-        .select('*')
-        .eq('is_active', true);
+        .select(getSupabaseProjection('chatbot_messages'))
+        .eq('is_active', true), { label: "components/ChibiBot.tsx:424", maxRows: 10_000, orderBy: getSupabaseOrderColumns('chatbot_messages') });
       if (data) setDbMessages(data);
     };
     fetchMessages();

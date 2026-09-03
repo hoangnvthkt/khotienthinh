@@ -6,6 +6,8 @@ import {
   DailyLogVolume,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface DailyLogDetails {
   volumes: DailyLogVolume[];
@@ -65,10 +67,10 @@ export const dailyLogDetailService = {
 
     try {
       const [volumes, materials, labor, machines] = await Promise.all([
-        supabase.from('daily_log_volumes').select('*').in('daily_log_id', logIds).order('source_index', { ascending: true }),
-        supabase.from('daily_log_materials').select('*').in('daily_log_id', logIds).order('source_index', { ascending: true }),
-        supabase.from('daily_log_labor').select('*').in('daily_log_id', logIds).order('source_index', { ascending: true }),
-        supabase.from('daily_log_machines').select('*').in('daily_log_id', logIds).order('source_index', { ascending: true }),
+        fetchAllSupabaseRows(supabase.from('daily_log_volumes').select(getSupabaseProjection('daily_log_volumes')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:69", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_volumes') }),
+        fetchAllSupabaseRows(supabase.from('daily_log_materials').select(getSupabaseProjection('daily_log_materials')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:70", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_materials') }),
+        fetchAllSupabaseRows(supabase.from('daily_log_labor').select(getSupabaseProjection('daily_log_labor')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:71", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_labor') }),
+        fetchAllSupabaseRows(supabase.from('daily_log_machines').select(getSupabaseProjection('daily_log_machines')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:72", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_machines') }),
       ]);
 
       for (const response of [volumes, materials, labor, machines]) {

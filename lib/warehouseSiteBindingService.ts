@@ -4,13 +4,15 @@ import {
   mapConstructionSiteWarehouseBindingFromDb,
   mapWarehouseSiteBindingFromDb,
 } from './warehouseSiteBinding';
+import { getSupabaseOrderColumns } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export const warehouseSiteBindingService = {
   async listProjects(): Promise<Project[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('projects')
       .select('id,code,name,status,construction_site_id')
-      .order('code', { ascending: true });
+      .order('code', { ascending: true }), { label: "lib/warehouseSiteBindingService.ts:10", maxRows: 20_000, orderBy: getSupabaseOrderColumns('projects') });
     if (error) throw error;
     return (data || []).map((row: any) => ({
       id: row.id,

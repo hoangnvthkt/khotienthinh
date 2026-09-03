@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { ProjectCostItem, CostItemSource, ProjectCostCategory, ProjectTransaction } from '../types';
 import { contractCostItemService } from './contractMetadataService';
 import { buildContractCostItemOptions } from './contractCostItemOptions';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface ProjectContractCostAnalysisNode {
   id: string;
@@ -59,10 +61,10 @@ export const projectCostItemService = {
   async listBySite(constructionSiteId: string, projectId?: string | null): Promise<ProjectCostItem[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .order('order', { ascending: true });
     query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/projectCostItemService.ts:61", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -202,14 +204,14 @@ export const projectCostItemService = {
 
     let query = supabase
       .from('project_transactions')
-      .select('*')
+      .select(getSupabaseProjection('project_transactions'))
       .eq('type', 'expense');
     if (projectId) {
       query = query.eq('project_id', projectId);
     } else {
       query = query.eq('construction_site_id', constructionSiteId);
     }
-    const { data: txData, error: txError } = await query;
+    const { data: txData, error: txError } = await fetchAllSupabaseRows(query, { label: "lib/projectCostItemService.ts:204", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_transactions') });
     if (txError) throw txError;
     const transactions: ProjectTransaction[] = (txData || []).map(fromDb);
 

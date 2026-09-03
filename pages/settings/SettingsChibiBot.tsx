@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase';
 import { Bot, Plus, Edit2, Trash2, Save, X, MessageCircle, Clock, Smile, Zap, Heart, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 interface ChatbotMessage {
   id: string;
@@ -40,11 +42,11 @@ const SettingsChibiBot: React.FC = () => {
   // Load messages
   const fetchMessages = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await fetchAllSupabaseRows(supabase
       .from('chatbot_messages')
-      .select('*')
+      .select(getSupabaseProjection('chatbot_messages'))
       .order('type', { ascending: true })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "pages/settings/SettingsChibiBot.tsx:44", maxRows: 10_000, orderBy: getSupabaseOrderColumns('chatbot_messages') });
     if (data) setMessages(data);
     setLoading(false);
   };

@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import type { ProjectTask } from '../types';
 import { calculateProjectProgress } from './projectScheduleRules';
+import { getSupabaseOrderColumns } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 /* ──────────────────────────────────────────────
    Portfolio Service — cross-project aggregates
@@ -62,17 +64,17 @@ async function fetchProjectSummaries(): Promise<ProjectSummary[]> {
     { data: logs },
     { data: payments },
   ] = await Promise.all([
-    supabase.from('projects').select('id, code, name, status, construction_site_id, start_date, end_date'),
-    supabase.from('hrm_construction_sites').select('id, name, address'),
-    supabase.from('project_finances').select('project_id, "constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status'),
-    supabase.from('project_contracts').select('id, project_id, construction_site_id, type, value'),
-    supabase.from('project_tasks').select('id, project_id, construction_site_id, parent_id, name, start_date, end_date, duration, progress, is_milestone, resource_count, estimated_cost_per_day, sort_order'),
-    supabase.from('acceptance_records').select('id, project_id, construction_site_id, approved_value, payable_amount, status'),
-    supabase.from('material_budget_items').select('id, project_id, construction_site_id, waste_percent, waste_threshold'),
-    supabase.from('project_vendors').select('id, project_id, construction_site_id'),
-    supabase.from('purchase_orders').select('id, project_id, construction_site_id, total_amount'),
-    supabase.from('daily_logs').select('id, project_id, construction_site_id'),
-    supabase.from('payment_schedules').select('id, project_id, construction_site_id, status, amount, due_date'),
+    fetchAllSupabaseRows(supabase.from('projects').select('id, code, name, status, construction_site_id, start_date, end_date'), { label: "lib/portfolioService.ts:65", maxRows: 50_000, orderBy: getSupabaseOrderColumns('projects') }),
+    fetchAllSupabaseRows(supabase.from('hrm_construction_sites').select('id, name, address'), { label: "lib/portfolioService.ts:66", maxRows: 50_000, orderBy: getSupabaseOrderColumns('hrm_construction_sites') }),
+    fetchAllSupabaseRows(supabase.from('project_finances').select('project_id, "constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "revenueReceived", "progressPercent", status'), { label: "lib/portfolioService.ts:67", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_finances') }),
+    fetchAllSupabaseRows(supabase.from('project_contracts').select('id, project_id, construction_site_id, type, value'), { label: "lib/portfolioService.ts:68", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_contracts') }),
+    fetchAllSupabaseRows(supabase.from('project_tasks').select('id, project_id, construction_site_id, parent_id, name, start_date, end_date, duration, progress, is_milestone, resource_count, estimated_cost_per_day, sort_order'), { label: "lib/portfolioService.ts:69", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') }),
+    fetchAllSupabaseRows(supabase.from('acceptance_records').select('id, project_id, construction_site_id, approved_value, payable_amount, status'), { label: "lib/portfolioService.ts:70", maxRows: 50_000, orderBy: getSupabaseOrderColumns('acceptance_records') }),
+    fetchAllSupabaseRows(supabase.from('material_budget_items').select('id, project_id, construction_site_id, waste_percent, waste_threshold'), { label: "lib/portfolioService.ts:71", maxRows: 50_000, orderBy: getSupabaseOrderColumns('material_budget_items') }),
+    fetchAllSupabaseRows(supabase.from('project_vendors').select('id, project_id, construction_site_id'), { label: "lib/portfolioService.ts:72", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_vendors') }),
+    fetchAllSupabaseRows(supabase.from('purchase_orders').select('id, project_id, construction_site_id, total_amount'), { label: "lib/portfolioService.ts:73", maxRows: 50_000, orderBy: getSupabaseOrderColumns('purchase_orders') }),
+    fetchAllSupabaseRows(supabase.from('daily_logs').select('id, project_id, construction_site_id'), { label: "lib/portfolioService.ts:74", maxRows: 50_000, orderBy: getSupabaseOrderColumns('daily_logs') }),
+    fetchAllSupabaseRows(supabase.from('payment_schedules').select('id, project_id, construction_site_id, status, amount, due_date'), { label: "lib/portfolioService.ts:75", maxRows: 50_000, orderBy: getSupabaseOrderColumns('payment_schedules') }),
   ]);
 
   const projectRows = (projects && projects.length > 0)

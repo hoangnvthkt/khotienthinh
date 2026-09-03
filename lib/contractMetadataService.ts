@@ -13,6 +13,8 @@ import {
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const cleanUndefined = <T extends Record<string, any>>(value: T): T =>
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T;
@@ -66,9 +68,9 @@ const assembleTemplates = (
 export const contractTypeService = {
   async list(options: { includeInactive?: boolean } = {}): Promise<ContractTypeMetadata[]> {
     if (!isSupabaseConfigured) return [];
-    let query = supabase.from('contract_type_metadata').select('*').order('sort_order', { ascending: true });
+    let query = supabase.from('contract_type_metadata').select(getSupabaseProjection('contract_type_metadata')).order('sort_order', { ascending: true });
     if (!options.includeInactive) query = query.eq('is_active', true);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/contractMetadataService.ts:70", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_type_metadata') });
     if (error) throw error;
     return (data || []).map(mapContractType);
   },
@@ -109,21 +111,21 @@ export const contractTemplateService = {
     if (!isSupabaseConfigured || !contractTypeId) return [];
     let templateQuery = supabase
       .from('contract_form_templates')
-      .select('*')
+      .select(getSupabaseProjection('contract_form_templates'))
       .eq('contract_type_id', contractTypeId)
       .order('is_default', { ascending: false })
       .order('created_at', { ascending: true });
     if (!options.includeInactive) templateQuery = templateQuery.eq('is_active', true);
 
-    const { data: templatesData, error: templateError } = await templateQuery;
+    const { data: templatesData, error: templateError } = await fetchAllSupabaseRows(templateQuery, { label: "lib/contractMetadataService.ts:111", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_form_templates') });
     if (templateError) throw templateError;
     const templates = (templatesData || []).map(mapTemplate);
     if (templates.length === 0) return [];
     const templateIds = templates.map(t => t.id);
 
     const [{ data: sectionsData, error: sectionError }, { data: fieldsData, error: fieldError }] = await Promise.all([
-      supabase.from('contract_template_sections').select('*').in('template_id', templateIds).order('sort_order', { ascending: true }),
-      supabase.from('contract_template_fields').select('*').in('template_id', templateIds).order('sort_order', { ascending: true }),
+      fetchAllSupabaseRows(supabase.from('contract_template_sections').select(getSupabaseProjection('contract_template_sections')).in('template_id', templateIds).order('sort_order', { ascending: true }), { label: "lib/contractMetadataService.ts:126", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_template_sections') }),
+      fetchAllSupabaseRows(supabase.from('contract_template_fields').select(getSupabaseProjection('contract_template_fields')).in('template_id', templateIds).order('sort_order', { ascending: true }), { label: "lib/contractMetadataService.ts:127", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_template_fields') }),
     ]);
     if (sectionError) throw sectionError;
     if (fieldError) throw fieldError;
@@ -233,10 +235,10 @@ export const contractTemplateService = {
 
 const catalogList = async <T>(table: string, mapper: (row: any) => T): Promise<T[]> => {
   if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(table)
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select(getSupabaseProjection(table))
+    .order('created_at', { ascending: false }), { label: "lib/contractMetadataService.ts:237", maxRows: 20_000, orderBy: getSupabaseOrderColumns(table) });
   if (error) throw error;
   return (data || []).map(mapper);
 };
@@ -311,11 +313,11 @@ export const contractMaterialNormService = {
 export const contractCostItemService = {
   async list(): Promise<ContractCostItem[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('contract_cost_items')
-      .select('*')
+      .select(getSupabaseProjection('contract_cost_items'))
       .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/contractMetadataService.ts:315", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_cost_items') });
     if (error) throw error;
     return (data || []).map(mapCostItem);
   },
@@ -366,10 +368,10 @@ export const contractCostItemService = {
 export const contractCatalogInventoryService = {
   async listMaterials(): Promise<InventoryItem[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('items')
       .select('id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
-      .order('name', { ascending: true });
+      .order('name', { ascending: true }), { label: "lib/contractMetadataService.ts:370", maxRows: 20_000, orderBy: getSupabaseOrderColumns('items') });
     if (error) throw error;
     return (data || []).map(mapInventoryItem);
   },
@@ -384,11 +386,11 @@ const DEFAULT_GUARANTEES: Array<Pick<ContractGuarantee, 'guaranteeType' | 'name'
 export const contractGuaranteeService = {
   async listByContract(contractId: string): Promise<ContractGuarantee[]> {
     if (!isSupabaseConfigured || !contractId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('contract_guarantees')
-      .select('*')
+      .select(getSupabaseProjection('contract_guarantees'))
       .eq('contract_id', contractId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/contractMetadataService.ts:388", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_guarantees') });
     if (error) throw error;
     return (data || []).map(mapGuarantee);
   },

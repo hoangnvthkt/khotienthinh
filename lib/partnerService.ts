@@ -1,6 +1,8 @@
 import { BusinessPartner, PartnerClassification } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'business_partners';
 
@@ -30,11 +32,11 @@ const normalizeCode = (name: string) => {
 export const partnerService = {
   async list(options: { includeInactive?: boolean; classification?: PartnerClassification } = {}): Promise<BusinessPartner[]> {
     if (!isSupabaseConfigured) return [];
-    let query = supabase.from(TABLE).select('*').order('created_at', { ascending: false });
+    let query = supabase.from(TABLE).select(getSupabaseProjection(TABLE)).order('created_at', { ascending: false });
     if (!options.includeInactive) query = query.eq('is_active', true);
     if (options.classification) query = query.contains('classifications', [options.classification]);
 
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/partnerService.ts:34", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(normalizePartner);
   },

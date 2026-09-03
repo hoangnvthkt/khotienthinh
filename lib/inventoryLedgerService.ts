@@ -7,6 +7,7 @@ import type {
   InventoryLedgerTransactionType,
   InventoryLedgerWarehouseReportRow,
 } from '../types';
+import { getSupabaseProjection } from './supabaseProjections';
 
 export type InventoryLedgerFilters = {
   warehouseId?: string;
@@ -192,7 +193,7 @@ export const inventoryLedgerService = {
     try {
       let query = supabase
         .from('inventory_ledger_entries')
-        .select('*')
+        .select(getSupabaseProjection('inventory_ledger_entries'))
         .order('transaction_date', { ascending: true })
         .order('entry_no', { ascending: true })
         .limit(filters.limit || 5000);
@@ -246,7 +247,7 @@ export const inventoryLedgerService = {
     try {
       let query = supabase
         .from('inventory_balances')
-        .select('*')
+        .select(getSupabaseProjection('inventory_balances'))
         .order('updated_at', { ascending: false })
         .limit(5000);
 

@@ -19,6 +19,8 @@ import {
   type RefreshProjectProgressSnapshotInput,
 } from './projectWeeklyProgressService';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const BALANCE_TABLE = 'project_opening_balances';
 const LINE_TABLE = 'project_opening_balance_lines';
@@ -891,11 +893,11 @@ export const projectOpeningBalanceService = {
 
   async listLines(openingBalanceId: string): Promise<ProjectOpeningBalanceLine[]> {
     if (!isSupabaseConfigured || !openingBalanceId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(LINE_TABLE))
       .eq('opening_balance_id', openingBalanceId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/projectOpeningBalanceService.ts:895", maxRows: 50_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (error) {
       console.warn('project opening balance lines unavailable', error.message);
       return [];
@@ -966,7 +968,7 @@ export const projectOpeningBalanceService = {
       const { data: lineRows, error: lineError } = await supabase
         .from(LINE_TABLE)
         .insert(normalizedLines.map(line => lineToDb(line, saved.id!)))
-        .select();
+        .select(getSupabaseProjection(LINE_TABLE));
       if (lineError) throw lineError;
       return { openingBalance: saved, lines: (lineRows || []).map(mapLine) };
     }
@@ -1051,7 +1053,7 @@ export const projectOpeningBalanceService = {
 
       const allItemIds = [...new Set(linesWithItems.map(line => line.inventoryItemId).filter(Boolean) as string[])];
       const { data: itemRows, error: itemReadError } = allItemIds.length > 0
-        ? await supabase.from('items').select('*').in('id', allItemIds)
+        ? await fetchAllSupabaseRows(supabase.from('items').select(getSupabaseProjection('items')).in('id', allItemIds), { label: "lib/projectOpeningBalanceService.ts:1055", maxRows: 50_000, orderBy: getSupabaseOrderColumns('items') })
         : { data: [], error: null } as any;
       if (itemReadError) throw itemReadError;
 

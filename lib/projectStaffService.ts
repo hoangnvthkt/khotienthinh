@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { ProjectPermissionType, ProjectStaff, ProjectStaffPermission, UserPermissionGrant } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { auditService } from './auditService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════════════════════════
 //  PROJECT STAFF SERVICE — Phân bổ nhân sự + quyền nghiệp vụ
@@ -88,29 +90,29 @@ const hydrateStaffRows = async (staffRows: any[]): Promise<ProjectStaff[]> => {
   const staffIds = staffRows.map(r => r.id);
 
   // Load permissions cho tất cả staff
-  const { data: permRows, error: permErr } = await supabase
+  const { data: permRows, error: permErr } = await fetchAllSupabaseRows(supabase
     .from(PERM_TABLE)
     .select('*, permission_type:project_permission_types(code, name)')
-    .in('staff_id', staffIds);
+    .in('staff_id', staffIds), { label: "lib/projectStaffService.ts:92", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PERM_TABLE) });
   if (permErr) throw permErr;
 
   // Load positions
   const positionIds = [...new Set(staffRows.map(r => r.position_id).filter(Boolean))];
   const { data: posRows } = positionIds.length > 0
-    ? await supabase
+    ? await fetchAllSupabaseRows(supabase
       .from('hrm_positions')
       .select('id, name, level')
-      .in('id', positionIds)
+      .in('id', positionIds), { label: "lib/projectStaffService.ts:101", maxRows: 50_000, orderBy: getSupabaseOrderColumns('hrm_positions') })
     : { data: [] as any[] };
   const posMap = new Map((posRows || []).map(p => [p.id, p]));
 
   // Load user info
   const userIds = [...new Set(staffRows.map(r => r.user_id).filter(Boolean))];
   const { data: userRows } = userIds.length > 0
-    ? await supabase
+    ? await fetchAllSupabaseRows(supabase
       .from('users')
       .select('id, name, avatar')
-      .in('id', userIds)
+      .in('id', userIds), { label: "lib/projectStaffService.ts:111", maxRows: 50_000, orderBy: getSupabaseOrderColumns('users') })
     : { data: [] as any[] };
   const userMap = new Map((userRows || []).map(u => [u.id, u]));
 
@@ -141,10 +143,10 @@ const hydrateStaffRows = async (staffRows: any[]): Promise<ProjectStaff[]> => {
 
 export const projectPermissionTypeService = {
   async list(): Promise<ProjectPermissionType[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(PERM_TYPE_TABLE)
-      .select('*')
-      .order('sort_order');
+      .select(getSupabaseProjection(PERM_TYPE_TABLE))
+      .order('sort_order'), { label: "lib/projectStaffService.ts:145", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PERM_TYPE_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -171,11 +173,11 @@ export const projectPermissionTypeService = {
 export const projectStaffService = {
   /** Load tất cả staff của 1 CT kèm vị trí + quyền */
   async listBySite(constructionSiteId: string): Promise<ProjectStaff[]> {
-    const { data: staffRows, error: staffErr } = await supabase
+    const { data: staffRows, error: staffErr } = await fetchAllSupabaseRows(supabase
       .from(STAFF_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(STAFF_TABLE))
       .eq('construction_site_id', constructionSiteId)
-      .order('sort_order');
+      .order('sort_order'), { label: "lib/projectStaffService.ts:175", maxRows: 50_000, orderBy: getSupabaseOrderColumns(STAFF_TABLE) });
     if (staffErr) throw staffErr;
     return hydrateStaffRows(staffRows || []);
   },
@@ -183,11 +185,11 @@ export const projectStaffService = {
   /** Load staff theo Project master. Dữ liệu site legacy không được kéo sang project khác. */
   async listByProject(projectId: string, constructionSiteId?: string): Promise<ProjectStaff[]> {
     void constructionSiteId;
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(STAFF_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(STAFF_TABLE))
       .eq('project_id', projectId)
-      .order('sort_order');
+      .order('sort_order'), { label: "lib/projectStaffService.ts:187", maxRows: 50_000, orderBy: getSupabaseOrderColumns(STAFF_TABLE) });
     if (error) throw error;
     return hydrateStaffRows(data || []);
   },
@@ -298,10 +300,10 @@ export const projectStaffService = {
   /** Cập nhật toàn bộ quyền cho 1 staff (replace all) */
   async setPermissions(staffId: string, permissionTypeIds: string[], grantedBy?: string, operatorName?: string): Promise<void> {
     const nextPermissionTypeIds = [...new Set(permissionTypeIds.filter(Boolean))];
-    const { data: oldPerms, error: oldPermsError } = await supabase
+    const { data: oldPerms, error: oldPermsError } = await fetchAllSupabaseRows(supabase
       .from(PERM_TABLE)
       .select('permission_type_id')
-      .eq('staff_id', staffId);
+      .eq('staff_id', staffId), { label: "lib/projectStaffService.ts:302", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PERM_TABLE) });
     if (oldPermsError) throw oldPermsError;
 
     const rpcResult = await supabase.rpc('replace_project_staff_permissions', {
@@ -462,12 +464,12 @@ export const projectStaffService = {
     if (!normalizedCode) return { allowed: false };
 
     // Load staff records for this user at this site
-    const { data: staffRows, error } = await supabase
+    const { data: staffRows, error } = await fetchAllSupabaseRows(supabase
       .from(STAFF_TABLE)
       .select('id')
       .eq('construction_site_id', constructionSiteId)
       .eq('user_id', userId)
-      .is('end_date', null); // Chỉ active staff
+      .is('end_date', null), { label: "lib/projectStaffService.ts:466", maxRows: 50_000, orderBy: getSupabaseOrderColumns(STAFF_TABLE) }); // Chỉ active staff
     if (error) throw error;
     if (!staffRows?.length) return { allowed: false };
 
@@ -506,12 +508,12 @@ export const projectStaffService = {
     const normalizedCode = normalizeProjectPermissionCode(actionCode);
     if (!normalizedCode) return { allowed: false };
 
-    let { data: staffRows, error } = await supabase
+    let { data: staffRows, error } = await fetchAllSupabaseRows(supabase
       .from(STAFF_TABLE)
       .select('id')
       .eq('project_id', projectId)
       .eq('user_id', userId)
-      .is('end_date', null);
+      .is('end_date', null), { label: "lib/projectStaffService.ts:510", maxRows: 50_000, orderBy: getSupabaseOrderColumns(STAFF_TABLE) });
     if (error) throw error;
 
     void constructionSiteId;

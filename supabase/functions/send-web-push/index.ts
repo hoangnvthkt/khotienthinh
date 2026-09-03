@@ -327,8 +327,13 @@ Deno.serve(async (req) => {
       .from('web_push_subscriptions')
       .select('id, user_id, endpoint, p256dh, auth')
       .eq('user_id', notification.user_id)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .order('id', { ascending: true })
+      .limit(1_000);
     if (subError) throw subError;
+    if ((subscriptions || []).length >= 1_000) {
+      throw new Error('web push subscription read reached its 1,000-row safety cap');
+    }
 
     if (!subscriptions?.length) {
       await recordDelivery(admin, {

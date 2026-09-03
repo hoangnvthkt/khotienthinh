@@ -17,6 +17,8 @@ import { fromDb, toDb } from './dbMapping';
 import { buildQualityChecklistForTask } from './qualityChecklistWorkflow';
 import { parseNonNegativeLocaleNumber } from './localeNumberInput';
 import { qualityChecklistCommandService } from './qualityChecklistCommandService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'quality_checklists';
 const TPL_TABLE = 'inspection_templates';
@@ -143,10 +145,10 @@ export const qualityChecklistService = {
   // ===================== CATEGORIES & WORK TYPES =====================
 
   async listCategories(): Promise<InspectionCategory[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(CAT_TABLE)
-      .select('*')
-      .order('code', { ascending: true });
+      .select(getSupabaseProjection(CAT_TABLE))
+      .order('code', { ascending: true }), { label: "lib/qualityChecklistService.ts:147", maxRows: 20_000, orderBy: getSupabaseOrderColumns(CAT_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -172,9 +174,9 @@ export const qualityChecklistService = {
   },
 
   async listWorkTypes(categoryId?: string): Promise<InspectionWorkType[]> {
-    let query = supabase.from(WT_TABLE).select('*').order('code', { ascending: true });
+    let query = supabase.from(WT_TABLE).select(getSupabaseProjection(WT_TABLE)).order('code', { ascending: true });
     if (categoryId) query = query.eq('category_id', categoryId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/qualityChecklistService.ts:176", maxRows: 20_000, orderBy: getSupabaseOrderColumns(WT_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -204,11 +206,11 @@ export const qualityChecklistService = {
   async listTemplates(workTypeId?: string): Promise<InspectionTemplate[]> {
     let query = supabase
       .from(TPL_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TPL_TABLE))
       .eq('is_active', true)
       .order('code', { ascending: true });
     if (workTypeId) query = query.eq('work_type_id', workTypeId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/qualityChecklistService.ts:206", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TPL_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -216,10 +218,10 @@ export const qualityChecklistService = {
   async listAllTemplates(workTypeId?: string): Promise<InspectionTemplate[]> {
     let query = supabase
       .from(TPL_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TPL_TABLE))
       .order('code', { ascending: true });
     if (workTypeId) query = query.eq('work_type_id', workTypeId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/qualityChecklistService.ts:218", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TPL_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -227,7 +229,7 @@ export const qualityChecklistService = {
   async getTemplateWithItems(templateId: string): Promise<InspectionTemplate & { sections: (InspectionTemplateSection & { items: InspectionTemplateItem[] })[] }> {
     const [tplRes, secRes] = await Promise.all([
       supabase.from(TPL_TABLE).select('*').eq('id', templateId).single(),
-      supabase.from(SEC_TABLE).select('*').eq('template_id', templateId).order('sort_order', { ascending: true }),
+      fetchAllSupabaseRows(supabase.from(SEC_TABLE).select(getSupabaseProjection(SEC_TABLE)).eq('template_id', templateId).order('sort_order', { ascending: true }), { label: "lib/qualityChecklistService.ts:231", maxRows: 20_000, orderBy: getSupabaseOrderColumns(SEC_TABLE) }),
     ]);
     if (tplRes.error) throw tplRes.error;
     if (secRes.error) throw secRes.error;
@@ -237,11 +239,11 @@ export const qualityChecklistService = {
     
     let items: any[] = [];
     if (sectionIds.length > 0) {
-      const { data, error } = await supabase
+      const { data, error } = await fetchAllSupabaseRows(supabase
         .from(TPL_ITEM_TABLE)
-        .select('*')
+        .select(getSupabaseProjection(TPL_ITEM_TABLE))
         .in('section_id', sectionIds)
-        .order('sort_order', { ascending: true });
+        .order('sort_order', { ascending: true }), { label: "lib/qualityChecklistService.ts:241", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TPL_ITEM_TABLE) });
       if (error) throw error;
       items = data || [];
     }
@@ -322,10 +324,10 @@ export const qualityChecklistService = {
   // ===================== CHECKLISTS =====================
 
   async list(projectId?: string | null, constructionSiteId?: string): Promise<QualityChecklist[]> {
-    let query = supabase.from(TABLE).select('*').order('created_at', { ascending: false });
+    let query = supabase.from(TABLE).select(getSupabaseProjection(TABLE)).order('created_at', { ascending: false });
     if (projectId) query = query.eq('project_id', projectId);
     if (constructionSiteId) query = query.eq('construction_site_id', constructionSiteId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/qualityChecklistService.ts:326", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(normalize);
   },
@@ -492,11 +494,11 @@ export const qualityChecklistService = {
   // ===================== ATTEMPTS =====================
 
   async listAttempts(checklistId: string): Promise<QualityInspectionAttempt[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(ATTEMPT_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(ATTEMPT_TABLE))
       .eq('checklist_id', checklistId)
-      .order('attempt_number', { ascending: true });
+      .order('attempt_number', { ascending: true }), { label: "lib/qualityChecklistService.ts:496", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ATTEMPT_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },

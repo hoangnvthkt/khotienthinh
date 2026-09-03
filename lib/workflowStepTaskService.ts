@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { WorkflowStepTask, WorkflowStepTaskAttachment } from '../types';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'workflow_step_tasks';
 const STORAGE_BUCKET = 'workflow-attachments';
@@ -30,11 +32,11 @@ const mapTaskFromDB = (row: any): WorkflowStepTask => ({
 export const workflowStepTaskService = {
     async listTasks(instanceId: string): Promise<WorkflowStepTask[]> {
         if (!instanceId) return [];
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from(TABLE)
-            .select('*')
+            .select(getSupabaseProjection(TABLE))
             .eq('instance_id', instanceId)
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true }), { label: "lib/workflowStepTaskService.ts:34", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
 
         if (error) {
             console.error('workflowStepTaskService listTasks error:', error);

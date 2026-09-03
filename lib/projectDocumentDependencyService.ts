@@ -1,6 +1,8 @@
 import { ContractItemType, DailyLog, PaymentCertificate, ProjectTask, QuantityAcceptance } from '../types';
 import { ProjectDocumentDependencies } from './projectDocumentPolicy';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const emptyDependencies = (metadata: Record<string, any> = {}): ProjectDocumentDependencies => ({
   blockers: [],
@@ -76,10 +78,10 @@ async function countPaymentCertificatesByAcceptance(acceptanceId: string): Promi
 
 async function getDailyLogVolumeIds(dailyLogId: string): Promise<string[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('daily_log_volumes')
       .select('id')
-      .eq('daily_log_id', dailyLogId);
+      .eq('daily_log_id', dailyLogId), { label: "lib/projectDocumentDependencyService.ts:79", maxRows: 50_000, orderBy: getSupabaseOrderColumns('daily_log_volumes') });
     if (error) throw error;
     return (data || []).map(row => row.id).filter(Boolean);
   } catch (error: any) {

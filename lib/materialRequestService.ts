@@ -14,6 +14,8 @@ import {
 } from '../types';
 import { materialRequestBoqLineSnapshotService } from './materialRequestBoqLineSnapshotService';
 import { decodeCursor, encodeCursor } from './supabasePagination';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const EVENT_TABLE = 'material_request_events';
 const DEFAULT_PROJECT_REQUEST_PAGE_SIZE = 500;
@@ -453,11 +455,11 @@ export const materialRequestService = {
   async listEventsByRequestIds(requestIds: string[]): Promise<Record<string, MaterialRequestEvent[]>> {
     const ids = Array.from(new Set(requestIds.filter(Boolean)));
     if (ids.length === 0) return {};
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(EVENT_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(EVENT_TABLE))
       .in('request_id', ids)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/materialRequestService.ts:457", maxRows: 20_000, orderBy: getSupabaseOrderColumns(EVENT_TABLE) });
     if (error) {
       if (isMissingEventTable(error)) return {};
       throw error;
@@ -477,7 +479,7 @@ export const materialRequestService = {
     const limit = Math.min(Math.max(options.limit || 100, 1), 200);
     let query = supabase
       .from(EVENT_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(EVENT_TABLE))
       .eq('request_id', requestId)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })

@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { User } from '../types';
 import { projectStaffService } from './projectStaffService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════════════════════════
 //  APPROVAL SERVICE — Phân quyền duyệt
@@ -133,14 +135,14 @@ export const approvalService = {
     // Load rules
     let query = supabase
       .from('approval_rules')
-      .select('*')
+      .select(getSupabaseProjection('approval_rules'))
       .eq('module', module)
       .eq('action', action)
       .eq('is_active', true)
       .lte('min_amount', amount)
       .order('priority', { ascending: false });
 
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/approvalService.ts:135", maxRows: 20_000, orderBy: getSupabaseOrderColumns('approval_rules') });
     if (error) throw error;
 
     const allRules = (data || []).map(fromDb);
@@ -230,14 +232,14 @@ export const approvalService = {
   async list(constructionSiteId?: string): Promise<ApprovalRule[]> {
     let query = supabase
       .from('approval_rules')
-      .select('*')
+      .select(getSupabaseProjection('approval_rules'))
       .order('priority', { ascending: false });
 
     if (constructionSiteId) {
       query = query.or(`construction_site_id.eq.${constructionSiteId},construction_site_id.is.null`);
     }
 
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/approvalService.ts:232", maxRows: 20_000, orderBy: getSupabaseOrderColumns('approval_rules') });
     if (error) throw error;
     return (data || []).map(fromDb);
   },

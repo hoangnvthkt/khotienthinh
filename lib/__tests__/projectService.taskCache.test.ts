@@ -17,6 +17,7 @@ const makeQuery = () => {
     select: vi.fn(() => query),
     or: vi.fn(() => query),
     order: vi.fn(() => query),
+    limit: vi.fn(() => query),
     then: (resolve: (value: unknown) => void) => resolve(
       supabaseMocks.responses.shift() || { data: supabaseMocks.rows, error: null },
     ),

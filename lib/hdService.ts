@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { ContractAppendix, CustomerContract, SubcontractorContract, SupplierContract } from '../types';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { projectDocumentDependencyService } from './projectDocumentDependencyService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════════════════════════
 //  HD SERVICE — CRUD cho 3 bảng Hợp Đồng
@@ -26,20 +28,20 @@ const cleanUndefined = <T extends Record<string, any>>(value: T): T =>
 // ==================== HĐ KHÁCH HÀNG ====================
 export const customerContractService = {
   async list(): Promise<CustomerContract[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('customer_contracts')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(getSupabaseProjection('customer_contracts'))
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:30", maxRows: 20_000, orderBy: getSupabaseOrderColumns('customer_contracts') });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
 
   async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<CustomerContract[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('customer_contracts')
-      .select('*')
+      .select(getSupabaseProjection('customer_contracts'))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:39", maxRows: 20_000, orderBy: getSupabaseOrderColumns('customer_contracts') });
     if (error) throw error;
     return dedupeRowsById(data || []).map(fromDb);
   },
@@ -88,20 +90,20 @@ export const customerContractService = {
 // ==================== HĐ THẦU PHỤ ====================
 export const subcontractorContractService = {
   async list(): Promise<SubcontractorContract[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('subcontractor_contracts')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(getSupabaseProjection('subcontractor_contracts'))
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:92", maxRows: 20_000, orderBy: getSupabaseOrderColumns('subcontractor_contracts') });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
 
   async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<SubcontractorContract[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('subcontractor_contracts')
-      .select('*')
+      .select(getSupabaseProjection('subcontractor_contracts'))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:101", maxRows: 20_000, orderBy: getSupabaseOrderColumns('subcontractor_contracts') });
     if (error) throw error;
     return dedupeRowsById(data || []).map(fromDb);
   },
@@ -137,13 +139,13 @@ export const subcontractorContractService = {
 // ==================== PHỤ LỤC HỢP ĐỒNG ====================
 export const contractAppendixService = {
   async listByContract(contractId: string, contractType: ContractAppendix['contractType']): Promise<ContractAppendix[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('contract_appendices')
-      .select('*')
+      .select(getSupabaseProjection('contract_appendices'))
       .eq('contract_id', contractId)
       .eq('contract_type', contractType)
       .order('signed_date', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:141", maxRows: 20_000, orderBy: getSupabaseOrderColumns('contract_appendices') });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -173,20 +175,20 @@ export const contractAppendixService = {
 // ==================== HĐ NHÀ CUNG CẤP ====================
 export const supplierContractService = {
   async list(): Promise<SupplierContract[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('supplier_contracts')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(getSupabaseProjection('supplier_contracts'))
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:177", maxRows: 20_000, orderBy: getSupabaseOrderColumns('supplier_contracts') });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
 
   async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<SupplierContract[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('supplier_contracts')
-      .select('*')
+      .select(getSupabaseProjection('supplier_contracts'))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/hdService.ts:186", maxRows: 20_000, orderBy: getSupabaseOrderColumns('supplier_contracts') });
     if (error) throw error;
     return dedupeRowsById(data || []).map(fromDb);
   },

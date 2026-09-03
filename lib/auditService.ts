@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { getSupabaseProjection } from './supabaseProjections';
 
 // ══════════════════════════════════════════
 //  AUDIT TRAIL SERVICE
@@ -432,7 +433,7 @@ export const auditService = {
   }): Promise<AuditEntry[]> {
     let query = supabase
       .from('audit_trail')
-      .select('*')
+      .select(getSupabaseProjection('audit_trail'))
       .order('created_at', { ascending: false })
       .limit(filters?.limit || 100);
 

@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface ChatPin {
     id: string;
@@ -45,11 +47,11 @@ export async function unpinMessage(conversationId: string, messageId: string): P
 }
 
 export async function getPinnedMessages(conversationId: string): Promise<ChatPin[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
         .from('chat_pins')
-        .select('*')
+        .select(getSupabaseProjection('chat_pins'))
         .eq('conversation_id', conversationId)
-        .order('pinned_at', { ascending: false });
+        .order('pinned_at', { ascending: false }), { label: "lib/chatPinService.ts:49", maxRows: 20_000, orderBy: getSupabaseOrderColumns('chat_pins') });
 
     if (error) {
         throw error;

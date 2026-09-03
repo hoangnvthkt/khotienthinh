@@ -53,6 +53,7 @@ const query = (response: { data?: any; error?: any } = { data: [], error: null }
     eq: vi.fn(() => api),
     ilike: vi.fn(() => api),
     update: vi.fn(() => api),
+    limit: vi.fn(() => api),
     single: vi.fn(() => Promise.resolve(response)),
     then: (resolve: any, reject: any) => Promise.resolve(response).then(resolve, reject),
   };

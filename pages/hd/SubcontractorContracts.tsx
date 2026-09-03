@@ -22,6 +22,8 @@ import {
   type ContractAttachmentDraft,
 } from '../../lib/contractAttachmentService';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 const asDraftNumber = (value: string) => value as unknown as number;
 const readLocaleNumber = (value: number | string | null | undefined) =>
@@ -83,7 +85,7 @@ const SubcontractorContracts: React.FC = () => {
     projectMasterService.list().then(setProjects).catch(console.error);
     partnerService.list().then(setSubcontractors).catch(console.error);
     if (!isSupabaseConfigured) { setContracts([]); setLoading(false); return; }
-    const { data, error } = await supabase.from('subcontractor_contracts').select('*').order('created_at', { ascending: false });
+    const { data, error } = await fetchAllSupabaseRows(supabase.from('subcontractor_contracts').select(getSupabaseProjection('subcontractor_contracts')).order('created_at', { ascending: false }), { label: "pages/hd/SubcontractorContracts.tsx:87", maxRows: 10_000, orderBy: getSupabaseOrderColumns('subcontractor_contracts') });
     if (!error && data) {
       setContracts(data.map((r: any) => ({
         id: r.id, code: r.code, name: r.name,

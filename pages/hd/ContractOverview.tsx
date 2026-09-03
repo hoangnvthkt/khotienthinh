@@ -16,6 +16,8 @@ import {
   contractMatchesProjectFilter,
   filterContractOverviewGroups,
 } from '../../lib/projectContractAggregation';
+import { getSupabaseOrderColumns } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 interface ContractPaymentSummary {
   totalValue: number;
@@ -69,9 +71,9 @@ const ContractOverview: React.FC = () => {
         setSupplierContracts(supplierData);
 
         if (isSupabaseConfigured) {
-          const { data: certs, error } = await supabase
+          const { data: certs, error } = await fetchAllSupabaseRows(supabase
             .from('payment_certificates')
-            .select('contract_id, contract_type, status, payable_this_period, current_payable_amount');
+            .select('contract_id, contract_type, status, payable_this_period, current_payable_amount'), { label: "pages/hd/ContractOverview.tsx:72", maxRows: 10_000, orderBy: getSupabaseOrderColumns('payment_certificates') });
           if (!error && certs) {
             setPaymentCertificates(certs);
           }

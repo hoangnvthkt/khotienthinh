@@ -58,6 +58,7 @@ describe('Phase 5 permission hardening guards', () => {
       'lib/permissions/projectPermissionService.ts',
       'lib/routeAccess.ts',
       'lib/settingsPermissions.ts',
+      'lib/supabaseProjections.ts',
       'lib/tenderAiService.ts',
       'pages/FeedbackHub.tsx',
     ]);

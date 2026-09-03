@@ -27,6 +27,8 @@ import { fromDb, toDb } from './dbMapping';
 import { getRequestLineId } from './materialRequestFulfillmentService';
 import { buildPoUnitSnapshot, getPoLineStockUnitPrice, poLinePurchaseToStockQty, stockToPurchaseQty, stockUnitPriceToPurchaseUnitPrice } from './materialUnitConversion';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'material_planning_rules';
 const CONFIRMED_INCOMING_PO_STATUSES = new Set(['confirmed', 'in_transit', 'partial']);
@@ -306,12 +308,12 @@ export const getMaterialPlanningScopeKey = (projectId?: string | null, construct
 export const materialPlanningRuleService = {
   async listByScope(scopeKey: string): Promise<MaterialPlanningRule[]> {
     if (!isSupabaseConfigured || !scopeKey) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('scope_key', scopeKey)
       .order('inventory_item_id', { ascending: false })
-      .order('category', { ascending: true });
+      .order('category', { ascending: true }), { label: "lib/projectMaterialPlanningService.ts:310", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) {
       console.warn('material planning rules unavailable', error.message);
       return [];
@@ -353,10 +355,10 @@ export const materialPlanningRuleService = {
 export const materialPlanningCurveService = {
   async listTemplates(): Promise<PlanningCurveTemplate[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('planning_curve_templates')
       .select('*, planning_curve_points(*)')
-      .order('code', { ascending: true });
+      .order('code', { ascending: true }), { label: "lib/projectMaterialPlanningService.ts:357", maxRows: 50_000, orderBy: getSupabaseOrderColumns('planning_curve_templates') });
     if (error) {
       console.warn('planning curve templates unavailable', error.message);
       return [];

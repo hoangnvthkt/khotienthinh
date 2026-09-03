@@ -26,6 +26,8 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { contractItemService } from './contractItemService';
 import { boqService, workBoqService } from './projectService';
 import { loadXlsx } from './loadXlsx';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface CostTemplateDetails extends CostTemplate {
   sections: CostTemplateSection[];
@@ -1577,10 +1579,10 @@ const isTemplateUsedInLockedEstimate = async (templateId: string) => {
 
 const isPriceUsedInLockedEstimate = async (priceId: string) => {
   if (!isSupabaseConfigured) return false;
-  const { data: items, error: itemError } = await supabase
+  const { data: items, error: itemError } = await fetchAllSupabaseRows(supabase
     .from(ESTIMATE_ITEM_TABLE)
     .select('estimate_id')
-    .eq('price_book_item_id', priceId);
+    .eq('price_book_item_id', priceId), { label: "lib/costEstimateService.ts:1581", maxRows: 50_000, orderBy: getSupabaseOrderColumns(ESTIMATE_ITEM_TABLE) });
   if (itemError) throw itemError;
   const estimateIds = Array.from(new Set((items || []).map((row: any) => row.estimate_id).filter(Boolean)));
   if (estimateIds.length === 0) return false;
@@ -1595,10 +1597,10 @@ const isPriceUsedInLockedEstimate = async (priceId: string) => {
 
 const isNormUsedInLockedEstimate = async (normId: string) => {
   if (!isSupabaseConfigured) return false;
-  const { data: items, error: itemError } = await supabase
+  const { data: items, error: itemError } = await fetchAllSupabaseRows(supabase
     .from(ESTIMATE_ITEM_TABLE)
     .select('estimate_id')
-    .eq('norm_id', normId);
+    .eq('norm_id', normId), { label: "lib/costEstimateService.ts:1599", maxRows: 50_000, orderBy: getSupabaseOrderColumns(ESTIMATE_ITEM_TABLE) });
   if (itemError) throw itemError;
   const estimateIds = Array.from(new Set((items || []).map((row: any) => row.estimate_id).filter(Boolean)));
   if (estimateIds.length === 0) return false;
@@ -1615,9 +1617,9 @@ const loadProjectTemplateSource = async (sourceProjectId: string): Promise<Proje
   if (!isSupabaseConfigured) return { tasks: [], workBoqItems: [], materialBudgetItems: [] };
   const scopeFilter = `project_id.eq.${sourceProjectId},construction_site_id.eq.${sourceProjectId}`;
   const [tasksResult, workResult, materialResult] = await Promise.all([
-    supabase.from(PROJECT_TASK_TABLE).select('*').or(scopeFilter).order('sort_order', { ascending: true }),
-    supabase.from(PROJECT_WORK_BOQ_TABLE).select('*').or(scopeFilter).order('sort_order', { ascending: true }),
-    supabase.from(MATERIAL_BUDGET_TABLE).select('*').or(scopeFilter).order('sort_order', { ascending: true }),
+    fetchAllSupabaseRows(supabase.from(PROJECT_TASK_TABLE).select(getSupabaseProjection(PROJECT_TASK_TABLE)).or(scopeFilter).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:1619", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PROJECT_TASK_TABLE) }),
+    fetchAllSupabaseRows(supabase.from(PROJECT_WORK_BOQ_TABLE).select(getSupabaseProjection(PROJECT_WORK_BOQ_TABLE)).or(scopeFilter).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:1620", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PROJECT_WORK_BOQ_TABLE) }),
+    fetchAllSupabaseRows(supabase.from(MATERIAL_BUDGET_TABLE).select(getSupabaseProjection(MATERIAL_BUDGET_TABLE)).or(scopeFilter).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:1621", maxRows: 50_000, orderBy: getSupabaseOrderColumns(MATERIAL_BUDGET_TABLE) }),
   ]);
   if (tasksResult.error) throw tasksResult.error;
   if (workResult.error) throw workResult.error;
@@ -1679,7 +1681,7 @@ const buildProjectTemplateImportPreview = async (
     return Boolean(work && ((workQuantity(work) || 0) > 0 || materialCount > 0));
   }).length;
   const existing = isSupabaseConfigured
-    ? (await supabase.from(TEMPLATE_TABLE).select('id, version_no').eq('code', templateCode)).data || []
+    ? (await fetchAllSupabaseRows(supabase.from(TEMPLATE_TABLE).select('id, version_no').eq('code', templateCode), { label: "lib/costEstimateService.ts:1683", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TEMPLATE_TABLE) })).data || []
     : [];
   const buildSampleItem = (task: ProjectTask) => {
     const work = workByTaskId.get(task.id);
@@ -1729,7 +1731,7 @@ const createTemplateFromProjectSource = async (
   const preview = await buildProjectTemplateImportPreview(sourceProjectId, templateCode, templateName, source);
   if (source.tasks.length === 0) throw new Error('Không tìm thấy WBS/task từ nguồn dự án để tạo template.');
   const existingTemplates = isSupabaseConfigured
-    ? (await supabase.from(TEMPLATE_TABLE).select('*').eq('code', templateCode).order('version_no', { ascending: false })).data || []
+    ? (await fetchAllSupabaseRows(supabase.from(TEMPLATE_TABLE).select(getSupabaseProjection(TEMPLATE_TABLE)).eq('code', templateCode).order('version_no', { ascending: false }), { label: "lib/costEstimateService.ts:1733", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TEMPLATE_TABLE) })).data || []
     : [];
   const template = await costTemplateService.upsertTemplate({
     id: newId(),
@@ -1889,17 +1891,17 @@ export const costTemplateService = {
 
   async list(includeArchived = false): Promise<CostTemplateDetails[]> {
     if (!isSupabaseConfigured) return [];
-    let templateQuery = supabase.from(TEMPLATE_TABLE).select('*').order('updated_at', { ascending: false });
+    let templateQuery = supabase.from(TEMPLATE_TABLE).select(getSupabaseProjection(TEMPLATE_TABLE)).order('updated_at', { ascending: false });
     if (!includeArchived) templateQuery = templateQuery.neq('status', 'archived');
-    const { data: templateRows, error } = await templateQuery;
+    const { data: templateRows, error } = await fetchAllSupabaseRows(templateQuery, { label: "lib/costEstimateService.ts:1893", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TEMPLATE_TABLE) });
     if (error) throw error;
     const templates = (templateRows || []).map(mapTemplate);
     if (templates.length === 0) return [];
     const ids = templates.map(template => template.id);
     const [sectionsResult, itemsResult, paramsResult] = await Promise.all([
-      supabase.from(SECTION_TABLE).select('*').in('template_id', ids).order('sort_order', { ascending: true }),
-      supabase.from(ITEM_TABLE).select('*').in('template_id', ids).order('sort_order', { ascending: true }),
-      supabase.from(PARAMETER_TABLE).select('*').in('template_id', ids).order('sort_order', { ascending: true }),
+      fetchAllSupabaseRows(supabase.from(SECTION_TABLE).select(getSupabaseProjection(SECTION_TABLE)).in('template_id', ids).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:1901", maxRows: 50_000, orderBy: getSupabaseOrderColumns(SECTION_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(ITEM_TABLE).select(getSupabaseProjection(ITEM_TABLE)).in('template_id', ids).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:1902", maxRows: 50_000, orderBy: getSupabaseOrderColumns(ITEM_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(PARAMETER_TABLE).select(getSupabaseProjection(PARAMETER_TABLE)).in('template_id', ids).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:1903", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PARAMETER_TABLE) }),
     ]);
     if (sectionsResult.error) throw sectionsResult.error;
     if (itemsResult.error) throw itemsResult.error;
@@ -2497,9 +2499,9 @@ export const costNormWorkbenchService = {
 export const internalPriceBookService = {
   async list(includeArchived = false): Promise<InternalPriceBookItem[]> {
     if (!isSupabaseConfigured) return [];
-    let query = supabase.from(PRICE_TABLE).select('*').order('updated_at', { ascending: false });
+    let query = supabase.from(PRICE_TABLE).select(getSupabaseProjection(PRICE_TABLE)).order('updated_at', { ascending: false });
     if (!includeArchived) query = query.neq('status', 'archived');
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/costEstimateService.ts:2501", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PRICE_TABLE) });
     if (error) throw error;
     return (data || []).map(mapPrice);
   },
@@ -2639,9 +2641,9 @@ export const internalPriceBookService = {
 export const internalNormService = {
   async list(includeArchived = false): Promise<InternalNorm[]> {
     if (!isSupabaseConfigured) return [];
-    let query = supabase.from(NORM_TABLE).select('*').order('updated_at', { ascending: false });
+    let query = supabase.from(NORM_TABLE).select(getSupabaseProjection(NORM_TABLE)).order('updated_at', { ascending: false });
     if (!includeArchived) query = query.neq('status', 'archived');
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/costEstimateService.ts:2643", maxRows: 50_000, orderBy: getSupabaseOrderColumns(NORM_TABLE) });
     if (error) throw error;
     return (data || []).map(mapNorm);
   },
@@ -3133,7 +3135,7 @@ export const estimateCalculationService = {
 export const estimateScenarioService = {
   async list(): Promise<EstimateScenario[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase.from(ESTIMATE_TABLE).select('*').order('created_at', { ascending: false });
+    const { data, error } = await fetchAllSupabaseRows(supabase.from(ESTIMATE_TABLE).select(getSupabaseProjection(ESTIMATE_TABLE)).order('created_at', { ascending: false }), { label: "lib/costEstimateService.ts:3137", maxRows: 50_000, orderBy: getSupabaseOrderColumns(ESTIMATE_TABLE) });
     if (error) throw error;
     return (data || []).map(mapEstimate);
   },
@@ -3142,9 +3144,9 @@ export const estimateScenarioService = {
     if (!isSupabaseConfigured) return null;
     const [scenarioResult, itemsResult, adjustmentsResult, versionsResult] = await Promise.all([
       supabase.from(ESTIMATE_TABLE).select('*').eq('id', id).maybeSingle(),
-      supabase.from(ESTIMATE_ITEM_TABLE).select('*').eq('estimate_id', id).order('sort_order', { ascending: true }),
-      supabase.from(ADJUSTMENT_TABLE).select('*').eq('estimate_id', id).order('created_at', { ascending: true }),
-      supabase.from(VERSION_TABLE).select('*').eq('estimate_id', id).order('version_no', { ascending: false }),
+      fetchAllSupabaseRows(supabase.from(ESTIMATE_ITEM_TABLE).select(getSupabaseProjection(ESTIMATE_ITEM_TABLE)).eq('estimate_id', id).order('sort_order', { ascending: true }), { label: "lib/costEstimateService.ts:3146", maxRows: 50_000, orderBy: getSupabaseOrderColumns(ESTIMATE_ITEM_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(ADJUSTMENT_TABLE).select(getSupabaseProjection(ADJUSTMENT_TABLE)).eq('estimate_id', id).order('created_at', { ascending: true }), { label: "lib/costEstimateService.ts:3147", maxRows: 50_000, orderBy: getSupabaseOrderColumns(ADJUSTMENT_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(VERSION_TABLE).select(getSupabaseProjection(VERSION_TABLE)).eq('estimate_id', id).order('version_no', { ascending: false }), { label: "lib/costEstimateService.ts:3148", maxRows: 50_000, orderBy: getSupabaseOrderColumns(VERSION_TABLE) }),
     ]);
     if (scenarioResult.error) throw scenarioResult.error;
     if (itemsResult.error) throw itemsResult.error;
@@ -3497,11 +3499,11 @@ export const estimateScenarioService = {
 
   async listConversionItems(batchId: string): Promise<EstimateConversionItem[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(CONVERSION_ITEM_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(CONVERSION_ITEM_TABLE))
       .eq('batch_id', batchId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/costEstimateService.ts:3501", maxRows: 50_000, orderBy: getSupabaseOrderColumns(CONVERSION_ITEM_TABLE) });
     if (error) throw error;
     return (data || []).map(mapConversionItem);
   },

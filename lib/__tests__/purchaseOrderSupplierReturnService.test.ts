@@ -116,43 +116,49 @@ describe('purchaseOrderSupplierReturnService', () => {
   });
 
   it('loads supplier returns with their lines and maps database keys', async () => {
+    const returnResponse = {
+      data: [{
+        id: 'return-1',
+        return_no: 'SR-001',
+        purchase_order_id: 'po-1',
+        source_warehouse_id: 'warehouse-1',
+        status: 'completed',
+        transaction_id: 'tx-return-1',
+        reason: 'Tra NCC',
+        created_at: '2026-07-25T00:00:00.000Z',
+        updated_at: '2026-07-25T00:00:00.000Z',
+      }],
+      error: null,
+    };
     const returnQuery = {
       select: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValueOnce({
-        data: [{
-          id: 'return-1',
-          return_no: 'SR-001',
-          purchase_order_id: 'po-1',
-          source_warehouse_id: 'warehouse-1',
-          status: 'completed',
-          transaction_id: 'tx-return-1',
-          reason: 'Tra NCC',
-          created_at: '2026-07-25T00:00:00.000Z',
-          updated_at: '2026-07-25T00:00:00.000Z',
-        }],
-        error: null,
-      }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: (resolve: any, reject: any) => Promise.resolve(returnResponse).then(resolve, reject),
+    };
+    const lineResponse = {
+      data: [{
+        id: 'line-1',
+        supplier_return_id: 'return-1',
+        purchase_order_line_id: 'po-line-1',
+        item_id: 'item-1',
+        received_qty_snapshot: 90,
+        previously_returned_qty_snapshot: 0,
+        return_qty: 10,
+        unit_price: 10000,
+        stock_return_qty: 10,
+        stock_unit: 'Kg',
+        created_at: '2026-07-25T00:00:00.000Z',
+      }],
+      error: null,
     };
     const lineQuery = {
       select: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValueOnce({
-        data: [{
-          id: 'line-1',
-          supplier_return_id: 'return-1',
-          purchase_order_line_id: 'po-line-1',
-          item_id: 'item-1',
-          received_qty_snapshot: 90,
-          previously_returned_qty_snapshot: 0,
-          return_qty: 10,
-          unit_price: 10000,
-          stock_return_qty: 10,
-          stock_unit: 'Kg',
-          created_at: '2026-07-25T00:00:00.000Z',
-        }],
-        error: null,
-      }),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: (resolve: any, reject: any) => Promise.resolve(lineResponse).then(resolve, reject),
     };
     supabaseMocks.from
       .mockReturnValueOnce(returnQuery)

@@ -2,6 +2,8 @@ import { Project, ProjectDeleteImpact, ProjectDeleteImpactItem } from '../types'
 import { logApiError } from './apiError';
 import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'projects';
 
@@ -187,7 +189,7 @@ const runScopedImpactQuery = async (
     query = query.eq('project_id', projectId);
   }
 
-  return query;
+  return fetchAllSupabaseRows(query, { label: "lib/projectMasterService.ts:177", maxRows: 50_000, orderBy: getSupabaseOrderColumns(spec.table) });
 };
 
 const fetchImpactItem = async (
@@ -246,8 +248,8 @@ export const projectMasterService = {
     const readTo = options.includeTotal ? to : from + pageSize;
     const buildQuery = (includePinnedOrder: boolean) => {
       let query = options.includeTotal
-        ? supabase.from(TABLE).select('*', { count: 'exact' })
-        : supabase.from(TABLE).select('*');
+        ? supabase.from(TABLE).select(getSupabaseProjection(TABLE), { count: 'exact' })
+        : supabase.from(TABLE).select(getSupabaseProjection(TABLE));
       query = applyProjectListFilters(query, options);
       return includePinnedOrder
         ? applyProjectListOrder(query, options).range(from, readTo)
@@ -284,16 +286,16 @@ export const projectMasterService = {
 
   async list(options: ProjectListOptions = {}): Promise<Project[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .order('is_pinned', { ascending: false })
       .order('pinned_at', { ascending: false, nullsFirst: false })
-      .order('updated_at', { ascending: false });
+      .order('updated_at', { ascending: false }), { label: "lib/projectMasterService.ts:288", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error && !isMissingSchemaError(error)) throw error;
     let rowsData = data || [];
     if (error) {
-      const fallback = await supabase.from(TABLE).select('*').order('updated_at', { ascending: false });
+      const fallback = await fetchAllSupabaseRows(supabase.from(TABLE).select(getSupabaseProjection(TABLE)).order('updated_at', { ascending: false }), { label: "lib/projectMasterService.ts:297", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TABLE) });
       if (fallback.error) throw fallback.error;
       rowsData = fallback.data || [];
     }

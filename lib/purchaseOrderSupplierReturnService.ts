@@ -1,5 +1,7 @@
 import { PurchaseOrderSupplierReturn } from '../types';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const RETURN_TABLE = 'purchase_order_supplier_returns';
 const LINE_TABLE = 'purchase_order_supplier_return_lines';
@@ -38,22 +40,22 @@ export const purchaseOrderSupplierReturnService = {
     const ids = Array.from(new Set(purchaseOrderIds.filter(Boolean)));
     if (ids.length === 0) return [];
 
-    const { data: returnRows, error: returnError } = await supabase
+    const { data: returnRows, error: returnError } = await fetchAllSupabaseRows(supabase
       .from(RETURN_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(RETURN_TABLE))
       .in('purchase_order_id', ids)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/purchaseOrderSupplierReturnService.ts:42", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RETURN_TABLE) });
     if (returnError) {
       if (returnError.code === '42P01') return [];
       throw returnError;
     }
     if (!returnRows?.length) return [];
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(LINE_TABLE))
       .in('supplier_return_id', returnRows.map(row => row.id))
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/purchaseOrderSupplierReturnService.ts:53", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     return mapReturns(returnRows, lineRows || []);

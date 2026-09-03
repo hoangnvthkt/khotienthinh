@@ -10,6 +10,8 @@ import { TransactionStatus, TransactionType } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { siteSmallToolService } from './siteSmallToolService';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const PURCHASE_TABLE = 'site_direct_purchases';
 const LINE_TABLE = 'site_direct_purchase_lines';
@@ -129,12 +131,12 @@ export const siteDirectPurchaseService = {
     supplierId?: string | null;
     status?: string | null;
   } = {}): Promise<SiteDirectPurchase[]> {
-    let query = supabase.from(PURCHASE_TABLE).select('*').order('purchase_date', { ascending: false });
+    let query = supabase.from(PURCHASE_TABLE).select(getSupabaseProjection(PURCHASE_TABLE)).order('purchase_date', { ascending: false });
     if (input.projectId) query = query.eq('project_id', input.projectId);
     if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
     if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
     if (input.status) query = query.eq('status', input.status);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/siteDirectPurchaseService.ts:133", maxRows: 20_000, orderBy: getSupabaseOrderColumns(PURCHASE_TABLE) });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;
@@ -150,11 +152,11 @@ export const siteDirectPurchaseService = {
       .single();
     if (purchaseError) throw purchaseError;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(LINE_TABLE))
       .eq('direct_purchase_id', id)
-      .order('line_no', { ascending: true });
+      .order('line_no', { ascending: true }), { label: "lib/siteDirectPurchaseService.ts:154", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) {
       if (isMissingDirectPurchaseTable(lineError)) return { purchase: normalizePurchase(purchaseRow), lines: [] };
       throw lineError;

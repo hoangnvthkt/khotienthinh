@@ -17,6 +17,8 @@ import type { PurchaseOrderSupplementalDraft } from './purchaseOrderReleaseAppro
 import { isPurchasePackageV2Enabled, isPurchasePackageV2EnabledForSite } from './featureFlags';
 import { purchasePackageService, type ApprovePurchasePackageResult } from './purchasePackageService';
 import { chunkValues, decodeCursor, encodeCursor, fetchAllPages } from './supabasePagination';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -309,19 +311,19 @@ export const taskService = {
         const cached = readScopedCache(taskListCache, cacheKey);
         if (cached) return cached;
 
-        let { data, error } = await supabase
+        let { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_tasks')
             .select(TASK_SELECT)
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true })
-            .order('id', { ascending: true });
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:313", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') });
         if (error && isMissingTaskVersionColumn(error)) {
-            ({ data, error } = await supabase
+            ({ data, error } = await fetchAllSupabaseRows(supabase
                 .from('project_tasks')
                 .select(LEGACY_TASK_SELECT)
                 .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
                 .order('sort_order', { ascending: true })
-                .order('id', { ascending: true }));
+                .order('id', { ascending: true }), { label: "lib/projectService.ts:320", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') }));
         }
         if (error) throw error;
         const rows = dedupeRowsById((data || []) as any[]).map(taskFromDb);
@@ -329,24 +331,24 @@ export const taskService = {
         return cloneCachedRows(rows);
     },
     async listLite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectTaskLite[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_tasks')
             .select(TASK_LITE_SELECT)
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true })
-            .order('id', { ascending: true });
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:333", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') });
         if (error) throw error;
         return dedupeRowsById((data || []) as any[]).map(taskFromDb) as ProjectTaskLite[];
     },
     async listBySites(siteIds: string[]): Promise<ProjectTask[]> {
         if (siteIds.length === 0) return [];
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_tasks')
             .select(TASK_SELECT)
             .in('construction_site_id', siteIds)
             .order('construction_site_id', { ascending: true })
             .order('sort_order', { ascending: true })
-            .order('id', { ascending: true });
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:344", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') });
         if (error) throw error;
         return ((data || []) as any[]).map(taskFromDb);
     },
@@ -377,11 +379,11 @@ export const taskService = {
 // ==================== DAILY LOGS ====================
 export const dailyLogService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<DailyLog[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('daily_logs')
-            .select('*')
+            .select(getSupabaseProjection('daily_logs'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('date', { ascending: false });
+            .order('date', { ascending: false }), { label: "lib/projectService.ts:381", maxRows: 50_000, orderBy: getSupabaseOrderColumns('daily_logs') });
         if (error) throw error;
         const logs = dedupeRowsById(data || []).map(fromDb) as DailyLog[];
         const detailMap = await dailyLogDetailService.listByLogIds(logs.map(l => l.id));
@@ -475,12 +477,12 @@ export const dailyLogService = {
 
 export const dailyLogContributionService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<DailyLogContribution[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('daily_log_contributions')
-            .select('*')
+            .select(getSupabaseProjection('daily_log_contributions'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('date', { ascending: false })
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true }), { label: "lib/projectService.ts:479", maxRows: 50_000, orderBy: getSupabaseOrderColumns('daily_log_contributions') });
         if (error) throw error;
         return (data || []).map(fromDb) as DailyLogContribution[];
     },
@@ -590,11 +592,11 @@ export const dailyLogSummarySourceService = {
     async listByLogIds(dailyLogIds: string[]): Promise<Record<string, DailyLogSummarySource[]>> {
         const ids = [...new Set(dailyLogIds.filter(Boolean))];
         if (ids.length === 0) return {};
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('daily_log_summary_sources')
-            .select('*')
+            .select(getSupabaseProjection('daily_log_summary_sources'))
             .in('daily_log_id', ids)
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true }), { label: "lib/projectService.ts:594", maxRows: 50_000, orderBy: getSupabaseOrderColumns('daily_log_summary_sources') });
         if (error) throw error;
         const result: Record<string, DailyLogSummarySource[]> = Object.fromEntries(ids.map(id => [id, []]));
         (data || []).forEach(row => {
@@ -629,11 +631,11 @@ export const dailyLogSummarySourceService = {
 // ==================== ACCEPTANCE RECORDS ====================
 export const acceptanceService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<AcceptanceRecord[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('acceptance_records')
-            .select('*')
+            .select(getSupabaseProjection('acceptance_records'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('period_number', { ascending: true });
+            .order('period_number', { ascending: true }), { label: "lib/projectService.ts:633", maxRows: 50_000, orderBy: getSupabaseOrderColumns('acceptance_records') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },
@@ -655,12 +657,12 @@ export const acceptanceService = {
 // ==================== MATERIAL BUDGET (BOQ) ====================
 export const boqService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<MaterialBudgetItem[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('material_budget_items')
-            .select('*')
+            .select(getSupabaseProjection('material_budget_items'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('category', { ascending: true })
-            .order('id', { ascending: true });
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:659", maxRows: 50_000, orderBy: getSupabaseOrderColumns('material_budget_items') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },
@@ -916,12 +918,12 @@ export const workBoqService = {
         const cached = readScopedCache(workBoqListCache, cacheKey);
         if (cached) return cached;
 
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_work_boq_items')
-            .select('*')
+            .select(getSupabaseProjection('project_work_boq_items'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true })
-            .order('id', { ascending: true });
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:920", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_work_boq_items') });
         if (error) throw error;
         const rows = dedupeRowsById(data || []).map(fromDb) as ProjectWorkBoqItem[];
         writeScopedCache(workBoqListCache, cacheKey, rows);
@@ -929,12 +931,12 @@ export const workBoqService = {
     },
 
     async listLite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectWorkBoqItemLite[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_work_boq_items')
             .select(WORK_BOQ_LITE_SELECT)
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
             .order('sort_order', { ascending: true })
-            .order('id', { ascending: true });
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:933", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_work_boq_items') });
         if (error) throw error;
         return dedupeRowsById((data || []) as any[]).map(fromDb) as ProjectWorkBoqItemLite[];
     },
@@ -987,11 +989,11 @@ export const workBoqService = {
 // ==================== MATERIAL REQUESTS ====================
 export const matRequestService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectMaterialRequest[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_material_requests')
-            .select('*')
+            .select(getSupabaseProjection('project_material_requests'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false }), { label: "lib/projectService.ts:991", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_material_requests') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },
@@ -1025,11 +1027,11 @@ export const matRequestService = {
 // ==================== VENDORS ====================
 export const vendorService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectVendor[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_vendors')
-            .select('*')
+            .select(getSupabaseProjection('project_vendors'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('name', { ascending: true });
+            .order('name', { ascending: true }), { label: "lib/projectService.ts:1029", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_vendors') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },
@@ -1565,18 +1567,18 @@ export const poDeliveryScheduleService = {
 // ==================== PAYMENT SCHEDULES ====================
 export const paymentService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PaymentSchedule[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('payment_schedules')
-            .select('*')
+            .select(getSupabaseProjection('payment_schedules'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('due_date', { ascending: true });
+            .order('due_date', { ascending: true }), { label: "lib/projectService.ts:1569", maxRows: 50_000, orderBy: getSupabaseOrderColumns('payment_schedules') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(normalizePaymentSchedule);
     },
     async listScoped(projectId?: string | null, constructionSiteId?: string | null): Promise<PaymentSchedule[]> {
         let query = supabase
             .from('payment_schedules')
-            .select('*')
+            .select(getSupabaseProjection('payment_schedules'))
             .order('due_date', { ascending: true });
         if (projectId && constructionSiteId) {
             query = query.or(`project_id.eq.${projectId},construction_site_id.eq.${constructionSiteId}`);
@@ -1585,7 +1587,7 @@ export const paymentService = {
         } else if (constructionSiteId) {
             query = query.eq('construction_site_id', constructionSiteId);
         }
-        const { data, error } = await query;
+        const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/projectService.ts:1578", maxRows: 50_000, orderBy: getSupabaseOrderColumns('payment_schedules') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(normalizePaymentSchedule);
     },
@@ -1611,11 +1613,11 @@ export const paymentService = {
     async listByContract(contractId: string, contractType?: PaymentSchedule['contractType']): Promise<PaymentSchedule[]> {
         let query = supabase
             .from('payment_schedules')
-            .select('*')
+            .select(getSupabaseProjection('payment_schedules'))
             .eq('contract_id', contractId)
             .order('due_date', { ascending: true });
         if (contractType) query = query.eq('contract_type', contractType);
-        const { data, error } = await query;
+        const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/projectService.ts:1613", maxRows: 50_000, orderBy: getSupabaseOrderColumns('payment_schedules') });
         if (error) throw error;
         return (data || []).map(normalizePaymentSchedule);
     },
@@ -1631,11 +1633,11 @@ export const paymentService = {
 // ==================== BASELINES ====================
 export const baselineService = {
     async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectBaseline[]> {
-        const { data, error } = await supabase
+        const { data, error } = await fetchAllSupabaseRows(supabase
             .from('project_baselines')
-            .select('*')
+            .select(getSupabaseProjection('project_baselines'))
             .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-            .order('locked_at', { ascending: false });
+            .order('locked_at', { ascending: false }), { label: "lib/projectService.ts:1635", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_baselines') });
         if (error) throw error;
         return dedupeRowsById(data || []).map(fromDb);
     },

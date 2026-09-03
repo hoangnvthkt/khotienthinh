@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { ContractItem, ContractItemResource, ContractItemType } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════════════════════════
 //  CONTRACT ITEM SERVICE — CRUD cho BOQ hạng mục hợp đồng
@@ -65,12 +67,12 @@ const buildTree = (items: ContractItem[]): ContractItem[] => {
 export const contractItemService = {
   /** Lấy tất cả hạng mục BOQ theo hợp đồng */
   async listByContract(contractId: string, contractType: ContractItemType): Promise<ContractItem[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('contract_id', contractId)
       .eq('contract_type', contractType)
-      .order('order', { ascending: true });
+      .order('order', { ascending: true }), { label: "lib/contractItemService.ts:69", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -79,11 +81,11 @@ export const contractItemService = {
   async listBySite(projectIdOrSiteId: string, contractType?: ContractItemType, constructionSiteId?: string | null): Promise<ContractItem[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('order', { ascending: true });
     if (contractType) query = query.eq('contract_type', contractType);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/contractItemService.ts:81", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return dedupeRowsById(data || []).map(fromDb);
   },
@@ -175,12 +177,12 @@ export const contractItemService = {
     );
     if (duplicateInFile) throw new Error(`File import có mã BOQ bị trùng: ${duplicateInFile.code}`);
     if (items.length > 0) {
-      const { data: existing, error: existingError } = await supabase
+      const { data: existing, error: existingError } = await fetchAllSupabaseRows(supabase
         .from(TABLE)
         .select('code')
         .eq('contract_id', items[0].contractId)
         .eq('contract_type', items[0].contractType)
-        .in('code', items.map(item => item.code));
+        .in('code', items.map(item => item.code)), { label: "lib/contractItemService.ts:179", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
       if (existingError) throw existingError;
       if (existing && existing.length > 0) {
         throw new Error(`Mã BOQ đã tồn tại: ${existing.map(row => row.code).join(', ')}`);
@@ -197,7 +199,7 @@ export const contractItemService = {
       delete d.id;
       return d;
     });
-    const { data, error } = await supabase.from(TABLE).insert(dbItems).select();
+    const { data, error } = await supabase.from(TABLE).insert(dbItems).select(getSupabaseProjection(TABLE));
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -275,11 +277,11 @@ export const contractItemService = {
 
 export const contractItemResourceService = {
   async listByItem(contractItemId: string): Promise<ContractItemResource[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(RESOURCE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(RESOURCE_TABLE))
       .eq('contract_item_id', contractItemId)
-      .order('order', { ascending: true });
+      .order('order', { ascending: true }), { label: "lib/contractItemService.ts:279", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RESOURCE_TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -287,11 +289,11 @@ export const contractItemResourceService = {
   async listByItems(contractItemIds: string[]): Promise<Record<string, ContractItemResource[]>> {
     const ids = Array.from(new Set(contractItemIds.filter(Boolean)));
     if (ids.length === 0) return {};
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(RESOURCE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(RESOURCE_TABLE))
       .in('contract_item_id', ids)
-      .order('order', { ascending: true });
+      .order('order', { ascending: true }), { label: "lib/contractItemService.ts:291", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RESOURCE_TABLE) });
     if (error) throw error;
     return (data || []).reduce<Record<string, ContractItemResource[]>>((acc, row) => {
       const item = fromDb(row) as ContractItemResource;

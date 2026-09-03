@@ -4,6 +4,7 @@ import {
   projectTransactionToDb,
 } from './projectTransactionMapping';
 import { supabase } from './supabase';
+import { getSupabaseProjection } from './supabaseProjections';
 
 const TABLE = 'project_transactions';
 
@@ -23,7 +24,7 @@ export const projectTransactionService = {
 
   async resolveProjectFinanceId(projectId: string | null | undefined, constructionSiteId: string | null | undefined): Promise<string> {
     if (!projectId && !constructionSiteId) return '';
-    let query = supabase.from('project_finances').select('*').limit(1);
+    let query = supabase.from('project_finances').select(getSupabaseProjection('project_finances')).limit(1);
     if (projectId) {
       query = query.eq('project_id', projectId);
     } else if (constructionSiteId) {

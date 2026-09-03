@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { MaterialRequest, MaterialRequestMaterialGroupSnapshot, RequestItem } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { getRequestLineId } from './materialRequestFulfillmentService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'material_request_material_group_snapshots';
 
@@ -53,10 +55,10 @@ export const materialRequestMaterialGroupSnapshotService = {
         if (upsertError) throw upsertError;
       }
 
-      const { data: existingRows, error: readError } = await supabase
+      const { data: existingRows, error: readError } = await fetchAllSupabaseRows(supabase
         .from(TABLE)
         .select('request_line_id')
-        .eq('request_id', request.id);
+        .eq('request_id', request.id), { label: "lib/materialRequestMaterialGroupSnapshotService.ts:57", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
       if (readError) throw readError;
 
       const staleLineIds = (existingRows || [])
@@ -79,11 +81,11 @@ export const materialRequestMaterialGroupSnapshotService = {
 
   async listByProject(projectId: string): Promise<MaterialRequestMaterialGroupSnapshot[]> {
     if (!projectId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('project_id', projectId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/materialRequestMaterialGroupSnapshotService.ts:83", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) {
       if (isMissingSnapshotTable(error)) return [];
       throw error;

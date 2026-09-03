@@ -6,6 +6,8 @@ import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 import { getKnowledgeBaseCapabilities } from '../lib/permissions/globalModulePermissions';
 import { canPerform } from '../lib/permissions/permissionService';
 import { hrmDocumentService } from '../lib/hrmDocumentService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../lib/supabaseCompleteRead';
 
 interface RagDocument {
   id: string;
@@ -43,10 +45,10 @@ const KnowledgeBase: React.FC = () => {
       setLoading(false);
       return;
     }
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('rag_documents')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(getSupabaseProjection('rag_documents'))
+      .order('created_at', { ascending: false }), { label: "pages/KnowledgeBase.tsx:47", maxRows: 10_000, orderBy: getSupabaseOrderColumns('rag_documents') });
     if (!error && data) setDocuments(data);
     setLoading(false);
   }, [kbCapabilities.canView]);
@@ -148,10 +150,10 @@ const KnowledgeBase: React.FC = () => {
         : [];
 
       // Sync from project_documents  
-      const { data: projDocs } = await supabase
+      const { data: projDocs } = await fetchAllSupabaseRows(supabase
         .from('project_documents')
         .select('id, title, file_name, file_type, file_size, storage_path')
-        .not('storage_path', 'is', null);
+        .not('storage_path', 'is', null), { label: "pages/KnowledgeBase.tsx:152", maxRows: 10_000, orderBy: getSupabaseOrderColumns('project_documents') });
 
       // Filter out image files (not supported for text extraction)
       const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico'];

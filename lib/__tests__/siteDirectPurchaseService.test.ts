@@ -134,6 +134,7 @@ const query = (response: { data?: any; error?: any } = { data: [], error: null }
     insert: vi.fn(() => Promise.resolve(response)),
     update: vi.fn(() => api),
     delete: vi.fn(() => api),
+    range: vi.fn(() => api),
     then: (resolve: any, reject: any) => Promise.resolve(response).then(resolve, reject),
   };
   return api;

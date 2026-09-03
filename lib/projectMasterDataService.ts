@@ -1,6 +1,8 @@
 import { ProjectGroup, ProjectMasterCategory, ProjectSector, ProjectTypeMaster } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 type CategoryTable = 'project_groups' | 'project_types' | 'project_sectors';
 type CategoryKind = 'group' | 'type' | 'sector';
@@ -70,11 +72,11 @@ const categoryKindByTable: Record<CategoryTable, CategoryKind> = {
 
 const listCategories = async <T extends ProjectMasterCategory>(table: CategoryTable, fallback: T[]): Promise<T[]> => {
   if (!isSupabaseConfigured) return fallback;
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(table)
-    .select('*')
+    .select(getSupabaseProjection(table))
     .order('sort_order', { ascending: true })
-    .order('name', { ascending: true });
+    .order('name', { ascending: true }), { label: "lib/projectMasterDataService.ts:74", maxRows: 50_000, orderBy: getSupabaseOrderColumns(table) });
   if (error) throw error;
   return (data || []).map(row => mapCategory<T>(row));
 };

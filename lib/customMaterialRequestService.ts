@@ -30,6 +30,8 @@ import type {
   PurchaseOrder,
   PurchaseOrderItem,
 } from '../types';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const REQUEST_TABLE = 'custom_material_requests';
 const LINE_TABLE = 'custom_material_request_lines';
@@ -206,8 +208,8 @@ const loadRequestBundle = async (requestRows: any[]): Promise<CustomMaterialRequ
   if (requestIds.length === 0) return [];
 
   const [{ data: lineRows, error: lineError }, { data: attachmentRows, error: attachmentError }] = await Promise.all([
-    supabase.from(LINE_TABLE).select('*').in('request_id', requestIds).order('sort_order', { ascending: true }),
-    supabase.from(ATTACHMENT_TABLE).select('*').in('request_id', requestIds).order('created_at', { ascending: false }),
+    fetchAllSupabaseRows(supabase.from(LINE_TABLE).select(getSupabaseProjection(LINE_TABLE)).in('request_id', requestIds).order('sort_order', { ascending: true }), { label: "lib/customMaterialRequestService.ts:210", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) }),
+    fetchAllSupabaseRows(supabase.from(ATTACHMENT_TABLE).select(getSupabaseProjection(ATTACHMENT_TABLE)).in('request_id', requestIds).order('created_at', { ascending: false }), { label: "lib/customMaterialRequestService.ts:211", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ATTACHMENT_TABLE) }),
   ]);
   if (lineError) throw lineError;
   if (attachmentError) throw attachmentError;
@@ -417,11 +419,11 @@ export const customMaterialRequestService = {
     if (!projectId && !constructionSiteId) return [];
     let query = supabase
       .from(REQUEST_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(REQUEST_TABLE))
       .order('created_at', { ascending: false });
     if (projectId) query = query.eq('project_id', projectId);
     if (constructionSiteId) query = query.eq('construction_site_id', constructionSiteId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/customMaterialRequestService.ts:419", maxRows: 20_000, orderBy: getSupabaseOrderColumns(REQUEST_TABLE) });
     if (error) throw error;
     return loadRequestBundle(data || []);
   },
@@ -691,11 +693,11 @@ export const customMaterialRequestService = {
   },
 
   async listApprovedDemand(): Promise<CustomMaterialDemandLine[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(REQUEST_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(REQUEST_TABLE))
       .in('status', ['approved', 'rfq_created', 'po_created', 'partially_received'])
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/customMaterialRequestService.ts:695", maxRows: 20_000, orderBy: getSupabaseOrderColumns(REQUEST_TABLE) });
     if (error) throw error;
     const requests = await loadRequestBundle(data || []);
     return requests.flatMap(request => request.lines
@@ -713,13 +715,13 @@ export const customMaterialRequestService = {
   },
 
   async listRfqs(): Promise<CustomMaterialRfq[]> {
-    const { data, error } = await supabase.from(RFQ_TABLE).select('*').order('created_at', { ascending: false });
+    const { data, error } = await fetchAllSupabaseRows(supabase.from(RFQ_TABLE).select(getSupabaseProjection(RFQ_TABLE)).order('created_at', { ascending: false }), { label: "lib/customMaterialRequestService.ts:717", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RFQ_TABLE) });
     if (error) throw error;
     const rfqIds = (data || []).map(row => row.id);
     if (rfqIds.length === 0) return [];
     const [{ data: lineRows, error: lineError }, { data: supplierRows, error: supplierError }] = await Promise.all([
-      supabase.from(RFQ_LINE_TABLE).select('*').in('rfq_id', rfqIds),
-      supabase.from(RFQ_SUPPLIER_TABLE).select('*').in('rfq_id', rfqIds),
+      fetchAllSupabaseRows(supabase.from(RFQ_LINE_TABLE).select(getSupabaseProjection(RFQ_LINE_TABLE)).in('rfq_id', rfqIds), { label: "lib/customMaterialRequestService.ts:722", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RFQ_LINE_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(RFQ_SUPPLIER_TABLE).select(getSupabaseProjection(RFQ_SUPPLIER_TABLE)).in('rfq_id', rfqIds), { label: "lib/customMaterialRequestService.ts:723", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RFQ_SUPPLIER_TABLE) }),
     ]);
     if (lineError) throw lineError;
     if (supplierError) throw supplierError;
@@ -814,7 +816,7 @@ export const customMaterialRequestService = {
       .eq('supplier_id', input.supplierId);
     if (error) throw error;
 
-    const { data: rfqLines, error: lineReadError } = await supabase.from(RFQ_LINE_TABLE).select('line_id').eq('rfq_id', input.rfqId);
+    const { data: rfqLines, error: lineReadError } = await fetchAllSupabaseRows(supabase.from(RFQ_LINE_TABLE).select('line_id').eq('rfq_id', input.rfqId), { label: "lib/customMaterialRequestService.ts:818", maxRows: 20_000, orderBy: getSupabaseOrderColumns(RFQ_LINE_TABLE) });
     if (lineReadError) throw lineReadError;
     const lineIds = (rfqLines || []).map(row => row.line_id);
     if (lineIds.length > 0) {

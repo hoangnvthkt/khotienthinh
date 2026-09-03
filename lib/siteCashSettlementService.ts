@@ -1,6 +1,8 @@
 import type { SiteCashSettlementBatch, SiteCashSettlementLine, SiteDirectPurchase } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const BATCH_TABLE = 'site_cash_settlement_batches';
 const LINE_TABLE = 'site_cash_settlement_lines';
@@ -140,12 +142,12 @@ export const siteCashSettlementService = {
     status?: SiteCashSettlementBatch['status'] | null;
     periodMonth?: string | null;
   } = {}): Promise<SiteCashSettlementBatch[]> {
-    let query = supabase.from(BATCH_TABLE).select('*').order('period_month', { ascending: false });
+    let query = supabase.from(BATCH_TABLE).select(getSupabaseProjection(BATCH_TABLE)).order('period_month', { ascending: false });
     if (input.projectId) query = query.eq('project_id', input.projectId);
     if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
     if (input.status) query = query.eq('status', input.status);
     if (input.periodMonth) query = query.eq('period_month', input.periodMonth);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/siteCashSettlementService.ts:144", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;
@@ -161,11 +163,11 @@ export const siteCashSettlementService = {
       .single();
     if (batchError) throw batchError;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(LINE_TABLE))
       .eq('settlement_batch_id', id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/siteCashSettlementService.ts:165", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     return {
@@ -185,7 +187,7 @@ export const siteCashSettlementService = {
     const end = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
     let query = supabase
       .from('site_direct_purchases')
-      .select('*')
+      .select(getSupabaseProjection('site_direct_purchases'))
       .eq('construction_site_id', input.constructionSiteId)
       .in('payment_source', ['site_cash', 'staff_paid'])
       .is('site_cash_settlement_id', null)
@@ -193,7 +195,7 @@ export const siteCashSettlementService = {
       .lt('purchase_date', end)
       .order('purchase_date', { ascending: true });
     if (input.projectId) query = query.eq('project_id', input.projectId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/siteCashSettlementService.ts:187", maxRows: 20_000, orderBy: getSupabaseOrderColumns('site_direct_purchases') });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;

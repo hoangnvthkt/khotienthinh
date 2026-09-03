@@ -8,6 +8,7 @@ const IGNORED_PATH = /(?:^|\/)(?:node_modules|dist|coverage|\.git|\.worktrees|__
 const RESULT_POLICY_METHODS = new Set(['limit', 'range', 'single', 'maybeSingle']);
 const CURSOR_METHODS = new Set(['or', 'lt', 'lte', 'gt', 'gte', 'range']);
 const MUTATION_METHODS = new Set(['insert', 'update', 'upsert', 'delete']);
+const COMPLETE_READ_HELPERS = new Set(['fetchAllSupabaseRows']);
 
 const propertyName = expression => {
   if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
@@ -18,6 +19,10 @@ const propertyName = expression => {
 };
 
 const callMethodName = node => ts.isCallExpression(node) ? propertyName(node.expression) : null;
+
+const callIdentifierName = node => ts.isCallExpression(node) && ts.isIdentifier(node.expression)
+  ? node.expression.text
+  : null;
 
 const walk = (node, visit) => {
   visit(node);
@@ -95,11 +100,27 @@ const getAssignedQueryMethods = root => {
 
   walk(scope, candidate => {
     if (!ts.isCallExpression(candidate)) return;
+    const helper = callIdentifierName(candidate);
+    if (helper && COMPLETE_READ_HELPERS.has(helper)
+      && candidate.arguments.some(argument => expressionStartsWithIdentifier(argument, variableName))) {
+      methods.add('allPages');
+    }
     const method = callMethodName(candidate);
     if (!method || !expressionStartsWithIdentifier(candidate.expression, variableName)) return;
     methods.add(method);
   });
   return methods;
+};
+
+const isCompleteReadArgument = root => {
+  let current = root;
+  while (current.parent && (ts.isParenthesizedExpression(current.parent) || ts.isAsExpression(current.parent))) {
+    current = current.parent;
+  }
+  const parent = current.parent;
+  return Boolean(ts.isCallExpression(parent)
+    && COMPLETE_READ_HELPERS.has(callIdentifierName(parent))
+    && parent.arguments.includes(current));
 };
 
 const getFunctionName = node => {
@@ -186,11 +207,15 @@ export function analyzeSource(source, filePath) {
     const head = hasHeadTrue(node);
     const singleton = methods.has('single') || methods.has('maybeSingle');
     const mutationReturn = [...MUTATION_METHODS].some(method => methods.has(method));
-    const bounded = head || [...RESULT_POLICY_METHODS].some(method => methods.has(method));
+    if (isCompleteReadArgument(root)) methods.add('allPages');
+    const completeRead = methods.has('allPages');
+    const bounded = head || mutationReturn || completeRead || [...RESULT_POLICY_METHODS].some(method => methods.has(method));
     const cursor = [...CURSOR_METHODS].some(method => methods.has(method));
-    const classification = head
-      ? 'count'
-      : mutationReturn && singleton
+    const classification = completeRead
+      ? 'all_pages'
+      : head
+        ? 'count'
+        : mutationReturn
         ? 'mutation_return'
         : singleton
           ? 'detail'
@@ -271,4 +296,3 @@ export function scanWorkspace(rootDir, policy = { allowlist: [] }) {
     findings,
   };
 }
-

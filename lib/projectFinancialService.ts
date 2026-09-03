@@ -9,6 +9,8 @@ import {
   isActualCostExpenseTransaction,
   isCashOutExpenseTransaction,
 } from './projectTransactionClassification';
+import { getSupabaseOrderColumns } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════════════════════════
 //  PROJECT FINANCIAL SERVICE
@@ -81,20 +83,22 @@ export const projectFinancialService = {
       // Transactions: dùng prop nếu đã có, fallback fetch từ DB
       transactions.length > 0
         ? Promise.resolve(transactions.map(t => ({ type: t.type, amount: t.amount, sourceRef: t.sourceRef })))
-        : supabase
+        : fetchAllSupabaseRows(supabase
             .from('project_transactions')
             .select('type, amount, source_ref, sourceRef')
-            .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId)
-            .then(r => (r.data || []).map((row: any) => ({
+            .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId),
+          { label: "lib/projectFinancialService.ts:84", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_transactions') })
+          .then(r => (r.data || []).map((row: any) => ({
               type: row.type,
               amount: row.amount,
               sourceRef: row.source_ref ?? row.sourceRef,
             }))),
       projectCostItemService.getSummary(constructionSiteId, projectId),
-      supabase
+      fetchAllSupabaseRows(supabase
         .from('project_purchase_orders')
         .select('total_amount, status')
-        .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId)
+        .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId),
+      { label: "lib/projectFinancialService.ts:94", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_purchase_orders') })
         .then(r => r.data || []),
     ]);
 

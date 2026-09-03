@@ -24,7 +24,10 @@ describe('proactive PO WMS receipt contract', () => {
     };
     const inventoryQuery = {
       select: vi.fn().mockReturnThis(),
-      in: vi.fn().mockResolvedValue({
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: (resolve: any, reject: any) => Promise.resolve({
         data: [{
           id: 'item-commercial',
           sku: 'COMMERCIAL-SKU',
@@ -39,7 +42,7 @@ describe('proactive PO WMS receipt contract', () => {
           stock_by_warehouse: {},
         }],
         error: null,
-      }),
+      }).then(resolve, reject),
     };
     const scheduleQuery = {
       update: vi.fn().mockReturnThis(),

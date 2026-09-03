@@ -10,6 +10,8 @@ import { fromDb, toDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { taskService } from './projectService';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const missingRelation = (error: any): boolean => {
   const message = `${error?.message || ''} ${error?.details || ''}`;
@@ -38,12 +40,12 @@ const revisionTaskToDb = (row: ProjectScheduleRevisionTask): any => {
 
 export const delayEventService = {
   async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectDelayEvent[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('project_delay_events')
-      .select('*')
+      .select(getSupabaseProjection('project_delay_events'))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('occurred_on', { ascending: false })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/projectScheduleForecastService.ts:42", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_delay_events') });
     if (error) {
       if (missingRelation(error)) {
         console.warn('project_delay_events table is not available yet; skipping schedule forecast delay events.');
@@ -65,10 +67,10 @@ export const delayEventService = {
     const delayTasks = (log.delayTasks || []).filter(row => row.taskId && Number(row.delayDays || 0) > 0);
     if (delayTasks.length === 0) return [];
 
-    const { data: existingRows, error: existingError } = await supabase
+    const { data: existingRows, error: existingError } = await fetchAllSupabaseRows(supabase
       .from('project_delay_events')
-      .select('*')
-      .eq('source_daily_log_id', log.id);
+      .select(getSupabaseProjection('project_delay_events'))
+      .eq('source_daily_log_id', log.id), { label: "lib/projectScheduleForecastService.ts:69", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_delay_events') });
     if (existingError) throw existingError;
 
     const existingByTaskId = new Map((existingRows || []).map(row => [row.task_id as string, fromDb(row) as ProjectDelayEvent]));
@@ -126,11 +128,11 @@ export const delayEventService = {
 
 export const scheduleRevisionService = {
   async list(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectScheduleRevision[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('project_schedule_revisions')
-      .select('*')
+      .select(getSupabaseProjection('project_schedule_revisions'))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-      .order('applied_at', { ascending: false });
+      .order('applied_at', { ascending: false }), { label: "lib/projectScheduleForecastService.ts:130", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_schedule_revisions') });
     if (error) {
       if (missingRelation(error)) {
         console.warn('project_schedule_revisions table is not available yet; skipping schedule revisions.');

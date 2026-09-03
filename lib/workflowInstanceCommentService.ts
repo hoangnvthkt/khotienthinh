@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { WorkflowCommentMention, WorkflowInstanceComment, WorkflowInstanceCommentAttachment } from '../types';
 import { normalizeWorkflowCommentMentions, reconcileWorkflowCommentMentions } from './workflowCommentMentions';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'workflow_instance_comments';
 const BUCKET = 'workflow-instance-comment-attachments';
@@ -34,11 +36,11 @@ export const workflowInstanceCommentService = {
 
   async list(instanceId: string): Promise<WorkflowInstanceComment[]> {
     if (!instanceId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('instance_id', instanceId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/workflowInstanceCommentService.ts:38", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(mapComment);
   },

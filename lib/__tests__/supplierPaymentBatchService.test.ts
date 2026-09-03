@@ -26,6 +26,7 @@ const query = (response: { data?: any; error?: any }) => {
     eq: vi.fn(() => api),
     delete: vi.fn(() => api),
     upsert: vi.fn(() => api),
+    limit: vi.fn(() => api),
     single: vi.fn(() => Promise.resolve(response)),
     then: (resolve: any, reject: any) => Promise.resolve(response).then(resolve, reject),
   };
@@ -161,7 +162,8 @@ describe('supplierPaymentBatchService helpers', () => {
     });
 
     expect(supabaseMocks.from).toHaveBeenCalledWith('supplier_payment_batches');
-    expect(batchQuery.select).toHaveBeenCalledWith('*');
+    expect(batchQuery.select).toHaveBeenCalledWith(expect.stringContaining('id,code,project_id'));
+    expect(batchQuery.select).not.toHaveBeenCalledWith('*');
     expect(batchQuery.order).toHaveBeenCalledWith('payment_date', { ascending: false });
     expect(batchQuery.eq).toHaveBeenCalledWith('project_id', 'project-1');
     expect(batchQuery.eq).toHaveBeenCalledWith('construction_site_id', 'site-1');

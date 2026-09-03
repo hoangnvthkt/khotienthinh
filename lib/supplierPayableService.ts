@@ -10,6 +10,8 @@ import type {
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const DOCUMENT_TABLE = 'supplier_payable_documents';
 const DOCUMENT_BALANCE_VIEW = 'supplier_payable_document_balances';
@@ -248,14 +250,14 @@ export const supplierPayableService = {
     sourceType?: SupplierPayableSourceType | null;
     sourceId?: string | null;
   } = {}): Promise<SupplierPayableDocument[]> {
-    let query = supabase.from(DOCUMENT_BALANCE_VIEW).select('*').order('document_date', { ascending: false });
+    let query = supabase.from(DOCUMENT_BALANCE_VIEW).select(getSupabaseProjection(DOCUMENT_BALANCE_VIEW)).order('document_date', { ascending: false });
     if (input.projectId) query = query.eq('project_id', input.projectId);
     if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
     if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
     if (input.status) query = query.eq('status', input.status);
     if (input.sourceType) query = query.eq('source_type', input.sourceType);
     if (input.sourceId) query = query.eq('source_id', input.sourceId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/supplierPayableService.ts:252", maxRows: 20_000, orderBy: getSupabaseOrderColumns(DOCUMENT_BALANCE_VIEW) });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;
@@ -268,11 +270,11 @@ export const supplierPayableService = {
     constructionSiteId?: string | null;
     supplierId?: string | null;
   } = {}): Promise<SupplierPayableBalance[]> {
-    let query = supabase.from(BALANCE_VIEW).select('*').order('outstanding_amount', { ascending: false });
+    let query = supabase.from(BALANCE_VIEW).select(getSupabaseProjection(BALANCE_VIEW)).order('outstanding_amount', { ascending: false });
     if (input.projectId) query = query.eq('project_id', input.projectId);
     if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
     if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/supplierPayableService.ts:272", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BALANCE_VIEW) });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;
@@ -291,7 +293,7 @@ export const supplierPayableService = {
   async syncFromPurchaseOrder(po: PurchaseOrder): Promise<SupplierPayableDocument> {
     const { data: existingRows, error: existingError } = await supabase
       .from(DOCUMENT_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DOCUMENT_TABLE))
       .eq('source_type', 'purchase_order')
       .eq('source_id', po.id)
       .limit(1);

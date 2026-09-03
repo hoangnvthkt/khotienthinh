@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { MaterialRequest, MaterialRequestBoqLineSnapshot, RequestItem } from '../types';
 import { getRequestLineId } from './materialRequestFulfillmentService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'material_request_boq_line_snapshots';
 
@@ -71,10 +73,10 @@ export const materialRequestBoqLineSnapshotService = {
         if (upsertError) throw upsertError;
       }
 
-      const { data: existingRows, error: readError } = await supabase
+      const { data: existingRows, error: readError } = await fetchAllSupabaseRows(supabase
         .from(TABLE)
         .select('request_line_id')
-        .eq('request_id', request.id);
+        .eq('request_id', request.id), { label: "lib/materialRequestBoqLineSnapshotService.ts:75", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
       if (readError) throw readError;
 
       const staleLineIds = (existingRows || [])
@@ -97,11 +99,11 @@ export const materialRequestBoqLineSnapshotService = {
 
   async listByProject(projectId: string): Promise<MaterialRequestBoqLineSnapshot[]> {
     if (!projectId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('project_id', projectId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }), { label: "lib/materialRequestBoqLineSnapshotService.ts:101", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) {
       if (isMissingSnapshotTable(error)) return [];
       throw error;

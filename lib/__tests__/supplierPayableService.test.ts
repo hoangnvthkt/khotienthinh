@@ -7,6 +7,7 @@ const supabaseMocks = vi.hoisted(() => ({
   select: vi.fn(),
   order: vi.fn(),
   eq: vi.fn(),
+  limit: vi.fn(),
 }));
 
 vi.mock('../supabase', () => ({
@@ -60,6 +61,7 @@ describe('supplierPayableService helpers', () => {
       select: supabaseMocks.select,
       order: supabaseMocks.order,
       eq: supabaseMocks.eq,
+      limit: supabaseMocks.limit,
       data: [],
       error: null,
     };
@@ -68,6 +70,7 @@ describe('supplierPayableService helpers', () => {
     supabaseMocks.select.mockReset().mockReturnValue(query);
     supabaseMocks.order.mockReset().mockReturnValue(query);
     supabaseMocks.eq.mockReset().mockReturnValue(query);
+    supabaseMocks.limit.mockReset().mockReturnValue(query);
   });
 
   it('recognizes PO payable from net received quantity only', () => {

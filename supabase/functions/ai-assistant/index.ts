@@ -512,11 +512,17 @@ async function actorHasPermission(actor: AppUserContext | null, permissionCode: 
     .from('user_permission_grants')
     .select('scope_type, scope_id, is_active, expires_at')
     .eq('user_id', actor.id)
-    .eq('permission_code', permissionCode);
+    .eq('permission_code', permissionCode)
+    .order('id', { ascending: true })
+    .limit(1_000);
 
   if (error) {
     console.warn('permission grant lookup failed:', error.message);
     return actorHasLegacyPermission(actor, permissionCode);
+  }
+  if ((data || []).length >= 1_000) {
+    console.error('permission grant lookup reached its 1,000-row safety cap');
+    return false;
   }
 
   const now = Date.now();

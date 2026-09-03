@@ -6,6 +6,8 @@ import type {
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const BATCH_TABLE = 'supplier_payment_batches';
 const ALLOCATION_TABLE = 'supplier_payment_allocations';
@@ -158,13 +160,13 @@ export const supplierPaymentBatchService = {
     status?: string | null;
     periodMonth?: string | null;
   } = {}): Promise<SupplierPaymentBatch[]> {
-    let query = supabase.from(BATCH_TABLE).select('*').order('payment_date', { ascending: false });
+    let query = supabase.from(BATCH_TABLE).select(getSupabaseProjection(BATCH_TABLE)).order('payment_date', { ascending: false });
     if (input.projectId) query = query.eq('project_id', input.projectId);
     if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
     if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
     if (input.status) query = query.eq('status', input.status);
     if (input.periodMonth) query = query.eq('period_month', input.periodMonth);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/supplierPaymentBatchService.ts:162", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;
@@ -230,11 +232,11 @@ export const supplierPaymentBatchService = {
   },
 
   async listAllocations(paymentBatchId: string): Promise<SupplierPaymentAllocation[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(ALLOCATION_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(ALLOCATION_TABLE))
       .eq('payment_batch_id', paymentBatchId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/supplierPaymentBatchService.ts:234", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ALLOCATION_TABLE) });
     if (error) {
       if (error.code === '42P01') return [];
       throw error;

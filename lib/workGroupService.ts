@@ -1,6 +1,8 @@
 import { WorkGroup, WorkGroupMember, WorkGroupMemberRole, WorkGroupWithMembers } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const GROUP_TABLE = 'work_groups';
 const MEMBER_TABLE = 'work_group_members';
@@ -58,13 +60,13 @@ export const workGroupService = {
 
     let query = supabase
       .from(GROUP_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(GROUP_TABLE))
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true });
 
     if (options.activeOnly) query = query.eq('is_active', true);
 
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/workGroupService.ts:60", maxRows: 20_000, orderBy: getSupabaseOrderColumns(GROUP_TABLE) });
     if (error) throw error;
     return (data || []).map(mapGroup);
   },
@@ -77,13 +79,13 @@ export const workGroupService = {
 
     let query = supabase
       .from(MEMBER_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(MEMBER_TABLE))
       .in('group_id', groups.map(group => group.id))
       .order('created_at', { ascending: true });
 
     if (options.memberActiveOnly) query = query.eq('is_active', true);
 
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/workGroupService.ts:79", maxRows: 20_000, orderBy: getSupabaseOrderColumns(MEMBER_TABLE) });
     if (error) throw error;
 
     const membersByGroup = new Map<string, WorkGroupMember[]>();

@@ -5,6 +5,8 @@ import {
   ChevronDown, ChevronUp, Loader2, AlertCircle, Star, TrendingUp,
   Users, Calendar, Target, Clock, Shield, Award, BarChart3, Eye, EyeOff, CheckCircle
 } from 'lucide-react';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
@@ -157,7 +159,7 @@ const EmployeeRanking: React.FC = () => {
   useEffect(() => { loadCriteria(); }, []);
 
   const loadCriteria = async () => {
-    const { data: rows, error: err } = await supabase.from('ranking_criteria').select('*').order('sort_order');
+    const { data: rows, error: err } = await fetchAllSupabaseRows(supabase.from('ranking_criteria').select(getSupabaseProjection('ranking_criteria')).order('sort_order'), { label: "pages/hrm/EmployeeRanking.tsx:161", maxRows: 10_000, orderBy: getSupabaseOrderColumns('ranking_criteria') });
     if (err) console.error('Load criteria error:', err);
     if (rows) setCriteria(rows);
   };

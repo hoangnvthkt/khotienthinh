@@ -64,6 +64,8 @@ import ZaloMentionPicker, { MentionCandidate } from './ZaloMentionPicker';
 import ZaloImageGrid from './ZaloImageGrid';
 import ZaloPinnedBanner from './ZaloPinnedBanner';
 import ZaloInputToolbar from './ZaloInputToolbar';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 const CHAT_V2_ATTACHMENT_BUCKET = 'chat-attachments';
 
@@ -1659,11 +1661,11 @@ const RightMediaSidebar: React.FC<{
       setLoading(true);
       try {
         // Fetch attachments
-        const { data: attRows, error: attError } = await supabase
+        const { data: attRows, error: attError } = await fetchAllSupabaseRows(supabase
           .from('chat_v2_attachments')
-          .select('*')
+          .select(getSupabaseProjection('chat_v2_attachments'))
           .eq('conversation_id', activeConversationId)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false }), { label: "components/chat-v2/ChatShell.tsx:1663", maxRows: 10_000, orderBy: getSupabaseOrderColumns('chat_v2_attachments') });
 
         if (attError) throw attError;
 
@@ -1691,12 +1693,12 @@ const RightMediaSidebar: React.FC<{
         setAttachments(signedAtts);
 
         // Fetch messages with links
-        const { data: msgRows, error: msgError } = await supabase
+        const { data: msgRows, error: msgError } = await fetchAllSupabaseRows(supabase
           .from('chat_v2_messages')
           .select('body, created_at')
           .eq('conversation_id', activeConversationId)
           .is('deleted_at', null)
-          .like('body', '%http%');
+          .like('body', '%http%'), { label: "components/chat-v2/ChatShell.tsx:1695", maxRows: 10_000, orderBy: getSupabaseOrderColumns('chat_v2_messages') });
 
         if (msgError) throw msgError;
 

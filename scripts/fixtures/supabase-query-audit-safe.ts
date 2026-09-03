@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 export const loadSafePage = async (cursor: string | undefined, limit = 50) => {
   let query = supabase
@@ -34,3 +35,22 @@ export const createSafeRow = async (name: string) => supabase
   .select('id,name,symbol')
   .single();
 
+export const loadEverySafeRow = async () => fetchAllSupabaseRows(
+  supabase.from('activities').select('id,timestamp,action'),
+  { label: 'fixture activities', maxRows: 10_000, orderBy: ['timestamp', 'id'] },
+);
+
+export const loadEveryAssignedSafeRow = async () => {
+  let query = supabase.from('activities').select('id,timestamp,action');
+  query = query.eq('action', 'created');
+  return fetchAllSupabaseRows(query, {
+    label: 'fixture assigned activities',
+    maxRows: 10_000,
+    orderBy: ['timestamp', 'id'],
+  });
+};
+
+export const createManySafeRows = async (names: string[]) => supabase
+  .from('units')
+  .insert(names.map(name => ({ name })))
+  .select('id,name,symbol');

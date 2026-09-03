@@ -1,4 +1,6 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type ReleaseNoteEntry = string | {
   title: string;
@@ -95,14 +97,14 @@ export const releaseNoticeService = {
     if (!isSupabaseConfigured) return [];
 
     const [releaseResult, readsResult] = await Promise.all([
-      supabase
+      fetchAllSupabaseRows(supabase
         .from('app_releases')
         .select(RELEASE_COLUMNS)
         .order('release_date', { ascending: false })
-        .order('created_at', { ascending: false }),
-      supabase
+        .order('created_at', { ascending: false }), { label: "lib/releaseNoticeService.ts:98", maxRows: 20_000, orderBy: getSupabaseOrderColumns('app_releases') }),
+      fetchAllSupabaseRows(supabase
         .from('user_release_reads')
-        .select('release_id'),
+        .select('release_id'), { label: "lib/releaseNoticeService.ts:103", maxRows: 20_000, orderBy: getSupabaseOrderColumns('user_release_reads') }),
     ]);
 
     if (releaseResult.error) throw releaseResult.error;

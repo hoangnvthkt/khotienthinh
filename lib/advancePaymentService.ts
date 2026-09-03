@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { AdvancePayment, AdvancePaymentStatus, ContractItemType, PaymentCertificateAdvanceRecovery } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ══════════════════════════════════════════════════════════════
 //  ADVANCE PAYMENT SERVICE — Quản lý Tạm ứng (FastCons)
@@ -15,11 +17,11 @@ export const advancePaymentService = {
   async listByContract(contractId: string, contractType?: ContractItemType): Promise<AdvancePayment[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('contract_id', contractId)
       .order('date', { ascending: true });
     if (contractType) query = query.eq('contract_type', contractType);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/advancePaymentService.ts:17", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },
@@ -28,10 +30,10 @@ export const advancePaymentService = {
   async listBySite(constructionSiteId: string, projectId?: string | null): Promise<AdvancePayment[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .order('created_at', { ascending: false });
     query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/advancePaymentService.ts:30", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
     return (data || []).map(fromDb);
   },

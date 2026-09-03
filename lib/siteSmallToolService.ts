@@ -5,6 +5,8 @@ import type {
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'site_small_tool_records';
 
@@ -43,7 +45,7 @@ export const siteSmallToolService = {
   } = {}): Promise<SiteSmallToolRecord[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .order('purchase_date', { ascending: false })
       .order('created_at', { ascending: false });
 
@@ -53,7 +55,7 @@ export const siteSmallToolService = {
     if (input.holderType && input.holderType !== 'all') query = query.eq('holder_type', input.holderType);
     if (input.search?.trim()) query = query.ilike('item_name_snapshot', `%${input.search.trim()}%`);
 
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/siteSmallToolService.ts:45", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) {
       if (isMissingSmallToolTable(error)) return [];
       throw error;

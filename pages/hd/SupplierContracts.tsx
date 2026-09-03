@@ -45,6 +45,8 @@ import {
 } from '../../lib/contractAttachmentService';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 import { removeSupplierContractDeepLink } from '../../lib/projectContractAggregation';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -159,10 +161,10 @@ const SupplierContracts: React.FC = () => {
       setLoading(false);
       return;
     }
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('supplier_contracts')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(getSupabaseProjection('supplier_contracts'))
+      .order('created_at', { ascending: false }), { label: "pages/hd/SupplierContracts.tsx:163", maxRows: 10_000, orderBy: getSupabaseOrderColumns('supplier_contracts') });
     if (!error && data) {
       setContracts(data.map((r: any) => ({
         id: r.id, code: r.code, name: r.name, type: r.type,

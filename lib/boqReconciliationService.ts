@@ -12,6 +12,8 @@ import {
 import { fromDb, toDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { projectSubmissionService } from './projectSubmissionService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const GROUP_TABLE = 'boq_reconciliation_groups';
 const CONTRACT_LINE_TABLE = 'boq_reconciliation_contract_lines';
@@ -112,11 +114,11 @@ export const boqReconciliationService = {
   ): Promise<BoqReconciliationGroup[]> {
     let query = supabase
       .from(GROUP_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(GROUP_TABLE))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
       .order('created_at', { ascending: false });
     if (contractType) query = query.eq('contract_type', contractType);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/boqReconciliationService.ts:114", maxRows: 20_000, orderBy: getSupabaseOrderColumns(GROUP_TABLE) });
     if (error) throw error;
 
     const groupRows = dedupeRowsById(data || []);
@@ -124,8 +126,8 @@ export const boqReconciliationService = {
     if (groupIds.length === 0) return [];
 
     const [contractLineResult, workLineResult] = await Promise.all([
-      supabase.from(CONTRACT_LINE_TABLE).select('*').in('group_id', groupIds).order('created_at', { ascending: true }),
-      supabase.from(WORK_LINE_TABLE).select('*').in('group_id', groupIds).order('created_at', { ascending: true }),
+      fetchAllSupabaseRows(supabase.from(CONTRACT_LINE_TABLE).select(getSupabaseProjection(CONTRACT_LINE_TABLE)).in('group_id', groupIds).order('created_at', { ascending: true }), { label: "lib/boqReconciliationService.ts:128", maxRows: 20_000, orderBy: getSupabaseOrderColumns(CONTRACT_LINE_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(WORK_LINE_TABLE).select(getSupabaseProjection(WORK_LINE_TABLE)).in('group_id', groupIds).order('created_at', { ascending: true }), { label: "lib/boqReconciliationService.ts:129", maxRows: 20_000, orderBy: getSupabaseOrderColumns(WORK_LINE_TABLE) }),
     ]);
     if (contractLineResult.error) throw contractLineResult.error;
     if (workLineResult.error) throw workLineResult.error;

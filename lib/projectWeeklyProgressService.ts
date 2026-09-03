@@ -20,6 +20,8 @@ import {
   getTaskProgressWeight,
 } from './projectScheduleRules';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const WEEKLY_TABLE = 'project_weekly_task_progress';
 const DAILY_TABLE = 'project_daily_task_progress';
@@ -720,7 +722,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .order('week_start', { ascending: true })
       .order('task_id', { ascending: true })
@@ -736,7 +738,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .eq('week_start', weekStart)
       .order('updated_at', { ascending: false })
@@ -753,7 +755,7 @@ export const projectWeeklyProgressService = {
     assertProgressRpcAvailable();
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .eq('week_start', weekStart)
       .order('updated_at', { ascending: false })
@@ -767,7 +769,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .gte('week_start', fromWeekStart)
       .lte('week_start', toWeekStart)
@@ -785,7 +787,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .lte('week_start', weekStart)
       .order('week_start', { ascending: false })
@@ -803,7 +805,7 @@ export const projectWeeklyProgressService = {
     assertProgressRpcAvailable();
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .lte('week_start', weekStart)
       .order('week_start', { ascending: false })
@@ -818,7 +820,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(WEEKLY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(WEEKLY_TABLE))
       .eq('scope_key', scopeKey)
       .lt('week_start', weekStart)
       .order('week_start', { ascending: false })
@@ -836,7 +838,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .order('progress_date', { ascending: true })
       .order('updated_at', { ascending: true })
@@ -853,7 +855,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .eq('progress_date', progressDate)
       .order('updated_at', { ascending: false })
@@ -870,7 +872,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .eq('week_start', weekStart)
       .order('progress_date', { ascending: true })
@@ -888,7 +890,7 @@ export const projectWeeklyProgressService = {
     assertProgressRpcAvailable();
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .eq('week_start', weekStart)
       .order('progress_date', { ascending: true })
@@ -903,7 +905,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .lte('progress_date', progressDate)
       .order('progress_date', { ascending: false })
@@ -921,7 +923,7 @@ export const projectWeeklyProgressService = {
     if (!isSupabaseConfigured || !scopeKey) return [];
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .lt('progress_date', progressDate)
       .order('progress_date', { ascending: false })
@@ -939,7 +941,7 @@ export const projectWeeklyProgressService = {
     assertProgressRpcAvailable();
     const { data, error } = await fetchPagedRows((from, to) => supabase
       .from(DAILY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(DAILY_TABLE))
       .eq('scope_key', scopeKey)
       .lt('progress_date', progressDate)
       .order('progress_date', { ascending: false })
@@ -955,10 +957,10 @@ export const projectWeeklyProgressService = {
     constructionSiteId?: string | null,
   ): Promise<MaterialRequestFulfillmentBatch[]> {
     if (!isSupabaseConfigured || !projectIdOrSiteId) return [];
-    const { data: batchRows, error: batchError } = await supabase
+    const { data: batchRows, error: batchError } = await fetchAllSupabaseRows(supabase
       .from(BATCH_TABLE)
-      .select('*')
-      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId));
+      .select(getSupabaseProjection(BATCH_TABLE))
+      .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId)), { label: "lib/projectWeeklyProgressService.ts:959", maxRows: 50_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (batchError) {
       console.warn('material fulfillment batches unavailable', batchError.message);
       return [];
@@ -966,10 +968,10 @@ export const projectWeeklyProgressService = {
     const batches = batchRows || [];
     if (batches.length === 0) return [];
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
-      .select('*')
-      .in('batch_id', batches.map(row => row.id));
+      .select(getSupabaseProjection(LINE_TABLE))
+      .in('batch_id', batches.map(row => row.id)), { label: "lib/projectWeeklyProgressService.ts:970", maxRows: 50_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) {
       console.warn('material fulfillment lines unavailable', lineError.message);
       return [];

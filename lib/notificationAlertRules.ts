@@ -1,6 +1,8 @@
 import { Role } from '../types';
 import { supabase } from './supabase';
 import type { ProjectPermissionCode } from './projectStaffService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type AlertRuleKey =
   | 'budget_overrun'
@@ -246,11 +248,11 @@ export const getDefaultAlertRule = (alertKey: AlertRuleKey): NotificationAlertRu
 
 export const notificationAlertRuleService = {
   async list(): Promise<NotificationAlertRule[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('notification_alert_rules')
-      .select('*')
+      .select(getSupabaseProjection('notification_alert_rules'))
       .order('category', { ascending: true })
-      .order('label', { ascending: true });
+      .order('label', { ascending: true }), { label: "lib/notificationAlertRules.ts:250", maxRows: 20_000, orderBy: getSupabaseOrderColumns('notification_alert_rules') });
     if (error) {
       console.warn('notification alert rules load failed:', error);
       return DEFAULT_ALERT_RULES;

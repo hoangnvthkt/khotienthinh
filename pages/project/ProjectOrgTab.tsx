@@ -9,6 +9,8 @@ import { projectStaffService } from '../../lib/projectStaffService';
 import { supabase } from '../../lib/supabase';
 import PremiumMemberSelect, { MemberOption } from '../../components/common/PremiumMemberSelect';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
 
 interface Props {
   projectId: string;
@@ -43,7 +45,7 @@ const ProjectOrgTab: React.FC<Props> = ({ projectId, constructionSiteId }) => {
     try {
       const [staffData, positionResult] = await Promise.all([
         projectStaffService.listByProject(projectId, constructionSiteId || undefined),
-        supabase.from('hrm_positions').select('*').order('level', { ascending: true }).order('name', { ascending: true }),
+        fetchAllSupabaseRows(supabase.from('hrm_positions').select(getSupabaseProjection('hrm_positions')).order('level', { ascending: true }).order('name', { ascending: true }), { label: "pages/project/ProjectOrgTab.tsx:47", maxRows: 50_000, orderBy: getSupabaseOrderColumns('hrm_positions') }),
       ]);
       if (positionResult.error) throw positionResult.error;
       setStaff(staffData);

@@ -23,6 +23,8 @@ import {
   SupplierPayableDocument,
   SupplierPaymentBatch,
 } from '../types';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type ProjectFinanceWorkspaceTab =
   | 'overview'
@@ -203,9 +205,9 @@ const loadScopedRows = async <T>(
 ): Promise<T[]> => {
   const filter = scopeFilter(projectId, constructionSiteId);
   if (!filter) return [];
-  let query = supabase.from(table).select('*').or(filter);
+  let query = supabase.from(table).select(getSupabaseProjection(table)).or(filter);
   if (orderColumn) query = query.order(orderColumn, { ascending: false });
-  const { data, error } = await query;
+  const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/projectFinanceWorkspaceService.ts:207", maxRows: 50_000, orderBy: getSupabaseOrderColumns(table) });
   if (error) {
     if (error.code === '42P01') return [];
     throw error;
@@ -349,19 +351,19 @@ const loadScopedPurchaseOrders = async (
   const filter = scopeFilter(projectId, constructionSiteId);
   if (!filter) return directRows;
 
-  const { data: linkRows, error: linkError } = await supabase
+  const { data: linkRows, error: linkError } = await fetchAllSupabaseRows(supabase
     .from('purchase_order_request_lines')
     .select('purchase_order_id')
-    .or(filter);
+    .or(filter), { label: "lib/projectFinanceWorkspaceService.ts:353", maxRows: 50_000, orderBy: getSupabaseOrderColumns('purchase_order_request_lines') });
   if (linkError && linkError.code !== '42P01') throw linkError;
 
   const linkedPoIds = Array.from(new Set((linkRows || []).map(row => row.purchase_order_id).filter(Boolean)));
   if (linkedPoIds.length === 0) return directRows.filter(po => !po.archivedAt);
 
-  const { data: linkedRows, error: poError } = await supabase
+  const { data: linkedRows, error: poError } = await fetchAllSupabaseRows(supabase
     .from('purchase_orders')
-    .select('*')
-    .in('id', linkedPoIds);
+    .select(getSupabaseProjection('purchase_orders'))
+    .in('id', linkedPoIds), { label: "lib/projectFinanceWorkspaceService.ts:362", maxRows: 50_000, orderBy: getSupabaseOrderColumns('purchase_orders') });
   if (poError) throw poError;
 
   return dedupeById([
@@ -375,11 +377,11 @@ const loadSupplierDirectDeliveryLinesForNotes = async (
 ): Promise<SupplierDirectDeliveryLine[]> => {
   const ids = Array.from(new Set(noteIds.filter(Boolean)));
   if (ids.length === 0) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from('supplier_direct_delivery_lines')
-    .select('*')
+    .select(getSupabaseProjection('supplier_direct_delivery_lines'))
     .in('delivery_note_id', ids)
-    .order('line_no', { ascending: true });
+    .order('line_no', { ascending: true }), { label: "lib/projectFinanceWorkspaceService.ts:379", maxRows: 50_000, orderBy: getSupabaseOrderColumns('supplier_direct_delivery_lines') });
   if (error) {
     if (error.code === '42P01') return [];
     throw error;

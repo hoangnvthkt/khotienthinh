@@ -8,6 +8,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { escapeHtml } from '../lib/safeHtml';
 import { getAiReportCapabilities } from '../lib/permissions/globalModulePermissions';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../lib/supabaseProjections';
+import { fetchAllSupabaseRows } from '../lib/supabaseCompleteRead';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -66,10 +68,10 @@ const AiReports: React.FC = () => {
       return;
     }
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await fetchAllSupabaseRows(supabase
       .from('ai_scheduled_reports')
       .select('*, ai_report_results(id, created_at, status)')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "pages/AiReports.tsx:70", maxRows: 10_000, orderBy: getSupabaseOrderColumns('ai_scheduled_reports') });
     setReports(data || []);
     setLoading(false);
   }, [reportCapabilities.canView]);
@@ -112,7 +114,7 @@ const AiReports: React.FC = () => {
     setHistoryLoading(true);
     const { data } = await supabase
       .from('ai_report_results')
-      .select('*')
+      .select(getSupabaseProjection('ai_report_results'))
       .eq('report_id', report.id)
       .order('created_at', { ascending: false })
       .limit(20);

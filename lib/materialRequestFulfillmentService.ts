@@ -35,6 +35,8 @@ import { isPurchasePackageV2EnabledForSite } from './featureFlags';
 import { purchaseReceiptService, type ReceiptQualityLineInput } from './purchaseReceiptService';
 import { getPurchaseOrderScheduleLineUnitPrice } from './purchaseOrderSchedulePricing';
 import { WMS_TRANSACTION_DETAIL_SELECT } from './wmsTransactionListService';
+import { getSupabaseOrderColumns } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const BATCH_TABLE = 'material_request_fulfillment_batches';
 const LINE_TABLE = 'material_request_fulfillment_lines';
@@ -129,10 +131,10 @@ const mapInventoryItem = (row: any): InventoryItem => ({
 const loadInventoryByIds = async (ids: string[]): Promise<Map<string, InventoryItem>> => {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   if (uniqueIds.length === 0) return new Map();
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from('items')
     .select('id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
-    .in('id', uniqueIds);
+    .in('id', uniqueIds), { label: "lib/materialRequestFulfillmentService.ts:132", maxRows: 20_000, orderBy: getSupabaseOrderColumns('items') });
   if (error) throw error;
   return new Map((data || []).map(row => {
     const item = mapInventoryItem(row);
@@ -245,10 +247,10 @@ const syncPurchaseOrderReceiptFromBatch = async (
   }
 
   if (batch.poDeliveryBatchId) {
-    const { data: siblingBatches, error: siblingError } = await supabase
+    const { data: siblingBatches, error: siblingError } = await fetchAllSupabaseRows(supabase
       .from(BATCH_TABLE)
       .select('id,status')
-      .eq('po_delivery_batch_id', batch.poDeliveryBatchId);
+      .eq('po_delivery_batch_id', batch.poDeliveryBatchId), { label: "lib/materialRequestFulfillmentService.ts:248", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (siblingError) throw siblingError;
     const allReceived = (siblingBatches || []).length > 0
       && (siblingBatches || []).every(row => row.status === 'received');
@@ -557,10 +559,10 @@ const listNeedClosuresByRequestIds = async (requestIds: string[]): Promise<Mater
 
 const syncDeliveryGroupStatus = async (deliveryGroupId?: string | null) => {
   if (!deliveryGroupId) return;
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(BATCH_TABLE)
     .select('status')
-    .eq('po_delivery_group_id', deliveryGroupId);
+    .eq('po_delivery_group_id', deliveryGroupId), { label: "lib/materialRequestFulfillmentService.ts:560", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
   if (error) {
     if (isMissingDeliveryGroupTable(error) || isMissingFulfillmentTable(error)) return;
     throw error;
@@ -662,11 +664,11 @@ const createProactivePoDeliveryReceiptBatch = async (
 const prepareProactivePoReceiptForQualityReview = async (
   input: PreparePoReceiptForQualityReviewInput,
 ): Promise<PreparePoReceiptForQualityReviewResult> => {
-  const { data: batchRows, error: batchError } = await supabase
+  const { data: batchRows, error: batchError } = await fetchAllSupabaseRows(supabase
     .from('purchase_order_delivery_batches')
     .select('id,wms_transaction_id,status')
     .eq('purchase_order_id', input.po.id)
-    .not('wms_transaction_id', 'is', null);
+    .not('wms_transaction_id', 'is', null), { label: "lib/materialRequestFulfillmentService.ts:665", maxRows: 20_000, orderBy: getSupabaseOrderColumns('purchase_order_delivery_batches') });
   if (batchError) throw batchError;
 
   const transactionIds = Array.from(new Set(
@@ -678,10 +680,10 @@ const prepareProactivePoReceiptForQualityReview = async (
     throw new Error('PO không còn đợt giao đang chờ duyệt SL/CL.');
   }
 
-  const { data: transactionRows, error: transactionError } = await supabase
+  const { data: transactionRows, error: transactionError } = await fetchAllSupabaseRows(supabase
     .from('transactions')
     .select(WMS_TRANSACTION_DETAIL_SELECT)
-    .in('id', transactionIds);
+    .in('id', transactionIds), { label: "lib/materialRequestFulfillmentService.ts:681", maxRows: 20_000, orderBy: getSupabaseOrderColumns('transactions') });
   if (transactionError) throw transactionError;
 
   const transactions = (transactionRows || []).map(row => fromDb(row) as Transaction);
@@ -840,10 +842,10 @@ export const materialRequestFulfillmentService = {
     const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
     if (uniqueIds.length === 0) return {};
 
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('purchase_orders')
       .select('id,po_number,vendor_name')
-      .in('id', uniqueIds);
+      .in('id', uniqueIds), { label: "lib/materialRequestFulfillmentService.ts:843", maxRows: 20_000, orderBy: getSupabaseOrderColumns('purchase_orders') });
     if (error) throw error;
 
     return (data || []).reduce<Record<string, string>>((map, row: any) => {
@@ -870,11 +872,11 @@ export const materialRequestFulfillmentService = {
     }
     if (!batchRow) return null;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
       .eq('batch_id', batchRow.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:873", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     return normalizeBatch(batchRow, lineRows || []);
@@ -894,11 +896,11 @@ export const materialRequestFulfillmentService = {
     }
     if (!batchRow) return null;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
       .eq('batch_id', batchRow.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:897", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     return normalizeBatch(batchRow, lineRows || []);
@@ -1061,12 +1063,12 @@ export const materialRequestFulfillmentService = {
 
   async listDeliveryGroupsByPurchaseOrder(purchaseOrderId: string): Promise<PurchaseOrderDeliveryGroup[]> {
     if (!purchaseOrderId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(DELIVERY_GROUP_TABLE)
       .select(DELIVERY_GROUP_SELECT)
       .eq('purchase_order_id', purchaseOrderId)
       .order('planned_date', { ascending: true })
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:1064", maxRows: 20_000, orderBy: getSupabaseOrderColumns(DELIVERY_GROUP_TABLE) });
     if (error) {
       if (isMissingDeliveryGroupTable(error)) return [];
       throw error;
@@ -1270,10 +1272,10 @@ export const materialRequestFulfillmentService = {
     const poSourceSuffix = input.po.vendorName ? ` - ${input.po.vendorName}` : '';
     const poNumber = formatPoNumber(input.po.poNumber);
 
-    const { data: existingRows, error: existingError } = await supabase
+    const { data: existingRows, error: existingError } = await fetchAllSupabaseRows(supabase
       .from(BATCH_TABLE)
       .select('material_request_id')
-      .eq('transaction_id', input.transactionId);
+      .eq('transaction_id', input.transactionId), { label: "lib/materialRequestFulfillmentService.ts:1273", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (existingError) {
       if (isMissingFulfillmentTable(existingError)) return [];
       throw existingError;
@@ -1282,10 +1284,10 @@ export const materialRequestFulfillmentService = {
       return Array.from(new Set((existingRows || []).map(row => row.material_request_id).filter(Boolean)));
     }
 
-    const { data: linkRows, error: linkError } = await supabase
+    const { data: linkRows, error: linkError } = await fetchAllSupabaseRows(supabase
       .from('purchase_order_request_lines')
       .select(PO_REQUEST_LINE_SELECT)
-      .eq('purchase_order_id', input.po.id);
+      .eq('purchase_order_id', input.po.id), { label: "lib/materialRequestFulfillmentService.ts:1285", maxRows: 20_000, orderBy: getSupabaseOrderColumns('purchase_order_request_lines') });
     if (linkError) throw linkError;
 
     const links = (linkRows || []).map(fromDb) as PurchaseOrderRequestLineLink[];
@@ -1398,19 +1400,19 @@ export const materialRequestFulfillmentService = {
     }
 
     // Legacy fulfillment-batch receipt fallback remains until Gate G4 confirms no legacy anomalies.
-    const { data: linkRows, error: linkError } = await supabase
+    const { data: linkRows, error: linkError } = await fetchAllSupabaseRows(supabase
       .from('purchase_order_request_lines')
       .select('purchase_order_line_id,material_request_id')
-      .eq('purchase_order_id', input.po.id);
+      .eq('purchase_order_id', input.po.id), { label: "lib/materialRequestFulfillmentService.ts:1401", maxRows: 20_000, orderBy: getSupabaseOrderColumns('purchase_order_request_lines') });
     if (linkError) throw linkError;
     if ((linkRows || []).length === 0) {
       throw new Error('PO chưa liên kết đề xuất vật tư nên chưa có phiếu chờ duyệt SL/CL. Vui lòng tạo đợt giao trước khi quét nhận.');
     }
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
-      .eq('po_id', input.po.id);
+      .eq('po_id', input.po.id), { label: "lib/materialRequestFulfillmentService.ts:1410", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     const batchIds = Array.from(new Set((lineRows || []).map(line => line.batch_id).filter(Boolean)));
@@ -1418,11 +1420,11 @@ export const materialRequestFulfillmentService = {
       throw new Error('PO chưa có đợt giao đang chờ nhận. Vui lòng chuyển PO sang trạng thái Đang giao trước.');
     }
 
-    const { data: batchRows, error: batchError } = await supabase
+    const { data: batchRows, error: batchError } = await fetchAllSupabaseRows(supabase
       .from(BATCH_TABLE)
       .select(FULFILLMENT_BATCH_SELECT)
       .in('id', batchIds)
-      .order('batch_date', { ascending: true });
+      .order('batch_date', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:1421", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (batchError) throw batchError;
 
     const activeBatches = (batchRows || []).filter(batch =>
@@ -1443,10 +1445,10 @@ export const materialRequestFulfillmentService = {
     }
 
     const transactionIds = Array.from(new Set(activeBatches.map(batch => batch.transaction_id).filter(Boolean)));
-    const { data: transactionRows, error: transactionError } = await supabase
+    const { data: transactionRows, error: transactionError } = await fetchAllSupabaseRows(supabase
       .from('transactions')
       .select(WMS_TRANSACTION_DETAIL_SELECT)
-      .in('id', transactionIds);
+      .in('id', transactionIds), { label: "lib/materialRequestFulfillmentService.ts:1446", maxRows: 20_000, orderBy: getSupabaseOrderColumns('transactions') });
     if (transactionError) throw transactionError;
 
     const transactions = (transactionRows || []).map(row => fromDb(row) as Transaction);
@@ -1561,10 +1563,10 @@ export const materialRequestFulfillmentService = {
     const poNumber = formatPoNumber(input.po.poNumber);
 
     const hasExplicitDeliveryLines = (input.lineOverrides || []).some(line => Number(line.issuedQty || 0) > 0);
-    const { data: existingLineRows, error: existingLineError } = await supabase
+    const { data: existingLineRows, error: existingLineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select('batch_id, material_request_id, request_line_id, po_line_id, purchase_order_request_line_id, issued_qty, received_qty')
-      .eq('po_id', input.po.id);
+      .eq('po_id', input.po.id), { label: "lib/materialRequestFulfillmentService.ts:1564", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (existingLineError) {
       if (isMissingFulfillmentTable(existingLineError)) return [];
       throw existingLineError;
@@ -1572,10 +1574,10 @@ export const materialRequestFulfillmentService = {
 
     const existingBatchIds = Array.from(new Set((existingLineRows || []).map(row => row.batch_id).filter(Boolean)));
     if (existingBatchIds.length > 0) {
-      const { data: existingBatches, error: existingBatchError } = await supabase
+      const { data: existingBatches, error: existingBatchError } = await fetchAllSupabaseRows(supabase
         .from(BATCH_TABLE)
         .select('id,status,material_request_id')
-        .in('id', existingBatchIds);
+        .in('id', existingBatchIds), { label: "lib/materialRequestFulfillmentService.ts:1575", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
       if (existingBatchError) throw existingBatchError;
       const activeBatches = (existingBatches || []).filter(batch => batch.status === 'issued');
       if (activeBatches.length > 0 && !hasExplicitDeliveryLines) {
@@ -1583,10 +1585,10 @@ export const materialRequestFulfillmentService = {
       }
     }
 
-    const { data: linkRows, error: linkError } = await supabase
+    const { data: linkRows, error: linkError } = await fetchAllSupabaseRows(supabase
       .from('purchase_order_request_lines')
       .select(PO_REQUEST_LINE_SELECT)
-      .eq('purchase_order_id', input.po.id);
+      .eq('purchase_order_id', input.po.id), { label: "lib/materialRequestFulfillmentService.ts:1586", maxRows: 20_000, orderBy: getSupabaseOrderColumns('purchase_order_request_lines') });
     if (linkError) throw linkError;
 
     const links = (linkRows || []).map(fromDb) as PurchaseOrderRequestLineLink[];
@@ -1796,36 +1798,36 @@ export const materialRequestFulfillmentService = {
       throw new Error('Đợt giao V2 phải tạo WMS/QR bằng command tạo Đợt, không tạo bằng luồng legacy.');
     }
     if (deliveryBatch.status !== 'planned') {
-      const { data: existingRows, error: existingError } = await supabase
+      const { data: existingRows, error: existingError } = await fetchAllSupabaseRows(supabase
         .from(BATCH_TABLE)
         .select('material_request_id,status')
-        .eq('po_delivery_batch_id', deliveryBatch.id);
+        .eq('po_delivery_batch_id', deliveryBatch.id), { label: "lib/materialRequestFulfillmentService.ts:1799", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
       if (existingError && !isMissingFulfillmentTable(existingError)) throw existingError;
       return Array.from(new Set((existingRows || []).map(row => row.material_request_id).filter(Boolean)));
     }
 
-    const { data: existingLineRows, error: existingLineError } = await supabase
+    const { data: existingLineRows, error: existingLineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select('batch_id, material_request_id')
-      .eq('po_delivery_line_id', (deliveryBatch.lines || []).map(line => line.id)[0] || '__none__');
+      .eq('po_delivery_line_id', (deliveryBatch.lines || []).map(line => line.id)[0] || '__none__'), { label: "lib/materialRequestFulfillmentService.ts:1807", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (existingLineError && !isMissingFulfillmentTable(existingLineError)) throw existingLineError;
     if ((existingLineRows || []).length > 0) {
       return Array.from(new Set((existingLineRows || []).map(row => row.material_request_id).filter(Boolean)));
     }
 
-    const { data: existingBatchRows, error: existingBatchError } = await supabase
+    const { data: existingBatchRows, error: existingBatchError } = await fetchAllSupabaseRows(supabase
       .from(BATCH_TABLE)
       .select('material_request_id,status')
-      .eq('po_delivery_batch_id', deliveryBatch.id);
+      .eq('po_delivery_batch_id', deliveryBatch.id), { label: "lib/materialRequestFulfillmentService.ts:1816", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
     if (existingBatchError && !isMissingFulfillmentTable(existingBatchError)) throw existingBatchError;
     if ((existingBatchRows || []).length > 0) {
       return Array.from(new Set((existingBatchRows || []).map(row => row.material_request_id).filter(Boolean)));
     }
 
-    const { data: linkRows, error: linkError } = await supabase
+    const { data: linkRows, error: linkError } = await fetchAllSupabaseRows(supabase
       .from('purchase_order_request_lines')
       .select(PO_REQUEST_LINE_SELECT)
-      .eq('purchase_order_id', po.id);
+      .eq('purchase_order_id', po.id), { label: "lib/materialRequestFulfillmentService.ts:1825", maxRows: 20_000, orderBy: getSupabaseOrderColumns('purchase_order_request_lines') });
     if (linkError) throw linkError;
 
     const links = (linkRows || []).map(fromDb) as PurchaseOrderRequestLineLink[];
@@ -2031,10 +2033,10 @@ export const materialRequestFulfillmentService = {
   async cancelPoReceiptBatchesBeforeReceipt(poId: string, reason?: string): Promise<string[]> {
     if (!poId) return [];
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select('batch_id, material_request_id')
-      .eq('po_id', poId);
+      .eq('po_id', poId), { label: "lib/materialRequestFulfillmentService.ts:2034", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) {
       if (isMissingFulfillmentTable(lineError)) return [];
       throw lineError;
@@ -2204,11 +2206,11 @@ export const materialRequestFulfillmentService = {
       .single();
     if (batchError) throw batchError;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
       .eq('batch_id', input.batch.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:2207", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     await syncPurchaseOrderReceiptFromBatch(input.batch, receivedByLineId);
@@ -2255,11 +2257,11 @@ export const materialRequestFulfillmentService = {
       .single();
     if (batchError) throw batchError;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
       .eq('batch_id', input.batch.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:2258", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
@@ -2287,11 +2289,11 @@ export const materialRequestFulfillmentService = {
       .single();
     if (batchError) throw batchError;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
       .eq('batch_id', input.batch.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:2290", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
@@ -2344,11 +2346,11 @@ export const materialRequestFulfillmentService = {
       .single();
     if (batchError) throw batchError;
 
-    const { data: lineRows, error: lineError } = await supabase
+    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
       .from(LINE_TABLE)
       .select(FULFILLMENT_LINE_SELECT)
       .eq('batch_id', input.batch.id)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:2347", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
     if (lineError) throw lineError;
 
     await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);

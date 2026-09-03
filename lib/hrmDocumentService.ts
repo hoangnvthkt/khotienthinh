@@ -1,4 +1,6 @@
 import { supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 // ==================== TYPES ====================
 export interface HrmDocument {
@@ -114,9 +116,9 @@ const toCommandPayload = (doc: HrmDocument) => ({
 export const hrmDocumentService = {
   // ---- Category CRUD ----
   async listCategories(docType?: string): Promise<DocCategory[]> {
-    let query = supabase.from('hrm_doc_categories').select('*').eq('is_active', true).order('sort_order');
+    let query = supabase.from('hrm_doc_categories').select(getSupabaseProjection('hrm_doc_categories')).eq('is_active', true).order('sort_order');
     if (docType) query = query.eq('doc_type', docType);
-    const { data } = await query;
+    const { data } = await fetchAllSupabaseRows(query, { label: "lib/hrmDocumentService.ts:118", maxRows: 50_000, orderBy: getSupabaseOrderColumns('hrm_doc_categories') });
     return (data || []).map(catToCamel);
   },
 

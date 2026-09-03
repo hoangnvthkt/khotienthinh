@@ -1,6 +1,8 @@
 import { UserPermissionGrant } from '../../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
 import { isDirectPermissionGrantAllowed } from './permissionService';
+import { getSupabaseOrderColumns } from '../supabaseProjections';
+import { fetchAllSupabaseRows } from '../supabaseCompleteRead';
 
 const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
   id: row.id,
@@ -16,12 +18,12 @@ const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
 
 export const listUserPermissionGrants = async (userId: string): Promise<UserPermissionGrant[]> => {
   if (!isSupabaseConfigured || !userId) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from('user_permission_grants')
     .select('id,user_id,permission_code,scope_type,scope_id,is_active,granted_by,granted_at,expires_at')
     .eq('user_id', userId)
     .eq('is_active', true)
-    .order('permission_code', { ascending: true });
+    .order('permission_code', { ascending: true }), { label: "lib/permissions/permissionAdminService.ts:19", maxRows: 20_000, orderBy: getSupabaseOrderColumns('user_permission_grants') });
   if (error) throw error;
   return (data || []).map(mapPermissionGrantFromDb);
 };

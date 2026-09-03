@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { ProjectWorkflowComment, ProjectWorkflowCommentAttachment, ProjectWorkflowSubject } from '../types';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'workflow_subject_comments';
 const BUCKET = 'workflow-comment-attachments';
@@ -42,11 +44,11 @@ export const projectWorkflowCommentService = {
 
   async listBySubject(workflowSubjectId: string): Promise<ProjectWorkflowComment[]> {
     if (!workflowSubjectId) return [];
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('workflow_subject_id', workflowSubjectId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/projectWorkflowCommentService.ts:46", maxRows: 50_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) {
       if (isMissingWorkflowCommentTable(error)) return [];
       throw error;

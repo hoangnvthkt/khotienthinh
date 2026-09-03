@@ -1,4 +1,6 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export const FEEDBACK_TYPES = ['bug', 'ui', 'feature', 'workflow', 'performance', 'permission', 'data', 'other'] as const;
 export const FEEDBACK_MODULES = ['material', 'boq', 'warehouse', 'project', 'dashboard', 'acceptance', 'cost_library', 'auth', 'mobile', 'other'] as const;
@@ -463,9 +465,9 @@ const hydrateFeedbackItems = async (rows: any[], actorUserId?: string | null): P
   if (ids.length === 0) return [];
 
   const [votesResult, commentsResult, watchersResult] = await Promise.all([
-    supabase.from('feedback_votes').select('feedback_id, user_id').in('feedback_id', ids),
-    supabase.from('feedback_comments').select('feedback_id').in('feedback_id', ids),
-    supabase.from('feedback_watchers').select('feedback_id, user_id').in('feedback_id', ids),
+    fetchAllSupabaseRows(supabase.from('feedback_votes').select('feedback_id, user_id').in('feedback_id', ids), { label: "lib/feedbackService.ts:467", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_votes') }),
+    fetchAllSupabaseRows(supabase.from('feedback_comments').select('feedback_id').in('feedback_id', ids), { label: "lib/feedbackService.ts:468", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_comments') }),
+    fetchAllSupabaseRows(supabase.from('feedback_watchers').select('feedback_id, user_id').in('feedback_id', ids), { label: "lib/feedbackService.ts:469", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_watchers') }),
   ]);
   if (votesResult.error) throw votesResult.error;
   if (commentsResult.error) throw commentsResult.error;
@@ -497,7 +499,7 @@ export const feedbackService = {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
       .from('feedback_items')
-      .select('*')
+      .select(getSupabaseProjection('feedback_items'))
       .order('last_activity_at', { ascending: false })
       .limit(250);
     if (error) throw error;
@@ -518,11 +520,11 @@ export const feedbackService = {
 
     const [item] = await hydrateFeedbackItems([itemRow], actorUserId);
     const [commentsResult, attachmentsResult, logsResult, checklistResult, watchersResult] = await Promise.all([
-      supabase.from('feedback_comments').select('*').eq('feedback_id', id).order('created_at', { ascending: true }),
-      supabase.from('feedback_attachments').select('*').eq('feedback_id', id).order('created_at', { ascending: true }),
-      supabase.from('feedback_status_logs').select('*').eq('feedback_id', id).order('created_at', { ascending: true }),
-      supabase.from('feedback_checklist').select('*').eq('feedback_id', id).order('sort_order', { ascending: true }),
-      supabase.from('feedback_watchers').select('*').eq('feedback_id', id).order('created_at', { ascending: true }),
+      fetchAllSupabaseRows(supabase.from('feedback_comments').select(getSupabaseProjection('feedback_comments')).eq('feedback_id', id).order('created_at', { ascending: true }), { label: "lib/feedbackService.ts:522", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_comments') }),
+      fetchAllSupabaseRows(supabase.from('feedback_attachments').select(getSupabaseProjection('feedback_attachments')).eq('feedback_id', id).order('created_at', { ascending: true }), { label: "lib/feedbackService.ts:523", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_attachments') }),
+      fetchAllSupabaseRows(supabase.from('feedback_status_logs').select(getSupabaseProjection('feedback_status_logs')).eq('feedback_id', id).order('created_at', { ascending: true }), { label: "lib/feedbackService.ts:524", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_status_logs') }),
+      fetchAllSupabaseRows(supabase.from('feedback_checklist').select(getSupabaseProjection('feedback_checklist')).eq('feedback_id', id).order('sort_order', { ascending: true }), { label: "lib/feedbackService.ts:525", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_checklist') }),
+      fetchAllSupabaseRows(supabase.from('feedback_watchers').select(getSupabaseProjection('feedback_watchers')).eq('feedback_id', id).order('created_at', { ascending: true }), { label: "lib/feedbackService.ts:526", maxRows: 20_000, orderBy: getSupabaseOrderColumns('feedback_watchers') }),
     ]);
     if (commentsResult.error) throw commentsResult.error;
     if (attachmentsResult.error) throw attachmentsResult.error;
@@ -923,7 +925,7 @@ export const feedbackService = {
       .from('feedback_items')
       .update(payload)
       .in('id', targetIds)
-      .select('*');
+      .select(getSupabaseProjection('feedback_items'));
     if (error) throw error;
     return hydrateFeedbackItems(data || []);
   },

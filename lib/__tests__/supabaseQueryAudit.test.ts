@@ -31,5 +31,15 @@ describe('Supabase query audit', () => {
       }),
     ]));
   });
-});
 
+  it('recognizes complete-read helpers and bounded mutation returns', () => {
+    const safe = readFixture('supabase-query-audit-safe.ts');
+    const findings = analyzeSource(safe, 'safe.ts');
+
+    expect(findings.filter((row: any) => [
+      'loadEverySafeRow',
+      'loadEveryAssignedSafeRow',
+      'createManySafeRows',
+    ].includes(row.functionName))).toEqual([]);
+  });
+});

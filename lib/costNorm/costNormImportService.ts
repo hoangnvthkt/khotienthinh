@@ -12,6 +12,8 @@ import {
   ParsedNormComponent,
   ParsedNormItem,
 } from './import/types';
+import { getSupabaseOrderColumns, getSupabaseProjection } from '../supabaseProjections';
+import { fetchAllSupabaseRows } from '../supabaseCompleteRead';
 
 const LIBRARY_TABLE = 'cost_norm_libraries';
 const ITEM_TABLE = 'cost_norm_items';
@@ -353,10 +355,10 @@ const ensureResources = async (parseResult: G8ParseResult): Promise<Map<string, 
   const codes = Array.from(new Set(rows.map(row => row.code)));
   if (!codes.length) return new Map();
 
-  const { data: existing, error: existingError } = await supabase
+  const { data: existing, error: existingError } = await fetchAllSupabaseRows(supabase
     .from(RESOURCE_TABLE)
-    .select('*')
-    .in('code', codes);
+    .select(getSupabaseProjection(RESOURCE_TABLE))
+    .in('code', codes), { label: "lib/costNorm/costNormImportService.ts:357", maxRows: 50_000, orderBy: getSupabaseOrderColumns(RESOURCE_TABLE) });
   if (existingError) throw existingError;
 
   const existingRows = (existing || []).map(fromDb);
@@ -373,10 +375,10 @@ const ensureResources = async (parseResult: G8ParseResult): Promise<Map<string, 
     if (error) throw error;
   }
 
-  const { data: finalRows, error: finalError } = await supabase
+  const { data: finalRows, error: finalError } = await fetchAllSupabaseRows(supabase
     .from(RESOURCE_TABLE)
-    .select('*')
-    .in('code', codes);
+    .select(getSupabaseProjection(RESOURCE_TABLE))
+    .in('code', codes), { label: "lib/costNorm/costNormImportService.ts:377", maxRows: 50_000, orderBy: getSupabaseOrderColumns(RESOURCE_TABLE) });
   if (finalError) throw finalError;
 
   const byKey = new Map<string, string>();
@@ -446,7 +448,7 @@ const upsertItems = async (libraryId: string, parseResult: G8ParseResult): Promi
     const { data, error } = await supabase
       .from(ITEM_TABLE)
       .upsert(part, { onConflict: 'library_id,code' })
-      .select('*');
+      .select(getSupabaseProjection(ITEM_TABLE));
     if (error) throw error;
     (data || []).map(fromDb).forEach((row: any) => itemMap.set(row.code, row.id));
   }
@@ -612,7 +614,7 @@ export const g8CostNormImportService = {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
       .from(LIBRARY_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(LIBRARY_TABLE))
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error) throw error;
@@ -623,7 +625,7 @@ export const g8CostNormImportService = {
     if (!isSupabaseConfigured || !libraryId) return [];
     const rows = await fetchPaged<any>((from, to) => supabase
       .from(IMPORT_JOB_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(IMPORT_JOB_TABLE))
       .eq('library_id', libraryId)
       .order('created_at', { ascending: false })
       .range(from, to) as any);
@@ -950,7 +952,7 @@ export const g8CostNormImportService = {
 
     const itemRows = await fetchPaged<any>((from, to) => supabase
       .from(ITEM_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(ITEM_TABLE))
       .eq('library_id', libraryId)
       .order('code', { ascending: true })
       .range(from, to) as any);
@@ -959,7 +961,7 @@ export const g8CostNormImportService = {
     const componentRows = (await Promise.all(chunk(itemIds, 200).map(ids =>
       fetchPaged<any>((from, to) => supabase
         .from(COMPONENT_TABLE)
-        .select('*')
+        .select(getSupabaseProjection(COMPONENT_TABLE))
         .in('norm_item_id', ids)
         .order('line_index', { ascending: true })
         .range(from, to) as any)
@@ -969,7 +971,7 @@ export const g8CostNormImportService = {
     const resourceRows = (await Promise.all(chunk(resourceIds, 200).map(ids =>
       fetchPaged<any>((from, to) => supabase
         .from(RESOURCE_TABLE)
-        .select('*')
+        .select(getSupabaseProjection(RESOURCE_TABLE))
         .in('id', ids)
         .range(from, to) as any)
     ))).flat();
@@ -978,7 +980,7 @@ export const g8CostNormImportService = {
 
     const importJobs = await fetchPaged<any>((from, to) => supabase
       .from(IMPORT_JOB_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(IMPORT_JOB_TABLE))
       .eq('library_id', libraryId)
       .order('created_at', { ascending: false })
       .range(from, to) as any).then(rows => rows.map(fromDb) as CostNormImportJobRecord[]);
@@ -986,7 +988,7 @@ export const g8CostNormImportService = {
     const importErrors = (await Promise.all(chunk(jobIds, 200).map(ids =>
       fetchPaged<any>((from, to) => supabase
         .from(IMPORT_ERROR_TABLE)
-        .select('*')
+        .select(getSupabaseProjection(IMPORT_ERROR_TABLE))
         .in('import_job_id', ids)
         .order('row_number', { ascending: true })
         .range(from, to) as any)
@@ -994,7 +996,7 @@ export const g8CostNormImportService = {
 
     const changeLogs = await fetchPaged<any>((from, to) => supabase
       .from(CHANGE_LOG_TABLE)
-      .select('*')
+      .select(getSupabaseProjection(CHANGE_LOG_TABLE))
       .eq('library_id', libraryId)
       .order('created_at', { ascending: false })
       .range(from, to) as any).then(rows => rows.map(fromDb) as CostNormChangeLogRecord[]);
@@ -1004,7 +1006,7 @@ export const g8CostNormImportService = {
     if (latestJobId) {
       const { data: rawData, error: rawError } = await supabase
         .from(IMPORT_RAW_ROW_TABLE)
-        .select('*')
+        .select(getSupabaseProjection(IMPORT_RAW_ROW_TABLE))
         .eq('import_job_id', latestJobId)
         .order('row_number', { ascending: true })
         .limit(500);

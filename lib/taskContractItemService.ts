@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { TaskContractItem } from '../types';
 import { fromDb, toDb } from './dbMapping';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'task_contract_items';
 
@@ -43,11 +45,11 @@ export const buildTaskContractQuantityFactors = (
 
 export const taskContractItemService = {
   async listBySite(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<TaskContractItem[]> {
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true }), { label: "lib/taskContractItemService.ts:47", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) {
       console.warn('task_contract_items unavailable', error.message);
       return [];

@@ -3,6 +3,8 @@ import { CostTemplateDetails } from './costEstimateService';
 import { fromDb, toDb } from './dbMapping';
 import { loadXlsx } from './loadXlsx';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type TenderPackageStatus =
   | 'uploaded'
@@ -691,7 +693,7 @@ export const tenderDocumentService = {
 export const tenderPackageService = {
   async list(): Promise<TenderPackage[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase.from(PACKAGE_TABLE).select('*').order('created_at', { ascending: false });
+    const { data, error } = await fetchAllSupabaseRows(supabase.from(PACKAGE_TABLE).select(getSupabaseProjection(PACKAGE_TABLE)).order('created_at', { ascending: false }), { label: "lib/tenderAiService.ts:695", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PACKAGE_TABLE) });
     if (error) throw error;
     return (data || []).map(mapPackage);
   },
@@ -702,18 +704,18 @@ export const tenderPackageService = {
     if (error) throw error;
     if (!pkg) return null;
     const [documents, lines, mappings, mappingLinks, risks, exports] = await Promise.all([
-      supabase.from(DOCUMENT_TABLE).select('*').eq('package_id', id).order('created_at', { ascending: true }),
-      supabase.from(LINE_TABLE).select('*').eq('package_id', id).order('sheet_name').order('row_number'),
-      supabase.from(INTERNAL_MAPPING_TABLE).select('*').eq('package_id', id).order('created_at'),
-      supabase.from(MAPPING_LINK_TABLE).select('*').eq('package_id', id).order('created_at'),
-      supabase.from(RISK_TABLE).select('*').eq('package_id', id).order('severity', { ascending: false }).order('created_at'),
-      supabase.from(EXPORT_TABLE).select('*').eq('package_id', id).order('created_at', { ascending: false }),
+      fetchAllSupabaseRows(supabase.from(DOCUMENT_TABLE).select(getSupabaseProjection(DOCUMENT_TABLE)).eq('package_id', id).order('created_at', { ascending: true }), { label: "lib/tenderAiService.ts:706", maxRows: 50_000, orderBy: getSupabaseOrderColumns(DOCUMENT_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(LINE_TABLE).select(getSupabaseProjection(LINE_TABLE)).eq('package_id', id).order('sheet_name').order('row_number'), { label: "lib/tenderAiService.ts:707", maxRows: 50_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(INTERNAL_MAPPING_TABLE).select(getSupabaseProjection(INTERNAL_MAPPING_TABLE)).eq('package_id', id).order('created_at'), { label: "lib/tenderAiService.ts:708", maxRows: 50_000, orderBy: getSupabaseOrderColumns(INTERNAL_MAPPING_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(MAPPING_LINK_TABLE).select(getSupabaseProjection(MAPPING_LINK_TABLE)).eq('package_id', id).order('created_at'), { label: "lib/tenderAiService.ts:709", maxRows: 50_000, orderBy: getSupabaseOrderColumns(MAPPING_LINK_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(RISK_TABLE).select(getSupabaseProjection(RISK_TABLE)).eq('package_id', id).order('severity', { ascending: false }).order('created_at'), { label: "lib/tenderAiService.ts:710", maxRows: 50_000, orderBy: getSupabaseOrderColumns(RISK_TABLE) }),
+      fetchAllSupabaseRows(supabase.from(EXPORT_TABLE).select(getSupabaseProjection(EXPORT_TABLE)).eq('package_id', id).order('created_at', { ascending: false }), { label: "lib/tenderAiService.ts:711", maxRows: 50_000, orderBy: getSupabaseOrderColumns(EXPORT_TABLE) }),
     ]);
     if (documents.error) throw documents.error;
     const documentRows = documents.data || [];
     const documentIds = documentRows.map(row => row.id);
     const columnRows = documentIds.length
-      ? await supabase.from(COLUMN_MAPPING_TABLE).select('*').in('document_id', documentIds)
+      ? await fetchAllSupabaseRows(supabase.from(COLUMN_MAPPING_TABLE).select(getSupabaseProjection(COLUMN_MAPPING_TABLE)).in('document_id', documentIds), { label: "lib/tenderAiService.ts:717", maxRows: 50_000, orderBy: getSupabaseOrderColumns(COLUMN_MAPPING_TABLE) })
       : { data: [], error: null };
     if (columnRows.error) throw columnRows.error;
     if (lines.error) throw lines.error;
@@ -724,7 +726,7 @@ export const tenderPackageService = {
 
     let pricingRows: any[] = [];
     if (includePricing) {
-      const pricing = await supabase.from(PRICING_TABLE).select('*').eq('package_id', id).order('external_line_id');
+      const pricing = await fetchAllSupabaseRows(supabase.from(PRICING_TABLE).select(getSupabaseProjection(PRICING_TABLE)).eq('package_id', id).order('external_line_id'), { label: "lib/tenderAiService.ts:728", maxRows: 50_000, orderBy: getSupabaseOrderColumns(PRICING_TABLE) });
       if (!pricing.error) pricingRows = pricing.data || [];
     }
 
@@ -1010,7 +1012,7 @@ export const externalBoqMappingService = {
     const { data: savedRows, error } = await supabase
       .from(INTERNAL_MAPPING_TABLE)
       .upsert(rows, { onConflict: 'external_line_id' })
-      .select('*');
+      .select(getSupabaseProjection(INTERNAL_MAPPING_TABLE));
     if (error) throw error;
     const savedMappings = (savedRows || []).map(mapInternalMapping);
     const mappingByLine = new Map(savedMappings.map(mapping => [mapping.externalLineId, mapping]));

@@ -18,6 +18,8 @@ import { approvalService } from './approvalService';
 import { projectTransactionService } from './projectTransactionService';
 import { User } from '../types';
 import { projectSubmissionService } from './projectSubmissionService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const TABLE = 'payment_certificates';
 const ITEM_TABLE = 'payment_certificate_items';
@@ -65,11 +67,11 @@ const itemFromContract = (item: ContractItem, previousQuantity = 0, previousAmou
 
 async function fetchItemsByCertIds(certIds: string[]): Promise<Record<string, PaymentCertificateItem[]>> {
   if (certIds.length === 0) return {};
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(ITEM_TABLE)
-    .select('*')
+    .select(getSupabaseProjection(ITEM_TABLE))
     .in('payment_certificate_id', certIds)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }), { label: "lib/paymentCertificateService.ts:69", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ITEM_TABLE) });
   if (error) {
     // Fresh migrations may not be pushed yet; fall back to JSONB items stored on payment_certificates.
     console.warn('payment_certificate_items not available; using JSONB items fallback', error.message);
@@ -85,10 +87,10 @@ async function fetchItemsByCertIds(certIds: string[]): Promise<Record<string, Pa
 }
 
 async function fetchRecoveries(paymentCertificateId: string): Promise<PaymentCertificateAdvanceRecovery[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from(ADV_RECOVERY_TABLE)
-    .select('*')
-    .eq('payment_certificate_id', paymentCertificateId);
+    .select(getSupabaseProjection(ADV_RECOVERY_TABLE))
+    .eq('payment_certificate_id', paymentCertificateId), { label: "lib/paymentCertificateService.ts:89", maxRows: 20_000, orderBy: getSupabaseOrderColumns(ADV_RECOVERY_TABLE) });
   if (error) {
     console.warn('payment_certificate_advance_recoveries not available', error.message);
     return [];
@@ -170,11 +172,11 @@ export const paymentCertificateService = {
   async listByContract(contractId: string, contractType?: ContractItemType): Promise<PaymentCertificate[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .eq('contract_id', contractId)
       .order('period_number', { ascending: true });
     if (contractType) query = query.eq('contract_type', contractType);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/paymentCertificateService.ts:172", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
 
     const certs = (data || []).map(normalizeCert);
@@ -188,10 +190,10 @@ export const paymentCertificateService = {
   async listBySite(constructionSiteId: string, projectId?: string | null): Promise<PaymentCertificate[]> {
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(getSupabaseProjection(TABLE))
       .order('created_at', { ascending: false });
     query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
-    const { data, error } = await query;
+    const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/paymentCertificateService.ts:190", maxRows: 20_000, orderBy: getSupabaseOrderColumns(TABLE) });
     if (error) throw error;
 
     const certs = (data || []).map(normalizeCert);
@@ -221,10 +223,10 @@ export const paymentCertificateService = {
     // M5: Auto-fill amount từ nghiệm thu liên kết nếu có acceptanceId
     let acceptanceItemMap = new Map<string, any>();
     if (cert.acceptanceId) {
-      const { data: accItems } = await supabase
+      const { data: accItems } = await fetchAllSupabaseRows(supabase
         .from('quantity_acceptance_items')
         .select('id, contract_item_id, accepted_quantity, cumulative_accepted_quantity, accepted_amount, accepted_percent, unit_price, amount_note')
-        .eq('acceptance_id', cert.acceptanceId);
+        .eq('acceptance_id', cert.acceptanceId), { label: "lib/paymentCertificateService.ts:225", maxRows: 20_000, orderBy: getSupabaseOrderColumns('quantity_acceptance_items') });
       for (const row of accItems || []) {
         acceptanceItemMap.set(row.contract_item_id, row);
       }
@@ -560,11 +562,11 @@ export const paymentCertificateService = {
         const advances = await advancePaymentService.listByContract(cert.contractId, cert.contractType);
         for (const adv of advances) {
           // Tính lại total recovered từ các cert paid còn lại
-          const { data: remainingRecoveries } = await supabase
+          const { data: remainingRecoveries } = await fetchAllSupabaseRows(supabase
             .from('payment_certificate_advance_recoveries')
             .select('recovery_amount')
             .eq('advance_payment_id', adv.id)
-            .in('payment_certificate_id', activeCerts.map(c => c.id));
+            .in('payment_certificate_id', activeCerts.map(c => c.id)), { label: "lib/paymentCertificateService.ts:564", maxRows: 20_000, orderBy: getSupabaseOrderColumns('payment_certificate_advance_recoveries') });
           const newRecovered = (remainingRecoveries || []).reduce(
             (sum, r) => sum + Number(r.recovery_amount || 0), 0,
           );

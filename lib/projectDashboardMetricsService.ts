@@ -63,6 +63,8 @@ import {
   type ExecutiveScheduleSummary,
   type ExecutiveScheduleTaskRow,
 } from './projectExecutiveScheduleService';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface ProjectProgressMetric {
   mode: ProjectProgressCalculationMode;
@@ -344,22 +346,22 @@ const safeLoad = async <T>(
 
 const listTransactions = async (projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ProjectTransaction[]> => {
   if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from('project_transactions')
-    .select('*')
+    .select(getSupabaseProjection('project_transactions'))
     .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-    .order('date', { ascending: true });
+    .order('date', { ascending: true }), { label: "lib/projectDashboardMetricsService.ts:348", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_transactions') });
   if (error) throw error;
   return dedupeRowsById(data || []).map(row => fromDb(row) as ProjectTransaction);
 };
 
 const listContractVariations = async (projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<ContractVariation[]> => {
   if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllSupabaseRows(supabase
     .from('contract_variations')
-    .select('*')
+    .select(getSupabaseProjection('contract_variations'))
     .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false }), { label: "lib/projectDashboardMetricsService.ts:359", maxRows: 50_000, orderBy: getSupabaseOrderColumns('contract_variations') });
   if (error) throw error;
   return dedupeRowsById(data || []).map(row => fromDb(row) as ContractVariation);
 };

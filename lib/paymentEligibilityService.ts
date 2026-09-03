@@ -28,6 +28,8 @@ import { buildTaskContractQuantityFactors } from './taskContractItemService';
 import { workBoqService } from './projectService';
 import { loadPaymentGanttCatalog } from './projectGanttCatalogAdapters';
 import { getProjectTaskStatus } from './projectScheduleRules';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type PaymentEligibilityContractTypeFilter = ContractItemType | 'all';
 export type PaymentEligibilityStatusFilter = PaymentEligibilityStatus | PaymentEligibilityBlockReason | 'all';
@@ -185,13 +187,13 @@ const getNextActionLabel = (action: PaymentEligibilityNextAction) => {
 const loadVerifiedLogs = async (params: PaymentEligibilityWorkbenchParams): Promise<DailyLog[]> => {
   let query = supabase
     .from('daily_logs')
-    .select('*')
+    .select(getSupabaseProjection('daily_logs'))
     .eq('status', 'verified')
     .order('date', { ascending: true });
   if (params.periodStart) query = query.gte('date', params.periodStart);
   if (params.periodEnd) query = query.lte('date', params.periodEnd);
   query = params.projectId ? query.eq('project_id', params.projectId) : query.eq('construction_site_id', params.constructionSiteId);
-  const { data, error } = await query;
+  const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/paymentEligibilityService.ts:187", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_logs') });
   if (error) throw error;
   return (data || []).map(fromDb);
 };
@@ -199,7 +201,7 @@ const loadVerifiedLogs = async (params: PaymentEligibilityWorkbenchParams): Prom
 const loadPaymentTransactionRefs = async (projectId: string | null | undefined, constructionSiteId: string): Promise<Set<string>> => {
   let query = supabase.from('project_transactions').select('source_ref');
   query = projectId ? query.eq('project_id', projectId) : query.eq('construction_site_id', constructionSiteId);
-  const { data, error } = await query;
+  const { data, error } = await fetchAllSupabaseRows(query, { label: "lib/paymentEligibilityService.ts:201", maxRows: 20_000, orderBy: getSupabaseOrderColumns('project_transactions') });
   if (error) {
     console.warn('Cannot load project payment transactions for eligibility workbench', error.message);
     return new Set();

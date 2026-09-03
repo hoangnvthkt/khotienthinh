@@ -1,5 +1,7 @@
 import { MaterialCodeRequest } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
+import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 const mapMaterialCodeRequestFromDb = (row: any): MaterialCodeRequest => ({
   id: row.id,
@@ -27,10 +29,10 @@ export const materialCodeRequestService = {
   async list(): Promise<MaterialCodeRequest[]> {
     if (!isSupabaseConfigured) return [];
 
-    const { data, error } = await supabase
+    const { data, error } = await fetchAllSupabaseRows(supabase
       .from('material_code_requests')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(getSupabaseProjection('material_code_requests'))
+      .order('created_at', { ascending: false }), { label: "lib/materialCodeRequestService.ts:31", maxRows: 20_000, orderBy: getSupabaseOrderColumns('material_code_requests') });
 
     if (error) throw error;
     return (data || []).map(mapMaterialCodeRequestFromDb);
