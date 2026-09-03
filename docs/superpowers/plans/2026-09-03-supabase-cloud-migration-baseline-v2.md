@@ -252,11 +252,11 @@ Expected: the scan exposes no credentials; evidence is committed before migratio
 - Consumes: frozen production schema, Task 3 evidence, and PERF02 SQL from commit `4f154ef`.
 - Produces: one production-equivalent baseline and one known pending migration.
 
-- [ ] **Step 1: Write failing baseline contract test**
+- [x] **Step 1: Write failing baseline contract test**
 
 Assert exactly one `_cloud_schema_baseline_v2.sql` exists and it creates `public`, `app_private`, and `private`; does not create managed schemas; contains RLS, grants, managed-schema application DDL, and bootstrap markers; contains no production business inserts or secrets; and sorts before exactly one PERF02 migration.
 
-- [ ] **Step 2: Run focused test and confirm RED**
+- [x] **Step 2: Run focused test and confirm RED**
 
 ```bash
 npm test -- --run lib/__tests__/supabaseCloudBaselineMigration.test.ts lib/__tests__/perf02QueryIndexMigration.test.ts
@@ -264,7 +264,7 @@ npm test -- --run lib/__tests__/supabaseCloudBaselineMigration.test.ts lib/__tes
 
 Expected: FAIL because the V2 baseline is absent.
 
-- [ ] **Step 3: Dump application-owned schemas**
+- [x] **Step 3: Dump application-owned schemas**
 
 ```bash
 pg_dump "$PRODUCTION_DB_URL" \
@@ -275,11 +275,11 @@ pg_dump "$PRODUCTION_DB_URL" \
 
 Render managed-schema application DDL and bootstrap configuration into separate evidence files. Scan all generated files for secrets and forbidden business-data statements.
 
-- [ ] **Step 4: Archive the active migration set**
+- [x] **Step 4: Archive the active migration set**
 
 Move every active SQL file to `supabase/migrations_archive/pre_baseline_20260903/` without deleting it. Confirm its path-normalized SHA-256 manifest matches `active_migrations_before.sha256`.
 
-- [ ] **Step 5: Preserve legacy migration contract tests**
+- [x] **Step 5: Preserve legacy migration contract tests**
 
 Add a Vitest setup file based on the proven July archive resolver, extended to resolve string and file-URL reads and existence checks. It must redirect a missing path under `supabase/migrations` to the same basename under `supabase/migrations_archive/pre_baseline_20260903`, and merge archived names into string-mode `readdirSync` results. Add `vitest.config.ts` with:
 
@@ -291,7 +291,7 @@ test: {
 
 Run the full suite immediately after the archive move; failures caused by missing archived paths block baseline generation.
 
-- [ ] **Step 6: Create the baseline using Supabase CLI**
+- [x] **Step 6: Create the baseline using Supabase CLI**
 
 ```bash
 npx supabase migration new cloud_schema_baseline_v2
@@ -299,7 +299,7 @@ npx supabase migration new cloud_schema_baseline_v2
 
 Populate the generated file in this order: transaction/session settings, application schema dump, managed-schema application DDL, bootstrap configuration, final marker comment. Do not copy the July baseline.
 
-- [ ] **Step 7: Recreate PERF02 after the baseline**
+- [x] **Step 7: Recreate PERF02 after the baseline**
 
 ```bash
 npx supabase migration new perf02_query_indexes
@@ -307,11 +307,11 @@ npx supabase migration new perf02_query_indexes
 
 Copy the three reviewed concurrent index statements from commit `4f154ef`. Confirm the PERF02 version sorts after the baseline and remains non-transactional.
 
-- [ ] **Step 8: Write baseline marker**
+- [x] **Step 8: Write baseline marker**
 
 Create `supabase/baseline/current.json` containing the generated baseline version/filename, archive path, archive manifest SHA-256, allowed post-baseline filename, and the prohibition of `--include-all`.
 
-- [ ] **Step 9: Verify candidate**
+- [x] **Step 9: Verify candidate**
 
 ```bash
 npm run check:supabase-migrations
@@ -321,7 +321,7 @@ npm test -- --run
 npm run build
 ```
 
-- [ ] **Step 10: Commit candidate baseline**
+- [x] **Step 10: Commit candidate baseline**
 
 ```bash
 git add supabase/migrations supabase/migrations_archive supabase/baseline lib/__tests__ scripts package.json .github/workflows/ci.yml
@@ -341,11 +341,11 @@ git commit -m "chore(db): establish Supabase Cloud baseline v2"
 - Consumes: candidate baseline and the in-memory `baseline-vioo` pooler connection.
 - Produces: clean rebuild proof or an evidence-backed decision to replace the branch.
 
-- [ ] **Step 1: Confirm the preview is disposable and empty**
+- [x] **Step 1: Confirm the preview is disposable and empty**
 
 Recheck `with_data=false`, zero migration rows, and absence of `app_private`/`private`. Abort rather than cleaning a branch that contains application data.
 
-- [ ] **Step 2: Apply only baseline in one transaction**
+- [x] **Step 2: Apply only baseline in one transaction**
 
 ```bash
 psql "$PREVIEW_DB_URL" -X -v ON_ERROR_STOP=1 --single-transaction \
@@ -354,11 +354,11 @@ psql "$PREVIEW_DB_URL" -X -v ON_ERROR_STOP=1 --single-transaction \
 
 Capture sanitized output. On failure, record the first SQLSTATE/object, fix the generator or supplemental SQL, and retry only after proving the failed transaction left no application schemas.
 
-- [ ] **Step 3: Compare structural fingerprints**
+- [x] **Step 3: Compare structural fingerprints**
 
 Compare normalized application objects, functions, policies, triggers, grants, and required configuration. Managed internals and environment-specific identifiers are excluded. Any application-owned mismatch blocks progress.
 
-- [ ] **Step 4: Run verification**
+- [x] **Step 4: Run verification**
 
 ```bash
 npm run check:supabase-migrations
@@ -367,11 +367,11 @@ npm test -- --run
 npm run build
 ```
 
-- [ ] **Step 5: Decide branch reuse**
+- [x] **Step 5: Decide branch reuse**
 
 If the baseline applies and fingerprints match, retain `baseline-vioo` as manual candidate validation evidence. If it is not clean or cannot be trusted, delete only branch ID `057503dd-ee69-4ae8-aa0c-40b2b1a5019d` after rechecking its name/project/data flags, then create a new no-data branch.
 
-- [ ] **Step 6: Commit validation evidence**
+- [x] **Step 6: Commit validation evidence**
 
 ```bash
 git add supabase/baseline/2026-09-03
@@ -389,25 +389,25 @@ git commit -m "test(db): validate Cloud baseline rebuild"
 - Consumes: fully passing candidate commit.
 - Produces: remote feature branch and preview deployment evidence for the exact Git commit.
 
-- [ ] **Step 1: Push only the baseline feature branch**
+- [x] **Step 1: Push only the baseline feature branch**
 
 ```bash
 git push -u origin chore/supabase-cloud-baseline-20260903
 ```
 
-- [ ] **Step 2: Create or update a no-data preview branch tied to the pushed Git branch**
+- [x] **Step 2: Create or update a no-data preview branch tied to the pushed Git branch**
 
 Use the Management API/CLI workflow discovered through `--help`. Confirm metadata reports `with_data=false` and the expected Git branch before waiting for migration completion.
 
-- [ ] **Step 3: Poll status safely**
+- [x] **Step 3: Poll status safely**
 
 Poll at intervals shorter than 60 seconds. Success requires a healthy preview project and successful migrations. On failure, capture sanitized evidence and do not merge.
 
-- [ ] **Step 4: Re-run fingerprints and tests**
+- [x] **Step 4: Re-run fingerprints and tests**
 
 Confirm the integration-created branch matches production application objects and records only the baseline. PERF02 remains pending during baseline validation.
 
-- [ ] **Step 5: Commit validation summary**
+- [x] **Step 5: Commit validation summary**
 
 ```bash
 git add supabase/baseline/2026-09-03/validation_summary.json
@@ -426,7 +426,7 @@ git push
 - Consumes: validated feature branch head.
 - Produces: canonical main commit containing the archive and baseline before production repair.
 
-- [ ] **Step 1: Reconfirm freeze and fast-forward condition**
+- [x] **Step 1: Reconfirm freeze and fast-forward condition**
 
 ```bash
 git fetch origin main
@@ -435,7 +435,7 @@ git merge-base --is-ancestor origin/main HEAD
 
 Expected: exit zero. If main advanced, integrate it, rerun repository checks and preview validation, and never force-push main.
 
-- [ ] **Step 2: Push validated commit to main**
+- [x] **Step 2: Push validated commit to main**
 
 ```bash
 git push origin HEAD:main
@@ -443,7 +443,7 @@ git push origin HEAD:main
 
 Expected: fast-forward only.
 
-- [ ] **Step 3: Prove merge completeness**
+- [x] **Step 3: Prove merge completeness**
 
 Fetch main and verify it contains the candidate commit, exactly two active migrations, the archive manifest, evidence, rollback preparation, and CI guard. Run the guard against the exact `origin/main` tree.
 
@@ -463,19 +463,19 @@ Fetch main and verify it contains the candidate commit, exactly two active migra
 - Consumes: captured 151 versions, baseline on `origin/main`, and unchanged production fingerprint.
 - Produces: production ledger containing only the new baseline with an unchanged production schema.
 
-- [ ] **Step 1: Generate guarded forward and rollback scripts**
+- [x] **Step 1: Generate guarded forward and rollback scripts**
 
 Both scripts assert project ref `ftciqmqhmfvjtwoycswe`, expected pre-cut history checksum, expected baseline filename, and containment of the baseline commit in `origin/main`. Forward repair marks exactly the captured versions reverted and the baseline applied. Rollback removes the baseline metadata and restores exactly the captured versions.
 
-- [ ] **Step 2: Run final read-only production gate**
+- [x] **Step 2: Run final read-only production gate**
 
 Recompute history and schema fingerprints. Abort if either differs from Task 3 evidence. Confirm no migration deployment is active.
 
-- [ ] **Step 3: Execute supported migration repair**
+- [x] **Step 3: Execute supported migration repair**
 
 Run the guarded forward script with Supabase CLI. Do not execute baseline SQL against production and do not use `--include-all`.
 
-- [ ] **Step 4: Verify immediately**
+- [x] **Step 4: Verify immediately**
 
 ```bash
 npx supabase migration list --linked --agent=no
@@ -484,11 +484,11 @@ npx supabase db push --linked --dry-run --agent=no
 
 Expected: baseline appears on both sides and only PERF02 is pending. If anything differs, run `rollback_history.sh` while the freeze remains active.
 
-- [ ] **Step 5: Prove production schema did not change**
+- [x] **Step 5: Prove production schema did not change**
 
 Recompute normalized schema fingerprint and configuration counts. They must match the pre-cut evidence exactly.
 
-- [ ] **Step 6: Commit and push cutover evidence**
+- [x] **Step 6: Commit and push cutover evidence**
 
 ```bash
 git add supabase/baseline/2026-09-03
@@ -508,7 +508,7 @@ git push origin HEAD:main
 - Consumes: repaired production history and unchanged production schema.
 - Produces: operational handoff for future migrations.
 
-- [ ] **Step 1: Run full verification from current main**
+- [x] **Step 1: Run full verification from current main**
 
 ```bash
 git fetch origin main
@@ -519,15 +519,15 @@ npm test -- --run
 npm run build
 ```
 
-- [ ] **Step 2: Run final Cloud checks**
+- [x] **Step 2: Run final Cloud checks**
 
 Confirm production is healthy, migration list is aligned at the baseline, dry-run lists only PERF02, advisors contain no newly introduced finding, and preview validation is recorded.
 
-- [ ] **Step 3: Document operating rule**
+- [x] **Step 3: Document operating rule**
 
 Record that every future Cloud schema change must be a CLI-generated migration merged to main before one designated writer deploys it. Direct Dashboard SQL must be followed immediately by a captured migration and narrow history repair.
 
-- [ ] **Step 4: Mark completed steps and commit handoff**
+- [x] **Step 4: Mark completed steps and commit handoff**
 
 ```bash
 git add docs/superpowers/plans/2026-09-03-supabase-cloud-migration-baseline-v2.md supabase/baseline/2026-09-03/README.md

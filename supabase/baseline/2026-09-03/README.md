@@ -50,3 +50,53 @@ of the new baseline after the candidate is generated.
 
 No production schema, data, or migration history was changed during this
 capture. Connection strings and credentials are not stored in this directory.
+
+## Cutover Result
+
+The validated baseline was merged to `origin/main` and the production ledger
+was repaired at `2026-09-03T08:13:32Z`. The baseline SQL was not executed on
+production. The 151 captured history rows were marked reverted and
+`20260903063714_cloud_schema_baseline_v2.sql` was marked applied.
+
+Post-cutover checks proved:
+
+- Production schema fingerprint before/after: identical (`fba1645d...4541`).
+- Production configuration inventory before/after: no differences.
+- Production Cron jobs: all five remain active.
+- Migration list: baseline aligned locally/remotely.
+- Dry run: only `20260903063821_perf02_query_indexes.sql` is pending.
+- Git-linked no-data preview: healthy, baseline-only ledger, fingerprint and
+  configuration differences both zero.
+
+See `production_cutover_summary.json`, `validation_summary.json`, and the
+captured command outputs in this directory for machine-readable evidence.
+
+## Operating Rules After Baseline
+
+1. Treat `supabase/migrations/20260903063714_cloud_schema_baseline_v2.sql` as
+   the immutable migration boundary. Historical files remain immutable under
+   `supabase/migrations_archive/pre_baseline_20260903/`.
+2. Generate every future schema change with Supabase CLI, merge it to `main`,
+   and use one designated writer to deploy it. Never use `--include-all`.
+3. If emergency SQL is run in the Dashboard, capture the exact change in a
+   narrow migration immediately and repair only that migration's ledger entry.
+4. Run `npm run check:supabase-migrations` in CI and before every deployment.
+5. Preview bootstraps keep captured Cron jobs disabled. Production Cron state
+   must not be copied from preview.
+
+## PERF02 Deployment Note
+
+PERF02 intentionally remains after the baseline and pending on production. Its
+three indexes use `CREATE INDEX CONCURRENTLY` to avoid blocking live writes.
+The current Cloud migration runner sends migration statements through a
+pipeline and returns SQLSTATE `25001` for this command. Therefore, do not run
+PERF02 with the normal pipeline-based `db push`: execute the reviewed file in a
+standalone `psql` session, verify all three indexes, then mark only version
+`20260903063821` applied with the supported migration repair command.
+
+While PERF02 is pending, the database branch record for Git `main` may report
+`MIGRATIONS_FAILED`; this reflects the pipeline-incompatible pending index file,
+not database health. The production project remains `ACTIVE_HEALTHY`, and the
+canonical proof is the baseline-aligned migration list plus dry run captured
+here. The retained no-data preview is `baseline-vioo-git`; redundant manual
+preview branches were deleted after their evidence was recorded.

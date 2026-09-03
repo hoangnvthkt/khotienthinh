@@ -1,0 +1,36 @@
+{
+  "captured_at": "2026-09-03T08:15:10Z",
+  "production_project_ref": "ftciqmqhmfvjtwoycswe",
+  "schema_fingerprint_changed_by_cutover": false,
+  "interpretation": "The cutover changed migration metadata only; unchanged schema fingerprint proves it introduced no advisor finding.",
+  "security": {
+    "total": 214,
+    "by_level": {
+      "INFO": 19,
+      "WARN": 195
+    },
+    "by_name": {
+      "anon_security_definer_function_executable": 12,
+      "auth_leaked_password_protection": 1,
+      "authenticated_security_definer_function_executable": 162,
+      "extension_in_public": 5,
+      "function_search_path_mutable": 15,
+      "rls_enabled_no_policy": 19
+    }
+  },
+  "performance": {
+    "total": 984,
+    "by_level": {
+      "INFO": 844,
+      "WARN": 140
+    },
+    "by_name": {
+      "auth_db_connections_absolute": 1,
+      "auth_rls_initplan": 3,
+      "duplicate_index": 10,
+      "multiple_permissive_policies": 127,
+      "unindexed_foreign_keys": 367,
+      "unused_index": 476
+    }
+  }
+}
