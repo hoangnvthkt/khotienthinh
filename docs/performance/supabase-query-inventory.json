@@ -1,11 +1,11 @@
 {
   "version": 1,
   "summary": {
-    "findings": 768,
-    "errors": 768,
-    "wildcardLists": 357,
-    "missingResultPolicies": 411,
-    "unclassified": 734
+    "findings": 700,
+    "errors": 700,
+    "wildcardLists": 316,
+    "missingResultPolicies": 384,
+    "unclassified": 669
   },
   "findings": [
     {
@@ -1764,274 +1764,6 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "1a9dd7e4b9f4afe8fe7f",
-      "file": "lib/companyProcurementService.ts",
-      "line": 70,
-      "table": "items",
-      "projection": "id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "919745035fba6a580b20",
-      "file": "lib/companyProcurementService.ts",
-      "line": 151,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "48af045c150d4c823c99",
-      "file": "lib/companyProcurementService.ts",
-      "line": 151,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "70e7ae26e7a437ef0475",
-      "file": "lib/companyProcurementService.ts",
-      "line": 161,
-      "table": "purchase_orders",
-      "projection": "id,status,archived_at",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "cb4b10a6c9996efaa0ce",
-      "file": "lib/companyProcurementService.ts",
-      "line": 180,
-      "table": "requests",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "510f5252794add793169",
-      "file": "lib/companyProcurementService.ts",
-      "line": 180,
-      "table": "requests",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "1e253a15bef7ca85dca8",
-      "file": "lib/companyProcurementService.ts",
-      "line": 375,
-      "table": "purchase_orders",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e870c7b6c649992c910c",
-      "file": "lib/companyProcurementService.ts",
-      "line": 375,
-      "table": "purchase_orders",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "3a8434d3d801ebfac11b",
-      "file": "lib/companyProcurementService.ts",
-      "line": 387,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "18c6f1f3909ba4b73857",
-      "file": "lib/companyProcurementService.ts",
-      "line": 387,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "c45e12963a3db308f155",
-      "file": "lib/companyProcurementService.ts",
-      "line": 402,
-      "table": "purchase_order_delivery_groups",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "b3c5efcd788fbc815a9a",
-      "file": "lib/companyProcurementService.ts",
-      "line": 402,
-      "table": "purchase_order_delivery_groups",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ccb0d94c4350264f4813",
-      "file": "lib/companyProcurementService.ts",
-      "line": 432,
-      "table": "material_request_fulfillment_batches",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "cf9a2a9a78690ea12090",
-      "file": "lib/companyProcurementService.ts",
-      "line": 432,
-      "table": "material_request_fulfillment_batches",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "4523a2e97df6825f9254",
-      "file": "lib/companyProcurementService.ts",
-      "line": 445,
-      "table": "material_request_fulfillment_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "34a6cdcf56aa75f071bb",
-      "file": "lib/companyProcurementService.ts",
-      "line": 445,
-      "table": "material_request_fulfillment_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {
@@ -5616,7 +5348,7 @@
     {
       "fingerprint": "a588e80927a5ebd9cc0b",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 84,
+      "line": 132,
       "table": "items",
       "projection": "id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse",
       "modifiers": [
@@ -5632,7 +5364,7 @@
     {
       "fingerprint": "a808771e68685d0deda8",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 200,
+      "line": 248,
       "table": "(dynamic)",
       "projection": "id,status",
       "modifiers": [
@@ -5646,43 +5378,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "daefcaa6fb855976c24f",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 495,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "96ce5962aa5677186a9e",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 495,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "b89ceff118b84b2f2251",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 509,
+      "line": 560,
       "table": "(dynamic)",
       "projection": "status",
       "modifiers": [
@@ -5698,7 +5396,7 @@
     {
       "fingerprint": "071ac7807b73b724f0ae",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 614,
+      "line": 665,
       "table": "purchase_order_delivery_batches",
       "projection": "id,wms_transaction_id,status",
       "modifiers": [
@@ -5713,11 +5411,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "2a193904e5da66a56020",
+      "fingerprint": "762a0a7446a973014d4b",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 630,
+      "line": 681,
       "table": "transactions",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "from",
         "in",
@@ -5729,25 +5427,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "9e8545d1b973a019bf61",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 630,
-      "table": "transactions",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "26b9c2b2c7c16f61e0e7",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 792,
+      "line": 843,
       "table": "purchase_orders",
       "projection": "id,po_number,vendor_name",
       "modifiers": [
@@ -5761,115 +5443,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "2c6a9c03e1a15098db9c",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 806,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6245ee025e4e6aab7b76",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 806,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "76ad94c85251d1f3d5cd",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 818,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "0cf03dae69890cd2a7ba",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 818,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "cba163ac468d849bb564",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 849,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "c1ef8e098c0744039e80",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 849,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "392e9eecbef4534440e1",
+      "fingerprint": "2300cee01d5ec2edfe5b",
       "file": "lib/materialRequestFulfillmentService.ts",
       "line": 873,
       "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -5882,133 +5460,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "3213ea2f2bb992715522",
+      "fingerprint": "6009ccce277c985c60f4",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 873,
+      "line": 897,
       "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "87e3fa0dd415471e9c07",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 900,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "3e2b212bc90f5c7e914b",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 900,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8c169d1a141fa7e4ac36",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 912,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "b1ec1c5dd00b484fc446",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 912,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "eded806bfb63a866e190",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 951,
-      "table": "(dynamic)",
-      "projection": "id,material_request_id,status,batch_date,fulfillment_mode,source_type",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "770420421fe1168fb081",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 976,
-      "table": "(dynamic)",
-      "projection": "batch_id,material_request_id,request_line_id,item_id,requested_qty_snapshot,committed_qty_snapshot,issued_qty,received_qty",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8de8d05dd4bd40bce987",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1029,
-      "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6021,11 +5477,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "37ac43f784360f143fba",
+      "fingerprint": "a66875d6f2bc798f1a55",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1029,
+      "line": 1064,
       "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6034,15 +5490,15 @@
       ],
       "classification": null,
       "owner": null,
-      "rule": "wildcard-list",
+      "rule": "missing-result-policy",
       "severity": "error"
     },
     {
-      "fingerprint": "62546d81683320113b98",
+      "fingerprint": "70ef3773573e3df64541",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1215,
+      "line": 1250,
       "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "from",
         "insert",
@@ -6052,29 +5508,12 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e30ce6fcfbe47ec884af",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1215,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "insert",
-        "map",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {
       "fingerprint": "c0a314efa7ab132425d0",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1238,
+      "line": 1273,
       "table": "(dynamic)",
       "projection": "material_request_id",
       "modifiers": [
@@ -6088,11 +5527,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "c030e74623b10bebfb7f",
+      "fingerprint": "a27d926996b6c21d7d1d",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1250,
+      "line": 1285,
       "table": "purchase_order_request_lines",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6104,25 +5543,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "5d3502d3dd8ca20f827a",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1250,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "bd04eb0d551b06667b3f",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1366,
+      "line": 1401,
       "table": "purchase_order_request_lines",
       "projection": "purchase_order_line_id,material_request_id",
       "modifiers": [
@@ -6136,11 +5559,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "d22c3647f3c0efbdbee6",
+      "fingerprint": "71d6c2e9d4e623cbeae5",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1375,
+      "line": 1410,
       "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6152,27 +5575,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "15377081230d2c2e6145",
+      "fingerprint": "8560bb3f70b30c3240ae",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1375,
+      "line": 1421,
       "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "a7c5c9dd6ecf4e0eb9e3",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1386,
-      "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "from",
         "in",
@@ -6185,28 +5592,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "8e7ab174676c2079699a",
+      "fingerprint": "ea7b60e8dbd808d1de44",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1386,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "40c1f3d66ffc60ab4cff",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1411,
+      "line": 1446,
       "table": "transactions",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "from",
         "in",
@@ -6215,28 +5605,12 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "880b82353bff9af3e94f",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1411,
-      "table": "transactions",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {
       "fingerprint": "02a0955995c523967e64",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1529,
+      "line": 1564,
       "table": "(dynamic)",
       "projection": "batch_id, material_request_id, request_line_id, po_line_id, purchase_order_request_line_id, issued_qty, received_qty",
       "modifiers": [
@@ -6252,7 +5626,7 @@
     {
       "fingerprint": "978751c96cf51b215219",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1540,
+      "line": 1575,
       "table": "(dynamic)",
       "projection": "id,status,material_request_id",
       "modifiers": [
@@ -6266,11 +5640,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "468c64dc880f90928981",
+      "fingerprint": "b896bfcfc49fa03cecc9",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1551,
+      "line": 1586,
       "table": "purchase_order_request_lines",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6282,25 +5656,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "1440f0b12fa22d3e3029",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1551,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "0cb8a76042352587d2ca",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1764,
+      "line": 1799,
       "table": "(dynamic)",
       "projection": "material_request_id,status",
       "modifiers": [
@@ -6316,7 +5674,7 @@
     {
       "fingerprint": "5c97110e87dafa72924b",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1772,
+      "line": 1807,
       "table": "(dynamic)",
       "projection": "batch_id, material_request_id",
       "modifiers": [
@@ -6333,7 +5691,7 @@
     {
       "fingerprint": "0cb8a76042352587d2ca",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1781,
+      "line": 1816,
       "table": "(dynamic)",
       "projection": "material_request_id,status",
       "modifiers": [
@@ -6347,11 +5705,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "8c9fbdc303eb60ea580d",
+      "fingerprint": "c7cf5823161820665f44",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1790,
+      "line": 1825,
       "table": "purchase_order_request_lines",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6363,25 +5721,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "2ea586cbe5a9e67e4805",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1790,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "c7400d388278859ddf93",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 1999,
+      "line": 2034,
       "table": "(dynamic)",
       "projection": "batch_id, material_request_id",
       "modifiers": [
@@ -6395,11 +5737,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "8e923d71d012303ba927",
+      "fingerprint": "9d3380d7d1d4321eec0f",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2172,
+      "line": 2207,
       "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6412,28 +5754,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "2922da28f1e4c2f6d780",
+      "fingerprint": "4f9379864ce7d97753cc",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2172,
+      "line": 2258,
       "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "8345c4f37eeebb499749",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2223,
-      "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6446,28 +5771,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "f5d92ed66f61834a56ae",
+      "fingerprint": "50372340d72f4354516b",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2223,
+      "line": 2290,
       "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "19a37728314852ca2128",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2255,
-      "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6480,28 +5788,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "7eacfadf99b1157b1e64",
+      "fingerprint": "ccb75ddbada616301d9a",
       "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2255,
+      "line": 2347,
       "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "13b70f5564b857cc176a",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2312,
-      "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "eq",
         "from",
@@ -6511,23 +5802,6 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "ab5300df101134b93a53",
-      "file": "lib/materialRequestFulfillmentService.ts",
-      "line": 2312,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {
@@ -8031,7 +7305,7 @@
     {
       "fingerprint": "142df81e20cb61c652d2",
       "file": "lib/projectService.ts",
-      "line": 274,
+      "line": 312,
       "table": "project_tasks",
       "projection": "(dynamic)",
       "modifiers": [
@@ -8048,7 +7322,7 @@
     {
       "fingerprint": "142df81e20cb61c652d2",
       "file": "lib/projectService.ts",
-      "line": 281,
+      "line": 319,
       "table": "project_tasks",
       "projection": "(dynamic)",
       "modifiers": [
@@ -8065,7 +7339,7 @@
     {
       "fingerprint": "d62b59bf49e69510d25b",
       "file": "lib/projectService.ts",
-      "line": 294,
+      "line": 332,
       "table": "project_tasks",
       "projection": "(dynamic)",
       "modifiers": [
@@ -8082,7 +7356,7 @@
     {
       "fingerprint": "1f984aecaa68ef24b157",
       "file": "lib/projectService.ts",
-      "line": 305,
+      "line": 343,
       "table": "project_tasks",
       "projection": "(dynamic)",
       "modifiers": [
@@ -8099,7 +7373,7 @@
     {
       "fingerprint": "a3a5b2c15eaf999c7cbf",
       "file": "lib/projectService.ts",
-      "line": 342,
+      "line": 380,
       "table": "daily_logs",
       "projection": "*",
       "modifiers": [
@@ -8116,7 +7390,7 @@
     {
       "fingerprint": "f6b1aae04f157dedf8bb",
       "file": "lib/projectService.ts",
-      "line": 342,
+      "line": 380,
       "table": "daily_logs",
       "projection": "*",
       "modifiers": [
@@ -8133,7 +7407,7 @@
     {
       "fingerprint": "49cc82d5df132a316301",
       "file": "lib/projectService.ts",
-      "line": 440,
+      "line": 478,
       "table": "daily_log_contributions",
       "projection": "*",
       "modifiers": [
@@ -8150,7 +7424,7 @@
     {
       "fingerprint": "307f25eb343879a50161",
       "file": "lib/projectService.ts",
-      "line": 440,
+      "line": 478,
       "table": "daily_log_contributions",
       "projection": "*",
       "modifiers": [
@@ -8167,7 +7441,7 @@
     {
       "fingerprint": "6d916b63b5d3fd80c062",
       "file": "lib/projectService.ts",
-      "line": 555,
+      "line": 593,
       "table": "daily_log_summary_sources",
       "projection": "*",
       "modifiers": [
@@ -8184,7 +7458,7 @@
     {
       "fingerprint": "473e01e220a1bee13115",
       "file": "lib/projectService.ts",
-      "line": 555,
+      "line": 593,
       "table": "daily_log_summary_sources",
       "projection": "*",
       "modifiers": [
@@ -8201,7 +7475,7 @@
     {
       "fingerprint": "29e0c90eab44f41defaf",
       "file": "lib/projectService.ts",
-      "line": 594,
+      "line": 632,
       "table": "acceptance_records",
       "projection": "*",
       "modifiers": [
@@ -8218,7 +7492,7 @@
     {
       "fingerprint": "a4f9ed8cb5ad32f45aba",
       "file": "lib/projectService.ts",
-      "line": 594,
+      "line": 632,
       "table": "acceptance_records",
       "projection": "*",
       "modifiers": [
@@ -8235,7 +7509,7 @@
     {
       "fingerprint": "3f423e7d551104ff26c1",
       "file": "lib/projectService.ts",
-      "line": 620,
+      "line": 658,
       "table": "material_budget_items",
       "projection": "*",
       "modifiers": [
@@ -8252,7 +7526,7 @@
     {
       "fingerprint": "13a448f391e2c189fe4a",
       "file": "lib/projectService.ts",
-      "line": 620,
+      "line": 658,
       "table": "material_budget_items",
       "projection": "*",
       "modifiers": [
@@ -8269,7 +7543,7 @@
     {
       "fingerprint": "aa6e1c880f42293e27ef",
       "file": "lib/projectService.ts",
-      "line": 881,
+      "line": 919,
       "table": "project_work_boq_items",
       "projection": "*",
       "modifiers": [
@@ -8286,7 +7560,7 @@
     {
       "fingerprint": "375ddac3bb42a0bb2631",
       "file": "lib/projectService.ts",
-      "line": 881,
+      "line": 919,
       "table": "project_work_boq_items",
       "projection": "*",
       "modifiers": [
@@ -8303,7 +7577,7 @@
     {
       "fingerprint": "1fd324b99e9f288ff283",
       "file": "lib/projectService.ts",
-      "line": 894,
+      "line": 932,
       "table": "project_work_boq_items",
       "projection": "(dynamic)",
       "modifiers": [
@@ -8320,7 +7594,7 @@
     {
       "fingerprint": "f8c1ca6e79883743cefd",
       "file": "lib/projectService.ts",
-      "line": 952,
+      "line": 990,
       "table": "project_material_requests",
       "projection": "*",
       "modifiers": [
@@ -8337,7 +7611,7 @@
     {
       "fingerprint": "ce3a22c4be9399c12b73",
       "file": "lib/projectService.ts",
-      "line": 952,
+      "line": 990,
       "table": "project_material_requests",
       "projection": "*",
       "modifiers": [
@@ -8354,7 +7628,7 @@
     {
       "fingerprint": "4129455df8b2d1dbc047",
       "file": "lib/projectService.ts",
-      "line": 990,
+      "line": 1028,
       "table": "project_vendors",
       "projection": "*",
       "modifiers": [
@@ -8371,7 +7645,7 @@
     {
       "fingerprint": "ea59ddb6db060bd5c43d",
       "file": "lib/projectService.ts",
-      "line": 990,
+      "line": 1028,
       "table": "project_vendors",
       "projection": "*",
       "modifiers": [
@@ -8386,215 +7660,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "19d8c1522c4560810515",
-      "file": "lib/projectService.ts",
-      "line": 1022,
-      "table": "purchase_orders",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "or",
-        "order",
-        "range",
-        "select"
-      ],
-      "classification": "page",
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "bc2e9048354013448717",
-      "file": "lib/projectService.ts",
-      "line": 1049,
-      "table": "purchase_orders",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "range",
-        "select"
-      ],
-      "classification": "page",
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "921c578068d17edf162c",
-      "file": "lib/projectService.ts",
-      "line": 1074,
-      "table": "purchase_order_request_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "or",
-        "order",
-        "range",
-        "select"
-      ],
-      "classification": "page",
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "aaf8a8e62cb41b098e28",
-      "file": "lib/projectService.ts",
-      "line": 1211,
-      "table": "purchase_orders",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d6c5b0853dbed2d6d6a8",
-      "file": "lib/projectService.ts",
-      "line": 1211,
-      "table": "purchase_orders",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "2d54b43c22f287ce0082",
-      "file": "lib/projectService.ts",
-      "line": 1318,
-      "table": "purchase_order_supplemental_approvals",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "09ca0c9a94334480b8a8",
-      "file": "lib/projectService.ts",
-      "line": 1318,
-      "table": "purchase_order_supplemental_approvals",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e7776b7d02247a71130d",
-      "file": "lib/projectService.ts",
-      "line": 1386,
-      "table": "purchase_order_delivery_batches",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "db72deb9a05a5b2c8617",
-      "file": "lib/projectService.ts",
-      "line": 1386,
-      "table": "purchase_order_delivery_batches",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6ee714e74155daa3c259",
-      "file": "lib/projectService.ts",
-      "line": 1398,
-      "table": "purchase_order_delivery_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "236431044dc672704ece",
-      "file": "lib/projectService.ts",
-      "line": 1398,
-      "table": "purchase_order_delivery_lines",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "in",
-        "map",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "9b0639dc1c02a8c6de38",
-      "file": "lib/projectService.ts",
-      "line": 1421,
-      "table": "purchase_order_delivery_batches",
-      "projection": "id,status,idempotency_key,qr_token,wms_transaction_id",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
       "fingerprint": "cdf6173c57ad7606e270",
       "file": "lib/projectService.ts",
-      "line": 1505,
+      "line": 1568,
       "table": "payment_schedules",
       "projection": "*",
       "modifiers": [
@@ -8611,7 +7679,7 @@
     {
       "fingerprint": "b019bff85dabc017c104",
       "file": "lib/projectService.ts",
-      "line": 1505,
+      "line": 1568,
       "table": "payment_schedules",
       "projection": "*",
       "modifiers": [
@@ -8628,7 +7696,7 @@
     {
       "fingerprint": "d47fc7656c3eccec9f46",
       "file": "lib/projectService.ts",
-      "line": 1514,
+      "line": 1577,
       "table": "payment_schedules",
       "projection": "*",
       "modifiers": [
@@ -8646,7 +7714,7 @@
     {
       "fingerprint": "2a6d6fd29be8f47f413d",
       "file": "lib/projectService.ts",
-      "line": 1514,
+      "line": 1577,
       "table": "payment_schedules",
       "projection": "*",
       "modifiers": [
@@ -8664,7 +7732,7 @@
     {
       "fingerprint": "66a64ccaac99f8cf9ebf",
       "file": "lib/projectService.ts",
-      "line": 1549,
+      "line": 1612,
       "table": "payment_schedules",
       "projection": "*",
       "modifiers": [
@@ -8681,7 +7749,7 @@
     {
       "fingerprint": "3473a40c1160cfb51814",
       "file": "lib/projectService.ts",
-      "line": 1549,
+      "line": 1612,
       "table": "payment_schedules",
       "projection": "*",
       "modifiers": [
@@ -8698,7 +7766,7 @@
     {
       "fingerprint": "ae2acbb2a2c500989f9d",
       "file": "lib/projectService.ts",
-      "line": 1571,
+      "line": 1634,
       "table": "project_baselines",
       "projection": "*",
       "modifiers": [
@@ -8715,7 +7783,7 @@
     {
       "fingerprint": "1d2aa4a998eec3691027",
       "file": "lib/projectService.ts",
-      "line": 1571,
+      "line": 1634,
       "table": "project_baselines",
       "projection": "*",
       "modifiers": [
@@ -9563,38 +8631,6 @@
         "in",
         "map",
         "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "2d1de305fb0c5018de11",
-      "file": "lib/purchasePackageService.ts",
-      "line": 122,
-      "table": "purchase_order_delivery_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "1cf419b44a0e2d4590ef",
-      "file": "lib/purchasePackageService.ts",
-      "line": 122,
-      "table": "purchase_order_delivery_lines",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
         "select"
       ],
       "classification": null,
@@ -10724,45 +9760,11 @@
       "severity": "error"
     },
     {
-      "fingerprint": "cd55859c0bcdd2e5cbf4",
+      "fingerprint": "31b4c718a41b693c2aa4",
       "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 183,
+      "line": 233,
       "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "88fe40248de00b9220ab",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 183,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "dbcb04ae3e762d81b0c6",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 197,
-      "table": "(dynamic)",
-      "projection": "*",
+      "projection": "(dynamic)",
       "modifiers": [
         "from",
         "map",
@@ -10772,97 +9774,12 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "72160198293495621919",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 197,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "map",
-        "select",
-        "upsert"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "bbd54c71a0c3029c4c13",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 214,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d254924bc3c1ae251fe0",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 214,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "e6f27fad8344a60daa93",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 236,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6e6426d473f268cc4f06",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 236,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {
       "fingerprint": "b3d6132331d8ac5350d5",
       "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 304,
+      "line": 349,
       "table": "(dynamic)",
       "projection": "id",
       "modifiers": [
@@ -10874,74 +9791,6 @@
       "classification": null,
       "owner": null,
       "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "bbd54c71a0c3029c4c13",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 479,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d254924bc3c1ae251fe0",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 479,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d7dfce1e0e75e7aaf097",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 495,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "d25945b6f3f34bc9b771",
-      "file": "lib/supplierDeliveryStatementService.ts",
-      "line": 495,
-      "table": "(dynamic)",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
       "severity": "error"
     },
     {

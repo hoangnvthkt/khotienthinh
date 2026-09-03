@@ -198,7 +198,7 @@ describe('poService Phase 3.3 workflow transitions', () => {
   });
 
   it('maps purchase package v2 delivery fields from delivery schedule rows', async () => {
-    const batchOrder = vi.fn().mockResolvedValue({
+    const batchLimit = vi.fn().mockResolvedValue({
       data: [{
         id: 'batch-1',
         purchase_order_id: 'po-1',
@@ -223,9 +223,10 @@ describe('poService Phase 3.3 workflow transitions', () => {
       }],
       error: null,
     });
+    const batchOrder = vi.fn().mockReturnValue({ limit: batchLimit });
     const batchIn = vi.fn().mockReturnValue({ order: batchOrder });
     const batchSelect = vi.fn().mockReturnValue({ in: batchIn });
-    const lineOrder = vi.fn().mockResolvedValue({
+    const lineLimit = vi.fn().mockResolvedValue({
       data: [{
         id: 'line-1',
         delivery_batch_id: 'batch-1',
@@ -243,6 +244,7 @@ describe('poService Phase 3.3 workflow transitions', () => {
       }],
       error: null,
     });
+    const lineOrder = vi.fn().mockReturnValue({ limit: lineLimit });
     const lineIn = vi.fn().mockReturnValue({ order: lineOrder });
     const lineSelect = vi.fn().mockReturnValue({ in: lineIn });
     supabaseMock.from
@@ -275,7 +277,7 @@ describe('poService Phase 3.3 workflow transitions', () => {
   });
 
   it('blocks PO-form replacement when an existing delivery batch was created by command/WMS/QR', async () => {
-    const eq = vi.fn().mockResolvedValue({
+    const limit = vi.fn().mockResolvedValue({
       data: [{
         id: 'batch-1',
         status: 'cancelled',
@@ -285,6 +287,7 @@ describe('poService Phase 3.3 workflow transitions', () => {
       }],
       error: null,
     });
+    const eq = vi.fn().mockReturnValue({ limit });
     const select = vi.fn().mockReturnValue({ eq });
     supabaseMock.from.mockReturnValueOnce({ select });
     const { poDeliveryScheduleService } = await import('../projectService');
@@ -295,7 +298,8 @@ describe('poService Phase 3.3 workflow transitions', () => {
   });
 
   it('defaults fulfillment mode when replacing draft delivery schedule from the PO form', async () => {
-    const existingEq = vi.fn().mockResolvedValue({ data: [], error: null });
+    const existingLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const existingEq = vi.fn().mockReturnValue({ limit: existingLimit });
     const existingSelect = vi.fn().mockReturnValue({ eq: existingEq });
     const deleteEq = vi.fn().mockResolvedValue({ error: null });
     const deleteFn = vi.fn().mockReturnValue({ eq: deleteEq });

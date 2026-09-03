@@ -1,8 +1,9 @@
 import { supabase } from './supabase';
 import { fromDb } from './dbMapping';
-import { mapMaterialRequestFromDb } from './materialRequestService';
+import { MATERIAL_REQUEST_LIST_SELECT, mapMaterialRequestFromDb } from './materialRequestService';
 import { getRequestLineId, materialRequestFulfillmentService } from './materialRequestFulfillmentService';
-import { poService } from './projectService';
+import { PURCHASE_ORDER_REQUEST_LINE_SELECT, PURCHASE_ORDER_SELECT, poService } from './projectService';
+import { chunkValues } from './supabasePagination';
 import {
   BusinessPartner,
   CompanyProcurementCreateInput,
@@ -48,6 +49,41 @@ const mapPurchaseOrder = (row: any): PurchaseOrder => fromDb(row) as PurchaseOrd
 const mapPoLink = (row: any): PurchaseOrderRequestLineLink => fromDb(row) as PurchaseOrderRequestLineLink;
 const mapDeliveryGroup = (row: any): PurchaseOrderDeliveryGroup => fromDb(row) as PurchaseOrderDeliveryGroup;
 
+const COMPANY_READ_PAGE_SIZE = 1000;
+const COMPANY_READ_MAX_ROWS = 20_000;
+const DELIVERY_GROUP_SELECT = 'id,project_id,purchase_order_id,delivery_no,planned_date,status,note,created_by,created_at,updated_at';
+
+const loadChunkedRows = async (input: {
+  table: string;
+  projection: string;
+  filterColumn: string;
+  values: string[];
+}): Promise<any[]> => {
+  const rows: any[] = [];
+  for (const valueChunk of chunkValues(Array.from(new Set(input.values.filter(Boolean))), 100)) {
+    let lastId: string | null = null;
+    while (true) {
+      let query: any = supabase
+        .from(input.table as any)
+        .select(input.projection)
+        .in(input.filterColumn, valueChunk)
+        .order('id', { ascending: true })
+        .limit(COMPANY_READ_PAGE_SIZE);
+      if (lastId) query = query.gt('id', lastId);
+      const { data, error } = await query;
+      if (error) throw error;
+      const page = data || [];
+      rows.push(...page);
+      if (rows.length > COMPANY_READ_MAX_ROWS) throw new Error(`Company procurement read exceeded safety cap of ${COMPANY_READ_MAX_ROWS} rows`);
+      if (page.length < COMPANY_READ_PAGE_SIZE) break;
+      const nextId = String(page[page.length - 1]?.id || '');
+      if (!nextId || nextId === lastId) throw new Error('Company procurement read received a repeated cursor');
+      lastId = nextId;
+    }
+  }
+  return rows;
+};
+
 const normalizeBatch = (batch: any, lines: any[]): MaterialRequestFulfillmentBatch => ({
   ...fromDb(batch),
   lines: lines.map(fromDb),
@@ -67,12 +103,13 @@ export interface UpdateCompanyDeliveryGroupInput {
 const loadInventoryByIds = async (ids: string[]): Promise<Map<string, InventoryItem>> => {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   if (uniqueIds.length === 0) return new Map();
-  const { data, error } = await supabase
-    .from('items')
-    .select('id, sku, accounting_code, name, category, unit, purchase_unit, purchase_conversion_factor, price_in, price_out, min_stock, supplier_id, image_url, location, stock_by_warehouse')
-    .in('id', uniqueIds);
-  if (error) throw error;
-  return new Map((data || []).map(row => {
+  const rows = await loadChunkedRows({
+    table: 'items',
+    projection: 'id,sku,accounting_code,name,category,unit,purchase_unit,purchase_conversion_factor,price_in,price_out,min_stock,supplier_id,image_url,location,stock_by_warehouse',
+    filterColumn: 'id',
+    values: uniqueIds,
+  });
+  return new Map(rows.map(row => {
     const item = fromDb(row) as InventoryItem;
     return [
       item.id,
@@ -148,21 +185,23 @@ const loadActivePoLinksByRequestIds = async (requestIds: string[]) => {
   const uniqueRequestIds = Array.from(new Set(requestIds.filter(Boolean)));
   if (uniqueRequestIds.length === 0) return new Map<string, number>();
 
-  const { data: linkRows, error: linkError } = await supabase
-    .from('purchase_order_request_lines')
-    .select('*')
-    .in('material_request_id', uniqueRequestIds);
-  if (linkError) throw linkError;
+  const linkRows = await loadChunkedRows({
+    table: 'purchase_order_request_lines',
+    projection: PURCHASE_ORDER_REQUEST_LINE_SELECT,
+    filterColumn: 'material_request_id',
+    values: uniqueRequestIds,
+  });
 
-  const links = (linkRows || []).map(mapPoLink);
+  const links = linkRows.map(mapPoLink);
   const poIds = Array.from(new Set(links.map(link => link.purchaseOrderId).filter(Boolean)));
   if (poIds.length === 0) return new Map<string, number>();
 
-  const { data: poRows, error: poError } = await supabase
-    .from('purchase_orders')
-    .select('id,status,archived_at')
-    .in('id', poIds);
-  if (poError) throw poError;
+  const poRows = await loadChunkedRows({
+    table: 'purchase_orders',
+    projection: 'id,status,archived_at',
+    filterColumn: 'id',
+    values: poIds,
+  });
 
   const activePoIds = new Set((poRows || [])
     .filter(row => !row.archived_at && ACTIVE_PO_STATUSES.has(row.status as POStatus))
@@ -177,14 +216,31 @@ const loadActivePoLinksByRequestIds = async (requestIds: string[]) => {
 };
 
 const loadRequestsForOpenDemand = async (): Promise<MaterialRequest[]> => {
-  const { data, error } = await supabase
-    .from('requests')
-    .select('*')
-    .eq('request_origin', 'project')
-    .order('created_date', { ascending: false });
-  if (error) throw error;
+  const rows: any[] = [];
+  let cursor: { createdDate: string; id: string } | null = null;
+  while (true) {
+    let query = supabase
+      .from('requests')
+      .select(MATERIAL_REQUEST_LIST_SELECT)
+      .eq('request_origin', 'project')
+      .in('status', [...OPEN_REQUEST_STATUSES])
+      .order('created_date', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(COMPANY_READ_PAGE_SIZE);
+    if (cursor) query = query.or(`created_date.lt.${cursor.createdDate},and(created_date.eq.${cursor.createdDate},id.lt.${cursor.id})`);
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (rows.length > COMPANY_READ_MAX_ROWS) throw new Error(`Company procurement request read exceeded safety cap of ${COMPANY_READ_MAX_ROWS} rows`);
+    if (page.length < COMPANY_READ_PAGE_SIZE) break;
+    const last = page[page.length - 1];
+    const next = last ? { createdDate: last.created_date, id: last.id } : null;
+    if (!next || (cursor && next.createdDate === cursor.createdDate && next.id === cursor.id)) throw new Error('Company procurement request read received a repeated cursor');
+    cursor = next;
+  }
 
-  return (data || [])
+  return rows
     .map(mapMaterialRequestFromDb)
     .filter(request => OPEN_REQUEST_STATUSES.has(String(request.status || '')))
     .filter(request => request.workflowStep !== 'rejected' && request.workflowStep !== 'returned_to_creator');
@@ -372,25 +428,41 @@ export const companyProcurementService = {
   },
 
   async listCompanyPurchaseOrders(): Promise<PurchaseOrder[]> {
-    const { data, error } = await supabase
-      .from('purchase_orders')
-      .select('*')
-      .eq('source_mode', 'company_consolidated')
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false });
-    if (error) throw error;
-    return (data || []).map(mapPurchaseOrder);
+    const rows: any[] = [];
+    let cursor: { createdAt: string; id: string } | null = null;
+    while (true) {
+      let query = supabase
+        .from('purchase_orders')
+        .select(PURCHASE_ORDER_SELECT)
+        .eq('source_mode', 'company_consolidated')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(COMPANY_READ_PAGE_SIZE);
+      if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+      const { data, error } = await query;
+      if (error) throw error;
+      const page = data || [];
+      rows.push(...page);
+      if (rows.length > COMPANY_READ_MAX_ROWS) throw new Error(`Company purchase order read exceeded safety cap of ${COMPANY_READ_MAX_ROWS} rows`);
+      if (page.length < COMPANY_READ_PAGE_SIZE) break;
+      const last = page[page.length - 1];
+      const next = last ? { createdAt: last.created_at, id: last.id } : null;
+      if (!next || (cursor && next.createdAt === cursor.createdAt && next.id === cursor.id)) throw new Error('Company purchase order read received a repeated cursor');
+      cursor = next;
+    }
+    return rows.map(mapPurchaseOrder);
   },
 
   async listPoLinks(purchaseOrderId: string): Promise<PurchaseOrderRequestLineLink[]> {
     if (!purchaseOrderId) return [];
-    const { data, error } = await supabase
-      .from('purchase_order_request_lines')
-      .select('*')
-      .eq('purchase_order_id', purchaseOrderId)
-      .order('created_at', { ascending: true });
-    if (error) throw error;
-    return (data || []).map(mapPoLink);
+    const rows = await loadChunkedRows({
+      table: 'purchase_order_request_lines',
+      projection: PURCHASE_ORDER_REQUEST_LINE_SELECT,
+      filterColumn: 'purchase_order_id',
+      values: [purchaseOrderId],
+    });
+    rows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)) || String(left.id).localeCompare(String(right.id)));
+    return rows.map(mapPoLink);
   },
 
   async listCompanyDeliveryGroups(): Promise<CompanyProcurementDeliveryGroupDetail[]> {
@@ -399,16 +471,20 @@ export const companyProcurementService = {
     const poIds = purchaseOrders.map(po => po.id);
     if (poIds.length === 0) return [];
 
-    const { data: groupRows, error } = await supabase
-      .from('purchase_order_delivery_groups')
-      .select('*')
-      .in('purchase_order_id', poIds)
-      .order('created_at', { ascending: false });
-    if (error) {
-      if (error.code === '42P01') return [];
+    let groupRows: any[];
+    try {
+      groupRows = await loadChunkedRows({
+        table: 'purchase_order_delivery_groups',
+        projection: DELIVERY_GROUP_SELECT,
+        filterColumn: 'purchase_order_id',
+        values: poIds,
+      });
+      groupRows.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)) || String(right.id).localeCompare(String(left.id)));
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
       throw error;
     }
-    return Promise.all((groupRows || []).map(async row => {
+    return Promise.all(groupRows.map(async row => {
       const group = mapDeliveryGroup(row);
       const detail = await this.getDeliveryGroupDetail(group.id);
       return {
@@ -421,39 +497,51 @@ export const companyProcurementService = {
   async getDeliveryGroupDetail(deliveryGroupId: string): Promise<CompanyProcurementDeliveryGroupDetail> {
     const { data: groupRow, error: groupError } = await supabase
       .from('purchase_order_delivery_groups')
-      .select('*')
+      .select(DELIVERY_GROUP_SELECT)
       .eq('id', deliveryGroupId)
       .single();
     if (groupError) throw groupError;
     const group = mapDeliveryGroup(groupRow);
 
-    const [{ data: poRow, error: poError }, { data: batchRows, error: batchError }] = await Promise.all([
-      supabase.from('purchase_orders').select('*').eq('id', group.purchaseOrderId).maybeSingle(),
-      supabase.from('material_request_fulfillment_batches').select('*').eq('po_delivery_group_id', deliveryGroupId),
-    ]);
+    const { data: poRow, error: poError } = await supabase
+      .from('purchase_orders')
+      .select(PURCHASE_ORDER_SELECT)
+      .eq('id', group.purchaseOrderId)
+      .maybeSingle();
     if (poError) throw poError;
-    if (batchError) {
-      if (batchError.code === '42P01') return { group, purchaseOrder: poRow ? mapPurchaseOrder(poRow) : null, batches: [] };
-      throw batchError;
+    let batches: any[];
+    try {
+      batches = await loadChunkedRows({
+        table: 'material_request_fulfillment_batches',
+        projection: 'id,project_id,construction_site_id,material_request_id,batch_no,batch_date,source_warehouse_id,target_warehouse_id,fulfillment_mode,source_type,status,transaction_id,reason,note,created_by,created_at,issued_by,issued_at,received_by,received_at,cancel_reason,updated_at,qr_token,po_delivery_batch_id,po_delivery_group_id',
+        filterColumn: 'po_delivery_group_id',
+        values: [deliveryGroupId],
+      });
+    } catch (error: any) {
+      if (error?.code === '42P01') return { group, purchaseOrder: poRow ? mapPurchaseOrder(poRow) : null, batches: [] };
+      throw error;
     }
 
-    const batches = batchRows || [];
     if (batches.length === 0) {
       return { group, purchaseOrder: poRow ? mapPurchaseOrder(poRow) : null, batches: [] };
     }
 
-    const { data: lineRows, error: lineError } = await supabase
-      .from('material_request_fulfillment_lines')
-      .select('*')
-      .in('batch_id', batches.map(batch => batch.id))
-      .order('created_at', { ascending: true });
-    if (lineError) {
-      if (lineError.code === '42P01') return { group, purchaseOrder: poRow ? mapPurchaseOrder(poRow) : null, batches: [] };
-      throw lineError;
+    let lineRows: any[];
+    try {
+      lineRows = await loadChunkedRows({
+        table: 'material_request_fulfillment_lines',
+        projection: 'id,batch_id,material_request_id,request_line_id,item_id,material_budget_item_id,work_boq_item_id,po_id,po_line_id,requested_qty_snapshot,committed_qty_snapshot,issued_qty,received_qty,unit,variance_reason,note,created_at,updated_at,po_delivery_line_id,purchase_order_request_line_id,delivery_unit,delivery_unit_price',
+        filterColumn: 'batch_id',
+        values: batches.map(batch => batch.id),
+      });
+      lineRows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)) || String(left.id).localeCompare(String(right.id)));
+    } catch (error: any) {
+      if (error?.code === '42P01') return { group, purchaseOrder: poRow ? mapPurchaseOrder(poRow) : null, batches: [] };
+      throw error;
     }
 
     const linesByBatch = new Map<string, any[]>();
-    (lineRows || []).forEach(line => {
+    lineRows.forEach(line => {
       linesByBatch.set(line.batch_id, [...(linesByBatch.get(line.batch_id) || []), line]);
     });
 

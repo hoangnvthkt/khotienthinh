@@ -184,7 +184,8 @@ describe('purchasePackageService', () => {
     const result = await purchasePackageService.getWmsTransactionById('tx-1');
 
     expect(supabaseMocks.from).toHaveBeenCalledWith('transactions');
-    expect(select).toHaveBeenCalledWith('*');
+    expect(select).toHaveBeenCalledWith(expect.stringContaining('items'));
+    expect(select).not.toHaveBeenCalledWith('*');
     expect(eq).toHaveBeenCalledWith('id', 'tx-1');
     expect(result?.sourceType).toBe('po_delivery_batch');
     expect(result?.sourceId).toBe('batch-1');

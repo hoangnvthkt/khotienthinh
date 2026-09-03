@@ -69,7 +69,7 @@ const normalizePageLimit = (limit?: number | null): number =>
 
 type ProjectRequestCursor = { createdDate: string; id: string };
 
-const PROJECT_REQUEST_LIST_SELECT = 'id,code,title,site_warehouse_id,source_warehouse_id,requester_id,status,items,created_date,expected_date,note,logs,fulfillment_mode,override_reason,related_transaction_id,project_id,construction_site_id,request_origin,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,workflow_step,workflow_step_started_at,workflow_step_due_at,workflow_step_sla_hours,workflow_step_actor_user_id,workflow_instance_id,workflow_subject_id,workflow_template_id';
+export const MATERIAL_REQUEST_LIST_SELECT = 'id,code,title,site_warehouse_id,source_warehouse_id,requester_id,status,items,created_date,expected_date,note,logs,fulfillment_mode,override_reason,related_transaction_id,project_id,construction_site_id,request_origin,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,workflow_step,workflow_step_started_at,workflow_step_due_at,workflow_step_sla_hours,workflow_step_actor_user_id,workflow_instance_id,workflow_subject_id,workflow_template_id';
 
 export interface MaterialRequestEventCursor {
   createdAt: string;
@@ -136,7 +136,7 @@ const listProjectRequestsPage = async (input: {
 
   let query = supabase
     .from('requests')
-    .select(PROJECT_REQUEST_LIST_SELECT)
+    .select(MATERIAL_REQUEST_LIST_SELECT)
     .eq('request_origin', 'project')
     .eq('project_id', input.projectId)
     .order('created_date', { ascending: false })
@@ -174,7 +174,7 @@ const listWmsRequestsPage = async (input: {
   const cursor = input.cursor ? decodeCursor<ProjectRequestCursor>(input.cursor) : null;
   let query = supabase
     .from('requests')
-    .select(PROJECT_REQUEST_LIST_SELECT)
+    .select(MATERIAL_REQUEST_LIST_SELECT)
     .eq('request_origin', 'wms')
     .order('created_date', { ascending: false })
     .order('id', { ascending: false })

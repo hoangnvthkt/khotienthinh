@@ -29,6 +29,8 @@ const query = (response: { data?: any; error?: any } = { data: [], error: null }
   const api: any = {
     select: vi.fn(() => api),
     order: vi.fn(() => api),
+    limit: vi.fn(() => api),
+    gt: vi.fn(() => api),
     eq: vi.fn(() => api),
     in: vi.fn(() => api),
     maybeSingle: vi.fn(() => Promise.resolve(response)),

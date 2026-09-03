@@ -16,6 +16,7 @@ import { projectSubmissionService } from './projectSubmissionService';
 import type { PurchaseOrderSupplementalDraft } from './purchaseOrderReleaseApproval';
 import { isPurchasePackageV2Enabled, isPurchasePackageV2EnabledForSite } from './featureFlags';
 import { purchasePackageService, type ApprovePurchasePackageResult } from './purchasePackageService';
+import { chunkValues, decodeCursor, encodeCursor, fetchAllPages } from './supabasePagination';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -140,34 +141,71 @@ type ListPage<T> = {
 const normalizePageLimit = (limit?: number | null): number =>
     Math.max(1, Math.min(Math.floor(Number(limit || DEFAULT_PROJECT_LIST_PAGE_SIZE)), 1000));
 
-const parseOffsetCursor = (cursor?: string | null): number => {
-    const offset = Number(cursor || 0);
-    return Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
-};
-
 const mapPage = <T>(
     data: any[] | null,
     limit: number,
-    offset: number,
     mapper: (row: any) => T,
+    getCursor: (row: any) => string,
 ): ListPage<T> => {
     const rawRows = data || [];
     const hasMore = rawRows.length > limit;
     return {
         rows: rawRows.slice(0, limit).map(mapper),
         hasMore,
-        nextCursor: hasMore ? String(offset + limit) : null,
+        nextCursor: hasMore && rawRows[limit - 1] ? getCursor(rawRows[limit - 1]) : null,
     };
 };
 
 const loadAllPages = async <T>(loadPage: (cursor: string | null) => Promise<ListPage<T>>): Promise<T[]> => {
-    const rows: T[] = [];
-    let cursor: string | null = null;
-    do {
-        const page = await loadPage(cursor);
-        rows.push(...page.rows);
-        cursor = page.nextCursor;
-    } while (cursor);
+    return fetchAllPages<T, string>({
+        pageSize: DEFAULT_PROJECT_LIST_PAGE_SIZE,
+        maxRows: 20_000,
+        loadPage: async cursor => {
+            const page = await loadPage(cursor || null);
+            return { items: page.rows, nextCursor: page.nextCursor || undefined };
+        },
+    });
+};
+
+type CreatedAtCursor = { createdAt: string; id: string };
+const readCreatedAtCursor = (value?: string | null): CreatedAtCursor | null => value ? decodeCursor<CreatedAtCursor>(value) : null;
+const writeCreatedAtCursor = (row: any): string => encodeCursor({ createdAt: row.created_at, id: row.id });
+
+export const PURCHASE_ORDER_SELECT = 'id,construction_site_id,vendor_id,vendor_name,po_number,items,total_amount,order_date,expected_delivery_date,actual_delivery_date,status,material_request_id,delivery_note,note,created_at,project_id,qr_token,target_warehouse_id,received_transaction_ids,source_mode,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,procurement_group_id,procurement_group_no,archived_at,archived_by,archive_reason,created_by_id,vat_rate,approval_request_title,direct_purchase_id,payment_term,invoice_number,invoice_date,payment_status,metadata,approved_total_amount,supplemental_approval_status,purchase_mode,fulfillment_mode,reference_gross_amount,closed_need_qty';
+export const PURCHASE_ORDER_REQUEST_LINE_SELECT = 'id,project_id,construction_site_id,purchase_order_id,purchase_order_line_id,material_request_id,material_request_code,request_line_id,item_id,work_boq_item_id,material_budget_item_id,requested_qty,ordered_qty,unit,note,created_at,target_warehouse_id,source_construction_site_id,allocation_status,requested_qty_snapshot,ordered_stock_qty_snapshot,actual_received_qty_snapshot';
+const PO_SUPPLEMENTAL_APPROVAL_SELECT = 'id,purchase_order_id,delivery_batch_id,project_id,construction_site_id,previous_approved_amount,requested_total_amount,over_amount,status,note,decision_note,requested_by,approved_by,approved_at,rejected_by,rejected_at,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,created_at,updated_at';
+const PO_DELIVERY_BATCH_SELECT = 'id,purchase_order_id,project_id,construction_site_id,delivery_no,planned_delivery_date,status,fulfillment_batch_ids,note,created_by,created_at,updated_at,supplemental_approval_id,supplier_id,supplier_name_snapshot,fulfillment_mode,vat_rate,qr_token,idempotency_key,quality_result,variance_reason,quality_approved_by,quality_approved_at,received_by,received_at,accepted_gross_amount,wms_transaction_id';
+const PO_DELIVERY_LINE_SELECT = 'id,delivery_batch_id,purchase_order_id,purchase_order_line_id,item_id,planned_qty,unit,stock_planned_qty,stock_unit,created_at,updated_at,delivery_unit_price,accepted_qty,accepted_stock_qty,returned_qty';
+const PROJECT_PROCUREMENT_PAGE_SIZE = 1000;
+
+const loadProjectRowsByChunkedValue = async (input: {
+    table: string;
+    projection: string;
+    filterColumn: string;
+    values: string[];
+}): Promise<any[]> => {
+    const rows: any[] = [];
+    for (const valueChunk of chunkValues(Array.from(new Set(input.values.filter(Boolean))), 100)) {
+        let lastId: string | null = null;
+        while (true) {
+            let query: any = supabase
+                .from(input.table as any)
+                .select(input.projection)
+                .in(input.filterColumn, valueChunk)
+                .order('id', { ascending: true })
+                .limit(PROJECT_PROCUREMENT_PAGE_SIZE);
+            if (lastId) query = query.gt('id', lastId);
+            const { data, error } = await query;
+            if (error) throw error;
+            const page = data || [];
+            rows.push(...page);
+            if (rows.length > 20_000) throw new Error('Project procurement read exceeded safety cap of 20000 rows');
+            if (page.length < PROJECT_PROCUREMENT_PAGE_SIZE) break;
+            const nextId = String(page[page.length - 1]?.id || '');
+            if (!nextId || nextId === lastId) throw new Error('Project procurement read received a repeated cursor');
+            lastId = nextId;
+        }
+    }
     return rows;
 };
 
@@ -1018,16 +1056,18 @@ const listPurchaseOrdersPage = async (input: {
     cursor?: string | null;
 }): Promise<ListPage<PurchaseOrder>> => {
     const limit = normalizePageLimit(input.limit);
-    const offset = parseOffsetCursor(input.cursor);
-    const { data, error } = await supabase
+    const cursor = readCreatedAtCursor(input.cursor);
+    let query = supabase
         .from('purchase_orders')
-        .select('*')
+        .select(PURCHASE_ORDER_SELECT)
         .or(buildProjectScopeFilter(input.projectIdOrSiteId, input.constructionSiteId))
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
-        .range(offset, offset + limit);
+        .limit(limit + 1);
+    if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+    const { data, error } = await query;
     if (error) throw error;
-    const page = mapPage(data || [], limit, offset, poFromDb);
+    const page = mapPage(data || [], limit, poFromDb, writeCreatedAtCursor);
     return { ...page, rows: page.rows.filter(isActivePurchaseOrder) };
 };
 
@@ -1045,16 +1085,18 @@ const listStockPurchaseOrdersPage = async (input: {
     cursor?: string | null;
 } = {}): Promise<ListPage<PurchaseOrder>> => {
     const limit = normalizePageLimit(input.limit);
-    const offset = parseOffsetCursor(input.cursor);
-    const { data, error } = await supabase
+    const cursor = readCreatedAtCursor(input.cursor);
+    let query = supabase
         .from('purchase_orders')
-        .select('*')
+        .select(PURCHASE_ORDER_SELECT)
         .eq('source_mode', 'proactive_stock')
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
-        .range(offset, offset + limit);
+        .limit(limit + 1);
+    if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+    const { data, error } = await query;
     if (error) throw error;
-    const page = mapPage(data || [], limit, offset, poFromDb);
+    const page = mapPage(data || [], limit, poFromDb, writeCreatedAtCursor);
     return { ...page, rows: page.rows.filter(isActivePurchaseOrder) };
 };
 
@@ -1070,16 +1112,18 @@ const listPurchaseOrderRequestLineLinksPage = async (input: {
     cursor?: string | null;
 }): Promise<ListPage<PurchaseOrderRequestLineLink>> => {
     const limit = normalizePageLimit(input.limit);
-    const offset = parseOffsetCursor(input.cursor);
-    const { data, error } = await supabase
+    const cursor = readCreatedAtCursor(input.cursor);
+    let query = supabase
         .from('purchase_order_request_lines')
-        .select('*')
+        .select(PURCHASE_ORDER_REQUEST_LINE_SELECT)
         .or(buildProjectScopeFilter(input.projectIdOrSiteId, input.constructionSiteId))
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
-        .range(offset, offset + limit);
+        .limit(limit + 1);
+    if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+    const { data, error } = await query;
     if (error) throw error;
-    return mapPage(data || [], limit, offset, fromDb);
+    return mapPage(data || [], limit, fromDb, writeCreatedAtCursor);
 };
 
 const listAllPurchaseOrderRequestLineLinks = async (
@@ -1208,12 +1252,16 @@ export const poService = {
     async listByIds(ids: string[]): Promise<PurchaseOrder[]> {
         const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
         if (uniqueIds.length === 0) return [];
-        const { data, error } = await supabase
-            .from('purchase_orders')
-            .select('*')
-            .in('id', uniqueIds);
-        if (error) throw error;
-        return (data || []).map(fromDb) as PurchaseOrder[];
+        const rows = await Promise.all(chunkValues(uniqueIds, 100).map(async idChunk => {
+            const { data, error } = await supabase
+                .from('purchase_orders')
+                .select(PURCHASE_ORDER_SELECT)
+                .in('id', idChunk)
+                .limit(idChunk.length);
+            if (error) throw error;
+            return data || [];
+        }));
+        return rows.flat().map(fromDb) as PurchaseOrder[];
     },
     async listRequestLineLinks(projectIdOrSiteId: string, constructionSiteId?: string | null): Promise<PurchaseOrderRequestLineLink[]> {
         return listAllPurchaseOrderRequestLineLinks(projectIdOrSiteId, constructionSiteId);
@@ -1243,7 +1291,7 @@ export const poService = {
     async getByQrToken(token: string): Promise<PurchaseOrder | null> {
         const { data, error } = await supabase
             .from('purchase_orders')
-            .select('*')
+            .select(PURCHASE_ORDER_SELECT)
             .eq('qr_token', token)
             .maybeSingle();
         if (error) throw error;
@@ -1262,7 +1310,7 @@ export const poService = {
     ): Promise<PurchaseOrder> {
         const { data, error } = await supabase
             .from('purchase_orders')
-            .select('*')
+            .select(PURCHASE_ORDER_SELECT)
             .eq('id', poId)
             .single();
         if (error) throw error;
@@ -1315,17 +1363,21 @@ export const poSupplementalApprovalService = {
         const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
         if (uniqueIds.length === 0) return {};
 
-        const { data, error } = await supabase
-            .from('purchase_order_supplemental_approvals')
-            .select('*')
-            .in('purchase_order_id', uniqueIds)
-            .order('created_at', { ascending: false });
-        if (error) {
-            if (error.code === '42P01') return {};
+        let rows: any[];
+        try {
+            rows = await loadProjectRowsByChunkedValue({
+                table: 'purchase_order_supplemental_approvals',
+                projection: PO_SUPPLEMENTAL_APPROVAL_SELECT,
+                filterColumn: 'purchase_order_id',
+                values: uniqueIds,
+            });
+            rows.sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)) || String(right.id).localeCompare(String(left.id)));
+        } catch (error: any) {
+            if (error?.code === '42P01') return {};
             throw error;
         }
 
-        return (data || []).reduce<Record<string, PurchaseOrderSupplementalApproval[]>>((acc, row) => {
+        return rows.reduce<Record<string, PurchaseOrderSupplementalApproval[]>>((acc, row) => {
             const item = poSupplementalApprovalFromDb(row);
             acc[item.purchaseOrderId] = [...(acc[item.purchaseOrderId] || []), item];
             return acc;
@@ -1383,30 +1435,37 @@ export const poDeliveryScheduleService = {
         const uniqueIds = Array.from(new Set(poIds.filter(Boolean)));
         if (uniqueIds.length === 0) return {};
 
-        const { data: batchRows, error: batchError } = await supabase
-            .from('purchase_order_delivery_batches')
-            .select('*')
-            .in('purchase_order_id', uniqueIds)
-            .order('delivery_no', { ascending: true });
-        if (batchError) {
-            if (batchError.code === '42P01') return {};
-            throw batchError;
+        let batches: any[];
+        try {
+            batches = await loadProjectRowsByChunkedValue({
+                table: 'purchase_order_delivery_batches',
+                projection: PO_DELIVERY_BATCH_SELECT,
+                filterColumn: 'purchase_order_id',
+                values: uniqueIds,
+            });
+            batches.sort((left, right) => Number(left.delivery_no) - Number(right.delivery_no) || String(left.id).localeCompare(String(right.id)));
+        } catch (error: any) {
+            if (error?.code === '42P01') return {};
+            throw error;
         }
-        const batches = batchRows || [];
         if (batches.length === 0) return {};
 
-        const { data: lineRows, error: lineError } = await supabase
-            .from('purchase_order_delivery_lines')
-            .select('*')
-            .in('delivery_batch_id', batches.map(batch => batch.id))
-            .order('created_at', { ascending: true });
-        if (lineError) {
-            if (lineError.code === '42P01') return {};
-            throw lineError;
+        let lineRows: any[];
+        try {
+            lineRows = await loadProjectRowsByChunkedValue({
+                table: 'purchase_order_delivery_lines',
+                projection: PO_DELIVERY_LINE_SELECT,
+                filterColumn: 'delivery_batch_id',
+                values: batches.map(batch => batch.id),
+            });
+            lineRows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)) || String(left.id).localeCompare(String(right.id)));
+        } catch (error: any) {
+            if (error?.code === '42P01') return {};
+            throw error;
         }
 
         const linesByBatch = new Map<string, any[]>();
-        (lineRows || []).forEach(row => {
+        lineRows.forEach(row => {
             linesByBatch.set(row.delivery_batch_id, [...(linesByBatch.get(row.delivery_batch_id) || []), row]);
         });
 
@@ -1421,10 +1480,14 @@ export const poDeliveryScheduleService = {
         const { data: existingRows, error: existingError } = await supabase
             .from('purchase_order_delivery_batches')
             .select('id,status,idempotency_key,qr_token,wms_transaction_id')
-            .eq('purchase_order_id', po.id);
+            .eq('purchase_order_id', po.id)
+            .limit(PROJECT_PROCUREMENT_PAGE_SIZE);
         if (existingError) {
             if (existingError.code === '42P01') return;
             throw existingError;
+        }
+        if ((existingRows || []).length >= PROJECT_PROCUREMENT_PAGE_SIZE) {
+            throw new Error(`PO delivery batch validation exceeded safety cap of ${PROJECT_PROCUREMENT_PAGE_SIZE} rows`);
         }
         const lockedBatch = (existingRows || []).find(row =>
             row.idempotency_key || row.qr_token || row.wms_transaction_id ||

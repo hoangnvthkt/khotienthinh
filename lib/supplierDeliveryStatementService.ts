@@ -19,6 +19,41 @@ const DELIVERY_LINE_TABLE = 'supplier_direct_delivery_lines';
 const STATEMENT_TABLE = 'supplier_delivery_statements';
 const STATEMENT_LINE_TABLE = 'supplier_delivery_statement_lines';
 
+const CONTRACT_LINE_SELECT = 'id,supplier_contract_id,line_no,item_id,sku_snapshot,item_name_snapshot,unit_snapshot,unit_price,vat_rate,quantity_limit,amount_limit,delivery_terms,note,created_at,updated_at';
+const DELIVERY_NOTE_SELECT = 'id,code,project_id,construction_site_id,supplier_contract_id,supplier_contract_code,supplier_id,supplier_name_snapshot,delivery_ticket_no,delivery_date,vehicle_no,status,gross_amount,vat_amount,total_amount,attachments,qr_token,created_by,created_at,updated_at,note';
+const DELIVERY_LINE_SELECT = 'id,delivery_note_id,supplier_contract_id,supplier_contract_line_id,line_no,item_id,sku_snapshot,item_name_snapshot,unit_snapshot,quantity,unit_price,vat_rate,line_amount,vat_amount,total_amount,accepted_quantity,accepted_amount,status,issue_reason,work_boq_item_id,material_budget_item_id,statement_id,rejection_reason,note,created_at,updated_at,wms_flow_mode,target_warehouse_id,wms_import_transaction_id,wms_export_transaction_id,wms_status';
+const STATEMENT_SELECT = 'id,code,project_id,construction_site_id,supplier_contract_id,supplier_contract_code,supplier_id,supplier_name_snapshot,period_month,statement_date,status,gross_amount,vat_amount,total_amount,payable_document_id,qr_token,attachments,metadata,created_by,posted_by,posted_at,created_at,updated_at,note';
+const STATEMENT_LINE_SELECT = 'id,statement_id,delivery_note_id,delivery_line_id,supplier_contract_id,item_name_snapshot,unit_snapshot,accepted_quantity,accepted_amount,vat_amount,total_amount,note,created_at,unit_price_snapshot,vat_rate_snapshot';
+const SUPPLIER_READ_PAGE_SIZE = 1000;
+const SUPPLIER_READ_MAX_ROWS = 20_000;
+
+const loadSupplierRows = async (input: {
+  table: string;
+  projection: string;
+  applyFilters?: (query: any) => any;
+}): Promise<any[]> => {
+  const rows: any[] = [];
+  let lastId: string | null = null;
+  while (true) {
+    let query: any = supabase
+      .from(input.table as any)
+      .select(input.projection)
+      .order('id', { ascending: true })
+      .limit(SUPPLIER_READ_PAGE_SIZE);
+    if (lastId) query = query.gt('id', lastId);
+    if (input.applyFilters) query = input.applyFilters(query);
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (rows.length > SUPPLIER_READ_MAX_ROWS) throw new Error(`Supplier read exceeded safety cap of ${SUPPLIER_READ_MAX_ROWS} rows`);
+    if (page.length < SUPPLIER_READ_PAGE_SIZE) return rows;
+    const nextId = String(page[page.length - 1]?.id || '');
+    if (!nextId || nextId === lastId) throw new Error('Supplier read received a repeated cursor');
+    lastId = nextId;
+  }
+};
+
 const numeric = (value: unknown) => {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
@@ -180,16 +215,17 @@ const statementPayload = (statement: SupplierDeliveryStatement, lines: SupplierD
 
 export const supplierContractLineService = {
   async listByContract(supplierContractId: string): Promise<SupplierContractLine[]> {
-    const { data, error } = await supabase
-      .from(CONTRACT_LINE_TABLE)
-      .select('*')
-      .eq('supplier_contract_id', supplierContractId)
-      .order('line_no', { ascending: true });
-    if (error) {
-      if (error.code === '42P01') return [];
+    try {
+      const rows = await loadSupplierRows({
+        table: CONTRACT_LINE_TABLE,
+        projection: CONTRACT_LINE_SELECT,
+        applyFilters: query => query.eq('supplier_contract_id', supplierContractId),
+      });
+      return rows.sort((left, right) => Number(left.line_no) - Number(right.line_no)).map(normalizeContractLine);
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
       throw error;
     }
-    return (data || []).map(normalizeContractLine);
   },
 
   async upsert(lines: SupplierContractLine[]): Promise<SupplierContractLine[]> {
@@ -197,7 +233,7 @@ export const supplierContractLineService = {
     const { data, error } = await supabase
       .from(CONTRACT_LINE_TABLE)
       .upsert(lines.map(line => toDb(compact(line))), { onConflict: 'id' })
-      .select('*');
+      .select(CONTRACT_LINE_SELECT);
     if (error) throw error;
     return (data || []).map(normalizeContractLine);
   },
@@ -211,38 +247,47 @@ export const supplierDirectDeliveryService = {
     supplierId?: string | null;
     status?: string | null;
   } = {}): Promise<SupplierDirectDeliveryNote[]> {
-    let query = supabase.from(DELIVERY_NOTE_TABLE).select('*').order('delivery_date', { ascending: false });
-    if (input.projectId) query = query.eq('project_id', input.projectId);
-    if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
-    if (input.supplierContractId) query = query.eq('supplier_contract_id', input.supplierContractId);
-    if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
-    if (input.status) query = query.eq('status', input.status);
-    const { data, error } = await query;
-    if (error) {
-      if (error.code === '42P01') return [];
+    try {
+      const rows = await loadSupplierRows({
+        table: DELIVERY_NOTE_TABLE,
+        projection: DELIVERY_NOTE_SELECT,
+        applyFilters: query => {
+          if (input.projectId) query = query.eq('project_id', input.projectId);
+          if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
+          if (input.supplierContractId) query = query.eq('supplier_contract_id', input.supplierContractId);
+          if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
+          if (input.status) query = query.eq('status', input.status);
+          return query;
+        },
+      });
+      return rows.sort((left, right) => String(right.delivery_date).localeCompare(String(left.delivery_date)) || String(right.id).localeCompare(String(left.id))).map(normalizeDeliveryNote);
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
       throw error;
     }
-    return (data || []).map(normalizeDeliveryNote);
   },
 
   async getDetail(id: string): Promise<{ note: SupplierDirectDeliveryNote; lines: SupplierDirectDeliveryLine[] }> {
     const { data: noteRow, error: noteError } = await supabase
       .from(DELIVERY_NOTE_TABLE)
-      .select('*')
+      .select(DELIVERY_NOTE_SELECT)
       .eq('id', id)
       .single();
     if (noteError) throw noteError;
 
-    const { data: lineRows, error: lineError } = await supabase
-      .from(DELIVERY_LINE_TABLE)
-      .select('*')
-      .eq('delivery_note_id', id)
-      .order('line_no', { ascending: true });
-    if (lineError) {
-      if (lineError.code === '42P01') return { note: normalizeDeliveryNote(noteRow), lines: [] };
-      throw lineError;
+    let lineRows: any[];
+    try {
+      lineRows = await loadSupplierRows({
+        table: DELIVERY_LINE_TABLE,
+        projection: DELIVERY_LINE_SELECT,
+        applyFilters: query => query.eq('delivery_note_id', id),
+      });
+      lineRows.sort((left, right) => Number(left.line_no) - Number(right.line_no) || String(left.id).localeCompare(String(right.id)));
+    } catch (error: any) {
+      if (error?.code === '42P01') return { note: normalizeDeliveryNote(noteRow), lines: [] };
+      throw error;
     }
-    const lines = (lineRows || []).map(normalizeDeliveryLine);
+    const lines = lineRows.map(normalizeDeliveryLine);
     return {
       note: {
         ...normalizeDeliveryNote(noteRow),
@@ -283,7 +328,7 @@ export const supplierDirectDeliveryService = {
       .from(DELIVERY_NOTE_TABLE)
       .update(toDb({ status }))
       .eq('id', id)
-      .select('*')
+      .select(DELIVERY_NOTE_SELECT)
       .single();
     if (error) throw error;
     return normalizeDeliveryNote(data);
@@ -476,32 +521,39 @@ export const supplierDeliveryStatementService = {
     status?: string | null;
     periodMonth?: string | null;
   } = {}): Promise<SupplierDeliveryStatement[]> {
-    let query = supabase.from(STATEMENT_TABLE).select('*').order('statement_date', { ascending: false });
-    if (input.projectId) query = query.eq('project_id', input.projectId);
-    if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
-    if (input.supplierContractId) query = query.eq('supplier_contract_id', input.supplierContractId);
-    if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
-    if (input.status) query = query.eq('status', input.status);
-    if (input.periodMonth) query = query.eq('period_month', input.periodMonth);
-    const { data, error } = await query;
-    if (error) {
-      if (error.code === '42P01') return [];
+    try {
+      const rows = await loadSupplierRows({
+        table: STATEMENT_TABLE,
+        projection: STATEMENT_SELECT,
+        applyFilters: query => {
+          if (input.projectId) query = query.eq('project_id', input.projectId);
+          if (input.constructionSiteId) query = query.eq('construction_site_id', input.constructionSiteId);
+          if (input.supplierContractId) query = query.eq('supplier_contract_id', input.supplierContractId);
+          if (input.supplierId) query = query.eq('supplier_id', input.supplierId);
+          if (input.status) query = query.eq('status', input.status);
+          if (input.periodMonth) query = query.eq('period_month', input.periodMonth);
+          return query;
+        },
+      });
+      return rows.sort((left, right) => String(right.statement_date).localeCompare(String(left.statement_date)) || String(right.id).localeCompare(String(left.id))).map(normalizeStatement);
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
       throw error;
     }
-    return (data || []).map(normalizeStatement);
   },
 
   async listStatementLines(statementId: string): Promise<SupplierDeliveryStatementLine[]> {
-    const { data, error } = await supabase
-      .from(STATEMENT_LINE_TABLE)
-      .select('*')
-      .eq('statement_id', statementId)
-      .order('created_at', { ascending: true });
-    if (error) {
-      if (error.code === '42P01') return [];
+    try {
+      const rows = await loadSupplierRows({
+        table: STATEMENT_LINE_TABLE,
+        projection: STATEMENT_LINE_SELECT,
+        applyFilters: query => query.eq('statement_id', statementId),
+      });
+      return rows.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)) || String(left.id).localeCompare(String(right.id))).map(normalizeStatementLine);
+    } catch (error: any) {
+      if (error?.code === '42P01') return [];
       throw error;
     }
-    return (data || []).map(normalizeStatementLine);
   },
 
   async getDetail(id: string): Promise<{
@@ -510,7 +562,7 @@ export const supplierDeliveryStatementService = {
   }> {
     const { data, error } = await supabase
       .from(STATEMENT_TABLE)
-      .select('*')
+      .select(STATEMENT_SELECT)
       .eq('id', id)
       .single();
     if (error) throw error;
@@ -529,7 +581,7 @@ export const supplierDeliveryStatementService = {
     const { data, error } = await supabase
       .from(STATEMENT_TABLE)
       .upsert(statementPayload(statement, acceptedLines), { onConflict: 'id' })
-      .select('*')
+      .select(STATEMENT_SELECT)
       .single();
     if (error) throw error;
 
