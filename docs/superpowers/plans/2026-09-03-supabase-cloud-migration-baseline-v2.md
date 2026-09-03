@@ -130,19 +130,15 @@ git commit -m "build(db): guard Supabase migration baseline"
 - Consumes: a PostgreSQL connection supplied only through process environment.
 - Produces: stable ordered JSON/SQL output without credentials or production business rows.
 
-- [ ] **Step 1: Add failing static-contract tests**
+- [x] **Step 1: Create read-only evidence query drafts**
 
-Assert that fingerprint queries cover `public`, `app_private`, and `private`; managed DDL only reads catalog metadata for `auth` and `storage`; bootstrap extraction is limited to the reviewed allowlist; no query selects from `auth.users`, `storage.objects`, Vault decrypted secrets, or business transaction tables; and outputs are deterministically ordered.
+Fingerprint queries cover `public`, `app_private`, and `private`; managed DDL reads catalog metadata for `auth` and `storage`; bootstrap extraction is limited to the reviewed allowlist; no query selects from `auth.users`, `storage.objects`, Vault decrypted secrets, or business transaction tables; and outputs are deterministically ordered.
 
-- [ ] **Step 2: Run focused tests and confirm RED**
+- [x] **Step 2: Run the query drafts against Cloud and capture failures**
 
-```bash
-npm test -- --run lib/__tests__/supabaseBaselineTooling.test.ts
-```
+The first live execution correctly exposed two SQL defects before evidence capture: `pg_get_functiondef` cannot render aggregates, and the renderer unions did not expose their sort key.
 
-Expected: FAIL because the SQL files are absent.
-
-- [ ] **Step 3: Implement evidence SQL**
+- [x] **Step 3: Correct the query boundaries and implement the allowlist**
 
 The configuration allowlist is exactly:
 
@@ -159,7 +155,7 @@ cron.job metadata without secret values
 
 Generate `CREATE POLICY` using `pg_policies`, non-internal `CREATE TRIGGER` using `pg_get_triggerdef`, and matching grants only for application-managed `auth`/`storage` objects. Generate idempotent inserts keyed by primary keys. Render cron jobs disabled for preview validation and document production activation separately.
 
-- [ ] **Step 4: Run focused tests and read-only SQL checks**
+- [x] **Step 4: Run focused tests, read-only SQL checks, and secret scan**
 
 ```bash
 npm test -- --run lib/__tests__/supabaseBaselineTooling.test.ts
@@ -169,7 +165,7 @@ psql "$PRODUCTION_DB_URL" -X -v ON_ERROR_STOP=1 -f scripts/supabase-baseline/con
 
 Expected: tests and read-only queries succeed.
 
-- [ ] **Step 5: Commit evidence tooling**
+- [x] **Step 5: Commit evidence tooling**
 
 ```bash
 git add scripts/supabase-baseline lib/__tests__/supabaseBaselineTooling.test.ts
