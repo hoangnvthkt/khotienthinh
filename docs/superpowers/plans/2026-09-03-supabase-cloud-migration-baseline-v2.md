@@ -575,7 +575,7 @@ Mark only `20260903063821` applied. Require local/remote migration alignment,
 an empty dry run, exactly three added fingerprint objects, zero removed
 objects, unchanged configuration, and five active Cron jobs.
 
-- [ ] **Step 5: Commit, push, and verify the final Cloud runner state**
+- [x] **Step 5: Commit, push, and verify the final Cloud runner state**
 
 Push the evidence to the feature branch and then fast-forward `main`. Confirm
 the latest Git-linked migration action no longer retries PERF02 and finish the

@@ -107,5 +107,10 @@ applied using `supabase migration repair`. No baseline SQL was rerun. See
 `perf02_production_completion_summary.json`,
 `migration_list_after_perf02.txt`, and `db_push_dry_run_after_perf02.txt`.
 
+The next Git-linked `main` action completed at `2026-09-03T08:23:34Z` with the
+`migrate` step `EXITED`; all runnable steps exited successfully. This proves
+the runner now sees the repaired two-version ledger and no longer retries
+PERF02.
+
 The retained no-data preview is `baseline-vioo-git`; redundant manual preview
 branches were deleted after their evidence was recorded.

@@ -39,5 +39,21 @@
     "configuration_sha256": "9be9bb08bb324ea175706167240c76eef73ca9a1469c631a98e19a368eeb330e",
     "configuration_diff_lines": 0,
     "active_cron_jobs": 5
+  },
+  "cloud_runner_verification": {
+    "action_run_id": "be62f5bcc5414509a0c9d2d8e7d62116",
+    "check_run_id": 100577141096,
+    "git_ref": "main",
+    "completed_at": "2026-09-03T08:23:34.365187Z",
+    "migrate_status": "EXITED",
+    "terminal_steps": {
+      "clone": "EXITED",
+      "configure": "PAUSED",
+      "deploy": "EXITED",
+      "health": "EXITED",
+      "migrate": "EXITED",
+      "pull": "EXITED",
+      "seed": "EXITED"
+    }
   }
 }
