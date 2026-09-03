@@ -1,6 +1,6 @@
 # Supabase Cloud Migration Baseline V2 Design
 
-**Status:** Approved in chat on 2026-09-03; implementation plan pending review of this document.
+**Status:** Implemented on 2026-09-03; production baseline and PERF02 ledger are aligned.
 
 ## Objective
 
@@ -84,6 +84,11 @@ supabase/
 
 Only the baseline is marked applied during the ledger cut. PERF02 remains
 pending until the normal post-baseline deployment gate.
+
+Implementation note: the Cloud runner could not execute PERF02's concurrent
+index statements and repeated attempts left two invalid indexes. The approved
+post-baseline work was completed with standalone concurrent index operations,
+object-level verification, and a narrow repair of only the PERF02 ledger row.
 
 ## Schema Capture Rules
 

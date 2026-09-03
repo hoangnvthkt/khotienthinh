@@ -1,0 +1,10 @@
+PERF02 Production completion — 2026-09-03
+Rebuilt invalid target index concurrently.
+REINDEX
+                index_name                 | indisvalid | indisready |                                                                                 definition                                                                                  
+-------------------------------------------+------------+------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ idx_requests_origin_created_id_perf02     | t          | t          | CREATE INDEX idx_requests_origin_created_id_perf02 ON public.requests USING btree (request_origin, created_date DESC, id DESC) WHERE (request_origin IS NOT NULL)
+ idx_transactions_source_wh_date_id_perf02 | t          | t          | CREATE INDEX idx_transactions_source_wh_date_id_perf02 ON public.transactions USING btree (source_warehouse_id, date DESC, id DESC) WHERE (source_warehouse_id IS NOT NULL)
+ idx_transactions_target_wh_date_id_perf02 | t          | t          | CREATE INDEX idx_transactions_target_wh_date_id_perf02 ON public.transactions USING btree (target_warehouse_id, date DESC, id DESC) WHERE (target_warehouse_id IS NOT NULL)
+(3 rows)
+

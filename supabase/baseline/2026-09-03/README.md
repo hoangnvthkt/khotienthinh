@@ -68,6 +68,13 @@ Post-cutover checks proved:
 - Git-linked no-data preview: healthy, baseline-only ledger, fingerprint and
   configuration differences both zero.
 
+PERF02 was subsequently completed on production at
+`2026-09-03T08:21:51Z`. The final migration list contains both the baseline and
+PERF02, and `db push --dry-run` reports that the remote database is up to date.
+The post-PERF02 fingerprint contains exactly three additional objects—the
+three reviewed PERF02 indexes—with zero removed objects. Configuration remains
+byte-for-byte identical and all five Cron jobs remain active.
+
 See `production_cutover_summary.json`, `validation_summary.json`, and the
 captured command outputs in this directory for machine-readable evidence.
 
@@ -86,17 +93,19 @@ captured command outputs in this directory for machine-readable evidence.
 
 ## PERF02 Deployment Note
 
-PERF02 intentionally remains after the baseline and pending on production. Its
+PERF02 remains ordered after the baseline and is now applied on production. Its
 three indexes use `CREATE INDEX CONCURRENTLY` to avoid blocking live writes.
-The current Cloud migration runner sends migration statements through a
-pipeline and returns SQLSTATE `25001` for this command. Therefore, do not run
-PERF02 with the normal pipeline-based `db push`: execute the reviewed file in a
-standalone `psql` session, verify all three indexes, then mark only version
-`20260903063821` applied with the supported migration repair command.
+The Cloud migration runner could not execute that migration through its
+pipeline and retried it on later `main` pushes, leaving two same-named indexes
+invalid. A standalone `psql` execution correctly created the third index but
+skipped the invalid names because the migration uses `IF NOT EXISTS`.
 
-While PERF02 is pending, the database branch record for Git `main` may report
-`MIGRATIONS_FAILED`; this reflects the pipeline-incompatible pending index file,
-not database health. The production project remains `ACTIVE_HEALTHY`, and the
-canonical proof is the baseline-aligned migration list plus dry run captured
-here. The retained no-data preview is `baseline-vioo-git`; redundant manual
-preview branches were deleted after their evidence was recorded.
+Recovery was deliberately narrow: the two invalid indexes were rebuilt with
+`REINDEX INDEX CONCURRENTLY`, all three definitions were verified as both
+`indisvalid` and `indisready`, and only version `20260903063821` was then marked
+applied using `supabase migration repair`. No baseline SQL was rerun. See
+`perf02_production_completion_summary.json`,
+`migration_list_after_perf02.txt`, and `db_push_dry_run_after_perf02.txt`.
+
+The retained no-data preview is `baseline-vioo-git`; redundant manual preview
+branches were deleted after their evidence was recorded.

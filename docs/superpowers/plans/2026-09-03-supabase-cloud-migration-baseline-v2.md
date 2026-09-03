@@ -535,6 +535,52 @@ git commit -m "docs(db): complete migration baseline handoff"
 git push origin HEAD:main
 ```
 
+---
+
+### Task 10: Complete PERF02 And Stabilize The Git Runner
+
+**Files:**
+- Create: `supabase/baseline/2026-09-03/perf02_production_completion_output.txt`
+- Create: `supabase/baseline/2026-09-03/perf02_production_completion_summary.json`
+- Create: `supabase/baseline/2026-09-03/migration_list_after_perf02.txt`
+- Create: `supabase/baseline/2026-09-03/db_push_dry_run_after_perf02.txt`
+- Create: `supabase/baseline/2026-09-03/schema_fingerprint_after_perf02.json`
+- Create: `supabase/baseline/2026-09-03/cloud_configuration_after_perf02.json`
+- Modify: `supabase/baseline/2026-09-03/README.md`
+
+**Reason:** Later pushes to `main` caused the Git-linked Cloud runner to retry
+the deliberately pending non-transactional PERF02 migration. It partially
+created the indexes but could not complete the migration or ledger update.
+Leaving that state pending would make every later `main` push unsafe.
+
+- [x] **Step 1: Inspect production before recovery**
+
+Confirm the ledger still contains only the baseline, no long transaction is
+active, and identify the exact validity/readiness of all three PERF02 indexes.
+
+- [x] **Step 2: Complete only the reviewed PERF02 indexes**
+
+Run the reviewed migration in standalone `psql`. Because `IF NOT EXISTS`
+correctly avoids duplicate names but cannot repair invalid indexes, rebuild the
+two invalid indexes individually with `REINDEX INDEX CONCURRENTLY`.
+
+- [x] **Step 3: Verify objects before repairing history**
+
+Require all three expected definitions to exist with `indisvalid=true` and
+`indisready=true`. Do not repair history if any check fails.
+
+- [x] **Step 4: Repair only PERF02 and compare state**
+
+Mark only `20260903063821` applied. Require local/remote migration alignment,
+an empty dry run, exactly three added fingerprint objects, zero removed
+objects, unchanged configuration, and five active Cron jobs.
+
+- [ ] **Step 5: Commit, push, and verify the final Cloud runner state**
+
+Push the evidence to the feature branch and then fast-forward `main`. Confirm
+the latest Git-linked migration action no longer retries PERF02 and finish the
+full repository and Cloud verification suite.
+
 ## Stop Conditions
 
 Stop without production repair when any of these occurs:

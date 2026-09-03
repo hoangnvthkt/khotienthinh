@@ -1,0 +1,43 @@
+{
+  "completed_at": "2026-09-03T08:21:51Z",
+  "production_project_ref": "ftciqmqhmfvjtwoycswe",
+  "migration_version": "20260903063821",
+  "migration_name": "perf02_query_indexes",
+  "execution": {
+    "baseline_sql_executed_on_production": false,
+    "perf02_sql_executed_with_standalone_psql": true,
+    "cloud_runner_observation": "Repeated pipeline attempts left the first two same-named indexes invalid; IF NOT EXISTS then skipped those names during the standalone run.",
+    "recovery": "Rebuilt exactly the two invalid indexes with REINDEX INDEX CONCURRENTLY, verified all three indexes, then marked only PERF02 applied in migration history."
+  },
+  "before_recovery": {
+    "expected_indexes": 3,
+    "present_indexes": 3,
+    "valid_indexes": 1,
+    "invalid_indexes": 2,
+    "ledger_versions": [
+      "20260903063714"
+    ]
+  },
+  "after_recovery": {
+    "present_indexes": 3,
+    "valid_indexes": 3,
+    "ready_indexes": 3,
+    "ledger_versions": [
+      "20260903063714",
+      "20260903063821"
+    ],
+    "db_push_dry_run": "Remote database is up to date.",
+    "fingerprint_before_object_count": 21099,
+    "fingerprint_after_object_count": 21102,
+    "fingerprint_added_objects": [
+      "public.idx_requests_origin_created_id_perf02",
+      "public.idx_transactions_source_wh_date_id_perf02",
+      "public.idx_transactions_target_wh_date_id_perf02"
+    ],
+    "fingerprint_removed_object_count": 0,
+    "schema_fingerprint_sha256": "3285430a3fa7c5881cdebb5195ffedc85286300ecec7e9ef6630066d16913850",
+    "configuration_sha256": "9be9bb08bb324ea175706167240c76eef73ca9a1469c631a98e19a368eeb330e",
+    "configuration_diff_lines": 0,
+    "active_cron_jobs": 5
+  }
+}

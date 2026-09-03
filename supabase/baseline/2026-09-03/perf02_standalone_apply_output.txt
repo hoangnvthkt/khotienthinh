@@ -1,0 +1,5 @@
+psql:supabase/migrations/20260903063821_perf02_query_indexes.sql:6: NOTICE:  relation "idx_transactions_source_wh_date_id_perf02" already exists, skipping
+CREATE INDEX
+psql:supabase/migrations/20260903063821_perf02_query_indexes.sql:10: NOTICE:  relation "idx_transactions_target_wh_date_id_perf02" already exists, skipping
+CREATE INDEX
+CREATE INDEX
