@@ -23,12 +23,20 @@ import {
   WorkflowEdge,
 } from '../types';
 import { projectStaffService } from './projectStaffService';
+import { chunkValues } from './supabasePagination';
 
 const SUBJECT_TABLE = 'workflow_subjects';
 const BINDING_TABLE = 'project_workflow_bindings';
 const ASSIGNMENT_TABLE = 'workflow_step_assignments';
 
 const WORKFLOW_INSTANCE_SELECT = 'id,template_id,template_version_id,current_instance_node_id,code,title,created_by,current_node_id,status,watchers,step_assignees,created_at,updated_at';
+const WORKFLOW_NODE_SELECT = 'id,template_id,type,label,config,position_x,position_y';
+const WORKFLOW_EDGE_SELECT = 'id,template_id,source_node_id,target_node_id,label';
+const WORKFLOW_RUNTIME_NODE_SELECT = 'id,workflow_instance_id,template_version_id,template_node_id,type,label,config,position_x,position_y,created_at';
+const WORKFLOW_RUNTIME_EDGE_SELECT = 'id,workflow_instance_id,template_version_id,template_edge_id,source_instance_node_id,target_instance_node_id,label,sort_order,created_at';
+const WORKFLOW_ASSIGNMENT_SELECT = 'id,workflow_subject_id,workflow_instance_id,node_id,assignee_user_id,assigned_by,status,assigned_at,acted_at,action_comment,return_to_node_id,metadata,instance_node_id,return_to_instance_node_id';
+const WORKFLOW_QUERY_PAGE_SIZE = 1000;
+const WORKFLOW_QUERY_MAX_ROWS = 10_000;
 const ASSIGNEE_CANDIDATE_CACHE_TTL_MS = 60_000;
 const assigneeCandidateCache = new Map<string, { expiresAt: number; rows: ProjectStaff[] }>();
 
@@ -170,6 +178,41 @@ const bindingSelect = `
   workflow_template:workflow_templates(*)
 `;
 
+const loadWorkflowRowsByChunkedValue = async (input: {
+  table: string;
+  projection: string;
+  filterColumn: string;
+  values: string[];
+  applyFilters?: (query: any) => any;
+}): Promise<any[]> => {
+  const rows: any[] = [];
+  for (const valueChunk of chunkValues(Array.from(new Set(input.values.filter(Boolean))), 100)) {
+    let lastId: string | null = null;
+    while (true) {
+      let query: any = supabase
+        .from(input.table as any)
+        .select(input.projection)
+        .in(input.filterColumn, valueChunk)
+        .order('id', { ascending: true })
+        .limit(WORKFLOW_QUERY_PAGE_SIZE);
+      if (lastId) query = query.gt('id', lastId);
+      if (input.applyFilters) query = input.applyFilters(query);
+      const { data, error } = await query;
+      if (error) throw error;
+      const page = data || [];
+      rows.push(...page);
+      if (rows.length > WORKFLOW_QUERY_MAX_ROWS) {
+        throw new Error(`Workflow read exceeded safety cap of ${WORKFLOW_QUERY_MAX_ROWS} rows`);
+      }
+      if (page.length < WORKFLOW_QUERY_PAGE_SIZE) break;
+      const nextId = String(page[page.length - 1]?.id || '');
+      if (!nextId || nextId === lastId) throw new Error('Workflow read received a repeated cursor');
+      lastId = nextId;
+    }
+  }
+  return rows;
+};
+
 export const projectWorkflowService = {
   async getConfiguration(
     subjectType: ProjectWorkflowSubjectType,
@@ -266,7 +309,8 @@ export const projectWorkflowService = {
       .from(BINDING_TABLE)
       .select(bindingSelect)
       .eq('subject_type', subjectType)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (error) {
       if (isMissingProjectWorkflowError(error)) return [];
       throw error;
@@ -296,8 +340,8 @@ export const projectWorkflowService = {
 
   async getTemplateStartContext(templateId: string): Promise<{ firstNode: WorkflowNode | null; nodes: WorkflowNode[]; edges: WorkflowEdge[] }> {
     const [{ data: nodeRows, error: nodeError }, { data: edgeRows, error: edgeError }] = await Promise.all([
-      supabase.from('workflow_nodes').select('*').eq('template_id', templateId),
-      supabase.from('workflow_edges').select('*').eq('template_id', templateId),
+      supabase.from('workflow_nodes').select(WORKFLOW_NODE_SELECT).eq('template_id', templateId).limit(WORKFLOW_QUERY_PAGE_SIZE),
+      supabase.from('workflow_edges').select(WORKFLOW_EDGE_SELECT).eq('template_id', templateId).limit(WORKFLOW_QUERY_PAGE_SIZE),
     ]);
     if (nodeError) throw nodeError;
     if (edgeError) throw edgeError;
@@ -322,14 +366,12 @@ export const projectWorkflowService = {
   async listRuntimeContextsBySubjects(subjects: ProjectWorkflowSubject[]): Promise<Record<string, ProjectWorkflowRuntimeContext>> {
     const instanceIds = Array.from(new Set(subjects.map(subject => subject.workflowInstanceId).filter(Boolean) as string[]));
     if (instanceIds.length === 0) return {};
-    const [{ data: nodeRows, error: nodeError }, { data: edgeRows, error: edgeError }] = await Promise.all([
-      supabase.from('workflow_instance_nodes').select('*').in('workflow_instance_id', instanceIds),
-      supabase.from('workflow_instance_edges').select('*').in('workflow_instance_id', instanceIds),
+    const [nodeRows, edgeRows] = await Promise.all([
+      loadWorkflowRowsByChunkedValue({ table: 'workflow_instance_nodes', projection: WORKFLOW_RUNTIME_NODE_SELECT, filterColumn: 'workflow_instance_id', values: instanceIds }),
+      loadWorkflowRowsByChunkedValue({ table: 'workflow_instance_edges', projection: WORKFLOW_RUNTIME_EDGE_SELECT, filterColumn: 'workflow_instance_id', values: instanceIds }),
     ]);
-    if (nodeError) throw nodeError;
-    if (edgeError) throw edgeError;
-    const nodes = (nodeRows || []).map(mapWorkflowRuntimeNode).filter(Boolean) as WorkflowRuntimeNode[];
-    const edges = (edgeRows || []).map(mapWorkflowRuntimeEdge);
+    const nodes = nodeRows.map(mapWorkflowRuntimeNode).filter(Boolean) as WorkflowRuntimeNode[];
+    const edges = edgeRows.map(mapWorkflowRuntimeEdge);
     return subjects.reduce<Record<string, ProjectWorkflowRuntimeContext>>((acc, subject) => {
       acc[subject.id] = {
         subject,
@@ -380,17 +422,21 @@ export const projectWorkflowService = {
     const ids = Array.from(new Set(subjectIds.filter(Boolean)));
     if (ids.length === 0) return {};
 
-    const { data, error } = await supabase
-      .from(SUBJECT_TABLE)
-      .select(subjectSelect)
-      .eq('subject_type', subjectType)
-      .in('subject_id', ids);
-    if (error) {
+    let rows: any[];
+    try {
+      rows = await loadWorkflowRowsByChunkedValue({
+        table: SUBJECT_TABLE,
+        projection: subjectSelect,
+        filterColumn: 'subject_id',
+        values: ids,
+        applyFilters: query => query.eq('subject_type', subjectType),
+      });
+    } catch (error) {
       if (isMissingProjectWorkflowError(error)) return {};
       throw error;
     }
 
-    return (data || []).reduce<Record<string, ProjectWorkflowSubject>>((acc, row) => {
+    return rows.reduce<Record<string, ProjectWorkflowSubject>>((acc, row) => {
       const subject = mapSubject(row);
       acc[subject.subjectId] = subject;
       return acc;
@@ -424,17 +470,21 @@ export const projectWorkflowService = {
     const ids = Array.from(new Set(subjectIds.filter(Boolean)));
     if (ids.length === 0) return {};
 
-    const { data, error } = await supabase
-      .from(ASSIGNMENT_TABLE)
-      .select('*')
-      .in('workflow_subject_id', ids)
-      .order('assigned_at', { ascending: true });
-    if (error) {
+    let rows: any[];
+    try {
+      rows = await loadWorkflowRowsByChunkedValue({
+        table: ASSIGNMENT_TABLE,
+        projection: WORKFLOW_ASSIGNMENT_SELECT,
+        filterColumn: 'workflow_subject_id',
+        values: ids,
+      });
+      rows.sort((left, right) => String(left.assigned_at).localeCompare(String(right.assigned_at)) || String(left.id).localeCompare(String(right.id)));
+    } catch (error) {
       if (isMissingProjectWorkflowError(error)) return {};
       throw error;
     }
 
-    return (data || []).reduce<Record<string, WorkflowStepAssignment[]>>((acc, row) => {
+    return rows.reduce<Record<string, WorkflowStepAssignment[]>>((acc, row) => {
       const assignment = mapAssignment(row);
       if (!acc[assignment.workflowSubjectId]) acc[assignment.workflowSubjectId] = [];
       acc[assignment.workflowSubjectId].push(assignment);

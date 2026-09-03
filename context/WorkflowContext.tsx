@@ -14,6 +14,7 @@ import {
     getWorkflowProcessErrorMessage,
     normalizeStepAssigneeIds,
 } from '../lib/workflowAssignmentResolver';
+import { chunkValues } from '../lib/supabasePagination';
 
 export interface WorkflowProcessResult {
     ok: boolean;
@@ -63,6 +64,48 @@ const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined
 
 const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, created_at, updated_at';
 const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
+const WORKFLOW_TEMPLATE_SELECT = 'id,name,description,created_by,is_active,custom_fields,managers,default_watchers,created_at,updated_at';
+const WORKFLOW_NODE_SELECT = 'id,template_id,type,label,config,position_x,position_y';
+const WORKFLOW_EDGE_SELECT = 'id,template_id,source_node_id,target_node_id,label';
+const WORKFLOW_LOG_SELECT = 'id,instance_id,node_id,action,acted_by,comment,created_at';
+const WORKFLOW_PRINT_TEMPLATE_SELECT = 'id,template_id,name,file_name,storage_path,created_at';
+const WORKFLOW_TEMPLATE_CATALOG_LIMIT = 200;
+const WORKFLOW_PRINT_TEMPLATE_LIMIT = 500;
+const WORKFLOW_CHILD_PAGE_SIZE = 1000;
+const WORKFLOW_CHILD_MAX_ROWS = 10_000;
+
+const loadWorkflowRowsByIds = async (
+    table: string,
+    projection: string,
+    filterColumn: string,
+    values: string[],
+): Promise<any[]> => {
+    const rows: any[] = [];
+    for (const valueChunk of chunkValues(Array.from(new Set(values.filter(Boolean))), 100)) {
+        let lastId: string | null = null;
+        while (true) {
+            let query: any = supabase
+                .from(table as any)
+                .select(projection)
+                .in(filterColumn, valueChunk)
+                .order('id', { ascending: true })
+                .limit(WORKFLOW_CHILD_PAGE_SIZE);
+            if (lastId) query = query.gt('id', lastId);
+            const { data, error } = await query;
+            if (error) throw error;
+            const page = data || [];
+            rows.push(...page);
+            if (rows.length > WORKFLOW_CHILD_MAX_ROWS) {
+                throw new Error(`Workflow child read exceeded safety cap of ${WORKFLOW_CHILD_MAX_ROWS} rows`);
+            }
+            if (page.length < WORKFLOW_CHILD_PAGE_SIZE) break;
+            const nextId = String(page[page.length - 1]?.id || '');
+            if (!nextId || nextId === lastId) throw new Error('Workflow child read received a repeated cursor');
+            lastId = nextId;
+        }
+    }
+    return rows;
+};
 
 // DB snake_case <-> TS camelCase mappers
 const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
@@ -160,25 +203,25 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (inflightRefreshRef.current) return inflightRefreshRef.current;
         setIsLoading(true);
         const refreshTask = (async () => {
-            const [tRes, nRes, eRes, iRes, ptRes] = await Promise.all([
-                supabase.from('workflow_templates').select('*').order('created_at', { ascending: false }),
-                supabase.from('workflow_nodes').select('*'),
-                supabase.from('workflow_edges').select('*'),
+            const [tRes, iRes, ptRes] = await Promise.all([
+                supabase.from('workflow_templates').select(WORKFLOW_TEMPLATE_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_TEMPLATE_CATALOG_LIMIT),
                 supabase.from('workflow_instances').select(WORKFLOW_INSTANCE_LIST_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_INSTANCE_LIST_LIMIT),
-                supabase.from('workflow_print_templates').select('*').order('created_at', { ascending: false }),
+                supabase.from('workflow_print_templates').select(WORKFLOW_PRINT_TEMPLATE_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_PRINT_TEMPLATE_LIMIT),
             ]);
             if (tRes.data) setTemplates(tRes.data.map(mapTemplateFromDB));
-            if (nRes.data) setNodes(nRes.data.map(mapNodeFromDB));
-            if (eRes.data) setEdges(eRes.data.map(mapEdgeFromDB));
+            const activeTemplateIds = (tRes.data || []).filter((template: any) => template.is_active !== false).map((template: any) => template.id);
+            const [nodeRows, edgeRows] = await Promise.all([
+                loadWorkflowRowsByIds('workflow_nodes', WORKFLOW_NODE_SELECT, 'template_id', activeTemplateIds),
+                loadWorkflowRowsByIds('workflow_edges', WORKFLOW_EDGE_SELECT, 'template_id', activeTemplateIds),
+            ]);
+            setNodes(nodeRows.map(mapNodeFromDB));
+            setEdges(edgeRows.map(mapEdgeFromDB));
             if (iRes.data) setInstances(iRes.data.map(mapInstanceFromDB));
             if (iRes.data && iRes.data.length > 0) {
                 const instanceIds = iRes.data.map((i: any) => i.id);
-                const { data: logData } = await supabase
-                    .from('workflow_instance_logs')
-                    .select('*')
-                    .in('instance_id', instanceIds)
-                    .order('created_at', { ascending: true });
-                if (logData) setLogs(logData.map(mapLogFromDB));
+                const logData = await loadWorkflowRowsByIds('workflow_instance_logs', WORKFLOW_LOG_SELECT, 'instance_id', instanceIds);
+                logData.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)) || String(left.id).localeCompare(String(right.id)));
+                setLogs(logData.map(mapLogFromDB));
             } else {
                 setLogs([]);
             }
@@ -200,7 +243,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const { data, error } = await supabase
             .from('users')
             .select('id, role, allowed_modules, is_active')
-            .eq('role', role);
+            .eq('role', role)
+            .limit(500);
         if (error) {
             console.error('WF recipient lookup error:', error);
             return [];
@@ -554,7 +598,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const templateId = freshInstance.template_id;
 
         // Fetch fresh nodes from DB for notification routing
-        const nodesRes = await supabase.from('workflow_nodes').select('*').eq('template_id', templateId);
+        const nodesRes = await supabase.from('workflow_nodes').select(WORKFLOW_NODE_SELECT).eq('template_id', templateId).limit(WORKFLOW_CHILD_PAGE_SIZE);
         const templateNodes = (nodesRes.data || []).map(mapNodeFromDB);
 
         let { data: processedData, error: processError } = await supabase.rpc('process_workflow_instance_fast', {
@@ -771,9 +815,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const deleteInstance = async (instanceId: string): Promise<boolean> => {
         await supabase.from('workflow_instance_logs').delete().eq('instance_id', instanceId);
-        const { data, error } = await supabase.from('workflow_instances').delete().eq('id', instanceId).select('id');
+        const { data, error } = await supabase.from('workflow_instances').delete().eq('id', instanceId).select('id').single();
         if (error) { console.error(error); return false; }
-        if (!data || data.length === 0) return false;
+        if (!data) return false;
         setInstances(prev => prev.filter(i => i.id !== instanceId));
         setLogs(prev => prev.filter(l => l.instanceId !== instanceId));
         return true;

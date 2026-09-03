@@ -38,6 +38,11 @@ const statusClass = (status?: string) => {
 const emptyRuleForm = () => ({ title: '', content: '', domain: '', priority: 50, status: 'approved' as ReviewStatus });
 const emptyGlossaryForm = () => ({ term: '', definition: '', aliases: '', domain: '', status: 'approved' as ReviewStatus });
 const emptyMemoryForm = () => ({ content: '', category: 'correction', scope: 'enterprise', domain: '', importance: 3, status: 'approved' as ReviewStatus });
+const AI_FEEDBACK_SELECT = 'id,conversation_id,message_id,user_id,rating,comment,question,answer,sql_query,created_at,ai_message_id,feedback_type,correction_text,approved_answer,reason,status,reviewed_by,reviewed_at,updated_at,metadata';
+const AI_MEMORY_SELECT = 'id,user_id,conversation_id,category,content,topics,importance,created_at,scope,status,domain,source,source_message_id,approved_by,approved_at,updated_at,metadata';
+const AI_BUSINESS_RULE_SELECT = 'id,title,content,domain,priority,status,source,created_by,approved_by,approved_at,created_at,updated_at,metadata';
+const AI_GLOSSARY_SELECT = 'id,term,definition,aliases,domain,status,source,created_by,approved_by,approved_at,created_at,updated_at,metadata';
+const AI_CHAT_RUN_SELECT = 'id,conversation_id,user_id,mode,question,classified_domain,route_action,tool_name,model_used,response_time_ms,token_count,status,error_message,created_at,metadata';
 
 const SettingsAiLearning: React.FC<SettingsAiLearningProps> = ({ actorId }) => {
   const toast = useToast();
@@ -56,11 +61,11 @@ const SettingsAiLearning: React.FC<SettingsAiLearningProps> = ({ actorId }) => {
   const fetchData = async () => {
     setLoading(true);
     const [feedbackRes, memoryRes, rulesRes, glossaryRes, runsRes] = await Promise.all([
-      supabase.from('ai_feedback').select('*').order('created_at', { ascending: false }).limit(100),
-      supabase.from('ai_memory').select('*').order('updated_at', { ascending: false }).limit(100),
-      supabase.from('ai_business_rules').select('*').order('priority', { ascending: false }).order('updated_at', { ascending: false }).limit(100),
-      supabase.from('ai_business_glossary').select('*').order('term', { ascending: true }).limit(100),
-      supabase.from('ai_chat_runs').select('*').order('created_at', { ascending: false }).limit(120),
+      supabase.from('ai_feedback').select(AI_FEEDBACK_SELECT).order('created_at', { ascending: false }).limit(100),
+      supabase.from('ai_memory').select(AI_MEMORY_SELECT).order('updated_at', { ascending: false }).limit(100),
+      supabase.from('ai_business_rules').select(AI_BUSINESS_RULE_SELECT).order('priority', { ascending: false }).order('updated_at', { ascending: false }).limit(100),
+      supabase.from('ai_business_glossary').select(AI_GLOSSARY_SELECT).order('term', { ascending: true }).limit(100),
+      supabase.from('ai_chat_runs').select(AI_CHAT_RUN_SELECT).order('created_at', { ascending: false }).limit(120),
     ]);
     if (feedbackRes.data) setFeedback(feedbackRes.data);
     if (memoryRes.data) setMemory(memoryRes.data);

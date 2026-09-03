@@ -47,6 +47,9 @@ export type NotificationListPage = CursorPage<AppNotification, NotificationCurso
 
 const UNREAD_DISPLAY_LIMIT = 99;
 const UNREAD_QUERY_LIMIT = UNREAD_DISPLAY_LIMIT + 1;
+const NOTIFICATION_LIST_SELECT = 'id,user_id,type,category,title,message,icon,link,is_read,is_dismissed,severity,source_type,source_id,construction_site_id,priority,push_enabled,action_url,entity_type,entity_id,metadata,created_at,expires_at';
+const NOTIFICATION_ALERT_RULE_SELECT = 'id,alert_key,label,description,category,is_enabled,thresholds,cooldown_minutes,recipient_config,channels,updated_by,created_at,updated_at';
+const ALERT_SCAN_LIMIT = 5000;
 
 const toCamel = (row: any): AppNotification => ({
   id: row.id,
@@ -194,7 +197,7 @@ const dedupeRowsById = <T extends { id: string }>(rows: T[]): T[] => {
 const buildNotificationQuery = (limit: number, cursor?: NotificationCursor) => {
   let query = supabase
     .from('notifications')
-    .select('*')
+    .select(NOTIFICATION_LIST_SELECT)
     .eq('is_dismissed', false)
     .neq('category', 'inventory')
     .order('created_at', { ascending: false })
@@ -347,7 +350,8 @@ const listActiveUsers = async (cache?: AlertResolveCache): Promise<any[]> => {
   if (!cache) {
     const { data, error } = await supabase
       .from('users')
-      .select('id, role, allowed_modules, admin_modules, is_active');
+      .select('id, role, allowed_modules, admin_modules, is_active')
+      .limit(ALERT_SCAN_LIMIT);
     if (error) {
       console.warn('Alert active user lookup failed:', error);
       return [];
@@ -358,7 +362,8 @@ const listActiveUsers = async (cache?: AlertResolveCache): Promise<any[]> => {
     cache.activeUsers = (async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('id, role, allowed_modules, admin_modules, is_active');
+        .select('id, role, allowed_modules, admin_modules, is_active')
+        .limit(ALERT_SCAN_LIMIT);
         if (error) {
           console.warn('Alert active user lookup failed:', error);
           return [];
@@ -410,7 +415,8 @@ const isCurrentUserAdmin = async (): Promise<boolean> => {
 const loadAlertRules = async (): Promise<Map<AlertRuleKey, NotificationAlertRule>> => {
   const { data, error } = await supabase
     .from('notification_alert_rules')
-    .select('*');
+    .select(NOTIFICATION_ALERT_RULE_SELECT)
+    .limit(100);
   if (error) {
     console.warn('Alert rules unavailable, using defaults:', error);
     return new Map(DEFAULT_ALERT_RULES.map(rule => [rule.alertKey, rule]));
@@ -688,7 +694,8 @@ export const notificationService = {
     const { data: recentAlerts } = await supabase
       .from('notifications')
       .select('source_type, source_id, created_at')
-      .gte('created_at', since);
+      .gte('created_at', since)
+      .limit(ALERT_SCAN_LIMIT);
     const emittedKeys = new Set<string>();
 
     const isNew = (rule: NotificationAlertRule, sourceType: string, sourceId: string) => {
@@ -720,7 +727,8 @@ export const notificationService = {
 
     const { data: sites } = await supabase
       .from('hrm_construction_sites')
-      .select('id, name, "checkInTime"');
+      .select('id, name, "checkInTime"')
+      .limit(1000);
     const getSiteName = (id?: string | null) => sites?.find((s: any) => s.id === id)?.name || 'N/A';
 
     try {
@@ -729,7 +737,8 @@ export const notificationService = {
       if (budgetRule.isEnabled || slowProgressRule.isEnabled) {
         const { data: finances } = await supabase
           .from('project_finances')
-          .select('project_id, "constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "progressPercent", status');
+          .select('project_id, "constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "progressPercent", status')
+          .limit(ALERT_SCAN_LIMIT);
 
         for (const f of (finances || [])) {
           const projectId = f.project_id || null;
@@ -786,7 +795,8 @@ export const notificationService = {
       if (paymentRule.isEnabled) {
         const { data: payments } = await supabase
           .from('payment_schedules')
-          .select('id, project_id, construction_site_id, description, status, due_date, amount');
+          .select('id, project_id, construction_site_id, description, status, due_date, amount')
+          .limit(ALERT_SCAN_LIMIT);
         for (const p of (payments || [])) {
           const isUnpaid = p.status === 'pending' || p.status === 'overdue' || p.status === 'partial';
           if (!isUnpaid || !p.due_date || p.due_date >= today) continue;
@@ -815,7 +825,8 @@ export const notificationService = {
       if (materialRule.isEnabled) {
         const { data: boqItems } = await supabase
           .from('material_budget_items')
-          .select('id, project_id, construction_site_id, item_name, waste_percent, waste_threshold');
+          .select('id, project_id, construction_site_id, item_name, waste_percent, waste_threshold')
+          .limit(ALERT_SCAN_LIMIT);
         for (const b of (boqItems || [])) {
           const wp = Number(b.waste_percent || 0);
           const wt = Number(b.waste_threshold || 5);
@@ -847,7 +858,8 @@ export const notificationService = {
         const reminderLeadMin = getRuleNumber(attendanceRule, 'minutesBefore', 5);
         const { data: offices } = await supabase
           .from('hrm_offices')
-          .select('id, name, "checkInTime"');
+          .select('id, name, "checkInTime"')
+          .limit(1000);
         const locations = [
           ...(offices || []).map((o: any) => ({ id: o.id, name: o.name, checkInTime: o.checkInTime || '08:00', type: 'office' })),
           ...(sites || []).map((s: any) => ({ id: s.id, name: s.name, checkInTime: s.checkInTime || '07:30', type: 'site' })),
@@ -869,7 +881,8 @@ export const notificationService = {
             .from('hrm_attendance')
             .select('"employeeId"')
             .eq('date', today)
-            .in('"employeeId"', empIds);
+            .in('"employeeId"', empIds)
+            .limit(ALERT_SCAN_LIMIT);
           const checkedInIds = new Set((checkedIn || []).map((a: any) => a.employeeId));
 
           const { data: onLeave } = await supabase
@@ -877,7 +890,8 @@ export const notificationService = {
             .select('"employeeId"')
             .eq('status', 'approved')
             .lte('"startDate"', today)
-            .gte('"endDate"', today);
+            .gte('"endDate"', today)
+            .limit(ALERT_SCAN_LIMIT);
           const leaveIds = new Set((onLeave || []).map((l: any) => l.employeeId));
 
           for (const emp of employees) {
@@ -949,7 +963,8 @@ export const notificationService = {
           .select('id, code, title, due_date, status')
           .in('status', ['pending', 'in_progress', 'draft'])
           .not('due_date', 'is', null)
-          .lt('due_date', today);
+          .lt('due_date', today)
+          .limit(ALERT_SCAN_LIMIT);
         for (const req of (overdueReqs || [])) {
           const daysOverdue = Math.ceil((Date.now() - new Date(req.due_date).getTime()) / (24 * 60 * 60 * 1000));
           alertCount += await notifyRule('overdue_request', {

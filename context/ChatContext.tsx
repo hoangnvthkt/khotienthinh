@@ -52,6 +52,15 @@ interface ChatContextType {
 
 const ChatContext = createContext<ChatContextType | null>(null);
 
+const CHAT_WORKSPACE_SELECT = 'id,name,icon_text,color,description,is_public,sort_order,created_by,created_at,updated_at,deleted_at';
+const CHAT_WORKSPACE_MEMBER_SELECT = 'id,workspace_id,user_id,role,joined_at,left_at';
+const CHAT_CONVERSATION_SELECT = 'id,type,name,workspace_id,channel_kind,description,sort_order,avatar_url,created_by,created_at,updated_at,deleted_at';
+const CHAT_MEMBER_SELECT = 'id,conversation_id,user_id,role,last_read_at,joined_at,left_at';
+const CHAT_MESSAGE_SELECT = 'id,conversation_id,sender_id,sender_name,sender_avatar_url,content,type,attachments,reactions,created_at,updated_at,deleted_at,recalled_at,recalled_by,reply_to_id,reply_to_preview,file_urls';
+const CHAT_PIN_SELECT = `conversation_id,message_id,chat_messages(${CHAT_MESSAGE_SELECT})`;
+const CHAT_CONVERSATION_LIMIT = 200;
+const CHAT_MESSAGE_PAGE_SIZE = 200;
+
 export const useChat = () => {
     const ctx = useContext(ChatContext);
     if (!ctx) throw new Error('useChat must be used within ChatProvider');
@@ -168,7 +177,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .from('chat_workspace_members')
                 .select('workspace_id')
                 .eq('user_id', user.id)
-                .is('left_at', null);
+                .is('left_at', null)
+                .limit(CHAT_CONVERSATION_LIMIT);
 
             if (memberError) {
                 console.error('Error loading chat workspace memberships:', memberError);
@@ -185,10 +195,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         let workspaceQuery = supabase
             .from('chat_workspaces')
-            .select('*')
+            .select(CHAT_WORKSPACE_SELECT)
             .is('deleted_at', null)
             .order('sort_order', { ascending: true })
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true })
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (workspaceIds) workspaceQuery = workspaceQuery.in('id', workspaceIds);
 
@@ -207,9 +218,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data: memberRows, error: membersError } = await supabase
             .from('chat_workspace_members')
-            .select('*')
+            .select(CHAT_WORKSPACE_MEMBER_SELECT)
             .in('workspace_id', visibleIds)
-            .is('left_at', null);
+            .is('left_at', null)
+            .limit(1000);
 
         if (membersError) console.error('Error loading chat workspace members:', membersError);
 
@@ -231,7 +243,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .from('chat_members')
             .select('conversation_id, last_read_at, role, left_at')
             .eq('user_id', user.id)
-            .is('left_at', null);
+            .is('left_at', null)
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (memberError) {
             console.error('Error loading chat memberships:', memberError);
@@ -250,10 +263,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data: convData, error: convError } = await supabase
             .from('chat_conversations')
-            .select('*')
+            .select(CHAT_CONVERSATION_SELECT)
             .in('id', convIds)
             .is('deleted_at', null)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (convError) {
             console.error('Error loading chat conversations:', convError);
@@ -270,15 +284,17 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const [{ data: allMembers, error: membersError }, { data: lastMessages, error: messagesError }] = await Promise.all([
             supabase
                 .from('chat_members')
-                .select('*')
+                .select(CHAT_MEMBER_SELECT)
                 .in('conversation_id', visibleConvIds)
-                .is('left_at', null),
+                .is('left_at', null)
+                .limit(2000),
             supabase
                 .from('chat_messages')
-                .select('*')
+                .select(CHAT_MESSAGE_SELECT)
                 .in('conversation_id', visibleConvIds)
                 .is('deleted_at', null)
-                .order('created_at', { ascending: false }),
+                .order('created_at', { ascending: false })
+                .limit(5000),
         ]);
 
         if (membersError) console.error('Error loading chat members:', membersError);
@@ -325,11 +341,12 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data, error } = await supabase
             .from('chat_messages')
-            .select('*')
+            .select(CHAT_MESSAGE_SELECT)
             .eq('conversation_id', conversationId)
             .is('deleted_at', null)
-            .order('created_at', { ascending: true })
-            .limit(200);
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(CHAT_MESSAGE_PAGE_SIZE);
 
         if (error) {
             console.error('Error loading chat messages:', error);
@@ -338,7 +355,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setMessages(prev => ({
             ...prev,
-            [conversationId]: (data || []).map(mapMessage),
+            [conversationId]: [...(data || [])].reverse().map(mapMessage),
         }));
     }, []);
 
@@ -361,9 +378,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data, error } = await supabase
             .from('chat_members')
-            .select('*')
+            .select(CHAT_MEMBER_SELECT)
             .eq('conversation_id', conversationId)
-            .is('left_at', null);
+            .is('left_at', null)
+            .limit(500);
 
         if (error) throw new Error(errorMessage(error, 'Không thể tải danh sách thành viên nhóm.'));
         return (data || []).map(mapMember);
@@ -400,9 +418,10 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data, error } = await supabase
             .from('chat_workspace_members')
-            .select('*')
+            .select(CHAT_WORKSPACE_MEMBER_SELECT)
             .eq('workspace_id', workspaceId)
-            .is('left_at', null);
+            .is('left_at', null)
+            .limit(500);
 
         if (error) throw new Error(errorMessage(error, 'Không thể tải thành viên kênh chat.'));
         return (data || []).map(mapWorkspaceMember);
@@ -427,7 +446,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .from('chat_members')
             .select('conversation_id')
             .eq('user_id', user.id)
-            .is('left_at', null);
+            .is('left_at', null)
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (membershipError) throw new Error(errorMessage(membershipError, 'Không thể kiểm tra chat đơn hiện có.'));
         const convIds = Array.from(new Set((myMemberships || []).map(m => m.conversation_id)));
@@ -438,7 +458,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .select('id')
             .in('id', convIds)
             .eq('type', 'direct')
-            .is('deleted_at', null);
+            .is('deleted_at', null)
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (directError) throw new Error(errorMessage(directError, 'Không thể kiểm tra chat đơn hiện có.'));
         const directIds = (directConvs || []).map(c => c.id);
@@ -448,7 +469,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .from('chat_members')
             .select('conversation_id, user_id')
             .in('conversation_id', directIds)
-            .is('left_at', null);
+            .is('left_at', null)
+            .limit(CHAT_CONVERSATION_LIMIT * 2);
 
         if (membersError) throw new Error(errorMessage(membersError, 'Không thể kiểm tra thành viên chat đơn.'));
 
@@ -741,7 +763,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const now = new Date().toISOString();
         const { data: existingRows, error: existingError } = await supabase
             .from('chat_workspace_members')
-            .select('*')
+            .select(CHAT_WORKSPACE_MEMBER_SELECT)
             .eq('workspace_id', workspaceId)
             .eq('user_id', userId)
             .limit(1);
@@ -789,7 +811,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .select('id')
             .eq('workspace_id', workspaceId)
             .in('type', ['channel_text', 'channel_voice'])
-            .is('deleted_at', null);
+            .is('deleted_at', null)
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (roomRows && roomRows.length > 0) {
             await supabase
@@ -832,7 +855,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (conv?.workspaceId) {
             const { data: workspaceMemberRows, error: workspaceMemberError } = await supabase
                 .from('chat_workspace_members')
-                .select('*')
+                .select(CHAT_WORKSPACE_MEMBER_SELECT)
                 .eq('workspace_id', conv.workspaceId)
                 .eq('user_id', userId)
                 .limit(1);
@@ -859,7 +882,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data: existingRows, error: existingError } = await supabase
             .from('chat_members')
-            .select('*')
+            .select(CHAT_MEMBER_SELECT)
             .eq('conversation_id', conversationId)
             .eq('user_id', userId)
             .order('joined_at', { ascending: false })
@@ -1166,7 +1189,8 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .from('chat_members')
                 .select('conversation_id')
                 .eq('user_id', user.id)
-                .is('left_at', null);
+                .is('left_at', null)
+                .limit(CHAT_CONVERSATION_LIMIT);
 
             if (membershipError) {
                 console.error('Error loading pin memberships:', membershipError);
@@ -1182,8 +1206,9 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { data, error } = await supabase
             .from('chat_pins')
-            .select('conversation_id, message_id, chat_messages(*)')
-            .in('conversation_id', visibleConversationIds);
+            .select(CHAT_PIN_SELECT)
+            .in('conversation_id', visibleConversationIds)
+            .limit(CHAT_CONVERSATION_LIMIT);
 
         if (error) {
             console.error('Error loading pins:', error);
@@ -1213,7 +1238,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 message_id: messageId,
                 pinned_by: user.id,
             })
-            .select('*, chat_messages(*)')
+            .select(CHAT_PIN_SELECT)
             .single();
 
         if (error || !data) throw new Error(errorMessage(error, 'Không thể ghim tin nhắn.'));

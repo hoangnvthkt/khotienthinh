@@ -1,10 +1,12 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { User } from '../types';
+import { clampPageSize, takeCursorPage, type CursorPage } from './supabasePagination';
 
 export const CHAT_V2_ATTACHMENT_BUCKET = 'chat-attachments';
 export const CHAT_V2_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '✅'];
 export const CHAT_V2_PAGE_SIZE = 50;
+const CHAT_V2_CONVERSATION_LIMIT = 200;
 
 export type ChatV2ConversationType = 'direct' | 'group';
 export type ChatV2ParticipantRole = 'owner' | 'admin' | 'member';
@@ -174,6 +176,8 @@ export interface ChatV2MessageCursor {
   createdAt: string;
   id?: string;
 }
+
+export type ChatV2MessagePage = CursorPage<ChatV2Message, ChatV2MessageCursor>;
 
 export interface ChatV2PendingAttachment {
   file: File;
@@ -716,7 +720,8 @@ export const chatV2Service = {
       .eq('user_id', currentUserId)
       .is('left_at', null)
       .order('is_pinned', { ascending: false })
-      .order('last_message_at', { ascending: false, nullsFirst: false });
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(CHAT_V2_CONVERSATION_LIMIT);
     if (membershipError) throw membershipError;
 
     const currentMemberships = (membershipRows || []).map(mapParticipant);
@@ -727,14 +732,16 @@ export const chatV2Service = {
       .from('chat_v2_conversations')
       .select(CONVERSATION_COLUMNS)
       .in('id', conversationIds)
-      .is('deleted_at', null);
+      .is('deleted_at', null)
+      .limit(CHAT_V2_CONVERSATION_LIMIT);
     if (conversationError) throw conversationError;
 
     const { data: participantRows, error: participantError } = await supabase
       .from('chat_v2_participants')
       .select(PARTICIPANT_COLUMNS)
       .in('conversation_id', conversationIds)
-      .is('left_at', null);
+      .is('left_at', null)
+      .limit(1000);
     if (participantError) throw participantError;
 
     const participants = (participantRows || []).map(mapParticipant);
@@ -757,7 +764,8 @@ export const chatV2Service = {
       .from('chat_v2_participants')
       .select('unread_count')
       .eq('user_id', currentUserId)
-      .is('left_at', null);
+      .is('left_at', null)
+      .limit(CHAT_V2_CONVERSATION_LIMIT);
     if (error) throw error;
     return (data || []).reduce((sum, row) => sum + asNumber(row.unread_count), 0);
   },
@@ -773,11 +781,11 @@ export const chatV2Service = {
       { data: checklistRows, error: checklistError },
       { data: quickConfirmRows, error: quickConfirmError },
     ] = await Promise.all([
-      supabase.from('chat_v2_attachments').select(ATTACHMENT_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }),
-      supabase.from('chat_v2_reactions').select(REACTION_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }),
-      supabase.from('chat_v2_poll_votes').select(POLL_VOTE_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }),
-      supabase.from('chat_v2_checklist_items').select(CHECKLIST_ITEM_COLUMNS).in('message_id', messageIds).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
-      supabase.from('chat_v2_quick_confirm_responses').select(QUICK_CONFIRM_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }),
+      supabase.from('chat_v2_attachments').select(ATTACHMENT_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }).limit(1000),
+      supabase.from('chat_v2_reactions').select(REACTION_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }).limit(1000),
+      supabase.from('chat_v2_poll_votes').select(POLL_VOTE_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }).limit(1000),
+      supabase.from('chat_v2_checklist_items').select(CHECKLIST_ITEM_COLUMNS).in('message_id', messageIds).order('sort_order', { ascending: true }).order('created_at', { ascending: true }).limit(1000),
+      supabase.from('chat_v2_quick_confirm_responses').select(QUICK_CONFIRM_COLUMNS).in('message_id', messageIds).order('created_at', { ascending: true }).limit(1000),
     ]);
     if (attachmentError) throw attachmentError;
     if (reactionError) throw reactionError;
@@ -809,7 +817,19 @@ export const chatV2Service = {
     cursor?: ChatV2MessageCursor,
     limit = CHAT_V2_PAGE_SIZE,
   ): Promise<ChatV2Message[]> {
-    if (!isSupabaseConfigured || !conversationId || !currentUserId) return [];
+    const page = await this.getMessagesPage(conversationId, currentUserId, cursor, limit);
+    return page.items;
+  },
+
+  async getMessagesPage(
+    conversationId: string,
+    currentUserId: string,
+    cursor?: ChatV2MessageCursor,
+    requestedLimit = CHAT_V2_PAGE_SIZE,
+  ): Promise<ChatV2MessagePage> {
+    if (!isSupabaseConfigured || !conversationId || !currentUserId) return { items: [] };
+
+    const limit = clampPageSize(requestedLimit, CHAT_V2_PAGE_SIZE, 100);
 
     let query = supabase
       .from('chat_v2_messages')
@@ -818,7 +838,7 @@ export const chatV2Service = {
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
-      .limit(limit);
+      .limit(limit + 1);
 
     if (cursor?.createdAt && cursor.id) {
       query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
@@ -828,7 +848,11 @@ export const chatV2Service = {
 
     const { data: messageRows, error: messageError } = await query;
     if (messageError) throw messageError;
-    return this.hydrateMessages([...(messageRows || [])].reverse(), currentUserId);
+    const page = takeCursorPage((messageRows || []) as any[], limit, row => ({ createdAt: row.created_at, id: row.id }));
+    return {
+      items: await this.hydrateMessages([...page.items].reverse(), currentUserId),
+      nextCursor: page.nextCursor,
+    };
   },
 
   async loadOlderMessages(

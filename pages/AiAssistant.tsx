@@ -35,6 +35,11 @@ interface AiConversation {
   createdAt: string;
 }
 
+const AI_CONVERSATION_SELECT = 'id,title,mode,created_at';
+const AI_MESSAGE_SELECT = 'id,role,content,sql_query,mode,sources,created_at,feedback_rating,metadata';
+const AI_CONVERSATION_HISTORY_LIMIT = 100;
+const AI_MESSAGE_HISTORY_LIMIT = 500;
+
 const MODE_CONFIG = {
   data: {
     icon: Database,
@@ -130,8 +135,10 @@ const AiAssistant: React.FC = () => {
   const loadConversations = async () => {
     let query = supabase
       .from('ai_conversations')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(AI_CONVERSATION_SELECT)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(AI_CONVERSATION_HISTORY_LIMIT);
     // Admin sees all, regular users only see their own
     if (user.role !== 'ADMIN') {
       query = query.eq('user_id', user.id);
@@ -143,10 +150,12 @@ const AiAssistant: React.FC = () => {
   const loadMessages = async (convId: string) => {
     const { data } = await supabase
       .from('ai_messages')
-      .select('*')
+      .select(AI_MESSAGE_SELECT)
       .eq('conversation_id', convId)
-      .order('created_at', { ascending: true });
-    if (data) setMessages(data.map(m => ({
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(AI_MESSAGE_HISTORY_LIMIT);
+    if (data) setMessages([...data].reverse().map(m => ({
       id: m.id,
       role: m.role,
       content: m.content,
