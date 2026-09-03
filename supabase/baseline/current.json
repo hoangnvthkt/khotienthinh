@@ -5,8 +5,6 @@
   "archivePath": "supabase/migrations_archive/pre_baseline_20260903",
   "archiveManifest": "supabase/baseline/2026-09-03/archived_migrations.sha256",
   "archiveManifestSha256": "c4b344c05053fb0259b7f16f93dc6fa3f59473834694133b0dd06d882cef62f4",
-  "allowedPostBaselineFiles": [
-    "20260903063821_perf02_query_indexes.sql"
-  ],
+  "allowedPostBaselineFiles": [],
   "forbidIncludeAll": true
 }
