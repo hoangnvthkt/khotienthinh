@@ -1,0 +1,18 @@
+{
+  "name": "baseline-vioo",
+  "branch_id": "057503dd-ee69-4ae8-aa0c-40b2b1a5019d",
+  "project_ref": "oleocfgevkkiysygfocs",
+  "parent_project_ref": "ftciqmqhmfvjtwoycswe",
+  "status": "MIGRATIONS_FAILED",
+  "preview_project_status": "ACTIVE_HEALTHY",
+  "with_data": false,
+  "persistent": false,
+  "applied_migration_count": 0,
+  "application_schemas": [
+    "public"
+  ],
+  "first_migration": "20260428090000_harden_workflows_assets_wms.sql",
+  "first_required_relation": "public.asset_location_stocks",
+  "first_required_relation_missing": true,
+  "root_cause": "The active history begins with a hardening migration that alters application tables before any active migration creates the base schema."
+}

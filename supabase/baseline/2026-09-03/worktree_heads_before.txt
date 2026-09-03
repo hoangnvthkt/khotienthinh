@@ -1,0 +1,20 @@
+worktree /Users/admin/khotienthinh
+HEAD 616ad845a7c06efb781e83fdccec91123d787be2
+branch refs/heads/feature/fix-audit-vioo
+
+worktree /Users/admin/khotienthinh/.worktrees/feat-safety-card-readiness
+HEAD 4ba8f8894ad2fe94335e1bc52b2a6a59d82784e5
+branch refs/heads/feat/safety-card-readiness
+
+worktree /Users/admin/khotienthinh/.worktrees/perf02-query-remediation
+HEAD 4f154ef619643d61df475cb20422d9981ee9d43a
+branch refs/heads/feature/perf02-query-remediation
+
+worktree /Users/admin/khotienthinh/.worktrees/request-approval-phase1
+HEAD c02c14ee05a657be2e0a079c6e0504fe2a9da1fa
+branch refs/heads/feature/request-approval-phase1
+
+worktree /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903
+HEAD 31de6f7cf09a5624739aa08d8fd6785a46eb0cba
+branch refs/heads/chore/supabase-cloud-baseline-20260903
+

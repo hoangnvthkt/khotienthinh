@@ -190,15 +190,15 @@ git commit -m "build(db): add Cloud baseline evidence tooling"
 - Consumes: root `.env`, production pooler URL, and preview credentials held only in process memory.
 - Produces: immutable non-secret evidence used by later gates.
 
-- [ ] **Step 1: Recheck freeze invariants**
+- [x] **Step 1: Recheck freeze invariants**
 
 Record UTC capture time, `origin/main` SHA, worktree heads, CLI/client/server versions, production history checksum, and schema fingerprint checksum. Abort if production history differs from 151 rows or a migration appears after `20260830081946` without explicit classification.
 
-- [ ] **Step 2: Export production evidence**
+- [x] **Step 2: Export production evidence**
 
 Use `psql` with `ON_ERROR_STOP=1` and deterministic CSV/JSON output. Export the full six-column migration history, remote versions, fingerprints, and configuration inventory. Never write a connection URL or credential to disk.
 
-- [ ] **Step 3: Diagnose the existing preview branch**
+- [x] **Step 3: Diagnose the existing preview branch**
 
 Record only sanitized metadata:
 
@@ -215,11 +215,11 @@ Record only sanitized metadata:
 
 Confirm the first active migration alters `public.asset_location_stocks` before any active migration creates that table. This identifies an incomplete bootstrap chain rather than a failed preview database.
 
-- [ ] **Step 4: Generate migration checksums and summary**
+- [x] **Step 4: Generate migration checksums and summary**
 
 Generate a sorted SHA-256 manifest for all 402 active SQL files and JSON recording 393 valid unique versions, 9 invalid filenames, 151 common versions, 242 local-only versions, and 0 remote-only versions.
 
-- [ ] **Step 5: Secret scan and commit evidence**
+- [x] **Step 5: Secret scan and commit evidence**
 
 ```bash
 rg -n -i 'postgres(ql)?://|eyJ[A-Za-z0-9_-]{20,}|jwt_secret|password=' supabase/baseline/2026-09-03
