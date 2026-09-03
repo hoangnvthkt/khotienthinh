@@ -27,4 +27,3 @@ export interface QueryAuditReport {
 
 export function analyzeSource(source: string, filePath: string): QueryFinding[];
 export function scanWorkspace(rootDir: string, policy?: { allowlist?: Array<Record<string, unknown>> }): QueryAuditReport;
-

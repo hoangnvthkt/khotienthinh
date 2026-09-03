@@ -9,4 +9,3 @@ export const loadUnsafeNamedRows = async () => supabase
   .from('requests')
   .select('id,created_date,status')
   .order('created_date', { ascending: false });
-

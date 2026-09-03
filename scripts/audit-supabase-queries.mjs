@@ -19,7 +19,6 @@ if (writePath) {
   mkdirSync(dirname(absolutePath), { recursive: true });
   writeFileSync(absolutePath, `${JSON.stringify(report, null, 2)}\n`);
 }
-
 if (args.includes('--summary') || !writePath) {
   process.stdout.write(`${JSON.stringify(report.summary, null, 2)}\n`);
 }
@@ -58,4 +57,3 @@ if (baselinePath) {
     }
   }
 }
-
