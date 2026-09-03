@@ -51,6 +51,7 @@ import {
     projectWeeklyProgressService,
 } from '../../lib/projectWeeklyProgressService';
 import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { applyImportedParentAssignments } from '../../lib/projectScheduleImport';
 
 interface GanttTabProps {
     constructionSiteId?: string;
@@ -102,6 +103,7 @@ const SCHEDULE_UPDATE_HEADERS = [
     'Khối lượng tạm tính',
     'Nhân công dự kiến',
     'Tiến độ (%)',
+    'Mã cha',
     'Ghi chú',
 ];
 
@@ -963,7 +965,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 { wch: 18 }, // Provisional quantity
                 { wch: 18 }, // Expected labor
                 { wch: 10 }, // Progress
-                { wch: 24 }, // Parent / note
+                { wch: 15 }, // Parent WBS
+                { wch: 24 }, // Note
             ];
             return sheet;
         };
@@ -983,6 +986,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 task.provisionalQuantity || 0,
                 task.resourceCount ?? 1,
                 task.progress || 0,
+                task.parentId ? tasks.find(item => item.id === task.parentId)?.wbsCode || '' : '',
                 task.notes || ''
             ];
         });
@@ -990,7 +994,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         const guideRows = [
             ['Sheet', 'Mục đích', 'Cột bắt buộc', 'Ghi chú'],
             [SCHEDULE_CREATE_SHEET, 'Nhập mới hạng mục tiến độ', 'Công việc (*), Bắt đầu KH (*), Kết thúc KH (*)', 'Mã WBS không được trùng với dữ liệu đang có. Mã cha nhập bằng Mã WBS của hạng mục cha.'],
-            [SCHEDULE_UPDATE_SHEET, 'Cập nhật hạng mục đang có theo WBS', 'Mã WBS', 'Hệ thống tìm hạng mục theo Mã WBS rồi cập nhật các ô có nhập dữ liệu. Để trống ô nào thì giữ nguyên ô đó. Đã được điền sẵn toàn bộ dữ liệu hiện tại của dự án.'],
+            [SCHEDULE_UPDATE_SHEET, 'Cập nhật hạng mục đang có theo WBS', 'Mã WBS', 'Hệ thống tìm hạng mục theo Mã WBS rồi cập nhật các ô có nhập dữ liệu. Nhập Mã cha để chuyển hạng mục vào dưới cha đó; để trống Mã cha thì giữ nguyên.'],
             ['Ngày', 'Định dạng ngày', 'yyyy-mm-dd hoặc dd/mm/yyyy', 'Ví dụ: 2026-05-01 hoặc 01/05/2026.'],
             ['Số', 'KL tạm tính, Nhân công dự kiến, Tiến độ (%)', 'Số không âm', 'Tiến độ nằm trong khoảng 0-100.'],
         ];
@@ -1051,6 +1055,22 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
             else if (!errors[idx] && rawProgressValue !== '' && (!Number.isFinite(rawProgress) || rawProgress < 0 || rawProgress > 100)) errors[idx] = 'Tiến độ không hợp lệ';
             if (wbs && !errors[idx]) seenWbs.add(wbs.toLowerCase());
         });
+        if (mode === 'update') {
+            const assignments = data.flatMap(row => {
+                const wbs = getExcelText(row, ['Mã WBS']);
+                const task = tasks.find(item => item.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
+                const parentWbs = getExcelText(row, ['Mã cha']);
+                return task && parentWbs ? [{ taskId: task.id, parentWbs }] : [];
+            });
+            const parentResult = applyImportedParentAssignments(tasks, assignments);
+            data.forEach((row, idx) => {
+                const wbs = getExcelText(row, ['Mã WBS']);
+                const task = tasks.find(item => item.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
+                if (!errors[idx] && task && parentResult.errors[task.id]) {
+                    errors[idx] = parentResult.errors[task.id];
+                }
+            });
+        }
         return errors;
     };
 
@@ -1150,7 +1170,19 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 }
                 const importedById = new Map(updatedTasks.map(task => [task.id, task]));
                 const rawNextTasks = tasks.map(task => importedById.get(task.id) || task);
-                const nextTasks = deriveProjectTaskProgress(rawNextTasks, dailyLogs);
+                const parentAssignments = validRows.flatMap(row => {
+                    const wbs = getExcelText(row, ['Mã WBS']);
+                    const task = rawNextTasks.find(item => item.wbsCode?.trim().toLowerCase() === wbs.toLowerCase());
+                    const parentWbs = getExcelText(row, ['Mã cha']);
+                    return task && parentWbs ? [{ taskId: task.id, parentWbs }] : [];
+                });
+                const parentResult = applyImportedParentAssignments(rawNextTasks, parentAssignments);
+                if (Object.keys(parentResult.errors).length > 0) {
+                    const firstError = Object.values(parentResult.errors)[0];
+                    toast.error('Không thể cập nhật cấu trúc hạng mục', firstError);
+                    return;
+                }
+                const nextTasks = deriveProjectTaskProgress(parentResult.tasks, dailyLogs);
                 const changedTasks = nextTasks.filter(next => {
                     const previous = tasks.find(task => task.id === next.id);
                     return !!previous && JSON.stringify(toGanttTaskChange(next, previous.rowVersion ?? 0))

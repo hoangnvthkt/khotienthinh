@@ -50,6 +50,20 @@ const deliveryBatch = (id: string, plannedQty: number, deliveryUnitPrice: number
 });
 
 describe('purchaseOrderAmount', () => {
+  it('uses the edited PO unit price for a single request delivery before the schedule is saved', () => {
+    const amount = getPurchaseOrderFinancialSummary({
+      ...po,
+      purchaseMode: 'single',
+      items: [{
+        ...po.items[0],
+        qty: 6,
+        unitPrice: 9_000_000,
+      }],
+    }, [deliveryBatch('batch-1', 6, 381_818)]);
+
+    expect(amount.netAmount).toBe(54_000_000);
+  });
+
   it('uses active delivery batches for the visible PO amount after a planned batch is removed', () => {
     const amount = getPurchaseOrderDisplayAmount(po, [
       deliveryBatch('batch-1', 10, 100000),
