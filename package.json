@@ -43,7 +43,7 @@
     "xlsx": "0.18.5"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.14.0",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^5.0.0",
