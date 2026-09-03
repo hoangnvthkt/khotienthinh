@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "allowedClassifications": [
+    "page",
+    "all_pages",
+    "detail",
+    "catalog",
+    "count",
+    "mutation_return"
+  ],
+  "allowlist": []
+}
+

@@ -13,6 +13,8 @@
     "lint": "tsc",
     "check:supabase-migrations": "node scripts/check-supabase-migration-baseline.mjs",
     "test": "vitest run",
+    "audit:supabase-queries": "node scripts/audit-supabase-queries.mjs --summary",
+    "check:supabase-queries": "node scripts/audit-supabase-queries.mjs --check docs/performance/supabase-query-inventory.json",
     "preview": "vite preview",
     "qa:pwa": "npm run lint && npm run build && node scripts/verify-pwa-build.mjs",
     "smoke:request": "npx --yes supabase@2.110.0 db query --linked --file supabase/tests/request_approval_phase1_smoke.sql",
