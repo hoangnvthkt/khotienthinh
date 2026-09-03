@@ -124,4 +124,3 @@ Rollback consists of disabling the domain flag or reverting its isolated fronten
 - Focused domain tests, full Vitest, TypeScript, and production build pass.
 - Cloud smoke tests confirm first-page parity, deep-link detail loading, and complete export/calculation behavior.
 - Supabase Security/Performance Advisors show no new error-level finding caused by this work.
-
