@@ -131,7 +131,7 @@ export default function PurchaseDeliveryBatchEditor({
 
       <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:grid-cols-5">
         <div>
-          <div className="text-[10px] font-black uppercase text-slate-400">Nhu cầu MR</div>
+          <div className="text-[10px] font-black uppercase text-slate-400">Nhu cầu Công trường</div>
           <div className="mt-0.5 font-black text-slate-800">{summary.orderedQty.toLocaleString('vi-VN')}</div>
         </div>
         <div>
