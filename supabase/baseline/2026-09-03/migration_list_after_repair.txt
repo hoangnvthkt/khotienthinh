@@ -1,0 +1,10 @@
+Connecting to remote database...
+
+
+   Local          | Remote         | Time (UTC)
+  ----------------|----------------|---------------------
+   20260903063714 | 20260903063714 | 2026-09-03 06:37:14
+   20260903063821 |                | 2026-09-03 06:38:21
+
+A new version of Supabase CLI is available: v2.115.0 (currently installed v2.95.6)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

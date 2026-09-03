@@ -1,0 +1,40 @@
+{
+  "completed_at": "2026-09-03T08:13:32Z",
+  "production_project_ref": "ftciqmqhmfvjtwoycswe",
+  "production_project_status": "ACTIVE_HEALTHY",
+  "origin_main_at_cutover": "3eda49e",
+  "operation": "migration_history_repair_only",
+  "baseline_sql_executed_on_production": false,
+  "before": {
+    "migration_rows": 151,
+    "first_version": "20260428090000",
+    "last_version": "20260830081946",
+    "history_csv_sha256": "87fdac4f9126c04e298185ff4da353aae17e4816bba357934c9103e754077902",
+    "schema_fingerprint_sha256": "fba1645de106bfeb879669a7ee945991bd6a941cbc05c909538e3165b1124541"
+  },
+  "repair": {
+    "captured_versions_marked_reverted": 151,
+    "baseline_version_marked_applied": "20260903063714",
+    "baseline_name": "cloud_schema_baseline_v2",
+    "baseline_statement_count": 9766
+  },
+  "after": {
+    "migration_rows": 1,
+    "migration_versions": [
+      "20260903063714"
+    ],
+    "db_push_dry_run_pending": [
+      "20260903063821_perf02_query_indexes.sql"
+    ],
+    "schema_fingerprint_sha256": "fba1645de106bfeb879669a7ee945991bd6a941cbc05c909538e3165b1124541",
+    "schema_fingerprint_diff_lines": 0,
+    "configuration_diff_lines": 0,
+    "active_cron_jobs": 5
+  },
+  "rollback": {
+    "script": "supabase/baseline/2026-09-03/rollback_history.sh",
+    "dry_run_preflight_passed": true,
+    "captured_csv_temp_restore_probe_rows": 151,
+    "preserves_all_six_ledger_columns": true
+  }
+}
