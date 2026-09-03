@@ -3,6 +3,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Role } from '../types';
 import { projectStaffService } from './projectStaffService';
 import { hrmSensitiveProjectionService } from './hrmSensitiveProjectionService';
+import { clampPageSize, takeCursorPage, type CursorPage } from './supabasePagination';
 import {
   DEFAULT_ALERT_RULES,
   getDefaultAlertRule,
@@ -42,10 +43,7 @@ export interface NotificationCursor {
   id: string;
 }
 
-export interface NotificationListPage {
-  items: AppNotification[];
-  nextCursor?: NotificationCursor;
-}
+export type NotificationListPage = CursorPage<AppNotification, NotificationCursor>;
 
 const UNREAD_DISPLAY_LIMIT = 99;
 const UNREAD_QUERY_LIMIT = UNREAD_DISPLAY_LIMIT + 1;
@@ -572,17 +570,15 @@ export const notificationService = {
     limit?: number;
     cursor?: NotificationCursor;
   } = {}): Promise<NotificationListPage> {
-    const limit = Math.min(Math.max(options.limit || 50, 1), 120);
+    const limit = clampPageSize(options.limit, 50, 120);
 
     if (!userId) {
       const { data, error } = await buildNotificationQuery(limit, options.cursor).is('user_id', null);
       if (error) throw error;
-      const rows = data || [];
-      const pageRows = rows.slice(0, limit);
-      const last = pageRows[pageRows.length - 1];
+      const page = takeCursorPage(data || [], limit, row => ({ createdAt: row.created_at, id: row.id }));
       return {
-        items: pageRows.map(toCamel),
-        nextCursor: rows.length > limit && last ? { createdAt: last.created_at, id: last.id } : undefined,
+        items: page.items.map(toCamel),
+        nextCursor: page.nextCursor,
       };
     }
 
@@ -595,12 +591,11 @@ export const notificationService = {
 
     const mergedRows = dedupeRowsById([...(userResult.data || []), ...(globalResult.data || [])])
       .sort(compareNotificationRows);
-    const pageRows = mergedRows.slice(0, limit);
-    const last = pageRows[pageRows.length - 1];
+    const page = takeCursorPage(mergedRows, limit, row => ({ createdAt: row.created_at, id: row.id }));
 
     return {
-      items: pageRows.map(toCamel),
-      nextCursor: mergedRows.length > limit && last ? { createdAt: last.created_at, id: last.id } : undefined,
+      items: page.items.map(toCamel),
+      nextCursor: page.nextCursor,
     };
   },
 

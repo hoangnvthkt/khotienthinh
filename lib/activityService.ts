@@ -1,15 +1,13 @@
 import type { GlobalActivity } from '../types';
 import { supabase } from './supabase';
+import { clampPageSize, takeCursorPage, type CursorPage } from './supabasePagination';
 
 export interface ActivityCursor {
   timestamp: string;
   id: string;
 }
 
-export interface ActivityListPage {
-  items: GlobalActivity[];
-  nextCursor?: ActivityCursor;
-}
+export type ActivityListPage = CursorPage<GlobalActivity, ActivityCursor>;
 
 const ACTIVITY_SELECT = 'id,type,action,description,status,timestamp,user_id,user_name,user_avatar,warehouse_id';
 
@@ -32,7 +30,7 @@ export const activityService = {
     cursor?: ActivityCursor;
     warehouseId?: string | null;
   } = {}): Promise<ActivityListPage> {
-    const limit = Math.min(Math.max(options.limit || 50, 1), 100);
+    const limit = clampPageSize(options.limit);
     let query = supabase
       .from('activities')
       .select(ACTIVITY_SELECT)
@@ -51,13 +49,11 @@ export const activityService = {
     const { data, error } = await query;
     if (error) throw error;
 
-    const rows = data || [];
-    const pageRows = rows.slice(0, limit);
-    const last = pageRows[pageRows.length - 1];
+    const page = takeCursorPage(data || [], limit, row => ({ timestamp: row.timestamp, id: row.id }));
 
     return {
-      items: pageRows.map(mapActivityFromDb),
-      nextCursor: rows.length > limit && last ? { timestamp: last.timestamp, id: last.id } : undefined,
+      items: page.items.map(mapActivityFromDb),
+      nextCursor: page.nextCursor,
     };
   },
 
