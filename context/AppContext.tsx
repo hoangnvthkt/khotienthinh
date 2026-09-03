@@ -55,6 +55,13 @@ import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
 import { hrmSensitiveProjectionService } from '../lib/hrmSensitiveProjectionService';
 import { mapEmployeeFromDb } from '../lib/employeeSelfService';
 import { upsertRowsById } from '../lib/collectionState';
+import {
+  mapWmsTransactionFromDb as mapTransactionFromDb,
+  wmsTransactionListService,
+  type TransactionCursor,
+} from '../lib/wmsTransactionListService';
+import { fetchAllPages } from '../lib/supabasePagination';
+import { isPerf02RequestPagingEnabled, isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 
@@ -309,33 +316,19 @@ const fetchAllInventoryItemRows = async (): Promise<any[] | null> => {
   }
 };
 
-const mapTransactionFromDb = (t: any): Transaction => ({
-  ...t,
-  attachments: Array.isArray(t.attachments) ? t.attachments : [],
-  items: Array.isArray(t.items)
-    ? t.items.map((item: any) => ({
-      ...item,
-      orderedQty: item.orderedQty ?? item.ordered_qty,
-      varianceReason: item.varianceReason ?? item.variance_reason,
-    }))
-    : [],
-  sourceWarehouseId: t.source_warehouse_id,
-  targetWarehouseId: t.target_warehouse_id,
-  supplierId: t.supplier_id,
-  requesterId: t.requester_id,
-  createdBy: t.created_by ?? t.createdBy ?? null,
-  updatedBy: t.updated_by ?? t.updatedBy ?? null,
-  businessPartnerId: t.business_partner_id ?? t.businessPartnerId ?? null,
-  businessPartnerNameSnapshot: t.business_partner_name_snapshot ?? t.businessPartnerNameSnapshot ?? null,
-  approvedAt: t.approved_at ?? t.approvedAt ?? null,
-  approvalNote: t.approval_note ?? t.approvalNote ?? null,
-  businessEventType: t.business_event_type ?? t.businessEventType ?? null,
-  businessEventReason: t.business_event_reason ?? t.businessEventReason ?? null,
-  approverId: t.approver_id,
-  sourceType: t.source_type ?? t.sourceType ?? null,
-  sourceId: t.source_id ?? t.sourceId ?? null,
-  relatedRequestId: t.related_request_id,
-  pendingItems: t.pending_items,
+const fetchLegacyWmsTransactions = () => fetchAllPages<Transaction, TransactionCursor>({
+  pageSize: 100,
+  maxRows: 10_000,
+  loadPage: cursor => wmsTransactionListService.listPage({ limit: 100, cursor }),
+});
+
+const fetchLegacyWmsRequests = () => fetchAllPages<MaterialRequest, string>({
+  pageSize: 500,
+  maxRows: 10_000,
+  loadPage: async cursor => {
+    const page = await materialRequestService.listWmsPage({ limit: 500, cursor });
+    return { items: page.rows, nextCursor: page.nextCursor || undefined };
+  },
 });
 
 const mapWarehouseFromDb = (w: any): Warehouse => ({
@@ -828,9 +821,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [setActiveRealtimeModules]);
 
   // ==================== LAZY MODULE DATA LOADING ====================
-  const fetchTableHelper = async (table: string, query: any = supabase.from(table).select('*')) => {
+  const fetchTableHelper = async (table: string, query?: any) => {
     try {
-      const { data, error } = await query;
+      const resolvedQuery = query ?? supabase.from(table).select('*');
+      const { data, error } = await resolvedQuery;
       if (error) {
         if (isTransientSupabaseError(error)) showSystemSlowMessage();
         console.warn(`Error fetching ${table}:`, error.message);
@@ -900,12 +894,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             fetchAllInventoryItemRows(),
             fetchTableHelper('warehouses'),
             fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
-            fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+            isPerf02RequestPagingEnabled ? Promise.resolve(null) : fetchLegacyWmsRequests(),
           ]);
           setItems(requireModuleData(module, 'items', itemsData).map(mapInventoryItemFromDb));
           setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
           setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
-          setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
+          if (reqData) setRequests(reqData);
         };
 
         if (module === 'workflow-people') {
@@ -972,8 +966,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             fetchTableHelper('warehouses'),
             fetchTableHelper('warehouse_types', supabase.from('warehouse_types').select('*').order('sort_order', { ascending: true }).order('name', { ascending: true })),
             fetchTableHelper('suppliers'),
-            fetchTableHelper('transactions', supabase.from('transactions').select('*').order('date', { ascending: false })),
-            fetchTableHelper('requests', supabase.from('requests').select('*').order('created_date', { ascending: false })),
+            isPerf02WmsPagingEnabled ? Promise.resolve(null) : fetchLegacyWmsTransactions(),
+            isPerf02RequestPagingEnabled ? Promise.resolve(null) : fetchLegacyWmsRequests(),
             activityService.listPage({ limit: 50, warehouseId: user.assignedWarehouseId || undefined }).catch((err) => {
               logApiError('activities', err);
               return { items: [] };
@@ -987,8 +981,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setWarehouses(requireModuleData(module, 'warehouses', whData).map(mapWarehouseFromDb));
           setWarehouseTypes(requireModuleData(module, 'warehouse_types', whTypeData).map(mapWarehouseTypeFromDb));
           if (supData) setSuppliers(supData.map((s: any) => ({ ...s, contactPerson: s.contact_person })));
-          setTransactions(requireModuleData(module, 'transactions', txData).map(mapTransactionFromDb));
-          setRequests(requireModuleData(module, 'requests', reqData).map(mapMaterialRequestFromDb));
+          if (txData) setTransactions(txData);
+          if (reqData) setRequests(reqData);
           setActivities(actPage.items);
           if (catData) setCategories(catData);
           if (unitData) setUnits(unitData);

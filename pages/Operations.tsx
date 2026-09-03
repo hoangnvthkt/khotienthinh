@@ -33,6 +33,8 @@ import { buildWmsImportSupplySource, type WmsImportSupplySourceSelection } from 
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { purchasePackageService } from '../lib/purchasePackageService';
+import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
+import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -89,7 +91,7 @@ const getHistoryColumnKey = (tx: Transaction): HistoryColumnKey => {
 
 const Operations: React.FC = () => {
   const location = useLocation();
-  const { items, warehouses, suppliers, users, user, transactions, addTransaction, updateTransactionStatus, clearTransactionHistory } = useApp();
+  const { items, warehouses, suppliers, users, user, transactions: contextTransactions, addTransaction, updateTransactionStatus, clearTransactionHistory, lastRealtimeEvent } = useApp();
   useModuleData('wms');
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
@@ -99,6 +101,58 @@ const Operations: React.FC = () => {
   const [approvalSearch, setApprovalSearch] = useState('');
   const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('table');
   const openedStateTransactionRef = useRef<string | null>(null);
+  const [pagedTransactions, setPagedTransactions] = useState<Transaction[]>([]);
+  const [transactionCursor, setTransactionCursor] = useState<TransactionCursor>();
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [transactionLoadError, setTransactionLoadError] = useState<string | null>(null);
+  const transactions = useMemo(() => {
+    if (!isPerf02WmsPagingEnabled) return contextTransactions;
+    const byId = new Map(pagedTransactions.map(transaction => [transaction.id, transaction]));
+    contextTransactions.forEach(transaction => byId.set(transaction.id, transaction));
+    return [...byId.values()].sort((left, right) => {
+      const byDate = new Date(right.date).getTime() - new Date(left.date).getTime();
+      return byDate || right.id.localeCompare(left.id);
+    });
+  }, [contextTransactions, pagedTransactions]);
+
+  useEffect(() => {
+    if (!isPerf02WmsPagingEnabled) return;
+    let cancelled = false;
+    setIsLoadingTransactions(true);
+    setTransactionLoadError(null);
+    wmsTransactionListService.listPage({ limit: 50 })
+      .then(page => {
+        if (cancelled) return;
+        setPagedTransactions(page.items);
+        setTransactionCursor(page.nextCursor);
+      })
+      .catch(error => {
+        if (!cancelled) setTransactionLoadError(getApiErrorMessage(error, 'Không thể tải danh sách phiếu kho.'));
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingTransactions(false);
+      });
+    return () => { cancelled = true; };
+  }, [lastRealtimeEvent]);
+
+  const loadMoreTransactions = async () => {
+    if (!isPerf02WmsPagingEnabled || !transactionCursor || isLoadingTransactions) return;
+    setIsLoadingTransactions(true);
+    setTransactionLoadError(null);
+    try {
+      const page = await wmsTransactionListService.listPage({ limit: 50, cursor: transactionCursor });
+      setPagedTransactions(current => {
+        const byId = new Map(current.map(transaction => [transaction.id, transaction]));
+        page.items.forEach(transaction => byId.set(transaction.id, transaction));
+        return [...byId.values()];
+      });
+      setTransactionCursor(page.nextCursor);
+    } catch (error) {
+      setTransactionLoadError(getApiErrorMessage(error, 'Không thể tải thêm phiếu kho.'));
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
 
   useEffect(() => {
     if (location.state?.tab) {
@@ -109,16 +163,20 @@ const Operations: React.FC = () => {
   useEffect(() => {
     const transactionId = location.state?.transactionId;
     if (!transactionId || openedStateTransactionRef.current === transactionId) return;
-    const tx = transactions.find(item => item.id === transactionId);
-    if (!tx) return;
-    openedStateTransactionRef.current = transactionId;
-    setActiveTab(location.state?.tab || 'PENDING');
-    if (tx.status === TransactionStatus.COMPLETED || tx.status === TransactionStatus.CANCELLED) {
-      setOpsSubTab('history');
-    } else {
-      setOpsSubTab('approvals');
-    }
-    void openTransactionDetails(tx);
+    const loaded = transactions.find(item => item.id === transactionId);
+    const open = async () => {
+      const tx = loaded || (isPerf02WmsPagingEnabled ? await wmsTransactionListService.getById(transactionId) : null);
+      if (!tx) return;
+      openedStateTransactionRef.current = transactionId;
+      setActiveTab(location.state?.tab || 'PENDING');
+      if (tx.status === TransactionStatus.COMPLETED || tx.status === TransactionStatus.CANCELLED) {
+        setOpsSubTab('history');
+      } else {
+        setOpsSubTab('approvals');
+      }
+      await openTransactionDetails(tx);
+    };
+    void open().catch(error => toast.error('Không thể mở phiếu kho', getApiErrorMessage(error)));
   }, [location.state, transactions]);
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isItemSelectOpen, setItemSelectOpen] = useState(false);
@@ -130,7 +188,10 @@ const Operations: React.FC = () => {
   const [showConfirmTransfer, setShowConfirmTransfer] = useState(false);
   const [viewingHistoryTx, setViewingHistoryTx] = useState<Transaction | null>(null);
 
-  async function openTransactionDetails(tx: Transaction) {
+  async function openTransactionDetails(summary: Transaction) {
+    const tx = isPerf02WmsPagingEnabled
+      ? await wmsTransactionListService.getById(summary.id) || summary
+      : summary;
     if (tx.sourceType !== 'po_delivery_batch') {
       setViewingHistoryTx(tx);
       return;
@@ -1864,6 +1925,21 @@ const Operations: React.FC = () => {
                     pageSize={histPageSize}
                     onPageSizeChange={histSetPageSize}
                   />
+                  {isPerf02WmsPagingEnabled && (transactionCursor || transactionLoadError) && (
+                    <div className="flex flex-col items-center gap-2">
+                      {transactionLoadError && <p className="text-xs font-semibold text-rose-600">{transactionLoadError}</p>}
+                      {transactionCursor && (
+                        <button
+                          type="button"
+                          onClick={() => void loadMoreTransactions()}
+                          disabled={isLoadingTransactions}
+                          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {isLoadingTransactions ? 'Đang tải thêm...' : 'Tải thêm dữ liệu từ Cloud'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

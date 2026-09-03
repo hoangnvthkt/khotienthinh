@@ -38,6 +38,8 @@ import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 import { getMaterialRequestNextAction } from '../lib/erpWorkflow';
 import { EmptyState, NextActionCard, PageHeader, StatusBadge } from '../components/erp';
 import Pagination from '../components/Pagination';
+import { isPerf02RequestPagingEnabled } from '../lib/featureFlags';
+import { materialRequestService } from '../lib/materialRequestService';
 
 const RequestModal = React.lazy(() => import('../components/RequestModal'));
 
@@ -66,7 +68,7 @@ const formatDateOnly = (value?: string | null) => {
 };
 
 const RequestWorkflow: React.FC = () => {
-  const { requests, warehouses, user, users, items } = useApp();
+  const { requests: contextRequests, warehouses, user, users, items, lastRealtimeEvent } = useApp();
   useModuleData('wms');
 
   const [reqSubTab, setReqSubTab] = useState<'actions' | 'all'>('actions');
@@ -83,6 +85,58 @@ const RequestWorkflow: React.FC = () => {
   const [isModalOpen, setModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);
   const [fulfillmentSummaries, setFulfillmentSummaries] = useState<Record<string, MaterialRequestFulfillmentSummary>>({});
+  const [pagedRequests, setPagedRequests] = useState<MaterialRequest[]>([]);
+  const [requestCursor, setRequestCursor] = useState<string | null>(null);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [requestLoadError, setRequestLoadError] = useState<string | null>(null);
+  const requests = useMemo(() => {
+    if (!isPerf02RequestPagingEnabled) return contextRequests;
+    const byId = new Map(pagedRequests.map(request => [request.id, request]));
+    contextRequests.forEach(request => byId.set(request.id, request));
+    return [...byId.values()].sort((left, right) => {
+      const byDate = new Date(right.createdDate).getTime() - new Date(left.createdDate).getTime();
+      return byDate || right.id.localeCompare(left.id);
+    });
+  }, [contextRequests, pagedRequests]);
+
+  useEffect(() => {
+    if (!isPerf02RequestPagingEnabled) return;
+    let cancelled = false;
+    setIsLoadingRequests(true);
+    setRequestLoadError(null);
+    materialRequestService.listWmsPage({ limit: 50 })
+      .then(page => {
+        if (cancelled) return;
+        setPagedRequests(page.rows);
+        setRequestCursor(page.nextCursor);
+      })
+      .catch(error => {
+        if (!cancelled) setRequestLoadError(error instanceof Error ? error.message : 'Không thể tải danh sách đề xuất vật tư.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingRequests(false);
+      });
+    return () => { cancelled = true; };
+  }, [lastRealtimeEvent]);
+
+  const loadMoreRequests = async () => {
+    if (!isPerf02RequestPagingEnabled || !requestCursor || isLoadingRequests) return;
+    setIsLoadingRequests(true);
+    setRequestLoadError(null);
+    try {
+      const page = await materialRequestService.listWmsPage({ limit: 50, cursor: requestCursor });
+      setPagedRequests(current => {
+        const byId = new Map(current.map(request => [request.id, request]));
+        page.rows.forEach(request => byId.set(request.id, request));
+        return [...byId.values()];
+      });
+      setRequestCursor(page.nextCursor);
+    } catch (error) {
+      setRequestLoadError(error instanceof Error ? error.message : 'Không thể tải thêm đề xuất vật tư.');
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1025,6 +1079,21 @@ const RequestWorkflow: React.FC = () => {
               pageSize={reqPageSize}
               onPageSizeChange={reqSetPageSize}
             />
+            {isPerf02RequestPagingEnabled && (requestCursor || requestLoadError) && (
+              <div className="flex flex-col items-center gap-2">
+                {requestLoadError && <p className="text-xs font-semibold text-rose-600">{requestLoadError}</p>}
+                {requestCursor && (
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreRequests()}
+                    disabled={isLoadingRequests}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {isLoadingRequests ? 'Đang tải thêm...' : 'Tải thêm đề xuất từ Cloud'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -13,6 +13,7 @@ import {
   TransactionStatus,
 } from '../types';
 import { materialRequestBoqLineSnapshotService } from './materialRequestBoqLineSnapshotService';
+import { decodeCursor, encodeCursor } from './supabasePagination';
 
 const EVENT_TABLE = 'material_request_events';
 const DEFAULT_PROJECT_REQUEST_PAGE_SIZE = 500;
@@ -66,10 +67,9 @@ type MaterialRequestProcurementDemandRow = {
 const normalizePageLimit = (limit?: number | null): number =>
   Math.max(1, Math.min(Math.floor(Number(limit || DEFAULT_PROJECT_REQUEST_PAGE_SIZE)), 1000));
 
-const parseOffsetCursor = (cursor?: string | null): number => {
-  const offset = Number(cursor || 0);
-  return Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
-};
+type ProjectRequestCursor = { createdDate: string; id: string };
+
+const PROJECT_REQUEST_LIST_SELECT = 'id,code,title,site_warehouse_id,source_warehouse_id,requester_id,status,items,created_date,expected_date,note,logs,fulfillment_mode,override_reason,related_transaction_id,project_id,construction_site_id,request_origin,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,workflow_step,workflow_step_started_at,workflow_step_due_at,workflow_step_sla_hours,workflow_step_actor_user_id,workflow_instance_id,workflow_subject_id,workflow_template_id';
 
 export interface MaterialRequestEventCursor {
   createdAt: string;
@@ -132,30 +132,69 @@ const listProjectRequestsPage = async (input: {
 }): Promise<MaterialRequestListPage> => {
   if (!input.projectId) return { rows: [], nextCursor: null, hasMore: false };
   const limit = normalizePageLimit(input.limit);
-  const offset = parseOffsetCursor(input.cursor);
+  const cursor = input.cursor ? decodeCursor<ProjectRequestCursor>(input.cursor) : null;
 
   let query = supabase
     .from('requests')
-    .select('*')
+    .select(PROJECT_REQUEST_LIST_SELECT)
     .eq('request_origin', 'project')
     .eq('project_id', input.projectId)
     .order('created_date', { ascending: false })
     .order('id', { ascending: false })
-    .range(offset, offset + limit);
+    .limit(limit + 1);
 
   if (input.constructionSiteId) {
     query = query.eq('construction_site_id', input.constructionSiteId);
+  }
+  if (cursor?.createdDate && cursor.id) {
+    query = query.or(`created_date.lt.${cursor.createdDate},and(created_date.eq.${cursor.createdDate},id.lt.${cursor.id})`);
   }
 
   const { data, error } = await query;
   if (error) throw error;
 
-  const rows = (data || []).slice(0, limit).map(mapMaterialRequestFromDb);
+  const pageRows = (data || []).slice(0, limit);
+  const rows = pageRows.map(mapMaterialRequestFromDb);
   const hasMore = (data || []).length > limit;
+  const last = pageRows[pageRows.length - 1];
   return {
     rows,
     hasMore,
-    nextCursor: hasMore ? String(offset + limit) : null,
+    nextCursor: hasMore && last
+      ? encodeCursor({ createdDate: last.created_date, id: last.id })
+      : null,
+  };
+};
+
+const listWmsRequestsPage = async (input: {
+  limit?: number | null;
+  cursor?: string | null;
+} = {}): Promise<MaterialRequestListPage> => {
+  const limit = normalizePageLimit(input.limit);
+  const cursor = input.cursor ? decodeCursor<ProjectRequestCursor>(input.cursor) : null;
+  let query = supabase
+    .from('requests')
+    .select(PROJECT_REQUEST_LIST_SELECT)
+    .eq('request_origin', 'wms')
+    .order('created_date', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit + 1);
+
+  if (cursor?.createdDate && cursor.id) {
+    query = query.or(`created_date.lt.${cursor.createdDate},and(created_date.eq.${cursor.createdDate},id.lt.${cursor.id})`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  const pageRows = (data || []).slice(0, limit);
+  const last = pageRows[pageRows.length - 1];
+  const hasMore = (data || []).length > limit;
+  return {
+    rows: pageRows.map(mapMaterialRequestFromDb),
+    hasMore,
+    nextCursor: hasMore && last
+      ? encodeCursor({ createdDate: last.created_date, id: last.id })
+      : null,
   };
 };
 
@@ -284,6 +323,10 @@ export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
 });
 
 export const materialRequestService = {
+  listWmsPage(input: { limit?: number | null; cursor?: string | null } = {}) {
+    return listWmsRequestsPage(input);
+  },
+
   async getAvailableStock(input: {
     projectId: string;
     constructionSiteId?: string | null;

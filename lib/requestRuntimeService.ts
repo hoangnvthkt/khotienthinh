@@ -6,6 +6,7 @@ import type {
   RequestTemplateFieldSchema,
 } from '../types';
 import { supabase } from './supabase';
+import { clampPageSize } from './supabasePagination';
 
 export interface SubmitRequestInput {
   requestTemplateVersionId: string;
@@ -413,7 +414,7 @@ export const requestRuntimeService = {
 
     const result = await run<unknown>('list_request_instances', {
       p_filters: pFilters,
-      p_limit: filters.limit,
+      p_limit: clampPageSize(filters.limit, 40, 100),
     });
     if (!isListPage(result)) {
       throw new Error('list_request_instances trả về dữ liệu không hợp lệ.');

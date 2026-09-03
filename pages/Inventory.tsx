@@ -25,6 +25,7 @@ import { extractPurchaseDeliveryToken, PURCHASE_DELIVERY_QR_PARAM } from '../lib
 import { extractFulfillmentBatchToken, FULFILLMENT_BATCH_QR_PARAM } from '../lib/fulfillmentBatchQr';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import { purchasePackageService } from '../lib/purchasePackageService';
+import { materialRequestService } from '../lib/materialRequestService';
 import { formatInventoryQuantity } from '../lib/inventoryNumberFormat';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import {
@@ -204,7 +205,8 @@ const Inventory: React.FC = () => {
           toast.error('Không tìm thấy phiếu xuất', 'Mã QR không phải phiếu xuất kho nội bộ hợp lệ.');
           return;
         }
-        const request = requests.find(item => item.id === batch.materialRequestId);
+        const request = requests.find(item => item.id === batch.materialRequestId)
+          || await materialRequestService.getById(batch.materialRequestId);
         if (!request) {
           toast.error('Không tìm thấy đề xuất', 'Phiếu xuất tồn tại nhưng chưa tải được phiếu đề xuất liên quan.');
           return;

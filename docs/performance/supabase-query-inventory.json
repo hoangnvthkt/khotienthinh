@@ -1,11 +1,11 @@
 {
   "version": 1,
   "summary": {
-    "findings": 775,
-    "errors": 775,
-    "wildcardLists": 361,
-    "missingResultPolicies": 414,
-    "unclassified": 740
+    "findings": 768,
+    "errors": 768,
+    "wildcardLists": 357,
+    "missingResultPolicies": 411,
+    "unclassified": 734
   },
   "findings": [
     {
@@ -113,7 +113,7 @@
     {
       "fingerprint": "32794a1fb7a0c61bcf6f",
       "file": "context/AppContext.tsx",
-      "line": 291,
+      "line": 298,
       "table": "items",
       "projection": "*",
       "modifiers": [
@@ -131,7 +131,7 @@
     {
       "fingerprint": "5f3d1385906e24149fbe",
       "file": "context/AppContext.tsx",
-      "line": 831,
+      "line": 826,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -146,7 +146,7 @@
     {
       "fingerprint": "6c144e793399dfc9550b",
       "file": "context/AppContext.tsx",
-      "line": 831,
+      "line": 826,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -161,7 +161,7 @@
     {
       "fingerprint": "7ed93a46218a0bdcaabd",
       "file": "context/AppContext.tsx",
-      "line": 902,
+      "line": 896,
       "table": "warehouse_types",
       "projection": "*",
       "modifiers": [
@@ -177,40 +177,8 @@
     {
       "fingerprint": "b350f83fc3cc0fdb642d",
       "file": "context/AppContext.tsx",
-      "line": 902,
+      "line": 896,
       "table": "warehouse_types",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "bdcceecb53182ca5dc67",
-      "file": "context/AppContext.tsx",
-      "line": 903,
-      "table": "requests",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "c1b39a831718e936fe76",
-      "file": "context/AppContext.tsx",
-      "line": 903,
-      "table": "requests",
       "projection": "*",
       "modifiers": [
         "from",
@@ -225,7 +193,7 @@
     {
       "fingerprint": "d2142d7c6c679499193e",
       "file": "context/AppContext.tsx",
-      "line": 973,
+      "line": 967,
       "table": "warehouse_types",
       "projection": "*",
       "modifiers": [
@@ -241,72 +209,8 @@
     {
       "fingerprint": "9a405214f4b057971306",
       "file": "context/AppContext.tsx",
-      "line": 973,
+      "line": 967,
       "table": "warehouse_types",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "c16164385c2962763424",
-      "file": "context/AppContext.tsx",
-      "line": 975,
-      "table": "transactions",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "6670a641a81de2a8c551",
-      "file": "context/AppContext.tsx",
-      "line": 975,
-      "table": "transactions",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "f25fa505ca22fa04e230",
-      "file": "context/AppContext.tsx",
-      "line": 976,
-      "table": "requests",
-      "projection": "*",
-      "modifiers": [
-        "from",
-        "order",
-        "select"
-      ],
-      "classification": null,
-      "owner": null,
-      "rule": "missing-result-policy",
-      "severity": "error"
-    },
-    {
-      "fingerprint": "295591ca569066b5c70d",
-      "file": "context/AppContext.tsx",
-      "line": 976,
-      "table": "requests",
       "projection": "*",
       "modifiers": [
         "from",
@@ -321,7 +225,7 @@
     {
       "fingerprint": "a89540afce281a5a485e",
       "file": "context/AppContext.tsx",
-      "line": 984,
+      "line": 978,
       "table": "audit_sessions",
       "projection": "*",
       "modifiers": [
@@ -337,7 +241,7 @@
     {
       "fingerprint": "34fc00a7e9ca3f28075d",
       "file": "context/AppContext.tsx",
-      "line": 984,
+      "line": 978,
       "table": "audit_sessions",
       "projection": "*",
       "modifiers": [
@@ -353,7 +257,7 @@
     {
       "fingerprint": "ed1abf3e06bb13b664cc",
       "file": "context/AppContext.tsx",
-      "line": 1118,
+      "line": 1112,
       "table": "asset_assignments",
       "projection": "*",
       "modifiers": [
@@ -369,7 +273,7 @@
     {
       "fingerprint": "5903baadb8845711a08c",
       "file": "context/AppContext.tsx",
-      "line": 1118,
+      "line": 1112,
       "table": "asset_assignments",
       "projection": "*",
       "modifiers": [
@@ -385,7 +289,7 @@
     {
       "fingerprint": "ba2d48811939b16b90c3",
       "file": "context/AppContext.tsx",
-      "line": 1119,
+      "line": 1113,
       "table": "asset_maintenances",
       "projection": "*",
       "modifiers": [
@@ -401,7 +305,7 @@
     {
       "fingerprint": "0deb2e0c801214a00457",
       "file": "context/AppContext.tsx",
-      "line": 1119,
+      "line": 1113,
       "table": "asset_maintenances",
       "projection": "*",
       "modifiers": [
@@ -417,7 +321,7 @@
     {
       "fingerprint": "9f7db2915dca59f807db",
       "file": "context/AppContext.tsx",
-      "line": 1121,
+      "line": 1115,
       "table": "asset_transfers",
       "projection": "*",
       "modifiers": [
@@ -433,7 +337,7 @@
     {
       "fingerprint": "db839efa0bf46ccf92c8",
       "file": "context/AppContext.tsx",
-      "line": 1121,
+      "line": 1115,
       "table": "asset_transfers",
       "projection": "*",
       "modifiers": [
@@ -449,7 +353,7 @@
     {
       "fingerprint": "49c0d485e44e2f50e372",
       "file": "context/AppContext.tsx",
-      "line": 1178,
+      "line": 1172,
       "table": "project_transactions",
       "projection": "*",
       "modifiers": [
@@ -465,7 +369,7 @@
     {
       "fingerprint": "5b58df3c1496a5d3dae2",
       "file": "context/AppContext.tsx",
-      "line": 1178,
+      "line": 1172,
       "table": "project_transactions",
       "projection": "*",
       "modifiers": [
@@ -481,7 +385,7 @@
     {
       "fingerprint": "74143cc9366a9322bee1",
       "file": "context/AppContext.tsx",
-      "line": 1641,
+      "line": 1635,
       "table": "items",
       "projection": "*",
       "modifiers": [
@@ -497,7 +401,7 @@
     {
       "fingerprint": "1ec2de00df7e3e02f683",
       "file": "context/AppContext.tsx",
-      "line": 1641,
+      "line": 1635,
       "table": "items",
       "projection": "*",
       "modifiers": [
@@ -513,7 +417,7 @@
     {
       "fingerprint": "c245451f006260d7cc3d",
       "file": "context/AppContext.tsx",
-      "line": 1644,
+      "line": 1638,
       "table": "transactions",
       "projection": "*",
       "modifiers": [
@@ -529,7 +433,7 @@
     {
       "fingerprint": "b698de3ae815721ef012",
       "file": "context/AppContext.tsx",
-      "line": 1644,
+      "line": 1638,
       "table": "transactions",
       "projection": "*",
       "modifiers": [
@@ -545,7 +449,7 @@
     {
       "fingerprint": "fbe21e4563bb573d6862",
       "file": "context/AppContext.tsx",
-      "line": 1647,
+      "line": 1641,
       "table": "requests",
       "projection": "*",
       "modifiers": [
@@ -561,7 +465,7 @@
     {
       "fingerprint": "c4bec7186262dd0704b1",
       "file": "context/AppContext.tsx",
-      "line": 1647,
+      "line": 1641,
       "table": "requests",
       "projection": "*",
       "modifiers": [
@@ -577,7 +481,7 @@
     {
       "fingerprint": "d8e86c014e34332fd5e0",
       "file": "context/AppContext.tsx",
-      "line": 2383,
+      "line": 2377,
       "table": "material_request_fulfillment_batches",
       "projection": "id,status,transaction_id",
       "modifiers": [
@@ -593,7 +497,7 @@
     {
       "fingerprint": "e2961cddf86962b9e10d",
       "file": "context/AppContext.tsx",
-      "line": 2384,
+      "line": 2378,
       "table": "purchase_order_request_lines",
       "projection": "id,purchase_order_id,purchase_order_line_id",
       "modifiers": [
@@ -609,7 +513,7 @@
     {
       "fingerprint": "f3a3e5b2290f60089843",
       "file": "context/AppContext.tsx",
-      "line": 2402,
+      "line": 2396,
       "table": "purchase_orders",
       "projection": "id,status,items",
       "modifiers": [
@@ -625,7 +529,7 @@
     {
       "fingerprint": "c6e0e2e39262e4a945cf",
       "file": "context/AppContext.tsx",
-      "line": 2455,
+      "line": 2449,
       "table": "requests",
       "projection": "id",
       "modifiers": [
@@ -642,7 +546,7 @@
     {
       "fingerprint": "7155d2dec5e354f9d3ed",
       "file": "context/AppContext.tsx",
-      "line": 3195,
+      "line": 3189,
       "table": "project_transactions",
       "projection": "id",
       "modifiers": [
@@ -659,7 +563,7 @@
     {
       "fingerprint": "9cf6f539aee58119735c",
       "file": "context/AppContext.tsx",
-      "line": 3272,
+      "line": 3266,
       "table": "asset_location_stocks",
       "projection": "*",
       "modifiers": [
@@ -675,7 +579,7 @@
     {
       "fingerprint": "87e01b0a0900e362aae4",
       "file": "context/AppContext.tsx",
-      "line": 3272,
+      "line": 3266,
       "table": "asset_location_stocks",
       "projection": "*",
       "modifiers": [
@@ -691,7 +595,7 @@
     {
       "fingerprint": "ecfeece08334c72c6673",
       "file": "context/AppContext.tsx",
-      "line": 3413,
+      "line": 3407,
       "table": "asset_location_stocks",
       "projection": "*",
       "modifiers": [
@@ -707,7 +611,7 @@
     {
       "fingerprint": "8804134d69798b2b092c",
       "file": "context/AppContext.tsx",
-      "line": 3413,
+      "line": 3407,
       "table": "asset_location_stocks",
       "projection": "*",
       "modifiers": [
@@ -6677,27 +6581,9 @@
       "severity": "error"
     },
     {
-      "fingerprint": "ca9de569a3e2b1a1a996",
-      "file": "lib/materialRequestService.ts",
-      "line": 137,
-      "table": "requests",
-      "projection": "*",
-      "modifiers": [
-        "eq",
-        "from",
-        "order",
-        "range",
-        "select"
-      ],
-      "classification": "page",
-      "owner": null,
-      "rule": "wildcard-list",
-      "severity": "error"
-    },
-    {
       "fingerprint": "4591bfae53d5a0d790be",
       "file": "lib/materialRequestService.ts",
-      "line": 413,
+      "line": 456,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -6714,7 +6600,7 @@
     {
       "fingerprint": "d402a70ad8a115fff539",
       "file": "lib/materialRequestService.ts",
-      "line": 413,
+      "line": 456,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -6731,7 +6617,7 @@
     {
       "fingerprint": "c1830690aacd5501db1b",
       "file": "lib/materialRequestService.ts",
-      "line": 435,
+      "line": 478,
       "table": "(dynamic)",
       "projection": "*",
       "modifiers": [
@@ -6782,7 +6668,7 @@
     {
       "fingerprint": "27b09640f8f9bcef2058",
       "file": "lib/notificationService.ts",
-      "line": 197,
+      "line": 195,
       "table": "notifications",
       "projection": "*",
       "modifiers": [
@@ -6802,7 +6688,7 @@
     {
       "fingerprint": "868c6602d0a2d509a55a",
       "file": "lib/notificationService.ts",
-      "line": 350,
+      "line": 348,
       "table": "users",
       "projection": "id, role, allowed_modules, admin_modules, is_active",
       "modifiers": [
@@ -6817,7 +6703,7 @@
     {
       "fingerprint": "868c6602d0a2d509a55a",
       "file": "lib/notificationService.ts",
-      "line": 361,
+      "line": 359,
       "table": "users",
       "projection": "id, role, allowed_modules, admin_modules, is_active",
       "modifiers": [
@@ -6832,7 +6718,7 @@
     {
       "fingerprint": "b903c211bc181f4f1462",
       "file": "lib/notificationService.ts",
-      "line": 413,
+      "line": 411,
       "table": "notification_alert_rules",
       "projection": "*",
       "modifiers": [
@@ -6847,7 +6733,7 @@
     {
       "fingerprint": "ade3148063e5cb255d9e",
       "file": "lib/notificationService.ts",
-      "line": 413,
+      "line": 411,
       "table": "notification_alert_rules",
       "projection": "*",
       "modifiers": [
@@ -6862,7 +6748,7 @@
     {
       "fingerprint": "7aa48e3b6793bdbdedc5",
       "file": "lib/notificationService.ts",
-      "line": 693,
+      "line": 688,
       "table": "notifications",
       "projection": "source_type, source_id, created_at",
       "modifiers": [
@@ -6878,7 +6764,7 @@
     {
       "fingerprint": "fe6092fc8aa39d3b975f",
       "file": "lib/notificationService.ts",
-      "line": 726,
+      "line": 721,
       "table": "hrm_construction_sites",
       "projection": "id, name, \"checkInTime\"",
       "modifiers": [
@@ -6893,7 +6779,7 @@
     {
       "fingerprint": "157be60d1080874aff70",
       "file": "lib/notificationService.ts",
-      "line": 735,
+      "line": 730,
       "table": "project_finances",
       "projection": "project_id, \"constructionSiteId\", \"contractValue\", \"actualMaterials\", \"actualLabor\", \"actualSubcontract\", \"actualMachinery\", \"actualOverhead\", \"progressPercent\", status",
       "modifiers": [
@@ -6908,7 +6794,7 @@
     {
       "fingerprint": "37876f66c7918d735c61",
       "file": "lib/notificationService.ts",
-      "line": 792,
+      "line": 787,
       "table": "payment_schedules",
       "projection": "id, project_id, construction_site_id, description, status, due_date, amount",
       "modifiers": [
@@ -6923,7 +6809,7 @@
     {
       "fingerprint": "5f17973a357d1576a406",
       "file": "lib/notificationService.ts",
-      "line": 821,
+      "line": 816,
       "table": "material_budget_items",
       "projection": "id, project_id, construction_site_id, item_name, waste_percent, waste_threshold",
       "modifiers": [
@@ -6938,7 +6824,7 @@
     {
       "fingerprint": "ec7902089d1fa2ece33f",
       "file": "lib/notificationService.ts",
-      "line": 853,
+      "line": 848,
       "table": "hrm_offices",
       "projection": "id, name, \"checkInTime\"",
       "modifiers": [
@@ -6953,7 +6839,7 @@
     {
       "fingerprint": "16d1ea36c1e4bf732c1c",
       "file": "lib/notificationService.ts",
-      "line": 873,
+      "line": 868,
       "table": "hrm_attendance",
       "projection": "\"employeeId\"",
       "modifiers": [
@@ -6970,7 +6856,7 @@
     {
       "fingerprint": "92d34d7798bddbe2ccfd",
       "file": "lib/notificationService.ts",
-      "line": 880,
+      "line": 875,
       "table": "hrm_leave_requests",
       "projection": "\"employeeId\"",
       "modifiers": [
@@ -6988,7 +6874,7 @@
     {
       "fingerprint": "8bb6a8256de6f571767d",
       "file": "lib/notificationService.ts",
-      "line": 952,
+      "line": 947,
       "table": "request_instances",
       "projection": "id, code, title, due_date, status",
       "modifiers": [

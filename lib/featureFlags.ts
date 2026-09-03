@@ -9,6 +9,12 @@ export const isRequestApprovalPhase1Enabled =
 export const isPurchasePackageV2Enabled =
   isEnabledByDefault(import.meta.env.VITE_ENABLE_PURCHASE_PACKAGE_V2);
 
+export const isPerf02WmsPagingEnabled =
+  import.meta.env.VITE_ENABLE_PERF02_WMS_PAGING === 'true';
+
+export const isPerf02RequestPagingEnabled =
+  import.meta.env.VITE_ENABLE_PERF02_REQUEST_PAGING === 'true';
+
 const purchasePackageV2SiteIds = new Set(
   String(import.meta.env.VITE_PURCHASE_PACKAGE_V2_SITE_IDS || '')
     .split(',')
