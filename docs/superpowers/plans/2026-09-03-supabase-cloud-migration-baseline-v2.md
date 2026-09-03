@@ -58,7 +58,7 @@
 - Consumes: migration directory paths, optional newline-delimited remote versions, and `supabase/baseline/current.json` after cutover.
 - Produces: `buildMigrationInventory({ activeDir, archiveDir, remoteVersions })` and a CLI exit status of zero only for a valid active set.
 
-- [ ] **Step 1: Write failing tooling tests**
+- [x] **Step 1: Write failing tooling tests**
 
 Create fixtures in an OS temporary directory and assert:
 
@@ -75,7 +75,7 @@ expect(buildMigrationInventory({ activeDir, archiveDir, remoteVersions })).toEqu
 
 Also spawn the guard with a fixture root and assert nonzero status for invalid names, duplicate versions, a version at or below the recorded boundary, and command text containing `--include-all`.
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [x] **Step 2: Run the focused test and confirm RED**
 
 ```bash
 npm test -- --run lib/__tests__/supabaseBaselineTooling.test.ts
@@ -83,7 +83,7 @@ npm test -- --run lib/__tests__/supabaseBaselineTooling.test.ts
 
 Expected: FAIL because the modules do not exist.
 
-- [ ] **Step 3: Implement inventory and guard**
+- [x] **Step 3: Implement inventory and guard**
 
 Implement pure parsing functions. The guard reads the current baseline marker when present; before cutover it reports legacy filename violations as warnings. It never reads `.env` or connects to Cloud.
 
@@ -99,7 +99,7 @@ Add to CI after `npm ci`:
 - run: npm run check:supabase-migrations
 ```
 
-- [ ] **Step 4: Run focused verification**
+- [x] **Step 4: Run focused verification**
 
 ```bash
 npm test -- --run lib/__tests__/supabaseBaselineTooling.test.ts
@@ -108,7 +108,7 @@ npm run check:supabase-migrations
 
 Expected: PASS; pre-cut legacy violations are warnings because no current baseline marker exists.
 
-- [ ] **Step 5: Commit tooling**
+- [x] **Step 5: Commit tooling**
 
 ```bash
 git add scripts/supabase-baseline/migration-inventory.mjs scripts/check-supabase-migration-baseline.mjs lib/__tests__/supabaseBaselineTooling.test.ts package.json .github/workflows/ci.yml
