@@ -27,6 +27,7 @@ export const PROJECT_PERMISSION_MODULE_CODES = [
   'project.material_plan',
   'project.material_boq',
   'project.material_po',
+  'project.material_supplier_delivery',
   'project.material_waste',
   'project.custom_material',
   'project.gantt',
@@ -109,6 +110,18 @@ const actionSet = (
   actions.map(([action, label, sortOrder, scopeTypes]) =>
     projectAction(action, label, prefix, legacyRoute, sortOrder, scopeTypes || PROJECT_SCOPE_TYPES)
   );
+
+const explicitActionSet = (
+  prefix: string,
+  actions: readonly ProjectActionTuple[],
+): readonly PermissionActionDefinition[] =>
+  actions.map(([action, label, sortOrder, scopeTypes]) => ({
+    action,
+    label,
+    permissionCode: `${prefix}.${action}`,
+    scopeTypes: scopeTypes || PROJECT_SCOPE_TYPES,
+    sortOrder,
+  }));
 
 const workflowActions = (prefix: string, legacyRoute: string): readonly PermissionActionDefinition[] =>
   actionSet(prefix, legacyRoute, [
@@ -198,6 +211,18 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     ['receive', 'Nhận hàng', 40],
     ['delete', 'Xóa', 45],
     ['manage', 'Quản trị', 50],
+  ])),
+  moduleDefinition('project.material_supplier_delivery', 'Gọi hàng HĐ NCC', [
+    PROJECT_TAB_ROUTE_BY_KEY.material,
+    PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.po,
+  ], 82, explicitActionSet('project.material_supplier_delivery', [
+    ['view', 'Xem', 10],
+    ['create', 'Tạo', 20],
+    ['edit', 'Sửa', 30],
+    ['delete', 'Xóa', 40],
+    ['record', 'Ghi', 50],
+    ['unrecord', 'Bỏ ghi', 60],
+    ['reconcile', 'Đối soát AP', 70],
   ])),
   moduleDefinition('project.material_waste', 'Hao hụt vật tư', [PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.waste], 85, actionSet('project.material_waste', PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.waste, [
     ['view', 'Xem', 10],

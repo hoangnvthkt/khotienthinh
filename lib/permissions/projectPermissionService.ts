@@ -158,6 +158,17 @@ const canManageLegacyProjectRoute = (
 const getProjectViewPermissionCode = (moduleCode: ProjectPermissionModuleCode): string | undefined =>
   getPermissionModuleByCode(moduleCode)?.actions.find(action => action.action === 'view')?.permissionCode;
 
+const hasExplicitProjectViewGrantForRoute = (
+  user: ProjectPermissionUser,
+  route: string,
+  scope: ProjectPermissionScope,
+): boolean => getPermissionModules().some(module =>
+  (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route)) &&
+  module.actions.some(action =>
+    action.action === 'view' && hasExplicitProjectGrant(user, action.permissionCode, scope)
+  )
+);
+
 const getProjectManagePermissionCodes = (moduleCode: ProjectPermissionModuleCode): readonly string[] =>
   getPermissionModuleByCode(moduleCode)?.actions
     .filter(action => action.action === 'manage' || action.permissionCode === 'project.org.grant_permissions')
@@ -178,6 +189,7 @@ export const canViewProjectTab = (
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
   if (viewPermissionCode && hasExplicitProjectGrant(user, viewPermissionCode, scope)) return true;
+  if (hasExplicitProjectViewGrantForRoute(user, PROJECT_TAB_ROUTE_BY_KEY[tabKey], scope)) return true;
 
   if (tabKey === 'finance') {
     return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key =>
@@ -199,6 +211,7 @@ export const canViewProjectMaterialTab = (
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
   if (viewPermissionCode && hasExplicitProjectGrant(user, viewPermissionCode, scope)) return true;
+  if (hasExplicitProjectViewGrantForRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey], scope)) return true;
   return canOpenLegacyProjectRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey]) ||
     canOpenLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material);
 };
