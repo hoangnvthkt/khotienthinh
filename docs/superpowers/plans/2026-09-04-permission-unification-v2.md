@@ -35,7 +35,8 @@
 
 - 55 active users; cả 55 còn module legacy; 31 có direct grant mới; 24 EMPLOYEE legacy-only.
 - 1.181 active direct grants; 1.164 thuộc `project.*`; 17 grant ngoài Project.
-- 14 Project Rooms, 72 action bindings: 34 `pilot`, 38 `audit_only`, 0 `enforced`.
+- 7/14 Room đã cutover nghiệp vụ: `daily_log`, `material_planning`, `material_request`, `material_po`, `gantt`, `weekly_progress`, `quality`. Không backfill hoặc triển khai lại UI/RLS/RPC của bảy Room này.
+- Registry hiện có 72 action bindings: 34 `pilot`, 38 `audit_only`, 0 `enforced`. Sáu Room cutover có toàn bộ action ở `pilot`; riêng `material_request.verify` còn `audit_only` và phải được xác nhận là action cần giữ hay retire, không được dùng làm lý do chạy lại cả Room.
 - 24 fallback-only combinations ở Weekly Progress; 2 active Room members gắn với `project_staff` đã kết thúc.
 - Effective sources: 1.181 DIRECT, 5.362 LEGACY, 333 ROLE; 768 LEGACY+DIRECT và 261 LEGACY+ROLE collisions theo user/code.
 - Flags: `business_role_resolver_enabled=true`, `legacy_fallback_disabled=false`, `legacy_governance_fallback_disabled=false`, `legacy_projection_enabled=false`, `project_room_pbac_fallback_enabled=true`, `system_admin_business_approval_bypass_disabled=false`.
@@ -55,7 +56,7 @@ Các số trên là snapshot, không phải hằng số migration. Task 1 chụp
 - Modify `lib/permissions/permissionService.ts`, `lib/permissions/projectPermissionService.ts`, `lib/routeAccess.ts`, `App.tsx`: một evaluator, deny unknown route/action.
 - Create `components/permissions/AuthorizationEditor.tsx` và `LegacyPermissionReadOnly.tsx`: một editor, legacy read-only trong transition.
 - Modify `components/UserModal.tsx`, `components/permissions/PermissionMatrix.tsx`, `lib/permissions/permissionAdminService.ts`, `context/AppContext.tsx`: atomic admin save, không ghi legacy.
-- Modify `components/project/permissions/ProjectPermissionRoomsPanel.tsx`, `components/project/permissions/ProjectPermissionRoomCard.tsx`, `components/project/permissions/ProjectPermissionRoomDrawer.tsx`, `lib/projectPermissionRoomService.ts`; tạo ba wave smoke SQL.
+- Modify `components/project/permissions/ProjectPermissionRoomsPanel.tsx`, `components/project/permissions/ProjectPermissionRoomCard.tsx`, `components/project/permissions/ProjectPermissionRoomDrawer.tsx`, `lib/projectPermissionRoomService.ts`; regression-only cho 7 Room đã cutover và tạo hai wave smoke cho 7 Room còn lại.
 - Modify `supabase/functions/ai-assistant/index.ts`, `lib/homeCapabilities.ts`, `lib/feedbackNotificationService.ts`: xóa runtime legacy ở Phase 6.
 
 Mỗi migration được tham chiếu bằng suffix duy nhất. Timestamp prefix do CLI tạo tại thời điểm thực thi; executor phải assert chỉ có đúng một file khớp suffix.
@@ -256,63 +257,74 @@ git commit -m "refactor(auth): use one source-aware permission evaluator"
 
 **Phase 3 exit gate:** một editor, một atomic RPC; không còn partial save giữa profile và grants.
 
-## Giai đoạn 4 — Project Room authoritative cutover
+## Giai đoạn 4 — Chỉ cutover 7 Project Rooms còn lại
 
-### Task 7: Material Room wave
+### Task 7: Đóng băng phạm vi 7 Room đã cutover — regression-only
 
-**Rooms:** `material_planning`, `material_request`, `material_po`, `material_waste`, `custom_material` với toàn bộ actions trong `projectPermissionRooms.ts`.
+**Không tái triển khai:** `daily_log`, `material_planning`, `material_request`, `material_po`, `gantt`, `weekly_progress`, `quality`.
 
 **Files:**
-- Create via CLI suffix: `_authorization_v2_phase4_material_rooms.sql`
-- Create: `supabase/tests/authorization_v2_room_material_smoke.sql`
+- Modify: `docs/security/authorization-v2-main-rollout-log.md`
+- Existing test: `supabase/tests/project_permission_rooms_smoke.sql`
+- Existing test: `supabase/tests/project_room_permission_audit_pilots_smoke.sql`
+- Existing test: `supabase/tests/phase3_daily_log_permissions_smoke.sql`
+- Existing test: `supabase/tests/material_request_room_authoritative_cutover_smoke.sql`
+- Existing test: `supabase/tests/material_po_room_authoritative_cutover_smoke.sql`
+- Existing test: `supabase/tests/gantt_room_authoritative_cutover_smoke.sql`
+- Existing test: `supabase/tests/weekly_progress_period_state_smoke.sql`
+- Existing test: `supabase/tests/quality_room_authoritative_smoke.sql`
+
+- [ ] **Step 1: Snapshot checksums** của binding rows, Room memberships, RLS policies và function definitions cho bảy Room trước Phase 4.
+- [ ] **Step 2: Chạy regression hiện hữu**; không tạo migration, không backfill, không đổi policy/function/UI cho Room đã pass.
+- [ ] **Step 3: Đối với `material_request.verify`** — xác nhận từ registry/runtime rằng action có business path hay không. Nếu không có path, retire riêng binding này bằng migration metadata-only ở Task 9; nếu có path nhưng chưa cutover, tách thành checkpoint action-level và không mở lại các action khác của Material Request.
+- [ ] **Step 4: Ghi checksum và test result vào rollout log; commit evidence-only.**
+
+**Commit:** `test(auth): lock regression baseline for seven cutover rooms`
+
+Expected: checksum trước/sau không đổi; không có SQL mutation trên bảy Room đã cutover.
+
+### Task 8: Cutover năm Room Material/Finance còn lại
+
+**Chỉ thực thi:** `material_waste`, `custom_material`, `quantity_acceptance`, `payment`, `boq_reconciliation`.
+
+**Files:**
+- Create via CLI suffix: `_authorization_v2_phase4_remaining_material_finance_rooms.sql`
+- Create: `supabase/tests/authorization_v2_room_remaining_material_finance_smoke.sql`
 - Modify: `components/project/permissions/ProjectPermissionRoomCard.tsx`
 - Modify: `components/project/permissions/ProjectPermissionRoomDrawer.tsx`
 - Modify: `lib/projectPermissionRoomService.ts`
 - Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Snapshot bindings, PBAC mappings, policies và function definitions.**
+- [ ] **Step 1: Snapshot bindings, PBAC mappings, policies và functions chỉ cho năm Room trong task.**
 - [ ] **Step 2: Smoke Room-only allow; PBAC/module/owner/participant-only deny; wrong scope; inactive staff; empty Room; missing prerequisite.**
-- [ ] **Step 3: Backfill chỉ active user + một active unambiguous `project_staff`; preserve manual grants; source `pbac_backfill`; deactivate stale membership.**
-- [ ] **Step 4: Enforce exact Room action trong UI/RPC/RLS/transition/recipient path; promote only passing bindings to `enforced`.**
-- [ ] **Step 5: Run new smoke cùng material request/PO/phase3 material regressions; apply/evidence theo protocol.**
+- [ ] **Step 3: Test maker/checker/approver separation, current assignment, final-state immutability và cross-project/site isolation.**
+- [ ] **Step 4: Backfill chỉ active user + một active unambiguous `project_staff`; preserve manual grants; source `pbac_backfill`; deactivate stale membership thuộc năm Room này.**
+- [ ] **Step 5: Enforce exact Room actions trong UI/RPC/RLS/transition/recipient paths; không chạm definitions của bảy Room đã cutover.**
+- [ ] **Step 6: Run new smoke cùng payment/contract regressions; verify checksum bảy Room cũ không đổi; apply/evidence theo protocol.**
 
-**Commit:** `feat(auth): enforce material project rooms`
+**Commit:** `feat(auth): cut over five remaining material and finance rooms`
 
-### Task 8: Finance and quality Room wave
+### Task 9: Cutover Safety/Subcontract và tắt Room fallback
 
-**Rooms:** `quantity_acceptance`, `payment`, `boq_reconciliation`, `quality`.
-
-**Files:**
-- Create via CLI suffix: `_authorization_v2_phase4_finance_quality_rooms.sql`
-- Create: `supabase/tests/authorization_v2_room_finance_quality_smoke.sql`
-- Modify: `docs/security/authorization-v2-main-rollout-log.md`
-
-- [ ] **Step 1: Test maker/checker/approver separation, current assignment, final-state immutability, cross-project/site isolation.**
-- [ ] **Step 2: Backfill unambiguous staff; enforce exact actions; protect workflow/status columns from direct REST update.**
-- [ ] **Step 3: Run new smoke cùng payment/contract và quality authoritative regressions.**
-- [ ] **Step 4: Apply/evidence theo protocol.**
-
-**Commit:** `feat(auth): enforce finance and quality project rooms`
-
-### Task 9: Remaining Rooms và tắt fallback
-
-**Rooms:** `gantt`, `weekly_progress`, `safety`, `subcontract`, và re-verify `daily_log`. Gantt edit/delete và Weekly Progress edit/confirm bắt buộc prerequisite view.
+**Chỉ thực thi:** `safety`, `subcontract`. Bảy Room cũ vẫn regression-only.
 
 **Files:**
-- Create via CLI suffix: `_authorization_v2_phase4_remaining_rooms.sql`
-- Create: `supabase/tests/authorization_v2_room_remaining_smoke.sql`
+- Create via CLI suffix: `_authorization_v2_phase4_safety_subcontract_rooms.sql`
+- Create: `supabase/tests/authorization_v2_room_safety_subcontract_smoke.sql`
 - Modify: `pages/project/ProjectPermissionsTab.tsx`
 - Modify: `pages/settings/SettingsPermissionHealth.tsx`
+- Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Test ownership, period lock, assignment, incident close, subcontract approval/confirm và Daily Log verifier/approver.**
-- [ ] **Step 2: Enforce passing actions; action không có business path phải retire bằng migration có reason, không để `audit_only`.**
-- [ ] **Step 3: Audit assert mọi binding `enforced` hoặc retired, fallback-only=0, stale member=0.**
-- [ ] **Step 4: Set `project_room_pbac_fallback_enabled=false`; chạy full Room smoke/audit matrix.**
-- [ ] **Step 5: Apply/evidence theo protocol.**
+- [ ] **Step 1: Test assignment, incident close, approval/confirmation, final-state immutability và wrong project/site.**
+- [ ] **Step 2: Backfill và enforce chỉ Safety/Subcontract; action không có business path phải retire với reason.**
+- [ ] **Step 3: Xử lý disposition action-level của `material_request.verify` theo kết quả Task 7, không thay đổi các Material Request actions đã cutover.**
+- [ ] **Step 4: Audit assert cả 14 Room có disposition rõ ràng, fallback-only=0, stale member=0; checksum bảy Room cũ không đổi ngoại trừ metadata disposition đã duyệt.**
+- [ ] **Step 5: Set `project_room_pbac_fallback_enabled=false`; chạy full Room smoke/audit matrix.**
+- [ ] **Step 6: Apply/evidence theo protocol.**
 
-**Commit:** `feat(auth): complete project room authoritative cutover`
+**Commit:** `feat(auth): cut over safety and subcontract rooms`
 
-**Phase 4 exit gate:** 0 `audit_only`, 0 fallback-only, 0 stale member, Room fallback off; PBAC ngoài Room có disposition và không tự cấp Room action.
+**Phase 4 exit gate:** chỉ 7 Room còn lại được cutover; 7 Room cũ không bị re-apply; mọi action `enforced` hoặc retired có reason; 0 `audit_only`, 0 fallback-only, 0 stale member, Room fallback off.
 
 ## Giai đoạn 5 — Migrate module legacy sang canonical grants
 
