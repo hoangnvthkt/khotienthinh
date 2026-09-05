@@ -92,10 +92,28 @@ const effectivePermissionSource = {
   metadata: { template_version: 1 },
 };
 
+const authorizationSnapshot = {
+  generatedAt: '2026-09-05T00:00:00.000Z',
+  flags: {
+    legacy_fallback_disabled: false,
+    project_room_pbac_fallback_enabled: true,
+  },
+  sources: [effectivePermissionSource],
+  roomActions: [{
+    projectId: 'project-1',
+    constructionSiteId: null,
+    roomCode: 'daily_log',
+    actionCode: 'view',
+    source: 'room',
+    enforcement: 'pilot',
+    fallback: true,
+  }],
+};
+
 const makeGateway = (overrides: Partial<AuthProfileGateway> = {}): AuthProfileGateway => ({
   verifySession: vi.fn(async () => ({ id: AUTH_ID })),
   loadActiveProfileByAuthId: vi.fn(async () => profileRow),
-  loadEffectivePermissionSources: vi.fn(async () => [effectivePermissionSource]),
+  loadAuthorizationSnapshot: vi.fn(async () => authorizationSnapshot),
   loadSignatureUrl: vi.fn(async () => 'https://example.com/signature.png'),
   ...overrides,
 });
@@ -121,6 +139,7 @@ describe('fail-closed auth state', () => {
     expect(gateway.verifySession).toHaveBeenCalledWith(session);
     expect(gateway.loadActiveProfileByAuthId).toHaveBeenCalledWith(AUTH_ID);
     expect(gateway.loadActiveProfileByAuthId).toHaveBeenCalledTimes(1);
+    expect(gateway.loadAuthorizationSnapshot).toHaveBeenCalledWith();
     expect(user).toMatchObject({
       id: PROFILE_ID,
       authId: AUTH_ID,
@@ -152,6 +171,22 @@ describe('fail-closed auth state', () => {
         isBusinessApproval: true,
         metadata: { template_version: 1 },
       }],
+      authorizationSnapshot: {
+        generatedAt: '2026-09-05T00:00:00.000Z',
+        flags: {
+          legacy_fallback_disabled: false,
+          project_room_pbac_fallback_enabled: true,
+        },
+        roomActions: [{
+          projectId: 'project-1',
+          constructionSiteId: null,
+          roomCode: 'daily_log',
+          actionCode: 'view',
+          source: 'room',
+          enforcement: 'pilot',
+          fallback: true,
+        }],
+      },
     });
   });
 

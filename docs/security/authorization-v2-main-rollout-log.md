@@ -36,3 +36,12 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Postflight smoke: passed and rolled back.
 - Privileges: `PUBLIC`/`anon` cannot execute the public wrapper; `authenticated` can execute only the public wrapper and cannot execute the private resolver.
 - Security advisor: no error-level findings (pre-existing warnings remain).
+
+## Phase 2 / Task 4 — Canonical frontend evaluator
+
+- Auth loads `get_my_authorization_snapshot()` and projects its source list into `effectivePermissionSources` / legacy-compatible `permissionGrants`.
+- Capability, route, Project scope, and Room helpers delegate to `authorizationEvaluator`.
+- Domain routes take precedence over broad system shell modules; unknown routes and contradictory legacy fields deny when an authoritative snapshot is present.
+- Targeted authorization regression: 6 files / 75 tests passed.
+- Full regression: 341 files / 1,614 tests passed.
+- Lint and production build: passed; only the existing Vite chunk-size warning remains.

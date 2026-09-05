@@ -138,6 +138,7 @@ export interface User {
   reactivationReason?: string;
   permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
   effectivePermissionSources?: EffectivePermissionSource[];
+  authorizationSnapshot?: AuthorizationSnapshot;
 }
 
 export type HrmBusinessRoleCode = 'HR' | 'HR_MANAGE';
@@ -155,6 +156,23 @@ export interface EffectivePermissionSource {
   riskLevel?: string;
   isBusinessApproval: boolean;
   metadata: Record<string, unknown>;
+}
+
+export interface AuthorizationRoomAction {
+  projectId: string;
+  constructionSiteId?: string | null;
+  roomCode: string;
+  actionCode: string;
+  source: string;
+  enforcement: string;
+  fallback: boolean;
+}
+
+export interface AuthorizationSnapshot {
+  generatedAt: string;
+  flags: Record<string, boolean>;
+  sources: EffectivePermissionSource[];
+  roomActions: AuthorizationRoomAction[];
 }
 
 export interface UserPermissionGrant {

@@ -1,5 +1,12 @@
 import type { Session } from '@supabase/supabase-js';
-import { Role, type EffectivePermissionSource, type User, type UserPermissionGrant } from '../types';
+import {
+  Role,
+  type AuthorizationRoomAction,
+  type AuthorizationSnapshot,
+  type EffectivePermissionSource,
+  type User,
+  type UserPermissionGrant,
+} from '../types';
 
 export type AuthStatus =
   | 'initializing'
@@ -40,7 +47,7 @@ export type AuthAction =
 export interface AuthProfileGateway {
   verifySession(session: Session): Promise<{ id: string }>;
   loadActiveProfileByAuthId(authId: string): Promise<unknown | null>;
-  loadEffectivePermissionSources(userId: string): Promise<unknown[]>;
+  loadAuthorizationSnapshot(): Promise<unknown>;
   loadSignatureUrl(userId: string): Promise<string | undefined>;
 }
 
@@ -316,6 +323,37 @@ export const mapEffectivePermissionSourceRow = (row: any): EffectivePermissionSo
   metadata: row.metadata ?? {},
 });
 
+const mapAuthorizationRoomAction = (row: any): AuthorizationRoomAction => ({
+  projectId: row.project_id ?? row.projectId,
+  constructionSiteId: row.construction_site_id ?? row.constructionSiteId ?? null,
+  roomCode: row.room_code ?? row.roomCode,
+  actionCode: row.action_code ?? row.actionCode,
+  source: row.authorization_source ?? row.source,
+  enforcement: row.enforcement_status ?? row.enforcement,
+  fallback: row.pbac_fallback_enabled ?? row.fallback ?? false,
+});
+
+export const mapAuthorizationSnapshot = (value: unknown): AuthorizationSnapshot => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Authorization snapshot is invalid');
+  }
+  const row = value as Record<string, unknown>;
+  const sources = Array.isArray(row.sources) ? row.sources.map(mapEffectivePermissionSourceRow) : [];
+  const roomActionsValue = row.room_actions ?? row.roomActions;
+  const rawFlags = row.flags && typeof row.flags === 'object' && !Array.isArray(row.flags)
+    ? row.flags as Record<string, unknown>
+    : {};
+
+  return {
+    generatedAt: String(row.generated_at ?? row.generatedAt ?? ''),
+    flags: Object.fromEntries(Object.entries(rawFlags).map(([key, flag]) => [key, flag === true])),
+    sources,
+    roomActions: Array.isArray(roomActionsValue)
+      ? roomActionsValue.map(mapAuthorizationRoomAction)
+      : [],
+  };
+};
+
 const effectiveSourceToGrant = (
   userId: string,
   source: EffectivePermissionSource,
@@ -435,13 +473,15 @@ export const resolveCandidateSession = async (
   }
 
   try {
-    const [permissionSourceRows, signatureUrl] = await Promise.all([
-      gateway.loadEffectivePermissionSources(mappedUser.id),
+    const [authorizationSnapshotValue, signatureUrl] = await Promise.all([
+      gateway.loadAuthorizationSnapshot(),
       gateway.loadSignatureUrl(mappedUser.id),
     ]);
-    const effectivePermissionSources = permissionSourceRows.map(mapEffectivePermissionSourceRow);
+    const authorizationSnapshot = mapAuthorizationSnapshot(authorizationSnapshotValue);
+    const effectivePermissionSources = authorizationSnapshot.sources;
     return {
       ...mappedUser,
+      authorizationSnapshot,
       effectivePermissionSources,
       permissionGrants: effectivePermissionSources.map(source => effectiveSourceToGrant(mappedUser.id, source)),
       signatureUrl,

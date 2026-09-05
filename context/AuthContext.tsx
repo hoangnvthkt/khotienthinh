@@ -115,12 +115,11 @@ const authGateway: AuthProfileGateway = {
     if (error) throw error;
     return data;
   },
-  loadEffectivePermissionSources: async (userId) => {
-    const { data, error } = await supabase.rpc('get_effective_permission_sources', {
-      p_target_user_id: userId,
-    });
+  loadAuthorizationSnapshot: async () => {
+    const { data, error } = await supabase.rpc('get_my_authorization_snapshot');
     if (error) throw error;
-    return data || [];
+    if (!data) throw new Error('Supabase did not return an authorization snapshot');
+    return data;
   },
   loadSignatureUrl: async (userId) => {
     try {

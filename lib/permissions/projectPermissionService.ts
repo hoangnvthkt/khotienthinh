@@ -1,12 +1,9 @@
 import { matchPath } from 'react-router-dom';
-import { Role, User, UserPermissionGrant } from '../../types';
+import { User } from '../../types';
 import {
-  LEGACY_PROJECT_SUPPLY_ROUTE,
   PROJECT_FINANCE_LEGACY_TAB_KEYS,
   PROJECT_MATERIAL_TAB_ROUTE_BY_KEY,
   PROJECT_TAB_ROUTE_BY_KEY,
-  hasProjectMaterialTabPermissionRoute,
-  hasProjectTabPermissionRoute,
   isProjectFinanceLegacyTabKey,
   type ProjectMaterialTabKey,
   type ProjectOverviewTabKey,
@@ -18,6 +15,8 @@ import {
   type ProjectPermissionModuleCode,
 } from './projectPermissionRegistry';
 import { PermissionScopeType } from './permissionTypes';
+import { evaluateCapability, hasRoomAction } from './authorizationEvaluator';
+import { getUserAuthorizationSnapshot } from './permissionService';
 
 export type ProjectPermissionScope = {
   scopeType: Extract<PermissionScopeType, 'project' | 'construction_site'>;
@@ -28,7 +27,14 @@ export type ProjectPermissionScope = {
 
 type ProjectPermissionUser = Pick<
   User,
-  'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'
+  | 'role'
+  | 'allowedModules'
+  | 'adminModules'
+  | 'allowedSubModules'
+  | 'adminSubModules'
+  | 'permissionGrants'
+  | 'effectivePermissionSources'
+  | 'authorizationSnapshot'
 > | null | undefined;
 
 export type LegacyProjectPermissionCode =
@@ -43,12 +49,6 @@ export type LegacyProjectPermissionCode =
 
 const routeMatches = (pattern: string, route: string): boolean =>
   pattern === route || (pattern.includes(':') && !!matchPath({ path: pattern, end: true }, route));
-
-const isGrantActive = (grant: UserPermissionGrant, now = new Date()): boolean => {
-  if (grant.isActive === false) return false;
-  if (!grant.expiresAt) return true;
-  return new Date(grant.expiresAt).getTime() > now.getTime();
-};
 
 export const getProjectScope = (projectId?: string, constructionSiteId?: string | null): ProjectPermissionScope => {
   if (constructionSiteId) {
@@ -67,28 +67,30 @@ export const getProjectScope = (projectId?: string, constructionSiteId?: string 
   };
 };
 
-const projectScopeMatches = (grant: UserPermissionGrant, scope: ProjectPermissionScope): boolean => {
-  if (grant.scopeType === 'global') return true;
-  if (grant.scopeId === '*') return grant.scopeType === scope.scopeType || grant.scopeType === 'project';
-  if (grant.scopeType === scope.scopeType && grant.scopeId === scope.scopeId) return true;
-  return Boolean(
-    scope.constructionSiteId &&
-    scope.projectId &&
-    grant.scopeType === 'project' &&
-    grant.scopeId === scope.projectId
-  );
-};
-
-const hasExplicitProjectGrant = (
+const hasProjectCapability = (
   user: ProjectPermissionUser,
   permissionCode: string,
   scope: ProjectPermissionScope,
-): boolean =>
-  Boolean(user?.permissionGrants?.some(grant =>
-    grant.permissionCode === permissionCode &&
-    isGrantActive(grant) &&
-    projectScopeMatches(grant, scope)
-  ));
+): boolean => {
+  const decision = evaluateCapability(
+    getUserAuthorizationSnapshot(user),
+    permissionCode,
+    scope,
+  );
+  if (!decision.allowed) return false;
+  return decision.sourceType?.toUpperCase() !== 'LEGACY'
+    || decision.sourceMetadata?.legacyAdminCompatibility === true;
+};
+
+const hasProjectNavigationCapability = (
+  user: ProjectPermissionUser,
+  permissionCode: string,
+  scope: ProjectPermissionScope,
+): boolean => evaluateCapability(
+  getUserAuthorizationSnapshot(user),
+  permissionCode,
+  scope,
+).allowed;
 
 export const canPerformProjectAction = (
   user: ProjectPermissionUser,
@@ -96,10 +98,22 @@ export const canPerformProjectAction = (
   scopeInput: { projectId?: string; constructionSiteId?: string | null },
 ): boolean => {
   if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
   if (!permissionCode.startsWith('project.')) return false;
-  return hasExplicitProjectGrant(user, permissionCode, getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId));
+  return hasProjectCapability(user, permissionCode, getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId));
 };
+
+export const canPerformProjectRoomAction = (
+  user: ProjectPermissionUser,
+  roomCode: string,
+  actionCode: string,
+  scopeInput: { projectId: string; constructionSiteId?: string | null },
+): boolean => hasRoomAction(
+  getUserAuthorizationSnapshot(user),
+  scopeInput.projectId,
+  scopeInput.constructionSiteId,
+  roomCode,
+  actionCode,
+);
 
 export const checkProjectAction = canPerformProjectAction;
 
@@ -113,48 +127,6 @@ export const requireProjectAction = (
   throw new Error(`Bạn cần quyền "${permissionCode}" để ${actionLabel}.`);
 };
 
-const canOpenLegacyProjectRoute = (
-  user: ProjectPermissionUser,
-  route: string,
-): boolean => {
-  if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
-  if (user.allowedModules !== undefined && !user.allowedModules.includes('DA') && !(user.adminModules || []).includes('DA')) {
-    return false;
-  }
-
-  const allowedRoutes = user.allowedSubModules?.DA || [];
-  const adminRoutes = user.adminSubModules?.DA || [];
-  const hasDaSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, 'DA');
-  const hasDaModuleAdmin = (user.adminModules || []).includes('DA');
-
-  if (hasDaModuleAdmin) return true;
-  if (!hasDaSubModuleRestriction) return true;
-  if (allowedRoutes.length === 0 && adminRoutes.length === 0) return false;
-  if (!hasProjectTabPermissionRoute(allowedRoutes) && allowedRoutes.includes('/da')) return true;
-  if ([...allowedRoutes, ...adminRoutes].some(allowedRoute => routeMatches(allowedRoute, route))) return true;
-  if (route === PROJECT_TAB_ROUTE_BY_KEY.material && allowedRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-  if (
-    route === PROJECT_TAB_ROUTE_BY_KEY.material &&
-    (hasProjectMaterialTabPermissionRoute(allowedRoutes) || hasProjectMaterialTabPermissionRoute(adminRoutes))
-  ) {
-    return true;
-  }
-  return false;
-};
-
-const canManageLegacyProjectRoute = (
-  user: ProjectPermissionUser,
-  route: string,
-): boolean => {
-  if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
-  if ((user.adminModules || []).includes('DA')) return true;
-  const adminRoutes = user.adminSubModules?.DA || [];
-  if (route === PROJECT_TAB_ROUTE_BY_KEY.material && adminRoutes.includes(LEGACY_PROJECT_SUPPLY_ROUTE)) return true;
-  return adminRoutes.some(adminRoute => routeMatches(adminRoute, route));
-};
-
 const getProjectViewPermissionCode = (moduleCode: ProjectPermissionModuleCode): string | undefined =>
   getPermissionModuleByCode(moduleCode)?.actions.find(action => action.action === 'view')?.permissionCode;
 
@@ -165,8 +137,22 @@ const hasExplicitProjectViewGrantForRoute = (
 ): boolean => getPermissionModules().some(module =>
   (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route)) &&
   module.actions.some(action =>
-    action.action === 'view' && hasExplicitProjectGrant(user, action.permissionCode, scope)
+    action.action === 'view' && hasProjectNavigationCapability(user, action.permissionCode, scope)
   )
+);
+
+const hasProjectViewCapabilityForRoutes = (
+  user: ProjectPermissionUser,
+  routes: readonly string[],
+  scope: ProjectPermissionScope,
+): boolean => routes.some(route => hasExplicitProjectViewGrantForRoute(user, route, scope));
+
+const hasProjectManageCapabilityForModules = (
+  user: ProjectPermissionUser,
+  moduleCodes: readonly ProjectPermissionModuleCode[],
+  scope: ProjectPermissionScope,
+): boolean => moduleCodes.some(moduleCode =>
+  getProjectManagePermissionCodes(moduleCode).some(code => hasProjectNavigationCapability(user, code, scope))
 );
 
 const getProjectManagePermissionCodes = (moduleCode: ProjectPermissionModuleCode): readonly string[] =>
@@ -188,18 +174,20 @@ export const canViewProjectTab = (
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
-  if (viewPermissionCode && hasExplicitProjectGrant(user, viewPermissionCode, scope)) return true;
+  if (viewPermissionCode && hasProjectNavigationCapability(user, viewPermissionCode, scope)) return true;
   if (hasExplicitProjectViewGrantForRoute(user, PROJECT_TAB_ROUTE_BY_KEY[tabKey], scope)) return true;
 
   if (tabKey === 'finance') {
-    return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key =>
-      canOpenLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY[key])
+    return hasProjectViewCapabilityForRoutes(
+      user,
+      [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].map(key => PROJECT_TAB_ROUTE_BY_KEY[key]),
+      scope,
     );
   }
-  if (isProjectFinanceLegacyTabKey(tabKey) && canOpenLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.finance)) {
+  if (isProjectFinanceLegacyTabKey(tabKey) && hasExplicitProjectViewGrantForRoute(user, PROJECT_TAB_ROUTE_BY_KEY.finance, scope)) {
     return true;
   }
-  return canOpenLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
+  return false;
 };
 
 export const canViewProjectMaterialTab = (
@@ -210,10 +198,9 @@ export const canViewProjectMaterialTab = (
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
-  if (viewPermissionCode && hasExplicitProjectGrant(user, viewPermissionCode, scope)) return true;
+  if (viewPermissionCode && hasProjectNavigationCapability(user, viewPermissionCode, scope)) return true;
   if (hasExplicitProjectViewGrantForRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey], scope)) return true;
-  return canOpenLegacyProjectRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey]) ||
-    canOpenLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material);
+  return hasExplicitProjectViewGrantForRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material, scope);
 };
 
 export const canManageProjectTab = (
@@ -223,17 +210,23 @@ export const canManageProjectTab = (
 ): boolean => {
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
-  if (getProjectManagePermissionCodes(moduleCode).some(code => hasExplicitProjectGrant(user, code, scope))) return true;
+  if (getProjectManagePermissionCodes(moduleCode).some(code => hasProjectNavigationCapability(user, code, scope))) return true;
 
   if (tabKey === 'finance') {
-    return [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].some(key =>
-      canManageLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY[key])
+    return hasProjectManageCapabilityForModules(
+      user,
+      [tabKey, ...PROJECT_FINANCE_LEGACY_TAB_KEYS].map(key => PROJECT_TAB_MODULE_CODE_BY_KEY[key]),
+      scope,
     );
   }
-  if (isProjectFinanceLegacyTabKey(tabKey) && canManageLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.finance)) {
+  if (isProjectFinanceLegacyTabKey(tabKey) && hasProjectManageCapabilityForModules(
+    user,
+    [PROJECT_TAB_MODULE_CODE_BY_KEY.finance],
+    scope,
+  )) {
     return true;
   }
-  return canManageLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY[tabKey]);
+  return false;
 };
 
 export const canManageProjectMaterialTab = (
@@ -243,9 +236,9 @@ export const canManageProjectMaterialTab = (
 ): boolean => {
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
-  if (getProjectManagePermissionCodes(moduleCode).some(code => hasExplicitProjectGrant(user, code, scope))) return true;
-  return canManageLegacyProjectRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey]) ||
-    canManageLegacyProjectRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material);
+  if (getProjectManagePermissionCodes(moduleCode).some(code => hasProjectNavigationCapability(user, code, scope))) return true;
+  return getProjectManagePermissionCodes(PROJECT_TAB_MODULE_CODE_BY_KEY.material)
+    .some(code => hasProjectNavigationCapability(user, code, scope));
 };
 
 const projectActionCodesByAction = (actions: readonly string[]): readonly string[] =>

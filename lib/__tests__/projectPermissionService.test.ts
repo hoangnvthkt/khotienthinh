@@ -76,6 +76,19 @@ describe('projectPermissionService', () => {
     expect(canPerformProjectAction(user({ role: Role.ADMIN }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(true);
   });
 
+  it('does not bypass an authoritative empty snapshot from legacy role or module fields', () => {
+    expect(canPerformProjectAction(user({
+      role: Role.ADMIN,
+      adminModules: ['DA'],
+      authorizationSnapshot: {
+        generatedAt: '2026-09-05T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: false },
+        sources: [],
+        roomActions: [],
+      },
+    }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(false);
+  });
+
   it('checks and requires explicit namespaced project actions without legacy fallback', () => {
     const grantedUser = user({
       adminModules: ['DA'],
