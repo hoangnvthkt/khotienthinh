@@ -6,7 +6,8 @@
 - Supabase project: `ftciqmqhmfvjtwoycswe`
 - Migration: `20260905041938_material_issue_approval_reversal_return.sql`
 - Release-candidate source commit: `4ff8f03d1102`
-- Status: preflight passed; Cloud apply pending
+- Release-candidate commit: `74e0451`
+- Status: applied and postflight verified
 
 ## Verification before apply
 
@@ -52,8 +53,28 @@ Status counts before apply:
 
 ## Apply and postflight
 
-To be completed after the release-candidate commit is created. The apply must
-use `supabase db push --linked` with the configured Cloud password. The smoke is
-transactional and must leave no fixtures. Postflight must confirm unchanged
-stock/balance checksums and totals, the expected ACLs, capability metadata, and
-migration history.
+The migration was applied with `supabase db push --linked` and the linked
+migration history now shows local and remote version `20260905041938` aligned.
+The post-apply Cloud smoke passed with
+`materialIssueApprovalReversal=ok`, `safeUnusedReturn=ok`, and
+`transaction=rollback`.
+
+Postflight captured at `2026-09-05T04:51:14.040462+00:00`:
+
+- Item stock checksum remained `11d8902c220e160b67d0baa411bdf6e8`.
+- Inventory balance checksum remained `520444c8aabc8310ded5e1231e1e38b6`.
+- On-hand total remained `58133.9445`; inventory value remained
+  `1900529126908.6472`.
+- Order, return, and WMS status counts were unchanged from preflight.
+- Issue equation violations remained `0`.
+- The only completed WMS transaction without a ledger remained the documented
+  pre-existing adjustment `e663c294-1251-43cc-b587-b3258771e165`.
+- All five feature columns exist and the material issue order constraint accepts
+  terminal status `reversed`.
+- `wms.transaction.reverse` is `sensitive`, supports only `global` and
+  `warehouse`, is enforced, and requires expiry for a direct grant.
+- `PUBLIC` and `anon` cannot execute either command RPC. `authenticated` can
+  execute the two public wrappers and cannot execute either privileged
+  implementation in `app_private`.
+- No smoke fixture or real WMS/ledger movement was left behind because the
+  acceptance script rolled back its transaction.
