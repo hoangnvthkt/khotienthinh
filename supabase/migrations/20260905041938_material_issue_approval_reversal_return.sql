@@ -1285,6 +1285,128 @@ as $$
   );
 $$;
 
+-- Preserve the existing report implementation and decorate its stock summary so
+-- compensating receipts are not presented as purchase imports.
+alter function public.get_inventory_ledger_report(jsonb, integer, text)
+  rename to get_inventory_ledger_report_pre_reversal_20260905;
+
+create function public.get_inventory_ledger_report(
+  p_filters jsonb default '{}'::jsonb,
+  p_limit integer default 500,
+  p_cursor text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor uuid := public.current_app_user_id();
+  v_result jsonb;
+  v_stock_rows jsonb;
+  v_reversal_by_material jsonb := '{}'::jsonb;
+  v_warehouse_id text := nullif(coalesce(p_filters ->> 'warehouseId', p_filters ->> 'warehouse_id'), '');
+  v_material_id text := nullif(coalesce(p_filters ->> 'materialId', p_filters ->> 'material_id'), '');
+  v_project_id text := nullif(coalesce(p_filters ->> 'projectId', p_filters ->> 'project_id'), '');
+  v_construction_site_id text := nullif(coalesce(p_filters ->> 'constructionSiteId', p_filters ->> 'construction_site_id'), '');
+  v_transaction_type text := nullif(coalesce(p_filters ->> 'transactionType', p_filters ->> 'transaction_type'), '');
+  v_date_from timestamptz := nullif(coalesce(p_filters ->> 'dateFrom', p_filters ->> 'date_from'), '')::timestamptz;
+  v_date_to timestamptz := nullif(coalesce(p_filters ->> 'dateTo', p_filters ->> 'date_to'), '')::timestamptz;
+  v_search text := lower(trim(coalesce(p_filters ->> 'search', '')));
+begin
+  if v_actor is null then
+    raise exception 'authentication required';
+  end if;
+
+  if v_warehouse_id = 'ALL' then v_warehouse_id := null; end if;
+  if v_material_id = 'ALL' then v_material_id := null; end if;
+  if v_transaction_type = 'all' then v_transaction_type := null; end if;
+  if v_date_to is not null then
+    v_date_to := date_trunc('day', v_date_to) + interval '1 day' - interval '1 millisecond';
+  end if;
+
+  v_result := public.get_inventory_ledger_report_pre_reversal_20260905(
+    p_filters,
+    p_limit,
+    p_cursor
+  );
+
+  select coalesce(jsonb_object_agg(grouped.material_id, grouped.quantity), '{}'::jsonb)
+  into v_reversal_by_material
+  from (
+    select entry.material_id, sum(entry.quantity_in)::numeric as quantity
+    from public.inventory_ledger_entries entry
+    left join public.items item on item.id = entry.material_id
+    where app_private.can_read_inventory_scope(
+        entry.warehouse_id,
+        entry.created_by,
+        entry.approved_by
+      )
+      and entry.transaction_type = 'reversal'
+      and (v_transaction_type is null or v_transaction_type = 'reversal')
+      and (v_warehouse_id is null or entry.warehouse_id = v_warehouse_id)
+      and (v_material_id is null or entry.material_id = v_material_id)
+      and (v_project_id is null or entry.project_id = v_project_id)
+      and (v_construction_site_id is null or entry.construction_site_id = v_construction_site_id)
+      and (v_date_from is null or entry.transaction_date >= v_date_from)
+      and (v_date_to is null or entry.transaction_date <= v_date_to)
+      and (
+        v_search = ''
+        or lower(
+          coalesce(item.sku, '') || ' ' ||
+          coalesce(item.name, '') || ' ' ||
+          coalesce(entry.document_code, '') || ' ' ||
+          coalesce(entry.source_code, '') || ' ' ||
+          coalesce(entry.description, '')
+        ) like '%' || v_search || '%'
+      )
+    group by entry.material_id
+  ) grouped;
+
+  select coalesce(jsonb_agg(
+    stock.value || jsonb_build_object(
+      'in_import', greatest(
+        coalesce((stock.value ->> 'in_import')::numeric, 0) - quantities.in_reversal,
+        0
+      ),
+      'in_reversal', quantities.in_reversal,
+      'total_in',
+        greatest(
+          coalesce((stock.value ->> 'in_import')::numeric, 0) - quantities.in_reversal,
+          0
+        )
+        + coalesce((stock.value ->> 'in_transfer')::numeric, 0)
+        + coalesce((stock.value ->> 'in_adjustment')::numeric, 0)
+        + quantities.in_reversal
+    )
+    order by stock.ordinality
+  ), '[]'::jsonb)
+  into v_stock_rows
+  from jsonb_array_elements(coalesce(v_result -> 'stockRows', '[]'::jsonb))
+    with ordinality stock(value, ordinality)
+  cross join lateral (
+    select coalesce(
+      (v_reversal_by_material ->> (stock.value ->> 'id'))::numeric,
+      0
+    ) as in_reversal
+  ) quantities;
+
+  return jsonb_set(v_result, '{stockRows}', v_stock_rows, true);
+end;
+$$;
+
+revoke all on function public.get_inventory_ledger_report_pre_reversal_20260905(
+  jsonb, integer, text
+) from public, anon, authenticated;
+grant execute on function public.get_inventory_ledger_report_pre_reversal_20260905(
+  jsonb, integer, text
+) to service_role;
+
+revoke all on function public.get_inventory_ledger_report(jsonb, integer, text)
+  from public, anon;
+grant execute on function public.get_inventory_ledger_report(jsonb, integer, text)
+  to authenticated, service_role;
+
 revoke all on function app_private.material_issue_payload_hash(jsonb)
   from public, anon, authenticated;
 revoke all on function app_private.material_issue_pending_return_qty(uuid, uuid, uuid)

@@ -48,6 +48,7 @@ type StockReportRow = {
   inImport: number;
   inTransfer: number;
   inAdjustment: number;
+  inReversal: number;
   totalIn: number;
   outExport: number;
   outTransfer: number;
@@ -79,6 +80,7 @@ const transactionTypeOptions: Array<{ value: InventoryLedgerTransactionType | 'a
   { value: 'loss_issue', label: 'Xuất hao hụt / huỷ' },
   { value: 'adjustment_in', label: 'Điều chỉnh tăng' },
   { value: 'adjustment_out', label: 'Điều chỉnh giảm' },
+  { value: 'reversal', label: 'Đảo giao dịch' },
 ];
 
 const fmt = (value: number) => Number(value || 0).toLocaleString('vi-VN', { maximumFractionDigits: 2 });
@@ -268,6 +270,7 @@ const Reports: React.FC = () => {
         inImport: 0,
         inTransfer: 0,
         inAdjustment: 0,
+        inReversal: 0,
         totalIn: 0,
         outExport: 0,
         outTransfer: 0,
@@ -298,7 +301,8 @@ const Reports: React.FC = () => {
       if (selectedType !== 'all' && entry.transactionType !== selectedType) return;
 
       if (entry.movementDirection === 'in') {
-        if (entry.transactionType === 'transfer_receipt') row.inTransfer += entry.quantityIn;
+        if (entry.transactionType === 'reversal') row.inReversal += entry.quantityIn;
+        else if (entry.transactionType === 'transfer_receipt') row.inTransfer += entry.quantityIn;
         else if (entry.transactionType === 'adjustment_in') row.inAdjustment += entry.quantityIn;
         else row.inImport += entry.quantityIn;
       } else {
@@ -310,7 +314,7 @@ const Reports: React.FC = () => {
 
     grouped.forEach(row => {
       const item = itemById.get(row.id);
-      row.totalIn = row.inImport + row.inTransfer + row.inAdjustment;
+      row.totalIn = row.inImport + row.inTransfer + row.inAdjustment + row.inReversal;
       row.totalOut = row.outExport + row.outTransfer + row.outLiquidation;
       row.closing = row.opening + row.totalIn - row.totalOut;
       row.value = row.closing * Number(item?.priceIn || 0);
@@ -338,6 +342,7 @@ const Reports: React.FC = () => {
         let inImport = 0;
         let inTransfer = 0;
         let inAdjustment = 0;
+        let inReversal = 0;
         let outExport = 0;
         let outTransfer = 0;
         let outLiquidation = 0;
@@ -359,7 +364,20 @@ const Reports: React.FC = () => {
               if (tx.sourceWarehouseId === selectedWh) opening -= qty;
             } else if (tx.type === TransactionType.ADJUSTMENT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) opening += qty;
           } else if (txDate <= end) {
-            if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) inImport += qty;
+            const fallbackTransactionType: InventoryLedgerTransactionType = tx.businessEventType === 'reversal'
+              ? 'reversal'
+              : tx.type === TransactionType.IMPORT
+                ? tx.businessEventType === 'project_return_receipt' ? 'project_return_receipt' : 'purchase_receipt'
+                : tx.type === TransactionType.TRANSFER
+                  ? tx.targetWarehouseId === selectedWh ? 'transfer_receipt' : 'transfer_issue'
+                  : tx.type === TransactionType.LIQUIDATION
+                    ? 'loss_issue'
+                    : tx.type === TransactionType.ADJUSTMENT
+                      ? 'adjustment_in'
+                      : 'project_issue';
+            if (selectedType !== 'all' && fallbackTransactionType !== selectedType) return;
+            if (tx.businessEventType === 'reversal' && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) inReversal += qty;
+            else if (tx.type === TransactionType.IMPORT && (selectedWh === 'ALL' || tx.targetWarehouseId === selectedWh)) inImport += qty;
             else if (tx.type === TransactionType.EXPORT && (selectedWh === 'ALL' || tx.sourceWarehouseId === selectedWh)) outExport += qty;
             else if (tx.type === TransactionType.TRANSFER && selectedWh !== 'ALL') {
               if (tx.targetWarehouseId === selectedWh) inTransfer += qty;
@@ -369,7 +387,7 @@ const Reports: React.FC = () => {
           }
         });
 
-        const totalIn = inImport + inTransfer + inAdjustment;
+        const totalIn = inImport + inTransfer + inAdjustment + inReversal;
         const totalOut = outExport + outTransfer + outLiquidation;
         const closing = opening + totalIn - totalOut;
         return {
@@ -381,6 +399,7 @@ const Reports: React.FC = () => {
           inImport,
           inTransfer,
           inAdjustment,
+          inReversal,
           totalIn,
           outExport,
           outTransfer,
@@ -391,7 +410,7 @@ const Reports: React.FC = () => {
         };
       })
       .filter(row => !search || `${row.sku} ${row.name}`.toLowerCase().includes(search));
-  }, [endDate, items, searchTerm, selectedMaterialId, selectedWh, startDate, transactions, visibleWarehouseIdSet, warehouseAccess.canViewAll]);
+  }, [endDate, items, searchTerm, selectedMaterialId, selectedType, selectedWh, startDate, transactions, visibleWarehouseIdSet, warehouseAccess.canViewAll]);
 
   const reportData = ledgerAvailable && ledgerReport ? ledgerReport.stockRows : (ledgerAvailable ? reportDataFromLedger : fallbackReportData);
 
@@ -482,6 +501,7 @@ const Reports: React.FC = () => {
       'Nhap mua': row.inImport,
       'Nhap chuyen kho': row.inTransfer,
       'Nhap khac': row.inAdjustment,
+      'Nhập đảo': row.inReversal,
       'Tong nhap': row.totalIn,
       'Xuat cong trinh': row.outExport,
       'Xuat chuyen kho': row.outTransfer,
@@ -673,6 +693,7 @@ const Reports: React.FC = () => {
                   <th className="p-4 text-center">Nhập mua</th>
                   <th className="p-4 text-center">Nhập chuyển</th>
                   <th className="p-4 text-center">Nhập khác</th>
+                  <th className="p-4 text-center">Nhập đảo</th>
                   <th className="p-4 text-right bg-emerald-50/70 text-emerald-700">Tổng nhập</th>
                   <th className="p-4 text-center">Xuất CT</th>
                   <th className="p-4 text-center">Xuất chuyển</th>
@@ -701,6 +722,7 @@ const Reports: React.FC = () => {
                     <td className="p-4 text-center text-slate-500">{row.inImport ? fmt(row.inImport) : '-'}</td>
                     <td className="p-4 text-center text-slate-500">{row.inTransfer ? fmt(row.inTransfer) : '-'}</td>
                     <td className="p-4 text-center text-slate-500">{row.inAdjustment ? fmt(row.inAdjustment) : '-'}</td>
+                    <td className="p-4 text-center font-bold text-orange-600">{row.inReversal ? fmt(row.inReversal) : '-'}</td>
                     <td className="p-4 text-right font-black text-emerald-600 bg-emerald-50/20">{fmt(row.totalIn)}</td>
                     <td className="p-4 text-center text-slate-500">{row.outExport ? fmt(row.outExport) : '-'}</td>
                     <td className="p-4 text-center text-slate-500">{row.outTransfer ? fmt(row.outTransfer) : '-'}</td>

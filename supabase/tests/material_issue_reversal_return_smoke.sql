@@ -535,6 +535,8 @@ declare
   v_reversal_transaction public.transactions%rowtype;
   v_stock_before numeric;
   v_stock_after numeric;
+  v_report jsonb;
+  v_report_row jsonb;
 begin
   select * into v_context from material_issue_reversal_smoke_context;
   perform set_config('request.jwt.claims', jsonb_build_object(
@@ -621,6 +623,23 @@ begin
       and original.status = 'reversed'
   ) then
     raise exception 'SMOKE_INVENTORY_REVERSAL_LINK_MISSING';
+  end if;
+
+  v_report := public.get_inventory_ledger_report(
+    jsonb_build_object(
+      'warehouseId', v_context.warehouse_id,
+      'materialId', v_context.reversal_item_id
+    ),
+    50,
+    null
+  );
+  select value into v_report_row
+  from jsonb_array_elements(v_report -> 'stockRows')
+  limit 1;
+  if coalesce((v_report_row ->> 'in_reversal')::numeric, 0) <> 10
+     or coalesce((v_report_row ->> 'in_import')::numeric, 0) <> 0
+     or coalesce((v_report_row ->> 'total_in')::numeric, 0) <> 10 then
+    raise exception 'SMOKE_REVERSAL_REPORT_CLASSIFICATION_INVALID: %', v_report_row;
   end if;
 end;
 $$;
