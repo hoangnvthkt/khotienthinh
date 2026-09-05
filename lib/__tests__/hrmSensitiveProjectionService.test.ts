@@ -35,6 +35,26 @@ describe('hrmSensitiveProjectionService', () => {
     });
   });
 
+  it('lets the database generate the employee code when the form leaves it empty', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        id: 'e1', employee_code: 'TT001', full_name: 'Nguyễn A',
+        status: 'Đang làm việc',
+      },
+      error: null,
+    });
+
+    await hrmSensitiveProjectionService.createEmployee({
+      id: 'e1', employeeCode: '', fullName: 'Nguyễn A', title: '',
+      gender: 'Nam', phone: '', email: '', status: 'Đang làm việc',
+    }, 'Tạo hồ sơ nhân sự từ màn hình quản lý');
+
+    expect(rpc).toHaveBeenCalledWith('create_hrm_employee_core', expect.objectContaining({
+      p_employee_code: null,
+      p_full_name: 'Nguyễn A',
+    }));
+  });
+
   it('uses domain commands with a reason for employee and payroll mutations', async () => {
     rpc.mockResolvedValue({ data: { id: 'record-1' }, error: null });
 

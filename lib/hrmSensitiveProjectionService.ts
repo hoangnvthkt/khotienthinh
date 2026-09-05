@@ -91,7 +91,7 @@ export const hrmSensitiveProjectionService = {
   async createEmployee(employee: Employee, reason: string): Promise<Employee> {
     const { data, error } = await supabase.rpc('create_hrm_employee_core', {
       p_employee_id: employee.id || null,
-      p_employee_code: employee.employeeCode,
+      p_employee_code: employee.employeeCode?.trim() || null,
       p_full_name: employee.fullName,
       p_gender: employee.gender || null,
       p_phone: employee.phone || null,

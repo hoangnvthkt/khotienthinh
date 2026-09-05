@@ -7,7 +7,9 @@
   "archiveManifestSha256": "c4b344c05053fb0259b7f16f93dc6fa3f59473834694133b0dd06d882cef62f4",
   "allowedPostBaselineFiles": [
     "20260903063821_perf02_query_indexes.sql",
-    "20260903093652_remediate_supplier_delivery_wms_event_permissions.sql"
+    "20260903093652_remediate_supplier_delivery_wms_event_permissions.sql",
+    "20260904015927_allow_pending_material_review_po_demand.sql",
+    "20260904081841_allow_generated_hrm_employee_code.sql"
   ],
   "forbidIncludeAll": true
 }
