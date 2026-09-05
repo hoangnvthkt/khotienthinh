@@ -15,7 +15,10 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 
 ## Phase 1 / Task 2 — Legacy write guard
 
-Pending.
+- Migration: `20260905034726_authorization_v2_phase1_legacy_write_guard.sql`.
+- Contract tests: passed.
+- Cloud rollback transaction: passed all audit-only, disabled-write, and controlled-migration branches; fixture rolled back.
+- Release candidate / dry-run / apply / postflight: pending.
 
 ## Phase 2 / Task 3 — Source-aware snapshot
 

@@ -15,4 +15,12 @@ describe('Supabase Cloud transaction runner', () => {
     expect(buildRollbackSql('select 1;', ['select 2;']))
       .toMatch(/^begin;[\s\S]*select 1;[\s\S]*select 2;[\s\S]*rollback;$/i);
   });
+
+  it('removes a smoke file transaction boundary before composing the Cloud rollback', () => {
+    const sql = buildRollbackSql('select 1;', ['BEGIN; select 2; ROLLBACK;']);
+
+    expect(sql.match(/\bbegin\s*;/gi)).toHaveLength(1);
+    expect(sql.match(/\brollback\s*;/gi)).toHaveLength(1);
+    expect(sql).toContain('select 2;');
+  });
 });

@@ -11,10 +11,16 @@ export const assertCloudTarget = (projectRef, expectedRef) => {
   }
 };
 
+const stripTransactionBoundary = (sql) => String(sql ?? '')
+  .trim()
+  .replace(/^begin\s*;\s*/i, '')
+  .replace(/\s*rollback\s*;\s*$/i, '')
+  .trim();
+
 export const buildRollbackSql = (migrationSql, smokeSql = []) => [
   'begin;',
   String(migrationSql ?? '').trim(),
-  ...smokeSql.map(sql => String(sql ?? '').trim()),
+  ...smokeSql.map(stripTransactionBoundary),
   'rollback;',
 ].filter(Boolean).join('\n\n');
 
