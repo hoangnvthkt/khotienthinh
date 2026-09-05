@@ -103,6 +103,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['create', 'Tạo', 20],
         ['approve', 'Duyệt', 30],
         ['complete', 'Hoàn tất', 40],
+        ['reverse', 'Hủy duyệt', 50, ['global', 'warehouse']],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10],

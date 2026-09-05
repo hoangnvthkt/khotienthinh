@@ -188,6 +188,7 @@ describe('permissionRegistry', () => {
 
     expect(actionCodes).toEqual(expect.arrayContaining([
       'wms.transaction.complete',
+      'wms.transaction.reverse',
       'wms.request.receive',
       'hrm.payroll.manage',
       'expense.expense_record.view_all',
@@ -208,6 +209,11 @@ describe('permissionRegistry', () => {
     );
 
     expect(actionByCode['wms.inventory.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse']));
+    expect(actionByCode['wms.transaction.reverse']).toMatchObject({
+      action: 'reverse',
+      label: 'Hủy duyệt',
+      scopeTypes: ['global', 'warehouse'],
+    });
     expect(actionByCode['wms.request.create'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned', 'warehouse']));
     expect(actionByCode['hrm.employee.view_profile'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'direct_reports', 'org_unit', 'assigned']));
     expect(actionByCode['hrm.employee.view_profile'].scopeTypes).not.toContain('department');
