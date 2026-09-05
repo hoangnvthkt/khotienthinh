@@ -30,4 +30,9 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Migration: `20260905035047_authorization_v2_phase2_snapshot_rpc.sql`.
 - Contract tests: passed.
 - Cloud rollback transaction: passed self-only active snapshot, inactive deny, expired-source exclusion, exact project scope, and Room action isolation; fixtures rolled back.
-- Release candidate / dry-run / apply / postflight: pending.
+- Release candidate: `75d662c`.
+- Dry-run: exactly one migration, `20260905035047`.
+- Applied to Cloud main: success; local/remote ledger aligned through `20260905035047`.
+- Postflight smoke: passed and rolled back.
+- Privileges: `PUBLIC`/`anon` cannot execute the public wrapper; `authenticated` can execute only the public wrapper and cannot execute the private resolver.
+- Security advisor: no error-level findings (pre-existing warnings remain).
