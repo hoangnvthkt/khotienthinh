@@ -110,6 +110,7 @@ const STATUS_META: Record<MaterialIssueStatus, { label: string; tone: string }> 
   settling: { label: 'Đang quyết toán', tone: 'bg-violet-100 text-violet-700' },
   partially_returned: { label: 'Hoàn trả một phần', tone: 'bg-rose-100 text-rose-700' },
   closed: { label: 'Đã đóng', tone: 'bg-slate-800 text-white' },
+  reversed: { label: 'Đã đảo', tone: 'bg-orange-100 text-orange-700' },
   rejected: { label: 'Kho từ chối', tone: 'bg-red-100 text-red-700' },
   cancelled: { label: 'Đã hủy', tone: 'bg-slate-200 text-slate-500' },
 };
@@ -664,6 +665,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
           targetWarehouseId: returnWarehouseId,
           reason: actionReason.trim(),
           note: actionNote.trim() || null,
+          idempotencyKey: actionIdempotencyKey,
           lines: selectedLines.map(row => ({
             issueLineId: row.line.id,
             returnQty: row.quantity,

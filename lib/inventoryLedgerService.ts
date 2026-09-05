@@ -91,6 +91,7 @@ const mapStockReportRow = (row: any): InventoryLedgerStockReportRow => ({
   inImport: num(row.in_import ?? row.inImport),
   inTransfer: num(row.in_transfer ?? row.inTransfer),
   inAdjustment: num(row.in_adjustment ?? row.inAdjustment),
+  inReversal: num(row.in_reversal ?? row.inReversal),
   totalIn: num(row.total_in ?? row.totalIn),
   outExport: num(row.out_export ?? row.outExport),
   outTransfer: num(row.out_transfer ?? row.outTransfer),
