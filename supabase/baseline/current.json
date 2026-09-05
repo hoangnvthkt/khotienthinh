@@ -10,7 +10,8 @@
     "20260903093652_remediate_supplier_delivery_wms_event_permissions.sql",
     "20260904015927_allow_pending_material_review_po_demand.sql",
     "20260904081841_allow_generated_hrm_employee_code.sql",
-    "20260905034726_authorization_v2_phase1_legacy_write_guard.sql"
+    "20260905034726_authorization_v2_phase1_legacy_write_guard.sql",
+    "20260905035047_authorization_v2_phase2_snapshot_rpc.sql"
   ],
   "forbidIncludeAll": true
 }

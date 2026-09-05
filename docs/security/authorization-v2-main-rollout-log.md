@@ -27,4 +27,7 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 
 ## Phase 2 / Task 3 — Source-aware snapshot
 
-Pending.
+- Migration: `20260905035047_authorization_v2_phase2_snapshot_rpc.sql`.
+- Contract tests: passed.
+- Cloud rollback transaction: passed self-only active snapshot, inactive deny, expired-source exclusion, exact project scope, and Room action isolation; fixtures rolled back.
+- Release candidate / dry-run / apply / postflight: pending.
