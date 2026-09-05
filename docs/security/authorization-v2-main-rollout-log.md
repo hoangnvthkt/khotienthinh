@@ -18,7 +18,12 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Migration: `20260905034726_authorization_v2_phase1_legacy_write_guard.sql`.
 - Contract tests: passed.
 - Cloud rollback transaction: passed all audit-only, disabled-write, and controlled-migration branches; fixture rolled back.
-- Release candidate / dry-run / apply / postflight: pending.
+- Release candidate: `aa2a4e0`.
+- Dry-run: exactly one migration, `20260905034726`.
+- Applied to Cloud main: success; local/remote ledger aligned through `20260905034726`.
+- Postflight smoke: passed and rolled back. The flag remains `false`; audit table and trigger exist.
+- Privileges: `PUBLIC`, `anon`, and `authenticated` have neither table access nor direct function execution.
+- Security advisor: no error-level findings (pre-existing warnings remain).
 
 ## Phase 2 / Task 3 — Source-aware snapshot
 
