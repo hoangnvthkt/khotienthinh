@@ -58,6 +58,7 @@ export interface WorkTaskCommandResult {
   taskCode: string;
   lockVersion: number;
   status: WorkTaskStatus;
+  capabilities?: WorkTaskCapabilities;
 }
 
 export interface WorkTaskCursor { sortAt: string; id: string }
@@ -92,6 +93,8 @@ export interface WorkTaskSummary {
   lock_version: number;
 }
 export interface WorkTask extends WorkTaskSummary {
+  started_at: string | null;
+  blocked_reason: string | null;
   description_document: WorkTextDocument;
   description_text: string;
   recipient_snapshot_fingerprint: string | null;
@@ -181,8 +184,33 @@ export interface WorkTaskAttachment {
   deleted_by: string | null;
   created_at: string;
 }
-/** Only implemented capabilities are exposed; lifecycle adds its actions in Task 4. */
-export interface WorkTaskCapabilities { canClone: boolean; canViewHistory: boolean }
+/** Server decisions include task state, canonical scope and active assignment. */
+export interface WorkTaskCapabilities {
+  canClone: boolean;
+  canViewHistory: boolean;
+  canAcknowledge: boolean;
+  canRequestClarification: boolean;
+  canStart: boolean;
+  canBlock: boolean;
+  canUnblock: boolean;
+  canSubmit: boolean;
+  canReview: boolean;
+  canCancel: boolean;
+  canTransfer: boolean;
+  canAddAssignees: boolean;
+}
+export type WorkLifecycleCommand =
+  | { command: 'acknowledge' | 'start' | 'unblock'; payload: Record<string, never> }
+  | { command: 'request_clarification' | 'block' | 'cancel'; payload: { reason: string } }
+  | { command: 'submit'; payload: { result: WorkTextDocument } }
+  | { command: 'review'; payload: { decision: 'approve'; reason?: string } | { decision: 'request_changes'; reason: string } }
+  | { command: 'transfer'; payload: { userId: string; reason: string } }
+  | { command: 'add_assignees'; payload: { userIds: string[] } };
+export type WorkLifecycleCommandInput = WorkLifecycleCommand & {
+  taskId: string;
+  expectedLockVersion: number;
+  idempotencyKey: string;
+};
 export interface WorkTaskDetail {
   task: WorkTask;
   assignments: WorkTaskAssignment[];

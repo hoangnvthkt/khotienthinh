@@ -24,11 +24,11 @@
 
 **Interfaces:** private `work_add_business_minutes(uuid,timestamptz,integer) -> timestamptz`; private `work_resolve_sla(jsonb,text,timestamptz) -> jsonb`; assignment fields `execution_sla_started_at`, `execution_sla_due_at`, `sla_snapshot`. The snapshot records the calendar/policy and configured/default durations. No execution SLA exists unless a duration is explicitly configured.
 
-- [ ] Add rollback tests with a synthetic split workday, closed day, exceptional working day and three priorities. Assert exact timestamps and missing-calendar rejection. Assert self-assignment starts execution at acknowledgement and configured execution duration never rewrites task deadline.
-- [ ] Run against an empty CLI-created migration; verify the engine assertions fail for the missing implementation.
-- [ ] Extend calendar/exception intervals, add optional policy priority/execution duration, replace old policy uniqueness with scope+priority uniqueness. Validate interval ordering and overlap. Resolve exact-scope priority policy, scope default, global priority, global default, then configured default calendar. Compute normal default acknowledgement as one configured workday; important 240 minutes; urgent 60 minutes.
-- [ ] Iterate day/interval boundaries in the calendar timezone, apply date exceptions, reject invalid/absent calendars and an exhausted bounded search. Use forward replacement of create so snapshot and SLA fields are filled inside its original transaction.
-- [ ] Run Task 3 regression plus engine rollback smoke, lint, migration checker and advisor. Commit, dry-run/apply/postflight and record evidence.
+- [x] Add rollback tests with a synthetic split workday, closed day, exceptional working day and three priorities. Assert exact timestamps and missing-calendar rejection. Assert self-assignment starts execution at acknowledgement and configured execution duration never rewrites task deadline.
+- [x] Run against an empty CLI-created migration; verify the engine assertions fail for the missing implementation.
+- [x] Extend calendar/exception intervals, add optional policy priority/execution duration, replace old policy uniqueness with scope+priority uniqueness. Validate interval ordering and overlap. Resolve exact-scope priority policy, scope default, global priority, global default, then configured default calendar. Compute normal default acknowledgement as one configured workday; important 240 minutes; urgent 60 minutes.
+- [x] Iterate day/interval boundaries in the calendar timezone, apply date exceptions, reject invalid/absent calendars and an exhausted bounded search. Use forward replacement of create so snapshot and SLA fields are filled inside its original transaction.
+- [x] Run Task 3 regression plus engine rollback smoke, lint, migration checker and advisor. Commit, dry-run/apply/postflight and record evidence.
 
 Calendar acceptance example (fixture only): Friday 2026-09-04 11:30 +07 plus 120 working minutes on 08:00–12:00 / 13:00–17:00 equals Friday 14:30 +07. Friday 16:30 plus 60 minutes with Monday closed equals Tuesday 08:30 +07.
 

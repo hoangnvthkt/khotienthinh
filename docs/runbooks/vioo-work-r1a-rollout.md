@@ -153,3 +153,33 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   overlapping-interval rejection, missing calendar and authenticated self-create.
 - Task 3 regression rollback smoke also passed with the forward create command.
 - No real company calendar/policy was seeded. Lifecycle commands are Task 4B.
+- Release candidate `92bea7b`: dry-run listed only the SLA migration; apply and
+  engine postflight passed. Cloud ledger contains all 13 intended migrations;
+  the next lifecycle candidate is pending locally. Post-apply security advisor
+  at error level reported no issues. Lint and migration baseline check passed.
+
+### Task 4B — lifecycle and responsibility commands candidate (2026-09-07)
+
+- Candidate: `20260907025138_work_r1a_lifecycle_commands.sql`.
+- Public `command_work_task` accepts the fixed command allowlist, expected task
+  version and actor-scoped idempotency key. Task lock, assignments/submission,
+  version/event/outbox and response are one atomic operation.
+- Authenticated smoke passed acknowledgement/self retry, stale version/key
+  conflict, clarification during collaborative work, start/block/unblock,
+  submission/rejection/resubmission/approval, creator-only auto-complete, cancel,
+  scoped manager permission/isolation, transfer/new-assignee SLA, duplicate
+  rejection, reviewer checks, inactive/unrelated denial and restricted recipient
+  pre-access checks. Eight synthetic accounts are used; no account is persisted.
+- Completed/cancelled assignments close without deleting their acknowledgement
+  history. Historical assignees retain canonical-related read access; mutation
+  capabilities require a live assignment and valid task state.
+- Regression caught and fixed transfer incorrectly clearing a shared blocker.
+  Clone now prefills current responsibility after transfer/co-assignee changes,
+  clears stale checklist assignees, and preserves stored original provenance.
+- Terminal mutations are denied; retries return their original stored response
+  even after later transitions. Self-only auto-complete becomes creator-review
+  when responsibility changes and the creator must be an eligible reviewer.
+- Lifecycle and SLA engine Cloud rollback smokes passed. Task 3/core/helper
+  regressions passed; full frontend regression: 349 files / 1,654 tests; lint
+  passed; query audit 0 findings/errors; pre-apply security advisor error level
+  no issues. No UI/pilot/notification delivery activation is included here.
