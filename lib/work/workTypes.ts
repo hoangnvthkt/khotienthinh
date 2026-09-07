@@ -169,6 +169,8 @@ export interface WorkTaskSubmission {
   review_note: string | null;
   created_at: string;
 }
+export type WorkAttachmentKind = 'input' | 'discussion' | 'result' | 'evidence';
+export interface WorkAttachmentFileVariant { path: string; mimeType: string; sizeBytes: number; width?: number; height?: number }
 export interface WorkTaskAttachment {
   id: string;
   task_id: string;
@@ -178,7 +180,9 @@ export interface WorkTaskAttachment {
   size_bytes: number;
   storage_path: string;
   status: 'ready';
-  variants: Record<string, unknown>;
+  attachment_kind: WorkAttachmentKind;
+  can_delete: boolean;
+  variants: Partial<Record<'thumbnail' | 'display' | 'fallback' | 'original', WorkAttachmentFileVariant>>;
   keep_original: boolean;
   evidence_type: string | null;
   finalized_at: string | null;
@@ -203,6 +207,10 @@ export interface WorkTaskCapabilities {
   canManageChecklist: boolean;
   canComment: boolean;
   canSetPreferences: boolean;
+  canAttachInput: boolean;
+  canAttachDiscussion: boolean;
+  canAttachResult: boolean;
+  canAttachEvidence: boolean;
 }
 export type WorkLifecycleCommand =
   | { command: 'acknowledge' | 'start' | 'unblock'; payload: Record<string, never> }

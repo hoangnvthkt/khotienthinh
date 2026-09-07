@@ -20,7 +20,8 @@
     "20260907024703_work_r1a_sla_engine.sql",
     "20260907025138_work_r1a_lifecycle_commands.sql",
     "20260907032728_work_r1a_collaboration_commands.sql",
-    "20260907034255_work_r1a_notification_delivery.sql"
+    "20260907034255_work_r1a_notification_delivery.sql",
+    "20260907041036_work_r1a_private_attachments.sql"
   ],
   "forbidIncludeAll": true
 }

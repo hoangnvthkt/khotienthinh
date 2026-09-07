@@ -325,3 +325,82 @@ policies 0, direct Work grants 0, fixture users 0. No test push was sent to a re
 recipient. Task 6 is complete at the delivery/invalidation infrastructure checkpoint;
 real device delivery and screen integration remain in the named pilot/UI/observation
 checkpoints. Task 7 adds private Storage and attachment processing.
+
+### Task 7 — private Storage and attachments (2026-09-07)
+
+Candidate `20260907041036_work_r1a_private_attachments.sql` creates private bucket
+`work-attachments`. `command_work_attachment` reserves an immutable path for 15
+minutes, with 20 live reservations per uploader. Authenticated INSERT requires
+that exact pending reservation, current uploader and current task authority.
+Restrictive bucket boundaries deny client read/list/sign/overwrite/delete even if
+an unrelated permissive policy would otherwise match. No Storage SQL deletion is
+used by the application or cleanup worker.
+
+`work-attachments` Edge validates the user JWT through Auth.getUser before using
+user-scoped claim/read RPCs. Finalize, expiry and cleanup worker RPCs are service-only.
+Finalization rechecks uploader authority after transformation. Input/result follow
+checklist editing authority; discussion/evidence follow current discussion authority.
+Creator/scope managers may delete others' files only while that kind remains mutable;
+uploaders may delete their own under the same current authority. Terminal tasks are
+read-only. Detail returns per-kind upload and per-file delete capabilities.
+
+Initial supported formats are JPEG, PNG, static WebP, PDF and UTF-8 text. Image input
+is bounded to 5 MiB / 4 megapixels / 4096 per dimension; other input to 25 MiB. These
+are conservative processor limits, not company policy. SVG, animation, HEIC, Office
+files and archives currently fail explicitly. MIME/signature/size are checked on
+actual bytes; image decoding is forced to the declared allowlisted format, with
+resource limits and dimension checks. PDF validation checks header/EOF signature;
+this is not a full PDF sanitizer. No malware scanning infrastructure is configured,
+so this checkpoint makes no antivirus claim. Non-image files and originals are
+served as downloads, not embedded documents.
+
+WASM normalizes image orientation and strips profiles/properties from derivatives.
+Default display edge is 1920, configurable with Edge `WORK_IMAGE_MAX_EDGE` from 320
+through 1920; thumbnail edge is 320. WebP display/thumbnail and PNG fallback preserve
+aspect ratio and do not upscale. Evidence images always retain the untouched source;
+other images retain it only on `keepOriginal=true`. Non-image documents retain their
+original bytes. An original retained by explicit choice can contain EXIF; derivatives
+never inherit that metadata. No legal retention period is invented here.
+
+Processing uses a three-minute UUID lease, at most three claims within the reservation.
+Every possible attempt output path is registered for durable cleanup before a byte
+is written. Attempts use different prefixes. An ambiguous finalization response never
+causes eager deletion: the ready transaction may already have committed. Successful
+finalization atomically removes retained output cleanup jobs and writes attachment
+metadata, one audit event and one outbox row. Retried ready/delete operations do not
+emit duplicate events. Attachment changes publish the existing Work revision signal.
+
+Temp source cleanup starts one hour after upload expiry; abandoned output cleanup
+starts one hour after its processing lease. This grace window covers in-flight writes.
+Delete hides metadata immediately and queues retained objects after 60 seconds. A
+five-minute Cron invokes the secret-authenticated cleanup action. Claims are bounded
+at 30 paths with three-minute fences and retry backoff capped at one hour. There is
+no retry exhaustion that silently abandons failed deletion. Monitor
+`app_private.work_attachment_cleanup.available_at/attempts/last_error` and rejected
+attachment metadata; resolve Storage errors before forcing a targeted retry. Physical
+delete must always use Storage API. Pending/rejected records remain diagnostic metadata.
+
+Read resolves only an existing ready variant after current subject authorization,
+then signs for 60 seconds. Direct Storage reads/signing remain denied. Revocation
+blocks new URLs immediately; an already issued bearer URL can remain valid until its
+short expiry. The feature-local service requests a fresh URL each time and defaults
+to thumbnails. It does not persist signed URLs. Responsive/lazy image rendering and
+camera preprocessing belong to the upcoming UI tasks; preprocessing must honor the
+original retention choice. Task 7 does not enable the Work UI or notification gate.
+
+Verification commands include the rollback persona/Storage RLS/lease smoke, actual
+WASM image fixtures (`deno test --allow-read` with the function's locked config),
+worker/service Vitest tests, and `scripts/verify-work-attachment-storage.mjs` for a
+Cloud physical Storage probe. The probe uses a random synthetic `_probe` path,
+verifies upload/anonymous/public deny/signed download, and removes/verifies the object
+in `finally`; credentials and signed URLs stay in process memory. It creates no task,
+user or notification fixtures. The internal `health` action transforms only a fixed
+synthetic image to check the deployed WASM; it accepts no user-provided test bytes.
+
+Task 7 pre-apply verification: 353 Vitest files / 1,669 tests, five real WASM image
+checks, TypeScript lint, locked Deno check and build passed (existing chunk warning
+only). Task 7, notification, collaboration, lifecycle, SLA, Task 3, core RLS and
+permission helper Cloud rollback smokes all passed with the candidate migration.
+Migration audit: 17 active / 402 archived; query audit: zero findings/errors.
+Pre-apply security advisor at error level found no issues. Rollout/postflight status
+is recorded below after actual Cloud apply and Edge deployment.
