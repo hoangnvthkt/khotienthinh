@@ -16,7 +16,8 @@
     "20260907012229_work_r1a_permission_registry.sql",
     "20260907015936_work_r1a_restore_permission_execution.sql",
     "20260907021001_work_r1a_core_schema.sql",
-    "20260907023329_work_r1a_task_commands.sql"
+    "20260907023329_work_r1a_task_commands.sql",
+    "20260907024703_work_r1a_sla_engine.sql"
   ],
   "forbidIncludeAll": true
 }

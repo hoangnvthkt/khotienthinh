@@ -110,6 +110,9 @@ export interface WorkTaskAssignment {
   assigned_by: string;
   assigned_at: string;
   acknowledgement_due_at: string | null;
+  execution_sla_started_at: string | null;
+  execution_sla_due_at: string | null;
+  sla_snapshot: Record<string, unknown>;
   acknowledged_at: string | null;
   clarification_requested_at: string | null;
   clarification_note: string | null;

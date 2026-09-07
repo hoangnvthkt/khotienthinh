@@ -137,3 +137,19 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   smokes inside one rollback transaction without reapplying the migration.
   Local/Cloud ledgers match 12/12; post-apply security advisor at error level
   reported no issues. Task 3 is complete; Task 4 follows from the approved spec.
+
+### Task 4A — business calendar/SLA engine candidate (2026-09-07)
+
+- Candidate: `20260907024703_work_r1a_sla_engine.sql`.
+- Adds ordered non-overlapping workday intervals (including lunch breaks), date
+  exception intervals, priority-specific policy overrides and optional execution
+  minutes. Policy resolution: matching scope before global; matching priority
+  before scope default; only active/effective policies and active calendars.
+- Assignments snapshot acknowledgement/execution configuration and relevant
+  exception dates. Execution starts at acknowledgement; no configured duration
+  means no execution due timestamp. Task deadline is never rewritten by SLA.
+- Engine rollback smoke passed split day, break start, weekend, holiday, working
+  exception, three priority defaults, policy/scope precedence and expiry,
+  overlapping-interval rejection, missing calendar and authenticated self-create.
+- Task 3 regression rollback smoke also passed with the forward create command.
+- No real company calendar/policy was seeded. Lifecycle commands are Task 4B.
