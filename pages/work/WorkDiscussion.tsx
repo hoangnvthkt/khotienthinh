@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type {
   WorkCollaborationCommand,
@@ -64,6 +64,15 @@ export function WorkDiscussion({
   anchorId: string | null;
   onAnchor: (id: string) => void;
 }) {
+  const [editorError, setEditorError] = useState<unknown>(null),
+    [editorLoading, setEditorLoading] = useState(false);
+  const editorRequest = useRef(0);
+  useEffect(
+    () => () => {
+      editorRequest.current++;
+    },
+    [],
+  );
   const [open, setOpen] = useState(!!anchorId),
     [historyOpen, setHistoryOpen] = useState(false),
     [category, setCategory] = useState<WorkTaskHistoryFilters["category"] | "">(
@@ -189,7 +198,7 @@ export function WorkDiscussion({
           <button
             type="button"
             onClick={() => {
-              if (busy) return;
+              if (busy || editorLoading) return;
               setReply(c);
               setEditing(null);
               setText("");
@@ -200,7 +209,7 @@ export function WorkDiscussion({
           </button>
         )}
         {c.can_edit && canComment && (
-          <button type="button" disabled={busy} onClick={() => edit(c)}>
+          <button type="button" disabled={busy||editorLoading} onClick={() => edit(c)}>
             Sửa bình luận
           </button>
         )}
@@ -301,21 +310,48 @@ export function WorkDiscussion({
                           ]
                         : []),
                     ].find((c) => c.id === editing.id);
-                    return latest &&
-                      latest.lock_version !== editing.lock_version ? (
+                    const conflicted =
+                      (error as { message?: string } | null)?.message ===
+                      "WORK_VERSION_CONFLICT";
+                    return conflicted ||
+                      (latest &&
+                        latest.lock_version !== editing.lock_version) ? (
                       <p className="work-notice">
                         Bình luận đã thay đổi.{" "}
                         <button
                           type="button"
-                          disabled={busy}
-                          onClick={() => edit(latest)}
+                          disabled={busy || editorLoading}
+                          onClick={async () => {
+                            const request = ++editorRequest.current;
+                            setEditorLoading(true);
+                            setEditorError(null);
+                            try {
+                              const result = await service.commentAnchor(
+                                taskId,
+                                editing.id,
+                              );
+                              if (request === editorRequest.current)
+                                edit(result.comment);
+                            } catch (e) {
+                              if (request === editorRequest.current)
+                                setEditorError(e);
+                            } finally {
+                              if (request === editorRequest.current)
+                                setEditorLoading(false);
+                            }
+                          }}
                         >
                           Nạp lại bình luận mới
                         </button>
                       </p>
                     ) : null;
                   })()}
-                <fieldset disabled={busy}>
+                {editorError && (
+                  <p role="alert" className="work-error">
+                    {workError(editorError)}
+                  </p>
+                )}
+                <fieldset disabled={busy || editorLoading}>
                   {(editing || reply) && (
                     <p>
                       {editing ? "Đang sửa bình luận" : "Đang trả lời"} ·{" "}

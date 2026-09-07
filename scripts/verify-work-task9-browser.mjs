@@ -25,6 +25,37 @@ try {
       .waitFor();
     await page.getByText("Đối chiếu biên bản", { exact: true }).waitFor();
   };
+  await open("commentConflict=true");
+  await page.getByRole("button", { name: /^Thảo luận/ }).click();
+  await page.getByRole("button", { name: "Bình luận cũ hơn" }).click();
+  await page
+    .locator("#work-comment-older")
+    .getByRole("button", { name: "Sửa bình luận", exact: true })
+    .click();
+  await page
+    .getByLabel("Nội dung bình luận")
+    .fill("Chỉnh sửa bình luận ở trang cũ");
+  await page
+    .getByRole("button", { name: "Lưu bình luận", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Nạp lại bình luận mới" }).click();
+  await page
+    .getByLabel("Nội dung bình luận")
+    .fill("Chỉnh sửa từ phiên bản mới");
+  await page
+    .getByRole("button", { name: "Lưu bình luận", exact: true })
+    .click();
+  await page.getByText("Chỉnh sửa từ phiên bản mới", { exact: true }).waitFor();
+  const editCalls = await page.evaluate(() =>
+    window.workQa.calls
+      .filter(
+        (c) => c.name === "collaborate" && c.args[0].command === "comment_edit",
+      )
+      .map((c) => c.args[0]),
+  );
+  assert.equal(editCalls[0].payload.expectedLockVersion, 1);
+  assert.equal(editCalls[1].payload.expectedLockVersion, 2);
+  assert.notEqual(editCalls[0].idempotencyKey, editCalls[1].idempotencyKey);
   await open();
   assert.equal(
     await page.evaluate(
@@ -266,13 +297,11 @@ try {
     previousScroll,
   );
   await open("fileFailure=true");
-  await page
-    .getByLabel("Thêm đính kèm công việc")
-    .setInputFiles({
-      name: "evidence.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("fixture"),
-    });
+  await page.getByLabel("Thêm đính kèm công việc").setInputFiles({
+    name: "evidence.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("fixture"),
+  });
   await page.getByRole("button", { name: "Nộp kết quả", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("Nội dung kết quả").fill("Kết quả chưa đủ tệp");
@@ -310,16 +339,62 @@ try {
     ),
     1,
   );
-  await open('lostCommand=true');
-  await page.getByRole('button',{name:'Báo bị chặn',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Lý do').fill('Kiểm tra giữ yêu cầu khi đổi màn hình');await dialog.getByRole('button',{name:'Xác nhận'}).click();await dialog.getByRole('button',{name:'Thử lại đúng yêu cầu'}).waitFor();await dialog.getByRole('button',{name:'Đóng',exact:true}).click();
-  await page.getByRole('link',{name:'Công việc của tôi',exact:true}).click();await page.getByRole('heading',{name:'Chuẩn bị hồ sơ nghiệm thu',exact:true}).click();await page.getByRole('button',{name:'Thử lại đúng yêu cầu',exact:true}).click();
-  await page.waitForFunction(()=>window.workQa.calls.filter(c=>c.name==='command').length===2);calls=await page.evaluate(()=>window.workQa.calls.filter(c=>c.name==='command').map(c=>c.args[0]));assert.deepEqual(calls[0],calls[1]);
-  const imageResult=await page.evaluate(async()=>{
-    const {prepareWorkImage}=await import('/lib/work/workImageInput.ts');
-    const canvas=document.createElement('canvas');canvas.width=4032;canvas.height=3024;const ctx=canvas.getContext('2d');ctx.fillStyle='#0f766e';ctx.fillRect(0,0,canvas.width,canvas.height);
-    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.9));const file=new File([blob],'camera.jpg',{type:'image/jpeg'});const prepared=await prepareWorkImage(file,false);const bitmap=await createImageBitmap(prepared);const result={width:bitmap.width,height:bitmap.height,mime:prepared.type,retained:await prepareWorkImage(file,true)===file};bitmap.close();return result;
+  await open("lostCommand=true");
+  await page.getByRole("button", { name: "Báo bị chặn", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel("Lý do")
+    .fill("Kiểm tra giữ yêu cầu khi đổi màn hình");
+  await dialog.getByRole("button", { name: "Xác nhận" }).click();
+  await dialog.getByRole("button", { name: "Thử lại đúng yêu cầu" }).waitFor();
+  await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Công việc của tôi", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "Chuẩn bị hồ sơ nghiệm thu", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Thử lại đúng yêu cầu", exact: true })
+    .click();
+  await page.waitForFunction(
+    () => window.workQa.calls.filter((c) => c.name === "command").length === 2,
+  );
+  calls = await page.evaluate(() =>
+    window.workQa.calls
+      .filter((c) => c.name === "command")
+      .map((c) => c.args[0]),
+  );
+  assert.deepEqual(calls[0], calls[1]);
+  const imageResult = await page.evaluate(async () => {
+    const { prepareWorkImage } = await import("/lib/work/workImageInput.ts");
+    const canvas = document.createElement("canvas");
+    canvas.width = 4032;
+    canvas.height = 3024;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#0f766e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.9),
+    );
+    const file = new File([blob], "camera.jpg", { type: "image/jpeg" });
+    const prepared = await prepareWorkImage(file, false);
+    const bitmap = await createImageBitmap(prepared);
+    const result = {
+      width: bitmap.width,
+      height: bitmap.height,
+      mime: prepared.type,
+      retained: (await prepareWorkImage(file, true)) === file,
+    };
+    bitmap.close();
+    return result;
   });
-  assert.deepEqual(imageResult,{width:1920,height:1440,mime:'image/webp',retained:true});
+  assert.deepEqual(imageResult, {
+    width: 1920,
+    height: 1440,
+    mime: "image/webp",
+    retained: true,
+  });
   assert.deepEqual(errors, []);
   console.log(
     "Task 9 browser checks passed: capability roles, lazy feeds, mention/checklist, conflict, immutable retry, transfer reason, review, deep comment, private image, 1440/768/360 and list return. Screenshots:",

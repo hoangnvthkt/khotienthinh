@@ -58,6 +58,7 @@ let commandAttempts = 0;
 const commandResults = new Map<string, any>();
 const fixtureComments: any[] = [];
 let checkDone = false;
+let commentVersion = 1;
 let pinned = false;
 const role = query.get("role") || "assignee";
 const comment = (id: string, text: string) => ({
@@ -115,6 +116,21 @@ const service: WorkTaskService = {
   },
   async collaborate(input) {
     log("collaborate", structuredClone(input));
+    if (input.command === "comment_edit") {
+      if (query.get("commentConflict") === "true" && commentVersion === 1) {
+        commentVersion = 2;
+        throw new Error("WORK_VERSION_CONFLICT");
+      }
+      fixtureComments.unshift({
+        ...comment(
+          input.payload.commentId,
+          input.payload.content.content
+            .map((p) => p.content.map((t) => t.text).join(""))
+            .join("\n"),
+        ),
+        lock_version: commentVersion,
+      });
+    }
     if (input.command === "set_pin") pinned = input.payload.pinned;
     if (input.command === "checklist_set_completed")
       checkDone = input.payload.completed;
@@ -195,7 +211,10 @@ const service: WorkTaskService = {
   async commentAnchor(taskId, id) {
     log("commentAnchor", taskId, id);
     return {
-      comment: comment(id, "Bình luận đích từ thông báo"),
+      comment: {
+        ...comment(id, "Bình luận đích từ thông báo"),
+        lock_version: commentVersion,
+      },
       parent: null,
     };
   },
