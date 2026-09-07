@@ -1,8 +1,8 @@
 {
   "projectRef": "ftciqmqhmfvjtwoycswe",
-  "status": "awaiting_calendar_and_deployment_target",
-  "deploymentTarget": null,
-  "calendarConfirmed": false,
+  "status": "dev_review_active",
+  "deploymentTarget": "http://127.0.0.1:5187 (vioo-work-r1a dev)",
+  "calendarConfirmed": true,
   "scope": {
     "type": "department",
     "departmentId": "6a1ee524-c7f6-41dd-9b0d-440e76c6cdc9"
@@ -11,12 +11,28 @@
   "calendar": {
     "name": "Văn phòng — Phòng Quản lý dự án",
     "timezone": "Asia/Ho_Chi_Minh",
-    "working_weekdays": [1, 2, 3, 4, 5, 6],
-    "working_intervals": [{ "start": "08:00", "end": "17:00" }],
+    "working_weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "working_intervals": [
+      {
+        "start": "08:00",
+        "end": "12:00"
+      },
+      {
+        "start": "13:00",
+        "end": "17:00"
+      }
+    ],
     "is_default": false,
     "is_active": true
   },
-  "calendarNote": "08:00–17:00 is the user's supplied span. Lunch exclusion is still being clarified; this draft is not applied.",
+  "calendarNote": "Confirmed by user: Monday–Saturday, 08:00–12:00 and 13:00–17:00, Asia/Ho_Chi_Minh.",
   "grantDurationDays": 14,
   "grantReason": "Vioo Work R1A named pilot — Phòng Quản lý dự án",
   "participants": [
@@ -55,11 +71,26 @@
     "importantMinutes": 240,
     "urgentMinutes": 60,
     "executionMinutes": null,
-    "source": "Approved design section 9.1; task deadlines remain explicit."
+    "source": "Approved design section 9.1; task deadlines remain explicit.",
+    "normalMinutes": 480
   },
   "activation": {
-    "frontendEnabled": false,
+    "frontendEnabled": true,
     "notificationsEnabled": false,
-    "observationHours": 48
+    "observationHours": 48,
+    "frontendScope": "Current dev process only; production deployment unchanged",
+    "observationStartedAt": null
+  },
+  "commandKeys": {
+    "calendar": "553f600f-ade6-4e33-a2c0-28650af33a1c",
+    "normal": "cf3587d0-0acd-414b-985c-b5a003a30b25",
+    "important": "d8293151-2d3c-4d99-84cf-6f4da289423f",
+    "urgent": "f7a23a2d-330b-42e4-9f42-50b4c71910f4"
+  },
+  "applied": {
+    "calendarId": "3f1e7dc6-9bd5-47ed-b057-6de1abcb04ee",
+    "grantCount": 15,
+    "grantExpiresAt": "2026-09-21T07:02:36.939209+00:00",
+    "activatedAt": "2026-09-07T07:02:36.939209+00:00"
   }
 }

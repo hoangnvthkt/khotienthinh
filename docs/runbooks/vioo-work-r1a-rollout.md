@@ -658,3 +658,30 @@ all remain zero. Notification delivery is disabled; the frontend flag remains of
 by its default (no enable override was introduced). The two named accounts and
 department are verified; pilot activation awaits the pending calendar/deployment
 choices in the manifest, then real authenticated/device acceptance and observation.
+
+### Named dev review activated — 2026-09-07
+
+The user confirmed lunch 12:00–13:00 and requested the actual application from
+this worktree via `npm run dev`. Dev runs at `http://127.0.0.1:5187/#/work/my`
+with `VITE_ENABLE_VIOO_WORK=true` for that process and the existing root `.env`
+Cloud configuration. Headless Chrome verified HTTP 200, the login screen, enabled
+Work flag, configured Supabase client and no page errors. No production frontend
+flag was changed, and notification delivery remains disabled for this UI review.
+
+Applied the named manifest after a successful rollback rehearsal using
+`supabase/operations/work_r1a_named_pilot.sql` (the tracked script defaults to
+ROLLBACK). Existing accounts use their mapped `auth_id` during SQL role simulation;
+this tests the canonical backend identity/grants, not a real browser login.
+Postflight confirms 15 temporary grants for exactly the two named users, expiring
+2026-09-21 14:02:36 Asia/Ho_Chi_Minh; one department calendar
+`3f1e7dc6-9bd5-47ed-b057-6de1abcb04ee`; Monday–Saturday shifts 08:00–12:00 and
+13:00–17:00; three department policies with ACK 480/240/60 working minutes for
+normal/important/urgent, and no execution SLA override. Admin can configure only
+this department; Sơn has no configure grant. No global business grants were added.
+
+SLA checks passed for Monday 11:30 + 60 minutes = 13:30 and Saturday 16:00 + 480
+minutes = Monday 16:00. No sample tasks were persisted (task count was zero at
+postflight). Users can log in, select Phòng Quản lý dự án and create their first
+work item. Admin settings are at `/#/work/settings`. Real user UI review is now
+available; notification/device acceptance and the 48-hour observation remain
+separate pending checkpoints. No handoff was created.
