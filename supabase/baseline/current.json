@@ -13,7 +13,8 @@
     "20260905034726_authorization_v2_phase1_legacy_write_guard.sql",
     "20260905035047_authorization_v2_phase2_snapshot_rpc.sql",
     "20260905041938_material_issue_approval_reversal_return.sql",
-    "20260907012229_work_r1a_permission_registry.sql"
+    "20260907012229_work_r1a_permission_registry.sql",
+    "20260907015936_work_r1a_restore_permission_execution.sql"
   ],
   "forbidIncludeAll": true
 }
