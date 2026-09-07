@@ -243,3 +243,68 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   Task 5 is complete at the backend/RPC checkpoint. Task 6 is notification
   delivery, retry/deduplication, mandatory-event mute rules and invalidation;
   UI and Storage remain at their later roadmap checkpoints.
+
+### Task 6 — notification delivery and invalidation (2026-09-07)
+
+- Candidate: `20260907034255_work_r1a_notification_delivery.sql`; Edge worker
+  `process-work-notifications`. The minute Cron calls the worker through the
+  existing Vault/Edge `send_web_push_secret` / `SEND_WEB_PUSH_SECRET` pair.
+  `app_private.work_notification_settings.enabled` defaults to false. Task 10
+  enables delivery with the named pilot; the frontend feature flag also remains off.
+- In-app delivery resolves actual creator, current assignments/participants and
+  explicit mention targets, with task visibility rechecked. Completed/cancelled
+  assignments remain recipients of closure updates; transferred historical rows
+  do not become recipients of subsequent activity. Technical admin/scope permission
+  holders are not broadcast recipients. Strict current-manager resolution is used
+  only for acknowledgement escalation, and the manager must already see the task.
+- Actor-generated routine self-notifications, muted activity and routine bursts
+  are suppressed. Direct assignment/transfer, mentions, pending review, requested
+  changes, own/creator deadline reminders, acknowledgement escalation and security
+  events retain mandatory behavior. Routine comment/checklist/file cooldown is
+  five minutes. Mentions have one dedicated event, avoiding a second comment alert.
+- In-app notification, delivery marker and device queue are atomic. Work rows in
+  the shared notification table have an additional restrictive RLS boundary and
+  immutable routing/recipient fields; authenticated users can mark them read or
+  dismiss them, but cannot fabricate/retarget official Work notifications.
+- Push uses separate device jobs with stable notification tags and `renotify=false`.
+  A successful device is not intentionally retried; gone endpoints are deactivated.
+  Claims recheck access, relationship, preference and subscription. Two-minute
+  leases use fresh UUID fencing tokens. Failures back off and stop after eight
+  attempts. In-app processing skips busy task rows; short push claims are serialized,
+  while network sends run four at a time with a five-second transport timeout.
+  Worker batches max at 20; more than 1,000 active devices for one user records a
+  push failure instead of silently truncating delivery or blocking their in-app alert.
+- Browser push remains at-least-once across an ambiguous provider timeout/crash;
+  there is no claim of exactly-once external delivery. Payloads use generic text,
+  canonical `/#/work/tasks/<code>?comment=<id>` links and no task/comment content.
+  Supported transport hosts cover FCM, Mozilla, Apple and Windows push services.
+- Due-soon (default 60 elapsed minutes), overdue and acknowledgement-overdue events
+  use daily UTC dedupe keys tied to the actual due timestamp and assignment. This
+  does not change the business calendar, SLA snapshot or task deadline.
+- `work_task_revisions` publishes task ID/revision/time only under task RLS. The
+  feature-local subscription coalesces changes and refetches on reconnect, focus
+  and every 30 seconds, including when permission revocation hides later signals.
+  Actual Work screen mounting and denied-link presentation follow in Tasks 8–9.
+- Cloud rollback worker smoke passed mandatory/mute decisions, delivery dedupe,
+  per-device retry/gone outcomes, stale lease recovery/fencing, permission revocation,
+  private notification/Realtime visibility, technical-admin denial, deadline and
+  acknowledgement reminders, manager recipient boundary, routine cooldown,
+  review-required mute bypass and completed-assignment notifications. The manager
+  resolver is adapted inside the rollback fixture to test the Work boundary;
+  actual HRM manager readiness remains the existing strict resolver's responsibility.
+- Injected notification insert failures verified transaction rollback, bounded
+  retry and quarantine. Full Task 3/core/helper and Task 4–5 Cloud regressions passed.
+  Frontend: 351 test files / 1,661 tests; lint and build passed (existing chunk-size
+  warning only). Deno check passed with a dependency lock. Migration checker:
+  16 active / 402 archived; query audit: 0 findings/errors. Pre-apply security
+  advisor at error level: no issues. Transport tests use mocks; no real device/user
+  receives a test push in this checkpoint.
+
+Task 6 operations: inspect `work_notification_outbox.dead_at/last_error`,
+`work_notification_deliveries.status/last_error` and `work_push_jobs` lease/retry
+state through an authorized server/SQL session. Correct the root cause before
+requeuing a specific failed ID; never reset all delivery markers or replay successful
+jobs. An outbox quarantine can be retried by clearing that row's `dead_at`, resetting
+its attempt count and setting `available_at=now()`. A failed device job can be retried
+by clearing its finish/lease timestamps, setting status to pending and resetting its
+attempt count. Existing event/user/channel markers continue to prevent in-app duplicates.

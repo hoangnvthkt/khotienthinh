@@ -50,6 +50,11 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   const metadata = notification.metadata || {};
   const sourceType = notification.sourceType || '';
 
+  if (sourceType === 'work_task' || notification.entityType === 'work_task') {
+    const taskRef = getMetaValue(metadata, ['taskCode', 'workTaskId']) || notification.sourceId || notification.entityId;
+    return taskRef ? withQuery(`/work/tasks/${encodeURIComponent(taskRef)}`, { comment: getMetaValue(metadata, ['commentId']) }) : '/work';
+  }
+
   // ── Chat v2 ───────────────────────────────────────────
   if (sourceType === 'chat_v2_message' || notification.category === 'chat') {
     const conversationId = getMetaValue(metadata, ['conversationId', 'conversation_id']);
