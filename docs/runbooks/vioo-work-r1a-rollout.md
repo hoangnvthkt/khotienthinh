@@ -132,3 +132,8 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   at `--level error`: no issues before apply.
 - Security approach checked against [Supabase database function documentation](https://supabase.com/docs/guides/database/functions).
 - Feature flag remains false; no UI routes, pilot grants or user tasks added.
+- Release candidate commit: `806dedb`. Linked dry-run listed only the candidate;
+  apply succeeded. Postflight ran commands + core schema + authenticated helper
+  smokes inside one rollback transaction without reapplying the migration.
+  Local/Cloud ledgers match 12/12; post-apply security advisor at error level
+  reported no issues. Task 3 is complete; Task 4 follows from the approved spec.

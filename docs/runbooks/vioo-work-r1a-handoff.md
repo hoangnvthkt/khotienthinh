@@ -1,8 +1,20 @@
-# Vioo Work R1A — handoff trước Task 3
+# Vioo Work R1A — handoff sau Task 3
 
 > Cập nhật: 2026-09-07 (Asia/Ho_Chi_Minh)  
-> Trạng thái: Task 0–2 đã hoàn thành; bắt đầu tiếp từ Task 3  
+> Trạng thái: Task 0–3 đã hoàn thành; tiếp theo Task 4  
 > Phạm vi: triển khai R1A, không triển khai R1B–R3 trong nhánh này
+
+## Checkpoint mới nhất — Task 3 (2026-09-07)
+
+- Commit implementation: `806dedb`; migration `20260907023329_work_r1a_task_commands.sql` đã apply.
+- Sáu RPC preview/create/list/detail/clone/groups đã tồn tại; TypeScript contracts ở `lib/work/workTypes.ts`.
+- Cloud rollback/postflight đạt; ledger 12/12; lint/build và 349 files / 1.654 tests đạt.
+- Calendar dùng fixture rollback; code concurrency cấp 16 mã không sử dụng, không tạo task/grant thật.
+- Feature flag vẫn false. Task 4 tiếp tục policy overrides/execution SLA/lifecycle trước pilot.
+- Người dùng đã xác nhận dùng đặc tả ở checkout gốc làm cơ sở Task 4–11;
+  đã đối chiếu và nội dung trùng bản trong worktree. Không cần tìm lại kế hoạch phiên cũ.
+- Thông tin lịch công ty/cohort pilot/môi trường bật Work đang được hỏi; không tự cấu hình thật.
+- Các mục bên dưới lưu bối cảnh lịch sử trước Task 3; mục 6 không còn là việc chưa làm.
 
 ## 1. Điểm bắt đầu cho phiên chat mới
 
