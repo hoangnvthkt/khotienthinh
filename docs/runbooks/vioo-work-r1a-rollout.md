@@ -415,3 +415,31 @@ policy gap, then passed with the guard; standard upload and the full Task 7 pers
 lease suite remained green. See Supabase's [operation helper documentation](https://supabase.com/docs/guides/storage/schema/helper-functions)
 and [operation names](https://github.com/supabase/storage/blob/master/src/http/routes/operations.ts).
 The original applied migration remains immutable.
+
+Task 7 postflight: candidates `6034762` and `f9ab102` each had only their own new
+migration in the linked dry-run and were applied successfully. Local/Cloud ledgers
+now match 18/18 (402 archived). `work-attachments` deployed through `--use-api`,
+without Docker. All Task 3–7/core/helper postflight smokes passed after the main
+migration; the expanded Task 7 operation/role/cleanup suite passed again after the
+forward guard. Post-apply security advisor at error level found no issues; lower
+severities are not claimed clean.
+
+Cloud physical Storage probes passed before and after the operation guard: upload,
+anonymous/public deny, 60-second signed download with byte comparison, actual API
+delete and empty-prefix verification. Edge HTTP rejected missing/invalid internal
+secrets with 401. Vault-authenticated health request 61491 returned 200 with
+`{"ok":true,"processor":"magick-wasm","formats":["webp","png"]}`; cleanup request
+61492 returned 200 with `{"claimed":0,"removed":0}`. Neither timed out. The health
+fixture verifies deployed execution/bundling, not a worst-case image performance SLA.
+
+Final persisted counts: Work tasks 0, attachments 0, bucket objects 0, cleanup jobs 0,
+outbox 0; calendar/direct Work grants/fixture users remain 0. Bucket public=false;
+cleanup Cron active every five minutes; notification enabled=false. No real user
+message was sent. Main feature flag remains disabled. End-user JWT HTTP flows and
+named-device/browser performance are still the pilot/UI/observation checkpoints;
+SQL personas, physical service-authorized Storage, and fixed deployed image health
+are recorded separately rather than described as a complete user journey.
+
+Task 7 is complete at the Storage/processing/service checkpoint. Task 8 can use the
+feature-local attachment service and authoritative capabilities when building the
+Work shell/list/create UI. No handoff was created or updated.

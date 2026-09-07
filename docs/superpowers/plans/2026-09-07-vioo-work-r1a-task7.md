@@ -24,3 +24,11 @@ ftciqmqhmfvjtwoycswe. No handoff. Feature and notification delivery gates stay o
   feature-local typed upload/read/delete service, lint/build/regressions/advisors.
 - Candidate commit, isolated dry-run/apply, API Edge deploy, Cloud postflight, and
   rollout evidence. No real user notifications, calendar setup or pilot enablement.
+
+Completed 2026-09-07. Implementation `6034762`; operation-boundary correction
+`f9ab102` prevents signed-upload capabilities outliving the reservation. Both forward
+migrations applied after isolated dry-runs, ledgers 18/18. Edge deployment and the
+Cloud Storage physical probe passed. All Task 3–7/core/helper Cloud regressions,
+353 Vitest files / 1,669 tests, five WASM image tests, lint/build, Deno locked check,
+query/baseline audits and error-level security advisors passed. Rollback/task/object
+fixtures are clean. See the normal rollout runbook for limits and postflight evidence.

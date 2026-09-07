@@ -5,7 +5,13 @@ import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 const ref = 'ftciqmqhmfvjtwoycswe';
 if (readFileSync('supabase/.temp/project-ref','utf8').trim() !== ref) throw new Error('Project ref mismatch');
-const keys = JSON.parse(execFileSync('npx',['--no-install','supabase','projects','api-keys','--project-ref',ref,'--output','json'], { encoding:'utf8', stdio:['ignore','pipe','pipe'] }));
+let keys;
+try {
+  keys = JSON.parse(execFileSync('npx',['--no-install','supabase','projects','api-keys','--project-ref',ref,'--output','json'], { encoding:'utf8', stdio:['ignore','pipe','pipe'] }));
+} catch {
+  // Child-process errors can embed captured stdout; never propagate credential output.
+  throw new Error('Probe credential lookup failed');
+}
 const key = keys.find(x => x.name === 'service_role')?.api_key;
 const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
 if (!key || !anonKey) throw new Error('Missing probe credentials');
