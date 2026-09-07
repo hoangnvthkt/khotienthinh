@@ -685,3 +685,21 @@ postflight). Users can log in, select Phòng Quản lý dự án and create thei
 work item. Admin settings are at `/#/work/settings`. Real user UI review is now
 available; notification/device acceptance and the 48-hour observation remain
 separate pending checkpoints. No handoff was created.
+
+### Workspace implementation started — WS1
+
+Executing the approved WS1–WS8 plan from this worktree. The user explicitly
+selected GPT 5.6 Luna / xhigh for sub-agents; the main agent owns integration,
+Cloud tests/applies and review. No handoff. WS1 is additive foundation only;
+existing task access, pilot membership/grants, deadlines and SLA stay unchanged.
+Foundation smoke was run before the new schema and failed as expected with
+`WORK_WORKSPACE_FOUNDATION_MISSING`. Contracts and schema are assigned to separate
+files; the main agent owns the Cloud smoke and baseline verification.
+
+WS1 candidate verification: Cloud rollback smoke passed source uniqueness including
+archived sources, immutable linkage, forbidden hard delete, append-only private
+audit, finite membership dates, RLS and denied browser membership writes. The
+legacy business snapshots inside the transaction are unchanged. Contracts: 6/6
+Vitest tests passed; TypeScript passed; baseline checker 22 active / 402 archived.
+Linked security advisor has zero ERROR findings (225 lower-severity findings;
+not claimed globally clean). Cloud application/postflight follows this candidate.

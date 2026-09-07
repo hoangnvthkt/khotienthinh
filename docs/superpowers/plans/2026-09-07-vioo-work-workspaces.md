@@ -1,10 +1,11 @@
 # Vioo Work Workspaces Implementation Plan
 
-> **For agentic workers:** Use superpowers:executing-plans to implement task-by-task
-> with the main agent. User/AGENTS.md explicitly prohibit sub-agents and unsolicited
-> handoffs; these override the skill's delegation/execution-choice suggestions.
-> Steps use checkbox syntax; this document is a plan, not authorization to publish
-> production UI or send notifications.
+> **For agentic workers:** Execute task-by-task with the main agent coordinating.
+> The user's subsequent instruction authorizes sub-agents for WS1–WS8, overriding
+> the earlier no-sub-agent instruction for this scope only. Every sub-agent must
+> use model `gpt-5.6-luna`, reasoning effort `xhigh` (Extra High).
+> No unsolicited handoffs. Steps use checkbox syntax; this document is a plan,
+> not authorization to publish production UI or send notifications.
 
 **Goal:** Xây dashboard Workspace trực quan, có thành viên/quản trị riêng, liên kết
 phòng ban/dự án chính thức, giữ nguyên nền tảng công việc R1A và hỗ trợ cộng tác liên phòng.
@@ -23,7 +24,8 @@ Vitest, Playwright/Chrome; tái sử dụng CSS, private Storage và worker Work
 ## Global Constraints
 
 - Worktree `/Users/admin/khotienthinh/.worktrees/vioo-work-r1a`, branch `feature/vioo-work-r1a`.
-- Main agent only; không dùng sub-agent; không tạo/cập nhật handoff khi chưa được yêu cầu.
+- Điều phối bằng agent chính; sub-agent chỉ trong WS1–WS8 theo chỉ dẫn mới của người dùng,
+  model `gpt-5.6-luna`, reasoning `xhigh`; không tạo/cập nhật handoff khi chưa được yêu cầu.
 - Chỉ Supabase Cloud project `ftciqmqhmfvjtwoycswe`, cấu hình root `.env`; không Docker/local Supabase.
 - Tạo migration bằng `npx --no-install supabase migration new <name>` khi thực hiện task.
   Không đặt trước timestamp, không sửa migration đã apply, không `db push --include-all`.
@@ -56,6 +58,37 @@ Không bật dashboard bằng dữ liệu thật trước WS4/WS5. WS6 có fixtu
 riêng để kiểm tra bố cục mà không phát sinh dữ liệu Cloud; WS8 mới nối trải nghiệm
 hoàn chỉnh cho pilot. Đây là một chuỗi phụ thuộc quyền/dữ liệu, không chia thành
 những nhánh triển khai độc lập làm lệch hợp đồng.
+
+## Cách phối hợp agent — cập nhật theo lựa chọn của người dùng
+
+Một agent có thể hoàn thành lộ trình, nhưng dùng sub-agent cho phần việc độc lập
+sẽ giúp tách triển khai khỏi kiểm tra. Không giao tám task chạy đồng thời: các
+hợp đồng dữ liệu/quyền là phụ thuộc tuần tự WS1–WS5.
+
+- **Agent chính:** sở hữu kiến trúc/contracts, điều phối file, rà quyền và tương thích,
+  tích hợp, xử lý lỗi liên phần, chạy Cloud rollback/apply/postflight, commit và báo cáo.
+- **Sub-agent triển khai:** một phần code có phạm vi file rõ và hợp đồng đã chốt;
+  ưu tiên service/component/fixture khi có thể chạy bên cạnh công việc của agent chính.
+- **Sub-agent kiểm tra:** rà spec/quyền/read-only hoặc viết test trong file được giao
+  riêng. Không sửa cùng file với người đang triển khai; phát hiện phải có đường tái hiện.
+- Thường tối đa **hai sub-agent đồng thời**; chỉ chạy song song khi có công việc
+  độc lập hữu ích. WS1/WS2 có thể chỉ một worker + agent chính vì phụ thuộc bảo mật.
+- Mỗi sub-agent dùng đúng `gpt-5.6-luna` + `xhigh`. Khi gọi spawn phải dùng fork
+  `none` hoặc số lượt hữu hạn để model/effort override được áp dụng; prompt đính kèm
+  đường dẫn worktree, spec, task, contracts, phạm vi file, test và tiêu chí hoàn thành.
+- Nếu model không khả dụng, agent chính tiếp tục phần việc và báo rõ; không tự đổi
+  sub-agent sang model khác. Không nhờ sub-agent sinh thêm agent.
+- Sub-agent không apply migration, cấp quyền pilot, thay gate, gửi thông báo, commit,
+  reset/checkout branch hoặc sửa dữ liệu Cloud. SQL candidate chỉ được tạo trong
+  file đã giao; agent chính chịu trách nhiệm kiểm thử Cloud và bước ghi dữ liệu.
+- Mọi agent dùng worktree Vioo Work được chỉ định và tôn trọng thay đổi đang có;
+  agent chính phân công không chồng file và kiểm diff trước khi tích hợp.
+- Kết quả sub-agent chỉ là đầu vào review. Agent chính kiểm code, chạy kiểm chứng
+  liên quan, kiểm regression và xác nhận tiêu chí task trước khi đánh dấu hoàn thành.
+
+Chỉ dẫn này thay thế các câu “main agent only” trước đây trong phạm vi WS1–WS8;
+không thay đổi AGENTS.md chung của repository hoặc các dự án khác. Việc ghi cách
+phối hợp vào kế hoạch chưa khởi chạy triển khai WS1.
 
 ## Hợp đồng xuyên suốt
 
