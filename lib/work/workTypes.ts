@@ -148,6 +148,8 @@ export interface WorkChecklistItem {
   sort_order: number;
   completed_by: string | null;
   completed_at: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
   lock_version: number;
   created_by: string;
   created_at: string;
@@ -198,6 +200,9 @@ export interface WorkTaskCapabilities {
   canCancel: boolean;
   canTransfer: boolean;
   canAddAssignees: boolean;
+  canManageChecklist: boolean;
+  canComment: boolean;
+  canSetPreferences: boolean;
 }
 export type WorkLifecycleCommand =
   | { command: 'acknowledge' | 'start' | 'unblock'; payload: Record<string, never> }
@@ -219,7 +224,65 @@ export interface WorkTaskDetail {
   currentSubmission: WorkTaskSubmission | null;
   attachments: WorkTaskAttachment[];
   capabilities: WorkTaskCapabilities;
+  preferences: WorkTaskPreferences;
 }
+
+/** Mute applies to routine activity; mandatory delivery is enforced by the worker. */
+export interface WorkTaskPreferences {
+  pinned: boolean;
+  notificationsEnabled: boolean;
+}
+export interface WorkTaskComment {
+  id: string;
+  task_id: string;
+  author_user_id: string;
+  parent_comment_id: string | null;
+  content_document: WorkTextDocument;
+  content_text: string;
+  edited_at: string | null;
+  lock_version: number;
+  created_at: string;
+  updated_at: string;
+  mentionedUserIds: string[];
+  /** Author-only editing while the task is open and the actor can comment. */
+  can_edit: boolean;
+}
+export interface WorkTaskEvent {
+  id: string;
+  task_id: string;
+  actor_user_id: string | null;
+  event_type: string;
+  source: 'human' | 'ai_chatbot' | 'automation' | 'system';
+  payload: Record<string, unknown>;
+  correlation_id: string | null;
+  idempotency_key: string | null;
+  created_at: string;
+}
+export interface WorkTaskHistoryFilters {
+  category?: 'status' | 'assignees' | 'files' | 'comments' | 'sla' | 'permissions' | 'checklist';
+  actorUserId?: string;
+}
+export interface WorkMentionCandidatePage {
+  items: Array<{ userId: string; name: string }>;
+  /** UUID cursor, ordered by user ID. Search and task must remain the same. */
+  nextCursor: string | null;
+}
+/** Comment edits replace content and the full mention list; an omitted list means empty. */
+export type WorkCollaborationCommand =
+  | { command: 'checklist_create'; payload: { title: string; assigneeUserId?: string | null; sortOrder?: number } }
+  | { command: 'checklist_update'; payload: { itemId: string; expectedLockVersion: number; title?: string; assigneeUserId?: string | null; sortOrder?: number } }
+  | { command: 'checklist_set_completed'; payload: { itemId: string; expectedLockVersion: number; completed: boolean } }
+  | { command: 'checklist_delete'; payload: { itemId: string; expectedLockVersion: number } }
+  | { command: 'comment_create'; payload: { content: WorkTextDocument; parentCommentId?: string; mentionedUserIds?: string[] } }
+  | { command: 'comment_edit'; payload: { commentId: string; expectedLockVersion: number; content: WorkTextDocument; mentionedUserIds?: string[] } }
+  | { command: 'set_pin'; payload: { pinned: boolean } }
+  | { command: 'set_notifications'; payload: { notificationsEnabled: boolean } };
+export type WorkCollaborationCommandInput = WorkCollaborationCommand & { taskId: string; idempotencyKey: string };
+export type WorkCollaborationCommandResult = { taskId: string; taskLockVersion: number } & (
+  | { item: WorkChecklistItem }
+  | { comment: WorkTaskComment }
+  | { preferences: WorkTaskPreferences }
+);
 export interface WorkTaskCloneDraft {
   draft: CreateWorkTaskInput;
   recipientSnapshot: Array<{ userId: string }>;

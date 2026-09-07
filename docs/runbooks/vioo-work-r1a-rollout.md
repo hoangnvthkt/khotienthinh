@@ -191,3 +191,44 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
 - Postflight persisted Work counts: tasks 0, calendars 0, policies 0, direct Work
   grants 0, outbox 0. Only the 16 unused concurrency-test code allocations remain.
   Task 0–4 checkpoints are complete; Task 5 is the next implementation checkpoint.
+
+### Task 5 — checklist, discussion and personal preferences (2026-09-07)
+
+- Candidate: `20260907032728_work_r1a_collaboration_commands.sql`.
+- `command_work_task_collaboration` provides eight fixed commands: checklist
+  create/update/complete-or-reopen/soft-delete, comment create/edit, pin and
+  notification preference. Actor-scoped idempotency and a task row lock cover
+  the complete mutation, immutable event/outbox and original response.
+- Checklist requires creator, accepted live assignee or scoped manager and is
+  frozen during review/closure. Item versions detect conflicting edits; task
+  versions also advance. Deleted items remain stored with completion evidence
+  but disappear from detail, direct RLS reads and clone drafts.
+- Discussion uses independent comment versions. Current participants can comment
+  on open tasks; only the author can edit. Edits replace the content/full mention
+  list (an omitted list means empty), retaining before/after evidence in events.
+  Replies cannot cross tasks. Attachment support follows in Task 7.
+- Mention picker and writes use the same target visibility predicate as task
+  reads. No relationship or permission is created. Newly introduced mention IDs
+  produce separate `comment.mentioned` outbox events with mandatory recipients
+  and comment deep-link IDs. Actual delivery/mute enforcement follows in Task 6.
+- Fixed the demonstrated event RLS leak for viewers without `audit_view`.
+  Events, task versions, history RPC and capabilities now use one audit predicate,
+  including canonical access for historical assignees. Watcher/scoped-view access
+  alone does not grant history access or restricted task access.
+- Comment/history readers use descending `(created_at,id)` cursors, max 100;
+  history supports category/actor filters. Mention picker returns ID/name only,
+  UUID cursor, max 50. Detail adds personal preferences and capabilities only.
+  Pin/mute changes are private and do not change shared task versions/events.
+- Cloud rollback smoke passed eight authenticated personas, cross-task rejection,
+  stale versions/retries, immutable edit/completion evidence, permission revocation,
+  restricted manager/mention boundaries, review freeze, personal isolation,
+  cursor ties/picker pagination, hard limits and function ACLs. The initial red
+  smoke reproduced `TEST_HISTORY_LEAK_WITHOUT_AUDIT_PERMISSION` before the fix.
+- Task 3/core/authenticated helper and Task 4 lifecycle/SLA rollback regressions
+  passed. Full frontend regression: 349 files / 1,654 tests, no failures. TypeScript
+  passed; query audit: 0 findings/errors; migration checker: 15 active/402 archived.
+  The feature flag remains false; no real calendar, pilot grants or UI activation.
+- Pre-apply Cloud security advisor at error level reported no issues. Inline review
+  checked command allowlists, per-actor private preferences, authenticated wrapper
+  ACLs, immutable audit and the shared visibility predicate. No applied migration
+  file was edited; only the new forward migration is a rollout candidate.
