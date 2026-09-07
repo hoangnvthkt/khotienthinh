@@ -19,3 +19,8 @@ worktree, main agent only, Cloud only. Keep the feature and notification gates o
    cases, permission denial and list return; lint/full tests/build/query audit;
    commit candidate, isolated migration dry-run/apply and Cloud postflight.
 7. Record normal rollout evidence and commit. No handoff or pilot activation.
+
+Completed 2026-09-07. Candidate `ab78c4b`; migration `20260907052234` applied on
+Cloud and postflight passed (20/20 ledgers). All seven steps are complete, including
+older-page comment conflict recovery. Verification and checkpoint limits are in
+the Task 9 section of `docs/runbooks/vioo-work-r1a-rollout.md`. Task 10 is next.

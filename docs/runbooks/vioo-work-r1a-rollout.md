@@ -44,7 +44,7 @@ flag and repair schema or data with a forward migration.
 - [x] Core schema/RLS and ten-persona Cloud smoke verified.
 - [x] Commands, lifecycle, SLA, collaboration, and outbox verified.
 - [x] Private Storage and upload processor verified.
-- [ ] Responsive UI verified at 360x800, 768x1024, and 1440x900.
+- [x] Responsive UI verified at 360x800, 768x1024, and 1440x900 in isolated Chrome QA; named-device pilot remains Task 11.
 - [ ] Named pilot grants reviewed; no bulk grants exist.
 - [ ] Feature flag enabled only for the approved deployment environment.
 - [ ] Forty-eight-hour observation completed.
@@ -565,3 +565,23 @@ Storage/processing permissions, Task 8 options, core RLS and authenticated helpe
 execution, each in its own transaction. Security advisor at error level reported no
 issues. Migration baseline is 20 active / 402 archived; query audit has zero findings
 or errors. TypeScript and production build passed with the existing chunk warning.
+
+Postflight: candidate `ab78c4b` listed only its Task 9 migration in the linked
+dry-run; apply succeeded and local/Cloud ledgers match 20/20. New detail readers,
+lifecycle, collaboration and core RLS smokes passed against the deployed schema.
+All three new public readers are present. Post-apply security advisor at error
+level found no issues; lower severities are not claimed clean. Work tasks,
+attachments, Storage objects, cleanup jobs, outbox, calendars, policies, direct
+Work grants and fixture users all remain zero. Storage is private; notification
+enabled=false and the environment feature flag is false.
+
+Final browser regression reproduced an edit conflict on an older comment page:
+refreshing the thread evicted the edited comment from the first page. Recovery now
+fetches that exact comment through the authorized anchor reader, allowing explicit
+reload and a new-version submission. The regression failed before the fix and
+passed afterward, together with the full Task 9 browser script, TypeScript and build.
+This was a frontend correction; the applied migration was not changed.
+
+Task 9 is complete at the responsive detail/actions checkpoint. No handoff was
+created or updated. Next: Task 10 scoped bucket/calendar/SLA settings and the named
+pilot checkpoint; production UI and notification activation remain gated.
