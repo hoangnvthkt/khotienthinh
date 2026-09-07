@@ -1198,3 +1198,105 @@
   font-size: 12px;
   font-weight: 650;
 }
+
+/* Scope administration uses the Work layout on both desktop and mobile. */
+.work-settings {
+  padding: 24px;
+  max-width: 1120px;
+  margin: 0 auto;
+  overflow-y: auto;
+}
+.work-settings h1 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 12px 0;
+}
+.work-settings h2,
+.work-config-dialog h2 {
+  font-size: 19px;
+  font-weight: 650;
+}
+.work-settings-card {
+  background: white;
+  border: 1px solid #dce5e2;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 18px 0;
+}
+.work-settings-tabs,
+.work-settings-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.work-settings-heading {
+  justify-content: space-between;
+}
+.work-settings-tabs [aria-pressed="true"] {
+  background: #e0f2ed;
+  border-color: #15745f;
+  color: #125342;
+}
+.work-settings-fields,
+.work-settings-fields fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 18px 0;
+}
+.work-config-list {
+  list-style: none;
+  padding: 0;
+}
+.work-config-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e7ecea;
+  padding: 16px 0;
+  overflow-wrap: anywhere;
+}
+.work-config-list p,
+.work-settings p {
+  color: #52645e;
+  margin: 8px 0;
+}
+.work-config-dialog {
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid #dce5e2;
+  border-radius: 14px;
+  overflow-y: auto;
+  color: #203b32;
+}
+.work-config-dialog::backdrop {
+  background: #102e2670;
+}
+.work-config-dialog .work-input {
+  width: 100%;
+  min-width: 0;
+}
+.work-config-dialog fieldset:disabled {
+  opacity: 0.65;
+}
+@media (max-width: 600px) {
+  .work-settings {
+    padding: 12px;
+  }
+  .work-settings-card {
+    padding: 14px;
+  }
+  .work-config-list li {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .work-config-dialog {
+    padding: 18px;
+  }
+}

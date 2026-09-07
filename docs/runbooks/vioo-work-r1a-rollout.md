@@ -585,3 +585,64 @@ This was a frontend correction; the applied migration was not changed.
 Task 9 is complete at the responsive detail/actions checkpoint. No handoff was
 created or updated. Next: Task 10 scoped bucket/calendar/SLA settings and the named
 pilot checkpoint; production UI and notification activation remain gated.
+
+## Task 10 — scoped configuration and named pilot preparation
+
+Settings at `/work/settings` require the feature gate, canonical module access and
+an active `work.task.configure` source. The server lists only authorized scopes;
+technical ADMIN status adds no Work permission. Groups stay department/project
+scoped. Calendar ownership is explicit; only global configurators edit shared
+calendars, while department/project policies can select an active shared calendar.
+Calendar exceptions can override hours, mark a holiday, or restore the weekly day.
+Policies specify priority, effective interval and working-minute ACK/execution SLA.
+A server preview shows the resolved calendar and both due dates for a supplied
+start time. It does not change a task deadline.
+
+Migration `20260907062813_work_r1a_configuration.sql` adds guarded, bounded reads and
+versioned/idempotent writes. A short configuration-only advisory lock serializes
+policy overlap checks and calendar dependencies. Every mutation records actor,
+reason, before/after values and command key in private audit storage; scoped audit
+reads are bounded too. Writes cannot change ownership, bypass the scope grant,
+remove an in-use calendar or silently recalculate existing task/assignment data.
+The UI freezes unresolved saves and preserves their exact request in per-actor
+session storage for retry after navigation; no credentials are stored there.
+
+Named pilot preflight verified active accounts `admin@khoviet.vn` (Admin Hoàng,
+`928d3473-49a2-4427-a319-19729689a084`) and `sonpn@tienthinhjsc.vn` (Phạm Ngọc Sơn,
+`d0a300a0-1586-4748-b6e7-71773addc004`), and department `Phòng Quản lý dự án`
+(`6a1ee524-c7f6-41dd-9b0d-440e76c6cdc9`). No Work grants existed for either account.
+The reviewable manifest is `docs/runbooks/vioo-work-r1a-pilot.json`: module access
+for both, business permissions confined to this department, configure/manage only
+for the named admin, and 14-day temporary grants. No restricted-view, global
+business, work-group distribution, or other-user grants are proposed.
+
+The user supplied Monday–Saturday, 08:00–17:00. Lunch exclusion and the deployment
+target are still being clarified. The manifest contains that supplied span as a
+draft and must not be applied until those fields are resolved. After confirmation,
+create one department-owned calendar and three department priority policies:
+normal = one confirmed working day, important = 240 minutes, urgent = 60 minutes;
+execution SLA stays unset. This follows design §9.1 and avoids a global fallback
+calendar changing other scopes. Resolve accounts/scope again before grants, set
+explicit expiries, verify recipient preview and task lifecycle in a rollback
+transaction, then activate only the selected frontend target and agreed delivery.
+Record the actual activation time before Task 11's 48-hour observation begins.
+
+Task 10's named pilot is not yet active. Gates remain off while the two outstanding
+configuration choices are pending. No handoff was created or updated.
+
+Pre-apply verification: 357 Vitest files / 1,686 tests passed, TypeScript and
+production build passed (existing bundle-size warning). Query audit: zero findings
+and errors; migration baseline: 21 active / 402 archived. Task 10 isolated Chrome
+QA passed at 1440x900, 768x1024 and 360x800, including same-key recovery after a full
+page reload, version conflict with exact-record reload, holiday creation, policy
+selection and SLA preview. Screenshots: `/tmp/vioo-work-task10-qa`. Task 8 and Task 9
+browser regressions passed. Task 9's test now waits for the initial animation-frame
+scroll restoration before setting a simulated user scroll, avoiding a detected
+race in the test; production detail behavior was not changed.
+
+Cloud candidate rollback suites passed for configuration (scoped/global/outsider,
+shared calendars, audit, overlap, invalid intervals, same-key retry, unchanged
+assignment rows), SLA engine, task commands, core RLS and authenticated permission
+helper execution. The final configuration smoke passed after scope-before-version
+checks and the scoped history index were added. Linked security advisor at error
+level reported no issues on the pre-apply schema; post-apply evidence follows.

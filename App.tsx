@@ -171,6 +171,7 @@ const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ c
   isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
 
 const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
+const WorkSettings = React.lazy(() => import('./pages/work/WorkSettings'));
 
 const AppRoutes: React.FC = () => {
   return (
@@ -180,6 +181,7 @@ const AppRoutes: React.FC = () => {
           <Route index element={<Home />} />
           <Route path="work" element={<Navigate to="/work/my" replace />} />
           <Route path="work/my" element={<WorkPage />} />
+          <Route path="work/settings" element={<WorkSettings />} />
           <Route path="work/tasks/:taskCode" element={<WorkPage />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="my-profile" element={<MyProfile />} />

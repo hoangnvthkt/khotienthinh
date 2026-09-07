@@ -50,6 +50,16 @@ describe('Work canonical route boundary', () => {
     expect(canAccessRoute(workUser(Role.ADMIN), '/work/my')).toBe(false);
   });
 
+  it('requires active canonical configure permission on settings', async () => {
+    const { canAccessRoute } = await loadBoundary(true);
+    const user = workUser(Role.ADMIN, 'work.module.access');
+    expect(canAccessRoute(user, '/work/settings')).toBe(false);
+    user.permissionGrants!.push({userId:user.id,permissionCode:'work.task.configure',scopeType:'department',scopeId:'d1',isActive:true});
+    expect(canAccessRoute(user, '/work/settings')).toBe(true);
+    user.permissionGrants![1].expiresAt='2020-01-01T00:00:00Z';
+    expect(canAccessRoute(user, '/work/settings')).toBe(false);
+  });
+
   it('does not let a department grant cover a project scope', async () => {
     await loadBoundary(true);
     const { evaluateCapability } = await import('../permissions/authorizationEvaluator');

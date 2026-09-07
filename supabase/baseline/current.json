@@ -24,7 +24,8 @@
     "20260907041036_work_r1a_private_attachments.sql",
     "20260907042716_work_r1a_upload_operation_guard.sql",
     "20260907043333_work_r1a_creation_options.sql",
-    "20260907052234_work_r1a_detail_ui_reads.sql"
+    "20260907052234_work_r1a_detail_ui_reads.sql",
+    "20260907062813_work_r1a_configuration.sql"
   ],
   "forbidIncludeAll": true
 }

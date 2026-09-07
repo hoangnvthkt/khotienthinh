@@ -262,6 +262,13 @@ try {
   await page
     .getByRole("heading", { name: "Công việc số 1", exact: true })
     .waitFor();
+  // Let the initial list restoration finish before simulating the user's scroll.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
   await page
     .locator("[data-work-scroll-host]")
     .evaluate((el) => (el.scrollTop = 500));
@@ -289,7 +296,11 @@ try {
   await page
     .getByRole("heading", { name: "Công việc số 1", exact: true })
     .waitFor();
-  await page.waitForTimeout(80);
+  await page.waitForFunction(
+    (top) =>
+      document.querySelector("[data-work-scroll-host]").scrollTop === top,
+    previousScroll,
+  );
   assert.equal(
     await page
       .locator("[data-work-scroll-host]")

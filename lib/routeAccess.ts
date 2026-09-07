@@ -93,7 +93,8 @@ export const canAccessRoute = (
   if (isWorkRoute(pathname)) {
     return isViooWorkEnabled
       && getRouteModuleKey(pathname) === 'work.module'
-      && canPerform(user, 'work.module.access', GLOBAL_SCOPE);
+      && canPerform(user, 'work.module.access', GLOBAL_SCOPE)
+      && (pathname !== '/work/settings' || canConfigureWork(user));
   }
 
   const moduleKey = getRouteModuleKey(pathname);
@@ -106,3 +107,4 @@ export const canAccessRoute = (
 
   return canViewRoute(user, pathname);
 };
+import { canConfigureWork } from './work/workConfigurationAccess';

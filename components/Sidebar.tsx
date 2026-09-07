@@ -239,7 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Nav items per module
   const moduleNavMap: Record<AppKey, any[]> = {
-    'work.module': [{ to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }],
+    'work.module': [{ to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
     WMS: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null },
@@ -326,6 +326,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const currentNavItems = (isModuleView && isModuleAllowed && activeModule) ? moduleNavMap[activeModule.key] || [] : [];
   const filteredNavItems = currentNavItems.filter((item: any) => {
+    if (item.to === '/work/settings' && !canConfigureWork(user)) return false;
     const subModules = activeModule ? user.allowedSubModules?.[activeModule.key] || [] : [];
     const adminSubModules = activeModule ? user.adminSubModules?.[activeModule.key] || [] : [];
     const isLegacyModuleAdmin = activeModule ? (user.adminModules || []).includes(activeModule.key) : false;
@@ -973,3 +974,4 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 };
 
 export default Sidebar;
+import { canConfigureWork } from '../lib/work/workConfigurationAccess';
