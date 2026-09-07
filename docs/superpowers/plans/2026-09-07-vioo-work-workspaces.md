@@ -193,15 +193,15 @@ Read `lib/work/workTypes.ts`, core schema migration `20260907021001_work_r1a_cor
 **Consumes:** org_units UUID, projects text ID, users UUID; R1A task/config tables.
 **Produces:** bảng và contracts ở trên; chưa cấp quyền người dùng hoặc đổi task access.
 
-- [ ] Ghi fixture rollback với hai phòng, hai dự án, Workspace cộng tác và liên kết
+- [x] Ghi fixture rollback với hai phòng, hai dự án, Workspace cộng tác và liên kết
   trùng. Chứng minh insert sai shape/trùng nguồn bị chặn; archived không giải phóng
   unique nguồn. Chứng minh browser không thể trực tiếp insert/update membership.
-- [ ] Chạy fixture trước schema, xác nhận fail vì bảng chưa tồn tại.
-- [ ] Tạo migration bằng CLI, thêm bảng, FK indexes, unique indexes và private audit.
+- [x] Chạy fixture trước schema, xác nhận fail vì bảng chưa tồn tại.
+- [x] Tạo migration bằng CLI, thêm bảng, FK indexes, unique indexes và private audit.
   Browser table access deny-by-default; chưa mở generic table SELECT cho membership.
-- [ ] Thêm types và test phân biệt direct/workspace/legacy scope, không chấp nhận
+- [x] Thêm types và test phân biệt direct/workspace/legacy scope, không chấp nhận
   workspaceId kèm departmentId do client gửi. Không đổi input type cũ ở task này.
-- [ ] Chạy rollback smoke qua `scripts/run-supabase-cloud-transaction.mjs`, baseline
+- [x] Chạy rollback smoke qua `scripts/run-supabase-cloud-transaction.mjs`, baseline
   checker, TypeScript; commit candidate với explicit paths. Apply foundation theo
   checkpoint chung nếu smoke/advisors đạt; access_mode vẫn legacy cho dữ liệu cũ.
 
@@ -255,18 +255,18 @@ cursor cùng sort, đổi filter/sort phải reset. Pin section đọc riêng, k
 sách đã ghim từ trang đầu của toàn bộ Workspace. Recovery RPC riêng
 `recover_work_workspace_admin(p_workspace_id,p_user_id,p_reason,p_key)`.
 
-- [ ] Viết permission tests trước: HRM member không phải Workspace member, legacy
+- [x] Viết permission tests trước: HRM member không phải Workspace member, legacy
   ADMIN, global Work grant ngoài membership, expired/disabled member đều không vào
   task Workspace; admin A không sửa B; member không đổi role của chính mình.
-- [ ] Thêm nguồn membership vào central resolver/snapshot, scope work_workspace vào
+- [x] Thêm nguồn membership vào central resolver/snapshot, scope work_workspace vào
   types/catalog và đúng các constraint cần thiết. So sánh parity JS/SQL cho mỗi role.
   Giữ nguyên mọi nhánh non-Work; test permission regression cả HRM và project.
-- [ ] Implement create atomically tạo Workspace + admin đầu tiên + audit, validate
+- [x] Implement create atomically tạo Workspace + admin đầu tiên + audit, validate
   nguồn đang hoạt động và actor được phép dùng nguồn; rollback toàn bộ khi có lỗi.
-- [ ] Implement member preview/apply: lock Workspace, kiểm version/fingerprint,
+- [x] Implement member preview/apply: lock Workspace, kiểm version/fingerprint,
   user active, expiry, admin cuối và nhiệm vụ đang mở. Không update/delete users,
   employees, project_staff hoặc grants của module khác.
-- [ ] Implement list/get/member readers, role-derived capabilities, counts ban đầu
+- [x] Implement list/get/member readers, role-derived capabilities, counts ban đầu
   chỉ trả dữ liệu được guard; WS4 hoàn thiện task counts. Audit read bounded cùng guard.
 - [ ] Test concurrent demote/remove admin, replay key, response lost, key reused với
   payload khác; khôi phục admin chỉ đúng recovery capability. Verify SQL và commit.
@@ -284,6 +284,11 @@ scope matcher để thay thế kiểm chứng đường truy cập thực tế.
 
 **Nghiệm thu:** thêm/bớt/đổi vai trò được audit và không sinh direct-grant pool.
 Commit `feat(work): add workspace membership and canonical capabilities`.
+
+
+WS2 verification note: replay/version/batch guards pass Cloud rollback; actual
+simultaneous-client race coverage remains for WS8. Task-resource negatives listed
+in the first item are implemented at the WS4 guard checkpoint.
 
 ## WS3 — Gợi ý nhân sự và đối chiếu nguồn
 

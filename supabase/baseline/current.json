@@ -26,7 +26,8 @@
     "20260907043333_work_r1a_creation_options.sql",
     "20260907052234_work_r1a_detail_ui_reads.sql",
     "20260907062813_work_r1a_configuration.sql",
-    "20260907090453_work_workspace_foundation.sql"
+    "20260907090453_work_workspace_foundation.sql",
+    "20260907090818_work_workspace_membership.sql"
   ],
   "forbidIncludeAll": true
 }

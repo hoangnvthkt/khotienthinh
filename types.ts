@@ -179,7 +179,7 @@ export interface UserPermissionGrant {
   id?: string;
   userId: string;
   permissionCode: string;
-  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department' | 'direct_reports' | 'org_unit';
+  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department' | 'direct_reports' | 'org_unit' | 'work_workspace';
   scopeId: string;
   isActive?: boolean;
   grantedBy?: string;

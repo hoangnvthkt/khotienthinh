@@ -703,3 +703,49 @@ legacy business snapshots inside the transaction are unchanged. Contracts: 6/6
 Vitest tests passed; TypeScript passed; baseline checker 22 active / 402 archived.
 Linked security advisor has zero ERROR findings (225 lower-severity findings;
 not claimed globally clean). Cloud application/postflight follows this candidate.
+
+WS1 applied from candidate `9de0b10`; dry-run listed only
+`20260907090453_work_workspace_foundation.sql`. Post-apply rollback smoke passed
+and local/Cloud ledgers match 22/22. Pre/post hashes for the one existing task,
+assignments, calendar and policies are identical. Work grants remain 15 and
+notification delivery remains disabled. No Workspace or fixture data persisted.
+Continuing WS2 membership commands and canonical sources.
+
+WS1 post-apply linked security advisor at ERROR level reports no issues. WS2
+Cloud smoke first failed with `WORK_WORKSPACE_MEMBERSHIP_MISSING`, as expected.
+Canonical-source candidate rollback passes member/admin scope, snapshot parity,
+archived read-only access and disabled-account checks. Synthetic account-state
+changes in the rollback fixture use the existing trusted lifecycle context; no
+account guard was changed. Frontend contracts, Workspace services/permissions,
+Work route boundary and authorization evaluator: 5 files / 26 tests passed.
+Command integration and expanded membership smoke are still in progress.
+
+### Workspace membership — WS2 candidate
+
+The final candidate adds canonical `WORKSPACE_MEMBER` sources and guarded
+Workspace/source/member/audit readers, create/profile/archive/restore/recovery,
+membership preview/apply and user preferences. Non-Work resolver branches are
+preserved exactly; rollback comparison of the two pilot accounts' non-Work
+sources was unchanged. Source visibility follows the existing source SELECT
+policies: active actors can read the organization catalog; project visibility
+uses the existing project predicate. Workspace creation still requires its own
+canonical capability. No membership automatically grants restricted/group-task
+capabilities; those remain available only as separately authorized grants.
+
+Final Cloud rollback passed creation and replay/key conflicts, canonical snapshot
+parity, outsider/self-promotion/expired/disabled denials, last-admin batch guard,
+open assignment/review removal blockers, source uniqueness and legacy-calendar
+migration guard, Workspace/member/source keyset pagination, pin/open persistence,
+archive/restore/read-only behavior, version and stale-preview conflicts, expiry
+escalation (including explicit null), UUID alias deduplication, removed-actor
+replay denial and explicit recovery without task-read access for the recovery
+actor. R1A task-command regression passed on the candidate. These checks exercise
+serialized mutations and version conflicts; separate simultaneous-client race
+testing is not claimed. Task/resource membership enforcement is WS4.
+
+Frontend verification: 6 files / 44 tests passed; TypeScript passed. Query audit
+reports zero findings/errors; migration baseline 23 active / 402 archived. Review
+fixes included source authorization before status probing, indexed calendar
+checks, effective last-admin calculation, nullable expiry semantics, cursor
+queries and invoker-to-private RPC execution grants. Pilot data/activation is
+unchanged; Cloud apply/postflight follows this candidate.

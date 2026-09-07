@@ -230,7 +230,7 @@ describe('permissionRegistry', () => {
     const workActions = getAllPermissionActions().filter(action => action.permissionCode.startsWith('work.'));
 
     expect(workApplication?.label).toBe('Công việc');
-    expect(workModules.map(module => module.code)).toEqual(['work.module', 'work.task']);
+    expect(workModules.map(module => module.code)).toEqual(['work.module', 'work.task', 'work.workspace']);
     expect(workActions.map(action => action.permissionCode)).toEqual([
       'work.module.access',
       'work.task.create',
@@ -243,6 +243,10 @@ describe('permissionRegistry', () => {
       'work.task.review',
       'work.task.audit_view',
       'work.task.configure',
+      'work.workspace.create',
+      'work.workspace.manage_members',
+      'work.workspace.archive',
+      'work.workspace.recover',
     ]);
     expect(workModules.every(module => module.legacyModuleKey === undefined)).toBe(true);
     expect(workActions.every(action => action.legacyModuleKey === undefined)).toBe(true);
@@ -254,10 +258,37 @@ describe('permissionRegistry', () => {
     );
 
     expect(actionByCode['work.module.access'].scopeTypes).toEqual(['global']);
-    expect(actionByCode['work.task.view_scope'].scopeTypes).toEqual(['global', 'department', 'project']);
+    expect(actionByCode['work.task.view_scope'].scopeTypes).toEqual(['global', 'department', 'project', 'work_workspace']);
     expect(actionByCode['work.task.view_related'].scopeTypes).toEqual([
-      'global', 'own', 'assigned', 'department', 'project',
+      'global', 'own', 'assigned', 'department', 'project', 'work_workspace',
     ]);
+  });
+
+  it('keeps Work Workspace scopes in parity with the canonical catalog', () => {
+    const actionByCode = Object.fromEntries(
+      getAllPermissionActions().map(action => [action.permissionCode, action]),
+    );
+    const workspaceScopedCodes = [
+      'work.task.create',
+      'work.task.view_related',
+      'work.task.assign_user',
+      'work.task.assign_group',
+      'work.task.view_scope',
+      'work.task.view_restricted',
+      'work.task.manage_scope',
+      'work.task.review',
+      'work.task.audit_view',
+      'work.task.configure',
+      'work.workspace.manage_members',
+      'work.workspace.archive',
+    ];
+
+    for (const permissionCode of workspaceScopedCodes) {
+      expect(actionByCode[permissionCode]?.scopeTypes, permissionCode).toContain('work_workspace');
+    }
+    expect(actionByCode['work.module.access']?.scopeTypes).not.toContain('work_workspace');
+    expect(actionByCode['work.workspace.create']?.scopeTypes).not.toContain('work_workspace');
+    expect(actionByCode['work.workspace.recover']?.scopeTypes).not.toContain('work_workspace');
   });
 
   it('maps every Project tab route to a project view permission', () => {
