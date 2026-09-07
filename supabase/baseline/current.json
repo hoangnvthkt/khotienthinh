@@ -12,7 +12,8 @@
     "20260904081841_allow_generated_hrm_employee_code.sql",
     "20260905034726_authorization_v2_phase1_legacy_write_guard.sql",
     "20260905035047_authorization_v2_phase2_snapshot_rpc.sql",
-    "20260905041938_material_issue_approval_reversal_return.sql"
+    "20260905041938_material_issue_approval_reversal_return.sql",
+    "20260907012229_work_r1a_permission_registry.sql"
   ],
   "forbidIncludeAll": true
 }

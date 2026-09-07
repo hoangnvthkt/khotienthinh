@@ -224,6 +224,42 @@ describe('permissionRegistry', () => {
     expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
   });
 
+  it('registers Work as a canonical-only business domain', () => {
+    const workApplication = getPermissionApplications().find(app => app.code === 'work');
+    const workModules = getPermissionModules().filter(module => module.code.startsWith('work.'));
+    const workActions = getAllPermissionActions().filter(action => action.permissionCode.startsWith('work.'));
+
+    expect(workApplication?.label).toBe('Công việc');
+    expect(workModules.map(module => module.code)).toEqual(['work.module', 'work.task']);
+    expect(workActions.map(action => action.permissionCode)).toEqual([
+      'work.module.access',
+      'work.task.create',
+      'work.task.view_related',
+      'work.task.assign_user',
+      'work.task.assign_group',
+      'work.task.view_scope',
+      'work.task.view_restricted',
+      'work.task.manage_scope',
+      'work.task.review',
+      'work.task.audit_view',
+      'work.task.configure',
+    ]);
+    expect(workModules.every(module => module.legacyModuleKey === undefined)).toBe(true);
+    expect(workActions.every(action => action.legacyModuleKey === undefined)).toBe(true);
+  });
+
+  it('keeps Work department and project grants isolated by scope type', () => {
+    const actionByCode = Object.fromEntries(
+      getAllPermissionActions().map(action => [action.permissionCode, action]),
+    );
+
+    expect(actionByCode['work.module.access'].scopeTypes).toEqual(['global']);
+    expect(actionByCode['work.task.view_scope'].scopeTypes).toEqual(['global', 'department', 'project']);
+    expect(actionByCode['work.task.view_related'].scopeTypes).toEqual([
+      'global', 'own', 'assigned', 'department', 'project',
+    ]);
+  });
+
   it('maps every Project tab route to a project view permission', () => {
     const projectRoutes = [
       ...PROJECT_TAB_PERMISSIONS.map(tab => tab.route),

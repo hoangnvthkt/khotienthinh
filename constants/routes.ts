@@ -68,6 +68,13 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/rq/:requestId': 'RQ',
   '/rq/categories': 'RQ',
 
+  // ── VIOO WORK ────────────────────────────────────────
+  '/work': 'work.module',
+  '/work/my': 'work.module',
+  '/work/scopes': 'work.module',
+  '/work/tasks/:taskCode': 'work.module',
+  '/work/settings': 'work.module',
+
   // ── NGÂN SÁCH ─────────────────────────────────────────
   '/expense': 'EX',
 

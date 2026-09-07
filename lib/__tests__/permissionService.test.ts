@@ -41,6 +41,13 @@ describe('permissionService', () => {
     expect(canPerform(technicalAdmin, 'system.hrm.manage')).toBe(false);
   });
 
+  it('does not give a technical admin implicit Work access', () => {
+    const technicalAdmin = user({ role: Role.ADMIN });
+
+    expect(canPerform(technicalAdmin, 'work.module.access')).toBe(false);
+    expect(canPerform(technicalAdmin, 'work.task.configure')).toBe(false);
+  });
+
   it('allows a technical admin to use HRM permissions from an effective source', () => {
     const hrAdmin = user({
       role: Role.ADMIN,

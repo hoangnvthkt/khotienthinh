@@ -3,6 +3,7 @@ import { ROUTE_TO_MODULE } from '../constants/routes';
 import { User } from '../types';
 import { canPerform, canViewRoute } from './permissions/permissionService';
 import { PermissionScope } from './permissions/permissionTypes';
+import { isViooWorkEnabled } from './featureFlags';
 
 const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/',
@@ -54,6 +55,9 @@ export const HRM_ROUTE_PERMISSION_REQUIREMENTS: Readonly<Record<string, RoutePer
   },
 };
 
+const isWorkRoute = (pathname: string): boolean =>
+  pathname === '/work' || pathname.startsWith('/work/');
+
 export const normalizeRoutePath = (route: string): string => {
   const path = route.split('?')[0].split('#')[0].trim();
   return path || '/';
@@ -86,6 +90,9 @@ export const canAccessRoute = (
 
   const pathname = normalizeRoutePath(route);
   if (isAuthenticatedOpenRoute(pathname)) return true;
+  if (isWorkRoute(pathname)) {
+    return isViooWorkEnabled && canPerform(user, 'work.module.access', GLOBAL_SCOPE);
+  }
 
   const moduleKey = getRouteModuleKey(pathname);
   if (!moduleKey) return false;

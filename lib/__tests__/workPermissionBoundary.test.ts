@@ -1,0 +1,77 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { Role, type AuthorizationSnapshot, type User } from '../../types';
+
+const workUser = (role: Role, permissionCode?: string): User => ({
+  id: 'work-user-1',
+  name: 'Work User',
+  email: 'work@example.com',
+  role,
+  allowedModules: [],
+  adminModules: [],
+  allowedSubModules: {},
+  adminSubModules: {},
+  permissionGrants: permissionCode ? [{
+    userId: 'work-user-1',
+    permissionCode,
+    scopeType: 'global',
+    scopeId: '*',
+    isActive: true,
+  }] : [],
+});
+
+const loadBoundary = async (enabled: boolean) => {
+  vi.resetModules();
+  vi.stubEnv('VITE_ENABLE_VIOO_WORK', enabled ? 'true' : 'false');
+  return import('../routeAccess');
+};
+
+describe('Work canonical route boundary', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('keeps every Work route closed while the feature flag is off', async () => {
+    const { canAccessRoute } = await loadBoundary(false);
+    const pilot = workUser(Role.EMPLOYEE, 'work.module.access');
+
+    expect(canAccessRoute(pilot, '/work/my')).toBe(false);
+    expect(canAccessRoute(pilot, '/work/tasks/VW-2026-000001')).toBe(false);
+  });
+
+  it('opens Work only for a canonical module grant when the flag is on', async () => {
+    const { canAccessRoute, getRouteModuleKey } = await loadBoundary(true);
+    const pilot = workUser(Role.EMPLOYEE, 'work.module.access');
+
+    expect(getRouteModuleKey('/work/tasks/VW-2026-000001')).toBe('work.module');
+    expect(canAccessRoute(pilot, '/work/my')).toBe(true);
+    expect(canAccessRoute(workUser(Role.EMPLOYEE), '/work/my')).toBe(false);
+    expect(canAccessRoute(workUser(Role.ADMIN), '/work/my')).toBe(false);
+  });
+
+  it('does not let a department grant cover a project scope', async () => {
+    await loadBoundary(true);
+    const { evaluateCapability } = await import('../permissions/authorizationEvaluator');
+    const snapshot: AuthorizationSnapshot = {
+      generatedAt: '2026-09-07T00:00:00.000Z',
+      flags: { legacy_fallback_disabled: false },
+      sources: [{
+        permissionCode: 'work.task.view_scope',
+        sourceType: 'DIRECT',
+        scopeType: 'department',
+        scopeId: 'department-1',
+        isBusinessApproval: false,
+        metadata: {},
+      }],
+      roomActions: [],
+    };
+
+    expect(evaluateCapability(snapshot, 'work.task.view_scope', {
+      scopeType: 'department', scopeId: 'department-1',
+    }).allowed).toBe(true);
+    expect(evaluateCapability(snapshot, 'work.task.view_scope', {
+      scopeType: 'project', scopeId: 'department-1',
+    }).allowed).toBe(false);
+  });
+});

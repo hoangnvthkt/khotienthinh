@@ -206,6 +206,7 @@ const grantToSource = (grant: UserPermissionGrant): EffectivePermissionSource =>
 const legacySourcesForCompatibility = (
   user: Exclude<PermissionUser, null | undefined>,
 ): EffectivePermissionSource[] => getAllPermissionActions()
+  .filter(action => Boolean(action.legacyModuleKey))
   .filter(action => !isHrmPermissionCode(action.permissionCode))
   .filter(action => user.role === Role.ADMIN || hasLegacyPermission(user, action))
   .map(action => ({

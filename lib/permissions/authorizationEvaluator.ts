@@ -55,7 +55,10 @@ const legacySourceDisabled = (
   snapshot: AuthorizationSnapshot,
   source: EffectivePermissionSource,
 ): boolean => source.sourceType.toUpperCase() === 'LEGACY'
-  && snapshot.flags.legacy_fallback_disabled === true;
+  && (
+    snapshot.flags.legacy_fallback_disabled === true
+    || source.permissionCode.startsWith('work.')
+  );
 
 export const evaluateCapability = (
   snapshot: AuthorizationSnapshot | null | undefined,
