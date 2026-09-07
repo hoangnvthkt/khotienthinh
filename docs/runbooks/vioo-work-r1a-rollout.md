@@ -232,3 +232,14 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   checked command allowlists, per-actor private preferences, authenticated wrapper
   ACLs, immutable audit and the shared visibility predicate. No applied migration
   file was edited; only the new forward migration is a rollout candidate.
+- Release candidate `8926cd0`: linked dry-run listed only the Task 5 migration;
+  apply succeeded. Collaboration, lifecycle, SLA engine, Task 3 commands, core RLS
+  and authenticated helper postflight smokes all passed against the applied
+  schema (`--migration /dev/null`). Local/Cloud ledgers match 15/15. Post-apply
+  Cloud security advisor at error level: no issues; lower severities were not
+  claimed clean.
+- Persisted Work counts after postflight: tasks 0, comments 0, calendars 0,
+  policies 0, direct Work grants 0, outbox 0, collaboration fixture users 0.
+  Task 5 is complete at the backend/RPC checkpoint. Task 6 is notification
+  delivery, retry/deduplication, mandatory-event mute rules and invalidation;
+  UI and Storage remain at their later roadmap checkpoints.

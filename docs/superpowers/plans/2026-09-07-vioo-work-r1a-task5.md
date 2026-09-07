@@ -16,4 +16,11 @@ Approved basis: task-management design sections 11–12, 20 and the R1A roadmap.
 - [x] Forward migration: shared visibility/audit predicates, checklist soft-delete, collaboration commands, bounded readers, detail/clone filters and explicit ACLs.
 - [x] Feature-local TypeScript contracts and authenticated persona smoke: cross-task input, restricted visibility, historical audit, version/idempotency, immutable evidence, cursors and private preferences.
 - [x] Task 3/4/core/helper regression, lint, migration/query checks and security advisor.
-- [ ] Explicit candidate commit, isolated dry-run/apply, postflight and rollout evidence commit.
+- [x] Explicit candidate commit, isolated dry-run/apply, postflight and rollout evidence.
+
+Release candidate `8926cd0` was applied after a dry-run listing only the Task 5
+migration. Collaboration, lifecycle, SLA, Task 3, core RLS and authenticated helper
+postflight smokes passed against the applied schema. Local/Cloud ledgers match
+15/15; security advisor error level has no issues. Persisted tasks, comments,
+calendars, policies, direct Work grants, outbox and collaboration fixture users are
+all zero. Rollout evidence is recorded in `docs/runbooks/vioo-work-r1a-rollout.md`.
