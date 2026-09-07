@@ -502,3 +502,66 @@ policies, direct Work grants and fixture users are all zero. Storage remains pri
 notification enabled=false and the environment Work feature flag is false. No real
 user notification was sent. Task 8 is complete at the shell/list/create checkpoint.
 Next is Task 9: rich task detail and lifecycle/collaboration UI.
+
+### Task 9 — responsive detail and capability actions (2026-09-07)
+
+The detail route now retains a contextual task rail on desktop, with task content,
+result/checklist/files/discussion in the center and responsibility/SLA on the right.
+Tablet/phone metadata opens a modal sheet; the phone action bar stays above the
+application's bottom navigation. Work uses Layout's scroll container directly.
+Returning to the list preserves its filter query and scroll position. Account changes
+remount the workspace and clear feature-local data.
+
+Action availability comes from the existing server capabilities. Acknowledge,
+clarification, start/block/unblock, submit, approve/request changes, cancel, transfer
+and add co-assignees call the existing lifecycle RPC with the captured task version.
+Transfer/cancel/request changes require a reason and explicit confirmation. A
+workspace-owned in-memory mutation session preserves the exact task, payload,
+version and key across ambiguous retries and detail navigation. It prevents another
+command until resolved. Version conflicts require inspecting the latest task/item/
+comment before submitting anew. Reload warnings cover uncertain commands and pending
+uploads; no persistent/offline draft recovery is claimed.
+
+Checklist create/update/order/assignee/complete/delete, author-only comment editing,
+replies, authorized mention selection, personal pin/mute and filtered activity history
+use Task 5 commands/readers. Comments and history load only when expanded, in 30-row
+cursor pages. A notification `?comment=<uuid>` fetches the exact authorized comment
+and its immediate parent, highlights and scrolls to it without crawling every page.
+History displays actor/source/time and expandable recorded payload/correlation data.
+Mention selection does not add assignments, watchers or grants.
+
+Migration `20260907052234_work_r1a_detail_ui_reads.sql` adds three guarded public read
+entry points backed by private definers: minimal context names (at most 100 requested
+IDs, each tied to the subject), eligible transfer/co-assignee choices (30 client /
+50 server maximum, UUID cursor), and a two-record comment anchor. Candidate eligibility
+reuses the exact lifecycle helper, including restricted-task rules. An assignee can
+transfer without a task-create grant; a watcher cannot use assignment selection.
+No existing mutation contract or applied migration was changed. RPC calls follow the
+[Supabase JavaScript RPC contract](https://supabase.com/docs/reference/javascript/rpc).
+
+Files support input/discussion/result/evidence categories, authorized delete, lazy
+thumbnail reads and fresh signed display/fallback/download requests. Signed image
+state is cleared before expiry and on unmount. Upload retry reuses reservations and
+never resubmits a task command; submission is blocked while selected files remain
+unfinished. Camera JPEGs without original retention are oriented and reduced to a
+1920-pixel maximum edge before upload (32 MiB client source ceiling). PNG/WebP pass
+through so animated containers remain detectable by the server. Retained originals
+and all evidence bypass client rewriting and retain Task 7's input limits. Real
+4032x3024 synthetic JPEG browser QA produced 1920x1440 WebP; retention returned the
+same original File. The server still validates and processes uploaded bytes.
+
+Verification: 356 Vitest files / 1,681 tests passed. Isolated Chrome QA at 1440x900,
+768x1024 and 360x800 exercised capability personas, lazy feeds, checklist/mentions,
+version conflict, lost-response retry (including leave/return), transfer reason,
+review, exact comment navigation, private image requests, upload retry/submission
+blocking and actual Layout-style scroll/bottom navigation. Task 8 browser regression
+also passed. Scripts: `scripts/verify-work-task9-browser.mjs` and
+`scripts/verify-work-task8-browser.mjs`; screenshots are under
+`/tmp/vioo-work-task9-qa`. These use synthetic services and block Cloud traffic;
+real JWT/device/pilot observation remains Task 10/11.
+
+Pre-apply Cloud rollback suites passed: new detail reads, lifecycle, collaboration,
+Storage/processing permissions, Task 8 options, core RLS and authenticated helper
+execution, each in its own transaction. Security advisor at error level reported no
+issues. Migration baseline is 20 active / 402 archived; query audit has zero findings
+or errors. TypeScript and production build passed with the existing chunk warning.

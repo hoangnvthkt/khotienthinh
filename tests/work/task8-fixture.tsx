@@ -8,6 +8,19 @@ import type { createWorkAttachmentService } from "../../lib/work/workAttachmentS
 import { emptyWorkDraft, workDocument } from "../../lib/work/workForm";
 import type { WorkTaskSummary } from "../../lib/work/workTypes";
 const query = new URLSearchParams(window.location.search);
+if (query.get("layout") === "true") {
+  const root = document.getElementById("root")!;
+  const host = document.createElement("main");
+  host.dataset.workScrollHost = "true";
+  host.style.cssText = "height:100dvh;overflow:auto;position:relative";
+  root.replaceWith(host);
+  host.append(root);
+  const nav = document.createElement("nav");
+  nav.textContent = "Điều hướng ứng dụng";
+  nav.style.cssText =
+    "position:fixed;bottom:0;left:0;right:0;height:64px;background:white;border-top:1px solid #ddd;z-index:50;text-align:center;padding:20px";
+  document.body.append(nav);
+}
 const qa = {
   calls: [] as { name: string; args: unknown[] }[],
   createAttempts: 0,
@@ -39,7 +52,153 @@ const people = [
   { id: "actor", name: "Lê Minh An", kind: "user" },
   { id: "second", name: "Nguyễn Thu Hà", kind: "user" },
 ];
+let taskStatus = query.get("state") || "in_progress";
+let taskVersion = 1;
+let commandAttempts = 0;
+const commandResults = new Map<string, any>();
+const fixtureComments: any[] = [];
+let checkDone = false;
+let pinned = false;
+const role = query.get("role") || "assignee";
+const comment = (id: string, text: string) => ({
+  id,
+  task_id: "1",
+  author_user_id: "actor",
+  parent_comment_id: null,
+  content_document: workDocument(text),
+  content_text: text,
+  edited_at: null,
+  lock_version: 1,
+  created_at: "2026-09-07T01:00:00Z",
+  updated_at: "2026-09-07T01:00:00Z",
+  mentionedUserIds: [],
+  can_edit: role !== "watcher",
+});
 const service: WorkTaskService = {
+  async command(input) {
+    log("command", structuredClone(input));
+    commandAttempts++;
+    if (commandResults.has(input.idempotencyKey))
+      return commandResults.get(input.idempotencyKey);
+    if (query.get("conflict") === "true" && commandAttempts === 1) {
+      taskVersion++;
+      throw new Error("WORK_VERSION_CONFLICT");
+    }
+    taskVersion++;
+    taskStatus =
+      (
+        {
+          acknowledge: "not_started",
+          start: "in_progress",
+          block: "blocked",
+          unblock: "in_progress",
+          submit: "awaiting_review",
+          cancel: "cancelled",
+          transfer: "pending_acknowledgement",
+        } as Record<string, string>
+      )[input.command] || taskStatus;
+    if (input.command === "review")
+      taskStatus =
+        input.payload.decision === "approve"
+          ? "completed"
+          : "changes_requested";
+    const result: any = {
+      taskId: "1",
+      taskCode: "VW-2026-000001",
+      lockVersion: taskVersion,
+      status: taskStatus,
+    };
+    commandResults.set(input.idempotencyKey, result);
+    if (query.get("lostCommand") === "true" && commandAttempts === 1)
+      throw new Error("network");
+    return result;
+  },
+  async collaborate(input) {
+    log("collaborate", structuredClone(input));
+    if (input.command === "set_pin") pinned = input.payload.pinned;
+    if (input.command === "checklist_set_completed")
+      checkDone = input.payload.completed;
+    if (input.command === "comment_create") {
+      const c = {
+        ...comment(
+          "new-comment",
+          input.payload.content.content
+            .map((p) => p.content.map((t) => t.text).join(""))
+            .join("\n"),
+        ),
+        mentionedUserIds: input.payload.mentionedUserIds || [],
+        parent_comment_id: input.payload.parentCommentId || null,
+      };
+      fixtureComments.unshift(c);
+    }
+    return {
+      taskId: "1",
+      taskLockVersion: taskVersion,
+      preferences: { pinned, notificationsEnabled: true },
+    } as any;
+  },
+  async comments(taskId, cursor) {
+    log("comments", taskId, cursor);
+    return {
+      items: cursor
+        ? [comment("older", "Nội dung bình luận cũ")]
+        : [
+            ...fixtureComments,
+            comment("first", "Đã kiểm tra tài liệu đầu vào."),
+          ],
+      nextCursor: cursor
+        ? null
+        : { sortAt: "2026-09-07T01:00:00Z", id: "first" },
+    };
+  },
+  async history(taskId, filters, cursor) {
+    log("history", taskId, filters, cursor);
+    return {
+      items: [
+        {
+          id: "event",
+          task_id: taskId,
+          actor_user_id: "actor",
+          event_type: "task.started",
+          source: "human",
+          payload: { reason: "Bắt đầu ca kiểm tra" },
+          created_at: "2026-09-07T01:00:00Z",
+          correlation_id: null,
+          idempotency_key: null,
+        },
+      ],
+      nextCursor: null,
+    } as any;
+  },
+  async mentions(taskId, search, cursor) {
+    log("mentions", taskId, search, cursor);
+    return {
+      items: people.map((p) => ({ userId: p.id, name: p.name })),
+      nextCursor: null,
+    };
+  },
+  async assigneeOptions(taskId, action, search, cursor) {
+    log("assigneeOptions", taskId, action, search, cursor);
+    return {
+      items: [{ userId: "second", name: "Nguyễn Thu Hà" }],
+      nextCursor: null,
+    };
+  },
+  async detailContext(taskId, ids) {
+    log("detailContext", taskId, ids);
+    return {
+      names: { actor: "Lê Minh An", second: "Nguyễn Thu Hà" },
+      scopeName: "Trực tiếp",
+      bucketName: null,
+    };
+  },
+  async commentAnchor(taskId, id) {
+    log("commentAnchor", taskId, id);
+    return {
+      comment: comment(id, "Bình luận đích từ thông báo"),
+      parent: null,
+    };
+  },
   async list(view, filters, cursor) {
     log("list", view, filters, cursor);
     await wait(filters.search === "chậm" ? 800 : 15);
@@ -50,16 +209,21 @@ const service: WorkTaskService = {
         nextCursor: null,
       };
     return {
-      items: cursor
-        ? [summary("2", "Tổng hợp kết quả kiểm tra")]
-        : [
-            summary(
-              "1",
-              view === "created_by_me"
-                ? "Công việc tôi đã giao"
-                : "Chuẩn bị hồ sơ nghiệm thu",
-            ),
-          ],
+      items:
+        query.get("longList") === "true"
+          ? Array.from({ length: 20 }, (_, i) =>
+              summary(String(i + 1), `Công việc số ${i + 1}`),
+            )
+          : cursor
+            ? [summary("2", "Tổng hợp kết quả kiểm tra")]
+            : [
+                summary(
+                  "1",
+                  view === "created_by_me"
+                    ? "Công việc tôi đã giao"
+                    : "Chuẩn bị hồ sơ nghiệm thu",
+                ),
+              ],
       nextCursor: cursor ? null : { sortAt: "2026-09-07T00:00:00Z", id: "1" },
     };
   },
@@ -137,15 +301,113 @@ const service: WorkTaskService = {
   async detail(ref) {
     log("detail", ref);
     if (query.get("deny") === "true") throw new Error("WORK_TASK_NOT_FOUND");
+    const terminal = ["completed", "cancelled"].includes(taskStatus),
+      worker = role === "assignee",
+      reviewer = role === "reviewer";
+    const active = worker && !terminal;
     return {
       task: {
         ...summary("1", "Chuẩn bị hồ sơ nghiệm thu"),
+        status: taskStatus,
+        lock_version: taskVersion,
         description_document: workDocument(
           "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.\nKhông diễn giải nội dung thành HTML.",
         ),
+        description_text: "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.",
+        labels: ["Nghiệm thu", "Hồ sơ"],
+        review_policy: "creator_review",
+        created_at: "2026-09-07T00:00:00Z",
+        blocked_reason: taskStatus === "blocked" ? "Chờ vật tư" : null,
       },
-      checklist: [],
-      capabilities: { canClone: true },
+      assignments: [
+        {
+          id: "assignment",
+          task_id: "1",
+          user_id: "actor",
+          assigned_by: "second",
+          state: taskStatus,
+          assigned_at: "2026-09-07T00:00:00Z",
+          acknowledged_at:
+            taskStatus === "pending_acknowledgement"
+              ? null
+              : "2026-09-07T00:10:00Z",
+          acknowledgement_due_at: "2026-09-08T02:00:00Z",
+          execution_sla_due_at: "2026-09-10T10:00:00Z",
+          ended_at: terminal ? "2026-09-07T03:00:00Z" : null,
+        },
+      ],
+      participants: [
+        { id: "watcher", user_id: "second", participant_role: "watcher" },
+      ],
+      preferences: { pinned, notificationsEnabled: true },
+      attachments:
+        query.get("images") === "true"
+          ? [
+              {
+                id: "image",
+                task_id: "1",
+                file_name: "anh-nghiem-thu.webp",
+                mime_type: "image/webp",
+                size_bytes: 1234,
+                attachment_kind: "input",
+                uploader_user_id: "actor",
+                can_delete: false,
+                variants: {
+                  thumbnail: {},
+                  display: {},
+                  fallback: {},
+                  original: {},
+                },
+              },
+            ]
+          : [],
+      currentSubmission:
+        taskStatus === "awaiting_review"
+          ? {
+              id: "submission",
+              iteration: 1,
+              submitted_by: "actor",
+              submitted_at: "2026-09-07T02:00:00Z",
+              result_text: "Hồ sơ đã được kiểm tra đầy đủ.",
+              status: "pending_review",
+            }
+          : null,
+      checklist:
+        query.get("task9") === "true"
+          ? [
+              {
+                id: "check",
+                task_id: "1",
+                title: "Đối chiếu biên bản",
+                lock_version: 1,
+                sort_order: 0,
+                assignee_user_id: "actor",
+                completed_at: checkDone ? "2026-09-07T02:00:00Z" : null,
+              },
+            ]
+          : [],
+      capabilities: {
+        canClone: true,
+        canViewHistory: role !== "watcher",
+        canSetPreferences: true,
+        canComment: !terminal,
+        canManageChecklist: active && taskStatus !== "awaiting_review",
+        canAcknowledge: active && taskStatus === "pending_acknowledgement",
+        canRequestClarification:
+          active && taskStatus === "pending_acknowledgement",
+        canStart: active && taskStatus === "not_started",
+        canBlock: active && taskStatus === "in_progress",
+        canUnblock: active && taskStatus === "blocked",
+        canSubmit: active && taskStatus === "in_progress",
+        canReview: reviewer && taskStatus === "awaiting_review",
+        canCancel: reviewer && !terminal,
+        canTransfer: active,
+        canAddAssignees: active,
+        canAttachInput: active,
+        canAttachDiscussion: !terminal,
+        canAttachResult: active,
+        canAttachEvidence: active,
+      },
     } as any;
   },
   async clone(id) {
@@ -188,8 +450,13 @@ const attachments: ReturnType<typeof createWorkAttachmentService> = {
       throw new Error("network");
     return { id: "attachment", status: "ready" };
   },
-  async read() {
-    throw new Error("not used");
+  async read(id, variant) {
+    log("attachment.read", id, variant);
+    return {
+      signedUrl:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jM1UAAAAASUVORK5CYII=",
+      expiresIn: 60,
+    };
   },
   async remove() {
     throw new Error("not used");

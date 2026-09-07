@@ -1,3 +1,4 @@
+import { prepareWorkImage } from "../../lib/work/workImageInput";
 import React, { useEffect, useRef, useState } from "react";
 import type {
   WorkCloneForm,
@@ -41,6 +42,7 @@ interface Props {
 interface PendingFile {
   key: string;
   file: File;
+  prepared?: File;
   keepOriginal: boolean;
   reservation?: WorkUploadReservation;
   uploaded?: boolean;
@@ -234,17 +236,18 @@ export function WorkCreateDrawer({
       if (item.ready) continue;
       item.error = undefined;
       try {
+        item.prepared ||= await prepareWorkImage(item.file, item.keepOriginal);
         if (!item.reservation)
           item.reservation = await attachments.begin(
             result.taskId,
-            item.file,
+            item.prepared,
             "input",
             item.keepOriginal,
             item.key,
           );
         if (!item.uploaded) {
           try {
-            await attachments.upload(item.reservation, item.file);
+            await attachments.upload(item.reservation, item.prepared);
           } catch (e) {
             const code = String(
               (e as { statusCode?: string })?.statusCode || "",

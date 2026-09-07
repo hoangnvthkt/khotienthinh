@@ -238,6 +238,9 @@ export interface WorkTaskDetail {
   preferences: WorkTaskPreferences;
 }
 
+export interface WorkDetailContext { names: Record<string,string>; scopeName:string; bucketName:string|null }
+export interface WorkCommentAnchor { comment:WorkTaskComment; parent:WorkTaskComment|null }
+
 /** Mute applies to routine activity; mandatory delivery is enforced by the worker. */
 export interface WorkTaskPreferences {
   pinned: boolean;

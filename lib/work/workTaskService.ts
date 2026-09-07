@@ -1,5 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  WorkLifecycleCommandInput,
+  WorkCollaborationCommandInput,
+  WorkCollaborationCommandResult,
+  WorkTaskComment,
+  WorkTaskEvent,
+  WorkTaskHistoryFilters,
+  WorkMentionCandidatePage,
+  WorkDetailContext,
+  WorkCommentAnchor,
+} from "./workTypes";
+import type {
   CreateWorkTaskInput,
   WorkRecipientPreview,
   WorkPriority,
@@ -51,6 +62,68 @@ export function createWorkTaskService(client: Pick<SupabaseClient, "rpc">) {
     return data as T;
   }
   return {
+    command: (input: WorkLifecycleCommandInput) =>
+      call<WorkTaskCommandResult>("command_work_task", {
+        p_task_id: input.taskId,
+        p_command: input.command,
+        p_payload: input.payload,
+        p_expected_lock_version: input.expectedLockVersion,
+        p_idempotency_key: input.idempotencyKey,
+      }),
+    collaborate: (input: WorkCollaborationCommandInput) =>
+      call<WorkCollaborationCommandResult>("command_work_task_collaboration", {
+        p_task_id: input.taskId,
+        p_command: input.command,
+        p_payload: input.payload,
+        p_idempotency_key: input.idempotencyKey,
+      }),
+    comments: (taskId: string, cursor: WorkTaskCursor | null = null) =>
+      call<WorkTaskPage<WorkTaskComment>>("list_work_task_comments", {
+        p_task_id: taskId,
+        p_cursor: cursor,
+        p_limit: 30,
+      }),
+    history: (
+      taskId: string,
+      filters: WorkTaskHistoryFilters = {},
+      cursor: WorkTaskCursor | null = null,
+    ) =>
+      call<WorkTaskPage<WorkTaskEvent>>("list_work_task_history", {
+        p_task_id: taskId,
+        p_filters: filters,
+        p_cursor: cursor,
+        p_limit: 30,
+      }),
+    mentions: (taskId: string, search = "", cursor: string | null = null) =>
+      call<WorkMentionCandidatePage>("list_work_task_mention_candidates", {
+        p_task_id: taskId,
+        p_search: search,
+        p_cursor: cursor,
+        p_limit: 30,
+      }),
+    assigneeOptions: (
+      taskId: string,
+      action: "transfer" | "add_assignees",
+      search = "",
+      cursor: string | null = null,
+    ) =>
+      call<WorkMentionCandidatePage>("list_work_task_assignment_candidates", {
+        p_task_id: taskId,
+        p_action: action,
+        p_search: search,
+        p_cursor: cursor,
+        p_limit: 30,
+      }),
+    detailContext: (taskId: string, userIds: string[] = []) =>
+      call<WorkDetailContext>("get_work_task_ui_context", {
+        p_task_id: taskId,
+        p_user_ids: userIds,
+      }),
+    commentAnchor: (taskId: string, commentId: string) =>
+      call<WorkCommentAnchor>("get_work_task_comment_anchor", {
+        p_task_id: taskId,
+        p_comment_id: commentId,
+      }),
     list: (
       view: WorkTaskView,
       filters: WorkTaskFilters,

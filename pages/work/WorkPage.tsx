@@ -1,3 +1,4 @@
+import { workScrollHost } from "../../lib/work/workScroll";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -40,20 +41,12 @@ import { useWorkTasks } from "../../hooks/work/useWorkTasks";
 import { WorkCreateDrawer } from "./WorkCreateDrawer";
 import { WorkPicker } from "./WorkPicker";
 import "./work.css";
+import { workStatusLabels } from "../../lib/work/workPresentation";
+import { WorkDetail } from "./WorkDetail";
+import { WorkMutationSession } from "../../lib/work/workMutation";
+import type { WorkUploadState } from "./WorkAttachments";
 const taskService = createWorkTaskService(supabase),
   attachmentService = createWorkAttachmentService(supabase);
-export const workStatusLabels: Record<WorkTaskStatus, string> = {
-  draft: "Bản nháp",
-  pending_acknowledgement: "Chờ nhận việc",
-  clarification_requested: "Cần làm rõ",
-  not_started: "Chưa bắt đầu",
-  in_progress: "Đang thực hiện",
-  blocked: "Đang bị chặn",
-  awaiting_review: "Chờ đánh giá",
-  changes_requested: "Cần chỉnh sửa",
-  completed: "Hoàn thành",
-  cancelled: "Đã hủy",
-};
 const views: { id: WorkTaskView; label: string }[] = [
   { id: "assigned_to_me", label: "Được giao" },
   { id: "created_by_me", label: "Tôi đã giao" },
@@ -85,6 +78,28 @@ export function WorkWorkspace({
   subscribe,
 }: WorkWorkspaceProps) {
   const { taskCode } = useParams();
+  const routeLocation = useLocation();
+  const mutation = useRef(new WorkMutationSession());
+  const uploadStates = useRef(new Map<string, WorkUploadState>());
+  const listScroll = useRef(0);
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (
+        mutation.current.pending ||
+        [...uploadStates.current.values()].some((s) =>
+          s.items.some((i) => !i.ready),
+        )
+      ) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+  const listSearch = useRef("");
+  const [revision, setRevision] = useState(0);
   const [params, setParams] = useSearchParams();
   const requested = params.get("view");
   const view = views.some((v) => v.id === requested)
@@ -121,7 +136,7 @@ export function WorkWorkspace({
       ? { deadlineTo: params.get("deadlineTo")! }
       : {}),
   };
-  const list = useWorkTasks(service, actorId, view, filters, !taskCode);
+  const list = useWorkTasks(service, actorId, view, filters);
   const detailSeq = useRef(0),
     alive = useRef(true);
   const refNow = useRef(taskCode);
@@ -129,15 +144,22 @@ export function WorkWorkspace({
   const reloadDetail = useCallback(async () => {
     if (!taskCode) return;
     const n = ++detailSeq.current;
-    setDetail({ ref: taskCode, data: null, error: null, loading: true });
+    setDetail((old) => ({
+      ref: taskCode,
+      data: old.ref === taskCode ? old.data : null,
+      error: null,
+      loading: true,
+    }));
     try {
       const data = await service.detail(taskCode);
       if (
         alive.current &&
         n === detailSeq.current &&
         refNow.current === taskCode
-      )
+      ) {
         setDetail({ ref: taskCode, data, error: null, loading: false });
+        setRevision((x) => x + 1);
+      }
     } catch (error) {
       if (
         alive.current &&
@@ -208,8 +230,30 @@ export function WorkWorkspace({
     }
   }
   const currentDetail = detail.ref === taskCode ? detail : null;
+  if (!taskCode) listSearch.current = params.toString();
+  const returnSearch =
+    (routeLocation.state as { workListSearch?: string } | null)
+      ?.workListSearch ??
+    (listSearch.current ||
+      (() => {
+        const p = new URLSearchParams(params);
+        p.delete("comment");
+        return p.toString();
+      })());
+  const returnTo = `/work/my${returnSearch ? "?" + returnSearch : ""}`;
+  useEffect(() => {
+    if (!taskCode && !list.loading) {
+      const top =
+        (routeLocation.state as { workScroll?: number } | null)?.workScroll ??
+        listScroll.current;
+      const id = requestAnimationFrame(() =>
+        workScrollHost(root.current).scrollTo(0, top),
+      );
+      return () => cancelAnimationFrame(id);
+    }
+  }, [taskCode, list.loading]);
   return (
-    <main className="work-module">
+    <main className="work-module" ref={root}>
       <header className="work-heading">
         <div>
           <p className="work-eyebrow">VIOO WORK</p>
@@ -248,101 +292,131 @@ export function WorkWorkspace({
         </p>
       )}
       {taskCode ? (
-        <section className="work-detail">
-          <Link className="work-back" to="/work/my">
-            <ArrowLeft size={16} />
-            Công việc của tôi
-          </Link>
-          {(!currentDetail || currentDetail.loading) && (
-            <p role="status">Đang tải công việc…</p>
-          )}
-          {currentDetail?.error && (
-            <div role="alert">
-              <p>{workError(currentDetail.error)}</p>
-              <button
-                className="work-secondary"
-                onClick={() => void reloadDetail()}
+        <div className="work-master-detail">
+          <aside className="work-task-rail">
+            <Link
+              className="work-back"
+              to={returnTo}
+              state={{ workScroll: listScroll.current }}
+            >
+              ← Danh sách và bộ lọc
+            </Link>
+            {list.items.map((t) => (
+              <Link
+                key={t.id}
+                aria-current={t.task_code === taskCode ? "page" : undefined}
+                to={`/work/tasks/${encodeURIComponent(t.task_code)}${returnSearch ? "?" + returnSearch : ""}`}
+                state={{
+                  workListSearch: returnSearch,
+                  workScroll: listScroll.current,
+                }}
               >
-                Thử lại
+                <small>{t.task_code}</small>
+                <strong>{t.title}</strong>
+                <span>{workStatusLabels[t.status]}</span>
+              </Link>
+            ))}
+            {list.error && (
+              <button onClick={() => void list.refresh()}>
+                Thử tải danh sách
               </button>
-            </div>
-          )}
-          {currentDetail?.data && (
-            <>
-              <div className="work-detail-top">
-                <span className="work-code">
-                  {currentDetail.data.task.task_code}
-                </span>
-                <div className="work-actions">
-                  <button
-                    className="work-secondary"
-                    onClick={() => {
-                      const url = new URL(window.location.href);
-                      url.search = "";
-                      url.hash = `/work/tasks/${encodeURIComponent(currentDetail.data!.task.task_code)}`;
-                      navigator.clipboard
-                        .writeText(url.toString())
-                        .then(() =>
-                          setNotice(
-                            "Đã sao chép liên kết. Người mở vẫn cần quyền xem công việc.",
-                          ),
-                        )
-                        .catch(() =>
-                          setNotice(
-                            "Không thể sao chép. Bạn có thể sao chép địa chỉ trên trình duyệt.",
-                          ),
-                        );
-                    }}
-                  >
-                    <Copy size={16} />
-                    Sao chép link
-                  </button>
-                  {currentDetail.data.capabilities.canClone && (
+            )}
+            {list.cursor && (
+              <button
+                disabled={list.loading}
+                onClick={() => void list.loadMore()}
+              >
+                Xem thêm công việc
+              </button>
+            )}
+          </aside>
+          <section className="work-detail">
+            <Link
+              className="work-back"
+              to={returnTo}
+              state={{ workScroll: listScroll.current }}
+            >
+              <ArrowLeft size={16} />
+              Công việc của tôi
+            </Link>
+            {(!currentDetail ||
+              (currentDetail.loading && !currentDetail.data)) && (
+              <p role="status">Đang tải công việc…</p>
+            )}
+            {currentDetail?.error && (
+              <div role="alert">
+                <p>{workError(currentDetail.error)}</p>
+                <button
+                  className="work-secondary"
+                  onClick={() => void reloadDetail()}
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
+            {currentDetail?.data && (
+              <>
+                <div className="work-detail-top">
+                  <span className="work-code">
+                    {currentDetail.data.task.task_code}
+                  </span>
+                  <div className="work-actions">
                     <button
                       className="work-secondary"
-                      onClick={() => void cloneTask()}
+                      onClick={() => {
+                        const url = new URL(window.location.href);
+                        url.search = "";
+                        url.hash = `/work/tasks/${encodeURIComponent(currentDetail.data!.task.task_code)}`;
+                        navigator.clipboard
+                          .writeText(url.toString())
+                          .then(() =>
+                            setNotice(
+                              "Đã sao chép liên kết. Người mở vẫn cần quyền xem công việc.",
+                            ),
+                          )
+                          .catch(() =>
+                            setNotice(
+                              "Không thể sao chép. Bạn có thể sao chép địa chỉ trên trình duyệt.",
+                            ),
+                          );
+                      }}
                     >
-                      Nhân bản
+                      <Copy size={16} />
+                      Sao chép link
                     </button>
-                  )}
+                    {currentDetail.data.capabilities.canClone && (
+                      <button
+                        className="work-secondary"
+                        onClick={() => void cloneTask()}
+                      >
+                        Nhân bản
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <h2>{currentDetail.data.task.title}</h2>
-              <div className="work-meta">
-                <span
-                  className={`work-status status-${currentDetail.data.task.status}`}
-                >
-                  {workStatusLabels[currentDetail.data.task.status]}
-                </span>
-                <span>{priorities[currentDetail.data.task.priority]}</span>
-                <span>{when(currentDetail.data.task.deadline_at)}</span>
-              </div>
-              <p className="work-description">
-                {documentText(currentDetail.data.task.description_document) ||
-                  "Chưa có mô tả."}
-              </p>
-              {currentDetail.data.checklist.length > 0 && (
-                <section>
-                  <h3>Checklist</h3>
-                  <ul className="work-read-checklist">
-                    {currentDetail.data.checklist.map((item) => (
-                      <li key={item.id}>
-                        <span
-                          aria-label={
-                            item.completed_at ? "Hoàn thành" : "Chưa hoàn thành"
-                          }
-                        >
-                          {item.completed_at ? "✓" : "○"}
-                        </span>
-                        {item.title}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </>
-          )}
-        </section>
+                <h2>{currentDetail.data.task.title}</h2>
+                <WorkDetail
+                  key={currentDetail.data.task.id}
+                  detail={currentDetail.data}
+                  service={service}
+                  attachments={attachments}
+                  actorId={actorId}
+                  session={mutation.current}
+                  uploads={(() => {
+                    const id = currentDetail.data!.task.id;
+                    if (!uploadStates.current.has(id))
+                      uploadStates.current.set(id, { items: [], busy: false });
+                    return uploadStates.current.get(id)!;
+                  })()}
+                  refresh={() => refresh.current()}
+                  revision={revision}
+                  anchorId={params.get("comment")}
+                  onAnchor={(id) => setFilter("comment", id)}
+                />
+              </>
+            )}
+          </section>
+        </div>
       ) : (
         <>
           <nav className="work-tabs" aria-label="Danh sách công việc">
@@ -466,7 +540,16 @@ export function WorkWorkspace({
               {list.items.map((task) => (
                 <li key={task.id}>
                   <Link
-                    to={`/work/tasks/${encodeURIComponent(task.task_code)}`}
+                    to={`/work/tasks/${encodeURIComponent(task.task_code)}${params.toString() ? "?" + params.toString() : ""}`}
+                    state={{
+                      workListSearch: params.toString(),
+                      workScroll: workScrollHost(root.current).scrollTop,
+                    }}
+                    onClick={() => {
+                      listScroll.current = workScrollHost(
+                        root.current,
+                      ).scrollTop;
+                    }}
                   >
                     <div className="work-task-main">
                       <span className="work-code">{task.task_code}</span>
