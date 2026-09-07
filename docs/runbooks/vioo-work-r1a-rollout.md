@@ -41,7 +41,7 @@ flag and repair schema or data with a forward migration.
 ## Rollout gates
 
 - [x] Permission catalog and route boundary verified.
-- [ ] Core schema/RLS and six-persona Cloud smoke verified.
+- [x] Core schema/RLS and ten-persona Cloud smoke verified.
 - [ ] Commands, lifecycle, SLA, collaboration, and outbox verified.
 - [ ] Private Storage and upload processor verified.
 - [ ] Responsive UI verified at 360x800, 768x1024, and 1440x900.
@@ -83,9 +83,19 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   integrity. This is database-role testing, not yet the R1A HTTP/JWT acceptance
   suite, Storage smoke, concurrency/load tests or scaled EXPLAIN evidence.
 - Targeted frontend/migration regression: 53 tests across 7 files passed.
+- Post-apply full regression: `npm test -- --reporter=dot` passed 349 files and
+  1,654 tests (0 failures).
 - `npm run lint` and `npm run build` passed (existing chunk-size warning).
 - Migration baseline: 11 active files, 402 archived; query audit: 0 findings.
 - Pre-apply Cloud security advisor at `--level error`: no issues.
 - Security design follows the grants-plus-RLS separation in
   [Supabase RLS documentation](https://supabase.com/docs/guides/database/postgres/row-level-security).
-- Core apply/postflight: pending; feature remains disabled.
+- Release candidate: `7a7daf0` (`feat(work): add secure task domain schema`).
+- Linked dry-run listed only `20260907021001_work_r1a_core_schema.sql`; apply
+  succeeded. Postflight core smoke and authenticated permission-helper smoke
+  passed. Local/Cloud migration ledgers match at 11/11. Post-apply Cloud security
+  advisor at `--level error` reported no issues. Lower-severity advisor findings
+  have not been claimed clean.
+- Core schema is deployed; no task command RPCs/UI or pilot activation are
+  included in this checkpoint. Next: Task 3 recipient preview, create/list/detail
+  and clone draft. Feature remains disabled.
