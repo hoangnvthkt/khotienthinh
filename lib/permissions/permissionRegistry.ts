@@ -147,5 +147,5 @@ export const getPrimaryViewPermissionForModule = (moduleCodeOrLegacyKey: string)
   const directModule = getPermissionModuleByCode(moduleCodeOrLegacyKey);
   const legacyModule = getPermissionModulesByLegacyKey(moduleCodeOrLegacyKey)[0];
   const module = directModule || legacyModule;
-  return module?.actions.find(action => action.action === 'view');
+  return module?.actions.find(action => action.action === 'view' || action.action === 'access');
 };

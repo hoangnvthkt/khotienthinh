@@ -74,4 +74,20 @@ describe('Work canonical route boundary', () => {
       scopeType: 'project', scopeId: 'department-1',
     }).allowed).toBe(false);
   });
+
+  it('denies unregistered Work paths even for a pilot user', async () => {
+    const { canAccessRoute } = await loadBoundary(true);
+    expect(canAccessRoute(workUser(Role.EMPLOYEE, 'work.module.access'), '/work/not-registered')).toBe(false);
+    expect(canAccessRoute(workUser(Role.EMPLOYEE, 'work.module.access'), '/work/tasks/VW-2026-000001/extra')).toBe(false);
+  });
+
+  it('uses canonical access for module and route visibility', async () => {
+    await loadBoundary(true);
+    const { canViewModule, canViewRoute } = await import('../permissions/permissionService');
+    const pilot = workUser(Role.EMPLOYEE, 'work.module.access');
+    expect(canViewModule(pilot, 'work.module')).toBe(true);
+    expect(canViewModule(workUser(Role.ADMIN), 'work.module')).toBe(false);
+    expect(canViewRoute(pilot, '/work/my')).toBe(true);
+    expect(canViewRoute(pilot, '/work/unknown')).toBe(false);
+  });
 });

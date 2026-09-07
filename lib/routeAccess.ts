@@ -91,7 +91,9 @@ export const canAccessRoute = (
   const pathname = normalizeRoutePath(route);
   if (isAuthenticatedOpenRoute(pathname)) return true;
   if (isWorkRoute(pathname)) {
-    return isViooWorkEnabled && canPerform(user, 'work.module.access', GLOBAL_SCOPE);
+    return isViooWorkEnabled
+      && getRouteModuleKey(pathname) === 'work.module'
+      && canPerform(user, 'work.module.access', GLOBAL_SCOPE);
   }
 
   const moduleKey = getRouteModuleKey(pathname);

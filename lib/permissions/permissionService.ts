@@ -313,7 +313,7 @@ export const canViewRoute = (
     : domainModules.length > 0 ? domainModules : routeModules;
   if (eligibleModules.length === 0) return false;
   return eligibleModules.some(module => module.actions.some(action =>
-    action.action.startsWith('view') &&
+    (action.action.startsWith('view') || action.action === 'access') &&
     canPerform(user, action.permissionCode, scope)
   ));
 };
