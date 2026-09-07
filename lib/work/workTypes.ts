@@ -76,6 +76,9 @@ export interface WorkTaskFilters {
 
 /** Read projections retain database field names. Commands use camelCase inputs. */
 export interface WorkTaskSummary {
+  /** List-only aggregates; task detail has its separate assignment projection. */
+  assignment_count?: number;
+  acknowledged_count?: number;
   id: string;
   task_code: string;
   title: string;

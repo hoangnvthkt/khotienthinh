@@ -287,6 +287,16 @@ const SYSTEM_APPS = [
     moduleKey: 'RQ',
   },
   {
+    key: 'WORK',
+    to: '/work/my',
+    label: 'Vioo Work',
+    description: 'Giao, nhận và phối hợp công việc',
+    icon: ClipboardList,
+    gradient: 'from-teal-600 to-emerald-700',
+    shadow: 'shadow-teal-600/25',
+    moduleKey: 'work.module',
+  },
+  {
     key: 'WF',
     to: '/wf',
     label: 'Quy trình',

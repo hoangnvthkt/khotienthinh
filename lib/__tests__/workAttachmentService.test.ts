@@ -24,3 +24,8 @@ it('signs through the authorized Edge boundary on each request and defaults to t
   expect(client.functions.invoke).toHaveBeenNthCalledWith(2,'work-attachments',{ body: { action: 'read', attachmentId: 'file', variant: 'original' } });
   expect(client.storage.from).not.toHaveBeenCalled();
 });
+it('exposes only known Edge failure codes so the UI can recover rejected upload attempts', async () => {
+ const {client,service}=fixture();
+ client.functions.invoke.mockResolvedValue({data:null,error:{context:new Response(JSON.stringify({error:'WORK_ATTACHMENT_EXPIRED'}),{status:409})}} as any);
+ await expect(service.finalize('file')).rejects.toThrow('WORK_ATTACHMENT_EXPIRED');
+});

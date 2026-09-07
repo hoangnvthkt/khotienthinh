@@ -170,12 +170,17 @@ const RequestListRoute: React.FC = () => {
 const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
 
+const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
+
 const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
         <Route path="/" element={<SubModuleGuard><Layout /></SubModuleGuard>}>
           <Route index element={<Home />} />
+          <Route path="work" element={<Navigate to="/work/my" replace />} />
+          <Route path="work/my" element={<WorkPage />} />
+          <Route path="work/tasks/:taskCode" element={<WorkPage />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="my-profile" element={<MyProfile />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />

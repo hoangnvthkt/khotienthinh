@@ -42,8 +42,8 @@ flag and repair schema or data with a forward migration.
 
 - [x] Permission catalog and route boundary verified.
 - [x] Core schema/RLS and ten-persona Cloud smoke verified.
-- [ ] Commands, lifecycle, SLA, collaboration, and outbox verified.
-- [ ] Private Storage and upload processor verified.
+- [x] Commands, lifecycle, SLA, collaboration, and outbox verified.
+- [x] Private Storage and upload processor verified.
 - [ ] Responsive UI verified at 360x800, 768x1024, and 1440x900.
 - [ ] Named pilot grants reviewed; no bulk grants exist.
 - [ ] Feature flag enabled only for the approved deployment environment.
@@ -443,3 +443,50 @@ are recorded separately rather than described as a complete user journey.
 Task 7 is complete at the Storage/processing/service checkpoint. Task 8 can use the
 feature-local attachment service and authoritative capabilities when building the
 Work shell/list/create UI. No handoff was created or updated.
+
+### Task 8 — module shell, lists and creation UI (2026-09-07)
+
+Lazy routes `/work/my` and `/work/tasks/:taskCode`, Home entry and Sidebar navigation
+use the existing feature flag and canonical module permission. Four personal lists
+support search, status/priority/scope/deadline filters, 30-row cursor pagination and
+confirmation counts. Feature-local requests discard stale results after query/task
+changes; account changes remount the workspace. Realtime revision, focus and polling
+invalidation use Task 6's subscription. No global directory warmup was added.
+
+Desktop creation uses a modal drawer; phones use a full-screen sheet. Scope and
+recipient options come from guarded RPCs, with a maximum of 50 minimal ID/name/kind
+records per page (client requests 30). Scope filters expose department/project names
+only through visible tasks. Creation context resolves the selected priority's SLA
+calendar and canonical action permissions. Missing calendars block creation.
+Clone labels are limited to references in the authorized clone draft.
+
+The form supports user/work-group recipients, authoritative recipient preview,
+scope/bucket, deadline shortcuts, priority, plain-text description, labels, watchers,
+review policy and an expanded checklist editor. Unknown create failures retain the
+same immutable payload, preview fingerprint and idempotency key; the form stays
+locked until the result is known. A reload warning protects an uncertain in-memory
+attempt; this is not persistent draft recovery. File failures retry upload/finalize
+against the already created task. Expired/invalid reservations can be restarted or
+removed. Clone is read-only until Create, and expired deadlines require confirmation.
+
+Basic authorized detail and copy-link support list navigation and cloning. The rich
+detail layout, lifecycle actions, thread/history, attachment viewing and complete
+device acceptance remain Task 9/11. No department/company distribution (R1B), pilot
+calendar/grants (Task 10), production frontend activation or handoff is included.
+
+Verification: full Vitest suite passed 354 files / 1,674 tests. The isolated Chrome
+fixture in `tests/work/task8-fixture.html`, driven by
+`scripts/verify-work-task8-browser.mjs`, covers pagination, tab changes, stale search,
+preview/calendar gates, ambiguous creation with identical retry arguments, attachment
+retry without another task/reservation, clone/deadline gating, denied detail and
+desktop/mobile overflow. Screenshots are written to `/tmp/vioo-work-task8-qa`.
+The fixture uses synthetic services and blocks Cloud traffic; it does not claim a
+real authenticated pilot journey. Cloud persona tests are recorded separately.
+
+Pre-apply: TypeScript lint, production build (existing chunk-size warning), migration
+baseline (19 active / 402 archived) and query audit (zero findings/errors) passed.
+Final service tests and Chrome checks passed after the last UI fixes. Candidate
+`20260907043333_work_r1a_creation_options.sql` passed creation-options, Task 3–7,
+core RLS and authenticated permission-helper Cloud rollback smokes, each in its own
+transaction. Security advisor at error level reported no issues. Apply and
+postflight evidence follows below once completed.
