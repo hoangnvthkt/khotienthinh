@@ -102,6 +102,9 @@ export interface MembershipChange {
   userId: string;
   role?: WorkspaceRole;
   expiresAt?: string | null;
+  /** Provenance is verified against the current linked source by the server. */
+  origin?: WorkspaceMemberOrigin;
+  sourceReference?: string;
 }
 
 export interface WorkspaceMembershipBlocker {
