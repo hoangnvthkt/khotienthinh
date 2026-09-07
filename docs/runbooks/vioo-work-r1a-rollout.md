@@ -488,5 +488,17 @@ baseline (19 active / 402 archived) and query audit (zero findings/errors) passe
 Final service tests and Chrome checks passed after the last UI fixes. Candidate
 `20260907043333_work_r1a_creation_options.sql` passed creation-options, Task 3–7,
 core RLS and authenticated permission-helper Cloud rollback smokes, each in its own
-transaction. Security advisor at error level reported no issues. Apply and
-postflight evidence follows below once completed.
+transaction. Security advisor at error level reported no issues.
+
+Postflight: candidate `9892ea0` had only
+`20260907043333_work_r1a_creation_options.sql` in the linked dry-run, and apply
+succeeded. Local/Cloud ledgers match 19/19. Creation-options, Task 3/4/5, core RLS
+and permission-helper smokes passed again against the deployed schema. All three
+new public read RPCs are present. Post-apply security advisor at error level found
+no issues; lower severities are not claimed clean.
+
+Persisted Work tasks, attachments, Storage objects, cleanup jobs, outbox, calendars,
+policies, direct Work grants and fixture users are all zero. Storage remains private;
+notification enabled=false and the environment Work feature flag is false. No real
+user notification was sent. Task 8 is complete at the shell/list/create checkpoint.
+Next is Task 9: rich task detail and lifecycle/collaboration UI.

@@ -19,3 +19,8 @@ agent only. Supabase Cloud only. No handoff, calendar/pilot grants or feature en
 - Meaningful service/state/browser tests and Cloud rollback personas; lint/build,
   query/migration audit, candidate commit, isolated Cloud migration apply/postflight.
   Keep production UI and notification gate off. Record normal rollout evidence.
+
+Completed on 2026-09-07. Implementation candidate: `9892ea0`; Cloud migration
+`20260907043333` applied and postflight passed. Verification and checkpoint limits
+are recorded in `docs/runbooks/vioo-work-r1a-rollout.md` under Task 8. No handoff
+was created or changed; Task 9 remains the next implementation task.
