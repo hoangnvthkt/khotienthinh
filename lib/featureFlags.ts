@@ -15,6 +15,9 @@ export const isPerf02WmsPagingEnabled =
 export const isPerf02RequestPagingEnabled =
   import.meta.env.VITE_ENABLE_PERF02_REQUEST_PAGING === 'true';
 
+export const isViooWorkEnabled =
+  import.meta.env.VITE_ENABLE_VIOO_WORK === 'true';
+
 const purchasePackageV2SiteIds = new Set(
   String(import.meta.env.VITE_PURCHASE_PACKAGE_V2_SITE_IDS || '')
     .split(',')

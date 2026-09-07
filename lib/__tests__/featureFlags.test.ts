@@ -3,10 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const loadFeatureFlags = async (env: {
   purchasePackageV2?: string;
   purchasePackageV2SiteIds?: string;
+  viooWork?: string;
 } = {}) => {
   vi.resetModules();
   vi.stubEnv('VITE_ENABLE_PURCHASE_PACKAGE_V2', env.purchasePackageV2);
   vi.stubEnv('VITE_PURCHASE_PACKAGE_V2_SITE_IDS', env.purchasePackageV2SiteIds);
+  vi.stubEnv('VITE_ENABLE_VIOO_WORK', env.viooWork);
 
   return import('../featureFlags');
 };
@@ -40,5 +42,13 @@ describe('feature flags', () => {
     expect(flags.isPurchasePackageV2EnabledForSite('site-2')).toBe(true);
     expect(flags.isPurchasePackageV2EnabledForSite('site-3')).toBe(false);
     expect(flags.isPurchasePackageV2EnabledForSite(null)).toBe(false);
+  });
+
+  it('keeps Vioo Work disabled unless rollout explicitly enables it', async () => {
+    const disabledFlags = await loadFeatureFlags();
+    expect(disabledFlags.isViooWorkEnabled).toBe(false);
+
+    const enabledFlags = await loadFeatureFlags({ viooWork: 'true' });
+    expect(enabledFlags.isViooWorkEnabled).toBe(true);
   });
 });
