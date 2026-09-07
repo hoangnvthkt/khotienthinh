@@ -40,7 +40,7 @@ flag and repair schema or data with a forward migration.
 
 ## Rollout gates
 
-- [ ] Permission catalog and route boundary verified.
+- [x] Permission catalog and route boundary verified.
 - [ ] Core schema/RLS and six-persona Cloud smoke verified.
 - [ ] Commands, lifecycle, SLA, collaboration, and outbox verified.
 - [ ] Private Storage and upload processor verified.
@@ -53,3 +53,39 @@ flag and repair schema or data with a forward migration.
 
 Append migration dry-run/apply output, smoke personas, query plans, advisor results,
 Edge Function deployment, pilot grants, and the 48-hour observation summary here.
+
+### Task 1 — canonical permission boundary (2026-09-07)
+
+- Applied `20260907012229_work_r1a_permission_registry.sql` after rollback smoke,
+  release-candidate commit and linked dry-run.
+- Authenticated-role regression exposed an overly broad EXECUTE revocation on
+  the existing `app_private.has_permission` helper. Forward migration
+  `20260907015936_work_r1a_restore_permission_execution.sql` restored the baseline
+  authenticated EXECUTE grant. Its rollback smoke, isolated dry-run/apply and
+  authenticated-role postflight passed. Applied migration files were not amended.
+- Frontend denies unknown Work routes and technical ADMIN without canonical
+  grants. Module visibility uses the canonical `access` action, not a legacy key.
+- Flag remains off; no pilot grants or Work legacy aliases were created.
+
+### Task 2 — core schema release candidate (2026-09-07)
+
+- Candidate: `20260907021001_work_r1a_core_schema.sql`.
+- Real Cloud transaction smoke uses `SET LOCAL ROLE authenticated` with ten
+  synthetic JWT contexts: creator, assignee, watcher, reviewer, scoped manager,
+  unrelated user, inactive user, restricted manager, technical ADMIN without
+  Work grants, and department-scoped watcher. All fixtures roll back.
+- RED/GREEN checks caught and fixed: helper EXECUTE access, seven-digit code
+  truncation, mutable task identity/history, cross-task reply/mention/transfer,
+  bucket scope rewriting, missing FK indexes/private RLS, scoped view grants,
+  and audit scope incorrectly treating an unrelated manager as assigned.
+- Cloud smoke passed for standard/restricted visibility, department/project
+  isolation, audit grants, direct UPDATE denial, immutable histories and schema
+  integrity. This is database-role testing, not yet the R1A HTTP/JWT acceptance
+  suite, Storage smoke, concurrency/load tests or scaled EXPLAIN evidence.
+- Targeted frontend/migration regression: 53 tests across 7 files passed.
+- `npm run lint` and `npm run build` passed (existing chunk-size warning).
+- Migration baseline: 11 active files, 402 archived; query audit: 0 findings.
+- Pre-apply Cloud security advisor at `--level error`: no issues.
+- Security design follows the grants-plus-RLS separation in
+  [Supabase RLS documentation](https://supabase.com/docs/guides/database/postgres/row-level-security).
+- Core apply/postflight: pending; feature remains disabled.
