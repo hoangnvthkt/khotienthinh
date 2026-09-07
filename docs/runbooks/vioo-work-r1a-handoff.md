@@ -1,399 +1,200 @@
-# Vioo Work R1A — handoff sau Task 3
+# Vioo Work R1A — handoff trước Task 5
 
-> Cập nhật: 2026-09-07 (Asia/Ho_Chi_Minh)  
-> Trạng thái: Task 0–3 đã hoàn thành; tiếp theo Task 4  
-> Phạm vi: triển khai R1A, không triển khai R1B–R3 trong nhánh này
+> Cập nhật: 2026-09-07 (Asia/Ho_Chi_Minh)
+> Task 0–4 đã hoàn thành; tiếp theo Task 5. R1A chưa bật cho người dùng.
 
-## Checkpoint mới nhất — Task 3 (2026-09-07)
+## 1. Workspace và nguồn sự thật
 
-- Commit implementation: `806dedb`; migration `20260907023329_work_r1a_task_commands.sql` đã apply.
-- Sáu RPC preview/create/list/detail/clone/groups đã tồn tại; TypeScript contracts ở `lib/work/workTypes.ts`.
-- Cloud rollback/postflight đạt; ledger 12/12; lint/build và 349 files / 1.654 tests đạt.
-- Calendar dùng fixture rollback; code concurrency cấp 16 mã không sử dụng, không tạo task/grant thật.
-- Feature flag vẫn false. Task 4 tiếp tục policy overrides/execution SLA/lifecycle trước pilot.
-- Người dùng đã xác nhận dùng đặc tả ở checkout gốc làm cơ sở Task 4–11;
-  đã đối chiếu và nội dung trùng bản trong worktree. Không cần tìm lại kế hoạch phiên cũ.
-- Thông tin lịch công ty/cohort pilot/môi trường bật Work đang được hỏi; không tự cấu hình thật.
-- Các mục bên dưới lưu bối cảnh lịch sử trước Task 3; mục 6 không còn là việc chưa làm.
+Làm việc tại `/Users/admin/khotienthinh/.worktrees/vioo-work-r1a`, branch
+`feature/vioo-work-r1a`. Không sửa checkout gốc, không dùng sub-agent.
 
-## 1. Điểm bắt đầu cho phiên chat mới
+- Base: `74d18a1`; đặc tả cherry-pick: `e251c9a`.
+- Đọc `AGENTS.md` trước khi sửa.
+- Đặc tả: `docs/superpowers/specs/2026-09-05-vioo-work-task-management-design.md`.
+  Người dùng đã xác nhận bản ở checkout gốc là cơ sở cho Task 4–11; nội dung đã
+  đối chiếu và trùng bản trong worktree. Không cần hỏi lại kế hoạch phiên trước.
+- Bằng chứng: `docs/runbooks/vioo-work-r1a-rollout.md`.
+- Kế hoạch Task 4 đã thực hiện:
+  `docs/superpowers/plans/2026-09-07-vioo-work-r1a-task4.md`.
+- Handoff cũ trước Task 3 được giữ trong lịch sử commit `2153407`.
 
-Làm việc tại:
+Trước khi chỉnh sửa: `git status --short` và `git log -8 --oneline`. Thay đổi đang
+có ngoài checkpoint này phải được kiểm tra như thay đổi của người dùng.
 
-```text
-/Users/admin/khotienthinh/.worktrees/vioo-work-r1a
-```
+## 2. Checkpoint đã hoàn thành
 
-- Branch: `feature/vioo-work-r1a`
-- Implementation checkpoint trước handoff: `c9cc08d`
-- Base đã chọn: `74d18a1`
-- Commit đặc tả đã cherry-pick: `e251c9a`
-- Supabase Cloud project duy nhất được phép dùng: `ftciqmqhmfvjtwoycswe`
-- Feature flag: `VITE_ENABLE_VIOO_WORK=false`
-- Không làm việc trong checkout gốc `/Users/admin/khotienthinh`.
-- Không dùng Supabase local hoặc Docker.
-- Không dùng `db push --include-all`.
-- Không sử dụng sub-agent theo `AGENTS.md`.
+| Task | Nội dung | Commit implementation |
+| --- | --- | --- |
+| 0 | Worktree, baseline, feature flag tắt | `2887eac` |
+| 1 | Canonical permission registry và route boundary | `c47433a`, `791b363`, `de0c696` |
+| 2 | Core schema, constraints, RLS | `7a7daf0` |
+| 3 | Preview/create/list/detail/clone/groups và types | `806dedb` |
+| 4A | Calendar intervals, policy priority/scope, assignment SLA | `92bea7b` |
+| 4B | Lifecycle, review, transfer/co-assignee, capabilities | `d745072` |
 
-Trước khi chỉnh sửa, chạy:
-
-```bash
-cd /Users/admin/khotienthinh/.worktrees/vioo-work-r1a
-git status --short
-git log -8 --oneline
-```
-
-Kỳ vọng tại thời điểm handoff: worktree sạch. Nếu có thay đổi ngoài file handoff,
-phải coi đó là thay đổi của người dùng và kiểm tra trước khi sửa.
-
-## 2. Nguồn sự thật cần đọc
-
-Đọc theo thứ tự:
-
-1. `AGENTS.md` — ràng buộc workspace và Supabase Cloud.
-2. `docs/superpowers/specs/2026-09-05-vioo-work-task-management-design.md`
-   — đặc tả nghiệp vụ đã duyệt.
-3. `docs/runbooks/vioo-work-r1a-rollout.md` — bằng chứng rollout đang tích lũy.
-4. Kế hoạch R1A trong yêu cầu người dùng của phiên trước, đặc biệt Task 3–11.
-5. Các migration Work đã áp dụng; không được sửa nội dung các file này.
-
-Nếu phiên chat mới không còn nội dung kế hoạch đầy đủ, Task 3 được khóa tại mục 6
-của handoff này; các Task 4–11 được tóm tắt tại mục 7.
-
-## 3. Các checkpoint đã hoàn thành
-
-### Task 0 — worktree và baseline
-
-Commit: `2887eac chore(work): establish R1A delivery baseline`
-
-- Tạo worktree/branch đúng base.
-- Thêm `VITE_ENABLE_VIOO_WORK=false` vào `.env.example`.
-- Thêm `isViooWorkEnabled` trong `lib/featureFlags.ts`.
-- Chưa đăng ký UI route Work.
-- Baseline ban đầu: 346 test files, 1.639 tests; lint/build/migration checker/query
-  audit đạt.
-
-### Task 1 — permission registry và route boundary
-
-Commits:
-
-- `c47433a feat(work): register canonical Work permissions`
-- `791b363 fix(work): preserve authenticated permission helper execution`
-- `de0c696 fix(work): deny unknown routes and enforce canonical module visibility`
-
-Đã áp dụng lên Cloud:
-
-- `20260907012229_work_r1a_permission_registry.sql`
-- `20260907015936_work_r1a_restore_permission_execution.sql`
-
-Permission canonical đã đăng ký:
+Sáu migration Work sau đây đã apply lên Cloud; **không sửa nội dung**:
 
 ```text
-work.module.access
-work.task.create
-work.task.view_related
-work.task.assign_user
-work.task.assign_group
-work.task.view_scope
-work.task.view_restricted
-work.task.manage_scope
-work.task.review
-work.task.audit_view
-work.task.configure
+20260907012229_work_r1a_permission_registry.sql
+20260907015936_work_r1a_restore_permission_execution.sql
+20260907021001_work_r1a_core_schema.sql
+20260907023329_work_r1a_task_commands.sql
+20260907024703_work_r1a_sla_engine.sql
+20260907025138_work_r1a_lifecycle_commands.sql
 ```
 
-Quy tắc quan trọng:
+Ledger local/Cloud khớp **14/14** migration; archive có 402 file.
 
-- Work không có legacy alias trong `allowed_modules`.
-- `Role.ADMIN` không bypass nếu thiếu canonical Work grant.
-- Route Work không biết trước bị deny.
-- Module visibility dùng action canonical `access`.
-- Không cấp quyền hàng loạt cho 57 user đang hoạt động.
+## 3. Contract hiện tại
 
-Sự cố đã xử lý: migration registry ban đầu revoke EXECUTE trên helper
-`app_private.has_permission`, ảnh hưởng RLS hiện có. Migration forward
-`20260907015936...` đã khôi phục quyền EXECUTE cho `authenticated`; postflight đạt.
-Không được sửa lại hai migration đã chạy.
+TypeScript: `lib/work/workTypes.ts`; độc lập với `ProjectTask`.
 
-### Task 2 — core schema, constraints và RLS
-
-Commits:
-
-- `7a7daf0 feat(work): add secure task domain schema`
-- `c9cc08d docs(work): record core schema Cloud postflight`
-
-Đã áp dụng lên Cloud:
-
-- `20260907021001_work_r1a_core_schema.sql`
-
-Các nhóm bảng đã tạo:
-
-- Task/bucket: `work_tasks`, `work_task_groups`.
-- Recipient snapshot: `work_task_recipient_specs`,
-  `work_task_recipient_members`, `work_task_recipient_member_sources`.
-- Vòng đời: `work_task_assignments`, `work_task_participants`,
-  `work_task_submissions`.
-- Nội dung: checklist, comments, mentions, attachments.
-- Audit/cá nhân: versions, events, pins, notification preferences.
-- SLA: calendars, exceptions, policies.
-- Private: code counter, command idempotency, notification outbox/deliveries.
-
-Đặc tính đã kiểm chứng:
-
-- Mã `VW-YYYY-NNNNNN` sinh nguyên tử theo `Asia/Ho_Chi_Minh`, không cắt khi vượt
-  sáu chữ số.
-- `department_id uuid` và `project_id text` giữ riêng, scope có constraint độc quyền.
-- Bucket không thể đổi scope sau khi tạo; task/bucket phải cùng scope.
-- Không cho liên kết reply, mention hoặc transfer chéo task.
-- Task identity, event/version history bất biến; không hard-delete assignment và
-  submission.
-- Bảng public chỉ cấp SELECT phù hợp cho `authenticated`; mutation sẽ đi qua RPC.
-- Bảng private revoke client access và bật RLS defense-in-depth.
-- `app_private.work_task_actor_can_view(uuid)` thực thi canonical module + quan hệ
-  hoặc scope + privacy.
-- Task `restricted` chỉ mở cho quan hệ trực tiếp hoặc `view_restricted` đúng scope.
-
-Cloud smoke dùng `SET LOCAL ROLE authenticated` với 10 persona:
+RPC đọc/tạo:
 
 ```text
-creator, assignee, watcher, reviewer, manager, unrelated, inactive,
-restricted_manager, technical_admin, scoped_watcher
+preview_work_task_recipients(p_sources jsonb, p_scope jsonb)
+create_work_task(p_input jsonb, p_idempotency_key uuid, p_recipient_fingerprint text)
+list_work_tasks(p_view text, p_filters jsonb, p_cursor jsonb, p_limit integer)
+get_work_task_detail(p_task_ref text)
+get_work_task_clone_draft(p_task_id uuid)
+list_work_task_groups(p_scope jsonb, p_cursor jsonb, p_limit integer)
 ```
 
-Mọi fixture nằm trong transaction rollback. Postflight đạt; local/Cloud ledger
-khớp 11/11 migration. Cloud security advisor ở mức `error` không có issue. Không
-tuyên bố sạch warning/info vì chưa xử lý hai mức đó.
-
-Verification gần nhất:
+Command vòng đời:
 
 ```text
-npm test -- --reporter=dot       349 files / 1.654 tests / 0 failures
-npm run lint                     passed
-npm run build                    passed; chỉ có chunk-size warning cũ
-npm run check:supabase-migrations 11 active / 402 archived
-npm run audit:supabase-queries   0 findings / 0 errors
+command_work_task(
+  p_task_id uuid,
+  p_command text,
+  p_payload jsonb,
+  p_expected_lock_version bigint,
+  p_idempotency_key uuid
+)
 ```
 
-## 4. Trạng thái hệ thống hiện tại
+Allowlist: `acknowledge`, `request_clarification`, `start`, `block`, `unblock`,
+`submit`, `review`, `cancel`, `transfer`, `add_assignees`. Payload có discriminated
+union `WorkLifecycleCommand` trong types. Các wrapper public là security-invoker;
+entry private kiểm actor/capability và ghim `search_path=''`.
 
-- Core schema đã tồn tại trên Supabase Cloud.
-- Chưa có RPC Task 3: preview/create/list/detail/clone.
-- Chưa có task nghiệp vụ/pilot được tạo bởi rollout.
-- Chưa có UI route/menu Work.
-- Feature flag vẫn tắt.
-- Chưa cấp canonical Work grant cho cohort pilot.
-- Chưa có notification worker, Edge Function upload hoặc Realtime publication.
-- Chưa cấu hình lịch làm việc/SLA; không được tự đoán lịch công ty.
+Lưu ý tích hợp:
 
-Không sửa migration đã áp dụng. Nếu phát hiện lỗi schema sau đây, tạo migration
-forward mới.
+- Actor chỉ lấy từ `current_app_user_id()`, không truyền actor từ client.
+- Input camelCase; read projection giữ tên cột snake_case. Cursor `{sortAt,id}`;
+  list cap 100. Comments/events/history không nằm trong detail.
+- DB dùng `clarification_requested` cho trạng thái làm rõ; giữ nhất quán với
+  TypeScript khi làm UI (đặc tả mô tả trạng thái này là `needs_clarification`).
+- `department_id uuid`, `project_id text`; không gộp thành một UUID polymorphic.
+- `work_groups` là nguồn người nhận; `work_task_groups` là bucket theo scope.
+- Join legacy membership bằng `work_group_members.user_id = users.id::text`.
+- Tài khoản disabled được trigger hiện có đồng bộ thành inactive. `auth_id` null
+  không tự có nghĩa là không có app account: actor resolver còn email fallback.
+- Create chống preview stale và retry/key conflict; version/event/outbox cùng
+  transaction. Task thiếu calendar bị chặn; không tự seed lịch.
+- Calendar `working_intervals=[]` dùng `workday_start/end`; array khác rỗng hỗ trợ
+  ca có giờ nghỉ. Policy ưu tiên scope, rồi priority, chỉ lấy bản active/effective.
+- `execution_sla_started_at = acknowledged_at`; due chỉ có khi cấu hình thời lượng.
+  Snapshot lưu cấu hình và exception áp dụng. Deadline task không tự thay đổi.
+- Transfer không xóa blocker chung; đóng assignment cũ và tạo SLA cho người mới.
+  Self-only auto-complete chuyển creator-review khi thay đổi trách nhiệm và phải
+  có reviewer hợp lệ.
+- Completed/cancelled assignments có `ended_at`; giữ `acknowledged_at` để biết ai
+  chưa từng nhận. Người từng được giao giữ quyền đọc qua canonical relation;
+  mutation capabilities chỉ dựa trên assignment đang mở và trạng thái hợp lệ.
+- Clone lấy trách nhiệm hiện tại sau transfer/add, bỏ assignee checklist không
+  còn trong draft recipients; provenance ban đầu vẫn nằm trong snapshot gốc.
+- Retry trả response gốc, có thể cũ hơn state hiện tại: client cần invalidate/
+  refetch sau command, không coi response retry là toàn bộ state mới nhất.
 
-## 5. Chu trình bắt buộc cho mỗi task/migration
+## 4. Việc tiếp theo — Task 5
 
-Mỗi tính năng:
+Theo mục 11–12 và 20 của đặc tả: checklist CRUD, discussion/reply/edit audit,
+mention, history, pin và notification preference.
 
-1. Viết failing test.
-2. Chạy và xác nhận fail đúng lý do.
-3. Viết implementation tối thiểu.
-4. Chạy targeted tests.
-5. Chạy `npm run lint`; chạy `npm run build` nếu có UI.
+Các điểm cần triển khai/kiểm chứng:
 
-Mỗi migration:
+1. Checklist dùng quyền creator/accepted assignee/scoped manager phù hợp trạng
+   thái; kiểm assignee hợp lệ, version conflict, không làm mất lịch sử hoàn thành.
+2. Comment/reply luôn cùng task; edit có policy và bằng chứng before/after. Watcher
+   được bình luận nhưng không nhận quyền thay đổi trạng thái task.
+3. Mention picker chỉ trả người có quyền xem; mention không tạo assignment,
+   participant hoặc grant. Notification mention cần event/outbox riêng.
+4. Comments/history tải bằng cursor riêng, có hard limit; không mở rộng detail
+   để nhồi toàn bộ thảo luận/lịch sử.
+5. Đồng bộ `audit_view` giữa history RPC, capabilities và RLS events/versions.
+   Chính sách events hiện kế thừa Task 2 (can-view-task); versions còn kiểm quan
+   hệ assignment active. Phải hoàn thiện boundary audit cho historical assignees
+   trước pilot; Task 4 không tuyên bố đã hoàn thành history API này.
+6. Pin/mute là theo actor + task, không tác động người khác. Mute chỉ chặn thông
+   báo thường, không chặn các thông báo bắt buộc ở Task 6.
+7. SQL smoke role authenticated: creator/assignee/watcher/reviewer/manager/
+   unrelated/inactive; cross-task reply/mention, edit/conflict, restricted leak,
+   cursor ties và idempotent retry. Chạy regression Task 3–4 và core/helper.
 
-1. Tạo file bằng `npx --no-install supabase migration new <name>`.
-2. Viết behavioral smoke trong `supabase/tests/`.
-3. Nạp `.env` gốc và chạy Cloud rollback transaction.
-4. Commit release candidate bằng danh sách file cụ thể; không `git add .`.
-5. Chạy `supabase db push --linked --dry-run` và xác nhận chỉ migration dự kiến.
-6. Apply bằng `supabase db push --linked --yes`.
-7. Chạy postflight và ghi bằng chứng vào rollout runbook.
+## 5. Roadmap còn lại và điều kiện pilot
 
-Nạp cấu hình Cloud mà không in secret:
+- Task 6: outbox worker, delivery dedupe/retry, deep link, Realtime invalidation.
+- Task 7: private Storage, two-phase upload, compression và Edge Function.
+- Task 8: module shell/list/create drawer và services/hooks feature-local.
+- Task 9: responsive detail, capability actions và screenshot QA.
+- Task 10: scoped bucket/calendar/SLA settings, named pilot enablement.
+- Task 11: HTTP/JWT acceptance personas, EXPLAIN, deployment, quan sát đủ 48 giờ.
+
+**Hiện tại:** `VITE_ENABLE_VIOO_WORK=false`; chưa có route/menu Work, worker,
+Storage processor hoặc Realtime publication. Không bật pilot trước khi đầy đủ
+commands/collaboration/notifications/Storage/UI smoke.
+
+Người dùng đang được hỏi lịch công ty (ngày, ca/giờ nghỉ, ngày nghỉ đặc biệt),
+người dùng pilot cụ thể và môi trường bật Work. Chưa có câu trả lời cho các thông
+tin này; không tự suy ra cấu hình hoặc cấp grant. Việc phát triển Task 5–9 bằng
+fixture rollback không phụ thuộc câu trả lời này.
+
+R1B/R2/R3 chỉ là roadmap, không triển khai trong nhánh R1A.
+
+## 6. Quy trình Cloud và verification
+
+Chỉ Supabase Cloud project `ftciqmqhmfvjtwoycswe`, cấu hình `.env` ở checkout gốc.
+Không Docker/local Supabase và không `db push --include-all`.
+
+Mỗi feature: failing behavioral test → xác nhận fail → implementation → targeted
+smoke → lint; build khi có UI. Mỗi migration: tạo file bằng CLI → Cloud rollback
+smoke → commit explicit paths → linked dry-run chỉ migration dự kiến → apply →
+postflight → ghi bằng chứng. Thêm migration mới vào `supabase/baseline/current.json`.
 
 ```bash
 set -a
 source /Users/admin/khotienthinh/.env
 set +a
-```
-
-Rollback smoke mẫu:
-
-```bash
 node scripts/run-supabase-cloud-transaction.mjs \
   --expected-ref ftciqmqhmfvjtwoycswe \
-  --migration supabase/migrations/<migration>.sql \
+  --migration supabase/migrations/<CLI-generated-file>.sql \
   --smoke supabase/tests/<smoke>.sql
 ```
 
-Tuyệt đối không dùng local Supabase, Docker hay `--include-all`.
+Postflight dùng `--migration /dev/null` để không chạy lại DDL đã apply.
 
-## 6. Việc tiếp theo — Task 3
-
-Tên checkpoint: **Recipient preview, create, list, detail và clone draft**.
-
-Commit dự kiến:
+Smokes hiện có:
 
 ```text
-feat(work): add recipient and task creation commands
+supabase/tests/work_r1a_permission_execute_smoke.sql
+supabase/tests/work_r1a_core_schema_smoke.sql
+supabase/tests/work_r1a_task_commands_smoke.sql
+supabase/tests/work_r1a_sla_engine_smoke.sql
+supabase/tests/work_r1a_lifecycle_commands_smoke.sql
 ```
 
-### 6.1 TypeScript contracts
+Chạy riêng các smoke tạo default calendar: không gộp Task 3/SLA/lifecycle thành
+một outer transaction vì mỗi bộ tự tạo calendar mặc định. Mỗi fixture rollback.
 
-Tạo `lib/work/workTypes.ts`, không mở rộng `ProjectTask` trong `types.ts`.
+Verification gần nhất:
 
-Các contract tối thiểu:
-
-```ts
-type WorkScope =
-  | { type: 'direct' }
-  | { type: 'department'; departmentId: string }
-  | { type: 'project'; projectId: string };
-
-type WorkRecipientSource =
-  | { type: 'user'; id: string }
-  | { type: 'work_group'; id: string };
-
-interface CreateWorkTaskInput {
-  title: string;
-  description: WorkTextDocument;
-  scope: WorkScope;
-  taskGroupId?: string;
-  recipientSources: WorkRecipientSource[];
-  watcherUserIds: string[];
-  reviewerUserId?: string;
-  deadlineAt?: string;
-  priority: 'normal' | 'important' | 'urgent';
-  privacy: 'standard' | 'restricted';
-  labels: string[];
-  checklist: Array<{ title: string; assigneeUserId?: string }>;
-  clonedFromTaskId?: string;
-}
-```
-
-Thêm `WorkTaskCommandResult`, `WorkTaskPage<T>`, `WorkTaskDetail` và capability
-types feature-local. Comments/events phải tải riêng bằng cursor, không nhồi vào
-detail.
-
-### 6.2 RPC cần triển khai trong Task 3
-
-```text
-preview_work_task_recipients
-create_work_task
-list_work_tasks
-get_work_task_detail
-get_work_task_clone_draft
-list_work_task_groups
-```
-
-Mọi RPC phải xác định actor bằng `current_app_user_id()`; không nhận actor từ
-client. Security-definer function phải nằm trong private schema hoặc public
-wrapper được revoke/grant chính xác, `search_path=''`, kiểm actor và capability.
-
-### 6.3 Recipient preview
-
-- R1A chỉ nhận nguồn `user` và `work_group`.
-- `work_group_members.user_id` là `text`, còn `users.id` là `uuid`.
-- Join an toàn theo `work_group_members.user_id = users.id::text`; không cast dữ
-  liệu legacy text sang UUID.
-- Chỉ lấy group/member active.
-- Loại user inactive, `account_status <> 'ACTIVE'`, không có app account hoặc
-  thiếu `work.module.access` canonical.
-- Dedupe user nhưng giữ đầy đủ provenance từ từng source.
-- Trả cả valid/invalid counts, lý do loại và fingerprint ổn định.
-- Fingerprint phải phụ thuộc tập source + member hợp lệ/provenance; create từ chối
-  nếu group/member/quyền thay đổi sau preview.
-- Không cho preview rỗng tạo task.
-
-### 6.4 Create task
-
-- Nhận `p_idempotency_key uuid` và fingerprint đã preview.
-- Toàn bộ task, snapshot, assignments, participants, checklist, initial version,
-  event và outbox nằm trong một transaction/function call.
-- Kiểm `work.task.create`, `assign_user`/`assign_group`, scope, bucket và privacy.
-- Từ chối nếu calendar cần thiết chưa cấu hình theo quy tắc đã duyệt; nếu quyết
-  định này làm Task 3 phụ thuộc Task 4/10, triển khai private assertion tối thiểu
-  có mã `WORK_CALENDAR_NOT_CONFIGURED`, không tự seed lịch.
-- Self-assignment tự xác nhận và chuyển assignment sang `not_started`.
-- Self-only direct task mặc định `auto_complete`.
-- Task khác mặc định reviewer là creator và dùng creator review, trừ override hợp
-  lệ.
-- Ghi `cloned_from_task_id` chỉ để truy vết; không kế thừa quyền từ task nguồn.
-- Retry cùng actor/key/payload trả cùng response; cùng key payload khác phải bị
-  từ chối.
-
-### 6.5 List/detail/clone
-
-- `list_work_tasks` dùng cursor `{sortAt,id}`, giới hạn cứng; không query unbounded.
-- Views R1A: `assigned_to_me`, `created_by_me`, `following`, `pinned`.
-- Filters: status, priority, scope, bucket, deadline và search.
-- Sort ổn định theo thời gian + UUID.
-- Detail trả task, assignments, participants, checklist, submission hiện hành,
-  attachments ready và capabilities. Comments/history không nằm trong payload.
-- Clone chỉ trả draft prefill; không INSERT cho tới `create_work_task`.
-- Clone sao chép allowlist: title, description, scope, bucket, labels, priority,
-  recipient sources/snapshot draft, watchers/reviewer/review policy, checklist
-  chưa hoàn thành.
-- Không clone UUID/code/status/timestamps/SLA/progress/submission/comments/events/
-  file kết quả/completion checklist.
-- Deadline hết hiệu lực không được âm thầm dùng lại; UI sau này bắt xác nhận.
-
-### 6.6 Test bắt buộc của Task 3
-
-- Nhóm có thành viên trùng và một user từ nhiều nguồn.
-- Thành viên nhóm thay đổi sau preview.
-- User inactive/no app account/không module access bị loại đúng lý do.
-- Zero valid recipient.
-- Self-assignment.
-- Code concurrency, không trùng mã.
-- Idempotent retry và key/payload conflict.
-- Scope/bucket/capability deny.
-- Clone allowlist và không tạo row.
-- Cursor không trùng/không bỏ row ở cùng timestamp.
-- Detail không chứa comments/events và không lộ restricted task.
-- Cloud smoke phải dùng role `authenticated`, không chỉ chạy bằng owner.
-
-## 7. Roadmap còn lại của R1A
-
-- Task 4: lifecycle assignment, review, transfer/co-assignee và SLA/calendar engine.
-- Task 5: checklist CRUD, discussion/reply/edit audit, mention, history, pin/mute.
-- Task 6: transactional notification outbox, worker dedupe/retry, deep link và
-  Realtime invalidation.
-- Task 7: private Storage, two-phase upload, image compression và Edge Function.
-- Task 8: module shell, cursor list và drawer/full-screen create.
-- Task 9: responsive task detail, capability actions và screenshot QA.
-- Task 10: scoped bucket/calendar/SLA settings và named pilot enablement.
-- Task 11: full Cloud rollout evidence, EXPLAIN, six-plus JWT personas, deployment
-  và 48-hour observation.
-
-R1B giao department/company, R2 Dashboard V2 và R3 AI runtime vẫn chỉ là roadmap.
-
-## 8. Các bẫy đã biết
-
-- Không revoke/grant blanket trên helper dùng chung; smoke phải test bằng
-  `SET LOCAL ROLE authenticated`.
-- `Role.ADMIN` kỹ thuật không có quyền Work nếu thiếu grant canonical.
-- Không cast `work_group_members.user_id` sang UUID vì dữ liệu legacy có thể lỗi.
-- RLS helper không thay thế table privilege; phải kiểm cả GRANT và policy.
-- Không đưa toàn bộ task vào `AppContext`; services/hooks phải feature-local.
-- Không mở route/menu khi flag tắt.
-- Không nhận user ID do client truyền làm actor.
-- Không sửa migration đã apply; mọi repair là forward migration.
-- Không ghi rằng advisor sạch hoàn toàn khi mới chạy `--level error`.
-- Không bật pilot trước khi calendar, commands, notifications và Storage smoke đạt.
-
-## 9. Prompt khởi động đề xuất cho phiên chat mới
-
-```text
-Tiếp tục triển khai Vioo Work R1A từ Task 3 trong worktree
-/Users/admin/khotienthinh/.worktrees/vioo-work-r1a.
-
-Đọc đầy đủ AGENTS.md, docs/runbooks/vioo-work-r1a-handoff.md,
-docs/runbooks/vioo-work-r1a-rollout.md và đặc tả
-docs/superpowers/specs/2026-09-05-vioo-work-task-management-design.md trước khi sửa.
-
-Thực hiện Task 3 theo TDD và migration checkpoint trong handoff. Chỉ dùng Supabase
-Cloud project ftciqmqhmfvjtwoycswe với .env ở repo gốc; không local, không Docker,
-không --include-all, không sub-agent. Feature flag tiếp tục false và không cấp
-pilot grants. Không sửa ba migration Work đã apply. Tiếp tục tự chủ đến khi Task 3
-được kiểm chứng, commit, dry-run/apply/postflight và cập nhật rollout evidence.
-```
+- Full frontend regression: 349 files / 1.654 tests / 0 failures.
+- Lint và build đạt; build còn chunk-size warning cũ.
+- Commands, SLA, lifecycle, core RLS và authenticated helper postflight đều đạt.
+- Query audit: 0 findings/errors. Migration checker: 14 active / 402 archived.
+- Cloud security advisor mức `error`: không issue; không tuyên bố sạch warn/info.
+- Persisted Work counts sau postflight: tasks/calendars/policies/direct Work
+  grants/outbox đều **0**. Chưa có task nghiệp vụ hoặc pilot grant.
+- Code concurrency: 2 Cloud transactions đồng thời cấp 16 mã khác nhau, không tạo
+  task. Counter tăng và để lại 16 mã không sử dụng; không rewind counter. Script
+  `scripts/smoke-work-code-concurrency.mjs` mỗi lần chạy sẽ cấp thêm 16 mã.

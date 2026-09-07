@@ -38,13 +38,13 @@ Calendar acceptance example (fixture only): Friday 2026-09-04 11:30 +07 plus 120
 
 **Interface:** public `command_work_task(p_task_id uuid,p_command text,p_payload jsonb,p_expected_lock_version bigint,p_idempotency_key uuid) -> WorkTaskCommandResult`. Supported commands: `acknowledge`, `request_clarification`, `start`, `block`, `unblock`, `submit`, `review`, `cancel`, `transfer`, `add_assignees`. One private guarded dispatcher implements the fixed command allowlist; no client-selected actor/source.
 
-- [ ] Create authenticated fixtures for creator, two assignees, watcher, reviewer, manager, unrelated/inactive accounts. For a task with pending assignments assert: watcher cannot start; acknowledgement affects only caller; first acknowledgement moves task to not_started; other pending assignments remain pending.
-- [ ] Assert stale expected version returns `WORK_VERSION_CONFLICT`; same actor/key/payload returns original response; changed payload fails `WORK_IDEMPOTENCY_CONFLICT`.
-- [ ] Implement per-task row lock, authorization/capability and exact transition allowlists. Actor's accepted live assignment permits start/block/unblock/submit; clarification never blocks accepted collaborators. Require notes for clarification/block/cancel/reject/transfer.
-- [ ] Add tests for submission iteration, pending-review uniqueness, reviewer-only approval/rejection, auto-complete, terminal task denial and event/outbox atomicity. Complete all live assignments without deleting pending acknowledgement history.
-- [ ] Add transfer and co-assignee tests: only actor's assignment transfers; no duplicate live assignment; validate receiver module/scope/privacy access, preserve the common deadline, reset acknowledgement/execution SLA for new assignee, preserve old rows and transfer pointers.
-- [ ] Recompute capabilities from actual relationships/state. Include them in detail and command result; readonly actors have no mutation actions. Preserve original idempotent response after later state changes.
-- [ ] Run lifecycle + Task 3/4A/core permission smoke, lint/full tests/checker/advisor. Commit, dry-run/apply/postflight and record evidence.
+- [x] Create authenticated fixtures for creator, two assignees, watcher, reviewer, manager, unrelated/inactive accounts. For a task with pending assignments assert: watcher cannot start; acknowledgement affects only caller; first acknowledgement moves task to not_started; other pending assignments remain pending.
+- [x] Assert stale expected version returns `WORK_VERSION_CONFLICT`; same actor/key/payload returns original response; changed payload fails `WORK_IDEMPOTENCY_CONFLICT`.
+- [x] Implement per-task row lock, authorization/capability and exact transition allowlists. Actor's accepted live assignment permits start/block/unblock/submit; clarification never blocks accepted collaborators. Require notes for clarification/block/cancel/reject/transfer.
+- [x] Add tests for submission iteration, pending-review uniqueness, reviewer-only approval/rejection, auto-complete, terminal task denial and event/outbox atomicity. Complete all live assignments without deleting pending acknowledgement history.
+- [x] Add transfer and co-assignee tests: only actor's assignment transfers; no duplicate live assignment; validate receiver module/scope/privacy access, preserve the common deadline, reset acknowledgement/execution SLA for new assignee, preserve old rows and transfer pointers.
+- [x] Recompute capabilities from actual relationships/state. Include them in detail and command result; readonly actors have no mutation actions. Preserve original idempotent response after later state changes.
+- [x] Run lifecycle + Task 3/4A/core permission smoke, lint/full tests/checker/advisor. Commit, dry-run/apply/postflight and record evidence.
 
 ## Remaining R1A sequence
 

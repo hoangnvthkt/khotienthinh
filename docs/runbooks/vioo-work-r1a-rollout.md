@@ -183,3 +183,11 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
   regressions passed; full frontend regression: 349 files / 1,654 tests; lint
   passed; query audit 0 findings/errors; pre-apply security advisor error level
   no issues. No UI/pilot/notification delivery activation is included here.
+- Release candidate `d745072`: dry-run listed only the lifecycle migration;
+  apply succeeded. Postflight lifecycle, SLA engine, Task 3 commands, core RLS
+  and authenticated helper regression smokes all passed against the applied
+  schema. Local/Cloud ledgers match 14/14. Post-apply security advisor at error
+  level: no issues. Lower severities were not claimed clean.
+- Postflight persisted Work counts: tasks 0, calendars 0, policies 0, direct Work
+  grants 0, outbox 0. Only the 16 unused concurrency-test code allocations remain.
+  Task 0–4 checkpoints are complete; Task 5 is the next implementation checkpoint.
