@@ -404,3 +404,14 @@ permission helper Cloud rollback smokes all passed with the candidate migration.
 Migration audit: 17 active / 402 archived; query audit: zero findings/errors.
 Pre-apply security advisor at error level found no issues. Rollout/postflight status
 is recorded below after actual Cloud apply and Edge deployment.
+
+The final policy review added forward migration
+`20260907042716_work_r1a_upload_operation_guard.sql`: Storage INSERT also covers
+signed-upload URL creation and other transports. Restrict Work inserts to the exact
+server-set `storage.object.upload` operation so a client cannot mint a capability
+that outlives the reservation/cleanup window. Signed upload, copy, S3, TUS and unset
+operation contexts are denied. The regression first reproduced the signed-upload
+policy gap, then passed with the guard; standard upload and the full Task 7 persona/
+lease suite remained green. See Supabase's [operation helper documentation](https://supabase.com/docs/guides/storage/schema/helper-functions)
+and [operation names](https://github.com/supabase/storage/blob/master/src/http/routes/operations.ts).
+The original applied migration remains immutable.

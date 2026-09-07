@@ -40,7 +40,7 @@ do $$ declare v_input jsonb; v_preview jsonb; v_result jsonb; begin
   insert into work_collab_data values('restricted',v_result);
 end $$;
 -- Upload reservations are idempotent and subject-bound; no ready metadata leaks.
-do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_data where key='task'); v_r jsonb; v_p jsonb; v_key uuid:=gen_random_uuid(); begin
+do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_data where key='task'); v_r jsonb; v_p jsonb; v_key uuid:=gen_random_uuid(); v_operation text; begin
  v_p:=jsonb_build_object('taskId',v_task,'fileName','test.txt','mimeType','text/plain','sizeBytes',5,'kind','input','keepOriginal',false);
  v_r:=public.command_work_attachment('begin',v_p,v_key);
  if v_r->>'status'<>'pending' or v_r is distinct from public.command_work_attachment('begin',v_p,v_key) then raise exception 'TEST_RESERVATION_RETRY'; end if;
@@ -53,6 +53,14 @@ do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_dat
  begin perform public.command_work_attachment('begin',v_p||'{"kind":"fake"}',gen_random_uuid()); raise exception 'TEST_KIND_ALLOWLIST'; exception when invalid_parameter_value then null; end;
  begin perform public.command_work_attachment('begin',v_p||'{"uploaderUserId":"fake"}',gen_random_uuid()); raise exception 'TEST_ACTOR_OVERRIDE'; exception when invalid_parameter_value then null; end;
  -- SQL Storage policy test only: rolled-back metadata, not a physical object upload.
+ foreach v_operation in array array['storage.object.sign_upload_url','storage.object.upload_signed','storage.object.copy','storage.s3.upload','storage.tus.upload.create',''] loop
+  perform set_config('storage.operation',v_operation,true);
+  begin
+   insert into storage.objects(bucket_id,name) values('work-attachments',v_r->>'path');
+   raise exception 'TEST_ALTERNATE_UPLOAD_OPERATION_ALLOWED %',v_operation;
+  exception when insufficient_privilege then null; end;
+ end loop;
+ perform set_config('storage.operation','storage.object.upload',true);
  insert into storage.objects(bucket_id,name) values('work-attachments',v_r->>'path');
  begin insert into storage.objects(bucket_id,name) values('work-attachments','unreserved/path'); raise exception 'TEST_UNRESERVED_UPLOAD'; exception when insufficient_privilege then null; end;
  if exists(select 1 from storage.objects where bucket_id='work-attachments') then raise exception 'TEST_DIRECT_STORAGE_READ'; end if;
