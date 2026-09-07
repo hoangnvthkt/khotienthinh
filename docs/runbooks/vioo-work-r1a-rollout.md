@@ -646,3 +646,15 @@ assignment rows), SLA engine, task commands, core RLS and authenticated permissi
 helper execution. The final configuration smoke passed after scope-before-version
 checks and the scoped history index were added. Linked security advisor at error
 level reported no issues on the pre-apply schema; post-apply evidence follows.
+
+Postflight: candidate `2242648` dry-run listed only
+`20260907062813_work_r1a_configuration.sql`; apply succeeded. Local and Cloud
+migration ledgers match 21/21. Configuration, SLA, task-command and core RLS smokes
+passed against the deployed schema, each rolled back. All five new public RPC
+entry points are present. Post-apply security advisor at error level found no
+issues; lower severities are not claimed clean. Persisted Work tasks, calendars,
+policies, configuration events, direct Work grants, fixture users and outbox rows
+all remain zero. Notification delivery is disabled; the frontend flag remains off
+by its default (no enable override was introduced). The two named accounts and
+department are verified; pilot activation awaits the pending calendar/deployment
+choices in the manifest, then real authenticated/device acceptance and observation.
