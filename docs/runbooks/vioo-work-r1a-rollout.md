@@ -99,3 +99,36 @@ Edge Function deployment, pilot grants, and the 48-hour observation summary here
 - Core schema is deployed; no task command RPCs/UI or pilot activation are
   included in this checkpoint. Next: Task 3 recipient preview, create/list/detail
   and clone draft. Feature remains disabled.
+
+### Task 3 — recipient and task commands release candidate (2026-09-07)
+
+- Candidate: `20260907023329_work_r1a_task_commands.sql`; six public invoker
+  wrappers delegate to guarded private functions with `search_path=''`.
+- `lib/work/workTypes.ts` defines independent Work input/read/cursor/capability
+  contracts. Detail excludes discussion and history; list pages cap at 100 rows.
+- Authenticated-role rollback smoke passed: overlapping group/user provenance,
+  legacy non-UUID membership, inactive/disabled/missing-account/module exclusions,
+  stable preview ordering, membership and canonical permission drift, zero valid
+  recipients, self and collaborative defaults, creator/scoped permissions,
+  department/project creation, bucket mismatch, reviewer override denial,
+  document allowlist, atomic rollback, idempotent retry/conflict, version/event/
+  outbox, ready attachments, restricted detail, read-only clone and expired
+  deadline handling. Pagination covered 103 tied timestamps across 100+3 rows.
+- Existing account lifecycle trigger synchronizes disabled accounts to inactive;
+  both fixtures are excluded as `INACTIVE_USER`. Missing `users` records are
+  `NO_APP_ACCOUNT`; an unlinked `auth_id` alone is not a missing app account,
+  because the existing actor resolver supports the email fallback.
+- Missing calendar returns `WORK_CALENDAR_NOT_CONFIGURED`. The small creation
+  helper applies default priority acknowledgement durations using configured
+  weekdays/hours and date exceptions; weekend/holiday smoke passed. Task 4 must
+  finish policy overrides, execution SLA and lifecycle integration. No company
+  calendar was inferred or persisted.
+- `scripts/smoke-work-code-concurrency.mjs`: two concurrent Cloud transactions
+  allocated 16 distinct codes. Only the shared code counter advanced; no task,
+  user, grant, calendar, event or notification was persisted. The unused code
+  gaps are intentional and the counter was not rewound.
+- Frontend regression: 349 files / 1,654 tests passed; lint/build passed (existing
+  chunk-size warning). Query audit: 0 findings/errors. Cloud security advisor
+  at `--level error`: no issues before apply.
+- Security approach checked against [Supabase database function documentation](https://supabase.com/docs/guides/database/functions).
+- Feature flag remains false; no UI routes, pilot grants or user tasks added.
