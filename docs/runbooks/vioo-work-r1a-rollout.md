@@ -308,3 +308,20 @@ jobs. An outbox quarantine can be retried by clearing that row's `dead_at`, rese
 its attempt count and setting `available_at=now()`. A failed device job can be retried
 by clearing its finish/lease timestamps, setting status to pending and resetting its
 attempt count. Existing event/user/channel markers continue to prevent in-app duplicates.
+
+Task 6 postflight: release candidate `b28f26d` had only the notification delivery
+migration in its linked dry-run; apply succeeded. `process-work-notifications`
+was deployed through the API without Docker. Worker, collaboration, lifecycle,
+SLA, Task 3 commands, core RLS and authenticated helper postflight smokes passed
+against the applied schema (`--migration /dev/null`). Local/Cloud ledgers match
+16/16. Post-apply Cloud security advisor at error level found no issues; lower
+severities were not claimed clean.
+
+Deployed HTTP probes: missing secret 401, invalid secret 401, existing Vault-held
+secret 200 with `{"enabled":false}` and no timeout. The minute Cron is active,
+but its delivery gate remains false. Persisted counts after rollback smokes:
+tasks 0, Work notifications 0, outbox 0, deliveries 0, push jobs 0, calendars 0,
+policies 0, direct Work grants 0, fixture users 0. No test push was sent to a real
+recipient. Task 6 is complete at the delivery/invalidation infrastructure checkpoint;
+real device delivery and screen integration remain in the named pilot/UI/observation
+checkpoints. Task 7 adds private Storage and attachment processing.

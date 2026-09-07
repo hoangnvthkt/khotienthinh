@@ -20,9 +20,16 @@ main agent only, Supabase Cloud ftciqmqhmfvjtwoycswe. No handoff is part of this
   read bypass and authenticated fabrication/retargeting. Keep push content generic.
 - [x] Publish an RLS-protected task revision signal; add feature-local invalidation
   subscription with reconnect/focus/poll refresh and canonical task/comment routing.
-- [ ] Implement/deploy the internal Edge worker with the existing Vault/Edge internal
+- [x] Implement/deploy the internal Edge worker with the existing Vault/Edge internal
   secret; schedule a minute tick. A private enabled=false gate blocks automatic
   delivery until Task 10; no real users receive test messages.
-- [ ] Run Cloud persona/worker regression, mocked transport/invalidation/route tests,
+- [x] Run Cloud persona/worker regression, mocked transport/invalidation/route tests,
   lint/build, advisors and baseline audit; commit/dry-run/apply/postflight and record
   rollout evidence. Applied migrations remain immutable.
+
+Release candidate `b28f26d` was applied after an isolated linked dry-run. The Edge
+worker was deployed with `--use-api` (no Docker). Task 6 and all Task 3–5/core/helper
+postflight smokes passed against the applied schema. Ledgers match 16/16. Worker
+HTTP probes returned 401 for missing/invalid secrets and 200 with enabled=false
+using the Vault-held secret. The minute Cron is installed; delivery stays gated.
+All Work task/notification/outbox/delivery/push-job fixtures were rolled back.
