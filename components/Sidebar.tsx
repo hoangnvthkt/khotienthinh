@@ -43,7 +43,7 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
-  { key: 'work.module' as const, icon: ClipboardCheck, label: 'Vioo Work', shortLabel: 'WORK', route: '/work/my', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
+  { key: 'work.module' as const, icon: ClipboardCheck, label: 'Vioo Work', shortLabel: 'WORK', route: '/work', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
   { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25' },
   { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile', gradient: 'from-purple-500 to-pink-600', shadow: 'shadow-purple-500/25' },
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
@@ -239,7 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Nav items per module
   const moduleNavMap: Record<AppKey, any[]> = {
-    'work.module': [{ to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
+    'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
     WMS: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null },

@@ -171,6 +171,8 @@ const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ c
   isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
 
 const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
+const WorkHome = React.lazy(() => import('./pages/work/WorkHome'));
+const WorkWorkspacePreview = React.lazy(() => import('./pages/work/WorkHome').then(module => ({ default: module.WorkWorkspacePreview })));
 const WorkSettings = React.lazy(() => import('./pages/work/WorkSettings'));
 
 const AppRoutes: React.FC = () => {
@@ -179,8 +181,9 @@ const AppRoutes: React.FC = () => {
       <Routes>
         <Route path="/" element={<SubModuleGuard><Layout /></SubModuleGuard>}>
           <Route index element={<Home />} />
-          <Route path="work" element={<Navigate to="/work/my" replace />} />
+          <Route path="work" element={<WorkHome />} />
           <Route path="work/my" element={<WorkPage />} />
+          <Route path="work/spaces/:workspaceId" element={<WorkWorkspacePreview />} />
           <Route path="work/settings" element={<WorkSettings />} />
           <Route path="work/tasks/:taskCode" element={<WorkPage />} />
           <Route path="notifications" element={<Notifications />} />

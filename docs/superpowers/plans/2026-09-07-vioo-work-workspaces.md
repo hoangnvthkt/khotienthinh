@@ -431,22 +431,22 @@ modify `App.tsx`, `components/Sidebar.tsx`, `lib/routeAccess.ts`,
 route `/work/spaces/:workspaceId` nối WS7. Preference RPC
 `set_work_workspace_preference(p_workspace_id,p_pinned,p_opened)` ghi đúng user hiện tại.
 
-- [ ] Viết fixture route/member/empty/loading/error/expired và sidebar parity trước.
+- [x] Viết fixture route/member/empty/loading/error/expired và sidebar parity trước.
   Khách chưa đăng nhập đi login; user ngoài membership không có thẻ Workspace đó.
-- [ ] Tạo layout: header chào người dùng, tác vụ cá nhân, hàng Việc cần tôi xử lý,
+- [x] Tạo layout: header chào người dùng, tác vụ cá nhân, hàng Việc cần tôi xử lý,
   tìm/lọc không gian, thẻ ghim và danh sách có phân trang. Chỉ số từ server, không
   tải toàn bộ tasks/nhân viên để đếm. Không làm bảng xếp hạng task count.
-- [ ] Thẻ 1 cột mobile, 2 tablet, 3 desktop; cover preset SVG/local asset, icon, màu,
+- [x] Thẻ 1 cột mobile, 2 tablet, 3 desktop; cover preset SVG/local asset, icon, màu,
   avatar stack tối đa 4 người + số còn lại, name/source label, visible counts.
   Focus rõ, nút pin tách link, keyboard hoạt động; reduced-motion tắt animation.
-- [ ] Preset có chủ đích: phòng ban dùng hình gợi hoạt động văn phòng, dự án dùng
+- [x] Preset có chủ đích: phòng ban dùng hình gợi hoạt động văn phòng, dự án dùng
   kiến trúc/công trường, cộng tác dùng minh họa nhóm; không chỉ đổi màu thẻ giống nhau.
   Giữ chữ/contrast rõ, thông tin thực tế ưu tiên hơn trang trí, không ảnh remote theo dõi.
-- [ ] Nút tạo trực tiếp/cá nhân kiểm quyền và calendar readiness; mở drawer hiện có,
+- [x] Nút tạo trực tiếp/cá nhân kiểm quyền và calendar readiness; mở drawer hiện có,
   không giả lập một scope để vượt quyền pilot chỉ được cấp theo phòng ban.
-- [ ] Test stale response khi search/filter/actor thay đổi, refresh permission sau
+- [x] Test stale response khi search/filter/actor thay đổi, refresh permission sau
   remove, pin persistence, load-more không trùng và không lộ restricted counters.
-- [ ] Chạy browser fixture 360x800/768x1024/1440x900, chụp và xem ảnh, keyboard,
+- [x] Chạy browser fixture 360x800/768x1024/1440x900, chụp và xem ảnh, keyboard,
   touch, empty/error/retry; commit UI còn sau gate đến WS8.
 
 Browser acceptance mẫu:

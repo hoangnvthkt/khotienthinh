@@ -110,6 +110,7 @@ export function WorkWorkspace({
     [drawer, setDrawer] = useState<{ clone?: WorkCloneForm } | null>(null),
     [notice, setNotice] = useState(""),
     [createError, setCreateError] = useState<unknown>(null);
+  const queryCreateOpened = useRef(false);
   const [detail, setDetail] = useState<{
     ref: string;
     data: WorkTaskDetail | null;
@@ -189,6 +190,12 @@ export function WorkWorkspace({
       detailSeq.current++;
     };
   }, [actorId, service]);
+  useEffect(() => {
+    if (params.get("create") === "1" && scopes.length > 0 && !queryCreateOpened.current) {
+      queryCreateOpened.current = true;
+      setDrawer({});
+    }
+  }, [params, scopes.length]);
   useEffect(() => {
     void reloadDetail();
     return () => {

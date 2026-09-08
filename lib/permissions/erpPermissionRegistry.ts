@@ -25,6 +25,7 @@ const WORK_WORKSPACE_CREATE_SCOPE: readonly PermissionScopeType[] = ['global', '
 const WORK_ROUTES = [
   '/work',
   '/work/my',
+  '/work/spaces/:workspaceId',
   '/work/scopes',
   '/work/tasks/:taskCode',
   '/work/settings',

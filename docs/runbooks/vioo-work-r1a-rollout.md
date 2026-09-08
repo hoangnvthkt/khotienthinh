@@ -822,3 +822,28 @@ not run: Cloud still has 0 Workspaces and 0 mapped task/config rows; notificatio
 remain disabled. Local and Cloud migration ledgers match 26/26. Full Vitest is 363
 files / 1,717 tests; TypeScript, production build, migration baseline (26 active /
 402 archived) and query audit (0 findings) pass.
+
+### Workspace dashboard — WS6
+
+The `/work` module landing page is now a visual directory of the signed-in user's
+active Workspace memberships. It presents separate local covers for departments,
+projects and collaboration groups, server-provided action/open counts, pin controls,
+search, kind filters and keyset pagination. `/work/my` remains the existing personal
+task list. The direct-task action appears only with the existing own-scope create
+capability and opens the current creation drawer, whose server context still blocks
+submission when the selected scope has no ready calendar.
+
+The list hook fences stale actor/search/filter responses, merges later pages by ID
+and restores optimistic pin state after a failed persistence call. Workspace routes
+are registered under the Work module; opening a restricted or expired Workspace is
+still decided by the member-only server endpoint. The sidebar now opens `/work` and
+keeps explicit links to the personal list and configuration.
+
+Isolated Chrome QA passed pin persistence, page deduplication, delayed-search fencing,
+card navigation, error/retry, empty and expired-member fixtures. Responsive captures
+at 1440×900, 768×1024 and 360×800 have no horizontal overflow and were inspected at
+`/tmp/vioo-work-workspace-qa`. Focus states and reduced-motion behavior are included.
+Focused route/service tests pass (2 files / 8 tests); the full suite passes (364 files /
+1,720 tests), and TypeScript, lint and the production build pass. The
+dev server remains process-only at `http://127.0.0.1:5187/#/work`; production flag
+and notification delivery are unchanged. No handoff was created.
