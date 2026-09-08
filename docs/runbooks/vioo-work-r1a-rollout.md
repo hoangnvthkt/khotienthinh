@@ -27,6 +27,13 @@ Phản hồi 08/09 và bản bố cục tương tác được ghi tại
 Quyết định đã chốt: **cha hoàn thành độc lập; cảnh báo nếu còn con mở, không đóng
 con theo cha**. Đây chưa phải nghiệp vụ đã có trong sản phẩm.
 
+Thiết kế tiếp tục được điều chỉnh theo ảnh tham khảo của người dùng: **bản v2**
+giữ danh sách bên cạnh detail, menu tối, nhãn nhẹ, các khối mô tả/kết quả/việc con,
+watcher bên phải với thêm/bỏ; thay nhãn thời hạn bằng cặp **Ngày bắt đầu – Ngày
+kết thúc**. Ngày bắt đầu là lịch dự kiến mới; `started_at` và `completed_at` giữ
+ý nghĩa thời gian thực tế. Bản tương tác đã kiểm tra ở 1850/1440/768/360; thay đổi
+trong lượt này chỉ nằm ở thiết kế, chưa thêm migration hoặc chức năng production.
+
 ### Bản sửa và kiểm chứng 08/09
 
 - Commit sửa lỗi: `2991031` trên `feature/vioo-work-r1a`.

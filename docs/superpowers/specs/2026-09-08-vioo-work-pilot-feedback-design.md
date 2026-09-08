@@ -17,6 +17,10 @@ roadmap, không phải biên bản handoff hay xác nhận nghiệm thu.
 - **Cho hoàn thành cha độc lập, chỉ cảnh báo việc con còn mở.** Không tự hoàn
   thành, hủy, chuyển người nhận hoặc sửa deadline của con khi đóng cha.
 - Mention được chọn ngay khi gõ `@` trong nội dung trao đổi, không có ô riêng.
+- Điều chỉnh theo ảnh tham khảo ở lượt phản hồi tiếp theo: menu tối, danh sách
+  việc bên cạnh detail, các nhãn nhẹ theo dòng, nội dung chia khối trên nền xám,
+  người giao và watcher ở cột phải. Thêm/bỏ watcher ngay tại detail.
+- Hiển thị **Ngày bắt đầu → Ngày kết thúc**; thời điểm hoàn thành thực tế riêng.
 
 ## 2. Kết quả kiểm tra tám phản hồi
 
@@ -52,8 +56,8 @@ assignment, file, lịch sử, SLA và review đã có.
 - Đợt đầu hỗ trợ một cấp cha–con. Backend chặn tự tham chiếu, tạo cháu và liên kết
   chéo Workspace/phạm vi. Việc con vẫn có mã task và deep link độc lập.
 - Tạo con từ cha còn mở: người tạo phải đọc được cha và có quyền tạo task trong
-  phạm vi. Scope và privacy theo cha; tên/mô tả/kết quả/tệp riêng. Deadline được
-  điền gợi ý theo cha nhưng có thể sửa. Người nhận/người duyệt/người theo dõi đi qua
+  phạm vi. Scope và privacy theo cha; tên/mô tả/kết quả/tệp riêng. Ngày bắt đầu và
+  kết thúc được điền gợi ý theo cha nhưng có thể sửa. Người nhận/người duyệt/người theo dõi đi qua
   preview và kiểm tra hiện hành. SLA tính tại thời điểm tạo, không sao chép due_at.
 - Checklist và quan hệ cha–con là hai khái niệm riêng. Không tự chuyển dữ liệu
   checklist cũ; không sao chép tệp/bình luận của cha vào con.
@@ -95,26 +99,76 @@ Toàn bộ nội dung trong bản xem trước là dữ liệu minh họa, khôn
 
 ### Thứ tự ưu tiên
 
-1. Breadcrumb Workspace, mã việc, tên việc lớn, trạng thái; phòng ban/nhóm việc
-   nằm trong chip có nhãn. Dùng tên người cùng avatar, tránh hiển thị UUID.
-2. Một khối “việc cần làm tiếp theo”, có một nút chính theo capability: Nhận việc,
-   Bắt đầu, Nộp kết quả, Duyệt kết quả hoặc Hoàn thành. Chuyển việc, thêm người,
-   báo bị chặn, ghim, mute là tác vụ phụ; hủy nằm trong menu riêng có xác nhận.
-3. Công việc con: tiến độ, danh sách có checkbox trạng thái, tên bấm mở detail,
-   người phụ trách, hạn và số tệp; nút Thêm công việc con rõ ràng.
-4. Tổng quan có mô tả, kết quả/tệp và tóm tắt trao đổi. Tab Trao đổi, Lịch sử tải
-   theo nhu cầu và giữ bản nháp/vị trí đang đọc khi background refresh.
-5. Desktop: cột phải gọn chứa người phụ trách, reviewer, deadline, SLA, nhóm/nhãn.
-   Mobile: người phụ trách và hạn đặt gần tiêu đề; thông tin sâu mở trong sheet.
+1. Desktop rộng: menu tối ngoài cùng; danh sách việc chia tuần, trạng thái và tag
+   trong cột kế tiếp; detail ở giữa; người giao, watcher và lịch sử bên phải.
+   Chọn việc vẫn giữ bộ lọc/vị trí danh sách. Dòng đang chọn có nền tím rất nhạt.
+2. Đầu detail: nhãn nhỏ, tên việc lớn, Workspace/nhóm việc, cặp ngày dự kiến,
+   hoàn thành thực tế. Một hàng hành động chính theo capability nằm dưới thông
+   tin này: Nhận việc, Bắt đầu, Nộp kết quả, Duyệt hoặc Hoàn thành; avatar và tên
+   người thực hiện đặt ngay bên cạnh. Tác vụ phụ nằm trong menu, hủy có xác nhận.
+3. Các khối độc lập theo thứ tự: Mô tả công việc → Kết quả công việc → Công việc
+   con → Trao đổi. File đặt ở đúng khối đầu vào/kết quả; discussion giữ bản nháp,
+   lazy load theo lúc mở/đi vào vùng đọc và không reset khi background refresh.
+4. Việc con: thanh progress gọn cạnh tiêu đề, dòng có checkbox trạng thái, tên
+   bấm mở detail, người phụ trách, lịch và số tệp; nút thêm ở đầu và cuối danh sách.
+5. Cột phải: người giao, watcher có thao tác thêm/bỏ, reviewer/chế độ duyệt,
+   lịch/SLA, thời điểm tạo/cập nhật, lịch sử thu gọn. Tên người cùng avatar.
+6. Tablet thu menu và danh sách thành nút mở; mobile detail một cột, giữ cặp ngày
+   và người nhận gần tiêu đề, watcher/thông tin phụ mở qua “Người tham gia”.
+   Vẫn xem được danh sách từ sheet, không cố nén bốn cột vào màn hình nhỏ.
 
-Màu teal dành cho hành động chính và khu vực đang chọn, xanh lá cho hoàn thành,
-hổ phách cho cần chú ý, đỏ cho lỗi/quá hạn. Luôn kèm nhãn, không dùng màu làm dấu
-hiệu duy nhất. Nền trung tính, khoảng cách phân nhóm, giảm đường viền lặp lại.
+Nền xám nhạt, khối nội dung trắng, viền mảnh và bo góc nhỏ theo ảnh tham khảo.
+Xanh lá dùng cho hành động/trạng thái hoàn thành; xanh lam nhẹ cho link ngày và
+tag Workspace, xám cho nhãn thường, hổ phách cho mức quan trọng, đỏ cho lỗi/quá hạn.
+Luôn kèm nhãn hoặc biểu tượng, không dùng màu làm dấu hiệu duy nhất.
 Giữ font/token Vioo hiện có, icon cùng bộ lucide-react, không thêm thư viện UI.
 
 Bản xem trước có thể thử: mở detail con, mở form con, tích thử tiến độ, hoàn thành
-cha với con đang mở, đổi tab, gõ @ chọn tên và mở vùng xem tệp. Form con không lưu;
-PDF/TXT dùng vùng tài liệu minh họa. Nghiệp vụ thực vẫn phải đi qua server.
+cha với con đang mở, thêm/bỏ watcher, sửa cặp ngày, gõ @ chọn tên và mở vùng xem
+tệp. Có tìm danh sách, sheet danh sách/người tham gia trên màn hình nhỏ. Các dòng
+việc khác mở thông tin minh họa; detail chính chỉ mô phỏng việc nghiệm thu. Form
+con không lưu; PDF/TXT dùng tài liệu mẫu. Nghiệp vụ thực vẫn phải đi qua server.
+
+### Ngày bắt đầu, ngày kết thúc và thời gian thực tế
+
+- Ngày bắt đầu là **ngày dự kiến** do người dùng chọn. Cần thêm trường
+  `planned_start_at` nullable và contract `plannedStartAt` ở create/detail/update.
+  `started_at` hiện có là thời điểm command `start` chạy, giữ nguyên ý nghĩa đó.
+- Ngày kết thúc là **hạn dự kiến**, dùng `deadline_at`/`deadlineAt` hiện có, đổi
+  nhãn ở cả form cha/con và detail. `completed_at` ghi thời điểm hoàn thành thực
+  tế, không thay cho deadline. Việc chưa xong hiển thị “Chưa hoàn thành”.
+- Cả hai mốc dự kiến có thể để trống như deadline hiện tại. Nếu nhập cả hai thì
+  kết thúc phải bằng hoặc sau bắt đầu; validation ở client và server. Dữ liệu cũ
+  không tự suy đoán ngày bắt đầu từ `created_at` hoặc `started_at`.
+- Form hiển thị giờ Việt Nam, lưu thời điểm UTC. Clone chỉ gợi ý lịch theo hành
+  vi clone và yêu cầu kiểm tra mốc quá hạn; không sao chép thời gian thực tế.
+- Sửa lịch chỉ cho người tạo hoặc quản lý có `work.task.manage_scope` tại đúng
+  phạm vi và đang đọc được việc; task terminal không sửa qua UI này. Bổ sung
+  capability `canManageSchedule` do server tính và command có expectedVersion,
+  idempotency, audit before/after và outbox. Không UPDATE trực tiếp từ client.
+- Ngày bắt đầu dự kiến không tự kích hoạt command start, không viết lại SLA
+  snapshot và không chặn nhận việc trước ngày dự kiến. Ngày kết thúc vẫn là đầu
+  vào nhắc hạn/quá hạn. Đóng cha không viết lại bất kỳ mốc ngày nào của con.
+
+### Thêm/bỏ người theo dõi trong detail
+
+- Hiện tại có `watcherUserIds` lúc tạo và danh sách watcher trong detail; chưa
+  có command quản lý watcher sau tạo. Bổ sung picker tìm người có quyền tham gia
+  task, hiển thị tên/avatar và số người đang theo dõi; dedupe theo user ID.
+- Người tạo hoặc quản lý có `work.task.manage_scope` đúng phạm vi và quyền đọc
+  được thêm/bỏ watcher. Thành viên chỉ có quyền xem hoặc thực hiện không mặc nhiên
+  được thay watcher. Server trả capability `canManageWatchers`.
+- Workspace: chọn tài khoản nội bộ đang hoạt động, là thành viên hợp lệ và đủ
+  canonical permission. Direct: áp dụng ranh giới người nhận trực tiếp hiện có.
+  Task hạn chế kiểm tra quyền quản lý người tham gia trước khi cấp quan hệ watcher.
+- Command thêm/bỏ theo diff, khóa version task, có idempotency và ghi audit/event
+  trong transaction. Bỏ watcher kết thúc quan hệ tương ứng, không xóa lịch sử;
+  không xóa vai trò reviewer/assignee hoặc nâng watcher thành người thực hiện.
+- Quyền xem sau khi bỏ watcher được tính lại từ các quan hệ/canonical grant còn
+  hiệu lực. Người nhận notification được kiểm tra lại tại lúc xử lý theo policy;
+  danh sách watcher không phải danh sách broadcast vô điều kiện.
+- Sheet mobile và cột phải phản ánh cùng dữ liệu. Hủy picker không thay đổi danh
+  sách, mất quyền/stale version giữ lựa chọn để xem lại trước khi thử lại.
 
 ### Preview
 
@@ -174,8 +228,8 @@ tra click thông báo vào đúng việc/bình luận, mute và quyền bị thu
 | Đợt | Kết quả có thể nghiệm thu |
 | --- | --- |
 | UX1 — sửa lỗi đã xác minh | Đã thực hiện refresh và coverKey; kiểm thử browser/thực tế tạo Workspace |
-| UX2 — cấu trúc việc con | Forward migration, guarded create/list/detail/aggregate, quyền, lifecycle, cảnh báo cha, tests Cloud rollback |
-| UX3 — UI chi tiết & con | Bố cục ở mục 4 nối service thật; form đầy đủ, tiến độ, next action, mobile sheet |
+| UX2 — dữ liệu, việc con và người tham gia | Forward migration: cha–con, planned_start_at, command sửa lịch/thêm-bỏ watcher, capability, audit; guarded create/list/detail/aggregate và tests Cloud rollback |
+| UX3 — UI chi tiết & con | Bố cục v2 ở mục 4 nối service thật; form đủ ngày bắt đầu/kết thúc, watcher, tiến độ, next action và mobile sheet |
 | UX4 — preview & mention | Viewer ảnh/PDF/TXT; document mention, composer trong dòng và dedupe sự kiện |
 | UX5 — delivery pilot | Chuẩn bị backlog/recipient review; bật theo xác nhận gửi, kiểm tra in-app và push thật |
 | UX6 — nghiệm thu Task 11 | Ma trận nghiệp vụ/quyền/thiết bị, lỗi không tái diễn, quan sát 48 giờ |
@@ -190,3 +244,10 @@ link không nâng quyền; tiến độ đúng khi phân trang/hủy; mention x�
 mất quyền; URL tệp hết hạn/chuyển task; refresh không mất draft, focus hoặc scroll;
 360/768/1440 không tràn ngang và có điều khiển bàn phím. Các test browser mock phải
 đối chiếu contract SQL để tránh lặp lại lỗ hổng kiểm thử coverKey.
+
+Bổ sung theo ảnh tham khảo: ngày bắt đầu không ghi đè start thực tế, kết thúc
+trước bắt đầu bị từ chối, hoàn thành không đổi lịch; thêm/bỏ watcher dedupe đúng,
+hủy không lưu, sai quyền và thành viên hết hiệu lực bị từ chối, không xóa nhầm
+vai trò khác, mobile và desktop cùng phản ánh người theo dõi. Bản mẫu v2 đã kiểm
+tra 1850/1440/768/360 và các tương tác trên; đây không thay cho kiểm thử Cloud của
+các command mới khi triển khai.
