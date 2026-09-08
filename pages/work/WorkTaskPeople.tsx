@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Eye, UserRoundCheck, UsersRound } from "lucide-react";
+import { CalendarDays, ChevronDown, Clock3, Eye, Plus, UserRoundCheck } from "lucide-react";
 import type { WorkCollaborationCommand, WorkTaskDetail } from "../../lib/work/workTypes";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import { workError } from "../../lib/work/workForm";
@@ -42,6 +42,17 @@ export function WorkTaskPeople({ detail, service, actorId, names, busy, run }: {
     return () => { live = false; window.clearTimeout(timer); };
   }, [editing, service, detail.task.id, search]);
   const name = (id: string | null) => id ? names[id] || options.find((x) => x.userId === id)?.name || "Người tham gia" : "Chưa chỉ định";
+  const activeAssignments = detail.assignments.filter((assignment) => !assignment.ended_at);
+  const sla = activeAssignments[0]?.sla_snapshot as Record<string, unknown> | undefined;
+  const slaConfig = (sla?.execution || sla?.acknowledgement) as Record<string, unknown> | undefined;
+  const calendar = slaConfig?.calendar as Record<string, unknown> | undefined;
+  const weekdays = Array.isArray(calendar?.working_weekdays) ? calendar.working_weekdays as number[] : [];
+  const intervals = Array.isArray(calendar?.working_intervals) ? calendar.working_intervals as Array<{ start?: string; end?: string }> : [];
+  const schedule = intervals.length
+    ? intervals.map((item) => `${String(item.start || "").slice(0, 5)}–${String(item.end || "").slice(0, 5)}`).join(" · ")
+    : calendar?.workday_start && calendar?.workday_end
+      ? `${String(calendar.workday_start).slice(0, 5)}–${String(calendar.workday_end).slice(0, 5)}`
+      : "Theo lịch làm việc của phạm vi";
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -66,24 +77,35 @@ export function WorkTaskPeople({ detail, service, actorId, names, busy, run }: {
   return (
     <>
       <aside className="work-responsibility">
-        <div className="work-people-title"><UsersRound size={18} aria-hidden="true" /><h3>Con người</h3></div>
-        <div className="work-person-block">
-          <small>Người giao việc</small>
-          <div><Avatar name={name(detail.task.created_by)} /><span><strong>{name(detail.task.created_by)}</strong><small>Người tạo công việc</small></span></div>
-        </div>
-        <div className="work-person-block">
-          <small>Người thực hiện</small>
-          {detail.assignments.filter((a) => !a.ended_at).map((a) => <div key={a.id}><Avatar name={name(a.user_id)} /><span><strong>{name(a.user_id)}{a.user_id === actorId ? " (bạn)" : ""}</strong><small>{workStatusLabels[a.state as keyof typeof workStatusLabels] || "Đã chuyển"} · SLA {workWhen(a.execution_sla_due_at)}</small></span></div>)}
-        </div>
-        <div className="work-person-block">
-          <small>Người đánh giá</small>
-          <div><UserRoundCheck size={28} aria-hidden="true" /><span><strong>{detail.task.review_policy === "auto_complete" ? "Tự hoàn thành" : name(detail.task.reviewer_user_id)}</strong><small>{detail.task.review_policy === "auto_complete" ? "Không cần duyệt thủ công" : "Duyệt kết quả"}</small></span></div>
-        </div>
-        <div className="work-person-block">
-          <div className="work-person-block-heading"><small>Người theo dõi</small>{detail.capabilities.canManageWatchers && <button type="button" className="work-text-button" disabled={busy} onClick={() => setEditing(true)} aria-label="Thêm / bỏ người theo dõi">Chỉnh sửa</button>}</div>
-          {watchers.map((p) => <div key={p.id}><Avatar name={name(p.user_id)} /><span><strong>{name(p.user_id)}</strong><small>Theo dõi cập nhật</small></span></div>)}
-          {!watchers.length && <p className="work-hint"><Eye size={15} aria-hidden="true" /> Chưa có người theo dõi.</p>}
-        </div>
+        <section className="work-side-card">
+          <h3 className="work-side-title">Người giao việc <ChevronDown size={13} aria-hidden="true" /></h3>
+          <div className="work-side-body"><div className="work-side-person"><Avatar name={name(detail.task.created_by)} /><span><strong>{name(detail.task.created_by)}</strong><small>Người tạo công việc</small></span></div></div>
+        </section>
+        <section className="work-side-card">
+          <h3 className="work-side-title">Người thực hiện <span>{activeAssignments.length}</span></h3>
+          <div className="work-side-body">{activeAssignments.map((assignment) => <div className="work-side-person" key={assignment.id}><Avatar name={name(assignment.user_id)} /><span><strong>{name(assignment.user_id)}{assignment.user_id === actorId ? " (bạn)" : ""}</strong><small>{workStatusLabels[assignment.state as keyof typeof workStatusLabels] || "Đã chuyển"} · SLA {workWhen(assignment.execution_sla_due_at)}</small></span></div>)}</div>
+        </section>
+        <section className="work-side-card">
+          <h3 className="work-side-title">Người theo dõi <span>{watchers.length}</span></h3>
+          <div className="work-side-body">
+            {watchers.map((watcher) => <div className="work-side-person" key={watcher.id}><Avatar name={name(watcher.user_id)} /><span><strong>{name(watcher.user_id)}</strong><small>Theo dõi cập nhật</small></span></div>)}
+            {!watchers.length && <p className="work-side-note"><Eye size={14} aria-hidden="true" /> Chưa có người theo dõi.</p>}
+          </div>
+          {detail.capabilities.canManageWatchers && <div className="work-side-actions"><button type="button" disabled={busy} onClick={() => setEditing(true)} aria-label="Thêm / bỏ người theo dõi"><Plus size={13} aria-hidden="true" /> Thêm / bỏ người theo dõi</button></div>}
+        </section>
+        <section className="work-side-card">
+          <h3 className="work-side-title">Duyệt kết quả <ChevronDown size={13} aria-hidden="true" /></h3>
+          <div className="work-side-body"><div className="work-side-person"><UserRoundCheck size={25} aria-hidden="true" /><span><strong>{detail.task.review_policy === "auto_complete" ? "Tự hoàn thành" : name(detail.task.reviewer_user_id)}</strong><small>{detail.task.review_policy === "auto_complete" ? "Không cần duyệt thủ công" : "Duyệt kết quả"}</small></span></div></div>
+        </section>
+        <section className="work-side-card">
+          <h3 className="work-side-title">Lịch làm việc & SLA <ChevronDown size={13} aria-hidden="true" /></h3>
+          <div className="work-side-body work-side-schedule"><span><CalendarDays size={14} aria-hidden="true" /> {weekdays.length === 6 && weekdays[0] === 1 && weekdays[5] === 6 ? "Thứ Hai – Thứ Bảy" : weekdays.length ? `${weekdays.length} ngày làm việc / tuần` : "Lịch theo phạm vi"}</span><strong>{schedule}</strong><p>Ngày bắt đầu và kết thúc là lịch dự kiến. SLA tính theo lịch làm việc của phạm vi.</p></div>
+        </section>
+        <section className="work-side-card work-side-timestamps">
+          <span><Clock3 size={14} aria-hidden="true" /> Tạo: <strong>{workWhen(detail.task.created_at)}</strong></span>
+          <span><Clock3 size={14} aria-hidden="true" /> Cập nhật: <strong>{workWhen(detail.task.updated_at)}</strong></span>
+        </section>
+        {detail.capabilities.canViewHistory && <a className="work-side-history" href="#work-task-history">Lịch sử hoạt động <ChevronDown size={13} aria-hidden="true" /></a>}
       </aside>
       {editing && <dialog ref={dialog} className="work-action-dialog" aria-labelledby="work-watchers-title" onCancel={(e) => { e.preventDefault(); if (!busy) setEditing(false); }}>
         <form onSubmit={save}>

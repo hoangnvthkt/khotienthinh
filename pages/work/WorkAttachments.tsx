@@ -11,6 +11,7 @@ import type {
 import { prepareWorkImage } from "../../lib/work/workImageInput";
 import { workError } from "../../lib/work/workForm";
 import { WorkAttachmentPreview } from "./WorkAttachmentPreview";
+import { WorkTaskSection } from "./WorkTaskSection";
 type Service = ReturnType<typeof createWorkAttachmentService>;
 const kindLabels: Record<WorkAttachmentKind, string> = {
   input: "Đầu vào",
@@ -223,8 +224,7 @@ export function WorkAttachments({
     }
   }
   return (
-    <section className="work-section">
-      <h3>Đính kèm</h3>
+    <WorkTaskSection title="Đính kèm" hint={`${files.length} tệp đã tải lên`}>
       {error && (
         <p className="work-error" role="alert">
           {workError(error)}
@@ -381,6 +381,6 @@ export function WorkAttachments({
           {uploads.busy ? "Đang tải và xử lý…" : "Tải các tệp đã chọn"}
         </button>
       )}
-    </section>
+    </WorkTaskSection>
   );
 }

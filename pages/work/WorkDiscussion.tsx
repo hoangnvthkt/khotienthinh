@@ -216,7 +216,7 @@ export function WorkDiscussion({
   );
   return (
     <>
-      <section className="work-section">
+      <section className="work-section" id="work-task-discussion">
         <button
           className="work-section-toggle"
           aria-expanded={open}
@@ -225,7 +225,7 @@ export function WorkDiscussion({
           Thảo luận <span>{open ? "−" : "+"}</span>
         </button>
         {open && (
-          <>
+          <div className="work-collapsible-body">
             {anchorError && (
               <p role="alert" className="work-error">
                 {workError(anchorError)}
@@ -383,11 +383,11 @@ export function WorkDiscussion({
                 </fieldset>
               </form>
             )}
-          </>
+          </div>
         )}
       </section>
       {canHistory && (
-        <section className="work-section">
+        <section className="work-section" id="work-task-history">
           <button
             className="work-section-toggle"
             aria-expanded={historyOpen}
@@ -396,7 +396,7 @@ export function WorkDiscussion({
             Lịch sử hoạt động <span>{historyOpen ? "−" : "+"}</span>
           </button>
           {historyOpen && (
-            <>
+            <div className="work-collapsible-body">
               <div className="work-history-filters">
                 <select
                   aria-label="Lọc lịch sử"
@@ -487,7 +487,7 @@ export function WorkDiscussion({
                   Hoạt động cũ hơn
                 </button>
               )}
-            </>
+            </div>
           )}
         </section>
       )}

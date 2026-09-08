@@ -5,6 +5,7 @@ import type {
   WorkCollaborationCommand,
   WorkTaskAssignment,
 } from "../../lib/work/workTypes";
+import { WorkTaskSection } from "./WorkTaskSection";
 export function WorkChecklist({
   items,
   assignments,
@@ -34,16 +35,12 @@ export function WorkChecklist({
   useEffect(() => {
     if (completed.command.startsWith("checklist_")) setForm(null);
   }, [completed.seq]);
+  const completedCount = items.filter((item) => item.completed_at).length;
   return (
-    <section className="work-section">
-      <div className="work-section-title">
-        <h3>
-          Checklist{" "}
-          <small>
-            {items.filter((x) => x.completed_at).length}/{items.length}
-          </small>
-        </h3>
-        {canManage && (
+    <WorkTaskSection
+      title="Checklist"
+      hint={`${completedCount}/${items.length} mục đã xong`}
+      actions={canManage && (
           <button
             className="work-secondary"
             disabled={busy || items.length >= 200}
@@ -53,8 +50,8 @@ export function WorkChecklist({
           >
             Thêm mục
           </button>
-        )}
-      </div>
+      )}
+    >
       <ul className="work-detail-checklist">
         {items.map((item) => (
           <li key={item.id}>
@@ -241,6 +238,6 @@ export function WorkChecklist({
           </fieldset>
         </form>
       )}
-    </section>
+    </WorkTaskSection>
   );
 }

@@ -48,14 +48,36 @@ try {
   await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "collaborate" && call.args[0].command === "schedule_update"));
 
   assert.equal(await page.locator(".work-action-bar").count(), 1);
+  const approvedLayout = await page.evaluate(() => {
+    const rail = document.querySelector(".work-task-rail").getBoundingClientRect();
+    const side = document.querySelector(".work-responsibility").getBoundingClientRect();
+    const action = document.querySelector(".work-action-bar");
+    const card = document.querySelector(".work-task-header");
+    return {
+      moduleDetail: document.querySelector(".work-module")?.classList.contains("work-module-detail"),
+      railWidth: rail.width,
+      sideWidth: side.width,
+      actionInsidePane: action?.parentElement?.classList.contains("work-detail-pane"),
+      cardRadius: getComputedStyle(card).borderRadius,
+      sideCards: document.querySelectorAll(".work-side-card").length,
+    };
+  });
+  assert.equal(approvedLayout.moduleDetail, true);
+  assert.ok(Math.abs(approvedLayout.railWidth - 280) < 1, `task rail is ${approvedLayout.railWidth}px`);
+  assert.ok(Math.abs(approvedLayout.sideWidth - 220) < 1, `responsibility rail is ${approvedLayout.sideWidth}px`);
+  assert.equal(approvedLayout.actionInsidePane, true);
+  assert.equal(approvedLayout.cardRadius, "4px");
+  assert.ok(approvedLayout.sideCards >= 5);
+
+  const content = page.locator(".work-detail-content");
   for (const y of [0, 900, 100000]) {
-    await page.evaluate((top) => window.scrollTo(0, top), y);
+    await content.evaluate((element, top) => element.scrollTo(0, top), y);
     await page.waitForTimeout(50);
     const rect = await page.locator(".work-action-bar").evaluate((element) => {
       const box = element.getBoundingClientRect();
       return { top: box.top, bottom: box.bottom, height: box.height };
     });
-    assert.ok(rect.height > 0 && rect.bottom > 0 && rect.top < 900, `action bar outside viewport at scroll ${y}`);
+    assert.ok(rect.height > 0 && rect.bottom > 0 && rect.top < 900, `action bar outside viewport at content scroll ${y}`);
   }
 
   await page.setViewportSize({ width: 320, height: 700 });

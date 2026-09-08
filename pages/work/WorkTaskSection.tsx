@@ -22,7 +22,7 @@ export function WorkTaskSection({
         </div>
         {actions && <div className="work-task-section-actions">{actions}</div>}
       </header>
-      {children}
+      <div className="work-task-section-body">{children}</div>
     </section>
   );
 }

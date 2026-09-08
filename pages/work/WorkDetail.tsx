@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, BellOff, Pin, PinOff, UsersRound } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { WorkCollaborationCommand, WorkDetailContext, WorkLifecycleCommand, WorkTaskDetail } from "../../lib/work/workTypes";
@@ -6,7 +6,7 @@ import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { createWorkAttachmentService } from "../../lib/work/workAttachmentService";
 import type { WorkMutationSession } from "../../lib/work/workMutation";
 import { documentText, workError } from "../../lib/work/workForm";
-import { workWhen } from "../../lib/work/workPresentation";
+import { workStatusLabels, workWhen } from "../../lib/work/workPresentation";
 import { WorkActions } from "./WorkActions";
 import { WorkAttachments, type WorkUploadState } from "./WorkAttachments";
 import { WorkChecklist } from "./WorkChecklist";
@@ -16,7 +16,7 @@ import { WorkTaskHeader } from "./WorkTaskHeader";
 import { WorkTaskPeople } from "./WorkTaskPeople";
 import { WorkTaskSection } from "./WorkTaskSection";
 
-export function WorkDetail({ detail, service, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor }: {
+export function WorkDetail({ detail, service, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor, headerActions }: {
   detail: WorkTaskDetail;
   service: WorkTaskService;
   attachments: ReturnType<typeof createWorkAttachmentService>;
@@ -27,6 +27,7 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
   revision: number;
   anchorId: string | null;
   onAnchor: (id: string) => void;
+  headerActions?: ReactNode;
 }) {
   const { task, capabilities: caps } = detail;
   const [context, setContext] = useState<WorkDetailContext>({ names: {}, scopeName: "", bucketName: null });
@@ -109,48 +110,60 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
   const locked = busy || pending;
   const name = (id: string | null) => id ? context.names[id] || "Người tham gia" : "Chưa chỉ định";
   const mine = detail.assignments.find((assignment) => assignment.user_id === actorId && !assignment.ended_at);
+  const lead = detail.assignments.find((assignment) => !assignment.ended_at);
   const people = <WorkTaskPeople detail={detail} service={service} actorId={actorId} names={context.names} busy={locked} run={collab} />;
 
   return (
     <div className="work-detail-shell">
       <div className="work-detail-layout">
-        <main className="work-detail-content">
-          {notice && <p role="status" className="work-success">{notice}</p>}
-          {error && <p role="alert" className="work-error">{workError(error)}</p>}
-          {pending && <div className="work-notice" role="status">Yêu cầu {session.pending!.taskId === task.id ? "của công việc này" : "của công việc khác"} chưa rõ kết quả. Giữ nguyên yêu cầu khi thử lại. {session.pending!.taskId !== task.id && <Link to={`/work/tasks/${session.pending!.taskId}`}>Mở công việc đó</Link>} <button disabled={busy} className="work-secondary" onClick={() => void retry()}>Thử lại đúng yêu cầu</button></div>}
-          {contextError && <p role="alert" className="work-error">{workError(contextError)} <button onClick={() => setContextRetry((value) => value + 1)}>Tải lại tên người tham gia</button></p>}
+        <div className="work-detail-pane">
+          <main className="work-detail-content">
+            {notice && <p role="status" className="work-success">{notice}</p>}
+            {error && <p role="alert" className="work-error">{workError(error)}</p>}
+            {pending && <div className="work-notice" role="status">Yêu cầu {session.pending!.taskId === task.id ? "của công việc này" : "của công việc khác"} chưa rõ kết quả. Giữ nguyên yêu cầu khi thử lại. {session.pending!.taskId !== task.id && <Link to={`/work/tasks/${session.pending!.taskId}`}>Mở công việc đó</Link>} <button disabled={busy} className="work-secondary" onClick={() => void retry()}>Thử lại đúng yêu cầu</button></div>}
+            {contextError && <p role="alert" className="work-error">{workError(contextError)} <button onClick={() => setContextRetry((value) => value + 1)}>Tải lại tên người tham gia</button></p>}
 
-          <WorkTaskHeader detail={detail} scopeName={context.scopeName} bucketName={context.bucketName} busy={locked} run={collab} />
-          <div className="work-preferences">
-            {caps.canSetPreferences && <>
-              <button className="work-secondary" disabled={locked} aria-pressed={detail.preferences.pinned} onClick={() => void collab({ command: "set_pin", payload: { pinned: !detail.preferences.pinned } })}>{detail.preferences.pinned ? <PinOff size={16} /> : <Pin size={16} />} {detail.preferences.pinned ? "Bỏ ghim" : "Ghim"}</button>
-              <button className="work-secondary" disabled={locked} aria-pressed={!detail.preferences.notificationsEnabled} onClick={() => void collab({ command: "set_notifications", payload: { notificationsEnabled: !detail.preferences.notificationsEnabled } })}>{detail.preferences.notificationsEnabled ? <BellOff size={16} /> : <Bell size={16} />} {detail.preferences.notificationsEnabled ? "Tắt thông báo thường" : "Bật thông báo thường"}</button>
-            </>}
-            <button className="work-secondary work-metadata-trigger" onClick={() => setMetadata(true)}><UsersRound size={16} /> Trách nhiệm & SLA</button>
-          </div>
-          {!detail.preferences.notificationsEnabled && <p className="work-hint">Thông báo bắt buộc vẫn được gửi theo chính sách.</p>}
-          {mine && !mine.acknowledged_at && <p className="work-notice">Bạn chưa xác nhận nhận việc. Hạn xác nhận: {workWhen(mine.acknowledgement_due_at)}.</p>}
-          {task.blocked_reason && <p className="work-notice">Đang bị chặn: {task.blocked_reason}</p>}
+            <WorkTaskHeader
+              detail={detail}
+              scopeName={context.scopeName}
+              bucketName={context.bucketName}
+              busy={locked}
+              run={collab}
+              actions={headerActions}
+              assigneeName={lead ? name(lead.user_id) : null}
+              assigneeState={lead ? workStatusLabels[lead.state as keyof typeof workStatusLabels] || "Đã chuyển" : null}
+            />
+            <div className="work-preferences">
+              {caps.canSetPreferences && <>
+                <button className="work-secondary" disabled={locked} aria-pressed={detail.preferences.pinned} onClick={() => void collab({ command: "set_pin", payload: { pinned: !detail.preferences.pinned } })}>{detail.preferences.pinned ? <PinOff size={16} /> : <Pin size={16} />} {detail.preferences.pinned ? "Bỏ ghim" : "Ghim"}</button>
+                <button className="work-secondary" disabled={locked} aria-pressed={!detail.preferences.notificationsEnabled} onClick={() => void collab({ command: "set_notifications", payload: { notificationsEnabled: !detail.preferences.notificationsEnabled } })}>{detail.preferences.notificationsEnabled ? <BellOff size={16} /> : <Bell size={16} />} {detail.preferences.notificationsEnabled ? "Tắt thông báo thường" : "Bật thông báo thường"}</button>
+              </>}
+              <button className="work-secondary work-metadata-trigger" onClick={() => setMetadata(true)}><UsersRound size={16} /> Trách nhiệm & SLA</button>
+            </div>
+            {!detail.preferences.notificationsEnabled && <p className="work-hint">Thông báo bắt buộc vẫn được gửi theo chính sách.</p>}
+            {mine && !mine.acknowledged_at && <p className="work-notice">Bạn chưa xác nhận nhận việc. Hạn xác nhận: {workWhen(mine.acknowledgement_due_at)}.</p>}
+            {task.blocked_reason && <p className="work-notice">Đang bị chặn: {task.blocked_reason}</p>}
 
-          <WorkTaskSection title="Mô tả công việc" hint="Yêu cầu và thông tin đầu vào">
-            <p className="work-prose">{task.description_text || documentText(task.description_document) || "Chưa có mô tả."}</p>
-          </WorkTaskSection>
-          <WorkChecklist items={detail.checklist} assignments={detail.assignments} names={context.names} canManage={caps.canManageChecklist} busy={locked} run={collab} completed={completed} error={error} />
-          <WorkTaskSection title="Kết quả công việc" hint={detail.currentSubmission ? `Lần nộp ${detail.currentSubmission.iteration}` : "Cập nhật kết quả khi hoàn tất"}>
-            {detail.currentSubmission ? <>
-              <p>{name(detail.currentSubmission.submitted_by)} · {workWhen(detail.currentSubmission.submitted_at)}</p>
-              <p className="work-prose">{detail.currentSubmission.result_text}</p>
-              <strong>{{ pending_review: "Chờ đánh giá", approved: "Đã duyệt", changes_requested: "Cần chỉnh sửa" }[detail.currentSubmission.status]}</strong>
-              {detail.currentSubmission.review_note && <p className="work-prose">{detail.currentSubmission.review_note}</p>}
-            </> : <p>Chưa nộp kết quả.</p>}
-          </WorkTaskSection>
-          <WorkAttachments taskId={task.id} files={detail.attachments} caps={caps} service={attachments} onChanged={refresh} uploads={uploads} locked={locked} />
-          {!task.parent_task_id && <WorkTaskChildren detail={detail} service={service} attachments={attachments} scopeLabel={context.scopeName} revision={revision} onCreated={() => refresh()} />}
-          <WorkDiscussion taskId={task.id} service={service} canComment={caps.canComment} canHistory={caps.canViewHistory} names={context.names} requestNames={requestNames} revision={revision} run={collab} busy={locked} anchorId={anchorId} onAnchor={onAnchor} completed={completed} error={error} />
-        </main>
+            <WorkTaskSection title="Mô tả công việc" hint="Yêu cầu và thông tin đầu vào">
+              <p className="work-prose">{task.description_text || documentText(task.description_document) || "Chưa có mô tả."}</p>
+            </WorkTaskSection>
+            <WorkChecklist items={detail.checklist} assignments={detail.assignments} names={context.names} canManage={caps.canManageChecklist} busy={locked} run={collab} completed={completed} error={error} />
+            <WorkTaskSection className="work-result-section" title="Kết quả công việc" hint={detail.currentSubmission ? `Lần nộp ${detail.currentSubmission.iteration}` : "Cập nhật kết quả khi hoàn tất"}>
+              {detail.currentSubmission ? <>
+                <p>{name(detail.currentSubmission.submitted_by)} · {workWhen(detail.currentSubmission.submitted_at)}</p>
+                <div className="work-result-summary"><p className="work-prose">{detail.currentSubmission.result_text}</p></div>
+                <strong>{{ pending_review: "Chờ đánh giá", approved: "Đã duyệt", changes_requested: "Cần chỉnh sửa" }[detail.currentSubmission.status]}</strong>
+                {detail.currentSubmission.review_note && <p className="work-prose">{detail.currentSubmission.review_note}</p>}
+              </> : <p>Chưa nộp kết quả.</p>}
+            </WorkTaskSection>
+            <WorkAttachments taskId={task.id} files={detail.attachments} caps={caps} service={attachments} onChanged={refresh} uploads={uploads} locked={locked} />
+            {!task.parent_task_id && <WorkTaskChildren detail={detail} service={service} attachments={attachments} scopeLabel={context.scopeName} revision={revision} onCreated={() => refresh()} />}
+            <WorkDiscussion taskId={task.id} service={service} canComment={caps.canComment} canHistory={caps.canViewHistory} names={context.names} requestNames={requestNames} revision={revision} run={collab} busy={locked} anchorId={anchorId} onAnchor={onAnchor} completed={completed} error={error} />
+          </main>
+          <WorkActions detail={detail} service={service} run={(input, version) => run("lifecycle", input, version)} retry={retry} busy={busy || uploads.busy} pending={pending} error={error} names={context.names} />
+        </div>
         {people}
       </div>
-      <WorkActions detail={detail} service={service} run={(input, version) => run("lifecycle", input, version)} retry={retry} busy={busy || uploads.busy} pending={pending} error={error} names={context.names} />
       {metadata && <dialog className="work-metadata-sheet" ref={dialog} onCancel={() => setMetadata(false)} aria-label="Trách nhiệm và SLA"><button className="work-secondary" onClick={() => setMetadata(false)}>Đóng thông tin</button>{people}</dialog>}
     </div>
   );

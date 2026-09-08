@@ -41,6 +41,7 @@ import { useWorkTasks } from "../../hooks/work/useWorkTasks";
 import { WorkCreateDrawer } from "./WorkCreateDrawer";
 import { WorkPicker } from "./WorkPicker";
 import "./work.css";
+import "./workTaskDetail.css";
 import { workStatusLabels } from "../../lib/work/workPresentation";
 import { WorkDetail } from "./WorkDetail";
 import { WorkMutationSession } from "../../lib/work/workMutation";
@@ -285,7 +286,7 @@ export function WorkWorkspace({
     }
   }, [taskCode, list.loading, routeLocation.key]);
   return (
-    <main className="work-module" ref={root}>
+    <main className={`work-module${taskCode ? " work-module-detail" : ""}`} ref={root}>
       <header className="work-heading">
         <div>
           <p className="work-eyebrow">VIOO WORK</p>
@@ -325,42 +326,74 @@ export function WorkWorkspace({
       )}
       {taskCode ? (
         <div className="work-master-detail">
-          <aside className="work-task-rail">
-            <Link
-              className="work-back"
-              to={returnTo}
-              state={{ workScroll: listScroll.current }}
-            >
-              ← Danh sách và bộ lọc
+          <aside className="work-task-rail" aria-label="Danh sách công việc">
+            <header className="work-rail-heading">
+              <strong>{views.find((item) => item.id === view)?.label}</strong>
+              <span>{list.items.length}</span>
+            </header>
+            <label className="work-rail-search">
+              <Search size={15} aria-hidden="true" />
+              <input
+                aria-label="Tìm trong danh sách công việc"
+                placeholder="Tìm công việc"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                maxLength={200}
+              />
+            </label>
+            <nav className="work-rail-tabs" aria-label="Đổi danh sách công việc">
+              {views.slice(0, 3).map((item) => (
+                <button
+                  key={item.id}
+                  aria-current={item.id === view ? "page" : undefined}
+                  onClick={() => setFilter("view", item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <div className="work-rail-scroll">
+              {list.items.map((t) => (
+                <Link
+                  key={t.id}
+                  aria-current={t.task_code === taskCode ? "page" : undefined}
+                  to={detailTo(t.task_code)}
+                  state={{
+                    workListSearch: returnSearch,
+                    workScroll: listScroll.current,
+                  }}
+                >
+                  <span className={`work-rail-state status-${t.status}`} aria-hidden="true" />
+                  <span className="work-rail-task">
+                    <strong>{t.title}</strong>
+                    <span className="work-rail-meta">
+                      <span className="work-rail-scope">
+                        {t.scope_type === "direct" ? "Trực tiếp" : t.scope_type === "department" ? "Phòng ban" : t.scope_type === "workspace" ? "Workspace" : "Dự án"}
+                      </span>
+                      {t.priority !== "normal" && (
+                        <span className={`work-rail-priority priority-${t.priority}`}>
+                          {priorities[t.priority]}
+                        </span>
+                      )}
+                      <time dateTime={t.deadline_at || undefined}>{when(t.deadline_at)}</time>
+                    </span>
+                  </span>
+                </Link>
+              ))}
+              {list.error && (
+                <button className="work-rail-retry" onClick={() => void list.refresh()}>
+                  Thử tải danh sách
+                </button>
+              )}
+              {list.cursor && (
+                <button className="work-rail-more" disabled={list.loading} onClick={() => void list.loadMore()}>
+                  Xem thêm công việc
+                </button>
+              )}
+            </div>
+            <Link className="work-rail-footer" to={returnTo} state={{ workScroll: listScroll.current }}>
+              <ArrowLeft size={14} /> Danh sách và bộ lọc
             </Link>
-            {list.items.map((t) => (
-              <Link
-                key={t.id}
-                aria-current={t.task_code === taskCode ? "page" : undefined}
-                to={detailTo(t.task_code)}
-                state={{
-                  workListSearch: returnSearch,
-                  workScroll: listScroll.current,
-                }}
-              >
-                <small>{t.task_code}</small>
-                <strong>{t.title}</strong>
-                <span>{workStatusLabels[t.status]}</span>
-              </Link>
-            ))}
-            {list.error && (
-              <button onClick={() => void list.refresh()}>
-                Thử tải danh sách
-              </button>
-            )}
-            {list.cursor && (
-              <button
-                disabled={list.loading}
-                onClick={() => void list.loadMore()}
-              >
-                Xem thêm công việc
-              </button>
-            )}
           </aside>
           <section className="work-detail">
             <Link
@@ -388,44 +421,6 @@ export function WorkWorkspace({
             )}
             {currentDetail?.data && (
               <>
-                <div className="work-detail-top">
-                  <span className="work-code">
-                    {currentDetail.data.task.task_code}
-                  </span>
-                  <div className="work-actions">
-                    <button
-                      className="work-secondary"
-                      onClick={() => {
-                        const url = new URL(window.location.href);
-                        url.search = "";
-                        url.hash = `/work/tasks/${encodeURIComponent(currentDetail.data!.task.task_code)}${workspaceContextId ? `?workspace=${encodeURIComponent(workspaceContextId)}` : ""}`;
-                        navigator.clipboard
-                          .writeText(url.toString())
-                          .then(() =>
-                            setNotice(
-                              "Đã sao chép liên kết. Người mở vẫn cần quyền xem công việc.",
-                            ),
-                          )
-                          .catch(() =>
-                            setNotice(
-                              "Không thể sao chép. Bạn có thể sao chép địa chỉ trên trình duyệt.",
-                            ),
-                          );
-                      }}
-                    >
-                      <Copy size={16} />
-                      Sao chép link
-                    </button>
-                    {currentDetail.data.capabilities.canClone && (
-                      <button
-                        className="work-secondary"
-                        onClick={() => void cloneTask()}
-                      >
-                        Nhân bản
-                      </button>
-                    )}
-                  </div>
-                </div>
                 <WorkDetail
                   key={currentDetail.data.task.id}
                   detail={currentDetail.data}
@@ -443,6 +438,29 @@ export function WorkWorkspace({
                   revision={revision}
                   anchorId={params.get("comment")}
                   onAnchor={(id) => setFilter("comment", id)}
+                  headerActions={
+                    <>
+                      <button
+                        className="work-secondary"
+                        onClick={() => {
+                          const url = new URL(window.location.href);
+                          url.search = "";
+                          url.hash = `/work/tasks/${encodeURIComponent(currentDetail.data!.task.task_code)}${workspaceContextId ? `?workspace=${encodeURIComponent(workspaceContextId)}` : ""}`;
+                          navigator.clipboard
+                            .writeText(url.toString())
+                            .then(() => setNotice("Đã sao chép liên kết. Người mở vẫn cần quyền xem công việc."))
+                            .catch(() => setNotice("Không thể sao chép. Bạn có thể sao chép địa chỉ trên trình duyệt."));
+                        }}
+                      >
+                        <Copy size={15} /> Sao chép link
+                      </button>
+                      {currentDetail.data.capabilities.canClone && (
+                        <button className="work-secondary" onClick={() => void cloneTask()}>
+                          Nhân bản
+                        </button>
+                      )}
+                    </>
+                  }
                 />
               </>
             )}
