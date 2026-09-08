@@ -200,6 +200,26 @@ const service: WorkTaskService = {
       nextCursor: null,
     };
   },
+  async watcherOptions(taskId, search, cursor) {
+    log("watcherOptions", taskId, search, cursor);
+    return {
+      items: people.map((p) => ({ userId: p.id, name: p.name })),
+      nextCursor: null,
+    };
+  },
+  async children(taskId, cursor) {
+    log("children", taskId, cursor);
+    return {
+      items: [],
+      aggregate: {
+        visibleTotal: 0,
+        visibleCompleted: 0,
+        visibleCancelled: 0,
+        visibleOpen: 0,
+      },
+      nextCursor: null,
+    };
+  },
   async assigneeOptions(taskId, action, search, cursor) {
     log("assigneeOptions", taskId, action, search, cursor);
     return {

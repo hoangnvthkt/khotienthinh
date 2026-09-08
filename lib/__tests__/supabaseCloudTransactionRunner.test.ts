@@ -23,4 +23,13 @@ describe('Supabase Cloud transaction runner', () => {
     expect(sql.match(/\brollback\s*;/gi)).toHaveLength(1);
     expect(sql).toContain('select 2;');
   });
+
+  it('isolates each smoke fixture with a rollback savepoint', () => {
+    const sql = buildRollbackSql('select 1;', ['select 2;', 'select 3;']);
+
+    expect(sql).toContain('savepoint smoke_1;');
+    expect(sql).toContain('rollback to savepoint smoke_1;');
+    expect(sql).toContain('release savepoint smoke_1;');
+    expect(sql).toContain('savepoint smoke_2;');
+  });
 });

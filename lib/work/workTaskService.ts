@@ -16,6 +16,7 @@ import type {
   WorkPriority,
   WorkScope,
   WorkTaskCommandResult,
+  WorkTaskChildrenPage,
   WorkTaskCursor,
   WorkTaskDetail,
   WorkTaskFilters,
@@ -132,6 +133,23 @@ export function createWorkTaskService(client: Pick<SupabaseClient, "rpc">) {
       call<WorkMentionCandidatePage>("list_work_task_mention_candidates", {
         p_task_id: taskId,
         p_search: search,
+        p_cursor: cursor,
+        p_limit: 30,
+      }),
+    watcherOptions: (
+      taskId: string,
+      search = "",
+      cursor: string | null = null,
+    ) =>
+      call<WorkMentionCandidatePage>("list_work_task_watcher_candidates", {
+        p_task_id: taskId,
+        p_search: search,
+        p_cursor: cursor,
+        p_limit: 30,
+      }),
+    children: (taskId: string, cursor: WorkTaskCursor | null = null) =>
+      call<WorkTaskChildrenPage>("list_work_task_children", {
+        p_task_id: taskId,
         p_cursor: cursor,
         p_limit: 30,
       }),

@@ -158,8 +158,8 @@ Extend `CreateWorkTaskInput` with optional `plannedStartAt?: string` and
 `canManageWatchers` to `WorkTaskCapabilities`. Add collaboration commands:
 
 ```ts
-| { command: "schedule_update"; payload: { plannedStartAt: string | null; deadlineAt: string | null } }
-| { command: "watchers_update"; payload: { addUserIds: string[]; removeUserIds: string[] } };
+| { command: "schedule_update"; payload: { plannedStartAt: string | null; deadlineAt: string | null; expectedLockVersion: number } }
+| { command: "watchers_update"; payload: { addUserIds: string[]; removeUserIds: string[]; expectedLockVersion: number } };
 ```
 
 - [x] **Step 4: Implement schedule/document helpers**
@@ -202,7 +202,7 @@ git commit -m "test(work): define child schedule watcher and mention contracts"
 - Consumes: existing `public.work_tasks`, `app_private.work_task_actor_can_view`, `app_private.work_task_capabilities` and Workspace access helpers.
 - Produces: `parent_task_id`, `planned_start_at`, `list_work_task_children(uuid,jsonb,integer)` and extended task detail/capabilities.
 
-- [ ] **Step 1: Write a rollback smoke that fails before the migration**
+- [x] **Step 1: Write a rollback smoke that fails before the migration**
 
 The smoke creates creator, assignee, watcher, scoped manager and unrelated personas,
 then asserts:
@@ -221,7 +221,7 @@ rejected; parent completion leaves an open child unchanged; restricted child is
 absent from another reader's items and aggregate; cancelled children are reported
 separately and excluded from the completion denominator.
 
-- [ ] **Step 2: Run the smoke without the migration and record RED**
+- [x] **Step 2: Run the smoke without the migration and record RED**
 
 ```bash
 node scripts/run-supabase-cloud-transaction.mjs \
@@ -232,7 +232,7 @@ node scripts/run-supabase-cloud-transaction.mjs \
 
 Expected: missing column/function failure. The smoke transaction rolls back all fixtures.
 
-- [ ] **Step 3: Add columns and structural constraints in the forward migration**
+- [x] **Step 3: Add columns and structural constraints in the forward migration**
 
 ```sql
 alter table public.work_tasks
@@ -253,7 +253,7 @@ Use a guarded trigger for constraints requiring parent lookup: parent has no
 parent, same `workspace_id`, same canonical scope IDs and same privacy. Do not
 copy or update parent/child rows in this trigger.
 
-- [ ] **Step 4: Extend create/detail/clone/list projections**
+- [x] **Step 4: Extend create/detail/clone/list projections**
 
 `app_private.work_create_task` validates `plannedStartAt` and `parentTaskId` before
 insert. Parent creation authority requires parent visibility plus the same scope
@@ -265,7 +265,7 @@ Create `app_private.work_list_task_children()` and public invoker wrapper with
 cursor `{sortAt,id}`, limit 1..100 and `app_private.work_task_actor_can_view()` in
 both row and aggregate queries.
 
-- [ ] **Step 5: Run candidate and regressions in one Cloud rollback transaction**
+- [x] **Step 5: Run candidate and regressions in one Cloud rollback transaction**
 
 ```bash
 node scripts/run-supabase-cloud-transaction.mjs \
@@ -279,7 +279,7 @@ node scripts/run-supabase-cloud-transaction.mjs \
 
 Expected: every smoke ends with its PASS sentinel; transaction rolls back.
 
-- [ ] **Step 6: Check query shape and security before commit**
+- [x] **Step 6: Check query shape and security before commit**
 
 Add EXPLAIN assertions for `parent_task_id` paging to the smoke, run
 `npm run check:supabase-migrations`, `npm run audit:supabase-queries`, and
@@ -287,7 +287,7 @@ Add EXPLAIN assertions for `parent_task_id` paging to the smoke, run
 Expected: migration baseline includes one new active file, query audit has zero
 errors, security advisor has no ERROR finding caused by the candidate.
 
-- [ ] **Step 7: Commit the database candidate**
+- [x] **Step 7: Commit the database candidate**
 
 ```bash
 git add supabase/migrations/20260908052000_work_task_children_schedule_watchers.sql supabase/tests/work_task_children_schedule_watchers_smoke.sql docs/performance/supabase-query-inventory.json
@@ -306,7 +306,7 @@ git commit -m "feat(work): add child tasks and planned schedules"
 - Consumes: `command_work_task_collaboration`, `work_task_capabilities`, canonical `work.task.manage_scope`.
 - Produces: `schedule_update`, `watchers_update`, `list_work_task_watcher_candidates`, `canManageSchedule`, `canManageWatchers`.
 
-- [ ] **Step 1: Add failing SQL cases for exact authorization and atomicity**
+- [x] **Step 1: Add failing SQL cases for exact authorization and atomicity**
 
 Assert creator/scoped manager allowed; assignee-only/watcher/unrelated denied;
 inactive/non-member/missing-module watcher rejected; duplicate IDs deduped;
@@ -314,7 +314,7 @@ remove ends only active watcher relation; reviewer/assignment rows unchanged;
 stale version and reused idempotency-key mismatch rejected; injected event failure
 rolls back schedule/watcher changes.
 
-- [ ] **Step 2: Add guarded commands to the unapplied candidate**
+- [x] **Step 2: Add guarded commands to the unapplied candidate**
 
 For `schedule_update`, lock task `FOR UPDATE`, check non-terminal status and
 creator or `work.task.manage_scope` at exact scope, validate range, update
@@ -326,7 +326,7 @@ candidate using Workspace membership/canonical access and restricted boundary,
 insert or reactivate only matching watcher rows, end removed watcher rows, bump
 lock version, record `task.watchers_updated` with added/removed IDs and outbox.
 
-- [ ] **Step 3: Add candidate listing and server capabilities**
+- [x] **Step 3: Add candidate listing and server capabilities**
 
 Expose:
 
@@ -342,7 +342,7 @@ public.list_work_task_watcher_candidates(
 Return only active app accounts with Work module access and valid task scope.
 Do not return watcher candidates to actors lacking `canManageWatchers`.
 
-- [ ] **Step 4: Wire the TypeScript service**
+- [x] **Step 4: Wire the TypeScript service**
 
 ```ts
 watcherOptions: (taskId: string, search = "", cursor: string | null = null) =>
@@ -363,7 +363,7 @@ children: (taskId: string, cursor: WorkTaskCursor | null = null) =>
 `collaborate()` already transports the expanded command union; add tests for exact
 RPC names, payload casing and null schedule values.
 
-- [ ] **Step 5: Run focused unit and Cloud rollback tests**
+- [x] **Step 5: Run focused unit and Cloud rollback tests**
 
 ```bash
 npx vitest run lib/__tests__/workTaskService.test.ts lib/__tests__/workPilotFeedbackContracts.test.ts
@@ -376,7 +376,7 @@ node scripts/run-supabase-cloud-transaction.mjs \
 
 Expected: selected Vitest and all SQL smoke sentinels pass.
 
-- [ ] **Step 6: Amend the candidate commit only because it is still unapplied**
+- [x] **Step 6: Amend the candidate commit only because it is still unapplied**
 
 ```bash
 git add supabase/migrations/20260908052000_work_task_children_schedule_watchers.sql supabase/tests/work_task_children_schedule_watchers_smoke.sql lib/work/workTaskService.ts lib/__tests__/workTaskService.test.ts
@@ -384,6 +384,8 @@ git commit --amend --no-edit
 ```
 
 Do not amend after linked apply. Any later correction uses a new forward migration.
+
+> Verification note: the five Cloud smokes pass in isolated savepoints/batches. A single all-in-one API request exceeded the linked SQL endpoint timeout after 80 seconds, so the runner now isolates fixtures per smoke and the suite is executed in bounded batches.
 
 ### Task 4: Apply and postflight the child/schedule/watcher candidate
 

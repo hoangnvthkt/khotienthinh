@@ -67,6 +67,49 @@ describe("Work task service and creation attempt", () => {
       p_task_id: "source",
     });
   });
+  it("uses bounded child and watcher candidate RPCs", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { items: [], aggregate: {}, nextCursor: null },
+      error: null,
+    });
+    const service = createWorkTaskService({ rpc } as any);
+    await service.children("parent", {
+      sortAt: "2026-09-08T01:00:00.000Z",
+      id: "child",
+    });
+    expect(rpc).toHaveBeenLastCalledWith("list_work_task_children", {
+      p_task_id: "parent",
+      p_cursor: { sortAt: "2026-09-08T01:00:00.000Z", id: "child" },
+      p_limit: 30,
+    });
+    await service.watcherOptions("task", "Sơn", "cursor");
+    expect(rpc).toHaveBeenLastCalledWith("list_work_task_watcher_candidates", {
+      p_task_id: "task",
+      p_search: "Sơn",
+      p_cursor: "cursor",
+      p_limit: 30,
+    });
+    await service.collaborate({
+      taskId: "task",
+      command: "schedule_update",
+      payload: {
+        plannedStartAt: null,
+        deadlineAt: null,
+        expectedLockVersion: 7,
+      },
+      idempotencyKey: "schedule-key",
+    });
+    expect(rpc).toHaveBeenLastCalledWith("command_work_task_collaboration", {
+      p_task_id: "task",
+      p_command: "schedule_update",
+      p_payload: {
+        plannedStartAt: null,
+        deadlineAt: null,
+        expectedLockVersion: 7,
+      },
+      p_idempotency_key: "schedule-key",
+    });
+  });
   it("preserves text safely and project IDs as arbitrary text", () => {
     const text = "<script>alert(1)</script>\nNội dung";
     expect(documentText(workDocument(text))).toBe(text);

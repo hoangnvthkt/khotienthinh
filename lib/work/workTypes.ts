@@ -337,17 +337,24 @@ export type WorkCollaborationCommand =
       payload: {
         plannedStartAt: string | null;
         deadlineAt: string | null;
+        expectedLockVersion: number;
       };
     }
   | {
       command: "watchers_update";
-      payload: { addUserIds: string[]; removeUserIds: string[] };
+      payload: {
+        addUserIds: string[];
+        removeUserIds: string[];
+        expectedLockVersion: number;
+      };
     };
 export type WorkCollaborationCommandInput = WorkCollaborationCommand & { taskId: string; idempotencyKey: string };
 export type WorkCollaborationCommandResult = { taskId: string; taskLockVersion: number } & (
   | { item: WorkChecklistItem }
   | { comment: WorkTaskComment }
   | { preferences: WorkTaskPreferences }
+  | { schedule: { plannedStartAt: string | null; deadlineAt: string | null } }
+  | { addedUserIds: string[]; removedUserIds: string[] }
 );
 export interface WorkTaskCloneDraft {
   draft: CreateWorkTaskInput;

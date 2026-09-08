@@ -197,6 +197,10 @@ insert into work_command_data select 'project',to_jsonb(id) from p;
 with g as (insert into public.work_task_groups(name,scope_type,department_id,created_by)
 select 'Command bucket','department',(select (value#>>'{}')::uuid from work_command_data where key='department'),id from work_command_people where name='creator' returning id)
 insert into work_command_data select 'bucket',to_jsonb(id) from g;
+-- Configuration-era bucket reads require the canonical scope-view permission.
+insert into public.user_permission_grants(user_id,permission_code,scope_type,scope_id,grant_reason)
+select id,'work.task.view_scope','department',(select value#>>'{}' from work_command_data where key='department'),'rollback smoke'
+from work_command_people where name='creator';
 insert into public.user_permission_grants(user_id,permission_code,scope_type,scope_id,grant_reason)
 select id,code,'department',(select value#>>'{}' from work_command_data where key='department'),'rollback smoke'
 from work_command_people cross join unnest(array['work.task.create','work.task.assign_user','work.task.view_related','work.task.review']) code where name='scoped';

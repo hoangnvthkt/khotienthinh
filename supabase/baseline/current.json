@@ -30,7 +30,8 @@
     "20260907090818_work_workspace_membership.sql",
     "20260907093106_work_workspace_people.sql",
     "20260907100124_work_workspace_task_access.sql",
-    "20260908013042_work_workspace_configuration.sql"
+    "20260908013042_work_workspace_configuration.sql",
+    "20260908052000_work_task_children_schedule_watchers.sql"
   ],
   "forbidIncludeAll": true
 }

@@ -17,10 +17,20 @@ const stripTransactionBoundary = (sql) => String(sql ?? '')
   .replace(/\s*rollback\s*;\s*$/i, '')
   .trim();
 
+const isolateSmoke = (sql, index) => {
+  const savepoint = `smoke_${index + 1}`;
+  return [
+    `savepoint ${savepoint};`,
+    stripTransactionBoundary(sql),
+    `rollback to savepoint ${savepoint};`,
+    `release savepoint ${savepoint};`,
+  ].filter(Boolean).join('\n');
+};
+
 export const buildRollbackSql = (migrationSql, smokeSql = []) => [
   'begin;',
   String(migrationSql ?? '').trim(),
-  ...smokeSql.map(stripTransactionBoundary),
+  ...smokeSql.map(isolateSmoke),
   'rollback;',
 ].filter(Boolean).join('\n\n');
 
