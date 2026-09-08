@@ -3,6 +3,26 @@ import type { WorkAttachmentKind } from './workTypes';
 
 export interface WorkUploadReservation { id: string; status: 'pending'; bucket: 'work-attachments'; path: string; expiresAt: string }
 export type WorkAttachmentVariant = 'thumbnail' | 'display' | 'fallback' | 'original';
+export type WorkAttachmentPreviewRoute = {
+  kind: 'image' | 'pdf' | 'text';
+  variant: WorkAttachmentVariant;
+};
+
+export function workAttachmentPreviewRoute(
+  mimeType: string,
+  variants: Partial<Record<WorkAttachmentVariant, unknown>>,
+): WorkAttachmentPreviewRoute | null {
+  if (/^image\/(?:jpeg|png|webp)$/i.test(mimeType)) {
+    if (variants.display) return { kind: 'image', variant: 'display' };
+    if (variants.fallback) return { kind: 'image', variant: 'fallback' };
+    return null;
+  }
+  if (mimeType.toLowerCase() === 'application/pdf' && variants.original)
+    return { kind: 'pdf', variant: 'original' };
+  if (mimeType.toLowerCase() === 'text/plain' && variants.original)
+    return { kind: 'text', variant: 'original' };
+  return null;
+}
 /** Keep the reservation and key until the UI resolves the attempt; retries of finalize
  * are safe after a lost response. Call read again after expiry; never persist signed URLs. */
 export function createWorkAttachmentService(client: Pick<SupabaseClient, 'rpc' | 'storage' | 'functions'>) {

@@ -101,6 +101,42 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: `${output}/desktop-detail.png`, fullPage: true });
+
+  await page.goto(`${base}?images=true#/work/tasks/VW-2026-000001`);
+  await page.getByText("bien-ban-nghiem-thu.pdf", { exact: true }).waitFor();
+  const pdfPreview = page.getByRole("button", { name: "Xem trước bien-ban-nghiem-thu.pdf", exact: true });
+  await pdfPreview.click();
+  await page.getByRole("dialog").getByTitle("Xem trước bien-ban-nghiem-thu.pdf").waitFor();
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Xem trước bien-ban-nghiem-thu.pdf");
+
+  const textPreview = page.getByRole("button", { name: "Xem trước ghi-chu-hien-truong.txt", exact: true });
+  await textPreview.click();
+  await page.getByRole("dialog").getByText("Ghi chú an toàn tại hiện trường.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Đóng xem trước" }).click();
+  await page.evaluate(() => { window.workQa.denyReads = true; });
+  await textPreview.click();
+  await page.getByRole("dialog").getByText("Thao tác không còn phù hợp", { exact: false }).waitFor();
+  assert.equal(await page.getByRole("dialog").locator("pre").count(), 0);
+  await page.evaluate(() => { window.workQa.denyReads = false; });
+  await page.getByRole("dialog").getByRole("button", { name: "Thử tải lại" }).click();
+  await page.getByRole("dialog").getByText("Ghi chú an toàn tại hiện trường.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Đóng xem trước" }).click();
+  const unsupported = page.locator(".work-attachment-grid > li", { hasText: "du-lieu-cu.xls" });
+  assert.equal(await unsupported.getByRole("button", { name: /Xem trước/ }).count(), 0);
+  await unsupported.getByRole("button", { name: "Tải bản gốc" }).waitFor();
+
+  await pdfPreview.click();
+  await page.getByRole("dialog").waitFor();
+  await page.evaluate(() => { window.location.hash = "/work/my"; });
+  await page.getByRole("heading", { name: "Công việc của tôi", exact: true }).waitFor();
+  assert.equal(await page.locator(".work-attachment-preview").count(), 0);
+
+  await page.goto(`${base}?images=true&previewExpired=true#/work/tasks/VW-2026-000001`);
+  await page.getByRole("button", { name: "Xem trước anh-nghiem-thu.webp", exact: true }).click();
+  await page.getByRole("dialog").getByRole("img").waitFor();
+  await page.getByRole("dialog").getByRole("button", { name: "Thử tải lại" }).waitFor({ timeout: 3000 });
   assert.deepEqual(errors, []);
   console.log(`WORK_TASK_DETAIL_REDESIGN_BROWSER_PASSED ${output}`);
 } finally {

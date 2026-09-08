@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import type {
   createWorkAttachmentService,
   WorkUploadReservation,
-  WorkAttachmentVariant,
 } from "../../lib/work/workAttachmentService";
 import type {
   WorkTaskAttachment,
@@ -11,6 +10,7 @@ import type {
 } from "../../lib/work/workTypes";
 import { prepareWorkImage } from "../../lib/work/workImageInput";
 import { workError } from "../../lib/work/workForm";
+import { WorkAttachmentPreview } from "./WorkAttachmentPreview";
 type Service = ReturnType<typeof createWorkAttachmentService>;
 const kindLabels: Record<WorkAttachmentKind, string> = {
   input: "Đầu vào",
@@ -131,12 +131,9 @@ export function WorkAttachments({
     [kind, setKind] = useState<WorkAttachmentKind>("discussion"),
     [keep, setKeep] = useState(false),
     [error, setError] = useState<unknown>(null),
-    [view, setView] = useState<{ name: string; url: string } | null>(null),
     [reading, setReading] = useState(false);
   const alive = useRef(true),
-    reader = useRef(0),
-    expiry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined),
-    dialog = useRef<HTMLDialogElement>(null);
+    reader = useRef(0);
   const allowed = Object.entries({
     input: caps.canAttachInput,
     discussion: caps.canAttachDiscussion,
@@ -151,12 +148,8 @@ export function WorkAttachments({
     return () => {
       alive.current = false;
       reader.current++;
-      clearTimeout(expiry.current);
     };
   }, []);
-  useEffect(() => {
-    if (view) dialog.current?.showModal();
-  }, [view]);
   useEffect(() => {
     if (!uploads.items.some((x) => !x.ready)) return;
     const warn = (e: BeforeUnloadEvent) => {
@@ -166,31 +159,19 @@ export function WorkAttachments({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [uploads.items.length, uploads.items.filter((x) => x.ready).length]);
-  async function read(
-    file: WorkTaskAttachment,
-    variant: WorkAttachmentVariant,
-  ) {
+  async function download(file: WorkTaskAttachment) {
     const n = ++reader.current;
     setReading(true);
     setError(null);
     try {
-      const r = await service.read(file.id, variant);
+      const r = await service.read(file.id, "original");
       if (!alive.current || n !== reader.current) return;
-      if (variant === "original") {
-        const a = document.createElement("a");
-        a.href = r.signedUrl;
-        a.download = file.file_name;
-        a.rel = "noopener noreferrer";
-        a.target = "_blank";
-        a.click();
-      } else {
-        setView({ name: file.file_name, url: r.signedUrl });
-        clearTimeout(expiry.current);
-        expiry.current = setTimeout(
-          () => setView(null),
-          Math.max(1, r.expiresIn - 5) * 1000,
-        );
-      }
+      const a = document.createElement("a");
+      a.href = r.signedUrl;
+      a.download = file.file_name;
+      a.rel = "noopener noreferrer";
+      a.target = "_blank";
+      a.click();
     } catch (e) {
       if (alive.current) setError(e);
     } finally {
@@ -259,26 +240,11 @@ export function WorkAttachments({
               KB
             </small>
             <div className="work-actions">
-              {f.variants.display && (
-                <button
-                  disabled={reading}
-                  onClick={() => void read(f, "display")}
-                >
-                  Xem ảnh
-                </button>
-              )}
-              {f.variants.fallback && (
-                <button
-                  disabled={reading}
-                  onClick={() => void read(f, "fallback")}
-                >
-                  Ảnh PNG
-                </button>
-              )}
+              <WorkAttachmentPreview file={f} service={service} disabled={reading} />
               {f.variants.original && (
                 <button
                   disabled={reading}
-                  onClick={() => void read(f, "original")}
+                  onClick={() => void download(f)}
                 >
                   Tải bản gốc
                 </button>
@@ -414,27 +380,6 @@ export function WorkAttachments({
         >
           {uploads.busy ? "Đang tải và xử lý…" : "Tải các tệp đã chọn"}
         </button>
-      )}
-      {view && (
-        <dialog
-          ref={dialog}
-          className="work-image-dialog"
-          onCancel={() => setView(null)}
-          aria-label={view.name}
-        >
-          <button className="work-secondary" onClick={() => setView(null)}>
-            Đóng ảnh
-          </button>
-          <p>{view.name}</p>
-          <img
-            src={view.url}
-            alt={view.name}
-            onError={() => {
-              setView(null);
-              setError(new Error("WORK_ATTACHMENT_EXPIRED"));
-            }}
-          />
-        </dialog>
       )}
     </section>
   );

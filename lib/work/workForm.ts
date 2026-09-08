@@ -244,7 +244,9 @@ export function workError(error: unknown): string {
     WORK_INVALID_FILE:
       "Tệp không hợp lệ hoặc ảnh vượt giới hạn 4 megapixel. Hãy chọn tệp khác.",
     WORK_ATTACHMENT_EXPIRED:
-      "Phiên tải đã kết thúc. Hãy tải lại từ đầu hoặc chọn tệp khác.",
+      "Phiên truy cập tệp đã hết hạn. Hãy tải lại để tiếp tục.",
+    WORK_ATTACHMENT_READ_FAILED:
+      "Không thể đọc bản xem trước. Vui lòng thử tải lại.",
     WORK_ATTACHMENT_BUSY: "Tệp đang được xử lý. Vui lòng thử lại sau ít phút.",
     WORK_INVALID_REVIEWER:
       "Người đánh giá chưa đủ điều kiện. Hãy kiểm tra chính sách đánh giá.",

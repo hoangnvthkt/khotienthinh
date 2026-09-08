@@ -1,5 +1,5 @@
 import { it, expect, vi } from 'vitest';
-import { createWorkAttachmentService } from '../work/workAttachmentService';
+import { createWorkAttachmentService, workAttachmentPreviewRoute } from '../work/workAttachmentService';
 function fixture() {
   const upload = vi.fn().mockResolvedValue({ error: null });
   const client = { rpc: vi.fn().mockResolvedValue({ data: {}, error: null }), storage: { from: vi.fn().mockReturnValue({ upload }) }, functions: { invoke: vi.fn().mockResolvedValue({ data: { signedUrl: 'short-lived', expiresIn: 60 }, error: null }) } };
@@ -28,4 +28,12 @@ it('exposes only known Edge failure codes so the UI can recover rejected upload 
  const {client,service}=fixture();
  client.functions.invoke.mockResolvedValue({data:null,error:{context:new Response(JSON.stringify({error:'WORK_ATTACHMENT_EXPIRED'}),{status:409})}} as any);
  await expect(service.finalize('file')).rejects.toThrow('WORK_ATTACHMENT_EXPIRED');
+});
+it('routes supported previews to the safest available signed variant', () => {
+  expect(workAttachmentPreviewRoute('image/jpeg', { display: {}, fallback: {}, original: {} })).toEqual({ kind: 'image', variant: 'display' });
+  expect(workAttachmentPreviewRoute('image/webp', { fallback: {}, original: {} })).toEqual({ kind: 'image', variant: 'fallback' });
+  expect(workAttachmentPreviewRoute('application/pdf', { original: {} })).toEqual({ kind: 'pdf', variant: 'original' });
+  expect(workAttachmentPreviewRoute('text/plain', { original: {} })).toEqual({ kind: 'text', variant: 'original' });
+  expect(workAttachmentPreviewRoute('application/vnd.ms-excel', { original: {} })).toBeNull();
+  expect(workAttachmentPreviewRoute('application/pdf', {})).toBeNull();
 });

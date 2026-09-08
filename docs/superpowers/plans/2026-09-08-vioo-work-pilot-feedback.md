@@ -572,14 +572,14 @@ git commit -m "feat(work): add child tasks and redesigned task detail"
 - Consumes: signed attachment read RPC and variants `display`, `fallback`, `original`.
 - Produces: `WorkAttachmentPreview` for image/PDF/TXT without external viewer.
 
-- [ ] **Step 1: Add failing service and browser tests**
+- [x] **Step 1: Add failing service and browser tests**
 
 Test MIME routing: image prefers display/fallback; PDF and TXT request original;
 unsupported MIME offers download only. Browser asserts Escape closes, focus returns
 to the exact file button, expired URL removes content and offers retry, task switch
 closes viewer, and a denied read never retains prior content.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```bash
 npx vitest run lib/__tests__/workAttachmentService.test.ts
@@ -588,7 +588,7 @@ node scripts/verify-work-task-detail-redesign-browser.mjs
 
 Expected: PDF/TXT viewer assertions fail.
 
-- [ ] **Step 3: Implement an abort-safe preview component**
+- [x] **Step 3: Implement an abort-safe preview component**
 
 For images render `<img>` from display/fallback. For PDF render an `<iframe title>`
 with the signed original URL and a download fallback. For TXT fetch the signed URL
@@ -598,13 +598,13 @@ text node in `<pre>`; indicate truncation. Never use `innerHTML`.
 On close/task change/unmount, abort fetch, clear URL/text and expiry timeout. Expiry
 closes content and reports `WORK_ATTACHMENT_EXPIRED`. Dialog handles Escape/focus.
 
-- [ ] **Step 4: Route supported files from WorkAttachments**
+- [x] **Step 4: Route supported files from WorkAttachments**
 
 Expose `Xem trước` for JPEG/PNG/WebP/PDF/TXT and retain `Tải bản gốc`. Thumbnail
 still loads lazily. All access goes through `service.read()` and signed URLs; do
 not persist URLs in state outside the viewer lifecycle.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
 ```bash
 npx vitest run lib/__tests__/workAttachmentService.test.ts

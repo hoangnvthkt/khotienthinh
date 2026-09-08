@@ -1072,3 +1072,21 @@ refresh regressions pass. Full verification passes **366 files / 1,736 tests**,
 TypeScript and the production build; the pre-existing large-chunk warning remains.
 Dev continues at `http://127.0.0.1:5187/#/work`. Notifications stay disabled and
 no production deployment or handoff was performed.
+
+### Pilot feedback UI — direct attachment preview
+
+Task attachments now route JPEG/PNG/WebP to the preferred processed display or
+fallback variant and route PDF/TXT to the signed original. Unsupported MIME types
+remain download-only. The viewer keeps each signed URL inside its dialog lifecycle:
+closing, pressing Escape, changing task/route or unmounting aborts pending text reads
+and clears content. Expiry removes the old content and exposes an explicit retry.
+
+Image preview uses contained media, PDF uses a titled internal frame with the existing
+original-download action retained, and TXT is rendered as text in a `pre` element.
+TXT streaming stops at 1 MiB and marks a truncated preview; no file content is passed
+to `innerHTML`. Focus returns to the exact attachment button after close.
+
+Unit routing checks and synthetic Chrome QA pass for image/PDF/TXT, unsupported
+download-only files, Escape/focus return, expiry/retry, read denial without retained
+content and route-change cleanup. Notification delivery and production deployment
+remain unchanged; no handoff was created.

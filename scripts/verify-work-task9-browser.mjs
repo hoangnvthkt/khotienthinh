@@ -200,9 +200,9 @@ try {
   await page
     .getByText("Bình luận đích từ thông báo", { exact: true })
     .waitFor();
-  await page.getByRole("button", { name: "Xem ảnh", exact: true }).click();
+  await page.getByRole("button", { name: "Xem trước anh-nghiem-thu.webp", exact: true }).click();
   await page.getByRole("dialog").getByRole("img").waitFor();
-  await page.getByRole("button", { name: "Đóng ảnh", exact: true }).click();
+  await page.getByRole("button", { name: "Đóng xem trước", exact: true }).click();
   assert.ok(
     await page.evaluate(() =>
       window.workQa.calls.some(

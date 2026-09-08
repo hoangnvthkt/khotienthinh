@@ -432,6 +432,39 @@ const service: WorkTaskService = {
                   original: {},
                 },
               },
+              {
+                id: "pdf",
+                task_id: "1",
+                file_name: "bien-ban-nghiem-thu.pdf",
+                mime_type: "application/pdf",
+                size_bytes: 2048,
+                attachment_kind: "input",
+                uploader_user_id: "actor",
+                can_delete: false,
+                variants: { original: {} },
+              },
+              {
+                id: "text",
+                task_id: "1",
+                file_name: "ghi-chu-hien-truong.txt",
+                mime_type: "text/plain",
+                size_bytes: 96,
+                attachment_kind: "discussion",
+                uploader_user_id: "actor",
+                can_delete: false,
+                variants: { original: {} },
+              },
+              {
+                id: "sheet",
+                task_id: "1",
+                file_name: "du-lieu-cu.xls",
+                mime_type: "application/vnd.ms-excel",
+                size_bytes: 4096,
+                attachment_kind: "input",
+                uploader_user_id: "actor",
+                can_delete: false,
+                variants: { original: {} },
+              },
             ]
           : [],
       currentSubmission:
@@ -534,10 +567,16 @@ const attachments: ReturnType<typeof createWorkAttachmentService> = {
   },
   async read(id, variant) {
     log("attachment.read", id, variant);
+    if (qa.denyReads) throw new Error("WORK_COMMAND_DENIED");
+    const signedUrl =
+      id === "text"
+        ? "data:text/plain;charset=utf-8,Ghi%20ch%C3%BA%20an%20to%C3%A0n%20t%E1%BA%A1i%20hi%E1%BB%87n%20tr%C6%B0%E1%BB%9Dng."
+        : id === "pdf"
+          ? "data:application/pdf;base64,JVBERi0xLjQKJSVFT0Y="
+          : "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jM1UAAAAASUVORK5CYII=";
     return {
-      signedUrl:
-        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jM1UAAAAASUVORK5CYII=",
-      expiresIn: 60,
+      signedUrl,
+      expiresIn: query.get("previewExpired") === "true" ? 5 : 60,
     };
   },
   async remove() {
