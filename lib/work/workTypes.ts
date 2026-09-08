@@ -15,13 +15,21 @@ export type WorkTaskStatus = 'draft' | 'pending_acknowledgement' | 'clarificatio
   | 'not_started' | 'in_progress' | 'blocked' | 'awaiting_review' | 'changes_requested' | 'completed' | 'cancelled';
 export type WorkAssignmentState = Exclude<WorkTaskStatus, 'draft'> | 'transferred';
 
-/** Plain text content, rendered as text nodes; never interpret text as HTML. */
+export type WorkInlineNode =
+  | {
+      type: "text";
+      text: string;
+      marks?: Array<{ type: "bold" | "italic" | "strike" | "code" }>;
+    }
+  | { type: "mention"; userId: string; label: string };
+
+/** Rich text content, rendered as safe text/mention nodes; never interpret as HTML. */
 export interface WorkTextDocument {
   version: 1;
-  type: 'doc';
+  type: "doc";
   content: Array<{
-    type: 'paragraph';
-    content: Array<{ type: 'text'; text: string; marks?: Array<{ type: 'bold' | 'italic' | 'strike' | 'code' }> }>;
+    type: "paragraph";
+    content: WorkInlineNode[];
   }>;
 }
 
@@ -34,12 +42,14 @@ export interface CreateWorkTaskInput {
   watcherUserIds: string[];
   reviewerUserId?: string;
   reviewPolicy?: WorkReviewPolicy;
+  plannedStartAt?: string;
   deadlineAt?: string;
   priority: WorkPriority;
   privacy: WorkPrivacy;
   labels: string[];
   checklist: Array<{ title: string; assigneeUserId?: string }>;
   clonedFromTaskId?: string;
+  parentTaskId?: string;
 }
 
 export interface WorkRecipientPreview {
@@ -95,7 +105,9 @@ export interface WorkTaskSummary {
   department_id: string | null;
   project_id: string | null;
   task_group_id: string | null;
+  planned_start_at?: string | null;
   deadline_at: string | null;
+  parent_task_id?: string | null;
   created_by: string;
   reviewer_user_id: string | null;
   updated_at: string;
@@ -214,6 +226,9 @@ export interface WorkTaskCapabilities {
   canTransfer: boolean;
   canAddAssignees: boolean;
   canManageChecklist: boolean;
+  canCreateChild?: boolean;
+  canManageSchedule?: boolean;
+  canManageWatchers?: boolean;
   canComment: boolean;
   canSetPreferences: boolean;
   canAttachInput: boolean;
@@ -242,6 +257,26 @@ export interface WorkTaskDetail {
   attachments: WorkTaskAttachment[];
   capabilities: WorkTaskCapabilities;
   preferences: WorkTaskPreferences;
+  childAggregate?: WorkTaskChildAggregate;
+}
+
+export interface WorkTaskChildSummary extends WorkTaskSummary {
+  parent_task_id: string;
+  assignee_names: string[];
+  attachment_count: number;
+}
+
+export interface WorkTaskChildAggregate {
+  visibleTotal: number;
+  visibleCompleted: number;
+  visibleCancelled: number;
+  visibleOpen: number;
+}
+
+export interface WorkTaskChildrenPage {
+  items: WorkTaskChildSummary[];
+  aggregate: WorkTaskChildAggregate;
+  nextCursor: WorkTaskCursor | null;
 }
 
 export interface WorkDetailContext { names: Record<string,string>; scopeName:string; bucketName:string|null }
@@ -296,7 +331,18 @@ export type WorkCollaborationCommand =
   | { command: 'comment_create'; payload: { content: WorkTextDocument; parentCommentId?: string; mentionedUserIds?: string[] } }
   | { command: 'comment_edit'; payload: { commentId: string; expectedLockVersion: number; content: WorkTextDocument; mentionedUserIds?: string[] } }
   | { command: 'set_pin'; payload: { pinned: boolean } }
-  | { command: 'set_notifications'; payload: { notificationsEnabled: boolean } };
+  | { command: 'set_notifications'; payload: { notificationsEnabled: boolean } }
+  | {
+      command: "schedule_update";
+      payload: {
+        plannedStartAt: string | null;
+        deadlineAt: string | null;
+      };
+    }
+  | {
+      command: "watchers_update";
+      payload: { addUserIds: string[]; removeUserIds: string[] };
+    };
 export type WorkCollaborationCommandInput = WorkCollaborationCommand & { taskId: string; idempotencyKey: string };
 export type WorkCollaborationCommandResult = { taskId: string; taskLockVersion: number } & (
   | { item: WorkChecklistItem }

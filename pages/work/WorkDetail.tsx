@@ -9,7 +9,7 @@ import type {
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { createWorkAttachmentService } from "../../lib/work/workAttachmentService";
 import type { WorkMutationSession } from "../../lib/work/workMutation";
-import { workError } from "../../lib/work/workForm";
+import { documentText, workError } from "../../lib/work/workForm";
 import { workStatusLabels, workWhen } from "../../lib/work/workPresentation";
 import { WorkActions } from "./WorkActions";
 import { WorkChecklist } from "./WorkChecklist";
@@ -392,9 +392,7 @@ export function WorkDetail({
           <h3>Mô tả</h3>
           <p className="work-prose">
             {task.description_text ||
-              task.description_document.content
-                .map((p) => p.content.map((t) => t.text).join(""))
-                .join("\n") ||
+              documentText(task.description_document) ||
               "Chưa có mô tả."}
           </p>
           {task.labels?.length > 0 && (

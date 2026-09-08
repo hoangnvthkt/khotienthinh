@@ -17,7 +17,42 @@ export const workDocument = (text: string): WorkTextDocument => ({
   })),
 });
 export const documentText = (doc: WorkTextDocument) =>
-  doc.content.map((p) => p.content.map((t) => t.text).join("")).join("\n");
+  doc.content
+    .map((p) =>
+      p.content
+        .map((node) =>
+          node.type === "mention" ? `@${node.label}` : node.text,
+        )
+        .join(""),
+    )
+    .join("\n");
+export const mentionedUserIds = (doc: WorkTextDocument) => [
+  ...new Set(
+    doc.content.flatMap((paragraph) =>
+      paragraph.content.flatMap((node) =>
+        node.type === "mention" ? [node.userId] : [],
+      ),
+    ),
+  ),
+];
+
+export function validateWorkSchedule(
+  plannedStartAt?: string | null,
+  deadlineAt?: string | null,
+) {
+  const start = plannedStartAt ? new Date(plannedStartAt) : null;
+  const end = deadlineAt ? new Date(deadlineAt) : null;
+  if (
+    (start && Number.isNaN(start.valueOf())) ||
+    (end && Number.isNaN(end.valueOf())) ||
+    (start && end && start > end)
+  )
+    throw new Error("WORK_INVALID_SCHEDULE");
+  return {
+    plannedStartAt: start?.toISOString() ?? null,
+    deadlineAt: end?.toISOString() ?? null,
+  };
+}
 const validatedWorkScope = (scope: unknown): WorkScope =>
   validateWorkspaceScope(scope) as WorkScope;
 
@@ -122,6 +157,8 @@ export function workError(error: unknown): string {
     || rawMessage;
   const messages: Record<string, string> = {
     WORK_INVALID_COMMAND: "Thông tin gửi lên chưa hợp lệ. Vui lòng tải lại trang và kiểm tra các trường đã nhập.",
+    WORK_INVALID_SCHEDULE:
+      "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.",
     WORK_WORKSPACE_MIGRATION_REQUIRED: "Phòng ban hoặc dự án này đã có dữ liệu công việc cần được chuyển vào Workspace trước khi tạo. Vui lòng liên hệ quản trị viên.",
     WORK_CONFIGURE_DENIED: "Bạn không có quyền cấu hình phạm vi hoặc lịch này.",
     WORK_INVALID_CONFIGURATION:

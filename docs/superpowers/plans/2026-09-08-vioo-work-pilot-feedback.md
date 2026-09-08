@@ -87,7 +87,7 @@
 - Consumes: existing `WorkTask`, `CreateWorkTaskInput`, `WorkTaskDetail`, `WorkCollaborationCommand`.
 - Produces: `plannedStartAt`, `parentTaskId`, `WorkTaskChildSummary`, `WorkTaskChildrenPage`, `WorkMentionNode`, `validateWorkSchedule()`.
 
-- [ ] **Step 1: Add failing contract tests**
+- [x] **Step 1: Add failing contract tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -115,7 +115,7 @@ describe("Work pilot feedback contracts", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused tests and capture RED**
+- [x] **Step 2: Run the focused tests and capture RED**
 
 Run:
 
@@ -125,7 +125,7 @@ npx vitest run lib/__tests__/workPilotFeedbackContracts.test.ts lib/__tests__/wo
 
 Expected: compile/test failure because the new functions and node types do not exist.
 
-- [ ] **Step 3: Add exact TypeScript contracts**
+- [x] **Step 3: Add exact TypeScript contracts**
 
 ```ts
 export type WorkInlineNode =
@@ -162,7 +162,7 @@ Extend `CreateWorkTaskInput` with optional `plannedStartAt?: string` and
 | { command: "watchers_update"; payload: { addUserIds: string[]; removeUserIds: string[] } };
 ```
 
-- [ ] **Step 4: Implement schedule/document helpers**
+- [x] **Step 4: Implement schedule/document helpers**
 
 ```ts
 export function validateWorkSchedule(plannedStartAt?: string | null, deadlineAt?: string | null) {
@@ -180,12 +180,12 @@ export function validateWorkSchedule(plannedStartAt?: string | null, deadlineAt?
 Update `documentText()` to render mention nodes as `@${label}` and add
 `mentionedUserIds()` that returns stable, deduplicated IDs in document order.
 
-- [ ] **Step 5: Update existing service/detail fixtures and run GREEN**
+- [x] **Step 5: Update existing service/detail fixtures and run GREEN**
 
 Run the command from Step 2. Expected: all selected tests pass and old text-only
 documents still round-trip unchanged.
 
-- [ ] **Step 6: Commit the contract checkpoint**
+- [x] **Step 6: Commit the contract checkpoint**
 
 ```bash
 git add lib/work/workTypes.ts lib/work/workForm.ts lib/__tests__/workTaskService.test.ts lib/__tests__/workDetailService.test.ts lib/__tests__/workPilotFeedbackContracts.test.ts

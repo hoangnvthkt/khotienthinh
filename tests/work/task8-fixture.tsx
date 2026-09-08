@@ -5,7 +5,11 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { WorkWorkspace } from "../../pages/work/WorkPage";
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { createWorkAttachmentService } from "../../lib/work/workAttachmentService";
-import { emptyWorkDraft, workDocument } from "../../lib/work/workForm";
+import {
+  documentText,
+  emptyWorkDraft,
+  workDocument,
+} from "../../lib/work/workForm";
 import type { WorkTaskSummary } from "../../lib/work/workTypes";
 const query = new URLSearchParams(window.location.search);
 if (query.get("layout") === "true") {
@@ -129,9 +133,7 @@ const service: WorkTaskService = {
       fixtureComments.unshift({
         ...comment(
           input.payload.commentId,
-          input.payload.content.content
-            .map((p) => p.content.map((t) => t.text).join(""))
-            .join("\n"),
+          documentText(input.payload.content),
         ),
         lock_version: commentVersion,
       });
@@ -143,9 +145,7 @@ const service: WorkTaskService = {
       const c = {
         ...comment(
           "new-comment",
-          input.payload.content.content
-            .map((p) => p.content.map((t) => t.text).join(""))
-            .join("\n"),
+          documentText(input.payload.content),
         ),
         mentionedUserIds: input.payload.mentionedUserIds || [],
         parent_comment_id: input.payload.parentCommentId || null,
