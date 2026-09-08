@@ -631,7 +631,7 @@ git commit -m "feat(work): preview task images pdf and text files"
 - Consumes: text documents and `list_work_task_mention_candidates`.
 - Produces: server-derived mention recipients and inline keyboard composer.
 
-- [ ] **Step 1: Write RED SQL tests for document validation and mention diff**
+- [x] **Step 1: Write RED SQL tests for document validation and mention diff**
 
 Cases: valid text+mention document; duplicate ID deduped; unknown node/mark rejected;
 label length and UUID validated; candidate lost access rejected atomically; typed
@@ -639,7 +639,7 @@ label length and UUID validated; candidate lost access rejected atomically; type
 new ID emits only that ID; retaining or removing old IDs does not re-notify them;
 same display names remain distinct by UUID; retry keeps one event/outbox record.
 
-- [ ] **Step 2: Write RED browser keyboard journey**
+- [x] **Step 2: Write RED browser keyboard journey**
 
 ```js
 const composer = page.getByLabel("Nội dung bình luận");
@@ -653,7 +653,7 @@ await page.getByRole("button", { name: "Gửi bình luận" }).click();
 Also test Backspace removes a whole token, Escape closes suggestions, blur does not
 lose selected IDs, and background refresh preserves draft/focus.
 
-- [ ] **Step 3: Implement server document validation/extraction**
+- [x] **Step 3: Implement server document validation/extraction**
 
 The migration replaces only affected functions with forward definitions. Accept
 paragraph content nodes from exact allowlist `text|mention`. For mention nodes require
@@ -662,7 +662,7 @@ visibility. Derive recipient IDs in SQL from document nodes; compare old/new set
 edit. Ignore or reject client `mentionedUserIds` as an authority; return the derived
 list for backward-compatible reads.
 
-- [ ] **Step 4: Implement inline composer**
+- [x] **Step 4: Implement inline composer**
 
 Use a controlled sequence of text/mention segments with a textarea-compatible
 accessible fallback. Typing `@query` opens the existing task-scoped candidate RPC;
@@ -671,7 +671,7 @@ token holds label and stable ID. Submission serializes `WorkTextDocument` nodes.
 Editing a legacy comment loads text and its existing mention IDs as explicit tokens
 at the top of the composer with a migration note; never guess offsets by name.
 
-- [ ] **Step 5: Run candidate Cloud rollback and browser tests**
+- [x] **Step 5: Run candidate Cloud rollback and browser tests**
 
 ```bash
 node scripts/run-supabase-cloud-transaction.mjs \
@@ -689,7 +689,7 @@ npm run lint
 Expected: all selected tests/smokes pass; no real notification is delivered because
 the Cloud gate remains false and Cloud smoke rolls back.
 
-- [ ] **Step 6: Commit, dry-run, apply and postflight**
+- [x] **Step 6: Commit, dry-run, apply and postflight**
 
 ```bash
 git add supabase/migrations/20260908060000_work_inline_comment_mentions.sql supabase/tests/work_inline_comment_mentions_smoke.sql lib/work/workTypes.ts lib/work/workForm.ts pages/work/WorkMentionComposer.tsx pages/work/WorkDiscussion.tsx lib/__tests__/workPilotFeedbackContracts.test.ts tests/work/task8-fixture.tsx scripts/verify-work-task-detail-redesign-browser.mjs scripts/verify-work-refresh-browser.mjs

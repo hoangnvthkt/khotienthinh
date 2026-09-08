@@ -1090,3 +1090,37 @@ Unit routing checks and synthetic Chrome QA pass for image/PDF/TXT, unsupported
 download-only files, Escape/focus return, expiry/retry, read denial without retained
 content and route-change cleanup. Notification delivery and production deployment
 remain unchanged; no handoff was created.
+
+### Pilot feedback collaboration — inline mentions
+
+Migration `20260908060000_work_inline_comment_mentions.sql` was applied from commit
+`4e77e7b` on 2026-09-08. Its SHA-256 is
+`d7b5446f2297911d4e8d93e88a31dc543623ebe3de3424f9f05b68898cd99ab6`.
+The linked dry-run listed this migration only; local and Cloud migration ledgers
+now match 28/28.
+
+Comment create/edit now validates an exact safe document-node allowlist and derives
+mention recipients from inline `mention` nodes on the server. A client-supplied
+`mentionedUserIds` list has no authority. UUID and label validation, current task
+visibility, a 50-recipient limit, deduplication and old/new edit diffing are enforced
+inside the collaboration command transaction. Plain typed `@name` text creates no
+mention; retained or removed recipients are not notified again, while a newly added
+recipient creates one mandatory `comment.mentioned` event and outbox item.
+
+The discussion composer now opens the task-scoped people suggestions directly while
+typing `@`. Arrow keys, Enter/Tab, Escape and whole-token Backspace are supported.
+Selected labels remain tied to stable user IDs through blur and background refresh.
+Existing comments that predate inline nodes are loaded for editing with explicit
+mention tokens at the top and a migration note.
+
+Candidate rollback and applied-schema postflight passed the inline mention,
+collaboration and notification-delivery Cloud smokes. Full Vitest passes **366 files /
+1,739 tests**; TypeScript, production build, migration baseline (28 active / 402
+archived), query audit (0 findings/errors), Task 9 keyboard/browser, detail redesign
+and refresh browser suites pass. The post-apply Cloud security advisor at ERROR level
+reports no issues.
+
+Notification delivery remains disabled. Cloud state after rollout is 16 pending
+outbox records, 0 processed records, 0 deliveries and 0 push jobs. No backlog item was
+delivered. Dev remains available at `http://127.0.0.1:5187/#/work` with HTTP 200.
+Production deployment is unchanged, and no handoff was created.
