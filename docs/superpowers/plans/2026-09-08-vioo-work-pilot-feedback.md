@@ -396,7 +396,7 @@ Do not amend after linked apply. Any later correction uses a new forward migrati
 - Consumes: committed candidate from Tasks 2–3.
 - Produces: Cloud schema/RPC checkpoint with rollback and postflight evidence.
 
-- [ ] **Step 1: Verify exact committed paths and clean diff for the candidate**
+- [x] **Step 1: Verify exact committed paths and clean diff for the candidate**
 
 ```bash
 git status --short
@@ -407,7 +407,7 @@ npx --no-install supabase migration list --linked
 Expected: only known plan progress/doc changes may be dirty; local/Cloud ledger
 diff is exactly `20260908052000_work_task_children_schedule_watchers.sql`.
 
-- [ ] **Step 2: Run linked dry-run**
+- [x] **Step 2: Run linked dry-run**
 
 ```bash
 set -a
@@ -418,13 +418,13 @@ npx --no-install supabase db push --linked --dry-run
 
 Expected: dry-run lists only `20260908052000_work_task_children_schedule_watchers.sql`.
 
-- [ ] **Step 3: Apply the exact migration**
+- [x] **Step 3: Apply the exact migration**
 
 Run `npx --no-install supabase db push --linked` only after Step 2 matches. Expected:
 one migration applied successfully. This is authorized schema implementation;
 it does not enable notifications or create real tasks.
 
-- [ ] **Step 4: Run postflight against applied schema without reapplying SQL**
+- [x] **Step 4: Run postflight against applied schema without reapplying SQL**
 
 ```bash
 node scripts/run-supabase-cloud-transaction.mjs \
@@ -440,7 +440,7 @@ npx --no-install supabase db advisors --linked --type security --level error --f
 
 Expected: all smokes pass and advisor reports no ERROR.
 
-- [ ] **Step 5: Record factual evidence and commit**
+- [x] **Step 5: Record factual evidence and commit**
 
 Add migration hash, dry-run/apply/postflight output summary and ledger count to the
 rollout. Do not mark UI, notification or Task 11 complete.

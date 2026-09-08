@@ -9,15 +9,15 @@ evidence phía dưới ghi trạng thái tại thời điểm thực hiện, kh�
 | Lộ trình | Đã triển khai | Còn thiếu hoặc đang điều chỉnh |
 | --- | --- | --- |
 | Task 1–2 | Permission/module boundary, schema, RLS | Tiếp tục hồi quy theo thay đổi mới |
-| Task 3 | Tạo/list/detail/clone và recipient preview | Mô hình công việc con đầy đủ chưa có |
-| Task 4 | Vòng đời, nhận/chuyển việc, review, lịch và SLA | Cảnh báo việc con khi hoàn thành cha là yêu cầu mới |
+| Task 3 | Tạo/list/detail/clone, recipient preview và backend công việc con một cấp | UI tạo/xem công việc con đang triển khai |
+| Task 4 | Vòng đời, nhận/chuyển việc, review, lịch và SLA; cha đóng độc lập ở server | UI cảnh báo việc con còn mở khi hoàn thành cha đang triển khai |
 | Task 5 | Checklist, thảo luận, mention, lịch sử | Chưa có mention trong dòng; checklist không phải task con |
 | Task 6 | Event/outbox, worker, cron, mute/dedupe, Realtime | Delivery gate=false; chưa nghiệm thu notification/push thật |
 | Task 7 | Private Storage, upload, xử lý ảnh, đọc/tải tệp | Preview trong trang mới có ảnh; PDF/TXT còn cần bổ sung |
-| Task 8–9 | Danh sách/tạo/chi tiết và thao tác responsive | Đã sửa refresh nhấp nháy; đang duyệt bố cục mới, preview, mention và việc con |
+| Task 8–9 | Danh sách/tạo/chi tiết và thao tác responsive | Đã sửa refresh nhấp nháy; bố cục v2 đã duyệt, còn nối preview, mention và việc con vào UI thật |
 | Task 10 | Cấu hình nhóm/lịch/SLA; hai người dùng pilot và dev | Lịch thứ Hai–thứ Bảy 08–12/13–17 đã cấu hình; delivery pilot chưa bật |
 | Task 11 | Có test kỹ thuật và checklist nghiệm thu | Chưa hoàn tất kiểm tra thiết bị thật và quan sát 48 giờ |
-| WS1–5 | Workspace, membership/quyền, gợi ý tổ chức, task scope, cấu hình | Hồi quy quyền khi thêm công việc con |
+| WS1–5 | Workspace, membership/quyền, gợi ý tổ chức, task scope, cấu hình | Hồi quy quyền công việc con đã qua Cloud smoke; tiếp tục nghiệm thu UI |
 | WS6–7 | Menu Workspace, trang làm việc/thành viên/cấu hình | Đã sửa payload tạo Workspace; người dùng cần thử lại trường hợp thực tế |
 | WS8 | Cutover Cloud vào Workspace pilot và kiểm thử kỹ thuật | Nghiệm thu người dùng đang diễn ra; phản hồi 08/09 chưa đóng hết |
 | R1B / R2 / R3 | Chưa triển khai | Dispatch hàng loạt / dashboard phân tích / AI & automation |
@@ -25,14 +25,15 @@ evidence phía dưới ghi trạng thái tại thời điểm thực hiện, kh�
 Phản hồi 08/09 và bản bố cục tương tác được ghi tại
 [thiết kế điều chỉnh pilot](../superpowers/specs/2026-09-08-vioo-work-pilot-feedback-design.md).
 Quyết định đã chốt: **cha hoàn thành độc lập; cảnh báo nếu còn con mở, không đóng
-con theo cha**. Đây chưa phải nghiệp vụ đã có trong sản phẩm.
+con theo cha**. Backend đã giữ trạng thái con độc lập; cảnh báo trên UI thuộc lượt
+triển khai giao diện kế tiếp.
 
 Thiết kế tiếp tục được điều chỉnh theo ảnh tham khảo của người dùng: **bản v2**
 giữ danh sách bên cạnh detail, menu tối, nhãn nhẹ, các khối mô tả/kết quả/việc con,
 watcher bên phải với thêm/bỏ; thay nhãn thời hạn bằng cặp **Ngày bắt đầu – Ngày
 kết thúc**. Ngày bắt đầu là lịch dự kiến mới; `started_at` và `completed_at` giữ
-ý nghĩa thời gian thực tế. Bản tương tác đã kiểm tra ở 1850/1440/768/360; thay đổi
-trong lượt này chỉ nằm ở thiết kế, chưa thêm migration hoặc chức năng production.
+ý nghĩa thời gian thực tế. Bản tương tác đã kiểm tra ở 1850/1440/768/360. Schema,
+RPC lịch và watcher đã lên Cloud; bố cục này chưa được nối vào giao diện production.
 
 Yêu cầu UX tiếp theo đã được ghi vào thiết kế: giữ **thanh thao tác luôn hiển thị
 khi cuộn**, với hành động chính, Chuyển việc, Thêm đồng thực hiện và Hủy công việc.
@@ -1003,3 +1004,40 @@ for that process only. Real browser login for the two named users and the UI
 checklist in `vioo-work-workspace-acceptance.md` remain for user acceptance.
 The 48-hour observation has not started and is not marked complete. Production
 deployment is unchanged; no handoff was created.
+
+### Pilot feedback data foundation — child tasks, planned dates and watchers
+
+Migration `20260908052000_work_task_children_schedule_watchers.sql` was applied
+from commit `78af195` on 2026-09-08. Its SHA-256 is
+`0bb5a9c3299f47d3b4a5abdca691979669ff698d1a2b5529f60fb1233784d422`.
+The linked dry-run listed this migration only; local and Cloud ledgers now match
+27/27.
+
+The data model supports one child level, a nullable planned start, and a guarded
+same-Workspace/scope/privacy parent boundary. Parent completion does not update
+open children. Child paging and its completion aggregate both filter by the
+reader's own task visibility; cancelled children are counted separately and are
+excluded from the completion denominator. Create, detail, clone, personal lists
+and Workspace lists expose the new fields without changing actual `started_at`
+or `completed_at` semantics.
+
+Schedule and watcher updates use the existing collaboration command with task
+version checks, actor-scoped idempotency, before/after audit, version snapshots
+and outbox writes in one transaction. Watcher candidates must be active, have
+Work access, satisfy Workspace membership where applicable and pass the task's
+privacy boundary. Removing a watcher ends only that participant relation; it
+does not alter assignee or reviewer rows.
+
+Cloud rollback and postflight passed the new smoke plus task creation, lifecycle,
+Workspace access and collaboration regressions. The smoke also proves index use,
+stale-version rejection and rollback when outbox insertion is forced to fail.
+The runner now isolates multiple smoke fixtures with savepoints. The complete
+five-smoke request exceeded the Management API timeout, so the same set passed in
+bounded savepoint batches. Full Vitest passes 366 files / 1,736 tests; TypeScript,
+migration baseline (27 active / 402 archived), query audit (0 findings/errors)
+and the linked ERROR security advisor pass.
+
+Postflight confirms the child and watcher RPCs and `planned_start_at` on Cloud.
+Notification delivery remains disabled; the current outbox is 16 pending with
+0 processed, 0 deliveries and 0 push jobs. No backlog item was delivered by this
+rollout. Production frontend deployment and the UI redesign remain unchanged.
