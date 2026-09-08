@@ -94,6 +94,17 @@ export function WorkActions({
         payload: { reason: reason.trim() },
       } as WorkLifecycleCommand;
     else input = { command: action.id, payload: {} } as WorkLifecycleCommand;
+    const completesParent =
+      (action.id === "submit" && detail.task.review_policy === "auto_complete") ||
+      action.id === "approve";
+    if (
+      completesParent &&
+      (detail.childAggregate?.visibleOpen || 0) > 0 &&
+      !window.confirm(
+        `Còn ${detail.childAggregate!.visibleOpen} công việc con bạn có thể xem chưa hoàn thành.\nCác công việc con vẫn tiếp tục độc lập. Vẫn hoàn thành công việc cha?`,
+      )
+    )
+      return;
     if (await run(input, action.version)) setAction(null);
   }
   return (

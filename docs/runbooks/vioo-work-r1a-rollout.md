@@ -9,12 +9,12 @@ evidence phía dưới ghi trạng thái tại thời điểm thực hiện, kh�
 | Lộ trình | Đã triển khai | Còn thiếu hoặc đang điều chỉnh |
 | --- | --- | --- |
 | Task 1–2 | Permission/module boundary, schema, RLS | Tiếp tục hồi quy theo thay đổi mới |
-| Task 3 | Tạo/list/detail/clone, recipient preview và backend công việc con một cấp | UI tạo/xem công việc con đang triển khai |
-| Task 4 | Vòng đời, nhận/chuyển việc, review, lịch và SLA; cha đóng độc lập ở server | UI cảnh báo việc con còn mở khi hoàn thành cha đang triển khai |
+| Task 3 | Tạo/list/detail/clone, recipient preview và công việc con đầy đủ một cấp | Nghiệm thu người dùng thật còn thiếu |
+| Task 4 | Vòng đời, nhận/chuyển việc, review, lịch và SLA; cha đóng độc lập ở server | UI đã cảnh báo mềm khi còn việc con mở |
 | Task 5 | Checklist, thảo luận, mention, lịch sử | Chưa có mention trong dòng; checklist không phải task con |
 | Task 6 | Event/outbox, worker, cron, mute/dedupe, Realtime | Delivery gate=false; chưa nghiệm thu notification/push thật |
 | Task 7 | Private Storage, upload, xử lý ảnh, đọc/tải tệp | Preview trong trang mới có ảnh; PDF/TXT còn cần bổ sung |
-| Task 8–9 | Danh sách/tạo/chi tiết và thao tác responsive | Đã sửa refresh nhấp nháy; bố cục v2 đã duyệt, còn nối preview, mention và việc con vào UI thật |
+| Task 8–9 | Danh sách/tạo/chi tiết và thao tác responsive | Đã sửa refresh nhấp nháy, nối bố cục v2 và việc con; còn preview PDF/TXT và mention trong dòng |
 | Task 10 | Cấu hình nhóm/lịch/SLA; hai người dùng pilot và dev | Lịch thứ Hai–thứ Bảy 08–12/13–17 đã cấu hình; delivery pilot chưa bật |
 | Task 11 | Có test kỹ thuật và checklist nghiệm thu | Chưa hoàn tất kiểm tra thiết bị thật và quan sát 48 giờ |
 | WS1–5 | Workspace, membership/quyền, gợi ý tổ chức, task scope, cấu hình | Hồi quy quyền công việc con đã qua Cloud smoke; tiếp tục nghiệm thu UI |
@@ -25,21 +25,22 @@ evidence phía dưới ghi trạng thái tại thời điểm thực hiện, kh�
 Phản hồi 08/09 và bản bố cục tương tác được ghi tại
 [thiết kế điều chỉnh pilot](../superpowers/specs/2026-09-08-vioo-work-pilot-feedback-design.md).
 Quyết định đã chốt: **cha hoàn thành độc lập; cảnh báo nếu còn con mở, không đóng
-con theo cha**. Backend đã giữ trạng thái con độc lập; cảnh báo trên UI thuộc lượt
-triển khai giao diện kế tiếp.
+con theo cha**. Backend giữ trạng thái con độc lập và UI đã cảnh báo trước thao
+tác hoàn thành cha nhưng vẫn cho phép người dùng tiếp tục.
 
 Thiết kế tiếp tục được điều chỉnh theo ảnh tham khảo của người dùng: **bản v2**
 giữ danh sách bên cạnh detail, menu tối, nhãn nhẹ, các khối mô tả/kết quả/việc con,
 watcher bên phải với thêm/bỏ; thay nhãn thời hạn bằng cặp **Ngày bắt đầu – Ngày
 kết thúc**. Ngày bắt đầu là lịch dự kiến mới; `started_at` và `completed_at` giữ
 ý nghĩa thời gian thực tế. Bản tương tác đã kiểm tra ở 1850/1440/768/360. Schema,
-RPC lịch và watcher đã lên Cloud; bố cục này chưa được nối vào giao diện production.
+RPC lịch và watcher đã lên Cloud; bố cục này đã được nối vào mã nguồn giao diện.
 
 Yêu cầu UX tiếp theo đã được ghi vào thiết kế: giữ **thanh thao tác luôn hiển thị
 khi cuộn**, với hành động chính, Chuyển việc, Thêm đồng thực hiện và Hủy công việc.
 Bản mẫu đặt thanh ở đáy cột detail; mobile bám đáy và chừa khoảng trống theo chiều
 cao thanh. Khi triển khai phải giữ safe-area/bottom-navigation và quyền/mutation
-của `WorkActions` hiện có.
+của `WorkActions` hiện có. Kiểm tra trình duyệt hiện xác nhận chỉ có một thanh
+thao tác và thanh vẫn trong viewport ở đầu, giữa và cuối trang, kể cả chiều rộng 320px.
 
 ### Bản sửa và kiểm chứng 08/09
 
@@ -1040,4 +1041,34 @@ and the linked ERROR security advisor pass.
 Postflight confirms the child and watcher RPCs and `planned_start_at` on Cloud.
 Notification delivery remains disabled; the current outbox is 16 pending with
 0 processed, 0 deliveries and 0 push jobs. No backlog item was delivered by this
-rollout. Production frontend deployment and the UI redesign remain unchanged.
+rollout. Production frontend deployment remains unchanged.
+
+### Pilot feedback UI — child tasks, people and persistent actions
+
+The approved detail layout is now implemented in the frontend source. The task
+rail remains beside the detail on desktop; the center uses a clear header and
+white content sections on a neutral canvas, while creator, active assignees,
+reviewer and watchers appear in a dedicated people rail. Names and avatars are
+shown instead of internal IDs. Tablet/mobile retain the responsibility sheet.
+
+Parent tasks load permission-filtered child pages and the server aggregate. The
+full creation drawer is reused for child tasks with the parent ID, scope and
+privacy fixed; planned dates and active assignees are initial defaults, while
+files, checklist and watchers are not copied. Children keep their own lifecycle.
+Auto-complete submit and reviewer approval show the agreed warning when visible
+children remain open; cancelling the warning sends no command and accepting it
+does not cascade any child state.
+
+The header now separates planned start/end from actual start/completion and sends
+versioned `schedule_update` commands. Authorized users can add or remove watchers
+with one versioned diff. The single action bar sits outside the scrolling detail
+content and remains reachable while scrolling, including safe-area handling above
+the application bottom navigation.
+
+Synthetic Chrome QA passed child creation, inherited boundary fields, schedule
+validation/update, watcher diff, parent warning cancel/continue, one persistent
+action bar, 1440/768/360 layouts and 320px overflow checks. Task 8, Task 9 and
+refresh regressions pass. Full verification passes **366 files / 1,736 tests**,
+TypeScript and the production build; the pre-existing large-chunk warning remains.
+Dev continues at `http://127.0.0.1:5187/#/work`. Notifications stay disabled and
+no production deployment or handoff was performed.

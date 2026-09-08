@@ -27,6 +27,7 @@ import {
   WorkCreateAttempt,
   workDocument,
   workError,
+  validateWorkSchedule,
 } from "../../lib/work/workForm";
 import { WorkPicker } from "./WorkPicker";
 type AttachmentService = ReturnType<typeof createWorkAttachmentService>;
@@ -37,6 +38,15 @@ interface Props {
   lockScope?: boolean;
   scopeLabels?: Record<string, string>;
   clone?: WorkCloneForm;
+  parentTask?: {
+    id: string;
+    title: string;
+    privacy: CreateWorkTaskInput["privacy"];
+    taskGroupId?: string;
+    plannedStartAt?: string;
+    deadlineAt?: string;
+    recipientUserIds?: string[];
+  };
   onClose: () => void;
   onCreated: (result: WorkTaskCommandResult) => void;
 }
@@ -58,12 +68,23 @@ export function WorkCreateDrawer({
   lockScope = false,
   scopeLabels,
   clone,
+  parentTask,
   onClose,
   onCreated,
 }: Props) {
-  const [draft, setDraft] = useState<CreateWorkTaskInput>(() =>
-    clone ? structuredClone(clone.draft) : emptyWorkDraft(initialScope),
-  );
+  const [draft, setDraft] = useState<CreateWorkTaskInput>(() => {
+    if (clone) return structuredClone(clone.draft);
+    const value = emptyWorkDraft(initialScope);
+    return parentTask ? {
+      ...value,
+      parentTaskId: parentTask.id,
+      privacy: parentTask.privacy,
+      taskGroupId: parentTask.taskGroupId,
+      plannedStartAt: parentTask.plannedStartAt,
+      deadlineAt: parentTask.deadlineAt,
+      recipientSources: (parentTask.recipientUserIds || []).map((id) => ({ type: "user" as const, id })),
+    } : value;
+  });
   const [context, setContext] = useState<WorkCreationContext | null>(null),
     [contextError, setContextError] = useState<unknown>(null),
     [contextRetry, setContextRetry] = useState(0);
@@ -289,6 +310,7 @@ export function WorkCreateDrawer({
             !deadlineConfirmed
           )
             return;
+          validateWorkSchedule(draft.plannedStartAt, draft.deadlineAt);
           request = new WorkCreateAttempt(
             {
               ...draft,
@@ -353,7 +375,9 @@ export function WorkCreateDrawer({
                 ? "Đã tạo công việc"
                 : clone
                   ? "Nhân bản công việc"
-                  : "Tạo công việc"}
+                  : parentTask
+                    ? "Tạo công việc con"
+                    : "Tạo công việc"}
             </h2>
           </div>
           <button
@@ -391,6 +415,7 @@ export function WorkCreateDrawer({
               trước khi tạo việc.
             </p>
           )}
+          {parentTask && <p className="work-parent-context">Công việc cha <strong>{parentTask.title}</strong>. Công việc con có quy trình và trạng thái độc lập.</p>}
           <fieldset disabled={locked}>
             <label className="work-label">
               Tên công việc *
@@ -550,7 +575,17 @@ export function WorkCreateDrawer({
             )}
             <div className="work-form-grid">
               <label className="work-label">
-                Deadline
+                Ngày bắt đầu
+                <input
+                  className="work-input"
+                  type="datetime-local"
+                  value={localDeadline(draft.plannedStartAt)}
+                  onChange={(e) => patch({ plannedStartAt: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+                />
+                <small>Giờ trên thiết bị của bạn.</small>
+              </label>
+              <label className="work-label">
+                Ngày kết thúc
                 <input
                   className="work-input"
                   type="datetime-local"
@@ -646,6 +681,7 @@ export function WorkCreateDrawer({
               <select
                 className="work-input"
                 value={draft.privacy}
+                disabled={!!parentTask}
                 onChange={(e) =>
                   patch({
                     privacy: e.target.value as CreateWorkTaskInput["privacy"],

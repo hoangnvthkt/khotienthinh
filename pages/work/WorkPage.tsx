@@ -426,7 +426,6 @@ export function WorkWorkspace({
                     )}
                   </div>
                 </div>
-                <h2>{currentDetail.data.task.title}</h2>
                 <WorkDetail
                   key={currentDetail.data.task.id}
                   detail={currentDetail.data}

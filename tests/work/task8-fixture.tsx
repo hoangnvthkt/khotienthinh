@@ -49,7 +49,9 @@ const summary = (id: string, title: string): WorkTaskSummary => ({
   department_id: null,
   project_id: null,
   task_group_id: null,
+  planned_start_at: "2026-09-09T01:00:00Z",
   deadline_at: "2026-09-10T10:00:00Z",
+  parent_task_id: null,
   created_by: "actor",
   reviewer_user_id: "actor",
   updated_at: "2026-09-07T00:00:00Z",
@@ -69,6 +71,10 @@ const fixtureComments: any[] = [];
 let checkDone = false;
 let commentVersion = 1;
 let pinned = false;
+let plannedStartAt: string | null = "2026-09-09T01:00:00Z";
+let deadlineAt: string | null = "2026-09-10T10:00:00Z";
+let watcherIds = ["second"];
+const fixtureChildren: any[] = [];
 const role = query.get("role") || "assignee";
 const comment = (id: string, text: string) => ({
   id,
@@ -139,6 +145,15 @@ const service: WorkTaskService = {
       });
     }
     if (input.command === "set_pin") pinned = input.payload.pinned;
+    if (input.command === "schedule_update") {
+      plannedStartAt = input.payload.plannedStartAt;
+      deadlineAt = input.payload.deadlineAt;
+      taskVersion++;
+    }
+    if (input.command === "watchers_update") {
+      watcherIds = [...new Set([...watcherIds.filter((id) => !input.payload.removeUserIds.includes(id)), ...input.payload.addUserIds])];
+      taskVersion++;
+    }
     if (input.command === "checklist_set_completed")
       checkDone = input.payload.completed;
     if (input.command === "comment_create") {
@@ -210,12 +225,12 @@ const service: WorkTaskService = {
   async children(taskId, cursor) {
     log("children", taskId, cursor);
     return {
-      items: [],
+      items: fixtureChildren,
       aggregate: {
-        visibleTotal: 0,
-        visibleCompleted: 0,
+        visibleTotal: fixtureChildren.filter((item) => item.status !== "cancelled").length,
+        visibleCompleted: fixtureChildren.filter((item) => item.status === "completed").length,
         visibleCancelled: 0,
-        visibleOpen: 0,
+        visibleOpen: fixtureChildren.filter((item) => !["completed", "cancelled"].includes(item.status)).length,
       },
       nextCursor: null,
     };
@@ -339,6 +354,16 @@ const service: WorkTaskService = {
     qa.createAttempts++;
     if (query.get("ambiguous") === "true" && qa.createAttempts === 1)
       throw new Error("network timeout");
+    if (input.parentTaskId && !fixtureChildren.length)
+      fixtureChildren.push({
+        ...summary("99", input.title),
+        task_code: "VW-2026-000099",
+        parent_task_id: input.parentTaskId,
+        planned_start_at: input.plannedStartAt || null,
+        deadline_at: input.deadlineAt || null,
+        assignee_names: ["Lê Minh An"],
+        attachment_count: 0,
+      });
     return {
       taskId: "new",
       taskCode: "VW-2026-000099",
@@ -358,12 +383,14 @@ const service: WorkTaskService = {
         ...summary("1", "Chuẩn bị hồ sơ nghiệm thu"),
         status: taskStatus,
         lock_version: taskVersion,
+        planned_start_at: plannedStartAt,
+        deadline_at: deadlineAt,
         description_document: workDocument(
           "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.\nKhông diễn giải nội dung thành HTML.",
         ),
         description_text: "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.",
         labels: ["Nghiệm thu", "Hồ sơ"],
-        review_policy: "creator_review",
+        review_policy: query.get("autoComplete") === "true" ? "auto_complete" : "creator_review",
         created_at: "2026-09-07T00:00:00Z",
         blocked_reason: taskStatus === "blocked" ? "Chờ vật tư" : null,
       },
@@ -384,9 +411,7 @@ const service: WorkTaskService = {
           ended_at: terminal ? "2026-09-07T03:00:00Z" : null,
         },
       ],
-      participants: [
-        { id: "watcher", user_id: "second", participant_role: "watcher" },
-      ],
+      participants: watcherIds.map((userId) => ({ id: `watcher-${userId}`, user_id: userId, participant_role: "watcher" })),
       preferences: { pinned, notificationsEnabled: true },
       attachments:
         query.get("images") === "true"
@@ -440,6 +465,9 @@ const service: WorkTaskService = {
         canSetPreferences: true,
         canComment: !terminal,
         canManageChecklist: active && taskStatus !== "awaiting_review",
+        canCreateChild: active,
+        canManageSchedule: active,
+        canManageWatchers: active,
         canAcknowledge: active && taskStatus === "pending_acknowledgement",
         canRequestClarification:
           active && taskStatus === "pending_acknowledgement",
@@ -455,6 +483,12 @@ const service: WorkTaskService = {
         canAttachDiscussion: !terminal,
         canAttachResult: active,
         canAttachEvidence: active,
+      },
+      childAggregate: {
+        visibleTotal: fixtureChildren.length,
+        visibleCompleted: fixtureChildren.filter((item) => item.status === "completed").length,
+        visibleCancelled: 0,
+        visibleOpen: fixtureChildren.filter((item) => !["completed", "cancelled"].includes(item.status)).length,
       },
     } as any;
   },

@@ -470,7 +470,7 @@ git commit -m "docs(work): record child task schema rollout"
 - Consumes: Tasks 1–4 types/RPCs, `WorkMutationSession`, approved v2 preview.
 - Produces: production child creation/listing, schedule editor, watcher editor and approved layout.
 
-- [ ] **Step 1: Extend browser fixtures and write RED journey**
+- [x] **Step 1: Extend browser fixtures and write RED journey**
 
 The script opens one task and asserts before implementation:
 
@@ -486,7 +486,7 @@ await page.getByRole("button", { name: "Thêm / bỏ người theo dõi" }).clic
 Add fixture behavior for child paging/aggregate, child creation with parent ID,
 schedule validation, watchers update, stale version and permission denial.
 
-- [ ] **Step 2: Run browser RED**
+- [x] **Step 2: Run browser RED**
 
 ```bash
 node scripts/verify-work-task-detail-redesign-browser.mjs
@@ -494,7 +494,7 @@ node scripts/verify-work-task-detail-redesign-browser.mjs
 
 Expected: missing children section or controls.
 
-- [ ] **Step 3: Create focused presentation components**
+- [x] **Step 3: Create focused presentation components**
 
 `WorkTaskHeader` renders tags, scope/group, planned range, actual completion and
 invokes `schedule_update`. `WorkTaskChildren` loads `service.children()`, renders
@@ -502,14 +502,14 @@ server aggregate, pages by cursor and opens `WorkCreateDrawer` with locked paren
 scope/privacy. `WorkTaskPeople` renders server detail participants and sends one
 diff through `watchers_update`. `WorkTaskSection` only owns visual section markup.
 
-- [ ] **Step 4: Extend create drawer for parent and schedule**
+- [x] **Step 4: Extend create drawer for parent and schedule**
 
 Add start/end inputs labelled `Ngày bắt đầu` and `Ngày kết thúc`. Before preview,
 call `validateWorkSchedule()`. A child drawer receives `parentTaskId`, locked scope,
 parent privacy and default dates; it still runs recipient preview and attachment
 pipeline. Do not copy parent files, checklist or watchers automatically.
 
-- [ ] **Step 5: Add parent completion warning to the existing action path**
+- [x] **Step 5: Add parent completion warning to the existing action path**
 
 `WorkActions` receives `childAggregate`. Before `submit` under auto-complete or
 `review approve`, if `visibleOpen > 0`, show:
@@ -522,14 +522,14 @@ Các công việc con vẫn tiếp tục độc lập. Vẫn hoàn thành công 
 Confirm continues with the same frozen command/version/key. Cancel creates no
 mutation. Do not add a server precondition or cascade.
 
-- [ ] **Step 6: Compose the approved desktop/mobile layout**
+- [x] **Step 6: Compose the approved desktop/mobile layout**
 
 Keep the route's existing master/detail behavior, use dark module navigation only
 where the Work shell owns it, task rail next to detail, neutral canvas, white
 sections and right people/SLA rail. At <=1000px collapse task rail to a sheet; at
 <=700px render one detail column and people sheet. Keep names/avatars, never UUIDs.
 
-- [ ] **Step 7: Preserve one persistent action bar**
+- [x] **Step 7: Preserve one persistent action bar**
 
 Move `WorkActions` outside the scrolling content container for desktop. On mobile
 use sticky bottom above the app's 64px bottom navigation with safe-area. Add
@@ -537,7 +537,7 @@ content bottom padding based on action-bar height where overlay is unavoidable.
 The DOM contains one `.work-action-bar`; tests assert it stays in viewport at top,
 middle and end and that the last comment control is not obscured.
 
-- [ ] **Step 8: Run GREEN and focused regressions**
+- [x] **Step 8: Run GREEN and focused regressions**
 
 ```bash
 npx vitest run lib/__tests__/workTaskService.test.ts lib/__tests__/workDetailService.test.ts lib/__tests__/workPilotFeedbackContracts.test.ts
@@ -551,7 +551,7 @@ npm run lint
 Expected: all pass at 1440/768/360 plus persistent bar at 320; no horizontal
 overflow, hidden final content or background-refresh scroll reset.
 
-- [ ] **Step 9: Commit the production UI checkpoint**
+- [x] **Step 9: Commit the production UI checkpoint**
 
 ```bash
 git add pages/work/WorkTaskHeader.tsx pages/work/WorkTaskChildren.tsx pages/work/WorkTaskPeople.tsx pages/work/WorkTaskSection.tsx pages/work/WorkDetail.tsx pages/work/WorkCreateDrawer.tsx pages/work/WorkActions.tsx pages/work/WorkPage.tsx pages/work/work.css tests/work/task8-fixture.tsx tests/work/workspace-fixture.tsx scripts/verify-work-task-detail-redesign-browser.mjs scripts/verify-work-refresh-browser.mjs
