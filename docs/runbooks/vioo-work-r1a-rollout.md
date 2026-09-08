@@ -1,5 +1,57 @@
 # Vioo Work R1A rollout
 
+## Trạng thái hiện tại — đối chiếu pilot 2026-09-08
+
+**Chưa nghiệm thu toàn bộ R1A.** Task 1–10 và WS1–8 đã có triển khai kỹ thuật;
+gửi notification thật, nghiệm thu thiết bị và quan sát 48 giờ còn thiếu. Các mục
+evidence phía dưới ghi trạng thái tại thời điểm thực hiện, không thay thế bảng này.
+
+| Lộ trình | Đã triển khai | Còn thiếu hoặc đang điều chỉnh |
+| --- | --- | --- |
+| Task 1–2 | Permission/module boundary, schema, RLS | Tiếp tục hồi quy theo thay đổi mới |
+| Task 3 | Tạo/list/detail/clone và recipient preview | Mô hình công việc con đầy đủ chưa có |
+| Task 4 | Vòng đời, nhận/chuyển việc, review, lịch và SLA | Cảnh báo việc con khi hoàn thành cha là yêu cầu mới |
+| Task 5 | Checklist, thảo luận, mention, lịch sử | Chưa có mention trong dòng; checklist không phải task con |
+| Task 6 | Event/outbox, worker, cron, mute/dedupe, Realtime | Delivery gate=false; chưa nghiệm thu notification/push thật |
+| Task 7 | Private Storage, upload, xử lý ảnh, đọc/tải tệp | Preview trong trang mới có ảnh; PDF/TXT còn cần bổ sung |
+| Task 8–9 | Danh sách/tạo/chi tiết và thao tác responsive | Đã sửa refresh nhấp nháy; đang duyệt bố cục mới, preview, mention và việc con |
+| Task 10 | Cấu hình nhóm/lịch/SLA; hai người dùng pilot và dev | Lịch thứ Hai–thứ Bảy 08–12/13–17 đã cấu hình; delivery pilot chưa bật |
+| Task 11 | Có test kỹ thuật và checklist nghiệm thu | Chưa hoàn tất kiểm tra thiết bị thật và quan sát 48 giờ |
+| WS1–5 | Workspace, membership/quyền, gợi ý tổ chức, task scope, cấu hình | Hồi quy quyền khi thêm công việc con |
+| WS6–7 | Menu Workspace, trang làm việc/thành viên/cấu hình | Đã sửa payload tạo Workspace; người dùng cần thử lại trường hợp thực tế |
+| WS8 | Cutover Cloud vào Workspace pilot và kiểm thử kỹ thuật | Nghiệm thu người dùng đang diễn ra; phản hồi 08/09 chưa đóng hết |
+| R1B / R2 / R3 | Chưa triển khai | Dispatch hàng loạt / dashboard phân tích / AI & automation |
+
+Phản hồi 08/09 và bản bố cục tương tác được ghi tại
+[thiết kế điều chỉnh pilot](../superpowers/specs/2026-09-08-vioo-work-pilot-feedback-design.md).
+Quyết định đã chốt: **cha hoàn thành độc lập; cảnh báo nếu còn con mở, không đóng
+con theo cha**. Đây chưa phải nghiệp vụ đã có trong sản phẩm.
+
+### Bản sửa và kiểm chứng 08/09
+
+- Commit sửa lỗi: `2991031` trên `feature/vioo-work-r1a`.
+- Refresh: giữ nội dung cùng query trong khi tải nền; access revision vẫn tải lại
+  quyền; khi đổi phạm vi/tài khoản/filter hoặc server từ chối, dữ liệu tương ứng
+  được xóa. Khôi phục scroll theo route entry, không theo mỗi lần refresh.
+- Workspace: sửa cover mặc định từ `office/site/team` sang
+  `blueprint/sunrise/grid`, đúng allowlist RPC/constraint. Cloud rollback tái hiện
+  cover `team` bị từ chối và cùng payload `grid` tạo được dưới persona admin.
+  Fixture browser nay kiểm tra allowlist thay vì luôn chấp nhận payload.
+- RED: browser refresh tháo nội dung đang đọc; browser tạo Workspace thất bại khi
+  fixture kiểm tra đúng contract. GREEN: refresh, Workspace và Task 9 browser
+  suites đạt, gồm refresh khi bị thu hồi quyền, đổi bộ lọc và giữ scroll.
+- Toàn bộ Vitest: **365 files / 1.731 tests**, TypeScript/lint và production build
+  đạt; build còn cảnh báo chunk lớn đã có trước. Không có migration mới trong đợt
+  sửa này. Bản thiết kế mock cũng đã kiểm tra ở 1440/768/360; chưa nối dữ liệu thật.
+- Cloud inventory 08/09 lúc 11:19 giờ Việt Nam: outbox **15**, deliveries **0**,
+  push jobs **0**, enabled **false**; cron `work-notification-outbox` active mỗi
+  phút, cleanup active mỗi 5 phút. Event tạo/nhận/chuyển việc/mention/nộp/hoàn thành
+  đã được ghi. Chưa thay đổi gate hay phát thông báo; cần xử lý backlog và xác nhận
+  gửi pilot trước khi kích hoạt.
+- Dev đang phục vụ worktree tại `http://127.0.0.1:5187/#/work`; production không
+  được triển khai trong đợt này. Fingerprint/outbox cũ ở WS8 là snapshot lịch sử;
+  không chạy lại phép so sánh cố định sau khi người dùng đã thao tác dữ liệu.
+
 ## Release controls
 
 - Supabase project: `ftciqmqhmfvjtwoycswe`
