@@ -34,6 +34,12 @@ kết thúc**. Ngày bắt đầu là lịch dự kiến mới; `started_at` và
 ý nghĩa thời gian thực tế. Bản tương tác đã kiểm tra ở 1850/1440/768/360; thay đổi
 trong lượt này chỉ nằm ở thiết kế, chưa thêm migration hoặc chức năng production.
 
+Yêu cầu UX tiếp theo đã được ghi vào thiết kế: giữ **thanh thao tác luôn hiển thị
+khi cuộn**, với hành động chính, Chuyển việc, Thêm đồng thực hiện và Hủy công việc.
+Bản mẫu đặt thanh ở đáy cột detail; mobile bám đáy và chừa khoảng trống theo chiều
+cao thanh. Khi triển khai phải giữ safe-area/bottom-navigation và quyền/mutation
+của `WorkActions` hiện có.
+
 ### Bản sửa và kiểm chứng 08/09
 
 - Commit sửa lỗi: `2991031` trên `feature/vioo-work-r1a`.

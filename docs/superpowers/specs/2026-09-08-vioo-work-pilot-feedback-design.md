@@ -21,6 +21,8 @@ roadmap, không phải biên bản handoff hay xác nhận nghiệm thu.
   việc bên cạnh detail, các nhãn nhẹ theo dòng, nội dung chia khối trên nền xám,
   người giao và watcher ở cột phải. Thêm/bỏ watcher ngay tại detail.
 - Hiển thị **Ngày bắt đầu → Ngày kết thúc**; thời điểm hoàn thành thực tế riêng.
+- **Giữ thanh thao tác luôn trong tầm bấm khi cuộn lên/xuống**, theo ảnh người dùng
+  gửi: hành động chính, Chuyển việc, Thêm đồng thực hiện, Hủy công việc.
 
 ## 2. Kết quả kiểm tra tám phản hồi
 
@@ -103,9 +105,10 @@ Toàn bộ nội dung trong bản xem trước là dữ liệu minh họa, khôn
    trong cột kế tiếp; detail ở giữa; người giao, watcher và lịch sử bên phải.
    Chọn việc vẫn giữ bộ lọc/vị trí danh sách. Dòng đang chọn có nền tím rất nhạt.
 2. Đầu detail: nhãn nhỏ, tên việc lớn, Workspace/nhóm việc, cặp ngày dự kiến,
-   hoàn thành thực tế. Một hàng hành động chính theo capability nằm dưới thông
-   tin này: Nhận việc, Bắt đầu, Nộp kết quả, Duyệt hoặc Hoàn thành; avatar và tên
-   người thực hiện đặt ngay bên cạnh. Tác vụ phụ nằm trong menu, hủy có xác nhận.
+   hoàn thành thực tế, trạng thái, avatar và tên người thực hiện. Thanh hành động
+   nằm cố định ở đáy vùng detail: Nhận việc/Bắt đầu/Nộp kết quả/Duyệt/Hoàn thành
+   theo capability, cùng Chuyển việc, Thêm đồng thực hiện và Hủy công việc.
+   Hủy giữ nút cảnh báo riêng với xác nhận, không giấu vào menu trên desktop.
 3. Các khối độc lập theo thứ tự: Mô tả công việc → Kết quả công việc → Công việc
    con → Trao đổi. File đặt ở đúng khối đầu vào/kết quả; discussion giữ bản nháp,
    lazy load theo lúc mở/đi vào vùng đọc và không reset khi background refresh.
@@ -128,6 +131,24 @@ cha với con đang mở, thêm/bỏ watcher, sửa cặp ngày, gõ @ chọn t�
 tệp. Có tìm danh sách, sheet danh sách/người tham gia trên màn hình nhỏ. Các dòng
 việc khác mở thông tin minh họa; detail chính chỉ mô phỏng việc nghiệm thu. Form
 con không lưu; PDF/TXT dùng tài liệu mẫu. Nghiệp vụ thực vẫn phải đi qua server.
+
+### Thanh thao tác luôn hiển thị — yêu cầu giữ lại từ UI hiện có
+
+- Desktop/tablet: thanh nằm ở đáy cột detail, ngoài phần nội dung cuộn, luôn thấy
+  ngay từ đầu trang, khi cuộn giữa và cuối. Không đè lên danh sách việc hoặc watcher.
+- Mobile: thanh bám đáy vùng sử dụng được; nút tự xuống hàng khi thiếu chỗ, có
+  safe-area. Khi tích hợp shell Vioo, giữ khoảng cách với bottom navigation hiện
+  có, theo `work.css`; bàn phím mở không được che ô soạn hoặc hành động đang dùng.
+- Nội dung chừa khoảng trống theo chiều cao thực của thanh khi nó đè lên viewport;
+  bình luận, nút gửi và tệp cuối cùng vẫn cuộn lên đọc/bấm được đầy đủ.
+- Một bộ nút duy nhất, cùng capability và mutation session hiện hành; không tạo
+  bản sao gây gửi lặp hoặc khác quyền giữa header/footer. Nút chính đổi theo trạng
+  thái; đang gửi/chờ retry khóa tương ứng. Hủy luôn có bước xác nhận như hiện tại.
+- Đây là hành vi đã có trong UI R1A cần được bảo toàn khi thay layout. Bản mẫu nay
+  có thanh cố định và nút mở thao tác mẫu; chưa thay đổi `WorkActions` production.
+- Nghiệm thu: cuộn 0%/50%/100%, resize, phóng to chữ, bàn phím và bottom nav mobile;
+  các nút vẫn nhìn thấy, bấm được, không che nội dung cuối và không đổi scroll khi
+  background refresh. Bản mẫu kiểm tra viewport 1440/768/360/320.
 
 ### Ngày bắt đầu, ngày kết thúc và thời gian thực tế
 
