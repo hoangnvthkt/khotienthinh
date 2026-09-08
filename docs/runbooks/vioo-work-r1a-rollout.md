@@ -749,3 +749,46 @@ fixes included source authorization before status probing, indexed calendar
 checks, effective last-admin calculation, nullable expiry semantics, cursor
 queries and invoker-to-private RPC execution grants. Pilot data/activation is
 unchanged; Cloud apply/postflight follows this candidate.
+
+WS2 applied from `4396c7a`; dry-run listed only
+`20260907090818_work_workspace_membership.sql`. Postflight membership smoke passes,
+local and Cloud ledgers match 23/23, and security advisor at ERROR level reports
+no issues. Existing task/assignment/calendar/policy hashes are unchanged from the
+pre-WS baseline; Work grants remain 15 and notifications remain disabled. No
+Workspace fixture data persisted. Continuing WS3 authoritative people projections.
+
+### Workspace people and source diff — WS3
+
+WS3 applied from `a828564` as
+`20260907093106_work_workspace_people.sql`. Cloud rollback and postflight smokes
+cover organization/project/directory projections, secondary assignments, accountless
+employees, source-bound removals, manual-member preservation, pagination, bounded
+selection and stale fingerprints. Local and Cloud ledgers matched 24/24; the ERROR
+security advisor had no issue. No fixture Workspace persisted and notifications
+remained disabled.
+
+### Workspace task boundary — WS4
+
+WS4 is recorded as `20260907100124_work_workspace_task_access.sql`. It makes current
+Workspace membership mandatory across task list/detail/search/counts, lifecycle and
+collaboration commands, recipients/reviewers/watchers, legacy mapped department/project
+tasks, task subresources, private attachments and notification delivery. Membership
+revision invalidation fences in-flight client reads. Attachment signing performs a
+second path/revision check after Storage signs and before the URL is returned.
+
+Independent review found and the final candidate fixed concurrent revoke/write
+serialization, legacy-task membership blockers and archive checks, archived task
+preferences, clone compatibility with legacy task groups, and Workspace calendar/SLA
+RLS. The expanded rollback smoke proves those cases, including private calendar and
+policy negatives for a non-member with a broad legacy Work grant.
+
+A Management API timeout completed the DDL but lost the response before the migration
+ledger write. Postflight verified the migration tail, task list RPC, attachment fence,
+notification guard and SLA policy; all synthetic fixture counts were zero. The ledger
+was repaired for the exact version with `supabase migration repair --status applied`.
+Local and Cloud now match 25/25 and `db push --dry-run` reports the remote database is
+up to date. All Task3–9, membership, people and WS4 Cloud smokes pass. Full Vitest is
+362 files / 1713 tests; TypeScript, production build, migration baseline (25 active /
+402 archived), query audit (0 findings) and ERROR security advisor pass. The
+`work-attachments` Edge Function is ACTIVE at version 2. Notifications remain disabled,
+Work grants remain 15, no fixture Workspace persisted, and the existing task count is 1.

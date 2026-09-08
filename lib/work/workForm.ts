@@ -3,6 +3,11 @@ import type {
   WorkScope,
   WorkTextDocument,
 } from "./workTypes";
+import {
+  WorkspaceScopeValidationError,
+  validateWorkspaceScope,
+  type WorkspaceScope,
+} from "./workWorkspaceTypes";
 export const workDocument = (text: string): WorkTextDocument => ({
   version: 1,
   type: "doc",
@@ -13,18 +18,74 @@ export const workDocument = (text: string): WorkTextDocument => ({
 });
 export const documentText = (doc: WorkTextDocument) =>
   doc.content.map((p) => p.content.map((t) => t.text).join("")).join("\n");
-export const scopeKey = (scope: WorkScope) =>
-  scope.type === "direct"
-    ? "direct"
-    : scope.type === "department"
-      ? `department:${scope.departmentId}`
-      : `project:${scope.projectId}`;
-export const scopeFromKey = (key: string): WorkScope =>
-  key === "direct"
-    ? { type: "direct" }
-    : key.startsWith("department:")
-      ? { type: "department", departmentId: key.slice(11) }
-      : { type: "project", projectId: key.slice(8) };
+const validatedWorkScope = (scope: unknown): WorkScope =>
+  validateWorkspaceScope(scope) as WorkScope;
+
+/** Convert the scope used by the drawer and URL state to a stable key. */
+export const scopeToKey = (scope: WorkScope): string => {
+  const value = validatedWorkScope(scope) as WorkspaceScope;
+  switch (value.type) {
+    case "direct":
+      return "direct";
+    case "department":
+      if (value.departmentId.includes(":"))
+        throw new WorkspaceScopeValidationError(
+          "WORK_SCOPE_INVALID_FIELD",
+          "departmentId must be a single key segment",
+        );
+      return `department:${value.departmentId}`;
+    case "project":
+      return `project:${value.projectId}`;
+    case "workspace":
+      if (value.workspaceId.includes(":"))
+        throw new WorkspaceScopeValidationError(
+          "WORK_SCOPE_INVALID_FIELD",
+          "workspaceId must be a single key segment",
+        );
+      return `workspace:${value.workspaceId}`;
+  }
+};
+
+/** Backwards-compatible name used by the existing Work drawer. */
+export const scopeKey = scopeToKey;
+
+/**
+ * Parse a scope key without guessing unknown values as project scopes.
+ * Project IDs may contain further colons, so only the first separator is
+ * significant. The resulting object still passes the strict WS1 parser.
+ */
+export const scopeFromKey = (key: unknown): WorkScope => {
+  if (typeof key !== "string")
+    return validatedWorkScope(key);
+  if (key === "direct") return validatedWorkScope({ type: "direct" });
+
+  const separator = key.indexOf(":");
+  if (separator <= 0)
+    return validatedWorkScope({ type: key, id: "" });
+
+  const type = key.slice(0, separator);
+  const id = key.slice(separator + 1);
+  switch (type) {
+    case "department":
+      if (id.includes(":"))
+        throw new WorkspaceScopeValidationError(
+          "WORK_SCOPE_INVALID_FIELD",
+          "departmentId must be a single key segment",
+        );
+      return validatedWorkScope({ type, departmentId: id });
+    case "project":
+      return validatedWorkScope({ type, projectId: id });
+    case "workspace":
+      if (id.includes(":"))
+        throw new WorkspaceScopeValidationError(
+          "WORK_SCOPE_INVALID_FIELD",
+          "workspaceId must be a single key segment",
+        );
+      return validatedWorkScope({ type, workspaceId: id });
+    default:
+      return validatedWorkScope({ type, id });
+  }
+};
 export function localDeadline(iso?: string) {
   if (!iso) return "";
   const date = new Date(iso);
@@ -41,7 +102,7 @@ export function deadlineShortcut(days: number) {
 export const emptyWorkDraft = (scope: WorkScope): CreateWorkTaskInput => ({
   title: "",
   description: workDocument(""),
-  scope,
+  scope: validatedWorkScope(scope),
   recipientSources: [],
   watcherUserIds: [],
   priority: "normal",
@@ -101,6 +162,10 @@ export function workError(error: unknown): string {
     WORK_TASK_NOT_FOUND:
       "Công việc không tồn tại hoặc bạn không còn quyền xem.",
     WORK_ACCESS_DENIED: "Bạn không còn quyền truy cập Vioo Work.",
+    WORK_WORKSPACE_NOT_FOUND:
+      "Không gian làm việc không tồn tại hoặc bạn không còn là thành viên.",
+    WORK_WORKSPACE_ARCHIVED:
+      "Không gian đã lưu trữ và hiện chỉ cho phép xem.",
     WORK_REVIEW_POLICY_DENIED:
       "Chính sách đánh giá chưa phù hợp với quyền của bạn.",
     WORK_REVIEWER_INELIGIBLE: "Người đánh giá không còn đủ điều kiện.",

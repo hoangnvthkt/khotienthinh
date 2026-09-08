@@ -327,6 +327,7 @@ export function WorkCreateDrawer({
     INACTIVE_USER: "Tài khoản ngừng hoạt động",
     ACCOUNT_NOT_ACTIVE: "Tài khoản chưa hoạt động",
     NO_MODULE_ACCESS: "Chưa có quyền Vioo Work",
+    NOT_WORKSPACE_MEMBER: "Chưa tham gia không gian này",
     GROUP_NOT_FOUND: "Nhóm không còn tồn tại",
     GROUP_INACTIVE: "Nhóm ngừng hoạt động",
     NO_ACTIVE_MEMBERS: "Nhóm chưa có thành viên hoạt động",

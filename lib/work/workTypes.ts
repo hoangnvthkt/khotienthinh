@@ -1,8 +1,11 @@
 /** Vioo Work contracts. This domain is independent of project planning tasks. */
+import type { WorkspaceTaskScope } from './workWorkspaceTypes';
+
 export type WorkScope =
-  | { type: 'direct'; departmentId?: never; projectId?: never }
-  | { type: 'department'; departmentId: string; projectId?: never }
-  | { type: 'project'; projectId: string; departmentId?: never };
+  | { type: 'direct'; workspaceId?: never; departmentId?: never; projectId?: never }
+  | { type: 'department'; departmentId: string; workspaceId?: never; projectId?: never }
+  | { type: 'project'; projectId: string; workspaceId?: never; departmentId?: never }
+  | WorkspaceTaskScope;
 
 export type WorkRecipientSource = { type: 'user' | 'work_group'; id: string };
 export type WorkPriority = 'normal' | 'important' | 'urgent';
@@ -45,7 +48,7 @@ export interface WorkRecipientPreview {
   invalidRecipients: Array<{
     userId: string | null;
     reason: 'NO_APP_ACCOUNT' | 'INACTIVE_USER' | 'ACCOUNT_NOT_ACTIVE' | 'NO_MODULE_ACCESS'
-      | 'GROUP_NOT_FOUND' | 'GROUP_INACTIVE' | 'NO_ACTIVE_MEMBERS';
+      | 'NOT_WORKSPACE_MEMBER' | 'GROUP_NOT_FOUND' | 'GROUP_INACTIVE' | 'NO_ACTIVE_MEMBERS';
     sources: WorkRecipientSource[];
   }>;
   validCount: number;
@@ -69,6 +72,7 @@ export interface WorkTaskFilters {
   priority?: WorkPriority[];
   scope?: WorkScope;
   taskGroupId?: string;
+  assigneeUserId?: string;
   deadlineFrom?: string;
   deadlineTo?: string;
   search?: string;
@@ -86,6 +90,8 @@ export interface WorkTaskSummary {
   priority: WorkPriority;
   privacy: WorkPrivacy;
   scope_type: WorkScope['type'];
+  /** Null for direct and legacy tasks that have not entered a Workspace. */
+  workspace_id?: string | null;
   department_id: string | null;
   project_id: string | null;
   task_group_id: string | null;

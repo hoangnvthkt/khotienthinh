@@ -34,9 +34,23 @@ Deno.serve(async request => {
     const result = await user.rpc('command_work_attachment', { p_command: body.action === 'finalize' ? 'claim' : 'read', p_payload: { attachmentId: body.attachmentId, ...(body.action === 'read' ? { variant: body.variant } : {}) }, p_idempotency_key: crypto.randomUUID() });
     if (result.error) return response({ error: result.error.message }, result.error.code === '42501' ? 403 : 409);
     if (body.action === 'finalize') return response(await finalizeAttachment(admin, result.data as Claim, (bytes, mime, size, keep) => processFile(bytes, mime, size, keep, Number(Deno.env.get('WORK_IMAGE_MAX_EDGE') || 1920))));
-    const download = body.variant === 'original' || !result.data.mimeType.startsWith('image/');
-    const signed = await admin.storage.from('work-attachments').createSignedUrl(result.data.path, 60, { download: download ? result.data.fileName : false });
+    const authorized = result.data as { path: string; mimeType: string; fileName: string; accessRevision?: number };
+    const download = body.variant === 'original' || !authorized.mimeType.startsWith('image/');
+    const signed = await admin.storage.from('work-attachments').createSignedUrl(authorized.path, 60, { download: download ? authorized.fileName : false });
     if (signed.error) throw new Error('WORK_SIGN_FAILED');
+    // The Storage signer runs outside the database transaction. Fence the URL
+    // after signing so a concurrent membership revoke wins before any URL is
+    // returned to the browser.
+    const fence = await user.rpc('command_work_attachment', {
+      p_command: 'read',
+      p_payload: { attachmentId: body.attachmentId, variant: body.variant },
+      p_idempotency_key: crypto.randomUUID(),
+    });
+    if (fence.error) return response({ error: fence.error.message }, fence.error.code === '42501' ? 403 : 409);
+    const rechecked = fence.data as { path?: string; accessRevision?: number };
+    if (rechecked.path !== authorized.path || rechecked.accessRevision !== authorized.accessRevision) {
+      return response({ error: 'WORK_ATTACHMENT_ACCESS_REVOKED' }, 403);
+    }
     return response({ signedUrl: signed.data.signedUrl, expiresIn: 60 });
   } catch (error) {
     if (error instanceof InvalidFile) return response({ error: 'WORK_INVALID_FILE' }, 422);

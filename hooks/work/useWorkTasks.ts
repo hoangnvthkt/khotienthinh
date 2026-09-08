@@ -6,14 +6,23 @@ import type {
   WorkTaskSummary,
   WorkTaskView,
 } from "../../lib/work/workTypes";
+import type { WorkspaceCursor } from "../../lib/work/workWorkspaceTypes";
 export function useWorkTasks(
   service: WorkTaskService,
   actorId: string,
   view: WorkTaskView,
   filters: WorkTaskFilters,
   enabled = true,
+  workspaceId?: string,
+  accessRevision = 0,
 ) {
-  const identity = JSON.stringify([actorId, view, filters]);
+  const identity = JSON.stringify([
+    actorId,
+    workspaceId ?? null,
+    accessRevision,
+    view,
+    filters,
+  ]);
   const generation = useRef(0);
   const busy = useRef(false);
   const identityRef = useRef(identity);
@@ -29,7 +38,18 @@ export function useWorkTasks(
   stateRef.current = state;
   const load = useCallback(
     async (append = false) => {
-      if (!enabled) return;
+      if (!enabled) {
+        generation.current++;
+        busy.current = false;
+        setState({
+          identity,
+          items: [],
+          cursor: null,
+          loading: false,
+          error: null,
+        });
+        return;
+      }
       if (append && busy.current) return;
       const version = ++generation.current;
       const requestIdentity = identity;
@@ -44,11 +64,23 @@ export function useWorkTasks(
         error: null,
       }));
       try {
-        const page = await service.list(
-          view,
-          filters,
-          append ? previous.cursor : null,
-        );
+        let page;
+        if (workspaceId !== undefined) {
+          const workspaceTasks = service.workspaceTasks;
+          if (!workspaceTasks)
+            throw new Error("Workspace task listing is unavailable.");
+          page = await workspaceTasks(
+            workspaceId,
+            filters,
+            (append ? previous.cursor : null) as WorkspaceCursor | null,
+          );
+        } else {
+          page = await service.list(
+            view,
+            filters,
+            append ? previous.cursor : null,
+          );
+        }
         if (
           version !== generation.current ||
           identityRef.current !== requestIdentity
@@ -72,7 +104,13 @@ export function useWorkTasks(
           version === generation.current &&
           identityRef.current === requestIdentity
         )
-          setState((s) => ({ ...s, loading: false, error }));
+          setState({
+            identity,
+            items: append ? previous.items : [],
+            cursor: append ? previous.cursor : null,
+            loading: false,
+            error,
+          });
       } finally {
         if (version === generation.current) busy.current = false;
       }
@@ -86,8 +124,9 @@ export function useWorkTasks(
       busy.current = false;
     };
   }, [load]);
-  const visible =
-    state.identity === identity
+  const visible = !enabled
+    ? { identity, items: [], cursor: null, loading: false, error: null }
+    : state.identity === identity
       ? state
       : { identity, items: [], cursor: null, loading: true, error: null };
   return { ...visible, refresh: () => load(), loadMore: () => load(true) };

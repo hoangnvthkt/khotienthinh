@@ -309,18 +309,18 @@ chọn tối đa 100 thay đổi, WS2 tính fingerprint trên đúng tập đã 
 hành. Mọi apply
 vẫn đi qua WS2 và chỉ nhận thay đổi đã chọn, không cập nhật tự động.
 
-- [ ] Fixture: kiêm nhiệm, điều chuyển có ngày hiệu lực, kết thúc phân công dự án,
+- [x] Fixture: kiêm nhiệm, điều chuyển có ngày hiệu lực, kết thúc phân công dự án,
   chưa có tài khoản, tài khoản khóa, member đã có và người được mời thủ công liên phòng.
-- [ ] Xác nhận hàm SQL phân giải phân công hiện hành từ Cloud/local migration mới nhất;
+- [x] Xác nhận hàm SQL phân giải phân công hiện hành từ Cloud/local migration mới nhất;
   tái dùng hoặc tách projection tối thiểu cùng semantics HRM; không copy phép lọc
   employees.department_id vốn có thể khác nguồn tổ chức authoritative.
-- [ ] Implement bounded projections có quyền quản trị Workspace và chỉ các trường
+- [x] Implement bounded projections có quyền quản trị Workspace và chỉ các trường
   cần mời cộng tác; gợi ý project dùng phân công project, không quyền tài chính.
-- [ ] Implement dedupe theo user ID; khi chưa có tài khoản giữ employee row disabled.
+- [x] Implement dedupe theo user ID; khi chưa có tài khoản giữ employee row disabled.
   Preview selection tối đa 100 và fingerprint cả eligibility + effective source.
-- [ ] Diff chỉ đề xuất remove cho thành viên gắn nguồn tương ứng, giữ manual members;
+- [x] Diff chỉ đề xuất remove cho thành viên gắn nguồn tương ứng, giữ manual members;
   source change trong lúc preview phải báo `WORK_MEMBERSHIP_PREVIEW_STALE`.
-- [ ] Verify unauthorized source enumeration denied; tham số search không mở danh
+- [x] Verify unauthorized source enumeration denied; tham số search không mở danh
   bạ HRM toàn bộ; limit/keyset/max batch được kiểm trên Cloud rồi commit.
 
 Test ví dụ:
@@ -348,23 +348,23 @@ existing public task APIs nhận workspace scope và chuẩn hóa legacy input b
 `list_work_workspace_tasks(p_workspace_id,p_filters,p_cursor,p_limit)` dùng projection
 WorkTaskSummary, trả WorkspacePage<WorkTaskSummary>; chỉ visible tasks được đếm.
 
-- [ ] Viết Cloud negative fixtures trước cho task read/direct REST/RPC, comments,
+- [x] Viết Cloud negative fixtures trước cho task read/direct REST/RPC, comments,
   history, checklist, clone, recipient preview, transfer, watcher/reviewer, search,
   dashboard counts, attachment list/sign/upload/finalize/delete và notification links.
-- [ ] Thêm helper `app_private.work_resolve_workspace_scope(p_scope jsonb)`; reject
+- [x] Thêm helper `app_private.work_resolve_workspace_scope(p_scope jsonb)`; reject
   workspace thiếu/archived khi mutate và scope mismatch; legacy scope mapped vẫn
   kiểm cùng membership. Hàm quyền task kiểm membership trước relationship/global grant.
-- [ ] Task standard trong Workspace: member được list/detail; restricted giữ predicate
+- [x] Task standard trong Workspace: member được list/detail; restricted giữ predicate
   quan hệ cũ + membership. Reviewer/member không được tự duyệt việc không giao cho mình.
   Recipient/watchers/reviewer phải là member hợp lệ; group expansion cũng lọc member.
-- [ ] Update create/clone/lifecycle/collaboration readers/commands và query filters;
+- [x] Update create/clone/lifecycle/collaboration readers/commands và query filters;
   task scope liên kết immutable ở phiên này. Clone ra không gian khác phải xem lại
   recipient preview, bucket và SLA; không chuyển task cũ bằng update scope tùy tiện.
-- [ ] Thêm member-removal invalidation: xóa cache/ảnh/link riêng, refresh snapshot,
+- [x] Thêm member-removal invalidation: xóa cache/ảnh/link riêng, refresh snapshot,
   fence request đang bay; mọi RPC vẫn kiểm server khi client giữ snapshot cũ.
-- [ ] Workers kiểm membership ở lúc xử lý và mở liên kết; không gửi payload riêng
+- [x] Workers kiểm membership ở lúc xử lý và mở liên kết; không gửi payload riêng
   cho người đã rời Workspace. Không bật delivery để thử; dùng rollback/outbox fixture.
-- [ ] Chạy Task3–9 smokes trên candidate và permission tests non-Work; commit khi
+- [x] Chạy Task3–9 smokes trên candidate và permission tests non-Work; commit khi
   mọi đường dẫn phụ được chứng minh không vượt guard. Giữ rollout access_mode theo scope.
 
 SQL test tình huống phải có:

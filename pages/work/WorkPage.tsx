@@ -1,5 +1,5 @@
 import { workScrollHost } from "../../lib/work/workScroll";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -631,11 +631,22 @@ export function WorkWorkspace({
     </main>
   );
 }
-const subscribe = (invalidate: () => void) =>
-  subscribeWorkInvalidation(supabase, invalidate);
 export default function WorkPage() {
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const location = useLocation();
+  const subscribe = useMemo(() => {
+    if (!user) return undefined;
+    return (invalidate: () => void) =>
+      subscribeWorkInvalidation(
+        supabase,
+        (event) => {
+          if (event.reason === "access_revision")
+            void refreshProfile().catch(() => undefined);
+          invalidate();
+        },
+        { actorId: user.id },
+      );
+  }, [user?.id, refreshProfile]);
   if (!user || !canAccessRoute(user, location.pathname))
     return (
       <div className="work-module" role="alert">
