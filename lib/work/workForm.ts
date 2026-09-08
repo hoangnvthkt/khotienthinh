@@ -121,6 +121,8 @@ export function workError(error: unknown): string {
     || rawMessage.match(/(?:^|[^A-Z0-9_])(WORK_[A-Z0-9_]+)/)?.[1]
     || rawMessage;
   const messages: Record<string, string> = {
+    WORK_INVALID_COMMAND: "Thông tin gửi lên chưa hợp lệ. Vui lòng tải lại trang và kiểm tra các trường đã nhập.",
+    WORK_WORKSPACE_MIGRATION_REQUIRED: "Phòng ban hoặc dự án này đã có dữ liệu công việc cần được chuyển vào Workspace trước khi tạo. Vui lòng liên hệ quản trị viên.",
     WORK_CONFIGURE_DENIED: "Bạn không có quyền cấu hình phạm vi hoặc lịch này.",
     WORK_INVALID_CONFIGURATION:
       "Cấu hình chưa hợp lệ. Kiểm tra tên, ngày, thời lượng và các trường bắt buộc.",

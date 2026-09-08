@@ -247,7 +247,7 @@ export function WorkDiscussion({
                 </button>
               </p>
             )}
-            {comments.loading && <p role="status">Đang tải bình luận…</p>}
+            {comments.loading && !comments.items.length && <p role="status">Đang tải bình luận…</p>}
             {display.map((c) => renderComment(c))}
             {!comments.loading &&
               !comments.error &&
@@ -471,7 +471,7 @@ export function WorkDiscussion({
                   </button>
                 </p>
               )}
-              {history.loading && <p role="status">Đang tải lịch sử…</p>}
+              {history.loading && !history.items.length && <p role="status">Đang tải lịch sử…</p>}
               {!history.loading && !history.error && !history.items.length && (
                 <p>Chưa có hoạt động phù hợp.</p>
               )}

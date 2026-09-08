@@ -271,8 +271,10 @@ export function WorkWorkspace({
     if (workspaceContextId) next.set("workspace", workspaceContextId);
     return `/work/tasks/${encodeURIComponent(code)}${next.toString() ? `?${next}` : ""}`;
   };
+  const restoredLocation = useRef<string | null>(null);
   useEffect(() => {
-    if (!taskCode && !list.loading) {
+    if (!taskCode && !list.loading && restoredLocation.current !== routeLocation.key) {
+      restoredLocation.current = routeLocation.key;
       const top =
         (routeLocation.state as { workScroll?: number } | null)?.workScroll ??
         listScroll.current;
@@ -281,7 +283,7 @@ export function WorkWorkspace({
       );
       return () => cancelAnimationFrame(id);
     }
-  }, [taskCode, list.loading]);
+  }, [taskCode, list.loading, routeLocation.key]);
   return (
     <main className="work-module" ref={root}>
       <header className="work-heading">

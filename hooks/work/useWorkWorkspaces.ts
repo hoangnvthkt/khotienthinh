@@ -41,8 +41,8 @@ export function useWorkWorkspaces(
     busy.current = true;
     setState((old) => ({
       identity,
-      items: append && old.identity === identity ? old.items : [],
-      cursor: append && old.identity === identity ? old.cursor : null,
+      items: old.identity === identity ? old.items : [],
+      cursor: old.identity === identity ? old.cursor : null,
       loading: true,
       error: null,
     }));

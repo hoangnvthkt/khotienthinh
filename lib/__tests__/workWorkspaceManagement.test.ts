@@ -39,12 +39,21 @@ describe("Workspace management UI contracts", () => {
   });
 
   it("requires linked source ids and keeps collaboration independent", () => {
-    expect(createWorkspaceDraft("collaboration", "  Tổ nghiệm thu  ", null, "blue", "users", "team"))
-      .toEqual({ kind: "collaboration", name: "Tổ nghiệm thu", iconKey: "users", colorKey: "blue", coverKey: "team" });
-    expect(createWorkspaceDraft("department", "Phòng dự án", "department-1", "teal", "building", "office"))
+    expect(createWorkspaceDraft("collaboration", "  Tổ nghiệm thu  ", null, "blue", "users", "grid"))
+      .toEqual({ kind: "collaboration", name: "Tổ nghiệm thu", iconKey: "users", colorKey: "blue", coverKey: "grid" });
+    expect(createWorkspaceDraft("department", "Phòng dự án", "department-1", "teal", "building", "blueprint"))
       .toMatchObject({ departmentId: "department-1" });
-    expect(() => createWorkspaceDraft("project", "Dự án", null, "amber", "briefcase", "site"))
+    expect(() => createWorkspaceDraft("project", "Dự án", null, "amber", "briefcase", "sunrise"))
       .toThrow("WORK_WORKSPACE_SOURCE_REQUIRED");
+  });
+
+  it.each([
+    ["department", "blueprint"],
+    ["project", "sunrise"],
+    ["collaboration", "grid"],
+  ] as const)("defaults %s to a cover accepted by the Workspace RPC", (kind, coverKey) => {
+    expect(createWorkspaceDraft(kind, "Workspace", "source-1", "blue", "users"))
+      .toMatchObject({ coverKey });
   });
 
   it("keeps blockers attached to the preview that will be applied", () => {
@@ -76,7 +85,7 @@ describe("Workspace management UI contracts", () => {
 
   it("freezes Workspace creation input while the result is unknown", () => {
     const attempt = new WorkspaceCreateAttempt();
-    const original = createWorkspaceDraft("collaboration", "Nhóm A", null, "blue", "users", "team");
+    const original = createWorkspaceDraft("collaboration", "Nhóm A", null, "blue", "users", "grid");
     const first = attempt.begin(original);
     const retry = attempt.begin({ ...original, name: "Tên đã đổi" });
     expect(retry).toEqual(first);

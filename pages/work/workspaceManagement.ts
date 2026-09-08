@@ -36,7 +36,8 @@ export function createWorkspaceDraft(
   sourceId: string | null,
   colorKey: string,
   iconKey: string,
-  coverKey: string,
+  coverKey: "plain" | "grid" | "waves" | "dots" | "blueprint" | "sunrise" =
+    kind === "department" ? "blueprint" : kind === "project" ? "sunrise" : "grid",
 ): CreateWorkWorkspaceInput {
   const trimmedName = name.trim();
   if (!trimmedName) throw new Error("WORK_WORKSPACE_NAME_REQUIRED");

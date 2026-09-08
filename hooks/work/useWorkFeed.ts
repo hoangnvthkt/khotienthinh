@@ -29,8 +29,8 @@ export function useWorkFeed<T extends { id: string }>(
     busy.current = true;
     setState({
       identity: key,
-      items: append ? previous.items : [],
-      cursor: append ? previous.cursor : null,
+      items: previous.identity === key ? previous.items : [],
+      cursor: previous.identity === key ? previous.cursor : null,
       loading: true,
       error: null,
     });
@@ -52,7 +52,7 @@ export function useWorkFeed<T extends { id: string }>(
       });
     } catch (error) {
       if (e === epoch.current && current.current === key)
-        setState((s) => ({ ...s, loading: false, error }));
+        setState({ identity: key, items: [], cursor: null, loading: false, error });
     } finally {
       if (e === epoch.current) busy.current = false;
     }

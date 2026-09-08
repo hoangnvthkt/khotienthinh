@@ -88,8 +88,9 @@ const service = {
     ] : [{ id: "project-1",name: "Dự án Trung tâm dữ liệu",kind,existingWorkspaceId: null }];
     return { items: all.filter((item) => item.name.toLowerCase().includes(search.toLowerCase())),nextCursor: null };
   },
-  create: async (input: { kind: WorkspaceSummary["kind"]; name: string },key: string) => {
+  create: async (input: { kind: WorkspaceSummary["kind"]; name: string; coverKey: string },key: string) => {
     calls.push({ name: "create",args: [input,key] });
+    if (!["plain","grid","waves","dots","blueprint","sunrise"].includes(input.coverKey)) throw new Error("WORK_INVALID_COMMAND");
     const created = workspace("space-created",input.name,input.kind,false,0); rows.push(created); return created;
   },
   command: async (workspaceId: string,command: string,payload: Record<string,unknown>,version: number,reason: string,key: string) => {
@@ -120,6 +121,7 @@ const taskRows = [{
 const taskService = {
   workspaceTasks: async (workspaceId: string,filters: { search?: string }) => {
     calls.push({ name: "workspaceTasks",args: [workspaceId,filters] });
+    if (query.has("slowRefresh")) await new Promise((resolve) => setTimeout(resolve, 500));
     return { items: taskRows.filter((task) => !filters.search || task.title.toLowerCase().includes(filters.search.toLowerCase())),nextCursor: null };
   },
   context: async () => ({ actorId: "fixture-user",canCreate: true,canAssignUser: false,canAssignGroup: false,canChooseReviewer: false,calendarReady: true }),
@@ -140,9 +142,13 @@ function TaskFixture() {
   const [params] = useSearchParams();
   return <main style={{ padding: 32 }}><h1>{taskCode}</h1><p>Workspace quay lại: {params.get("workspace")}</p></main>;
 }
+const subscribeRefresh = (invalidate: () => void) => {
+  window.addEventListener("focus", invalidate);
+  return () => window.removeEventListener("focus", invalidate);
+};
 function SpaceRouteFixture() {
   const { workspaceId = "" } = useParams();
-  return <WorkSpaceWorkspace actorId="fixture-user" workspaceId={workspaceId} workspaceService={service} peopleService={peopleService} taskService={taskService} attachments={{} as never} configurationService={configurationService} />;
+  return <WorkSpaceWorkspace actorId="fixture-user" workspaceId={workspaceId} workspaceService={service} peopleService={peopleService} taskService={taskService} attachments={{} as never} configurationService={configurationService} subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined} />;
 }
 Object.assign(window,{ workWorkspaceQa: { calls,rows,members } });
 createRoot(document.getElementById("root")!).render(

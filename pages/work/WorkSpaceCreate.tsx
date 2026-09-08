@@ -70,7 +70,6 @@ export function WorkSpaceCreateWorkspace({ service }: { service: WorkWorkspaceSe
         source?.id || null,
         kind === "project" ? "amber" : kind === "collaboration" ? "blue" : "teal",
         kind === "project" ? "briefcase" : kind === "collaboration" ? "users" : "building",
-        kind === "project" ? "site" : kind === "collaboration" ? "team" : "office",
       );
       const request = attempt.current.begin(input);
       const created = await service.create(request.input, request.key);

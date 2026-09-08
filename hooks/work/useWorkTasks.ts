@@ -16,10 +16,11 @@ export function useWorkTasks(
   workspaceId?: string,
   accessRevision = 0,
 ) {
+  // Access revisions trigger a fresh authorization check, not a different list.
+  // Keep its rows while pending; a denied response still clears them below.
   const identity = JSON.stringify([
     actorId,
     workspaceId ?? null,
-    accessRevision,
     view,
     filters,
   ]);
@@ -58,8 +59,8 @@ export function useWorkTasks(
       setState((s) => ({
         ...s,
         identity,
-        items: append ? s.items : [],
-        cursor: append ? s.cursor : null,
+        items: s.identity === identity ? s.items : [],
+        cursor: s.identity === identity ? s.cursor : null,
         loading: true,
         error: null,
       }));
@@ -115,7 +116,7 @@ export function useWorkTasks(
         if (version === generation.current) busy.current = false;
       }
     },
-    [service, identity, enabled],
+    [service, identity, enabled, accessRevision],
   ); // identity includes the complete immutable query inputs.
   useEffect(() => {
     void load();

@@ -25,8 +25,13 @@ const qa = {
   calls: [] as { name: string; args: unknown[] }[],
   createAttempts: 0,
   finalizeAttempts: 0,
+  denyReads: false,
 };
 (window as unknown as { workQa: typeof qa }).workQa = qa;
+const subscribeRefresh = (invalidate: () => void) => {
+  window.addEventListener("focus", invalidate);
+  return () => window.removeEventListener("focus", invalidate);
+};
 const log = (name: string, ...args: unknown[]) => qa.calls.push({ name, args });
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const summary = (id: string, title: string): WorkTaskSummary => ({
@@ -154,6 +159,8 @@ const service: WorkTaskService = {
     } as any;
   },
   async comments(taskId, cursor) {
+    if (query.has("slowRefresh")) await wait(500);
+    if (qa.denyReads) throw new Error("WORK_FORBIDDEN");
     log("comments", taskId, cursor);
     return {
       items: cursor
@@ -219,6 +226,8 @@ const service: WorkTaskService = {
     };
   },
   async list(view, filters, cursor) {
+    if (query.has("slowRefresh")) await wait(500);
+    if (qa.denyReads) throw new Error("WORK_FORBIDDEN");
     log("list", view, filters, cursor);
     await wait(filters.search === "chậm" ? 800 : 15);
     if (filters.search === "lỗi") throw new Error("network");
@@ -491,6 +500,7 @@ createRoot(document.getElementById("root")!).render(
             actorId="actor"
             service={service}
             attachments={attachments}
+            subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
         }
       />
@@ -501,6 +511,7 @@ createRoot(document.getElementById("root")!).render(
             actorId="actor"
             service={service}
             attachments={attachments}
+            subscribe={query.has("slowRefresh") ? subscribeRefresh : undefined}
           />
         }
       />
