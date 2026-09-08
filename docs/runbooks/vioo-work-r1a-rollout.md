@@ -1073,6 +1073,17 @@ TypeScript and the production build; the pre-existing large-chunk warning remain
 Dev continues at `http://127.0.0.1:5187/#/work`. Notifications stay disabled and
 no production deployment or handoff was performed.
 
+Visual-fidelity correction `b83f871` on 2026-09-08 applies the approved
+`docs/design-previews/vioo-work-task-detail.html` composition to the actual Work
+route. The first implementation had the correct features but retained the earlier
+rounded, vertically stacked presentation. The corrected route uses a 280 px task
+rail, independently scrolling center pane, 220 px responsibility/SLA rail, compact
+section cards and an action bar owned by the center pane. It keeps the existing VIOO
+application navigation instead of duplicating the preview's sample module menu.
+Desktop and mobile browser QA now asserts these structural dimensions, card radius,
+responsive overflow and action-bar visibility. Full verification passes 366 files /
+1,739 tests, TypeScript and the production build.
+
 ### Pilot feedback UI — direct attachment preview
 
 Task attachments now route JPEG/PNG/WebP to the preferred processed display or
