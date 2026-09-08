@@ -109,6 +109,7 @@ try {
   await page.getByRole("dialog").getByTitle("Xem trước bien-ban-nghiem-thu.pdf").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("dialog").waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Xem trước bien-ban-nghiem-thu.pdf");
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Xem trước bien-ban-nghiem-thu.pdf");
 
   const textPreview = page.getByRole("button", { name: "Xem trước ghi-chu-hien-truong.txt", exact: true });

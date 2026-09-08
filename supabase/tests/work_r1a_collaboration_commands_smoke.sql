@@ -25,6 +25,19 @@ end $$;
 create function pg_temp.work_doc(p_text text) returns jsonb language sql immutable set search_path='' as $$
   select jsonb_build_object('version',1,'type','doc','content',jsonb_build_array(jsonb_build_object('type','paragraph','content',jsonb_build_array(jsonb_build_object('type','text','text',p_text)))));
 $$;
+create function pg_temp.work_mention_doc(p_text text,p_users uuid[]) returns jsonb language sql immutable set search_path='' as $$
+  select jsonb_build_object(
+    'version',1,
+    'type','doc',
+    'content',jsonb_build_array(jsonb_build_object(
+      'type','paragraph',
+      'content',jsonb_build_array(jsonb_build_object('type','text','text',p_text)) || coalesce((
+        select jsonb_agg(jsonb_build_object('type','mention','userId',u::text,'label','Mention') order by ordinal)
+        from unnest(p_users) with ordinality as mentions(u,ordinal)
+      ),'[]'::jsonb)
+    ))
+  );
+$$;
 set local role authenticated;
 select pg_temp.work_as('creator');
 do $$ declare v_input jsonb; v_preview jsonb; v_result jsonb; begin
@@ -49,7 +62,7 @@ do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_dat
   v_r:=public.get_work_task_detail(v_task::text);
   if v_r->'capabilities'->>'canComment'<>'true' or v_r->'capabilities'->>'canManageChecklist'<>'false' or v_r ? 'comments' or v_r ? 'history' then raise exception 'TEST_WATCHER_CAPABILITIES_OR_EAGER_THREAD'; end if;
   if exists(select 1 from public.work_task_versions where task_id=v_task) then raise exception 'TEST_VERSION_LEAK_WITHOUT_AUDIT'; end if;
-  v_payload:=jsonb_build_object('content',pg_temp.work_doc('Original discussion'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='assignee'),(select id from work_collab_people where name='assignee')));
+  v_payload:=jsonb_build_object('content',pg_temp.work_mention_doc('Original discussion ',array[(select id from work_collab_people where name='assignee'),(select id from work_collab_people where name='assignee')]),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='reviewer')));
   v_r:=public.command_work_task_collaboration(v_task,'comment_create',v_payload,v_key);
   if v_r is distinct from public.command_work_task_collaboration(v_task,'comment_create',v_payload,v_key) then raise exception 'TEST_COMMENT_RETRY'; end if;
   if (select count(*) from public.work_task_mentions where comment_id=(v_r->'comment'->>'id')::uuid)<>1 then raise exception 'TEST_MENTION_DEDUPE'; end if;
@@ -77,14 +90,14 @@ do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_dat
   if jsonb_array_length(v_r->'items')<>4 or exists(select 1 from jsonb_array_elements(v_r->'items') x where x-array['userId','name']<>'{}') then raise exception 'TEST_MENTION_PICKER_VISIBILITY_OR_PROJECTION %',v_r; end if;
   if public.list_work_task_mention_candidates(v_task,'Outsider')->'items'<>'[]' then raise exception 'TEST_MENTION_PICKER_SEARCH_LEAK'; end if;
   foreach v_bad in array array['outsider','inactive'] loop
-    begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_doc('Denied mention'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name=v_bad))),gen_random_uuid()); raise exception 'TEST_MENTION_VISIBILITY_BYPASS'; exception when insufficient_privilege then null; end;
+    begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_mention_doc('Denied mention ',array[(select id from work_collab_people where name=v_bad)])),gen_random_uuid()); raise exception 'TEST_MENTION_VISIBILITY_BYPASS'; exception when insufficient_privilege then null; end;
   end loop;
   begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_doc('Cross reply'),'parentCommentId',(select value->'comment'->>'id' from work_collab_data where key='otherComment')),gen_random_uuid()); raise exception 'TEST_CROSS_TASK_REPLY'; exception when insufficient_privilege then null; end;
   begin perform public.command_work_task_collaboration(v_task,'comment_edit',jsonb_build_object('content',pg_temp.work_doc('Cross edit'),'commentId',(select value->'comment'->>'id' from work_collab_data where key='otherComment'),'expectedLockVersion',1),gen_random_uuid()); raise exception 'TEST_CROSS_TASK_EDIT'; exception when insufficient_privilege then null; end;
   begin perform public.command_work_task_collaboration(v_task,'comment_create','{"content":{"version":1,"type":"doc","content":[{"type":"html","content":[]}]}}',gen_random_uuid()); raise exception 'TEST_UNSAFE_DOCUMENT'; exception when invalid_parameter_value then null; end;
   begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_doc(' ')),gen_random_uuid()); raise exception 'TEST_EMPTY_COMMENT'; exception when invalid_parameter_value then null; end;
   begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_doc(repeat('x',10001))),gen_random_uuid()); raise exception 'TEST_OVERLONG_COMMENT'; exception when invalid_parameter_value then null; end;
-  v_r:=public.command_work_task_collaboration(v_task,'comment_edit',jsonb_build_object('commentId',v_comment,'expectedLockVersion',1,'content',pg_temp.work_doc('Edited discussion'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='assignee'),(select id from work_collab_people where name='reviewer'))),gen_random_uuid());
+  v_r:=public.command_work_task_collaboration(v_task,'comment_edit',jsonb_build_object('commentId',v_comment,'expectedLockVersion',1,'content',pg_temp.work_mention_doc('Edited discussion ',array[(select id from work_collab_people where name='assignee'),(select id from work_collab_people where name='reviewer')])),gen_random_uuid());
   if v_r->'comment'->>'lock_version'<>'2' or v_r->'comment'->>'edited_at' is null or v_r->'comment'->'created_at' is distinct from (select value->'comment'->'created_at' from work_collab_data where key='comment') then raise exception 'TEST_COMMENT_EDIT_VERSION'; end if;
   begin perform public.command_work_task_collaboration(v_task,'comment_edit',jsonb_build_object('commentId',v_comment,'expectedLockVersion',1,'content',pg_temp.work_doc('Stale')),gen_random_uuid()); raise exception 'TEST_STALE_COMMENT'; exception when sqlstate 'P0001' then if sqlerrm<>'WORK_VERSION_CONFLICT' then raise; end if; end;
   if public.command_work_task_collaboration(v_task,'comment_create',(select value from work_collab_data where key='commentPayload'),(select (value#>>'{}')::uuid from work_collab_data where key='commentKey')) is distinct from (select value from work_collab_data where key='comment') then raise exception 'TEST_RETRY_AFTER_EDIT'; end if;
@@ -133,7 +146,7 @@ do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_dat
     if cardinality(v_seen)<>v_count then raise exception 'TEST_CURSOR_SKIPPED_TIES'; end if;
   end loop;
   if not exists(select 1 from jsonb_array_elements(public.list_work_task_history(v_task,'{"category":"comments"}')->'items') x
-    where x->>'event_type'='comment.edited' and x->'payload'->'before'->>'content_text'='Original discussion' and x->'payload'->'after'->>'content_text'='Edited discussion') then raise exception 'TEST_IMMUTABLE_EDIT_EVIDENCE'; end if;
+    where x->>'event_type'='comment.edited' and x->'payload'->'before'->>'content_text'='Original discussion @Mention@Mention' and x->'payload'->'after'->>'content_text'='Edited discussion @Mention@Mention') then raise exception 'TEST_IMMUTABLE_EDIT_EVIDENCE'; end if;
   if (select count(*) from jsonb_array_elements(public.list_work_task_history(v_task,'{"category":"checklist"}')->'items') x where x->>'event_type'='checklist.completed')<>2 then raise exception 'TEST_CHECKLIST_COMPLETION_HISTORY'; end if;
   v_page:=public.list_work_task_history(v_task,jsonb_build_object('category','comments','actorUserId',(select id from work_collab_people where name='watcher')));
   if jsonb_array_length(v_page->'items')<>6 then raise exception 'TEST_HISTORY_FILTER %',v_page; end if;
@@ -178,7 +191,7 @@ set local role authenticated;
 select pg_temp.work_as('watcher');
 do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_data where key='task'); begin
   if public.list_work_task_mention_candidates(v_task,'assignee')->'items'<>'[]' then raise exception 'TEST_REVOKED_MENTION_PICKER'; end if;
-  begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_doc('Stale picker'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='assignee'))),gen_random_uuid()); raise exception 'TEST_STALE_PICKER_ALLOWED'; exception when insufficient_privilege then null; end;
+  begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_mention_doc('Stale picker ',array[(select id from work_collab_people where name='assignee')])),gen_random_uuid()); raise exception 'TEST_STALE_PICKER_ALLOWED'; exception when insufficient_privilege then null; end;
   perform public.command_work_task_collaboration(v_task,'set_pin','{"pinned":false}',gen_random_uuid());
   perform public.command_work_task_collaboration(v_task,'set_notifications','{"notificationsEnabled":true}',gen_random_uuid());
   if public.get_work_task_detail(v_task::text)->'preferences'<>'{"pinned":false,"notificationsEnabled":true}' then raise exception 'TEST_PREFERENCE_RESET'; end if;
@@ -233,7 +246,7 @@ end $$;
 select pg_temp.work_as('creator');
 do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_data where key='managedRestricted'); begin
   if jsonb_array_length(public.list_work_task_mention_candidates(v_task,'manager')->'items')<>0 then raise exception 'TEST_RESTRICTED_MANAGER_PICKER'; end if;
-  begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_doc('Cannot mention manager'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='manager'))),gen_random_uuid()); raise exception 'TEST_RESTRICTED_MANAGER_MENTION'; exception when insufficient_privilege then null; end;
+  begin perform public.command_work_task_collaboration(v_task,'comment_create',jsonb_build_object('content',pg_temp.work_mention_doc('Cannot mention manager ',array[(select id from work_collab_people where name='manager')])),gen_random_uuid()); raise exception 'TEST_RESTRICTED_MANAGER_MENTION'; exception when insufficient_privilege then null; end;
 end $$;
 select pg_temp.work_as('replacement');
 do $$ declare v_task uuid:=(select (value->>'taskId')::uuid from work_collab_data where key='managed'); begin

@@ -37,6 +37,12 @@ end $$;
 create function pg_temp.work_doc(p_text text) returns jsonb language sql immutable set search_path='' as $$
   select jsonb_build_object('version',1,'type','doc','content',jsonb_build_array(jsonb_build_object('type','paragraph','content',jsonb_build_array(jsonb_build_object('type','text','text',p_text)))));
 $$;
+create function pg_temp.work_mention_doc(p_text text,p_user uuid,p_label text) returns jsonb language sql immutable set search_path='' as $$
+  select jsonb_build_object('version',1,'type','doc','content',jsonb_build_array(jsonb_build_object('type','paragraph','content',jsonb_build_array(
+    jsonb_build_object('type','text','text',p_text),
+    jsonb_build_object('type','mention','userId',p_user::text,'label',p_label)
+  ))));
+$$;
 set local role authenticated;
 select pg_temp.work_as('creator');
 do $$ declare v_input jsonb; v_preview jsonb; v_result jsonb; begin
@@ -114,7 +120,7 @@ end $$;
 set local role authenticated;
 select pg_temp.work_as('creator');
 do $$ declare r jsonb; t uuid:=(select (value->>'taskId')::uuid from work_collab_data where key='task'); begin
-  r:=public.command_work_task_collaboration(t,'comment_create',jsonb_build_object('content',pg_temp.work_doc('Sensitive text never sent in push'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='watcher'))),gen_random_uuid());
+  r:=public.command_work_task_collaboration(t,'comment_create',jsonb_build_object('content',pg_temp.work_mention_doc('Sensitive text never sent in push ',(select id from work_collab_people where name='watcher'),'watcher')),gen_random_uuid());
   insert into work_collab_data values('mention',r);
 end $$;
 reset role;
@@ -190,7 +196,7 @@ grant all on work_collab_data to service_role;
 update app_private.work_push_jobs set status='suppressed',finished_at=now() where finished_at is null;
 set local role authenticated;
 select pg_temp.work_as('creator');
-select public.command_work_task_collaboration((select (value->>'taskId')::uuid from work_collab_data where key='task'),'comment_create',jsonb_build_object('content',pg_temp.work_doc('Lease fixture'),'mentionedUserIds',jsonb_build_array((select id from work_collab_people where name='watcher'))),gen_random_uuid());
+select public.command_work_task_collaboration((select (value->>'taskId')::uuid from work_collab_data where key='task'),'comment_create',jsonb_build_object('content',pg_temp.work_mention_doc('Lease fixture ',(select id from work_collab_people where name='watcher'),'watcher')),gen_random_uuid());
 reset role;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;

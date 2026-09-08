@@ -52,4 +52,19 @@ describe("Work pilot feedback contracts", () => {
     );
     expect(mentionedUserIds(document)).toEqual(["user-1"]);
   });
+
+  it("does not treat typed @ text as a selected mention", () => {
+    expect(mentionedUserIds(workDocument("Nhờ @Nguyễn Thu Hà kiểm tra"))).toEqual([]);
+  });
+
+  it("keeps distinct users when their visible mention labels match", () => {
+    const document = workDocument("");
+    document.content[0].content = [
+      { type: "mention", userId: "user-1", label: "Trùng Tên" },
+      { type: "text", text: " " },
+      { type: "mention", userId: "user-2", label: "Trùng Tên" },
+    ];
+    expect(documentText(document)).toBe("@Trùng Tên @Trùng Tên");
+    expect(mentionedUserIds(document)).toEqual(["user-1", "user-2"]);
+  });
 });

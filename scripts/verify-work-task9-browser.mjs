@@ -80,21 +80,45 @@ try {
     ),
   );
   await page.getByRole("button", { name: /^Thảo luận/ }).click();
-  await page.getByLabel("Nội dung bình luận").fill("Đã đối chiếu xong hồ sơ.");
-  await page.getByRole("button", { name: /@ Nhắc tên/ }).click();
-  await page
-    .getByRole("button", { name: "Nguyễn Thu Hà", exact: true })
-    .click();
+  const composer = page.getByLabel("Nội dung bình luận");
+  const mentionQuery = "Đã đối chiếu xong hồ sơ. @Nguyễn";
+  const suggestions = page.getByRole("listbox", { name: "Gợi ý nhắc tên" });
+  await composer.fill(mentionQuery);
+  await suggestions.getByRole("option").first().waitFor();
+  await page.keyboard.press("Escape");
+  await suggestions.waitFor({ state: "hidden" });
+  assert.equal(await composer.inputValue(), mentionQuery);
+  await composer.fill("");
+  await composer.fill(mentionQuery);
+  await suggestions.getByRole("option").first().waitFor();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  assert.equal(await composer.inputValue(), "Đã đối chiếu xong hồ sơ. @Nguyễn Thu Hà ");
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Backspace");
+  assert.equal(await composer.inputValue(), "Đã đối chiếu xong hồ sơ. ");
+  await composer.fill(mentionQuery);
+  await suggestions.getByRole("option").first().waitFor();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const selectedDraft = await composer.inputValue();
+  await page.getByRole("heading", { name: "Chuẩn bị hồ sơ nghiệm thu", exact: true }).click();
+  assert.equal(await composer.inputValue(), selectedDraft);
+  await composer.focus();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(50);
+  assert.equal(await composer.inputValue(), selectedDraft);
+  assert.equal(await composer.evaluate((element) => document.activeElement === element), true);
   await page
     .getByRole("button", { name: "Gửi bình luận", exact: true })
     .click();
-  await page.getByText("Đã đối chiếu xong hồ sơ.", { exact: true }).waitFor();
+  await page.getByText(/Đã đối chiếu xong hồ sơ\. @Nguyễn Thu Hà/).waitFor();
   const mentions = await page.evaluate(
     () =>
       window.workQa.calls.find(
         (c) =>
           c.name === "collaborate" && c.args[0].command === "comment_create",
-      ).args[0].payload.mentionedUserIds,
+      ).args[0].payload.content.content.flatMap((p) => p.content.filter((n) => n.type === "mention").map((n) => n.userId)),
   );
   assert.deepEqual(mentions, ["second"]);
   await page.getByRole("button", { name: "Bình luận cũ hơn" }).click();

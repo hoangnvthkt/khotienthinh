@@ -6,10 +6,11 @@ import type {
   WorkTaskHistoryFilters,
   WorkTaskEvent,
   WorkCommentAnchor,
+  WorkTextDocument,
 } from "../../lib/work/workTypes";
-import { workDocument, workError } from "../../lib/work/workForm";
+import { documentText, mentionedUserIds, workDocument, workError } from "../../lib/work/workForm";
 import { useWorkFeed } from "../../hooks/work/useWorkFeed";
-import { WorkPersonPicker } from "./WorkPersonPicker";
+import { WorkMentionComposer } from "./WorkMentionComposer";
 const date = (s: string) => new Date(s).toLocaleString("vi-VN");
 const eventLabels: Record<string, string> = {
   "task.created": "Tạo công việc",
@@ -79,18 +80,16 @@ export function WorkDiscussion({
       "",
     ),
     [actor, setActor] = useState("");
-  const [text, setText] = useState(""),
-    [mentions, setMentions] = useState<string[]>([]),
-    [showMention, setShowMention] = useState(false),
+  const [draft, setDraft] = useState<WorkTextDocument>(() => workDocument("")),
     [editing, setEditing] = useState<WorkTaskComment | null>(null),
-    [reply, setReply] = useState<WorkTaskComment | null>(null);
+    [reply, setReply] = useState<WorkTaskComment | null>(null),
+    [legacyDraft, setLegacyDraft] = useState(false);
   useEffect(() => {
     if (completed.command.startsWith("comment_")) {
-      setText("");
+      setDraft(workDocument(""));
       setEditing(null);
       setReply(null);
-      setMentions([]);
-      setShowMention(false);
+      setLegacyDraft(false);
     }
   }, [completed.seq]);
   const [anchor, setAnchor] = useState<WorkCommentAnchor | null>(null),
@@ -161,8 +160,12 @@ export function WorkDiscussion({
   function edit(c: WorkTaskComment) {
     setEditing(c);
     setReply(null);
-    setText(c.content_text);
-    setMentions(c.mentionedUserIds);
+    const legacy = !mentionedUserIds(c.content_document).length && c.mentionedUserIds.length > 0;
+    setLegacyDraft(legacy);
+    if (!legacy)
+      setDraft(c.content_document);
+    else
+      setDraft({ version: 1, type: "doc", content: [{ type: "paragraph", content: c.mentionedUserIds.flatMap((id, index) => [...(index ? [{ type: "text" as const, text: " " }] : []), { type: "mention" as const, userId: id, label: name(id) }]) }, ...workDocument(c.content_text).content] });
   }
   const renderComment = (c: WorkTaskComment, highlight = false) => (
     <article
@@ -187,12 +190,7 @@ export function WorkDiscussion({
           Xem bình luận được trả lời
         </button>
       )}
-      <p className="work-prose">{c.content_text}</p>
-      {c.mentionedUserIds.length > 0 && (
-        <p className="work-mentions">
-          {c.mentionedUserIds.map((id) => `@${name(id)}`).join(" · ")}
-        </p>
-      )}
+      <p className="work-prose">{documentText(c.content_document) || c.content_text}</p>
       <div className="work-actions">
         {canComment && (
           <button
@@ -201,8 +199,8 @@ export function WorkDiscussion({
               if (busy || editorLoading) return;
               setReply(c);
               setEditing(null);
-              setText("");
-              setMentions([]);
+              setLegacyDraft(false);
+              setDraft(workDocument(""));
             }}
           >
             Trả lời
@@ -273,24 +271,21 @@ export function WorkDiscussion({
                         payload: {
                           commentId: editing.id,
                           expectedLockVersion: editing.lock_version,
-                          content: workDocument(text.trim()),
-                          mentionedUserIds: mentions,
+                          content: draft,
                         },
                       }
                     : {
                         command: "comment_create",
                         payload: {
-                          content: workDocument(text.trim()),
+                          content: draft,
                           ...(reply ? { parentCommentId: reply.id } : {}),
-                          mentionedUserIds: mentions,
                         },
                       };
                   if (await run(input)) {
-                    setText("");
+                    setDraft(workDocument(""));
                     setEditing(null);
                     setReply(null);
-                    setMentions([]);
-                    setShowMention(false);
+                    setLegacyDraft(false);
                   }
                 }}
               >
@@ -361,50 +356,27 @@ export function WorkDiscussion({
                         onClick={() => {
                           setEditing(null);
                           setReply(null);
-                          setText("");
-                          setMentions([]);
+                          setLegacyDraft(false);
+                          setDraft(workDocument(""));
                         }}
                       >
                         Bỏ chọn
                       </button>
                     </p>
                   )}
-                  <label className="work-label">
-                    {editing ? "Sửa nội dung" : "Viết bình luận"}
-                    <textarea
-                      className="work-input"
-                      aria-label="Nội dung bình luận"
-                      rows={3}
-                      maxLength={10000}
-                      required
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="work-secondary"
-                    onClick={() => setShowMention(!showMention)}
-                  >
-                    @ Nhắc tên{mentions.length ? ` (${mentions.length})` : ""}
-                  </button>
-                  {showMention && (
-                    <WorkPersonPicker
-                      service={service}
-                      taskId={taskId}
-                      action="mention"
-                      value={mentions}
-                      onChange={setMentions}
-                      names={names}
-                    />
+                  {legacyDraft && (
+                    <p className="work-notice">
+                      Bình luận cũ đã được chuyển nhắc tên vào nội dung. Hãy kiểm tra lại trước khi lưu.
+                    </p>
                   )}
+                  <WorkMentionComposer taskId={taskId} service={service} value={draft} onChange={setDraft} disabled={busy || editorLoading} label={editing ? "Sửa nội dung" : "Viết bình luận"} />
                   <p className="work-hint">
                     Nhắc tên chỉ thông báo cho người đã có quyền xem, không thêm
                     người nhận việc.
                   </p>
                   <button
                     className="work-primary"
-                    disabled={!text.trim() || mentions.length > 50}
+                    disabled={!documentText(draft).trim() || mentionedUserIds(draft).length > 50}
                   >
                     {editing ? "Lưu bình luận" : "Gửi bình luận"}
                   </button>

@@ -8,6 +8,7 @@ import type { createWorkAttachmentService } from "../../lib/work/workAttachmentS
 import {
   documentText,
   emptyWorkDraft,
+  mentionedUserIds,
   workDocument,
 } from "../../lib/work/workForm";
 import type { WorkTaskSummary } from "../../lib/work/workTypes";
@@ -141,6 +142,8 @@ const service: WorkTaskService = {
           input.payload.commentId,
           documentText(input.payload.content),
         ),
+        content_document: input.payload.content,
+        mentionedUserIds: mentionedUserIds(input.payload.content),
         lock_version: commentVersion,
       });
     }
@@ -158,11 +161,9 @@ const service: WorkTaskService = {
       checkDone = input.payload.completed;
     if (input.command === "comment_create") {
       const c = {
-        ...comment(
-          "new-comment",
-          documentText(input.payload.content),
-        ),
-        mentionedUserIds: input.payload.mentionedUserIds || [],
+        ...comment("new-comment", documentText(input.payload.content)),
+        content_document: input.payload.content,
+        mentionedUserIds: mentionedUserIds(input.payload.content),
         parent_comment_id: input.payload.parentCommentId || null,
       };
       fixtureComments.unshift(c);

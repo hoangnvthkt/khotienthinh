@@ -965,6 +965,47 @@
 .work-comment-form {
   margin-top: 18px;
 }
+.work-mention-composer {
+  position: relative;
+}
+.work-mention-composer textarea {
+  line-height: 1.65;
+}
+.work-mention-suggestions {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid #d5e0e4;
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 14px 35px #0f172a24;
+}
+.work-mention-suggestions > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px;
+  border-radius: 7px;
+  text-align: left;
+}
+.work-mention-suggestions > button[aria-selected="true"],
+.work-mention-suggestions > button:hover {
+  background: #ecfdf5;
+}
+.work-mention-suggestions > button > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+.work-mention-suggestions small {
+  color: #64748b;
+  font-size: 10px;
+}
 .work-mentions {
   color: #0f766e !important;
 }

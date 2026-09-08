@@ -322,7 +322,7 @@ export interface WorkMentionCandidatePage {
   /** UUID cursor, ordered by user ID. Search and task must remain the same. */
   nextCursor: string | null;
 }
-/** Comment edits replace content and the full mention list; an omitted list means empty. */
+/** Comment mention recipients are derived from stable mention nodes in content. */
 export type WorkCollaborationCommand =
   | { command: 'checklist_create'; payload: { title: string; assigneeUserId?: string | null; sortOrder?: number } }
   | { command: 'checklist_update'; payload: { itemId: string; expectedLockVersion: number; title?: string; assigneeUserId?: string | null; sortOrder?: number } }
