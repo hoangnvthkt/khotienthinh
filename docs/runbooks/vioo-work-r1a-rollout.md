@@ -792,3 +792,33 @@ up to date. All Task3–9, membership, people and WS4 Cloud smokes pass. Full Vi
 402 archived), query audit (0 findings) and ERROR security advisor pass. The
 `work-attachments` Edge Function is ACTIVE at version 2. Notifications remain disabled,
 Work grants remain 15, no fixture Workspace persisted, and the existing task count is 1.
+
+### Workspace configuration bridge — WS5
+
+WS5 is deployed as `20260908013042_work_workspace_configuration.sql`. Configuration
+keys now accept `workspace:<uuid>` and legacy department/project input normalizes to
+the mapped Workspace. Workspace admin role is mandatory for list, save, history and
+SLA preview even if a member receives a direct configure grant. New groups, calendars
+and policies are owned by Workspace; active global calendars remain selectable but
+cannot be edited through Workspace settings. Group selection is capped at 50 and
+excludes inactive or foreign Workspace groups. Policy overlap is serialized and
+checked within the same Workspace and priority.
+
+The Workspace smoke failed red before migration, then passed candidate and postflight.
+It covers canonical scope discovery, CRUD, exceptions, lunch-break SLA calculation,
+same-priority isolation, global-calendar read-only behavior, member overgrant denial,
+outsider denial and raw-table RLS. The original R1A configuration smoke also passes.
+Independent SQL review found three P1 cases; the final implementation requires admin
+role for readers, refuses to reactivate an existing membership whose manifest state
+differs, rejects non-null bridges to another Workspace and only fills null bridges.
+
+`work_workspace_pilot_backfill.sql` rehearsed twice in one transaction and rolled
+back. Current inventory is 1 task, 1 full assignment row, 0 groups, 1 calendar and
+3 policies for Phòng Quản lý dự án; no other department/project task scope exists.
+The rehearsal preserves task business fields, full assignment and SLA snapshots,
+outbox/deliveries, attachments, events, versions and direct-task null bridges. Exact
+pilot members and expiry `2026-09-21T07:02:36.939209Z` are validated. Commit mode was
+not run: Cloud still has 0 Workspaces and 0 mapped task/config rows; notifications
+remain disabled. Local and Cloud migration ledgers match 26/26. Full Vitest is 363
+files / 1,717 tests; TypeScript, production build, migration baseline (26 active /
+402 archived) and query audit (0 findings) pass.

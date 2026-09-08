@@ -29,7 +29,8 @@
     "20260907090453_work_workspace_foundation.sql",
     "20260907090818_work_workspace_membership.sql",
     "20260907093106_work_workspace_people.sql",
-    "20260907100124_work_workspace_task_access.sql"
+    "20260907100124_work_workspace_task_access.sql",
+    "20260908013042_work_workspace_configuration.sql"
   ],
   "forbidIncludeAll": true
 }

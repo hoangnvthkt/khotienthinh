@@ -1,4 +1,4 @@
-import type { WorkTaskStatus } from "./workTypes";
+import type { WorkScope, WorkTaskStatus } from "./workTypes";
 export const workStatusLabels: Record<WorkTaskStatus, string> = {
   draft: "Bản nháp",
   pending_acknowledgement: "Chờ nhận việc",
@@ -19,3 +19,12 @@ export const workWhen = (value: string | null | undefined) =>
         timeStyle: "short",
       })
     : "Chưa có";
+
+export const workScopeKindLabel = (scope: WorkScope) =>
+  scope.type === "workspace"
+    ? "Không gian làm việc"
+    : scope.type === "department"
+      ? "Phòng ban"
+      : scope.type === "project"
+        ? "Dự án"
+        : "Giao trực tiếp";

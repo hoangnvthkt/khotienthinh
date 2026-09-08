@@ -3,7 +3,8 @@ import { knownWorkRejection } from "./workForm";
 export type ConfigScope =
   | { type: "global" }
   | { type: "department"; departmentId: string }
-  | { type: "project"; projectId: string };
+  | { type: "project"; projectId: string }
+  | { type: "workspace"; workspaceId: string };
 export type ConfigKind = "group" | "calendar" | "exception" | "policy";
 export interface ConfigRecord {
   id: string;
@@ -69,11 +70,15 @@ export const configurationFields: Record<ConfigKind, string[]> = {
   ],
 };
 export function configurationScope(key: string): ConfigScope {
-  return key === "global"
-    ? { type: "global" }
-    : key.startsWith("department:")
-      ? { type: "department", departmentId: key.slice(11) }
-      : { type: "project", projectId: key.slice(8) };
+  if (key === "global") return { type: "global" };
+  const split = key.indexOf(":");
+  const kind = split < 0 ? "" : key.slice(0, split);
+  const id = split < 0 ? "" : key.slice(split + 1);
+  if (!id) throw new Error("WORK_INVALID_SCOPE");
+  if (kind === "department") return { type: "department", departmentId: id };
+  if (kind === "project") return { type: "project", projectId: id };
+  if (kind === "workspace") return { type: "workspace", workspaceId: id };
+  throw new Error("WORK_INVALID_SCOPE");
 }
 export function createWorkConfigurationService(
   client: Pick<SupabaseClient, "rpc">,
@@ -170,7 +175,9 @@ export class ConfigAttempt {
         typeof p.key === "string" &&
         typeof p.reason === "string" &&
         p.scope &&
-        ["global", "department", "project"].includes(p.scope.type) &&
+        ["global", "department", "project", "workspace"].includes(
+          p.scope.type,
+        ) &&
         p.data &&
         typeof p.data === "object"
       ) {

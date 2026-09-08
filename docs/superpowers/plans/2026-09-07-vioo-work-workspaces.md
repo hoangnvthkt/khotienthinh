@@ -390,21 +390,21 @@ CLI migration `work_workspace_configuration` và baseline allowlist.
 **Produces:** ConfigScope thêm workspace; config API cũ normalize cùng scope bridge;
 script backfill mặc định rollback, có fingerprint inventory và đối chiếu trước/sau.
 
-- [ ] Snapshot task ID/code/deadline, assignment toàn dòng, calendar/policy/group ID,
+- [x] Snapshot task ID/code/deadline, assignment toàn dòng, calendar/policy/group ID,
   outbox và attachment links của pilot trước khi chuyển. Kiểm tra lại dữ liệu hiện
   tại; không dùng giả định task count 0 từ 2026-09-07.
-- [ ] Map department/project config sang Workspace; calendar global dùng chung vẫn
+- [x] Map department/project config sang Workspace; calendar global dùng chung vẫn
   chỉ global configurator sửa. Collaboration có calendar/policy/group riêng.
-- [ ] Implement group selector (30/50 items, đúng Workspace, inactive không chọn mới),
+- [x] Implement group selector (30/50 items, đúng Workspace, inactive không chọn mới),
   policy overlap cùng Workspace+priority, lịch ngoại lệ và server SLA preview.
-- [ ] Backfill pilot đúng một Workspace, hai member từ manifest, giữ expiry chính
+- [x] Backfill pilot đúng một Workspace, hai member từ manifest, giữ expiry chính
   xác và admin/member tương ứng. Gắn các task/config thuộc scope, không đổi assignment
   SLA snapshots. Không tạo membership cho toàn bộ org hoặc từ global grants.
-- [ ] Inventory scope khác nếu có: lập danh sách mapping và ai sẽ xem standard tasks;
+- [x] Inventory scope khác nếu có: lập danh sách mapping và ai sẽ xem standard tasks;
   scope chưa có mapping duyệt được thì giữ legacy mode, không tự chuyển toàn Cloud.
-- [ ] Test trước/sau so sánh hashes trường nghiệp vụ; test direct task vẫn null
+- [x] Test trước/sau so sánh hashes trường nghiệp vụ; test direct task vẫn null
   workspace, giữ private attachments và lịch sử; script gọi hai lần không tạo trùng.
-- [ ] Commit migration/tooling; không chạy commit mode của backfill trước WS8.
+- [x] Commit migration/tooling; không chạy commit mode của backfill trước WS8.
 
 SQL verification cần dùng trong operation:
 ```sql

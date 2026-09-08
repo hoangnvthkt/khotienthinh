@@ -40,7 +40,9 @@ export function WorkConfigurationWorkspace({
       ? "global"
       : pendingScope.type === "department"
         ? `department:${pendingScope.departmentId}`
-        : `project:${pendingScope.projectId}`;
+        : pendingScope.type === "project"
+          ? `project:${pendingScope.projectId}`
+          : `workspace:${pendingScope.workspaceId}`;
   const [search, setSearch] = useState(""),
     [scopes, setScopes] = useState<{ id: string; name: string }[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
