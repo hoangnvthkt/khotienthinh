@@ -368,9 +368,9 @@ where id=(select (value->>'id')::uuid from ws4_data where key='department_task')
 
 with calendar_row as (
   insert into public.work_sla_calendars(
-    name,workday_start,workday_end,workspace_id,created_by
+    name,scope_type,workday_start,workday_end,workspace_id,created_by
   ) values(
-    'WS4 private workspace calendar','08:00','17:00',
+    'WS4 private workspace calendar','workspace','08:00','17:00',
     (select (value->>'id')::uuid from ws4_data where key='workspace'),
     (select user_id from ws4_people where name='admin')
   ) returning id
@@ -381,7 +381,7 @@ with policy_row as (
   insert into public.work_sla_policies(
     name,scope_type,calendar_id,acknowledgement_minutes,is_active,workspace_id,created_by
   ) values(
-    'WS4 private workspace policy','global',
+    'WS4 private workspace policy','workspace',
     (select (value->>'id')::uuid from ws4_data where key='private_calendar'),
     30,false,(select (value->>'id')::uuid from ws4_data where key='workspace'),
     (select user_id from ws4_people where name='admin')
