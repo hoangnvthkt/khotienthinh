@@ -129,7 +129,7 @@ export function WorkConfigurationWorkspace({
     </main>
   );
 }
-function ScopeSettings({
+export function ScopeSettings({
   service,
   attempt,
   scope,

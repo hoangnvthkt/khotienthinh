@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AuthorizationSnapshot } from '../../types';
+import { Role, type AuthorizationSnapshot } from '../../types';
 import { evaluateCapability } from '../permissions/authorizationEvaluator';
+import { canStartWorkWorkspace } from '../permissions/permissionService';
 import { getAllPermissionActions, getPermissionActionByCode } from '../permissions/permissionRegistry';
 import type { PermissionScopeType } from '../permissions/permissionTypes';
 
@@ -56,6 +57,22 @@ describe('Work Workspace canonical permissions', () => {
       scopeType: 'work_workspace',
       scopeId: 'workspace-b',
     })).toMatchObject({ allowed: false, reason: 'scope_mismatch' });
+  });
+
+  it('opens the creation wizard for an active source-scoped create grant', () => {
+    expect(canStartWorkWorkspace({
+      role: Role.EMPLOYEE,
+      authorizationSnapshot: snapshot([source('work.workspace.create', 'department-a', {
+        scopeType: 'department',
+      })]),
+    })).toBe(true);
+    expect(canStartWorkWorkspace({
+      role: Role.EMPLOYEE,
+      authorizationSnapshot: snapshot([source('work.workspace.create', 'department-a', {
+        scopeType: 'department',
+        expiresAt: '2020-01-01T00:00:00.000Z',
+      })]),
+    })).toBe(false);
   });
 
   it('rejects expired Workspace capability sources', () => {

@@ -34,6 +34,7 @@ interface Props {
   service: WorkTaskService;
   attachments: AttachmentService;
   initialScope: WorkScope;
+  lockScope?: boolean;
   scopeLabels?: Record<string, string>;
   clone?: WorkCloneForm;
   onClose: () => void;
@@ -54,6 +55,7 @@ export function WorkCreateDrawer({
   service,
   attachments,
   initialScope,
+  lockScope = false,
   scopeLabels,
   clone,
   onClose,
@@ -403,17 +405,26 @@ export function WorkCreateDrawer({
                 placeholder="Cần hoàn thành việc gì?"
               />
             </label>
-            <WorkPicker
-              service={service}
-              kind="scope"
-              scope={null}
-              label="Phạm vi"
-              clearable={false}
-              value={[scopeId]}
-              onChange={changeScope}
-              multiple={false}
-              labels={{ direct: "Trực tiếp", ...scopeLabels, ...clone?.labels }}
-            />
+            {lockScope ? (
+              <label className="work-label">
+                Phạm vi
+                <output className="work-input work-scope-locked">
+                  {scopeLabels?.[scopeId] || clone?.labels?.[scopeId] || "Workspace hiện tại"}
+                </output>
+              </label>
+            ) : (
+              <WorkPicker
+                service={service}
+                kind="scope"
+                scope={null}
+                label="Phạm vi"
+                clearable={false}
+                value={[scopeId]}
+                onChange={changeScope}
+                multiple={false}
+                labels={{ direct: "Trực tiếp", ...scopeLabels, ...clone?.labels }}
+              />
+            )}
             {context?.canAssignUser && (
               <WorkPicker
                 key={`${scopeId}:user`}

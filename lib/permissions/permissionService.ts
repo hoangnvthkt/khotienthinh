@@ -274,6 +274,18 @@ export const canPerform = (
   scope,
 ).allowed;
 
+/** The creation wizard can start for a global or source-scoped Workspace grant. */
+export const canStartWorkWorkspace = (user: PermissionUser): boolean => {
+  if (canPerform(user, 'work.workspace.create', DEFAULT_SCOPE)) return true;
+  const now = Date.now();
+  return getUserAuthorizationSnapshot(user).sources.some(source =>
+    source.permissionCode === 'work.workspace.create' &&
+    ['global', 'department', 'project'].includes(source.scopeType) &&
+    (!source.startsAt || Date.parse(source.startsAt) <= now) &&
+    (!source.expiresAt || Date.parse(source.expiresAt) > now)
+  );
+};
+
 export const canViewModule = (
   user: PermissionUser,
   moduleCodeOrLegacyKey: string,

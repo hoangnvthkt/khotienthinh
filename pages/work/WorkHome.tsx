@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import { Link, Navigate } from "react-router-dom";
 import {
   ArrowRight,
   CheckCircle2,
@@ -10,17 +10,16 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useWorkWorkspaces } from "../../hooks/work/useWorkWorkspaces";
-import { canPerform } from "../../lib/permissions/permissionService";
+import { canPerform, canStartWorkWorkspace } from "../../lib/permissions/permissionService";
 import { canAccessRoute } from "../../lib/routeAccess";
 import { supabase } from "../../lib/supabase";
 import {
   createWorkWorkspaceService,
   type WorkWorkspaceService,
 } from "../../lib/work/workWorkspaceService";
-import type { WorkspaceKind, WorkspaceSummary } from "../../lib/work/workWorkspaceTypes";
+import type { WorkspaceKind } from "../../lib/work/workWorkspaceTypes";
 import { workError } from "../../lib/work/workForm";
 import { WorkWorkspaceCard } from "./WorkWorkspaceCard";
-import { workspaceCover, workspaceKindLabel } from "./workspacePresentation";
 import "./workspace.css";
 
 const defaultService = createWorkWorkspaceService(supabase);
@@ -36,11 +35,13 @@ export function WorkHomeWorkspace({
   displayName,
   service,
   canCreateDirect,
+  canCreateWorkspace = false,
 }: {
   actorId: string;
   displayName: string;
   service: WorkWorkspaceService;
   canCreateDirect: boolean;
+  canCreateWorkspace?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
@@ -78,6 +79,11 @@ export function WorkHomeWorkspace({
           <p>Chọn một không gian để xem hoạt động của phòng ban, dự án hoặc nhóm cộng tác.</p>
         </div>
         <div className="work-home-actions">
+          {canCreateWorkspace && (
+            <Link className="work-home-secondary" to="/work/spaces/new">
+              <Plus size={18} /> Tạo Workspace
+            </Link>
+          )}
           {canCreateDirect && (
             <Link className="work-home-primary" to="/work/my?create=1">
               <Plus size={18} /> Giao việc trực tiếp
@@ -180,55 +186,6 @@ export function WorkHomeWorkspace({
   );
 }
 
-export function WorkWorkspacePreview() {
-  const { user } = useAuth();
-  const actorId = user?.id;
-  const { workspaceId = "" } = useParams();
-  const [state, setState] = useState<{
-    data: WorkspaceSummary | null;
-    loading: boolean;
-    error: unknown;
-  }>({ data: null, loading: true, error: null });
-  useEffect(() => {
-    if (!actorId || !workspaceId) return;
-    let active = true;
-    setState({ data: null, loading: true, error: null });
-    defaultService.get(workspaceId).then((data) => {
-      if (active) setState({ data, loading: false, error: null });
-      void defaultService.setPreference(workspaceId, null, true).catch(() => undefined);
-    }).catch((error) => {
-      if (active) setState({ data: null, loading: false, error });
-    });
-    return () => { active = false; };
-  }, [workspaceId, actorId]);
-  if (!user || !canAccessRoute(user, `/work/spaces/${encodeURIComponent(workspaceId)}`)) {
-    return <Navigate to="/" replace />;
-  }
-  return (
-    <main className="work-home work-space-preview">
-      <Link className="work-space-preview-back" to="/work">← Tất cả không gian</Link>
-      {state.loading && <div className="work-space-skeleton" role="status" aria-label="Đang tải không gian" />}
-      {state.error && <div className="work-space-error" role="alert"><p>{workError(state.error)}</p><Link to="/work">Quay lại dashboard</Link></div>}
-      {state.data && (
-        <>
-          <header className="work-space-preview-hero">
-            <img src={workspaceCover(state.data.kind)} alt="" />
-            <div>
-              <p>{workspaceKindLabel[state.data.kind]} · {state.data.sourceName || "Không gian độc lập"}</p>
-              <h1>{state.data.name}</h1>
-              <span>{state.data.memberCount} thành viên · {state.data.visibleOpenTaskCount} việc đang mở</span>
-            </div>
-          </header>
-          <section className="work-space-preview-next">
-            <div><h2>Hoạt động công việc</h2><p>Danh sách công việc và bộ lọc của không gian sẽ được nối tại bước giao diện tiếp theo.</p></div>
-            <Link className="work-home-secondary" to="/work/my">Mở công việc của tôi</Link>
-          </section>
-        </>
-      )}
-    </main>
-  );
-}
-
 export default function WorkHome() {
   const { user } = useAuth();
   if (!user || !canAccessRoute(user, "/work")) return <Navigate to="/" replace />;
@@ -238,6 +195,7 @@ export default function WorkHome() {
       displayName={user.name}
       service={defaultService}
       canCreateDirect={canPerform(user, "work.task.create", { scopeType: "own", scopeId: "*" })}
+      canCreateWorkspace={canStartWorkWorkspace(user)}
     />
   );
 }

@@ -111,10 +111,15 @@ export const emptyWorkDraft = (scope: WorkScope): CreateWorkTaskInput => ({
   checklist: [],
 });
 export function workError(error: unknown): string {
-  const code =
-    typeof error === "object" && error !== null && "message" in error
-      ? String(error.message)
-      : "";
+  const rawCode = typeof error === "object" && error !== null && "code" in error
+    ? String(error.code)
+    : "";
+  const rawMessage = typeof error === "object" && error !== null && "message" in error
+    ? String(error.message)
+    : "";
+  const code = rawCode.match(/(?:^|[^A-Z0-9_])(WORK_[A-Z0-9_]+)/)?.[1]
+    || rawMessage.match(/(?:^|[^A-Z0-9_])(WORK_[A-Z0-9_]+)/)?.[1]
+    || rawMessage;
   const messages: Record<string, string> = {
     WORK_CONFIGURE_DENIED: "Bạn không có quyền cấu hình phạm vi hoặc lịch này.",
     WORK_INVALID_CONFIGURATION:
@@ -133,7 +138,7 @@ export function workError(error: unknown): string {
     WORK_UPLOADS_PENDING:
       "Còn tệp chưa tải xong. Tải xong hoặc bỏ tệp chờ trước khi nộp kết quả.",
     WORK_VERSION_CONFLICT:
-      "Công việc đã được cập nhật ở nơi khác. Tải bản mới, kiểm tra lại rồi xác nhận thao tác.",
+      "Dữ liệu đã được cập nhật ở nơi khác. Tải bản mới, kiểm tra lại rồi xác nhận thao tác.",
     WORK_COMMAND_DENIED:
       "Thao tác không còn phù hợp với quyền hoặc trạng thái hiện tại.",
     WORK_UNRESOLVED_COMMAND:
@@ -166,6 +171,32 @@ export function workError(error: unknown): string {
       "Không gian làm việc không tồn tại hoặc bạn không còn là thành viên.",
     WORK_WORKSPACE_ARCHIVED:
       "Không gian đã lưu trữ và hiện chỉ cho phép xem.",
+    WORK_MEMBERSHIP_PREVIEW_STALE:
+      "Thành viên hoặc trách nhiệm đã thay đổi. Hãy tải lại danh sách rồi xem trước lần nữa.",
+    WORK_LAST_ADMIN:
+      "Workspace cần ít nhất một quản trị viên đang hoạt động.",
+    WORK_MEMBER_OPEN_ASSIGNMENTS:
+      "Thành viên còn việc đang nhận hoặc đang duyệt. Hãy bàn giao trước khi gỡ.",
+    WORK_MEMBER_ALREADY_ACTIVE:
+      "Người này đã là thành viên. Hãy tải lại danh sách.",
+    WORK_MEMBER_USER_INACTIVE:
+      "Tài khoản người được chọn không còn hoạt động.",
+    WORK_WORKSPACE_ADMIN_REQUIRED:
+      "Chỉ quản trị viên Workspace mới được thực hiện thao tác này.",
+    WORK_WORKSPACE_SOURCE_EXISTS:
+      "Nguồn này đã có Workspace. Hãy mở Workspace hiện có.",
+    WORK_WORKSPACE_CREATE_DENIED:
+      "Bạn không có quyền tạo Workspace từ nguồn đã chọn.",
+    WORK_SOURCE_VIEW_DENIED:
+      "Bạn không còn quyền xem phòng ban hoặc dự án nguồn.",
+    WORK_SOURCE_NOT_ACTIVE:
+      "Phòng ban hoặc dự án nguồn không còn hoạt động.",
+    WORK_SOURCE_PERSON_INELIGIBLE:
+      "Nhân sự đã chọn không còn thuộc nguồn hoặc chưa đủ điều kiện.",
+    WORK_SOURCE_REFERENCE_MISMATCH:
+      "Nguồn thành viên đã thay đổi. Hãy tải lại gợi ý rồi xem trước lần nữa.",
+    WORK_WORKSPACE_OPEN_TASKS:
+      "Workspace còn công việc đang mở. Hoàn tất hoặc di chuyển các việc này trước khi lưu trữ.",
     WORK_REVIEW_POLICY_DENIED:
       "Chính sách đánh giá chưa phù hợp với quyền của bạn.",
     WORK_REVIEWER_INELIGIBLE: "Người đánh giá không còn đủ điều kiện.",

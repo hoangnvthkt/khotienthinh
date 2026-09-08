@@ -45,6 +45,7 @@ import { workStatusLabels } from "../../lib/work/workPresentation";
 import { WorkDetail } from "./WorkDetail";
 import { WorkMutationSession } from "../../lib/work/workMutation";
 import type { WorkUploadState } from "./WorkAttachments";
+import { workspaceTabRoute } from "./workspaceManagement";
 const taskService = createWorkTaskService(supabase),
   attachmentService = createWorkAttachmentService(supabase);
 const views: { id: WorkTaskView; label: string }[] = [
@@ -101,6 +102,7 @@ export function WorkWorkspace({
   const listSearch = useRef("");
   const [revision, setRevision] = useState(0);
   const [params, setParams] = useSearchParams();
+  const workspaceContextId = params.get("workspace") || undefined;
   const requested = params.get("view");
   const view = views.some((v) => v.id === requested)
     ? (requested as WorkTaskView)
@@ -127,7 +129,7 @@ export function WorkWorkspace({
     ...(priority && priority in priorities
       ? { priority: [priority as keyof typeof priorities] }
       : {}),
-    ...(params.get("scope")
+    ...(!workspaceContextId && params.get("scope")
       ? { scope: scopeFromKey(params.get("scope")!) }
       : {}),
     ...(params.get("deadlineFrom")
@@ -137,7 +139,14 @@ export function WorkWorkspace({
       ? { deadlineTo: params.get("deadlineTo")! }
       : {}),
   };
-  const list = useWorkTasks(service, actorId, view, filters);
+  const list = useWorkTasks(
+    service,
+    actorId,
+    view,
+    filters,
+    true,
+    workspaceContextId,
+  );
   const detailSeq = useRef(0),
     alive = useRef(true);
   const refNow = useRef(taskCode);
@@ -247,7 +256,21 @@ export function WorkWorkspace({
         p.delete("comment");
         return p.toString();
       })());
-  const returnTo = `/work/my${returnSearch ? "?" + returnSearch : ""}`;
+  const workspaceSearch = (() => {
+    const next = new URLSearchParams(returnSearch);
+    next.delete("workspace");
+    next.delete("scope");
+    next.delete("view");
+    return next.toString();
+  })();
+  const returnTo = workspaceContextId
+    ? `${workspaceTabRoute(workspaceContextId, "tasks")}${workspaceSearch ? `?${workspaceSearch}` : ""}`
+    : `/work/my${returnSearch ? "?" + returnSearch : ""}`;
+  const detailTo = (code: string) => {
+    const next = new URLSearchParams(returnSearch);
+    if (workspaceContextId) next.set("workspace", workspaceContextId);
+    return `/work/tasks/${encodeURIComponent(code)}${next.toString() ? `?${next}` : ""}`;
+  };
   useEffect(() => {
     if (!taskCode && !list.loading) {
       const top =
@@ -312,7 +335,7 @@ export function WorkWorkspace({
               <Link
                 key={t.id}
                 aria-current={t.task_code === taskCode ? "page" : undefined}
-                to={`/work/tasks/${encodeURIComponent(t.task_code)}${returnSearch ? "?" + returnSearch : ""}`}
+                to={detailTo(t.task_code)}
                 state={{
                   workListSearch: returnSearch,
                   workScroll: listScroll.current,
@@ -344,7 +367,7 @@ export function WorkWorkspace({
               state={{ workScroll: listScroll.current }}
             >
               <ArrowLeft size={16} />
-              Công việc của tôi
+              {workspaceContextId ? "Không gian làm việc" : "Công việc của tôi"}
             </Link>
             {(!currentDetail ||
               (currentDetail.loading && !currentDetail.data)) && (
@@ -373,7 +396,7 @@ export function WorkWorkspace({
                       onClick={() => {
                         const url = new URL(window.location.href);
                         url.search = "";
-                        url.hash = `/work/tasks/${encodeURIComponent(currentDetail.data!.task.task_code)}`;
+                        url.hash = `/work/tasks/${encodeURIComponent(currentDetail.data!.task.task_code)}${workspaceContextId ? `?workspace=${encodeURIComponent(workspaceContextId)}` : ""}`;
                         navigator.clipboard
                           .writeText(url.toString())
                           .then(() =>
@@ -547,7 +570,7 @@ export function WorkWorkspace({
               {list.items.map((task) => (
                 <li key={task.id}>
                   <Link
-                    to={`/work/tasks/${encodeURIComponent(task.task_code)}${params.toString() ? "?" + params.toString() : ""}`}
+                    to={detailTo(task.task_code)}
                     state={{
                       workListSearch: params.toString(),
                       workScroll: workScrollHost(root.current).scrollTop,
@@ -622,8 +645,11 @@ export function WorkWorkspace({
           service={service}
           attachments={attachments}
           initialScope={
-            drawer.clone?.draft.scope || scopeFromKey(scopes[0]?.id || "direct")
+            drawer.clone?.draft.scope || (workspaceContextId
+              ? { type: "workspace", workspaceId: workspaceContextId }
+              : scopeFromKey(scopes[0]?.id || "direct"))
           }
+          lockScope={!!workspaceContextId}
           clone={drawer.clone}
           scopeLabels={Object.fromEntries(scopes.map((s) => [s.id, s.name]))}
           onClose={() => setDrawer(null)}

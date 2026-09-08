@@ -473,25 +473,25 @@ modify `pages/work/WorkPage.tsx`, `pages/work/WorkCreateDrawer.tsx`,
 Global config còn ở `/work/settings` cho người có quyền global; scoped settings
 được mở từ Workspace, không bắt user tìm lại phòng ban trong một danh sách chung.
 
-- [ ] Fixture user journey: tạo linked/collaboration → chọn admin đầu tiên → thêm
+- [x] Fixture user journey: tạo linked/collaboration → chọn admin đầu tiên → thêm
   member từ nguồn → cấu hình lịch → tạo task → nhận/xử lý/review → kiểm tra history.
-- [ ] Wizard chọn loại, nguồn hợp lệ theo quyền, name/cover; nguồn đã có Workspace
+- [x] Wizard chọn loại, nguồn hợp lệ theo quyền, name/cover; nguồn đã có Workspace
   cho mở Workspace đó, không tạo bản trùng. Sau create vào không gian đang trống.
-- [ ] Workspace header có nguồn, avatar và vai trò; tab Công việc / Thành viên /
+- [x] Workspace header có nguồn, avatar và vai trò; tab Công việc / Thành viên /
   Cấu hình; admin controls chỉ cho admin, member thấy roster tối thiểu. archived
   hiện trạng thái readonly. UI không tự kiểm quyền bằng role text thay server caps.
-- [ ] Danh sách Workspace khác “việc của tôi”: dùng endpoint WS4 cho toàn bộ standard
+- [x] Danh sách Workspace khác “việc của tôi”: dùng endpoint WS4 cho toàn bộ standard
   tasks nhìn được. Drawer tạo tự giữ workspaceId, bucket và picker cùng phạm vi;
   task detail giữ breadcrumb/quay lại bộ lọc/scroll đúng Workspace và URL task cũ.
-- [ ] Member picker gợi ý ưu tiên nguồn, tìm liên phòng, disabled reasons, select-page
+- [x] Member picker gợi ý ưu tiên nguồn, tìm liên phòng, disabled reasons, select-page
   và preview batch rõ ràng; áp dụng một lần có version/fingerprint/reason/key.
   Review dialog không cho đóng tạo yêu cầu mới khi kết quả cũ chưa xác định.
-- [ ] Membership change có màn xem trước quyền/trách nhiệm đang mở; admin cuối,
+- [x] Membership change có màn xem trước quyền/trách nhiệm đang mở; admin cuối,
   nhiệm vụ cần bàn giao và preview stale hiển thị hướng xử lý cụ thể. Đối chiếu
   nguồn giữ manual members, không âm thầm áp dụng remove.
-- [ ] Tái dùng editor nhóm việc/lịch/SLA; kiểm lost response, reload đúng record,
+- [x] Tái dùng editor nhóm việc/lịch/SLA; kiểm lost response, reload đúng record,
   actor-scoped draft và cache invalidation của Task10 trong ngữ cảnh Workspace.
-- [ ] Test thật qua browser fixture; soát mọi task detail/attachment/nav regression,
+- [x] Test thật qua browser fixture; soát mọi task detail/attachment/nav regression,
   commit sau TypeScript và test liên quan đạt.
 
 Browser acceptance mẫu:

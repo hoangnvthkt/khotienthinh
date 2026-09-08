@@ -172,7 +172,8 @@ const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ c
 
 const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
 const WorkHome = React.lazy(() => import('./pages/work/WorkHome'));
-const WorkWorkspacePreview = React.lazy(() => import('./pages/work/WorkHome').then(module => ({ default: module.WorkWorkspacePreview })));
+const WorkSpacePage = React.lazy(() => import('./pages/work/WorkSpacePage'));
+const WorkSpaceCreate = React.lazy(() => import('./pages/work/WorkSpaceCreate'));
 const WorkSettings = React.lazy(() => import('./pages/work/WorkSettings'));
 
 const AppRoutes: React.FC = () => {
@@ -183,7 +184,10 @@ const AppRoutes: React.FC = () => {
           <Route index element={<Home />} />
           <Route path="work" element={<WorkHome />} />
           <Route path="work/my" element={<WorkPage />} />
-          <Route path="work/spaces/:workspaceId" element={<WorkWorkspacePreview />} />
+          <Route path="work/spaces/new" element={<WorkSpaceCreate />} />
+          <Route path="work/spaces/:workspaceId" element={<WorkSpacePage />} />
+          <Route path="work/spaces/:workspaceId/members" element={<WorkSpacePage />} />
+          <Route path="work/spaces/:workspaceId/settings" element={<WorkSpacePage />} />
           <Route path="work/settings" element={<WorkSettings />} />
           <Route path="work/tasks/:taskCode" element={<WorkPage />} />
           <Route path="notifications" element={<Notifications />} />

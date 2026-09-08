@@ -38,6 +38,11 @@ describe("Work Workspace dashboard contracts", () => {
     expect(getPermissionModuleByCode("work.module")?.routes).toContain(
       "/work/spaces/:workspaceId",
     );
+    expect(getPermissionModuleByCode("work.module")?.routes).toEqual(expect.arrayContaining([
+      "/work/spaces/new",
+      "/work/spaces/:workspaceId/members",
+      "/work/spaces/:workspaceId/settings",
+    ]));
   });
 
   it("deduplicates load-more pages while accepting refreshed summaries", () => {

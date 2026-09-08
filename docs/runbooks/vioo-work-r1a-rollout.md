@@ -847,3 +847,39 @@ Focused route/service tests pass (2 files / 8 tests); the full suite passes (364
 1,720 tests), and TypeScript, lint and the production build pass. The
 dev server remains process-only at `http://127.0.0.1:5187/#/work`; production flag
 and notification delivery are unchanged. No handoff was created.
+
+### Workspace operations UI — WS7
+
+Workspace cards now open an operational page with Công việc, Thành viên and Cấu hình
+tabs. The task tab uses the member-guarded WS4 endpoint and fixes the creation drawer
+to the current Workspace; personal `/work/my` behavior remains intact. Task detail
+keeps the established `/work/tasks/:taskCode` URL and carries a Workspace return
+context for the breadcrumb, filters and rail. Task 8/9 browser regressions continue
+to pass, including create retry, attachments, lifecycle, review and history.
+
+The creation wizard supports department, project and independent collaboration
+Workspaces. Source readers remain server-authoritative; a linked source with an
+existing visible Workspace opens that record rather than creating a duplicate. The
+creator is shown as the first admin, and unknown create responses freeze the exact
+input/idempotency key for retry. Global and source-scoped canonical create grants can
+open the wizard; the server still verifies the selected source.
+
+Admins can search and page through source-prioritized people, select a page, review a
+bounded batch and apply it once. Canonical department/project additions include the
+server-projected source reference; cross-source additions remain manual. Network-lost
+membership applies preserve the exact preview, expected version, reason and key, and
+the review cannot be replaced until retry succeeds. Server rejections clear the
+attempt and show a reload/review instruction. Removal, role changes and source diff
+reconciliation all require preview; source diff never removes manual members silently.
+Archived Workspaces expose readonly task/member state and hide mutating controls.
+
+Workspace configuration reuses the Task 10 group/calendar/exception/SLA editor with
+an actor-and-Workspace-scoped persisted attempt. Workspace access-revision realtime
+events refresh both the current record and the signed-in permission snapshot. Chrome
+QA passed the dashboard, linked create, old task URL, fixed-scope task drawer, member
+retry with identical payload/key, scoped configuration, archived readonly mode,
+restricted direct navigation and 1440×900/768×1024/360×800 screenshots. Task 8, Task 9
+and Task 10 browser suites pass. The full suite/build evidence is recorded with the
+WS7 commit: 365 Vitest files / 1,728 tests, TypeScript, lint and production build all
+pass (the existing large-chunk warning remains). No Cloud schema or pilot data changed; notifications remain disabled and
+no handoff was created.
