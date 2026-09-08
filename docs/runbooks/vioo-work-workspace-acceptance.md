@@ -6,18 +6,18 @@ admin admin@khoviet.vn và thành viên sonpn@tienthinhjsc.vn. Thông báo vẫn
 
 ## Bằng chứng tự động
 
-- [ ] Cloud có đúng một Workspace phòng ban ở chế độ workspace.
-- [ ] Workspace có đúng hai thành viên, đúng vai trò admin/member và cùng hạn
+- [x] Cloud có đúng một Workspace phòng ban ở chế độ workspace.
+- [x] Workspace có đúng hai thành viên, đúng vai trò admin/member và cùng hạn
   2026-09-21T07:02:36.939209Z.
-- [ ] Task VW-2026-000017, assignment, lịch, SLA, event, version và outbox giữ
+- [x] Task VW-2026-000017, assignment, lịch, SLA, event, version và outbox giữ
   nguyên fingerprint; không tạo notification delivery.
-- [ ] 15 direct grant pilot cũ được soft revoke có before/after audit; module access
+- [x] 15 direct grant pilot cũ được soft revoke có before/after audit; module access
   của hai người đến từ membership.
-- [ ] Chỉ admin có work.workspace.create global; Sơn không có create Workspace,
+- [x] Chỉ admin có work.workspace.create global; Sơn không có create Workspace,
   configure, recovery hoặc quyền xem task restricted.
-- [ ] Persona SQL dùng auth_id thật của admin và Sơn qua guarded RPC; principal
+- [x] Persona SQL dùng auth_id thật của admin và Sơn qua guarded RPC; principal
   không tồn tại bị từ chối ở raw table/RLS.
-- [ ] Full test, lint, TypeScript, build, migration ledger, query audit, browser
+- [x] Full test, lint, TypeScript, build, migration ledger, query audit, browser
   regressions và postflight Cloud đều đạt.
 
 ## Anh nghiệm thu bằng đăng nhập thật

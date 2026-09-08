@@ -517,24 +517,24 @@ create `supabase/tests/work_workspace_pilot_acceptance.sql` và
 activation riêng; không suy rằng user yêu cầu publish từ việc đồng ý kế hoạch này.
 **Produces:** Workspace dev thực tế cho hai tài khoản hiện tại, hồ sơ kiểm chứng đầy đủ.
 
-- [ ] Đọc lại inventory pilot: members/grants/calendar/task counts và nguồn đang
+- [x] Đọc lại inventory pilot: members/grants/calendar/task counts và nguồn đang
   hoạt động. So sánh fingerprint bản rehearsal; khác biệt buộc rehearsal lại.
-- [ ] Chạy backfill mặc định rollback cùng acceptance: members đúng 2 người,
+- [x] Chạy backfill mặc định rollback cùng acceptance: members đúng 2 người,
   admin/member đúng vai trò, calendar giữ split shifts, SLA/attachments/task code
   bất biến. Dùng auth_id thực khi mô phỏng persona SQL, kiểm `IS DISTINCT FROM`
   thay vì `<>` để không lọt principal null; không gọi đó là browser login thật.
-- [ ] Candidate commit explicit paths; dry-run/apply từng migration còn lại đúng
+- [x] Candidate commit explicit paths; dry-run/apply từng migration còn lại đúng
   allowlist. Tạm ngừng ghi đúng pilot scope trong giao dịch chuyển access_mode,
   giữ scope khác hoạt động. Backfill + membership + mode switch phải atomic.
-- [ ] Bootstrap quyền tạo Workspace cho đúng tài khoản admin pilot bằng canonical
+- [x] Bootstrap quyền tạo Workspace cho đúng tài khoản admin pilot bằng canonical
   `work.workspace.create` global có cùng hạn 21/09, ghi riêng trong manifest/audit.
   Quyền này cho tạo collaboration và linked nguồn actor được phép xem; không cấp
   quyền đọc các Workspace hiện hữu. Sơn không có quyền tạo Workspace ở pilot đầu.
   Không bootstrap recovery global hoặc view_restricted.
-- [ ] Retire đúng các direct Work scope grants do pilot cũ tạo sau khi membership
+- [x] Retire đúng các direct Work scope grants do pilot cũ tạo sau khi membership
   parity đạt; lưu danh sách IDs/expiry và before/after audit, không xóa grant khác.
   Giữ hoặc thay thế module access có chủ đích; không tự gia hạn mốc 21/09.
-- [ ] Chạy postflight server và toàn bộ tests; kiểm security advisor, query inventory,
+- [x] Chạy postflight server và toàn bộ tests; kiểm security advisor, query inventory,
   migration ledgers. Nếu fail, giữ UI gate tắt và quyền fail-closed. Không bật lại
   bypass legacy scope như một cách rollback quyền sau khi đã chuyển membership.
 - [ ] Bật Workspace dashboard chỉ trên dev hiện có; kiểm HTTP, route flag và login.
@@ -543,7 +543,7 @@ activation riêng; không suy rằng user yêu cầu publish từ việc đồng
 - [ ] Nghiệm thu UI: admin tạo/quản trị Workspace; Sơn thấy đúng phòng đã tham gia;
   thêm người có gợi ý tổ chức; người ngoài không thấy; direct work đúng capability;
   task standard/restricted, lịch, quay lại danh sách và mobile đều đúng.
-- [ ] Cập nhật rollout bằng kết quả thật, task còn thiếu và grant expiry; chưa đánh
+- [x] Cập nhật rollout bằng kết quả thật, task còn thiếu và grant expiry; chưa đánh
   dấu quan sát 48 giờ hoàn thành khi chưa chạy. Không tạo handoff hay dừng dev ngoài ý người dùng.
 
 Commands kiểm chứng (load root `.env` âm thầm cho CLI Cloud):

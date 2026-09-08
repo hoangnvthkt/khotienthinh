@@ -45,8 +45,8 @@ flag and repair schema or data with a forward migration.
 - [x] Commands, lifecycle, SLA, collaboration, and outbox verified.
 - [x] Private Storage and upload processor verified.
 - [x] Responsive UI verified at 360x800, 768x1024, and 1440x900 in isolated Chrome QA; named-device pilot remains Task 11.
-- [ ] Named pilot grants reviewed; no bulk grants exist.
-- [ ] Feature flag enabled only for the approved deployment environment.
+- [x] Named pilot grants reviewed; no bulk grants exist.
+- [x] Feature flag enabled only for the approved deployment environment.
 - [ ] Forty-eight-hour observation completed.
 
 ## Cloud rollout evidence
@@ -883,3 +883,58 @@ and Task 10 browser suites pass. The full suite/build evidence is recorded with 
 WS7 commit: 365 Vitest files / 1,728 tests, TypeScript, lint and production build all
 pass (the existing large-chunk warning remains). No Cloud schema or pilot data changed; notifications remain disabled and
 no handoff was created.
+
+### Workspace named pilot cutover — WS8
+
+WS8 cut over **Phòng Quản lý dự án** to Workspace
+`a4a5782f-4cd8-4f10-af22-ae2448bd1e45` at
+`2026-09-08T03:10:11.667329Z`. The tracked operation remains rollback by
+default. The applied candidate came from commit `2ebf3e4`, SHA-256
+`bcfc81e4f51ca0dc10f0a8c498780e13af2f80be1eb72dca23e45c04c384450e`;
+the reviewed apply copy differed only in its final `ROLLBACK`/ `COMMIT`
+statement. It briefly blocked writes while leaving reads available, backfilled
+the task/calendar/policies and switched `access_mode` in one transaction.
+
+The Workspace has exactly two active source-bound members through
+`2026-09-21T07:02:36.939209Z`: admin
+`7fa2d219-fcb4-4ca7-9667-12d81c8f43bf` for `admin@khoviet.vn`, and member
+`3ee9d305-d7d0-4dc0-86cc-292916c85db6` for
+`sonpn@tienthinhjsc.vn`. Both membership rows use the canonical department UUID
+as their organization source reference.
+
+Membership parity was proven before retirement. The exact 15 named-pilot direct
+grants, including both old module-access grants, were soft revoked and retained
+with their original expiry. Permission audit events
+`a7f0ef25-51b2-470e-853b-e6f234b35592`,
+`d30d8c36-f367-4eb8-bb4d-edbf2c36490d` and
+`c4be49d4-f4f7-4700-9ff6-213fc6482b42` record the two before/after retirements
+and the admin bootstrap. Admin alone received global `work.workspace.create`
+grant `680f7574-2e97-42e7-a038-658025b70fbc` with the same expiry. Sơn received
+no Workspace-create/configure capability; neither account received recovery or
+restricted-view bootstrap.
+
+Before and after fingerprints are identical for task business fields
+`d74eadfd341f2c01e515e1baa6a9c6f1`, assignment
+`0e9e7ac5f5ddc8f56a77cd27cb73772a`, calendar
+`ebf8adafa642c61eb5853271ca0e476d` and policies
+`8ba38c1c49589bde2fb7099ae0447d48`. Task `VW-2026-000017` remains in progress,
+the Monday–Saturday 08:00–12:00/13:00–17:00 calendar and normal/important/urgent
+SLA values remain 480/240/60 minutes. Existing outbox count remains 2; deliveries
+remain 0 and notification settings remain disabled.
+
+Persistent-state acceptance passed with both real auth IDs through guarded RPCs
+and an unknown-principal RLS denial. All five Workspace Cloud smokes pass after
+rollback. The WS4 regression fixture was corrected to declare its synthetic
+private calendar/policy as `scope_type='workspace'`, matching the deployed WS5
+constraint and avoiding any dependency on an empty Cloud. Full Vitest passes
+365 files / 1,728 tests; TypeScript/lint, production build, migration baseline
+(26 active / 402 archived) and query audit (0 findings/errors) pass. Local and
+Cloud migration ledgers match 26/26, linked dry-run is up to date, and the Cloud
+ERROR security advisor reports no issues.
+
+The isolated Workspace, Task 8, Task 9 and Task 10 browser suites pass. Dev at
+`http://127.0.0.1:5187/#/work` returns HTTP 200 with the Workspace flag enabled
+for that process only. Real browser login for the two named users and the UI
+checklist in `vioo-work-workspace-acceptance.md` remain for user acceptance.
+The 48-hour observation has not started and is not marked complete. Production
+deployment is unchanged; no handoff was created.
