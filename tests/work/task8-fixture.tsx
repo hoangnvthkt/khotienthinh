@@ -11,7 +11,7 @@ import {
   mentionedUserIds,
   workDocument,
 } from "../../lib/work/workForm";
-import type { WorkTaskSummary } from "../../lib/work/workTypes";
+import type { WorkTaskSummary, WorkTextDocument } from "../../lib/work/workTypes";
 const query = new URLSearchParams(window.location.search);
 if (query.get("layout") === "true") {
   const root = document.getElementById("root")!;
@@ -59,6 +59,7 @@ const summary = (id: string, title: string): WorkTaskSummary => ({
   lock_version: 1,
   assignment_count: 2,
   acknowledged_count: 1,
+  progress_percent: id === "1" ? 65 : 25,
 });
 const people = [
   { id: "actor", name: "Lê Minh An", kind: "user" },
@@ -75,6 +76,11 @@ let pinned = false;
 let plannedStartAt: string | null = "2026-09-09T01:00:00Z";
 let deadlineAt: string | null = "2026-09-10T10:00:00Z";
 let watcherIds = ["second"];
+let descriptionDocument: WorkTextDocument = workDocument(
+  "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.\nKhông diễn giải nội dung thành HTML.",
+);
+let resultDraftDocument: WorkTextDocument = workDocument("Bản nháp kết quả ban đầu.");
+let progressPercent = 65;
 const fixtureChildren: any[] = [];
 const role = query.get("role") || "assignee";
 const comment = (id: string, text: string) => ({
@@ -155,6 +161,18 @@ const service: WorkTaskService = {
     }
     if (input.command === "watchers_update") {
       watcherIds = [...new Set([...watcherIds.filter((id) => !input.payload.removeUserIds.includes(id)), ...input.payload.addUserIds])];
+      taskVersion++;
+    }
+    if (input.command === "description_update") {
+      descriptionDocument = input.payload.content;
+      taskVersion++;
+    }
+    if (input.command === "result_draft_update") {
+      resultDraftDocument = input.payload.content;
+      taskVersion++;
+    }
+    if (input.command === "progress_update") {
+      progressPercent = input.payload.progressPercent;
       taskVersion++;
     }
     if (input.command === "checklist_set_completed")
@@ -384,12 +402,15 @@ const service: WorkTaskService = {
         ...summary("1", "Chuẩn bị hồ sơ nghiệm thu"),
         status: taskStatus,
         lock_version: taskVersion,
+        progress_percent: taskStatus === "completed" ? 100 : progressPercent,
         planned_start_at: plannedStartAt,
         deadline_at: deadlineAt,
-        description_document: workDocument(
-          "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.\nKhông diễn giải nội dung thành HTML.",
-        ),
-        description_text: "Kiểm tra đầy đủ hồ sơ trước khi trình duyệt.",
+        description_document: descriptionDocument,
+        description_text: documentText(descriptionDocument),
+        result_draft_document: resultDraftDocument,
+        result_draft_text: documentText(resultDraftDocument),
+        result_draft_updated_at: "2026-09-09T03:00:00Z",
+        result_draft_updated_by: "actor",
         labels: ["Nghiệm thu", "Hồ sơ"],
         review_policy: query.get("autoComplete") === "true" ? "auto_complete" : "creator_review",
         created_at: "2026-09-07T00:00:00Z",
@@ -475,6 +496,7 @@ const service: WorkTaskService = {
               iteration: 1,
               submitted_by: "actor",
               submitted_at: "2026-09-07T02:00:00Z",
+              result_document: workDocument("Hồ sơ đã được kiểm tra đầy đủ."),
               result_text: "Hồ sơ đã được kiểm tra đầy đủ.",
               status: "pending_review",
             }
@@ -502,6 +524,9 @@ const service: WorkTaskService = {
         canCreateChild: active,
         canManageSchedule: active,
         canManageWatchers: active,
+        canUpdateDescription: !terminal && role !== "watcher",
+        canUpdateResultDraft: active && ["in_progress", "changes_requested"].includes(taskStatus),
+        canUpdateProgress: active && ["in_progress", "changes_requested"].includes(taskStatus),
         canAcknowledge: active && taskStatus === "pending_acknowledgement",
         canRequestClarification:
           active && taskStatus === "pending_acknowledgement",

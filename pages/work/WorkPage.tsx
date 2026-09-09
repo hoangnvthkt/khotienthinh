@@ -377,6 +377,10 @@ export function WorkWorkspace({
                       )}
                       <time dateTime={t.deadline_at || undefined}>{when(t.deadline_at)}</time>
                     </span>
+                    <span className="work-rail-progress" aria-label={`Tiến độ ${t.progress_percent}%`}>
+                      <span><i style={{ width: `${t.progress_percent}%` }} /></span>
+                      <b>{t.progress_percent}%</b>
+                    </span>
                   </span>
                 </Link>
               ))}

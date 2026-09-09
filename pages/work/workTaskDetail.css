@@ -124,7 +124,7 @@
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
   gap: 9px;
-  min-height: 72px;
+  min-height: 84px;
   padding: 12px 12px 11px 14px;
   border: 0;
   border-bottom: 1px solid #e8ebed;
@@ -180,6 +180,30 @@
 .work-rail-meta time {
   color: #7c8d96;
   font-size: 9px;
+}
+.work-rail-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.work-rail-progress > span {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6ebed;
+}
+.work-rail-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #229641;
+}
+.work-rail-progress b {
+  color: #60747e;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 .work-rail-scope,
 .work-rail-priority {
@@ -473,6 +497,234 @@
   font-size: 11px;
   line-height: 1.6;
 }
+.work-progress-card {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  padding: 14px 18px;
+  border: 1px solid #dfe3e5;
+  border-radius: 4px;
+  background: #fff;
+}
+.work-progress-card header,
+.work-progress-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.work-progress-card header {
+  justify-content: space-between;
+}
+.work-progress-card header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.work-progress-card strong {
+  color: #253b46;
+  font-size: 12px;
+  font-weight: 780;
+}
+.work-progress-card header span,
+.work-progress-card p {
+  margin: 0;
+  color: #7d8d95;
+  font-size: 9px;
+}
+.work-progress-card output {
+  min-width: 48px;
+  color: #188248;
+  font-size: 17px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.work-progress-controls input[type="range"] {
+  width: 100%;
+  min-width: 90px;
+  height: 5px;
+  appearance: none;
+  border-radius: 999px;
+  outline: 0;
+  background: linear-gradient(to right, #229641 var(--work-progress), #e4e9eb var(--work-progress));
+}
+.work-progress-controls input[type="range"]::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  appearance: none;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #229641;
+  box-shadow: 0 0 0 1px #16813a, 0 2px 6px #17324730;
+  cursor: grab;
+}
+.work-progress-controls input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #229641;
+  box-shadow: 0 0 0 1px #16813a;
+}
+.work-progress-controls .work-secondary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.work-rich-editor {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #ccd5d9;
+  border-radius: 4px;
+  background: #fff;
+}
+.work-rich-editor:focus-within {
+  border-color: #227b96;
+  box-shadow: 0 0 0 2px #227b9617;
+}
+.work-rich-canvas {
+  min-height: 116px;
+  padding: 13px 14px;
+  overflow-wrap: anywhere;
+  outline: 0;
+  color: #304650;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: normal;
+}
+.work-rich-canvas:empty::before {
+  color: #9aa6ac;
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+.work-rich-canvas p,
+.work-rich-canvas h1,
+.work-rich-canvas h2,
+.work-rich-canvas blockquote,
+.work-rich-canvas pre,
+.work-rich-canvas ul,
+.work-rich-canvas ol {
+  margin: 0 0 8px;
+}
+.work-rich-canvas h1 { font-size: 20px; }
+.work-rich-canvas h2 { font-size: 16px; }
+.work-rich-canvas blockquote {
+  padding-left: 12px;
+  border-left: 3px solid #9fc4cf;
+  color: #607781;
+}
+.work-rich-canvas pre {
+  overflow-x: auto;
+  padding: 8px;
+  border-radius: 3px;
+  background: #f3f5f6;
+  white-space: pre-wrap;
+}
+.work-rich-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 4px 7px;
+  overflow-x: auto;
+  border-top: 1px solid #dfe4e6;
+  background: #f7f8f8;
+  scrollbar-width: thin;
+}
+.work-rich-toolbar > span {
+  width: 1px;
+  height: 20px;
+  flex: 0 0 1px;
+  margin: 0 3px;
+  background: #d8dfe2;
+}
+.work-rich-toolbar button {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  place-items: center;
+  padding: 0;
+  border-radius: 3px;
+  color: #526872;
+  font-size: 10px;
+  font-weight: 760;
+}
+.work-rich-toolbar button:hover:not(:disabled) {
+  color: #1d6e85;
+  background: #e8f2f5;
+}
+.work-rich-toolbar svg { width: 14px; height: 14px; }
+.work-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+}
+.work-editor-actions > span {
+  margin-right: auto;
+  color: #7d8d95;
+  font-size: 9px;
+}
+.work-editor-actions button,
+.work-task-section-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.work-rich-view {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #536873;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.work-rich-view > :first-child { margin-top: 0; }
+.work-rich-view > :last-child { margin-bottom: 0; }
+.work-rich-view h4 { font-size: 17px; }
+.work-rich-view h5 { font-size: 14px; }
+.work-rich-view ul,
+.work-rich-view ol { padding-left: 22px; }
+.work-rich-view blockquote {
+  margin-left: 0;
+  padding-left: 12px;
+  border-left: 3px solid #9fc4cf;
+}
+.work-rich-view pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 10px;
+  border-radius: 3px;
+  background: #f3f5f6;
+  white-space: pre-wrap;
+}
+.work-rich-view a { color: #19728c; }
+.work-rich-empty { color: #8b989f !important; }
+.work-submitted-result,
+.work-submit-preview .work-rich-view {
+  margin-top: 13px;
+  padding: 12px 13px;
+  border-left: 3px solid #229641;
+  background: #f3faf5;
+}
+.work-submitted-result > header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px;
+  margin-bottom: 8px;
+  color: #60747e;
+  font-size: 10px;
+}
+.work-submission-state {
+  display: inline-flex;
+  margin-top: 10px;
+  color: #188248;
+  font-size: 10px;
+}
+.work-submit-preview { min-width: 0; }
 .work-module-detail .work-section-toggle {
   min-height: 48px;
   margin: 0;
@@ -783,6 +1035,31 @@
   .work-module-detail .work-task-section-header {
     align-items: stretch;
     flex-direction: column;
+  }
+  .work-progress-card {
+    padding: 13px 14px;
+  }
+  .work-progress-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .work-progress-controls input[type="range"] {
+    min-height: 28px;
+  }
+  .work-rich-canvas {
+    min-height: 132px;
+    padding: 12px;
+  }
+  .work-rich-toolbar {
+    flex-wrap: nowrap;
+    overscroll-behavior-x: contain;
+  }
+  .work-editor-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .work-editor-actions > span {
+    width: 100%;
   }
   .work-module-detail .work-task-section-actions {
     justify-content: flex-start;

@@ -37,7 +37,7 @@ try {
   await dialog.getByRole("button", { name: "Lưu người theo dõi", exact: true }).click();
   await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "collaborate" && call.args[0].command === "watchers_update"));
 
-  await page.getByRole("button", { name: "Chỉnh sửa", exact: true }).click();
+  await page.locator(".work-task-header").getByRole("button", { name: "Chỉnh sửa", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("Ngày bắt đầu").fill("2026-09-12T08:00");
   await dialog.getByLabel("Ngày kết thúc").fill("2026-09-11T17:00");
@@ -46,6 +46,32 @@ try {
   await dialog.getByLabel("Ngày kết thúc").fill("2026-09-12T17:00");
   await dialog.getByRole("button", { name: "Lưu thời hạn" }).click();
   await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "collaborate" && call.args[0].command === "schedule_update"));
+
+  assert.equal(await page.getByLabel("Tiến độ 65%").count(), 1);
+  const descriptionSection = page.locator(".work-task-section", { has: page.getByRole("heading", { name: "Mô tả công việc", exact: true }) });
+  await descriptionSection.getByRole("button", { name: "Chỉnh sửa", exact: true }).click();
+  const descriptionEditor = descriptionSection.getByRole("textbox", { name: "Mô tả công việc" });
+  await descriptionEditor.fill("Mô tả đã cập nhật từ trình soạn thảo.");
+  await descriptionSection.getByRole("button", { name: "Lưu mô tả", exact: true }).click();
+  await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "collaborate" && call.args[0].command === "description_update"));
+  await descriptionSection.getByText("Mô tả đã cập nhật từ trình soạn thảo.", { exact: true }).waitFor();
+
+  const resultSection = page.locator(".work-task-section", { has: page.getByRole("heading", { name: "Kết quả công việc", exact: true }) });
+  const resultEditor = resultSection.getByRole("textbox", { name: "Kết quả công việc" });
+  await resultEditor.fill("Đã hoàn tất phần việc cha.");
+  await resultEditor.press("ControlOrMeta+A");
+  await resultSection.getByRole("button", { name: "Đậm", exact: true }).click();
+  await resultSection.getByRole("button", { name: "Lưu kết quả", exact: true }).click();
+  await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "collaborate" && call.args[0].command === "result_draft_update"));
+  const resultDraftInput = await page.evaluate(() => window.workQa.calls.find((call) => call.name === "collaborate" && call.args[0].command === "result_draft_update").args[0]);
+  assert.equal(resultDraftInput.payload.content.content[0].content[0].marks[0].type, "bold");
+
+  const progress = page.getByRole("slider", { name: "Phần trăm hoàn thành" });
+  await progress.fill("80");
+  await page.getByRole("button", { name: "Lưu tiến độ", exact: true }).click();
+  await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "collaborate" && call.args[0].command === "progress_update"));
+  assert.equal(await page.locator(".work-progress-card output").textContent(), "80%");
+  await page.screenshot({ path: `${output}/desktop-editors.png`, fullPage: false });
 
   assert.equal(await page.locator(".work-action-bar").count(), 1);
   const approvedLayout = await page.evaluate(() => {
@@ -81,6 +107,8 @@ try {
   }
 
   await page.setViewportSize({ width: 320, height: 700 });
+  await resultSection.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: `${output}/mobile-editor-320.png`, fullPage: false });
   await page.evaluate(() => window.scrollTo(0, 900));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   const compactBar = await page.locator(".work-action-bar").evaluate((element) => {
@@ -102,7 +130,8 @@ try {
 
   await page.getByRole("button", { name: "Nộp kết quả", exact: true }).click();
   dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Nội dung kết quả").fill("Đã hoàn tất phần việc cha.");
+  await dialog.getByText("Đã hoàn tất phần việc cha.", { exact: true }).waitFor();
+  assert.equal(await dialog.getByLabel("Nội dung kết quả").count(), 0);
   let warning = "";
   page.once("dialog", async (nativeDialog) => { warning = nativeDialog.message(); await nativeDialog.dismiss(); });
   await dialog.getByRole("button", { name: "Xác nhận", exact: true }).click();
@@ -112,7 +141,19 @@ try {
   page.once("dialog", async (nativeDialog) => nativeDialog.accept());
   await dialog.getByRole("button", { name: "Xác nhận", exact: true }).click();
   await page.waitForFunction(() => window.workQa.calls.some((call) => call.name === "command" && call.args[0].command === "submit"));
+  const submitInput = await page.evaluate(() => window.workQa.calls.find((call) => call.name === "command" && call.args[0].command === "submit").args[0]);
+  assert.equal(submitInput.payload.result.content[0].content[0].text, "Đã hoàn tất phần việc cha.");
 
+  for (const width of [320, 360, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const mobile = await page.evaluate(() => ({
+      fits: document.documentElement.scrollWidth <= window.innerWidth,
+      overlapping: [...document.querySelectorAll(".work-task-section-header, .work-editor-actions")].some((element) => element.scrollWidth > element.clientWidth + 1),
+    }));
+    assert.equal(mobile.fits, true, `page overflows at ${width}px`);
+    assert.equal(mobile.overlapping, false, `section controls overlap at ${width}px`);
+  }
   await page.setViewportSize({ width: 360, height: 800 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.getByRole("button", { name: "Trách nhiệm & SLA" }).click();

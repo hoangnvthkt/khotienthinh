@@ -1,5 +1,6 @@
 import type {
   CreateWorkTaskInput,
+  WorkInlineNode,
   WorkScope,
   WorkTextDocument,
 } from "./workTypes";
@@ -8,31 +9,35 @@ import {
   validateWorkspaceScope,
   type WorkspaceScope,
 } from "./workWorkspaceTypes";
-export const workDocument = (text: string): WorkTextDocument => ({
+export const workDocument = (text: string) => ({
   version: 1,
   type: "doc",
   content: text.split("\n").map((line) => ({
-    type: "paragraph",
-    content: [{ type: "text", text: line }],
+    type: "paragraph" as const,
+    content: [{ type: "text", text: line }] as WorkInlineNode[],
   })),
-});
+}) satisfies WorkTextDocument;
 export const documentText = (doc: WorkTextDocument) =>
   doc.content
-    .map((p) =>
-      p.content
-        .map((node) =>
-          node.type === "mention" ? `@${node.label}` : node.text,
-        )
-        .join(""),
-    )
+    .flatMap((block) => {
+      const contents = block.type === "bullet_list" || block.type === "ordered_list"
+        ? block.content.map((item) => item.content)
+        : [block.content];
+      return contents.map((content) => content
+        .map((node) => node.type === "mention" ? `@${node.label}` : node.text)
+        .join(""));
+    })
     .join("\n");
 export const mentionedUserIds = (doc: WorkTextDocument) => [
   ...new Set(
-    doc.content.flatMap((paragraph) =>
-      paragraph.content.flatMap((node) =>
+    doc.content.flatMap((block) => {
+      const contents = block.type === "bullet_list" || block.type === "ordered_list"
+        ? block.content.map((item) => item.content)
+        : [block.content];
+      return contents.flatMap((content) => content.flatMap((node) =>
         node.type === "mention" ? [node.userId] : [],
-      ),
-    ),
+      ));
+    }),
   ),
 ];
 
@@ -52,6 +57,15 @@ export function validateWorkSchedule(
     plannedStartAt: start?.toISOString() ?? null,
     deadlineAt: end?.toISOString() ?? null,
   };
+}
+
+export function validateWorkProgress(value: unknown): number {
+  const progress = typeof value === "string" && value.trim() !== ""
+    ? Number(value)
+    : value;
+  if (typeof progress !== "number" || !Number.isInteger(progress) || progress < 0 || progress > 100)
+    throw new Error("WORK_INVALID_PROGRESS");
+  return progress;
 }
 const validatedWorkScope = (scope: unknown): WorkScope =>
   validateWorkspaceScope(scope) as WorkScope;
@@ -159,6 +173,8 @@ export function workError(error: unknown): string {
     WORK_INVALID_COMMAND: "Thông tin gửi lên chưa hợp lệ. Vui lòng tải lại trang và kiểm tra các trường đã nhập.",
     WORK_INVALID_SCHEDULE:
       "Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.",
+    WORK_INVALID_PROGRESS:
+      "Tiến độ cần là số nguyên từ 0% đến 100%.",
     WORK_WORKSPACE_MIGRATION_REQUIRED: "Phòng ban hoặc dự án này đã có dữ liệu công việc cần được chuyển vào Workspace trước khi tạo. Vui lòng liên hệ quản trị viên.",
     WORK_CONFIGURE_DENIED: "Bạn không có quyền cấu hình phạm vi hoặc lịch này.",
     WORK_INVALID_CONFIGURATION:

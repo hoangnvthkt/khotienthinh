@@ -15,22 +15,31 @@ export type WorkTaskStatus = 'draft' | 'pending_acknowledgement' | 'clarificatio
   | 'not_started' | 'in_progress' | 'blocked' | 'awaiting_review' | 'changes_requested' | 'completed' | 'cancelled';
 export type WorkAssignmentState = Exclude<WorkTaskStatus, 'draft'> | 'transferred';
 
+export type WorkTextMark =
+  | { type: "bold" | "italic" | "underline" | "strike" | "code" }
+  | { type: "link"; attrs: { href: string } };
+
 export type WorkInlineNode =
   | {
       type: "text";
       text: string;
-      marks?: Array<{ type: "bold" | "italic" | "strike" | "code" }>;
+      marks?: WorkTextMark[];
     }
   | { type: "mention"; userId: string; label: string };
+
+export type WorkTextBlock =
+  | { type: "paragraph" | "blockquote" | "code_block"; content: WorkInlineNode[] }
+  | { type: "heading"; level: 1 | 2; content: WorkInlineNode[] }
+  | {
+      type: "bullet_list" | "ordered_list";
+      content: Array<{ type: "list_item"; content: WorkInlineNode[] }>;
+    };
 
 /** Rich text content, rendered as safe text/mention nodes; never interpret as HTML. */
 export interface WorkTextDocument {
   version: 1;
   type: "doc";
-  content: Array<{
-    type: "paragraph";
-    content: WorkInlineNode[];
-  }>;
+  content: WorkTextBlock[];
 }
 
 export interface CreateWorkTaskInput {
@@ -112,12 +121,17 @@ export interface WorkTaskSummary {
   reviewer_user_id: string | null;
   updated_at: string;
   lock_version: number;
+  progress_percent: number;
 }
 export interface WorkTask extends WorkTaskSummary {
   started_at: string | null;
   blocked_reason: string | null;
   description_document: WorkTextDocument;
   description_text: string;
+  result_draft_document: WorkTextDocument;
+  result_draft_text: string;
+  result_draft_updated_at: string | null;
+  result_draft_updated_by: string | null;
   recipient_snapshot_fingerprint: string | null;
   labels: string[];
   review_policy: WorkReviewPolicy;
@@ -229,6 +243,9 @@ export interface WorkTaskCapabilities {
   canCreateChild?: boolean;
   canManageSchedule?: boolean;
   canManageWatchers?: boolean;
+  canUpdateDescription?: boolean;
+  canUpdateResultDraft?: boolean;
+  canUpdateProgress?: boolean;
   canComment: boolean;
   canSetPreferences: boolean;
   canAttachInput: boolean;
@@ -347,6 +364,18 @@ export type WorkCollaborationCommand =
         removeUserIds: string[];
         expectedLockVersion: number;
       };
+    }
+  | {
+      command: "description_update";
+      payload: { content: WorkTextDocument; expectedLockVersion: number };
+    }
+  | {
+      command: "result_draft_update";
+      payload: { content: WorkTextDocument; expectedLockVersion: number };
+    }
+  | {
+      command: "progress_update";
+      payload: { progressPercent: number; expectedLockVersion: number };
     };
 export type WorkCollaborationCommandInput = WorkCollaborationCommand & { taskId: string; idempotencyKey: string };
 export type WorkCollaborationCommandResult = { taskId: string; taskLockVersion: number } & (
@@ -355,6 +384,8 @@ export type WorkCollaborationCommandResult = { taskId: string; taskLockVersion: 
   | { preferences: WorkTaskPreferences }
   | { schedule: { plannedStartAt: string | null; deadlineAt: string | null } }
   | { addedUserIds: string[]; removedUserIds: string[] }
+  | { content: { kind: "description" | "result_draft"; document: WorkTextDocument; text: string } }
+  | { progressPercent: number }
 );
 export interface WorkTaskCloneDraft {
   draft: CreateWorkTaskInput;

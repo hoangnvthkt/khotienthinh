@@ -5,7 +5,7 @@ import type { WorkCollaborationCommand, WorkDetailContext, WorkLifecycleCommand,
 import type { WorkTaskService } from "../../lib/work/workTaskService";
 import type { createWorkAttachmentService } from "../../lib/work/workAttachmentService";
 import type { WorkMutationSession } from "../../lib/work/workMutation";
-import { documentText, workError } from "../../lib/work/workForm";
+import { workError } from "../../lib/work/workForm";
 import { workStatusLabels, workWhen } from "../../lib/work/workPresentation";
 import { WorkActions } from "./WorkActions";
 import { WorkAttachments, type WorkUploadState } from "./WorkAttachments";
@@ -14,7 +14,7 @@ import { WorkDiscussion } from "./WorkDiscussion";
 import { WorkTaskChildren } from "./WorkTaskChildren";
 import { WorkTaskHeader } from "./WorkTaskHeader";
 import { WorkTaskPeople } from "./WorkTaskPeople";
-import { WorkTaskSection } from "./WorkTaskSection";
+import { WorkTaskDescription, WorkTaskProgress, WorkTaskResult } from "./WorkTaskContent";
 
 export function WorkDetail({ detail, service, attachments, actorId, session, uploads, refresh, revision, anchorId, onAnchor, headerActions }: {
   detail: WorkTaskDetail;
@@ -144,18 +144,10 @@ export function WorkDetail({ detail, service, attachments, actorId, session, upl
             {mine && !mine.acknowledged_at && <p className="work-notice">Bạn chưa xác nhận nhận việc. Hạn xác nhận: {workWhen(mine.acknowledgement_due_at)}.</p>}
             {task.blocked_reason && <p className="work-notice">Đang bị chặn: {task.blocked_reason}</p>}
 
-            <WorkTaskSection title="Mô tả công việc" hint="Yêu cầu và thông tin đầu vào">
-              <p className="work-prose">{task.description_text || documentText(task.description_document) || "Chưa có mô tả."}</p>
-            </WorkTaskSection>
+            <WorkTaskProgress task={task} canUpdate={!!caps.canUpdateProgress} busy={locked} run={collab} />
+            <WorkTaskDescription task={task} canUpdate={!!caps.canUpdateDescription} busy={locked} run={collab} />
             <WorkChecklist items={detail.checklist} assignments={detail.assignments} names={context.names} canManage={caps.canManageChecklist} busy={locked} run={collab} completed={completed} error={error} />
-            <WorkTaskSection className="work-result-section" title="Kết quả công việc" hint={detail.currentSubmission ? `Lần nộp ${detail.currentSubmission.iteration}` : "Cập nhật kết quả khi hoàn tất"}>
-              {detail.currentSubmission ? <>
-                <p>{name(detail.currentSubmission.submitted_by)} · {workWhen(detail.currentSubmission.submitted_at)}</p>
-                <div className="work-result-summary"><p className="work-prose">{detail.currentSubmission.result_text}</p></div>
-                <strong>{{ pending_review: "Chờ đánh giá", approved: "Đã duyệt", changes_requested: "Cần chỉnh sửa" }[detail.currentSubmission.status]}</strong>
-                {detail.currentSubmission.review_note && <p className="work-prose">{detail.currentSubmission.review_note}</p>}
-              </> : <p>Chưa nộp kết quả.</p>}
-            </WorkTaskSection>
+            <WorkTaskResult task={task} currentSubmission={detail.currentSubmission} canUpdate={!!caps.canUpdateResultDraft} busy={locked} run={collab} submitterName={name} />
             <WorkAttachments taskId={task.id} files={detail.attachments} caps={caps} service={attachments} onChanged={refresh} uploads={uploads} locked={locked} />
             {!task.parent_task_id && <WorkTaskChildren detail={detail} service={service} attachments={attachments} scopeLabel={context.scopeName} revision={revision} onCreated={() => refresh()} />}
             <WorkDiscussion taskId={task.id} service={service} canComment={caps.canComment} canHistory={caps.canViewHistory} names={context.names} requestNames={requestNames} revision={revision} run={collab} busy={locked} anchorId={anchorId} onAnchor={onAnchor} completed={completed} error={error} />

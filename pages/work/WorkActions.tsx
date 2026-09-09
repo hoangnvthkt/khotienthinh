@@ -4,8 +4,9 @@ import type {
   WorkTaskDetail,
   WorkLifecycleCommand,
 } from "../../lib/work/workTypes";
-import { workDocument, workError } from "../../lib/work/workForm";
+import { documentText, workError } from "../../lib/work/workForm";
 import { WorkPersonPicker } from "./WorkPersonPicker";
+import { WorkRichTextView } from "./WorkRichTextView";
 export const actionDefinitions = [
   ["acknowledge", "canAcknowledge", "Nhận việc"],
   ["request_clarification", "canRequestClarification", "Đề nghị làm rõ"],
@@ -58,7 +59,6 @@ export function WorkActions({
       "cancel",
       "transfer",
       "request_changes",
-      "submit",
     ].includes(action.id);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -79,7 +79,7 @@ export function WorkActions({
     else if (action.id === "submit")
       input = {
         command: "submit",
-        payload: { result: workDocument(reason.trim()) },
+        payload: { result: detail.task.result_draft_document },
       };
     else if (action.id === "transfer")
       input = {
@@ -161,10 +161,10 @@ export function WorkActions({
               </p>
             )}
             {action.id === "submit" && (
-              <p>
-                Tải tệp kết quả hoặc bằng chứng trong mục Đính kèm trước khi
-                nộp.
-              </p>
+              <div className="work-submit-preview">
+                <p>Bản nháp đã lưu dưới đây sẽ được nộp để đánh giá. Tệp kết quả hoặc bằng chứng cần được tải lên mục Đính kèm trước khi nộp.</p>
+                <WorkRichTextView document={detail.task.result_draft_document} empty="Chưa có nội dung kết quả để nộp." />
+              </div>
             )}
             <fieldset disabled={busy || pending}>
               {["transfer", "add_assignees"].includes(action.id) && (
@@ -178,27 +178,21 @@ export function WorkActions({
                   names={names}
                 />
               )}
-              <label className="work-label">
-                {action.id === "submit"
-                  ? "Nội dung kết quả"
-                  : needsReason
-                    ? "Lý do bắt buộc"
-                    : "Ghi chú (tùy chọn)"}
+              {(needsReason || action.id === "approve") && <label className="work-label">
+                {needsReason ? "Lý do bắt buộc" : "Ghi chú (tùy chọn)"}
                 {(needsReason || action.id === "approve") && (
                   <textarea
                     autoFocus
                     className="work-input"
-                    aria-label={
-                      action.id === "submit" ? "Nội dung kết quả" : "Lý do"
-                    }
+                    aria-label="Lý do"
                     required={!!needsReason}
-                    maxLength={action.id === "submit" ? 30000 : 4000}
+                    maxLength={4000}
                     rows={4}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                   />
                 )}
-              </label>
+              </label>}
             </fieldset>
             {error && (
               <p className="work-error" role="alert">
@@ -237,6 +231,7 @@ export function WorkActions({
                     (!allowed ||
                       action.version !== detail.task.lock_version ||
                       (!!needsReason && !reason.trim()) ||
+                      (action.id === "submit" && !documentText(detail.task.result_draft_document).trim()) ||
                       (["transfer", "add_assignees"].includes(action.id) &&
                         !ids.length)))
                 }
