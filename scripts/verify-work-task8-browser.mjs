@@ -25,12 +25,15 @@ try {
   await page.route("**/*.supabase.co/**", (route) => route.abort());
   const open = async (query = "", route = "/work/my") => {
     await page.goto(`${base}${query}#${route}`);
-    await page
-      .getByRole("heading", {
-        name: route === "/work/my" ? "Công việc của tôi" : "Công việc",
-        exact: true,
-      })
-      .waitFor();
+    if (query.includes("deny=true"))
+      await page.getByText("Công việc không tồn tại hoặc bạn không còn quyền xem.", { exact: true }).waitFor();
+    else
+      await page
+        .getByRole("heading", {
+          name: route === "/work/my" ? "Công việc của tôi" : "Chuẩn bị hồ sơ nghiệm thu",
+          exact: true,
+        })
+        .waitFor();
     console.log("Opened", query, route);
   };
   await open();

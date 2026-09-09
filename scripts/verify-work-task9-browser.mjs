@@ -339,7 +339,7 @@ try {
   });
   await page.getByRole("button", { name: "Nộp kết quả", exact: true }).click();
   dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Nội dung kết quả").fill("Kết quả chưa đủ tệp");
+  await dialog.getByText("Bản nháp kết quả ban đầu.", { exact: true }).waitFor();
   await dialog.getByRole("button", { name: "Xác nhận" }).click();
   await dialog.getByText(/Còn tệp chưa tải xong/).waitFor();
   assert.equal(
