@@ -1135,3 +1135,42 @@ Notification delivery remains disabled. Cloud state after rollout is 16 pending
 outbox records, 0 processed records, 0 deliveries and 0 push jobs. No backlog item was
 delivered. Dev remains available at `http://127.0.0.1:5187/#/work` with HTTP 200.
 Production deployment is unchanged, and no handoff was created.
+
+### Pilot feedback UI — rich task content and reported progress
+
+Migration `20260909023239_work_task_content_progress.sql` was applied from commit
+`9553862` on 2026-09-09. Its SHA-256 is
+`f5b174eba2d99668e28770a1fbd2059968f7a8c0cc673420996a4bf87f839018`.
+The linked dry-run listed this migration only; local and Cloud migration ledgers
+now match 29/29.
+
+Task descriptions and result drafts now use a safe structured document with an
+exact allowlist for headings, lists, quotes, code blocks, text marks and
+`http`/`https`/`mailto` links. The frontend never persists or renders arbitrary
+HTML. Description edits are limited to the creator or scope manager. An accepted
+active assignee can save the result draft and reported progress while the task is
+in progress or changes are requested. All three commands use task version checks,
+actor-scoped idempotency, a version snapshot, an audit event and an outbox record
+in one transaction.
+
+Saving a result remains a draft operation. `Nộp kết quả` submits the last saved
+structured draft through the existing lifecycle command. Reporting 100% does not
+change task status; completing the lifecycle forces progress to 100%. The task
+rail shows the current percentage and a compact progress bar.
+
+The editor toolbar stays on one horizontally scrollable row on narrow screens,
+and content uses bounded wrapping without horizontal page overflow. Synthetic
+Chrome QA passed editor formatting and saves, progress updates, sidebar display,
+saved-draft submission, the open-child warning, persistent actions and overflow
+checks at 320/360/390 and 1440 px.
+
+Candidate rollback and applied-schema postflight passed the new content/progress
+smoke plus task creation, lifecycle, collaboration, child-task and inline-mention
+regressions. Full Vitest passes **367 files / 1,742 tests**; TypeScript, production
+build, migration baseline (29 active / 402 archived), query audit (0 findings/errors)
+and the linked security advisor at ERROR level pass.
+
+Notification delivery remains disabled. Postflight recorded 25 pending outbox
+records, 0 processed records and 0 deliveries; this rollout delivered no backlog
+item. Dev remains available at `http://127.0.0.1:5187/#/work`. Production frontend
+deployment is unchanged, and no handoff was created.
