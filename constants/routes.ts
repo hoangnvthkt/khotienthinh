@@ -67,6 +67,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/rq':            'RQ',
   '/rq/:requestId': 'RQ',
   '/rq/categories': 'RQ',
+  '/rq/templates': 'RQ',
+  '/rq/templates/new': 'RQ',
+  '/rq/templates/:templateId': 'RQ',
 
   // ── NGÂN SÁCH ─────────────────────────────────────────
   '/expense': 'EX',

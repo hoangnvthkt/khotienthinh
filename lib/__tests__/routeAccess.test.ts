@@ -94,6 +94,28 @@ describe('phase 0 route containment', () => {
 });
 
 describe('request detail route access', () => {
+  const templateRoutes = ['/rq/templates', '/rq/templates/new', '/rq/templates/template-1'];
+
+  it('maps all request template routes to RQ and allows administrators', () => {
+    for (const route of templateRoutes) {
+      expect(getRouteModuleKey(route), route).toBe('RQ');
+      expect(canAccessRoute({ ...user([]), role: Role.ADMIN }, route), route).toBe(true);
+    }
+  });
+
+  it('opens template editors with an explicit template view grant', () => {
+    const viewer = persona(Role.EMPLOYEE, [['request.template.view', 'global']]);
+    for (const route of templateRoutes) {
+      expect(canAccessRoute(viewer, route), route).toBe(true);
+    }
+  });
+
+  it('keeps template editors closed to users without request access', () => {
+    for (const route of templateRoutes) {
+      expect(canAccessRoute(persona(Role.EMPLOYEE, []), route), route).toBe(false);
+    }
+  });
+
   it('maps request detail deep links to the RQ module', () => {
     expect(getRouteModuleKey('/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe('RQ');
   });
