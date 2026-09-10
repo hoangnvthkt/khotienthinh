@@ -16,16 +16,12 @@ export const PROJECT_PERMISSION_ROOM_CODES = [
   'material_planning',
   'material_request',
   'material_po',
-  'material_waste',
-  'custom_material',
   'gantt',
   'weekly_progress',
   'quantity_acceptance',
   'payment',
-  'boq_reconciliation',
   'quality',
   'safety',
-  'subcontract',
 ] as const;
 
 export type ProjectPermissionRoomCode = typeof PROJECT_PERMISSION_ROOM_CODES[number];
@@ -78,16 +74,12 @@ export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('material_planning', 'material', 'Kế hoạch & BOQ vật tư', 'Quản lý kế hoạch và BOQ vật tư.', ['view', 'edit', 'delete'], [], 20),
   defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, kiểm tra, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve', 'view_available_stock'], [], 30),
   defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], [], 40),
-  defineRoom('material_waste', 'material', 'Hao hụt vật tư', 'Ghi nhận và duyệt hao hụt.', ['view', 'edit', 'approve'], ['approve'], 50),
-  defineRoom('custom_material', 'material', 'Vật tư phi tiêu chuẩn', 'Tạo, sửa và duyệt vật tư phi tiêu chuẩn.', ['view', 'edit', 'approve'], ['approve'], 60),
   defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý hạng mục và tiến độ thi công.', ['view', 'edit', 'delete'], [], 70, { edit: ['view'], delete: ['view'] }),
   defineRoom('weekly_progress', 'progress', 'Chốt tiến độ ngày/tuần', 'Cập nhật và chốt/mở chốt kỳ tiến độ.', ['view', 'edit', 'confirm'], [], 80, { edit: ['view'], confirm: ['view'] }),
   defineRoom('quantity_acceptance', 'finance', 'Nghiệm thu khối lượng', 'Lập và duyệt nghiệm thu khối lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 90),
   defineRoom('payment', 'finance', 'Thanh toán', 'Lập, duyệt và xác nhận thanh toán.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'confirm'], ['approve', 'confirm'], 100),
-  defineRoom('boq_reconciliation', 'finance', 'Đối soát BOQ', 'Kiểm tra, duyệt và khóa đối soát.', ['view', 'edit', 'submit', 'verify', 'approve'], ['verify'], 110),
   defineRoom('quality', 'quality', 'Hồ sơ & checklist chất lượng', 'Lập, kiểm tra và duyệt chất lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 120),
   defineRoom('safety', 'safety', 'Hồ sơ & sự cố an toàn', 'Quản lý hồ sơ và đóng sự cố.', ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'], ['approve'], 130),
-  defineRoom('subcontract', 'subcontract', 'Nghiệm thu & thanh toán nhà thầu', 'Quản lý nghiệm thu và thanh toán nhà thầu.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], ['approve'], 140),
 ] satisfies readonly ProjectPermissionRoomDefinition[]);
 
 export const getProjectPermissionRoom = (code: ProjectPermissionRoomCode) =>

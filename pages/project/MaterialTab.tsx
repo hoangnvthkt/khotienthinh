@@ -117,6 +117,7 @@ const normalizeMaterialRequestPermissionCodes = (codes?: string[] | null): strin
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions }) => {
     const location = useLocation();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
+    const isAdmin = user?.role === 'ADMIN';
     const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
     const toast = useToast();
     const confirm = useConfirm();
@@ -162,8 +163,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canRecordSupplierDelivery,
         canUnrecordSupplierDelivery,
         canReconcileSupplierDelivery,
-        canCreateCustomMaterial,
-        canApproveCustomMaterial,
     } = useProjectMaterialAccess({
         materialPermissions,
         canManageTab,
@@ -2990,8 +2989,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     constructionSiteId={constructionSiteId}
                     currentUserId={user.id}
                     currentUserName={user.name || user.username}
-                    canCreate={canCreateCustomMaterial}
-                    canApprove={canApproveCustomMaterial}
+                    canCreate={isAdmin}
+                    canApprove={isAdmin}
                 />
             )}
 

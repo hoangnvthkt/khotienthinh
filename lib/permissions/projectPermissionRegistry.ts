@@ -226,15 +226,9 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
   ])),
   moduleDefinition('project.material_waste', 'Hao hụt vật tư', [PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.waste], 85, actionSet('project.material_waste', PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.waste, [
     ['view', 'Xem', 10],
-    ['record', 'Ghi nhận', 20],
-    ['approve', 'Duyệt', 30],
-    ['manage', 'Quản trị', 40],
   ])),
   moduleDefinition('project.custom_material', 'Vật tư phi tiêu chuẩn', [PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.custom], 90, actionSet('project.custom_material', PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.custom, [
     ['view', 'Xem', 10],
-    ['create', 'Tạo', 20],
-    ['approve', 'Duyệt', 30],
-    ['manage', 'Quản trị', 40],
   ])),
   moduleDefinition('project.gantt', 'Tiến độ Gantt', [PROJECT_TAB_ROUTE_BY_KEY.gantt], 100, actionSet('project.gantt', PROJECT_TAB_ROUTE_BY_KEY.gantt, [
     ['view', 'Xem', 10],
@@ -279,10 +273,6 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
   ])),
   moduleDefinition('project.subcontract', 'Nhà thầu phụ', [PROJECT_TAB_ROUTE_BY_KEY.subcontract], 130, actionSet('project.subcontract', PROJECT_TAB_ROUTE_BY_KEY.subcontract, [
     ['view', 'Xem', 10],
-    ['create', 'Tạo', 20],
-    ['edit_all', 'Sửa tất cả', 30],
-    ['approve', 'Duyệt', 40],
-    ['manage', 'Quản trị', 50],
   ])),
   moduleDefinition('project.payment', 'Nghiệm thu và thanh toán', [PROJECT_TAB_ROUTE_BY_KEY.payment], 140, [
     ...workflowActions('project.payment', PROJECT_TAB_ROUTE_BY_KEY.payment),

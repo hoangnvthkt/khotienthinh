@@ -22,8 +22,6 @@ export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
   'project.material_request.confirm_fulfillment',
   'project.material_request.view_available_stock',
   'project.custom_material.view',
-  'project.custom_material.create',
-  'project.custom_material.approve',
   'project.material_po.view',
   'project.material_po.create',
   'project.material_po.approve',
@@ -43,8 +41,6 @@ export const PROJECT_MATERIAL_ACTION_CODES = Object.freeze([
   'project.material_supplier_delivery.unrecord',
   'project.material_supplier_delivery.reconcile',
   'project.material_waste.view',
-  'project.material_waste.record',
-  'project.material_waste.approve',
 ] as const);
 
 export type ProjectMaterialActionCode = (typeof PROJECT_MATERIAL_ACTION_CODES)[number];
@@ -164,8 +160,8 @@ export const getProjectMaterialCapabilities = (
     canConfirmFulfillment: can('project.material_request.confirm_fulfillment'),
     canViewAvailableStock: can('project.material_request.view_available_stock'),
     canViewCustomMaterial: can('project.custom_material.view'),
-    canCreateCustomMaterial: can('project.custom_material.create'),
-    canApproveCustomMaterial: can('project.custom_material.approve'),
+    canCreateCustomMaterial: Boolean(options.isAdmin),
+    canApproveCustomMaterial: Boolean(options.isAdmin),
     canViewPo: can('project.material_po.view'),
     canEditPo: can('project.material_po.create'),
     canSubmitPo: can('project.material_po.create'),
@@ -186,7 +182,7 @@ export const getProjectMaterialCapabilities = (
     canUnrecordSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.unrecord'),
     canReconcileSupplierDelivery: canSupplierDelivery('project.material_supplier_delivery.reconcile'),
     canViewWaste: can('project.material_waste.view'),
-    canRecordWaste: can('project.material_waste.record'),
-    canApproveWaste: can('project.material_waste.approve'),
+    canRecordWaste: Boolean(options.isAdmin),
+    canApproveWaste: Boolean(options.isAdmin),
   };
 };

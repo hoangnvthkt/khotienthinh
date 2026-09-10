@@ -466,9 +466,9 @@ const ContractVariationPanel: React.FC<Props> = ({ contractId, contractType, pro
           documentSubtitle={`Version ${submittingVariation.versionNumber || '?'} • Trạng thái hiện tại: ${submittingVariation.status}`}
           projectId={projectId}
           constructionSiteId={constructionSiteId}
-          recipientRoomCode="boq_reconciliation"
+          recipientRoomCode="quantity_acceptance"
           recipientAction="approve"
-          recipientHint="Chọn người thuộc Room Đối soát BOQ có quyền duyệt phát sinh BOQ."
+          recipientHint="Chọn người thuộc Room Nghiệm thu khối lượng có quyền duyệt phát sinh BOQ."
           details={[
             { label: 'Giá trị phát sinh', value: fmt(submittingVariation.totalAmountDelta) },
             { label: 'Số dòng', value: `${submittingVariation.items.length} hạng mục` },

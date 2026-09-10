@@ -3224,7 +3224,7 @@ const ProjectDashboard: React.FC = () => {
                             <PaymentWorkbenchTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} canManageTab={canManageProjectTab('payment')} />
                         ) : renderSiteRequired('Nghiệm thu & Thanh toán')
                     ) : overviewTab === 'subcontract' ? (
-                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} />
+                        <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} isAdmin={isAdmin} />
                     ) : overviewTab === 'quality' ? (
                         <QualityTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                     ) : overviewTab === 'safety' ? (

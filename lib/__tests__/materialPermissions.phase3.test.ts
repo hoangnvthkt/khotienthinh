@@ -18,11 +18,9 @@ describe('Phase 3.3 Material permission capabilities', () => {
       'project.material_plan.edit',
       'project.material_request.create',
       'project.material_request.view_available_stock',
-      'project.custom_material.approve',
       'project.material_po.receive',
       'project.material_po.delete',
       'project.material_po.manage',
-      'project.material_waste.approve',
     ]));
   });
 

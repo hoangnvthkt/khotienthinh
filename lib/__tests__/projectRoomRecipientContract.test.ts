@@ -81,15 +81,14 @@ describe('Project Room recipient cutover', () => {
     expect(source).not.toContain("recipientPermissionCodes={['approve']}");
   });
 
-  it('routes BOQ review and BOQ variations to the BOQ reconciliation Room', () => {
+  it('retires BOQ reconciliation recipients and routes variations to quantity acceptance', () => {
     const reconciliation = readFileSync(join(process.cwd(), 'components/project/BoqReconciliationPanel.tsx'), 'utf8');
     const variation = readFileSync(join(process.cwd(), 'components/project/ContractVariationPanel.tsx'), 'utf8');
 
-    expect(reconciliation).toContain('ProjectRoomSubmissionDialog');
-    expect(reconciliation).toContain('recipientRoomCode="boq_reconciliation"');
-    expect(reconciliation).toContain('recipientAction="verify"');
+    expect(reconciliation).not.toContain('ProjectRoomSubmissionDialog');
+    expect(reconciliation).not.toContain('recipientRoomCode="boq_reconciliation"');
     expect(variation).toContain('ProjectRoomSubmissionDialog');
-    expect(variation).toContain('recipientRoomCode="boq_reconciliation"');
+    expect(variation).toContain('recipientRoomCode="quantity_acceptance"');
     expect(variation).toContain('recipientAction="approve"');
   });
 });

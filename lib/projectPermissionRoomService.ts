@@ -154,6 +154,11 @@ const ensureRoomCode = (roomCode: string): ProjectPermissionRoomCode => {
   return roomCode as ProjectPermissionRoomCode;
 };
 
+const asActiveRoomCode = (roomCode: string): ProjectPermissionRoomCode | null =>
+  getProjectPermissionRoom(roomCode as ProjectPermissionRoomCode)
+    ? roomCode as ProjectPermissionRoomCode
+    : null;
+
 const toRoomMember = (row: any): ProjectPermissionRoomMember | null => {
   if (!row?.member_id || !row?.project_staff_id || !row?.user_id) return null;
   return {
@@ -198,13 +203,16 @@ export const projectPermissionRoomService = {
     });
     if (error) throw error;
 
-    return (data || []).map((row: any): EffectiveProjectRoomAction => ({
-      roomCode: ensureRoomCode(row.room_code),
-      actionCode: row.action_code as ProjectRoomActionCode,
-      source: row.authorization_source as ProjectRoomAuthorizationSource,
-      enforcementStatus: row.enforcement_status as ProjectRoomEnforcementStatus,
-      pbacFallbackEnabled: row.pbac_fallback_enabled !== false,
-    }));
+    return (data || []).flatMap((row: any): EffectiveProjectRoomAction[] => {
+      const roomCode = asActiveRoomCode(row.room_code);
+      return roomCode ? [{
+        roomCode,
+        actionCode: row.action_code as ProjectRoomActionCode,
+        source: row.authorization_source as ProjectRoomAuthorizationSource,
+        enforcementStatus: row.enforcement_status as ProjectRoomEnforcementStatus,
+        pbacFallbackEnabled: row.pbac_fallback_enabled !== false,
+      }] : [];
+    });
   },
 
   async listMyPbacExceptions(
@@ -217,10 +225,10 @@ export const projectPermissionRoomService = {
     });
     if (error) throw error;
 
-    return (data || []).map((row: any): ProjectRoomPbacException => ({
-      roomCode: ensureRoomCode(row.room_code),
-      permissionCode: String(row.permission_code),
-    }));
+    return (data || []).flatMap((row: any): ProjectRoomPbacException[] => {
+      const roomCode = asActiveRoomCode(row.room_code);
+      return roomCode ? [{ roomCode, permissionCode: String(row.permission_code) }] : [];
+    });
   },
 
   async listRooms(

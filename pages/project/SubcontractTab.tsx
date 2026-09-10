@@ -16,6 +16,7 @@ interface SubcontractTabProps {
     constructionSiteId?: string;
     projectId?: string;
     canManageTab?: boolean;
+    isAdmin?: boolean;
 }
 
 const fmt = (n: number) => {
@@ -31,10 +32,11 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
     paid: { label: 'Đã TT', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200', icon: <CreditCard size={12} /> },
 };
 
-const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
+const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId, canManageTab = false, isAdmin = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
+    const canMutate = isAdmin;
     const [contracts, setContracts] = useState<SubcontractorContract[]>([]);
     const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
 
@@ -63,7 +65,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
     const [fApprovedBy, setFApprovedBy] = useState('');
 
     const ensureCanManage = (action: string) => {
-        if (canManageTab) return true;
+        if (canMutate) return true;
         toast.warning('Không có quyền quản trị tab', `Bạn cần quyền quản trị "Nhà thầu" để ${action}.`);
         return false;
     };
@@ -312,7 +314,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                             <span className="text-xs font-black text-slate-600 flex items-center gap-1">
                                                 <CheckCircle2 size={12} className="text-emerald-500" /> Biên bản nghiệm thu
                                             </span>
-                                            {canManageTab && (
+                                            {canMutate && (
                                                 <button onClick={() => openNewAcceptance(contract.id)}
                                                     className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-all">
                                                     <Plus size={12} /> Tạo đợt NT
@@ -357,7 +359,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                                                         </div>
                                                                     </div>
                                                                     {/* Status action buttons */}
-                                                                    {canManageTab && (
+                                                                    {canMutate && (
                                                                         <div className="flex gap-1">
                                                                             {record.status === 'draft' && (
                                                                             <button onClick={() => updateAcceptanceStatus(record.id, 'submitted')}
@@ -382,7 +384,7 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                                                             )}
                                                                         </div>
                                                                     )}
-                                                                    {canManageTab && (
+                                                                    {canMutate && (
                                                                         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                                                             <button onClick={() => openEditAcceptance(record)}
                                                                                 className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-blue-500"><Edit2 size={11} /></button>

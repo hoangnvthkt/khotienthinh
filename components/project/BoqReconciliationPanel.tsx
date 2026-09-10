@@ -19,7 +19,6 @@ import { workBoqService } from '../../lib/projectService';
 import { useApp } from '../../context/AppContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
-import ProjectRoomSubmissionDialog from './ProjectRoomSubmissionDialog';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
 import { formatPolicyMessage, getProjectDocumentPolicy } from '../../lib/projectDocumentPolicy';
 import { projectDocumentActionLogService } from '../../lib/projectDocumentActionLogService';
@@ -83,6 +82,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
   const isAdminUser = user?.role === 'ADMIN';
+  const canMutate = isAdminUser;
   const [contractType, setContractType] = useState<ContractItemType>('customer');
   const [groups, setGroups] = useState<BoqReconciliationGroup[]>([]);
   const [contractItems, setContractItems] = useState<ContractItem[]>([]);
@@ -95,7 +95,6 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   const [workSearch, setWorkSearch] = useState('');
   const [selectedContractIds, setSelectedContractIds] = useState<string[]>([]);
   const [selectedWorkIds, setSelectedWorkIds] = useState<string[]>([]);
-  const [submittingGroup, setSubmittingGroup] = useState<BoqReconciliationGroup | null>(null);
 
   const load = useCallback(async () => {
     if (!effectiveId) return;
@@ -142,6 +141,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   }, [activeWorkIds, workItems, workSearch]);
 
   const createGroup = async () => {
+    if (!canMutate) return;
     if (!effectiveId || !newName.trim()) return;
     setSaving(true);
     try {
@@ -172,11 +172,8 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
   };
 
   const setStatus = async (status: BoqReconciliationGroup['status'], submissionTarget?: ProjectSubmissionTarget) => {
+    if (!canMutate) return;
     if (!activeGroup) return;
-    if (status === 'submitted' && !submissionTarget) {
-      setSubmittingGroup(activeGroup);
-      return;
-    }
     const isRollback = statusOrder[status] < statusOrder[activeGroup.status];
     const hasContractLines = (activeGroup.contractLines || []).length > 0;
     const hasWorkLines = (activeGroup.workLines || []).length > 0;
@@ -286,7 +283,6 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
         createdBy: user?.id,
       });
       await load();
-      if (status === 'submitted') setSubmittingGroup(null);
       toast.success('Đã cập nhật trạng thái đối chiếu');
     } catch (error: any) {
       toast.error('Không cập nhật được trạng thái', error?.message || 'Vui lòng thử lại.');
@@ -428,8 +424,8 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
           <div className="rounded-xl border border-slate-100 p-3">
             <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Nhóm công tác quy đổi</label>
             <div className="flex gap-2">
-              <input value={newName} onChange={event => setNewName(event.target.value)} placeholder="VD: Công tác bê tông móng" className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-1 focus:ring-indigo-400" />
-              <button onClick={createGroup} disabled={saving || !newName.trim()} className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center disabled:opacity-50">
+              <input value={newName} onChange={event => setNewName(event.target.value)} disabled={!canMutate} placeholder="VD: Công tác bê tông móng" className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-1 focus:ring-indigo-400 disabled:bg-slate-50" />
+              <button onClick={createGroup} disabled={!canMutate || saving || !newName.trim()} className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center disabled:opacity-50">
                 <Plus size={15} />
               </button>
             </div>
@@ -479,13 +475,13 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
                 <div className="text-[10px] text-slate-400 font-bold">Quy đổi KL HĐ: {fmt(summary.contractConverted)} • KL thi công: {fmt(summary.workConverted)} • Chênh GT: {money(summary.workAmount - summary.contractAmount)} đ</div>
               </div>
               <div className="flex gap-1.5">
-                {activeGroup.status === 'draft' && <button onClick={() => setStatus('submitted')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-amber-700 bg-amber-50 flex items-center gap-1"><Send size={11} /> Gửi rà soát</button>}
-                {activeGroup.status === 'submitted' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-700 bg-emerald-50 flex items-center gap-1"><CheckCircle2 size={11} /> Đã rà soát</button>}
-                {activeGroup.status === 'reviewed' && <button onClick={() => setStatus('locked')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-indigo-700 bg-indigo-50 flex items-center gap-1"><Lock size={11} /> Khóa</button>}
+                {canMutate && activeGroup.status === 'draft' && <button onClick={() => setStatus('submitted')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-amber-700 bg-amber-50 flex items-center gap-1"><Send size={11} /> Gửi rà soát</button>}
+                {canMutate && activeGroup.status === 'submitted' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-emerald-700 bg-emerald-50 flex items-center gap-1"><CheckCircle2 size={11} /> Đã rà soát</button>}
+                {canMutate && activeGroup.status === 'reviewed' && <button onClick={() => setStatus('locked')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-indigo-700 bg-indigo-50 flex items-center gap-1"><Lock size={11} /> Khóa</button>}
                 {isAdminUser && activeGroup.status === 'submitted' && <button onClick={() => setStatus('draft')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 bg-slate-100 flex items-center gap-1"><Undo2 size={11} /> Về nháp</button>}
                 {isAdminUser && activeGroup.status === 'reviewed' && <button onClick={() => setStatus('submitted')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-slate-600 bg-slate-100 flex items-center gap-1"><Undo2 size={11} /> Về chờ rà soát</button>}
                 {isAdminUser && activeGroup.status === 'locked' && <button onClick={() => setStatus('reviewed')} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-700 bg-red-50 flex items-center gap-1"><Undo2 size={11} /> Mở khóa</button>}
-                {activeGroup.status !== 'locked' && <button onClick={removeGroup} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50"><Trash2 size={11} /></button>}
+                {canMutate && activeGroup.status !== 'locked' && <button onClick={removeGroup} className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-red-600 bg-red-50"><Trash2 size={11} /></button>}
               </div>
             </div>
 
@@ -509,7 +505,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
                 search={contractSearch}
                 onSearch={setContractSearch}
                 onAdd={addContractLines}
-                disabled={saving || selectedContractIds.length === 0 || activeGroup.status === 'locked'}
+                disabled={!canMutate || saving || selectedContractIds.length === 0 || activeGroup.status === 'locked'}
                 count={selectedContractIds.length}
               >
                 {filteredContractItems.map(item => (
@@ -529,7 +525,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
                 search={workSearch}
                 onSearch={setWorkSearch}
                 onAdd={addWorkLines}
-                disabled={saving || selectedWorkIds.length === 0 || activeGroup.status === 'locked'}
+                disabled={!canMutate || saving || selectedWorkIds.length === 0 || activeGroup.status === 'locked'}
                 count={selectedWorkIds.length}
               >
                 {filteredWorkItems.map(item => (
@@ -549,7 +545,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
               title="BOQ hợp đồng trong nhóm"
               type="contract"
               lines={activeGroup.contractLines || []}
-              locked={activeGroup.status === 'locked'}
+              locked={!canMutate || activeGroup.status === 'locked'}
               labelOf={line => {
                 const item = contractMap.get((line as BoqReconciliationContractLine).contractItemId);
                 return `${item?.code || ''} ${item?.name || ''}`.trim() || 'Dòng hợp đồng';
@@ -563,7 +559,7 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
               title="BOQ thi công trong nhóm"
               type="work"
               lines={activeGroup.workLines || []}
-              locked={activeGroup.status === 'locked'}
+              locked={!canMutate || activeGroup.status === 'locked'}
               labelOf={line => {
                 const item = workMap.get((line as BoqReconciliationWorkLine).workBoqItemId);
                 return `${item?.wbsCode || ''} ${item?.name || ''}`.trim() || 'Đầu mục thi công';
@@ -575,28 +571,6 @@ const BoqReconciliationPanel: React.FC<Props> = ({ projectId, constructionSiteId
           </div>
         )}
       </div>
-      {submittingGroup && (
-        <ProjectRoomSubmissionDialog
-          title="Gửi nhóm đối chiếu BOQ"
-          actionLabel="Gửi rà soát"
-          documentLabel="Đối chiếu BOQ"
-          documentName={`${submittingGroup.code || 'DQ'} • ${submittingGroup.name}`}
-          documentSubtitle={`Trạng thái hiện tại: ${statusLabel[submittingGroup.status]}`}
-          projectId={projectId || undefined}
-          constructionSiteId={constructionSiteId || undefined}
-          recipientRoomCode="boq_reconciliation"
-          recipientAction="verify"
-          recipientHint="Chọn người thuộc Room Đối soát BOQ có quyền rà soát."
-          details={[
-            { label: 'Dòng BOQ hợp đồng', value: `${submittingGroup.contractLines?.length || 0} dòng` },
-            { label: 'Đầu mục BOQ thi công', value: `${submittingGroup.workLines?.length || 0} đầu mục` },
-            { label: 'Giá trị HĐ tham chiếu', value: `${money((submittingGroup.contractLines || []).reduce((sum, line) => sum + Number(line.amountSnapshot || 0), 0))} đ` },
-            { label: 'Giá trị thi công tham chiếu', value: `${money((submittingGroup.workLines || []).reduce((sum, line) => sum + Number(line.amountSnapshot || 0), 0))} đ` },
-          ]}
-          onCancel={() => setSubmittingGroup(null)}
-          onConfirm={target => setStatus('submitted', target)}
-        />
-      )}
     </div>
   );
 };
