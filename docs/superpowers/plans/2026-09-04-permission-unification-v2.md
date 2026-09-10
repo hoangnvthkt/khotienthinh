@@ -459,12 +459,16 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Modify: `supabase/functions/ai-assistant/index.ts`
 - Modify: `pages/settings/SettingsPermissionHealth.tsx`
 
-- [ ] **Step 1: Static failing test** — runtime authorization files có 0 decision từ bốn legacy fields; chỉ migration/audit và read-only evidence được phép nhắc tới.
-- [ ] **Step 2: Remove legacy helpers/consumers và compatibility projection; AI tools dùng canonical evaluator/RPC.**
-- [ ] **Step 3: Set `legacy_permission_writes_disabled=true`; smoke chứng minh direct update/RPC cũ bị chặn, canonical admin RPC và account lifecycle vẫn chạy.**
-- [ ] **Step 4: Full Vitest, lint, build, query audit, security advisor; apply/evidence theo protocol.**
+- [x] **Step 1: Static failing test** — runtime authorization files có 0 decision từ bốn legacy fields; chỉ migration/audit và read-only evidence được phép nhắc tới.
+- [x] **Step 2: Remove legacy helpers/consumers và compatibility projection; AI tools dùng canonical evaluator/RPC.**
+- [x] **Step 3: Set `legacy_permission_writes_disabled=true`; smoke chứng minh direct update/RPC cũ bị chặn, canonical admin RPC và account lifecycle vẫn chạy.**
+- [x] **Step 4: Full Vitest, lint, build, query audit, security advisor; apply/evidence theo protocol.**
 
 **Commit:** `refactor(auth): remove legacy authorization runtime`
+
+**Kết quả:** release candidate `e81badc`, security follow-up `f18a210`; migration `20260910034817` đã áp dụng lên Cloud main. Direct INSERT/UPDATE vào bốn legacy fields và hai RPC mutation cũ đều bị chặn; account lifecycle chỉ được phép xóa các giá trị này qua nhánh audit. Runtime frontend, recipient lookup và AI tool authorization chỉ còn canonical DIRECT/ROLE/ROOM. `ai-assistant` v61 bắt buộc JWT + `ai.assistant.use` trước mọi action và không còn chấp nhận `userId` trong body làm actor; `create-user` v21 không còn ghi legacy fields. Checkout regression đạt 377 files / 1.780 tests; lint/build, migration/query checks, rollback/preflight và postflight smokes đều đạt. Bốn legacy columns và read-only rollback evidence tiếp tục được giữ nguyên trong observation window.
+
+**Task 12 observation start:** `2026-09-10 04:07 UTC`. Task 13 không được chạy trước `2026-09-17 04:07 UTC`, và chỉ chạy khi không có rollback incident/deny anomaly cùng xác nhận persona trọng yếu.
 
 ### Task 13: Drop legacy schema sau observation gate
 
