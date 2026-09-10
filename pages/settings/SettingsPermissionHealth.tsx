@@ -61,6 +61,13 @@ type ProjectRoomHealthSummary = {
   checks?: Record<string, HealthFinding[]>;
 };
 
+type LegacyMigrationSummary = {
+  snapshots?: number;
+  manualReview?: number;
+  legacyOnlyUsers?: number;
+  dispositions?: Record<string, number>;
+};
+
 const CHECK_LABELS: Record<string, string> = {
   unmappedRoutes: 'Route chưa map',
   broadPolicies: 'Policy rộng',
@@ -151,6 +158,7 @@ const describeFinding = (finding: HealthFinding) => {
 
 const SettingsPermissionHealth: React.FC = () => {
   const [summary, setSummary] = useState<PermissionHealthSummary | null>(null);
+  const [legacyMigration, setLegacyMigration] = useState<LegacyMigrationSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -170,20 +178,25 @@ const SettingsPermissionHealth: React.FC = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const [baseResult, roomResult] = await Promise.all([
+      const [baseResult, roomResult, legacyMigrationResult] = await Promise.all([
         supabase.rpc('get_permission_health_summary'),
         supabase.rpc('get_project_permission_room_health_summary'),
+        supabase.rpc('get_authorization_legacy_migration_summary'),
       ]);
       if (baseResult.error) throw baseResult.error;
       if (roomResult.error) throw roomResult.error;
+      if (legacyMigrationResult.error) throw legacyMigrationResult.error;
       const base = (baseResult.data || {}) as PermissionHealthSummary;
       const room = (roomResult.data || {}) as ProjectRoomHealthSummary;
       const roomChecks = room.checks || {};
       const hasRoomFindings = Object.values(roomChecks).some(findings => findings.length > 0);
+      const migration = (legacyMigrationResult.data || {}) as LegacyMigrationSummary;
+      const hasMigrationBlocker = (migration.manualReview || 0) > 0 || (migration.legacyOnlyUsers || 0) > 0;
+      setLegacyMigration(migration);
       setSummary({
         ...base,
         generatedAt: room.generatedAt || base.generatedAt,
-        status: base.status === 'critical' ? 'critical' : hasRoomFindings ? 'warning' : base.status,
+        status: base.status === 'critical' || hasMigrationBlocker ? 'critical' : hasRoomFindings ? 'warning' : base.status,
         projectRoomPbacFallbackEnabled: room.projectRoomPbacFallbackEnabled,
         checks: { ...(base.checks || {}), ...roomChecks },
       });
@@ -252,7 +265,7 @@ const SettingsPermissionHealth: React.FC = () => {
           </div>
         )}
 
-        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-5">
+        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-6">
           <div className={`rounded-xl border p-4 ${status.className}`}>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest">
               <StatusIcon size={16} />
@@ -273,6 +286,13 @@ const SettingsPermissionHealth: React.FC = () => {
               {summary?.legacyProjectionEnabled ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertTriangle size={16} className="text-amber-500" />}
               {summary?.legacyProjectionEnabled ? 'Enabled' : 'Disabled'}
             </div>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-white p-4">
+            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Legacy migration</div>
+            <div className="mt-2 text-sm font-black text-slate-800">
+              manual {legacyMigration?.manualReview ?? '-'} · legacy-only {legacyMigration?.legacyOnlyUsers ?? '-'}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-slate-500">{legacyMigration?.snapshots ?? 0} snapshots</div>
           </div>
           <div className="rounded-xl border border-slate-100 bg-white p-4">
             <div className="text-xs font-black uppercase tracking-widest text-slate-500">Legacy fallback</div>

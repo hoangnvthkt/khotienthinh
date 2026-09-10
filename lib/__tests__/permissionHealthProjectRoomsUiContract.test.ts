@@ -16,6 +16,13 @@ describe('Permission Health Project Room audit UI', () => {
     expect(source).toContain('roomInvalidScopeOrStaff');
   });
 
+  it('loads the deterministic legacy migration gate', () => {
+    expect(source).toContain('get_authorization_legacy_migration_summary');
+    expect(source).toContain('Legacy migration');
+    expect(source).toContain('manualReview');
+    expect(source).toContain('legacyOnlyUsers');
+  });
+
   it('shows the dedicated Room PBAC fallback flag', () => {
     expect(source).toContain('projectRoomPbacFallbackEnabled');
     expect(source).toContain('Room PBAC fallback');
