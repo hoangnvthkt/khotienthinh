@@ -46,7 +46,7 @@ describe('Phase 5 permission hardening guards', () => {
     const allowedLegacyConsumers = new Set([
       'components/Layout.tsx',
       'components/Sidebar.tsx',
-      'components/UserModal.tsx',
+      'components/permissions/LegacyPermissionReadOnly.tsx',
       'hooks/usePermission.ts',
       'lib/approvalService.ts',
       'lib/auditService.ts',

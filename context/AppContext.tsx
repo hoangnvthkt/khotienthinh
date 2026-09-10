@@ -126,6 +126,7 @@ interface AppContextType {
   theme: 'light' | 'dark';
   addUser: (user: User) => Promise<void>;
   updateUser: (user: User) => Promise<void>;
+  reloadManagedUser: (userId: string) => Promise<void>;
   disableUserAccount: (userId: string, reason: string) => Promise<UserAccountOperationResult>;
   reactivateUserAccount: (userId: string, reason: string, newPassword: string) => Promise<UserAccountOperationResult>;
   items: InventoryItem[];
@@ -1472,6 +1473,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .single();
     if (error) throw error;
     return mapUserFromDb(data);
+  };
+
+  const reloadManagedUser = async (id: string): Promise<void> => {
+    let refreshed = await refreshManagedUser(id);
+    if (user.id === id) refreshed = await refreshProfile();
+    setUsers(previous => upsertRowsById(previous, [refreshed]));
   };
 
   const disableUserAccount = async (id: string, reason: string) => {
@@ -3541,7 +3548,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
-      user, users, appSettings, theme, addUser, updateUser, disableUserAccount, reactivateUserAccount, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
+      user, users, appSettings, theme, addUser, updateUser, reloadManagedUser, disableUserAccount, reactivateUserAccount, items, warehouses, warehouseTypes, suppliers, transactions, requests, activities,
       categories, units, employees,
       hrmAreas, hrmOffices, hrmEmployeeTypes, hrmPositions, hrmSalaryPolicies, hrmWorkSchedules, hrmConstructionSites, constructionSites: hrmConstructionSites,
       shiftTypes, employeeShifts,

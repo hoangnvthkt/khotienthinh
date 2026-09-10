@@ -15,6 +15,7 @@ const UserManagement: React.FC = () => {
     warehouses,
     addUser,
     updateUser,
+    reloadManagedUser,
     disableUserAccount,
     reactivateUserAccount,
     user: currentUser,
@@ -113,6 +114,7 @@ const UserManagement: React.FC = () => {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         onSave={handleSaveUser}
+        onAuthorizationSaved={reloadManagedUser}
         userToEdit={editingUser}
         warehouses={warehouses}
         users={users}

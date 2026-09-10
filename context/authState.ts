@@ -394,6 +394,7 @@ export const mapUserProfileRow = (row: any): User => ({
   reactivatedAt: row.reactivated_at ?? row.reactivatedAt ?? undefined,
   reactivatedBy: row.reactivated_by ?? row.reactivatedBy ?? undefined,
   reactivationReason: row.reactivation_reason ?? row.reactivationReason ?? undefined,
+  updatedAt: row.updated_at ?? row.updatedAt ?? undefined,
 });
 
 export class AuthResolutionError extends Error {

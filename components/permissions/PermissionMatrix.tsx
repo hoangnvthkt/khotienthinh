@@ -85,7 +85,7 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
                     const currentKey = grantKey(action.permissionCode, scope);
                     const explicit = explicitGrantKeys.has(currentKey);
                     const inherited = inheritedCodes.has(action.permissionCode);
-                    const checked = explicit || inherited;
+                    const checked = explicit;
                     const scopeAllowed = isPermissionActionScopeAllowed(action.permissionCode, scope);
                     const directGrantAllowed = isDirectPermissionGrantAllowed(action.permissionCode);
                     return (
@@ -97,12 +97,12 @@ const PermissionMatrix: React.FC<PermissionMatrixProps> = ({
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={disabled || !scopeAllowed || !directGrantAllowed}
+                          disabled={disabled || !scopeAllowed || !directGrantAllowed || (inherited && !explicit)}
                           onChange={event => toggleGrant(action.permissionCode, event.target.checked)}
                           className="h-3.5 w-3.5 shrink-0 rounded accent-blue-600"
                         />
                         <span className="min-w-0 flex-1 truncate">{action.label}</span>
-                        {inherited && <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-black uppercase text-slate-500">Legacy</span>}
+                        {inherited && <span className="rounded bg-slate-200 px-1 py-0.5 text-[8px] font-black uppercase text-slate-500">Kế thừa</span>}
                         {!directGrantAllowed && <span className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-black uppercase text-amber-700">Template</span>}
                         {!scopeAllowed && <span className="rounded bg-slate-100 px-1 py-0.5 text-[8px] font-black uppercase text-slate-400">Scope</span>}
                       </label>

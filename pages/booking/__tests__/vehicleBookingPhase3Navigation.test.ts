@@ -13,6 +13,7 @@ const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const layout = read('pages/booking/VehicleBookingLayout.tsx');
 const sidebar = read('components/Sidebar.tsx');
 const userModal = read('components/UserModal.tsx');
+const permissionRegistry = read('lib/permissions/erpPermissionRegistry.ts');
 
 const withGrants = (...permissionCodes: string[]) => ({
   permissionGrants: permissionCodes.map(permissionCode => ({
@@ -62,14 +63,16 @@ describe('vehicle booking Phase 3 navigation', () => {
   });
 
   it('keeps Sidebar and user permission configuration in sync', () => {
-    for (const source of [sidebar, userModal]) {
+    for (const source of [sidebar, permissionRegistry]) {
       expect(source).toContain('/booking/vehicle/reports');
       expect(source).toContain('/booking/vehicle/issues');
       expect(source).toContain('/booking/vehicle/audit');
       expect(source).toContain('/booking/vehicle/drivers');
       expect(source).toContain('/booking/vehicle/settings');
-      expect(source).toContain('Dashboard & Báo cáo KPI');
     }
+    expect(sidebar).toContain('Dashboard & Báo cáo KPI');
+    expect(permissionRegistry).toContain('Xem báo cáo & KPI');
+    expect(userModal).toContain('AuthorizationEditor');
     expect(sidebar).toContain('canViewVehicleReports');
     expect(sidebar).toContain('canViewSensitiveVehicleIssues');
     expect(sidebar).toContain('canViewVehicleAudit');

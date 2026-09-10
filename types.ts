@@ -139,6 +139,7 @@ export interface User {
   permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
   effectivePermissionSources?: EffectivePermissionSource[];
   authorizationSnapshot?: AuthorizationSnapshot;
+  updatedAt?: string;
 }
 
 export type HrmBusinessRoleCode = 'HR' | 'HR_MANAGE';
