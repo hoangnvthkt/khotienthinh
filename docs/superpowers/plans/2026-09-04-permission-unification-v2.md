@@ -4,7 +4,7 @@
 
 **Goal:** Hợp nhất nền tảng quyền mới, quyền module và Project Room thành một chuỗi quyết định nhất quán; hoàn tất cutover trên Supabase Cloud `main`, sau đó tắt và dọn legacy có kiểm soát.
 
-**Architecture:** Module permission chỉ mở product shell; capability có namespace và scope quyết định năng lực nghiệp vụ; Project Room quyết định assignment/action trong đúng project hoặc công trường; workflow state và RLS/RPC là lớp quyết định cuối. Frontend dùng một authorization snapshot có nguồn gốc rõ ràng, còn mutation nhạy cảm được backend deny-by-default.
+**Architecture:** Module permission chỉ mở product shell; capability có namespace và scope quyết định năng lực nghiệp vụ; Project Room quyết định assignment/action trong đúng project hoặc công trường; workflow state và RLS/RPC là lớp quyết định cuối. Frontend dùng một authorization snapshot có nguồn gốc rõ ràng, còn mutation nhạy cảm được backend deny-by-default. Với các module được chỉ định là view-only, user thường chỉ được đọc; System Admin (`public.is_admin()`) là ngoại lệ ghi dữ liệu explicit và không cần Room/action grant.
 
 **Tech Stack:** React 18, TypeScript 5.8, Vitest 4, Supabase Cloud/Postgres, RLS, SECURITY DEFINER functions trong `app_private`, Supabase CLI 2.95.6+.
 
@@ -23,7 +23,8 @@
 - Bảng public mới phải bật RLS. Privileged function đặt trong `app_private`, revoke `PUBLIC`; wrapper public chỉ grant vai trò cần thiết.
 - Không authorize từ `user_metadata`; không đưa secret/service-role key vào frontend.
 - Project Room chỉ cấp action theo assignment trong scope; module permission chỉ mở shell.
-- System Admin bypass phải explicit, không áp dụng ngầm cho HRM, business approval, recipient resolution hoặc separation-of-duty.
+- `material_waste`, `custom_material`, `boq_reconciliation`, `subcontract` không còn là Project Room. User thường chỉ đọc; chỉ System Admin theo `public.is_admin()` được ghi. Không dùng role string/frontend-only gate làm authority.
+- System Admin bypass phải explicit. Ngoài ngoại lệ ghi của bốn module view-only nêu trên, bypass không áp dụng ngầm cho HRM, business approval, recipient resolution hoặc separation-of-duty.
 - Mỗi checkpoint: failing test → implementation → targeted tests → lint → Cloud transaction rollback → commit release candidate → dry-run → apply Cloud main → postflight → commit evidence.
 - Mọi Vitest command loại `.worktrees/**`.
 - Không stage `supabase/.temp/**`, `.env*`, credential hoặc database output có PII; không dùng `git add .`.
@@ -44,6 +45,48 @@
 
 Các số trên là snapshot, không phải hằng số migration. Task 1 chụp lại và ghi mọi chênh lệch trước khi thay đổi Cloud main.
 
+## Rà soát thay đổi gần đây ngày 2026-09-10
+
+### Kết luận phạm vi
+
+- Giữ nguyên 7 Room đã cutover: `daily_log`, `material_planning`, `material_request`, `material_po`, `gantt`, `weekly_progress`, `quality`; chỉ chạy regression/checksum, không re-apply.
+- Retire khỏi Project Room bốn module: `material_waste`, `custom_material`, `boq_reconciliation`, `subcontract`.
+- Bốn module vẫn hiển thị dữ liệu cho user có quyền view tương ứng. Chỉ System Admin được tạo/sửa/xóa/chuyển trạng thái; quyền ghi không được suy từ Room, PBAC rộng, module admin hoặc direct grant cũ.
+- Chỉ còn 3 Room cần cutover: `quantity_acceptance`, `payment`, `safety`. Sau disposition của `material_request.verify`, tắt Room fallback toàn cục.
+- Phạm vi `subcontract` ở đây là tab Project “Nghiệm thu & thanh toán nhà thầu” và bảng `acceptance_records`; không thay đổi quyền quản trị danh mục hợp đồng thầu phụ thuộc module HĐ.
+
+### Bằng chứng Cloud main
+
+- Cả 4 Room đang active, có tổng 17 binding đều `audit_only` và `pbac_fallback_enabled=true`: `material_waste` 3, `custom_material` 3, `boq_reconciliation` 5, `subcontract` 6.
+- Có 39 active Room memberships cần snapshot rồi deactivate: `material_waste` 13, `custom_material` 1, `boq_reconciliation` 5, `subcontract` 20. Không hard-delete evidence.
+- Có 32 active non-view direct grants cần revoke có audit: Custom Material 11, Material Waste 1, Subcontract 20; không có role-template item tương ứng. `boq_reconciliation` chưa có canonical capability riêng nên hiện không có direct/role grant theo namespace này.
+- Các bảng ghi đang trống tại thời điểm audit: `custom_material_requests`, lines, attachments, RFQ; `boq_reconciliation_groups`, contract/work lines; `acceptance_records`. Đây là cửa sổ ít rủi ro để đóng write path, nhưng migration vẫn phải idempotent và có rollback transaction.
+- Cloud hiện có 1 active System Admin. Không ghi user id/name/email vào artifact.
+- `material_waste` UI hiện đã read-only, nhưng registry vẫn quảng bá `record/approve/manage`; các action này phải retire.
+- `custom_material` UI/service/RLS hiện còn create, edit, import, upload, approve/reject/return và procurement paths cho admin/module admin/owner/PBAC; phải thu về `is_admin()` cho mutation.
+- `boq_reconciliation` nằm trong tab BOQ vật tư và hiện còn create/delete/edit/submit/review/lock; UI chưa gate toàn bộ mutation, RLS còn cho PBAC rộng. View tiếp tục theo `project.material_boq.view`, không tạo namespace quyền ghi mới; mutation chỉ `is_admin()`.
+- `subcontract` UI còn mặc định `canManageTab=true`; Cloud RLS của `acceptance_records` đã admin-only cho mutation. Phải đổi frontend gate thành System Admin và bỏ default-allow.
+
+### Ảnh hưởng từ các commit/migration mới
+
+- `28c052d` bổ sung route Template Yêu cầu vào registry và test deny-by-default; không chạm bốn module nhưng củng cố yêu cầu mọi route phải có canonical mapping.
+- `7ddfab9` sửa deep-link/thông báo duyệt PO và projection; không đổi quyết định quyền, cần giữ regression Material PO.
+- Cloud main đã áp dụng `20260905034726` (legacy write guard), `20260905035047` (authorization snapshot), `20260905041938` (WMS reversal) và toàn bộ migration Work từ `20260907012229` đến `20260909023239`.
+- Branch `feature/audit-phan-quyen-v2` chưa chứa các migration/code tương ứng; `supabase migration list --linked` đang có remote-only entries. Đây là blocker tuyệt đối với mọi `db push`, không được dùng `migration repair` hoặc tạo migration mới để lấp ledger.
+- Registry/cleanup Phase 5–6 phải giữ capability `wms.transaction.reverse`, toàn bộ `work.*`, strict route boundary và quyền EXECUTE helper đã được sửa ở nhánh Work.
+
+## Task 0 — Reconcile Git với Cloud main trước khi thực thi tiếp
+
+**Mục tiêu:** đưa source branch về đúng lịch sử đã triển khai trên Cloud main mà không chạy lại migration.
+
+- [ ] Snapshot `git status`, `git log`, `supabase migration list --linked` và checksum các file migration remote-only.
+- [ ] Tích hợp có review chuỗi Authorization `959cce1..6fc94d4`, WMS bắt đầu tại `8a2b11f` và Work bắt đầu tại `c47433a` từ các nhánh đã triển khai; resolve theo hành vi hiện hành, không copy riêng SQL bỏ code/test/evidence.
+- [ ] Assert tất cả version Cloud đã có file local đúng checksum; không có local-only migration ngoài checkpoint dự kiến.
+- [ ] Chạy targeted authorization/WMS/Work tests, full lint/build và `db push --linked --dry-run`; expected: `Remote database is up to date` trước khi tạo migration view-only.
+- [ ] Commit reconciliation riêng, không trộn với thay đổi bốn module.
+
+**Gate:** nếu ledger còn remote-only/local-only hoặc source không chứa runtime tương thích với schema Cloud thì dừng; không bắt đầu Task 1/Task 8.
+
 ## File map
 
 - Create `scripts/lib/supabase-cloud-transaction.mjs`: target guard, tạo `BEGIN ... ROLLBACK` SQL, redaction và temp cleanup.
@@ -56,7 +99,8 @@ Các số trên là snapshot, không phải hằng số migration. Task 1 chụp
 - Modify `lib/permissions/permissionService.ts`, `lib/permissions/projectPermissionService.ts`, `lib/routeAccess.ts`, `App.tsx`: một evaluator, deny unknown route/action.
 - Create `components/permissions/AuthorizationEditor.tsx` và `LegacyPermissionReadOnly.tsx`: một editor, legacy read-only trong transition.
 - Modify `components/UserModal.tsx`, `components/permissions/PermissionMatrix.tsx`, `lib/permissions/permissionAdminService.ts`, `context/AppContext.tsx`: atomic admin save, không ghi legacy.
-- Modify `components/project/permissions/ProjectPermissionRoomsPanel.tsx`, `components/project/permissions/ProjectPermissionRoomCard.tsx`, `components/project/permissions/ProjectPermissionRoomDrawer.tsx`, `lib/projectPermissionRoomService.ts`; regression-only cho 7 Room đã cutover và tạo hai wave smoke cho 7 Room còn lại.
+- Modify `components/project/permissions/ProjectPermissionRoomsPanel.tsx`, `components/project/permissions/ProjectPermissionRoomCard.tsx`, `components/project/permissions/ProjectPermissionRoomDrawer.tsx`, `lib/projectPermissionRoomService.ts`; regression-only cho 7 Room đã cutover, retire 4 Room view-only và tạo smoke cho 3 Room còn lại.
+- Modify `lib/permissions/projectPermissionRooms.ts`, `lib/permissions/projectPermissionRegistry.ts`, `lib/permissions/projectMaterialPermissions.ts`, `pages/project/MaterialTab.tsx`, `components/project/material/CustomMaterialRequestTab.tsx`, `components/project/BoqReconciliationPanel.tsx`, `pages/project/SubcontractTab.tsx`, `pages/ProjectDashboard.tsx`: view-only cho user thường, System Admin-only mutation.
 - Modify `supabase/functions/ai-assistant/index.ts`, `lib/homeCapabilities.ts`, `lib/feedbackNotificationService.ts`: xóa runtime legacy ở Phase 6.
 
 Mỗi migration được tham chiếu bằng suffix duy nhất. Timestamp prefix do CLI tạo tại thời điểm thực thi; executor phải assert chỉ có đúng một file khớp suffix.
@@ -257,7 +301,7 @@ git commit -m "refactor(auth): use one source-aware permission evaluator"
 
 **Phase 3 exit gate:** một editor, một atomic RPC; không còn partial save giữa profile và grants.
 
-## Giai đoạn 4 — Chỉ cutover 7 Project Rooms còn lại
+## Giai đoạn 4 — Retire 4 Room view-only và cutover 3 Room còn lại
 
 ### Task 7: Đóng băng phạm vi 7 Room đã cutover — regression-only
 
@@ -283,48 +327,59 @@ git commit -m "refactor(auth): use one source-aware permission evaluator"
 
 Expected: checksum trước/sau không đổi; không có SQL mutation trên bảy Room đã cutover.
 
-### Task 8: Cutover năm Room Material/Finance còn lại
+### Task 8: Retire bốn Room, giữ System Admin-only mutation
 
-**Chỉ thực thi:** `material_waste`, `custom_material`, `quantity_acceptance`, `payment`, `boq_reconciliation`.
+**Chỉ thực thi:** `material_waste`, `custom_material`, `boq_reconciliation`, `subcontract`.
 
 **Files:**
-- Create via CLI suffix: `_authorization_v2_phase4_remaining_material_finance_rooms.sql`
-- Create: `supabase/tests/authorization_v2_room_remaining_material_finance_smoke.sql`
+- Create via CLI suffix: `_authorization_v2_phase4_retire_view_only_rooms.sql`
+- Create: `supabase/tests/authorization_v2_retired_view_only_rooms_smoke.sql`
+- Modify: `lib/permissions/projectPermissionRooms.ts`
+- Modify: `lib/permissions/projectPermissionRegistry.ts`
+- Modify: `lib/permissions/projectMaterialPermissions.ts`
+- Modify: `pages/project/MaterialTab.tsx`
+- Modify: `components/project/material/CustomMaterialRequestTab.tsx`
+- Modify: `components/project/BoqReconciliationPanel.tsx`
+- Modify: `pages/project/SubcontractTab.tsx`
+- Modify: `pages/ProjectDashboard.tsx`
 - Modify: `components/project/permissions/ProjectPermissionRoomCard.tsx`
 - Modify: `components/project/permissions/ProjectPermissionRoomDrawer.tsx`
 - Modify: `lib/projectPermissionRoomService.ts`
 - Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Snapshot bindings, PBAC mappings, policies và functions chỉ cho năm Room trong task.**
-- [ ] **Step 2: Smoke Room-only allow; PBAC/module/owner/participant-only deny; wrong scope; inactive staff; empty Room; missing prerequisite.**
-- [ ] **Step 3: Test maker/checker/approver separation, current assignment, final-state immutability và cross-project/site isolation.**
-- [ ] **Step 4: Backfill chỉ active user + một active unambiguous `project_staff`; preserve manual grants; source `pbac_backfill`; deactivate stale membership thuộc năm Room này.**
-- [ ] **Step 5: Enforce exact Room actions trong UI/RPC/RLS/transition/recipient paths; không chạm definitions của bảy Room đã cutover.**
-- [ ] **Step 6: Run new smoke cùng payment/contract regressions; verify checksum bảy Room cũ không đổi; apply/evidence theo protocol.**
+- [ ] **Step 1: Viết failing contract tests** — bốn Room không còn trong Room registry/admin UI; non-admin không thấy hoặc gọi được mutation; System Admin vẫn ghi được; `SubcontractTab` không default-allow.
+- [ ] **Step 2: Snapshot trước migration** — 17 bindings, 39 memberships, member actions, direct/role grants, RLS/functions và row counts; lưu counts/checksum, không PII.
+- [ ] **Step 3: Retire Room metadata có audit** — deactivate memberships/actions và room rows; retire bindings với reason hoặc chuyển sang bảng disposition; không hard-delete. Không backfill Room.
+- [ ] **Step 4: Thu gọn canonical capability** — chỉ giữ `project.material_waste.view`, `project.custom_material.view`, `project.subcontract.view`; BOQ reconciliation tiếp tục dùng `project.material_boq.view`. Retire/revoke active non-view grants bằng audited forward migration. System Admin không cần grant ghi.
+- [ ] **Step 5: Enforce frontend** — `material_waste` giữ read-only; `custom_material` và `boq_reconciliation` chỉ render mutation cho System Admin; `subcontract` nhận `isAdmin`, default false. Frontend check dùng canonical admin state nhưng không phải authority cuối.
+- [ ] **Step 6: Enforce backend** — RLS/RPC/storage mutation của custom material, BOQ reconciliation và Project acceptance chỉ cho `public.is_admin()`; SELECT giữ đúng scope/view hiện tại. Loại PBAC/module-admin/owner bypass khỏi write path.
+- [ ] **Step 7: Dọn recipient/workflow paths** — user thường không thể submit/verify/approve; admin action không resolve recipient qua Room đã retire. `ContractVariationPanel` không được phụ thuộc `boq_reconciliation` Room sau migration.
+- [ ] **Step 8: Smoke matrix** — non-admin SELECT allow theo view scope và mọi INSERT/UPDATE/DELETE/status RPC deny; System Admin mutation allow; cross-scope SELECT vẫn deny nơi đang scope-bound; bảy Room cũ checksum không đổi.
+- [ ] **Step 9: Rollback transaction, release-candidate commit, dry-run/apply/postflight/evidence theo protocol.**
 
-**Commit:** `feat(auth): cut over five remaining material and finance rooms`
+**Commit:** `feat(auth): retire four project rooms as admin-write views`
 
-### Task 9: Cutover Safety/Subcontract và tắt Room fallback
+### Task 9: Cutover Quantity Acceptance, Payment, Safety và tắt Room fallback
 
-**Chỉ thực thi:** `safety`, `subcontract`. Bảy Room cũ vẫn regression-only.
+**Chỉ thực thi:** `quantity_acceptance`, `payment`, `safety`. Bảy Room cũ vẫn regression-only; bốn Room retired chỉ chạy view/admin-write regression.
 
 **Files:**
-- Create via CLI suffix: `_authorization_v2_phase4_safety_subcontract_rooms.sql`
-- Create: `supabase/tests/authorization_v2_room_safety_subcontract_smoke.sql`
+- Create via CLI suffix: `_authorization_v2_phase4_remaining_enforced_rooms.sql`
+- Create: `supabase/tests/authorization_v2_room_remaining_enforced_smoke.sql`
 - Modify: `pages/project/ProjectPermissionsTab.tsx`
 - Modify: `pages/settings/SettingsPermissionHealth.tsx`
 - Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Test assignment, incident close, approval/confirmation, final-state immutability và wrong project/site.**
-- [ ] **Step 2: Backfill và enforce chỉ Safety/Subcontract; action không có business path phải retire với reason.**
+- [ ] **Step 1: Test assignment, payment/acceptance workflow, incident close, approval/confirmation, final-state immutability và wrong project/site.**
+- [ ] **Step 2: Backfill và enforce chỉ Quantity Acceptance/Payment/Safety; action không có business path phải retire với reason.**
 - [ ] **Step 3: Xử lý disposition action-level của `material_request.verify` theo kết quả Task 7, không thay đổi các Material Request actions đã cutover.**
-- [ ] **Step 4: Audit assert cả 14 Room có disposition rõ ràng, fallback-only=0, stale member=0; checksum bảy Room cũ không đổi ngoại trừ metadata disposition đã duyệt.**
-- [ ] **Step 5: Set `project_room_pbac_fallback_enabled=false`; chạy full Room smoke/audit matrix.**
+- [ ] **Step 4: Audit assert 10 active Room có disposition rõ ràng, 4 Room retired có evidence, fallback-only=0, stale member=0; checksum bảy Room cũ không đổi ngoại trừ metadata disposition đã duyệt.**
+- [ ] **Step 5: Set `project_room_pbac_fallback_enabled=false`; chạy full Room smoke/audit matrix và regression bốn module view/admin-write.**
 - [ ] **Step 6: Apply/evidence theo protocol.**
 
-**Commit:** `feat(auth): cut over safety and subcontract rooms`
+**Commit:** `feat(auth): cut over final three project rooms`
 
-**Phase 4 exit gate:** chỉ 7 Room còn lại được cutover; 7 Room cũ không bị re-apply; mọi action `enforced` hoặc retired có reason; 0 `audit_only`, 0 fallback-only, 0 stale member, Room fallback off.
+**Phase 4 exit gate:** 7 Room cũ không bị re-apply; 3 Room mới được cutover; 4 Room view-only được retire có evidence và admin-write regression; mọi active action `enforced` hoặc retired có reason; 0 `audit_only`, 0 fallback-only, 0 stale member, Room fallback off.
 
 ## Giai đoạn 5 — Migrate module legacy sang canonical grants
 
@@ -343,6 +398,7 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Dispositions: `mapped_view`, `mapped_manage`, `room_owned`, `role_owned`, `manual_review`, `retired`.
 
 - [ ] **Step 1: Preview không ghi data** — allowed module/submodule→view; admin module/submodule→view/manage; không tự sinh submit/verify/confirm/approve; Project workflow→Room; HR template-only→ROLE; unknown→manual_review.
+- [ ] **Step 1a: View-only disposition** — bốn module retired chỉ map sang quyền view; không sinh lại `create/record/edit/manage/submit/verify/approve/confirm`. System Admin write đến từ `is_admin()`, không từ grant migration.
 - [ ] **Step 2: Gate** — manual_review=0; 24 legacy-only baseline có canonical shell/view hoặc retired disposition; không duplicate active grant tuple.
 - [ ] **Step 3: Snapshot bốn columns vào private table rồi insert idempotent grants với cutover metadata.**
 - [ ] **Step 4: Shadow compare allow/deny; production audit đạt legacy-only=0, unresolved collisions=0, unknown mapping=0.**
@@ -425,7 +481,8 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Một chuỗi quyết định: active account → module shell → scoped capability → Room/assignment → workflow state → action.
 - Một authorization editor và một atomic transaction; không còn ba bề mặt chỉnh quyền cạnh tranh.
 - 0 active legacy-only user; 0 unresolved collision; 0 unknown legacy mapping.
-- 100% Room action `enforced` hoặc retired có lý do; 0 `audit_only`; 0 fallback-only; 0 stale active Room member.
+- 10 active Project Room; 7 Room giữ nguyên cutover, 3 Room cutover mới; 4 Room retired thành view-only cho user thường/System Admin-write.
+- 100% active Room action `enforced` hoặc retired có lý do; 0 `audit_only`; 0 fallback-only; 0 stale active Room member.
 - Room fallback off; legacy fallback off; legacy writes disabled.
 - Unknown protected route/action deny; RLS/RPC là authority cuối; notification recipient không suy từ permission rộng.
 - Mỗi Cloud main change truy được tới migration SHA, preflight, smoke, advisor output, rollback decision và evidence commit.
