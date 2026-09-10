@@ -407,14 +407,16 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Private backup `authorization_legacy_user_snapshots(cutover_id, user_id, legacy_payload, captured_at, checksum)`.
 - Dispositions: `mapped_view`, `mapped_manage`, `room_owned`, `role_owned`, `manual_review`, `retired`.
 
-- [ ] **Step 1: Preview không ghi data** — allowed module/submodule→view; admin module/submodule→view/manage; không tự sinh submit/verify/confirm/approve; Project workflow→Room; HR template-only→ROLE; unknown→manual_review.
-- [ ] **Step 1a: View-only disposition** — bốn module retired chỉ map sang quyền view; không sinh lại `create/record/edit/manage/submit/verify/approve/confirm`. System Admin write đến từ `is_admin()`, không từ grant migration.
-- [ ] **Step 2: Gate** — manual_review=0; 24 legacy-only baseline có canonical shell/view hoặc retired disposition; không duplicate active grant tuple.
-- [ ] **Step 3: Snapshot bốn columns vào private table rồi insert idempotent grants với cutover metadata.**
-- [ ] **Step 4: Shadow compare allow/deny; production audit đạt legacy-only=0, unresolved collisions=0, unknown mapping=0.**
-- [ ] **Step 5: Apply/evidence theo protocol.**
+- [x] **Step 1: Preview không ghi data** — allowed module/submodule→view; admin module/submodule→view/manage; không tự sinh submit/verify/confirm/approve; Project workflow→Room; HR template-only→ROLE; unknown→manual_review.
+- [x] **Step 1a: View-only disposition** — bốn module retired chỉ map sang quyền view; không sinh lại `create/record/edit/manage/submit/verify/approve/confirm`. System Admin write đến từ `is_admin()`, không từ grant migration.
+- [x] **Step 2: Gate** — manual_review=0; 24 legacy-only baseline có canonical shell/view hoặc retired disposition; không duplicate active grant tuple.
+- [x] **Step 3: Snapshot bốn columns vào private table rồi insert idempotent grants với cutover metadata.**
+- [x] **Step 4: Shadow compare allow/deny; production audit đạt legacy-only=0, unresolved collisions=0, unknown mapping=0.**
+- [x] **Step 5: Apply/evidence theo protocol.**
 
 **Commit:** `feat(auth): migrate legacy modules to canonical grants`
+
+**Kết quả:** release candidate `d4dc7e2`; migration `20260910033302` đã áp dụng lên Cloud main. 57 user snapshots có SHA-256; 0 manual review và 0 legacy-only. 5.837 disposition được ghi rõ: 1.741 mapped-view, 565 mapped-manage, 1.605 Room-owned, 550 HR role-owned và 1.376 retired. Có 4 deterministic HR profiles theo đúng permission set, tránh gán role HR rộng. Active canonical grants tăng lên 3.271; view-only modules không nhận lại mutation grant. Full regression 375 files / 1.774 tests, lint và build đạt.
 
 ### Task 11: Tắt legacy fallback, giữ columns cho rollback window
 

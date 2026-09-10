@@ -126,3 +126,15 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Room health: actions-not-connected 0, fallback-only 0, invalid-scope-or-staff 0. It still reports 644 inactive legacy PBAC audit rows and caps the broad unmapped-grant preview at 500; these are inputs to Phase 5, not hidden Phase 4 passes.
 - Checkout regression passed: 374 files / 1,769 tests. TypeScript lint, production build, migration baseline check, and `git diff --check` passed; only the existing Vite chunk-size warning remains.
 - Cloud database lint reports the same nine pre-existing unrelated error-level findings; none names the Task 9 migration or its new/changed authorization functions.
+
+## Phase 5 / Task 10 — Deterministic legacy grant migration
+
+- Read-only preview classified 5,551 effective legacy sources with 0 unknown module keys, 0 unknown routes, and 0 manual review. Raw routes without current action metadata use an explicit alias catalog; retired `CHIBIBOT` is recorded rather than silently mapped.
+- Migration: `20260910033302_authorization_v2_phase5_legacy_grant_migration.sql`; release candidate: `d4dc7e2`; cutover ID `6aa37d8c-1d58-4eb4-a5a9-709100333020`.
+- All 57 active users have private snapshots of the four legacy fields with verified SHA-256 checksums. Client roles have no access to snapshot or disposition tables.
+- Postflight dispositions: 1,741 `mapped_view`; 565 `mapped_manage`; 1,605 `room_owned`; 550 `role_owned`; 1,376 `retired`; 0 `manual_review`. View-only Project modules receive view grants only; module/submodule legacy access never infers submit, verify, confirm, or approve.
+- HR migration generated four deterministic `LEGACY_HR_*` templates from exact per-user effective permission sets. This avoids assigning the broad built-in HR/HR_MANAGE templates to 55 users with heterogeneous legacy access.
+- Canonical active grants increased from 1,181 to 3,271. Sensitive mapped grants that require expiry receive a 90-day review window. Unique grant tuples remain enforced and the shadow comparison found no missing mapped grant.
+- Postflight gate: 0 manual review, 0 legacy-only active user, 0 duplicate active grant tuple. The admin-only summary RPC exposes aggregate migration health without PII.
+- Cloud rollback preflight, smoke, dry-run (exactly `20260910033302`), apply, postflight smoke, and ledger reconciliation passed.
+- Checkout regression passed: 375 files / 1,774 tests. TypeScript lint, production build, migration baseline check, and `git diff --check` passed; only the existing Vite chunk-size warning remains.
