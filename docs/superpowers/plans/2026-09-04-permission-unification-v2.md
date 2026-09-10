@@ -276,12 +276,14 @@ git commit -m "refactor(auth): use one source-aware permission evaluator"
 - RPC `update_user_authorization_v2(p_user_id uuid, p_profile jsonb, p_grants jsonb, p_reason text, p_expected_updated_at timestamptz) returns jsonb`.
 - Return `{ userId, updatedAt, activeGrantCount, auditEventId }`.
 
-- [ ] **Step 1: Tests** — non-manager deny; blank reason deny; stale version conflict; invalid grant rolls back profile; valid request updates profile+grants atomically.
-- [ ] **Step 2: Implement** — whitelist `name`, `phone`, `avatar`, `manager_id`, `assigned_warehouse_id`; reject role/auth/account/legacy fields; reuse v2 grant validation.
-- [ ] **Step 3: Typed frontend service** — reason required, optimistic version, conflict message, no direct `.from('users').update()`.
-- [ ] **Step 4: Verify/apply/evidence theo protocol.**
+- [x] **Step 1: Tests** — non-manager deny; blank reason deny; stale version conflict; invalid grant rolls back profile; valid request updates profile+grants atomically.
+- [x] **Step 2: Implement** — whitelist `name`, `phone`, `avatar`, `manager_id`, `assigned_warehouse_id`; reject role/auth/account/legacy fields; reuse v2 grant validation.
+- [x] **Step 3: Typed frontend service** — reason required, optimistic version, conflict message, no direct `.from('users').update()`.
+- [x] **Step 4: Verify/apply/evidence theo protocol.**
 
 **Commit:** `feat(auth): make user authorization updates transactional`
+
+**Kết quả:** release candidate `1306c81`; migration `20260910022617` đã áp dụng lên Cloud main và postflight rollback smoke đạt.
 
 ### Task 6: Unified authorization editor
 

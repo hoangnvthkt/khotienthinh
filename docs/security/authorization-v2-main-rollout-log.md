@@ -60,3 +60,17 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - TypeScript lint and production build: passed; only the existing Vite chunk-size warning remains.
 - Cloud object check: authorization snapshot exists; `wms.transaction.reverse` is active; 15 active `work.*` permissions; Work task/workspace tables exist; authenticated helper EXECUTE smoke passed and rolled back.
 - `db push --linked --dry-run`: `Remote database is up to date`; no migration was applied and no Cloud data was changed during Task 0.
+
+## Phase 3 / Task 5 — Transactional authorization administration
+
+- Migration: `20260910022617_authorization_v2_phase3_admin_transaction.sql`.
+- Release candidate: `1306c81` (`feat(auth): make user authorization updates transactional`).
+- Contract/service tests: 2 files / 7 tests passed; full checkout regression: 370 files / 1,754 tests passed.
+- Migration baseline check, TypeScript lint, production build, and `git diff --check`: passed; only the existing Vite chunk-size warning remains.
+- Cloud preflight transaction: migration plus smoke passed and rolled back without retaining fixtures or schema changes.
+- Smoke coverage: non-manager deny, blank reason deny, stale `updated_at` conflict, invalid-grant profile rollback, and valid atomic profile/grant/audit update.
+- Dry-run: exactly one migration, `20260910022617`.
+- Applied to Cloud main: success; linked ledger contains `20260910022617`.
+- Postflight smoke: passed and rolled back. The wrapper exists; `authenticated` can execute it and `anon` cannot.
+- Cloud database lint still reports nine pre-existing error-level findings in unrelated AI, direct-purchase, quick-template, contract, and safety functions; no finding names the new Authorization V2 functions.
+- `npm test` without an exclusion also scanned historical `.worktrees/**`: 11,903 tests passed and 39 historical-worktree failures occurred. The authoritative checkout-only run used `--exclude '.worktrees/**'` and passed all 1,754 tests.
