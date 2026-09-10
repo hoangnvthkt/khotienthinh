@@ -51,11 +51,11 @@ const sourceCoversScope = (
   );
 };
 
-const legacySourceDisabled = (
+const sourceCanAuthorize = (
   snapshot: AuthorizationSnapshot,
   source: EffectivePermissionSource,
-): boolean => source.sourceType.toUpperCase() === 'LEGACY'
-  && (
+): boolean => source.sourceType.toUpperCase() !== 'LEGACY'
+  || !(
     snapshot.flags.legacy_fallback_disabled === true
     || source.permissionCode.startsWith('work.')
   );
@@ -79,7 +79,7 @@ export const evaluateCapability = (
 
   const matching = snapshot.sources.filter(source => source.permissionCode === permissionCode);
   const active = matching.filter(source => sourceIsActive(source, now));
-  const enabled = active.filter(source => !legacySourceDisabled(snapshot, source));
+  const enabled = active.filter(source => sourceCanAuthorize(snapshot, source));
   const granted = enabled.find(source => sourceCoversScope(source, scope));
 
   if (granted) {

@@ -85,6 +85,38 @@ describe('canonical authorization evaluator', () => {
     )).toMatchObject({ allowed: false, reason: 'legacy_disabled' });
   });
 
+  it('still honors canonical sources when a stale legacy source is present after cutover', () => {
+    const mixedSources = snapshot({
+      flags: { legacy_fallback_disabled: true },
+      sources: [
+        {
+          permissionCode: 'wms.inventory.view',
+          sourceType: 'LEGACY',
+          scopeType: 'global',
+          scopeId: '*',
+          isBusinessApproval: false,
+          metadata: {},
+        },
+        {
+          permissionCode: 'wms.inventory.view',
+          sourceType: 'DIRECT',
+          sourceId: 'canonical-grant',
+          scopeType: 'global',
+          scopeId: '*',
+          isBusinessApproval: false,
+          metadata: {},
+        },
+      ],
+    });
+
+    expect(evaluateCapability(mixedSources, 'wms.inventory.view')).toMatchObject({
+      allowed: true,
+      reason: 'granted',
+      sourceType: 'DIRECT',
+      sourceId: 'canonical-grant',
+    });
+  });
+
   it('denies inactive snapshots, expired sources, and unknown permissions', () => {
     expect(evaluateCapability(null, 'wms.inventory.view')).toMatchObject({
       allowed: false,

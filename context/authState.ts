@@ -338,15 +338,22 @@ export const mapAuthorizationSnapshot = (value: unknown): AuthorizationSnapshot 
     throw new Error('Authorization snapshot is invalid');
   }
   const row = value as Record<string, unknown>;
-  const sources = Array.isArray(row.sources) ? row.sources.map(mapEffectivePermissionSourceRow) : [];
+  const mappedSources = Array.isArray(row.sources) ? row.sources.map(mapEffectivePermissionSourceRow) : [];
   const roomActionsValue = row.room_actions ?? row.roomActions;
   const rawFlags = row.flags && typeof row.flags === 'object' && !Array.isArray(row.flags)
     ? row.flags as Record<string, unknown>
     : {};
+  const flags = Object.fromEntries(Object.entries(rawFlags).map(([key, flag]) => [key, flag === true]));
+  // Phase 5 is fail-closed at both boundaries. The database resolver excludes
+  // LEGACY after cutover; this filter also protects a session from a stale RPC
+  // response or cached payload produced before the flag changed.
+  const sources = flags.legacy_fallback_disabled
+    ? mappedSources.filter(source => source.sourceType.toUpperCase() !== 'LEGACY')
+    : mappedSources;
 
   return {
     generatedAt: String(row.generated_at ?? row.generatedAt ?? ''),
-    flags: Object.fromEntries(Object.entries(rawFlags).map(([key, flag]) => [key, flag === true])),
+    flags,
     sources,
     roomActions: Array.isArray(roomActionsValue)
       ? roomActionsValue.map(mapAuthorizationRoomAction)

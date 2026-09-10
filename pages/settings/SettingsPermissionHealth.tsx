@@ -65,6 +65,11 @@ type LegacyMigrationSummary = {
   snapshots?: number;
   manualReview?: number;
   legacyOnlyUsers?: number;
+  legacyConfiguredUsers?: number;
+  legacyConfiguredValues?: number;
+  legacyFallbackDisabled?: boolean;
+  legacyGovernanceFallbackDisabled?: boolean;
+  legacyProjectionEnabled?: boolean;
   dispositions?: Record<string, number>;
 };
 
@@ -292,7 +297,9 @@ const SettingsPermissionHealth: React.FC = () => {
             <div className="mt-2 text-sm font-black text-slate-800">
               manual {legacyMigration?.manualReview ?? '-'} · legacy-only {legacyMigration?.legacyOnlyUsers ?? '-'}
             </div>
-            <div className="mt-1 text-[10px] font-bold text-slate-500">{legacyMigration?.snapshots ?? 0} snapshots</div>
+            <div className="mt-1 text-[10px] font-bold text-slate-500">
+              {legacyMigration?.snapshots ?? 0} snapshots · {legacyMigration?.legacyConfiguredUsers ?? 0} config users
+            </div>
           </div>
           <div className="rounded-xl border border-slate-100 bg-white p-4">
             <div className="text-xs font-black uppercase tracking-widest text-slate-500">Legacy fallback</div>
@@ -317,6 +324,23 @@ const SettingsPermissionHealth: React.FC = () => {
           Phase 4 gate · Room-authoritative: {summary?.projectRoomPbacFallbackEnabled
             ? 'chưa đạt — fallback vẫn đang bật.'
             : 'fallback đã tắt; mọi finding Room phải bằng 0 trước khi rollout tiếp.'}
+        </div>
+        <div className={`mt-3 rounded-xl border px-4 py-3 text-xs font-bold ${
+          summary?.legacyFallbackDisabled
+            && legacyMigration?.legacyGovernanceFallbackDisabled
+            && !legacyMigration?.legacyProjectionEnabled
+            && (legacyMigration?.manualReview || 0) === 0
+            && (legacyMigration?.legacyOnlyUsers || 0) === 0
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-red-200 bg-red-50 text-red-700'
+        }`}>
+          Phase 5 gate · Canonical-only: {summary?.legacyFallbackDisabled
+            && legacyMigration?.legacyGovernanceFallbackDisabled
+            && !legacyMigration?.legacyProjectionEnabled
+            && (legacyMigration?.manualReview || 0) === 0
+            && (legacyMigration?.legacyOnlyUsers || 0) === 0
+            ? `đạt — legacy config (${legacyMigration?.legacyConfiguredValues ?? 0} giá trị) chỉ còn là rollback evidence.`
+            : 'chưa đạt — còn fallback, projection hoặc migration blocker.'}
         </div>
       </div>
 
