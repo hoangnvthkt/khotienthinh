@@ -81,8 +81,14 @@ describe('Phase 4 global module permission capabilities', () => {
     });
   });
 
-  it('allows admins through every global module capability', () => {
-    const admin = user([], { role: Role.ADMIN });
+  it('requires explicit canonical capabilities for global-module admins', () => {
+    const admin = user([
+      'ai.assistant.use',
+      'ai.report.generate',
+      'kb.manage',
+      'storage.manage',
+      'analytics.export',
+    ], { role: Role.ADMIN });
     expect(getAiAssistantCapabilities(admin).canUse).toBe(true);
     expect(getAiReportCapabilities(admin).canGenerate).toBe(true);
     expect(getKnowledgeBaseCapabilities(admin).canManage).toBe(true);

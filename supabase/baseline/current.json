@@ -38,7 +38,8 @@
     "20260910025910_authorization_v2_phase4_retire_view_only_rooms.sql",
     "20260910031856_authorization_v2_phase4_remaining_enforced_rooms.sql",
     "20260910033302_authorization_v2_phase5_legacy_grant_migration.sql",
-    "20260910034121_authorization_v2_phase5_disable_legacy_fallback.sql"
+    "20260910034121_authorization_v2_phase5_disable_legacy_fallback.sql",
+    "20260910034817_authorization_v2_phase6_disable_legacy_writes.sql"
   ],
   "forbidIncludeAll": true
 }

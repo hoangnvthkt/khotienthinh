@@ -44,23 +44,9 @@ describe('Phase 5 permission hardening guards', () => {
 
   it('keeps legacy field access decisions confined to the Phase 5 readiness allowlist', () => {
     const allowedLegacyConsumers = new Set([
-      'components/Layout.tsx',
-      'components/Sidebar.tsx',
       'components/permissions/LegacyPermissionReadOnly.tsx',
-      'hooks/usePermission.ts',
-      'lib/approvalService.ts',
       'lib/auditService.ts',
-      'lib/costEstimateService.ts',
-      'lib/feedbackNotificationService.ts',
-      'lib/homeCapabilities.ts',
-      'lib/notificationService.ts',
-      'lib/permissions/permissionService.ts',
-      'lib/permissions/projectPermissionService.ts',
-      'lib/routeAccess.ts',
-      'lib/settingsPermissions.ts',
       'lib/supabaseProjections.ts',
-      'lib/tenderAiService.ts',
-      'pages/FeedbackHub.tsx',
     ]);
     const legacyFieldPattern = /\b(?:allowedModules|adminModules|allowedSubModules|adminSubModules|allowed_modules|admin_modules|allowed_sub_modules|admin_sub_modules)\b/;
     const scannedRoots = ['components', 'hooks', 'lib', 'pages'];

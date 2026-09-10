@@ -6,7 +6,6 @@ import {
   canViewRoute,
   getUserAuthorizationSnapshot,
   getInheritedPermissionCodes,
-  getLegacyModuleAssignmentCount,
   isDirectPermissionGrantAllowed,
   isPermissionActionScopeAllowed,
   userHasPermissionGrant,
@@ -26,8 +25,18 @@ const user = (overrides: Partial<User> = {}): User => ({
 });
 
 describe('permissionService', () => {
-  it('allows admins to perform every registered permission', () => {
-    expect(canPerform(user({ role: Role.ADMIN }), 'project.daily_log.approve')).toBe(true);
+  it('requires a canonical source for admins outside explicit backend bypasses', () => {
+    expect(canPerform(user({ role: Role.ADMIN }), 'project.daily_log.approve')).toBe(false);
+    expect(canPerform(user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        userId: 'user-1',
+        permissionCode: 'project.daily_log.approve',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    }), 'project.daily_log.approve')).toBe(true);
   });
 
   it('does not give a technical admin implicit HRM access', () => {
@@ -137,29 +146,22 @@ describe('permissionService', () => {
     expect(userHasPermissionGrant(grantedUser, 'system.hrm.view')).toBe(false);
   });
 
-  it('falls back to allowedModules for legacy module view access', () => {
-    expect(canViewModule(user({ allowedModules: ['WMS'] }), 'WMS')).toBe(true);
-    expect(canPerform(user({ allowedModules: ['WMS'] }), 'system.wms.view')).toBe(true);
+  it('does not fall back to retired module fields', () => {
+    expect(canViewModule(user({ allowedModules: ['WMS'] }), 'WMS')).toBe(false);
+    expect(canPerform(user({ allowedModules: ['WMS'] }), 'system.wms.view')).toBe(false);
     expect(canPerform(user({ allowedModules: ['WMS'] }), 'system.wms.manage')).toBe(false);
   });
 
-  it('opens workflow instance details from a legacy allowed submodule grant', () => {
+  it('does not open workflow details from retired submodule fields', () => {
     expect(canViewRoute(user({
       allowedSubModules: { WF: ['/wf'] },
-    }), '/wf/instances/instance-1')).toBe(true);
+    }), '/wf/instances/instance-1')).toBe(false);
   });
 
-  it('opens workflow instance details from a legacy admin submodule grant', () => {
-    expect(canViewRoute(user({
-      allowedSubModules: { WF: [] },
-      adminSubModules: { WF: ['/wf'] },
-    }), '/wf/instances/instance-1')).toBe(true);
-  });
-
-  it('opens request details from a legacy request list grant', () => {
+  it('does not open request details from retired route fields', () => {
     expect(canViewRoute(user({
       allowedSubModules: { RQ: ['/rq'] },
-    }), '/rq/request-1')).toBe(true);
+    }), '/rq/request-1')).toBe(false);
   });
 
   it('does not expose workflow template routes from a legacy workflow list grant', () => {
@@ -178,17 +180,14 @@ describe('permissionService', () => {
     expect(getInheritedPermissionCodes(user({ adminModules: ['HRM'] }))).not.toContain('system.hrm.manage');
   });
 
-  it('reports inherited legacy permission codes for read-only UI badges', () => {
-    expect(getInheritedPermissionCodes(user({ allowedModules: ['DA'], adminSubModules: { DA: ['/da/tabs/dailylog'] } }))).toEqual(
-      expect.arrayContaining(['system.da.view', 'project.daily_log.manage'])
-    );
-  });
-
-  it('counts legacy module assignments behind the permission boundary', () => {
-    expect(getLegacyModuleAssignmentCount(user({
-      allowedModules: ['WMS', 'DA'],
-      adminModules: ['HRM'],
-    }))).toBe(3);
+  it('reports only canonical inherited permission codes for read-only UI badges', () => {
+    expect(getInheritedPermissionCodes(user({
+      allowedModules: ['DA'],
+      permissionGrants: [{
+        userId: 'user-1', permissionCode: 'system.da.view',
+        scopeType: 'global', scopeId: '*', isActive: true,
+      }],
+    }))).toEqual(['system.da.view']);
   });
 
   it('checks whether a permission action can be granted for a selected scope', () => {

@@ -28,10 +28,6 @@ export type ProjectPermissionScope = {
 type ProjectPermissionUser = Pick<
   User,
   | 'role'
-  | 'allowedModules'
-  | 'adminModules'
-  | 'allowedSubModules'
-  | 'adminSubModules'
   | 'permissionGrants'
   | 'effectivePermissionSources'
   | 'authorizationSnapshot'
@@ -77,9 +73,7 @@ const hasProjectCapability = (
     permissionCode,
     scope,
   );
-  if (!decision.allowed) return false;
-  return decision.sourceType?.toUpperCase() !== 'LEGACY'
-    || decision.sourceMetadata?.legacyAdminCompatibility === true;
+  return decision.allowed;
 };
 
 const hasProjectNavigationCapability = (

@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { Role, User, UserPermissionGrant } from '../../types';
 import { canAccessRoute, getRouteModuleKey, isAuthenticatedOpenRoute } from '../routeAccess';
 
-const user = (allowedModules?: string[]): User => ({
+const user = (permissionCodes: string[] = []): User => ({
   id: 'user-1',
   name: 'Nguyễn Văn A',
   email: 'a@example.com',
   role: Role.EMPLOYEE,
-  allowedModules,
+  permissionGrants: permissionCodes.map(permissionCode => ({
+    userId: 'user-1', permissionCode, scopeType: 'global', scopeId: '*', isActive: true,
+  })),
 });
 
 const persona = (
@@ -45,19 +47,19 @@ describe('chat route access', () => {
   });
 
   it('allows users explicitly granted CHAT', () => {
-    expect(canAccessRoute(user(['HRM', 'CHAT']), '/chat')).toBe(true);
+    expect(canAccessRoute(user(['system.chat.view']), '/chat')).toBe(true);
   });
 
   it('blocks users without CHAT', () => {
-    expect(canAccessRoute(user(['HRM']), '/chat')).toBe(false);
+    expect(canAccessRoute(user([]), '/chat')).toBe(false);
   });
 
-  it('keeps legacy profiles without an allowedModules list working', () => {
-    expect(canAccessRoute(user(undefined), '/chat')).toBe(true);
+  it('denies profiles without a canonical CHAT grant', () => {
+    expect(canAccessRoute(user(), '/chat')).toBe(false);
   });
 
   it('always allows administrators', () => {
-    expect(canAccessRoute({ ...user([]), role: Role.ADMIN }, '/chat')).toBe(true);
+    expect(canAccessRoute({ ...user(['system.chat.view']), role: Role.ADMIN }, '/chat')).toBe(true);
   });
 });
 
@@ -71,7 +73,7 @@ describe('phase 0 route containment', () => {
   });
 
   it('blocks unknown protected routes for non-admin users', () => {
-    expect(canAccessRoute(user(['HRM']), '/not-declared-yet')).toBe(false);
+    expect(canAccessRoute(user(), '/not-declared-yet')).toBe(false);
   });
 
   it('keeps authenticated-open profile routes available', () => {
@@ -82,8 +84,8 @@ describe('phase 0 route containment', () => {
     expect(canAccessRoute(user([]), '/')).toBe(true);
   });
 
-  it('keeps legacy profiles without an allowedModules list working for mapped routes', () => {
-    expect(canAccessRoute(user(undefined), '/hd')).toBe(true);
+  it('opens mapped routes only with their canonical view grant', () => {
+    expect(canAccessRoute(user(['contract.partner.view']), '/hd')).toBe(true);
   });
 
   it('treats a QR route as authenticated navigation, not a public capability grant', () => {
@@ -99,7 +101,7 @@ describe('request detail route access', () => {
   it('maps all request template routes to RQ and allows administrators', () => {
     for (const route of templateRoutes) {
       expect(getRouteModuleKey(route), route).toBe('RQ');
-      expect(canAccessRoute({ ...user([]), role: Role.ADMIN }, route), route).toBe(true);
+      expect(canAccessRoute({ ...user(['request.template.view']), role: Role.ADMIN }, route), route).toBe(true);
     }
   });
 
@@ -120,14 +122,11 @@ describe('request detail route access', () => {
     expect(getRouteModuleKey('/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe('RQ');
   });
 
-  it('allows an RQ user to open an assigned request detail', () => {
-    expect(canAccessRoute({
-      ...user(['RQ']),
-      allowedSubModules: { RQ: ['/rq'] },
-      adminSubModules: {},
-      adminModules: [],
-      permissionGrants: [],
-    }, '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a')).toBe(true);
+  it('allows a canonical request viewer to open an assigned request detail', () => {
+    expect(canAccessRoute(
+      user(['request.instance.view_own']),
+      '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a',
+    )).toBe(true);
   });
 });
 

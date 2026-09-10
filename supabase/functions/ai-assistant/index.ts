@@ -62,10 +62,6 @@ interface AppUserContext {
   role?: string | null;
   email?: string | null;
   isActive?: boolean | null;
-  allowedModules?: string[] | null;
-  adminModules?: string[] | null;
-  allowedSubModules?: Record<string, unknown> | null;
-  adminSubModules?: Record<string, unknown> | null;
   source: 'jwt' | 'body';
 }
 
@@ -413,126 +409,63 @@ const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
   ai_tool_executive_dashboard: { title: 'Dashboard tổng hợp', fileName: 'Hệ thống Quản lý Vioo ERP' },
 };
 
-const TOOL_ACCESS: Record<string, { requiresJwt?: boolean; adminModules?: string[]; message: string }> = {
+const TOOL_ACCESS: Record<string, { requiresJwt?: boolean; permissionCodes: string[]; message: string }> = {
   ai_tool_cost_template_summary: {
     requiresJwt: true,
-    adminModules: ['HD', 'DA', 'TENDER_AI'],
+    permissionCodes: ['contract.cost_library.manage', 'system.tender_ai.manage'],
     message: 'Cost template là dữ liệu nghiệp vụ nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án để AI tra cứu.',
   },
   ai_tool_internal_price_book_lookup: {
     requiresJwt: true,
-    adminModules: ['HD', 'TENDER_AI'],
+    permissionCodes: ['contract.cost_library.manage', 'system.tender_ai.manage'],
     message: 'Đơn giá nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng.',
   },
   ai_tool_internal_norms_lookup: {
     requiresJwt: true,
-    adminModules: ['HD', 'DA', 'TENDER_AI'],
+    permissionCodes: ['contract.cost_library.manage', 'system.tender_ai.manage'],
     message: 'Định mức nội bộ là dữ liệu nhạy cảm. AI chỉ được tra cứu khi tài khoản là Admin hoặc quản trị module Hợp đồng/Dự án.',
   },
   ai_tool_estimate_scenario_summary: {
     requiresJwt: true,
-    adminModules: ['HD', 'DA', 'TENDER_AI'],
+    permissionCodes: ['contract.cost_library.manage', 'system.tender_ai.manage'],
     message: 'Phương án dự toán/chào thầu cần quyền nội bộ. Anh/chị cần đăng nhập bằng tài khoản Admin hoặc quản trị module Hợp đồng/Dự án.',
   },
 };
 
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map(v => String(v).trim()).filter(Boolean);
-}
+const canUseEstimateAssistant = (actor: AppUserContext | null) =>
+  actorHasAnyPermission(actor, ['contract.cost_library.view', 'system.tender_ai.view']);
 
-function isAdminOrModuleAdmin(actor: AppUserContext | null, modules: string[]) {
-  if (!actor || actor.isActive === false) return false;
-  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
-  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  return modules.some(moduleCode => adminModules.includes(moduleCode.toUpperCase()));
-}
+const canUseTenderAssistant = (actor: AppUserContext | null) =>
+  actorHasAnyPermission(actor, ['system.tender_ai.view', 'contract.cost_library.view']);
 
-function canUseEstimateAssistant(actor: AppUserContext | null) {
-  if (!actor || actor.isActive === false) return false;
-  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
-  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
-  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  return ['HD', 'DA', 'TENDER_AI'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
-}
+const canUseCostNormAssistant = (actor: AppUserContext | null) =>
+  actorHasAnyPermission(actor, ['contract.cost_library.manage', 'system.tender_ai.manage']);
 
-function canUseTenderAssistant(actor: AppUserContext | null) {
-  if (!actor || actor.isActive === false) return false;
-  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
-  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
-  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  return allowedModules.includes('TENDER_AI') || adminModules.includes('TENDER_AI') || allowedModules.includes('HD') || adminModules.includes('HD');
-}
-
-function canUseCostNormAssistant(actor: AppUserContext | null) {
-  return isAdminOrModuleAdmin(actor, ['HD', 'TENDER_AI']);
-}
-
-function canUseCustomMaterialAssistant(actor: AppUserContext | null) {
-  if (!actor || actor.isActive === false) return false;
-  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
-  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
-  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  return ['DA', 'WMS', 'TENDER_AI'].some(moduleCode => allowedModules.includes(moduleCode) || adminModules.includes(moduleCode));
-}
-
-const GLOBAL_PERMISSION_LEGACY: Record<string, { moduleKey: string; route?: string; adminOnly?: boolean }> = {
-  'ai.assistant.use': { moduleKey: 'AI', route: '/ai' },
-};
-
-function normalizeSubModuleRoutes(value: unknown, moduleKey: string): string[] {
-  if (!value || typeof value !== 'object') return [];
-  const raw = (value as Record<string, unknown>)[moduleKey];
-  if (!Array.isArray(raw)) return [];
-  return raw.map(route => String(route || '').trim()).filter(Boolean);
-}
-
-function actorHasLegacyPermission(actor: AppUserContext, permissionCode: string) {
-  const legacy = GLOBAL_PERMISSION_LEGACY[permissionCode];
-  if (!legacy) return false;
-
-  const moduleKey = legacy.moduleKey.toUpperCase();
-  const allowedModules = normalizeStringArray(actor.allowedModules).map(m => m.toUpperCase());
-  const adminModules = normalizeStringArray(actor.adminModules).map(m => m.toUpperCase());
-  const allowedRoutes = normalizeSubModuleRoutes(actor.allowedSubModules, moduleKey);
-  const adminRoutes = normalizeSubModuleRoutes(actor.adminSubModules, moduleKey);
-
-  if (adminModules.includes(moduleKey)) return true;
-  if (legacy.adminOnly) return legacy.route ? adminRoutes.includes(legacy.route) : adminRoutes.length > 0;
-  if (allowedModules.includes(moduleKey)) return true;
-  if (!legacy.route) return allowedRoutes.length > 0 || adminRoutes.length > 0;
-  return allowedRoutes.includes(legacy.route) || adminRoutes.includes(legacy.route);
-}
+const canUseCustomMaterialAssistant = (actor: AppUserContext | null) =>
+  actorHasAnyPermission(actor, ['project.custom_material.view']);
 
 async function actorHasPermission(actor: AppUserContext | null, permissionCode: string) {
   if (!actor || actor.isActive === false) return false;
-  if (String(actor.role || '').toUpperCase() === 'ADMIN') return true;
 
-  const { data, error } = await admin
-    .from('user_permission_grants')
-    .select('scope_type, scope_id, is_active, expires_at')
-    .eq('user_id', actor.id)
-    .eq('permission_code', permissionCode)
-    .order('id', { ascending: true })
-    .limit(1_000);
-
-  if (error) {
-    console.warn('permission grant lookup failed:', error.message);
-    return actorHasLegacyPermission(actor, permissionCode);
-  }
-  if ((data || []).length >= 1_000) {
-    console.error('permission grant lookup reached its 1,000-row safety cap');
-    return false;
-  }
-
-  const now = Date.now();
-  const hasExplicitGrant = (data || []).some((grant: any) => {
-    if (grant.is_active === false) return false;
-    if (grant.expires_at && new Date(grant.expires_at).getTime() <= now) return false;
-    return grant.scope_type === 'global' || grant.scope_id === '*';
+  const { data, error } = await admin.rpc('service_authorization_user_has_permission', {
+    p_user_id: actor.id,
+    p_permission_code: permissionCode,
+    p_scope_type: 'global',
+    p_scope_id: '*',
   });
 
-  return hasExplicitGrant || actorHasLegacyPermission(actor, permissionCode);
+  if (error) {
+    console.warn('canonical permission lookup failed:', error.message);
+    return false;
+  }
+  return data === true;
+}
+
+async function actorHasAnyPermission(actor: AppUserContext | null, permissionCodes: string[]) {
+  for (const permissionCode of permissionCodes) {
+    if (await actorHasPermission(actor, permissionCode)) return true;
+  }
+  return false;
 }
 
 async function requireAiAssistantUse(request: Request): Promise<{ actor?: AppUserContext; response?: Response }> {
@@ -558,7 +491,7 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
   if (authUser.id) {
     const byAuthId = await admin
       .from('users')
-      .select('id, role, email, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules')
+      .select('id, role, email, is_active')
       .eq('auth_id', authUser.id)
       .maybeSingle();
 
@@ -568,10 +501,6 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
         role: byAuthId.data.role,
         email: byAuthId.data.email,
         isActive: byAuthId.data.is_active,
-        allowedModules: byAuthId.data.allowed_modules,
-        adminModules: byAuthId.data.admin_modules,
-        allowedSubModules: byAuthId.data.allowed_sub_modules,
-        adminSubModules: byAuthId.data.admin_sub_modules,
         source: 'jwt',
       };
     }
@@ -580,7 +509,7 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
   if (authUser.email) {
     const byEmail = await admin
       .from('users')
-      .select('id, role, email, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules')
+      .select('id, role, email, is_active')
       .ilike('email', authUser.email)
       .maybeSingle();
 
@@ -590,10 +519,6 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
         role: byEmail.data.role,
         email: byEmail.data.email,
         isActive: byEmail.data.is_active,
-        allowedModules: byEmail.data.allowed_modules,
-        adminModules: byEmail.data.admin_modules,
-        allowedSubModules: byEmail.data.allowed_sub_modules,
-        adminSubModules: byEmail.data.admin_sub_modules,
         source: 'jwt',
       };
     }
@@ -617,7 +542,7 @@ async function resolveActor(request: Request, fallbackUserId?: string): Promise<
   if (fallbackUserId) {
     const { data } = await admin
       .from('users')
-      .select('id, role, email, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules')
+      .select('id, role, email, is_active')
       .eq('id', fallbackUserId)
       .maybeSingle();
 
@@ -627,10 +552,6 @@ async function resolveActor(request: Request, fallbackUserId?: string): Promise<
         role: data.role,
         email: data.email,
         isActive: data.is_active,
-        allowedModules: data.allowed_modules,
-        adminModules: data.admin_modules,
-        allowedSubModules: data.allowed_sub_modules,
-        adminSubModules: data.admin_sub_modules,
         source: 'body',
       };
     }
@@ -639,7 +560,7 @@ async function resolveActor(request: Request, fallbackUserId?: string): Promise<
   return null;
 }
 
-function authorizeTool(toolName: string, actor: AppUserContext | null): { allowed: boolean; message?: string; suggestions?: string[] } {
+async function authorizeTool(toolName: string, actor: AppUserContext | null): Promise<{ allowed: boolean; message?: string; suggestions?: string[] }> {
   const access = TOOL_ACCESS[toolName];
   if (!access) return { allowed: true };
 
@@ -655,7 +576,7 @@ function authorizeTool(toolName: string, actor: AppUserContext | null): { allowe
     };
   }
 
-  if (!isAdminOrModuleAdmin(actor, access.adminModules || [])) {
+  if (!(await actorHasAnyPermission(actor, access.permissionCodes))) {
     return {
       allowed: false,
       message: access.message,
@@ -1130,7 +1051,7 @@ function normalizeEstimateSuggestionPayload(raw: any, req: AssistantRequest) {
 }
 
 async function handleEstimateSuggestion(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseEstimateAssistant(actor)) {
+  if (!(await canUseEstimateAssistant(actor))) {
     return jsonResponse({
       error: 'Tài khoản hiện tại chưa có quyền HD/DA để dùng AI gợi ý dự toán trong builder.',
     }, 403);
@@ -1231,7 +1152,7 @@ function normalizeNormSuggestionRows(raw: any, req: AssistantRequest) {
 }
 
 async function handleCostNormStandardization(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseCostNormAssistant(actor)) {
+  if (!(await canUseCostNormAssistant(actor))) {
     return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền Admin/HD admin/Tender AI admin để dùng AI chuẩn hóa định mức.' }, 403);
   }
   const item = req.item || {};
@@ -1358,7 +1279,7 @@ function normalizeCostNormImportPayload(raw: any) {
 }
 
 async function handleCostNormImportExcel(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseCostNormAssistant(actor)) {
+  if (!(await canUseCostNormAssistant(actor))) {
     return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền Admin/HD admin/Tender AI admin để dùng AI import định mức.' }, 403);
   }
   const rows = Array.isArray(req.rows) ? req.rows.slice(0, 600) : [];
@@ -1493,7 +1414,7 @@ function normalizeCustomMaterialSmartImportPayload(parsed: any, req: AssistantRe
 }
 
 async function handleCustomMaterialSmartImportExcel(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseCustomMaterialAssistant(actor)) {
+  if (!(await canUseCustomMaterialAssistant(actor))) {
     return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền DA/WMS để dùng AI import vật tư phi tiêu chuẩn.' }, 403);
   }
   if (req.templateKey && req.templateKey !== 'xa_go') {
@@ -1611,7 +1532,7 @@ async function writeTenderAiLog(req: AssistantRequest, actor: AppUserContext | n
 }
 
 async function handleTenderDetectColumns(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseTenderAssistant(actor)) {
+  if (!(await canUseTenderAssistant(actor))) {
     return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
   }
   const workbook = req.workbook || {};
@@ -1663,7 +1584,7 @@ ${compactJson(workbook, 22000)}
 }
 
 async function handleTenderSuggestMapping(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseTenderAssistant(actor)) {
+  if (!(await canUseTenderAssistant(actor))) {
     return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
   }
   const lines = Array.isArray(req.lines) ? req.lines.slice(0, 300) : [];
@@ -1794,7 +1715,7 @@ ${compactJson(templates, 24000)}
 }
 
 async function handleTenderRiskRfi(req: AssistantRequest, actor: AppUserContext | null) {
-  if (!canUseTenderAssistant(actor)) {
+  if (!(await canUseTenderAssistant(actor))) {
     return jsonResponse({ error: 'Tài khoản hiện tại chưa có quyền HD để dùng Tender AI.' }, 403);
   }
   const prompt = `
@@ -2126,7 +2047,7 @@ Deno.serve(async (request: Request) => {
         }, 200, { status: 'clarification', toolName: route.toolName });
       }
 
-      const toolAuthorization = authorizeTool(route.toolName, actor);
+      const toolAuthorization = await authorizeTool(route.toolName, actor);
       if (!toolAuthorization.allowed) {
         const msg = toolAuthorization.message || 'Tài khoản hiện tại chưa đủ quyền để AI tra cứu dữ liệu này.';
         activeAssistantMessageId = await saveMessage({

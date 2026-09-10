@@ -82,7 +82,7 @@ export const isAuthenticatedOpenRoute = (route: string): boolean => {
 };
 
 export const canAccessRoute = (
-  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
+  user: Pick<User, 'role' | 'permissionGrants' | 'effectivePermissionSources' | 'authorizationSnapshot'> | null | undefined,
   route?: string,
 ): boolean => {
   if (!route) return true;

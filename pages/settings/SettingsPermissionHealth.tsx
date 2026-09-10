@@ -73,6 +73,11 @@ type LegacyMigrationSummary = {
   dispositions?: Record<string, number>;
 };
 
+type Phase6Summary = {
+  legacyWritesDisabled?: boolean;
+  legacyWriteAuditEvents?: number;
+};
+
 const CHECK_LABELS: Record<string, string> = {
   unmappedRoutes: 'Route chưa map',
   broadPolicies: 'Policy rộng',
@@ -164,6 +169,7 @@ const describeFinding = (finding: HealthFinding) => {
 const SettingsPermissionHealth: React.FC = () => {
   const [summary, setSummary] = useState<PermissionHealthSummary | null>(null);
   const [legacyMigration, setLegacyMigration] = useState<LegacyMigrationSummary | null>(null);
+  const [phase6, setPhase6] = useState<Phase6Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -183,14 +189,16 @@ const SettingsPermissionHealth: React.FC = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const [baseResult, roomResult, legacyMigrationResult] = await Promise.all([
+      const [baseResult, roomResult, legacyMigrationResult, phase6Result] = await Promise.all([
         supabase.rpc('get_permission_health_summary'),
         supabase.rpc('get_project_permission_room_health_summary'),
         supabase.rpc('get_authorization_legacy_migration_summary'),
+        supabase.rpc('get_authorization_phase6_summary'),
       ]);
       if (baseResult.error) throw baseResult.error;
       if (roomResult.error) throw roomResult.error;
       if (legacyMigrationResult.error) throw legacyMigrationResult.error;
+      if (phase6Result.error) throw phase6Result.error;
       const base = (baseResult.data || {}) as PermissionHealthSummary;
       const room = (roomResult.data || {}) as ProjectRoomHealthSummary;
       const roomChecks = room.checks || {};
@@ -198,6 +206,7 @@ const SettingsPermissionHealth: React.FC = () => {
       const migration = (legacyMigrationResult.data || {}) as LegacyMigrationSummary;
       const hasMigrationBlocker = (migration.manualReview || 0) > 0 || (migration.legacyOnlyUsers || 0) > 0;
       setLegacyMigration(migration);
+      setPhase6((phase6Result.data || {}) as Phase6Summary);
       setSummary({
         ...base,
         generatedAt: room.generatedAt || base.generatedAt,
@@ -324,6 +333,15 @@ const SettingsPermissionHealth: React.FC = () => {
           Phase 4 gate · Room-authoritative: {summary?.projectRoomPbacFallbackEnabled
             ? 'chưa đạt — fallback vẫn đang bật.'
             : 'fallback đã tắt; mọi finding Room phải bằng 0 trước khi rollout tiếp.'}
+        </div>
+        <div className={`mt-3 rounded-xl border px-4 py-3 text-xs font-bold ${
+          phase6?.legacyWritesDisabled
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : 'border-red-200 bg-red-50 text-red-700'
+        }`}>
+          Phase 6 gate · Legacy writes: {phase6?.legacyWritesDisabled
+            ? `đã chặn; ${phase6.legacyWriteAuditEvents ?? 0} audit event được giữ làm bằng chứng.`
+            : 'chưa chặn — chưa được bắt đầu observation window.'}
         </div>
         <div className={`mt-3 rounded-xl border px-4 py-3 text-xs font-bold ${
           summary?.legacyFallbackDisabled

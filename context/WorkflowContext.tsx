@@ -242,7 +242,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!role) return [];
         const { data, error } = await supabase
             .from('users')
-            .select('id, role, allowed_modules, is_active')
+            .select('id, role, is_active')
             .eq('role', role)
             .limit(500);
         if (error) {
@@ -251,11 +251,6 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
         return (data || [])
             .filter((row: any) => row.is_active !== false)
-            .filter((row: any) =>
-                row.role === Role.ADMIN ||
-                !Array.isArray(row.allowed_modules) ||
-                row.allowed_modules.includes('WF')
-            )
             .map((row: any) => row.id)
             .filter(Boolean);
     }, []);

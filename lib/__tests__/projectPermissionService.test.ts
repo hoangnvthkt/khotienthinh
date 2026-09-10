@@ -72,8 +72,15 @@ describe('projectPermissionService', () => {
     expect(canPerformProjectAction(grantedUser, 'project.daily_log.approve', { projectId: 'project-1' })).toBe(false);
   });
 
-  it('allows ADMIN to perform project actions regardless of scope', () => {
-    expect(canPerformProjectAction(user({ role: Role.ADMIN }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(true);
+  it('requires canonical Project capability for ADMIN outside backend exceptions', () => {
+    expect(canPerformProjectAction(user({ role: Role.ADMIN }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(false);
+    expect(canPerformProjectAction(user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        userId: 'user-1', permissionCode: 'project.daily_log.approve',
+        scopeType: 'global', scopeId: '*', isActive: true,
+      }],
+    }), 'project.daily_log.approve', { projectId: 'project-1' })).toBe(true);
   });
 
   it('does not bypass an authoritative empty snapshot from legacy role or module fields', () => {
@@ -146,7 +153,7 @@ describe('projectPermissionService', () => {
     ])).toEqual(['view', 'edit', 'confirm', 'view_available_stock']);
   });
 
-  it('uses scoped grants and legacy route fallback for Project tab visibility', () => {
+  it('uses only scoped canonical grants for Project tab visibility', () => {
     const scopedUser = user({
       permissionGrants: [{
         id: 'grant-tab',
@@ -157,15 +164,22 @@ describe('projectPermissionService', () => {
         isActive: true,
       }],
     });
-    const legacyUser = user({
-      allowedModules: ['DA'],
-      allowedSubModules: { DA: ['/da/tabs/dailylog'] },
-      adminSubModules: { DA: ['/da/tabs/org'] },
+    const canonicalUser = user({
+      permissionGrants: [
+        {
+          userId: 'user-1', permissionCode: 'project.daily_log.view',
+          scopeType: 'project', scopeId: 'project-1', isActive: true,
+        },
+        {
+          userId: 'user-1', permissionCode: 'project.org.manage',
+          scopeType: 'project', scopeId: 'project-1', isActive: true,
+        },
+      ],
     });
 
     expect(canViewProjectTab(scopedUser, 'quality', { projectId: 'project-1' })).toBe(true);
     expect(canViewProjectTab(scopedUser, 'quality', { projectId: 'project-2' })).toBe(false);
-    expect(canViewProjectTab(legacyUser, 'dailylog', { projectId: 'project-1' })).toBe(true);
-    expect(canManageProjectTab(legacyUser, 'org', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(canonicalUser, 'dailylog', { projectId: 'project-1' })).toBe(true);
+    expect(canManageProjectTab(canonicalUser, 'org', { projectId: 'project-1' })).toBe(true);
   });
 });

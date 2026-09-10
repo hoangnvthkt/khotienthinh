@@ -6,8 +6,6 @@ const FEEDBACK_LINK = (feedbackId: string) => `/feedback?feedbackId=${feedbackId
 
 export const isFeedbackManagerUser = (user: User) => (
   user.role === Role.ADMIN
-  || (user.adminModules || []).includes('FEEDBACK')
-  || Boolean(user.adminSubModules?.FEEDBACK)
 );
 
 export const uniqueFeedbackRecipientIds = (

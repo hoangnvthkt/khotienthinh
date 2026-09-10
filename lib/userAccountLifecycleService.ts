@@ -5,7 +5,6 @@ import type {
   UserAccountOperationResult,
 } from '../types';
 import { isSupabaseConfigured, supabase } from './supabase';
-import { getLegacyModuleAssignmentCount } from './permissions/permissionService';
 import { readFunctionInvokeErrorMessage } from './userAccountCreation';
 
 export interface UserAccountLifecycleCommand {
@@ -63,7 +62,7 @@ export const getUserAccountLifecyclePreview = async (
       operationAction: target.accountOperationAction,
       hasAuthIdentity: true,
       directGrants: target.permissionGrants?.filter(grant => grant.isActive !== false).length || 0,
-      legacyModules: getLegacyModuleAssignmentCount(target),
+      legacyModules: 0,
       projectStaffAssignments: 0,
       responsibilitySlots: 0,
       runtimeAssignments: 0,

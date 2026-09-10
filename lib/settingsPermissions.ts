@@ -1,4 +1,5 @@
 import { Role, User } from '../types';
+import { canPerform, canViewModule, canViewRoute } from './permissions/permissionService';
 
 export const SETTINGS_MODULE_KEY = 'SETTINGS';
 
@@ -26,44 +27,29 @@ export type SettingsFeatureId = typeof SETTINGS_FEATURES[number]['id'] | 'accoun
 export const getSettingsFeatureToken = (featureId: Exclude<SettingsFeatureId, 'account'>): string =>
   `/settings/${featureId}`;
 
-const hasExplicitSettingsModule = (user: Pick<User, 'allowedModules' | 'adminModules'>): boolean =>
-  Boolean(user.allowedModules?.includes(SETTINGS_MODULE_KEY) || user.adminModules?.includes(SETTINGS_MODULE_KEY));
-
-const DEFAULT_SETTINGS_USER_MODULE_KEYS = ['WMS', 'HRM', 'WF'];
-
-export const isSettingsUserAdmin = (user: Pick<User, 'role' | 'adminModules'>): boolean =>
-  user.role === Role.ADMIN || Boolean(user.adminModules?.length);
+export const isSettingsUserAdmin = (user: User): boolean =>
+  user.role === Role.ADMIN || canPerform(user, 'system.settings.manage');
 
 export const getSettingsUserModuleKeys = (
-  user: Pick<User, 'role' | 'allowedModules' | 'adminModules'>,
+  user: User,
   moduleKeys: string[],
 ): string[] => {
   if (isSettingsUserAdmin(user)) return [...moduleKeys];
-  return user.allowedModules?.length ? user.allowedModules : [...DEFAULT_SETTINGS_USER_MODULE_KEYS];
+  return moduleKeys.filter(moduleKey => canViewModule(user, moduleKey));
 };
 
 export const canAccessSettingsFeature = (
-  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules'>,
+  user: User,
   featureId: SettingsFeatureId,
 ): boolean => {
   if (featureId === 'account') return true;
-  if (user.role === Role.ADMIN) return true;
-
   const token = getSettingsFeatureToken(featureId);
-  const allowedSettings = user.allowedSubModules?.[SETTINGS_MODULE_KEY];
-  const adminSettings = user.adminSubModules?.[SETTINGS_MODULE_KEY];
-
-  if (user.adminModules?.includes(SETTINGS_MODULE_KEY)) return true;
-  if (adminSettings?.includes(token)) return true;
-  if (!user.allowedModules?.includes(SETTINGS_MODULE_KEY)) return false;
-  if (!Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, SETTINGS_MODULE_KEY)) return true;
-
-  return Boolean(allowedSettings?.includes(token));
+  return canPerform(user, 'system.settings.manage') || canViewRoute(user, token);
 };
 
 export const hasAnySettingsManagementFeature = (
-  user: Pick<User, 'role' | 'allowedModules' | 'allowedSubModules' | 'adminModules' | 'adminSubModules'>,
+  user: User,
 ): boolean => {
-  if (user.role === Role.ADMIN || hasExplicitSettingsModule(user)) return true;
+  if (canPerform(user, 'system.settings.manage')) return true;
   return SETTINGS_FEATURES.some(feature => canAccessSettingsFeature(user, feature.id));
 };

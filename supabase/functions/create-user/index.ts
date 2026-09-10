@@ -64,10 +64,6 @@ Deno.serve(async (req) => {
         role: profile.role || 'EMPLOYEE',
         avatar: profile.avatar || null,
         assigned_warehouse_id: profile.assignedWarehouseId || null,
-        allowed_modules: profile.allowedModules || null,
-        admin_modules: profile.adminModules || null,
-        allowed_sub_modules: profile.allowedSubModules || null,
-        admin_sub_modules: profile.adminSubModules || null,
       };
 
       const { error: profileError } = await admin.from('users').upsert(payload).select('id').single();

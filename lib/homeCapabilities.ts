@@ -1,4 +1,5 @@
 import { Role, User } from '../types';
+import { canPerform, canViewModule } from './permissions/permissionService';
 
 export type HomeCapabilities = {
   admin: boolean;
@@ -9,16 +10,14 @@ export type HomeCapabilities = {
 };
 
 export const canUseModule = (user: User, moduleKey: string): boolean => {
-  if (user.role === Role.ADMIN) return true;
-  if (user.allowedModules === undefined) return true;
-  return user.allowedModules.includes(moduleKey);
+  return canViewModule(user, moduleKey);
 };
 
 export const resolveHomeCapabilities = (
   user: User,
   signals: { hasApprovalWork?: boolean } = {},
 ): HomeCapabilities => ({
-  admin: user.role === Role.ADMIN || Boolean(user.adminModules?.length),
+  admin: user.role === Role.ADMIN || canPerform(user, 'system.settings.manage'),
   approver: Boolean(signals.hasApprovalWork),
   material: canUseModule(user, 'WMS'),
   project: canUseModule(user, 'DA'),

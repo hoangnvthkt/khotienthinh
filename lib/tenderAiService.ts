@@ -1,10 +1,11 @@
-import { CostTemplateItem, InternalNorm, InternalPriceBookItem, Role, User } from '../types';
+import { CostTemplateItem, InternalNorm, InternalPriceBookItem, User } from '../types';
 import { CostTemplateDetails } from './costEstimateService';
 import { fromDb, toDb } from './dbMapping';
 import { loadXlsx } from './loadXlsx';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { canPerform } from './permissions/permissionService';
 
 export type TenderPackageStatus =
   | 'uploaded'
@@ -554,22 +555,12 @@ const toXlsxRows = (rows: unknown[][]) => rows.map(row => row.map(value => value
 
 export const tenderPermissionService = {
   canUseTenderAi(user: User) {
-    return user.role === Role.ADMIN ||
-      (user.allowedModules || []).includes('TENDER_AI') ||
-      (user.allowedModules || []).includes('HD') ||
-      (user.allowedSubModules?.TENDER_AI || []).some(route => ['/tender-ai', '/tender-ai/boq', '/tender-ai/cost-library'].includes(route)) ||
-      (user.allowedSubModules?.HD || []).some(route => ['/hd/tender-ai', '/hd/cost-library', '/hd'].includes(route)) ||
-      (user.adminModules || []).includes('TENDER_AI') ||
-      (user.adminModules || []).includes('HD') ||
-      (user.adminSubModules?.TENDER_AI || []).some(route => ['/tender-ai', '/tender-ai/boq', '/tender-ai/cost-library'].includes(route)) ||
-      (user.adminSubModules?.HD || []).some(route => ['/hd/tender-ai', '/hd/cost-library', '/hd'].includes(route));
+    return canPerform(user, 'system.tender_ai.view')
+      || canPerform(user, 'contract.cost_library.view');
   },
   canManageTenderPricing(user: User) {
-    return user.role === Role.ADMIN ||
-      (user.adminModules || []).includes('TENDER_AI') ||
-      (user.adminModules || []).includes('HD') ||
-      (user.adminSubModules?.TENDER_AI || []).some(route => ['/tender-ai', '/tender-ai/boq', '/tender-ai/cost-library'].includes(route)) ||
-      (user.adminSubModules?.HD || []).some(route => ['/hd/tender-ai', '/hd/cost-library', '/hd'].includes(route));
+    return canPerform(user, 'system.tender_ai.manage')
+      || canPerform(user, 'contract.cost_library.manage');
   },
 };
 

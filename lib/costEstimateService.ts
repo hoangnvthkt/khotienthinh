@@ -28,6 +28,7 @@ import { boqService, workBoqService } from './projectService';
 import { loadXlsx } from './loadXlsx';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { canPerform } from './permissions/permissionService';
 
 export interface CostTemplateDetails extends CostTemplate {
   sections: CostTemplateSection[];
@@ -4010,29 +4011,16 @@ export const estimateHistoricalLearningService = {
 
 export const estimatePermissionService = {
   canManageCostLibrary(user: User) {
-    return user.role === 'ADMIN' ||
-      (user.adminModules || []).includes('HD') ||
-      (user.adminModules || []).includes('TENDER_AI') ||
-      (user.adminSubModules?.HD || []).includes('/hd/cost-library') ||
-      (user.adminSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library');
+    return canPerform(user, 'contract.cost_library.manage')
+      || canPerform(user, 'system.tender_ai.manage');
   },
   canCreateEstimate(user: User) {
-    return user.role === 'ADMIN' ||
-      (user.allowedModules || []).includes('HD') ||
-      (user.allowedModules || []).includes('TENDER_AI') ||
-      (user.allowedSubModules?.HD || []).includes('/hd/cost-library') ||
-      (user.allowedSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library') ||
-      (user.adminModules || []).includes('HD') ||
-      (user.adminModules || []).includes('TENDER_AI') ||
-      (user.adminSubModules?.HD || []).includes('/hd/cost-library') ||
-      (user.adminSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library');
+    return canPerform(user, 'contract.cost_library.view')
+      || canPerform(user, 'system.tender_ai.view');
   },
   canSeeInternalCost(user: User) {
-    return user.role === 'ADMIN' ||
-      (user.adminModules || []).includes('HD') ||
-      (user.adminModules || []).includes('TENDER_AI') ||
-      (user.adminSubModules?.HD || []).includes('/hd/cost-library') ||
-      (user.adminSubModules?.TENDER_AI || []).includes('/tender-ai/cost-library');
+    return canPerform(user, 'contract.cost_library.manage')
+      || canPerform(user, 'system.tender_ai.manage');
   },
 };
 

@@ -184,8 +184,6 @@ const formatBytes = (bytes?: number | null) => {
 
 const canManageFeedback = (user: User) => (
   user.role === Role.ADMIN
-  || (user.adminModules || []).includes('FEEDBACK')
-  || Boolean(user.adminSubModules?.FEEDBACK)
 );
 
 const notifySafely = (operation: Promise<unknown>) => {

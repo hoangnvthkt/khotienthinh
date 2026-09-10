@@ -350,7 +350,7 @@ const listActiveUsers = async (cache?: AlertResolveCache): Promise<any[]> => {
   if (!cache) {
     const { data, error } = await supabase
       .from('users')
-      .select('id, role, allowed_modules, admin_modules, is_active')
+      .select('id, role, is_active')
       .limit(ALERT_SCAN_LIMIT);
     if (error) {
       console.warn('Alert active user lookup failed:', error);
@@ -362,7 +362,7 @@ const listActiveUsers = async (cache?: AlertResolveCache): Promise<any[]> => {
     cache.activeUsers = (async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('id, role, allowed_modules, admin_modules, is_active')
+        .select('id, role, is_active')
         .limit(ALERT_SCAN_LIMIT);
         if (error) {
           console.warn('Alert active user lookup failed:', error);
@@ -389,8 +389,17 @@ const listAdminUserIds = async (cache?: AlertResolveCache): Promise<string[]> =>
 
 const uniqueIds = (ids: Array<string | null | undefined>) => [...new Set(ids.filter(Boolean) as string[])];
 
-const includesAny = (values: unknown, targets: string[] = []) =>
-  Array.isArray(values) && targets.some(target => values.includes(target));
+const listCanonicalModuleManagerIds = async (moduleKeys: string[]): Promise<string[]> => {
+  if (moduleKeys.length === 0) return [];
+  const { data, error } = await supabase.rpc('list_canonical_module_manager_ids', {
+    p_module_keys: moduleKeys,
+  });
+  if (error) {
+    console.warn('Canonical module manager lookup failed:', error);
+    return [];
+  }
+  return Array.isArray(data) ? data.filter(Boolean).map(String) : [];
+};
 
 const isCurrentUserAdmin = async (): Promise<boolean> => {
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -445,13 +454,8 @@ const resolveAlertRecipients = async (
     recipientIds = users.filter(row => roles.includes(row.role)).map(row => row.id);
   } else if (config.mode === 'module_admins') {
     const moduleKeys = config.moduleKeys || [];
-    const users = await listActiveUsers(cache);
-    recipientIds = users
-      .filter(row =>
-        (config.includeAdmins && row.role === Role.ADMIN) ||
-        includesAny(row.admin_modules, moduleKeys)
-      )
-      .map(row => row.id);
+    recipientIds = await listCanonicalModuleManagerIds(moduleKeys);
+    if (config.includeAdmins) recipientIds.push(...await listAdminUserIds(cache));
   } else if (config.mode === 'users') {
     recipientIds = config.userIds || [];
   } else if (config.mode === 'employee_owner') {

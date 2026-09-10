@@ -8,7 +8,7 @@ import { canManageRoute } from '../lib/permissions/permissionService';
  * 
  * canManage(route) — dùng cho MASTER DATA:
  *   - Admin hệ thống → luôn true
- *   - Employee → true chỉ khi route nằm trong user.adminSubModules[moduleKey]
+ *   - User thường → true chỉ khi canonical snapshot có capability quản trị route
  * 
  * Không dùng cho "công việc phát sinh" (phiếu, yêu cầu...) — giữ logic riêng từng trang.
  */

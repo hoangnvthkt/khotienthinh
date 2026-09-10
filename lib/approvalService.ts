@@ -3,6 +3,7 @@ import { User } from '../types';
 import { projectStaffService } from './projectStaffService';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { canPerform } from './permissions/permissionService';
 
 // ══════════════════════════════════════════════════════════════
 //  APPROVAL SERVICE — Phân quyền duyệt
@@ -193,11 +194,9 @@ export const approvalService = {
     // Check 2: Role
     if (rule.approverRole && user.role === rule.approverRole) return true;
 
-    // Check 3: Module admin — user có quyền admin trên module "DA"
+    // Check 3: canonical Project shell management capability.
     if (rule.approverModuleAdmin) {
-      const isModuleAdmin = user.role === 'ADMIN' ||
-        (user.adminModules || []).includes('DA');
-      if (isModuleAdmin) return true;
+      if (canPerform(user, 'system.da.manage')) return true;
     }
 
     return false;

@@ -1,20 +1,18 @@
 import { matchPath } from 'react-router-dom';
 import {
-  Role,
   User,
   UserPermissionGrant,
   type AuthorizationSnapshot,
   type EffectivePermissionSource,
 } from '../../types';
 import {
-  getAllPermissionActions,
   getPermissionActionByCode,
   getPermissionModuleByCode,
   getPermissionModules,
   getPermissionModulesByLegacyKey,
   getPrimaryViewPermissionForModule,
 } from './permissionRegistry';
-import { PermissionActionDefinition, PermissionScope } from './permissionTypes';
+import { PermissionScope } from './permissionTypes';
 import { evaluateCapability } from './authorizationEvaluator';
 
 const DEFAULT_SCOPE: Required<PermissionScope> = { scopeType: 'global', scopeId: '*' };
@@ -61,114 +59,8 @@ const scopeMatches = (grant: UserPermissionGrant, scope?: PermissionScope): bool
   return grant.scopeId === '*' || grant.scopeId === requested.scopeId;
 };
 
-const hasLegacyModuleView = (user: Pick<User, 'allowedModules' | 'adminModules'>, legacyModuleKey: string): boolean => {
-  if (user.allowedModules === undefined) return true;
-  return (user.allowedModules || []).includes(legacyModuleKey) || (user.adminModules || []).includes(legacyModuleKey);
-};
-
-const hasLegacyModuleManage = (user: Pick<User, 'adminModules'>, legacyModuleKey: string): boolean =>
-  (user.adminModules || []).includes(legacyModuleKey);
-
-export const getLegacyModuleAssignmentCount = (
-  user: Pick<User, 'allowedModules' | 'adminModules'>,
-): number => (user.allowedModules?.length || 0) + (user.adminModules?.length || 0);
-
-const hasLegacyRouteGrant = (
-  routesByModule: Record<string, string[]> | undefined,
-  legacyModuleKey: string,
-  legacyRoute: string,
-): boolean =>
-  (routesByModule?.[legacyModuleKey] || []).some(route => routeMatches(route, legacyRoute) || routeMatches(legacyRoute, route));
-
-const hasLegacySubModuleGrant = (
-  user: Pick<User, 'allowedSubModules' | 'adminSubModules'>,
-  action: PermissionActionDefinition,
-): boolean => {
-  if (!action.legacyModuleKey) return false;
-  if (!action.legacyRoute) {
-    return (user.allowedSubModules?.[action.legacyModuleKey] || []).length > 0 ||
-      (user.adminSubModules?.[action.legacyModuleKey] || []).length > 0;
-  }
-  return hasLegacyRouteGrant(user.allowedSubModules, action.legacyModuleKey, action.legacyRoute) ||
-    hasLegacyRouteGrant(user.adminSubModules, action.legacyModuleKey, action.legacyRoute);
-};
-
-const hasLegacySubModuleManageGrant = (
-  user: Pick<User, 'adminSubModules'>,
-  action: PermissionActionDefinition,
-): boolean => {
-  if (!action.legacyModuleKey) return false;
-  if (!action.legacyRoute) return (user.adminSubModules?.[action.legacyModuleKey] || []).length > 0;
-  return hasLegacyRouteGrant(user.adminSubModules, action.legacyModuleKey, action.legacyRoute);
-};
-
-const hasLegacyPermission = (
-  user: Pick<User, 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules'>,
-  action: PermissionActionDefinition,
-): boolean => {
-  if (!action.legacyModuleKey) return false;
-  if (action.legacyAdminOnly || action.action === 'manage') {
-    return hasLegacyModuleManage(user, action.legacyModuleKey) || hasLegacySubModuleManageGrant(user, action);
-  }
-  return hasLegacyModuleView(user, action.legacyModuleKey) || hasLegacySubModuleGrant(user, action);
-};
-
-const canOpenLegacyRoute = (
-  user: Pick<User, 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules'>,
-  legacyModuleKey: string,
-  route: string,
-): boolean => {
-  const allowedSubs = user.allowedSubModules?.[legacyModuleKey] || [];
-  const adminSubs = user.adminSubModules?.[legacyModuleKey] || [];
-  const isLegacyModuleAdmin = hasLegacyModuleManage(user, legacyModuleKey);
-  const hasSubModuleRestriction = Object.prototype.hasOwnProperty.call(user.allowedSubModules || {}, legacyModuleKey);
-  const hasModuleView = hasLegacyModuleView(user, legacyModuleKey);
-  const hasAnySubModuleGrant = allowedSubs.length > 0 || adminSubs.length > 0 || isLegacyModuleAdmin;
-
-  if (!hasModuleView && !hasAnySubModuleGrant) return false;
-  if (!hasSubModuleRestriction) return true;
-  if (allowedSubs.length === 0 && adminSubs.length === 0 && !isLegacyModuleAdmin) return false;
-  if (isLegacyModuleAdmin) return true;
-  if ([...allowedSubs, ...adminSubs].some(allowedRoute => routeMatches(allowedRoute, route))) return true;
-  if (
-    legacyModuleKey === 'WF' &&
-    routeMatches('/wf/instances/:id', route) &&
-    (allowedSubs.includes('/wf') || adminSubs.includes('/wf'))
-  ) return true;
-  if (
-    legacyModuleKey === 'WF' &&
-    route.startsWith('/wf/builder/') &&
-    (allowedSubs.includes('/wf/templates') || adminSubs.includes('/wf/templates'))
-  ) return true;
-  if (
-    legacyModuleKey === 'RQ' &&
-    routeMatches('/rq/:requestId', route) &&
-    (allowedSubs.includes('/rq') || adminSubs.includes('/rq'))
-  ) return true;
-  if (legacyModuleKey === 'DA' && route === '/da' && allowedSubs.some(allowedRoute => allowedRoute.startsWith('/da/tabs/'))) {
-    return true;
-  }
-  return false;
-};
-
-const canManageLegacyRoute = (
-  user: Pick<User, 'adminModules' | 'adminSubModules'>,
-  legacyModuleKey: string,
-  route: string,
-): boolean => {
-  if (hasLegacyModuleManage(user, legacyModuleKey)) return true;
-  const adminSubs = user.adminSubModules?.[legacyModuleKey] || [];
-  if (adminSubs.some(adminRoute => routeMatches(adminRoute, route))) return true;
-  return legacyModuleKey === 'WF' &&
-    route.startsWith('/wf/builder/') &&
-    adminSubs.includes('/wf/templates');
-};
-
-const hasAnyActiveProjectGrant = (user: Pick<User, 'permissionGrants'> | null | undefined): boolean =>
-  Boolean(user?.permissionGrants?.some(grant =>
-    grant.permissionCode.startsWith('project.') &&
-    isGrantActive(grant)
-  ));
+const hasAnyActiveProjectGrant = (user: PermissionUser): boolean =>
+  Boolean(getUserAuthorizationSnapshot(user)?.sources.some(source => source.permissionCode.startsWith('project.')));
 
 const isVehicleBookingModule = (moduleCodeOrLegacyKey: string): boolean =>
   moduleCodeOrLegacyKey === 'VEHICLE_BOOKING' || moduleCodeOrLegacyKey === 'resource_booking.vehicle';
@@ -176,16 +68,9 @@ const isVehicleBookingModule = (moduleCodeOrLegacyKey: string): boolean =>
 const isVehicleBookingRoute = (route: string): boolean =>
   route === '/booking/vehicle' || route.startsWith('/booking/vehicle/');
 
-const isHrmPermissionCode = (permissionCode: string): boolean =>
-  permissionCode.startsWith('hrm.') || permissionCode.startsWith('system.hrm.');
-
 type PermissionUser = Pick<
   User,
   | 'role'
-  | 'allowedModules'
-  | 'adminModules'
-  | 'allowedSubModules'
-  | 'adminSubModules'
   | 'permissionGrants'
   | 'effectivePermissionSources'
   | 'authorizationSnapshot'
@@ -203,25 +88,6 @@ const grantToSource = (grant: UserPermissionGrant): EffectivePermissionSource =>
   metadata: { compatibilityProjection: true, isActive: grant.isActive !== false },
 });
 
-const legacySourcesForCompatibility = (
-  user: Exclude<PermissionUser, null | undefined>,
-): EffectivePermissionSource[] => getAllPermissionActions()
-  .filter(action => Boolean(action.legacyModuleKey))
-  .filter(action => !isHrmPermissionCode(action.permissionCode))
-  .filter(action => user.role === Role.ADMIN || hasLegacyPermission(user, action))
-  .map(action => ({
-    permissionCode: action.permissionCode,
-    sourceType: 'LEGACY',
-    sourceCode: action.legacyModuleKey,
-    scopeType: 'global',
-    scopeId: '*',
-    isBusinessApproval: false,
-    metadata: {
-      compatibilityProjection: true,
-      legacyAdminCompatibility: user.role === Role.ADMIN,
-    },
-  }));
-
 export const getUserAuthorizationSnapshot = (
   user: PermissionUser,
 ): AuthorizationSnapshot | null => {
@@ -230,14 +96,11 @@ export const getUserAuthorizationSnapshot = (
 
   const sources = user.effectivePermissionSources !== undefined
     ? user.effectivePermissionSources
-    : [
-      ...(user.permissionGrants || []).filter(grant => grant.isActive !== false).map(grantToSource),
-      ...legacySourcesForCompatibility(user),
-    ];
+    : (user.permissionGrants || []).filter(grant => grant.isActive !== false).map(grantToSource);
 
   return {
     generatedAt: new Date(0).toISOString(),
-    flags: { legacy_fallback_disabled: false },
+    flags: { legacy_fallback_disabled: true },
     sources,
     roomActions: [],
   };
@@ -278,12 +141,12 @@ export const canPerform = (
 export const canStartWorkWorkspace = (user: PermissionUser): boolean => {
   if (canPerform(user, 'work.workspace.create', DEFAULT_SCOPE)) return true;
   const now = Date.now();
-  return getUserAuthorizationSnapshot(user).sources.some(source =>
+  return Boolean(getUserAuthorizationSnapshot(user)?.sources.some(source =>
     source.permissionCode === 'work.workspace.create' &&
     ['global', 'department', 'project'].includes(source.scopeType) &&
     (!source.startsAt || Date.parse(source.startsAt) <= now) &&
     (!source.expiresAt || Date.parse(source.expiresAt) > now)
-  );
+  ));
 };
 
 export const canViewModule = (
@@ -295,9 +158,7 @@ export const canViewModule = (
   if (moduleCodeOrLegacyKey === 'DA' && hasAnyActiveProjectGrant(user)) return true;
   const viewAction = getPrimaryViewPermissionForModule(moduleCodeOrLegacyKey);
   if (viewAction) return canPerform(user, viewAction.permissionCode, scope);
-  if (!user) return false;
-  if (user.role === Role.ADMIN) return true;
-  return hasLegacyModuleView(user, moduleCodeOrLegacyKey);
+  return false;
 };
 
 export const canManageMaster = (

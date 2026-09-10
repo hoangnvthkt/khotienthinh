@@ -9,7 +9,6 @@ import NotificationCenter from './NotificationCenter';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import OfflineIndicator from './OfflineIndicator';
 import EasterEggs from './EasterEggs';
-import ChibiBot from './ChibiBot';
 import LoadingSpinner from './LoadingSpinner';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -168,14 +167,6 @@ const Layout: React.FC = () => {
       </div>
     );
   }
-
-  console.log('DEBUG CHIBIBOT:', {
-    userRole: user?.role,
-    roleAdmin: Role?.ADMIN,
-    allowedModules: user?.allowedModules,
-    hasChibiBot: user?.allowedModules?.includes('CHIBIBOT'),
-    evaluation: user && (user.role === Role.ADMIN || user.allowedModules === undefined || user.allowedModules === null || user.allowedModules.includes('CHIBIBOT'))
-  });
 
   return (
     <div className={`flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden relative transparent`}>
@@ -415,10 +406,6 @@ const Layout: React.FC = () => {
         })() : false;
         return <EasterEggs isBirthday={isBirthday} userName={emp?.fullName || user?.name} />;
       })()}
-      {/* ChibiBot Virtual Assistant */}
-      {user && (user.role === Role.ADMIN || user.allowedModules === undefined || user.allowedModules === null || user.allowedModules.includes('CHIBIBOT')) && (
-        <ChibiBot userName={employees.find(e => e.userId === user?.id)?.fullName || user?.name} userId={user?.id} />
-      )}
     </div>
   );
 };

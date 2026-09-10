@@ -327,15 +327,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const currentNavItems = (isModuleView && isModuleAllowed && activeModule) ? moduleNavMap[activeModule.key] || [] : [];
   const filteredNavItems = currentNavItems.filter((item: any) => {
     if (item.to === '/work/settings' && !canConfigureWork(user)) return false;
-    const subModules = activeModule ? user.allowedSubModules?.[activeModule.key] || [] : [];
-    const adminSubModules = activeModule ? user.adminSubModules?.[activeModule.key] || [] : [];
-    const isLegacyModuleAdmin = activeModule ? (user.adminModules || []).includes(activeModule.key) : false;
-    const hasExplicitRouteGrant = activeModule
-      ? isLegacyModuleAdmin || subModules.includes(item.to) || adminSubModules.includes(item.to)
-      : false;
-
     // Role filter (e.g., Admin-only items)
-    if (item.roles && !item.roles.includes(user.role) && !hasExplicitRouteGrant) return false;
+    if (item.roles && !item.roles.includes(user.role)) return false;
     if (activeModule?.key === 'VEHICLE_BOOKING') {
       if (item.to === '/booking/vehicle/approvals' && !canAccessVehicleApprovalQueue(user, users)) return false;
       if (item.to === '/booking/vehicle/dispatch' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.dispatch'])) return false;

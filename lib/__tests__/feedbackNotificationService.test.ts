@@ -16,16 +16,17 @@ describe('feedback notification helpers', () => {
     expect(uniqueFeedbackRecipientIds(['u1', 'u1', 'u2', null], 'u1')).toEqual(['u2']);
   });
 
-  it('finds admin and FEEDBACK managers', () => {
+  it('uses the explicit System Admin role for feedback management', () => {
     const users = [
       user({ id: 'admin', role: Role.ADMIN }),
+      user({ id: 'other-admin', role: Role.ADMIN }),
       user({ id: 'module-admin', adminModules: ['FEEDBACK'] }),
       user({ id: 'sub-admin', adminSubModules: { FEEDBACK: ['/feedback'] } }),
       user({ id: 'inactive', role: Role.ADMIN, isActive: false }),
       user({ id: 'employee' }),
     ];
 
-    expect(getFeedbackManagerRecipientIds(users, 'admin')).toEqual(['module-admin', 'sub-admin']);
+    expect(getFeedbackManagerRecipientIds(users, 'admin')).toEqual(['other-admin']);
   });
 
   it('routes public comments to creator, watchers, and commenters only', () => {

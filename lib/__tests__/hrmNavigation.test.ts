@@ -115,7 +115,21 @@ describe('Employee Dashboard quick links', () => {
   it('includes optional app links only when their route is accessible', () => {
     const crossAppUser: User = {
       ...businessUser,
-      allowedModules: ['HRM', 'WF', 'RQ', 'AI', 'CHAT'],
+      permissionGrants: [
+        ...(businessUser.permissionGrants || []),
+        ...[
+          'workflow.instance.view',
+          'request.instance.view_own',
+          'system.chat.view',
+          'ai.assistant.view',
+        ].map(permissionCode => ({
+          userId: businessUser.id,
+          permissionCode,
+          scopeType: 'global' as const,
+          scopeId: '*',
+          isActive: true,
+        })),
+      ],
     };
 
     expect(getEmployeeDashboardQuickLinks(crossAppUser, true)).toEqual([

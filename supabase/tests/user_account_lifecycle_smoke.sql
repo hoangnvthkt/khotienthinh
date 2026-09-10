@@ -30,6 +30,10 @@ values (
 
 grant select, update on account_lifecycle_smoke_ids to authenticated, service_role;
 
+-- Task 12 blocks runtime inserts into the retired fields. This transaction-only
+-- fixture bypass creates the pre-cutover state that lifecycle must clear.
+select set_config('app.authorization_legacy_migration', 'on', true);
+
 insert into public.users (
   id, name, email, username, role, is_active, account_status,
   allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules
@@ -46,6 +50,8 @@ select target_id, 'Lifecycle Target', 'lifecycle-target@vioo.local', 'lifecycle-
        'WAREHOUSE_KEEPER'::public.user_role, true, 'ACTIVE', array['WMS'], array['WMS'],
        '{"WMS":["/wms"]}'::jsonb, '{"WMS":["/wms"]}'::jsonb
 from account_lifecycle_smoke_ids;
+
+select set_config('app.authorization_legacy_migration', '', true);
 
 insert into public.user_permission_grants (
   user_id, permission_code, scope_type, scope_id, is_active
@@ -242,6 +248,8 @@ where target_user_id in (select target_id from account_lifecycle_smoke_ids);
 delete from public.user_permission_grants
 where user_id in (select target_id from account_lifecycle_smoke_ids);
 delete from app_private.user_account_operations
+where target_user_id in (select target_id from account_lifecycle_smoke_ids);
+delete from app_private.authorization_legacy_write_audit
 where target_user_id in (select target_id from account_lifecycle_smoke_ids);
 delete from public.users
 where id in (
