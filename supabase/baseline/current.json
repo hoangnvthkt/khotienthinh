@@ -33,7 +33,8 @@
     "20260908013042_work_workspace_configuration.sql",
     "20260908052000_work_task_children_schedule_watchers.sql",
     "20260908060000_work_inline_comment_mentions.sql",
-    "20260909023239_work_task_content_progress.sql"
+    "20260909023239_work_task_content_progress.sql",
+    "20260910022617_authorization_v2_phase3_admin_transaction.sql"
   ],
   "forbidIncludeAll": true
 }
