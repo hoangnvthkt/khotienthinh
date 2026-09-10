@@ -353,17 +353,19 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Modify: `lib/projectPermissionRoomService.ts`
 - Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Viết failing contract tests** — bốn Room không còn trong Room registry/admin UI; non-admin không thấy hoặc gọi được mutation; System Admin vẫn ghi được; `SubcontractTab` không default-allow.
-- [ ] **Step 2: Snapshot trước migration** — 17 bindings, 39 memberships, member actions, direct/role grants, RLS/functions và row counts; lưu counts/checksum, không PII.
-- [ ] **Step 3: Retire Room metadata có audit** — deactivate memberships/actions và room rows; retire bindings với reason hoặc chuyển sang bảng disposition; không hard-delete. Không backfill Room.
-- [ ] **Step 4: Thu gọn canonical capability** — chỉ giữ `project.material_waste.view`, `project.custom_material.view`, `project.subcontract.view`; BOQ reconciliation tiếp tục dùng `project.material_boq.view`. Retire/revoke active non-view grants bằng audited forward migration. System Admin không cần grant ghi.
-- [ ] **Step 5: Enforce frontend** — `material_waste` giữ read-only; `custom_material` và `boq_reconciliation` chỉ render mutation cho System Admin; `subcontract` nhận `isAdmin`, default false. Frontend check dùng canonical admin state nhưng không phải authority cuối.
-- [ ] **Step 6: Enforce backend** — RLS/RPC/storage mutation của custom material, BOQ reconciliation và Project acceptance chỉ cho `public.is_admin()`; SELECT giữ đúng scope/view hiện tại. Loại PBAC/module-admin/owner bypass khỏi write path.
-- [ ] **Step 7: Dọn recipient/workflow paths** — user thường không thể submit/verify/approve; admin action không resolve recipient qua Room đã retire. `ContractVariationPanel` không được phụ thuộc `boq_reconciliation` Room sau migration.
-- [ ] **Step 8: Smoke matrix** — non-admin SELECT allow theo view scope và mọi INSERT/UPDATE/DELETE/status RPC deny; System Admin mutation allow; cross-scope SELECT vẫn deny nơi đang scope-bound; bảy Room cũ checksum không đổi.
-- [ ] **Step 9: Rollback transaction, release-candidate commit, dry-run/apply/postflight/evidence theo protocol.**
+- [x] **Step 1: Viết failing contract tests** — bốn Room không còn trong Room registry/admin UI; non-admin không thấy hoặc gọi được mutation; System Admin vẫn ghi được; `SubcontractTab` không default-allow.
+- [x] **Step 2: Snapshot trước migration** — 17 bindings, 39 memberships, member actions, direct/role grants, RLS/functions và row counts; lưu counts/checksum, không PII.
+- [x] **Step 3: Retire Room metadata có audit** — deactivate memberships/actions và room rows; retire bindings với reason hoặc chuyển sang bảng disposition; không hard-delete. Không backfill Room.
+- [x] **Step 4: Thu gọn canonical capability** — chỉ giữ `project.material_waste.view`, `project.custom_material.view`, `project.subcontract.view`; BOQ reconciliation tiếp tục dùng `project.material_boq.view`. Retire/revoke active non-view grants bằng audited forward migration. System Admin không cần grant ghi.
+- [x] **Step 5: Enforce frontend** — `material_waste` giữ read-only; `custom_material` và `boq_reconciliation` chỉ render mutation cho System Admin; `subcontract` nhận `isAdmin`, default false. Frontend check dùng canonical admin state nhưng không phải authority cuối.
+- [x] **Step 6: Enforce backend** — RLS/RPC/storage mutation của custom material, BOQ reconciliation và Project acceptance chỉ cho `public.is_admin()`; SELECT giữ đúng scope/view hiện tại. Loại PBAC/module-admin/owner bypass khỏi write path.
+- [x] **Step 7: Dọn recipient/workflow paths** — user thường không thể submit/verify/approve; admin action không resolve recipient qua Room đã retire. `ContractVariationPanel` không được phụ thuộc `boq_reconciliation` Room sau migration.
+- [x] **Step 8: Smoke matrix** — non-admin SELECT allow theo view scope và mọi INSERT/UPDATE/DELETE/status RPC deny; System Admin mutation allow; cross-scope SELECT vẫn deny nơi đang scope-bound; bảy Room cũ checksum không đổi.
+- [x] **Step 9: Rollback transaction, release-candidate commit, dry-run/apply/postflight/evidence theo protocol.**
 
 **Commit:** `feat(auth): retire four project rooms as admin-write views`
+
+**Kết quả:** release candidate `1eb71f7`; migration `20260910025910` đã áp dụng lên Cloud main. Cloud còn 10 Room active; bốn Room có disposition audit, 17 binding không còn fallback, 39 membership và 66 member-action đã inactive, 32 non-view direct grants đã revoke; admin-write guard phủ 15 bảng. Postflight persona smoke, 373 files / 1.765 tests, lint và build đạt.
 
 ### Task 9: Cutover Quantity Acceptance, Payment, Safety và tắt Room fallback
 

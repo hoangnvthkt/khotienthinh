@@ -76,6 +76,8 @@ do $$
 declare
   actor authorization_v2_retired_room_actor%rowtype;
   denied boolean := false;
+  existing_subcontract_id text;
+  affected_rows integer;
 begin
   select * into actor from authorization_v2_retired_room_actor;
   perform set_config('request.jwt.claims', jsonb_build_object('sub', actor.ordinary_auth_id, 'email', actor.ordinary_email, 'role', 'authenticated')::text, true);
@@ -87,11 +89,21 @@ begin
   exception when insufficient_privilege then denied := true;
   end;
   if not denied then raise exception 'AUTH_V2_ORDINARY_WRITE_NOT_DENIED'; end if;
+  perform count(*) from public.subcontractor_contracts;
+  select id into existing_subcontract_id from public.subcontractor_contracts limit 1;
+  if existing_subcontract_id is not null then
+    update public.subcontractor_contracts set updated_at = updated_at where id = existing_subcontract_id;
+    get diagnostics affected_rows = row_count;
+    if affected_rows <> 0 then raise exception 'AUTH_V2_ORDINARY_SUBCONTRACT_WRITE_NOT_DENIED'; end if;
+  end if;
 end;
 $$;
 
 do $$
-declare actor authorization_v2_retired_room_actor%rowtype;
+declare
+  actor authorization_v2_retired_room_actor%rowtype;
+  existing_subcontract_id text;
+  affected_rows integer;
 begin
   select * into actor from authorization_v2_retired_room_actor;
   perform set_config('request.jwt.claims', jsonb_build_object('sub', actor.admin_auth_id, 'email', actor.admin_email, 'role', 'authenticated')::text, true);
@@ -99,6 +111,12 @@ begin
     raise exception 'AUTH_V2_ADMIN_CUSTOM_MATERIAL_MUTATION_DENIED';
   end if;
   insert into authorization_v2_admin_guard_probe values (2);
+  select id into existing_subcontract_id from public.subcontractor_contracts limit 1;
+  if existing_subcontract_id is not null then
+    update public.subcontractor_contracts set updated_at = updated_at where id = existing_subcontract_id;
+    get diagnostics affected_rows = row_count;
+    if affected_rows <> 1 then raise exception 'AUTH_V2_ADMIN_SUBCONTRACT_WRITE_DENIED'; end if;
+  end if;
 end;
 $$;
 

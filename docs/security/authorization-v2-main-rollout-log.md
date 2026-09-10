@@ -97,3 +97,17 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
   - the Weekly Progress fixture expects an older out-of-order aggregate result.
 - These failures occurred inside rollback-only transactions and did not mutate Cloud. They are recorded as test-harness drift rather than reported as passing production regression.
 - `project.material_request.verify` has one `audit_only` binding with PBAC fallback enabled, but no exact policy reference, database function reference, or frontend/service business path. Its approved disposition is metadata-only retirement in Task 9; other Material Request actions remain untouched.
+
+## Phase 4 / Task 8 — Four retired view-only Rooms
+
+- Migration: `20260910025910_authorization_v2_phase4_retire_view_only_rooms.sql`; release candidate: `1eb71f7`.
+- Preflight snapshot: 17 bindings; 39 active memberships; 66 active member-actions; 136 related active direct grants including the shared Material BOQ surface; zero role-template items; 30 relevant functions and 55 relevant policies. Domain row counts were unchanged: 0 Custom Material requests, 0 BOQ reconciliation groups, 0 acceptance records, and 5 subcontractor contracts.
+- The migration preserves a private, non-PII disposition snapshot for each retired Room; no Room, membership, action, binding, grant, or domain row was hard-deleted.
+- Cloud rollback preflight passed. Dry-run listed exactly migration `20260910025910`; apply to Cloud main succeeded and the linked ledger is aligned.
+- Postflight: 10 active Rooms; four retirement dispositions; all 17 retired bindings are `enforced` with fallback disabled; 0 active retired memberships; 0 active retired member-actions; 32 non-view direct grants revoked; 65 view grants retained; 0 active non-view grants remain.
+- Database authority: 15 mutation tables are protected by a common `public.is_admin()` trigger guard. Custom Material mutation helper, BOQ reconciliation write policies/status guard, acceptance writes, subcontract writes, and attachment storage mutation all require System Admin. Existing SELECT policies remain in place.
+- Persona smoke proved ordinary-account custom-material denial, ordinary subcontract SELECT plus zero-row UPDATE denial, System Admin mutation allowance, and rollback isolation. The initial expanded smoke expected an RLS exception; PostgreSQL correctly returned zero affected rows instead, so the assertion was corrected to verify `ROW_COUNT = 0`.
+- Frontend registry exposes only the view actions for Material Waste, Custom Material, and Subcontract; BOQ reconciliation remains under `project.material_boq.view`. Mutation controls are System Admin-only and retired Room recipient lookup was removed.
+- Frozen seven-Room counts remain 35 bindings and 323 memberships / 316 active; no old Room was re-cutover.
+- Full checkout regression passed: 373 files / 1,765 tests. TypeScript lint, production build, migration baseline check, and `git diff --check` passed; only the existing Vite chunk-size warning remains.
+- Cloud database lint still reports the same nine pre-existing unrelated error-level findings; none names the Phase 4 migration, retirement guard, or modified policies/functions.
