@@ -322,14 +322,16 @@ git commit -m "refactor(auth): use one source-aware permission evaluator"
 - Existing test: `supabase/tests/weekly_progress_period_state_smoke.sql`
 - Existing test: `supabase/tests/quality_room_authoritative_smoke.sql`
 
-- [ ] **Step 1: Snapshot checksums** của binding rows, Room memberships, RLS policies và function definitions cho bảy Room trước Phase 4.
-- [ ] **Step 2: Chạy regression hiện hữu**; không tạo migration, không backfill, không đổi policy/function/UI cho Room đã pass.
-- [ ] **Step 3: Đối với `material_request.verify`** — xác nhận từ registry/runtime rằng action có business path hay không. Nếu không có path, retire riêng binding này bằng migration metadata-only ở Task 9; nếu có path nhưng chưa cutover, tách thành checkpoint action-level và không mở lại các action khác của Material Request.
-- [ ] **Step 4: Ghi checksum và test result vào rollout log; commit evidence-only.**
+- [x] **Step 1: Snapshot checksums** của binding rows, Room memberships, RLS policies và function definitions cho bảy Room trước Phase 4.
+- [x] **Step 2: Chạy regression hiện hữu**; không tạo migration, không backfill, không đổi policy/function/UI cho Room đã pass.
+- [x] **Step 3: Đối với `material_request.verify`** — xác nhận từ registry/runtime rằng action có business path hay không. Nếu không có path, retire riêng binding này bằng migration metadata-only ở Task 9; nếu có path nhưng chưa cutover, tách thành checkpoint action-level và không mở lại các action khác của Material Request.
+- [x] **Step 4: Ghi checksum và test result vào rollout log; commit evidence-only.**
 
 **Commit:** `test(auth): lock regression baseline for seven cutover rooms`
 
 Expected: checksum trước/sau không đổi; không có SQL mutation trên bảy Room đã cutover.
+
+**Kết quả:** baseline bảy Room được khóa mà không tạo migration hay thay đổi Cloud. Contract tĩnh đạt 8 files / 35 tests. Hai Cloud rollback smoke đạt; sáu smoke lịch sử còn test debt do assertion pilot/fallback toàn cục hoặc fixture workflow đã lệch với runtime hiện tại, được ghi chi tiết trong rollout log. `material_request.verify` không có business path chính xác và được chốt disposition retire metadata-only ở Task 9.
 
 ### Task 8: Retire bốn Room, giữ System Admin-only mutation
 

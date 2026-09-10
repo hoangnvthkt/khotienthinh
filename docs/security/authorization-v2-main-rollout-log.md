@@ -83,3 +83,17 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Clipboard version 2 contains direct grants and their scopes only; it excludes account role, warehouse identity, and all four legacy permission fields.
 - Inherited capabilities are shown as locked `Kế thừa` provenance; legacy source count, collision count, and fallback migration state are read-only.
 - Targeted regression: 4 files / 14 tests passed. Full checkout regression: 371 files / 1,759 tests passed. TypeScript lint and production build passed; only the existing Vite chunk-size warning remains.
+
+## Phase 4 / Task 7 — Frozen regression baseline for seven cutover Rooms
+
+- Frozen scope: `daily_log`, `material_planning`, `material_request`, `material_po`, `gantt`, `weekly_progress`, and `quality`. Task 7 created no migration, performed no backfill, and changed no Room policy, function, binding, membership, or UI.
+- Before/after Cloud checksum snapshot was unchanged: 35 bindings (`8440dc8c6f750a92b7ef46b146f21a05`); 323 memberships / 316 active (`cfac9913cc24b9acb0259b19979783c1`); 118 relevant RLS policies (`73f9906693d3fddc637b1589606b5cdc`); 240 relevant function definitions (`6f895eddeeee49d8c42e4acec0fe876b`). Values contain no PII.
+- Static regression passed: 8 files / 35 tests covering the seven-room registry and migration contracts.
+- Cloud rollback smoke passed for Material Request and Quality. Six historical smokes exposed pre-existing test debt and were not rewritten in this evidence-only task:
+  - the generic Room smoke expects an unknown action to raise, while the deployed replacement function filters unknown/unbound actions;
+  - the audit-pilot smoke hard-codes 25 pilot actions from an earlier rollout state;
+  - the Material PO smoke assumes no other Room has disabled fallback;
+  - the Daily Log and Gantt fixtures no longer establish the assignment/grant state required by their current authoritative evaluators;
+  - the Weekly Progress fixture expects an older out-of-order aggregate result.
+- These failures occurred inside rollback-only transactions and did not mutate Cloud. They are recorded as test-harness drift rather than reported as passing production regression.
+- `project.material_request.verify` has one `audit_only` binding with PBAC fallback enabled, but no exact policy reference, database function reference, or frontend/service business path. Its approved disposition is metadata-only retirement in Task 9; other Material Request actions remain untouched.
