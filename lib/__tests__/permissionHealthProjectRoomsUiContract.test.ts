@@ -19,5 +19,7 @@ describe('Permission Health Project Room audit UI', () => {
   it('shows the dedicated Room PBAC fallback flag', () => {
     expect(source).toContain('projectRoomPbacFallbackEnabled');
     expect(source).toContain('Room PBAC fallback');
+    expect(source).toContain('Phase 4 gate');
+    expect(source).toContain('Room-authoritative');
   });
 });

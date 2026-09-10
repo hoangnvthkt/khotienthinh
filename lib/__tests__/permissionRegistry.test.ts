@@ -386,6 +386,7 @@ describe('permissionRegistry', () => {
     expect(org).not.toContain('PermissionMatrix');
     expect(org).not.toContain('PROJECT_PERMISSION_TEMPLATES');
     expect(permissions).toContain('ProjectPermissionRoomsPanel');
+    expect(permissions).toContain('Room-authoritative');
     expect(dashboard).toContain("overviewTab === 'permissions'");
     expect(dashboard).toContain('user?.role === Role.ADMIN');
   });

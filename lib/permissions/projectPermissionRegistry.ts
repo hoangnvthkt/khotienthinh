@@ -189,7 +189,8 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.request,
     PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.dashboard,
   ], 50, [
-    ...workflowActions('project.material_request', PROJECT_TAB_ROUTE_BY_KEY.material),
+    ...workflowActions('project.material_request', PROJECT_TAB_ROUTE_BY_KEY.material)
+      .filter(action => action.action !== 'verify'),
     projectAction('confirm_fulfillment', 'Xác nhận cấp hàng', 'project.material_request', PROJECT_TAB_ROUTE_BY_KEY.material, 125),
     projectAction('view_available_stock', 'Xem tồn khả dụng', 'project.material_request', PROJECT_TAB_ROUTE_BY_KEY.material, 130, PROJECT_WAREHOUSE_SCOPE_TYPES),
   ]),

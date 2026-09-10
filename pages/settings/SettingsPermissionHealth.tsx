@@ -289,6 +289,15 @@ const SettingsPermissionHealth: React.FC = () => {
             </div>
           </div>
         </div>
+        <div className={`mt-3 rounded-xl border px-4 py-3 text-xs font-bold ${
+          summary?.projectRoomPbacFallbackEnabled
+            ? 'border-red-200 bg-red-50 text-red-700'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        }`}>
+          Phase 4 gate · Room-authoritative: {summary?.projectRoomPbacFallbackEnabled
+            ? 'chưa đạt — fallback vẫn đang bật.'
+            : 'fallback đã tắt; mọi finding Room phải bằng 0 trước khi rollout tiếp.'}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

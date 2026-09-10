@@ -17,7 +17,12 @@ const ProjectPermissionsTab: React.FC<Props> = ({ projectId, constructionSiteId 
       <div><p className="font-black">Chỉ admin hệ thống được quản lý phân quyền dự án.</p><p className="mt-1 text-xs">Các Room và thành viên được chỉnh tại đây để bảo đảm người duyệt không bị lẫn giữa các nghiệp vụ.</p></div>
     </div>;
   }
-  return <ProjectPermissionRoomsPanel projectId={projectId} constructionSiteId={constructionSiteId} />;
+  return <div className="space-y-4">
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
+      Room-authoritative · mọi quyền nghiệp vụ tại đây được kiểm tra trực tiếp theo dự án/công trường; PBAC fallback đã tắt.
+    </div>
+    <ProjectPermissionRoomsPanel projectId={projectId} constructionSiteId={constructionSiteId} />
+  </div>;
 };
 
 export default ProjectPermissionsTab;

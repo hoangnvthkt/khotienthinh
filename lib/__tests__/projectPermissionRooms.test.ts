@@ -29,6 +29,19 @@ describe('projectPermissionRooms', () => {
     expect(isRoomActionAllowed('daily_log', 'confirm')).toBe(false);
     expect(isRoomActionAllowed('material_planning', 'view_available_stock')).toBe(false);
     expect(isRoomActionAllowed('material_request', 'view_available_stock')).toBe(true);
+    expect(isRoomActionAllowed('material_request', 'verify')).toBe(false);
+  });
+
+  it('requires view before every mutation in the final three Rooms', () => {
+    for (const roomCode of ['quantity_acceptance', 'payment', 'safety'] as const) {
+      const room = getProjectPermissionRoom(roomCode);
+      const mutations = room?.actions.filter(action => action !== 'view') || [];
+
+      expect(mutations.length).toBeGreaterThan(0);
+      for (const action of mutations) {
+        expect(room?.actionPrerequisites[action]).toContain('view');
+      }
+    }
   });
 
   it('gives weekly progress only view, edit, and confirm, with view prerequisites', () => {
