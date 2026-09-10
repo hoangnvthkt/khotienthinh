@@ -378,14 +378,16 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Modify: `pages/settings/SettingsPermissionHealth.tsx`
 - Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Test assignment, payment/acceptance workflow, incident close, approval/confirmation, final-state immutability và wrong project/site.**
-- [ ] **Step 2: Backfill và enforce chỉ Quantity Acceptance/Payment/Safety; action không có business path phải retire với reason.**
-- [ ] **Step 3: Xử lý disposition action-level của `material_request.verify` theo kết quả Task 7, không thay đổi các Material Request actions đã cutover.**
-- [ ] **Step 4: Audit assert 10 active Room có disposition rõ ràng, 4 Room retired có evidence, fallback-only=0, stale member=0; checksum bảy Room cũ không đổi ngoại trừ metadata disposition đã duyệt.**
-- [ ] **Step 5: Set `project_room_pbac_fallback_enabled=false`; chạy full Room smoke/audit matrix và regression bốn module view/admin-write.**
-- [ ] **Step 6: Apply/evidence theo protocol.**
+- [x] **Step 1: Test assignment, payment/acceptance workflow, incident close, approval/confirmation, final-state immutability và wrong project/site.**
+- [x] **Step 2: Backfill và enforce chỉ Quantity Acceptance/Payment/Safety; action không có business path phải retire với reason.**
+- [x] **Step 3: Xử lý disposition action-level của `material_request.verify` theo kết quả Task 7, không thay đổi các Material Request actions đã cutover.**
+- [x] **Step 4: Audit assert 10 active Room có disposition rõ ràng, 4 Room retired có evidence, fallback-only=0, stale member=0; checksum bảy Room cũ không đổi ngoại trừ metadata disposition đã duyệt.**
+- [x] **Step 5: Set `project_room_pbac_fallback_enabled=false`; chạy full Room smoke/audit matrix và regression bốn module view/admin-write.**
+- [x] **Step 6: Apply/evidence theo protocol.**
 
 **Commit:** `feat(auth): cut over final three project rooms`
+
+**Kết quả:** release candidate `e235c72`; migration `20260910031856` đã áp dụng lên Cloud main. 20 binding của ba Room cuối được cutover; mọi active Room action đã `enforced`, Room fallback đã tắt, `audit_only=0`, fallback-only=0 và stale member=0. `material_request.verify` được retire action-level có snapshot/reason. Backfill tạo 63 membership active cho mỗi Room Quantity Acceptance/Payment/Safety theo quyết định DIRECT/ROLE/LEGACY đang hiệu lực; 7 Room cũ không chạy lại migration, chỉ reconcile 7 stale membership và 24 Weekly Progress fallback gap đã đo trước. Full regression đạt 374 files / 1.769 tests; lint/build và Cloud postflight đạt.
 
 **Phase 4 exit gate:** 7 Room cũ không bị re-apply; 3 Room mới được cutover; 4 Room view-only được retire có evidence và admin-write regression; mọi active action `enforced` hoặc retired có reason; 0 `audit_only`, 0 fallback-only, 0 stale member, Room fallback off.
 
