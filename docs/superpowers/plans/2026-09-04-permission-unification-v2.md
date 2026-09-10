@@ -72,18 +72,18 @@ Các số trên là snapshot, không phải hằng số migration. Task 1 chụp
 - `28c052d` bổ sung route Template Yêu cầu vào registry và test deny-by-default; không chạm bốn module nhưng củng cố yêu cầu mọi route phải có canonical mapping.
 - `7ddfab9` sửa deep-link/thông báo duyệt PO và projection; không đổi quyết định quyền, cần giữ regression Material PO.
 - Cloud main đã áp dụng `20260905034726` (legacy write guard), `20260905035047` (authorization snapshot), `20260905041938` (WMS reversal) và toàn bộ migration Work từ `20260907012229` đến `20260909023239`.
-- Branch `feature/audit-phan-quyen-v2` chưa chứa các migration/code tương ứng; `supabase migration list --linked` đang có remote-only entries. Đây là blocker tuyệt đối với mọi `db push`, không được dùng `migration repair` hoặc tạo migration mới để lấp ledger.
+- Trước Task 0, branch `feature/audit-phan-quyen-v2` chưa chứa các migration/code tương ứng và `supabase migration list --linked` có 24 remote-only entries. Blocker đã được reconcile tại merge commit `6585fdf`; không dùng `migration repair` và không chạy lại migration.
 - Registry/cleanup Phase 5–6 phải giữ capability `wms.transaction.reverse`, toàn bộ `work.*`, strict route boundary và quyền EXECUTE helper đã được sửa ở nhánh Work.
 
 ## Task 0 — Reconcile Git với Cloud main trước khi thực thi tiếp
 
 **Mục tiêu:** đưa source branch về đúng lịch sử đã triển khai trên Cloud main mà không chạy lại migration.
 
-- [ ] Snapshot `git status`, `git log`, `supabase migration list --linked` và checksum các file migration remote-only.
-- [ ] Tích hợp có review chuỗi Authorization `959cce1..6fc94d4`, WMS bắt đầu tại `8a2b11f` và Work bắt đầu tại `c47433a` từ các nhánh đã triển khai; resolve theo hành vi hiện hành, không copy riêng SQL bỏ code/test/evidence.
-- [ ] Assert tất cả version Cloud đã có file local đúng checksum; không có local-only migration ngoài checkpoint dự kiến.
-- [ ] Chạy targeted authorization/WMS/Work tests, full lint/build và `db push --linked --dry-run`; expected: `Remote database is up to date` trước khi tạo migration view-only.
-- [ ] Commit reconciliation riêng, không trộn với thay đổi bốn module.
+- [x] Snapshot `git status`, `git log`, `supabase migration list --linked` và checksum các file migration remote-only.
+- [x] Tích hợp có review chuỗi Authorization `959cce1..6fc94d4`, WMS bắt đầu tại `8a2b11f` và Work bắt đầu tại `c47433a` từ các nhánh đã triển khai; resolve theo hành vi hiện hành, không copy riêng SQL bỏ code/test/evidence.
+- [x] Assert tất cả version Cloud đã có file local đúng checksum; không có local-only migration ngoài checkpoint dự kiến.
+- [x] Chạy targeted authorization/WMS/Work tests, full lint/build và `db push --linked --dry-run`; kết quả `Remote database is up to date` trước khi tạo migration view-only.
+- [x] Commit reconciliation riêng `6585fdf`, không trộn với thay đổi bốn module.
 
 **Gate:** nếu ledger còn remote-only/local-only hoặc source không chứa runtime tương thích với schema Cloud thì dừng; không bắt đầu Task 1/Task 8.
 

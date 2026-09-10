@@ -45,3 +45,18 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Targeted authorization regression: 6 files / 75 tests passed.
 - Full regression: 341 files / 1,614 tests passed.
 - Lint and production build: passed; only the existing Vite chunk-size warning remains.
+
+## Task 0 reconciliation — 2026-09-10
+
+- Target: Git branch `feature/audit-phan-quyen-v2`; linked Cloud main project `ftciqmqhmfvjtwoycswe`.
+- Baseline repair commit: `d828ad2`; removed one brittle source-format assertion already covered by route behavior tests. Baseline after repair: 338 files / 1,603 tests passed.
+- Source lineage merged: `f109477`, which contains the deployed Authorization chain `959cce1..6fc94d4`, WMS reversal from `8a2b11f`, and Work delivery from `c47433a` through `f109477`.
+- Reconciliation merge commit: `6585fdf`; parents `d828ad2` and `f109477`.
+- Migration reconciliation: 24 formerly remote-only files restored locally; all file SHA-256 values match the deployed source branch. Migration baseline check reports 29 active / 402 archived SQL files.
+- Linked ledger: all 29 local versions equal Cloud versions through `20260909023239`; no local-only or remote-only entry remains.
+- Preserved concurrent changes: Request Template routes `/rq/templates`, `/rq/templates/new`, `/rq/templates/:templateId`; PO delivery-batch/supplemental notification deep-links and centralized projection.
+- Targeted Authorization/WMS/Work regression: 53 files / 279 tests passed.
+- Full regression after merge: 368 files / 1,747 tests passed.
+- TypeScript lint and production build: passed; only the existing Vite chunk-size warning remains.
+- Cloud object check: authorization snapshot exists; `wms.transaction.reverse` is active; 15 active `work.*` permissions; Work task/workspace tables exist; authenticated helper EXECUTE smoke passed and rolled back.
+- `db push --linked --dry-run`: `Remote database is up to date`; no migration was applied and no Cloud data was changed during Task 0.
