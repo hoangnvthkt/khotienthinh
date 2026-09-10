@@ -34,8 +34,12 @@ import {
   InventoryItem,
 } from '../../types';
 import { materialIssueService } from '../../lib/materialIssueService';
+import {
+  getMaterialIssueLineDisposition,
+  getMaterialIssueReversalEligibility,
+} from '../../lib/materialIssueReturnPolicy';
 import { partnerService } from '../../lib/partnerService';
-import { isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
+import { canReverseWmsTransaction, isGlobalWarehouseKeeper } from '../../lib/wmsPermissions';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { normalizeLookupText, SITE_WAREHOUSE_STOP_WORDS } from '../../lib/projectMaterialTabUtils';
 import { buildMaterialIssueRecipientSource, type MaterialIssueRecipientSourceSelection } from '../../lib/materialIssueRecipientSource';
@@ -80,7 +84,7 @@ type RecipientSourceOption = {
   selection: MaterialIssueRecipientSourceSelection;
 };
 
-type ActionType = 'receipt' | 'return' | 'consume' | 'loss' | 'cancel';
+type ActionType = 'receipt' | 'return' | 'consume' | 'loss' | 'cancel' | 'approval_reversal';
 
 type ActionState = {
   type: ActionType;
@@ -110,6 +114,7 @@ const STATUS_META: Record<MaterialIssueStatus, { label: string; tone: string }> 
   settling: { label: 'Đang quyết toán', tone: 'bg-violet-100 text-violet-700' },
   partially_returned: { label: 'Hoàn trả một phần', tone: 'bg-rose-100 text-rose-700' },
   closed: { label: 'Đã đóng', tone: 'bg-slate-800 text-white' },
+  reversed: { label: 'Đã đảo', tone: 'bg-orange-100 text-orange-700' },
   rejected: { label: 'Kho từ chối', tone: 'bg-red-100 text-red-700' },
   cancelled: { label: 'Đã hủy', tone: 'bg-slate-200 text-slate-500' },
 };
@@ -122,9 +127,6 @@ const parseQty = (value: string | number | null | undefined) => {
 const formatQty = (value: number) => Number(value || 0).toLocaleString('vi-VN', {
   maximumFractionDigits: 3,
 });
-
-const lineOpenQty = (line: MaterialIssueOrder['lines'][number]) =>
-  Math.max(0, Number(line.issuedQty || 0) - Number(line.returnedQty || 0) - Number(line.consumedQty || 0) - Number(line.lostQty || 0));
 
 const lineReceiptRemaining = (line: MaterialIssueOrder['lines'][number]) =>
   Math.max(0, Number(line.issuedQty || 0) - Number(line.receivedQty || 0));
@@ -192,7 +194,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const [actionNote, setActionNote] = useState('');
   const [actionSettlementDate, setActionSettlementDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [actionIdempotencyKey, setActionIdempotencyKey] = useState('');
-  const [returnWarehouseId, setReturnWarehouseId] = useState('');
+  const [stockNeverLeftWarehouse, setStockNeverLeftWarehouse] = useState(false);
   const [reversal, setReversal] = useState<ReversalState>(null);
   const [reversalReason, setReversalReason] = useState('');
 
@@ -613,8 +615,13 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
     setActionReason('');
     setActionNote('');
     setActionSettlementDate(new Date().toISOString().slice(0, 10));
-    setActionIdempotencyKey(`settlement:${order.id}:${type}:${crypto.randomUUID()}`);
-    setReturnWarehouseId(order.sourceWarehouseId);
+    const keyPrefix = type === 'return'
+      ? 'material-return'
+      : type === 'approval_reversal'
+        ? 'approval-reversal'
+        : 'settlement';
+    setActionIdempotencyKey(`${keyPrefix}:${order.id}:${type}:${crypto.randomUUID()}`);
+    setStockNeverLeftWarehouse(false);
   };
 
   const handleActionSubmit = async () => {
@@ -627,21 +634,34 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       }))
       .filter(row => row.quantity > 0);
 
-    if (type !== 'cancel' && selectedLines.length === 0) {
+    if (type !== 'cancel' && type !== 'approval_reversal' && selectedLines.length === 0) {
       toast.warning('Chưa nhập số lượng', 'Nhập số lượng lớn hơn 0 cho ít nhất một dòng.');
       return;
     }
-    if ((type === 'return' || type === 'consume' || type === 'loss' || type === 'cancel') && !actionReason.trim()) {
+    if ((type === 'return' || type === 'consume' || type === 'loss' || type === 'cancel' || type === 'approval_reversal') && !actionReason.trim()) {
       toast.warning('Thiếu lý do', 'Nhập lý do để lưu vết quyết toán.');
       return;
     }
-    if (type === 'return' && !returnWarehouseId) {
-      toast.warning('Chưa chọn kho nhận trả');
+    if (type === 'approval_reversal' && !stockNeverLeftWarehouse) {
+      toast.warning('Chưa xác nhận hàng chưa rời kho');
       return;
     }
     if ((type === 'consume' || type === 'loss') && !actionSettlementDate) {
       toast.warning('Thiếu ngày quyết toán');
       return;
+    }
+    if (type === 'return' || type === 'consume' || type === 'loss') {
+      const overLimit = selectedLines.find(row => {
+        const disposition = getMaterialIssueLineDisposition(order, row.line.id);
+        const maxQty = type === 'return'
+          ? disposition.returnableQty
+          : disposition.settleableQty;
+        return row.quantity > maxQty;
+      });
+      if (overLimit) {
+        toast.warning('Số lượng vượt giới hạn', 'Dữ liệu vừa thay đổi; kiểm tra lại phần đang chờ hoàn và phần còn có thể xử lý.');
+        return;
+      }
     }
 
     setActionLoading(true);
@@ -661,9 +681,10 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       } else if (type === 'return') {
         const materialReturn = await materialIssueService.createReturn({
           orderId: order.id,
-          targetWarehouseId: returnWarehouseId,
+          targetWarehouseId: order.sourceWarehouseId,
           reason: actionReason.trim(),
           note: actionNote.trim() || null,
+          idempotencyKey: actionIdempotencyKey,
           lines: selectedLines.map(row => ({
             issueLineId: row.line.id,
             returnQty: row.quantity,
@@ -671,7 +692,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
           })),
         });
         touchedTransactionIds.push(materialReturn.transactionId);
-        toast.success('Đã tạo phiếu hoàn trả', 'Phiếu nhập trả đang chờ WMS duyệt để cộng tồn.');
+        toast.success('Đã tạo phiếu hoàn trả', 'Chờ WMS kiểm nhận - chưa cộng tồn');
       } else if (type === 'consume' || type === 'loss') {
         await materialIssueService.postSettlement({
           orderId: order.id,
@@ -685,6 +706,17 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
           })),
         });
         toast.success(type === 'consume' ? 'Đã ghi nhận sử dụng' : 'Đã ghi nhận hao hụt');
+      } else if (type === 'approval_reversal') {
+        const reversedOrder = await materialIssueService.reverseApproval({
+          orderId: order.id,
+          reason: actionReason.trim(),
+          idempotencyKey: actionIdempotencyKey,
+        });
+        const approvalReversal = reversedOrder.returns?.find(
+          item => item.returnKind === 'approval_reversal',
+        );
+        if (approvalReversal) touchedTransactionIds.push(approvalReversal.transactionId);
+        toast.success('Đã hủy duyệt phiếu xuất', 'Hệ thống đã tạo chứng từ nhập đảo và giữ nguyên phiếu xuất gốc.');
       } else if (type === 'cancel') {
         await materialIssueService.cancel(order.id, actionReason.trim());
         toast.success('Đã hủy phiếu xuất cấp');
@@ -736,8 +768,11 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   const renderOrderActions = (order: MaterialIssueOrder) => {
     const canConfirm = ['issued', 'partially_received', 'settling', 'partially_returned'].includes(order.status);
     const canSettle = ['issued', 'partially_received', 'received', 'settling', 'partially_returned'].includes(order.status)
-      && order.lines.some(line => lineOpenQty(line) > 0);
+      && order.lines.some(line => getMaterialIssueLineDisposition(order, line.id).returnableQty > 0);
     const canCancel = ['draft', 'submitted', 'wms_pending'].includes(order.status);
+    const reversalEligibility = getMaterialIssueReversalEligibility(order);
+    const canReverseApproval = reversalEligibility.eligible
+      && canReverseWmsTransaction(user, order.sourceWarehouseId);
 
     return (
       <div className="flex flex-wrap gap-2">
@@ -763,6 +798,12 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             </button>
           </>
         )}
+        {canReverseApproval && (
+          <button onClick={() => openAction('approval_reversal', order)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-orange-700 hover:bg-orange-100">
+            <Undo2 size={13} /> Hủy duyệt - hàng chưa giao
+          </button>
+        )}
         {canCancel && (
           <button onClick={() => openAction('cancel', order)}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-red-600 border border-red-100 text-[10px] font-black uppercase tracking-widest hover:bg-red-50">
@@ -782,7 +823,9 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
           ? 'Ghi nhận sử dụng'
           : action.type === 'loss'
             ? 'Ghi nhận hao hụt'
-            : 'Hủy phiếu xuất cấp'
+            : action.type === 'approval_reversal'
+              ? 'Hủy duyệt - hàng chưa giao'
+              : 'Hủy phiếu xuất cấp'
     : '';
 
   return (
@@ -1144,7 +1187,10 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 const status = STATUS_META[order.status];
                 const warehouse = warehouses.find(item => item.id === order.sourceWarehouseId);
                 const totalIssued = order.lines.reduce((sum, line) => sum + Number(line.issuedQty || 0), 0);
-                const totalOpen = order.lines.reduce((sum, line) => sum + lineOpenQty(line), 0);
+                const totalOpen = order.lines.reduce(
+                  (sum, line) => sum + getMaterialIssueLineDisposition(order, line.id).openQty,
+                  0,
+                );
                 const expanded = expandedOrderIds.has(order.id);
                 return (
                   <div key={order.id} className="rounded-2xl border border-slate-100 bg-white hover:border-indigo-100 transition-colors">
@@ -1204,10 +1250,14 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                                 <th className="p-3 text-right">Trả</th>
                                 <th className="p-3 text-right">Hao hụt</th>
                                 <th className="p-3 text-right">Còn giữ</th>
+                                <th className="p-3 text-right">Đang chờ hoàn</th>
+                                <th className="p-3 text-right">Có thể hoàn</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {order.lines.map(line => (
+                              {order.lines.map(line => {
+                                const disposition = getMaterialIssueLineDisposition(order, line.id);
+                                return (
                                 <tr key={line.id} className="text-xs">
                                   <td className="p-3">
                                     <div className="font-black text-slate-800">{line.skuSnapshot} - {line.itemNameSnapshot}</div>
@@ -1219,15 +1269,51 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                                   <td className="p-3 text-right font-bold text-slate-700">{formatQty(line.consumedQty)} {line.unit}</td>
                                   <td className="p-3 text-right font-bold text-blue-700">{formatQty(line.returnedQty)} {line.unit}</td>
                                   <td className="p-3 text-right font-bold text-rose-700">{formatQty(line.lostQty)} {line.unit}</td>
-                                  <td className="p-3 text-right font-black text-amber-700">{formatQty(lineOpenQty(line))} {line.unit}</td>
+                                  <td className="p-3 text-right font-black text-amber-700">{formatQty(disposition.openQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-bold text-violet-700">{formatQty(disposition.pendingReturnQty)} {line.unit}</td>
+                                  <td className="p-3 text-right font-black text-blue-700">{formatQty(disposition.returnableQty)} {line.unit}</td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                         <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-500">
                           Quy tắc từng dòng: Đã xuất = Đã trả + Đã dùng + Hao hụt + Còn giữ.
                         </div>
+
+                        {Boolean(order.returns?.length) && (
+                          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/40 p-3">
+                            <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-blue-700">Lịch sử nhập hoàn / đảo phiếu</div>
+                            <div className="space-y-2">
+                              {order.returns!.map(materialReturn => {
+                                const creator = users.find(item => item.id === materialReturn.createdBy);
+                                const completer = users.find(item => item.id === materialReturn.completedBy);
+                                return (
+                                  <div key={materialReturn.id} className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-[10px] font-bold text-slate-500">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-black text-slate-800">{materialReturn.returnNo}</span>
+                                      <span className={`rounded px-1.5 py-0.5 uppercase ${materialReturn.returnKind === 'approval_reversal' ? 'bg-orange-50 text-orange-700' : 'bg-blue-50 text-blue-700'}`}>
+                                        {materialReturn.returnKind === 'approval_reversal' ? 'Đảo phiếu xuất' : 'Nhập hoàn'}
+                                      </span>
+                                      <span className={materialReturn.status === 'completed' ? 'text-emerald-700' : materialReturn.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-amber-700'}>
+                                        {materialReturn.status === 'completed' ? 'Đã kiểm nhận' : materialReturn.status === 'cancelled' ? 'Đã hủy' : 'Chờ WMS kiểm nhận'}
+                                      </span>
+                                      <span>{materialReturn.lines?.length || 0} dòng</span>
+                                    </div>
+                                    <div className="mt-1">Lý do: <span className="text-slate-700">{materialReturn.reason}</span></div>
+                                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                      <span>Tạo bởi: {creator?.name || materialReturn.createdBy || '—'}</span>
+                                      <span>{new Date(materialReturn.createdAt).toLocaleString('vi-VN')}</span>
+                                      {materialReturn.completedAt && <span>Hoàn tất: {completer?.name || materialReturn.completedBy || '—'} • {new Date(materialReturn.completedAt).toLocaleString('vi-VN')}</span>}
+                                    </div>
+                                    <div className="mt-1 break-all font-mono text-[9px] text-slate-400">WMS: {materialReturn.transactionId}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
 
                         {Boolean(order.settlements?.length) && (
                           <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
@@ -1299,6 +1385,42 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 <div className="rounded-xl bg-red-50 border border-red-100 p-4 text-xs font-bold text-red-700">
                   Chỉ hủy được phiếu chưa phát sinh xuất kho hoàn tất. Nếu đã xuất kho, cần hoàn trả/quyết toán thay vì hủy trực tiếp.
                 </div>
+              ) : action.type === 'approval_reversal' ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-xs font-bold text-orange-800">
+                    Hệ thống sẽ giữ nguyên phiếu xuất đã hoàn tất và tạo một chứng từ nhập đảo toàn bộ về kho nguồn. Thao tác chỉ hợp lệ khi hàng chưa rời kho.
+                  </div>
+                  <div className="rounded-xl border border-slate-100 p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-black text-slate-800">
+                        Kho: {warehouses.find(item => item.id === action.order.sourceWarehouseId)?.name || action.order.sourceWarehouseId}
+                      </span>
+                      <span className="font-bold text-slate-500">
+                        Tổng số lượng: {formatQty(action.order.lines.reduce((sum, line) => sum + line.issuedQty, 0))}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {action.order.lines.map(line => (
+                        <div key={line.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                          <div>
+                            <div className="font-black text-slate-800">{line.itemNameSnapshot}</div>
+                            <div className="text-[10px] text-slate-400">{line.skuSnapshot}</div>
+                          </div>
+                          <div className="shrink-0 font-black text-orange-700">{formatQty(line.issuedQty)} {line.unit}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-orange-200 bg-white p-4 text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={stockNeverLeftWarehouse}
+                      onChange={event => setStockNeverLeftWarehouse(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span>Hàng chưa rời kho và chưa được bên nhận sử dụng — tôi xác nhận thông tin này là đúng.</span>
+                  </label>
+                </div>
               ) : (
                 <div className="rounded-xl border border-slate-100 overflow-hidden">
                   <table className="w-full text-left min-w-[620px]">
@@ -1311,7 +1433,12 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {action.order.lines.map(line => {
-                        const maxQty = action.type === 'receipt' ? lineReceiptRemaining(line) : lineOpenQty(line);
+                        const disposition = getMaterialIssueLineDisposition(action.order, line.id);
+                        const maxQty = action.type === 'receipt'
+                          ? lineReceiptRemaining(line)
+                          : action.type === 'return'
+                            ? disposition.returnableQty
+                            : disposition.settleableQty;
                         return (
                           <tr key={line.id}>
                             <td className="p-3">
@@ -1321,6 +1448,9 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                             <td className="p-3 text-right text-xs font-black text-slate-500">{formatQty(maxQty)} {line.unit}</td>
                             <td className="p-3 text-right">
                               <input
+                                type="number"
+                                min={0}
+                                max={maxQty}
                                 value={actionQtyByLine[line.id] || '0'}
                                 onChange={event => setActionQtyByLine(prev => ({
                                   ...prev,
@@ -1343,12 +1473,13 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
 
               {action.type === 'return' && (
                 <label className="space-y-1 block">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Kho nhận hoàn trả</span>
-                  <select value={returnWarehouseId} onChange={event => setReturnWarehouseId(event.target.value)}
-                    className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400">
-                    <option value="">Chọn kho nhận</option>
-                    {warehouses.filter(item => !item.isArchived).map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
-                  </select>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Kho nhận hoàn (cố định theo kho xuất)</span>
+                  <input
+                    readOnly
+                    value={warehouses.find(item => item.id === action.order.sourceWarehouseId)?.name || action.order.sourceWarehouseId}
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-700 outline-none"
+                  />
+                  <span className="block text-[10px] font-bold text-blue-600">Chờ WMS kiểm nhận - chưa cộng tồn</span>
                 </label>
               )}
 
@@ -1364,7 +1495,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 </label>
               )}
 
-              {(action.type === 'return' || action.type === 'consume' || action.type === 'loss' || action.type === 'cancel') && (
+              {(action.type === 'return' || action.type === 'consume' || action.type === 'loss' || action.type === 'cancel' || action.type === 'approval_reversal') && (
                 <label className="space-y-1 block">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lý do</span>
                   <textarea value={actionReason} onChange={event => setActionReason(event.target.value)}
@@ -1388,7 +1519,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                 className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-black text-slate-500 hover:bg-slate-50">
                 Đóng
               </button>
-              <button onClick={handleActionSubmit} disabled={actionLoading}
+              <button onClick={handleActionSubmit} disabled={actionLoading || (action.type === 'approval_reversal' && !stockNeverLeftWarehouse)}
                 className="px-5 py-2 rounded-lg bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-60 inline-flex items-center gap-2">
                 {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Xác nhận
               </button>

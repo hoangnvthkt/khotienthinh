@@ -5,6 +5,7 @@ import {
   canApproveWmsTransaction,
   canReceiveMaterialRequest,
   canReceiveWmsTransaction,
+  canReverseWmsTransaction,
   canViewMaterialRequest,
   canViewWmsTransaction,
   getDefaultWmsWarehouseFilter,
@@ -77,6 +78,55 @@ describe('Phase 4 WMS permission adapter', () => {
 
     expect(canReceiveWmsTransaction(granted, tx)).toBe(true);
     expect(canApproveWmsTransaction(granted, tx)).toBe(false);
+  });
+
+  it('allows reversal only from active non-legacy global or exact warehouse sources', () => {
+    const source = (sourceType: string, scopeType: 'global' | 'warehouse', scopeId: string, expiresAt?: string) => ({
+      permissionCode: 'wms.transaction.reverse',
+      sourceType,
+      scopeType,
+      scopeId,
+      expiresAt,
+      isBusinessApproval: false,
+      metadata: {},
+    });
+    const authorized = (sources: ReturnType<typeof source>[]) => user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-05T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: false },
+        sources,
+        roomActions: [],
+      },
+    });
+
+    expect(canReverseWmsTransaction(authorized([
+      source('DIRECT', 'global', '*'),
+    ]), 'wh-source')).toBe(true);
+    expect(canReverseWmsTransaction(authorized([
+      source('DIRECT', 'warehouse', 'wh-source'),
+    ]), 'wh-source')).toBe(true);
+    expect(canReverseWmsTransaction(authorized([
+      source('DIRECT', 'warehouse', 'wh-other'),
+    ]), 'wh-source')).toBe(false);
+    expect(canReverseWmsTransaction(authorized([
+      source('DIRECT', 'warehouse', 'wh-source', '2020-01-01T00:00:00.000Z'),
+    ]), 'wh-source')).toBe(false);
+    expect(canReverseWmsTransaction(authorized([
+      source('LEGACY', 'global', '*'),
+    ]), 'wh-source')).toBe(false);
+  });
+
+  it('does not derive reversal authority from legacy admin or warehouse-keeper fields', () => {
+    expect(canReverseWmsTransaction(user({
+      role: Role.ADMIN,
+      adminModules: ['WMS'],
+      assignedWarehouseId: 'wh-source',
+    }), 'wh-source')).toBe(false);
+    expect(canReverseWmsTransaction(user({
+      role: Role.WAREHOUSE_KEEPER,
+      allowedModules: ['WMS'],
+      assignedWarehouseId: 'wh-source',
+    }), 'wh-source')).toBe(false);
   });
 
   it('does not let request view/create grants approve or receive material requests', () => {

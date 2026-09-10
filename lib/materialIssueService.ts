@@ -350,19 +350,38 @@ export const materialIssueService = {
     lines: MaterialIssueReturnLineInput[];
     reason: string;
     note?: string | null;
+    idempotencyKey: string;
   }): Promise<MaterialIssueReturn> {
     if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
-    const { data, error } = await supabase.rpc('create_material_issue_return', {
+    const { data, error } = await supabase.rpc('create_material_issue_return_v2', {
       p_order_id: args.orderId,
       p_target_warehouse_id: args.targetWarehouseId,
       p_lines: args.lines,
       p_reason: args.reason,
       p_note: args.note || null,
+      p_idempotency_key: args.idempotencyKey,
     });
     if (error) throw error;
     const materialReturn = mapReturn(data);
     const fresh = await this.getById(args.orderId);
     return fresh?.returns?.find(item => item.id === materialReturn.id) || materialReturn;
+  },
+
+  async reverseApproval(args: {
+    orderId: string;
+    reason: string;
+    idempotencyKey: string;
+  }): Promise<MaterialIssueOrder> {
+    if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+    const { error } = await supabase.rpc('reverse_material_issue_approval_v1', {
+      p_order_id: args.orderId,
+      p_reason: args.reason,
+      p_idempotency_key: args.idempotencyKey,
+    });
+    if (error) throw error;
+    const fresh = await this.getById(args.orderId);
+    if (!fresh) throw new Error('Không tìm thấy phiếu xuất cấp sau khi hủy duyệt.');
+    return fresh;
   },
 
   async recordSettlement(args: {

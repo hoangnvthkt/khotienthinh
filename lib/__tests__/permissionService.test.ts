@@ -4,6 +4,7 @@ import {
   canPerform,
   canViewModule,
   canViewRoute,
+  getUserAuthorizationSnapshot,
   getInheritedPermissionCodes,
   getLegacyModuleAssignmentCount,
   isDirectPermissionGrantAllowed,
@@ -38,6 +39,13 @@ describe('permissionService', () => {
     expect(canPerform(technicalAdmin, 'hrm.employee.view_sensitive')).toBe(false);
     expect(canPerform(technicalAdmin, 'hrm.compensation.view')).toBe(false);
     expect(canPerform(technicalAdmin, 'system.hrm.manage')).toBe(false);
+  });
+
+  it('does not give a technical admin implicit Work access', () => {
+    const technicalAdmin = user({ role: Role.ADMIN });
+
+    expect(canPerform(technicalAdmin, 'work.module.access')).toBe(false);
+    expect(canPerform(technicalAdmin, 'work.task.configure')).toBe(false);
   });
 
   it('allows a technical admin to use HRM permissions from an effective source', () => {
@@ -84,6 +92,22 @@ describe('permissionService', () => {
 
     expect(canPerform(grantedUser, 'project.daily_log.approve', { scopeType: 'project', scopeId: 'project-1' })).toBe(true);
     expect(canPerform(grantedUser, 'project.daily_log.approve', { scopeType: 'project', scopeId: 'project-2' })).toBe(false);
+  });
+
+  it('treats the authorization snapshot as authoritative over contradictory legacy columns', () => {
+    const snapshotUser = user({
+      allowedModules: ['WMS'],
+      authorizationSnapshot: {
+        generatedAt: '2026-09-05T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: false },
+        sources: [],
+        roomActions: [],
+      },
+    });
+
+    expect(canPerform(snapshotUser, 'wms.inventory.view', {
+      scopeType: 'global', scopeId: '*',
+    })).toBe(false);
   });
 
   it('ignores inactive and expired grants', () => {
@@ -141,6 +165,9 @@ describe('permissionService', () => {
   it('does not expose workflow template routes from a legacy workflow list grant', () => {
     const workflowUser = user({ allowedSubModules: { WF: ['/wf'] } });
 
+    expect(getUserAuthorizationSnapshot(workflowUser)?.sources.map(source => source.permissionCode))
+      .not.toContain('workflow.template.view');
+    expect(canPerform(workflowUser, 'workflow.template.view')).toBe(false);
     expect(canViewRoute(workflowUser, '/wf/templates')).toBe(false);
     expect(canViewRoute(workflowUser, '/wf/builder/template-1')).toBe(false);
   });

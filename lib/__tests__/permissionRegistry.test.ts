@@ -188,6 +188,7 @@ describe('permissionRegistry', () => {
 
     expect(actionCodes).toEqual(expect.arrayContaining([
       'wms.transaction.complete',
+      'wms.transaction.reverse',
       'wms.request.receive',
       'hrm.payroll.manage',
       'expense.expense_record.view_all',
@@ -208,6 +209,11 @@ describe('permissionRegistry', () => {
     );
 
     expect(actionByCode['wms.inventory.view'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse']));
+    expect(actionByCode['wms.transaction.reverse']).toMatchObject({
+      action: 'reverse',
+      label: 'Hủy duyệt',
+      scopeTypes: ['global', 'warehouse'],
+    });
     expect(actionByCode['wms.request.create'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned', 'warehouse']));
     expect(actionByCode['hrm.employee.view_profile'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'direct_reports', 'org_unit', 'assigned']));
     expect(actionByCode['hrm.employee.view_profile'].scopeTypes).not.toContain('department');
@@ -216,6 +222,73 @@ describe('permissionRegistry', () => {
     expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
     expect(actionByCode['contract.supplier.manage'].scopeTypes).toEqual(['global']);
     expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
+  });
+
+  it('registers Work as a canonical-only business domain', () => {
+    const workApplication = getPermissionApplications().find(app => app.code === 'work');
+    const workModules = getPermissionModules().filter(module => module.code.startsWith('work.'));
+    const workActions = getAllPermissionActions().filter(action => action.permissionCode.startsWith('work.'));
+
+    expect(workApplication?.label).toBe('Công việc');
+    expect(workModules.map(module => module.code)).toEqual(['work.module', 'work.task', 'work.workspace']);
+    expect(workActions.map(action => action.permissionCode)).toEqual([
+      'work.module.access',
+      'work.task.create',
+      'work.task.view_related',
+      'work.task.assign_user',
+      'work.task.assign_group',
+      'work.task.view_scope',
+      'work.task.view_restricted',
+      'work.task.manage_scope',
+      'work.task.review',
+      'work.task.audit_view',
+      'work.task.configure',
+      'work.workspace.create',
+      'work.workspace.manage_members',
+      'work.workspace.archive',
+      'work.workspace.recover',
+    ]);
+    expect(workModules.every(module => module.legacyModuleKey === undefined)).toBe(true);
+    expect(workActions.every(action => action.legacyModuleKey === undefined)).toBe(true);
+  });
+
+  it('keeps Work department and project grants isolated by scope type', () => {
+    const actionByCode = Object.fromEntries(
+      getAllPermissionActions().map(action => [action.permissionCode, action]),
+    );
+
+    expect(actionByCode['work.module.access'].scopeTypes).toEqual(['global']);
+    expect(actionByCode['work.task.view_scope'].scopeTypes).toEqual(['global', 'department', 'project', 'work_workspace']);
+    expect(actionByCode['work.task.view_related'].scopeTypes).toEqual([
+      'global', 'own', 'assigned', 'department', 'project', 'work_workspace',
+    ]);
+  });
+
+  it('keeps Work Workspace scopes in parity with the canonical catalog', () => {
+    const actionByCode = Object.fromEntries(
+      getAllPermissionActions().map(action => [action.permissionCode, action]),
+    );
+    const workspaceScopedCodes = [
+      'work.task.create',
+      'work.task.view_related',
+      'work.task.assign_user',
+      'work.task.assign_group',
+      'work.task.view_scope',
+      'work.task.view_restricted',
+      'work.task.manage_scope',
+      'work.task.review',
+      'work.task.audit_view',
+      'work.task.configure',
+      'work.workspace.manage_members',
+      'work.workspace.archive',
+    ];
+
+    for (const permissionCode of workspaceScopedCodes) {
+      expect(actionByCode[permissionCode]?.scopeTypes, permissionCode).toContain('work_workspace');
+    }
+    expect(actionByCode['work.module.access']?.scopeTypes).not.toContain('work_workspace');
+    expect(actionByCode['work.workspace.create']?.scopeTypes).not.toContain('work_workspace');
+    expect(actionByCode['work.workspace.recover']?.scopeTypes).not.toContain('work_workspace');
   });
 
   it('maps every Project tab route to a project view permission', () => {

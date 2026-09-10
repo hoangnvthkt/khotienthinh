@@ -1,5 +1,6 @@
 import { MaterialRequest, MaterialRequestFulfillmentMode, RequestStatus, Role, Transaction, TransactionType, User, Warehouse } from '../types';
-import { canPerform } from './permissions/permissionService';
+import { evaluateCapability } from './permissions/authorizationEvaluator';
+import { canPerform, getUserAuthorizationSnapshot } from './permissions/permissionService';
 
 type WmsWarehouseGrantScope = 'global' | 'warehouse';
 
@@ -151,6 +152,22 @@ export const canReceiveWmsTransaction = (user: User, tx: Transaction): boolean =
     return isWarehouseKeeperFor(user, tx.sourceWarehouseId);
   }
   return false;
+};
+
+export const canReverseWmsTransaction = (
+  user: User,
+  sourceWarehouseId: string,
+): boolean => {
+  const snapshot = getUserAuthorizationSnapshot(user);
+  if (!snapshot) return false;
+
+  return evaluateCapability({
+    ...snapshot,
+    sources: snapshot.sources.filter(source => source.sourceType.toUpperCase() !== 'LEGACY'),
+  }, 'wms.transaction.reverse', {
+    scopeType: 'warehouse',
+    scopeId: sourceWarehouseId,
+  }).allowed;
 };
 
 export const canViewWmsTransaction = (user: User, tx: Transaction): boolean => {

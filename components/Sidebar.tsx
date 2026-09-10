@@ -20,7 +20,7 @@ import { useChat } from '../context/ChatContext';
 import { useChatV2UnreadCount } from '../hooks/useChatV2';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
-import { isChatEnabled, isChatV2Enabled } from '../lib/featureFlags';
+import { isChatEnabled, isChatV2Enabled, isViooWorkEnabled } from '../lib/featureFlags';
 import { canAccessRoute } from '../lib/routeAccess';
 import { canViewModule } from '../lib/permissions/permissionService';
 import { getHrmNavigationItems } from '../lib/hrmNavigation';
@@ -43,6 +43,7 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
+  { key: 'work.module' as const, icon: ClipboardCheck, label: 'Vioo Work', shortLabel: 'WORK', route: '/work', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
   { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25' },
   { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile', gradient: 'from-purple-500 to-pink-600', shadow: 'shadow-purple-500/25' },
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
@@ -104,6 +105,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   // Detect if we're inside a module from URL
   const detectAppFromUrl = (): AppKey | null => {
     const p = location.pathname;
+    if (p === '/work' || p.startsWith('/work/')) return 'work.module';
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
     if (p.startsWith('/hrm') || p === '/my-profile' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
@@ -143,7 +145,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Filter modules by user permissions
   const userModules = useMemo(() => {
-    return MODULE_CONFIG.filter(m => canViewModule(user, m.key));
+    return MODULE_CONFIG.filter(m => (m.key !== 'work.module' || isViooWorkEnabled) && canViewModule(user, m.key));
   }, [user]);
 
   // Sort by saved order
@@ -237,6 +239,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Nav items per module
   const moduleNavMap: Record<AppKey, any[]> = {
+    'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
     WMS: [
       { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null },
@@ -323,6 +326,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const currentNavItems = (isModuleView && isModuleAllowed && activeModule) ? moduleNavMap[activeModule.key] || [] : [];
   const filteredNavItems = currentNavItems.filter((item: any) => {
+    if (item.to === '/work/settings' && !canConfigureWork(user)) return false;
     const subModules = activeModule ? user.allowedSubModules?.[activeModule.key] || [] : [];
     const adminSubModules = activeModule ? user.adminSubModules?.[activeModule.key] || [] : [];
     const isLegacyModuleAdmin = activeModule ? (user.adminModules || []).includes(activeModule.key) : false;
@@ -970,3 +974,4 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 };
 
 export default Sidebar;
+import { canConfigureWork } from '../lib/work/workConfigurationAccess';

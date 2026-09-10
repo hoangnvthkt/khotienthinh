@@ -71,6 +71,17 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/rq/templates/new': 'RQ',
   '/rq/templates/:templateId': 'RQ',
 
+  // ── VIOO WORK ────────────────────────────────────────
+  '/work': 'work.module',
+  '/work/my': 'work.module',
+  '/work/spaces/:workspaceId': 'work.module',
+  '/work/spaces/new': 'work.module',
+  '/work/spaces/:workspaceId/members': 'work.module',
+  '/work/spaces/:workspaceId/settings': 'work.module',
+  '/work/scopes': 'work.module',
+  '/work/tasks/:taskCode': 'work.module',
+  '/work/settings': 'work.module',
+
   // ── NGÂN SÁCH ─────────────────────────────────────────
   '/expense': 'EX',
 

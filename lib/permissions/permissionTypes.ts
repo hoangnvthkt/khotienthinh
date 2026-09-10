@@ -7,7 +7,8 @@ export type PermissionScopeType =
   | 'warehouse'
   | 'department'
   | 'direct_reports'
-  | 'org_unit';
+  | 'org_unit'
+  | 'work_workspace';
 
 export interface PermissionScope {
   scopeType?: PermissionScopeType;

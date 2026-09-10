@@ -11,6 +11,28 @@ const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'direct_repo
 const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department'];
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
 const ASSET_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'department', 'assigned'];
+const WORK_SCOPE: readonly PermissionScopeType[] = [
+  'global',
+  'own',
+  'assigned',
+  'department',
+  'project',
+  'work_workspace',
+];
+const WORK_WORKSPACE_SCOPE: readonly PermissionScopeType[] = ['work_workspace'];
+const WORK_WORKSPACE_CREATE_SCOPE: readonly PermissionScopeType[] = ['global', 'department', 'project'];
+
+const WORK_ROUTES = [
+  '/work',
+  '/work/my',
+  '/work/spaces/:workspaceId',
+  '/work/spaces/new',
+  '/work/spaces/:workspaceId/members',
+  '/work/spaces/:workspaceId/settings',
+  '/work/scopes',
+  '/work/tasks/:taskCode',
+  '/work/settings',
+] as const;
 
 const VEHICLE_BOOKING_ROUTES = [
   '/booking/vehicle',
@@ -103,6 +125,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['create', 'Tạo', 20],
         ['approve', 'Duyệt', 30],
         ['complete', 'Hoàn tất', 40],
+        ['reverse', 'Hủy duyệt', 50, ['global', 'warehouse']],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10],
@@ -203,6 +226,57 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['edit', 'Sửa', 30],
         ['publish', 'Phát hành', 40],
       ])),
+    ],
+  },
+  {
+    code: 'work',
+    label: 'Công việc',
+    description: 'Giao, nhận và phối hợp công việc trong Vioo Work.',
+    sortOrder: 65,
+    modules: [
+      {
+        code: 'work.module',
+        label: 'Vioo Work',
+        routes: WORK_ROUTES,
+        sortOrder: 10,
+        actions: [{
+          action: 'access',
+          label: 'Truy cập Vioo Work',
+          permissionCode: 'work.module.access',
+          scopeTypes: ['global'],
+          sortOrder: 10,
+        }],
+      },
+      {
+        code: 'work.task',
+        label: 'Công việc',
+        routes: [],
+        sortOrder: 20,
+        actions: [
+          { action: 'create', label: 'Tạo công việc', permissionCode: 'work.task.create', scopeTypes: ['global', 'own', 'department', 'project', 'work_workspace'], sortOrder: 10 },
+          { action: 'view_related', label: 'Xem công việc liên quan', permissionCode: 'work.task.view_related', scopeTypes: WORK_SCOPE, sortOrder: 20 },
+          { action: 'assign_user', label: 'Giao cho người dùng', permissionCode: 'work.task.assign_user', scopeTypes: ['global', 'own', 'department', 'project', 'work_workspace'], sortOrder: 30 },
+          { action: 'assign_group', label: 'Giao cho nhóm làm việc', permissionCode: 'work.task.assign_group', scopeTypes: ['global', 'own', 'department', 'project', 'work_workspace'], sortOrder: 40 },
+          { action: 'view_scope', label: 'Xem theo phạm vi', permissionCode: 'work.task.view_scope', scopeTypes: ['global', 'department', 'project', 'work_workspace'], sortOrder: 50 },
+          { action: 'view_restricted', label: 'Xem công việc hạn chế', permissionCode: 'work.task.view_restricted', scopeTypes: WORK_SCOPE, sortOrder: 60 },
+          { action: 'manage_scope', label: 'Quản lý theo phạm vi', permissionCode: 'work.task.manage_scope', scopeTypes: ['global', 'department', 'project', 'work_workspace'], sortOrder: 70 },
+          { action: 'review', label: 'Đánh giá công việc', permissionCode: 'work.task.review', scopeTypes: ['global', 'assigned', 'department', 'project', 'work_workspace'], sortOrder: 80 },
+          { action: 'audit_view', label: 'Xem lịch sử công việc', permissionCode: 'work.task.audit_view', scopeTypes: WORK_SCOPE, sortOrder: 90 },
+          { action: 'configure', label: 'Cấu hình Vioo Work', permissionCode: 'work.task.configure', scopeTypes: ['global', 'department', 'project', 'work_workspace'], sortOrder: 100 },
+        ],
+      },
+      {
+        code: 'work.workspace',
+        label: 'Không gian Work',
+        routes: [],
+        sortOrder: 30,
+        actions: [
+          { action: 'create', label: 'Tạo không gian', permissionCode: 'work.workspace.create', scopeTypes: WORK_WORKSPACE_CREATE_SCOPE, sortOrder: 10 },
+          { action: 'manage_members', label: 'Quản lý thành viên', permissionCode: 'work.workspace.manage_members', scopeTypes: WORK_WORKSPACE_SCOPE, sortOrder: 20 },
+          { action: 'archive', label: 'Lưu trữ không gian', permissionCode: 'work.workspace.archive', scopeTypes: WORK_WORKSPACE_SCOPE, sortOrder: 30 },
+          { action: 'recover', label: 'Khôi phục quản trị', permissionCode: 'work.workspace.recover', scopeTypes: ['global'], sortOrder: 40 },
+        ],
+      },
     ],
   },
   {

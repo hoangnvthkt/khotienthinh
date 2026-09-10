@@ -170,12 +170,26 @@ const RequestListRoute: React.FC = () => {
 const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
 
+const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
+const WorkHome = React.lazy(() => import('./pages/work/WorkHome'));
+const WorkSpacePage = React.lazy(() => import('./pages/work/WorkSpacePage'));
+const WorkSpaceCreate = React.lazy(() => import('./pages/work/WorkSpaceCreate'));
+const WorkSettings = React.lazy(() => import('./pages/work/WorkSettings'));
+
 const AppRoutes: React.FC = () => {
   return (
     <Suspense fallback={<LoadingSpinner />}>
       <Routes>
         <Route path="/" element={<SubModuleGuard><Layout /></SubModuleGuard>}>
           <Route index element={<Home />} />
+          <Route path="work" element={<WorkHome />} />
+          <Route path="work/my" element={<WorkPage />} />
+          <Route path="work/spaces/new" element={<WorkSpaceCreate />} />
+          <Route path="work/spaces/:workspaceId" element={<WorkSpacePage />} />
+          <Route path="work/spaces/:workspaceId/members" element={<WorkSpacePage />} />
+          <Route path="work/spaces/:workspaceId/settings" element={<WorkSpacePage />} />
+          <Route path="work/settings" element={<WorkSettings />} />
+          <Route path="work/tasks/:taskCode" element={<WorkPage />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="my-profile" element={<MyProfile />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />

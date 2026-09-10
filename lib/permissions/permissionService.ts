@@ -1,5 +1,11 @@
 import { matchPath } from 'react-router-dom';
-import { Role, User, UserPermissionGrant } from '../../types';
+import {
+  Role,
+  User,
+  UserPermissionGrant,
+  type AuthorizationSnapshot,
+  type EffectivePermissionSource,
+} from '../../types';
 import {
   getAllPermissionActions,
   getPermissionActionByCode,
@@ -9,6 +15,7 @@ import {
   getPrimaryViewPermissionForModule,
 } from './permissionRegistry';
 import { PermissionActionDefinition, PermissionScope } from './permissionTypes';
+import { evaluateCapability } from './authorizationEvaluator';
 
 const DEFAULT_SCOPE: Required<PermissionScope> = { scopeType: 'global', scopeId: '*' };
 
@@ -172,16 +179,79 @@ const isVehicleBookingRoute = (route: string): boolean =>
 const isHrmPermissionCode = (permissionCode: string): boolean =>
   permissionCode.startsWith('hrm.') || permissionCode.startsWith('system.hrm.');
 
+type PermissionUser = Pick<
+  User,
+  | 'role'
+  | 'allowedModules'
+  | 'adminModules'
+  | 'allowedSubModules'
+  | 'adminSubModules'
+  | 'permissionGrants'
+  | 'effectivePermissionSources'
+  | 'authorizationSnapshot'
+> | null | undefined;
+
+const grantToSource = (grant: UserPermissionGrant): EffectivePermissionSource => ({
+  permissionCode: grant.permissionCode,
+  sourceType: 'DIRECT',
+  sourceId: grant.id,
+  scopeType: grant.scopeType,
+  scopeId: grant.scopeId,
+  startsAt: grant.grantedAt,
+  expiresAt: grant.expiresAt,
+  isBusinessApproval: false,
+  metadata: { compatibilityProjection: true, isActive: grant.isActive !== false },
+});
+
+const legacySourcesForCompatibility = (
+  user: Exclude<PermissionUser, null | undefined>,
+): EffectivePermissionSource[] => getAllPermissionActions()
+  .filter(action => Boolean(action.legacyModuleKey))
+  .filter(action => !isHrmPermissionCode(action.permissionCode))
+  .filter(action => user.role === Role.ADMIN || hasLegacyPermission(user, action))
+  .map(action => ({
+    permissionCode: action.permissionCode,
+    sourceType: 'LEGACY',
+    sourceCode: action.legacyModuleKey,
+    scopeType: 'global',
+    scopeId: '*',
+    isBusinessApproval: false,
+    metadata: {
+      compatibilityProjection: true,
+      legacyAdminCompatibility: user.role === Role.ADMIN,
+    },
+  }));
+
+export const getUserAuthorizationSnapshot = (
+  user: PermissionUser,
+): AuthorizationSnapshot | null => {
+  if (!user) return null;
+  if (user.authorizationSnapshot) return user.authorizationSnapshot;
+
+  const sources = user.effectivePermissionSources !== undefined
+    ? user.effectivePermissionSources
+    : [
+      ...(user.permissionGrants || []).filter(grant => grant.isActive !== false).map(grantToSource),
+      ...legacySourcesForCompatibility(user),
+    ];
+
+  return {
+    generatedAt: new Date(0).toISOString(),
+    flags: { legacy_fallback_disabled: false },
+    sources,
+    roomActions: [],
+  };
+};
+
 export const userHasPermissionGrant = (
-  user: Pick<User, 'permissionGrants'> | null | undefined,
+  user: PermissionUser,
   permissionCode: string,
   scope?: PermissionScope,
-): boolean =>
-  Boolean(user?.permissionGrants?.some(grant =>
-    grant.permissionCode === permissionCode &&
-    isGrantActive(grant) &&
-    scopeMatches(grant, scope)
-  ));
+): boolean => evaluateCapability(
+  getUserAuthorizationSnapshot(user),
+  permissionCode,
+  scope,
+).allowed;
 
 export const isPermissionActionScopeAllowed = (
   permissionCode: string,
@@ -195,25 +265,29 @@ export const isPermissionActionScopeAllowed = (
 };
 
 export const canPerform = (
-  user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
+  user: PermissionUser,
   permissionCode: string,
   scope?: PermissionScope,
-): boolean => {
-  if (!user) return false;
-  if (user.role === Role.ADMIN && !isHrmPermissionCode(permissionCode)) return true;
-  if (userHasPermissionGrant(user, permissionCode, scope)) return true;
+): boolean => evaluateCapability(
+  getUserAuthorizationSnapshot(user),
+  permissionCode,
+  scope,
+).allowed;
 
-  // HRM is a business-data boundary. Every persona, including technical admins,
-  // must receive an effective hrm.* source; legacy aliases/module flags never authorize HRM.
-  if (isHrmPermissionCode(permissionCode)) return false;
-
-  const action = getPermissionActionByCode(permissionCode);
-  if (!action) return false;
-  return hasLegacyPermission(user, action);
+/** The creation wizard can start for a global or source-scoped Workspace grant. */
+export const canStartWorkWorkspace = (user: PermissionUser): boolean => {
+  if (canPerform(user, 'work.workspace.create', DEFAULT_SCOPE)) return true;
+  const now = Date.now();
+  return getUserAuthorizationSnapshot(user).sources.some(source =>
+    source.permissionCode === 'work.workspace.create' &&
+    ['global', 'department', 'project'].includes(source.scopeType) &&
+    (!source.startsAt || Date.parse(source.startsAt) <= now) &&
+    (!source.expiresAt || Date.parse(source.expiresAt) > now)
+  );
 };
 
 export const canViewModule = (
-  user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules' | 'permissionGrants'> | null | undefined,
+  user: PermissionUser,
   moduleCodeOrLegacyKey: string,
   scope?: PermissionScope,
 ): boolean => {
@@ -245,17 +319,14 @@ export const canViewRoute = (
     (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route))
   );
   const isHrmRoute = routeModules.some(module => module.code.startsWith('hrm.'));
-  if (user.role === Role.ADMIN && !isHrmRoute) return true;
+  const domainModules = routeModules.filter(module => !module.code.startsWith('system.'));
   const eligibleModules = isHrmRoute
     ? routeModules.filter(module => module.code.startsWith('hrm.'))
-    : routeModules;
+    : domainModules.length > 0 ? domainModules : routeModules;
   if (eligibleModules.length === 0) return false;
   return eligibleModules.some(module => module.actions.some(action =>
-    action.action.startsWith('view') &&
-    (
-      userHasPermissionGrant(user, action.permissionCode, scope) ||
-      (!isHrmRoute && module.legacyModuleKey ? canOpenLegacyRoute(user, module.legacyModuleKey, route) : false)
-    )
+    (action.action.startsWith('view') || action.action === 'access') &&
+    canPerform(user, action.permissionCode, scope)
   ));
 };
 
@@ -270,16 +341,13 @@ export const canManageRoute = (
     (module.routes || []).some(moduleRoute => routeMatches(moduleRoute, route))
   );
   const isHrmRoute = routeModules.some(module => module.code.startsWith('hrm.'));
-  if (user.role === Role.ADMIN && !isHrmRoute) return true;
+  const domainModules = routeModules.filter(module => !module.code.startsWith('system.'));
   const eligibleModules = isHrmRoute
     ? routeModules.filter(module => module.code.startsWith('hrm.'))
-    : routeModules;
+    : domainModules.length > 0 ? domainModules : routeModules;
   return eligibleModules.some(module => module.actions.some(action =>
     action.action === 'manage' &&
-    (
-      userHasPermissionGrant(user, action.permissionCode, scope) ||
-      (!isHrmRoute && module.legacyModuleKey ? canManageLegacyRoute(user, module.legacyModuleKey, route) : false)
-    )
+    canPerform(user, action.permissionCode, scope)
   ));
 };
 
@@ -291,18 +359,12 @@ export const getManagePermissionCodeForRoute = (route: string): string | undefin
 };
 
 export const getInheritedPermissionCodes = (
-  user: Pick<User, 'role' | 'allowedModules' | 'adminModules' | 'allowedSubModules' | 'adminSubModules'> | null | undefined,
+  user: PermissionUser,
 ): readonly string[] => {
-  if (!user) return [];
-  if (user.role === Role.ADMIN) {
-    return getAllPermissionActions()
-      .map(action => action.permissionCode)
-      .filter(permissionCode => !isHrmPermissionCode(permissionCode));
-  }
-
-  return getAllPermissionActions()
-    .filter(action => !isHrmPermissionCode(action.permissionCode) && hasLegacyPermission(user, action))
-    .map(action => action.permissionCode);
+  const snapshot = getUserAuthorizationSnapshot(user);
+  return snapshot
+    ? [...new Set(snapshot.sources.map(source => source.permissionCode))]
+    : [];
 };
 
 export const getModuleViewPermissionCodes = (moduleCodeOrLegacyKey: string): readonly string[] => {

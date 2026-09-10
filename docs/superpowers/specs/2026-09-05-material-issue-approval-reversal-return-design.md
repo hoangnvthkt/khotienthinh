@@ -2,7 +2,7 @@
 
 **Ngày chốt thiết kế:** 2026-09-05
 
-**Trạng thái:** Đã được chủ dự án duyệt cơ chế nghiệp vụ; chờ review tài liệu trước khi lập implementation plan
+**Trạng thái:** Đã triển khai trên Supabase Cloud ngày 2026-09-05 qua migration `20260905041938_material_issue_approval_reversal_return.sql`
 
 **Phạm vi:** Phiếu xuất cấp thi công, giao dịch WMS, nhập hoàn, sổ tồn kho, sổ trách nhiệm vật tư và phân quyền thao tác đảo phiếu
 

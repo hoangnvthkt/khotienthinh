@@ -1,0 +1,153 @@
+{
+  "projectRef": "ftciqmqhmfvjtwoycswe",
+  "status": "workspace_pilot_cutover_active",
+  "deploymentTarget": "http://127.0.0.1:5187 (vioo-work-r1a dev)",
+  "calendarConfirmed": true,
+  "scope": {
+    "type": "department",
+    "departmentId": "6a1ee524-c7f6-41dd-9b0d-440e76c6cdc9"
+  },
+  "scopeName": "Phòng Quản lý dự án",
+  "calendar": {
+    "name": "Văn phòng — Phòng Quản lý dự án",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "working_weekdays": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "working_intervals": [
+      {
+        "start": "08:00",
+        "end": "12:00"
+      },
+      {
+        "start": "13:00",
+        "end": "17:00"
+      }
+    ],
+    "is_default": false,
+    "is_active": true
+  },
+  "calendarNote": "Confirmed by user: Monday–Saturday, 08:00–12:00 and 13:00–17:00, Asia/Ho_Chi_Minh.",
+  "grantDurationDays": 14,
+  "grantReason": "Vioo Work R1A named pilot — Phòng Quản lý dự án",
+  "participants": [
+    {
+      "id": "928d3473-49a2-4427-a319-19729689a084",
+      "email": "admin@khoviet.vn",
+      "name": "Admin Hoàng",
+      "moduleAccess": true,
+      "departmentPermissions": [
+        "work.task.create",
+        "work.task.view_related",
+        "work.task.assign_user",
+        "work.task.review",
+        "work.task.audit_view",
+        "work.task.view_scope",
+        "work.task.manage_scope",
+        "work.task.configure"
+      ],
+      "workspaceRole": "admin",
+      "membershipId": "7fa2d219-fcb4-4ca7-9667-12d81c8f43bf",
+      "moduleAccessSource": "WORKSPACE_MEMBER",
+      "legacyDirectGrantsActive": false
+    },
+    {
+      "id": "d0a300a0-1586-4748-b6e7-71773addc004",
+      "email": "sonpn@tienthinhjsc.vn",
+      "name": "Phạm Ngọc Sơn",
+      "moduleAccess": true,
+      "departmentPermissions": [
+        "work.task.create",
+        "work.task.view_related",
+        "work.task.assign_user",
+        "work.task.review",
+        "work.task.audit_view"
+      ],
+      "workspaceRole": "member",
+      "membershipId": "3ee9d305-d7d0-4dc0-86cc-292916c85db6",
+      "moduleAccessSource": "WORKSPACE_MEMBER",
+      "legacyDirectGrantsActive": false
+    }
+  ],
+  "sla": {
+    "normal": "one working day from confirmed intervals",
+    "importantMinutes": 240,
+    "urgentMinutes": 60,
+    "executionMinutes": null,
+    "source": "Approved design section 9.1; task deadlines remain explicit.",
+    "normalMinutes": 480
+  },
+  "activation": {
+    "frontendEnabled": true,
+    "notificationsEnabled": false,
+    "observationHours": 48,
+    "frontendScope": "Current dev process only; production deployment unchanged",
+    "observationStartedAt": null
+  },
+  "commandKeys": {
+    "calendar": "553f600f-ade6-4e33-a2c0-28650af33a1c",
+    "normal": "cf3587d0-0acd-414b-985c-b5a003a30b25",
+    "important": "d8293151-2d3c-4d99-84cf-6f4da289423f",
+    "urgent": "f7a23a2d-330b-42e4-9f42-50b4c71910f4",
+    "workspaceCutover": "91fa4436-8c00-44bf-8e1d-3a587d047364"
+  },
+  "applied": {
+    "calendarId": "3f1e7dc6-9bd5-47ed-b057-6de1abcb04ee",
+    "grantExpiresAt": "2026-09-21T07:02:36.939209+00:00",
+    "activatedAt": "2026-09-07T07:02:36.939209+00:00",
+    "workspaceId": "a4a5782f-4cd8-4f10-af22-ae2448bd1e45",
+    "workspaceCutoverAt": "2026-09-08T03:10:11.667329+00:00",
+    "candidateCommit": "2ebf3e4",
+    "candidateSha256": "bcfc81e4f51ca0dc10f0a8c498780e13af2f80be1eb72dca23e45c04c384450e",
+    "legacyDirectGrantCount": 15,
+    "legacyDirectGrantActiveCount": 0,
+    "retiredDirectGrantIds": [
+      "e81ce1d6-3bc0-49df-b4ce-70c153f18c7b",
+      "5e8fd000-20ae-4e19-9116-00d7d50a5b31",
+      "cea13f83-c47d-4001-91cb-f33b39bdf246",
+      "c3ca34d6-82bf-483a-90e4-5b5e473e3d78",
+      "e808893b-0c8d-4cbf-996d-c0e09d8afb03",
+      "c1366ba0-94c7-4f32-94f9-10f07cafe9f1",
+      "73cf34b8-9024-4c1b-af2d-cd0517f8cc14",
+      "b6608117-0dff-4548-a569-9589c8658ff2",
+      "ac08759b-6953-4a45-8cc7-d4d5ab072a5d",
+      "5a2a5de2-16c9-4345-92ea-bf25251f173a",
+      "b47c5c86-dcdc-4892-83e0-bd4762b4e75b",
+      "9207a3a1-8091-4aa8-8553-0c81595561cf",
+      "5371b709-c914-406a-ab64-57a7c286a78c",
+      "6e4dbbf4-5edb-49cb-9bcc-65dbb0c69651",
+      "afe1f077-337e-4640-88d0-4b843c910e49"
+    ],
+    "retiredAt": "2026-09-08T03:10:11.667329+00:00",
+    "bootstrapCreateGrantId": "680f7574-2e97-42e7-a038-658025b70fbc",
+    "bootstrapCreatePermission": "work.workspace.create",
+    "permissionAuditEventIds": [
+      "a7f0ef25-51b2-470e-853b-e6f234b35592",
+      "c4be49d4-f4f7-4700-9ff6-213fc6482b42",
+      "d30d8c36-f367-4eb8-bb4d-edbf2c36490d"
+    ],
+    "originalDirectGrantCount": 15
+  },
+  "workspace": {
+    "id": "a4a5782f-4cd8-4f10-af22-ae2448bd1e45",
+    "kind": "department",
+    "accessMode": "workspace",
+    "status": "active",
+    "createdAt": "2026-09-08T03:10:11.667329+00:00"
+  },
+  "fingerprints": {
+    "taskBusinessFields": "d74eadfd341f2c01e515e1baa6a9c6f1",
+    "assignments": "0e9e7ac5f5ddc8f56a77cd27cb73772a",
+    "groups": "d41d8cd98f00b204e9800998ecf8427e",
+    "calendars": "ebf8adafa642c61eb5853271ca0e476d",
+    "policies": "8ba38c1c49589bde2fb7099ae0447d48",
+    "taskCodes": [
+      "VW-2026-000017"
+    ]
+  }
+}

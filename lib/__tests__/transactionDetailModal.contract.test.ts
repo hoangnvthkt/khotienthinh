@@ -20,4 +20,11 @@ describe('transaction detail actual receipt contract', () => {
     expect(source).toContain('Xem tệp');
     expect(source).toContain('Tải xuống');
   });
+
+  it('identifies reversal receipts and links them to the original WMS voucher', () => {
+    expect(source).toContain("transaction.businessEventType === 'reversal'");
+    expect(source).toContain('Đảo phiếu xuất');
+    expect(source).toContain('transaction.reversalOfTransactionId');
+    expect(source).toContain('transaction.businessEventReason');
+  });
 });

@@ -56,6 +56,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   if (!isOpen || !localTransaction) return null;
 
   const transaction = localTransaction;
+  const isReversal = transaction.businessEventType === 'reversal';
 
   const isPending = transaction.status === TransactionStatus.PENDING;
   const isApproved = transaction.status === TransactionStatus.APPROVED;
@@ -309,6 +310,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   };
 
   const getTxTypeLabel = (type: TransactionType) => {
+    if (isReversal) return 'Phiếu Nhập đảo';
     switch (type) {
       case TransactionType.IMPORT: return 'Phiếu Nhập kho';
       case TransactionType.EXPORT: return 'Phiếu Xuất kho';
@@ -332,6 +334,11 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Chi tiết phiếu</span>
+              {transaction.businessEventType === 'reversal' && (
+                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-orange-700">
+                  Đảo phiếu xuất
+                </span>
+              )}
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusInfo.color}`}>
                 {statusInfo.label}
               </span>
@@ -345,6 +352,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-8 bg-slate-50/30">
+          {isReversal && (
+            <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-xs font-bold text-orange-800">
+              <div>Chứng từ nhập bù cho phiếu xuất: <span className="font-mono">{transaction.reversalOfTransactionId || 'Không xác định'}</span></div>
+              <div className="mt-1">Lý do đảo: {transaction.businessEventReason || transaction.note || 'Không có lý do'}</div>
+            </div>
+          )}
           {canEditVoucher && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
               <div>

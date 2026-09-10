@@ -138,6 +138,7 @@ export interface User {
   reactivationReason?: string;
   permissionGrants?: UserPermissionGrant[]; // Phase 1 permission framework grants
   effectivePermissionSources?: EffectivePermissionSource[];
+  authorizationSnapshot?: AuthorizationSnapshot;
 }
 
 export type HrmBusinessRoleCode = 'HR' | 'HR_MANAGE';
@@ -157,11 +158,28 @@ export interface EffectivePermissionSource {
   metadata: Record<string, unknown>;
 }
 
+export interface AuthorizationRoomAction {
+  projectId: string;
+  constructionSiteId?: string | null;
+  roomCode: string;
+  actionCode: string;
+  source: string;
+  enforcement: string;
+  fallback: boolean;
+}
+
+export interface AuthorizationSnapshot {
+  generatedAt: string;
+  flags: Record<string, boolean>;
+  sources: EffectivePermissionSource[];
+  roomActions: AuthorizationRoomAction[];
+}
+
 export interface UserPermissionGrant {
   id?: string;
   userId: string;
   permissionCode: string;
-  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department' | 'direct_reports' | 'org_unit';
+  scopeType: 'global' | 'own' | 'assigned' | 'project' | 'construction_site' | 'warehouse' | 'department' | 'direct_reports' | 'org_unit' | 'work_workspace';
   scopeId: string;
   isActive?: boolean;
   grantedBy?: string;
@@ -3187,8 +3205,30 @@ export type MaterialIssueStatus =
   | 'settling'
   | 'partially_returned'
   | 'closed'
+  | 'reversed'
   | 'rejected'
   | 'cancelled';
+
+export type MaterialIssueReturnKind = 'unused_return' | 'approval_reversal';
+
+export type MaterialIssueLineDisposition = {
+  openQty: number;
+  pendingReturnQty: number;
+  returnableQty: number;
+  settleableQty: number;
+};
+
+export type MaterialIssueReversalEligibility = {
+  eligible: boolean;
+  reasonCode:
+    | 'eligible'
+    | 'invalid_status'
+    | 'no_issued_quantity'
+    | 'already_received'
+    | 'already_returned'
+    | 'already_settled'
+    | 'pending_return';
+};
 
 export type MaterialIssueLedgerType =
   | 'issue'
@@ -3262,10 +3302,13 @@ export interface MaterialIssueReturn {
   id: string;
   issueOrderId: string;
   returnNo: string;
+  returnKind: MaterialIssueReturnKind;
   targetWarehouseId: string;
   status: 'pending' | 'completed' | 'cancelled';
   transactionId: string;
   reason: string;
+  idempotencyKey: string;
+  metadata: Record<string, unknown>;
   note?: string | null;
   createdBy?: string | null;
   createdAt: string;
@@ -3408,6 +3451,8 @@ export interface Transaction {
   businessEventReason?: string | null;
   sourceType?: string | null;
   sourceId?: string | null;
+  reversalOfTransactionId?: string | null;
+  idempotencyKey?: string | null;
   relatedRequestId?: string; // Link to MaterialRequest
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
   attachments?: WmsTransactionAttachment[];
@@ -4305,6 +4350,7 @@ export interface InventoryLedgerStockReportRow {
   inImport: number;
   inTransfer: number;
   inAdjustment: number;
+  inReversal: number;
   totalIn: number;
   outExport: number;
   outTransfer: number;

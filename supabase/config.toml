@@ -18,3 +18,18 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/process-request-notifications/deno.json"
 entrypoint = "./functions/process-request-notifications/index.ts"
+
+[functions.process-work-notifications]
+enabled = true
+# The worker validates x-web-push-secret against the existing Edge/Vault secret.
+# It never accepts an end-user JWT as worker authorization.
+verify_jwt = false
+import_map = "./functions/process-work-notifications/deno.json"
+entrypoint = "./functions/process-work-notifications/index.ts"
+
+[functions.work-attachments]
+enabled = true
+# Validates end-user JWT with Auth.getUser; cleanup requires the Vault-held secret.
+verify_jwt = false
+import_map = "./functions/work-attachments/deno.json"
+entrypoint = "./functions/work-attachments/index.ts"

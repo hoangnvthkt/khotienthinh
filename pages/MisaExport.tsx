@@ -248,8 +248,9 @@ const MisaExport: React.FC = () => {
             .flatMap((tx, idx) => {
                 const wh = warehouses.find(w => w.id === tx.targetWarehouseId);
                 const supplier = suppliers.find(s => s.id === tx.supplierId);
-                const supplyName = tx.businessPartnerNameSnapshot || supplier?.name;
-                const supplyId = tx.businessPartnerId || tx.supplierId;
+                const isReversal = tx.businessEventType === 'reversal';
+                const supplyName = isReversal ? undefined : (tx.businessPartnerNameSnapshot || supplier?.name);
+                const supplyId = isReversal ? undefined : (tx.businessPartnerId || tx.supplierId);
                 const docNo = `NK-${String(idx + 1).padStart(4, '0')}`;
                 const dateStr = new Date(tx.date).toLocaleDateString('vi-VN');
 
@@ -265,7 +266,9 @@ const MisaExport: React.FC = () => {
                     return {
                         date: dateStr,
                         docNo,
-                        description: `Nhập kho${supplyName ? ` - ${supplyName}` : ''}: ${item?.name || ti.itemId}`,
+                        description: isReversal
+                            ? `Đảo phiếu xuất ${tx.reversalOfTransactionId || 'không xác định'}: ${item?.name || ti.itemId}`
+                            : `Nhập kho${supplyName ? ` - ${supplyName}` : ''}: ${item?.name || ti.itemId}`,
                         warehouseCode: wh?.id?.slice(-6).toUpperCase() || 'KHO',
                         warehouseName: wh?.name || '',
                         itemCode: item?.sku || ti.itemId,
