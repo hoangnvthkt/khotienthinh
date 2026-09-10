@@ -32,6 +32,10 @@ const migrationName = readdirSync(join(root, 'supabase', 'migrations'))
 const migration = migrationName
   ? readFileSync(join(root, 'supabase', 'migrations', migrationName), 'utf8').toLowerCase()
   : '';
+const aiAssistant = readFileSync(
+  join(root, 'supabase', 'functions', 'ai-assistant', 'index.ts'),
+  'utf8',
+);
 
 describe('Authorization V2 legacy runtime removal', () => {
   it('has no legacy-field authorization or write consumer in runtime code', () => {
@@ -56,5 +60,12 @@ describe('Authorization V2 legacy runtime removal', () => {
     expect(migration).toContain("current_setting('app.account_lifecycle_command', true)");
     expect(migration).toContain('legacy permission writes are disabled');
     expect(migration).toContain('account lifecycle may only clear legacy permission columns');
+  });
+
+  it('authenticates every AI action from JWT before canonical permission checks', () => {
+    expect(aiAssistant).not.toContain('resolveActor(request, req.userId)');
+    expect(aiAssistant).toMatch(
+      /req = await request\.json\(\)[\s\S]*?const authorization = await requireAiAssistantUse\(request\);[\s\S]*?if \(req\.action === 'feedback'\)/,
+    );
   });
 });

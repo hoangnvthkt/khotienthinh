@@ -62,7 +62,7 @@ interface AppUserContext {
   role?: string | null;
   email?: string | null;
   isActive?: boolean | null;
-  source: 'jwt' | 'body';
+  source: 'jwt';
 }
 
 interface LearningContext {
@@ -527,7 +527,7 @@ async function findAppUserByAuthUser(authUser: any): Promise<AppUserContext | nu
   return null;
 }
 
-async function resolveActor(request: Request, fallbackUserId?: string): Promise<AppUserContext | null> {
+async function resolveActor(request: Request): Promise<AppUserContext | null> {
   const token = getBearerToken(request);
   if (token) {
     const { data, error } = await admin.auth.getUser(token);
@@ -536,24 +536,6 @@ async function resolveActor(request: Request, fallbackUserId?: string): Promise<
       if (appUser) return appUser;
     } else {
       console.warn('ai-assistant auth token validation failed:', error?.message);
-    }
-  }
-
-  if (fallbackUserId) {
-    const { data } = await admin
-      .from('users')
-      .select('id, role, email, is_active')
-      .eq('id', fallbackUserId)
-      .maybeSingle();
-
-    if (data) {
-      return {
-        id: data.id,
-        role: data.role,
-        email: data.email,
-        isActive: data.is_active,
-        source: 'body',
-      };
     }
   }
 
@@ -1806,38 +1788,32 @@ Deno.serve(async (request: Request) => {
     }
 
     req = await request.json() as AssistantRequest;
+    const authorization = await requireAiAssistantUse(request);
+    if (authorization.response) return authorization.response;
+    const actor = authorization.actor || null;
+
     if (req.action === 'feedback') {
-      const authorization = await requireAiAssistantUse(request);
-      if (authorization.response) return authorization.response;
-      const actor = authorization.actor || null;
       return jsonResponse(await handleFeedback({ ...req, userId: actor?.id }, actor));
     }
     if (req.action === 'estimate_suggestion') {
-      const actor = await resolveActor(request, req.userId);
       return handleEstimateSuggestion(req, actor);
     }
     if (req.action === 'cost_norm_standardization') {
-      const actor = await resolveActor(request, req.userId);
       return handleCostNormStandardization(req, actor);
     }
     if (req.action === 'cost_norm_import_excel') {
-      const actor = await resolveActor(request, req.userId);
       return handleCostNormImportExcel(req, actor);
     }
     if (req.action === 'custom_material_smart_import_excel') {
-      const actor = await resolveActor(request, req.userId);
       return handleCustomMaterialSmartImportExcel(req, actor);
     }
     if (req.action === 'tender_detect_columns') {
-      const actor = await resolveActor(request, req.userId);
       return handleTenderDetectColumns(req, actor);
     }
     if (req.action === 'tender_suggest_mapping') {
-      const actor = await resolveActor(request, req.userId);
       return handleTenderSuggestMapping(req, actor);
     }
     if (req.action === 'tender_risk_rfi') {
-      const actor = await resolveActor(request, req.userId);
       return handleTenderRiskRfi(req, actor);
     }
 
@@ -1847,9 +1823,6 @@ Deno.serve(async (request: Request) => {
     const mode: AiMode = req.mode === 'knowledge' ? 'knowledge' : 'data';
     const history = (req.history || []).slice(-10);
     const selectedModel = req.model || null;
-    const authorization = await requireAiAssistantUse(request);
-    if (authorization.response) return authorization.response;
-    const actor = authorization.actor || null;
     const effectiveUserId = actor?.id || null;
     activeUserId = effectiveUserId;
     activeMode = mode;
