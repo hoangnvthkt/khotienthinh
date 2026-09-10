@@ -294,12 +294,14 @@ git commit -m "refactor(auth): use one source-aware permission evaluator"
 - Modify: `components/UserModal.tsx`, `components/permissions/PermissionMatrix.tsx`
 - Modify: `context/AppContext.tsx`, `lib/permissions/permissionAdminService.ts`
 
-- [ ] **Step 1: UI contract test** — `UserModal` không còn editor “Phân quyền Module”/“Quản trị Sub-module”, không mutate legacy arrays, chỉ gọi transaction service.
-- [ ] **Step 2: Implement ba vùng** — module shell, scoped capabilities, Project Room summary/link; legacy chỉ đọc với source/collision/migration state.
-- [ ] **Step 3: Clipboard chỉ copy direct grants + scope; save yêu cầu reason; inherited badge không phải checkbox sửa được.**
-- [ ] **Step 4: Targeted tests, lint, build và commit.**
+- [x] **Step 1: UI contract test** — `UserModal` không còn editor “Phân quyền Module”/“Quản trị Sub-module”, không mutate legacy arrays, chỉ gọi transaction service.
+- [x] **Step 2: Implement ba vùng** — module shell, scoped capabilities, Project Room summary/link; legacy chỉ đọc với source/collision/migration state.
+- [x] **Step 3: Clipboard chỉ copy direct grants + scope; save yêu cầu reason; inherited badge không phải checkbox sửa được.**
+- [x] **Step 4: Targeted tests, lint, build và commit.**
 
 **Commit:** `feat(auth): unify permission administration UI`
+
+**Kết quả:** commit `41af7e2`; full checkout regression 371 files / 1.759 tests, lint và build đạt.
 
 **Phase 3 exit gate:** một editor, một atomic RPC; không còn partial save giữa profile và grants.
 

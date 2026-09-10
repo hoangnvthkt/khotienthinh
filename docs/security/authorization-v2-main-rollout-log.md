@@ -74,3 +74,12 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Postflight smoke: passed and rolled back. The wrapper exists; `authenticated` can execute it and `anon` cannot.
 - Cloud database lint still reports nine pre-existing error-level findings in unrelated AI, direct-purchase, quick-template, contract, and safety functions; no finding names the new Authorization V2 functions.
 - `npm test` without an exclusion also scanned historical `.worktrees/**`: 11,903 tests passed and 39 historical-worktree failures occurred. The authoritative checkout-only run used `--exclude '.worktrees/**'` and passed all 1,754 tests.
+
+## Phase 3 / Task 6 — Unified authorization editor
+
+- Commit: `41af7e2` (`feat(auth): unify permission administration UI`).
+- `UserModal` no longer renders or mutates the legacy module/sub-module editors. Edit saves call `update_user_authorization_v2` once, then reload the committed Cloud row.
+- The unified editor contains module-shell filtering, scoped direct capabilities, Project Room summary/link, grant diff, and a mandatory reason.
+- Clipboard version 2 contains direct grants and their scopes only; it excludes account role, warehouse identity, and all four legacy permission fields.
+- Inherited capabilities are shown as locked `Kế thừa` provenance; legacy source count, collision count, and fallback migration state are read-only.
+- Targeted regression: 4 files / 14 tests passed. Full checkout regression: 371 files / 1,759 tests passed. TypeScript lint and production build passed; only the existing Vite chunk-size warning remains.
