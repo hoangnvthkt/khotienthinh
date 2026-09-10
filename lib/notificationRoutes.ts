@@ -92,10 +92,24 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   }
 
   // ── Purchase Order ────────────────────────────────────
-  if (sourceType === 'purchase_order') {
-    const projectPath = buildProjectPath(notification, 'material', { materialTab: 'supply-chain' });
+  if (
+    sourceType === 'purchase_order' ||
+    sourceType === 'purchase_order_delivery_batch' ||
+    sourceType === 'purchase_order_supplemental_approval'
+  ) {
+    const purchaseOrderId =
+      getMetaValue(metadata, ['purchaseOrderId', 'purchase_order_id', 'poId', 'po_id']) ||
+      (sourceType === 'purchase_order' ? notification.sourceId : undefined);
+    const purchaseOrderParams = {
+      materialTab: 'po',
+      poId: purchaseOrderId,
+    };
+    const projectPath = buildProjectPath(notification, 'material', purchaseOrderParams);
     if (projectPath) return projectPath;
-    return notification.link || '/da';
+    if (purchaseOrderId) {
+      return withQuery('/da', { tab: 'material', ...purchaseOrderParams });
+    }
+    return notification.link || '/da?tab=material&materialTab=po';
   }
 
   // ── Task-related (assignment, gate, completion) ───────
