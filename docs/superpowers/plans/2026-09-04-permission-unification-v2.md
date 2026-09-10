@@ -428,13 +428,15 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - Modify: `pages/settings/SettingsPermissionHealth.tsx`
 - Modify: `docs/security/authorization-v2-main-rollout-log.md`
 
-- [ ] **Step 1: Failing tests xác nhận LEGACY source không authorize khi fallback off.**
-- [ ] **Step 2: Set `legacy_governance_fallback_disabled=true`, `legacy_fallback_disabled=true`, giữ `legacy_projection_enabled=false`.**
-- [ ] **Step 3: Snapshot không đưa LEGACY vào active decision; health vẫn đếm legacy config để cleanup.**
-- [ ] **Step 4: Run existing no-legacy smoke, new smoke, 88-test permission regression, lint và build.**
-- [ ] **Step 5: Apply/evidence theo protocol.**
+- [x] **Step 1: Failing tests xác nhận LEGACY source không authorize khi fallback off.**
+- [x] **Step 2: Set `legacy_governance_fallback_disabled=true`, `legacy_fallback_disabled=true`, giữ `legacy_projection_enabled=false`.**
+- [x] **Step 3: Snapshot không đưa LEGACY vào active decision; health vẫn đếm legacy config để cleanup.**
+- [x] **Step 4: Run existing no-legacy smoke, new smoke, 88-test permission regression, lint và build.**
+- [x] **Step 5: Apply/evidence theo protocol.**
 
 **Commit:** `feat(auth): disable legacy permission fallback`
+
+**Kết quả:** release candidate `2594a6e`; migration `20260910034121` đã áp dụng lên Cloud main. Cả legacy fallback và governance fallback đều tắt, projection tiếp tục tắt; effective resolver và authenticated snapshot có 0 source `LEGACY`. Client mapper loại stale `LEGACY` payload khi flag đã tắt. 57 checksum snapshots vẫn nguyên vẹn; bốn legacy columns vẫn tồn tại và health tiếp tục đếm 59 hồ sơ có legacy config làm rollback/cleanup evidence. Permission regression đạt 7 files / 83 tests; full regression đạt 376 files / 1.778 tests; lint/build, migration/query checks, existing/new Cloud smoke và ledger đều đạt.
 
 **Phase 5 exit gate:** 0 legacy-only, 0 unresolved collision; active flows chỉ dùng DIRECT/ROLE/ROOM; legacy columns chỉ còn rollback evidence.
 

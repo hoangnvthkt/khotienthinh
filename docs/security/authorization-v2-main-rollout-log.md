@@ -138,3 +138,14 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Postflight gate: 0 manual review, 0 legacy-only active user, 0 duplicate active grant tuple. The admin-only summary RPC exposes aggregate migration health without PII.
 - Cloud rollback preflight, smoke, dry-run (exactly `20260910033302`), apply, postflight smoke, and ledger reconciliation passed.
 - Checkout regression passed: 375 files / 1,774 tests. TypeScript lint, production build, migration baseline check, and `git diff --check` passed; only the existing Vite chunk-size warning remains.
+
+## Phase 5 / Task 11 — Legacy fallback disabled
+
+- Migration: `20260910034121_authorization_v2_phase5_disable_legacy_fallback.sql`; release candidate: `2594a6e`.
+- TDD first proved a fallback-disabled snapshot cannot authorize a `LEGACY` source and that canonical `DIRECT` still wins when a stale legacy source is mixed into the payload. The auth mapper now drops stale `LEGACY` sources at the client boundary after cutover.
+- Cloud rollback preflight initially caught the real mixed storage types (`text[]` module columns and `jsonb` submodule columns) in the health counter. The failed transaction retained no changes; the counter was corrected and the exact migration plus smoke then passed in rollback.
+- Dry-run listed exactly `20260910034121`; apply to Cloud main succeeded and the local/remote migration ledger is aligned.
+- Postflight flags: `legacy_fallback_disabled=true`, `legacy_governance_fallback_disabled=true`, `legacy_projection_enabled=false`. Effective resolver and authenticated snapshot both report zero `LEGACY` sources.
+- Rollback evidence remains intact: 57 active-user snapshots pass SHA-256 verification; all four legacy columns remain present. Health reports 59 user rows with legacy configuration for Phase 6 cleanup without using those values for an allow decision.
+- Existing feature-gated no-fallback smoke and the new permanent-cutover smoke both passed. Permission regression passed 7 files / 83 tests; full checkout regression passed 376 files / 1,778 tests. TypeScript lint, production build, migration baseline check, query inventory check, and `git diff --check` passed.
+- Cloud database lint still reports the same nine pre-existing unrelated error-level findings; none names the Task 11 migration or authorization snapshot functions.
