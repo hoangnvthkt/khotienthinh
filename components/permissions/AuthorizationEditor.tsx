@@ -8,6 +8,7 @@ import {
 } from '../../types';
 import { listPermissionAdminCatalog } from '../../lib/permissions/permissionCatalogService';
 import { PermissionAdminCatalog, PermissionScope } from '../../lib/permissions/permissionTypes';
+import { AuthorizationValidationIssue } from '../../lib/permissions/authorizationUpdateValidation';
 import PermissionDiffPreview from './PermissionDiffPreview';
 import PermissionModuleEditor from './PermissionModuleEditor';
 import LegacyPermissionReadOnly from './LegacyPermissionReadOnly';
@@ -20,7 +21,9 @@ interface AuthorizationEditorProps {
   effectivePermissionSources?: readonly EffectivePermissionSource[];
   roomActions?: readonly AuthorizationRoomAction[];
   reason: string;
+  validationIssues?: readonly AuthorizationValidationIssue[];
   disabled?: boolean;
+  onCatalogChange?: (catalog: PermissionAdminCatalog | null) => void;
   onDirectGrantsChange: (grants: UserPermissionGrant[]) => void;
   onReasonChange: (reason: string) => void;
 }
@@ -58,7 +61,9 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   effectivePermissionSources = [],
   roomActions = [],
   reason,
+  validationIssues = [],
   disabled = false,
+  onCatalogChange,
   onDirectGrantsChange,
   onReasonChange,
 }) => {
@@ -93,17 +98,22 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
     let cancelled = false;
     setCatalog(null);
     setCatalogError(null);
+    onCatalogChange?.(null);
     listPermissionAdminCatalog()
       .then(nextCatalog => {
-        if (!cancelled) setCatalog(nextCatalog);
+        if (!cancelled) {
+          setCatalog(nextCatalog);
+          onCatalogChange?.(nextCatalog);
+        }
       })
       .catch(error => {
         if (!cancelled) {
           setCatalogError(error instanceof Error ? error.message : 'Không tải được danh mục phân quyền.');
+          onCatalogChange?.(null);
         }
       });
     return () => { cancelled = true; };
-  }, [catalogReload]);
+  }, [catalogReload, onCatalogChange]);
 
   const copyDirectGrants = () => {
     const payload: AuthorizationClipboard = {
@@ -192,6 +202,16 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
             disabled={disabled}
             onChange={onDirectGrantsChange}
           />
+        )}
+        {validationIssues.filter(issue => issue.field !== 'reason').length > 0 && (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            <p className="font-bold">Cần kiểm tra lại quyền đã chọn</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              {validationIssues.filter(issue => issue.field !== 'reason').map((issue, index) => (
+                <li key={`${issue.code}-${issue.permissionCode || index}`}>{issue.message}</li>
+              ))}
+            </ul>
+          </div>
         )}
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>

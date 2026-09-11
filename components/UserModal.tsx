@@ -8,6 +8,8 @@ import AuthorizationEditor from './permissions/AuthorizationEditor';
 import { listUserPermissionGrants, updateUserAuthorizationV2 } from '../lib/permissions/permissionAdminService';
 import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
 import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
+import { PermissionAdminCatalog } from '../lib/permissions/permissionTypes';
+import { validateAuthorizationUpdate } from '../lib/permissions/authorizationUpdateValidation';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -27,6 +29,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
   const [permissionGrants, setPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [authorizationReason, setAuthorizationReason] = useState('');
+  const [authorizationCatalog, setAuthorizationCatalog] = useState<PermissionAdminCatalog | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +37,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     setPermissionGrants(seedGrants);
     setOriginalPermissionGrants(seedGrants);
     setAuthorizationReason('');
+    setAuthorizationCatalog(null);
 
     if (isOpen && userToEdit?.id && isSupabaseConfigured) {
       listUserPermissionGrants(userToEdit.id)
@@ -66,6 +70,45 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     || formData.role === Role.WAREHOUSE_KEEPER
     || permissionGrants.some(grant => grant.isActive !== false && grant.permissionCode.startsWith('wms.'));
 
+  const authorizationChanged = useMemo(() => {
+    if (!userToEdit) return false;
+    const normalizeValue = (value: unknown) => value == null ? '' : String(value).trim();
+    const beforeProfile = [
+      userToEdit.name,
+      userToEdit.phone,
+      userToEdit.avatar,
+      userToEdit.managerId,
+      userToEdit.assignedWarehouseId,
+    ].map(normalizeValue);
+    const afterProfile = [
+      formData.name,
+      formData.phone,
+      formData.avatar,
+      formData.managerId,
+      hasWmsAccess ? formData.assignedWarehouseId : '',
+    ].map(normalizeValue);
+    const grantKeys = (grants: readonly UserPermissionGrant[]) => grants
+      .filter(grant => grant.isActive !== false)
+      .map(grant => [
+        grant.permissionCode,
+        grant.scopeType || 'global',
+        grant.scopeId || '*',
+        grant.expiresAt || '',
+      ].join('::'))
+      .sort();
+    return JSON.stringify(beforeProfile) !== JSON.stringify(afterProfile)
+      || JSON.stringify(grantKeys(originalPermissionGrants)) !== JSON.stringify(grantKeys(permissionGrants));
+  }, [formData, hasWmsAccess, originalPermissionGrants, permissionGrants, userToEdit]);
+
+  const authorizationIssues = useMemo(() => authorizationCatalog && userToEdit
+    ? validateAuthorizationUpdate({
+      changed: authorizationChanged,
+      reason: authorizationReason,
+      grants: permissionGrants,
+      catalog: authorizationCatalog,
+    })
+    : [], [authorizationCatalog, authorizationChanged, authorizationReason, permissionGrants, userToEdit]);
+
   if (!isOpen) return null;
 
   const validate = () => {
@@ -75,7 +118,12 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     if (!userToEdit && !formData.username?.trim()) nextErrors.username = 'Vui lòng nhập tên đăng nhập';
     if (!userToEdit && !formData.password?.trim()) nextErrors.password = 'Vui lòng nhập mật khẩu';
     if (!userToEdit && formData.password && formData.password.length < 6) nextErrors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
-    if (userToEdit && !authorizationReason.trim()) nextErrors.authorizationReason = 'Vui lòng nhập lý do thay đổi';
+    if (userToEdit && !authorizationCatalog) nextErrors.authorizationCatalog = 'Danh mục phân quyền chưa sẵn sàng';
+    const reasonIssue = authorizationIssues.find(issue => issue.field === 'reason');
+    if (reasonIssue) nextErrors.authorizationReason = reasonIssue.message;
+    const grantIssue = authorizationIssues.find(issue => issue.field !== 'reason');
+    if (grantIssue) nextErrors.authorizationGrants = grantIssue.message;
+    if (userToEdit && !authorizationChanged) nextErrors.authorizationChanged = 'Chưa có thay đổi để lưu';
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -237,15 +285,18 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             effectivePermissionSources={userToEdit.authorizationSnapshot?.sources || userToEdit.effectivePermissionSources}
             roomActions={userToEdit.authorizationSnapshot?.roomActions}
             reason={authorizationReason}
+            validationIssues={authorizationIssues}
             disabled={saving}
+            onCatalogChange={setAuthorizationCatalog}
             onDirectGrantsChange={setPermissionGrants}
             onReasonChange={setAuthorizationReason}
           /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> Direct grants được cấp sau khi tài khoản và hồ sơ Auth đã tạo thành công.</div>}
           {errors.authorizationReason && <p className="text-[10px] font-bold text-red-500">{errors.authorizationReason}</p>}
+          {errors.authorizationCatalog && <p className="text-[10px] font-bold text-red-500">{errors.authorizationCatalog}</p>}
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-slate-200 py-2.5 font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">Hủy</button>
-            <button type="submit" disabled={saving} className="flex flex-1 items-center justify-center rounded-xl bg-accent py-2.5 font-bold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:opacity-50">
+            <button type="submit" disabled={saving || Boolean(userToEdit && (!authorizationCatalog || !authorizationChanged || authorizationIssues.length > 0))} className="flex flex-1 items-center justify-center rounded-xl bg-accent py-2.5 font-bold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:opacity-50">
               {saving ? <><Loader2 size={18} className="mr-2 animate-spin" /> Đang lưu...</> : <><Save size={18} className="mr-2" /> Lưu thông tin</>}
             </button>
           </div>

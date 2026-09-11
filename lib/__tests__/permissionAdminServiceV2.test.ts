@@ -71,12 +71,20 @@ describe('permissionAdminService Authorization V2 command', () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
+  it('rejects a trimmed reason shorter than ten characters before calling Supabase', async () => {
+    await expect(updateUserAuthorizationV2({
+      userId: 'user-1', profile: {}, grants: [], reason: '  Cấp TS  ',
+      expectedUpdatedAt: '2026-09-10T02:00:00.000Z',
+    })).rejects.toThrow('ít nhất 10 ký tự');
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it('maps optimistic-lock conflicts to an actionable message', async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: '40001', message: 'stale' } });
     await expect(updateUserAuthorizationV2({
       userId: 'user-1', profile: {}, grants: [], reason: 'Cap nhat theo yeu cau',
       expectedUpdatedAt: '2026-09-10T02:00:00.000Z',
-    })).rejects.toThrow('Thông tin người dùng đã thay đổi. Vui lòng tải lại trước khi lưu.');
+    })).rejects.toThrow('Thông tin người dùng đã thay đổi. Vui lòng tải lại và đối chiếu trước khi lưu.');
   });
 
   it('rejects direct grants that must come from managed templates', async () => {

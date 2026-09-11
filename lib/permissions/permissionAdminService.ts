@@ -3,6 +3,7 @@ import { isSupabaseConfigured, supabase } from '../supabase';
 import { isDirectPermissionGrantAllowed } from './permissionService';
 import { getSupabaseOrderColumns } from '../supabaseProjections';
 import { fetchAllSupabaseRows } from '../supabaseCompleteRead';
+import { mapAuthorizationRpcError } from './authorizationUpdateValidation';
 
 const mapPermissionGrantFromDb = (row: any): UserPermissionGrant => ({
   id: row.id,
@@ -90,6 +91,7 @@ export const updateUserAuthorizationV2 = async (
 ): Promise<UserAuthorizationUpdateReceipt> => {
   const reason = input.reason.trim();
   if (!reason) throw new Error('Lý do thay đổi phân quyền là bắt buộc.');
+  if (reason.length < 10) throw new Error('Lý do thay đổi phải có ít nhất 10 ký tự.');
   if (!isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
   if (!input.userId || !input.expectedUpdatedAt) {
     throw new Error('Thiếu người dùng hoặc phiên bản dữ liệu cần cập nhật.');
@@ -113,10 +115,7 @@ export const updateUserAuthorizationV2 = async (
     p_expected_updated_at: input.expectedUpdatedAt,
   });
 
-  if (error?.code === '40001') {
-    throw new Error('Thông tin người dùng đã thay đổi. Vui lòng tải lại trước khi lưu.');
-  }
-  if (error) throw error;
+  if (error) throw mapAuthorizationRpcError(error);
   if (!data) throw new Error('Lệnh cập nhật phân quyền không trả về kết quả.');
   return data as unknown as UserAuthorizationUpdateReceipt;
 };

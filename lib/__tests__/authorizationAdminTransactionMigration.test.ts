@@ -8,6 +8,12 @@ const migrationFile = readdirSync(migrationsDir)
 const migrationPath = migrationFile ? join(migrationsDir, migrationFile) : '';
 const migration = existsSync(migrationPath) ? readFileSync(migrationPath, 'utf8') : '';
 const normalized = migration.replace(/\s+/g, ' ').trim().toLowerCase();
+const structuredMigrationFile = readdirSync(migrationsDir)
+  .find(file => file.endsWith('_authorization_v2_structured_grant_errors.sql'));
+const structuredMigrationPath = structuredMigrationFile ? join(migrationsDir, structuredMigrationFile) : '';
+const structuredMigration = existsSync(structuredMigrationPath)
+  ? readFileSync(structuredMigrationPath, 'utf8').replace(/\s+/g, ' ').trim().toLowerCase()
+  : '';
 
 describe('Authorization V2 admin transaction migration', () => {
   it('exposes one authenticated wrapper backed by a hardened private command', () => {
@@ -38,5 +44,23 @@ describe('Authorization V2 admin transaction migration', () => {
     expect(normalized).toContain("'activegrantcount'");
     expect(normalized).toContain("'auditeventid'");
     expect(normalized).toContain("'user_authorization_v2_updated'");
+  });
+});
+
+describe('Authorization V2 structured grant errors migration', () => {
+  it('enforces catalog direct-grant metadata and emits machine-readable details', () => {
+    expect(existsSync(structuredMigrationPath)).toBe(true);
+    expect(structuredMigration).toContain('direct_grant_allowed');
+    expect(structuredMigration).toContain('direct_grant_requires_expiry');
+    expect(structuredMigration).toContain("'permissioncode'");
+    expect(structuredMigration).toContain("'field'");
+    expect(structuredMigration).toContain("'expiry_required'");
+    expect(structuredMigration).toContain("'direct_grant_denied'");
+  });
+
+  it('requires a ten-character reason on the public atomic command', () => {
+    expect(structuredMigration).toContain('char_length(btrim(coalesce(p_reason');
+    expect(structuredMigration).toContain("'reason_too_short'");
+    expect(structuredMigration).toMatch(/revoke all on function public\.update_user_authorization_v2[^;]+from anon/);
   });
 });

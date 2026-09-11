@@ -50,4 +50,11 @@ describe('unified authorization editor UI contract', () => {
     expect(moduleEditor).toContain('inheritedSources');
     expect(moduleCard).toContain('Kế thừa');
   });
+
+  it('fails closed until the catalog is ready and there is a valid change', () => {
+    expect(editor).toContain('onCatalogChange');
+    expect(userModal).toContain('!authorizationCatalog');
+    expect(userModal).toContain('!authorizationChanged');
+    expect(userModal).toContain('authorizationIssues.length > 0');
+  });
 });
