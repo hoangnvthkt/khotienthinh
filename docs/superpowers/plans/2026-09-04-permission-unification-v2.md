@@ -514,9 +514,29 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 **Observation reset:** migration Cloud Task 12.2 đã áp dụng ngày `2026-09-11`, nhưng cửa sổ quan sát mới chưa bắt đầu cho đến khi frontend checkpoint này được phát hành và xác nhận persona thực tế.
 
+### Task 12.3: Khôi phục phạm vi “Chấm công của tôi”
+
+**Files:**
+- Create via CLI: `_authorization_v2_task12_3_restore_own_attendance_scope.sql`
+- Create: `supabase/tests/authorization_v2_task12_3_attendance_scope_smoke.sql`
+- Create: `lib/hrmAttendanceVisibility.ts`
+- Create: `lib/__tests__/hrmAttendanceVisibility.test.ts`
+- Create: `docs/security/authorization-v2-operating-model.md`
+- Modify: `pages/hrm/Attendance.tsx`
+
+- [x] **Step 1: Tái hiện regression** — tài khoản non-admin từ hai legacy HR profile view-only vẫn nhận `hrm.attendance.view/global`; UI đồng thời khởi tạo bảng từ toàn bộ nhân sự active.
+- [x] **Step 2: Sửa scope canonical** — đổi riêng `hrm.attendance.view` của template `LEGACY_HR_*` không có `edit/approve` từ `global` sang `own`; giữ nguyên operator, `HR`/`HR_MANAGE` và direct global grant hợp lệ.
+- [x] **Step 3: Defense-in-depth frontend** — bảng chấm công non-global chỉ lấy employee có `employees.user_id = current user.id`; xóa email fallback khỏi nhận diện hồ sơ hiện tại.
+- [x] **Step 4: Cloud preflight/apply/postflight** — rollback transaction và smoke RLS đạt; dry-run chỉ có migration `20260911041501`; Cloud main đã apply và ledger đồng bộ.
+- [ ] **Step 5: Release/persona** — phát hành frontend rồi xác nhận trực tiếp nhân viên thường chỉ thấy mình, HR/operator thấy toàn công ty và quyền sửa/duyệt không regression.
+
+**Kết quả Cloud:** 56/56 tài khoản non-admin active có `attendance.view/own`; chỉ 5 tài khoản non-admin vận hành còn `attendance.view/global`, đồng thời đúng 5 tài khoản đó có `attendance.edit/global`. Hai template view-only (49 assignment active) đã về `own`; hai template operator vẫn `global`. RLS smoke xác nhận persona thường không đọc được attendance của nhân sự khác.
+
+**Observation reset:** Task 13 tiếp tục bị chặn. Cửa sổ 7 ngày chỉ bắt đầu lại sau khi frontend Task 12.3 được phát hành và các persona Step 5 được xác nhận.
+
 ### Task 13: Drop legacy schema sau observation gate
 
-**Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.2; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.2 và không coi chương trình hoàn tất.
+**Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.3; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.3 và không coi chương trình hoàn tất.
 
 **Files:**
 - Create via CLI suffix: `_authorization_v2_phase6_drop_legacy_schema.sql`

@@ -44,7 +44,8 @@
     "20260911034954_authorization_v2_task12_2_reconcile_employee_links.sql",
     "20260911035404_authorization_v2_task12_2_payroll_template_source.sql",
     "20260911040011_authorization_v2_task12_2_harden_self_service_rpc_acl.sql",
-    "20260911040254_authorization_v2_task12_2_finalize_self_service_rpc_acl.sql"
+    "20260911040254_authorization_v2_task12_2_finalize_self_service_rpc_acl.sql",
+    "20260911041501_authorization_v2_task12_3_restore_own_attendance_scope.sql"
   ],
   "forbidIncludeAll": true
 }

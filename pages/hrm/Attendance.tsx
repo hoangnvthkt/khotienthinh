@@ -15,6 +15,10 @@ import {
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { canPerform } from '../../lib/permissions/permissionService';
+import {
+  canViewCompanyAttendance,
+  selectAttendanceEmployees,
+} from '../../lib/hrmAttendanceVisibility';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { attendanceProposalService } from '../../lib/attendanceProposalService';
 import { getApiErrorMessage } from '../../lib/apiError';
@@ -48,12 +52,16 @@ const getAttendancePhotos = (record: AttendanceRecord) => {
 const Attendance: React.FC = () => {
   const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
   useModuleData('hrm');
-  const canViewAllAttendance = canPerform(user, 'hrm.attendance.view');
+  const canViewAllAttendance = canViewCompanyAttendance(user);
   const canEditAttendance = canPerform(user, 'hrm.attendance.edit');
   const canApproveAttendance = canPerform(user, 'hrm.attendance.approve')
     || canPerform(user, 'hrm.attendance.approve', { scopeType: 'direct_reports', scopeId: '*' });
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
+  const currentEmployee = useMemo(
+    () => activeEmployees.find(employee => employee.userId === user.id),
+    [activeEmployees, user.id],
+  );
 
   // Month/Year picker
   const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth() + 1);
@@ -161,13 +169,13 @@ const Attendance: React.FC = () => {
 
   // Filter employees
   const filteredEmployees = useMemo(() => {
-    let list = activeEmployees;
+    let list = selectAttendanceEmployees(activeEmployees, user.id, canViewAllAttendance);
     if (filterSite) list = list.filter(e => e.constructionSiteId === filterSite);
     if (searchText) {
       list = list.filter(e => matchesSearchQueryMultiple([e.fullName, e.employeeCode], searchText));
     }
     return list;
-  }, [activeEmployees, filterSite, searchText]);
+  }, [activeEmployees, canViewAllAttendance, filterSite, searchText, user.id]);
 
   // Build lookup: employeeId + date -> record
   const recordMap = useMemo(() => {
@@ -597,11 +605,6 @@ const Attendance: React.FC = () => {
   };
 
   // ==================== ĐỀ XUẤT CHẤM CÔNG ====================
-
-  const currentEmployee = useMemo(() => employees.find(e => (
-    e.userId === user.id ||
-    e.email?.toLowerCase() === user.email?.toLowerCase()
-  )), [employees, user.email, user.id]);
 
   // Location options for proposal form
   const locationOptions = useMemo(() => {
