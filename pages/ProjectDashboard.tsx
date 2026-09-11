@@ -75,6 +75,7 @@ import { getProjectPermissionTemplateCodes, ROOM_MANAGED_MATERIAL_PO_PERMISSION_
 import type { ProjectFinanceWorkspaceTab } from '../lib/projectFinanceWorkspaceService';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { isActualCostExpenseTransaction } from '../lib/projectTransactionClassification';
+import { resolveProjectProgressDisplay, resolveProjectSiteState, type ProjectProgressLoadStatus } from '../lib/projectOperationalUxPolicy';
 import {
     BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Percent,
     Plus, Edit2, Trash2, X, Check, Save, ChevronDown, ChevronLeft, ChevronRight, FileText,
@@ -429,7 +430,7 @@ const ProjectDashboard: React.FC = () => {
     const {
         hrmConstructionSites, projectFinances, addProjectFinance, updateProjectFinance, removeProjectFinance,
         projectTransactions, addProjectTransaction, addProjectTransactions, updateProjectTransaction, removeProjectTransaction,
-        user, users, employees, hrmPositions
+        user, users, employees, hrmPositions, moduleLoadState, moduleLoadErrors, loadModuleData
     } = useApp();
     const toast = useToast();
     const { canManage, isAdmin } = usePermission();
@@ -464,6 +465,7 @@ const ProjectDashboard: React.FC = () => {
     const [editingTx, setEditingTx] = useState<ProjectTransaction | null>(null);
     const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
     const [taskProgressBySite, setTaskProgressBySite] = useState<Record<string, { progressPercent: number; leafTaskCount: number }>>({});
+    const [taskProgressStatus, setTaskProgressStatus] = useState<ProjectProgressLoadStatus>('idle');
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
@@ -820,9 +822,10 @@ const ProjectDashboard: React.FC = () => {
         project.constructionSiteId ? hrmConstructionSites.find(site => site.id === project.constructionSiteId) || null : null;
 
     const getProjectFinance = (project: Project) => {
-        const site = getProjectSite(project);
         return projectFinances.find(finance => finance.projectId === project.id) ||
-            (site ? projectFinances.find(finance => finance.constructionSiteId === site.id) || null : null);
+            (project.constructionSiteId
+                ? projectFinances.find(finance => finance.constructionSiteId === project.constructionSiteId) || null
+                : null);
     };
 
     const getProjectAggregated = (project: Project) => {
@@ -839,7 +842,14 @@ const ProjectDashboard: React.FC = () => {
         const finance = getProjectFinance(project);
         const site = getProjectSite(project);
         const agg = getProjectAggregated(project);
-        const progress = finance ? getDisplayProgress(finance) : (project.progressCalculationMode === 'manual' ? Number(project.manualProgressPercent || 0) : 0);
+        const progressDisplay = resolveProjectProgressDisplay({
+            mode: project.progressCalculationMode || 'gantt_weighted',
+            taskStatus: moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus,
+            taskProgress: project.constructionSiteId ? taskProgressBySite[project.constructionSiteId]?.progressPercent : undefined,
+            financeProgress: finance?.progressPercent,
+            manualProgress: project.manualProgressPercent,
+        });
+        const progress = progressDisplay.percent ?? 0;
         const contractValue = getEffectiveContractValue(finance, project.id, site?.id || project.constructionSiteId);
         return {
             site,
@@ -850,6 +860,7 @@ const ProjectDashboard: React.FC = () => {
             contractValue,
             profit: contractValue - agg.totalExpense,
             progress,
+            progressDisplay,
         };
     };
 
@@ -1025,15 +1036,18 @@ const ProjectDashboard: React.FC = () => {
     useEffect(() => {
         if (!isSupabaseConfigured) {
             setTaskProgressBySite({});
+            setTaskProgressStatus('loaded');
             return;
         }
         const siteIds = Array.from(new Set(projectFinances.map(p => p.constructionSiteId).filter(Boolean)));
         if (siteIds.length === 0) {
             setTaskProgressBySite({});
+            setTaskProgressStatus(moduleLoadState.da === 'loaded' ? 'loaded' : 'idle');
             return;
         }
 
         let cancelled = false;
+        setTaskProgressStatus('loading');
         taskService.listBySites(siteIds)
             .then(allTasks => {
                 if (cancelled) return;
@@ -1048,11 +1062,16 @@ const ProjectDashboard: React.FC = () => {
                     }
                 }
                 setTaskProgressBySite(next);
+                setTaskProgressStatus('loaded');
             })
-            .catch(console.error);
+            .catch(error => {
+                if (cancelled) return;
+                console.error(error);
+                setTaskProgressStatus('error');
+            });
 
         return () => { cancelled = true; };
-    }, [financeSiteKey, projectFinances]);
+    }, [financeSiteKey, moduleLoadState.da, projectFinances]);
 
     const getProjectMetaChips = (project: Project): { label: string; tone: string }[] => {
         const group = project.projectGroupId ? projectGroupMap.get(project.projectGroupId) : undefined;
@@ -2962,7 +2981,12 @@ const ProjectDashboard: React.FC = () => {
     // ========== OVERVIEW (project detail) ==========
     const renderOverview = () => {
         if (!selectedProject) return null;
-        const hasSiteLink = Boolean(effectiveSiteId && selectedSite);
+        const siteState = resolveProjectSiteState({
+            constructionSiteId: effectiveSiteId,
+            siteResolved: Boolean(selectedSite),
+            moduleStatus: moduleLoadState.da,
+        });
+        const hasSiteScope = siteState.hasSiteScope;
         const financeForRender = selectedFinance || (effectiveSiteId ? emptyFinance(effectiveSiteId) : null);
         const aggForRender = selectedAgg || {
             actualMaterials: 0,
@@ -2984,12 +3008,19 @@ const ProjectDashboard: React.FC = () => {
         const estimatedMarginPct = contractValue > 0 ? (estimatedMargin / contractValue * 100) : 0;
         const budgetUsed = totalBudget > 0 ? (aggForRender.totalExpense / totalBudget * 100) : 0;
         const statusKey = financeForRender?.status || selectedProject.status || 'planning';
-        const displayProgress = financeForRender ? getDisplayProgress(financeForRender) : 0;
+        const progressDisplay = resolveProjectProgressDisplay({
+            mode: selectedProject.progressCalculationMode || 'gantt_weighted',
+            taskStatus: moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus,
+            taskProgress: effectiveSiteId ? taskProgressBySite[effectiveSiteId]?.progressPercent : undefined,
+            financeProgress: selectedFinance?.progressPercent,
+            manualProgress: selectedProject.manualProgressPercent,
+        });
+        const displayProgress = progressDisplay.percent ?? 0;
         const metaChips = getProjectMetaChips(selectedProject);
         const endDateTime = selectedProject.endDate ? new Date(selectedProject.endDate).getTime() : 0;
-        const isScheduleLate = Boolean(endDateTime && endDateTime < Date.now() && displayProgress < 100);
+        const isScheduleLate = Boolean(progressDisplay.state === 'ready' && endDateTime && endDateTime < Date.now() && displayProgress < 100);
         const attentionItems = [
-            !hasSiteLink ? {
+            siteState.state === 'unlinked' ? {
                 id: 'site',
                 title: 'Chưa liên kết công trường HRM',
                 message: 'Một số tab vận hành sẽ chưa tải đủ dữ liệu cho tới khi dự án có công trường.',
@@ -3017,7 +3048,7 @@ const ProjectDashboard: React.FC = () => {
                 tone: 'danger' as const,
                 tab: 'cashflow' as ProjectOverviewTabKey,
             } : null,
-            contractValue > 0 && aggForRender.totalExpense / contractValue * 100 > displayProgress + 20 ? {
+            progressDisplay.state === 'ready' && contractValue > 0 && aggForRender.totalExpense / contractValue * 100 > displayProgress + 20 ? {
                 id: 'cost-progress',
                 title: 'Chi phí đi nhanh hơn tiến độ',
                 message: 'Tỷ lệ chi phí trên hợp đồng cao hơn tiến độ thực hiện trên 20 điểm phần trăm.',
@@ -3037,6 +3068,33 @@ const ProjectDashboard: React.FC = () => {
                 <p className="text-xs text-slate-400 mt-1">Bấm "Dự án" để chọn công trường đã tạo tại HrmConstructionSite.</p>
             </div>
         );
+        const renderSiteMetadataStatus = () => {
+            if (siteState.state === 'loading') {
+                return (
+                    <div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300">
+                        <Loader2 size={14} className="animate-spin" /> Đang tải thông tin công trường. Dữ liệu dự án sẽ tự cập nhật khi tải xong.
+                    </div>
+                );
+            }
+            if (siteState.state === 'error') {
+                return (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                        <span>Không tải được thông tin công trường: {moduleLoadErrors.da || 'Lỗi kết nối dữ liệu.'}</span>
+                        <button type="button" onClick={() => void loadModuleData('da', true)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 text-red-700 hover:bg-red-100 dark:bg-slate-950">
+                            <RefreshCcw size={12} /> Thử lại
+                        </button>
+                    </div>
+                );
+            }
+            if (siteState.state === 'unavailable') {
+                return (
+                    <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                        Dự án đã liên kết công trường nhưng chưa đọc được tên công trường. Các tab vẫn dùng đúng mã liên kết của dự án.
+                    </div>
+                );
+            }
+            return null;
+        };
         const projectTransactionsForScope = projectTransactions.filter(t => matchesProjectScope(t, selectedProject.id, effectiveSiteId));
         const routeParams = new URLSearchParams(location.search);
         const routeTab = routeParams.get('tab');
@@ -3093,7 +3151,7 @@ const ProjectDashboard: React.FC = () => {
                                     <Edit2 size={12} /> Sửa
                                 </button>
                             )}
-                            {hasSiteLink && (
+                            {hasSiteScope && (
                                 <>
                                     {canManageCashflowTab && (
                                         <>
@@ -3122,14 +3180,21 @@ const ProjectDashboard: React.FC = () => {
                             )}
 
                             <StatusBadge status={statusKey} label={STATUS_CONFIG[statusKey]?.label || statusKey} size="sm" />
-                            <div className="text-sm font-black text-teal-700 dark:text-teal-400 shrink-0">{displayProgress}%</div>
+                            <div className="text-sm font-black text-teal-700 dark:text-teal-400 shrink-0">
+                                {progressDisplay.state === 'ready' ? `${displayProgress}%` : progressDisplay.label}
+                            </div>
                         </div>
                     </div>
 
                     <div className="mt-2 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-teal-700 dark:bg-teal-500 rounded-full transition-all duration-700" style={{ width: `${displayProgress}%` }} />
+                        <div
+                            className={`h-full bg-teal-700 dark:bg-teal-500 rounded-full transition-all duration-700 ${progressDisplay.state === 'loading' ? 'animate-pulse' : ''}`}
+                            style={{ width: progressDisplay.state === 'loading' ? '30%' : `${displayProgress}%` }}
+                        />
                     </div>
                 </div>
+
+                {renderSiteMetadataStatus()}
 
                 {attentionItems.length > 0 && (
                     <section className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4 dark:border-orange-900/40 dark:bg-orange-950/20">
@@ -3183,7 +3248,7 @@ const ProjectDashboard: React.FC = () => {
                             <p className="text-xs text-slate-400 mt-1">Admin có thể cấp quyền tại Cài đặt → Phân quyền module → DA - Dự án.</p>
                         </div>
                     ) : overviewTab === 'executive' ? (
-                        hasSiteLink ? (
+                        hasSiteScope ? (
                             <ExecutiveTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
                         ) : renderSiteRequired('Điều hành')
                     ) : overviewTab === 'org' ? (
@@ -3191,7 +3256,7 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'permissions' ? (
                         <ProjectPermissionsTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
                     ) : overviewTab === 'finance' ? (
-                        hasSiteLink ? (
+                        hasSiteScope ? (
                             <ProjectFinanceWorkspace
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
@@ -3203,7 +3268,7 @@ const ProjectDashboard: React.FC = () => {
                             />
                         ) : renderSiteRequired('Tài chính')
                     ) : overviewTab === 'cashflow' ? (
-                        hasSiteLink ? (
+                        hasSiteScope ? (
                             <CashFlowTab
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
@@ -3220,7 +3285,7 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'dailylog' ? (
                         <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
                     ) : overviewTab === 'payment' ? (
-                        hasSiteLink ? (
+                        hasSiteScope ? (
                             <PaymentWorkbenchTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} canManageTab={canManageProjectTab('payment')} />
                         ) : renderSiteRequired('Nghiệm thu & Thanh toán')
                     ) : overviewTab === 'subcontract' ? (
@@ -3240,7 +3305,7 @@ const ProjectDashboard: React.FC = () => {
                             materialPermissions={materialTabPermissions}
                         />
                     ) : overviewTab === 'report' ? (
-                        hasSiteLink ? (
+                        hasSiteScope ? (
                             <ReportTab
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
@@ -3652,7 +3717,7 @@ const ProjectDashboard: React.FC = () => {
                                                     <div>
                                                         <div className="flex items-center justify-between gap-2 mb-3">
                                                             <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
-                                                            <span className="font-semibold text-xs text-teal-700 dark:text-teal-400">Tiến độ: {metrics.progress}%</span>
+                                                            <span className="font-semibold text-xs text-teal-700 dark:text-teal-400">{metrics.progressDisplay.label}</span>
                                                         </div>
 
                                                         <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors line-clamp-2">
@@ -3689,7 +3754,7 @@ const ProjectDashboard: React.FC = () => {
                                                 >
                                                     <div className="flex items-center justify-between gap-2 mb-2">
                                                         <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
-                                                        <span className="text-xs text-teal-700 dark:text-teal-400 font-bold">Tiến độ: {metrics.progress}%</span>
+                                                        <span className="text-xs text-teal-700 dark:text-teal-400 font-bold">{metrics.progressDisplay.label}</span>
                                                     </div>
                                                     <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{project.name}</h3>
                                                     <div className="mt-3 flex items-center justify-end border-t border-zinc-100 dark:border-zinc-800 pt-2 text-xs">
@@ -3742,7 +3807,7 @@ const ProjectDashboard: React.FC = () => {
                                         <div>
                                             <div className="flex items-center justify-between gap-2 mb-3">
                                                 <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
-                                                <span className="font-semibold text-xs text-teal-700 dark:text-teal-400">Tiến độ: {metrics.progress}%</span>
+                                                <span className="font-semibold text-xs text-teal-700 dark:text-teal-400">{metrics.progressDisplay.label}</span>
                                             </div>
 
                                             <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors line-clamp-2">
@@ -3890,7 +3955,7 @@ const ProjectDashboard: React.FC = () => {
                                     <div key={project.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 gap-3 hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors group">
                                         <div className="flex items-start gap-3 flex-1 min-w-0">
                                             <div className="w-10 h-10 rounded-lg bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0 mt-0.5">
-                                                {site ? <HardHat size={18} /> : <Building2 size={18} />}
+                                                {project.constructionSiteId ? <HardHat size={18} /> : <Building2 size={18} />}
                                             </div>
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -3898,7 +3963,15 @@ const ProjectDashboard: React.FC = () => {
                                                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 font-bold shrink-0">{project.code}</span>
                                                 </div>
                                                 <div className="text-xs text-zinc-400 truncate mt-0.5">
-                                                    {site ? `Công trường: ${site.name}` : 'Chưa liên kết công trường HRM'}
+                                                    {site
+                                                        ? `Công trường: ${site.name}`
+                                                        : !project.constructionSiteId
+                                                            ? 'Chưa liên kết công trường HRM'
+                                                            : moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle'
+                                                                ? 'Đang tải thông tin công trường…'
+                                                                : moduleLoadState.da === 'error'
+                                                                    ? 'Không tải được thông tin công trường'
+                                                                    : 'Đã liên kết • chưa đọc được tên công trường'}
                                                     {project.clientName ? ` • ${project.clientName}` : ''}
                                                 </div>
                                             </div>
@@ -3906,7 +3979,7 @@ const ProjectDashboard: React.FC = () => {
 
                                         <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto">
                                             <StatusBadge status={status} label={STATUS_CONFIG[status]?.label || status} />
-                                            <span className="text-xs font-semibold text-teal-700 dark:text-teal-400">{metrics.progress}%</span>
+                                            <span className="text-xs font-semibold text-teal-700 dark:text-teal-400">{metrics.progressDisplay.label}</span>
                                             <button
                                                 onClick={() => openProjectDetail(project)}
                                                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 shadow-sm transition-colors"

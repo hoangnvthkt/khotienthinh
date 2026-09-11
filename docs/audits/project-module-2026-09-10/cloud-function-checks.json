@@ -1,0 +1,9 @@
+[
+  {
+    "audit": {
+      "ledger_uses_supplied_price": true,
+      "reject_has_dependency_check": true,
+      "return_has_dependency_check": false
+    }
+  }
+]

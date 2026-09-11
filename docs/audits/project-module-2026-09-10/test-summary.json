@@ -1,0 +1,567 @@
+{
+  "initial_including_worktrees": {
+    "numTotalTests": 11956,
+    "numPassedTests": 11913,
+    "numFailedTests": 43,
+    "numPendingTests": 0,
+    "success": false,
+    "files": 2513,
+    "failed_files": [
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/materialIssueRecipientSourceMigration.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "material issue recipient source migration stores recipient source inside the security-definer create RPC",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:16:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          },
+          {
+            "name": "material issue recipient source migration preserves table least privilege and grants only the new RPC signature",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:25:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/openingBalanceSnapshotRetryMigration.contract.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/supabase/migrations/20260808080743_weekly_progress_period_state.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(16) ]\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/phase5PermissionHardening.test.ts:73:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/poActualReceiptMigration.test.ts",
+        "message": "PO actual receipt migration file not found",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/poDeliveryCancelFulfillmentSyncMigration.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/supabase/migrations/20260826094218_fix_po_delivery_cancel_fulfillment_sync.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/requestTemplateRouteContract.test.ts:16:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "weekly progress Opening Balance preflight migration contract defines an authenticated non-mutating preflight that validates actor, scope, lock, and payload",
+            "messages": [
+              "Error: ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/supabase/migrations/20260808080743_weekly_progress_period_state.sql'\n    at Object.readFileSync (node:fs:439:20)\n    at /Users/admin/khotienthinh/lib/__tests__/setupMigrationArchive.ts:43:10\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts:8:17\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/request-approval-phase1/lib/__tests__/materialRequestRoomCapabilityContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "material-request Room capability alignment allows the material-request Room submit action to unlock creation in the UI",
+            "messages": [
+              "AssertionError: expected 'import { useEffect, useMemo, useState…' to contain 'projectPermissionRoomService.hasAction'\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/materialRequestRoomCapabilityContract.test.ts:14:20\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/request-approval-phase1/lib/__tests__/permissionRegistry.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "permissionRegistry tracks the remaining legacy generic Project permission consumers during Phase 3 rollout",
+            "messages": [
+              "AssertionError: expected [ …(13) ] to deeply equal [ …(15) ]\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/permissionRegistry.test.ts:282:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/request-approval-phase1/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(15) ]\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/phase5PermissionHardening.test.ts:72:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/request-approval-phase1/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/request-approval-phase1/lib/__tests__/requestTemplateEditorPersistence.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template editor persistence saves draft changes without a stale optimistic concurrency token",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'requestTemplateService.saveDraft(toSa…'\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/requestTemplateEditorPersistence.test.ts:8:20\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          },
+          {
+            "name": "request template editor persistence refreshes the template token by saving before publishing",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'const saved = await requestTemplateSe…'\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/requestTemplateEditorPersistence.test.ts:13:20\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/request-approval-phase1/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/request-approval-phase1/lib/__tests__/requestTemplateRouteContract.test.ts:15:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/feat-safety-card-readiness/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(15) ]\n    at /Users/admin/khotienthinh/.worktrees/feat-safety-card-readiness/lib/__tests__/phase5PermissionHardening.test.ts:72:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/feat-safety-card-readiness/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/feat-safety-card-readiness/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/feat-safety-card-readiness/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/feat-safety-card-readiness/lib/__tests__/requestTemplateRouteContract.test.ts:16:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/materialIssueRecipientSourceMigration.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "material issue recipient source migration stores recipient source inside the security-definer create RPC",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:16:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          },
+          {
+            "name": "material issue recipient source migration preserves table least privilege and grants only the new RPC signature",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:25:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/openingBalanceSnapshotRetryMigration.contract.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/vioo-work-r1a/supabase/migrations/20260808080743_weekly_progress_period_state.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(16) ]\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/phase5PermissionHardening.test.ts:73:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/poActualReceiptMigration.test.ts",
+        "message": "PO actual receipt migration file not found",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/poDeliveryCancelFulfillmentSyncMigration.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/vioo-work-r1a/supabase/migrations/20260826094218_fix_po_delivery_cancel_fulfillment_sync.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/requestTemplateRouteContract.test.ts:16:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "weekly progress Opening Balance preflight migration contract defines an authenticated non-mutating preflight that validates actor, scope, lock, and payload",
+            "messages": [
+              "Error: ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/vioo-work-r1a/supabase/migrations/20260808080743_weekly_progress_period_state.sql'\n    at Object.readFileSync (node:fs:439:20)\n    at /Users/admin/khotienthinh/lib/__tests__/setupMigrationArchive.ts:43:10\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts:8:17\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/materialIssueRecipientSourceMigration.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "material issue recipient source migration stores recipient source inside the security-definer create RPC",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:16:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          },
+          {
+            "name": "material issue recipient source migration preserves table least privilege and grants only the new RPC signature",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:25:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/openingBalanceSnapshotRetryMigration.contract.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/supabase/migrations/20260808080743_weekly_progress_period_state.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(15) ]\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/phase5PermissionHardening.test.ts:72:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/poActualReceiptMigration.test.ts",
+        "message": "PO actual receipt migration file not found",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/poDeliveryCancelFulfillmentSyncMigration.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/supabase/migrations/20260826094218_fix_po_delivery_cancel_fulfillment_sync.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/requestTemplateRouteContract.test.ts:16:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "weekly progress Opening Balance preflight migration contract defines an authenticated non-mutating preflight that validates actor, scope, lock, and payload",
+            "messages": [
+              "Error: ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/supabase/migrations/20260808080743_weekly_progress_period_state.sql'\n    at Object.readFileSync (node:fs:439:20)\n    at /Users/admin/khotienthinh/lib/__tests__/setupMigrationArchive.ts:43:10\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts:8:17\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/materialIssueRecipientSourceMigration.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "material issue recipient source migration stores recipient source inside the security-definer create RPC",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:16:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          },
+          {
+            "name": "material issue recipient source migration preserves table least privilege and grants only the new RPC signature",
+            "messages": [
+              "AssertionError: expected undefined to be truthy\n    at migrationOrFail (/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:10:25)\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/materialIssueRecipientSourceMigration.test.ts:25:23\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/openingBalanceSnapshotRetryMigration.contract.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/supabase/migrations/20260808080743_weekly_progress_period_state.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(15) ]\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/phase5PermissionHardening.test.ts:72:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/poActualReceiptMigration.test.ts",
+        "message": "PO actual receipt migration file not found",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/poDeliveryCancelFulfillmentSyncMigration.test.ts",
+        "message": "ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/supabase/migrations/20260826094218_fix_po_delivery_cancel_fulfillment_sync.sql'",
+        "failures": []
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/requestTemplateRouteContract.test.ts:16:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "weekly progress Opening Balance preflight migration contract defines an authenticated non-mutating preflight that validates actor, scope, lock, and payload",
+            "messages": [
+              "Error: ENOENT: no such file or directory, open '/Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/supabase/migrations/20260808080743_weekly_progress_period_state.sql'\n    at Object.readFileSync (node:fs:439:20)\n    at /Users/admin/khotienthinh/lib/__tests__/setupMigrationArchive.ts:43:10\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/lib/__tests__/weeklyProgressMigration.preflight.contract.test.ts:8:17\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/material-issue-reversal-return/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "vehicle booking Phase 3 navigation keeps Sidebar and user permission configuration in sync",
+            "messages": [
+              "AssertionError: expected 'import React, { useEffect, useMemo, u…' to contain '/booking/vehicle/reports'\n    at /Users/admin/khotienthinh/.worktrees/material-issue-reversal-return/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts:66:22\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/perf02-query-remediation/lib/__tests__/phase5PermissionHardening.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Phase 5 permission hardening guards keeps legacy field access decisions confined to the Phase 5 readiness allowlist",
+            "messages": [
+              "AssertionError: expected [ …(3) ] to deeply equal [ 'components/Layout.tsx', …(16) ]\n    at /Users/admin/khotienthinh/.worktrees/perf02-query-remediation/lib/__tests__/phase5PermissionHardening.test.ts:73:35\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/perf02-query-remediation/lib/__tests__/projectRoomRecipientContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "Project Room recipient cutover routes BOQ review and BOQ variations to the BOQ reconciliation Room",
+            "messages": [
+              "AssertionError: expected 'import React, { useCallback, useEffec…' to contain 'ProjectRoomSubmissionDialog'\n    at /Users/admin/khotienthinh/.worktrees/perf02-query-remediation/lib/__tests__/projectRoomRecipientContract.test.ts:88:28\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/perf02-query-remediation/lib/__tests__/requestTemplateRouteContract.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "request template routes assigns the template permission to the new route",
+            "messages": [
+              "AssertionError: expected 'import {\\n  PermissionActionDefinitio…' to contain '[\\'/rq/templates\\']'\n    at /Users/admin/khotienthinh/.worktrees/perf02-query-remediation/lib/__tests__/requestTemplateRouteContract.test.ts:16:25\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/feat-safety-card-readiness/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "vehicle booking Phase 3 navigation keeps Sidebar and user permission configuration in sync",
+            "messages": [
+              "AssertionError: expected 'import React, { useEffect, useMemo, u…' to contain '/booking/vehicle/reports'\n    at /Users/admin/khotienthinh/.worktrees/feat-safety-card-readiness/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts:66:22\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/vioo-work-r1a/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "vehicle booking Phase 3 navigation keeps Sidebar and user permission configuration in sync",
+            "messages": [
+              "AssertionError: expected 'import React, { useEffect, useMemo, u…' to contain '/booking/vehicle/reports'\n    at /Users/admin/khotienthinh/.worktrees/vioo-work-r1a/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts:66:22\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-20260903/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "vehicle booking Phase 3 navigation keeps Sidebar and user permission configuration in sync",
+            "messages": [
+              "AssertionError: expected 'import React, { useEffect, useMemo, u…' to contain '/booking/vehicle/reports'\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-20260903/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts:66:22\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/supabase-cloud-baseline-integration/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "vehicle booking Phase 3 navigation keeps Sidebar and user permission configuration in sync",
+            "messages": [
+              "AssertionError: expected 'import React, { useEffect, useMemo, u…' to contain '/booking/vehicle/reports'\n    at /Users/admin/khotienthinh/.worktrees/supabase-cloud-baseline-integration/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts:66:22\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      },
+      {
+        "file": ".worktrees/perf02-query-remediation/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts",
+        "message": "",
+        "failures": [
+          {
+            "name": "vehicle booking Phase 3 navigation keeps Sidebar and user permission configuration in sync",
+            "messages": [
+              "AssertionError: expected 'import React, { useEffect, useMemo, u…' to contain '/booking/vehicle/reports'\n    at /Users/admin/khotienthinh/.worktrees/perf02-query-remediation/pages/booking/__tests__/vehicleBookingPhase3Navigation.test.ts:66:22\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)\n    at file:///Users/admin/khotienthinh/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "current_checkout": {
+    "numTotalTests": 1780,
+    "numPassedTests": 1780,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "files": 377,
+    "failed_files": []
+  }
+}

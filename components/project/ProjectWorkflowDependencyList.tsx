@@ -1,10 +1,13 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Link2 } from 'lucide-react';
 import { ProjectWorkflowRollbackDependencyResult } from '../../types';
+import { buildWorkflowDependencyUrl } from '../../lib/projectOperationalUxPolicy';
 
 interface Props {
   dependencies?: ProjectWorkflowRollbackDependencyResult | null;
   title?: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
 }
 
 const typeLabel: Record<string, string> = {
@@ -27,6 +30,8 @@ const statusLabel = (status?: string) => {
 const ProjectWorkflowDependencyList: React.FC<Props> = ({
   dependencies,
   title = 'Dependency downstream',
+  projectId,
+  constructionSiteId,
 }) => {
   if (!dependencies) return null;
 
@@ -39,20 +44,32 @@ const ProjectWorkflowDependencyList: React.FC<Props> = ({
           <div className="mt-0.5 text-[10px]">
             {dependencies.allowed
               ? 'Không còn chứng từ downstream đang hoạt động.'
-              : `Còn ${dependencies.activeCount} chứng từ đang hoạt động, cần reverse/cancel/return đủ trước khi rollback.`}
+              : `Còn ${dependencies.activeCount} chứng từ đang hoạt động. Mở từng chứng từ bên dưới và hoàn tất, hủy hoặc trả hàng theo đúng nghiệp vụ trước khi tiếp tục.`}
           </div>
           {dependencies.dependencies.length > 0 && (
             <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">
               {dependencies.dependencies.map((dependency, index) => {
                 const active = dependency.status === 'active';
+                const targetUrl = buildWorkflowDependencyUrl({ dependency, projectId, constructionSiteId });
                 return (
                   <div key={`${dependency.type}-${dependency.id || index}`} className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1 ${active ? 'border-red-100 bg-white/70' : 'border-white/80 bg-white/55'}`}>
                     <span className="inline-flex min-w-0 items-center gap-1">
                       <Link2 size={11} className="shrink-0" />
-                      <span className="truncate">{typeLabel[dependency.type] || dependency.type}</span>
-                      {dependency.id && <span className="truncate font-mono text-[9px] opacity-70">{dependency.id}</span>}
+                      <span className="truncate">{dependency.label || typeLabel[dependency.type] || dependency.type}</span>
+                      {!dependency.label && dependency.id && <span className="truncate font-mono text-[9px] opacity-70">{dependency.id}</span>}
                     </span>
-                    <span className={active ? 'text-red-700' : 'text-emerald-700'}>{statusLabel(dependency.status)}</span>
+                    <span className="inline-flex shrink-0 items-center gap-2">
+                      <span className={active ? 'text-red-700' : 'text-emerald-700'}>{statusLabel(dependency.status)}</span>
+                      {targetUrl && (
+                        <a
+                          href={targetUrl}
+                          className="inline-flex items-center gap-1 rounded-md border border-current px-1.5 py-0.5 hover:bg-white"
+                          title={`Mở ${dependency.label || 'PO liên quan'}`}
+                        >
+                          Mở PO <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </span>
                   </div>
                 );
               })}

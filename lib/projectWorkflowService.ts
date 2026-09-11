@@ -24,6 +24,9 @@ import {
 } from '../types';
 import { projectStaffService } from './projectStaffService';
 import { chunkValues } from './supabasePagination';
+import { mergeWorkflowDependencyLabels } from './projectOperationalUxPolicy';
+import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { getSupabaseOrderColumns } from './supabaseProjections';
 
 const SUBJECT_TABLE = 'workflow_subjects';
 const BINDING_TABLE = 'project_workflow_bindings';
@@ -566,7 +569,26 @@ export const projectWorkflowService = {
       p_subject_id: requestId,
     });
     if (error) throw error;
-    return (data || { allowed: true, activeCount: 0, dependencies: [] }) as ProjectWorkflowRollbackDependencyResult;
+    const result = (data || { allowed: true, activeCount: 0, dependencies: [] }) as ProjectWorkflowRollbackDependencyResult;
+    const purchaseOrderIds = result.dependencies
+      .filter(dependency => dependency.type === 'purchase_order' && dependency.id)
+      .map(dependency => dependency.id!);
+    if (purchaseOrderIds.length === 0) return result;
+
+    const { data: purchaseOrders, error: purchaseOrderError } = await fetchAllSupabaseRows(supabase
+      .from('purchase_orders')
+      .select('id, po_number')
+      .in('id', purchaseOrderIds), {
+        label: 'lib/projectWorkflowService.ts:getRollbackDependencies.purchaseOrders',
+        maxRows: 20_000,
+        orderBy: getSupabaseOrderColumns('purchase_orders'),
+      });
+    if (purchaseOrderError) return result;
+
+    return mergeWorkflowDependencyLabels(
+      result,
+      (purchaseOrders || []).map(order => ({ id: order.id, label: order.po_number || order.id })),
+    );
   },
 
   async rollbackCompletedMaterialRequestWorkflow(input: {

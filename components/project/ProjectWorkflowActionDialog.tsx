@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCcw, Send, Undo2, UserRound, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw, RotateCcw, Send, Undo2, UserRound, X, XCircle } from 'lucide-react';
 import {
   Employee,
   OrgUnit,
@@ -16,6 +16,7 @@ import { projectWorkflowService } from '../../lib/projectWorkflowService';
 import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
 import type { ProjectPermissionRoomCode, ProjectRoomActionCode } from '../../lib/permissions/projectPermissionRooms';
 import ProjectWorkflowDependencyList from './ProjectWorkflowDependencyList';
+import { getWorkflowActionErrorMessage, resolveWorkflowDependencyGate } from '../../lib/projectOperationalUxPolicy';
 
 interface Props {
   action: ProjectWorkflowAction;
@@ -83,6 +84,8 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rollbackDependencies, setRollbackDependencies] = useState<ProjectWorkflowRollbackDependencyResult | null>(null);
+  const [dependencyLoading, setDependencyLoading] = useState(action === 'rollback' || action === 'reject');
+  const [dependencyError, setDependencyError] = useState<string | null>(null);
   const [roomRecipientUserIds, setRoomRecipientUserIds] = useState<string[] | null>(null);
   const [loadingRoomRecipients, setLoadingRoomRecipients] = useState(false);
 
@@ -137,12 +140,30 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     return `Sau khi xác nhận, pool xử lý của bước "${targetNode?.label || currentNode?.label || 'hiện tại'}" được thay bằng người được chọn.`;
   })();
 
-  React.useEffect(() => {
+  const loadDependencies = React.useCallback(async () => {
     if (action !== 'rollback' && action !== 'reject') return;
-    projectWorkflowService.getRollbackDependencies(subject.subjectId)
-      .then(setRollbackDependencies)
-      .catch(err => setError(err?.message || 'Không kiểm tra được chứng từ downstream.'));
+    setDependencyLoading(true);
+    setDependencyError(null);
+    setRollbackDependencies(null);
+    try {
+      setRollbackDependencies(await projectWorkflowService.getRollbackDependencies(subject.subjectId));
+    } catch {
+      setDependencyError('Không kiểm tra được chứng từ liên quan. Vui lòng thử lại trước khi xác nhận.');
+    } finally {
+      setDependencyLoading(false);
+    }
   }, [action, subject.subjectId]);
+
+  React.useEffect(() => {
+    void loadDependencies();
+  }, [loadDependencies]);
+
+  const dependencyGate = resolveWorkflowDependencyGate({
+    action,
+    loading: dependencyLoading,
+    error: dependencyError,
+    dependencies: rollbackDependencies,
+  });
 
   React.useEffect(() => {
     if (!needsAssignee || (!recipientRoomCode && !resolvedRecipientAction)) {
@@ -186,8 +207,10 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
       setError('Vui lòng chọn đúng một người phụ trách tạo đợt cấp hoặc đặt mua.');
       return;
     }
-    if (action === 'rollback' && rollbackDependencies && !rollbackDependencies.allowed) {
-      setError('Rollback đang bị khóa vì còn chứng từ downstream chưa reverse.');
+    if (dependencyGate.blocked) {
+      setError(dependencyGate.state === 'blocked'
+        ? 'Cần xử lý xong chứng từ liên quan trước khi thực hiện thao tác này.'
+        : 'Chưa kiểm tra xong chứng từ liên quan. Vui lòng thử lại.');
       return;
     }
     setSubmitting(true);
@@ -205,7 +228,8 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
         comment: trimmed,
       });
     } catch (err: any) {
-      setError(err?.message || 'Không xử lý được workflow.');
+      setError(getWorkflowActionErrorMessage(err));
+      if (action === 'reject' || action === 'rollback') void loadDependencies();
       setSubmitting(false);
     }
   };
@@ -241,7 +265,24 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
             <ProjectWorkflowDependencyList
               dependencies={rollbackDependencies}
               title={action === 'rollback' ? 'Kiểm tra rollback' : 'Kiểm tra chứng từ liên quan'}
+              projectId={subject.projectId}
+              constructionSiteId={subject.constructionSiteId}
             />
+          )}
+
+          {(action === 'rollback' || action === 'reject') && dependencyLoading && (
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+              <Loader2 size={14} className="animate-spin" /> Đang kiểm tra chứng từ liên quan...
+            </div>
+          )}
+
+          {(action === 'rollback' || action === 'reject') && dependencyError && (
+            <div className="flex items-start justify-between gap-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+              <span className="flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0" />{dependencyError}</span>
+              <button type="button" onClick={() => void loadDependencies()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 hover:bg-red-100">
+                <RefreshCcw size={12} /> Thử lại
+              </button>
+            </div>
           )}
 
           {needsAssignee && assigneeNode && (
@@ -289,7 +330,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
           </button>
           <button
             onClick={submit}
-            disabled={submitting || loadingRoomRecipients || (action === 'rollback' && rollbackDependencies?.allowed === false)}
+            disabled={submitting || loadingRoomRecipients || dependencyGate.blocked}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {actionIcon[action]} {submitting ? 'Đang xử lý...' : 'Xác nhận'}

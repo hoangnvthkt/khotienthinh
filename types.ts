@@ -4143,6 +4143,7 @@ export interface ProjectWorkflowRollbackDependencyResult {
   dependencies: Array<{
     type: string;
     id?: string;
+    label?: string;
     status: 'active' | 'reversed' | 'cancelled' | 'returned' | 'void' | string;
     source?: string;
     relationType?: string;

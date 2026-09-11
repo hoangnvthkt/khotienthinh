@@ -1,0 +1,67 @@
+[
+  {
+    "audit": {
+      "balance_anomalies_by_warehouse_type": [
+        {
+          "archived": false,
+          "negative_qty": 9,
+          "positive_qty_negative_value": 0,
+          "warehouse_type": "GENERAL",
+          "zero_qty_nonzero_value": 1
+        },
+        {
+          "archived": false,
+          "negative_qty": 9,
+          "positive_qty_negative_value": 2,
+          "warehouse_type": "SITE",
+          "zero_qty_nonzero_value": 16
+        }
+      ],
+      "ledger_balance_quantity_disagreements": 0,
+      "ledger_uses_supplied_price": true,
+      "ledger_zero_price_site_by_event": [
+        {
+          "business_event_type": "project_return_receipt",
+          "n": 1
+        },
+        {
+          "business_event_type": "legacy_direct_receipt",
+          "n": 74
+        },
+        {
+          "business_event_type": "direct_supplier_receipt",
+          "n": 18
+        },
+        {
+          "business_event_type": "warehouse_loss",
+          "n": 1
+        },
+        {
+          "business_event_type": "inventory_adjustment",
+          "n": 1
+        },
+        {
+          "business_event_type": "warehouse_transfer",
+          "n": 55
+        },
+        {
+          "business_event_type": "supplier_return",
+          "n": 6
+        },
+        {
+          "business_event_type": "construction_issue",
+          "n": 60
+        },
+        {
+          "business_event_type": "legacy_direct_issue",
+          "n": 18
+        }
+      ],
+      "po_anomalies": null,
+      "reject_has_dependency_check": true,
+      "return_has_dependency_check": false,
+      "returned_request_active_po_count": 1,
+      "wms_vs_ledger_qty_disagreements": 20
+    }
+  }
+]

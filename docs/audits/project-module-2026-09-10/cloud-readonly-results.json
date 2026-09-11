@@ -1,0 +1,60 @@
+[
+  {
+    "audit": {
+      "active_po_link_to_rejected_workflow": 0,
+      "financial_po_relation": null,
+      "ledger_zero_price_by_type": {
+        "adjustment_out": 10,
+        "loss_issue": 25,
+        "project_issue": 90,
+        "purchase_receipt": 135,
+        "transfer_issue": 53,
+        "transfer_receipt": 53
+      },
+      "negative_inventory_balance": 18,
+      "payables_by_source": {
+        "purchase_delivery_receipt": 5,
+        "supplier_delivery_statement": 10
+      },
+      "po_status_counts": {
+        "confirmed": 12,
+        "delivered": 11,
+        "draft": 5,
+        "in_transit": 8,
+        "partial": 3,
+        "returned": 6,
+        "sent": 8
+      },
+      "positive_qty_negative_value": 2,
+      "project_site_duplicates": 0,
+      "projects_missing_site": 79,
+      "screenshot_po": {
+        "code": "PO-462",
+        "links": [
+          {
+            "allocation_status": "open",
+            "request_code": "MR-2026-9819",
+            "workflow_status": "RETURNED"
+          },
+          {
+            "allocation_status": "open",
+            "request_code": "MR-2026-9819",
+            "workflow_status": "RETURNED"
+          },
+          {
+            "allocation_status": "open",
+            "request_code": "MR-2026-9819",
+            "workflow_status": "RETURNED"
+          },
+          {
+            "allocation_status": "open",
+            "request_code": "MR-2026-9819",
+            "workflow_status": "RETURNED"
+          }
+        ],
+        "status": "in_transit"
+      },
+      "zero_qty_nonzero_value": 17
+    }
+  }
+]
