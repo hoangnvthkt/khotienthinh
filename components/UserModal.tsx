@@ -234,6 +234,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             directGrants={permissionGrants}
             originalDirectGrants={originalPermissionGrants}
             inheritedPermissionCodes={inheritedPermissionCodes}
+            effectivePermissionSources={userToEdit.authorizationSnapshot?.sources || userToEdit.effectivePermissionSources}
             roomActions={userToEdit.authorizationSnapshot?.roomActions}
             reason={authorizationReason}
             disabled={saving}

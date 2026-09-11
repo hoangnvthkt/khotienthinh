@@ -1,11 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardPaste, Copy, ExternalLink, Layers, ShieldCheck } from 'lucide-react';
-import { AuthorizationRoomAction, User, UserPermissionGrant } from '../../types';
-import { getPermissionApplications } from '../../lib/permissions/permissionRegistry';
-import { PermissionScope } from '../../lib/permissions/permissionTypes';
+import {
+  AuthorizationRoomAction,
+  EffectivePermissionSource,
+  User,
+  UserPermissionGrant,
+} from '../../types';
+import { listPermissionAdminCatalog } from '../../lib/permissions/permissionCatalogService';
+import { PermissionAdminCatalog, PermissionScope } from '../../lib/permissions/permissionTypes';
 import PermissionDiffPreview from './PermissionDiffPreview';
-import PermissionMatrix from './PermissionMatrix';
-import PermissionScopePicker from './PermissionScopePicker';
+import PermissionModuleEditor from './PermissionModuleEditor';
 import LegacyPermissionReadOnly from './LegacyPermissionReadOnly';
 
 interface AuthorizationEditorProps {
@@ -13,6 +17,7 @@ interface AuthorizationEditorProps {
   directGrants: readonly UserPermissionGrant[];
   originalDirectGrants: readonly UserPermissionGrant[];
   inheritedPermissionCodes: readonly string[];
+  effectivePermissionSources?: readonly EffectivePermissionSource[];
   roomActions?: readonly AuthorizationRoomAction[];
   reason: string;
   disabled?: boolean;
@@ -50,16 +55,31 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   directGrants,
   originalDirectGrants,
   inheritedPermissionCodes,
+  effectivePermissionSources = [],
   roomActions = [],
   reason,
   disabled = false,
   onDirectGrantsChange,
   onReasonChange,
 }) => {
-  const applications = useMemo(() => getPermissionApplications(), []);
-  const [applicationCode, setApplicationCode] = useState('all');
-  const [scope, setScope] = useState<PermissionScope>({ scopeType: 'global', scopeId: '*' });
+  const [catalog, setCatalog] = useState<PermissionAdminCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogReload, setCatalogReload] = useState(0);
   const [clipboard, setClipboard] = useState<AuthorizationClipboard | null>(() => readClipboard());
+  const inheritedSources = useMemo<EffectivePermissionSource[]>(() => {
+    if (effectivePermissionSources.length > 0) {
+      return effectivePermissionSources.filter(source => source.sourceType !== 'DIRECT');
+    }
+    return inheritedPermissionCodes.map(permissionCode => ({
+      permissionCode,
+      sourceType: 'INHERITED',
+      sourceLabel: 'nguồn hiện có',
+      scopeType: 'global',
+      scopeId: '*',
+      isBusinessApproval: false,
+      metadata: {},
+    }));
+  }, [effectivePermissionSources, inheritedPermissionCodes]);
   const projectRooms = useMemo(() => {
     const keys = new Set(roomActions.map(action => [
       action.projectId,
@@ -69,11 +89,27 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
     return { roomCount: keys.size, actionCount: roomActions.length };
   }, [roomActions]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setCatalog(null);
+    setCatalogError(null);
+    listPermissionAdminCatalog()
+      .then(nextCatalog => {
+        if (!cancelled) setCatalog(nextCatalog);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setCatalogError(error instanceof Error ? error.message : 'Không tải được danh mục phân quyền.');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [catalogReload]);
+
   const copyDirectGrants = () => {
     const payload: AuthorizationClipboard = {
       version: 2,
       copiedAt: new Date().toISOString(),
-      scope: { scopeType: scope.scopeType || 'global', scopeId: scope.scopeId || '*' },
+      scope: { scopeType: 'global', scopeId: '*' },
       directGrants: directGrants
         .filter(grant => grant.isActive !== false)
         .map(grant => ({
@@ -90,7 +126,6 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   const pasteDirectGrants = () => {
     const payload = clipboard || readClipboard();
     if (!payload) return;
-    setScope(payload.scope);
     onDirectGrantsChange(payload.directGrants.map((grant, index) => ({
       id: `clipboard-${index}-${grant.permissionCode}`,
       userId: targetUser.id,
@@ -109,18 +144,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
           <Layers size={14} /> Quyền truy cập module
         </div>
         <p className="mt-1 text-[10px] text-slate-500">
-          Module shell được suy ra từ capability hiệu lực; chọn ứng dụng để thu gọn ma trận bên dưới.
+          Tích Module để tự chọn toàn bộ quyền Xem hợp lệ; mở chi tiết khi cần điều chỉnh từng phân hệ.
         </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" onClick={() => setApplicationCode('all')} className={`rounded-full border px-3 py-1 text-[10px] font-black ${applicationCode === 'all' ? 'border-blue-300 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-500'}`}>
-            Tất cả
-          </button>
-          {applications.map(application => (
-            <button key={application.code} type="button" onClick={() => setApplicationCode(application.code)} className={`rounded-full border px-3 py-1 text-[10px] font-black ${applicationCode === application.code ? 'border-blue-300 bg-blue-600 text-white' : 'border-slate-200 bg-white text-slate-500'}`}>
-              {application.label}
-            </button>
-          ))}
-        </div>
       </section>
 
       <section className="space-y-3">
@@ -140,16 +165,34 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
             </button>
           </div>
         </div>
-        <PermissionScopePicker value={scope} onChange={setScope} />
-        <PermissionMatrix
-          grants={directGrants}
-          inheritedPermissionCodes={inheritedPermissionCodes}
-          applicationCodes={applicationCode === 'all' ? undefined : [applicationCode]}
-          targetUserId={targetUser.id}
-          scope={scope}
-          disabled={disabled}
-          onChange={onDirectGrantsChange}
-        />
+        {!catalog && !catalogError && (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm font-semibold text-slate-500">
+            Đang tải danh mục phân quyền…
+          </div>
+        )}
+        {catalogError && (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+            <p className="font-bold">Không tải được danh mục phân quyền</p>
+            <p className="mt-1">{catalogError}</p>
+            <button
+              type="button"
+              onClick={() => setCatalogReload(value => value + 1)}
+              className="mt-2 min-h-10 rounded-lg border border-rose-300 bg-white px-3 font-bold"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+        {catalog && (
+          <PermissionModuleEditor
+            catalog={catalog}
+            grants={directGrants}
+            inheritedSources={inheritedSources}
+            targetUserId={targetUser.id}
+            disabled={disabled}
+            onChange={onDirectGrantsChange}
+          />
+        )}
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>
 

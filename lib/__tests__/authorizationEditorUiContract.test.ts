@@ -6,7 +6,8 @@ const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const userModal = read('components/UserModal.tsx');
 const editor = read('components/permissions/AuthorizationEditor.tsx');
 const legacy = read('components/permissions/LegacyPermissionReadOnly.tsx');
-const matrix = read('components/permissions/PermissionMatrix.tsx');
+const moduleEditor = read('components/permissions/PermissionModuleEditor.tsx');
+const moduleCard = read('components/permissions/PermissionModuleCard.tsx');
 
 describe('unified authorization editor UI contract', () => {
   it('removes both legacy editors and saves edits through the atomic V2 command', () => {
@@ -18,12 +19,11 @@ describe('unified authorization editor UI contract', () => {
     expect(userModal).not.toMatch(/setFormData\([^)]*(allowedModules|allowedSubModules|adminModules|adminSubModules)/s);
   });
 
-  it('presents module shell, scoped capabilities and Project Room status in one editor', () => {
+  it('presents module-first capabilities and Project Room status in one editor', () => {
     expect(editor).toContain('Quyền truy cập module');
-    expect(editor).toContain('Năng lực theo phạm vi');
     expect(editor).toContain('Phân quyền Room dự án');
-    expect(editor).toContain('PermissionScopePicker');
-    expect(editor).toContain('PermissionMatrix');
+    expect(editor).toContain('PermissionModuleEditor');
+    expect(editor).not.toContain('PermissionMatrix');
     expect(editor).toContain('PermissionDiffPreview');
   });
 
@@ -47,7 +47,7 @@ describe('unified authorization editor UI contract', () => {
   it('requires a reason and renders inherited authority as a non-editable badge', () => {
     expect(editor).toContain('Lý do thay đổi');
     expect(editor).toContain('required');
-    expect(matrix).toContain('Kế thừa');
-    expect(matrix).toContain('inherited && !explicit');
+    expect(moduleEditor).toContain('inheritedSources');
+    expect(moduleCard).toContain('Kế thừa');
   });
 });
