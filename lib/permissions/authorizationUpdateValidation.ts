@@ -37,6 +37,7 @@ interface ValidationInput {
   changed: boolean;
   reason: string;
   grants: readonly UserPermissionGrant[];
+  originalGrants?: readonly UserPermissionGrant[];
   catalog: PermissionAdminCatalog;
   now?: Date;
 }
@@ -68,10 +69,52 @@ const grantKey = (grant: UserPermissionGrant): string => [
   grant.scopeId || '*',
 ].join('::');
 
+const retainedGrantFingerprint = (grant: UserPermissionGrant): string => {
+  const parsedExpiry = grant.expiresAt ? Date.parse(grant.expiresAt) : Number.NaN;
+  const normalizedExpiry = grant.expiresAt && !Number.isNaN(parsedExpiry)
+    ? new Date(parsedExpiry).toISOString()
+    : grant.expiresAt || '';
+  return `${grantKey(grant)}::${normalizedExpiry}`;
+};
+
+export const getRetainedHiddenGrants = ({
+  grants,
+  originalGrants,
+  catalog,
+}: {
+  grants: readonly UserPermissionGrant[];
+  originalGrants: readonly UserPermissionGrant[];
+  catalog: PermissionAdminCatalog;
+}): UserPermissionGrant[] => {
+  const visiblePermissionCodes = new Set(catalogActions(catalog).keys());
+  const originalFingerprints = new Set(originalGrants
+    .filter(grant => grant.isActive !== false)
+    .map(retainedGrantFingerprint));
+  return grants.filter(grant =>
+    grant.isActive !== false
+    && !visiblePermissionCodes.has(grant.permissionCode)
+    && originalFingerprints.has(retainedGrantFingerprint(grant))
+  );
+};
+
+export const getCatalogEditableGrants = ({
+  grants,
+  catalog,
+}: {
+  grants: readonly UserPermissionGrant[];
+  catalog: PermissionAdminCatalog;
+}): UserPermissionGrant[] => {
+  const visiblePermissionCodes = new Set(catalogActions(catalog).keys());
+  return grants.filter(grant =>
+    grant.isActive !== false && visiblePermissionCodes.has(grant.permissionCode)
+  );
+};
+
 export const validateAuthorizationUpdate = ({
   changed,
   reason,
   grants,
+  originalGrants = [],
   catalog,
   now = new Date(),
 }: ValidationInput): AuthorizationValidationIssue[] => {
@@ -94,6 +137,9 @@ export const validateAuthorizationUpdate = ({
   }
 
   const actions = catalogActions(catalog);
+  const retainedOriginalFingerprints = new Set(originalGrants
+    .filter(grant => grant.isActive !== false)
+    .map(retainedGrantFingerprint));
   const seen = new Set<string>();
   grants.filter(grant => grant.isActive !== false).forEach(grant => {
     const key = grantKey(grant);
@@ -110,6 +156,7 @@ export const validateAuthorizationUpdate = ({
 
     const action = actions.get(grant.permissionCode);
     if (!action) {
+      if (retainedOriginalFingerprints.has(retainedGrantFingerprint(grant))) return;
       issues.push({
         code: 'unknown_permission',
         field: 'permissionCode',

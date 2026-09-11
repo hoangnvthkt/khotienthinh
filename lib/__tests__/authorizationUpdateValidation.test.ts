@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PermissionAdminCatalog } from '../permissions/permissionTypes';
 import {
+  getCatalogEditableGrants,
+  getRetainedHiddenGrants,
   mapAuthorizationRpcError,
   validateAuthorizationUpdate,
 } from '../permissions/authorizationUpdateValidation';
@@ -87,6 +89,81 @@ describe('authorization update validation', () => {
     });
     expect(issues).toContainEqual(expect.objectContaining({ code: 'duplicate_grant' }));
     expect(issues).toContainEqual(expect.objectContaining({ code: 'unknown_permission', permissionCode: 'unknown.view' }));
+  });
+
+  it('retains Hà\'s unchanged hidden shell grants while validating a new catalog grant', () => {
+    const retainedShellGrants = [
+      'system.da.view',
+      'system.hd.view',
+      'system.rq.manage',
+      'system.rq.view',
+      'system.ts.view',
+      'system.wf.manage',
+      'system.wf.view',
+      'system.wms.view',
+    ].map(permissionCode => ({ ...viewGrant, permissionCode }));
+    const issues = validateAuthorizationUpdate({
+      changed: true,
+      reason: 'Cấp quyền xem tài sản',
+      originalGrants: retainedShellGrants,
+      grants: [...retainedShellGrants, viewGrant],
+      catalog,
+      now,
+    });
+
+    expect(issues).toEqual([]);
+  });
+
+  it('still rejects a hidden shell grant when it is newly added or modified', () => {
+    const shellGrant = {
+      ...viewGrant,
+      permissionCode: 'system.ts.view',
+    };
+    const newGrantIssues = validateAuthorizationUpdate({
+      changed: true,
+      reason: 'Thử thêm quyền hệ thống',
+      originalGrants: [],
+      grants: [shellGrant],
+      catalog,
+      now,
+    });
+    const modifiedGrantIssues = validateAuthorizationUpdate({
+      changed: true,
+      reason: 'Thử sửa quyền hệ thống',
+      originalGrants: [shellGrant],
+      grants: [{ ...shellGrant, expiresAt: '2026-12-01T00:00:00.000Z' }],
+      catalog,
+      now,
+    });
+
+    expect(newGrantIssues).toContainEqual(expect.objectContaining({
+      code: 'unknown_permission',
+      permissionCode: 'system.ts.view',
+    }));
+    expect(modifiedGrantIssues).toContainEqual(expect.objectContaining({
+      code: 'unknown_permission',
+      permissionCode: 'system.ts.view',
+    }));
+  });
+
+  it('lists only unchanged hidden grants for read-only presentation', () => {
+    const retainedShell = { ...viewGrant, permissionCode: 'system.ts.view' };
+    const newlyPastedShell = { ...viewGrant, permissionCode: 'system.wms.view' };
+
+    expect(getRetainedHiddenGrants({
+      grants: [retainedShell, newlyPastedShell, viewGrant],
+      originalGrants: [retainedShell],
+      catalog,
+    })).toEqual([retainedShell]);
+  });
+
+  it('keeps hidden shell grants out of editable clipboard grants', () => {
+    const hiddenShell = { ...viewGrant, permissionCode: 'system.ts.view' };
+
+    expect(getCatalogEditableGrants({
+      grants: [hiddenShell, viewGrant],
+      catalog,
+    })).toEqual([viewGrant]);
   });
 
   it('maps PostgreSQL JSON details to an actionable command error', () => {

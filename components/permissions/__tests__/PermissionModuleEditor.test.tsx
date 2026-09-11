@@ -5,6 +5,7 @@ import { EffectivePermissionSource } from '../../../types';
 import { PermissionAdminCatalog, PermissionCatalogApplication } from '../../../lib/permissions/permissionTypes';
 import PermissionModuleCard from '../PermissionModuleCard';
 import { PermissionModuleEditorView } from '../PermissionModuleEditor';
+import RetainedPermissionGrantNotice from '../RetainedPermissionGrantNotice';
 
 const assetApplication: PermissionCatalogApplication = {
   code: 'asset',
@@ -68,6 +69,23 @@ const inheritedSources: EffectivePermissionSource[] = [{
 }];
 
 describe('PermissionModuleEditor', () => {
+  it('shows retained hidden grants as read-only system permissions', () => {
+    const html = renderToStaticMarkup(
+      <RetainedPermissionGrantNotice grants={[{
+        userId: 'user-1',
+        permissionCode: 'system.ts.view',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }]} />,
+    );
+
+    expect(html).toContain('Quyền hệ thống đang giữ lại');
+    expect(html).toContain('system.ts.view');
+    expect(html).toContain('Chỉ đọc');
+    expect(html).not.toContain('type="checkbox"');
+  });
+
   it('renders a compact collapsed Module card with a separate disclosure control', () => {
     const html = renderToStaticMarkup(
       <PermissionModuleCard

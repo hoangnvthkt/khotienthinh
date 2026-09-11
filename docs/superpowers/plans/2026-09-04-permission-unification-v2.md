@@ -556,6 +556,16 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 **Observation reset:** Task 13 tiếp tục bị chặn. Cửa sổ 7 ngày chỉ bắt đầu lại sau khi frontend Task 12.4 được phát hành và persona Admin/HR/nhân viên thường được xác nhận trên bản đó.
 
+### Task 12.4.1: Giữ nguyên quyền hệ thống ẩn khi lưu quyền canonical
+
+- [x] **Step 1: Tái hiện lỗi user Hà** — tám direct grant `system.*` cũ vẫn active và hợp lệ trên Cloud nhưng không thuộc catalog Module-first, khiến client gắn nhầm lỗi `unknown_permission` khi thêm Module Tài sản.
+- [x] **Step 2: Phân biệt quyền giữ lại và quyền cấp mới** — tuple ẩn đã tồn tại và không đổi được giữ nguyên, hiển thị chỉ đọc; quyền ẩn mới hoặc bị đổi scope/expiry vẫn bị chặn fail-closed.
+- [x] **Step 3: Chặn lan truyền qua clipboard** — chỉ sao chép quyền có trong catalog; khi dán, giữ quyền ẩn vốn có của user đích và loại quyền ẩn khỏi payload nguồn.
+- [x] **Step 4: Regression và tài liệu** — có ca kiểm thử đúng đủ tám quyền của Hà, ca thêm mới/chỉnh sửa bị từ chối, notice chỉ đọc và lọc clipboard. Checkpoint không có migration và không thay đổi dữ liệu Cloud.
+- [ ] **Step 5: Release/persona** — trên frontend đã phát hành, xác nhận Hà chọn Module Tài sản, lưu và reload thành công; tám quyền hệ thống cũ vẫn nguyên trạng và bundle Tài sản canonical xuất hiện đúng.
+
+**Kết quả dự kiến:** lỗi cảnh báo tám quyền không còn trong danh mục không chặn một thay đổi canonical hợp lệ, nhưng UI cũng không biến các shell grant đã ẩn thành cơ chế cấp quyền thứ hai. Task 13 tiếp tục chờ release, persona và observation gate.
+
 ### Task 13: Drop legacy schema sau observation gate
 
 **Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.3; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.3 và không coi chương trình hoàn tất.

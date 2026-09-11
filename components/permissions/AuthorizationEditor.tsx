@@ -8,10 +8,15 @@ import {
 } from '../../types';
 import { listPermissionAdminCatalog } from '../../lib/permissions/permissionCatalogService';
 import { PermissionAdminCatalog, PermissionScope } from '../../lib/permissions/permissionTypes';
-import { AuthorizationValidationIssue } from '../../lib/permissions/authorizationUpdateValidation';
+import {
+  AuthorizationValidationIssue,
+  getCatalogEditableGrants,
+  getRetainedHiddenGrants,
+} from '../../lib/permissions/authorizationUpdateValidation';
 import PermissionDiffPreview from './PermissionDiffPreview';
 import PermissionModuleEditor from './PermissionModuleEditor';
 import LegacyPermissionReadOnly from './LegacyPermissionReadOnly';
+import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
 interface AuthorizationEditorProps {
   targetUser: User;
@@ -93,6 +98,13 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
     ].join('::')));
     return { roomCount: keys.size, actionCount: roomActions.length };
   }, [roomActions]);
+  const retainedHiddenGrants = useMemo(() => catalog
+    ? getRetainedHiddenGrants({
+      grants: directGrants,
+      originalGrants: originalDirectGrants,
+      catalog,
+    })
+    : [], [catalog, directGrants, originalDirectGrants]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,12 +128,12 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   }, [catalogReload, onCatalogChange]);
 
   const copyDirectGrants = () => {
+    if (!catalog) return;
     const payload: AuthorizationClipboard = {
       version: 2,
       copiedAt: new Date().toISOString(),
       scope: { scopeType: 'global', scopeId: '*' },
-      directGrants: directGrants
-        .filter(grant => grant.isActive !== false)
+      directGrants: getCatalogEditableGrants({ grants: directGrants, catalog })
         .map(grant => ({
           permissionCode: grant.permissionCode,
           scopeType: grant.scopeType || 'global',
@@ -135,8 +147,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
 
   const pasteDirectGrants = () => {
     const payload = clipboard || readClipboard();
-    if (!payload) return;
-    onDirectGrantsChange(payload.directGrants.map((grant, index) => ({
+    if (!payload || !catalog) return;
+    const pastedGrants = payload.directGrants.map((grant, index) => ({
       id: `clipboard-${index}-${grant.permissionCode}`,
       userId: targetUser.id,
       permissionCode: grant.permissionCode,
@@ -144,7 +156,11 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
       scopeId: grant.scopeId,
       expiresAt: grant.expiresAt,
       isActive: true,
-    })));
+    }));
+    onDirectGrantsChange([
+      ...retainedHiddenGrants,
+      ...getCatalogEditableGrants({ grants: pastedGrants, catalog }),
+    ]);
   };
 
   return (
@@ -167,10 +183,10 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
             <p className="mt-1 text-[10px] text-slate-500">Chỉ direct grant được sửa; quyền kế thừa luôn hiển thị ở trạng thái khóa.</p>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={copyDirectGrants} disabled={disabled} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 disabled:opacity-50">
+            <button type="button" onClick={copyDirectGrants} disabled={disabled || !catalog} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 disabled:opacity-50">
               <Copy size={12} /> Sao chép direct grants
             </button>
-            <button type="button" onClick={pasteDirectGrants} disabled={disabled || !clipboard} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-black text-amber-700 disabled:opacity-50">
+            <button type="button" onClick={pasteDirectGrants} disabled={disabled || !catalog || !clipboard} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-black text-amber-700 disabled:opacity-50">
               <ClipboardPaste size={12} /> Dán grants + scope
             </button>
           </div>
@@ -194,14 +210,17 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
           </div>
         )}
         {catalog && (
-          <PermissionModuleEditor
-            catalog={catalog}
-            grants={directGrants}
-            inheritedSources={inheritedSources}
-            targetUserId={targetUser.id}
-            disabled={disabled}
-            onChange={onDirectGrantsChange}
-          />
+          <>
+            <RetainedPermissionGrantNotice grants={retainedHiddenGrants} />
+            <PermissionModuleEditor
+              catalog={catalog}
+              grants={directGrants}
+              inheritedSources={inheritedSources}
+              targetUserId={targetUser.id}
+              disabled={disabled}
+              onChange={onDirectGrantsChange}
+            />
+          </>
         )}
         {validationIssues.filter(issue => issue.field !== 'reason').length > 0 && (
           <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">

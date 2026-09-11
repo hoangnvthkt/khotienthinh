@@ -105,9 +105,10 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
       changed: authorizationChanged,
       reason: authorizationReason,
       grants: permissionGrants,
+      originalGrants: originalPermissionGrants,
       catalog: authorizationCatalog,
     })
-    : [], [authorizationCatalog, authorizationChanged, authorizationReason, permissionGrants, userToEdit]);
+    : [], [authorizationCatalog, authorizationChanged, authorizationReason, originalPermissionGrants, permissionGrants, userToEdit]);
 
   if (!isOpen) return null;
 
