@@ -215,3 +215,11 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Clipboard copy contains catalog-editable grants only. Paste preserves the target user's own unchanged hidden grants and discards hidden grants from the copied payload, preventing shell permissions from becoming a second assignment surface.
 - Selecting the canonical Asset Module can therefore add its reviewed view bundle without deleting or trying to re-author the target's transition-era shell grants. The atomic backend command remains authoritative and unchanged; no migration, Cloud write, grant backfill, or real-user mutation was needed for this checkpoint.
 - Targeted regression passed 5 files / 30 tests; full checkout regression passed 387 files / 1,852 tests. TypeScript lint, production build, migration baseline (43 active / 402 archived), query inventory check (0 findings), and `git diff --check` passed. Browser confirmation on the released frontend remains required before closing the persona gate.
+
+## Main integration checkpoint — 2026-09-11
+
+- The operator confirmed that adding and removing canonical Modules works after Task 12.4.1 and authorized merging the authorization branch and `vioo-work-r1a` into `main` for operational observation.
+- After fetching origin, local and remote `main` both pointed to `f12a4f4`. Worktree `vioo-work-r1a` was clean at `f109477`, already an ancestor of the authorization branch; `main` was also an ancestor. Integration therefore requires only a fast-forward, with no conflict resolution or repeat Work merge.
+- Previously uncommitted Project audit fixes F06/F07 and their evidence were captured separately in `6876ae9`. The authorization fix remains `c46f06f`. Local CLI cache changes are excluded from the release.
+- The combined checkout passed 387 files / 1,852 tests, TypeScript, production build, migration baseline (43 active / 402 archived), query inventory (zero findings), and whitespace checks. The existing build chunk-size warning remains.
+- This checkpoint publishes Git changes only; it does not apply another Cloud migration. Deployment completion and full Admin/HR/employee persona acceptance remain to be confirmed before dating the seven-day observation window. Task 12.4.2 awaits explicit operator approval after observation; Task 13 remains gated.
