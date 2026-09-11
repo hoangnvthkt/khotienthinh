@@ -49,49 +49,50 @@ create temporary table authorization_module_catalog_smoke_context (
 
 grant select on authorization_module_catalog_smoke_context to authenticated;
 
-do $$
-declare
-  v_admin_id uuid := gen_random_uuid();
-  v_admin_auth_id uuid := gen_random_uuid();
-  v_ordinary_id uuid := gen_random_uuid();
-  v_ordinary_auth_id uuid := gen_random_uuid();
-begin
-  insert into public.users (
-    id, auth_id, name, email, username, role, is_active, account_status
-  ) values
-    (
-      v_admin_id,
-      v_admin_auth_id,
-      'Authorization Module Catalog Admin',
-      'auth-module-catalog-admin-' || v_admin_id || '@invalid.local',
-      'auth-module-catalog-admin-' || v_admin_id,
-      'ADMIN',
-      true,
-      'ACTIVE'
-    ),
-    (
-      v_ordinary_id,
-      v_ordinary_auth_id,
-      'Authorization Module Catalog Ordinary',
-      'auth-module-catalog-ordinary-' || v_ordinary_id || '@invalid.local',
-      'auth-module-catalog-ordinary-' || v_ordinary_id,
-      'EMPLOYEE',
-      true,
-      'ACTIVE'
-    );
+insert into authorization_module_catalog_smoke_context
+select
+  admin_user.id,
+  admin_user.auth_id,
+  admin_user.email,
+  ordinary_user.id,
+  ordinary_user.auth_id,
+  ordinary_user.email
+from lateral (
+  select account.*
+  from public.users account
+  where account.auth_id is not null
+    and account.is_active
+    and account.account_status = 'ACTIVE'
+    and app_private.has_permission(
+      account.id,
+      'system.authorization.manage_grants',
+      'global',
+      '*'
+    )
+  order by account.id
+  limit 1
+) admin_user
+cross join lateral (
+  select account.*
+  from public.users account
+  where account.auth_id is not null
+    and account.is_active
+    and account.account_status = 'ACTIVE'
+    and not app_private.has_permission(
+      account.id,
+      'system.authorization.manage_grants',
+      'global',
+      '*'
+    )
+  order by account.id
+  limit 1
+) ordinary_user;
 
-  insert into authorization_module_catalog_smoke_context
-  select
-    admin_user.id,
-    v_admin_auth_id,
-    admin_user.email,
-    ordinary_user.id,
-    v_ordinary_auth_id,
-    ordinary_user.email
-  from public.users admin_user
-  cross join public.users ordinary_user
-  where admin_user.id = v_admin_id
-    and ordinary_user.id = v_ordinary_id;
+do $$
+begin
+  if (select count(*) from authorization_module_catalog_smoke_context) <> 1 then
+    raise exception 'AUTH_MODULE_CATALOG_CLOUD_PERSONAS_NOT_FOUND';
+  end if;
 end;
 $$;
 
