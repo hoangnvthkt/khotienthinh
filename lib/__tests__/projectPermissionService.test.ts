@@ -3,6 +3,7 @@ import { Role, User } from '../../types';
 import {
   canManageProjectTab,
   canPerformProjectAction,
+  canViewProjectMaterialTab,
   canViewProjectTab,
   checkProjectAction,
   getLegacyProjectCodesDerivedFromPermissionCodes,
@@ -181,5 +182,99 @@ describe('projectPermissionService', () => {
     expect(canViewProjectTab(scopedUser, 'quality', { projectId: 'project-2' })).toBe(false);
     expect(canViewProjectTab(canonicalUser, 'dailylog', { projectId: 'project-1' })).toBe(true);
     expect(canManageProjectTab(canonicalUser, 'org', { projectId: 'project-1' })).toBe(true);
+  });
+
+  it('uses authoritative Room view actions for Project tab navigation with strict scope isolation', () => {
+    const roomUser = user({
+      role: Role.ADMIN,
+      authorizationSnapshot: {
+        generatedAt: '2026-09-11T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [],
+        roomActions: [
+          {
+            projectId: 'project-1',
+            constructionSiteId: null,
+            roomCode: 'daily_log',
+            actionCode: 'view',
+            source: 'admin',
+            enforcement: 'enforced',
+            fallback: false,
+          },
+          {
+            projectId: 'project-1',
+            constructionSiteId: 'site-1',
+            roomCode: 'quality',
+            actionCode: 'view',
+            source: 'room',
+            enforcement: 'enforced',
+            fallback: false,
+          },
+          {
+            projectId: 'project-1',
+            constructionSiteId: null,
+            roomCode: 'payment',
+            actionCode: 'view',
+            source: 'room',
+            enforcement: 'enforced',
+            fallback: false,
+          },
+          {
+            projectId: 'project-1', constructionSiteId: null,
+            roomCode: 'gantt', actionCode: 'view', source: 'room', enforcement: 'enforced', fallback: false,
+          },
+          {
+            projectId: 'project-1', constructionSiteId: null,
+            roomCode: 'weekly_progress', actionCode: 'view', source: 'room', enforcement: 'enforced', fallback: false,
+          },
+          {
+            projectId: 'project-1', constructionSiteId: null,
+            roomCode: 'safety', actionCode: 'view', source: 'room', enforcement: 'enforced', fallback: false,
+          },
+        ],
+      },
+    });
+
+    expect(canViewProjectTab(roomUser, 'dailylog', { projectId: 'project-1', constructionSiteId: 'site-2' })).toBe(true);
+    expect(canViewProjectTab(roomUser, 'dailylog', { projectId: 'project-2', constructionSiteId: 'site-2' })).toBe(false);
+    expect(canViewProjectTab(roomUser, 'quality', { projectId: 'project-1', constructionSiteId: 'site-1' })).toBe(true);
+    expect(canViewProjectTab(roomUser, 'quality', { projectId: 'project-1', constructionSiteId: 'site-2' })).toBe(false);
+    expect(canViewProjectTab(roomUser, 'finance', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(roomUser, 'gantt', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(roomUser, 'weekly_progress', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(roomUser, 'safety', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(user({ role: Role.ADMIN }), 'dailylog', { projectId: 'project-1' })).toBe(false);
+  });
+
+  it('maps only active material Rooms to their governed material tabs', () => {
+    const roomUser = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-11T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [],
+        roomActions: [
+          {
+            projectId: 'project-1', constructionSiteId: null,
+            roomCode: 'material_planning', actionCode: 'view', source: 'room', enforcement: 'enforced', fallback: false,
+          },
+          {
+            projectId: 'project-1', constructionSiteId: null,
+            roomCode: 'material_request', actionCode: 'view', source: 'room', enforcement: 'enforced', fallback: false,
+          },
+          {
+            projectId: 'project-1', constructionSiteId: null,
+            roomCode: 'material_po', actionCode: 'view', source: 'room', enforcement: 'enforced', fallback: false,
+          },
+        ],
+      },
+    });
+
+    expect(canViewProjectTab(roomUser, 'material', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectMaterialTab(roomUser, 'boq', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectMaterialTab(roomUser, 'request', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectMaterialTab(roomUser, 'po', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectMaterialTab(roomUser, 'custom', { projectId: 'project-1' })).toBe(false);
+    expect(canViewProjectMaterialTab(roomUser, 'waste', { projectId: 'project-1' })).toBe(false);
+    expect(canViewProjectTab(roomUser, 'subcontract', { projectId: 'project-1' })).toBe(false);
   });
 });

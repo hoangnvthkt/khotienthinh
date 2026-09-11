@@ -73,6 +73,64 @@ describe('permissionService', () => {
     expect(canPerform(hrAdmin, 'hrm.employee.view_sensitive')).toBe(true);
   });
 
+  it('opens the HRM shell from active canonical view-like permissions without an admin bypass', () => {
+    const hrAdmin = user({
+      role: Role.ADMIN,
+      permissionGrants: [{
+        id: 'hr-manage-source',
+        userId: 'user-1',
+        permissionCode: 'hrm.employee.view_sensitive',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    });
+    const selfServiceUser = user({
+      permissionGrants: [{
+        id: 'hr-self-source',
+        userId: 'user-1',
+        permissionCode: 'hrm.employee.view_profile',
+        scopeType: 'own',
+        scopeId: 'user-1',
+        isActive: true,
+      }],
+    });
+
+    expect(canViewModule(hrAdmin, 'HRM')).toBe(true);
+    expect(canViewModule(selfServiceUser, 'HRM')).toBe(true);
+    expect(canViewModule(user({ role: Role.ADMIN, adminModules: ['HRM'] }), 'HRM')).toBe(false);
+    expect(canViewModule(user({
+      permissionGrants: [{
+        id: 'expired-hr-source',
+        userId: 'user-1',
+        permissionCode: 'hrm.employee.view_directory',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+        expiresAt: '2020-01-01T00:00:00.000Z',
+      }],
+    }), 'HRM')).toBe(false);
+  });
+
+  it('opens the Project shell for an effective Room view without requiring a duplicate canonical grant', () => {
+    expect(canViewModule(user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-11T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [],
+        roomActions: [{
+          projectId: 'project-1',
+          constructionSiteId: null,
+          roomCode: 'daily_log',
+          actionCode: 'view',
+          source: 'room',
+          enforcement: 'enforced',
+          fallback: false,
+        }],
+      },
+    }), 'DA')).toBe(true);
+  });
+
   it('does not let a technical admin open an HRM route without an effective HR permission', () => {
     expect(canViewRoute(user({ role: Role.ADMIN }), '/hrm/payroll')).toBe(false);
     expect(canViewRoute(user({

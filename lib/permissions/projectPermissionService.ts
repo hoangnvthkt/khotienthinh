@@ -14,6 +14,7 @@ import {
   PROJECT_TAB_MODULE_CODE_BY_KEY,
   type ProjectPermissionModuleCode,
 } from './projectPermissionRegistry';
+import type { ProjectPermissionRoomCode } from './projectPermissionRooms';
 import { PermissionScopeType } from './permissionTypes';
 import { evaluateCapability, hasRoomAction } from './authorizationEvaluator';
 import { getUserAuthorizationSnapshot } from './permissionService';
@@ -154,6 +155,38 @@ const getProjectManagePermissionCodes = (moduleCode: ProjectPermissionModuleCode
     .filter(action => action.action === 'manage' || action.permissionCode === 'project.org.grant_permissions')
     .map(action => action.permissionCode) || [];
 
+const PROJECT_TAB_ROOM_CODES_BY_KEY: Partial<Record<ProjectOverviewTabKey, readonly ProjectPermissionRoomCode[]>> = {
+  finance: ['quantity_acceptance', 'payment'],
+  gantt: ['gantt'],
+  weekly_progress: ['weekly_progress'],
+  dailylog: ['daily_log'],
+  material: ['material_planning', 'material_request', 'material_po'],
+  quality: ['quality'],
+  safety: ['safety'],
+  payment: ['payment'],
+};
+
+const PROJECT_MATERIAL_TAB_ROOM_CODE_BY_KEY: Partial<Record<ProjectMaterialTabKey, ProjectPermissionRoomCode>> = {
+  boq: 'material_planning',
+  request: 'material_request',
+  po: 'material_po',
+};
+
+const hasProjectRoomView = (
+  user: ProjectPermissionUser,
+  roomCodes: readonly ProjectPermissionRoomCode[] | undefined,
+  scopeInput: { projectId?: string; constructionSiteId?: string | null },
+): boolean => {
+  if (!scopeInput.projectId || !roomCodes) return false;
+  return roomCodes.some(roomCode => hasRoomAction(
+    getUserAuthorizationSnapshot(user),
+    scopeInput.projectId,
+    scopeInput.constructionSiteId,
+    roomCode,
+    'view',
+  ));
+};
+
 export const getProjectViewPermissionCodeForTab = (tabKey: ProjectOverviewTabKey): string | undefined =>
   getProjectViewPermissionCode(PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey]);
 
@@ -170,6 +203,7 @@ export const canViewProjectTab = (
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
   if (viewPermissionCode && hasProjectNavigationCapability(user, viewPermissionCode, scope)) return true;
   if (hasExplicitProjectViewGrantForRoute(user, PROJECT_TAB_ROUTE_BY_KEY[tabKey], scope)) return true;
+  if (hasProjectRoomView(user, PROJECT_TAB_ROOM_CODES_BY_KEY[tabKey], scopeInput)) return true;
 
   if (tabKey === 'finance') {
     return hasProjectViewCapabilityForRoutes(
@@ -194,6 +228,8 @@ export const canViewProjectMaterialTab = (
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
   if (viewPermissionCode && hasProjectNavigationCapability(user, viewPermissionCode, scope)) return true;
   if (hasExplicitProjectViewGrantForRoute(user, PROJECT_MATERIAL_TAB_ROUTE_BY_KEY[tabKey], scope)) return true;
+  const roomCode = PROJECT_MATERIAL_TAB_ROOM_CODE_BY_KEY[tabKey];
+  if (roomCode && hasProjectRoomView(user, [roomCode], scopeInput)) return true;
   return hasExplicitProjectViewGrantForRoute(user, PROJECT_TAB_ROUTE_BY_KEY.material, scope);
 };
 

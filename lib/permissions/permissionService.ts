@@ -10,7 +10,6 @@ import {
   getPermissionModuleByCode,
   getPermissionModules,
   getPermissionModulesByLegacyKey,
-  getPrimaryViewPermissionForModule,
 } from './permissionRegistry';
 import { PermissionScope } from './permissionTypes';
 import { evaluateCapability } from './authorizationEvaluator';
@@ -59,8 +58,20 @@ const scopeMatches = (grant: UserPermissionGrant, scope?: PermissionScope): bool
   return grant.scopeId === '*' || grant.scopeId === requested.scopeId;
 };
 
-const hasAnyActiveProjectGrant = (user: PermissionUser): boolean =>
-  Boolean(getUserAuthorizationSnapshot(user)?.sources.some(source => source.permissionCode.startsWith('project.')));
+const hasAnyActiveProjectGrant = (user: PermissionUser): boolean => {
+  const snapshot = getUserAuthorizationSnapshot(user);
+  if (!snapshot) return false;
+
+  const hasCanonicalProjectSource = snapshot.sources.some(source =>
+    source.permissionCode.startsWith('project.')
+    && evaluateCapability(snapshot, source.permissionCode, {
+      scopeType: source.scopeType,
+      scopeId: source.scopeId,
+    }).allowed
+  );
+
+  return hasCanonicalProjectSource || snapshot.roomActions.some(action => action.actionCode === 'view');
+};
 
 const isVehicleBookingModule = (moduleCodeOrLegacyKey: string): boolean =>
   moduleCodeOrLegacyKey === 'VEHICLE_BOOKING' || moduleCodeOrLegacyKey === 'resource_booking.vehicle';
@@ -156,9 +167,24 @@ export const canViewModule = (
 ): boolean => {
   if (isVehicleBookingModule(moduleCodeOrLegacyKey)) return Boolean(user);
   if (moduleCodeOrLegacyKey === 'DA' && hasAnyActiveProjectGrant(user)) return true;
-  const viewAction = getPrimaryViewPermissionForModule(moduleCodeOrLegacyKey);
-  if (viewAction) return canPerform(user, viewAction.permissionCode, scope);
-  return false;
+
+  const modules = getPermissionModuleByCode(moduleCodeOrLegacyKey)
+    ? [getPermissionModuleByCode(moduleCodeOrLegacyKey)!]
+    : getPermissionModulesByLegacyKey(moduleCodeOrLegacyKey);
+  const viewPermissionCodes = modules.flatMap(module => module.actions
+    .filter(action => action.action === 'view' || action.action === 'access' || action.action.startsWith('view_'))
+    .map(action => action.permissionCode));
+
+  if (scope) return viewPermissionCodes.some(permissionCode => canPerform(user, permissionCode, scope));
+
+  const snapshot = getUserAuthorizationSnapshot(user);
+  return Boolean(snapshot?.sources.some(source =>
+    viewPermissionCodes.includes(source.permissionCode)
+    && evaluateCapability(snapshot, source.permissionCode, {
+      scopeType: source.scopeType,
+      scopeId: source.scopeId,
+    }).allowed
+  ));
 };
 
 export const canManageMaster = (
