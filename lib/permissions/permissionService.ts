@@ -31,6 +31,7 @@ const HRM_TEMPLATE_ONLY_PERMISSIONS = new Set([
   'hrm.document.manage',
   'hrm.compensation.view',
   'hrm.compensation.manage',
+  'hrm.payroll.view',
   'hrm.payroll.manage',
   'hrm.payroll.export',
   'hrm.master_data.manage',
@@ -147,6 +148,27 @@ export const canPerform = (
   permissionCode,
   scope,
 ).allowed;
+
+const HRM_BUSINESS_ROLE_CODES = new Set(['HR', 'HR_MANAGE']);
+
+/** Mirrors app_private.has_hrm_template_permission for sensitive HRM surfaces. */
+export const canPerformHrmTemplatePermission = (
+  user: PermissionUser,
+  permissionCode: string,
+  scope: PermissionScope = DEFAULT_SCOPE,
+): boolean => {
+  const snapshot = getUserAuthorizationSnapshot(user);
+  if (!snapshot) return false;
+
+  return evaluateCapability({
+    ...snapshot,
+    sources: snapshot.sources.filter(source => {
+      const sourceType = source.sourceType.toUpperCase();
+      return (sourceType === 'ROLE' || sourceType === 'BUSINESS_ROLE')
+        && HRM_BUSINESS_ROLE_CODES.has((source.sourceCode || '').toUpperCase());
+    }),
+  }, permissionCode, scope).allowed;
+};
 
 /** The creation wizard can start for a global or source-scoped Workspace grant. */
 export const canStartWorkWorkspace = (user: PermissionUser): boolean => {

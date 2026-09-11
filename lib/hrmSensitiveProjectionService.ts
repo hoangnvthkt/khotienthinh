@@ -78,6 +78,11 @@ export const hrmSensitiveProjectionService = {
     return requireRows<PayrollRecord>(data, error, 'Không thể tải bảng lương.');
   },
 
+  async listMyPayrolls(): Promise<PayrollRecord[]> {
+    const { data, error } = await supabase.rpc('list_my_payrolls');
+    return requireRows<PayrollRecord>(data, error, 'Không thể tải phiếu lương cá nhân.');
+  },
+
   async listLaborContracts(): Promise<LaborContract[]> {
     const { data, error } = await supabase.rpc('list_hrm_labor_contracts');
     return requireRows<any>(data, error, 'Không thể tải hợp đồng lao động.').map(toLaborContract);

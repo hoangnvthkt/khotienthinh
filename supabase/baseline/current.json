@@ -39,7 +39,12 @@
     "20260910031856_authorization_v2_phase4_remaining_enforced_rooms.sql",
     "20260910033302_authorization_v2_phase5_legacy_grant_migration.sql",
     "20260910034121_authorization_v2_phase5_disable_legacy_fallback.sql",
-    "20260910034817_authorization_v2_phase6_disable_legacy_writes.sql"
+    "20260910034817_authorization_v2_phase6_disable_legacy_writes.sql",
+    "20260911034226_authorization_v2_task12_2_hrm_self_service_isolation.sql",
+    "20260911034954_authorization_v2_task12_2_reconcile_employee_links.sql",
+    "20260911035404_authorization_v2_task12_2_payroll_template_source.sql",
+    "20260911040011_authorization_v2_task12_2_harden_self_service_rpc_acl.sql",
+    "20260911040254_authorization_v2_task12_2_finalize_self_service_rpc_acl.sql"
   ],
   "forbidIncludeAll": true
 }

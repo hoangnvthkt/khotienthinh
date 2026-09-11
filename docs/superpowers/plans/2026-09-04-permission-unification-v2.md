@@ -490,9 +490,33 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 **Observation reset:** phát hiện regression persona làm observation window bắt đầu `2026-09-10 04:07 UTC` không còn đủ điều kiện cho Task 13. Cửa sổ tối thiểu 7 ngày chỉ bắt đầu lại sau khi commit Task 12.1 được phát hành lên frontend và Admin/HR Manage/Room member được xác nhận trên bản phát hành đó.
 
+### Task 12.2: Cô lập Check-in và self-service phiếu lương
+
+**Files:**
+- Create via CLI: `_authorization_v2_task12_2_hrm_self_service_isolation.sql`
+- Create via CLI: `_authorization_v2_task12_2_reconcile_employee_links.sql`
+- Create via CLI: `_authorization_v2_task12_2_payroll_template_source.sql`
+- Create via CLI: `_authorization_v2_task12_2_harden_self_service_rpc_acl.sql`
+- Create via CLI: `_authorization_v2_task12_2_finalize_self_service_rpc_acl.sql`
+- Create: `supabase/tests/authorization_v2_task12_2_hrm_self_service_isolation_smoke.sql`
+- Create: `pages/hrm/MyPayroll.tsx`
+- Modify: `pages/hrm/CheckIn.tsx`, `lib/checkInService.ts`, `lib/hrmSensitiveProjectionService.ts`
+- Modify: `App.tsx`, `context/AppContext.tsx`, `lib/routeAccess.ts`, `lib/permissions/permissionService.ts`
+
+- [x] **Step 1: Tái hiện coupling** — Check-in phụ thuộc batch HRM; một lỗi `list_hrm_payrolls()` có thể làm batch reject và khiến UI kết luận sai là không có hồ sơ.
+- [x] **Step 2: Tách Check-in** — `get_my_checkin_context()` không nhận employee ID, suy actor từ JWT và chỉ trả hồ sơ/attendance context của chính actor; route Check-in không chạy HRM warm-up.
+- [x] **Step 3: Tách phiếu lương cá nhân** — `/my-payroll` gọi RPC không tham số `list_my_payrolls()`, chỉ trả bản ghi `confirmed`/`paid` gắn với `employees.user_id` hiện tại; draft và dữ liệu người khác bị loại ở database.
+- [x] **Step 4: Đồng bộ payroll quản trị** — `hrm.payroll.view/manage` chỉ mở bề mặt quản trị khi nguồn quyền là role nghiệp vụ `HR`/`HR_MANAGE`; direct/legacy grant không còn kích hoạt batch payroll quản trị.
+- [x] **Step 5: Reconcile dữ liệu định danh** — chỉ backfill hai cặp account–employee email khớp duy nhất một-một; runtime tuyệt đối không dùng email fallback. Còn 13 account active chưa có hồ sơ employee tương ứng và được giữ ở trạng thái “chưa có hồ sơ” thay vì liên kết suy đoán.
+- [x] **Step 6: Cloud/test** — năm migration đã dry-run/apply tuần tự trên Cloud main; rollback smoke chứng minh non-HR bị chặn khỏi payroll quản trị, Check-in vẫn tải được, phiếu lương cá nhân không chéo người/không lộ draft, anon không gọi được public RPC và raw payroll không được nới quyền. Full checkout đạt 381 files / 1.814 tests; lint/build, migration baseline, query audit/check, `git diff --check`, Cloud DB lint và advisor scope Task 12.2 đều đạt.
+
+**Kết quả:** Check-in, payroll quản trị và phiếu lương cá nhân là ba luồng lỗi/quyền độc lập. Public self-service wrappers là `SECURITY INVOKER` với `search_path=''`; implementation `SECURITY DEFINER` nằm trong schema `app_private` không expose qua Data API và chỉ suy actor từ JWT. Không thay đổi quan hệ nghiệp vụ `employees.id → hrm_attendance/hrm_payrolls.employeeId`, công thức tính lương hoặc quy trình xác nhận/trả lương. 43 account non-admin đã liên kết được kiểm tra trên Cloud theo exact ownership; 13 account chưa có hồ sơ employee trả về context rỗng/payroll rỗng an toàn. Task 13 tiếp tục bị chặn cho tới khi frontend Task 12.2 được phát hành, persona được xác nhận và cửa sổ quan sát mới đủ 7 ngày.
+
+**Observation reset:** migration Cloud Task 12.2 đã áp dụng ngày `2026-09-11`, nhưng cửa sổ quan sát mới chưa bắt đầu cho đến khi frontend checkpoint này được phát hành và xác nhận persona thực tế.
+
 ### Task 13: Drop legacy schema sau observation gate
 
-**Observation gate:** tối thiểu 7 ngày sau Task 12 trên Cloud main; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12 và không coi chương trình hoàn tất.
+**Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.2; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.2 và không coi chương trình hoàn tất.
 
 **Files:**
 - Create via CLI suffix: `_authorization_v2_phase6_drop_legacy_schema.sql`

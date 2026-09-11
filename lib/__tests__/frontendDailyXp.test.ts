@@ -50,7 +50,7 @@ describe('frontend daily XP integration', () => {
 
     const persistedAt = source.indexOf('const saved = await checkInService.submit');
     const awardedAt = source.indexOf("xpService.awardDailyXP('daily_checkin', saved.id)");
-    const refreshedAt = source.indexOf("await loadModuleData('hrm', true)", persistedAt);
+    const refreshedAt = source.indexOf('await loadCheckInContext()', persistedAt);
 
     expect(source).toContain("xpService.awardDailyXP('daily_checkin', saved.id)");
     expect(source).not.toMatch(/award(?:Daily)?XP\(currentEmployee!?\.id\s*,?\s*['"]daily_checkin/);

@@ -56,6 +56,7 @@ const Employees = React.lazy(() => import('./pages/hrm/Employees'));
 const Attendance = React.lazy(() => import('./pages/hrm/Attendance'));
 const LeaveManagement = React.lazy(() => import('./pages/hrm/LeaveManagement'));
 const Payroll = React.lazy(() => import('./pages/hrm/Payroll'));
+const MyPayroll = React.lazy(() => import('./pages/hrm/MyPayroll'));
 const LaborContractPage = React.lazy(() => import('./pages/hrm/LaborContract'));
 const CheckIn = React.lazy(() => import('./pages/hrm/CheckIn'));
 const HrmReports = React.lazy(() => import('./pages/hrm/HrmReports'));
@@ -192,6 +193,7 @@ const AppRoutes: React.FC = () => {
           <Route path="work/tasks/:taskCode" element={<WorkPage />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="my-profile" element={<MyProfile />} />
+          <Route path="my-payroll" element={<MyPayroll />} />
           <Route path="employee-dashboard" element={<EmployeeDashboard />} />
           <Route path="custom-dashboard" element={<CustomDashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
@@ -301,7 +303,13 @@ const AppDataWarmup: React.FC = () => {
   const previousRealtimeStatusRef = useRef(realtimeStatus);
 
   useEffect(() => {
-    if (pathname === '/login' || pathname === '/' || pathname === '/my-profile') {
+    if (
+      pathname === '/login'
+      || pathname === '/'
+      || pathname === '/my-profile'
+      || pathname === '/my-payroll'
+      || pathname === '/hrm/checkin'
+    ) {
       setActiveRealtimeModules([]);
       return;
     }

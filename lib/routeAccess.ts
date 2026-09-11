@@ -1,7 +1,11 @@
 import { matchPath } from 'react-router-dom';
 import { ROUTE_TO_MODULE } from '../constants/routes';
 import { User } from '../types';
-import { canPerform, canViewRoute } from './permissions/permissionService';
+import {
+  canPerform,
+  canPerformHrmTemplatePermission,
+  canViewRoute,
+} from './permissions/permissionService';
 import { PermissionScope } from './permissions/permissionTypes';
 import { isViooWorkEnabled } from './featureFlags';
 
@@ -9,6 +13,7 @@ const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/',
   '/notifications',
   '/my-profile',
+  '/my-payroll',
   '/employee-dashboard',
   '/feedback',
   '/leaderboard',
@@ -20,6 +25,7 @@ const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
 interface RoutePermissionRequirement {
   permissionCode: string;
   scope: Required<PermissionScope>;
+  templateOnly?: boolean;
 }
 
 const GLOBAL_SCOPE: Required<PermissionScope> = {
@@ -52,6 +58,11 @@ export const HRM_ROUTE_PERMISSION_REQUIREMENTS: Readonly<Record<string, RoutePer
   '/hrm/leave': {
     permissionCode: 'hrm.leave.view',
     scope: OWN_SCOPE,
+  },
+  '/hrm/payroll': {
+    permissionCode: 'hrm.payroll.view',
+    scope: GLOBAL_SCOPE,
+    templateOnly: true,
   },
 };
 
@@ -102,7 +113,9 @@ export const canAccessRoute = (
 
   const requirement = HRM_ROUTE_PERMISSION_REQUIREMENTS[pathname];
   if (requirement) {
-    return canPerform(user, requirement.permissionCode, requirement.scope);
+    return requirement.templateOnly
+      ? canPerformHrmTemplatePermission(user, requirement.permissionCode, requirement.scope)
+      : canPerform(user, requirement.permissionCode, requirement.scope);
   }
 
   return canViewRoute(user, pathname);

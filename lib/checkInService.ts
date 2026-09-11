@@ -1,4 +1,5 @@
-import { AttendanceRecord } from '../types';
+import { AttendanceRecord, Employee, HrmConstructionSite, HrmOffice } from '../types';
+import { mapEmployeeFromDb } from './employeeSelfService';
 import { supabase, supabaseAnonKey, supabaseUrl } from './supabase';
 
 export type CameraCheckInAction = 'check_in' | 'check_out';
@@ -24,6 +25,13 @@ export interface CameraCheckInInput {
   lng: number | null;
   location: CameraCheckInLocation;
   imageBlob: Blob | null;
+}
+
+export interface MyCheckInContext {
+  employee: Employee | null;
+  attendanceRecords: AttendanceRecord[];
+  constructionSites: HrmConstructionSite[];
+  offices: HrmOffice[];
 }
 
 type CameraCheckInRpcPayload = {
@@ -184,6 +192,28 @@ const callCameraCheckInRpc = async (payload: CameraCheckInRpcPayload): Promise<A
 };
 
 export const checkInService = {
+  async loadMyContext(): Promise<MyCheckInContext> {
+    const { data, error } = await supabase.rpc('get_my_checkin_context');
+    if (error) throw new Error(error.message || 'Không thể tải hồ sơ Check-in.');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Không thể tải hồ sơ Check-in.');
+    }
+
+    const payload = data as Record<string, unknown>;
+    return {
+      employee: payload.employee && typeof payload.employee === 'object'
+        ? mapEmployeeFromDb(payload.employee)
+        : null,
+      attendanceRecords: Array.isArray(payload.attendanceRecords)
+        ? payload.attendanceRecords as AttendanceRecord[]
+        : [],
+      constructionSites: Array.isArray(payload.constructionSites)
+        ? payload.constructionSites as HrmConstructionSite[]
+        : [],
+      offices: Array.isArray(payload.offices) ? payload.offices as HrmOffice[] : [],
+    };
+  },
+
   async submit(input: CameraCheckInInput): Promise<AttendanceRecord> {
     const imageUrl = await uploadCheckInPhoto(input.imageBlob, input.employeeId, input.action);
     return callCameraCheckInRpc({

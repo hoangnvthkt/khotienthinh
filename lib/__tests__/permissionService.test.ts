@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
 import {
   canPerform,
+  canPerformHrmTemplatePermission,
   canViewModule,
   canViewRoute,
   getUserAuthorizationSnapshot,
@@ -143,6 +144,48 @@ describe('permissionService', () => {
         isActive: true,
       }],
     }), '/hrm/payroll')).toBe(true);
+  });
+
+  it('accepts payroll administration only from an HR business-role source', () => {
+    const directViewer = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-11T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [{
+          permissionCode: 'hrm.payroll.view', sourceType: 'DIRECT', sourceId: 'direct-payroll-view',
+          scopeType: 'global', scopeId: '*', isBusinessApproval: false, metadata: {},
+        }],
+        roomActions: [],
+      },
+    });
+    const legacyViewer = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-11T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: false },
+        sources: [{
+          permissionCode: 'hrm.payroll.view', sourceType: 'LEGACY', sourceCode: 'LEGACY_HR_PAYROLL_VIEW',
+          scopeType: 'global', scopeId: '*', isBusinessApproval: false, metadata: {},
+        }],
+        roomActions: [],
+      },
+    });
+    const hrViewer = user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-11T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: [{
+          permissionCode: 'hrm.payroll.view', sourceType: 'business_role', sourceCode: 'HR',
+          scopeType: 'global', scopeId: '*', isBusinessApproval: true, metadata: {},
+        }],
+        roomActions: [],
+      },
+    });
+
+    expect(canPerform(directViewer, 'hrm.payroll.view')).toBe(true);
+    expect(canPerformHrmTemplatePermission(directViewer, 'hrm.payroll.view')).toBe(false);
+    expect(canPerformHrmTemplatePermission(legacyViewer, 'hrm.payroll.view')).toBe(false);
+    expect(canPerformHrmTemplatePermission(hrViewer, 'hrm.payroll.view')).toBe(true);
+    expect(isDirectPermissionGrantAllowed('hrm.payroll.view')).toBe(false);
   });
 
   it('uses active scoped grants before legacy fallback', () => {

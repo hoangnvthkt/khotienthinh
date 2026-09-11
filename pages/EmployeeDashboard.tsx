@@ -7,7 +7,7 @@ import {
     User as UserIcon, Briefcase, Calendar, MapPin, Clock,
     Award, Hash, ChevronRight, Shield, TrendingUp,
     CheckCircle2, AlertCircle, FileText, GitBranch, Inbox,
-    CalendarOff, MessageCircle, Bot,
+    CalendarOff, MessageCircle, Bot, WalletCards,
     ClipboardList, ArrowRight, Zap, Sparkles, CalendarCheck,
     Timer, CircleDot, XCircle, CheckCheck
 } from 'lucide-react';
@@ -196,6 +196,7 @@ const EmployeeDashboard: React.FC = () => {
     const quickLinkPresentation: Record<string, { icon: React.ReactNode; gradient: string; shadow: string }> = {
         '/hrm/checkin': { icon: <MapPin size={17} />, gradient: 'from-emerald-500 to-green-600', shadow: 'shadow-emerald-500/20' },
         '/hrm/leave': { icon: <CalendarOff size={17} />, gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/20' },
+        '/my-payroll': { icon: <WalletCards size={17} />, gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/20' },
         '/wf': { icon: <GitBranch size={17} />, gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/20' },
         '/rq': { icon: <Inbox size={17} />, gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/20' },
         '/chat': { icon: <MessageCircle size={17} />, gradient: 'from-pink-500 to-rose-600', shadow: 'shadow-pink-500/20' },

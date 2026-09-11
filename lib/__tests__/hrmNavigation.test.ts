@@ -23,6 +23,30 @@ const persona = (
   })),
 });
 
+const hrPersona = (
+  grants: Array<[UserPermissionGrant['permissionCode'], UserPermissionGrant['scopeType']]>,
+  sourceCode: 'HR' | 'HR_MANAGE',
+): User => {
+  const base = persona(grants);
+  return {
+    ...base,
+    authorizationSnapshot: {
+      generatedAt: '2026-09-11T00:00:00.000Z',
+      flags: { legacy_fallback_disabled: true },
+      sources: grants.map(([permissionCode, scopeType]) => ({
+        permissionCode,
+        sourceType: 'business_role',
+        sourceCode,
+        scopeType,
+        scopeId: '*',
+        isBusinessApproval: true,
+        metadata: {},
+      })),
+      roomActions: [],
+    },
+  };
+};
+
 const businessUser = persona([
   ['hrm.employee.view_directory', 'global'],
   ['hrm.employee.view_profile', 'own'],
@@ -31,7 +55,7 @@ const businessUser = persona([
   ['hrm.leave.view', 'own'],
 ]);
 
-const hrUser = persona([
+const hrUser = hrPersona([
   ['hrm.employee.view_directory', 'global'],
   ['hrm.employee.view_sensitive', 'global'],
   ['hrm.attendance.view', 'global'],
@@ -40,16 +64,16 @@ const hrUser = persona([
   ['hrm.document.view', 'global'],
   ['hrm.payroll.view', 'global'],
   ['hrm.master_data.view', 'global'],
-]);
+], 'HR');
 
-const hrManageUser = persona([
+const hrManageUser = hrPersona([
   ...(hrUser.permissionGrants || []).map(grant => [
     grant.permissionCode,
     grant.scopeType,
   ] as [UserPermissionGrant['permissionCode'], UserPermissionGrant['scopeType']]),
   ['hrm.compensation.manage', 'global'],
   ['hrm.master_data.manage', 'global'],
-]);
+], 'HR_MANAGE');
 
 describe('HRM navigation', () => {
   it('returns the approved Employee self-service menu in order', () => {
@@ -108,6 +132,7 @@ describe('Employee Dashboard quick links', () => {
     expect(getEmployeeDashboardQuickLinks(businessUser, false)).toEqual([
       { to: '/hrm/checkin', label: 'Check-in' },
       { to: '/hrm/leave', label: 'Nghỉ phép' },
+      { to: '/my-payroll', label: 'Phiếu lương' },
       { to: '/my-profile', label: 'Hồ sơ' },
     ]);
   });
@@ -135,6 +160,7 @@ describe('Employee Dashboard quick links', () => {
     expect(getEmployeeDashboardQuickLinks(crossAppUser, true)).toEqual([
       { to: '/hrm/checkin', label: 'Check-in' },
       { to: '/hrm/leave', label: 'Nghỉ phép' },
+      { to: '/my-payroll', label: 'Phiếu lương' },
       { to: '/wf', label: 'Quy trình' },
       { to: '/rq', label: 'Yêu cầu' },
       { to: '/chat', label: 'Tin nhắn' },

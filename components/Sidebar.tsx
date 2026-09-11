@@ -107,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     const p = location.pathname;
     if (p === '/work' || p.startsWith('/work/')) return 'work.module';
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
-    if (p.startsWith('/hrm') || p === '/my-profile' || p === '/employee-dashboard') return 'HRM';
+    if (p.startsWith('/hrm') || p === '/my-profile' || p === '/my-payroll' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/procurement')) return 'PROCUREMENT';

@@ -49,7 +49,10 @@ import {
   normalizeProjectTransactionRow,
   projectTransactionToDb,
 } from '../lib/projectTransactionMapping';
-import { canPerform } from '../lib/permissions/permissionService';
+import {
+  canPerform,
+  canPerformHrmTemplatePermission,
+} from '../lib/permissions/permissionService';
 import { executeUserAccountLifecycle } from '../lib/userAccountLifecycleService';
 import { hrmEmployeeProfileService } from '../lib/hrmEmployeeProfileService';
 import { hrmSensitiveProjectionService } from '../lib/hrmSensitiveProjectionService';
@@ -1003,7 +1006,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (auditSessionsData) setAuditSessions(auditSessionsData);
           markModuleLoaded('wms-core');
         } else if (module === 'hrm') {
-          const canViewPayroll = canPerform(user, 'hrm.payroll.view');
+          const canViewPayroll = canPerformHrmTemplatePermission(user, 'hrm.payroll.view');
           const canViewContracts = canPerform(user, 'hrm.contract.view');
           const canViewCompensation = canPerform(user, 'hrm.compensation.view');
           const [

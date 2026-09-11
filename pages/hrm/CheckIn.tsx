@@ -13,12 +13,10 @@ import {
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
-import { useModuleData } from '../../hooks/useModuleData';
 import { useCelebration } from '../../components/Celebration';
 import { AttendanceRecord } from '../../types';
 import { getApiErrorMessage } from '../../lib/apiError';
-import { checkInService, CameraCheckInLocation } from '../../lib/checkInService';
+import { checkInService, CameraCheckInLocation, MyCheckInContext } from '../../lib/checkInService';
 import { xpService } from '../../lib/xpService';
 
 type LocationOption = CameraCheckInLocation & {
@@ -98,15 +96,6 @@ const calculateStreak = (records: AttendanceRecord[], employeeId: string) => {
 };
 
 const CheckIn: React.FC = () => {
-  const {
-    user,
-    employees,
-    attendanceRecords,
-    hrmConstructionSites,
-    hrmOffices,
-    loadModuleData,
-  } = useApp();
-  useModuleData('hrm');
   const { celebrate, showToast } = useCelebration();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -125,13 +114,31 @@ const CheckIn: React.FC = () => {
   const [lastAction, setLastAction] = useState<string | null>(null);
   const [lastSavedRecord, setLastSavedRecord] = useState<AttendanceRecord | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [checkInContext, setCheckInContext] = useState<MyCheckInContext | null>(null);
+  const [contextLoading, setContextLoading] = useState(true);
+  const [contextError, setContextError] = useState('');
 
-  const currentEmployee = useMemo(() => {
-    return employees.find(employee => (
-      employee.userId === user.id ||
-      employee.email?.toLowerCase() === user.email?.toLowerCase()
-    ));
-  }, [employees, user.email, user.id]);
+  const loadCheckInContext = useCallback(async () => {
+    setContextLoading(true);
+    setContextError('');
+    try {
+      const nextContext = await checkInService.loadMyContext();
+      setCheckInContext(nextContext);
+    } catch (error) {
+      setContextError(formatSyncError(error));
+    } finally {
+      setContextLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCheckInContext();
+  }, [loadCheckInContext]);
+
+  const currentEmployee = checkInContext?.employee || null;
+  const attendanceRecords = checkInContext?.attendanceRecords || [];
+  const hrmConstructionSites = checkInContext?.constructionSites || [];
+  const hrmOffices = checkInContext?.offices || [];
 
   const workDate = useMemo(todayLocal, []);
   const todayRecord = useMemo(() => {
@@ -270,10 +277,11 @@ const CheckIn: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!currentEmployee) return undefined;
     startCamera();
     refreshGps();
     return () => stopCamera();
-  }, [refreshGps, startCamera, stopCamera]);
+  }, [currentEmployee, refreshGps, startCamera, stopCamera]);
 
   const capturePhotoBlob = useCallback(async (): Promise<Blob> => {
     const video = videoRef.current;
@@ -338,7 +346,7 @@ const CheckIn: React.FC = () => {
         xpService.awardDailyXP('daily_checkin', saved.id).catch(() => { });
       }
       setLastSavedRecord(saved);
-      await loadModuleData('hrm', true);
+      await loadCheckInContext();
 
       if (action === 'check_in') {
         setLastAction(`Da check-in luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
@@ -364,6 +372,34 @@ const CheckIn: React.FC = () => {
       setProcessing(null);
     }
   };
+
+  if (contextLoading && !checkInContext) {
+    return (
+      <div className="max-w-lg mx-auto py-16 text-center">
+        <RefreshCw size={40} className="mx-auto mb-4 animate-spin text-emerald-500" />
+        <h2 className="text-lg font-black text-slate-800 dark:text-white">Đang tải hồ sơ Check-in</h2>
+        <p className="mt-2 text-sm text-slate-500">Hệ thống đang xác định hồ sơ từ tài khoản đăng nhập.</p>
+      </div>
+    );
+  }
+
+  if (contextError && !checkInContext) {
+    return (
+      <div className="max-w-lg mx-auto py-16 text-center">
+        <AlertTriangle size={44} className="mx-auto mb-4 text-rose-500" />
+        <h2 className="text-lg font-black text-slate-800 dark:text-white">Không tải được hồ sơ Check-in</h2>
+        <p className="mt-2 text-sm text-slate-500">{contextError}</p>
+        <button
+          type="button"
+          onClick={() => void loadCheckInContext()}
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-black text-white hover:bg-emerald-700"
+        >
+          <RefreshCw size={16} />
+          Thử lại
+        </button>
+      </div>
+    );
+  }
 
   if (!currentEmployee) {
     return (
@@ -576,7 +612,7 @@ const CheckIn: React.FC = () => {
           <p className="mb-2 text-[10px] font-black uppercase text-slate-400">Danh sách hôm nay ({todayAllRecords.length})</p>
           <div className="max-h-48 space-y-2 overflow-y-auto">
             {todayAllRecords.map(record => {
-              const employee = employees.find(item => item.id === record.employeeId);
+              const employee = record.employeeId === currentEmployee.id ? currentEmployee : null;
               return (
                 <div key={record.id} className="flex items-center gap-2 border-b border-slate-100 py-2 last:border-0 dark:border-slate-800">
                   <div className="h-8 w-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-500">

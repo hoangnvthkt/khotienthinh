@@ -15,7 +15,7 @@ import {
   PAYROLL_FIELD_SOURCE_LABELS, PAYROLL_FIELD_TYPE_LABELS,
   AttendanceStatus
 } from '../../types';
-import { canPerform } from '../../lib/permissions/permissionService';
+import { canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 const PAYROLL_STATUS_LABELS: Record<string, string> = { draft: 'Nháp', confirmed: 'Xác nhận', paid: 'Đã trả' };
@@ -94,7 +94,7 @@ const Payroll: React.FC = () => {
   } = useApp();
   useModuleData('hrm');
   const { theme } = useTheme();
-  const canCRUD = canPerform(user, 'hrm.payroll.manage');
+  const canCRUD = canPerformHrmTemplatePermission(user, 'hrm.payroll.manage');
 
   const activeEmployees = useMemo(() => employees.filter(e => e.status === 'Đang làm việc'), [employees]);
   const employeeMap = useMemo(() => new Map(activeEmployees.map(e => [e.id, e])), [activeEmployees]);

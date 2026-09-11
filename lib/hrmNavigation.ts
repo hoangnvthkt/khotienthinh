@@ -29,6 +29,7 @@ const HRM_NAVIGATION_ITEMS = [
 const EMPLOYEE_DASHBOARD_QUICK_LINKS = [
   { to: '/hrm/checkin', label: 'Check-in' },
   { to: '/hrm/leave', label: 'Nghỉ phép' },
+  { to: '/my-payroll', label: 'Phiếu lương' },
   { to: '/wf', label: 'Quy trình' },
   { to: '/rq', label: 'Yêu cầu' },
   { to: '/chat', label: 'Tin nhắn' },

@@ -78,6 +78,7 @@ describe('phase 0 route containment', () => {
 
   it('keeps authenticated-open profile routes available', () => {
     expect(canAccessRoute(user([]), '/my-profile')).toBe(true);
+    expect(canAccessRoute(user([]), '/my-payroll')).toBe(true);
   });
 
   it('keeps the authenticated home route available', () => {
@@ -153,6 +154,15 @@ describe('HRM employee self-service route access', () => {
     ]) {
       expect(canAccessRoute(businessUser, route), route).toBe(false);
     }
+  });
+
+  it('does not open payroll administration from a non-template payroll grant', () => {
+    const directPayrollViewer = persona(Role.EMPLOYEE, [
+      ['hrm.payroll.view', 'global'],
+    ]);
+
+    expect(canAccessRoute(directPayrollViewer, '/hrm/payroll')).toBe(false);
+    expect(canAccessRoute(directPayrollViewer, '/my-payroll')).toBe(true);
   });
 
   it('opens the HR dashboard only from an effective governed HR permission', () => {
