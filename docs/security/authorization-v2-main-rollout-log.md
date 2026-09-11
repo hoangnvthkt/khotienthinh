@@ -164,3 +164,12 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Cloud database lint reports the same nine pre-existing unrelated error-level findings; none names a Task 12 function or migration.
 - Cloud security advisor passed with no error-level finding.
 - Observation window starts `2026-09-10 04:07 UTC`; earliest eligible Task 13 execution is `2026-09-17 04:07 UTC`, subject to zero rollback incidents, no deny-anomaly increase, persona confirmation, and maintained reconciliation gates.
+
+## Phase 6 / Task 12.1 — Frontend authorization navigation regression
+
+- On `2026-09-11`, persona verification found that Task 12 had removed the legacy compatibility path but exposed two frontend consumers that did not fully consume the canonical snapshot: `canViewModule('HRM')` only searched for an exact `view`/`access` action on the first HR module, while Project tab navigation ignored authoritative `roomActions`.
+- TDD reproduced HR Manage/Admin losing the HR shell and scoped Room users losing Project tabs. The fix evaluates all canonical `view`, `view_*`, and `access` sources at their actual scopes and connects Project navigation to `hasRoomAction` for active Rooms.
+- The change adds no role-based Admin bypass and no duplicate canonical grants. Project/site isolation is retained. The four retired Rooms (`material_waste`, `custom_material`, `boq_reconciliation`, `subcontract`) are deliberately excluded from Room navigation and remain canonical view-only with backend Admin-write enforcement.
+- Read-only Cloud main reconciliation found 1 active Admin, 12 effective HR view-like permissions, all 10 active Room view codes, and 850/850 expected project-level Room view pairs across 85 projects, with zero missing pair. No migration, backfill, database write, or policy change was required.
+- Release candidate commit: `7dc5720`. Targeted regression passed 6 files / 48 tests; full checkout regression passed 378 files / 1,802 tests. TypeScript lint, production build, and `git diff --check` passed; only the existing Vite chunk-size warning remains.
+- The prior observation window is invalidated by this persona regression. Task 13 remains blocked until this frontend commit is deployed, Admin/HR Manage/Room member personas pass on the deployed build, and a fresh seven-day observation window completes without rollback incident or deny anomaly.

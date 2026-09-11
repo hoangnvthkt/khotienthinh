@@ -470,6 +470,26 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 **Task 12 observation start:** `2026-09-10 04:07 UTC`. Task 13 không được chạy trước `2026-09-17 04:07 UTC`, và chỉ chạy khi không có rollback incident/deny anomaly cùng xác nhận persona trọng yếu.
 
+### Task 12.1: Sửa regression điều hướng sau cutover
+
+**Files:**
+- Modify: `lib/permissions/permissionService.ts`
+- Modify: `lib/permissions/projectPermissionService.ts`
+- Modify: `lib/__tests__/permissionService.test.ts`
+- Modify: `lib/__tests__/projectPermissionService.test.ts`
+
+- [x] **Step 1: Tái hiện bằng test persona** — HR Manage/Admin có canonical `hrm.*.view_*` nhưng mất shell Nhân sự; Room member/Admin có `roomActions[].view` đúng scope nhưng mất tab Project.
+- [x] **Step 2: Sửa module shell** — xét toàn bộ action xem canonical (`view`, `view_*`, `access`) tại scope thực của source; quyền hết hạn, legacy-disabled và role Admin thuần vẫn deny.
+- [x] **Step 3: Nối Room vào navigation** — dùng trực tiếp `hasRoomAction` cho 10 Room active và scope project/site; không tạo duplicate grant, không nối lại bốn Room retired `material_waste`, `custom_material`, `boq_reconciliation`, `subcontract`.
+- [x] **Step 4: Verify** — targeted regression 6 files / 48 tests; full checkout 378 files / 1.802 tests; TypeScript lint, production build và `git diff --check` đạt.
+- [x] **Step 5: Cloud main read-only reconciliation** — 1 active Admin có 12 HR view-like permissions, đủ 10/10 active Room view codes và 850/850 project–Room view pairs trên 85 dự án; 0 thiếu. Không migration, backfill hoặc Cloud write.
+
+**Commit:** `7dc5720 fix(auth): reconnect module and room navigation`
+
+**Kết quả:** frontend dùng đúng canonical snapshot đã có trên Cloud thay vì yêu cầu một grant điều hướng trùng lặp. System Admin không nhận bypass mới; bốn module retired tiếp tục view-only theo canonical grant và Admin-write ở backend.
+
+**Observation reset:** phát hiện regression persona làm observation window bắt đầu `2026-09-10 04:07 UTC` không còn đủ điều kiện cho Task 13. Cửa sổ tối thiểu 7 ngày chỉ bắt đầu lại sau khi commit Task 12.1 được phát hành lên frontend và Admin/HR Manage/Room member được xác nhận trên bản phát hành đó.
+
 ### Task 13: Drop legacy schema sau observation gate
 
 **Observation gate:** tối thiểu 7 ngày sau Task 12 trên Cloud main; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12 và không coi chương trình hoàn tất.
