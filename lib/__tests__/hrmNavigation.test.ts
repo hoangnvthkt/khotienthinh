@@ -76,6 +76,18 @@ const hrManageUser = hrPersona([
 ], 'HR_MANAGE');
 
 describe('HRM navigation', () => {
+  it('shows only shift management for a master-data-only user', () => {
+    const routes = getHrmNavigationItems(persona([
+      ['hrm.master_data.view', 'global'],
+    ])).map(item => item.to);
+
+    expect(routes).toContain('/hrm/shifts');
+    expect(routes).not.toContain('/hrm/contracts');
+    expect(routes).not.toContain('/hrm/documents');
+    expect(routes).not.toContain('/hrm/reports');
+    expect(routes).not.toContain('/hrm/ranking');
+  });
+
   it('returns the approved Employee self-service menu in order', () => {
     expect(getHrmNavigationItems(businessUser)).toEqual([
       { to: '/employee-dashboard', label: 'Tổng quan của tôi' },

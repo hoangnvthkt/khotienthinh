@@ -41,6 +41,27 @@ const businessUser = persona(Role.EMPLOYEE, [
   ['hrm.leave.view', 'own'],
 ]);
 
+const governedHrPersona = (
+  permissionCode: string,
+  sourceCode: 'HR' | 'HR_MANAGE' = 'HR',
+): User => ({
+  ...persona(Role.EMPLOYEE, []),
+  authorizationSnapshot: {
+    generatedAt: '2026-09-11T00:00:00.000Z',
+    flags: { legacy_fallback_disabled: true },
+    sources: [{
+      permissionCode,
+      sourceType: 'business_role',
+      sourceCode,
+      scopeType: 'global',
+      scopeId: '*',
+      isBusinessApproval: true,
+      metadata: {},
+    }],
+    roomActions: [],
+  },
+});
+
 describe('chat route access', () => {
   it('maps the chat route to the CHAT module', () => {
     expect(getRouteModuleKey('/chat')).toBe('CHAT');
@@ -132,6 +153,26 @@ describe('request detail route access', () => {
 });
 
 describe('HRM employee self-service route access', () => {
+  it('does not widen HR master-data access to unrelated HR pages', () => {
+    const masterDataOnly = persona(Role.EMPLOYEE, [['hrm.master_data.view', 'global']]);
+
+    expect(canAccessRoute(masterDataOnly, '/hrm/shifts')).toBe(true);
+    expect(canAccessRoute(masterDataOnly, '/hrm/contracts')).toBe(false);
+    expect(canAccessRoute(masterDataOnly, '/hrm/documents')).toBe(false);
+    expect(canAccessRoute(masterDataOnly, '/hrm/reports')).toBe(false);
+    expect(canAccessRoute(masterDataOnly, '/hrm/ranking')).toBe(false);
+  });
+
+  it('opens contract and document pages only from their governed HR source', () => {
+    const contractViewer = governedHrPersona('hrm.contract.view');
+    const documentViewer = governedHrPersona('hrm.document.view', 'HR_MANAGE');
+
+    expect(canAccessRoute(contractViewer, '/hrm/contracts')).toBe(true);
+    expect(canAccessRoute(contractViewer, '/hrm/documents')).toBe(false);
+    expect(canAccessRoute(documentViewer, '/hrm/documents')).toBe(true);
+    expect(canAccessRoute(documentViewer, '/hrm/contracts')).toBe(false);
+  });
+
   it('opens employee self-service routes from own-scoped grants', () => {
     expect(canAccessRoute(businessUser, '/employee-dashboard')).toBe(true);
     expect(canAccessRoute(businessUser, '/my-profile')).toBe(true);

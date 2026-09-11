@@ -137,7 +137,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     label: 'Nhân sự',
     sortOrder: 40,
     modules: [
-      module('hrm.employee', 'Nhân viên', 'HRM', ['/hrm/dashboard', '/hrm/employees', '/org-map'], 10, actions('hrm.employee', 'HRM', '/hrm/employees', HRM_SCOPE, [
+      module('hrm.employee', 'Nhân viên', 'HRM', ['/hrm/dashboard', '/hrm/employees', '/hrm/reports', '/hrm/ranking', '/org-map'], 10, actions('hrm.employee', 'HRM', '/hrm/employees', HRM_SCOPE, [
         ['view_directory', 'Xem danh bạ', 10, ['global']],
         ['view_profile', 'Xem hồ sơ cá nhân', 20],
         ['edit_profile', 'Sửa hồ sơ cá nhân', 30],
@@ -182,7 +182,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem đãi ngộ', 10, ['global']],
         ['manage', 'Quản lý đãi ngộ', 20, ['global']],
       ])),
-      module('hrm.master_data', 'Danh mục nhân sự', 'HRM', ['/hrm/shifts', '/hrm/contracts', '/hrm/documents', '/hrm/reports', '/hrm/ranking'], 50, actions('hrm.master_data', 'HRM', '/hrm/shifts', HRM_SCOPE, [
+      module('hrm.master_data', 'Danh mục nhân sự', 'HRM', ['/hrm/shifts'], 50, actions('hrm.master_data', 'HRM', '/hrm/shifts', HRM_SCOPE, [
         ['view', 'Xem', 10],
         ['manage', 'Quản trị danh mục', 20],
       ])),

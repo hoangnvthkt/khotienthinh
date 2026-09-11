@@ -64,6 +64,30 @@ export const HRM_ROUTE_PERMISSION_REQUIREMENTS: Readonly<Record<string, RoutePer
     scope: GLOBAL_SCOPE,
     templateOnly: true,
   },
+  '/hrm/shifts': {
+    permissionCode: 'hrm.master_data.view',
+    scope: GLOBAL_SCOPE,
+  },
+  '/hrm/contracts': {
+    permissionCode: 'hrm.contract.view',
+    scope: GLOBAL_SCOPE,
+    templateOnly: true,
+  },
+  '/hrm/documents': {
+    permissionCode: 'hrm.document.view',
+    scope: GLOBAL_SCOPE,
+    templateOnly: true,
+  },
+  '/hrm/reports': {
+    permissionCode: 'hrm.employee.view_sensitive',
+    scope: GLOBAL_SCOPE,
+    templateOnly: true,
+  },
+  '/hrm/ranking': {
+    permissionCode: 'hrm.employee.view_sensitive',
+    scope: GLOBAL_SCOPE,
+    templateOnly: true,
+  },
 };
 
 const isWorkRoute = (pathname: string): boolean =>
