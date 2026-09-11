@@ -67,7 +67,7 @@ File cần đọc tiếp trước khi làm:
 - `lib/subjectAuthorizationService.ts`
 - `lib/projectStaffService.ts`
 - `pages/project/ProjectOrgTab.tsx`
-- `components/permissions/PermissionMatrix.tsx`
+- `components/permissions/PermissionModuleEditor.tsx`
 - `lib/permissions/permissionAdminService.ts`
 - `lib/permissions/permissionRegistry.ts`
 - `lib/permissions/permissionService.ts`

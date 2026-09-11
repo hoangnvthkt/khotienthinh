@@ -534,6 +534,28 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 **Observation reset:** Task 13 tiếp tục bị chặn. Cửa sổ 7 ngày chỉ bắt đầu lại sau khi frontend Task 12.3 được phát hành và các persona Step 5 được xác nhận.
 
+### Task 12.4: Editor phân quyền Module-first và route HR chính xác
+
+**Files chính:**
+- Create: `lib/permissions/permissionCatalogService.ts`, `lib/permissions/moduleGrantSelection.ts`, `lib/permissions/authorizationUpdateValidation.ts`
+- Create: `components/permissions/PermissionModuleEditor.tsx`, `components/permissions/PermissionModuleCard.tsx`
+- Create via CLI: `_authorization_v2_module_first_catalog.sql`, `_authorization_v2_structured_grant_errors.sql`
+- Modify: `components/permissions/AuthorizationEditor.tsx`, `components/UserModal.tsx`, `lib/routeAccess.ts`, `lib/permissions/erpPermissionRegistry.ts`
+- Delete after proving unused: `components/permissions/PermissionMatrix.tsx`
+
+- [x] **Step 1: Cloud catalog authoritative** — chỉ trả canonical active Module/action cho admin quản trị quyền; default-view bundle được review tường minh, Tài sản có đúng bốn quyền Xem; Project tiếp tục chuyển sang Room thay vì tạo bundle gây hiểu nhầm.
+- [x] **Step 2: Selection model và Module-first UI** — checkbox Module có tri-state, chọn tự thêm bundle Xem, mở chi tiết riêng, quyền nâng cao progressive disclosure, scope/expiry rõ ràng, quyền kế thừa khóa kèm provenance.
+- [x] **Step 3: Save fail-closed và lỗi có cấu trúc** — không lưu khi catalog lỗi/chưa tải, không có thay đổi hoặc validation sai; reason tối thiểu 10 ký tự; database enforce direct-grant metadata/scope/expiry và trả `code`/`field`/`permissionCode`.
+- [x] **Step 4: Route HR chính xác** — `hrm.master_data.view` chỉ mở Ca làm việc; Hợp đồng, Hồ sơ & Công văn, Báo cáo và Xếp hạng dùng capability riêng và nguồn `HR`/`HR_MANAGE` khi là quyền template-only.
+- [x] **Step 5: Cloud/test** — hai migration đã rollback-test, dry-run, apply và postflight trên Cloud main; catalog, transaction, self-service/payroll, attendance và retired-room smokes đều rollback thành công. Full checkout đạt 387 files / 1.847 tests; lint/build, baseline 43/402 và query audit/check đạt.
+- [ ] **Step 6: Release/persona** — phát hành frontend rồi xác nhận Admin chọn/lưu/reload bundle bốn quyền Xem Tài sản; user thường thấy Tài sản read-only, không thấy Hồ sơ & Công văn, chỉ thấy công/lương của mình. Không thay đổi grant thật chỉ để QA nếu chưa có phê duyệt vận hành.
+
+**Commits:** `b4483d8`, `19844cf`, `dfcde2b`, `8fdaf6f`, `547d99f`, `3ca9f82`, `3e94ae4`.
+
+**Kết quả:** ba bề mặt phân quyền cũ được thay bằng một editor Module-first dựa trên catalog Cloud và atomic command V2. Template-only, scope entity, expiry, duplicate và reason đều có chốt đồng nhất client/server. Ma trận cũ đã không còn production import và được xóa. Không chạy lại bảy Room đã cutover và không lưu thay đổi nào vào user/Room thật trong smoke.
+
+**Observation reset:** Task 13 tiếp tục bị chặn. Cửa sổ 7 ngày chỉ bắt đầu lại sau khi frontend Task 12.4 được phát hành và persona Admin/HR/nhân viên thường được xác nhận trên bản đó.
+
 ### Task 13: Drop legacy schema sau observation gate
 
 **Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.3; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.3 và không coi chương trình hoàn tất.
