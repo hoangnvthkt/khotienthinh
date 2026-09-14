@@ -120,18 +120,28 @@ describe('phase 0 route containment', () => {
 describe('request detail route access', () => {
   const templateRoutes = ['/rq/templates', '/rq/templates/new', '/rq/templates/template-1'];
 
-  it('maps all request template routes to RQ and allows administrators', () => {
+  it('maps all request template routes to RQ and allows administrators with explicit template rights', () => {
+    const administrator = { ...user([
+      'request.template.view',
+      'request.template.manage',
+    ]), role: Role.ADMIN };
     for (const route of templateRoutes) {
       expect(getRouteModuleKey(route), route).toBe('RQ');
-      expect(canAccessRoute({ ...user(['request.template.view']), role: Role.ADMIN }, route), route).toBe(true);
+      expect(canAccessRoute(administrator, route), route).toBe(true);
     }
   });
 
-  it('opens template editors with an explicit template view grant', () => {
+  it('keeps template viewers on the read-only list and requires manage for editors', () => {
     const viewer = persona(Role.EMPLOYEE, [['request.template.view', 'global']]);
-    for (const route of templateRoutes) {
-      expect(canAccessRoute(viewer, route), route).toBe(true);
-    }
+    expect(canAccessRoute(viewer, '/rq/templates')).toBe(true);
+    expect(canAccessRoute(viewer, '/rq/templates/new')).toBe(false);
+    expect(canAccessRoute(viewer, '/rq/templates/template-1')).toBe(false);
+
+    const manager = persona(Role.EMPLOYEE, [
+      ['request.template.view', 'global'],
+      ['request.template.manage', 'global'],
+    ]);
+    for (const route of templateRoutes) expect(canAccessRoute(manager, route), route).toBe(true);
   });
 
   it('keeps template editors closed to users without request access', () => {

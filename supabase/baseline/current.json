@@ -59,7 +59,8 @@
     "20260914075111_request_discussion_rpc_permissions.sql",
     "20260914084622_authorization_v2_task12_4_2_settings_capabilities.sql",
     "20260914090003_authorization_v2_task12_4_2_account_role_transition.sql",
-    "20260914091341_authorization_v2_task12_4_2_transition_commands.sql"
+    "20260914091341_authorization_v2_task12_4_2_transition_commands.sql",
+    "20260914092853_authorization_v2_task12_4_2_request_surface_parity.sql"
   ],
   "forbidIncludeAll": true
 }

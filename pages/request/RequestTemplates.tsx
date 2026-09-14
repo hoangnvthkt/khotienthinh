@@ -5,6 +5,8 @@ import { usePermission } from '../../hooks/usePermission';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { requestTemplateService, type RequestTemplateSummary } from '../../lib/requestTemplateService';
+import { useApp } from '../../context/AppContext';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 const STATUS: Record<RequestTemplateSummary['status'], { label: string; className: string }> = {
   DRAFT: { label: 'Bản nháp', className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/25 dark:text-amber-300 dark:border-amber-800' },
@@ -20,6 +22,7 @@ const RequestTemplates: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const toast = useToast();
+  const { user } = useApp();
   const { canManage } = usePermission();
   const [items, setItems] = useState<RequestTemplateSummary[]>([]);
   const [search, setSearch] = useState('');
@@ -28,6 +31,10 @@ const RequestTemplates: React.FC = () => {
   const [isMutatingId, setIsMutatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mayManage = canManage('/rq/templates');
+  const mayView = mayManage || canPerform(user, 'request.template.view', {
+    scopeType: 'global',
+    scopeId: '*',
+  });
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -102,11 +109,11 @@ const RequestTemplates: React.FC = () => {
     }
   };
 
-  if (!mayManage) {
+  if (!mayView) {
     return <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
       <ShieldAlert size={48} className="mb-4 opacity-20" />
       <h1 className="text-xl font-black uppercase tracking-widest">Truy cập bị từ chối</h1>
-      <p className="text-sm font-medium">Bạn chưa có quyền quản trị Mẫu yêu cầu.</p>
+      <p className="text-sm font-medium">Bạn chưa có quyền xem Mẫu yêu cầu.</p>
     </div>;
   }
 
@@ -116,9 +123,9 @@ const RequestTemplates: React.FC = () => {
         <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800 dark:text-white"><FileText className="text-accent" size={28} /> Mẫu yêu cầu</h1>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Thiết kế biểu mẫu và luồng phê duyệt tự động cho các đề xuất.</p>
       </div>
-      <button onClick={() => navigate('/rq/templates/new')} className="inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-600">
+      {mayManage && <button onClick={() => navigate('/rq/templates/new')} className="inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-600">
         <FilePlus2 size={18} className="mr-2" /> Tạo mẫu yêu cầu
-      </button>
+      </button>}
     </header>
 
     <section className="glass-card rounded-xl p-4">
@@ -150,12 +157,12 @@ const RequestTemplates: React.FC = () => {
           <div><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${state.className}`}>{state.label}</span></div>
           <div className="text-sm text-slate-600 dark:text-slate-300">{template.publishedVersionNumber ? `v${template.publishedVersionNumber}` : '—'}</div>
           <div className="text-sm text-slate-600 dark:text-slate-300">{template.usageScopeLabel}</div>
-          <div className="flex items-center justify-between gap-3 text-sm text-slate-500"><span>{formatDateTime(template.updatedAt)}</span><div className="flex shrink-0 gap-1">
+          <div className="flex items-center justify-between gap-3 text-sm text-slate-500"><span>{formatDateTime(template.updatedAt)}</span>{mayManage && <div className="flex shrink-0 gap-1">
             {template.status === 'DRAFT' && <button disabled={busy} onClick={() => navigate(`/rq/templates/${template.id}`)} title="Sửa bản nháp" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
             {template.status === 'PUBLISHED' && <button disabled={busy} onClick={() => void editPublished(template)} title="Sửa mẫu" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
             <button disabled={busy} onClick={() => void copyTemplate(template)} title="Sao chép mẫu" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Copy size={16} /></button>
             {template.status !== 'DEACTIVATED' && <button disabled={busy} onClick={() => void deactivate(template)} title="Ngừng áp dụng" className="rounded-lg p-2 text-slate-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 dark:hover:bg-amber-950/30"><Power size={16} /></button>}
-          </div></div>
+          </div>}</div>
         </article>;
       })}
     </section>

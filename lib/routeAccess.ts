@@ -93,6 +93,10 @@ export const HRM_ROUTE_PERMISSION_REQUIREMENTS: Readonly<Record<string, RoutePer
 const isWorkRoute = (pathname: string): boolean =>
   pathname === '/work' || pathname.startsWith('/work/');
 
+const isRequestTemplateEditorRoute = (pathname: string): boolean =>
+  pathname === '/rq/templates/new'
+  || (pathname.startsWith('/rq/templates/') && pathname !== '/rq/templates/');
+
 export const normalizeRoutePath = (route: string): string => {
   const path = route.split('?')[0].split('#')[0].trim();
   return path || '/';
@@ -130,6 +134,9 @@ export const canAccessRoute = (
       && getRouteModuleKey(pathname) === 'work.module'
       && canPerform(user, 'work.module.access', GLOBAL_SCOPE)
       && (pathname !== '/work/settings' || canConfigureWork(user));
+  }
+  if (isRequestTemplateEditorRoute(pathname)) {
+    return canPerform(user, 'request.template.manage', GLOBAL_SCOPE);
   }
 
   const moduleKey = getRouteModuleKey(pathname);

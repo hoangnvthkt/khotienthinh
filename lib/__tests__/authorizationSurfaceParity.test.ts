@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Role, type User } from '../../types';
 import { getAuthorizedRouteFallback } from '../routeAccess';
@@ -26,5 +28,22 @@ describe('denied route fallback', () => {
     expect(getAuthorizedRouteFallback(projectUser, '/da')).toBe('/');
     expect(getAuthorizedRouteFallback(projectUser, '/unknown')).toBe('/');
     expect(getAuthorizedRouteFallback(null, '/da/portfolio')).toBe('/');
+  });
+});
+
+describe('Request template surface parity migration', () => {
+  const migrationName = readdirSync(join(process.cwd(), 'supabase', 'migrations'))
+    .find(name => name.endsWith('_authorization_v2_task12_4_2_request_surface_parity.sql'));
+  const migration = migrationName
+    ? readFileSync(join(process.cwd(), 'supabase', 'migrations', migrationName), 'utf8').toLowerCase()
+    : '';
+
+  it('removes legacy and account-role fallback from Request template management', () => {
+    expect(migrationName).toBeDefined();
+    expect(migration).toContain('request_user_can_view_templates');
+    expect(migration).toContain("'request.template.manage'");
+    expect(migration).toContain("'request.template.view'");
+    expect(migration).not.toMatch(/\b(?:allowed_modules|admin_modules|allowed_sub_modules|admin_sub_modules)\b/);
+    expect(migration).not.toMatch(/app_user\.role\s*=\s*'admin'/);
   });
 });
