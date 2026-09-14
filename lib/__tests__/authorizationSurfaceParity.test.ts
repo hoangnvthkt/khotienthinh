@@ -47,3 +47,19 @@ describe('Request template surface parity migration', () => {
     expect(migration).not.toMatch(/app_user\.role\s*=\s*'admin'/);
   });
 });
+
+describe('canonical Chat and AI Learning helpers', () => {
+  const migrationName = readdirSync(join(process.cwd(), 'supabase', 'migrations'))
+    .find(name => name.endsWith('_authorization_v2_task12_4_2_canonical_helpers.sql'));
+  const migration = migrationName
+    ? readFileSync(join(process.cwd(), 'supabase', 'migrations', migrationName), 'utf8').toLowerCase()
+    : '';
+
+  it('uses canonical permissions without legacy user-column fallbacks', () => {
+    expect(migrationName).toBeDefined();
+    expect(migration).toContain("'system.chat.view'");
+    expect(migration).toContain("'system.chat.manage'");
+    expect(migration).toContain("settings_has_action('ai_learning', true)");
+    expect(migration).not.toMatch(/\b(?:allowed_modules|admin_modules|allowed_sub_modules|admin_sub_modules)\b/);
+  });
+});

@@ -115,3 +115,10 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 
 - Migration `20260914092853` đã apply lên Cloud main; surface smoke standalone exit 0 và rollback.
 - Postflight: 6 canonical Request template managers, 32 canonical viewers, `legacyOnlyRequestManagers=0`, `persistedBatches=0`. Smoke không giữ lại thay đổi quyền tài khoản thật.
+
+## E3 — Canonical Chat và AI Learning helpers
+
+- `chat_v2_has_app_access` chuyển từ `role/allowed_modules` sang `system.chat.view/manage`; vì helper nằm trong restrictive RLS, bỏ grant canonical sẽ chặn API/storage Chat thay vì chỉ ẩn menu.
+- `can_manage_ai_learning` chuyển từ `role/admin_modules/admin_sub_modules` sang hợp đồng `settings_has_action('ai_learning', true)`; SYSTEM_ADMIN vẫn cấp quyền cha `system.settings.manage` cho Admin hiện hành.
+- RED Cloud: tắt `system.chat.view` trong transaction vẫn còn truy cập do legacy field. GREEN rehearsal rollback: helper trả deny và Admin vẫn quản trị AI Learning qua nguồn canonical.
+- Full suite: 398 files / 1.897 tests pass; TypeScript/build pass (chunk warning hiện hữu); baseline 57 active / 402 archived; query check 0; dry-run chỉ có migration `20260914093239`.
