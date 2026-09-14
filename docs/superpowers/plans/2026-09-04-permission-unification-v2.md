@@ -568,11 +568,13 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 ### Task 13: Drop legacy schema sau observation gate
 
-**Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.3; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.3 và không coi chương trình hoàn tất.
+**Observation gate:** tối thiểu 7 ngày sau bản phát hành authorization frontend mới nhất có thể ảnh hưởng persona (hiện gồm Task 12.3, 12.4, 12.4.1 và correction menu Request template); không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Mốc bắt đầu là thời điểm deploy và persona được ghi nhận đạt, không phải ngày commit. Chưa đủ gate thì không chạy migration drop và không coi chương trình hoàn tất.
 
 **Files:**
 - Create via CLI suffix: `_authorization_v2_phase6_drop_legacy_schema.sql`
 - Create: `supabase/tests/authorization_v2_phase6_final_smoke.sql`
+- Create (preparation): `supabase/tests/authorization_v2_task13_readiness.sql`
+- Create (runbook): `docs/security/authorization-v2-task13-runbook.md`
 - Modify: `types.ts`, `context/authState.ts`
 - Modify: `docs/security/permission-audit.md`
 - Modify: `docs/security/permission-refactor-roadmap.md`
@@ -583,6 +585,8 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 - [ ] **Step 3: Xóa legacy fields khỏi `User` và row mappers.**
 - [ ] **Step 4: Final smoke** — legacy objects absent; public authorization tables RLS on; no PUBLIC private execute; all fallbacks off; unknown route/action deny.
 - [ ] **Step 5: Full tests/lint/build/migration check/query audit/advisors; dry-run; apply main; final evidence commits.**
+
+**Preparation checkpoint `2026-09-14`:** branch/worktree riêng đã được tạo từ `origin/main`; target khóa vào Cloud main `ftciqmqhmfvjtwoycswe`; readiness query chỉ-đọc và runbook đã được chuẩn bị. Chưa được phép tạo/apply migration drop vì observation/persona chưa được ghi nhận đủ, migration ledger Cloud còn sáu version `20260912*` chưa có trong `origin/main`, và dependency inventory còn 22 routine + 1 trigger cùng các frontend projection/mapper legacy cần xử lý theo dependency-first.
 
 **Commits:**
 - `refactor(auth): drop retired legacy permission schema`
