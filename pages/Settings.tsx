@@ -47,7 +47,7 @@ import {
   formatInventoryItemDeleteBlockers,
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
-import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
+import { canAccessSettingsFeature, canManageSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 import { canPerform } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { canAccessRoute } from '../lib/routeAccess';
@@ -116,7 +116,7 @@ const Settings: React.FC = () => {
     saveSignature, deleteSignature, loadModuleData
   } = useApp();
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
-  const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
+  const canViewPermissionHealth = canAccessSettingsFeature(currentUser, 'permission-health');
   const hrmSharedCatalogCapabilities = getHrmSharedCatalogCapabilities(currentUser);
   const canViewHrmSharedCatalog = canAccessRoute(currentUser, '/settings/hrm-shared-catalog');
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser)
@@ -1105,7 +1105,7 @@ const Settings: React.FC = () => {
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown },
     { id: 'hrm-master-data', label: 'Danh mục dùng chung HRM', icon: GitBranch },
     { id: 'users', label: 'Người dùng', icon: Users },
-    { id: 'alerts', label: 'Cảnh báo', icon: BellRing, adminOnly: true },
+    { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
@@ -1119,6 +1119,9 @@ const Settings: React.FC = () => {
         ? canViewHrmSharedCatalog
         : canOpenSettingsFeature(tab.id as SettingsFeatureId));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
+  const activeFeatureReadOnly = activeSettingsTab !== 'account'
+    && activeSettingsTab !== 'release-notes'
+    && !canManageSettingsFeature(currentUser, activeSettingsTab as Exclude<SettingsFeatureId, 'account'>);
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
     if (tabId === 'permission-health') {
@@ -1209,6 +1212,12 @@ const Settings: React.FC = () => {
 
         {/* Content Area */}
         <div className="flex-1">
+          {activeFeatureReadOnly && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Bạn đang có quyền Xem. Các thao tác thay đổi ở mục này đã được khóa.
+            </div>
+          )}
+          <fieldset disabled={activeFeatureReadOnly} aria-label="Nội dung mục Cài đặt">
           {activeSettingsTab === 'general' && (
             <SettingsGeneral
               appName={appName} setAppName={setAppName}
@@ -2263,6 +2272,7 @@ const Settings: React.FC = () => {
           {activeSettingsTab === 'maintenance' && (
             <SettingsMaintenance triggerAction={triggerAction} clearAllData={clearAllData} />
           )}
+          </fieldset>
         </div>
       </div>
 
@@ -2342,11 +2352,11 @@ const Settings: React.FC = () => {
       )}
 
           {activeSettingsTab === 'chibi-bot' && (
-            <SettingsChibiBot />
+            <fieldset disabled={activeFeatureReadOnly}><SettingsChibiBot /></fieldset>
           )}
 
           {activeSettingsTab === 'ai-learning' && (
-            <SettingsAiLearning actorId={currentUser.id} />
+            <fieldset disabled={activeFeatureReadOnly}><SettingsAiLearning actorId={currentUser.id} /></fieldset>
           )}
     </div>
   );

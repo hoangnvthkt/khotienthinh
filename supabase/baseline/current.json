@@ -56,7 +56,8 @@
     "20260912052011_task_notification_source_guards.sql",
     "20260914045955_request_content_revisions.sql",
     "20260914045956_request_discussion_storage.sql",
-    "20260914075111_request_discussion_rpc_permissions.sql"
+    "20260914075111_request_discussion_rpc_permissions.sql",
+    "20260914084622_authorization_v2_task12_4_2_settings_capabilities.sql"
   ],
   "forbidIncludeAll": true
 }

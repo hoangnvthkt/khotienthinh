@@ -85,6 +85,13 @@ const module = (
   actions: moduleActions,
 });
 
+const settingsModule = (code: string, label: string, featureId: string, sortOrder: number): PermissionModuleDefinition =>
+  module(`settings.${code}`, label, 'SETTINGS', [`/settings/${featureId}`], sortOrder,
+    actions(`settings.${code}`, 'SETTINGS', `/settings/${featureId}`, GLOBAL_SCOPE, [
+      ['view', 'Xem', 10],
+      ['manage', 'Quản lý', 20],
+    ]));
+
 const vehicleBookingAction = (
   action: string,
   label: string,
@@ -104,6 +111,28 @@ const vehicleBookingAction = (
 });
 
 export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefinition[] = [
+  {
+    code: 'settings',
+    label: 'Cài đặt',
+    description: 'Các mục cấu hình được cấp riêng theo nghiệp vụ.',
+    sortOrder: 25,
+    modules: [
+      settingsModule('general', 'Chung', 'general', 10),
+      settingsModule('warehouses', 'Kho bãi', 'warehouses', 20),
+      settingsModule('master_data', 'Dữ liệu gốc', 'master-data', 30),
+      settingsModule('g8_cost_norms', 'Định mức G8', 'g8-cost-norms', 40),
+      settingsModule('project_master_data', 'Danh mục DA', 'project-master-data', 50),
+      settingsModule('inspection_templates', 'Mẫu nghiệm thu', 'inspection-templates', 60),
+      settingsModule('work_groups', 'Nhóm làm việc', 'work-groups', 70),
+      settingsModule('loss_norms', 'Định mức hao hụt', 'loss-norms', 80),
+      settingsModule('users', 'Người dùng', 'users', 90),
+      settingsModule('alerts', 'Cảnh báo', 'alerts', 100),
+      settingsModule('permission_health', 'Permission health', 'permission-health', 110),
+      settingsModule('chibi_bot', 'Trợ lý ảo', 'chibi-bot', 120),
+      settingsModule('ai_learning', 'AI Learning', 'ai-learning', 130),
+      settingsModule('maintenance', 'Bảo trì', 'maintenance', 140),
+    ],
+  },
   {
     code: 'wms',
     label: 'Kho vật tư',
