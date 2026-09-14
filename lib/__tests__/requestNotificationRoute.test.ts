@@ -7,4 +7,11 @@ describe('request notification routes', () => {
       sourceType: 'request_instance', sourceId: 'rq-uuid', metadata: { requestInstanceId: 'rq-uuid' },
     } as any)).toBe('/rq/rq-uuid');
   });
+
+  it('keeps the comment anchor in request collaboration notifications', () => {
+    expect(resolveNotificationPath({
+      sourceType: 'request_instance', sourceId: 'rq-uuid',
+      metadata: { requestInstanceId: 'rq-uuid', commentId: 'comment-uuid' },
+    } as any)).toBe('/rq/rq-uuid?comment=comment-uuid');
+  });
 });

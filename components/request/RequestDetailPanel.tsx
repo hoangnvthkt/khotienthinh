@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Printer, Table2, User } from 'lucide-react';
+import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Pencil, Printer, Table2, User } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import type { RequestDetail } from '../../lib/requestRuntimeService';
 import { buildRequestRoute } from '../../lib/requestRoutes';
@@ -7,6 +7,8 @@ import { RequestActionBar } from './RequestActionBar';
 import { RequestApprovalInspector } from './RequestApprovalInspector';
 import { RequestStatusBadge } from './RequestTable';
 import { RequestPrintPreview } from './RequestPrintPreview';
+import { RequestEditDialog } from './RequestEditDialog';
+import { RequestDiscussion } from './RequestDiscussion';
 
 const displayValue = (value: unknown, fieldType?: string, options?: string[]): React.ReactNode => {
   if (value === null || value === undefined || value === '') return <span className="text-slate-400 font-normal italic">—</span>;
@@ -84,6 +86,7 @@ export const RequestDetailPanel: React.FC<{
   const toast = useToast();
   const [copying, setCopying] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
 
   if (loading) {
     return (
@@ -152,6 +155,11 @@ export const RequestDetailPanel: React.FC<{
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
+                    {detail.capabilities.canEditContent && <button
+                      type="button"
+                      onClick={() => setShowEditDialog(true)}
+                      className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                    ><Pencil size={14}/>Chỉnh sửa</button>}
                     <span className="inline-flex items-center rounded-lg bg-emerald-100/90 px-2.5 py-1 text-xs font-mono font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
                       {detail.code}
                     </span>
@@ -191,7 +199,7 @@ export const RequestDetailPanel: React.FC<{
                   </div>
                 </div>
 
-                <h1 className="mt-3 text-xl font-extrabold text-slate-900 dark:text-white md:text-2xl leading-tight">
+                <h1 className="mt-3 break-words [overflow-wrap:anywhere] text-xl font-extrabold text-slate-900 dark:text-white md:text-2xl leading-tight">
                   {detail.title}
                 </h1>
               </div>
@@ -307,6 +315,8 @@ export const RequestDetailPanel: React.FC<{
               })}
             </div>
           </section>
+
+          {detail.capabilities.canReadDiscussion && <RequestDiscussion requestId={detail.id} canComment={detail.capabilities.canComment} canAttach={detail.capabilities.canAttach} />}
         </article>
 
         {/* Column 4: Approval Inspector Side Panel */}
@@ -322,6 +332,7 @@ export const RequestDetailPanel: React.FC<{
       {showPrintPreview && (
         <RequestPrintPreview detail={detail} onClose={() => setShowPrintPreview(false)} />
       )}
+      <RequestEditDialog detail={detail} isOpen={showEditDialog} onClose={() => setShowEditDialog(false)} onSaved={refresh} />
     </>
   );
 };

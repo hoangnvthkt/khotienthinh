@@ -41,6 +41,67 @@ export interface RequestCommandResult {
   workflowSubjectId: string;
   currentBlockKeys: string[];
   updatedAt: string;
+  contentRevision?: number;
+}
+
+export interface RequestTextNode { type: 'text'; text: string }
+export interface RequestMentionNode { type: 'mention'; userId: string; label: string }
+export interface RequestTextDocument {
+  version: 1;
+  type: 'doc';
+  content: Array<{ type: 'paragraph'; content: Array<RequestTextNode | RequestMentionNode> }>;
+}
+
+export interface RequestComment {
+  id: string;
+  requestId: string;
+  parentCommentId: string | null;
+  author: RequestUserSnapshot;
+  content: RequestTextDocument;
+  contentText: string;
+  mentionedUserIds: string[];
+  attachments: RequestAttachment[];
+  lockVersion: number;
+  createdAt: string;
+  editedAt: string | null;
+  canEdit: boolean;
+}
+
+export interface RequestAttachment {
+  id: string;
+  kind: 'discussion_file' | 'discussion_image';
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'pending' | 'processing' | 'ready' | 'failed';
+  variants: Record<string, { mimeType: string; sizeBytes: number; width?: number; height?: number }>;
+}
+
+export interface RequestAttachmentReservation {
+  attachmentId: string;
+  storagePath: string;
+  expiresAt: string;
+  status: 'pending';
+}
+
+export interface RequestCommentPage {
+  items: RequestComment[];
+  total: number;
+  nextCursor?: string;
+}
+
+export interface RequestMentionCandidatePage {
+  items: Array<{ userId: string; name: string; avatarUrl?: string | null; position?: string | null }>;
+  nextCursor?: string;
+}
+
+export interface UpdateRequestContentInput {
+  requestId: string;
+  title: string;
+  description: string;
+  formData: Record<string, unknown>;
+  expectedUpdatedAt: string;
+  idempotencyKey: string;
 }
 
 export interface RequestListFilters {
@@ -87,6 +148,10 @@ export interface RequestActionCapabilities {
   canCancel: boolean;
   canReassign: boolean;
   canPrint: boolean;
+  canEditContent: boolean;
+  canReadDiscussion: boolean;
+  canComment: boolean;
+  canAttach: boolean;
 }
 
 export interface RequestApprovalBlockSnapshot {
@@ -102,10 +167,14 @@ export interface RequestApprovalBlockSnapshot {
     status: RequestAssignmentStatus;
     actedAt: string | null;
     comment: string | null;
+    contentRevision?: number;
+    isCurrentRound?: boolean;
   }>;
 }
 
 export interface RequestDetail extends RequestListItem {
+  contentRevision: number;
+  currentRoundId: string | null;
   description: string;
   templateVersionId: string;
   templateVersionNumber: number;
@@ -168,6 +237,16 @@ export type RequestRpcErrorCode =
   | 'REQUEST_TEMPLATE_OUT_OF_SCOPE'
   | 'REQUEST_PRINT_TEMPLATE_INVALID'
   | 'REQUEST_IDEMPOTENCY_CONFLICT'
+  | 'REQUEST_FEATURE_DISABLED'
+  | 'REQUEST_EDIT_FORBIDDEN'
+  | 'REQUEST_EDIT_STATUS_LOCKED'
+  | 'REQUEST_EDIT_APPROVER_INVALID'
+  | 'REQUEST_COMMENT_EDIT_FORBIDDEN'
+  | 'REQUEST_COMMENT_VERSION_CONFLICT'
+  | 'REQUEST_MENTION_INVALID'
+  | 'REQUEST_MENTION_INELIGIBLE'
+  | 'REQUEST_ATTACHMENT_INVALID'
+  | 'REQUEST_ATTACHMENT_NOT_READY'
   | 'REQUEST_NOT_FOUND_OR_FORBIDDEN';
 
 export class RequestRpcError extends Error {
@@ -284,6 +363,23 @@ const isCapabilities = (value: unknown): value is RequestActionCapabilities => {
   ].every(key => typeof value[key] === 'boolean');
 };
 
+const withCollaborationDefaults = (value: RequestDetail): RequestDetail => {
+  const raw = value as unknown as Record<string, unknown>;
+  const capabilities = raw.capabilities as Record<string, unknown>;
+  return {
+    ...raw,
+    contentRevision: Number.isInteger(raw.contentRevision) ? raw.contentRevision as number : 1,
+    currentRoundId: typeof raw.currentRoundId === 'string' ? raw.currentRoundId : null,
+    capabilities: {
+      ...capabilities,
+      canEditContent: capabilities.canEditContent === true,
+      canReadDiscussion: capabilities.canReadDiscussion === true,
+      canComment: capabilities.canComment === true,
+      canAttach: capabilities.canAttach === true,
+    },
+  } as unknown as RequestDetail;
+};
+
 const isDetail = (value: unknown): value is RequestDetail => {
   if (!isRecord(value) || !isListItem(value)) return false;
   const printConfig = value.printConfig;
@@ -328,6 +424,13 @@ const isSummary = (value: unknown): value is RequestSummary => {
   ].every(key => typeof value[key] === 'number' && Number.isFinite(value[key]));
 };
 
+const normalizeCursorPage = <T>(value: unknown, name: string): T => {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    throw new Error(`${name} trả về dữ liệu không hợp lệ.`);
+  }
+  return (value.nextCursor === null ? { ...value, nextCursor: undefined } : value) as T;
+};
+
 const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_STALE_STATE',
   'REQUEST_ACTION_FORBIDDEN',
@@ -341,6 +444,16 @@ const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_TEMPLATE_OUT_OF_SCOPE',
   'REQUEST_PRINT_TEMPLATE_INVALID',
   'REQUEST_IDEMPOTENCY_CONFLICT',
+  'REQUEST_FEATURE_DISABLED',
+  'REQUEST_EDIT_FORBIDDEN',
+  'REQUEST_EDIT_STATUS_LOCKED',
+  'REQUEST_EDIT_APPROVER_INVALID',
+  'REQUEST_COMMENT_EDIT_FORBIDDEN',
+  'REQUEST_COMMENT_VERSION_CONFLICT',
+  'REQUEST_MENTION_INVALID',
+  'REQUEST_MENTION_INELIGIBLE',
+  'REQUEST_ATTACHMENT_INVALID',
+  'REQUEST_ATTACHMENT_NOT_READY',
   'REQUEST_NOT_FOUND_OR_FORBIDDEN',
 ]);
 
@@ -358,6 +471,16 @@ export const mapRequestRpcError = (error: unknown): RequestRpcError => {
     REQUEST_APPROVER_SELF_NOT_ALLOWED: 'Bạn không thể chọn chính mình làm người duyệt.',
     REQUEST_APPROVER_INACTIVE: 'Người duyệt đã bị khóa hoặc không còn hoạt động. Vui lòng chọn người khác.',
     REQUEST_DIRECT_MANAGER_MISSING: 'Tài khoản của bạn chưa được thiết lập người quản lý trực tiếp. Vui lòng liên hệ quản trị viên.',
+    REQUEST_FEATURE_DISABLED: 'Chức năng này chưa được mở cho môi trường hiện tại.',
+    REQUEST_EDIT_FORBIDDEN: 'Bạn không còn quyền chỉnh sửa đề xuất này.',
+    REQUEST_EDIT_STATUS_LOCKED: 'Đề xuất đã kết thúc nên không thể chỉnh sửa nội dung.',
+    REQUEST_EDIT_APPROVER_INVALID: 'Không thể dựng lại lượt duyệt vì người duyệt không còn hợp lệ.',
+    REQUEST_COMMENT_EDIT_FORBIDDEN: 'Bạn chỉ có thể sửa bình luận của chính mình.',
+    REQUEST_COMMENT_VERSION_CONFLICT: 'Bình luận đã thay đổi ở nơi khác. Vui lòng tải lại.',
+    REQUEST_MENTION_INVALID: 'Thông tin người được nhắc không hợp lệ.',
+    REQUEST_MENTION_INELIGIBLE: 'Người được nhắc không có quyền xem đề xuất này.',
+    REQUEST_ATTACHMENT_INVALID: 'Tệp đính kèm không hợp lệ.',
+    REQUEST_ATTACHMENT_NOT_READY: 'Tệp chưa xử lý xong hoặc không còn khả dụng.',
   };
   return new RequestRpcError(
     code,
@@ -399,6 +522,64 @@ export const requestRuntimeService = {
     return assertRequestCommandResult(data, 'act_on_request');
   },
 
+  async updateContent(input: UpdateRequestContentInput): Promise<RequestCommandResult & { contentRevision: number }> {
+    const { data, error } = await supabase.rpc('update_request_content', {
+      p_request_id: input.requestId,
+      p_title: input.title,
+      p_description: input.description,
+      p_form_data: input.formData,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_idempotency_key: input.idempotencyKey,
+    });
+    if (error) throw mapRequestRpcError(error);
+    const result = assertRequestCommandResult(data, 'update_request_content');
+    if (!Number.isInteger(result.contentRevision) || (result.contentRevision ?? 0) < 1) {
+      throw new Error('update_request_content trả về revision không hợp lệ.');
+    }
+    return result as RequestCommandResult & { contentRevision: number };
+  },
+
+  async listComments(requestId: string, cursor?: string, limit = 30): Promise<RequestCommentPage> {
+    const result = await run<unknown>('list_request_comments', {
+      p_request_id: requestId,
+      p_cursor: cursor ?? null,
+      p_limit: clampPageSize(limit, 30, 100),
+    });
+    return normalizeCursorPage<RequestCommentPage>(result, 'list_request_comments');
+  },
+
+  async listMentionCandidates(requestId: string, search: string, cursor?: string, limit = 10): Promise<RequestMentionCandidatePage> {
+    const result = await run<unknown>('list_request_mention_candidates', {
+      p_request_id: requestId,
+      p_search: search,
+      p_cursor: cursor ?? null,
+      p_limit: clampPageSize(limit, 10, 30),
+    });
+    return normalizeCursorPage<RequestMentionCandidatePage>(result, 'list_request_mention_candidates');
+  },
+
+  getCommentAnchor(requestId: string, commentId: string) {
+    return run<{ commentId: string; rootCommentId: string; createdAt: string; cursor: string }>('get_request_comment_anchor', {
+      p_request_id: requestId, p_comment_id: commentId,
+    });
+  },
+
+  async comment(command: 'create' | 'reply' | 'edit', payload: Record<string, unknown>, idempotencyKey: string) {
+    return run<{ id: string; lockVersion: number }>('command_request_comment', {
+      p_command: command === 'reply' ? 'create' : command,
+      p_payload: payload,
+      p_idempotency_key: idempotencyKey,
+    });
+  },
+
+  async reserveAttachment(payload: Record<string, unknown>, idempotencyKey: string) {
+    return run<RequestAttachmentReservation>('command_request_comment', {
+      p_command: 'reserve_attachment',
+      p_payload: payload,
+      p_idempotency_key: idempotencyKey,
+    });
+  },
+
   async list(filters: RequestListFilters): Promise<RequestListPage> {
     const pFilters: Record<string, unknown> = {
       view: filters.view,
@@ -429,7 +610,7 @@ export const requestRuntimeService = {
     if (!isDetail(result)) {
       throw new Error('get_request_detail trả về dữ liệu không hợp lệ.');
     }
-    return result;
+    return withCollaborationDefaults(result);
   },
 
   async getSummary(): Promise<RequestSummary> {

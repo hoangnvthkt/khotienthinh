@@ -10,6 +10,15 @@ const blockIcon = (status: RequestDetail['approvalBlocks'][number]['status']) =>
   return <Circle size={18} className="text-slate-300 dark:text-slate-700 shrink-0" />;
 };
 
+type ApprovalAssignment = RequestDetail['approvalBlocks'][number]['assignments'][number];
+const AssignmentCard = ({ assignment, historical=false }: { assignment: ApprovalAssignment; historical?: boolean }) => <div
+  className={`rounded-lg p-2 text-xs border ${historical?'border-slate-200 bg-slate-50/60 opacity-75 dark:border-slate-800 dark:bg-slate-950/40':'border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/60'}`}
+>
+  <div className="flex min-w-0 items-center justify-between gap-1 font-semibold text-slate-700 dark:text-slate-200"><span className="truncate">{assignment.approver.name}</span><span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${assignment.status==='APPROVED'?'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300':assignment.status==='REJECTED'?'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300':assignment.status==='RETURNED'?'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300':'bg-slate-200/60 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>{assignment.status}</span></div>
+  {historical&&<p className="mt-1 text-[10px] font-medium text-slate-400">Phiên bản {assignment.contentRevision??'trước'} · lịch sử</p>}
+  {assignment.comment&&<p className="mt-1.5 break-words rounded border border-slate-200/60 bg-white p-1.5 italic text-slate-600 dark:border-slate-700/60 dark:bg-slate-900 dark:text-slate-400">“{assignment.comment}”</p>}
+</div>;
+
 export const RequestApprovalInspector: React.FC<{
   detail: RequestDetail;
   isCollapsed?: boolean;
@@ -91,29 +100,8 @@ export const RequestApprovalInspector: React.FC<{
                   </p>
 
                   <div className="mt-2 space-y-1.5 pl-1">
-                    {block.assignments.map(assignment => (
-                      <div
-                        key={assignment.id}
-                        className="rounded-lg bg-slate-50 p-2 text-xs dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800"
-                      >
-                        <div className="flex items-center justify-between gap-1 font-semibold text-slate-700 dark:text-slate-200">
-                          <span className="truncate">{assignment.approver.name}</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            assignment.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
-                            assignment.status === 'REJECTED' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' :
-                            assignment.status === 'RETURNED' ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300' :
-                            'bg-slate-200/60 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                          }`}>
-                            {assignment.status}
-                          </span>
-                        </div>
-                        {assignment.comment && (
-                          <p className="mt-1.5 italic text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-1.5 rounded border border-slate-200/60 dark:border-slate-700/60">
-                            “{assignment.comment}”
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                    {block.assignments.filter(assignment=>assignment.isCurrentRound!==false).map(assignment=><AssignmentCard key={assignment.id} assignment={assignment}/>)}
+                    {block.assignments.some(assignment=>assignment.isCurrentRound===false)&&<details className="pt-1"><summary className="cursor-pointer text-[10px] font-semibold text-slate-400 hover:text-violet-600">Lịch sử lượt duyệt trước</summary><div className="mt-1.5 space-y-1.5">{block.assignments.filter(assignment=>assignment.isCurrentRound===false).map(assignment=><AssignmentCard key={assignment.id} assignment={assignment} historical/>)}</div></details>}
                   </div>
                 </div>
               </div>

@@ -88,7 +88,9 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   if (sourceType.startsWith('rq') || sourceType === 'request' || sourceType === 'request_instance') {
     const requestId = getMetaValue(metadata, ['requestId', 'request_instance_id', 'requestInstanceId'])
       || (sourceType === 'request_instance' ? notification.sourceId : undefined);
-    return requestId ? `/rq/${encodeURIComponent(requestId)}` : '/rq';
+    return requestId ? withQuery(`/rq/${encodeURIComponent(requestId)}`, {
+      comment: getMetaValue(metadata, ['commentId', 'comment_id']),
+    }) : '/rq';
   }
 
   // ── Material Request (Phiếu vật tư dự án) ────────────

@@ -33,3 +33,10 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/work-attachments/deno.json"
 entrypoint = "./functions/work-attachments/index.ts"
+
+[functions.request-attachment-processor]
+enabled = true
+# Validates end-user JWT with Auth.getUser; cleanup requires the Vault-held secret.
+verify_jwt = false
+import_map = "./functions/request-attachment-processor/deno.json"
+entrypoint = "./functions/request-attachment-processor/index.ts"

@@ -327,3 +327,12 @@ Tính năng hoàn tất khi:
 - RLS/Storage/notification không làm rò user, nội dung, filename hoặc object path.
 - UI đạt kiểm thử responsive/accessibility, không còn lỗi chữ đè, CTA wrap hoặc bố cục vỡ ở các viewport đã nêu.
 - Test Cloud, unit, integration và UI liên quan pass; rollout log ghi project ref đã che, migration, commit, case evidence và rollback result.
+
+## 13. Làm rõ khi triển khai
+
+- Tên gate trong database được rút gọn thành `discussion_read`, `discussion_write`, `attachments`, `content_edit` bên trong bảng private `app_private.request_feature_gates`; chúng ánh xạ một-một với bốn gate phát hành ở mục 11 và đều mặc định `false`.
+- Client không tự suy quyền. Nếu backend cũ chưa trả capability mới, `canReadDiscussion`, `canComment`, `canAttach` và `canEditContent` đều được chuẩn hóa thành `false`.
+- Document bình luận phiên bản 1 chỉ nhận `doc → paragraph → text|mention`. Nhãn mention phải trùng tên hiện hành của user tương ứng; server không tin danh sách mention do client gửi.
+- Tệp Office Open XML phải có `[Content_Types].xml` và phần gốc Word/Excel đúng loại. Container có macro, ActiveX hoặc dấu hiệu mã hóa bị từ chối. DOC/XLS cũ phải đúng chữ ký Compound File và đúng stream gốc; tệp chỉ đổi đuôi không được chấp nhận.
+- Bucket không cấp quyền `SELECT` trực tiếp cho authenticated. Tải/preview luôn đi qua authorization RPC, kiểm quyền lại sau khi ký và signed URL 5 phút.
+- Comment anchor trả cursor ngay sau thời điểm comment để client có thể tải trang chứa comment cũ, sau đó mới cuộn tới phần tử đích.
