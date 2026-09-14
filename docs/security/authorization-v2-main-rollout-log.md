@@ -223,3 +223,11 @@ This log records non-PII reconciliation counts, release-candidate SHAs, migratio
 - Previously uncommitted Project audit fixes F06/F07 and their evidence were captured separately in `6876ae9`. The authorization fix remains `c46f06f`. Local CLI cache changes are excluded from the release.
 - The combined checkout passed 387 files / 1,852 tests, TypeScript, production build, migration baseline (43 active / 402 archived), query inventory (zero findings), and whitespace checks. The existing build chunk-size warning remains.
 - This checkpoint publishes Git changes only; it does not apply another Cloud migration. Deployment completion and full Admin/HR/employee persona acceptance remain to be confirmed before dating the seven-day observation window. Task 12.4.2 awaits explicit operator approval after observation; Task 13 remains gated.
+
+## Task 12.4.1 persona correction — Request template navigation
+
+- On `2026-09-14`, the operator reported that Đặng Thị Hương still could not reach Request template editing after granting the full Request application bundle in the Module-first editor.
+- Cloud main read-only reconciliation found the active employee account under the stored name `Đặng Thị Hương`. Its eight active direct Request grants include `request.template.view/global/*` and `request.template.manage/global/*`; both the effective permission resolver and `app_private.request_user_can_manage` return true.
+- The remaining denial was frontend-only: the Request Sidebar entry `/rq/templates` still had a legacy `Role.ADMIN` visibility filter before the canonical route check. The entry now follows canonical route capability like the rest of the Request navigation. `RequestTemplates` and every mutation RPC continue to require `request.template.manage`; database authorization is unchanged.
+- A rendered Sidebar persona regression proves an `EMPLOYEE` with the two canonical template capabilities sees the `Mẫu yêu cầu` link. No migration or Cloud data mutation is part of this correction.
+- Repository scanning found two other explicit Admin-only Sidebar entries, Workflow templates and MISA export. They were not treated as equivalent automatically: Workflow uses separate granular create/edit/publish capabilities and MISA currently has no dedicated export capability, so each requires a reviewed capability contract before changing its behavior.
