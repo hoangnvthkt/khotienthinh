@@ -20,6 +20,10 @@ const normalizedSource = source => ({
   scopeType: source.scopeType || 'global',
   scopeId: source.scopeId || '*',
   expiresAt: source.expiresAt || null,
+  isActive: source.isActive === undefined ? true : Boolean(source.isActive),
+  status: source.status || null,
+  updatedAt: source.updatedAt || null,
+  state: source.state || null,
 });
 
 const isScopeExpansion = (before, after) => {
@@ -37,7 +41,10 @@ export const buildTransitionManifest = input => {
       const item = normalizedSource(raw);
       return [item.sourceId, item];
     })).values()].sort((a, b) => a.sourceId.localeCompare(b.sourceId));
-    const expectedSourceHash = sha256(sources);
+    if (user.expectedSourceHash && !/^[a-f0-9]{64}$/i.test(user.expectedSourceHash)) {
+      throw new Error(`Invalid expectedSourceHash for user ${user.userId}`);
+    }
+    const expectedSourceHash = user.expectedSourceHash?.toLowerCase() || sha256(sources);
     const candidateSourceIds = user.candidateSourceIds
       ? new Set(user.candidateSourceIds.map(String))
       : null;
