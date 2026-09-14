@@ -87,6 +87,8 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 ## F1 — Manifest builder an toàn, chưa có batch được duyệt
 
 - Builder tạo manifest ổn định theo source ID, hash toàn bộ source của từng user và loại trùng source. Unknown mapping luôn `manual_review`; `system.authorization.*` mặc định retain; source hết hạn giữ nguyên expiry và không sinh replacement.
+- Tập source cần chuyển đổi (`candidateSourceIds`) được tách khỏi snapshot dùng để khóa cạnh tranh: manifest chỉ sinh item cho source được chọn nhưng `expectedSourceHash` vẫn bao phủ toàn bộ source của user. Vì vậy một thay đổi quyền ngoài batch cũng làm batch cũ bị từ chối thay vì ghi đè trạng thái mới.
+- Unit test manifest: `6/6` đạt, gồm cả trường hợp source ngoài batch thay đổi làm hash thay đổi.
 - Replacement khác scope được kiểm chặn khi mở own/cụ thể thành global. Không có quy tắc xóa theo tiền tố `system.*` hoặc gán HR rộng.
 - RED: module chưa tồn tại; GREEN 5 tests cho system retain, unknown, scope expansion, expiry và idempotency/hash.
 - Đây mới là builder local. Chưa tạo/apply manifest có user ID, chưa thu hồi grant thật; transition command, restore rehearsal và operator approval vẫn còn ở F.

@@ -49,4 +49,15 @@ describe('Task 12.4.2 transition manifest', () => {
     expect(first.items[0].expectedSourceHash).toMatch(/^[a-f0-9]{64}$/);
     expect(second).toEqual(first);
   });
+
+  it('hashes non-candidate sources without adding them to the transition batch', () => {
+    const base = input([source(), source({ sourceId: 'business-role', permissionCode: 'hrm.attendance.view' })]);
+    base.users[0].candidateSourceIds = ['source-1'];
+    const first = buildTransitionManifest(base);
+    const changed = input([source(), source({ sourceId: 'business-role', permissionCode: 'hrm.leave.view' })]);
+    changed.users[0].candidateSourceIds = ['source-1'];
+    const second = buildTransitionManifest(changed);
+    expect(first.items).toHaveLength(1);
+    expect(first.items[0].expectedSourceHash).not.toBe(second.items[0].expectedSourceHash);
+  });
 });

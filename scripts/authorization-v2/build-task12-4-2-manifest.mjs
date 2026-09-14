@@ -38,8 +38,12 @@ export const buildTransitionManifest = input => {
       return [item.sourceId, item];
     })).values()].sort((a, b) => a.sourceId.localeCompare(b.sourceId));
     const expectedSourceHash = sha256(sources);
+    const candidateSourceIds = user.candidateSourceIds
+      ? new Set(user.candidateSourceIds.map(String))
+      : null;
 
     for (const before of sources) {
+      if (candidateSourceIds && !candidateSourceIds.has(before.sourceId)) continue;
       const mapping = input.mappings[`${before.sourceType}:${before.permissionCode}`];
       let disposition = mapping?.disposition;
       let reason = mapping?.reason || '';
