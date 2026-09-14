@@ -10,6 +10,7 @@ import { getInheritedPermissionCodes } from '../lib/permissions/permissionServic
 import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
 import { PermissionAdminCatalog } from '../lib/permissions/permissionTypes';
 import { validateAuthorizationUpdate } from '../lib/permissions/authorizationUpdateValidation';
+import { saveAuthorizationAndRefresh } from '../lib/permissions/authorizationSaveOutcome';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -26,10 +27,15 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
   const [formData, setFormData] = useState<Partial<User>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [savedUserId, setSavedUserId] = useState<string | null>(null);
   const [permissionGrants, setPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [authorizationReason, setAuthorizationReason] = useState('');
   const [authorizationCatalog, setAuthorizationCatalog] = useState<PermissionAdminCatalog | null>(null);
+
+  useEffect(() => {
+    setSavedUserId(null);
+  }, [isOpen, userToEdit?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +118,29 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
 
   if (!isOpen) return null;
 
+  if (savedUserId) return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4">
+      <div role="alert" className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold">Đã lưu tài khoản — chưa tải lại được quyền</h2>
+        <p>Thay đổi đã được ghi nhận. Không cần lưu lại. Tải lại dữ liệu trước khi chỉnh sửa tiếp.</p>
+        <div className="flex gap-3">
+          <button type="button" disabled={saving} onClick={onClose} className="rounded-lg border px-4 py-2">Đóng</button>
+          <button type="button" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-white" onClick={async () => {
+            setSaving(true);
+            try {
+              await onAuthorizationSaved(savedUserId);
+              onClose();
+            } catch {
+              toast.error('Chưa tải lại được quyền', 'Tài khoản đã lưu. Kiểm tra kết nối rồi thử tải lại, không cần gửi lại thay đổi.');
+            } finally {
+              setSaving(false);
+            }
+          }}>{saving ? 'Đang tải...' : 'Tải lại dữ liệu'}</button>
+        </div>
+      </div>
+    </div>
+  );
+
   const validate = () => {
     const nextErrors: Record<string, string> = {};
     if (!formData.name?.trim()) nextErrors.name = 'Vui lòng nhập họ tên';
@@ -147,7 +176,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             permissionGrants,
           });
         } else {
-          await updateUserAuthorizationV2({
+          const outcome = await saveAuthorizationAndRefresh(() => updateUserAuthorizationV2({
             userId: userToEdit.id,
             profile: {
               name: formData.name || '',
@@ -159,8 +188,11 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             grants: permissionGrants,
             reason: authorizationReason,
             expectedUpdatedAt: userToEdit.updatedAt || '',
-          });
-          await onAuthorizationSaved(userToEdit.id);
+          }), async receipt => { await onAuthorizationSaved(receipt.userId); });
+          if (outcome.status === 'saved_refresh_pending') {
+            setSavedUserId(outcome.receipt.userId);
+            return;
+          }
         }
         toast.success('Đã cập nhật tài khoản', 'Hồ sơ và direct grants đã được lưu trong một giao dịch.');
       } else {
