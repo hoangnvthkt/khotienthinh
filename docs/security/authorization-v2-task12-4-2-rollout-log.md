@@ -127,3 +127,9 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 
 - Migration `20260914093239` đã apply lên Cloud main; helper smoke standalone exit 0 và rollback.
 - Postflight: 54 tài khoản có Chat qua capability canonical, `legacyOnlyChatUsers=0`, `persistedBatches=0`. Không có thay đổi grant thật được lưu.
+
+## E4 — Legacy runtime dependency gate
+
+- Cloud còn 17 function tham chiếu trực tiếp bốn cột legacy; phần lớn là guard/projection/lifecycle phải giữ đến Task 13. Hai decision helper còn hoạt động là `is_module_admin` và `can_access_module`.
+- Fan-out hiện tại: `is_module_admin` xuất hiện trong 57 function và 130 policy; `can_access_module` trong 2 function và 11 policy. Chi tiết và thứ tự chia cohort được ghi tại `authorization-v2-task12-4-2-legacy-runtime-dependencies.md`.
+- Kết luận kiểm soát: chưa có manifest thu hồi thật đủ điều kiện duyệt. Thay helper dùng chung bằng phép “any manage/view” bị loại vì có thể nâng quyền hẹp thành quyền toàn module.

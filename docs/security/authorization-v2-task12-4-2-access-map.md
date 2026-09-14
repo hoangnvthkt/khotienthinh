@@ -2,6 +2,8 @@
 
 Base `abc35de`; Cloud inventory 2026-09-14 08:20:54 UTC. Đây là bản đồ implementation, không xác nhận các quyền đề xuất đã enforce.
 
+Dependency gate cập nhật sau các checkpoint E/F: [legacy runtime dependencies](authorization-v2-task12-4-2-legacy-runtime-dependencies.md).
+
 ## Quy tắc đối chiếu
 
 - Danh sách đầy đủ 87 submodule registry và route/action/scope: [surfaces](authorization-v2-task12-4-2-surfaces.md). Catalog active/assignable và metadata Settings thực tế: [Cloud inventory](authorization-v2-task12-4-2-inventory.json).
