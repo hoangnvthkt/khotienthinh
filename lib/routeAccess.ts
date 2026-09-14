@@ -145,3 +145,11 @@ export const canAccessRoute = (
   return canViewRoute(user, pathname);
 };
 import { canConfigureWork } from './work/workConfigurationAccess';
+
+/** Choose a permitted landing after a denied route; never consult retained legacy fields. */
+export const getAuthorizedRouteFallback = (
+  user: Parameters<typeof canAccessRoute>[0],
+  deniedRoute: string,
+): '/' | '/da' => normalizeRoutePath(deniedRoute) !== '/da'
+  && getRouteModuleKey(deniedRoute) === 'DA'
+  && canAccessRoute(user, '/da') ? '/da' : '/';
