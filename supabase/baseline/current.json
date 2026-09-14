@@ -61,7 +61,8 @@
     "20260914090003_authorization_v2_task12_4_2_account_role_transition.sql",
     "20260914091341_authorization_v2_task12_4_2_transition_commands.sql",
     "20260914092853_authorization_v2_task12_4_2_request_surface_parity.sql",
-    "20260914093239_authorization_v2_task12_4_2_canonical_helpers.sql"
+    "20260914093239_authorization_v2_task12_4_2_canonical_helpers.sql",
+    "20260914095129_authorization_v2_task12_4_2_multi_replacement.sql"
   ],
   "forbidIncludeAll": true
 }

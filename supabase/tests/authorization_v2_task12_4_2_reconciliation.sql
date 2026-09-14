@@ -20,7 +20,9 @@ with actor as (
   where u.is_active and u.account_status = 'ACTIVE' and u.role::text = 'EMPLOYEE'
     and not exists (
       select 1 from public.user_permission_grants g
-      where g.user_id = u.id and g.permission_code in ('system.rq.view', 'request.instance.view_own')
+      where g.user_id = u.id and g.permission_code in (
+        'system.rq.view', 'request.instance.view_own', 'request.template.view'
+      )
     )
   order by u.id limit 1
 )
@@ -57,13 +59,23 @@ set items = jsonb_build_array(jsonb_build_object(
         ) entry
         where entry->>'sourceId' = context_row.source_id::text
       ),
-      'after', jsonb_build_object(
-        'sourceId', null,
-        'sourceType', 'DIRECT',
-        'permissionCode', 'request.instance.view_own',
-        'scopeType', 'global',
-        'scopeId', '*',
-        'expiresAt', null
+      'after', jsonb_build_array(
+        jsonb_build_object(
+          'sourceId', null,
+          'sourceType', 'DIRECT',
+          'permissionCode', 'request.instance.view_own',
+          'scopeType', 'global',
+          'scopeId', '*',
+          'expiresAt', null
+        ),
+        jsonb_build_object(
+          'sourceId', null,
+          'sourceType', 'DIRECT',
+          'permissionCode', 'request.template.view',
+          'scopeType', 'global',
+          'scopeId', '*',
+          'expiresAt', null
+        )
       ),
       'disposition', 'replace',
       'reason', 'Reviewed equivalent request read replacement',
@@ -164,7 +176,14 @@ begin
     where user_id = v_context.target_id and permission_code = 'request.instance.view_own'
       and scope_type = 'global' and scope_id = '*' and is_active
   ) then
-    raise exception 'Replacement direct source is missing after apply';
+    raise exception 'First replacement direct source is missing after apply';
+  end if;
+  if not exists (
+    select 1 from public.user_permission_grants
+    where user_id = v_context.target_id and permission_code = 'request.template.view'
+      and scope_type = 'global' and scope_id = '*' and is_active
+  ) then
+    raise exception 'Second replacement direct source is missing after apply';
   end if;
 end;
 $$;
@@ -224,7 +243,8 @@ begin
   end if;
   if exists (
     select 1 from public.user_permission_grants
-    where user_id = v_context.target_id and permission_code = 'request.instance.view_own'
+    where user_id = v_context.target_id
+      and permission_code in ('request.instance.view_own', 'request.template.view')
       and grant_reason = 'Task 12.4.2 apply reversible smoke batch'
   ) then
     raise exception 'Batch-created replacement survived restore';

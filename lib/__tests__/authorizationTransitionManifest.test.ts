@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { buildTransitionManifest } from '../../scripts/authorization-v2/build-task12-4-2-manifest.mjs';
+
+const wmsMappings = JSON.parse(readFileSync(
+  new URL('../../scripts/authorization-v2/task12-4-2-wms-mappings.json', import.meta.url),
+  'utf8',
+));
 
 const source = (overrides: Record<string, unknown> = {}) => ({
   sourceId: 'source-1', sourceType: 'DIRECT', permissionCode: 'system.rq.view',
@@ -97,5 +103,54 @@ describe('Task 12.4.2 transition manifest', () => {
     const data = input([source()]);
     data.users[0].expectedSourceHash = 'not-a-sha256';
     expect(() => buildTransitionManifest(data)).toThrow('Invalid expectedSourceHash');
+  });
+
+  it('expands one reviewed shell source into multiple direct capabilities without widening scope', () => {
+    const manifest = buildTransitionManifest(input([source({
+      permissionCode: 'system.wms.manage',
+      scopeType: 'global',
+    })], {
+      'DIRECT:system.wms.manage': {
+        disposition: 'replace',
+        permissionCodes: [
+          'wms.inventory.edit',
+          'wms.request.approve',
+          'wms.transaction.complete',
+        ],
+      },
+    }));
+    expect(manifest.items[0].after).toEqual([
+      expect.objectContaining({ permissionCode: 'wms.inventory.edit', scopeType: 'global' }),
+      expect.objectContaining({ permissionCode: 'wms.request.approve', scopeType: 'global' }),
+      expect.objectContaining({ permissionCode: 'wms.transaction.complete', scopeType: 'global' }),
+    ]);
+  });
+
+  it('rejects a multi-capability replacement when any target widens scope', () => {
+    const manifest = buildTransitionManifest(input([source()], {
+      'DIRECT:system.rq.view': {
+        disposition: 'replace',
+        replacements: [
+          { permissionCode: 'request.template.view' },
+          { permissionCode: 'request.instance.view_all', scopeType: 'global', scopeId: '*' },
+        ],
+      },
+    }));
+    expect(manifest.items[0]).toMatchObject({ disposition: 'manual_review', after: null });
+    expect(manifest.items[0].reason).toContain('scope expansion');
+  });
+
+  it('maps the WMS shells to the reviewed complete read and manager surfaces', () => {
+    const manifest = buildTransitionManifest(input([
+      source({ sourceId: 'wms-view', permissionCode: 'system.wms.view', scopeType: 'global' }),
+      source({ sourceId: 'wms-manage', permissionCode: 'system.wms.manage', scopeType: 'global' }),
+    ], wmsMappings));
+    const mapped = Object.fromEntries(manifest.items.map(item => [item.before.permissionCode, item.after]));
+    expect(mapped['system.wms.view']).toHaveLength(3);
+    expect(mapped['system.wms.manage']).toHaveLength(13);
+    expect(mapped['system.wms.manage'].map((item: { permissionCode: string }) => item.permissionCode)).toContain(
+      'wms.transaction.reverse',
+    );
+    expect(manifest.items.every(item => item.disposition === 'replace')).toBe(true);
   });
 });

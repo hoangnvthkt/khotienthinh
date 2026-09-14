@@ -33,6 +33,26 @@ const isScopeExpansion = (before, after) => {
     || (before.scopeId !== '*' && after.scopeId === '*');
 };
 
+const replacementTargets = mapping => {
+  if (Array.isArray(mapping.replacements)) return mapping.replacements;
+  if (Array.isArray(mapping.permissionCodes)) {
+    return mapping.permissionCodes.map(permissionCode => ({ permissionCode }));
+  }
+  return [mapping];
+};
+
+const buildReplacement = (before, mapping, target) => ({
+  ...before,
+  sourceId: null,
+  sourceType: target.sourceType || mapping.sourceType || 'DIRECT',
+  permissionCode: target.permissionCode,
+  scopeType: target.scopeType || mapping.scopeType || before.scopeType,
+  scopeId: target.scopeId || mapping.scopeId || before.scopeId,
+  expiresAt: target.expiresAt === undefined
+    ? (mapping.expiresAt === undefined ? before.expiresAt : mapping.expiresAt)
+    : target.expiresAt,
+});
+
 export const buildTransitionManifest = input => {
   const now = new Date(input.now).getTime();
   const items = [];
@@ -67,19 +87,22 @@ export const buildTransitionManifest = input => {
           : 'no explicit source-to-capability mapping';
         after = disposition === 'retain' ? before : null;
       } else if (disposition === 'replace') {
-        after = {
-          ...before,
-          sourceId: null,
-          sourceType: mapping.sourceType || 'DIRECT',
-          permissionCode: mapping.permissionCode,
-          scopeType: mapping.scopeType || before.scopeType,
-          scopeId: mapping.scopeId || before.scopeId,
-          expiresAt: mapping.expiresAt === undefined ? before.expiresAt : mapping.expiresAt,
-        };
-        if (!after.permissionCode || isScopeExpansion(before, after)) {
+        const replacements = replacementTargets(mapping).map(target => buildReplacement(before, mapping, target));
+        const hasMissingPermission = replacements.length === 0 || replacements.some(item => !item.permissionCode);
+        const hasScopeExpansion = replacements.some(item => isScopeExpansion(before, item));
+        if (hasMissingPermission || hasScopeExpansion) {
           disposition = 'manual_review';
-          reason = !after.permissionCode ? 'replacement permission is missing' : 'scope expansion requires operator review';
+          reason = hasMissingPermission ? 'replacement permission is missing' : 'scope expansion requires operator review';
           after = null;
+        } else {
+          const deduplicated = [...new Map(replacements.map(item => [stableJson({
+            sourceType: item.sourceType,
+            permissionCode: item.permissionCode,
+            scopeType: item.scopeType,
+            scopeId: item.scopeId,
+            expiresAt: item.expiresAt,
+          }), item])).values()];
+          after = deduplicated.length === 1 ? deduplicated[0] : deduplicated;
         }
       } else if (disposition === 'retain') {
         after = before;

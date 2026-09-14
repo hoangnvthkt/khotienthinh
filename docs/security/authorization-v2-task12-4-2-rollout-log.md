@@ -133,3 +133,13 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Cloud còn 17 function tham chiếu trực tiếp bốn cột legacy; phần lớn là guard/projection/lifecycle phải giữ đến Task 13. Hai decision helper còn hoạt động là `is_module_admin` và `can_access_module`.
 - Fan-out hiện tại: `is_module_admin` xuất hiện trong 57 function và 130 policy; `can_access_module` trong 2 function và 11 policy. Chi tiết và thứ tự chia cohort được ghi tại `authorization-v2-task12-4-2-legacy-runtime-dependencies.md`.
 - Kết luận kiểm soát: chưa có manifest thu hồi thật đủ điều kiện duyệt. Thay helper dùng chung bằng phép “any manage/view” bị loại vì có thể nâng quyền hẹp thành quyền toàn module.
+
+## F2 — Multi-replacement command và preview cohort WMS
+
+- Manifest builder hỗ trợ một source legacy được thay bằng nhiều DIRECT capability cùng scope/expiry. Nếu bất kỳ target nào thiếu permission hoặc mở rộng scope, toàn item chuyển sang `manual_review`; target trùng bị loại ổn định ở builder và bị Cloud command từ chối phòng thủ.
+- Migration `20260914095129` đã apply Cloud main. Command mới bao transaction cũ: target đầu tiên và mọi target bổ sung cùng commit/rollback; receipt lưu toàn bộ ID được dùng/tạo. Restore chỉ xóa grant do chính batch tạo, giữ grant đã tồn tại từ nguồn khác, rồi khôi phục source cũ. Entry point single-target cũ đã bị thu hồi quyền EXECUTE trực tiếp.
+- TDD: unit RED 2 ca multi-target trước sửa; GREEN hiện 11/11. Cloud reconciliation RED trên command cũ; GREEN sau migration với hai replacement, idempotent apply, stale apply/restore guard và restore đầy đủ. Bốn smoke tương thích ngược Task 12.4.2 đều exit 0; mọi fixture rollback.
+- Mapping WMS được chốt theo catalog Cloud active/direct-assignable: shell Xem → 3 quyền đọc; shell Quản lý → đủ 13 quyền đọc/thao tác. Tất cả source hiện hành đều `global/*`, không expiry.
+- Preview riêng tư hiện tại: 40 user, 63 source (`system.wms.view=40`, `system.wms.manage=23`), 63/63 item `replace`, 0 `manual_review`, 419 replacement references. Trong đó 212 reference đã có grant active và 207 grant thao tác còn thiếu sẽ được tạo; không có tên/email trong log, manifest có UUID chỉ nằm ở thư mục tạm mode 0700/file 0600.
+- **Chưa apply batch WMS thật.** 40 quyền shell và helper legacy vẫn còn nguyên. Cần operator duyệt đúng cohort/diff trước apply; helper WMS chỉ được cutover sau khi batch thành công, rồi mới quan sát và cân nhắc revoke các nguồn legacy tiếp theo.
+- Baseline sau migration: 58 active / 402 archived; TypeScript pass. Việc apply schema command không tự tạo grant và không đổi quyền tài khoản thật.

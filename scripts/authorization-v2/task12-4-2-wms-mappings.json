@@ -1,0 +1,30 @@
+{
+  "DIRECT:system.wms.view": {
+    "disposition": "replace",
+    "reason": "Replace the reviewed WMS read shell with the complete granular WMS read surface at the identical scope and expiry.",
+    "permissionCodes": [
+      "wms.inventory.view",
+      "wms.request.view",
+      "wms.transaction.view"
+    ]
+  },
+  "DIRECT:system.wms.manage": {
+    "disposition": "replace",
+    "reason": "Replace the reviewed WMS manager shell with the complete granular WMS operational surface at the identical scope and expiry.",
+    "permissionCodes": [
+      "wms.inventory.edit",
+      "wms.inventory.view",
+      "wms.master_data.manage",
+      "wms.request.approve",
+      "wms.request.create",
+      "wms.request.export",
+      "wms.request.receive",
+      "wms.request.view",
+      "wms.transaction.approve",
+      "wms.transaction.complete",
+      "wms.transaction.create",
+      "wms.transaction.reverse",
+      "wms.transaction.view"
+    ]
+  }
+}
