@@ -1,14 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { EffectivePermissionSource, UserPermissionGrant } from '../../types';
-import { PermissionAdminCatalog, PermissionCatalogAction, PermissionScopeType } from '../../lib/permissions/permissionTypes';
+import { PermissionAdminCatalog, PermissionCatalogAction, PermissionScopeType, PermissionScope } from '../../lib/permissions/permissionTypes';
 import {
   getApplicationGrantState,
+  getApplicationDirectScopes,
   removeApplicationDirectGrants,
   selectApplicationDefaultViews,
   togglePermissionAction,
 } from '../../lib/permissions/moduleGrantSelection';
-import PermissionModuleCard from './PermissionModuleCard';
+import PermissionModuleCard, { SCOPE_LABELS } from './PermissionModuleCard';
 
 interface PermissionModuleEditorProps {
   catalog: PermissionAdminCatalog;
@@ -23,7 +24,7 @@ interface PermissionModuleEditorProps {
 
 interface PendingRemoval {
   applicationCode: string;
-  grants: UserPermissionGrant[];
+  scope: Required<PermissionScope>;
   removedCount: number;
 }
 
@@ -43,6 +44,12 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
   );
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scopeRemovalApplication, setScopeRemovalApplication] = useState<string | null>(null);
+  // A paste, reload or other edit invalidates a previously displayed removal preview.
+  useEffect(() => {
+    setPendingRemoval(null);
+    setScopeRemovalApplication(null);
+  }, [grants, catalog]);
   const inheritedPermissionCodes = useMemo(
     () => inheritedSources.map(source => source.permissionCode),
     [inheritedSources],
@@ -72,11 +79,18 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
       return;
     }
 
+    const scopes = getApplicationDirectScopes({ catalog, applicationCode, grants });
+    if (scopes.length > 1) {
+      setPendingRemoval(null);
+      setScopeRemovalApplication(applicationCode);
+      setExpanded(current => new Set(current).add(applicationCode));
+      return;
+    }
     const removal = removeApplicationDirectGrants({ catalog, applicationCode, grants });
     if (removal.needsConfirmation) {
       setPendingRemoval({
         applicationCode,
-        grants: removal.grants,
+        scope: scopes[0],
         removedCount: removal.removed.length,
       });
       setExpanded(current => new Set(current).add(applicationCode));
@@ -131,6 +145,36 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
         </div>
       )}
 
+      {scopeRemovalApplication && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <label className="block space-y-2">
+            <span className="font-bold">Chọn phạm vi cần gỡ của {catalog.applications.find(app => app.code === scopeRemovalApplication)?.label}</span>
+            <select
+              aria-label="Phạm vi cần gỡ"
+              disabled={disabled}
+              value={pendingRemoval ? JSON.stringify(pendingRemoval.scope) : ''}
+              onChange={event => {
+                const scopes = getApplicationDirectScopes({ catalog, applicationCode: scopeRemovalApplication, grants });
+                const scope = scopes.find(item => JSON.stringify(item) === event.target.value);
+                if (!scope) { setPendingRemoval(null); return; }
+                const removal = removeApplicationDirectGrants({ catalog, applicationCode: scopeRemovalApplication, grants, scope });
+                setPendingRemoval({ applicationCode: scopeRemovalApplication, scope, removedCount: removal.removed.length });
+              }}
+              className="min-h-11 w-full rounded-lg border border-amber-300 bg-white px-3"
+            >
+              <option value="">Chọn một phạm vi…</option>
+              {getApplicationDirectScopes({ catalog, applicationCode: scopeRemovalApplication, grants }).map(scope => (
+                <option key={JSON.stringify(scope)} value={JSON.stringify(scope)}>
+                  {SCOPE_LABELS[scope.scopeType]}{scope.scopeId === '*' ? '' : ` · ${scope.scopeId}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="mt-2">Chỉ gỡ quyền cấp trực tiếp trong phạm vi đã chọn. Các phạm vi và nguồn cấp khác vẫn được giữ.</p>
+          <button type="button" onClick={() => { setScopeRemovalApplication(null); setPendingRemoval(null); }} className="mt-2 min-h-11 font-bold">Hủy gỡ</button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         {applications.map(application => (
           <PermissionModuleCard
@@ -159,10 +203,14 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
             })}
             onToggleAction={toggleAction}
             onConfirmRemoval={() => {
-              if (pendingRemoval?.applicationCode === application.code) onChange(pendingRemoval.grants);
+              if (!disabled && pendingRemoval?.applicationCode === application.code) {
+                const removal = removeApplicationDirectGrants({ catalog, applicationCode: application.code, grants, scope: pendingRemoval.scope });
+                onChange(removal.grants);
+              }
               setPendingRemoval(null);
+              setScopeRemovalApplication(null);
             }}
-            onCancelRemoval={() => setPendingRemoval(null)}
+            onCancelRemoval={() => { setPendingRemoval(null); setScopeRemovalApplication(null); }}
           />
         ))}
       </div>

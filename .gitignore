@@ -49,3 +49,7 @@ service-account*.json
 *.sw?
 .vercel/
 .env.local
+
+# Browser test reports (fixtures contain no production credentials)
+/test-results/
+/playwright-report/
