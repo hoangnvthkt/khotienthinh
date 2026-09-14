@@ -110,3 +110,8 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Backend `request_user_can_manage`, template/version select và `list_request_templates` được chuyển sang canonical capability. RED Cloud xác nhận legacy RQ còn giữ manage; GREEN rehearsal rollback xác nhận bỏ canonical manage thì legacy không giữ quyền, view vẫn đọc được list.
 - Regression mục tiêu: 4 files / 33 tests pass. Full suite: 398 files / 1.896 tests pass; TypeScript/build pass (chunk warning hiện hữu); baseline 56 active / 402 archived; query audit/check 0; dry-run chỉ có migration `20260914092853`.
 - Audit rộng còn thấy các helper compatibility khác (`is_module_admin`, `can_access_module`, Chat/AI và lifecycle/projection). Không xóa cơ học: phải phân loại consumer quyết định quyền với consumer audit/guard/projection trước Task 13.
+
+### E2 Cloud postflight
+
+- Migration `20260914092853` đã apply lên Cloud main; surface smoke standalone exit 0 và rollback.
+- Postflight: 6 canonical Request template managers, 32 canonical viewers, `legacyOnlyRequestManagers=0`, `persistedBatches=0`. Smoke không giữ lại thay đổi quyền tài khoản thật.
