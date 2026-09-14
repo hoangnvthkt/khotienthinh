@@ -140,17 +140,17 @@ describe('Task 12.4.2 transition manifest', () => {
     expect(manifest.items[0].reason).toContain('scope expansion');
   });
 
-  it('maps the WMS shells to the reviewed complete read and manager surfaces', () => {
+  it('keeps WMS manager sources under review instead of silently granting reversal', () => {
     const manifest = buildTransitionManifest(input([
       source({ sourceId: 'wms-view', permissionCode: 'system.wms.view', scopeType: 'global' }),
       source({ sourceId: 'wms-manage', permissionCode: 'system.wms.manage', scopeType: 'global' }),
     ], wmsMappings));
     const mapped = Object.fromEntries(manifest.items.map(item => [item.before.permissionCode, item.after]));
     expect(mapped['system.wms.view']).toHaveLength(3);
-    expect(mapped['system.wms.manage']).toHaveLength(13);
-    expect(mapped['system.wms.manage'].map((item: { permissionCode: string }) => item.permissionCode)).toContain(
-      'wms.transaction.reverse',
-    );
-    expect(manifest.items.every(item => item.disposition === 'replace')).toBe(true);
+    expect(mapped['system.wms.manage']).toBeNull();
+    expect(manifest.items.find(item => item.before.permissionCode === 'system.wms.manage'))
+      .toMatchObject({ disposition: 'manual_review' });
+    expect(manifest.items.find(item => item.before.permissionCode === 'system.wms.view'))
+      .toMatchObject({ disposition: 'replace' });
   });
 });

@@ -21,7 +21,7 @@ with actor as (
     and not exists (
       select 1 from public.user_permission_grants g
       where g.user_id = u.id and g.permission_code in (
-        'system.rq.view', 'request.instance.view_own', 'request.template.view'
+        'system.rq.view', 'request.instance.view_own', 'request.template.view', 'settings.general.view'
       )
     )
   order by u.id limit 1
@@ -102,6 +102,7 @@ do $$
 declare
   v_context task12_4_2_transition_context%rowtype;
   v_receipt jsonb;
+  v_invalid_items jsonb;
 begin
   select * into v_context from task12_4_2_transition_context;
   if public.preview_authorization_transition_sources(v_context.target_id)->>'expectedSourceHash'
@@ -153,6 +154,33 @@ begin
     raise exception 'Stale source hash unexpectedly applied';
   exception when serialization_failure then
     null;
+  end;
+
+  -- A rejected second target must roll back the already-processed first target.
+  v_invalid_items := jsonb_set(v_context.items, '{0,after,1,permissionCode}',
+    '"not.a.catalog.permission"');
+  begin
+    perform public.apply_authorization_transition_batch_v2(
+      v_context.batch_id, v_context.mapping_version, v_invalid_items,
+      'Task 12.4.2 invalid second target must roll back'
+    );
+    raise exception 'Invalid second replacement unexpectedly applied';
+  exception when check_violation then null;
+  end;
+  if public.preview_authorization_transition_sources(v_context.target_id)->>'expectedSourceHash'
+    is distinct from v_context.items->0->>'expectedSourceHash'
+  then
+    raise exception 'Rejected second replacement left partial source changes';
+  end if;
+
+  v_invalid_items := jsonb_set(v_context.items, '{0,after,1}', v_context.items#>'{0,after,0}');
+  begin
+    perform public.apply_authorization_transition_batch_v2(
+      v_context.batch_id, v_context.mapping_version, v_invalid_items,
+      'Task 12.4.2 duplicate replacement must fail'
+    );
+    raise exception 'Duplicate replacement unexpectedly applied';
+  exception when unique_violation then null;
   end;
 
   v_receipt := public.apply_authorization_transition_batch_v2(
@@ -252,5 +280,57 @@ begin
 end;
 $$;
 
+reset role;
+
+-- Reusing a pre-existing first target must not delete it on restore, while
+-- the newly-created second target must still be removed.
+insert into public.user_permission_grants(
+  user_id, permission_code, scope_type, scope_id, is_active, grant_reason
+)
+select target_id, 'request.instance.view_own', 'global', '*', true,
+       'Task 12.4.2 pre-existing replacement fixture'
+from task12_4_2_transition_context;
+
+update task12_4_2_transition_context c
+set batch_id = 'task12.4.2-smoke-reuse',
+    items = jsonb_set(jsonb_set(c.items,
+      '{0,batchId}', '"task12.4.2-smoke-reuse"'),
+      '{0,expectedSourceHash}', to_jsonb(app_private.authorization_transition_source_hash(c.target_id)));
+
+set local role authenticated;
+do $$
+declare
+  v_context task12_4_2_transition_context%rowtype;
+  v_receipt jsonb;
+begin
+  select * into v_context from task12_4_2_transition_context;
+  perform public.apply_authorization_transition_batch_v2(
+    v_context.batch_id, v_context.mapping_version, v_context.items,
+    'Task 12.4.2 reuse existing replacement test'
+  );
+  v_receipt := public.restore_authorization_transition_batch_v2(
+    v_context.batch_id, 'Task 12.4.2 restore with reused replacement'
+  );
+  if v_receipt->'restoredSourceHashes'->>v_context.target_id::text
+    is distinct from v_context.items->0->>'expectedSourceHash'
+  then
+    raise exception 'Restore did not reproduce the full pre-apply source snapshot';
+  end if;
+  if not exists (
+    select 1 from public.user_permission_grants
+    where user_id = v_context.target_id and permission_code = 'request.instance.view_own'
+      and is_active and grant_reason = 'Task 12.4.2 pre-existing replacement fixture'
+  ) then
+    raise exception 'Restore deleted a pre-existing replacement';
+  end if;
+  if exists (
+    select 1 from public.user_permission_grants
+    where user_id = v_context.target_id and permission_code = 'request.template.view'
+      and grant_reason = 'Task 12.4.2 reuse existing replacement test'
+  ) then
+    raise exception 'Restore kept newly created second target after reusing the first';
+  end if;
+end;
+$$;
 reset role;
 rollback;

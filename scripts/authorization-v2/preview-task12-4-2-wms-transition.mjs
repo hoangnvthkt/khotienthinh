@@ -13,8 +13,8 @@ if (!outputDirectory) {
 const mappingPath = fileURLToPath(new URL('./task12-4-2-wms-mappings.json', import.meta.url));
 const mappings = JSON.parse(await readFile(mappingPath, 'utf8'));
 const generatedAt = new Date().toISOString();
-const batchId = 'task12.4.2-wms-shell-20260914-preview-1';
-const mappingVersion = '2026-09-14.wms-shell.v1';
+const batchId = 'task12.4.2-wms-shell-20260914-preview-2';
+const mappingVersion = '2026-09-14.wms-shell.v2';
 
 const sql = `
 with candidate_sources as (
@@ -57,9 +57,6 @@ if (!Array.isArray(users) || users.length === 0) {
 const input = { batchId, mappingVersion, now: generatedAt, users, mappings };
 const manifest = buildTransitionManifest(input);
 const unresolved = manifest.items.filter(item => item.disposition === 'manual_review');
-if (unresolved.length > 0) {
-  throw new Error(`WMS preview contains ${unresolved.length} unresolved items`);
-}
 
 const targetDirectory = resolve(outputDirectory);
 await mkdir(targetDirectory, { mode: 0o700, recursive: true });
@@ -68,7 +65,8 @@ await writeFile(resolve(targetDirectory, 'input.json'), `${JSON.stringify(input,
   mode: 0o600,
   flag: 'wx',
 });
-await writeFile(resolve(targetDirectory, 'manifest.json'), `${JSON.stringify(manifest.items, null, 2)}\n`, {
+// An unresolved preview is review evidence, never an executable batch artifact.
+await writeFile(resolve(targetDirectory, unresolved.length ? 'review-required.json' : 'manifest.json'), `${JSON.stringify(manifest.items, null, 2)}\n`, {
   mode: 0o600,
   flag: 'wx',
 });
@@ -93,5 +91,8 @@ process.stdout.write(`${JSON.stringify({
   dispositionCounts,
   sourceCounts,
   replacementReferences,
+  readyForReview: unresolved.length === 0,
+  unresolvedItems: unresolved.length,
   outputDirectory: targetDirectory,
 })}\n`);
+if (unresolved.length) process.exitCode = 2;
