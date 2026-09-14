@@ -1,0 +1,1357 @@
+{
+  "accounts": [
+    {
+      "account_status": "ACTIVE",
+      "total": 56
+    },
+    {
+      "account_status": "DISABLED",
+      "total": 3
+    }
+  ],
+  "applications": [
+    {
+      "active": true,
+      "assignable": true,
+      "code": "ai"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "analytics"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "asset"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "chat"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "contract"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "expense"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "hrm"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "kb"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "procurement"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "project"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "request"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "resource_booking"
+    },
+    {
+      "active": true,
+      "assignable": false,
+      "code": "settings"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "storage"
+    },
+    {
+      "active": false,
+      "assignable": false,
+      "code": "system"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "wms"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "work"
+    },
+    {
+      "active": true,
+      "assignable": true,
+      "code": "workflow"
+    }
+  ],
+  "capturedAt": "2026-09-14T08:20:54.896329+00:00",
+  "grants": [
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ai.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ai.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.ai.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.analytics.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.analytics.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.audit_trail.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.audit_trail.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.authorization.audit",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.authorization.view",
+      "scope_type": "global",
+      "total": 2
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.chat.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.chat.view",
+      "scope_type": "global",
+      "total": 54
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.chat.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.custom_dashboard.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.custom_dashboard.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.da.manage",
+      "scope_type": "global",
+      "total": 39
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.da.view",
+      "scope_type": "global",
+      "total": 52
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.da.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ep.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ep.view",
+      "scope_type": "global",
+      "total": 4
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ex.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ex.view",
+      "scope_type": "global",
+      "total": 10
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.hd.manage",
+      "scope_type": "global",
+      "total": 8
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.hd.view",
+      "scope_type": "global",
+      "total": 19
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.hd.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.kb.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.kb.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.kb.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.procurement.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.procurement.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.rq.manage",
+      "scope_type": "global",
+      "total": 16
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.rq.view",
+      "scope_type": "global",
+      "total": 32
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.settings.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.settings.view",
+      "scope_type": "global",
+      "total": 13
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.settings.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.storage.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.storage.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.storage.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.tender_ai.manage",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.tender_ai.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ts.manage",
+      "scope_type": "global",
+      "total": 2
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.ts.view",
+      "scope_type": "global",
+      "total": 13
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.wf.manage",
+      "scope_type": "global",
+      "total": 24
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.wf.view",
+      "scope_type": "global",
+      "total": 45
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.wf.view",
+      "scope_type": "global",
+      "total": 1
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.wms.manage",
+      "scope_type": "global",
+      "total": 23
+    },
+    {
+      "account_status": "ACTIVE",
+      "expired": false,
+      "is_active": true,
+      "permission_code": "system.wms.view",
+      "scope_type": "global",
+      "total": 40
+    },
+    {
+      "account_status": "DISABLED",
+      "expired": false,
+      "is_active": false,
+      "permission_code": "system.wms.view",
+      "scope_type": "global",
+      "total": 1
+    }
+  ],
+  "legacyFunctions": [
+    {
+      "arguments": "p_user_id uuid, p_expected_fingerprint text, p_legacy_state jsonb, p_grants jsonb, p_reason text, p_warning_acceptances jsonb",
+      "name": "apply_user_permission_change_impl",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_module text",
+      "name": "can_access_module",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_user_id uuid",
+      "name": "chat_v2_has_app_access",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "",
+      "name": "get_permission_health_summary_legacy_base",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "",
+      "name": "guard_and_audit_legacy_permission_write",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "",
+      "name": "list_authorization_principals_impl",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "",
+      "name": "prevent_users_privilege_self_update",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_user_id uuid, p_legacy_state jsonb, p_grants jsonb",
+      "name": "preview_user_permission_change_impl",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_user_id uuid",
+      "name": "request_user_can_manage",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_user_id uuid, p_permission_code text, p_scope_type text, p_scope_id text, p_at timestamp with time zone",
+      "name": "resolve_effective_permission_sources",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_user_id uuid",
+      "name": "sync_legacy_permission_projection",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "",
+      "name": "sync_user_account_status_compat",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "p_user_id uuid",
+      "name": "user_permission_state_fingerprint",
+      "schema": "app_private"
+    },
+    {
+      "arguments": "",
+      "name": "can_manage_ai_learning",
+      "schema": "public"
+    },
+    {
+      "arguments": "p_actor_user_id uuid, p_operation_id uuid, p_auth_result jsonb",
+      "name": "complete_user_account_lifecycle",
+      "schema": "public"
+    },
+    {
+      "arguments": "",
+      "name": "get_authorization_legacy_migration_summary",
+      "schema": "public"
+    },
+    {
+      "arguments": "p_target_user_id uuid",
+      "name": "get_user_account_lifecycle_preview",
+      "schema": "public"
+    },
+    {
+      "arguments": "p_module text",
+      "name": "is_module_admin",
+      "schema": "public"
+    },
+    {
+      "arguments": "p_actor_user_id uuid, p_target_user_id uuid, p_action text, p_reason text, p_idempotency_key uuid",
+      "name": "prepare_user_account_lifecycle",
+      "schema": "public"
+    },
+    {
+      "arguments": "",
+      "name": "sync_auth_user_profile",
+      "schema": "public"
+    }
+  ],
+  "notificationLedger": [
+    {
+      "bodyMd5": "8424cfc460fc54d9601d9c29bcfe5202",
+      "name": "work_notification_preview_recipients",
+      "statementCount": 8,
+      "version": "20260912044730"
+    },
+    {
+      "bodyMd5": "c314da8d0f01cd9cd5a10834b1516398",
+      "name": "workflow_notification_outbox",
+      "statementCount": 36,
+      "version": "20260912045358"
+    },
+    {
+      "bodyMd5": "a7b847fb90bb59eef300beb86823f48b",
+      "name": "workflow_notification_commands",
+      "statementCount": 33,
+      "version": "20260912045733"
+    },
+    {
+      "bodyMd5": "3815470b62f18655d821fcb32b262bc4",
+      "name": "request_participant_notifications",
+      "statementCount": 11,
+      "version": "20260912050458"
+    },
+    {
+      "bodyMd5": "405cad742da319fe5ccf5381370438cc",
+      "name": "task_notification_deadline_reminders",
+      "statementCount": 20,
+      "version": "20260912050744"
+    },
+    {
+      "bodyMd5": "4104edfdf9a576b67f72a94c6e1f3748",
+      "name": "task_notification_source_guards",
+      "statementCount": 3,
+      "version": "20260912052011"
+    }
+  ],
+  "roleAssignments": [
+    {
+      "code": "AUDITOR",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 1
+    },
+    {
+      "code": "BUSINESS_USER",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 54
+    },
+    {
+      "code": "BUSINESS_USER",
+      "expired": false,
+      "scope_type": "global",
+      "status": "REVOKED",
+      "total": 1
+    },
+    {
+      "code": "HR",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 1
+    },
+    {
+      "code": "HR_MANAGE",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 1
+    },
+    {
+      "code": "LEGACY_HR_0923012A0F922B85",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 2
+    },
+    {
+      "code": "LEGACY_HR_1F11EEEB6E9FBB4F",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 46
+    },
+    {
+      "code": "LEGACY_HR_1F11EEEB6E9FBB4F",
+      "expired": false,
+      "scope_type": "global",
+      "status": "REVOKED",
+      "total": 1
+    },
+    {
+      "code": "LEGACY_HR_D460548B832323EE",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 1
+    },
+    {
+      "code": "LEGACY_HR_FD9FD9BA9D958E2C",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 5
+    },
+    {
+      "code": "PERMISSION_ADMIN",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 1
+    },
+    {
+      "code": "SYSTEM_ADMIN",
+      "expired": false,
+      "scope_type": "global",
+      "status": "ACTIVE",
+      "total": 1
+    }
+  ],
+  "settingsActions": [
+    {
+      "active": true,
+      "code": "system.audit_trail.manage",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.audit_trail",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.audit_trail.view",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.audit_trail",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.authorization.audit",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.authorization",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.authorization.manage_grants",
+      "directAllowed": true,
+      "expiryRequired": true,
+      "module": "system.authorization",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.authorization.manage_roles",
+      "directAllowed": true,
+      "expiryRequired": true,
+      "module": "system.authorization",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.authorization.manage_scopes",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.authorization",
+      "scopes": [
+        "global",
+        "project",
+        "construction_site",
+        "warehouse",
+        "department"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.authorization.override",
+      "directAllowed": true,
+      "expiryRequired": true,
+      "module": "system.authorization",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.authorization.view",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.authorization",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.settings.manage",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.settings",
+      "scopes": [
+        "global"
+      ]
+    },
+    {
+      "active": true,
+      "code": "system.settings.view",
+      "directAllowed": true,
+      "expiryRequired": false,
+      "module": "system.settings",
+      "scopes": [
+        "global"
+      ]
+    }
+  ],
+  "settingsPolicies": [
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "app_settings_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "app_settings",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "app_settings_delete",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "app_settings",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "app_settings_select",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "app_settings",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "app_settings_update",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "app_settings",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "app_settings_write",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "app_settings",
+      "with_check": "is_admin()"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "categories_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "categories",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "categories_delete",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "categories",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "categories_select",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "categories",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "categories_update",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "categories",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "categories_write",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "categories",
+      "with_check": "is_admin()"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "PERMISSIVE",
+      "policyname": "hrm_construction_sites_manage_hr_template",
+      "qual": "app_private.current_user_has_hrm_template_permission('hrm.master_data.manage'::text)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "hrm_construction_sites",
+      "with_check": "app_private.current_user_has_hrm_template_permission('hrm.master_data.manage'::text)"
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "hrm_cs_select",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "hrm_construction_sites",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "items_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "items",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "items_phase4_delete",
+      "qual": "app_private.wms_has_action('wms.master_data.manage'::text)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "items",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "items_phase4_insert",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "items",
+      "with_check": "(app_private.wms_has_action('wms.inventory.edit'::text) OR app_private.wms_has_action('wms.master_data.manage'::text))"
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "items_phase4_select",
+      "qual": "(( SELECT is_module_admin('WMS'::text) AS is_module_admin) OR ( SELECT app_private.wms_has_action('wms.inventory.view'::text) AS wms_has_action) OR ( SELECT app_private.wms_has_action('wms.inventory.edit'::text) AS wms_has_action) OR ( SELECT app_private.wms_has_action('wms.master_data.manage'::text) AS wms_has_action))",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "items",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "items_phase4_update",
+      "qual": "(app_private.wms_has_action('wms.inventory.edit'::text) OR app_private.wms_has_action('wms.master_data.manage'::text))",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "items",
+      "with_check": "(app_private.wms_has_action('wms.inventory.edit'::text) OR app_private.wms_has_action('wms.master_data.manage'::text))"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "loss_norms_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "loss_norms",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "PERMISSIVE",
+      "policyname": "loss_norms_all",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "loss_norms",
+      "with_check": "true"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "suppliers_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "suppliers",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "suppliers_delete",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "suppliers",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "suppliers_select",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "suppliers",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "suppliers_update",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "suppliers",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "suppliers_write",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "suppliers",
+      "with_check": "is_admin()"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "units_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "units",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "units_delete",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "units",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "units_select",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "units",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "units_update",
+      "qual": "is_admin()",
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "units",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "units_write",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "schemaname": "public",
+      "tablename": "units",
+      "with_check": "is_admin()"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "users_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "users",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_insert",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "users",
+      "with_check": "is_admin()"
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_select",
+      "qual": "true",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "users",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_update_admin",
+      "qual": "is_admin()",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "users",
+      "with_check": "is_admin()"
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "users_update_self_profile",
+      "qual": "(id = current_app_user_id())",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "users",
+      "with_check": "(id = current_app_user_id())"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "warehouse_types_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouse_types",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouse_types_insert",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouse_types",
+      "with_check": "(is_admin() OR is_module_admin('WMS'::text) OR is_module_admin('SETTINGS'::text))"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouse_types_phase4_delete",
+      "qual": "app_private.wms_has_action('wms.master_data.manage'::text)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouse_types",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouse_types_phase4_insert",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouse_types",
+      "with_check": "app_private.wms_has_action('wms.master_data.manage'::text)"
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouse_types_phase4_select",
+      "qual": "(app_private.wms_has_action('wms.inventory.view'::text) OR app_private.wms_has_action('wms.master_data.manage'::text))",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouse_types",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouse_types_phase4_update",
+      "qual": "app_private.wms_has_action('wms.master_data.manage'::text)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouse_types",
+      "with_check": "app_private.wms_has_action('wms.master_data.manage'::text)"
+    },
+    {
+      "cmd": "ALL",
+      "permissive": "RESTRICTIVE",
+      "policyname": "warehouses_active_actor_gate",
+      "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouses",
+      "with_check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)"
+    },
+    {
+      "cmd": "DELETE",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouses_phase4_delete",
+      "qual": "app_private.wms_has_action('wms.master_data.manage'::text)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouses",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouses_phase4_insert",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouses",
+      "with_check": "app_private.wms_has_action('wms.master_data.manage'::text)"
+    },
+    {
+      "cmd": "SELECT",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouses_phase4_select",
+      "qual": "(( SELECT app_private.can_manage_warehouse_site_bindings() AS can_manage_warehouse_site_bindings) OR ( SELECT app_private.wms_has_action('wms.inventory.view'::text) AS wms_has_action))",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouses",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "permissive": "PERMISSIVE",
+      "policyname": "warehouses_phase4_update",
+      "qual": "app_private.wms_has_action('wms.master_data.manage'::text)",
+      "roles": [
+        "authenticated"
+      ],
+      "schemaname": "public",
+      "tablename": "warehouses",
+      "with_check": "app_private.wms_has_action('wms.master_data.manage'::text)"
+    }
+  ]
+}
