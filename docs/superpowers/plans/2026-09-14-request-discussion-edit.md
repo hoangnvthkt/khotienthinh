@@ -75,8 +75,8 @@
 
 ## Verification và rollout
 
-- [ ] Chạy Vitest liên quan, Cloud matrix/RLS/Storage/concurrency, TypeScript và production build. (Đã pass trừ concurrency hai connection và upload qua Edge đã deploy.)
+- [ ] Chạy Vitest liên quan, Cloud matrix/RLS/Storage/concurrency, TypeScript và production build. (Đã pass và kiểm tra lại schema preview đã deploy; còn concurrency hai connection và upload authenticated với dữ liệu preview.)
 - [x] Chạy regression Request, Workflow và Work bị tác động.
-- [ ] Deploy backend tương thích trước frontend; mở gate read → discussion write → attachments → content edit.
+- [ ] Deploy backend tương thích trước frontend; mở gate read → discussion write → attachments → content edit. (Đã hoàn tất trên preview; production chưa thay đổi.)
 - [x] Cập nhật rollout log với migrations, Cloud evidence, ảnh QA, commit và rollback result.
 - [x] Review diff theo spec và commit theo checkpoint bằng danh sách file cụ thể.

@@ -27,15 +27,25 @@ describe('request discussion and content revision migrations on approved Cloud b
     });
     await db.connect();
     await db.query('begin');
-    for (const path of migrationPaths) {
-      const sql = readFileSync(resolve(path), 'utf8');
-      try {
-        await db.query(sql);
-      } catch (error) {
-        const position = Number((error as { position?: string }).position ?? 0);
-        const context = position > 0 ? sql.slice(Math.max(0, position - 180), position + 180) : '';
-        throw new Error(`${path}: ${(error as Error).message}\n${context}`, { cause: error });
+    const history = await db.query(`select count(*)::integer count
+      from supabase_migrations.schema_migrations
+      where version in ('20260914045955','20260914045956')`);
+    if (history.rows[0].count === 0) {
+      for (const path of migrationPaths) {
+        const sql = readFileSync(resolve(path), 'utf8');
+        try {
+          await db.query(sql);
+        } catch (error) {
+          const position = Number((error as { position?: string }).position ?? 0);
+          const context = position > 0 ? sql.slice(Math.max(0, position - 180), position + 180) : '';
+          throw new Error(`${path}: ${(error as Error).message}\n${context}`, { cause: error });
+        }
       }
+    } else if (history.rows[0].count === 2) {
+      // Exercise the default-off contract without changing the deployed gate state after rollback.
+      await db.query(`update app_private.request_feature_gates set enabled=false,updated_at=now()`);
+    } else {
+      throw new Error('REQUEST_MIGRATION_PARTIAL_STATE');
     }
   });
 

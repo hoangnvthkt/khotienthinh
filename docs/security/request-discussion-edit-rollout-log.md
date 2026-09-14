@@ -15,7 +15,7 @@
 - `20260914045956_request_discussion_storage.sql`: comments/replies/edit audit, mention derivation, cursor APIs, private attachment reservations, cleanup fencing, notification delivery and private bucket.
 - `request-attachment-processor`: image normalization/EXIF removal reused from Work, Office/PDF/TXT validation, finalize/read/cleanup and 300-second signed URLs.
 
-All four gates are inserted as disabled. Planned enable order remains `discussion_read` → `discussion_write` → `attachments` → `content_edit`.
+All four gates are inserted as disabled by migration. On the approved preview branch they were enabled in order: `discussion_read` → `discussion_write` → `attachments` → `content_edit`.
 
 ## Verification evidence
 
@@ -23,13 +23,16 @@ All four gates are inserted as disabled. Planned enable order remains `discussio
 - Current: TypeScript passed; production build passed with the pre-existing large-chunk warning.
 - Full Vitest regression with the parent `.env` loaded in memory: 397 files / 2,001 tests passed.
 - Client contract includes runtime collaboration, attachment validation, stable comment retry payloads and ordered/repeated mention tokenization.
-- Cloud preview rollback suite: 5 tests passed, including real transactional submit → pending edit → revision 2 → cancelled old round → new pending assignment, mention comment create/edit, edit history and activity feed.
+- Cloud preview rollback suite: 5 tests passed both before and after persistent migration deployment, including real transactional submit → pending edit → revision 2 → cancelled old round → new pending assignment, mention comment create/edit, edit history and activity feed. The post-deploy run temporarily closes gates inside its transaction and restores the deployed gate state through rollback.
 - Edge processor: 4 Deno tests passed; valid DOCX/XLSX accepted, renamed/macro/encrypted/zip-bomb containers and active HTML-as-text rejected. Edge entrypoint passed `deno check`.
-- Browser automation: blocked because the computer-use environment reported `No browser is available`; no visual screenshot is claimed.
+- Persistent preview verification: both migration history records exist; revision/comment/attachment tables and public RPCs exist; comment and attachment RLS are enabled; `request-attachments` is private; all four gates are enabled.
+- Edge Function `request-attachment-processor` is deployed to preview and its unauthenticated probe returns HTTP 401 at the expected boundary.
+- Frontend preview: `https://khotienthinh-719en2tgu-hoangnvthkts-projects.vercel.app`. The deployed bundle contains the discussion/edit UI and preview Supabase ref, and does not contain the production Supabase ref.
+- Browser automation remains blocked because the computer-use state exposes no controllable browser surface; no visual screenshot is claimed.
 
 ## Deployment state and rollback
 
-- Persistent Cloud migration was not applied. A redacted Supabase CLI dry-run against the approved preview branch failed authentication before any write.
-- Edge Function was not deployed because its required schema is not persistently present on the preview branch.
-- Production was not changed.
+- Both migrations were persistently applied to `baseline-vioo-git` in one PostgreSQL transaction and recorded in `supabase_migrations.schema_migrations`. CLI `db push` passed dry-run but its write transport failed, so the guarded direct Cloud connection was used; any SQL failure would have rolled back the whole transaction.
+- Edge Function and frontend were deployed only to preview. No persistent fixture user/request was created; the preview branch remains data-less.
+- Production was not changed and the feature branch was not merged to `main`.
 - Application rollback: deploy the previous frontend and disable all four gates. Keep revisions, posted comments and attached objects; cleanup only unattached/expired reservations.
