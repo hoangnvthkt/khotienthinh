@@ -49,3 +49,11 @@ All four gates are inserted as disabled by migration. On the approved preview br
 - The preview branch remains data-less and no production fixture user/request was created.
 - Production contains only the scoped Request migrations, Edge Function and focused frontend/source integration described above; the destructive Cloud branch diff was never applied.
 - Application rollback: deploy the previous frontend and disable all four gates. Keep revisions, posted comments and attached objects; cleanup only unattached/expired reservations.
+
+## Authenticated RPC permission hotfix
+
+- Migration `20260914075111_request_discussion_rpc_permissions.sql` fixes missing `EXECUTE` privileges on private collaboration entrypoints used by the public `SECURITY INVOKER` wrappers.
+- Root cause: the original Cloud test exercised public RPCs through the administrative database connection instead of switching to role `authenticated`, so the missing function ACL was not detected before rollout.
+- The regression suite now invokes comment create/edit/list, activity, mention candidates, anchor lookup and attachment reservation with role `authenticated`.
+- Cloud main preflight applied the migration in a transaction, exercised authenticated read RPCs, and rolled back. After persistent deployment, all eight required function privileges read back as enabled.
+- Post-deploy probes executed authenticated read RPCs in a read-only transaction and comment/attachment write RPCs in a transaction that ended with `ROLLBACK`; no probe data was retained.
