@@ -75,7 +75,8 @@
     "20260915024855_authorization_v2_task12_4_2_material_issue_create_submit.sql",
     "20260915045138_authorization_v2_task12_4_2_material_issue_process_capabilities.sql",
     "20260915050534_authorization_v2_task12_4_2_material_issue_cancel_capability.sql",
-    "20260915052209_authorization_v2_task12_4_2_material_request_delete_compatibility.sql"
+    "20260915052209_authorization_v2_task12_4_2_material_request_delete_compatibility.sql",
+    "20260915064553_authorization_v2_task12_4_2_material_issue_settlement_capabilities.sql"
   ],
   "forbidIncludeAll": true
 }

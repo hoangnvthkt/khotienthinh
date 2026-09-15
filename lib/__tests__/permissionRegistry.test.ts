@@ -188,6 +188,8 @@ describe('permissionRegistry', () => {
     expect(actionCodes).toEqual(expect.arrayContaining([
       'wms.transaction.complete',
       'wms.transaction.reverse',
+      'wms.material_issue.settle',
+      'wms.material_issue.reverse_settlement',
       'wms.request.receive',
       'hrm.payroll.manage',
       'expense.expense_record.view_all',
@@ -211,6 +213,16 @@ describe('permissionRegistry', () => {
     expect(actionByCode['wms.transaction.reverse']).toMatchObject({
       action: 'reverse',
       label: 'Hủy duyệt',
+      scopeTypes: ['global', 'warehouse'],
+    });
+    expect(actionByCode['wms.material_issue.settle']).toMatchObject({
+      action: 'settle',
+      label: 'Quyết toán xuất cấp',
+      scopeTypes: ['global', 'warehouse'],
+    });
+    expect(actionByCode['wms.material_issue.reverse_settlement']).toMatchObject({
+      action: 'reverse_settlement',
+      label: 'Hoàn tác quyết toán',
       scopeTypes: ['global', 'warehouse'],
     });
     expect(actionByCode['wms.request.create'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned', 'warehouse']));

@@ -7,6 +7,7 @@ import {
 
 const GLOBAL_SCOPE: readonly PermissionScopeType[] = ['global'];
 const WMS_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'own', 'assigned'];
+const WMS_WAREHOUSE_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse'];
 const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'direct_reports', 'org_unit', 'assigned'];
 const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department'];
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
@@ -155,6 +156,10 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['approve', 'Duyệt', 30],
         ['complete', 'Hoàn tất', 40],
         ['reverse', 'Hủy duyệt', 50, ['global', 'warehouse']],
+      ])),
+      module('wms.material_issue', 'Xuất cấp thi công', 'WMS', ['/operations'], 35, actions('wms.material_issue', 'WMS', '/operations', WMS_WAREHOUSE_SCOPE, [
+        ['settle', 'Quyết toán xuất cấp', 10],
+        ['reverse_settlement', 'Hoàn tác quyết toán', 20],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10],
