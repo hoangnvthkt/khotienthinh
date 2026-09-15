@@ -4,6 +4,7 @@ begin;
 
 do $$
 declare
+  action_definition text;
   v1_definition text;
   v2_definition text;
   v3_definition text;
@@ -14,12 +15,25 @@ begin
     raise exception 'Missing material-request WMS delete compatibility helper';
   end if;
 
+  if to_regprocedure(
+    'app_private.material_request_wms_can_delete(text,uuid,text,text,text)'
+  ) is null then
+    raise exception 'Missing action-specific material-request WMS delete helper';
+  end if;
+
   if has_function_privilege(
     'authenticated',
     'app_private.material_request_wms_can_delete_compatibility(text,uuid,text,text,text)',
     'execute'
   ) then
     raise exception 'Authenticated can invoke WMS delete compatibility helper';
+  end if;
+  if has_function_privilege(
+    'authenticated',
+    'app_private.material_request_wms_can_delete(text,uuid,text,text,text)',
+    'execute'
+  ) then
+    raise exception 'Authenticated can invoke action-specific WMS delete helper';
   end if;
   if has_function_privilege(
     'authenticated',
@@ -43,6 +57,9 @@ begin
     raise exception 'Requests RLS role lost access to material-request delete v3';
   end if;
 
+  action_definition := pg_get_functiondef(
+    'app_private.material_request_wms_can_delete(text,uuid,text,text,text)'::regprocedure
+  );
   v1_definition := pg_get_functiondef(
     'app_private.material_request_can_delete(text,text,text,boolean,uuid,text,text,text)'::regprocedure
   );
@@ -53,9 +70,13 @@ begin
     'app_private.material_request_can_delete_v3(text,text,text,text,boolean,uuid,text,text,text,text)'::regprocedure
   );
 
-  if position('app_private.material_request_wms_can_delete_compatibility' in v1_definition) = 0
-     or position('app_private.material_request_wms_can_delete_compatibility' in v2_definition) = 0 then
-    raise exception 'Legacy delete helpers are not wired to WMS compatibility boundary';
+  if position('app_private.material_request_wms_can_delete_compatibility' in action_definition) = 0
+     or position('wms.request.delete' in action_definition) = 0 then
+    raise exception 'Action helper lost compatibility or exact capability path';
+  end if;
+  if position('app_private.material_request_wms_can_delete(' in v1_definition) = 0
+     or position('app_private.material_request_wms_can_delete(' in v2_definition) = 0 then
+    raise exception 'Legacy delete helpers are not wired to WMS action boundary';
   end if;
   if position('is_module_admin(''WMS'')' in v1_definition) > 0
      or position('is_module_admin(''WMS'')' in v2_definition) > 0 then

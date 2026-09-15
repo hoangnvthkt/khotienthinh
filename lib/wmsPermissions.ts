@@ -211,3 +211,19 @@ export const canViewMaterialRequest = (user: User, request: MaterialRequest): bo
   if (!isWarehouseKeeper(user)) return false;
   return user.assignedWarehouseId === request.sourceWarehouseId || user.assignedWarehouseId === request.siteWarehouseId;
 };
+
+export const canDeleteWmsMaterialRequest = (user: User, request: MaterialRequest): boolean => {
+  if (request.requestOrigin === 'project') return false;
+  if (![RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)) return false;
+  if (isAdmin(user)) return true;
+  if (
+    request.requesterId === user.id
+    && [RequestStatus.DRAFT, RequestStatus.REJECTED].includes(request.status)
+  ) return true;
+  return canUseWmsRequestPermission(
+    user,
+    request,
+    'wms.request.delete',
+    [request.sourceWarehouseId, request.siteWarehouseId],
+  );
+};

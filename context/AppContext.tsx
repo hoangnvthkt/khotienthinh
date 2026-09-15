@@ -34,6 +34,7 @@ import {
   getStockDecreaseIssues,
   getStockDecreaseLinesForTransaction,
 } from '../lib/inventoryStockGuard';
+import { canDeleteWmsMaterialRequest } from '../lib/wmsPermissions';
 import {
   formatInventoryItemDeleteBlockers,
   getLocalInventoryItemDeleteBlockers,
@@ -2357,12 +2358,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
       : false;
     const deletableStatus = [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(req.status);
+    const canDeleteByWms = req.requestOrigin !== 'project'
+      && canDeleteWmsMaterialRequest(user, req);
     const canDelete =
       user.role === Role.ADMIN ||
       (
         canDeleteByRoom &&
         (req.status === RequestStatus.DRAFT || req.status === RequestStatus.REJECTED || req.workflowStep === 'returned_to_creator')
       ) ||
+      canDeleteByWms ||
       (
         deletableStatus &&
         isOwner &&

@@ -149,6 +149,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['approve', 'Duyệt', 30],
         ['export', 'Xuất kho', 40],
         ['receive', 'Nhận kho', 50],
+        ['delete', 'Xóa yêu cầu WMS', 60, ['global', 'warehouse']],
       ])),
       module('wms.transaction', 'Giao dịch kho', 'WMS', ['/operations', '/audit', '/reports', '/misa-export'], 30, actions('wms.transaction', 'WMS', '/operations', WMS_SCOPE, [
         ['view', 'Xem', 10],
