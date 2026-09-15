@@ -6,6 +6,37 @@ const wmsMappings = JSON.parse(readFileSync(
   new URL('../../scripts/authorization-v2/task12-4-2-wms-mappings.json', import.meta.url),
   'utf8',
 ));
+const nonWmsMappings = JSON.parse(readFileSync(
+  new URL('../../scripts/authorization-v2/task12-4-2-non-wms-mappings.json', import.meta.url),
+  'utf8',
+));
+const ownerDecisionRegister = JSON.parse(readFileSync(
+  new URL('../../scripts/authorization-v2/task12-4-2-owner-decisions.json', import.meta.url),
+  'utf8',
+));
+
+const nonWmsSystemCatalog = [
+  'system.ai.manage', 'system.ai.view',
+  'system.analytics.manage', 'system.analytics.view',
+  'system.audit_trail.manage', 'system.audit_trail.view',
+  'system.authorization.audit', 'system.authorization.manage_grants',
+  'system.authorization.manage_roles', 'system.authorization.manage_scopes',
+  'system.authorization.override', 'system.authorization.view',
+  'system.chat.manage', 'system.chat.view',
+  'system.custom_dashboard.manage', 'system.custom_dashboard.view',
+  'system.da.manage', 'system.da.view',
+  'system.ep.manage', 'system.ep.view',
+  'system.ex.manage', 'system.ex.view',
+  'system.hd.manage', 'system.hd.view',
+  'system.kb.manage', 'system.kb.view',
+  'system.procurement.manage', 'system.procurement.view',
+  'system.rq.manage', 'system.rq.view',
+  'system.settings.manage', 'system.settings.view',
+  'system.storage.manage', 'system.storage.view',
+  'system.tender_ai.manage', 'system.tender_ai.view',
+  'system.ts.manage', 'system.ts.view',
+  'system.wf.manage', 'system.wf.view',
+];
 
 const source = (overrides: Record<string, unknown> = {}) => ({
   sourceId: 'source-1', sourceType: 'DIRECT', permissionCode: 'system.rq.view',
@@ -152,5 +183,51 @@ describe('Task 12.4.2 transition manifest', () => {
       .toMatchObject({ disposition: 'manual_review' });
     expect(manifest.items.find(item => item.before.permissionCode === 'system.wms.view'))
       .toMatchObject({ disposition: 'replace' });
+  });
+
+  it('covers every active non-WMS system catalog action with an explicit disposition', () => {
+    expect(Object.keys(nonWmsMappings).sort()).toEqual(
+      nonWmsSystemCatalog.map(permissionCode => `DIRECT:${permissionCode}`).sort(),
+    );
+  });
+
+  it('retains only canonical authorization-control sources in the non-WMS preview', () => {
+    const sources = [
+      source({ sourceId: 'authorization-view', permissionCode: 'system.authorization.view', scopeType: 'global' }),
+      source({ sourceId: 'authorization-audit', permissionCode: 'system.authorization.audit', scopeType: 'global' }),
+      source({ sourceId: 'project-shell', permissionCode: 'system.da.view', scopeType: 'global' }),
+      source({ sourceId: 'workflow-shell', permissionCode: 'system.wf.manage', scopeType: 'global' }),
+    ];
+    const manifest = buildTransitionManifest(input(sources, nonWmsMappings));
+    const byCode = Object.fromEntries(manifest.items.map(item => [item.before.permissionCode, item]));
+
+    expect(byCode['system.authorization.view']).toMatchObject({ disposition: 'retain' });
+    expect(byCode['system.authorization.audit']).toMatchObject({ disposition: 'retain' });
+    expect(byCode['system.da.view']).toMatchObject({ disposition: 'manual_review', after: null });
+    expect(byCode['system.wf.manage']).toMatchObject({ disposition: 'manual_review', after: null });
+  });
+
+  it('does not emit replacement grants for owner-pending non-WMS shells', () => {
+    const manifest = buildTransitionManifest(input([
+      source({ sourceId: 'request-shell', permissionCode: 'system.rq.manage', scopeType: 'global' }),
+      source({ sourceId: 'asset-shell', permissionCode: 'system.ts.view', scopeType: 'global' }),
+      source({ sourceId: 'settings-shell', permissionCode: 'system.settings.manage', scopeType: 'global' }),
+    ], nonWmsMappings));
+
+    expect(manifest.items).toHaveLength(3);
+    expect(manifest.items.every(item => item.disposition === 'manual_review')).toBe(true);
+    expect(manifest.items.every(item => item.after === null)).toBe(true);
+  });
+
+  it('has an owner-pending decision entry for every manual-review shell', () => {
+    const registered = new Set(ownerDecisionRegister.decisions
+      .filter((decision: { status: string }) => decision.status === 'owner_pending')
+      .flatMap((decision: { permissionCodes: string[] }) => decision.permissionCodes));
+    const manualReviewCodes = Object.entries(nonWmsMappings)
+      .filter(([, mapping]) => (mapping as { disposition: string }).disposition === 'manual_review')
+      .map(([key]) => key.replace(/^DIRECT:/, ''));
+
+    expect(manualReviewCodes.every(code => registered.has(code))).toBe(true);
+    expect(registered.has('system.wms.manage')).toBe(true);
   });
 });

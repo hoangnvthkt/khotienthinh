@@ -1,0 +1,111 @@
+{
+  "version": "2026-09-15.e23.v1",
+  "policy": "No owner-pending cohort may produce replace or revoke manifest items.",
+  "decisions": [
+    {
+      "cohort": "ai",
+      "ownerRole": "AI product and data-security owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.ai.view", "system.ai.manage"],
+      "decisionRequired": "Define application entry, workload submission, provider configuration, model administration, and sensitive-data boundaries with scopes."
+    },
+    {
+      "cohort": "analytics_dashboard",
+      "ownerRole": "Analytics product and data owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.analytics.view", "system.analytics.manage", "system.custom_dashboard.view", "system.custom_dashboard.manage"],
+      "decisionRequired": "Define dataset scopes and separate read, export, author, publish, share, and data-source administration."
+    },
+    {
+      "cohort": "audit_trail",
+      "ownerRole": "Security and compliance owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.audit_trail.view", "system.audit_trail.manage"],
+      "decisionRequired": "Define visible audit domains and separate read/export from retention and administration."
+    },
+    {
+      "cohort": "chat",
+      "ownerRole": "Collaboration product owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.chat.view", "system.chat.manage"],
+      "decisionRequired": "Confirm application-entry semantics and separate conversation membership, moderation, channel administration, and platform configuration."
+    },
+    {
+      "cohort": "project_da",
+      "ownerRole": "Project operations owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.da.view", "system.da.manage"],
+      "decisionRequired": "Map actors to project/site and Project Room actions; decide whether any residual global shell is intentionally required."
+    },
+    {
+      "cohort": "employee_hr",
+      "ownerRole": "HR and payroll owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.ep.view", "system.ep.manage"],
+      "decisionRequired": "Separate self/team/department/company profile access from organization, payroll, and sensitive personnel administration."
+    },
+    {
+      "cohort": "expense",
+      "ownerRole": "Finance and expense owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.ex.view", "system.ex.manage"],
+      "decisionRequired": "Define own/assigned/department/global visibility and separate submit, review, approve, settle, and configuration actions."
+    },
+    {
+      "cohort": "contract",
+      "ownerRole": "Contract and commercial owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.hd.view", "system.hd.manage"],
+      "decisionRequired": "Map contract lifecycle actions and confidential visibility to project/company scopes."
+    },
+    {
+      "cohort": "knowledge_storage",
+      "ownerRole": "Knowledge and records owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.kb.view", "system.kb.manage", "system.storage.view", "system.storage.manage"],
+      "decisionRequired": "Define audience and record ownership; separate article authoring/publishing from object upload/delete, bucket, and retention controls."
+    },
+    {
+      "cohort": "procurement_tender",
+      "ownerRole": "Procurement and tender owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.procurement.view", "system.procurement.manage", "system.tender_ai.view", "system.tender_ai.manage"],
+      "decisionRequired": "Separate membership/read from sourcing, evaluation, approval, purchase-order, supplier, tender-workflow, and AI actions by scope."
+    },
+    {
+      "cohort": "request",
+      "ownerRole": "Request workflow owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.rq.view", "system.rq.manage"],
+      "decisionRequired": "Define own/participant/assigned/department/global visibility and separate template/category administration from submit, act, approve, and cancel."
+    },
+    {
+      "cohort": "settings",
+      "ownerRole": "Platform and security owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.settings.view", "system.settings.manage"],
+      "decisionRequired": "Decompose general settings from security, integration, project-master, and warehouse-site binding controls; system.settings.manage is not directly grantable."
+    },
+    {
+      "cohort": "asset",
+      "ownerRole": "Asset operations owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.ts.view", "system.ts.manage"],
+      "decisionRequired": "Separate catalog, custody, assignment, transfer, maintenance, stock, audit, and disposal actions with location/project scope."
+    },
+    {
+      "cohort": "workflow",
+      "ownerRole": "Workflow platform owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.wf.view", "system.wf.manage"],
+      "decisionRequired": "Separate template read/edit/publish from instance start, act, administer, cancel, and reopen for initiator, participant, assignee, manager, and administrator."
+    },
+    {
+      "cohort": "wms_manage",
+      "ownerRole": "Warehouse operations owner",
+      "status": "owner_pending",
+      "permissionCodes": ["system.wms.manage"],
+      "decisionRequired": "Approve per-actor and per-warehouse replacement sets for the remaining WMS compatibility consumers; do not infer all WMS actions from the manage shell."
+    }
+  ]
+}
