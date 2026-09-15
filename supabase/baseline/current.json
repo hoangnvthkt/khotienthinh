@@ -65,7 +65,9 @@
     "20260914095129_authorization_v2_task12_4_2_multi_replacement.sql",
     "20260914151015_authorization_v2_task12_4_2_wms_action_catalog_guard.sql",
     "20260915010215_authorization_v2_task12_4_2_wms_sensitive_action_guard.sql",
-    "20260915010425_authorization_v2_task12_4_2_wms_read_helpers.sql"
+    "20260915010425_authorization_v2_task12_4_2_wms_read_helpers.sql",
+    "20260915012751_authorization_v2_task12_4_2_wms_attachment_capabilities.sql",
+    "20260915013536_authorization_v2_task12_4_2_wms_attachment_compatibility_delegate.sql"
   ],
   "forbidIncludeAll": true
 }

@@ -48,10 +48,10 @@ Các consumer cần tách trước khi đóng cohort WMS:
 | Phiếu xuất vật tư | `material_issue_can_process`, `material_issue_can_view`, `material_issue_can_manage_project`, `submit_material_issue_order`, `cancel_material_issue_order` | `material_issue_can_view` đã nối `wms.transaction.view`; các thao tác còn lại phải giữ người lập/người phụ trách/người nhận, quyền Room và trạng thái chứng từ, không thay mọi thao tác bằng một grant approve. |
 | Xóa yêu cầu | `material_request_can_delete`, `material_request_can_delete_v2` | Nhánh Project và WMS khác nhau; catalog WMS hiện không có action delete riêng. |
 | PO và nhận hàng | `current_user_can_receive_purchase_batch_v2`, `create_purchase_order_supplier_return`, `process_transaction_status`, `sync_fulfillment_receipt_for_transaction`, `update_transaction_items_for_receipt` | Duyệt/nhận/trả NCC có điều kiện chứng từ riêng, cần so cả actor và trạng thái. |
-| File chứng từ | `wms_transaction_attachment_can_access` | Quyền đọc/ghi file phải bám đúng giao dịch và kho; helper hiện còn requester/keeper/legacy admin. |
+| File chứng từ | `wms_transaction_attachment_can_read`, `wms_transaction_attachment_can_mutate`, compatibility `wms_transaction_attachment_can_access` | Đã tách SELECT theo `wms.transaction.view`, INSERT/DELETE theo `wms.transaction.approve`; requester/keeper/legacy admin được giữ qua helper compatibility. Chưa được xóa shell cho tới khi helper cũ được retire sau persona/reconciliation. |
 | Dữ liệu dùng chung | `can_manage_warehouse_site_bindings`, `custom_material_request_can_select` | Giữ caller Settings/Project và ngoại lệ room retired đã được duyệt. |
 
-Sau E7 còn 15 function có tham chiếu WMS và `is_module_admin` trực tiếp, chưa tính toàn bộ policy và caller gián tiếp. E5–E7 mới hoàn tất guard catalog, canonical-only Hủy duyệt và hai read helper; chưa loại các consumer còn lại.
+Sau E8 còn 15 function có tham chiếu WMS và `is_module_admin` trực tiếp, chưa tính toàn bộ policy và caller gián tiếp. E5–E8 đã hoàn tất guard catalog, canonical-only Hủy duyệt, hai read helper và tách policy attachment đọc/ghi; chưa loại các consumer xử lý phiếu, PO/nhận hàng, xóa yêu cầu và dữ liệu dùng chung còn lại.
 
 ### Điều kiện áp dụng
 

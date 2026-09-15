@@ -179,3 +179,17 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Rehearsal rollback so 112 hàng trên toàn bộ 56 tài khoản active và hai kho: không có allow hiện hữu thành deny. Smoke canonical-only đạt sau migration; catalog/sensitive-action smoke vẫn đạt.
 - Migration đã dry-run một file, apply Cloud main và ledger có đúng một dòng. Postflight `persistedBatches=0`; số function chứa trực tiếp cả `is_module_admin` và `WMS` giảm từ 17 xuống 15.
 - Baseline: 61 active/402 archived. Chưa chuyển quyền quản lý/xóa/xử lý/PO/attachment; các consumer này vẫn nằm trong gate WMS.
+
+## Release/CI checkpoint — 2026-09-15
+
+- Git `main` đã nhận SHA `a2b7737`; GitHub CI run `34916870277`, Supabase Preview check và Vercel Production deployment đều thành công. Lỗi CI trước đó được truy về test catalog phụ thuộc `.env`; service hiện chỉ yêu cầu cấu hình Supabase khi dùng gateway mặc định, còn gateway được inject vẫn kiểm payload/RPC như cũ. Runtime không cấu hình tiếp tục fail-closed.
+- Phiên production hiện có là một tài khoản `EMPLOYEE`: màn hình Cài đặt chỉ hiện `Danh mục dùng chung HRM` và `Tài khoản`; khi mở danh mục HRM, UI báo chỉ có quyền Xem và toàn bộ thao tác thay đổi bị khóa. Đây là bằng chứng persona read-only cho checkpoint B, không thay cho persona Admin/HR/Thủ kho hoặc kiểm revoke.
+- Cloud main khớp tới migration `20260915010425` trước E8; 56 tài khoản active (1 Admin, 50 Employee, 5 Warehouse keeper), 3 disabled, 0 transition batch/item. Không dùng phiên production để đổi grant thật.
+
+## E8 — Tách quyền đọc và ghi tệp đính kèm WMS
+
+- Trước E8, cùng helper `wms_transaction_attachment_can_access` bảo vệ SELECT, INSERT và DELETE của bucket riêng `wms-transaction-attachments`; vì vậy nối quyền Xem canonical vào helper cũ sẽ đồng thời mở upload/xóa. Hợp đồng mới tách SELECT sang `wms.transaction.view`, INSERT/DELETE sang `wms.transaction.approve`; các nhánh Admin, WMS module-admin, global/scoped keeper và requester hiện hữu vẫn được giữ qua compatibility helper cũ.
+- TDD Cloud: smoke RED dừng ở helper đọc chưa tồn tại. Rehearsal migration + smoke rollback đạt; capability view đọc được nhưng không mutate, capability approve mutate được. Parity chạy 56 tài khoản trên 34 tổ hợp duy nhất `(type, source warehouse, target warehouse, requester)` và không có allow cũ thành deny.
+- Migration `20260915012751` đã apply Cloud main. Postflight đầu phát hiện hai helper mới lặp trực tiếp `is_module_admin('WMS')`, làm dependency function trực tiếp tăng 15→17. Không sửa migration đã chạy; forward migration `20260915013536` chuyển phần compatibility về helper cũ, rehearsal lại cùng parity rồi apply. Sau forward migration, số dependency WMS trực tiếp trở về 15.
+- Smoke attachment standalone, catalog WMS, canonical read, PO actual receipt và material issue reversal/return đều exit 0; fixture rollback. Ledger có đúng một row cho mỗi migration; policy SELECT/INSERT/DELETE trỏ đúng helper; `persistedBatches=0`, item=0, shell view/manage giữ 40/23.
+- Baseline Git: 63 active/402 archived. E8 chỉ gỡ coupling policy attachment và mở đường capability canonical; chưa thu hồi shell, helper compatibility cũ vẫn là blocker Task 13 và 23 source `system.wms.manage` vẫn `manual_review`.
