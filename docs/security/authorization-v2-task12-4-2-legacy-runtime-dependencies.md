@@ -43,7 +43,7 @@ Các consumer cần tách trước khi đóng cohort WMS:
 
 | Nhóm | Consumer hiện hành | Điều cần đối chiếu |
 |---|---|---|
-| Action dùng chung | `wms_has_action` | Đã chặn unknown/inactive; vẫn còn legacy module-admin và keeper theo kho. Giữ đúng requester/assignee/scope khi cutover. |
+| Action dùng chung | `wms_has_action` | Đã chặn unknown/inactive; Hủy duyệt đã canonical-only. Các action khác vẫn còn legacy module-admin và keeper theo kho; giữ đúng requester/assignee/scope khi cutover. |
 | Kiểm kho | `can_read_inventory_scope` | Owner/approver/keeper và legacy module-admin; phải xác định capability kiểm kho, không suy từ quyền xem mọi giao dịch. |
 | Phiếu xuất vật tư | `material_issue_can_process`, `material_issue_can_view`, `material_issue_can_manage_project`, `submit_material_issue_order`, `cancel_material_issue_order` | Người lập/người phụ trách/người nhận, quyền Room và trạng thái chứng từ; không thay mọi thao tác bằng một grant approve. |
 | Xóa yêu cầu | `material_request_can_delete`, `material_request_can_delete_v2` | Nhánh Project và WMS khác nhau; catalog WMS hiện không có action delete riêng. |

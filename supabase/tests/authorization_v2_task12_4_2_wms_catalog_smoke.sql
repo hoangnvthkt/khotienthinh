@@ -4,6 +4,12 @@ create temporary table wms_catalog_actor on commit drop as
 select id, auth_id from public.users
 where role::text = 'ADMIN' and is_active and account_status = 'ACTIVE'
   and auth_id is not null
+  and not exists (
+    select 1 from public.user_permission_grants grant_row
+    where grant_row.user_id = users.id
+      and grant_row.permission_code = 'wms.transaction.reverse'
+      and grant_row.scope_type = 'global' and grant_row.scope_id = '*'
+  )
 order by id limit 1;
 do $$ begin
   if not exists (select 1 from wms_catalog_actor) then
@@ -26,8 +32,28 @@ do $$ begin
   if app_private.wms_has_action('request.template.manage') is not false then
     raise exception 'Non-WMS action was authorized by the WMS helper';
   end if;
+  if app_private.wms_has_action('wms.transaction.reverse') is not false then
+    raise exception 'Sensitive WMS reversal inherited a legacy/admin/keeper fallback';
+  end if;
 end $$;
 reset role;
+
+select set_config('app.authorization_permission_command', 'on', true);
+insert into public.user_permission_grants(
+  user_id, permission_code, scope_type, scope_id, is_active, grant_reason
+)
+select id, 'wms.transaction.reverse', 'global', '*', true,
+       'Task 12.4.2 WMS sensitive action smoke fixture'
+from wms_catalog_actor;
+
+set local role authenticated;
+do $$ begin
+  if app_private.wms_has_action('wms.transaction.reverse') is not true then
+    raise exception 'Explicit canonical WMS reversal permission was not honored';
+  end if;
+end $$;
+reset role;
+
 update public.permission_actions set is_active = false
 where permission_code = 'wms.inventory.view';
 set local role authenticated;

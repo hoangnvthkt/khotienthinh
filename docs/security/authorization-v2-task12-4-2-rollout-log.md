@@ -163,3 +163,11 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Dry-run chỉ liệt kê migration trên; đã xác minh ref `.env` và linked đều là Cloud main `ftciqmqhmfvjtwoycswe`, apply và smoke standalone đạt. Postflight: 13 action WMS active, 40 view shell/23 manage shell và 0 transition batch thật.
 - Security advisor: 205 findings toàn project (15 search_path, 5 extension/public, 11 anon definer, 173 authenticated definer, 1 leaked-password protection); không finding nào chỉ tới `wms_has_action`. Không coi tổng advisor này là bằng chứng mọi finding cũ đã được xử lý.
 - Playwright editor 3/3 pass, targeted manifest/WMS/return-policy 23/23 pass. Migration baseline 59 active/402 archived. Test reconciliation bổ sung tại F3 cũng đã rollback thành công trên Cloud.
+
+## E6 — Bảo toàn capability Hủy duyệt canonical-only
+
+- Cloud RED sau E5: `wms_has_action('wms.transaction.reverse')` vẫn trả allow cho Admin không có capability reverse vì nhánh legacy/module/keeper. Điều này lệch hợp đồng đã phát hành của `material_issue_actor_can_reverse` và client `canReverseWmsTransaction`.
+- Migration `20260915010215` giới hạn riêng mã nhạy cảm `wms.transaction.reverse`: chỉ nguồn canonical global/warehouse qua `has_permission` được chấp nhận; Admin, shell WMS và Warehouse keeper không tự có quyền này. Các action WMS khác giữ nguyên hành vi E5.
+- Smoke tạo canonical reverse grant trong transaction để chứng minh deny-before/allow-after rồi rollback. Cloud standalone smoke và `material_issue_reversal_return_smoke` đều đạt; migration ledger có đúng một dòng.
+- Postflight giữ `persistedBatches=0`, 40 view shell và 23 manage shell. Không grant/revoke quyền tài khoản thật; thay đổi chỉ làm helper dùng chung tuân đúng quy tắc canonical-only đã có của Hủy duyệt.
+- Migration baseline: 60 active/402 archived. Task 12.4.2 vẫn chưa chuyển 23 WMS manage shell; các source này tiếp tục `manual_review` cho tới khi từng consumer/action được đối chiếu.
