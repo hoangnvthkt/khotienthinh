@@ -318,3 +318,11 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - WMS preview dùng snapshot Cloud hiện tại: 40 nguồn `system.wms.view` → 120 replacement references (40 `replace`); 23 nguồn `system.wms.manage` vẫn `manual_review`, không sinh executable manifest. Đây là kết quả chủ ý vì shell manage không tương đương toàn bộ capability WMS.
 - Inventory SQL và preview script chạy thành công trên Supabase Cloud, không cấp/gỡ quyền và không tạo batch. Unit test manifest tiếp tục phải giữ các invariant stale hash, scope expansion, expired source và manual review.
 - E21 exit đạt ở mức inventory/preview. Bước kế tiếp là E22: đối chiếu 23 `system.wms.manage` theo consumer và persona để quyết định source nào `retain`, source nào có replacement canonical, và source nào cần operator duyệt riêng; chưa được apply batch thật.
+
+## E22 — Audit consumer/persona cho `system.wms.manage`
+
+- Cloud read-only xác nhận 23 shell grant đều `global/*`: 1 Admin, 17 Employee không gán kho, 3 thủ kho toàn kho và 2 thủ kho gán kho. Cả 23 đã có bốn direct canonical grant đọc/master-data (`wms.inventory.view`, `wms.master_data.manage`, `wms.request.view`, `wms.transaction.view`), nhưng chưa có direct grant canonical cho nhóm thao tác nhạy cảm từ snapshot này.
+- Call-graph audit xác nhận 10 function consumers và 17 policy rows còn đi qua `wms_has_action` hoặc compatibility: binding kho/site, nhận PO, custom-material select, hủy phiếu xuất cấp, tạo/gửi phiếu, xử lý phiếu, xóa yêu cầu, trả NCC, boundary WMS dùng chung và attachment object.
+- Ma trận consumer → capability ứng viên → disposition đã ghi tại [WMS manage audit](authorization-v2-task12-4-2-wms-manage-audit.md). Không consumer nào được tự động map `system.wms.manage` thành toàn bộ capability; các boundary composite đều `manual_review` hoặc giữ compatibility cho tới khi owner chốt actor/kho/nghiệp vụ.
+- E22 chạy inventory/persona/call-graph SQL read-only thành công, không cấp/gỡ quyền, không tạo batch và không đổi schema. E22 exit đạt ở mức audit: 23/23 source có lý do rõ; chưa đạt điều kiện để sinh manifest executable hoặc revoke shell.
+- Bước kế tiếp là E23: đóng các cohort ngoài WMS và thu thập owner decision cho các nhóm WMS có thể thay thế theo actor/kho; chỉ sau đó mới tạo manifest có định danh trong evidence store riêng.
