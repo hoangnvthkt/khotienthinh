@@ -72,7 +72,8 @@
     "20260915020916_authorization_v2_task12_4_2_wms_receipt_commands.sql",
     "20260915022522_authorization_v2_task12_4_2_wms_status_actor_guard.sql",
     "20260915023633_authorization_v2_task12_4_2_purchase_receipt_stage_capabilities.sql",
-    "20260915024855_authorization_v2_task12_4_2_material_issue_create_submit.sql"
+    "20260915024855_authorization_v2_task12_4_2_material_issue_create_submit.sql",
+    "20260915045138_authorization_v2_task12_4_2_material_issue_process_capabilities.sql"
   ],
   "forbidIncludeAll": true
 }
