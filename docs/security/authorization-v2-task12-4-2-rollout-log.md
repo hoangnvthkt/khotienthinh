@@ -155,3 +155,11 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Sửa selector fixture để tránh chọn tài khoản đã có `settings.general.view`; lần test đầu vướng unique constraint ở dữ liệu fixture, lần sau exit 0. Không xóa hay ghi đè grant thật để chạy test.
 - Fetch và merge-tree với `origin/main` (`abc35de`) không có conflict Git. Workspace root có chỉnh sửa chưa commit và một bản plan chưa tracked khác đúng dòng tiến độ; chưa thay đổi các file đó.
 - Gate dữ liệu còn mở: kiểm equivalence các thao tác WMS, hoàn thiện API coverage B–E và xác nhận persona trên frontend phát hành trước batch thật. Đây là việc triển khai còn lại, không phải thiếu xác nhận “tiếp tục” từ operator.
+
+## E5 — WMS từ chối action ngoài catalog
+
+- Cloud RED chứng minh `wms_has_action('wms.unknown_action.for_smoke')` trả allow cho Admin qua nhánh legacy. Migration `20260914151015` thêm điều kiện action WMS phải tồn tại và active trước khi xét các nguồn hiện hữu; null/khác module/unknown/inactive trả false.
+- Thử migration cùng smoke trong transaction rollback đạt. So trước/sau 91 tổ hợp action/kho trên 3 persona (Admin, Employee, Warehouse keeper) giữ nguyên quyết định cho action active. Đây không phải nghiệm thu toàn bộ endpoint WMS hay cutover các helper legacy.
+- Dry-run chỉ liệt kê migration trên; đã xác minh ref `.env` và linked đều là Cloud main `ftciqmqhmfvjtwoycswe`, apply và smoke standalone đạt. Postflight: 13 action WMS active, 40 view shell/23 manage shell và 0 transition batch thật.
+- Security advisor: 205 findings toàn project (15 search_path, 5 extension/public, 11 anon definer, 173 authenticated definer, 1 leaked-password protection); không finding nào chỉ tới `wms_has_action`. Không coi tổng advisor này là bằng chứng mọi finding cũ đã được xử lý.
+- Playwright editor 3/3 pass, targeted manifest/WMS/return-policy 23/23 pass. Migration baseline 59 active/402 archived. Test reconciliation bổ sung tại F3 cũng đã rollback thành công trên Cloud.

@@ -35,6 +35,26 @@ Nhóm quan sát/guard không cấp quyền khi fallback đã off, nhưng vẫn n
 
 ## Gate cho manifest thật
 
+### WMS — kết quả đối chiếu bổ sung 2026-09-14
+
+Mapping `system.wms.manage` → toàn bộ 13 action WMS bị loại tại F3: 23 tài khoản có shell nhưng không tài khoản nào có quyền Hủy duyệt global qua `material_issue_actor_can_reverse`. Không được cấp `wms.transaction.reverse` bằng suy diễn từ shell. Mapping v2 giữ 23 source quản lý ở `manual_review`.
+
+Các consumer cần tách trước khi đóng cohort WMS:
+
+| Nhóm | Consumer hiện hành | Điều cần đối chiếu |
+|---|---|---|
+| Action dùng chung | `wms_has_action` | Đã chặn unknown/inactive; vẫn còn legacy module-admin và keeper theo kho. Giữ đúng requester/assignee/scope khi cutover. |
+| Kiểm kho | `can_read_inventory_scope` | Owner/approver/keeper và legacy module-admin; phải xác định capability kiểm kho, không suy từ quyền xem mọi giao dịch. |
+| Phiếu xuất vật tư | `material_issue_can_process`, `material_issue_can_view`, `material_issue_can_manage_project`, `submit_material_issue_order`, `cancel_material_issue_order` | Người lập/người phụ trách/người nhận, quyền Room và trạng thái chứng từ; không thay mọi thao tác bằng một grant approve. |
+| Xóa yêu cầu | `material_request_can_delete`, `material_request_can_delete_v2` | Nhánh Project và WMS khác nhau; catalog WMS hiện không có action delete riêng. |
+| PO và nhận hàng | `current_user_can_receive_purchase_batch_v2`, `create_purchase_order_supplier_return`, `process_transaction_status`, `sync_fulfillment_receipt_for_transaction`, `update_transaction_items_for_receipt` | Duyệt/nhận/trả NCC có điều kiện chứng từ riêng, cần so cả actor và trạng thái. |
+| File chứng từ | `wms_transaction_attachment_can_access` | Quyền đọc/ghi file phải bám đúng giao dịch và kho; helper hiện còn requester/keeper/legacy admin. |
+| Dữ liệu dùng chung | `can_manage_warehouse_site_bindings`, `custom_material_request_can_select` | Giữ caller Settings/Project và ngoại lệ room retired đã được duyệt. |
+
+Đây là 17 function có tham chiếu WMS và `is_module_admin` trực tiếp được kiểm kê, chưa tính toàn bộ policy và caller gián tiếp. E5 chỉ hoàn tất guard catalog của helper action; không coi E5 là đã loại các consumer này.
+
+### Điều kiện áp dụng
+
 - Source chưa có consumer-to-capability mapping vẫn là `manual_review` hoặc `retain`.
 - Batch chỉ gồm source đã duyệt, có snapshot/hash Cloud mới nhất và intentional diff rõ ràng.
 - Không apply batch có định danh tài khoản trước khi operator duyệt diff cụ thể.
