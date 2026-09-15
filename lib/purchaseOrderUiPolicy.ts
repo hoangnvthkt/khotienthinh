@@ -77,6 +77,7 @@ export interface PurchaseOrderUiPolicyInput {
   canClonePoDocument?: boolean;
   canConfirmPo?: boolean;
   canRunRestrictedPoActions?: boolean;
+  canReturnSupplier?: boolean;
   editBlockReason?: string | null;
   removalBlockReason?: string | null;
   hasStockImpact?: boolean;
@@ -137,6 +138,7 @@ export const getPurchaseOrderUiPolicy = ({
   canClonePoDocument = false,
   canConfirmPo = false,
   canRunRestrictedPoActions = false,
+  canReturnSupplier = false,
   editBlockReason = null,
   removalBlockReason = null,
   hasStockImpact = false,
@@ -156,7 +158,7 @@ export const getPurchaseOrderUiPolicy = ({
   const mayEditPo = canEditPoDocument;
   const mayDeletePo = canDeletePoDocument;
   const mayClonePo = canClonePoDocument && canClonePurchaseOrder(po);
-  const mayReturnSupplier = canRunRestrictedPoActions;
+  const mayReturnSupplier = canRunRestrictedPoActions || canReturnSupplier;
   const plannedBatch = firstPlannedBatch(deliveryBatches);
   const hasPendingSupplemental = Boolean(pendingSupplementalApprovalId)
     || po.supplementalApprovalStatus === 'pending'

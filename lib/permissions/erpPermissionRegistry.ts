@@ -161,6 +161,9 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['settle', 'Quyết toán xuất cấp', 10],
         ['reverse_settlement', 'Hoàn tác quyết toán', 20],
       ])),
+      module('wms.purchase_order', 'Hoàn trả nhà cung cấp', 'WMS', ['/operations'], 37, actions('wms.purchase_order', 'WMS', '/operations', WMS_WAREHOUSE_SCOPE, [
+        ['return_supplier', 'Trả hàng nhà cung cấp', 10],
+      ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10],
       ])),

@@ -190,6 +190,7 @@ describe('permissionRegistry', () => {
       'wms.transaction.reverse',
       'wms.material_issue.settle',
       'wms.material_issue.reverse_settlement',
+      'wms.purchase_order.return_supplier',
       'wms.request.receive',
       'hrm.payroll.manage',
       'expense.expense_record.view_all',
@@ -223,6 +224,11 @@ describe('permissionRegistry', () => {
     expect(actionByCode['wms.material_issue.reverse_settlement']).toMatchObject({
       action: 'reverse_settlement',
       label: 'Hoàn tác quyết toán',
+      scopeTypes: ['global', 'warehouse'],
+    });
+    expect(actionByCode['wms.purchase_order.return_supplier']).toMatchObject({
+      action: 'return_supplier',
+      label: 'Trả hàng nhà cung cấp',
       scopeTypes: ['global', 'warehouse'],
     });
     expect(actionByCode['wms.request.create'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned', 'warehouse']));
