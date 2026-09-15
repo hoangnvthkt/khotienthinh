@@ -179,12 +179,13 @@ export const parsePermissionAdminCatalog = (value: unknown): PermissionAdminCata
 };
 
 export const listPermissionAdminCatalog = async (
-  gateway: PermissionCatalogGateway = supabase as unknown as PermissionCatalogGateway,
+  gateway?: PermissionCatalogGateway,
 ): Promise<PermissionAdminCatalog> => {
-  if (!isSupabaseConfigured) {
+  if (!gateway && !isSupabaseConfigured) {
     throw new Error('Supabase chưa được cấu hình.');
   }
-  const { data, error } = await gateway.rpc('get_permission_admin_catalog');
+  const { data, error } = await (gateway || supabase as unknown as PermissionCatalogGateway)
+    .rpc('get_permission_admin_catalog');
   if (error) {
     throw new Error(`Không tải được catalog phân quyền: ${error.message || 'Lỗi không xác định'}`);
   }

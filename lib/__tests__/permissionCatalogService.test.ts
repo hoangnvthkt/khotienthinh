@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { listPermissionAdminCatalog } from '../permissions/permissionCatalogService';
 
+vi.mock('../supabase', () => ({
+  isSupabaseConfigured: false,
+  supabase: { rpc: vi.fn() },
+}));
+
 const catalogFixture = {
   generatedAt: '2026-09-11T07:45:16.000Z',
   applications: [{
@@ -38,7 +43,7 @@ const catalogFixture = {
 };
 
 describe('permission admin catalog service', () => {
-  it('preserves the authoritative four-view Asset bundle', async () => {
+  it('uses an injected gateway without requiring runtime Supabase configuration', async () => {
     const gateway = {
       rpc: vi.fn().mockResolvedValue({ data: catalogFixture, error: null }),
     };
@@ -56,6 +61,11 @@ describe('permission admin catalog service', () => {
       ]);
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.applications[0].modules[0].actions[0])).toBe(true);
+  });
+
+  it('fails closed without an injected gateway when Supabase is not configured', async () => {
+    await expect(listPermissionAdminCatalog())
+      .rejects.toThrow('Supabase chưa được cấu hình.');
   });
 
   it.each([
