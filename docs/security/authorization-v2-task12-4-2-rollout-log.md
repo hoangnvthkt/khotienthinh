@@ -171,3 +171,11 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Smoke tạo canonical reverse grant trong transaction để chứng minh deny-before/allow-after rồi rollback. Cloud standalone smoke và `material_issue_reversal_return_smoke` đều đạt; migration ledger có đúng một dòng.
 - Postflight giữ `persistedBatches=0`, 40 view shell và 23 manage shell. Không grant/revoke quyền tài khoản thật; thay đổi chỉ làm helper dùng chung tuân đúng quy tắc canonical-only đã có của Hủy duyệt.
 - Migration baseline: 60 active/402 archived. Task 12.4.2 vẫn chưa chuyển 23 WMS manage shell; các source này tiếp tục `manual_review` cho tới khi từng consumer/action được đối chiếu.
+
+## E7 — Nối capability đọc WMS tới resource helper
+
+- Cloud RED bằng employee không có bốn trường legacy WMS nhưng có DIRECT grant theo kho: `wms.inventory.view` chưa mở `can_read_inventory_scope`; test dừng trước ca phiếu xuất. Migration `20260915010425` nối `can_read_inventory_scope` với `wms.inventory.view` và `material_issue_can_view` với `wms.transaction.view`, truyền đúng kho/người lập/người phụ trách.
+- Các nhánh creator/approver/recipient, Project document và Warehouse keeper hiện hữu được giữ. `wms_has_action` tiếp tục cung cấp compatibility cho module-admin ở action không nhạy cảm, nên đây là cutover consumer đọc từng bước chứ chưa tắt fallback WMS.
+- Rehearsal rollback so 112 hàng trên toàn bộ 56 tài khoản active và hai kho: không có allow hiện hữu thành deny. Smoke canonical-only đạt sau migration; catalog/sensitive-action smoke vẫn đạt.
+- Migration đã dry-run một file, apply Cloud main và ledger có đúng một dòng. Postflight `persistedBatches=0`; số function chứa trực tiếp cả `is_module_admin` và `WMS` giảm từ 17 xuống 15.
+- Baseline: 61 active/402 archived. Chưa chuyển quyền quản lý/xóa/xử lý/PO/attachment; các consumer này vẫn nằm trong gate WMS.

@@ -64,7 +64,8 @@
     "20260914093239_authorization_v2_task12_4_2_canonical_helpers.sql",
     "20260914095129_authorization_v2_task12_4_2_multi_replacement.sql",
     "20260914151015_authorization_v2_task12_4_2_wms_action_catalog_guard.sql",
-    "20260915010215_authorization_v2_task12_4_2_wms_sensitive_action_guard.sql"
+    "20260915010215_authorization_v2_task12_4_2_wms_sensitive_action_guard.sql",
+    "20260915010425_authorization_v2_task12_4_2_wms_read_helpers.sql"
   ],
   "forbidIncludeAll": true
 }
