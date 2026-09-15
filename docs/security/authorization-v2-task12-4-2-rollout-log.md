@@ -1,5 +1,7 @@
 # Task 12.4.2 — Rollout log
 
+Handoff mới nhất cho phiên làm việc kế tiếp: `authorization-v2-task12-4-2-handoff-2026-09-15.md` (chốt sau E13, Git/Cloud/CI đã đối soát).
+
 ## Khởi động — 2026-09-14
 
 - Branch `feature/authorization-v2-task12-4-2`, worktree riêng từ `origin/main` tại `abc35de` sau fetch.
