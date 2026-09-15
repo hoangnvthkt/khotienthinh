@@ -11,7 +11,9 @@ create temporary table wms_transaction_command_actor (
   approve_transaction_id text not null,
   complete_transaction_id text not null,
   wrong_scope_transaction_id text not null,
-  unauthorized_complete_transaction_id text not null
+  unauthorized_complete_transaction_id text not null,
+  wrong_side_transfer_approve_id text not null,
+  wrong_side_transfer_complete_id text not null
 ) on commit drop;
 
 insert into wms_transaction_command_actor
@@ -24,7 +26,9 @@ values (
   'task12-4-2-wms-command-approve-' || gen_random_uuid()::text,
   'task12-4-2-wms-command-complete-' || gen_random_uuid()::text,
   'task12-4-2-wms-command-wrong-scope-' || gen_random_uuid()::text,
-  'task12-4-2-wms-command-unauthorized-complete-' || gen_random_uuid()::text
+  'task12-4-2-wms-command-unauthorized-complete-' || gen_random_uuid()::text,
+  'task12-4-2-wms-command-transfer-approve-' || gen_random_uuid()::text,
+  'task12-4-2-wms-command-transfer-complete-' || gen_random_uuid()::text
 );
 
 grant select on wms_transaction_command_actor to authenticated;
@@ -72,7 +76,29 @@ union all
 select unauthorized_complete_transaction_id, 'IMPORT'::public.transaction_type, now(), '[]'::jsonb,
        warehouse_a_id, requester_id, 'APPROVED'::public.transaction_status, '[]'::jsonb,
        'direct_manual_receipt', 'Task 12.4.2 authorization smoke'
+from wms_transaction_command_actor
+union all
+select wrong_side_transfer_approve_id, 'TRANSFER'::public.transaction_type, now(), '[]'::jsonb,
+       warehouse_a_id, requester_id, 'PENDING'::public.transaction_status, '[]'::jsonb,
+       'warehouse_transfer', 'Task 12.4.2 authorization smoke'
+from wms_transaction_command_actor
+union all
+select wrong_side_transfer_complete_id, 'TRANSFER'::public.transaction_type, now(), '[]'::jsonb,
+       warehouse_b_id, requester_id, 'APPROVED'::public.transaction_status, '[]'::jsonb,
+       'warehouse_transfer', 'Task 12.4.2 authorization smoke'
 from wms_transaction_command_actor;
+
+update public.transactions
+set source_warehouse_id = (
+  select warehouse_b_id from wms_transaction_command_actor
+)
+where id = (select wrong_side_transfer_approve_id from wms_transaction_command_actor);
+
+update public.transactions
+set source_warehouse_id = (
+  select warehouse_a_id from wms_transaction_command_actor
+)
+where id = (select wrong_side_transfer_complete_id from wms_transaction_command_actor);
 
 select set_config('app.authorization_permission_command', 'on', true);
 insert into public.user_permission_grants (
@@ -194,6 +220,41 @@ begin
       fixture.requester_id
     );
     raise exception 'Employee without complete permission unexpectedly completed transaction';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  perform set_config('request.jwt.claim.email', fixture.actor_email, true);
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object(
+      'email', fixture.actor_email,
+      'sub', gen_random_uuid()::text,
+      'role', 'authenticated'
+    )::text,
+    true
+  );
+
+  begin
+    perform public.process_transaction_status(
+      fixture.wrong_side_transfer_approve_id,
+      'APPROVED'::public.transaction_status,
+      fixture.actor_id
+    );
+    raise exception 'Target-side approve grant unexpectedly approved a standard transfer';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
+    perform public.process_transaction_status(
+      fixture.wrong_side_transfer_complete_id,
+      'COMPLETED'::public.transaction_status,
+      fixture.actor_id
+    );
+    raise exception 'Source-side complete grant unexpectedly completed a transfer';
   exception
     when insufficient_privilege then
       null;
