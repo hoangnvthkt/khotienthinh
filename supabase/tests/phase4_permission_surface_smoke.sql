@@ -134,8 +134,8 @@ values (
   'phase4-process-tx-' || gen_random_uuid()::text
 );
 
-insert into public.users (id, name, email, username, role, is_active, allowed_modules, admin_modules, allowed_sub_modules, admin_sub_modules)
-select user_id, user_name, user_email, user_name, user_role::public.user_role, true, '{}'::text[], '{}'::text[], '{}'::jsonb, '{}'::jsonb
+insert into public.users (id, name, email, username, role, is_active)
+select user_id, user_name, user_email, user_name, user_role::public.user_role, true
 from phase4_permission_smoke_ids s
 cross join lateral (
   values
@@ -149,10 +149,10 @@ cross join lateral (
 ) as u(user_id, user_name, user_email, user_role);
 
 insert into public.warehouses (id, name, address, type)
-select warehouse_a_id, 'Phase 4 Warehouse A', 'Smoke address A', 'SITE'::public.warehouse_type
+select warehouse_a_id, 'Phase 4 Warehouse A', 'Smoke address A', 'GENERAL'::public.warehouse_type
 from phase4_permission_smoke_ids
 union all
-select warehouse_b_id, 'Phase 4 Warehouse B', 'Smoke address B', 'SITE'::public.warehouse_type
+select warehouse_b_id, 'Phase 4 Warehouse B', 'Smoke address B', 'GENERAL'::public.warehouse_type
 from phase4_permission_smoke_ids;
 
 insert into public.budget_categories (id, name, code, year, "order", source)
@@ -178,6 +178,15 @@ insert into public.transactions (
   pending_items
 )
 select process_tx_id, 'IMPORT'::public.transaction_type, now(), '[]'::jsonb, warehouse_a_id, wms_creator_id, wms_approver_id, 'PENDING'::public.transaction_status, '[]'::jsonb
+from phase4_permission_smoke_ids;
+
+select set_config('app.authorization_permission_command', 'on', true);
+insert into public.user_permission_grants (
+  user_id, permission_code, scope_type, scope_id, is_active, expires_at, grant_reason
+)
+select admin_id, 'system.authorization.manage_grants', 'global', '*', true,
+       now() + interval '1 hour',
+       'Phase 4 permission administration fixture'
 from phase4_permission_smoke_ids;
 
 set role authenticated;
@@ -215,7 +224,8 @@ select public.replace_user_permission_grants(
     'permission_code', 'wms.transaction.approve',
     'scope_type', 'warehouse',
     'scope_id', (select warehouse_a_id from phase4_permission_smoke_ids),
-    'is_active', true
+    'is_active', true,
+    'expires_at', now() + interval '1 hour'
   ))
 );
 
@@ -225,13 +235,13 @@ select public.replace_user_permission_grants(
     jsonb_build_object(
       'permission_code', 'expense.expense_record.view_own',
       'scope_type', 'own',
-      'scope_id', (select expense_owner_id::text from phase4_permission_smoke_ids),
+      'scope_id', '*',
       'is_active', true
     ),
     jsonb_build_object(
       'permission_code', 'expense.expense_record.edit_own',
       'scope_type', 'own',
-      'scope_id', (select expense_owner_id::text from phase4_permission_smoke_ids),
+      'scope_id', '*',
       'is_active', true
     ),
     jsonb_build_object(
@@ -357,7 +367,7 @@ do $$
 begin
   begin
     insert into public.warehouses (id, name, address, type)
-    values ('phase4-wh-deny-' || gen_random_uuid()::text, 'Phase 4 Deny Warehouse', 'Smoke deny', 'SITE'::public.warehouse_type);
+    values ('phase4-wh-deny-' || gen_random_uuid()::text, 'Phase 4 Deny Warehouse', 'Smoke deny', 'GENERAL'::public.warehouse_type);
     raise exception 'no-grant warehouse insert unexpectedly succeeded';
   exception
     when insufficient_privilege then
