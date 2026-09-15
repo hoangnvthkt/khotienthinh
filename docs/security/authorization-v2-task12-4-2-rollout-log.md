@@ -264,3 +264,9 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Postflight: ledger đúng 1 row, helper tồn tại/command đã nối, authenticated không gọi helper private, fixture=0, transition batch/item=0, shell view/manage giữ 40/23 và direct dependency literal WMS vẫn 11. Security Advisor có 0 ERROR; WARN liên quan duy nhất là public `cancel_material_issue_order` SECURITY DEFINER có guard nội bộ, helper private không có finding.
 - Full gate sau apply: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 70/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Build chỉ còn cảnh báo chunk size hiện hữu.
 - Release E15: commit `fa70e4c` đã fast-forward lên `main`; GitHub CI run `34931750215`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E16 — Đối chiếu boundary trả hàng nhà cung cấp
+
+- Audit xác nhận UI phát hành chỉ hiển thị/tác nghiệp trả NCC cho Admin hoặc thủ kho tổng, trong khi `create_purchase_order_supplier_return` còn cho WMS module-admin và actor có `project.material_po.manage`. Canonical `wms.transaction.create` là một tập quyền thứ ba; không tập nào có thể được coi là tương đương cơ học.
+- Reconciliation Cloud khử định danh trên 56 tài khoản active × 15 context PO/kho cho thấy RPC hiện rộng hơn UI ở 285 quyết định. Phương án cộng `wms.transaction.create` sẽ mở thêm 15 quyết định RPC và cả 15 đều rộng hơn UI phát hành; `unexpected_legacy_loss=0`. Test chạy trong transaction rollback, không để lại fixture hoặc grant.
+- E16 giữ `create_purchase_order_supplier_return` ở `manual_review`. Không có migration, không đổi catalog/UI/backend, không tạo batch và không cấp/thu hồi quyền tài khoản thật. Muốn cutover boundary này phải chốt capability trả NCC riêng cùng owner nghiệp vụ, sau đó đồng bộ UI + RPC + persona test; không suy từ quyền tạo giao dịch WMS.
