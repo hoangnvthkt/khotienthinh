@@ -259,6 +259,30 @@ begin
     when insufficient_privilege then
       null;
   end;
+
+  begin
+    perform public.process_transaction_status(
+      fixture.approve_transaction_id,
+      'APPROVED'::public.transaction_status,
+      fixture.requester_id
+    );
+    raise exception 'Transaction status command accepted a spoofed approver id';
+  exception
+    when insufficient_privilege then
+      null;
+  end;
+
+  begin
+    perform public.process_transaction_status(
+      fixture.approve_transaction_id,
+      'PENDING'::public.transaction_status,
+      fixture.actor_id
+    );
+    raise exception 'Transaction status command accepted an unsupported PENDING target';
+  exception
+    when invalid_parameter_value then
+      null;
+  end;
 end $$;
 
 reset role;

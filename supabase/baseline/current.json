@@ -69,7 +69,8 @@
     "20260915012751_authorization_v2_task12_4_2_wms_attachment_capabilities.sql",
     "20260915013536_authorization_v2_task12_4_2_wms_attachment_compatibility_delegate.sql",
     "20260915015543_authorization_v2_task12_4_2_wms_transaction_commands.sql",
-    "20260915020916_authorization_v2_task12_4_2_wms_receipt_commands.sql"
+    "20260915020916_authorization_v2_task12_4_2_wms_receipt_commands.sql",
+    "20260915022522_authorization_v2_task12_4_2_wms_status_actor_guard.sql"
   ],
   "forbidIncludeAll": true
 }
