@@ -149,3 +149,10 @@ Do các điểm trên, blueprint là decision pack, không phải manifest cấp
 - Đây là chặn kỹ thuật có chủ đích, không phải thiếu owner approval. Nâng readiness chỉ được thực hiện sau khi command/RLS/backend guard của từng action được kiểm bằng allow/deny runtime smoke; không đổi metadata để ép wizard mở checkbox.
 
 Checkpoint kế tiếp là hardening nhóm WMS Operator trước: xác minh hoặc bổ sung backend guard cho 10 action vận hành, chạy persona/scope reconciliation, rồi mới nâng từng action sang `enforced/verified` và pilot `WAREHOUSE_OPERATOR`. `WAREHOUSE_MANAGER` chỉ mở sau khi các action nhạy cảm riêng đạt lại smoke và SoD preview.
+
+## E29 — WAREHOUSE_OPERATOR đã qua technical readiness
+
+- Mười action của Thủ kho đã có runtime boundary và ở trạng thái `enforced`. Hai khoảng trống trước đó được đóng tại backend: lifecycle request bắt buộc riêng `create/approve/export/receive`, còn transaction xuất theo request cần cả quyền tạo giao dịch và quyền xuất request tại kho nguồn.
+- Smoke trên Cloud kiểm đúng kho/sai kho, bỏ từng quyền xuất/nhận, semantics upsert không đòi thừa quyền create và chuỗi transaction approve/complete trong transaction rollback. Vì vậy readiness checker hiện trả `WAREHOUSE_OPERATOR canPilot=true`, 10 action, 0 blocker.
+- Chưa có template hoặc assignment thật được tạo. Pilot kế tiếp phải đi qua command V2, dùng fingerprint/version và rollback; chỉ sau khi preview/audit/scope reconciliation đạt mới cân nhắc lưu template thật hoặc gán cho người dùng cụ thể.
+- `WAREHOUSE_MANAGER`, `WORKFLOW_USER` và `WORKFLOW_ADMIN` vẫn bị khóa. Không dùng readiness của Thủ kho để suy mở các action quản lý kho hay Workflow.

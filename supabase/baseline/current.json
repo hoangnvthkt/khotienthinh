@@ -87,7 +87,9 @@
     "20260916110000_authorization_v2_task12_4_2_request_lifecycle_capabilities.sql",
     "20260916110100_authorization_v2_task12_4_2_super_admin_dynamic_role.sql",
     "20260916110200_authorization_v2_task12_4_2_super_admin_assignment_hardening.sql",
-    "20260916110300_authorization_v2_task12_4_2_role_template_commands_v2.sql"
+    "20260916110300_authorization_v2_task12_4_2_role_template_commands_v2.sql",
+    "20260916110400_authorization_v2_task12_4_2_wms_operator_hardening.sql",
+    "20260916110500_authorization_v2_task12_4_2_wms_operator_upsert_guard.sql"
   ],
   "forbidIncludeAll": true
 }
