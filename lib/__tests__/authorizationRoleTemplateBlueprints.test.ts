@@ -84,6 +84,8 @@ describe('Task 12.4.2 role-template blueprint', () => {
       'wms.material_issue.reverse_settlement',
       'wms.purchase_order.return_supplier',
     ]));
+    expect(operator.permissionScopeType).toBe('warehouse');
+    expect(manager.permissionScopeType).toBe('warehouse');
   });
 
   it('keeps regular workflow users away from template administration', () => {
@@ -107,6 +109,16 @@ describe('Task 12.4.2 role-template blueprint', () => {
       'workflow.template.edit',
       'workflow.template.publish',
     ]));
+    expect(user.permissionScopes).toMatchObject({
+      'workflow.instance.create': 'own',
+      'workflow.instance.act_assigned': 'assigned',
+      'workflow.template.view': 'global',
+    });
+    expect(admin.permissionScopes).toMatchObject({
+      'workflow.instance.edit_own_draft': 'own',
+      'workflow.instance.administer': 'global',
+      'workflow.template.publish': 'global',
+    });
   });
 
   it('closes the owner-approved workflow catalog gap', () => {

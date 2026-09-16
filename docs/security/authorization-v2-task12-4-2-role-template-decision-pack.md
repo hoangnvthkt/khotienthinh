@@ -122,7 +122,7 @@ Sau E26 Cloud có 384 action active, trong đó 11 action thuộc `request.insta
 5. UI và command quản trị template/assignment đã có ở E27, nhưng chưa có owner approval để tạo template nghiệp vụ hoặc gán role thật cho cohort đang chờ.
 6. Schema hiện cho phép scope ở cả template item và assignment. Trước UI builder phải chốt command semantics: item mô tả action/default scope; assignment mang entity scope cụ thể và hai lớp phải giao nhau, không mở rộng.
 
-Do các điểm trên, blueprint là decision pack, không phải manifest cấp quyền. Mọi cohort chưa có owner approval vẫn giữ `manual_review`.
+Do các điểm trên, blueprint là decision pack, không phải manifest cấp quyền. Sau E28, WMS và Workflow có owner approval nhưng vẫn chưa qua technical readiness; 13 cohort còn lại giữ `owner_pending/manual_review`.
 
 ## E27 — Bề mặt quản trị mẫu quyền và assignment
 
@@ -135,7 +135,17 @@ Do các điểm trên, blueprint là decision pack, không phải manifest cấp
 
 ## Checkpoint tiếp theo
 
-1. Owner chốt mapping actor/action/scope cho 15 cohort `owner_pending`, bắt đầu bằng WMS, Workflow và Request đã có capability đủ rõ; mỗi quyết định phải ghi người duyệt và phạm vi cụ thể.
+1. Owner tiếp tục chốt mapping actor/action/scope cho 13 cohort `owner_pending`; WMS và Workflow đã có approval nhưng phải qua technical readiness trước pilot. Request là cohort kế tiếp chỉ sau khi owner chốt ba template.
 2. Tạo/pilot template qua wizard chỉ cho cohort đã duyệt, dùng tài khoản fixture hoặc nhóm pilot xác định; preview và SoD acceptance phải được lưu làm evidence.
 3. Chạy persona test allow/deny, reconciliation gain/loss và kiểm tra audit sau từng pilot. Không mở cohort kế tiếp nếu cohort hiện tại chưa đạt.
 4. Chỉ sinh executable manifest và revoke shell khi cohort tương ứng có 0 `manual_review`, owner approval hợp lệ và rollback plan đã kiểm thử.
+
+## E28 — Chốt owner mapping WMS/Workflow và pilot-readiness gate
+
+- Decision register ghi owner approval hiện hành cho đúng hai cohort đã được anh duyệt: `wms_manage` và `workflow`. 13 cohort còn lại, gồm Request, vẫn `owner_pending`; không dùng việc đồng ý kiến trúc chung để tự suy ra approval nghiệp vụ chi tiết.
+- WMS mapping đã tường minh actor và scope: `WAREHOUSE_OPERATOR` và `WAREHOUSE_MANAGER` chỉ gán theo `warehouse/<warehouse-id>`. Workflow mapping giữ action record-bound: nháp `own`, xử lý bước `assigned`, còn quyền quản trị mẫu/phiên là `global` theo blueprint tương ứng.
+- Bộ kiểm máy đọc đối chiếu đồng thời owner decision, blueprint, action catalog, `grant_readiness` và scope modes trên Cloud. Chỉ action `enforced/verified` mới được materialize qua wizard; thiếu action/scope hoặc action còn `declared/legacy` đều fail closed.
+- Cloud preflight phát hiện 0/4 template sẵn sàng pilot. Có 19 action duy nhất chưa đạt readiness, xuất hiện thành 33 blocker theo template: WMS có 11 action `declared` và `wms.master_data.manage` còn `legacy`; Workflow có 7 action `declared`. Vì vậy E28 không tạo template/assignment và không thay đổi Cloud.
+- Đây là chặn kỹ thuật có chủ đích, không phải thiếu owner approval. Nâng readiness chỉ được thực hiện sau khi command/RLS/backend guard của từng action được kiểm bằng allow/deny runtime smoke; không đổi metadata để ép wizard mở checkbox.
+
+Checkpoint kế tiếp là hardening nhóm WMS Operator trước: xác minh hoặc bổ sung backend guard cho 10 action vận hành, chạy persona/scope reconciliation, rồi mới nâng từng action sang `enforced/verified` và pilot `WAREHOUSE_OPERATOR`. `WAREHOUSE_MANAGER` chỉ mở sau khi các action nhạy cảm riêng đạt lại smoke và SoD preview.

@@ -1,5 +1,5 @@
 {
-  "version": "2026-09-15.e23.v1",
+  "version": "2026-09-16.e28.v1",
   "policy": "No owner-pending cohort may produce replace or revoke manifest items.",
   "approvedDesignPrinciples": {
     "approvedAt": "2026-09-16",
@@ -107,16 +107,54 @@
     {
       "cohort": "workflow",
       "ownerRole": "Workflow platform owner",
-      "status": "owner_pending",
+      "status": "owner_approved",
+      "approvedAt": "2026-09-16",
+      "approvalEvidence": "Business owner approved the proposed role-template model and Workflow User/Workflow Admin split in the Task 12.4.2 conversation.",
       "permissionCodes": ["system.wf.view", "system.wf.manage"],
-      "decisionRequired": "Separate template read/edit/publish from instance start, act, administer, cancel, and reopen for initiator, participant, assignee, manager, and administrator."
+      "decision": {
+        "applicationCode": "workflow",
+        "legacyDisposition": "retain_until_pilot_verified",
+        "templates": [
+          {
+            "code": "WORKFLOW_USER",
+            "actors": ["regular_workflow_user"],
+            "assignmentScope": {"scopeType": "global", "scopeId": "*"},
+            "itemScopePolicy": "own drafts and assigned steps remain record-bound; template view is global"
+          },
+          {
+            "code": "WORKFLOW_ADMIN",
+            "actors": ["designated_workflow_administrator"],
+            "assignmentScope": {"scopeType": "global", "scopeId": "*"},
+            "itemScopePolicy": "explicit global administration snapshot"
+          }
+        ]
+      }
     },
     {
       "cohort": "wms_manage",
       "ownerRole": "Warehouse operations owner",
-      "status": "owner_pending",
+      "status": "owner_approved",
+      "approvedAt": "2026-09-16",
+      "approvalEvidence": "Business owner approved the Warehouse Operator/Warehouse Manager templates and the explicit sensitive WMS capabilities in the Task 12.4.2 conversation.",
       "permissionCodes": ["system.wms.manage"],
-      "decisionRequired": "Approve per-actor and per-warehouse replacement sets for the remaining WMS compatibility consumers; do not infer all WMS actions from the manage shell."
+      "decision": {
+        "applicationCode": "wms",
+        "legacyDisposition": "retain_until_pilot_verified",
+        "templates": [
+          {
+            "code": "WAREHOUSE_OPERATOR",
+            "actors": ["warehouse_operator"],
+            "assignmentScope": {"scopeType": "warehouse", "scopeId": "required_concrete_warehouse_id"},
+            "itemScopePolicy": "all actions restricted to the assigned warehouse"
+          },
+          {
+            "code": "WAREHOUSE_MANAGER",
+            "actors": ["designated_warehouse_manager"],
+            "assignmentScope": {"scopeType": "warehouse", "scopeId": "required_concrete_warehouse_id"},
+            "itemScopePolicy": "explicit 17-action snapshot restricted to the assigned warehouse; sensitive actions require preview and SoD review"
+          }
+        ]
+      }
     }
   ]
 }

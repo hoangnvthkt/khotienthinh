@@ -91,6 +91,7 @@
           "code": "WAREHOUSE_OPERATOR",
           "name": "Thủ kho",
           "policy": "explicit",
+          "permissionScopeType": "warehouse",
           "permissionCodes": [
             "wms.inventory.view",
             "wms.request.view", "wms.request.create", "wms.request.approve", "wms.request.export", "wms.request.receive",
@@ -101,6 +102,7 @@
           "code": "WAREHOUSE_MANAGER",
           "name": "Quản lý kho",
           "policy": "explicit_snapshot_including_operator_actions",
+          "permissionScopeType": "warehouse",
           "permissionCodes": [
             "wms.inventory.view", "wms.inventory.edit",
             "wms.request.view", "wms.request.create", "wms.request.approve", "wms.request.export", "wms.request.receive", "wms.request.delete",
@@ -138,6 +140,14 @@
           "code": "WORKFLOW_USER",
           "name": "Người dùng quy trình",
           "policy": "explicit",
+          "permissionScopes": {
+            "workflow.instance.view": "own",
+            "workflow.instance.create": "own",
+            "workflow.instance.act_assigned": "assigned",
+            "workflow.instance.edit_own_draft": "own",
+            "workflow.instance.delete_own_draft": "own",
+            "workflow.template.view": "global"
+          },
           "permissionCodes": [
             "workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned",
             "workflow.instance.edit_own_draft", "workflow.instance.delete_own_draft",
@@ -148,6 +158,20 @@
           "code": "WORKFLOW_ADMIN",
           "name": "Quản trị quy trình",
           "policy": "explicit_snapshot_including_user_actions",
+          "permissionScopes": {
+            "workflow.instance.view": "own",
+            "workflow.instance.create": "own",
+            "workflow.instance.act_assigned": "assigned",
+            "workflow.instance.edit_own_draft": "own",
+            "workflow.instance.delete_own_draft": "own",
+            "workflow.instance.cancel": "global",
+            "workflow.instance.reopen": "global",
+            "workflow.instance.administer": "global",
+            "workflow.template.view": "global",
+            "workflow.template.create": "global",
+            "workflow.template.edit": "global",
+            "workflow.template.publish": "global"
+          },
           "permissionCodes": [
             "workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned",
             "workflow.instance.edit_own_draft", "workflow.instance.delete_own_draft",

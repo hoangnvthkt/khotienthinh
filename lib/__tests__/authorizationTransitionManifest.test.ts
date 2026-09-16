@@ -219,9 +219,8 @@ describe('Task 12.4.2 transition manifest', () => {
     expect(manifest.items.every(item => item.after === null)).toBe(true);
   });
 
-  it('has an owner-pending decision entry for every manual-review shell', () => {
+  it('has a governed decision entry for every manual-review shell', () => {
     const registered = new Set(ownerDecisionRegister.decisions
-      .filter((decision: { status: string }) => decision.status === 'owner_pending')
       .flatMap((decision: { permissionCodes: string[] }) => decision.permissionCodes));
     const manualReviewCodes = Object.entries(nonWmsMappings)
       .filter(([, mapping]) => (mapping as { disposition: string }).disposition === 'manual_review')
@@ -229,5 +228,17 @@ describe('Task 12.4.2 transition manifest', () => {
 
     expect(manualReviewCodes.every(code => registered.has(code))).toBe(true);
     expect(registered.has('system.wms.manage')).toBe(true);
+    expect(ownerDecisionRegister.decisions.find(
+      (decision: { cohort: string }) => decision.cohort === 'wms_manage',
+    )).toMatchObject({
+      status: 'owner_approved',
+      decision: { legacyDisposition: 'retain_until_pilot_verified' },
+    });
+    expect(ownerDecisionRegister.decisions.find(
+      (decision: { cohort: string }) => decision.cohort === 'workflow',
+    )).toMatchObject({
+      status: 'owner_approved',
+      decision: { legacyDisposition: 'retain_until_pilot_verified' },
+    });
   });
 });
