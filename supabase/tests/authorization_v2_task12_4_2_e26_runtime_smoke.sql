@@ -30,6 +30,16 @@ from e26_actor actor
 join public.role_permission_templates template_row on template_row.code='PERMISSION_ADMIN'
 where actor.kind='permission_admin';
 
+insert into public.principal_role_assignments(
+  principal_type,principal_id,role_template_id,scope_type,scope_id,
+  status,assigned_by,assigned_reason
+)
+select 'user',actor.id,template_row.id,'global','*','ACTIVE',actor.id,
+  'E26 rollback fixture independent audit owner'
+from e26_actor actor
+join public.role_permission_templates template_row on template_row.code='AUDITOR'
+where actor.kind='denied';
+
 select set_config('app.authorization_permission_command','on',true);
 insert into public.user_permission_grants(
   user_id,permission_code,scope_type,scope_id,is_active,grant_reason,expires_at
@@ -119,6 +129,9 @@ declare
   first_assignment uuid;
   second_assignment uuid;
   assignment_id uuid;
+  preview_row jsonb;
+  warning_acceptances jsonb;
+  assignment_receipt jsonb;
   blocked boolean;
 begin
   select * into permission_admin from e26_actor where kind='permission_admin';
@@ -136,15 +149,46 @@ begin
 
   blocked:=false;
   begin
-    perform public.assign_business_role(permission_admin.id,super_template_id,'global','*',now(),null,
-      'E26 must reject self assignment', '[]'::jsonb);
-  exception when sqlstate '22023' then blocked:=sqlerrm='SUPER_ADMIN_ASSIGNMENT_INVALID'; end;
+    preview_row:=public.preview_business_role_assignment_v2(
+      permission_admin.id,super_template_id,'global','*'
+    );
+    perform public.assign_business_role_v2(
+      permission_admin.id,super_template_id,(preview_row->>'roleVersion')::integer,
+      'global','*',now(),null,'E26 must reject self assignment','[]'::jsonb,
+      preview_row->>'fingerprint'
+    );
+  exception when sqlstate '42501' then blocked:=true; end;
   if not blocked then raise exception 'SUPER_ADMIN self assignment was not blocked'; end if;
 
-  first_assignment:=public.assign_business_role(super_one.id,super_template_id,'global','*',now(),null,
-    'E26 protected root role assignment one','[]'::jsonb);
-  second_assignment:=public.assign_business_role(super_two.id,super_template_id,'global','*',now(),null,
-    'E26 protected root role assignment two','[]'::jsonb);
+  preview_row:=public.preview_business_role_assignment_v2(super_one.id,super_template_id,'global','*');
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleCode',warning->>'ruleCode','scopeType',warning->>'scopeType',
+    'scopeId',warning->>'scopeId','reason','E26 reviewed root assignment warning',
+    'controlOwnerUserId',denied_actor.id,'compensatingControls','E26 independent audit monitoring',
+    'expiresAt',now()+interval '1 day'
+  )),'[]'::jsonb) into warning_acceptances
+  from jsonb_array_elements(preview_row->'warnings') warning;
+  assignment_receipt:=public.assign_business_role_v2(
+    super_one.id,super_template_id,(preview_row->>'roleVersion')::integer,
+    'global','*',now(),null,'E26 protected root role assignment one',warning_acceptances,
+    preview_row->>'fingerprint'
+  );
+  first_assignment:=(assignment_receipt->>'assignmentId')::uuid;
+
+  preview_row:=public.preview_business_role_assignment_v2(super_two.id,super_template_id,'global','*');
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'ruleCode',warning->>'ruleCode','scopeType',warning->>'scopeType',
+    'scopeId',warning->>'scopeId','reason','E26 reviewed root assignment warning',
+    'controlOwnerUserId',denied_actor.id,'compensatingControls','E26 independent audit monitoring',
+    'expiresAt',now()+interval '1 day'
+  )),'[]'::jsonb) into warning_acceptances
+  from jsonb_array_elements(preview_row->'warnings') warning;
+  assignment_receipt:=public.assign_business_role_v2(
+    super_two.id,super_template_id,(preview_row->>'roleVersion')::integer,
+    'global','*',now(),null,'E26 protected root role assignment two',warning_acceptances,
+    preview_row->>'fingerprint'
+  );
+  second_assignment:=(assignment_receipt->>'assignmentId')::uuid;
 
   if not app_private.has_permission(super_one.id,'wms.transaction.reverse','global','*')
      or not exists (

@@ -119,15 +119,23 @@ Sau E26 Cloud có 384 action active, trong đó 11 action thuộc `request.insta
 2. Request đã có capability cho lifecycle đang chạy nhưng chưa có create/save/delete DRAFT; Workflow và Request vẫn cần command quản lý template/assignment trước khi cohort có thể thành manifest executable.
 3. Contract, KB và Storage còn dùng cặp view/manage quá rộng.
 4. Project cần giữ Project Room/action làm nguồn chuẩn; không đổi thành role global.
-5. `SUPER_ADMIN` đã có model/guard riêng; UI và command gán role vẫn phải hiển thị impact preview và audit trước khi cho vận hành thực tế.
+5. UI và command quản trị template/assignment đã có ở E27, nhưng chưa có owner approval để tạo template nghiệp vụ hoặc gán role thật cho cohort đang chờ.
 6. Schema hiện cho phép scope ở cả template item và assignment. Trước UI builder phải chốt command semantics: item mô tả action/default scope; assignment mang entity scope cụ thể và hai lớp phải giao nhau, không mở rộng.
 
 Do các điểm trên, blueprint là decision pack, không phải manifest cấp quyền. Mọi cohort chưa có owner approval vẫn giữ `manual_review`.
 
-## Checkpoint triển khai tiếp theo
+## E27 — Bề mặt quản trị mẫu quyền và assignment
 
-1. Tạo command/RPC quản lý template và assignment: validation, stale version, impact preview, audit, SoD và last-admin guard; resolver/last-admin boundary của `SUPER_ADMIN` đã hoàn tất ở E26.
-2. Chốt owner mapping ba template Request trên bảy lifecycle capability hiện có; thiết kế lifecycle `DRAFT` riêng nếu nghiệp vụ thực sự cần lưu/xóa nháp.
-3. Xây wizard ba bước dùng catalog hiện tại; system template fail closed và mẫu thường không tự nhận capability mới.
-4. Pilot Cloud với WMS + Workflow bằng fixture rollback, sau đó mới mở Asset/Booking và các module khác.
-5. Chỉ map/revoke shell khi owner decision hoàn tất, persona test đạt và reconciliation có 0 unexpected gain/loss.
+- Wizard ba bước đã được nối vào Settings: `Thông tin chung` → `Cấu hình bảng phân quyền` → `Gán đối tượng`. Quyền hiển thị và gọi command đều yêu cầu `system.authorization.manage_roles`; kiểm tra persona Employee không có quyền xác nhận URL bị chặn và redirect.
+- Mẫu thường lưu action theo snapshot tường minh, chỉ cho chọn capability đã `enforced/verified`. Mẫu hệ thống bị khóa; `SUPER_ADMIN` tiếp tục là role động, không sinh item tĩnh.
+- Preview assignment trả tổng capability, capability nhạy cảm, capability cần phê duyệt, cảnh báo SoD và hard deny. Gán role chỉ chạy khi role version và fingerprint preview còn khớp; stale preview/version bị từ chối.
+- Cảnh báo SoD phải có audit control owner khác actor/target, lý do, compensating control và thời hạn. Command hiện hữu vẫn ghi audit; revoke giữ continuity guard, còn `SUPER_ADMIN` giữ last-admin guard của E26.
+- Hai mutation RPC legacy `save_business_role` và `assign_business_role` đã bị thu hồi khỏi `anon/authenticated`; service role giữ compatibility. API V2 có ACL tường minh và snapshot read model riêng cho màn quản trị.
+- Migration không tạo template, item hoặc assignment thật. Cloud sau postflight vẫn có 12 template, 136 item, 114 assignment active, `SUPER_ADMIN` có 0 item và 0 assignment.
+
+## Checkpoint tiếp theo
+
+1. Owner chốt mapping actor/action/scope cho 15 cohort `owner_pending`, bắt đầu bằng WMS, Workflow và Request đã có capability đủ rõ; mỗi quyết định phải ghi người duyệt và phạm vi cụ thể.
+2. Tạo/pilot template qua wizard chỉ cho cohort đã duyệt, dùng tài khoản fixture hoặc nhóm pilot xác định; preview và SoD acceptance phải được lưu làm evidence.
+3. Chạy persona test allow/deny, reconciliation gain/loss và kiểm tra audit sau từng pilot. Không mở cohort kế tiếp nếu cohort hiện tại chưa đạt.
+4. Chỉ sinh executable manifest và revoke shell khi cohort tương ứng có 0 `manual_review`, owner approval hợp lệ và rollback plan đã kiểm thử.
