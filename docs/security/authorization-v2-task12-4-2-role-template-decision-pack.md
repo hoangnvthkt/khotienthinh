@@ -156,3 +156,9 @@ Checkpoint kế tiếp là hardening nhóm WMS Operator trước: xác minh ho�
 - Smoke trên Cloud kiểm đúng kho/sai kho, bỏ từng quyền xuất/nhận, semantics upsert không đòi thừa quyền create và chuỗi transaction approve/complete trong transaction rollback. Vì vậy readiness checker hiện trả `WAREHOUSE_OPERATOR canPilot=true`, 10 action, 0 blocker.
 - Chưa có template hoặc assignment thật được tạo. Pilot kế tiếp phải đi qua command V2, dùng fingerprint/version và rollback; chỉ sau khi preview/audit/scope reconciliation đạt mới cân nhắc lưu template thật hoặc gán cho người dùng cụ thể.
 - `WAREHOUSE_MANAGER`, `WORKFLOW_USER` và `WORKFLOW_ADMIN` vẫn bị khóa. Không dùng readiness của Thủ kho để suy mở các action quản lý kho hay Workflow.
+
+## E30 — Pilot mẫu Thủ kho qua command V2
+
+- Save/preview/assign hiện cùng enforce `grant_readiness in (enforced, verified)` tại backend; không còn phụ thuộc vào việc wizard ẩn checkbox. Crafted RPC chứa `wms.inventory.edit` declared đã bị Cloud từ chối.
+- Pilot rollback đã materialize đúng 10 item, preview fingerprint/version, ghi audit và assign tới một kho fixture. Target nhận đủ quyền ở kho A, không có quyền ở kho B và không nhận bốn quyền manager được kiểm tra.
+- Không có template hoặc assignment thật được giữ lại. Việc tạo persistent template đã an toàn về kỹ thuật, nhưng gán pilot thật cần chỉ rõ tài khoản và kho; không suy target từ role label hay shell WMS hiện có.

@@ -97,7 +97,7 @@ begin
   role_receipt:=public.save_business_role_v2(
     null,0,'E27_TEST_OPERATOR','E27 Test Operator','Rollback-only E27 template',
     jsonb_build_array(jsonb_build_object(
-      'permission_code','request.template.view','scope_type','global','scope_id','*','sort_order',0
+      'permission_code','request.instance.cancel','scope_type','global','scope_id','*','sort_order',0
     )),'E27 create versioned test template'
   );
   test_role_id:=(role_receipt->>'roleTemplateId')::uuid;
@@ -106,7 +106,7 @@ begin
     perform public.save_business_role_v2(
       test_role_id,0,'E27_TEST_OPERATOR','E27 stale update','Rollback-only E27 template',
       jsonb_build_array(jsonb_build_object(
-        'permission_code','request.template.view','scope_type','global','scope_id','*','sort_order',0
+        'permission_code','request.instance.cancel','scope_type','global','scope_id','*','sort_order',0
       )),'E27 stale version must be rejected'
     );
   exception when sqlstate '40001' then blocked:=sqlerrm='AUTHORIZATION_STALE_ROLE_VERSION'; end;
@@ -115,7 +115,7 @@ begin
   role_receipt:=public.save_business_role_v2(
     test_role_id,1,'E27_TEST_OPERATOR','E27 Test Operator v2','Rollback-only E27 template',
     jsonb_build_array(jsonb_build_object(
-      'permission_code','request.template.view','scope_type','global','scope_id','*','sort_order',0
+      'permission_code','request.instance.cancel','scope_type','global','scope_id','*','sort_order',0
     )),'E27 valid optimistic template update'
   );
   if (role_receipt->>'version')::integer<>2 then raise exception 'E27 version did not advance'; end if;
