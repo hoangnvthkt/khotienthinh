@@ -337,3 +337,12 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Owner decision register ghi 15 cohort `owner_pending`, gồm 14 nhóm business ngoài authorization và `system.wms.manage`; không tái sử dụng disposition lịch sử như phê duyệt owner hiện tại.
 - Cloud preview đối chiếu đủ 356 source: 353 `manual_review`, 3 `retain`, 0 `replace`, 0 `revoke`, 0 replacement reference. Evidence directory/file đạt mode 0700/0600; script exit code 2 đúng gate, chỉ tạo `review-required.json`, không tạo executable manifest.
 - E23 hoàn tất sáu đầu việc audit/reconcile/call-graph/decision-register/preview/manifest-gate và không thay đổi Cloud. Bước kế tiếp chỉ được mở sau khi owner ký nhận mapping theo actor/scope và preview mới có 0 manual review.
+
+### E23 owner decision pack — kiến trúc mẫu quyền
+
+- Owner đã chốt: template chứa action, assignment mang concrete scope theo từng người; nút Toàn quyền của mẫu thường là snapshot và capability tương lai phải review; template không kế thừa động; Super Admin là system role khóa và tự nhận capability hiện tại/tương lai.
+- WMS được tách thành `WAREHOUSE_OPERATOR` 10 quyền vận hành theo kho và `WAREHOUSE_MANAGER` snapshot tường minh đủ 17 capability canonical. Quyền nhạy cảm hoàn tác, hoàn tác quyết toán, trả NCC và xóa yêu cầu không mặc định cấp cho mọi thủ kho.
+- Workflow User chỉ xem/khởi tạo/xử lý bước được giao và xem mẫu; Workflow Admin cộng tạo/sửa/publish mẫu. Owner đã chốt user thường chỉ sửa/xóa bản nháp của mình, nhưng catalog hiện thiếu edit/delete own draft cùng cancel/reopen/administer instance nên cohort vẫn `manual_review`.
+- Cloud read-only inventory có 17 application, 103 module, 372 action active và 65 action nhạy cảm. Blueprint đối chiếu đủ 17 application/84 canonical business module; `system.authorization` được giữ là control module, 18 shell `system.*` còn lại tiếp tục ở transition gate.
+- Chat và Procurement bị `catalog_blocked`; Contract, KB, Storage, Analytics, AI, Request và Workflow ghi catalog gap rõ. Không dùng shell view/manage để lấp gap và không tạo executable manifest.
+- Decision pack và blueprint đã được kiểm bằng unit test cùng Cloud reconciliation; bước này không tạo/sửa template, assignment, grant, schema hoặc transition ledger trên Cloud.

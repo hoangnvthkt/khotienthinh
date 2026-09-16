@@ -1,6 +1,17 @@
 {
   "version": "2026-09-15.e23.v1",
   "policy": "No owner-pending cohort may produce replace or revoke manifest items.",
+  "approvedDesignPrinciples": {
+    "approvedAt": "2026-09-16",
+    "templateContainsActionsOnly": true,
+    "assignmentCarriesConcreteScope": true,
+    "ordinarySelectAllFutureActions": "manual_review",
+    "superAdminFutureActions": "auto_include",
+    "superAdminLocked": true,
+    "templateInheritance": "none_explicit_snapshot_only",
+    "warehouseTemplates": ["WAREHOUSE_OPERATOR", "WAREHOUSE_MANAGER"],
+    "workflowDraftPolicy": "regular users may edit or delete only their own draft; running instances are action-by-assignment"
+  },
   "decisions": [
     {
       "cohort": "ai",
