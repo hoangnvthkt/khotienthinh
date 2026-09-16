@@ -11,8 +11,8 @@
   "cloudCatalogBaseline": {
     "applications": 17,
     "modules": 103,
-    "actions": 372,
-    "sensitiveActions": 65,
+    "actions": 384,
+    "sensitiveActions": 68,
     "canonicalBusinessModules": 84,
     "authorizationControlModules": ["system.authorization"],
     "legacyShellModules": 18
@@ -21,7 +21,7 @@
     {
       "code": "SUPER_ADMIN",
       "name": "Super Admin",
-      "status": "owner_approved_principle",
+      "status": "implemented_protected_dynamic",
       "locked": true,
       "dynamic": true,
       "futureActionPolicy": "auto_include",
@@ -31,7 +31,7 @@
     {
       "code": "PERMISSION_ADMIN",
       "name": "Quản trị phân quyền",
-      "status": "proposed",
+      "status": "implemented_existing_system_template",
       "locked": true,
       "dynamic": false,
       "futureActionPolicy": "manual_review",
@@ -161,15 +161,42 @@
     {
       "code": "request",
       "name": "Yêu cầu",
-      "status": "proposed_with_catalog_gaps",
+      "status": "implemented_runtime_actions_pending_owner_template",
       "assignmentScopeTypes": ["own", "assigned", "global"],
       "moduleCodes": ["request.instance", "request.category", "request.template"],
       "templates": [
-        {"code": "REQUEST_USER", "name": "Người tạo yêu cầu", "policy": "own_create_and_view"},
-        {"code": "REQUEST_PROCESSOR", "name": "Người xử lý yêu cầu", "policy": "assigned_view_and_act"},
-        {"code": "REQUEST_TEMPLATE_ADMIN", "name": "Quản trị yêu cầu", "policy": "template_and_category_administration"}
+        {
+          "code": "REQUEST_USER",
+          "name": "Người tạo yêu cầu",
+          "policy": "explicit",
+          "permissionCodes": [
+            "request.instance.view_own", "request.instance.create",
+            "request.instance.edit_own_content", "request.instance.resubmit_own",
+            "request.instance.cancel", "request.category.view", "request.template.view"
+          ]
+        },
+        {
+          "code": "REQUEST_PROCESSOR",
+          "name": "Người xử lý yêu cầu",
+          "policy": "explicit",
+          "permissionCodes": [
+            "request.instance.view_all", "request.instance.approve_assigned",
+            "request.instance.reject_assigned", "request.instance.return_assigned",
+            "request.category.view", "request.template.view"
+          ]
+        },
+        {
+          "code": "REQUEST_TEMPLATE_ADMIN",
+          "name": "Quản trị yêu cầu",
+          "policy": "explicit_snapshot",
+          "permissionCodes": [
+            "request.instance.view_all", "request.instance.cancel", "request.instance.reassign",
+            "request.category.view", "request.category.manage",
+            "request.template.view", "request.template.manage"
+          ]
+        }
       ],
-      "catalogGaps": ["Instance approve, reject, cancel, edit-own-draft and delete-own-draft need explicit capabilities instead of a generic act action."]
+      "catalogGaps": ["Request has no create/save/delete DRAFT command yet; do not represent those operations as completed capabilities."]
     },
     {
       "code": "work",

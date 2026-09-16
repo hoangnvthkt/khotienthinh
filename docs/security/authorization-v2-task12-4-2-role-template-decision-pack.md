@@ -1,6 +1,6 @@
 # Task 12.4.2 — Role-template decision pack
 
-Ngày chốt nguyên tắc: 2026-09-16. Đây là thiết kế và Cloud audit read-only; chưa tạo/sửa template trên Cloud, chưa cấp/gỡ quyền và chưa tạo transition manifest.
+Ngày chốt nguyên tắc: 2026-09-16. E26 đã triển khai catalog lifecycle Request và system template `SUPER_ADMIN` trên Cloud; chưa gán `SUPER_ADMIN`, chưa cấp/gỡ quyền người dùng và chưa tạo transition manifest.
 
 ## Quyết định owner đã chốt
 
@@ -14,13 +14,13 @@ Ngày chốt nguyên tắc: 2026-09-16. Đây là thiết kế và Cloud audit r
 
 ## Cloud baseline
 
-Cloud hiện có 17 application, 103 module và 372 action active; 65 action nhạy cảm. Phân loại module:
+Cloud hiện có 17 application, 103 module và 384 action active; 68 action nhạy cảm. Phân loại module:
 
 - 84 module nghiệp vụ canonical.
 - 1 module điều khiển canonical có prefix hệ thống: `system.authorization`.
 - 18 module shell `system.*` còn lại cần thay thế hoặc đóng trước khi loại bỏ legacy schema.
 
-`SYSTEM_ADMIN` hiện chỉ chứa 2 item và không phải full application role. Vì vậy không đổi nghĩa ngầm của template này. Thiết kế mới bổ sung `SUPER_ADMIN` riêng, có semantics root rõ ràng và guard riêng.
+`SYSTEM_ADMIN` hiện chỉ chứa 2 item và không phải full application role. Vì vậy không đổi nghĩa ngầm của template này. `SUPER_ADMIN` là system template riêng, bị khóa, không chứa item tĩnh; resolver tự mở rộng toàn bộ action active hiện tại và tương lai. E26 không tự gán role này cho tài khoản thật.
 
 ## Trải nghiệm quản trị
 
@@ -55,12 +55,12 @@ Blueprint máy đọc nằm tại `scripts/authorization-v2/task12-4-2-role-temp
 
 | Ứng dụng | Template đề xuất | Scope chính | Trạng thái |
 | --- | --- | --- | --- |
-| Hệ thống | Super Admin; Permission Admin; Kiểm toán phân quyền | global hoặc scope quản trị | Nguyên tắc Super Admin đã duyệt |
+| Hệ thống | Super Admin; Permission Admin; Kiểm toán phân quyền | global hoặc scope quản trị | Super Admin protected dynamic đã triển khai |
 | Dự án | Thành viên; Điều phối; Người duyệt; Quản lý dự án | project/construction_site | Chờ owner theo Room/action |
 | Kho | Thủ kho; Quản lý kho | warehouse | Baseline đã duyệt |
 | Nhân sự | Self-service; People Manager; HR nghiệp vụ; HR Manager; Payroll Admin | own/direct_reports/org_unit/assigned/global | Chờ owner HR và payroll |
 | Quy trình | Người dùng; Quản trị quy trình | own/assigned/global | Baseline đã duyệt, catalog còn thiếu action |
-| Yêu cầu | Người tạo; Người xử lý; Quản trị yêu cầu | own/assigned/global | Chờ tách lifecycle action |
+| Yêu cầu | Người tạo; Người xử lý; Quản trị yêu cầu | own/assigned/global | Lifecycle runtime đã tách; chờ owner chốt template |
 | Công việc | Thành viên; Quản lý công việc; Workspace Admin | own/assigned/department/project/workspace/global | Chờ owner Work |
 | Chi phí | Người đề nghị; Người kiểm tra; Người duyệt; Quản lý chi phí | own/department/global | Chờ owner finance |
 | Tài sản | Người dùng; Người quản lý; Quản trị tài sản | assigned/department/warehouse/global | Đủ catalog để owner duyệt |
@@ -105,21 +105,29 @@ Quyền `INSERT/UPDATE/DELETE` trực tiếp của role `authenticated` trên `w
 
 Sau checkpoint này Cloud có 377 action active, trong đó 8 action thuộc `workflow.instance`. Không có assignment/grant thật nào được tạo bởi migration.
 
+## Request lifecycle và Super Admin checkpoint
+
+E26 tách bảy thao tác Request đang tồn tại thật thành capability enforced: duyệt, từ chối, trả lại bước được giao; gửi lại và sửa nội dung phiếu của mình; hủy; và chuyển người xử lý. Guard chạy tại bảng `request_instances` và `workflow_step_assignments`, nên direct grant không thể bỏ qua quan hệ owner/assignee. Compatibility `act_assigned`/`system.rq.view` được giữ để 45 quyết định hiện hành không bị mất trong giai đoạn chuyển đổi. Request vẫn chưa có command tạo/lưu/xóa `DRAFT`, vì vậy blueprint không tuyên bố các quyền nháp đó đã hoàn tất.
+
+`SUPER_ADMIN` được triển khai bằng system template khóa và resolver động, không phải hàng trăm item tĩnh. Chỉ actor đang giữ `PERMISSION_ADMIN` global active mới được gán/thu hồi; không được tự gán, chỉ gán `global/*`, không expiry, target phải active, assignment không được sửa/reactivate và không được thu hồi Super Admin cuối cùng. Migration tạo đúng một template và không tạo assignment thật.
+
+Sau E26 Cloud có 384 action active, trong đó 11 action thuộc `request.instance`; `SUPER_ADMIN` có 0 item tĩnh và 0 assignment.
+
 ## Những điểm chặn trước executable manifest
 
 1. Chat và Procurement chưa có capability canonical ngoài shell.
-2. Request còn thiếu lifecycle actions; Workflow đã có runtime draft nhưng vẫn cần command quản lý template/assignment trước khi cohort có thể thành manifest executable.
+2. Request đã có capability cho lifecycle đang chạy nhưng chưa có create/save/delete DRAFT; Workflow và Request vẫn cần command quản lý template/assignment trước khi cohort có thể thành manifest executable.
 3. Contract, KB và Storage còn dùng cặp view/manage quá rộng.
 4. Project cần giữ Project Room/action làm nguồn chuẩn; không đổi thành role global.
-5. `SUPER_ADMIN` cần model/guard riêng. Việc đơn thuần thêm 372 item vào `SYSTEM_ADMIN` không đáp ứng semantics tự nhận quyền tương lai và dễ lẫn với System Admin kỹ thuật.
+5. `SUPER_ADMIN` đã có model/guard riêng; UI và command gán role vẫn phải hiển thị impact preview và audit trước khi cho vận hành thực tế.
 6. Schema hiện cho phép scope ở cả template item và assignment. Trước UI builder phải chốt command semantics: item mô tả action/default scope; assignment mang entity scope cụ thể và hai lớp phải giao nhau, không mở rộng.
 
 Do các điểm trên, blueprint là decision pack, không phải manifest cấp quyền. Mọi cohort chưa có owner approval vẫn giữ `manual_review`.
 
 ## Checkpoint triển khai tiếp theo
 
-1. Hoàn thiện catalog gap của Request và định nghĩa `SUPER_ADMIN` protected dynamic role; runtime draft của Workflow đã hoàn tất ở E25.
-2. Tạo command/RPC quản lý template và assignment: validation, stale version, impact preview, audit, SoD và last-admin guard.
+1. Tạo command/RPC quản lý template và assignment: validation, stale version, impact preview, audit, SoD và last-admin guard; resolver/last-admin boundary của `SUPER_ADMIN` đã hoàn tất ở E26.
+2. Chốt owner mapping ba template Request trên bảy lifecycle capability hiện có; thiết kế lifecycle `DRAFT` riêng nếu nghiệp vụ thực sự cần lưu/xóa nháp.
 3. Xây wizard ba bước dùng catalog hiện tại; system template fail closed và mẫu thường không tự nhận capability mới.
 4. Pilot Cloud với WMS + Workflow bằng fixture rollback, sau đó mới mở Asset/Booking và các module khác.
 5. Chỉ map/revoke shell khi owner decision hoàn tất, persona test đạt và reconciliation có 0 unexpected gain/loss.

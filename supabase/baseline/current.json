@@ -83,7 +83,10 @@
     "20260916021848_authorization_v2_task12_4_2_workflow_instance_capabilities.sql",
     "20260916095000_authorization_v2_task12_4_2_workflow_running_mutation_guard.sql",
     "20260916102000_authorization_v2_task12_4_2_workflow_draft_status.sql",
-    "20260916102100_authorization_v2_task12_4_2_workflow_draft_commands.sql"
+    "20260916102100_authorization_v2_task12_4_2_workflow_draft_commands.sql",
+    "20260916110000_authorization_v2_task12_4_2_request_lifecycle_capabilities.sql",
+    "20260916110100_authorization_v2_task12_4_2_super_admin_dynamic_role.sql",
+    "20260916110200_authorization_v2_task12_4_2_super_admin_assignment_hardening.sql"
   ],
   "forbidIncludeAll": true
 }

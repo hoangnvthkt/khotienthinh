@@ -34,6 +34,7 @@ describe('Task 12.4.2 role-template blueprint', () => {
       (item: { code: string }) => item.code === 'SUPER_ADMIN',
     );
     expect(superAdmin).toMatchObject({
+      status: 'implemented_protected_dynamic',
       locked: true,
       dynamic: true,
       futureActionPolicy: 'auto_include',
@@ -42,6 +43,10 @@ describe('Task 12.4.2 role-template blueprint', () => {
     expect(blueprints.systemTemplates.some(
       (item: { code: string }) => item.code === 'SYSTEM_ADMIN',
     )).toBe(false);
+    expect(blueprints.cloudCatalogBaseline).toMatchObject({
+      actions: 384,
+      sensitiveActions: 68,
+    });
   });
 
   it('covers every canonical business module from the audited Cloud baseline once', () => {
@@ -109,6 +114,42 @@ describe('Task 12.4.2 role-template blueprint', () => {
       status: 'owner_approved_catalog_complete',
       catalogGaps: [],
     });
+  });
+
+  it('maps the implemented Request runtime lifecycle without claiming draft commands', () => {
+    const requestUser = template('request', 'REQUEST_USER');
+    const requestProcessor = template('request', 'REQUEST_PROCESSOR');
+    const requestAdmin = template('request', 'REQUEST_TEMPLATE_ADMIN');
+
+    expect(application('request')).toMatchObject({
+      status: 'implemented_runtime_actions_pending_owner_template',
+      catalogGaps: [
+        'Request has no create/save/delete DRAFT command yet; do not represent those operations as completed capabilities.',
+      ],
+    });
+    expect(requestUser.permissionCodes).toEqual(expect.arrayContaining([
+      'request.instance.edit_own_content',
+      'request.instance.resubmit_own',
+      'request.instance.cancel',
+    ]));
+    expect(requestProcessor.permissionCodes).toEqual(expect.arrayContaining([
+      'request.instance.approve_assigned',
+      'request.instance.reject_assigned',
+      'request.instance.return_assigned',
+    ]));
+    expect(requestAdmin.permissionCodes).toEqual(expect.arrayContaining([
+      'request.instance.cancel',
+      'request.instance.reassign',
+    ]));
+    expect([
+      ...requestUser.permissionCodes,
+      ...requestProcessor.permissionCodes,
+      ...requestAdmin.permissionCodes,
+    ]).not.toEqual(expect.arrayContaining([
+      'request.instance.create_draft',
+      'request.instance.save_draft',
+      'request.instance.delete_own_draft',
+    ]));
   });
 
   it('marks applications with only legacy shells as catalog blocked', () => {
