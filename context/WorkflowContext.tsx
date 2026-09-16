@@ -43,8 +43,11 @@ interface WorkflowContextType {
 
     // Instances
     createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>, firstAssigneeUserIds?: string | string[]) => Promise<WorkflowInstance | null>;
+    createDraft: (templateId: string, title: string, formData?: Record<string, any>, firstAssigneeUserIds?: string | string[]) => Promise<WorkflowInstance | null>;
     loadInstanceFormData: (instanceId: string) => Promise<Record<string, any> | null>;
-    updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any> }) => Promise<boolean>;
+    updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any>; initialAssigneeUserIds?: string[] }) => Promise<boolean>;
+    submitDraft: (instanceId: string, firstAssigneeUserIds?: string[]) => Promise<boolean>;
+    deleteDraft: (instanceId: string) => Promise<boolean>;
     cancelInstance: (instanceId: string, userId: string) => Promise<boolean>;
     processInstance: (instanceId: string, action: WorkflowInstanceAction, userId: string, comment?: string, nextAssigneeUserIds?: string | string[]) => Promise<WorkflowProcessResult>;
     reopenInstance: (instanceId: string, targetNodeId: string, userId: string, comment?: string) => Promise<boolean>;
@@ -476,55 +479,37 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             return null;
         }
 
-        // Auto-copy default watchers from template
-        const tmpl = templates.find(t => t.id === templateId);
-
-        // Generate code: WF-YYYY-NNN (DB-backed when Supabase RPC is available)
-        const year = new Date().getFullYear();
-        let code = `WF-${year}-${String(instances.length + 1).padStart(3, '0')}`;
-        const { data: nextCode, error: codeError } = await supabase.rpc('next_workflow_code');
-        if (!codeError && nextCode) code = nextCode;
-
-        const { data, error } = await supabase.from('workflow_instances').insert({
-            template_id: templateId,
-            code,
-            title,
-            created_by: userId,
-            current_node_id: firstTaskNodeId,
-            status: 'RUNNING',
-            form_data: formData,
-            watchers: tmpl?.defaultWatchers || [],
-            step_assignees: initialStepAssignees,
-        }).select(WORKFLOW_INSTANCE_LIST_SELECT).single();
-
-        if (error || !data) { console.error(error); return null; }
-
-        // Log the submission at the START node
-        const { data: logData } = await supabase.from('workflow_instance_logs').insert({
-            instance_id: data.id,
-            node_id: startNode.id,
-            action: 'SUBMITTED',
-            acted_by: userId,
-            comment: 'Phiếu được tạo mới',
-        }).select().single();
-
-        const createdInstance = { ...mapInstanceFromDB(data), formData };
+        const assigneeIds = normalizeStepAssigneeIds(firstAssigneeUserIds);
+        const { data, error } = await supabase.rpc('create_workflow_instance_v2', {
+            p_input: {
+                templateId,
+                title,
+                formData,
+                firstNodeId: firstTaskNodeId,
+                firstAssigneeUserIds: assigneeIds,
+            },
+            p_idempotency_key: crypto.randomUUID(),
+        });
+        if (error) { console.error(error); return null; }
+        const commandResult = data as { instance?: any; log?: any } | null;
+        if (!commandResult?.instance) return null;
+        const createdInstance = mapInstanceFromDB(commandResult.instance);
         setInstances(prev => [createdInstance, ...prev]);
-        if (logData) setLogs(prev => [...prev, mapLogFromDB(logData)]);
+        if (commandResult.log) setLogs(prev => [...prev, mapLogFromDB(commandResult.log)]);
 
         // 📝 Audit trail: new workflow instance created
         auditService.log({
             tableName: 'workflow_instances',
-            recordId: data.id,
+            recordId: createdInstance.id,
             action: 'INSERT',
-            newData: { id: data.id, code, title, templateId, status: 'RUNNING', formData },
+            newData: { id: createdInstance.id, code: createdInstance.code, title, templateId, status: 'RUNNING', formData },
             userId,
             userName: userId,
-            description: `Tạo phiếu quy trình: ${title} (${code})`,
+            description: `Tạo phiếu quy trình: ${title} (${createdInstance.code})`,
         });
 
         // 🔔 Notify assignees when new WF instance is created
-        if (data && firstTaskNodeId) {
+        if (firstTaskNodeId) {
             const firstNode = templateNodes.find(n => n.id === firstTaskNodeId);
             const recipientIds = await getWorkflowNodeRecipientIds(firstNode, createdInstance.stepAssignees);
             const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(createdInstance);
@@ -534,18 +519,41 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 type: 'info',
                 title: materialNotificationContext ? 'Phiếu vật tư cần xử lý' : '📋 Phiếu quy trình mới cần xử lý',
                 message: materialNotificationContext
-                    ? `Phiếu ${materialNotificationContext.metadata.requestCode || code} đang chờ bạn xử lý bước "${firstNode?.label || ''}".`
-                    : `"${title}" (${code}) — Bạn cần duyệt bước "${firstNode?.label || ''}"`,
-                sourceId: materialNotificationContext?.sourceId || `wf_new_${data.id}`,
+                    ? `Phiếu ${materialNotificationContext.metadata.requestCode || createdInstance.code} đang chờ bạn xử lý bước "${firstNode?.label || ''}".`
+                    : `"${title}" (${createdInstance.code}) — Bạn cần duyệt bước "${firstNode?.label || ''}"`,
+                sourceId: materialNotificationContext?.sourceId || `wf_new_${createdInstance.id}`,
                 category: materialNotificationContext?.category,
                 icon: materialNotificationContext?.icon,
                 link: materialNotificationContext?.link,
                 sourceType: materialNotificationContext?.sourceType,
-                metadata: { ...(materialNotificationContext?.metadata || {}), instanceId: data.id, templateId, nodeId: firstTaskNodeId },
+                metadata: { ...(materialNotificationContext?.metadata || {}), instanceId: createdInstance.id, templateId, nodeId: firstTaskNodeId },
             });
         }
 
         return createdInstance;
+    };
+
+    const createDraft = async (
+        templateId: string,
+        title: string,
+        formData: Record<string, any> = {},
+        firstAssigneeUserIds?: string | string[],
+    ): Promise<WorkflowInstance | null> => {
+        const { data, error } = await supabase.rpc('create_workflow_instance_draft', {
+            p_input: {
+                templateId,
+                title,
+                formData,
+                initialAssigneeUserIds: normalizeStepAssigneeIds(firstAssigneeUserIds),
+            },
+            p_idempotency_key: crypto.randomUUID(),
+        });
+        if (error) { console.error(error); return null; }
+        const commandResult = data as { instance?: any } | null;
+        if (!commandResult?.instance) return null;
+        const draft = mapInstanceFromDB(commandResult.instance);
+        setInstances(prev => [draft, ...prev]);
+        return draft;
     };
 
     const loadInstanceFormData = useCallback(async (instanceId: string): Promise<Record<string, any> | null> => {
@@ -797,19 +805,63 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const getInstanceLogs = (instanceId: string) => logs.filter(l => l.instanceId === instanceId);
 
-    const updateInstance = async (instanceId: string, updates: { title?: string; formData?: Record<string, any> }): Promise<boolean> => {
-        const { data, error } = await supabase.rpc('update_workflow_instance_content', {
-            p_instance_id: instanceId,
-            p_title: updates.title ?? null,
-            p_form_data: updates.formData ?? null,
-            p_idempotency_key: crypto.randomUUID(),
-        });
+    const updateInstance = async (instanceId: string, updates: { title?: string; formData?: Record<string, any>; initialAssigneeUserIds?: string[] }): Promise<boolean> => {
+        const existingInstance = instances.find(instance => instance.id === instanceId);
+        const isDraft = existingInstance?.status === WorkflowInstanceStatus.DRAFT;
+        const { data, error } = isDraft
+            ? await supabase.rpc('update_workflow_instance_draft', {
+                p_instance_id: instanceId,
+                p_title: updates.title ?? null,
+                p_form_data: updates.formData ?? null,
+                p_initial_assignee_user_ids: updates.initialAssigneeUserIds ?? null,
+                p_idempotency_key: crypto.randomUUID(),
+            })
+            : await supabase.rpc('update_workflow_instance_content', {
+                p_instance_id: instanceId,
+                p_title: updates.title ?? null,
+                p_form_data: updates.formData ?? null,
+                p_idempotency_key: crypto.randomUUID(),
+            });
         if (error) { console.error(error); return false; }
         const commandResult = data as { instance?: any } | null;
         if (!commandResult?.instance) return false;
         setInstances(prev => prev.map(i => i.id === instanceId
             ? mapInstanceFromDB(commandResult.instance)
             : i));
+        return true;
+    };
+
+    const submitDraft = async (instanceId: string, firstAssigneeUserIds: string[] = []): Promise<boolean> => {
+        const { data, error } = await supabase.rpc('submit_workflow_instance_draft', {
+            p_instance_id: instanceId,
+            p_initial_assignee_user_ids: firstAssigneeUserIds,
+            p_idempotency_key: crypto.randomUUID(),
+        });
+        if (error) { console.error(error); return false; }
+        const commandResult = data as { instance?: any; log?: any } | null;
+        if (!commandResult?.instance) return false;
+        setInstances(prev => prev.map(instance => instance.id === instanceId
+            ? mapInstanceFromDB(commandResult.instance)
+            : instance));
+        if (commandResult.log) {
+            setLogs(prev => prev.some(log => log.id === commandResult.log.id)
+                ? prev
+                : [...prev, mapLogFromDB(commandResult.log)]);
+        }
+        return true;
+    };
+
+    const deleteDraft = async (instanceId: string): Promise<boolean> => {
+        const { data, error } = await supabase.rpc('delete_workflow_instance_draft', {
+            p_instance_id: instanceId,
+            p_idempotency_key: crypto.randomUUID(),
+        });
+        if (error || !(data as { deletedInstanceId?: string } | null)?.deletedInstanceId) {
+            if (error) console.error(error);
+            return false;
+        }
+        setInstances(prev => prev.filter(instance => instance.id !== instanceId));
+        setLogs(prev => prev.filter(log => log.instanceId !== instanceId));
         return true;
     };
 
@@ -931,7 +983,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         templates, nodes, edges, instances, logs, printTemplates, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
-        createInstance, loadInstanceFormData, updateInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
+        createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
         uploadPrintTemplate, deletePrintTemplate, getPrintTemplates,
         refreshData,
     };

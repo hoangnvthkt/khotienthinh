@@ -39,6 +39,7 @@ interface NodeSlaInfo {
 
 // ========== Constants ==========
 const STATUS_CONFIG: Record<WorkflowInstanceStatus, { label: string; color: string; bg: string; icon: any }> = {
+  DRAFT: { label: 'Bản nháp', color: '#F59E0B', bg: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800', icon: AlertTriangle },
   RUNNING: { label: 'Đang xử lý', color: '#3B82F6', bg: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800', icon: Clock },
   COMPLETED: { label: 'Hoàn thành', color: '#10B981', bg: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800', icon: CheckCircle },
   REJECTED: { label: 'Từ chối', color: '#EF4444', bg: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800', icon: XCircle },

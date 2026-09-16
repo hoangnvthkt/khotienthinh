@@ -43,6 +43,7 @@ import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist
 import { canPerform } from '../../lib/permissions/permissionService';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
+    DRAFT: 'Bản nháp',
     RUNNING: 'Đang xử lý',
     COMPLETED: 'Hoàn thành',
     REJECTED: 'Từ chối',

@@ -54,11 +54,11 @@ begin
     )
       and (
         scope_modes <> array['own']::text[]
-        or grant_readiness <> 'declared'
-        or direct_grant_allowed
+        or grant_readiness <> 'enforced'
+        or not direct_grant_allowed
       )
   ) then
-    raise exception 'Draft capabilities became grantable before a draft lifecycle exists';
+    raise exception 'Draft capabilities are not enforced after the draft lifecycle rollout';
   end if;
 
   if exists (

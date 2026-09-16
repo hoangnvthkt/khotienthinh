@@ -20,6 +20,7 @@ import {
 import { canPerform } from '../lib/permissions/permissionService';
 
 const STATUS_COLORS: Record<WorkflowInstanceStatus, string> = {
+    DRAFT: 'border-l-amber-500',
     RUNNING: 'border-l-blue-500',
     COMPLETED: 'border-l-emerald-500',
     REJECTED: 'border-l-red-500',
@@ -27,6 +28,7 @@ const STATUS_COLORS: Record<WorkflowInstanceStatus, string> = {
 };
 
 const STATUS_DOT: Record<WorkflowInstanceStatus, string> = {
+    DRAFT: 'bg-amber-500',
     RUNNING: 'bg-blue-500',
     COMPLETED: 'bg-emerald-500',
     REJECTED: 'bg-red-500',

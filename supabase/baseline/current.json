@@ -81,7 +81,9 @@
     "20260915071458_authorization_v2_task12_4_2_wms_request_delete_capability.sql",
     "20260915094533_request_attachment_processor_rpc_wrappers.sql",
     "20260916021848_authorization_v2_task12_4_2_workflow_instance_capabilities.sql",
-    "20260916095000_authorization_v2_task12_4_2_workflow_running_mutation_guard.sql"
+    "20260916095000_authorization_v2_task12_4_2_workflow_running_mutation_guard.sql",
+    "20260916102000_authorization_v2_task12_4_2_workflow_draft_status.sql",
+    "20260916102100_authorization_v2_task12_4_2_workflow_draft_commands.sql"
   ],
   "forbidIncludeAll": true
 }

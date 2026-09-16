@@ -3945,6 +3945,7 @@ export enum WorkflowNodeType {
 }
 
 export enum WorkflowInstanceStatus {
+  DRAFT = 'DRAFT',
   RUNNING = 'RUNNING',
   COMPLETED = 'COMPLETED',
   REJECTED = 'REJECTED',

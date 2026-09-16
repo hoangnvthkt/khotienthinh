@@ -15,6 +15,21 @@ begin
     raise exception 'Workflow capability postflight catalog mismatch';
   end if;
 
+  if exists (
+    select 1
+    from public.permission_actions
+    where permission_code in (
+      'workflow.instance.edit_own_draft',
+      'workflow.instance.delete_own_draft',
+      'workflow.instance.cancel',
+      'workflow.instance.reopen',
+      'workflow.instance.administer'
+    )
+      and (grant_readiness <> 'enforced' or not direct_grant_allowed)
+  ) then
+    raise exception 'Workflow lifecycle capabilities are not fully enforced';
+  end if;
+
   if not exists (
     select 1
     from pg_proc p
@@ -69,7 +84,11 @@ begin
         'cancel_workflow_instance',
         'reopen_workflow_instance',
         'update_workflow_instance_watchers',
-        'update_workflow_instance_content'
+        'update_workflow_instance_content',
+        'create_workflow_instance_draft',
+        'update_workflow_instance_draft',
+        'delete_workflow_instance_draft',
+        'submit_workflow_instance_draft'
       )
       and (
         has_function_privilege('anon', p.oid, 'EXECUTE')
@@ -116,8 +135,10 @@ begin
 
   if has_table_privilege('authenticated', 'public.workflow_instances', 'UPDATE')
      or has_table_privilege('authenticated', 'public.workflow_instances', 'DELETE')
+     or has_table_privilege('authenticated', 'public.workflow_instances', 'INSERT')
      or has_table_privilege('authenticated', 'public.workflow_instance_logs', 'UPDATE')
-     or has_table_privilege('authenticated', 'public.workflow_instance_logs', 'DELETE') then
+     or has_table_privilege('authenticated', 'public.workflow_instance_logs', 'DELETE')
+     or has_table_privilege('authenticated', 'public.workflow_instance_logs', 'INSERT') then
     raise exception 'Authenticated retains direct workflow mutation privileges';
   end if;
 
@@ -128,12 +149,24 @@ begin
   ) then
     raise exception 'Workflow running mutation guard migration missing from Cloud ledger';
   end if;
+
+  if not exists (
+    select 1
+    from supabase_migrations.schema_migrations
+    where version = '20260916102000'
+  ) or not exists (
+    select 1
+    from supabase_migrations.schema_migrations
+    where version = '20260916102100'
+  ) then
+    raise exception 'Workflow draft lifecycle migrations missing from Cloud ledger';
+  end if;
 end;
 $$;
 
 select
   count(*) filter (where grant_readiness = 'enforced') as enforced_actions,
-  count(*) filter (where grant_readiness = 'declared') as declared_draft_actions,
+  count(*) filter (where grant_readiness = 'declared') as declared_actions,
   count(*) as workflow_lifecycle_actions
 from public.permission_actions
 where permission_code in (

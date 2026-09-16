@@ -63,7 +63,7 @@ describe('frontend daily XP integration', () => {
     const requestSource = readFileSync(join(process.cwd(), 'lib', 'requestRuntimeService.ts'), 'utf8');
     const workflowSource = readFileSync(join(process.cwd(), 'context', 'WorkflowContext.tsx'), 'utf8');
 
-    expect(requestSource).not.toMatch(/awardXP|awardDailyXP|create_rq|approve_rq/);
-    expect(workflowSource).not.toMatch(/awardXP|awardDailyXP|create_workflow|approve_workflow/);
+    expect(requestSource).not.toMatch(/awardXP|awardDailyXP|['"](?:create_rq|approve_rq)['"]/);
+    expect(workflowSource).not.toMatch(/awardXP|awardDailyXP|['"](?:create_workflow|approve_workflow)['"]/);
   });
 });

@@ -21,9 +21,23 @@ const runningMutationMigration = readFileSync(
   ),
   'utf8',
 );
+const draftCommandsMigration = readFileSync(
+  resolve(
+    process.cwd(),
+    'supabase/migrations/20260916102100_authorization_v2_task12_4_2_workflow_draft_commands.sql',
+  ),
+  'utf8',
+);
+const workflowInstancesSource = readFileSync(
+  resolve(process.cwd(), 'pages/wf/WorkflowInstances.tsx'),
+  'utf8',
+);
 
 describe('workflow instance capability commands', () => {
   it('routes lifecycle and watcher mutations through guarded RPC commands', () => {
+    expect(workflowContextSource).toContain("supabase.rpc('create_workflow_instance_draft'");
+    expect(workflowContextSource).toContain("supabase.rpc('submit_workflow_instance_draft'");
+    expect(workflowContextSource).toContain("supabase.rpc('delete_workflow_instance_draft'");
     expect(workflowContextSource).toContain("supabase.rpc('update_workflow_instance_content'");
     expect(workflowContextSource).toContain("supabase.rpc('cancel_workflow_instance'");
     expect(workflowContextSource).toContain("supabase.rpc('reopen_workflow_instance'");
@@ -34,6 +48,8 @@ describe('workflow instance capability commands', () => {
     expect(workflowContextSource).not.toContain("from('workflow_instances').update");
     expect(workflowContextSource).not.toContain("from('workflow_instances').delete");
     expect(workflowContextSource).not.toContain("from('workflow_instance_logs').delete");
+    expect(workflowContextSource).not.toContain("from('workflow_instances').insert");
+    expect(workflowContextSource).not.toContain("from('workflow_instance_logs').insert");
     const cancelBody = workflowContextSource.match(
       /const cancelInstance[\s\S]*?const reopenInstance/,
     )?.[0] || '';
@@ -63,5 +79,18 @@ describe('workflow instance capability commands', () => {
     expect(detailSource).toContain("canPerform(user, 'workflow.instance.administer'");
     expect(detailSource).toContain('canEdit={canAct || canAdministerInstance}');
     expect(detailSource).not.toContain('canEdit={canAct || instance.createdBy === user.id');
+  });
+
+  it('implements a real owner-only draft lifecycle without direct table inserts', () => {
+    expect(draftCommandsMigration).toContain("instance_row.status = 'DRAFT'");
+    expect(draftCommandsMigration).toContain('instance_row.created_by = p_actor_id');
+    expect(draftCommandsMigration).toContain("'workflow.instance.edit_own_draft'");
+    expect(draftCommandsMigration).toContain("'workflow.instance.delete_own_draft'");
+    expect(draftCommandsMigration).toContain('revoke insert on public.workflow_instances');
+    expect(draftCommandsMigration).toContain('revoke insert on public.workflow_instance_logs');
+    expect(workflowInstancesSource).toContain('onClick={handleSaveDraft}');
+    expect(workflowInstancesSource).toContain('onClick={handleSubmitDraft}');
+    expect(workflowInstancesSource).toContain('onClick={handleDeleteDraft}');
+    expect(workflowInstancesSource).toContain("DRAFT: { label: 'Bản nháp'");
   });
 });
