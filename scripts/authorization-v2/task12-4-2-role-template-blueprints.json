@@ -130,7 +130,7 @@
     {
       "code": "workflow",
       "name": "Quy trình",
-      "status": "owner_approved_baseline_with_catalog_gaps",
+      "status": "owner_approved_catalog_complete",
       "assignmentScopeTypes": ["own", "assigned", "global"],
       "moduleCodes": ["workflow.instance", "workflow.template"],
       "templates": [
@@ -138,7 +138,11 @@
           "code": "WORKFLOW_USER",
           "name": "Người dùng quy trình",
           "policy": "explicit",
-          "permissionCodes": ["workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned", "workflow.template.view"]
+          "permissionCodes": [
+            "workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned",
+            "workflow.instance.edit_own_draft", "workflow.instance.delete_own_draft",
+            "workflow.template.view"
+          ]
         },
         {
           "code": "WORKFLOW_ADMIN",
@@ -146,14 +150,13 @@
           "policy": "explicit_snapshot_including_user_actions",
           "permissionCodes": [
             "workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned",
+            "workflow.instance.edit_own_draft", "workflow.instance.delete_own_draft",
+            "workflow.instance.cancel", "workflow.instance.reopen", "workflow.instance.administer",
             "workflow.template.view", "workflow.template.create", "workflow.template.edit", "workflow.template.publish"
           ]
         }
       ],
-      "catalogGaps": [
-        "Missing explicit instance edit-own-draft and delete-own-draft capabilities.",
-        "Missing explicit instance cancel, reopen and administer capabilities."
-      ]
+      "catalogGaps": []
     },
     {
       "code": "request",

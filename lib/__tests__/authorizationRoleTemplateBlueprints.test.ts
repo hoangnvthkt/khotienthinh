@@ -88,24 +88,27 @@ describe('Task 12.4.2 role-template blueprint', () => {
       'workflow.instance.view',
       'workflow.instance.create',
       'workflow.instance.act_assigned',
+      'workflow.instance.edit_own_draft',
+      'workflow.instance.delete_own_draft',
       'workflow.template.view',
     ]);
-    expect(user.permissionCodes.some((code: string) => /create|edit|publish/.test(
-      code.replace('workflow.instance.create', ''),
-    ))).toBe(false);
+    expect(user.permissionCodes.some((code: string) => code.startsWith('workflow.template.')
+      && /create|edit|publish/.test(code))).toBe(false);
     expect(admin.permissionCodes).toEqual(expect.arrayContaining([
+      'workflow.instance.cancel',
+      'workflow.instance.reopen',
+      'workflow.instance.administer',
       'workflow.template.create',
       'workflow.template.edit',
       'workflow.template.publish',
     ]));
   });
 
-  it('fails the workflow decision gate until all approved lifecycle actions exist', () => {
-    expect(application('workflow').status).toBe('owner_approved_baseline_with_catalog_gaps');
-    expect(application('workflow').catalogGaps).toEqual(expect.arrayContaining([
-      expect.stringContaining('edit-own-draft'),
-      expect.stringContaining('cancel, reopen and administer'),
-    ]));
+  it('closes the owner-approved workflow catalog gap', () => {
+    expect(application('workflow')).toMatchObject({
+      status: 'owner_approved_catalog_complete',
+      catalogGaps: [],
+    });
   });
 
   it('marks applications with only legacy shells as catalog blocked', () => {

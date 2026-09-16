@@ -17,6 +17,7 @@ import {
     resolveCurrentWorkflowAssignees,
     resolveWorkflowStepAssigneeCandidates,
 } from '../lib/workflowAssignmentResolver';
+import { canPerform } from '../lib/permissions/permissionService';
 
 const STATUS_COLORS: Record<WorkflowInstanceStatus, string> = {
     RUNNING: 'border-l-blue-500',
@@ -44,6 +45,8 @@ interface KanbanBoardProps {
 const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employees = [], orgUnits = [], onCardClick, onDragComplete }) => {
     const { nodes, edges, logs, getInstanceLogs, processInstance, reopenInstance } = useWorkflow();
     const { user, users } = useApp();
+    const canReopenWorkflowInstance = user.role === Role.ADMIN
+        || canPerform(user, 'workflow.instance.reopen', { scopeType: 'global', scopeId: '*' });
 
     const [draggedInstanceId, setDraggedInstanceId] = useState<string | null>(null);
     const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
@@ -164,7 +167,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
         // Handle reopen: dragging from COMPLETED/REJECTED back to a step
         if (instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) {
             // Only admin can reopen
-            if (user.role !== Role.ADMIN) return;
+            if (!canReopenWorkflowInstance) return;
             const targetIdx = orderedColumns.findIndex(c => c.id === targetNodeId);
             if (targetIdx === -1) return;
             setShowConfirmDrag({ instanceId, targetNodeId, action: WorkflowInstanceAction.REVISION_REQUESTED, isReopen: true });
@@ -382,7 +385,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                     return (
                                         <div
                                             key={instance.id}
-                                            draggable={instance.status === WorkflowInstanceStatus.RUNNING || ((instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) && user.role === Role.ADMIN)}
+                                            draggable={instance.status === WorkflowInstanceStatus.RUNNING || ((instance.status === WorkflowInstanceStatus.COMPLETED || instance.status === WorkflowInstanceStatus.REJECTED) && canReopenWorkflowInstance)}
                                             onDragStart={e => handleDragStart(e, instance.id)}
                                             onDragEnd={handleDragEnd}
                                             onClick={() => onCardClick(instance)}

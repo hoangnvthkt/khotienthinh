@@ -86,25 +86,29 @@ Snapshot tường minh gồm toàn bộ quyền Thủ kho cộng: sửa tồn, x
 
 Không dùng inheritance động; nếu Thủ kho có action mới, Quản lý kho chỉ nhận action đó sau review.
 
-## Workflow baseline và catalog gap
+## Workflow baseline và capability checkpoint
 
 ### Người dùng quy trình
 
-Catalog hiện đáp ứng: xem instance, khởi tạo, xử lý bước được giao và xem mẫu.
-
-Owner đã duyệt thêm semantics nhưng catalog chưa có action tương ứng:
+Catalog hiện có: xem instance, khởi tạo, xử lý bước được giao, xem mẫu và hai action mô tả quyền trên bản nháp:
 
 - sửa bản nháp do mình tạo;
 - xóa bản nháp do mình tạo.
 
+Hai action bản nháp đang ở `grant_readiness=declared`, `direct_grant_allowed=false` vì schema hiện không có trạng thái `DRAFT`: tạo phiếu chuyển thẳng sang `RUNNING`. Chúng chưa được cấp thật cho đến khi có lifecycle nháp và command tương ứng; không coi checkbox catalog là runtime đã hoàn tất.
+
 ### Quản trị quy trình
 
-Catalog hiện đáp ứng quyền người dùng cộng tạo/sửa/publish mẫu. Còn thiếu action riêng cho hủy instance, mở lại instance và quản trị instance. Không được map các thao tác này vào `system.wf.manage` hoặc một quyền `manage` chung.
+Catalog hiện đáp ứng quyền người dùng cộng tạo/sửa/publish mẫu và ba action riêng `workflow.instance.cancel`, `workflow.instance.reopen`, `workflow.instance.administer`. Command hủy/mở lại, quản lý watcher và sửa nội dung instance đã kiểm capability riêng; compatibility module-admin được giữ trong `workflow_has_action` cho giai đoạn chuyển đổi. Người được giao bước chỉ được thay đổi các khóa dữ liệu có namespace của bước hiện tại; quyền `administer` mới được sửa tiêu đề hoặc dữ liệu cấp instance. Không map các thao tác này vào một quyền `manage` chung.
+
+Quyền `UPDATE/DELETE` trực tiếp của role `authenticated` trên `workflow_instances` và `workflow_instance_logs` đã bị thu hồi. Phiếu `RUNNING` không còn đường xóa; xóa chỉ được mở lại khi có lifecycle `DRAFT` thật và command `delete_own_draft` tương ứng.
+
+Sau checkpoint này Cloud có 377 action active, trong đó 8 action thuộc `workflow.instance`. Không có assignment/grant thật nào được tạo bởi migration.
 
 ## Những điểm chặn trước executable manifest
 
 1. Chat và Procurement chưa có capability canonical ngoài shell.
-2. Workflow/Request thiếu lifecycle actions mà owner đã mô tả.
+2. Request còn thiếu lifecycle actions; Workflow còn thiếu runtime lifecycle `DRAFT` dù catalog đã có hai action declared.
 3. Contract, KB và Storage còn dùng cặp view/manage quá rộng.
 4. Project cần giữ Project Room/action làm nguồn chuẩn; không đổi thành role global.
 5. `SUPER_ADMIN` cần model/guard riêng. Việc đơn thuần thêm 372 item vào `SYSTEM_ADMIN` không đáp ứng semantics tự nhận quyền tương lai và dễ lẫn với System Admin kỹ thuật.
@@ -114,7 +118,7 @@ Do các điểm trên, blueprint là decision pack, không phải manifest cấp
 
 ## Checkpoint triển khai tiếp theo
 
-1. Hoàn thiện catalog gap bắt buộc cho Workflow/Request và định nghĩa `SUPER_ADMIN` protected dynamic role.
+1. Hoàn thiện runtime draft cho Workflow, catalog gap của Request và định nghĩa `SUPER_ADMIN` protected dynamic role.
 2. Tạo command/RPC quản lý template và assignment: validation, stale version, impact preview, audit, SoD và last-admin guard.
 3. Xây wizard ba bước dùng catalog hiện tại; system template fail closed và mẫu thường không tự nhận capability mới.
 4. Pilot Cloud với WMS + Workflow bằng fixture rollback, sau đó mới mở Asset/Booking và các module khác.

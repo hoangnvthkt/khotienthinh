@@ -625,7 +625,7 @@ export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, col
 const WorkflowInstances: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { templates, instances, nodes, edges, logs, createInstance, loadInstanceFormData, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
+    const { templates, instances, nodes, edges, logs, createInstance, loadInstanceFormData, updateInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
@@ -695,7 +695,6 @@ const WorkflowInstances: React.FC = () => {
     const [editFormData, setEditFormData] = useState<Record<string, any>>({});
 
     // Delete/Cancel confirm state
-    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
 
     // Reopen modal state (Admin can revert completed/rejected instances)
@@ -704,7 +703,7 @@ const WorkflowInstances: React.FC = () => {
     const [reopenComment, setReopenComment] = useState('');
 
     useEffect(() => {
-        const hasActiveOverlay = showCreateModal || !!editingInstance || !!boardDetailInstanceId || !!deleteConfirmId || !!cancelConfirmId || !!reopenInstanceId;
+        const hasActiveOverlay = showCreateModal || !!editingInstance || !!boardDetailInstanceId || !!cancelConfirmId || !!reopenInstanceId;
         if (hasActiveOverlay) {
             const originalOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
@@ -712,7 +711,7 @@ const WorkflowInstances: React.FC = () => {
                 document.body.style.overflow = originalOverflow;
             };
         }
-    }, [showCreateModal, editingInstance, boardDetailInstanceId, deleteConfirmId, cancelConfirmId, reopenInstanceId]);
+    }, [showCreateModal, editingInstance, boardDetailInstanceId, cancelConfirmId, reopenInstanceId]);
 
     // Step data editing state
     const [stepFormData, setStepFormData] = useState<Record<string, any>>({});
@@ -1130,17 +1129,6 @@ const WorkflowInstances: React.FC = () => {
             setEditingInstance(null);
         } else {
             showToast('error', 'Cập nhật phiếu thất bại.');
-        }
-    };
-
-    const handleDelete = async (id: string) => {
-        const ok = await deleteInstance(id);
-        setDeleteConfirmId(null);
-        if (ok) {
-            showToast('success', 'Phiếu đã được xóa!');
-            setExpandedId(null);
-        } else {
-            showToast('error', 'Xóa phiếu thất bại.');
         }
     };
 
@@ -2008,20 +1996,6 @@ const WorkflowInstances: React.FC = () => {
                     </div>
                 );
             })()}
-
-            {/* Shared Delete Confirm Modal */}
-            {deleteConfirmId && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl animate-scale-in">
-                        <h2 className="text-lg font-bold text-red-600 mb-2">Xóa phiếu?</h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Phiếu và tất cả lịch sử xử lý sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.</p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
-                            <button onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-650 transition shadow-lg shadow-red-500/20">Xóa</button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Shared Cancel Confirm Modal */}
             {cancelConfirmId && (

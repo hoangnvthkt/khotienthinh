@@ -40,6 +40,7 @@ import { saveAs } from 'file-saver';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     RUNNING: 'Đang xử lý',
@@ -469,6 +470,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             logs: instanceLogs,
         });
     }, [instance, currentNode, user, template?.managers, firstTaskNodeId, instanceLogs]);
+
+    const canAdministerInstance = user.role === Role.ADMIN
+        || canPerform(user, 'workflow.instance.administer', { scopeType: 'global', scopeId: '*' });
 
     const transitionTargetNode = activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? revisionNode : nextNode;
     const transitionCandidates = useMemo(() => {
@@ -1118,7 +1122,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 MÔ TẢ
                             </h2>
                             <div className="flex items-center gap-3 text-xs font-bold">
-                                {instance.status === WorkflowInstanceStatus.RUNNING && (instance.createdBy === user.id || user.role === Role.ADMIN) && (
+                                {instance.status === WorkflowInstanceStatus.RUNNING && canAdministerInstance && (
                                     <>
                                         <button
                                             onClick={handleStartEditDescription}
@@ -1173,7 +1177,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                                         <button onClick={() => setPreviewFile(file)} className="hover:text-emerald-600 font-bold">Xem trước</button>
                                                         <span>•</span>
                                                         <button onClick={() => handleDownloadDoc(file)} className="hover:text-emerald-600 font-bold">Tải về</button>
-                                                        {instance.status === WorkflowInstanceStatus.RUNNING && (instance.createdBy === user.id || user.role === Role.ADMIN) && (
+                                                        {instance.status === WorkflowInstanceStatus.RUNNING && canAdministerInstance && (
                                                             <>
                                                                 <span>•</span>
                                                                 <button onClick={() => handleDeleteDoc(file)} className="hover:text-red-500 font-bold">Xoá</button>
@@ -1368,7 +1372,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         allStepNodes={orderedSteps.map(s => ({ id: s.id, label: s.label }))}
                         currentUser={user}
                         users={users}
-                        canEdit={canAct || instance.createdBy === user.id || user.role === Role.ADMIN}
+                        canEdit={canAct || canAdministerInstance}
                         onPreviewFile={(file) => setPreviewFile(file)}
                     />
 

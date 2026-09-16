@@ -257,6 +257,11 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem', 10],
         ['create', 'Tạo', 20],
         ['act_assigned', 'Xử lý được giao', 30],
+        ['edit_own_draft', 'Sửa bản nháp của mình', 40, ['own']],
+        ['delete_own_draft', 'Xóa bản nháp của mình', 50, ['own']],
+        ['cancel', 'Hủy phiên quy trình', 60, ['global']],
+        ['reopen', 'Mở lại phiên quy trình', 70, ['global']],
+        ['administer', 'Quản trị phiên quy trình', 80, ['global']],
       ])),
       module('workflow.template', 'Mẫu quy trình', 'WF', ['/wf/templates', '/wf/builder/:id'], 20, actions('workflow.template', 'WF', '/wf/templates', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],

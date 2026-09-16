@@ -242,6 +242,31 @@ describe('permissionRegistry', () => {
     expect(actionByCode['hrm.employee.view_profile'].scopeTypes).not.toContain('department');
     expect(actionByCode['expense.expense_record.edit_own'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'department']));
     expect(actionByCode['workflow.instance.act_assigned'].scopeTypes).toEqual(expect.arrayContaining(['global', 'own', 'assigned']));
+    expect(actionByCode['workflow.instance.edit_own_draft']).toMatchObject({
+      action: 'edit_own_draft',
+      label: 'Sửa bản nháp của mình',
+      scopeTypes: ['own'],
+    });
+    expect(actionByCode['workflow.instance.delete_own_draft']).toMatchObject({
+      action: 'delete_own_draft',
+      label: 'Xóa bản nháp của mình',
+      scopeTypes: ['own'],
+    });
+    expect(actionByCode['workflow.instance.cancel']).toMatchObject({
+      action: 'cancel',
+      label: 'Hủy phiên quy trình',
+      scopeTypes: ['global'],
+    });
+    expect(actionByCode['workflow.instance.reopen']).toMatchObject({
+      action: 'reopen',
+      label: 'Mở lại phiên quy trình',
+      scopeTypes: ['global'],
+    });
+    expect(actionByCode['workflow.instance.administer']).toMatchObject({
+      action: 'administer',
+      label: 'Quản trị phiên quy trình',
+      scopeTypes: ['global'],
+    });
     expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
     expect(actionByCode['contract.supplier.manage'].scopeTypes).toEqual(['global']);
     expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
