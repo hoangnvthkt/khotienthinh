@@ -177,3 +177,10 @@ Checkpoint kế tiếp là hardening nhóm WMS Operator trước: xác minh ho�
 - Backend kiểm visibility instance generic theo owner/assignee/admin, bắt buộc `act_assigned` khi xử lý bước, và đóng ghi trực tiếp bảng template/node/edge. Mọi lifecycle template đi qua command có capability guard; vì vậy checkbox UI không phải nguồn quyết định quyền.
 - Readiness Cloud hiện là `4/4`: hai template WMS và hai template Workflow đều có thể vào pilot. Đây chỉ là điều kiện kỹ thuật để sử dụng wizard V2, không phải xác nhận đã cấp mẫu cho người dùng hay được phép thu hồi shell legacy.
 - Chưa tạo role template persistent, assignment hay direct grant nào cho Workflow. Pilot đầu tiên phải nêu rõ target active và phạm vi `global/*`, sau đó lưu evidence preview version/fingerprint, kiểm SoD nếu có, test persona allow/deny và reconciliation/audit. Chỉ khi pilot đạt mới xem xét một assignment thật; legacy `system.wf.*` vẫn retain trong giai đoạn đó.
+
+## E33 — Pilot Workflow đã được gán có thời hạn
+
+- Hai mẫu persistent `WORKFLOW_USER` (6 action) và `WORKFLOW_ADMIN` (12 action) đã được tạo đúng blueprint v1. Mỗi mẫu được gán cho một target active do owner chỉ định, scope assignment `global/*`, có hiệu lực 24 giờ.
+- Preview trước khi ghi có `0 hard deny`, `0 warning`; fingerprint/version được command xác minh trước assignment. Item `own` và `assigned` vẫn record-bound, nên assignment global không biến người dùng thành instance administrator.
+- Postflight xác nhận allow/deny: User được xem instance của mình và xử lý bước được giao nhưng không tạo mẫu; Admin tạo/publish mẫu và quản trị instance. Cả hai assignment có audit event do Permission Admin hiện hành thực hiện.
+- Đây là pilot có expiry, chưa phải rollout rộng hoặc quyết định revoke legacy shell. Chỉ gia hạn sau khi có evidence thao tác thực tế, reconciliation gain/loss và audit review; failure phải thu hồi bằng command V2 trước expiry.

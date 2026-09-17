@@ -432,3 +432,11 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Cloud smoke rollback chứng minh: creator/assignee đúng scope được allow; outsider bị chặn; người chỉ xem template không tạo được; template admin tạo/sửa/publish qua RPC được; INSERT template và UPDATE node trực tiếp bị chặn. Kết quả trả `status=ok`, `enforcedActions=7`; không còn fixture, grant hay dữ liệu Workflow sau rollback.
 - Regression full đạt `409/409` test files, `1952/1952` tests; `npm run lint`, production build, query audit, migration check và `git diff --check` đều đạt. Cloud ledger khớp đến `20260917025252`; readiness checker trả `4/4` pilot-ready: `WORKFLOW_USER`, `WORKFLOW_ADMIN`, `WAREHOUSE_OPERATOR`, `WAREHOUSE_MANAGER`.
 - E32 không tạo persistent role template, assignment hoặc direct grant. Bước vận hành kế tiếp là chọn một người và phạm vi pilot cụ thể cho một trong bốn template đã ready, chạy preview/fingerprint, SoD nếu có cảnh báo, persona allow/deny, reconciliation và audit trước khi lưu. Legacy Workflow shell vẫn giữ cho tới khi pilot đạt.
+
+## E33 — Pilot Workflow persistent, bounded
+
+- Owner đã chỉ định hai target active cho pilot: một `WORKFLOW_USER` và một `WORKFLOW_ADMIN`. Tên/email không ghi vào tài liệu evidence; ID assignment, target và actor lưu trong audit Cloud.
+- Rehearsal rollback dưới `PERMISSION_ADMIN` xác nhận template User có 6 action, template Admin có 12 action; cả hai preview có `0 hard deny`, `0 warning` và fingerprint hợp lệ. Không cần SoD acceptance vì preview không sinh cảnh báo.
+- Hai template persistent v1 được tạo qua `save_business_role_v2`, rồi assignment `global/*` được ghi qua `assign_business_role_v2` trong transaction với expiry 24 giờ. Item record-bound vẫn giữ `own`/`assigned`; global assignment không làm rộng scope item.
+- Postflight xác nhận đúng 6/12 item, hai assignment `ACTIVE`, mỗi assignment có một event `business_role_assigned`, actor audit là Permission Admin hiện hành. Resolver chứng minh User có view-own và act-assigned, không có template-create; Admin có template-create/publish và instance-administer.
+- Pilot chưa là điều kiện revoke `system.wf.*`. Trước khi gia hạn hoặc chuyển sang assignment không expiry cần ghi kết quả thao tác thực tế của hai persona, reconciliation gain/loss và review audit; nếu không đạt, thu hồi hai assignment bằng command V2 trước expiry.
