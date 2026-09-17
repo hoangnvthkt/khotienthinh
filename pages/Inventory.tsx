@@ -16,6 +16,7 @@ import { usePagination } from '../hooks/usePagination';
 import { loadXlsx } from '../lib/loadXlsx';
 import { InventoryItem, Transaction, TransactionType, TransactionStatus, PurchaseOrder, MaterialRequest, MaterialRequestFulfillmentBatch } from '../types';
 import { usePermission } from '../hooks/usePermission';
+import { canPerform } from '../lib/permissions/permissionService';
 import { useModuleData } from '../hooks/useModuleData';
 import { matchesSearchQueryMultiple } from '../lib/searchUtils';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -76,8 +77,15 @@ const Inventory: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
   const hasAssignedWh = !!user.assignedWarehouseId;
-  const { canManage } = usePermission();
-  const canCRUD = canManage('/inventory');
+  const { isAdmin } = usePermission();
+  const canCRUD = isAdmin || canPerform(user, 'wms.inventory.edit', {
+    scopeType: 'global',
+    scopeId: '*',
+  });
+  const canDeleteCatalogItem = isAdmin || canPerform(user, 'wms.master_data.manage', {
+    scopeType: 'global',
+    scopeId: '*',
+  });
 
   // Khởi tạo filter kho
   const [filterWarehouse, setFilterWarehouse] = useState('all');
@@ -743,7 +751,7 @@ const Inventory: React.FC = () => {
             )}
           </>
         }
-        primaryAction={(canCRUD || hasAssignedWh) ? {
+        primaryAction={canCRUD ? {
           label: 'Thêm mới',
           icon: <Plus size={16} />,
           onClick: () => setAddModalOpen(true),
@@ -875,7 +883,7 @@ const Inventory: React.FC = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {canCRUD && (
+                        {canDeleteCatalogItem && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setItemToDelete(item); }}
                             className="p-2 text-zinc-400 hover:text-red-600 transition-colors"

@@ -162,3 +162,11 @@ Checkpoint kế tiếp là hardening nhóm WMS Operator trước: xác minh ho�
 - Save/preview/assign hiện cùng enforce `grant_readiness in (enforced, verified)` tại backend; không còn phụ thuộc vào việc wizard ẩn checkbox. Crafted RPC chứa `wms.inventory.edit` declared đã bị Cloud từ chối.
 - Pilot rollback đã materialize đúng 10 item, preview fingerprint/version, ghi audit và assign tới một kho fixture. Target nhận đủ quyền ở kho A, không có quyền ở kho B và không nhận bốn quyền manager được kiểm tra.
 - Không có template hoặc assignment thật được giữ lại. Việc tạo persistent template đã an toàn về kỹ thuật, nhưng gán pilot thật cần chỉ rõ tài khoản và kho; không suy target từ role label hay shell WMS hiện có.
+
+## E31 — WAREHOUSE_MANAGER đã qua technical readiness và pilot rollback
+
+- Hai blocker cuối của mẫu Quản lý kho đã có semantics giới hạn rõ ràng. `wms.inventory.edit` theo scope kho chỉ cho điều chỉnh số tồn tại kho đó qua command nguyên tử có optimistic check, lý do và audit; nó không cho sửa dữ liệu gốc vật tư dùng chung. `wms.master_data.manage` theo scope kho chỉ cho cập nhật đúng bản ghi kho được gán; tạo/xóa kho, sửa loại kho và dữ liệu dùng chung vẫn cần grant global riêng.
+- Endpoint điều chỉnh tồn thô `apply_stock_change` không còn callable bởi `authenticated`. Public RPC mới kiểm actor active, capability đúng kho, số lượng không âm, lý do tối thiểu và số tồn kỳ vọng trước khi ghi; private implementation không cấp cho authenticated.
+- RLS đọc/cập nhật kho truyền `warehouses.id` vào resolver nên assignment kho A không nhìn hoặc sửa kho B. UI chỉ hiện thao tác điều chỉnh tại kho có `wms.inventory.edit`; thêm/sửa dữ liệu gốc yêu cầu `wms.inventory.edit` global và xóa vật tư yêu cầu `wms.master_data.manage` global.
+- Pilot rollback qua command V2 đã tạo mẫu đủ 17 action, preview version/fingerprint, chấp nhận warning có auditor độc lập, gán kho A và chứng minh đủ 17 quyền tại A, không có quyền tại B. Stock adjustment, warehouse update và ba audit event chính đều được kiểm trước rollback.
+- Readiness hiện là 2/4: `WAREHOUSE_OPERATOR` và `WAREHOUSE_MANAGER` có thể pilot; hai mẫu Workflow vẫn fail closed với 7 action `declared`. Cloud không giữ lại template `WAREHOUSE_MANAGER` hoặc assignment thật nào sau E31.

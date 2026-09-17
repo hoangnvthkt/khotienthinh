@@ -151,7 +151,7 @@
             "code": "WAREHOUSE_MANAGER",
             "actors": ["designated_warehouse_manager"],
             "assignmentScope": {"scopeType": "warehouse", "scopeId": "required_concrete_warehouse_id"},
-            "itemScopePolicy": "explicit 17-action snapshot restricted to the assigned warehouse; sensitive actions require preview and SoD review"
+            "itemScopePolicy": "explicit 17-action snapshot restricted to the assigned warehouse; inventory.edit adjusts stock only in that warehouse and master_data.manage updates only that warehouse record; shared item metadata, warehouse create/delete and warehouse types require separate global grants; sensitive actions require preview and SoD review"
           }
         ]
       }

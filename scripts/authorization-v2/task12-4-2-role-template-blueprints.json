@@ -103,6 +103,10 @@
           "name": "Quản lý kho",
           "policy": "explicit_snapshot_including_operator_actions",
           "permissionScopeType": "warehouse",
+          "scopeSemantics": {
+            "wms.inventory.edit": "adjust stock only at the assigned warehouse; global item metadata requires a global grant",
+            "wms.master_data.manage": "update the assigned warehouse record only; creating/deleting warehouses and shared warehouse types require a global grant"
+          },
           "permissionCodes": [
             "wms.inventory.view", "wms.inventory.edit",
             "wms.request.view", "wms.request.create", "wms.request.approve", "wms.request.export", "wms.request.receive", "wms.request.delete",

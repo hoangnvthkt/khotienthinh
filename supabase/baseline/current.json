@@ -91,7 +91,8 @@
     "20260916110400_authorization_v2_task12_4_2_wms_operator_hardening.sql",
     "20260916110500_authorization_v2_task12_4_2_wms_operator_upsert_guard.sql",
     "20260916110600_authorization_v2_task12_4_2_role_template_readiness_guard.sql",
-    "20260916155524_fix_auth_profile_sync_after_legacy_shutdown.sql"
+    "20260916155524_fix_auth_profile_sync_after_legacy_shutdown.sql",
+    "20260916161634_authorization_v2_task12_4_2_warehouse_manager_hardening.sql"
   ],
   "forbidIncludeAll": true
 }
