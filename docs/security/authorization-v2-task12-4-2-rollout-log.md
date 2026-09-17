@@ -440,3 +440,10 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Hai template persistent v1 được tạo qua `save_business_role_v2`, rồi assignment `global/*` được ghi qua `assign_business_role_v2` trong transaction với expiry 24 giờ. Item record-bound vẫn giữ `own`/`assigned`; global assignment không làm rộng scope item.
 - Postflight xác nhận đúng 6/12 item, hai assignment `ACTIVE`, mỗi assignment có một event `business_role_assigned`, actor audit là Permission Admin hiện hành. Resolver chứng minh User có view-own và act-assigned, không có template-create; Admin có template-create/publish và instance-administer.
 - Pilot chưa là điều kiện revoke `system.wf.*`. Trước khi gia hạn hoặc chuyển sang assignment không expiry cần ghi kết quả thao tác thực tế của hai persona, reconciliation gain/loss và review audit; nếu không đạt, thu hồi hai assignment bằng command V2 trước expiry.
+
+## E34 — Hotfix route access cho Workflow record-bound
+
+- Pilot `WORKFLOW_USER` không mở được `/wf` vì generic route guard mặc định kiểm `workflow.instance.view` tại `global/*`, trong khi blueprint cố ý cấp `own`. Đây là lỗi frontend; Cloud assignment, resolver và RLS đều đúng.
+- Guard cho `/wf`, dashboard và detail instance nay chấp nhận `workflow.instance.view` tại `own`, `assigned` hoặc `global`. Không cấp capability global để lách UI; RLS tiếp tục quyết định instance cụ thể nào được đọc.
+- Sidebar bỏ role-label gate `Role.ADMIN` ở mục Mẫu quy trình và dùng canonical route capability. Người xem mẫu thấy entry read-only, còn quyền tạo/sửa/publish vẫn do action guard trong UI và command backend quyết định.
+- Regression kiểm own/assigned allow, no-instance-view deny, template-viewer không mở list instance; full suite và production build đạt. Hotfix không thay đổi Cloud grant, assignment hoặc expiry của pilot.

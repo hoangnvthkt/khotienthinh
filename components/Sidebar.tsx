@@ -257,7 +257,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     WF: [
       { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },
-      { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình', roles: [Role.ADMIN] },
+      { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình' },
     ],
     DA: [
       { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },

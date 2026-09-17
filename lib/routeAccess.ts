@@ -38,6 +38,11 @@ const OWN_SCOPE: Required<PermissionScope> = {
   scopeId: '*',
 };
 
+const ASSIGNED_SCOPE: Required<PermissionScope> = {
+  scopeType: 'assigned',
+  scopeId: '*',
+};
+
 export const HRM_ROUTE_PERMISSION_REQUIREMENTS: Readonly<Record<string, RoutePermissionRequirement>> = {
   '/hrm/dashboard': {
     permissionCode: 'hrm.employee.view_sensitive',
@@ -97,6 +102,16 @@ const isRequestTemplateEditorRoute = (pathname: string): boolean =>
   pathname === '/rq/templates/new'
   || (pathname.startsWith('/rq/templates/') && pathname !== '/rq/templates/');
 
+const isWorkflowInstanceRoute = (pathname: string): boolean =>
+  pathname === '/wf'
+  || pathname === '/wf/dashboard'
+  || !!matchPath({ path: '/wf/instances/:id', end: true }, pathname);
+
+const canViewWorkflowInstances = (user: Parameters<typeof canPerform>[0]): boolean =>
+  [OWN_SCOPE, ASSIGNED_SCOPE, GLOBAL_SCOPE].some(scope =>
+    canPerform(user, 'workflow.instance.view', scope)
+  );
+
 export const normalizeRoutePath = (route: string): string => {
   const path = route.split('?')[0].split('#')[0].trim();
   return path || '/';
@@ -137,6 +152,9 @@ export const canAccessRoute = (
   }
   if (isRequestTemplateEditorRoute(pathname)) {
     return canPerform(user, 'request.template.manage', GLOBAL_SCOPE);
+  }
+  if (isWorkflowInstanceRoute(pathname)) {
+    return canViewWorkflowInstances(user);
   }
 
   const moduleKey = getRouteModuleKey(pathname);

@@ -162,6 +162,26 @@ describe('request detail route access', () => {
   });
 });
 
+describe('workflow route access', () => {
+  it('opens instance routes for own- and assigned-scoped Workflow viewers', () => {
+    const ownViewer = persona(Role.EMPLOYEE, [['workflow.instance.view', 'own']]);
+    const assignedViewer = persona(Role.EMPLOYEE, [['workflow.instance.view', 'assigned']]);
+
+    for (const route of ['/wf', '/wf/dashboard', '/wf/instances/instance-1']) {
+      expect(canAccessRoute(ownViewer, route), route).toBe(true);
+      expect(canAccessRoute(assignedViewer, route), route).toBe(true);
+    }
+  });
+
+  it('does not widen the Workflow list route to users without instance visibility', () => {
+    const templateViewer = persona(Role.EMPLOYEE, [['workflow.template.view', 'global']]);
+
+    expect(canAccessRoute(templateViewer, '/wf/templates')).toBe(true);
+    expect(canAccessRoute(templateViewer, '/wf')).toBe(false);
+    expect(canAccessRoute(persona(Role.EMPLOYEE, []), '/wf')).toBe(false);
+  });
+});
+
 describe('HRM employee self-service route access', () => {
   it('does not widen HR master-data access to unrelated HR pages', () => {
     const masterDataOnly = persona(Role.EMPLOYEE, [['hrm.master_data.view', 'global']]);
