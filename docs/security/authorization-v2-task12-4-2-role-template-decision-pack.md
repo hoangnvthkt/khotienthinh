@@ -170,3 +170,10 @@ Checkpoint kế tiếp là hardening nhóm WMS Operator trước: xác minh ho�
 - RLS đọc/cập nhật kho truyền `warehouses.id` vào resolver nên assignment kho A không nhìn hoặc sửa kho B. UI chỉ hiện thao tác điều chỉnh tại kho có `wms.inventory.edit`; thêm/sửa dữ liệu gốc yêu cầu `wms.inventory.edit` global và xóa vật tư yêu cầu `wms.master_data.manage` global.
 - Pilot rollback qua command V2 đã tạo mẫu đủ 17 action, preview version/fingerprint, chấp nhận warning có auditor độc lập, gán kho A và chứng minh đủ 17 quyền tại A, không có quyền tại B. Stock adjustment, warehouse update và ba audit event chính đều được kiểm trước rollback.
 - Readiness hiện là 2/4: `WAREHOUSE_OPERATOR` và `WAREHOUSE_MANAGER` có thể pilot; hai mẫu Workflow vẫn fail closed với 7 action `declared`. Cloud không giữ lại template `WAREHOUSE_MANAGER` hoặc assignment thật nào sau E31.
+
+## E32 — Workflow templates đã sẵn sàng pilot kỹ thuật
+
+- Bảy action còn thiếu trong mapping `WORKFLOW_USER`/`WORKFLOW_ADMIN` hiện đều `enforced`. `WORKFLOW_USER` có quyền record-bound cho nháp của mình và bước được giao; `WORKFLOW_ADMIN` cộng quyền global tường minh để quản trị template và instance theo blueprint. Scope trong item không bị assignment global làm rộng ra.
+- Backend kiểm visibility instance generic theo owner/assignee/admin, bắt buộc `act_assigned` khi xử lý bước, và đóng ghi trực tiếp bảng template/node/edge. Mọi lifecycle template đi qua command có capability guard; vì vậy checkbox UI không phải nguồn quyết định quyền.
+- Readiness Cloud hiện là `4/4`: hai template WMS và hai template Workflow đều có thể vào pilot. Đây chỉ là điều kiện kỹ thuật để sử dụng wizard V2, không phải xác nhận đã cấp mẫu cho người dùng hay được phép thu hồi shell legacy.
+- Chưa tạo role template persistent, assignment hay direct grant nào cho Workflow. Pilot đầu tiên phải nêu rõ target active và phạm vi `global/*`, sau đó lưu evidence preview version/fingerprint, kiểm SoD nếu có, test persona allow/deny và reconciliation/audit. Chỉ khi pilot đạt mới xem xét một assignment thật; legacy `system.wf.*` vẫn retain trong giai đoạn đó.

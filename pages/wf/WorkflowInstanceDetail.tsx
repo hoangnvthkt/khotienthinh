@@ -462,7 +462,16 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
     const canAct = useMemo(() => {
         if (!instance) return false;
-        return canUserActOnWorkflowStep({
+        const hasAssignedAction = user.role === Role.ADMIN
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'assigned',
+                scopeId: user.id,
+            })
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'global',
+                scopeId: '*',
+            });
+        return hasAssignedAction && canUserActOnWorkflowStep({
             instance,
             node: currentNode,
             user,

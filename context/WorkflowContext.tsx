@@ -353,38 +353,52 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // ---- Template CRUD ----
 
     const createTemplate = async (name: string, description: string, userId: string): Promise<WorkflowTemplate | null> => {
-        const { data, error } = await supabase.from('workflow_templates').insert({
-            name,
-            description,
-            created_by: userId,
-            is_active: true,
-            custom_fields: [],
-            managers: [],
-            default_watchers: [],
-        }).select().single();
+        const { data, error } = await supabase.rpc('create_workflow_template', {
+            p_name: name,
+            p_description: description,
+            p_idempotency_key: crypto.randomUUID(),
+        });
         if (error) throw error;
-        if (!data) throw new Error('Không nhận được dữ liệu mẫu quy trình sau khi tạo.');
-        const t = mapTemplateFromDB(data);
+        const row = (data as { template?: any } | null)?.template;
+        if (!row) throw new Error('Không nhận được dữ liệu mẫu quy trình sau khi tạo.');
+        const t = mapTemplateFromDB(row);
         setTemplates(prev => [t, ...prev]);
         return t;
     };
 
     const updateTemplate = async (template: WorkflowTemplate) => {
-        const { error } = await supabase.from('workflow_templates').update({
-            name: template.name,
-            description: template.description,
-            is_active: template.isActive,
-            custom_fields: template.customFields || [],
-            managers: template.managers || [],
-            default_watchers: template.defaultWatchers || [],
-            updated_at: new Date().toISOString(),
-        }).eq('id', template.id);
+        const previous = templates.find(item => item.id === template.id);
+        const { data, error } = await supabase.rpc('update_workflow_template_metadata', {
+            p_template_id: template.id,
+            p_name: template.name,
+            p_description: template.description || '',
+            p_custom_fields: template.customFields || [],
+            p_managers: template.managers || [],
+            p_default_watchers: template.defaultWatchers || [],
+            p_idempotency_key: crypto.randomUUID(),
+        });
         if (error) throw error;
-        setTemplates(prev => prev.map(t => t.id === template.id ? template : t));
+        const metadataRow = (data as { template?: any } | null)?.template;
+        if (!metadataRow) throw new Error('Không nhận được dữ liệu mẫu quy trình sau khi cập nhật.');
+        let updated = mapTemplateFromDB(metadataRow);
+        if (previous && previous.isActive !== template.isActive) {
+            const { data: publishData, error: publishError } = await supabase.rpc('publish_workflow_template', {
+                p_template_id: template.id,
+                p_is_active: template.isActive,
+                p_idempotency_key: crypto.randomUUID(),
+            });
+            if (publishError) throw publishError;
+            const publishedRow = (publishData as { template?: any } | null)?.template;
+            if (publishedRow) updated = mapTemplateFromDB(publishedRow);
+        }
+        setTemplates(prev => prev.map(t => t.id === template.id ? updated : t));
     };
 
     const deleteTemplate = async (id: string) => {
-        const { error } = await supabase.from('workflow_templates').delete().eq('id', id);
+        const { error } = await supabase.rpc('delete_workflow_template', {
+            p_template_id: id,
+            p_idempotency_key: crypto.randomUUID(),
+        });
         if (error) throw error;
         setTemplates(prev => prev.filter(t => t.id !== id));
         setNodes(prev => prev.filter(n => n.templateId !== id));
@@ -405,47 +419,28 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const saveNodesAndEdges = async (templateId: string, newNodes: WorkflowNode[], newEdges: WorkflowEdge[]) => {
-        // Use UPSERT instead of delete+insert to avoid FK constraint violations
-        // (workflow_instance_logs references workflow_nodes)
-
-        if (newNodes.length > 0) {
-            const nodeRows = newNodes.map(n => ({
-                id: n.id,
-                template_id: templateId,
-                type: n.type,
-                label: n.label,
-                config: n.config,
-                position_x: n.positionX,
-                position_y: n.positionY,
-            }));
-            const { error: upsertNodeErr } = await supabase.from('workflow_nodes').upsert(nodeRows, { onConflict: 'id' });
-            if (upsertNodeErr) throw upsertNodeErr;
-        }
-
-        // Delete nodes that were removed (but only ones not in the new set)
-        const existingNodes = nodes.filter(n => n.templateId === templateId);
-        const newNodeIds = new Set(newNodes.map(n => n.id));
-        const removedNodeIds = existingNodes.filter(n => !newNodeIds.has(n.id)).map(n => n.id);
-        if (removedNodeIds.length > 0) {
-            const { error: delNodeErr } = await supabase.from('workflow_nodes').delete().in('id', removedNodeIds);
-            if (delNodeErr) throw delNodeErr;
-        }
-
-        // Replace edges (edges have no FK references from other tables)
-        const { error: delEdgeErr } = await supabase.from('workflow_edges').delete().eq('template_id', templateId);
-        if (delEdgeErr) throw delEdgeErr;
-
-        if (newEdges.length > 0) {
-            const edgeRows = newEdges.map(e => ({
-                id: e.id,
-                template_id: templateId,
-                source_node_id: e.sourceNodeId,
-                target_node_id: e.targetNodeId,
-                label: e.label,
-            }));
-            const { error: insEdgeErr } = await supabase.from('workflow_edges').insert(edgeRows);
-            if (insEdgeErr) throw insEdgeErr;
-        }
+        const template = templates.find(item => item.id === templateId);
+        if (!template) throw new Error('Không tìm thấy mẫu quy trình.');
+        const { error } = await supabase.rpc('save_workflow_template_structure', {
+            p_template_id: templateId,
+            p_template: {
+                name: template.name,
+                description: template.description || '',
+                is_active: template.isActive,
+                custom_fields: template.customFields || [],
+                managers: template.managers || [],
+                default_watchers: template.defaultWatchers || [],
+            },
+            p_nodes: newNodes.map(node => ({
+                id: node.id, type: node.type, label: node.label,
+                config: node.config || {}, position_x: node.positionX, position_y: node.positionY,
+            })),
+            p_edges: newEdges.map(edge => ({
+                id: edge.id, source_node_id: edge.sourceNodeId,
+                target_node_id: edge.targetNodeId, label: edge.label || '',
+            })),
+        });
+        if (error) throw error;
 
         // Refresh local state
         setNodes(prev => [...prev.filter(n => n.templateId !== templateId), ...newNodes]);

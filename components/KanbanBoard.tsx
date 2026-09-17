@@ -198,7 +198,16 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
 
         // Check permission
         const currentNode = orderedColumns[currentIdx];
-        const canAct = user.role === Role.ADMIN || isWorkflowStepAssignedToUser(instance, currentNode, user);
+        const hasAssignedAction = user.role === Role.ADMIN
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'assigned',
+                scopeId: user.id,
+            })
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'global',
+                scopeId: '*',
+            });
+        const canAct = hasAssignedAction && isWorkflowStepAssignedToUser(instance, currentNode, user);
 
         if (!canAct) return;
 

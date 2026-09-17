@@ -5,7 +5,6 @@ import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, Role } from '../../types';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
-import { usePermission } from '../../hooks/usePermission';
 import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
@@ -13,6 +12,7 @@ import {
     Search, Check, Table2, Edit
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
     text: { label: 'Văn bản ngắn', icon: Type, color: 'bg-blue-500' },
@@ -206,11 +206,10 @@ const WorkflowBuilder: React.FC = () => {
     const navigate = useNavigate();
     const { templates, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
     const { users, orgUnits, user, loadModuleData, moduleLoadState, moduleLoadErrors } = useApp();
-    const { canManage } = usePermission();
 
     const template = templates.find(t => t.id === templateId);
-    const canManageWorkflowTemplates = canManage('/wf/templates');
-    const canConfigureTemplate = canManageWorkflowTemplates || Boolean(template?.managers?.includes(user.id));
+    const canConfigureTemplate = user.role === Role.ADMIN
+        || canPerform(user, 'workflow.template.edit', { scopeType: 'global', scopeId: '*' });
 
     const [activeTab, setActiveTab] = useState<'steps' | 'fields' | 'print'>('steps');
     const [localNodes, setLocalNodes] = useState<WorkflowNode[]>([]);
@@ -770,7 +769,7 @@ const WorkflowBuilder: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {canManageWorkflowTemplates && <button
+                    {canConfigureTemplate && <button
                         onClick={toggleMaterialRequestDefaultBinding}
                         disabled={bindingSaving}
                         className={`flex items-center px-4 py-2.5 rounded-xl text-xs font-black border transition disabled:opacity-50 ${

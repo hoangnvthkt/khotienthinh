@@ -36,6 +36,7 @@ import {
     isRequestModuleWorkflowTemplate,
 } from '../../lib/workflowVisibility';
 import WorkflowInstanceDetail from './WorkflowInstanceDetail';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Bản nháp', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300', icon: Edit2 },
@@ -1295,7 +1296,16 @@ const WorkflowInstances: React.FC = () => {
         const firstTaskNodeId = startNode
             ? edges.find(edge => edge.templateId === instance.templateId && edge.sourceNodeId === startNode.id)?.targetNodeId
             : null;
-        return canUserActOnWorkflowStep({
+        const hasAssignedAction = user.role === Role.ADMIN
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'assigned',
+                scopeId: user.id,
+            })
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'global',
+                scopeId: '*',
+            });
+        return hasAssignedAction && canUserActOnWorkflowStep({
             instance,
             node: currentNode,
             user,

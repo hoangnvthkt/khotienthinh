@@ -94,6 +94,14 @@ join (values
 ) grant_row(actor_kind, permission_code)
   on grant_row.actor_kind = actor.actor_kind;
 
+insert into public.user_permission_grants (
+  user_id, permission_code, scope_type, scope_id, is_active, grant_reason
+)
+select actor_id, 'workflow.instance.view', 'own', actor_id::text, true,
+       'Task 12.4.2 workflow capability smoke owner visibility'
+from workflow_capability_actor
+where actor_kind = 'owner';
+
 create temporary table workflow_capability_context (
   template_id uuid not null,
   node_id uuid not null,

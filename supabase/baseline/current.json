@@ -92,7 +92,10 @@
     "20260916110500_authorization_v2_task12_4_2_wms_operator_upsert_guard.sql",
     "20260916110600_authorization_v2_task12_4_2_role_template_readiness_guard.sql",
     "20260916155524_fix_auth_profile_sync_after_legacy_shutdown.sql",
-    "20260916161634_authorization_v2_task12_4_2_warehouse_manager_hardening.sql"
+    "20260916161634_authorization_v2_task12_4_2_warehouse_manager_hardening.sql",
+    "20260917022452_authorization_v2_task12_4_2_workflow_boundary_hardening.sql",
+    "20260917024602_authorization_v2_task12_4_2_workflow_boundary_acl_fix.sql",
+    "20260917025252_authorization_v2_task12_4_2_workflow_instance_rls_fix.sql"
   ],
   "forbidIncludeAll": true
 }
