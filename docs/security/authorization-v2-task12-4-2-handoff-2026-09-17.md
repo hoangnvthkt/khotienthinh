@@ -1,7 +1,7 @@
 # Handoff - Authorization V2 Task 12.4.2 / Task 13
 
 **Thời điểm chốt:** 2026-09-17, Asia/Ho_Chi_Minh
-**Trạng thái:** Code E28-E34 đã lên Production; Task 12.4.2 chưa kết thúc; Task 13 vẫn bị chặn.
+**Trạng thái:** Code E28-E34 đã lên Production; E35 đã revoke pilot; E36 đã sẵn sàng preflight nhưng chờ Thuận có mặt; Task 12.4.2 chưa kết thúc; Task 13 vẫn bị chặn.
 
 Tài liệu này thay thế handoff ngày `2026-09-15` làm điểm bắt đầu cho phiên mới. Handoff cũ vẫn là lịch sử của E5-E13.
 
@@ -11,7 +11,7 @@ Tài liệu này thay thế handoff ngày `2026-09-15` làm điểm bắt đầu
 - Worktree triển khai: `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`
 - Branch hiện hành: `feature/authorization-v2-task12-4-2`
 - Release đã merge/Production: `86e0e272ee0481e84cdf1ef6203fdcffc218e3fa`
-- `HEAD` và `origin/main` cùng ở SHA trên tại thời điểm chốt.
+- E36 bắt đầu tại `HEAD = 5b9adcd81d73589d9155c049df8b0a2ccfc046d7`; `origin/main = 9766c5cef6383d869978726560445be7a7f32371`. Production application release vẫn là SHA ở trên.
 - Supabase duy nhất được phép thao tác: Cloud main project `ftciqmqhmfvjtwoycswe`, cấu hình trong `/Users/admin/khotienthinh/.env`.
 - Không dùng Supabase local, Docker, Supabase Branch, worktree mới hoặc sub-agent. Không dùng Superpowers/plugin workflow nếu chưa được yêu cầu rõ.
 
@@ -57,13 +57,12 @@ Nếu SHA/ledger khác tài liệu này, trạng thái mới là nguồn sự th
 - Direct write từ client vào template/node/edge bị khóa. Template lifecycle đi qua RPC có capability guard.
 - Role-template readiness trên Cloud đạt `4/4`: `WORKFLOW_USER`, `WORKFLOW_ADMIN`, `WAREHOUSE_OPERATOR`, `WAREHOUSE_MANAGER`.
 
-### E33: Workflow pilot đang hoạt động
+### E33: Workflow pilot lịch sử, đã revoke tại E35
 
 - Đặng Thu Hương là pilot `WORKFLOW_USER`; Nguyễn Quang Thuận là pilot `WORKFLOW_ADMIN` theo chỉ định owner.
 - Hai template persistent v1 được tạo bằng command V2. `WORKFLOW_USER` có 6 action, `WORKFLOW_ADMIN` có 12 action.
 - Assignment `global/*` chỉ là phạm vi gán template; item giữ scope record-bound: own draft, assigned step, hoặc global admin theo blueprint.
-- Hai assignment có expiry `2026-09-18 03:45:01 UTC` (`10:45:01`, giờ Việt Nam). ID target/assignment/audit giữ trong Cloud, không đưa vào evidence document.
-- Nếu không có bằng chứng vận hành đạt trước expiry, phải revoke qua command V2; không xóa/sửa trực tiếp. Nếu owner muốn kéo dài pilot, dùng command V2 để tạo/gia hạn có audit, sau khi review evidence và reconciliation.
+- Hai assignment có expiry `2026-09-18 03:45:01 UTC` (`10:45:01`, giờ Việt Nam) nhưng đã được revoke bằng command V2 lúc `2026-09-17 08:04:26 UTC` vì evidence không đủ. ID target/assignment/audit giữ trong Cloud, không đưa vào evidence document.
 
 ### E34: hotfix route Workflow
 
@@ -82,15 +81,14 @@ Khi sửa checkpoint mới, không dùng số trên làm thay bằng chứng m�
 
 ## 5. Các việc chưa hoàn thành và gate không được bỏ qua
 
-### Thu thập evidence pilot Workflow - việc ưu tiên ngay
+### E36 — làm sạch và chạy lại pilot Workflow
 
-Trước hoặc tại expiry, lấy xác nhận vận hành thực tế của hai persona trên Production:
+E35 đã đóng pilot cũ. E36 bổ sung checker read-only, nhưng maintenance gate lúc `2026-09-17 16:38 UTC` chưa mở vì Thuận không có active session hoặc heartbeat mới. Chỉ tiếp tục khi Hương, Thuận và Permission Admin cùng xác nhận cửa sổ nghiệm thu:
 
-1. Hương: vào `/wf`; xem template; tạo/sửa/xóa nháp của mình; xử lý đúng step được gán; không xem/điều hành instance của người khác và không tạo/sửa/publish template.
-2. Thuận: vào `/wf`; tạo/sửa/publish template qua giao diện; xem và quản trị instance theo global action; kiểm deny cho capability không nằm trong template nếu có.
-3. Đối chiếu Cloud audit và resolver với outcome browser; reconciliation phải nêu rõ gain/loss so với legacy shell.
-4. Ghi outcome, release SHA, thời gian, actor xác nhận và incident/deny anomaly vào `docs/security/authorization-v2-task12-4-2-rollout-log.md`.
-5. Quyết định trước expiry: revoke assignment bằng V2 command nếu thất bại/không đủ evidence, hoặc owner chấp thuận extension có audit. Không chuyển sang permanent chỉ vì người dùng mở được UI.
+1. Dùng fingerprint đã chốt để loại đúng 9 `workflow.*` direct grant của Hương qua `update_user_authorization_v2`, giữ nguyên 61 grant ngoài Workflow và `system.wf.view`; postflight audit trước khi assign.
+2. Preview rồi assign lại `WORKFLOW_USER`/`WORKFLOW_ADMIN` bằng V2 command với expiry 24 giờ; không assign nếu Thuận chưa có mặt.
+3. Chạy đủ allow/deny matrix Production của hai persona, đối chiếu Cloud audit/resolver/command activity và ghi evidence đã lược bỏ PII.
+4. Revoke ngay hai assignment sau evidence; E36 chỉ PASS nếu final postflight trở về `0` active assignment, Hương còn `0 workflow.*` direct grant và reconciliation không có unexpected gain/loss.
 
 ### 13 cohort business còn owner-pending
 
@@ -120,6 +118,7 @@ Task 13 chỉ được mở khi đồng thời đạt:
 6. `scripts/authorization-v2/task12-4-2-owner-decisions.json`
 7. `scripts/authorization-v2/task12-4-2-role-template-blueprints.json`
 8. `supabase/tests/authorization_v2_task13_readiness.sql`
+9. `scripts/authorization-v2/check-task12-4-2-e36-workflow-pilot.mjs`
 
 ## 7. Quy tắc Cloud/checkpoint
 
@@ -130,4 +129,4 @@ Task 13 chỉ được mở khi đồng thời đạt:
 
 ## 8. Prompt dùng ngay cho phiên chat mới
 
-> Tiếp tục Authorization V2 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-17.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng local/Docker hay Superpowers/plugin workflow. Trước hết xác minh `HEAD`, `origin/main`, Cloud migration ledger và đọc các tài liệu mục 6. Ưu tiên thu thập evidence Production cho pilot Workflow của Hương (`WORKFLOW_USER`) và Thuận (`WORKFLOW_ADMIN`) trước expiry `2026-09-18 03:45:01 UTC`; sau đó revoke hoặc gia hạn bằng V2 command có audit. Không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, và không triển khai Task 13/drop legacy schema trước khi toàn bộ gate observation, persona, reconciliation, backup/restore và dependency removal đạt.
+> Tiếp tục E36 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-17.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng local/Docker hay Superpowers/plugin workflow. Trước hết xác minh Git/Cloud ledger và chạy checker E36. Chỉ mở maintenance window khi Hương, Thuận và Permission Admin cùng sẵn sàng; hiện Thuận chưa có active session. Khi gate mở, loại đúng chín direct Workflow grant của Hương qua `update_user_authorization_v2`, assign pilot 24 giờ qua V2 preview/fingerprint, chạy đủ persona allow/deny rồi revoke ngay sau evidence. Không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, và không triển khai Task 13/drop legacy schema.
