@@ -1,6 +1,6 @@
 # Task 12.4.2 — Rollout log
 
-Handoff mới nhất cho phiên làm việc kế tiếp: `authorization-v2-task12-4-2-handoff-2026-09-15.md` (chốt sau E13, Git/Cloud/CI đã đối soát).
+Handoff mới nhất cho phiên làm việc kế tiếp: `authorization-v2-task12-4-2-handoff-2026-09-17.md` (chốt sau E34, Git/Cloud/CI đã đối soát).
 
 ## Khởi động — 2026-09-14
 
@@ -447,3 +447,14 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Guard cho `/wf`, dashboard và detail instance nay chấp nhận `workflow.instance.view` tại `own`, `assigned` hoặc `global`. Không cấp capability global để lách UI; RLS tiếp tục quyết định instance cụ thể nào được đọc.
 - Sidebar bỏ role-label gate `Role.ADMIN` ở mục Mẫu quy trình và dùng canonical route capability. Người xem mẫu thấy entry read-only, còn quyền tạo/sửa/publish vẫn do action guard trong UI và command backend quyết định.
 - Regression kiểm own/assigned allow, no-instance-view deny, template-viewer không mở list instance; full suite và production build đạt. Hotfix không thay đổi Cloud grant, assignment hoặc expiry của pilot.
+
+## E35 — Production evidence không đạt và thu hồi pilot Workflow
+
+- Checkpoint bắt đầu trên worktree được chỉ định với `HEAD = origin/main = 9766c5c`; Production application release được kiểm là `86e0e272ee0481e84cdf1ef6203fdcffc218e3fa` (commit `9766c5c` chỉ bổ sung handoff). Cloud migration dry-run trả `upToDate=true`; không có migration, seed hoặc role chờ apply. Tám artefact bắt buộc ở mục 6 của handoff ngày 17/09 đã được đọc trước khi kiểm pilot.
+- Hai assignment tạo lúc `2026-09-17 03:45:01 UTC` vẫn active khi preflight lúc `07:59:18 UTC`, đúng template v1 gồm `WORKFLOW_USER` 6 item và `WORKFLOW_ADMIN` 12 item, scope assignment `global/*`, expiry `2026-09-18 03:45:01 UTC`; mỗi assignment có một audit `business_role_assigned`.
+- Hương đã đăng nhập Production sau khi pilot bắt đầu (`last_sign_in_at 04:35:25 UTC`) và có session heartbeat. Trên alias Production của release hiện hành, menu hiển thị ứng dụng `Quy trình`, nhưng mở bằng chính menu hoặc route `/wf` đều quay về trang chủ. Console đồng thời ghi lỗi refresh token không hợp lệ. Không có Workflow command, instance, step action hoặc template lifecycle nào của Hương sau khi pilot bắt đầu, nên không thể xác nhận chuỗi allow tạo/sửa/xóa nháp và xử lý step được giao.
+- Thuận chưa có login/session mới sau khi pilot bắt đầu; lần đăng nhập gần nhất là ngày 14/09. Không có Workflow command, instance, step action hoặc template lifecycle nào của Thuận trong cửa sổ pilot, nên không có evidence cho create/edit/publish template hoặc quản trị instance.
+- Resolver Cloud trước revoke trả đủ capability theo template (`6/6` cho User, `12/12` cho Admin), nhưng reconciliation deny của Hương không đạt: có 9 direct Workflow grant được tạo lúc `03:54:49 UTC` với lý do `Phân quyền Room dự án`, trong đó `workflow.instance.administer`, `cancel` và `reopen` là global ngoài blueprint `WORKFLOW_USER`. Các direct grant này không thuộc assignment pilot và chưa được sửa/thu hồi ở checkpoint này; cần owner/operator điều tra bằng một change set riêng có preview/audit.
+- Vì evidence vận hành không đạt và deny anomaly làm sai lệch persona, không gia hạn pilot. Lúc `2026-09-17 08:04:26 UTC`, hai assignment được thu hồi nguyên tử qua `revoke_business_role_assignment` dưới actor Permission Admin hiện hành. Postflight xác nhận `WORKFLOW_USER` và `WORKFLOW_ADMIN` đều có `0` assignment active, mỗi assignment có đúng trạng thái `REVOKED` và audit `business_role_revoked`; template 6/12 item vẫn được giữ.
+- Không tạo transition manifest, không revoke legacy shell, không đổi 9 direct grant bất thường và không mở cohort khác. Transition ledger giữ `0 batch / 0 item`; 13 cohort `owner_pending` giữ nguyên.
+- Task 13 tiếp tục blocked. Readiness read-only lúc `08:04:51 UTC` còn bốn cột legacy, 18 routine và một trigger phụ thuộc trực tiếp; 59 user còn dữ liệu legacy cấu hình. Dù hardening flags, `effectiveLegacySources=0`, snapshot coverage/checksum và RLS table gate hiện đạt, persona/observation, backup/restore rehearsal, dependency removal và private-routine ACL contract chưa đạt. Cloud migration dry-run sau revoke vẫn `upToDate=true`.
