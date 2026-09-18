@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User, UserPermissionGrant } from '../../types';
-import { canAccessRoute, getRouteModuleKey, isAuthenticatedOpenRoute } from '../routeAccess';
+import {
+  canAccessNavigationModule,
+  canAccessRoute,
+  getAuthorizedModuleRoute,
+  getRouteModuleKey,
+  isAuthenticatedOpenRoute,
+} from '../routeAccess';
 
 const user = (permissionCodes: string[] = []): User => ({
   id: 'user-1',
@@ -179,6 +185,31 @@ describe('workflow route access', () => {
     expect(canAccessRoute(templateViewer, '/wf/templates')).toBe(true);
     expect(canAccessRoute(templateViewer, '/wf')).toBe(false);
     expect(canAccessRoute(persona(Role.EMPLOYEE, []), '/wf')).toBe(false);
+  });
+});
+
+describe('navigation module access', () => {
+  it('does not expose a module from a compatibility shell when its canonical routes are denied', () => {
+    const shellOnly = user(['system.wms.view']);
+
+    expect(canAccessNavigationModule(shellOnly, 'WMS', '/inventory')).toBe(false);
+    expect(getAuthorizedModuleRoute(shellOnly, 'WMS', '/inventory')).toBeNull();
+  });
+
+  it('lands on an authorized canonical submodule route instead of a denied default', () => {
+    const requestTemplateViewer = user(['request.template.view']);
+    const assetAssignmentViewer = user(['asset.assignment.view']);
+
+    expect(canAccessNavigationModule(requestTemplateViewer, 'RQ', '/rq')).toBe(true);
+    expect(getAuthorizedModuleRoute(requestTemplateViewer, 'RQ', '/rq')).toBe('/rq/templates');
+    expect(getAuthorizedModuleRoute(assetAssignmentViewer, 'TS', '/ts/dashboard')).toBe('/ts/assignment');
+  });
+
+  it('preserves system-shell navigation for modules without canonical submodules', () => {
+    const shellOnly = user(['system.ep.view']);
+
+    expect(canAccessNavigationModule(shellOnly, 'EP', '/ep')).toBe(true);
+    expect(getAuthorizedModuleRoute(shellOnly, 'EP', '/ep')).toBe('/ep');
   });
 });
 

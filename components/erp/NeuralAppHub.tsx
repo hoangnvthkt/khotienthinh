@@ -22,7 +22,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { User } from '../../types';
-import { canViewModule } from '../../lib/permissions/permissionService';
+import {
+  canAccessNavigationModule,
+  getAuthorizedModuleRoute,
+} from '../../lib/routeAccess';
 import StatusBadge from './StatusBadge';
 
 export interface ModuleAppDefinition {
@@ -234,7 +237,7 @@ export const NeuralAppHub: React.FC<NeuralAppHubProps> = ({
 
   // Filter modules user is authorized to view
   const userModules = useMemo(() => {
-    return ALL_MODULE_DEFS.filter(m => canViewModule(user, m.key));
+    return ALL_MODULE_DEFS.filter(m => canAccessNavigationModule(user, m.key, m.route));
   }, [user]);
 
   // Calculate layout coordinates for Neural Radial Graph
@@ -268,7 +271,8 @@ export const NeuralAppHub: React.FC<NeuralAppHubProps> = ({
   const handleLaunchModule = (module: ModuleAppDefinition) => {
     setActiveRippleKey(module.key);
     setTimeout(() => {
-      navigate(module.route);
+      const route = getAuthorizedModuleRoute(user, module.key, module.route);
+      if (route) navigate(route);
     }, 220);
   };
 

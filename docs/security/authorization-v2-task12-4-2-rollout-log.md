@@ -489,3 +489,10 @@ Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permi
 - Frontend nay dùng `canViewWorkflowModule`, chỉ coi `workflow.instance.view` hoặc `workflow.template.view` còn hiệu lực là điều kiện hiện icon; `system.wf.view` vẫn được giữ làm compatibility shell và không bị thu hồi trong E36. Nếu chỉ còn quyền xem mẫu, click module đi thẳng tới `/wf/templates`; nếu cả hai quyền canonical đều bị thu hồi, icon biến mất.
 - Regression bổ sung cho shell-only và template-viewer. Verification: targeted `3/3` files, `50/50` tests; full suite `414/414` files, `1970/1970` tests; TypeScript, production build, migration baseline `91 active / 402 archived`, Cloud migration dry-run `upToDate=true`, `git diff --check` đều đạt.
 - Đây là thay đổi client/read-only, không gọi mutation Cloud, không đổi schema/API, không tạo assignment/manifest và không mở Task 13. Cần merge/deploy branch rồi refresh session/browser để Production nhận Sidebar mới.
+
+### Navigation authorization parity follow-up
+
+- Pattern tương tự được xác nhận ở WMS, Dự án, Tài sản, Yêu cầu, Chi phí, Kho dữ liệu, Kho kiến thức, AI và Hợp đồng: `canViewModule()` có thể nhận compatibility `system.*.view` hoặc view của một submodule, trong khi landing route mặc định bị route guard từ chối.
+- Thêm `getAuthorizedModuleRoute` và `canAccessNavigationModule`: navigation chỉ hiện khi còn ít nhất một route canonical/thực sự mở được, đồng thời chọn route con được phép (ví dụ `asset.assignment.view` → `/ts/assignment`, `request.template.view` → `/rq/templates`). Module chỉ có system shell như Hồ sơ NV/Mua hàng/Tender AI vẫn giữ hành vi tương thích hiện hành.
+- Áp dụng resolver cho Sidebar, Neural App Hub, macOS Dock và BottomNav mobile. BottomNav cũng loại các item đã mất quyền khỏi danh sách persisted, thay vì chỉ lọc riêng Chat.
+- Verification: full `414/414` test files, `1973/1973` tests; TypeScript, production build, migration baseline `91 active / 402 archived` và `git diff --check` đều đạt. Thay đổi chỉ ở client/navigation và test; không gọi mutation Cloud, không đổi schema/API, không tạo assignment/manifest hay mở Task 13.

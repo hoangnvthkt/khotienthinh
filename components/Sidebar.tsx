@@ -21,8 +21,11 @@ import { useChatV2UnreadCount } from '../hooks/useChatV2';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { isChatEnabled, isChatV2Enabled, isViooWorkEnabled } from '../lib/featureFlags';
-import { canAccessRoute } from '../lib/routeAccess';
-import { canViewModule, canViewWorkflowModule } from '../lib/permissions/permissionService';
+import {
+  canAccessNavigationModule,
+  canAccessRoute,
+  getAuthorizedModuleRoute,
+} from '../lib/routeAccess';
 import { getHrmNavigationItems } from '../lib/hrmNavigation';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -147,8 +150,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const userModules = useMemo(() => {
     return MODULE_CONFIG.filter(m => {
       if (m.key === 'work.module' && !isViooWorkEnabled) return false;
-      if (m.key === 'WF') return canViewWorkflowModule(user);
-      return canViewModule(user, m.key);
+      return canAccessNavigationModule(user, m.key, m.route);
     });
   }, [user]);
 
@@ -352,12 +354,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   const handleModuleClick = (mod: typeof MODULE_CONFIG[number]) => {
     setView(mod.key);
-    const route = mod.key === 'WF'
-      && !canAccessRoute(user, mod.route)
-      && canAccessRoute(user, '/wf/templates')
-      ? '/wf/templates'
-      : mod.route;
-    navigate(route);
+    const route = getAuthorizedModuleRoute(user, mod.key, mod.route);
+    if (route) navigate(route);
   };
 
   const goBackToHome = () => {

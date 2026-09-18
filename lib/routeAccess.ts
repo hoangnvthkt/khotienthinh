@@ -4,10 +4,13 @@ import { User } from '../types';
 import {
   canPerform,
   canPerformHrmTemplatePermission,
+  canViewModule,
   canViewRoute,
 } from './permissions/permissionService';
+import { getPermissionModulesByLegacyKey } from './permissions/permissionRegistry';
 import { PermissionScope } from './permissions/permissionTypes';
 import { isViooWorkEnabled } from './featureFlags';
+import { canConfigureWork } from './work/workConfigurationAccess';
 
 const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/',
@@ -169,7 +172,30 @@ export const canAccessRoute = (
 
   return canViewRoute(user, pathname);
 };
-import { canConfigureWork } from './work/workConfigurationAccess';
+
+const getConcreteModuleNavigationRoutes = (
+  moduleKey: string,
+  preferredRoute?: string,
+): string[] => [...new Set([
+  preferredRoute,
+  ...getPermissionModulesByLegacyKey(moduleKey).flatMap(module => module.routes || []),
+].filter((route): route is string => Boolean(route) && !route.includes(':')))];
+
+/** Resolve the first concrete route that the user can actually open. */
+export const getAuthorizedModuleRoute = (
+  user: Parameters<typeof canAccessRoute>[0],
+  moduleKey: string,
+  preferredRoute?: string,
+): string | null => getConcreteModuleNavigationRoutes(moduleKey, preferredRoute)
+  .find(route => canAccessRoute(user, route)) || null;
+
+/** Navigation surfaces must have at least one route the user can open. */
+export const canAccessNavigationModule = (
+  user: Parameters<typeof canAccessRoute>[0],
+  moduleKey: string,
+  preferredRoute?: string,
+): boolean => canViewModule(user, moduleKey)
+  && Boolean(getAuthorizedModuleRoute(user, moduleKey, preferredRoute));
 
 /** Choose a permitted landing after a denied route; never consult retained legacy fields. */
 export const getAuthorizedRouteFallback = (
