@@ -13,11 +13,10 @@ import { ChatProvider, useChat } from './context/ChatContext';
 import { CelebrationProvider } from './components/Celebration';
 import ErrorBoundary from './components/ErrorBoundary';
 import ReleaseNotesModal from './components/ReleaseNotesModal';
-import { getProjectAllowedSubModuleRedirect, hasProjectTabPermissionRoute } from './lib/projectTabPermissions';
 import { isChatEnabled, isChatV2Enabled, isRequestApprovalPhase1Enabled } from './lib/featureFlags';
 import { hasAnySettingsManagementFeature } from './lib/settingsPermissions';
 import { useLatestReleaseNotice } from './hooks/useLatestReleaseNotice';
-import { canAccessRoute, getRouteModuleKey } from './lib/routeAccess';
+import { canAccessRoute, getAuthorizedRouteFallback } from './lib/routeAccess';
 import {
   AuthProvider,
   AuthenticatedBoundary,
@@ -139,9 +138,7 @@ const ContractWorkspacePage = React.lazy(() => import('./pages/hd/ContractWorksp
 const TenderAiLayout = React.lazy(() => import('./pages/tender-ai/TenderAiLayout'));
 const TenderBoqAnalyzer = React.lazy(() => import('./pages/tender-ai/TenderBoqAnalyzer'));
 
-// ── T2: SubModuleGuard — check phân quyền sub-module ─────────────────────────
-// Dùng ROUTE_TO_MODULE từ constants/routes.ts (T3).
-// Chỉ block user EMPLOYEE có allowedSubModules bị giới hạn.
+// Route and denied-route fallback both follow the current authorization snapshot.
 const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useApp();
   const location = useLocation();
@@ -149,12 +146,7 @@ const SubModuleGuard: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const pathname = location.pathname;
   if (canAccessRoute(user, pathname)) return <>{children}</>;
 
-  const moduleKey = getRouteModuleKey(pathname);
-  const allowedSubs = moduleKey ? user.allowedSubModules?.[moduleKey] || [] : [];
-  if (moduleKey === 'DA' && hasProjectTabPermissionRoute(allowedSubs)) {
-    return <Navigate to={getProjectAllowedSubModuleRedirect(allowedSubs)} replace />;
-  }
-  return <Navigate to="/" replace />;
+  return <Navigate to={getAuthorizedRouteFallback(user, pathname)} replace />;
 };
 
 // Landing page wrapper kept for compatibility with older references.
@@ -212,6 +204,7 @@ const AppRoutes: React.FC = () => {
           <Route path="users" element={<Navigate to="/settings" replace />} />
           <Route path="settings" element={<Settings />} />
           <Route path="settings/permission-health" element={<Settings />} />
+          <Route path="settings/role-templates" element={<Settings />} />
           <Route path="settings/hrm-shared-catalog" element={<Settings />} />
           <Route path="misa-export" element={<MisaExport />} />
           <Route path="hrm" element={<Navigate to="/my-profile" replace />} />

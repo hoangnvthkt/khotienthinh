@@ -1,0 +1,394 @@
+{
+  "version": "2026-09-16.role-template-blueprints.v1",
+  "principles": {
+    "templateContainsActionsOnly": true,
+    "assignmentCarriesConcreteScope": true,
+    "ordinarySelectAllFutureActions": "manual_review",
+    "superAdminFutureActions": "auto_include",
+    "superAdminLocked": true,
+    "templateInheritance": "none_explicit_snapshot_only"
+  },
+  "cloudCatalogBaseline": {
+    "applications": 17,
+    "modules": 103,
+    "actions": 384,
+    "sensitiveActions": 68,
+    "canonicalBusinessModules": 84,
+    "authorizationControlModules": ["system.authorization"],
+    "legacyShellModules": 18
+  },
+  "systemTemplates": [
+    {
+      "code": "SUPER_ADMIN",
+      "name": "Super Admin",
+      "status": "implemented_protected_dynamic",
+      "locked": true,
+      "dynamic": true,
+      "futureActionPolicy": "auto_include",
+      "assignmentScopeTypes": ["global"],
+      "notes": "Protected system root role. It is distinct from the current two-item SYSTEM_ADMIN template."
+    },
+    {
+      "code": "PERMISSION_ADMIN",
+      "name": "Quản trị phân quyền",
+      "status": "implemented_existing_system_template",
+      "locked": true,
+      "dynamic": false,
+      "futureActionPolicy": "manual_review",
+      "assignmentScopeTypes": ["global", "project", "construction_site", "warehouse", "department"],
+      "permissionCodes": [
+        "system.authorization.view",
+        "system.authorization.manage_roles",
+        "system.authorization.manage_grants",
+        "system.authorization.manage_scopes",
+        "system.authorization.audit"
+      ]
+    },
+    {
+      "code": "AUTHORIZATION_AUDITOR",
+      "name": "Kiểm toán phân quyền",
+      "status": "proposed",
+      "locked": true,
+      "dynamic": false,
+      "futureActionPolicy": "manual_review",
+      "assignmentScopeTypes": ["global"],
+      "permissionCodes": ["system.authorization.view", "system.authorization.audit"]
+    }
+  ],
+  "applications": [
+    {
+      "code": "project",
+      "name": "Dự án",
+      "status": "proposed",
+      "assignmentScopeTypes": ["project", "construction_site"],
+      "moduleCodes": [
+        "project.master", "project.overview", "project.org", "project.executive",
+        "project.daily_log", "project.material_request", "project.material_plan",
+        "project.material_boq", "project.material_po", "project.material_supplier_delivery",
+        "project.material_waste", "project.custom_material", "project.gantt",
+        "project.weekly_progress", "project.contract", "project.contract_item",
+        "project.contract_variation", "project.subcontract", "project.payment",
+        "project.quantity_acceptance", "project.cashflow", "project.budget",
+        "project.quality", "project.safety", "project.documents", "project.report",
+        "project.dashboard"
+      ],
+      "templates": [
+        {"code": "PROJECT_MEMBER", "name": "Thành viên dự án", "policy": "view_and_own_actions"},
+        {"code": "PROJECT_COORDINATOR", "name": "Điều phối dự án", "policy": "create_edit_assign_and_verify_selected_rooms"},
+        {"code": "PROJECT_APPROVER", "name": "Người duyệt dự án", "policy": "explicit_sensitive_approval_actions"},
+        {"code": "PROJECT_MANAGER", "name": "Quản lý dự án", "policy": "explicit_snapshot_no_future_auto_grant"}
+      ],
+      "catalogGaps": ["Room membership and Room actions remain the canonical fine-grained source and must not be flattened into a global template."]
+    },
+    {
+      "code": "wms",
+      "name": "Kho vật tư",
+      "status": "owner_approved_baseline",
+      "assignmentScopeTypes": ["warehouse"],
+      "moduleCodes": ["wms.inventory", "wms.request", "wms.transaction", "wms.material_issue", "wms.purchase_order", "wms.master_data"],
+      "templates": [
+        {
+          "code": "WAREHOUSE_OPERATOR",
+          "name": "Thủ kho",
+          "policy": "explicit",
+          "permissionScopeType": "warehouse",
+          "permissionCodes": [
+            "wms.inventory.view",
+            "wms.request.view", "wms.request.create", "wms.request.approve", "wms.request.export", "wms.request.receive",
+            "wms.transaction.view", "wms.transaction.create", "wms.transaction.approve", "wms.transaction.complete"
+          ]
+        },
+        {
+          "code": "WAREHOUSE_MANAGER",
+          "name": "Quản lý kho",
+          "policy": "explicit_snapshot_including_operator_actions",
+          "permissionScopeType": "warehouse",
+          "scopeSemantics": {
+            "wms.inventory.edit": "adjust stock only at the assigned warehouse; global item metadata requires a global grant",
+            "wms.master_data.manage": "update the assigned warehouse record only; creating/deleting warehouses and shared warehouse types require a global grant"
+          },
+          "permissionCodes": [
+            "wms.inventory.view", "wms.inventory.edit",
+            "wms.request.view", "wms.request.create", "wms.request.approve", "wms.request.export", "wms.request.receive", "wms.request.delete",
+            "wms.transaction.view", "wms.transaction.create", "wms.transaction.approve", "wms.transaction.complete", "wms.transaction.reverse",
+            "wms.material_issue.settle", "wms.material_issue.reverse_settlement",
+            "wms.purchase_order.return_supplier", "wms.master_data.manage"
+          ]
+        }
+      ],
+      "catalogGaps": []
+    },
+    {
+      "code": "hrm",
+      "name": "Nhân sự",
+      "status": "proposed",
+      "assignmentScopeTypes": ["own", "direct_reports", "org_unit", "assigned", "global"],
+      "moduleCodes": ["hrm.employee", "hrm.organization", "hrm.staffing", "hrm.attendance", "hrm.leave", "hrm.payroll", "hrm.contract", "hrm.document", "hrm.compensation", "hrm.master_data"],
+      "templates": [
+        {"code": "HR_SELF_SERVICE", "name": "Nhân viên tự phục vụ", "policy": "own_only_non_sensitive"},
+        {"code": "PEOPLE_MANAGER", "name": "Quản lý nhân sự trực tiếp", "policy": "direct_reports_attendance_and_leave"},
+        {"code": "HR_OPERATOR", "name": "HR nghiệp vụ", "policy": "assigned_or_org_unit_operations"},
+        {"code": "HR_MANAGER", "name": "HR Manager", "policy": "explicit_sensitive_snapshot"},
+        {"code": "PAYROLL_ADMIN", "name": "Quản trị lương", "policy": "payroll_and_compensation_sensitive_only"}
+      ],
+      "catalogGaps": ["Sensitive HR actions are template-only and must not be granted as ordinary direct exceptions."]
+    },
+    {
+      "code": "workflow",
+      "name": "Quy trình",
+      "status": "owner_approved_catalog_complete",
+      "assignmentScopeTypes": ["own", "assigned", "global"],
+      "moduleCodes": ["workflow.instance", "workflow.template"],
+      "templates": [
+        {
+          "code": "WORKFLOW_USER",
+          "name": "Người dùng quy trình",
+          "policy": "explicit",
+          "permissionScopes": {
+            "workflow.instance.view": "own",
+            "workflow.instance.create": "own",
+            "workflow.instance.act_assigned": "assigned",
+            "workflow.instance.edit_own_draft": "own",
+            "workflow.instance.delete_own_draft": "own",
+            "workflow.template.view": "global"
+          },
+          "permissionCodes": [
+            "workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned",
+            "workflow.instance.edit_own_draft", "workflow.instance.delete_own_draft",
+            "workflow.template.view"
+          ]
+        },
+        {
+          "code": "WORKFLOW_ADMIN",
+          "name": "Quản trị quy trình",
+          "policy": "explicit_snapshot_including_user_actions",
+          "permissionScopes": {
+            "workflow.instance.view": "own",
+            "workflow.instance.create": "own",
+            "workflow.instance.act_assigned": "assigned",
+            "workflow.instance.edit_own_draft": "own",
+            "workflow.instance.delete_own_draft": "own",
+            "workflow.instance.cancel": "global",
+            "workflow.instance.reopen": "global",
+            "workflow.instance.administer": "global",
+            "workflow.template.view": "global",
+            "workflow.template.create": "global",
+            "workflow.template.edit": "global",
+            "workflow.template.publish": "global"
+          },
+          "permissionCodes": [
+            "workflow.instance.view", "workflow.instance.create", "workflow.instance.act_assigned",
+            "workflow.instance.edit_own_draft", "workflow.instance.delete_own_draft",
+            "workflow.instance.cancel", "workflow.instance.reopen", "workflow.instance.administer",
+            "workflow.template.view", "workflow.template.create", "workflow.template.edit", "workflow.template.publish"
+          ]
+        }
+      ],
+      "catalogGaps": []
+    },
+    {
+      "code": "request",
+      "name": "Yêu cầu",
+      "status": "implemented_runtime_actions_pending_owner_template",
+      "assignmentScopeTypes": ["own", "assigned", "global"],
+      "moduleCodes": ["request.instance", "request.category", "request.template"],
+      "templates": [
+        {
+          "code": "REQUEST_USER",
+          "name": "Người tạo yêu cầu",
+          "policy": "explicit",
+          "permissionCodes": [
+            "request.instance.view_own", "request.instance.create",
+            "request.instance.edit_own_content", "request.instance.resubmit_own",
+            "request.instance.cancel", "request.category.view", "request.template.view"
+          ]
+        },
+        {
+          "code": "REQUEST_PROCESSOR",
+          "name": "Người xử lý yêu cầu",
+          "policy": "explicit",
+          "permissionCodes": [
+            "request.instance.view_all", "request.instance.approve_assigned",
+            "request.instance.reject_assigned", "request.instance.return_assigned",
+            "request.category.view", "request.template.view"
+          ]
+        },
+        {
+          "code": "REQUEST_TEMPLATE_ADMIN",
+          "name": "Quản trị yêu cầu",
+          "policy": "explicit_snapshot",
+          "permissionCodes": [
+            "request.instance.view_all", "request.instance.cancel", "request.instance.reassign",
+            "request.category.view", "request.category.manage",
+            "request.template.view", "request.template.manage"
+          ]
+        }
+      ],
+      "catalogGaps": ["Request has no create/save/delete DRAFT command yet; do not represent those operations as completed capabilities."]
+    },
+    {
+      "code": "work",
+      "name": "Công việc",
+      "status": "proposed",
+      "assignmentScopeTypes": ["own", "assigned", "department", "project", "work_workspace", "global"],
+      "moduleCodes": ["work.module", "work.task", "work.workspace"],
+      "templates": [
+        {"code": "WORK_MEMBER", "name": "Thành viên công việc", "policy": "create_and_related_tasks"},
+        {"code": "WORK_MANAGER", "name": "Quản lý công việc", "policy": "assign_review_and_manage_scope"},
+        {"code": "WORKSPACE_ADMIN", "name": "Quản trị không gian làm việc", "policy": "workspace_members_archive_recover_and_configure"}
+      ],
+      "catalogGaps": ["Workspace scope continues to use workspace membership; role assignment support must not bypass membership checks."]
+    },
+    {
+      "code": "expense",
+      "name": "Chi phí",
+      "status": "proposed",
+      "assignmentScopeTypes": ["own", "department", "global"],
+      "moduleCodes": ["expense.budget", "expense.expense_record", "expense.master_data"],
+      "templates": [
+        {"code": "EXPENSE_USER", "name": "Người đề nghị chi phí", "policy": "own_create_view_and_edit"},
+        {"code": "EXPENSE_REVIEWER", "name": "Người kiểm tra chi phí", "policy": "department_view_and_budget_edit"},
+        {"code": "EXPENSE_APPROVER", "name": "Người duyệt chi phí", "policy": "explicit_approval_with_expiry"},
+        {"code": "EXPENSE_MANAGER", "name": "Quản lý chi phí", "policy": "explicit_snapshot_and_master_data"}
+      ],
+      "catalogGaps": ["Settlement/payment completion is not represented by a dedicated canonical action."]
+    },
+    {
+      "code": "asset",
+      "name": "Tài sản",
+      "status": "proposed",
+      "assignmentScopeTypes": ["assigned", "department", "warehouse", "global"],
+      "moduleCodes": ["asset.catalog", "asset.assignment", "asset.maintenance", "asset.audit"],
+      "templates": [
+        {"code": "ASSET_USER", "name": "Người sử dụng tài sản", "policy": "assigned_view"},
+        {"code": "ASSET_CUSTODIAN", "name": "Người quản lý tài sản", "policy": "assign_return_transfer_maintenance_and_audit"},
+        {"code": "ASSET_MANAGER", "name": "Quản trị tài sản", "policy": "explicit_sensitive_catalog_snapshot"}
+      ],
+      "catalogGaps": []
+    },
+    {
+      "code": "contract",
+      "name": "Hợp đồng",
+      "status": "proposed_with_catalog_gaps",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": ["contract.partner", "contract.customer", "contract.supplier", "contract.template", "contract.cost_library"],
+      "templates": [
+        {"code": "CONTRACT_VIEWER", "name": "Người xem hợp đồng", "policy": "all_canonical_views"},
+        {"code": "CONTRACT_OPERATOR", "name": "Chuyên viên hợp đồng", "policy": "explicit_operational_actions_after_catalog_expansion"},
+        {"code": "CONTRACT_MANAGER", "name": "Quản lý hợp đồng", "policy": "explicit_administration_snapshot"}
+      ],
+      "catalogGaps": ["Most canonical contract modules expose only view/manage; create, edit, submit, approve and lifecycle actions must be separated."]
+    },
+    {
+      "code": "ai",
+      "name": "Trợ lý AI",
+      "status": "proposed_with_catalog_gaps",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": ["ai.assistant", "ai.executive", "ai.report"],
+      "templates": [
+        {"code": "AI_USER", "name": "Người dùng AI", "policy": "assistant_view_and_use"},
+        {"code": "AI_REPORTER", "name": "Người tạo báo cáo AI", "policy": "assistant_plus_report_generate"},
+        {"code": "AI_ADMIN", "name": "Quản trị AI", "policy": "explicit_provider_model_and_data_controls_after_catalog_expansion"}
+      ],
+      "catalogGaps": ["Provider/model administration and Tender AI actions are still represented by legacy shells."]
+    },
+    {
+      "code": "analytics",
+      "name": "Phân tích",
+      "status": "proposed_with_catalog_gaps",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": ["analytics.dashboard"],
+      "templates": [
+        {"code": "ANALYTICS_VIEWER", "name": "Người xem phân tích", "policy": "view"},
+        {"code": "ANALYTICS_EXPORTER", "name": "Người xuất dữ liệu", "policy": "view_and_export"},
+        {"code": "DASHBOARD_ADMIN", "name": "Quản trị dashboard", "policy": "author_publish_share_and_source_admin_after_catalog_expansion"}
+      ],
+      "catalogGaps": ["Dashboard author, publish, share and data-source administration actions are missing."]
+    },
+    {
+      "code": "kb",
+      "name": "Kho tri thức",
+      "status": "proposed_with_catalog_gaps",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": ["kb.articles"],
+      "templates": [
+        {"code": "KB_READER", "name": "Người đọc kho tri thức", "policy": "view"},
+        {"code": "KB_EDITOR", "name": "Người biên tập", "policy": "author_edit_after_catalog_expansion"},
+        {"code": "KB_PUBLISHER", "name": "Người xuất bản", "policy": "publish_and_audience_admin_after_catalog_expansion"}
+      ],
+      "catalogGaps": ["Author, edit, publish, archive and audience controls are collapsed into legacy manage."]
+    },
+    {
+      "code": "storage",
+      "name": "Kho dữ liệu",
+      "status": "proposed_with_catalog_gaps",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": ["storage.files"],
+      "templates": [
+        {"code": "STORAGE_USER", "name": "Người sử dụng tệp", "policy": "record_bounded_view_upload_after_catalog_expansion"},
+        {"code": "STORAGE_ADMIN", "name": "Quản trị kho dữ liệu", "policy": "object_bucket_and_retention_admin_after_catalog_expansion"}
+      ],
+      "catalogGaps": ["View/manage is too coarse; upload, download, delete, bucket and retention actions must be separated and bound to owning records."]
+    },
+    {
+      "code": "resource_booking",
+      "name": "Booking tài nguyên",
+      "status": "proposed",
+      "assignmentScopeTypes": ["own", "assigned", "department", "global"],
+      "moduleCodes": ["resource_booking.vehicle"],
+      "templates": [
+        {"code": "VEHICLE_REQUESTER", "name": "Người đặt xe", "policy": "create_and_view_own"},
+        {"code": "VEHICLE_APPROVER", "name": "Người duyệt đặt xe", "policy": "approve_direct_reports"},
+        {"code": "VEHICLE_DRIVER", "name": "Tài xế", "policy": "assigned_trip_and_handover"},
+        {"code": "VEHICLE_DISPATCHER", "name": "Điều phối xe", "policy": "dispatch_reports_and_audit"},
+        {"code": "FLEET_MANAGER", "name": "Quản lý đội xe", "policy": "fleet_authorization_feedback_and_admin_snapshot"}
+      ],
+      "catalogGaps": []
+    },
+    {
+      "code": "settings",
+      "name": "Cài đặt hệ thống",
+      "status": "proposed",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": [
+        "settings.general", "settings.warehouses", "settings.master_data", "settings.g8_cost_norms",
+        "settings.project_master_data", "settings.inspection_templates", "settings.work_groups",
+        "settings.loss_norms", "settings.users", "settings.alerts", "settings.permission_health",
+        "settings.chibi_bot", "settings.ai_learning", "settings.maintenance"
+      ],
+      "templates": [
+        {"code": "SETTINGS_VIEWER", "name": "Người xem cấu hình", "policy": "non_sensitive_views"},
+        {"code": "BUSINESS_SETTINGS_ADMIN", "name": "Quản trị cấu hình nghiệp vụ", "policy": "explicit_non_security_settings"},
+        {"code": "PLATFORM_ADMIN", "name": "Quản trị nền tảng", "policy": "explicit_sensitive_settings_snapshot"}
+      ],
+      "catalogGaps": ["Authorization administration remains in protected system templates, not ordinary settings templates."]
+    },
+    {
+      "code": "chat",
+      "name": "Tin nhắn",
+      "status": "catalog_blocked",
+      "assignmentScopeTypes": ["global"],
+      "moduleCodes": [],
+      "templates": [
+        {"code": "CHAT_USER", "name": "Người dùng Chat", "policy": "membership_bounded_access_after_catalog_expansion"},
+        {"code": "CHAT_MODERATOR", "name": "Điều phối Chat", "policy": "moderation_after_catalog_expansion"},
+        {"code": "CHAT_ADMIN", "name": "Quản trị Chat", "policy": "channel_and_platform_admin_after_catalog_expansion"}
+      ],
+      "catalogGaps": ["Only system.chat.view/manage shells exist; canonical membership, moderation and administration actions are missing."]
+    },
+    {
+      "code": "procurement",
+      "name": "Mua hàng",
+      "status": "catalog_blocked",
+      "assignmentScopeTypes": ["project", "department", "global"],
+      "moduleCodes": [],
+      "templates": [
+        {"code": "PROCUREMENT_REQUESTER", "name": "Người đề nghị mua", "policy": "create_and_view_own_after_catalog_expansion"},
+        {"code": "BUYER", "name": "Nhân viên mua hàng", "policy": "sourcing_supplier_and_po_operations_after_catalog_expansion"},
+        {"code": "PROCUREMENT_APPROVER", "name": "Người duyệt mua hàng", "policy": "explicit_approval_after_catalog_expansion"},
+        {"code": "PROCUREMENT_MANAGER", "name": "Quản lý mua hàng", "policy": "explicit_administration_snapshot_after_catalog_expansion"}
+      ],
+      "catalogGaps": ["Only system.procurement.view/manage shells exist; sourcing, evaluation, approval, PO and supplier capabilities are missing."]
+    }
+  ]
+}

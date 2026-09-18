@@ -1,4 +1,4 @@
-import { UserPermissionGrant } from '../../types';
+import { Role, UserPermissionGrant } from '../../types';
 import { isSupabaseConfigured, supabase } from '../supabase';
 import { isDirectPermissionGrantAllowed } from './permissionService';
 import { getSupabaseOrderColumns } from '../supabaseProjections';
@@ -38,6 +38,31 @@ export interface UserAuthorizationUpdateReceipt {
   updatedAt: string;
   activeGrantCount: number;
   auditEventId: string;
+}
+
+export interface AccountRoleTransitionInput {
+  userId: string;
+  role: Role;
+  warehouseId?: string | null;
+  expectedUpdatedAt: string;
+  reason: string;
+}
+
+export interface AccountRoleTransitionReceipt {
+  userId: string;
+  updatedAt: string;
+  role: Role;
+  assignedWarehouseId?: string | null;
+  activatedAssignmentId?: string | null;
+  revokedAssignmentIds?: string[];
+  auditEventId?: string;
+}
+
+export interface PermissionCommandGateway {
+  rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{
+    data: unknown;
+    error: { message?: string; details?: string; code?: string } | null;
+  }>;
 }
 
 const toGrantPayload = (grants: readonly UserPermissionGrant[]) => grants
@@ -118,4 +143,34 @@ export const updateUserAuthorizationV2 = async (
   if (error) throw mapAuthorizationRpcError(error);
   if (!data) throw new Error('Lệnh cập nhật phân quyền không trả về kết quả.');
   return data as unknown as UserAuthorizationUpdateReceipt;
+};
+
+export const changeUserAccountRoleV2 = async (
+  input: AccountRoleTransitionInput,
+  gateway?: PermissionCommandGateway,
+): Promise<AccountRoleTransitionReceipt> => {
+  const reason = input.reason.trim();
+  if (reason.length < 10) throw new Error('Lý do thay đổi phải có ít nhất 10 ký tự.');
+  if (!input.userId || !input.expectedUpdatedAt) {
+    throw new Error('Thiếu người dùng hoặc phiên bản dữ liệu cần cập nhật.');
+  }
+  if (!Object.values(Role).includes(input.role)) throw new Error('Loại tài khoản không hợp lệ.');
+  if (input.role === Role.WAREHOUSE_KEEPER && !input.warehouseId?.trim()) {
+    throw new Error('Tài khoản thủ kho phải chọn phạm vi kho hoặc toàn bộ kho.');
+  }
+  if (!gateway && !isSupabaseConfigured) throw new Error('Supabase chưa được cấu hình.');
+
+  const { data, error } = await (gateway || supabase as unknown as PermissionCommandGateway).rpc(
+    'change_user_account_role_v2',
+    {
+      p_user_id: input.userId,
+      p_role: input.role,
+      p_warehouse_id: input.role === Role.WAREHOUSE_KEEPER ? input.warehouseId!.trim() : null,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_reason: reason,
+    },
+  );
+  if (error) throw mapAuthorizationRpcError(error);
+  if (!data) throw new Error('Lệnh chuyển loại tài khoản không trả về kết quả.');
+  return data as AccountRoleTransitionReceipt;
 };

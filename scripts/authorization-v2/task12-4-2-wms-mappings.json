@@ -1,0 +1,15 @@
+{
+  "DIRECT:system.wms.view": {
+    "disposition": "replace",
+    "reason": "Replace the reviewed WMS read shell with the complete granular WMS read surface at the identical scope and expiry.",
+    "permissionCodes": [
+      "wms.inventory.view",
+      "wms.request.view",
+      "wms.transaction.view"
+    ]
+  },
+  "DIRECT:system.wms.manage": {
+    "disposition": "manual_review",
+    "reason": "WMS shell management is not equivalent to all granular actions. Reversal requires an explicit canonical capability; audit each operational consumer before proposing replacement targets."
+  }
+}

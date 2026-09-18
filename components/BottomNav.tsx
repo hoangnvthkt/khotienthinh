@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Package, BarChart3, Landmark, Briefcase,
   GitBranch, Inbox, MoreHorizontal, Settings, Plus, X,
@@ -9,10 +9,9 @@ import {
   CheckCircle, HardDrive, BookOpen, MapPin, MessageSquarePlus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Role } from '../types';
 import { xpService, UserXP, LEVELS } from '../lib/xpService';
 import { isChatEnabled } from '../lib/featureFlags';
-import { canAccessRoute } from '../lib/routeAccess';
+import { canAccessRoute, getAuthorizedModuleRoute } from '../lib/routeAccess';
 
 // === Master catalog of all available taskbar items ===
 interface NavItem {
@@ -65,19 +64,46 @@ const MAX_ITEMS = 5;
 const normalizeNavKeys = (keys: string[], items: NavItem[], defaultKeys: string[]) => {
   const allowedKeys = new Set(items.map(item => item.key));
   const normalized = keys.filter(key => allowedKeys.has(key)).slice(0, MAX_ITEMS);
-  return normalized.length >= 2 ? normalized : defaultKeys;
+  if (normalized.length >= 2) return normalized;
+  const fallback = defaultKeys.filter(key => allowedKeys.has(key)).slice(0, MAX_ITEMS);
+  return fallback.length > 0 ? fallback : normalized;
+};
+
+const NAV_MODULE_KEYS: Record<string, string> = {
+  WMS: 'WMS',
+  HRM: 'HRM',
+  DA: 'DA',
+  TS: 'TS',
+  WF: 'WF',
+  RQ: 'RQ',
+  EX: 'EX',
+  STORAGE: 'STORAGE',
+  KB: 'KB',
+  AI: 'AI',
+  TENDER_AI: 'TENDER_AI',
 };
 
 const BottomNav: React.FC = () => {
   const { user } = useApp();
   const location = useLocation();
-  const navigate = useNavigate();
   const canUseChat = isChatEnabled && canAccessRoute(user, '/chat');
-  const availableNavItems = useMemo(
-    () => ALL_NAV_ITEMS.filter(item => item.key !== 'CHAT' || canUseChat),
+  const defaultKeys = useMemo(
+    () => canUseChat ? DEFAULT_KEYS_WITH_CHAT : DEFAULT_KEYS_WITHOUT_CHAT,
     [canUseChat],
   );
-  const defaultKeys = canUseChat ? DEFAULT_KEYS_WITH_CHAT : DEFAULT_KEYS_WITHOUT_CHAT;
+  const availableNavItems = useMemo(
+    () => ALL_NAV_ITEMS
+      .filter(item => item.key !== 'CHAT' || canUseChat)
+      .map(item => {
+        const moduleKey = NAV_MODULE_KEYS[item.key];
+        const route = moduleKey
+          ? getAuthorizedModuleRoute(user, moduleKey, item.to)
+          : canAccessRoute(user, item.to) ? item.to : null;
+        return route ? { ...item, to: route } : null;
+      })
+      .filter((item): item is NavItem => Boolean(item)),
+    [canUseChat, user],
+  );
 
   // XP state
   const [xpProfile, setXpProfile] = useState<UserXP | null>(null);
@@ -112,6 +138,10 @@ const BottomNav: React.FC = () => {
       // localStorage can be unavailable in restricted browser contexts.
     }
   }, [availableNavItems, canUseChat]);
+
+  useEffect(() => {
+    setEnabledKeys(prev => normalizeNavKeys(prev, availableNavItems, defaultKeys));
+  }, [availableNavItems, defaultKeys]);
 
   const [showEditor, setShowEditor] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);

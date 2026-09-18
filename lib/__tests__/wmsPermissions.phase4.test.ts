@@ -3,6 +3,7 @@ import { MaterialRequestFulfillmentMode, RequestStatus, Role, TransactionStatus,
 import {
   canApproveMaterialRequest,
   canApproveWmsTransaction,
+  canDeleteWmsMaterialRequest,
   canReceiveMaterialRequest,
   canReceiveWmsTransaction,
   canReverseWmsTransaction,
@@ -154,6 +155,39 @@ describe('Phase 4 WMS permission adapter', () => {
     expect(canViewMaterialRequest(granted, request)).toBe(true);
     expect(canApproveMaterialRequest(granted, request)).toBe(false);
     expect(canReceiveMaterialRequest(granted, { ...request, status: RequestStatus.IN_TRANSIT })).toBe(false);
+  });
+
+  it('allows WMS request deletion only from its dedicated capability, eligible status and related warehouse', () => {
+    const granted = user({
+      permissionGrants: [{
+        id: 'delete',
+        userId: 'user-1',
+        permissionCode: 'wms.request.delete',
+        scopeType: 'warehouse',
+        scopeId: 'wh-target',
+        isActive: true,
+      }],
+    });
+
+    expect(canDeleteWmsMaterialRequest(granted, {
+      ...request,
+      status: RequestStatus.PENDING,
+    })).toBe(true);
+    expect(canDeleteWmsMaterialRequest(granted, {
+      ...request,
+      status: RequestStatus.APPROVED,
+    })).toBe(false);
+    expect(canDeleteWmsMaterialRequest(granted, {
+      ...request,
+      sourceWarehouseId: 'wh-other-source',
+      siteWarehouseId: 'wh-other-site',
+      status: RequestStatus.DRAFT,
+    })).toBe(false);
+    expect(canDeleteWmsMaterialRequest(granted, {
+      ...request,
+      requestOrigin: 'project',
+      status: RequestStatus.DRAFT,
+    })).toBe(false);
   });
 
   it('still keeps legacy warehouse keeper fallback during the transition', () => {

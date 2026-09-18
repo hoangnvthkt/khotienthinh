@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User, UserPermissionGrant } from '../../types';
-import { canAccessRoute, getRouteModuleKey, isAuthenticatedOpenRoute } from '../routeAccess';
+import {
+  canAccessNavigationModule,
+  canAccessRoute,
+  getAuthorizedModuleRoute,
+  getRouteModuleKey,
+  isAuthenticatedOpenRoute,
+} from '../routeAccess';
 
 const user = (permissionCodes: string[] = []): User => ({
   id: 'user-1',
@@ -120,18 +126,28 @@ describe('phase 0 route containment', () => {
 describe('request detail route access', () => {
   const templateRoutes = ['/rq/templates', '/rq/templates/new', '/rq/templates/template-1'];
 
-  it('maps all request template routes to RQ and allows administrators', () => {
+  it('maps all request template routes to RQ and allows administrators with explicit template rights', () => {
+    const administrator = { ...user([
+      'request.template.view',
+      'request.template.manage',
+    ]), role: Role.ADMIN };
     for (const route of templateRoutes) {
       expect(getRouteModuleKey(route), route).toBe('RQ');
-      expect(canAccessRoute({ ...user(['request.template.view']), role: Role.ADMIN }, route), route).toBe(true);
+      expect(canAccessRoute(administrator, route), route).toBe(true);
     }
   });
 
-  it('opens template editors with an explicit template view grant', () => {
+  it('keeps template viewers on the read-only list and requires manage for editors', () => {
     const viewer = persona(Role.EMPLOYEE, [['request.template.view', 'global']]);
-    for (const route of templateRoutes) {
-      expect(canAccessRoute(viewer, route), route).toBe(true);
-    }
+    expect(canAccessRoute(viewer, '/rq/templates')).toBe(true);
+    expect(canAccessRoute(viewer, '/rq/templates/new')).toBe(false);
+    expect(canAccessRoute(viewer, '/rq/templates/template-1')).toBe(false);
+
+    const manager = persona(Role.EMPLOYEE, [
+      ['request.template.view', 'global'],
+      ['request.template.manage', 'global'],
+    ]);
+    for (const route of templateRoutes) expect(canAccessRoute(manager, route), route).toBe(true);
   });
 
   it('keeps template editors closed to users without request access', () => {
@@ -149,6 +165,51 @@ describe('request detail route access', () => {
       user(['request.instance.view_own']),
       '/rq/f2995dba-4718-4e70-b1a8-19cc4a659e2a',
     )).toBe(true);
+  });
+});
+
+describe('workflow route access', () => {
+  it('opens instance routes for own- and assigned-scoped Workflow viewers', () => {
+    const ownViewer = persona(Role.EMPLOYEE, [['workflow.instance.view', 'own']]);
+    const assignedViewer = persona(Role.EMPLOYEE, [['workflow.instance.view', 'assigned']]);
+
+    for (const route of ['/wf', '/wf/dashboard', '/wf/instances/instance-1']) {
+      expect(canAccessRoute(ownViewer, route), route).toBe(true);
+      expect(canAccessRoute(assignedViewer, route), route).toBe(true);
+    }
+  });
+
+  it('does not widen the Workflow list route to users without instance visibility', () => {
+    const templateViewer = persona(Role.EMPLOYEE, [['workflow.template.view', 'global']]);
+
+    expect(canAccessRoute(templateViewer, '/wf/templates')).toBe(true);
+    expect(canAccessRoute(templateViewer, '/wf')).toBe(false);
+    expect(canAccessRoute(persona(Role.EMPLOYEE, []), '/wf')).toBe(false);
+  });
+});
+
+describe('navigation module access', () => {
+  it('does not expose a module from a compatibility shell when its canonical routes are denied', () => {
+    const shellOnly = user(['system.wms.view']);
+
+    expect(canAccessNavigationModule(shellOnly, 'WMS', '/inventory')).toBe(false);
+    expect(getAuthorizedModuleRoute(shellOnly, 'WMS', '/inventory')).toBeNull();
+  });
+
+  it('lands on an authorized canonical submodule route instead of a denied default', () => {
+    const requestTemplateViewer = user(['request.template.view']);
+    const assetAssignmentViewer = user(['asset.assignment.view']);
+
+    expect(canAccessNavigationModule(requestTemplateViewer, 'RQ', '/rq')).toBe(true);
+    expect(getAuthorizedModuleRoute(requestTemplateViewer, 'RQ', '/rq')).toBe('/rq/templates');
+    expect(getAuthorizedModuleRoute(assetAssignmentViewer, 'TS', '/ts/dashboard')).toBe('/ts/assignment');
+  });
+
+  it('preserves system-shell navigation for modules without canonical submodules', () => {
+    const shellOnly = user(['system.ep.view']);
+
+    expect(canAccessNavigationModule(shellOnly, 'EP', '/ep')).toBe(true);
+    expect(getAuthorizedModuleRoute(shellOnly, 'EP', '/ep')).toBe('/ep');
   });
 });
 

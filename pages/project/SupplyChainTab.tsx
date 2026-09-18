@@ -187,6 +187,7 @@ import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumb
 import { buildSupplierDeliveryWarehousePolicy } from '../../lib/warehouseSiteBinding';
 import { buildPurchaseOrderLineDescription, resolveMaterialLineName } from '../../lib/materialLineDescription';
 import MaterialCommercialDescriptionFields from '../../components/material/MaterialCommercialDescriptionFields';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 interface SupplyChainTabProps {
     constructionSiteId?: string;
@@ -887,6 +888,16 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [projectMaterialRequests, setProjectMaterialRequests] = useState<MaterialRequest[]>([]);
     const [supplierReturnsByPo, setSupplierReturnsByPo] = useState<Record<string, PurchaseOrderSupplierReturn[]>>({});
     const canRunRestrictedPoActions = isAdmin(user) || isGlobalWarehouseKeeper(user);
+    const supplierReturnWarehouses = useMemo(() => (
+        canRunRestrictedPoActions
+            ? warehouses
+            : warehouses.filter(warehouse => canPerform(
+                user,
+                'wms.purchase_order.return_supplier',
+                { scopeType: 'warehouse', scopeId: warehouse.id },
+            ))
+    ), [canRunRestrictedPoActions, user, warehouses]);
+    const canReturnSupplier = supplierReturnWarehouses.length > 0;
     const effectivePoCapabilities = resolvePurchaseOrderCapabilities(canManageTab, poCapabilities);
     const effectiveDirectPurchaseCapabilities = resolveDirectPurchaseCapabilities(canManageTab, directPurchaseCapabilities);
     const effectiveSupplierDeliveryCapabilities = resolveSupplierDeliveryCapabilities(canManageTab, supplierDeliveryCapabilities);
@@ -944,8 +955,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     };
 
     const ensureCanReturnSupplierPo = (action: string) => {
-        if (canRunRestrictedPoActions) return true;
-        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền kho tổng để ${action}.`);
+        if (canReturnSupplier) return true;
+        toast.warning('Không có quyền thao tác PO', `Bạn cần quyền trả hàng NCC tại ít nhất một kho để ${action}.`);
         return false;
     };
 
@@ -7263,6 +7274,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     canClonePoDocument: effectivePoCapabilities.canEditPo,
                                     canConfirmPo: effectivePoCapabilities.canConfirmPo,
                                     canRunRestrictedPoActions,
+                                    canReturnSupplier,
                                     editBlockReason,
                                     removalBlockReason: poRemovalBlockReason,
                                     hasStockImpact: poHasStockImpact,
@@ -7446,6 +7458,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     canClonePoDocument: effectivePoCapabilities.canEditPo,
                     canConfirmPo: effectivePoCapabilities.canConfirmPo,
                     canRunRestrictedPoActions,
+                    canReturnSupplier,
                     editBlockReason,
                     removalBlockReason: poRemovalBlockReason,
                     hasStockImpact: poHasStockImpact,
@@ -10123,7 +10136,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             />
             <PurchaseOrderSupplierReturnDialog
                 purchaseOrder={supplierReturnPo}
-                warehouses={warehouses}
+                warehouses={supplierReturnWarehouses}
                 inventoryItems={inventoryItems}
                 existingReturns={supplierReturnPo ? supplierReturnsByPo[supplierReturnPo.id] || [] : []}
                 onClose={() => setSupplierReturnPo(null)}

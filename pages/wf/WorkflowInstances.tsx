@@ -36,8 +36,10 @@ import {
     isRequestModuleWorkflowTemplate,
 } from '../../lib/workflowVisibility';
 import WorkflowInstanceDetail from './WorkflowInstanceDetail';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
+    DRAFT: { label: 'Bản nháp', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300', icon: Edit2 },
     RUNNING: { label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300', icon: Clock },
     COMPLETED: { label: 'Hoàn thành', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300', icon: CheckCircle },
     REJECTED: { label: 'Từ chối', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300', icon: XCircle },
@@ -625,7 +627,7 @@ export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, col
 const WorkflowInstances: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { templates, instances, nodes, edges, logs, createInstance, loadInstanceFormData, updateInstance, deleteInstance, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
+    const { templates, instances, nodes, edges, logs, createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
@@ -695,7 +697,6 @@ const WorkflowInstances: React.FC = () => {
     const [editFormData, setEditFormData] = useState<Record<string, any>>({});
 
     // Delete/Cancel confirm state
-    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
 
     // Reopen modal state (Admin can revert completed/rejected instances)
@@ -704,7 +705,7 @@ const WorkflowInstances: React.FC = () => {
     const [reopenComment, setReopenComment] = useState('');
 
     useEffect(() => {
-        const hasActiveOverlay = showCreateModal || !!editingInstance || !!boardDetailInstanceId || !!deleteConfirmId || !!cancelConfirmId || !!reopenInstanceId;
+        const hasActiveOverlay = showCreateModal || !!editingInstance || !!boardDetailInstanceId || !!cancelConfirmId || !!reopenInstanceId;
         if (hasActiveOverlay) {
             const originalOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
@@ -712,7 +713,7 @@ const WorkflowInstances: React.FC = () => {
                 document.body.style.overflow = originalOverflow;
             };
         }
-    }, [showCreateModal, editingInstance, boardDetailInstanceId, deleteConfirmId, cancelConfirmId, reopenInstanceId]);
+    }, [showCreateModal, editingInstance, boardDetailInstanceId, cancelConfirmId, reopenInstanceId]);
 
     // Step data editing state
     const [stepFormData, setStepFormData] = useState<Record<string, any>>({});
@@ -890,6 +891,36 @@ const WorkflowInstances: React.FC = () => {
             showToast('success', `Phiếu "${result.title}" đã được tạo thành công!`);
         } catch (err) {
             showToast('error', 'Đã xảy ra lỗi khi tạo phiếu. Vui lòng thử lại.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleSaveDraft = async () => {
+        if (!selectedTemplateId || !newTitle.trim()) return;
+        setIsSubmitting(true);
+        try {
+            const result = await createDraft(
+                selectedTemplateId,
+                newTitle.trim(),
+                { ...customFormData, note: newNote },
+                initialAssigneeIds,
+            );
+            if (!result) {
+                showToast('error', 'Không lưu được bản nháp. Vui lòng thử lại.');
+                return;
+            }
+            setShowCreateModal(false);
+            setSelectedTemplateId('');
+            setNewTitle('');
+            setNewNote('');
+            setCustomFormData({});
+            setInitialAssigneeIds([]);
+            loadedFormDataIdsRef.current.add(result.id);
+            setActiveTab('mine');
+            showToast('success', `Đã lưu bản nháp "${result.title}".`);
+        } catch (err) {
+            showToast('error', 'Không lưu được bản nháp. Vui lòng thử lại.');
         } finally {
             setIsSubmitting(false);
         }
@@ -1101,6 +1132,7 @@ const WorkflowInstances: React.FC = () => {
     const openEditModal = async (instance: WorkflowInstance) => {
         const readyInstance = await ensureInstanceFormData(instance);
         setEditingInstance(readyInstance);
+        setSelectedTemplateId(readyInstance.templateId);
         setEditTitle(readyInstance.title);
         // Extract only the original form data (non step_ prefixed)
         const originalFormData: Record<string, any> = {};
@@ -1110,6 +1142,14 @@ const WorkflowInstances: React.FC = () => {
             }
         });
         setEditFormData(originalFormData);
+        const startNode = nodes.find(node => node.templateId === readyInstance.templateId && node.type === WorkflowNodeType.START);
+        const firstEdge = startNode
+            ? edges.find(edge => edge.templateId === readyInstance.templateId && edge.sourceNodeId === startNode.id)
+            : null;
+        const savedAssignees = firstEdge ? readyInstance.stepAssignees?.[firstEdge.targetNodeId] : [];
+        setInitialAssigneeIds(Array.isArray(savedAssignees)
+            ? savedAssignees
+            : savedAssignees ? [savedAssignees] : []);
     };
 
     const handleEditSave = async () => {
@@ -1123,7 +1163,13 @@ const WorkflowInstances: React.FC = () => {
             }
         });
         const mergedFormData = { ...editFormData, ...stepData };
-        const ok = await updateInstance(editingInstance.id, { title: editTitle.trim(), formData: mergedFormData });
+        const ok = await updateInstance(editingInstance.id, {
+            title: editTitle.trim(),
+            formData: mergedFormData,
+            ...(editingInstance.status === WorkflowInstanceStatus.DRAFT
+                ? { initialAssigneeUserIds: initialAssigneeIds }
+                : {}),
+        });
         setIsSubmitting(false);
         if (ok) {
             showToast('success', 'Phiếu đã được cập nhật thành công!');
@@ -1133,14 +1179,49 @@ const WorkflowInstances: React.FC = () => {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        const ok = await deleteInstance(id);
-        setDeleteConfirmId(null);
-        if (ok) {
-            showToast('success', 'Phiếu đã được xóa!');
-            setExpandedId(null);
-        } else {
-            showToast('error', 'Xóa phiếu thất bại.');
+    const handleSubmitDraft = async () => {
+        if (!editingInstance || editingInstance.status !== WorkflowInstanceStatus.DRAFT || !editTitle.trim()) return;
+        if (!selectedFirstTaskNode || (requiresInitialAssignee && initialAssigneeIds.length === 0)) {
+            showToast('error', 'Cần chọn người xử lý bước đầu trước khi gửi phiếu.');
+            return;
+        }
+        if (selectedCustomFields.some(field => field.required && !editFormData[field.name])) {
+            showToast('error', 'Vui lòng điền đủ các trường bắt buộc trước khi gửi phiếu.');
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const saved = await updateInstance(editingInstance.id, {
+                title: editTitle.trim(),
+                formData: editFormData,
+                initialAssigneeUserIds: initialAssigneeIds,
+            });
+            const submitted = saved && await submitDraft(editingInstance.id, initialAssigneeIds);
+            if (!submitted) {
+                showToast('error', 'Không gửi được bản nháp. Vui lòng kiểm tra lại dữ liệu.');
+                return;
+            }
+            setEditingInstance(null);
+            showToast('success', 'Bản nháp đã được gửi vào quy trình xử lý.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteDraft = async () => {
+        if (!editingInstance || editingInstance.status !== WorkflowInstanceStatus.DRAFT) return;
+        if (!window.confirm(`Xóa bản nháp "${editingInstance.title}"?`)) return;
+        setIsSubmitting(true);
+        try {
+            const deleted = await deleteDraft(editingInstance.id);
+            if (!deleted) {
+                showToast('error', 'Không xóa được bản nháp.');
+                return;
+            }
+            setEditingInstance(null);
+            showToast('success', 'Đã xóa bản nháp.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -1215,7 +1296,16 @@ const WorkflowInstances: React.FC = () => {
         const firstTaskNodeId = startNode
             ? edges.find(edge => edge.templateId === instance.templateId && edge.sourceNodeId === startNode.id)?.targetNodeId
             : null;
-        return canUserActOnWorkflowStep({
+        const hasAssignedAction = user.role === Role.ADMIN
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'assigned',
+                scopeId: user.id,
+            })
+            || canPerform(user, 'workflow.instance.act_assigned', {
+                scopeType: 'global',
+                scopeId: '*',
+            });
+        return hasAssignedAction && canUserActOnWorkflowStep({
             instance,
             node: currentNode,
             user,
@@ -1606,7 +1696,9 @@ const WorkflowInstances: React.FC = () => {
                                     return (
                                         <div
                                             key={instance.id}
-                                            onClick={() => setExpandedId(instance.id)}
+                                            onClick={() => instance.status === WorkflowInstanceStatus.DRAFT
+                                                ? void openEditModal(instance)
+                                                : setExpandedId(instance.id)}
                                             className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border bg-white hover:bg-slate-50/50 dark:bg-[#1e1f22] dark:hover:bg-[#2e3035] border-slate-200 dark:border-slate-800 transition-all shadow-sm hover:shadow duration-200 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 select-none active:scale-[0.99]"
                                         >
                                             <div className="min-w-0 flex-1">
@@ -1983,6 +2075,13 @@ const WorkflowInstances: React.FC = () => {
                         <div className="flex gap-4 mt-8 border-t border-slate-100 dark:border-slate-700/50 pt-5">
                             <button onClick={() => setShowCreateModal(false)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
                             <button
+                                onClick={handleSaveDraft}
+                                disabled={isSubmitting || !selectedTemplateId || !newTitle.trim()}
+                                className="flex-1 px-5 py-3 border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 rounded-xl font-bold text-base hover:bg-amber-100 dark:hover:bg-amber-950/50 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                <Save size={15} /> Lưu nháp
+                            </button>
+                            <button
                                 onClick={handleCreate}
                                 disabled={isSubmitting || !selectedTemplateId || !newTitle.trim() || !selectedFirstTaskNode || (requiresInitialAssignee && initialAssigneeIds.length === 0) || selectedCustomFields.some(f => f.required && !customFormData[f.name])}
                                 className="flex-1 px-5 py-3 bg-accent text-white rounded-xl font-bold text-base hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
@@ -2049,9 +2148,56 @@ const WorkflowInstances: React.FC = () => {
                                         rows={2}
                                     />
                                 </div>
+
+                                {editingInstance.status === WorkflowInstanceStatus.DRAFT && selectedTemplateId && (
+                                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                                        <label className="block text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                                            Người xử lý bước đầu
+                                        </label>
+                                        {selectedFirstTaskNode && initialAssigneeCandidates.length > 0 ? (
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                {initialAssigneeCandidates.map(candidate => {
+                                                    const checked = initialAssigneeIds.includes(candidate.id);
+                                                    return (
+                                                        <button
+                                                            type="button"
+                                                            key={candidate.id}
+                                                            onClick={() => toggleInitialAssignee(candidate.id)}
+                                                            className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${checked
+                                                                ? 'border-indigo-500 bg-indigo-50 text-indigo-800 dark:border-indigo-400 dark:bg-indigo-950/40 dark:text-indigo-100'
+                                                                : 'border-slate-200 bg-white/60 text-slate-700 hover:border-indigo-200 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-200'
+                                                                }`}
+                                                        >
+                                                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${checked ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 dark:border-slate-500'}`}>
+                                                                {checked && <CheckCircle size={13} />}
+                                                            </span>
+                                                            <span className="min-w-0">
+                                                                <span className="block truncate text-sm font-black">{candidate.name}</span>
+                                                                <span className="block truncate text-[11px] text-slate-400">{candidate.sublabel}</span>
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+                                                Mẫu quy trình chưa cấu hình người nhận hợp lệ cho bước đầu.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex gap-4 mt-8 border-t border-slate-100 dark:border-slate-700/50 pt-5">
                                 <button onClick={() => setEditingInstance(null)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
+                                {editingInstance.status === WorkflowInstanceStatus.DRAFT && (
+                                    <button
+                                        onClick={handleDeleteDraft}
+                                        disabled={isSubmitting}
+                                        className="px-5 py-3 border border-red-200 text-red-600 dark:border-red-800 dark:text-red-300 rounded-xl font-bold text-base hover:bg-red-50 dark:hover:bg-red-950/30 transition disabled:opacity-50"
+                                    >
+                                        <Trash2 size={15} />
+                                    </button>
+                                )}
                                 <button
                                     onClick={handleEditSave}
                                     disabled={isSubmitting || !editTitle.trim()}
@@ -2063,25 +2209,20 @@ const WorkflowInstances: React.FC = () => {
                                         <><Save size={14} /> Lưu thay đổi</>
                                     )}
                                 </button>
+                                {editingInstance.status === WorkflowInstanceStatus.DRAFT && (
+                                    <button
+                                        onClick={handleSubmitDraft}
+                                        disabled={isSubmitting || !editTitle.trim() || !selectedFirstTaskNode || (requiresInitialAssignee && initialAssigneeIds.length === 0) || selectedCustomFields.some(field => field.required && !editFormData[field.name])}
+                                        className="flex-1 px-4 py-2.5 bg-accent text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                                    >
+                                        <Send size={14} /> Gửi xử lý
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
                 );
             })()}
-
-            {/* Shared Delete Confirm Modal */}
-            {deleteConfirmId && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl animate-scale-in">
-                        <h2 className="text-lg font-bold text-red-600 mb-2">Xóa phiếu?</h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Phiếu và tất cả lịch sử xử lý sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác.</p>
-                        <div className="flex gap-3">
-                            <button onClick={() => setDeleteConfirmId(null)} className="flex-1 px-5 py-3 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-base hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>
-                            <button onClick={() => handleDelete(deleteConfirmId)} className="flex-1 px-4 py-2.5 bg-red-500 text-white rounded-xl font-bold text-sm hover:bg-red-650 transition shadow-lg shadow-red-500/20">Xóa</button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Shared Cancel Confirm Modal */}
             {cancelConfirmId && (

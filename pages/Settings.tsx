@@ -28,6 +28,7 @@ import SettingsAiLearning from './settings/SettingsAiLearning';
 import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
+import SettingsRoleTemplates from './settings/SettingsRoleTemplates';
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
@@ -47,7 +48,7 @@ import {
   formatInventoryItemDeleteBlockers,
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
-import { canAccessSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
+import { canAccessSettingsFeature, canManageSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
 import { canPerform } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { canAccessRoute } from '../lib/routeAccess';
@@ -116,10 +117,12 @@ const Settings: React.FC = () => {
     saveSignature, deleteSignature, loadModuleData
   } = useApp();
   const isSettingsAdmin = currentUser.role === Role.ADMIN;
-  const canViewPermissionHealth = canPerform(currentUser, 'system.settings.manage');
+  const canViewPermissionHealth = canAccessSettingsFeature(currentUser, 'permission-health');
+  const canManageBusinessRoles = canPerform(currentUser, 'system.authorization.manage_roles');
   const hrmSharedCatalogCapabilities = getHrmSharedCatalogCapabilities(currentUser);
   const canViewHrmSharedCatalog = canAccessRoute(currentUser, '/settings/hrm-shared-catalog');
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser)
+    || canManageBusinessRoles
     || canViewHrmSharedCatalog;
   const canOpenSettingsFeature = (featureId: SettingsFeatureId) => canAccessSettingsFeature(currentUser, featureId);
   useModuleData('admin', hasSettingsManagementAccess);
@@ -142,7 +145,9 @@ const Settings: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState(
-    location.pathname === '/settings/permission-health'
+    location.pathname === '/settings/role-templates'
+      ? 'role-templates'
+      : location.pathname === '/settings/permission-health'
       ? 'permission-health'
       : location.pathname === '/settings/hrm-shared-catalog'
         ? 'hrm-master-data'
@@ -1105,13 +1110,16 @@ const Settings: React.FC = () => {
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown },
     { id: 'hrm-master-data', label: 'Danh mục dùng chung HRM', icon: GitBranch },
     { id: 'users', label: 'Người dùng', icon: Users },
-    { id: 'alerts', label: 'Cảnh báo', icon: BellRing, adminOnly: true },
+    { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
+    { id: 'role-templates', label: 'Mẫu quyền', icon: ShieldCheck, rolesOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
-  ].filter(tab => tab.healthOnly
+  ].filter(tab => tab.rolesOnly
+    ? canManageBusinessRoles
+    : tab.healthOnly
     ? canViewPermissionHealth
     : tab.adminOnly
       ? isSettingsAdmin
@@ -1119,9 +1127,15 @@ const Settings: React.FC = () => {
         ? canViewHrmSharedCatalog
         : canOpenSettingsFeature(tab.id as SettingsFeatureId));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
+  const activeFeatureReadOnly = activeSettingsTab !== 'account'
+    && activeSettingsTab !== 'release-notes'
+    && activeSettingsTab !== 'role-templates'
+    && !canManageSettingsFeature(currentUser, activeSettingsTab as Exclude<SettingsFeatureId, 'account'>);
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
-    if (tabId === 'permission-health') {
+    if (tabId === 'role-templates') {
+      navigate('/settings/role-templates');
+    } else if (tabId === 'permission-health') {
       navigate('/settings/permission-health');
     } else if (tabId === 'hrm-master-data') {
       navigate('/settings/hrm-shared-catalog');
@@ -1146,7 +1160,9 @@ const Settings: React.FC = () => {
   }, [activeTab, currentUser.role]);
 
   useEffect(() => {
-    if (location.pathname === '/settings/permission-health') {
+    if (location.pathname === '/settings/role-templates') {
+      setActiveTab('role-templates');
+    } else if (location.pathname === '/settings/permission-health') {
       setActiveTab('permission-health');
     } else if (location.pathname === '/settings/hrm-shared-catalog') {
       setActiveTab('hrm-master-data');
@@ -1209,6 +1225,12 @@ const Settings: React.FC = () => {
 
         {/* Content Area */}
         <div className="flex-1">
+          {activeFeatureReadOnly && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Bạn đang có quyền Xem. Các thao tác thay đổi ở mục này đã được khóa.
+            </div>
+          )}
+          <fieldset disabled={activeFeatureReadOnly} aria-label="Nội dung mục Cài đặt">
           {activeSettingsTab === 'general' && (
             <SettingsGeneral
               appName={appName} setAppName={setAppName}
@@ -2110,6 +2132,10 @@ const Settings: React.FC = () => {
             <SettingsPermissionHealth />
           )}
 
+          {activeSettingsTab === 'role-templates' && canManageBusinessRoles && (
+            <SettingsRoleTemplates />
+          )}
+
           {activeSettingsTab === 'account' && (
             <div className="space-y-6">
               <SettingsAccount
@@ -2263,6 +2289,7 @@ const Settings: React.FC = () => {
           {activeSettingsTab === 'maintenance' && (
             <SettingsMaintenance triggerAction={triggerAction} clearAllData={clearAllData} />
           )}
+          </fieldset>
         </div>
       </div>
 
@@ -2342,11 +2369,11 @@ const Settings: React.FC = () => {
       )}
 
           {activeSettingsTab === 'chibi-bot' && (
-            <SettingsChibiBot />
+            <fieldset disabled={activeFeatureReadOnly}><SettingsChibiBot /></fieldset>
           )}
 
           {activeSettingsTab === 'ai-learning' && (
-            <SettingsAiLearning actorId={currentUser.id} />
+            <fieldset disabled={activeFeatureReadOnly}><SettingsAiLearning actorId={currentUser.id} /></fieldset>
           )}
     </div>
   );

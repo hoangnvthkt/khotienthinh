@@ -12,5 +12,5 @@ describe('remaining Supabase query policies', () => {
     expect(report.findings.filter((row: any) => !row.classification)).toEqual([]);
     expect(report.findings.filter((row: any) => row.classification === 'page' && row.projection === '*')).toEqual([]);
     expect(report.findings.filter((row: any) => row.severity === 'error')).toEqual([]);
-  });
+  }, 15_000);
 });

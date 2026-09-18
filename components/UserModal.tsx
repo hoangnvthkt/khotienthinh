@@ -5,11 +5,12 @@ import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import AuthorizationEditor from './permissions/AuthorizationEditor';
-import { listUserPermissionGrants, updateUserAuthorizationV2 } from '../lib/permissions/permissionAdminService';
+import { changeUserAccountRoleV2, listUserPermissionGrants, updateUserAuthorizationV2 } from '../lib/permissions/permissionAdminService';
 import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
 import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
 import { PermissionAdminCatalog } from '../lib/permissions/permissionTypes';
 import { validateAuthorizationUpdate } from '../lib/permissions/authorizationUpdateValidation';
+import { saveAuthorizationAndRefresh } from '../lib/permissions/authorizationSaveOutcome';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -26,10 +27,15 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
   const [formData, setFormData] = useState<Partial<User>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [savedUserId, setSavedUserId] = useState<string | null>(null);
   const [permissionGrants, setPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [authorizationReason, setAuthorizationReason] = useState('');
   const [authorizationCatalog, setAuthorizationCatalog] = useState<PermissionAdminCatalog | null>(null);
+
+  useEffect(() => {
+    setSavedUserId(null);
+  }, [isOpen, userToEdit?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +76,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     || formData.role === Role.WAREHOUSE_KEEPER
     || permissionGrants.some(grant => grant.isActive !== false && grant.permissionCode.startsWith('wms.'));
 
-  const authorizationChanged = useMemo(() => {
+  const authorizationChanges = useMemo(() => {
     if (!userToEdit) return false;
     const normalizeValue = (value: unknown) => value == null ? '' : String(value).trim();
     const beforeProfile = [
@@ -78,14 +84,12 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
       userToEdit.phone,
       userToEdit.avatar,
       userToEdit.managerId,
-      userToEdit.assignedWarehouseId,
     ].map(normalizeValue);
     const afterProfile = [
       formData.name,
       formData.phone,
       formData.avatar,
       formData.managerId,
-      hasWmsAccess ? formData.assignedWarehouseId : '',
     ].map(normalizeValue);
     const grantKeys = (grants: readonly UserPermissionGrant[]) => grants
       .filter(grant => grant.isActive !== false)
@@ -96,9 +100,20 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
         grant.expiresAt || '',
       ].join('::'))
       .sort();
-    return JSON.stringify(beforeProfile) !== JSON.stringify(afterProfile)
-      || JSON.stringify(grantKeys(originalPermissionGrants)) !== JSON.stringify(grantKeys(permissionGrants));
-  }, [formData, hasWmsAccess, originalPermissionGrants, permissionGrants, userToEdit]);
+    const roleChanged = formData.role !== userToEdit.role;
+    const warehouseChanged = formData.role === Role.WAREHOUSE_KEEPER
+      && normalizeValue(formData.assignedWarehouseId || '*') !== normalizeValue(userToEdit.assignedWarehouseId || '*');
+    return {
+      accountRoleTransitionChanged: roleChanged || warehouseChanged,
+      otherAuthorizationChanged: JSON.stringify(beforeProfile) !== JSON.stringify(afterProfile)
+        || JSON.stringify(grantKeys(originalPermissionGrants)) !== JSON.stringify(grantKeys(permissionGrants)),
+    };
+  }, [formData, originalPermissionGrants, permissionGrants, userToEdit]);
+  const authorizationChanged = Boolean(userToEdit && (
+    authorizationChanges && (
+      authorizationChanges.accountRoleTransitionChanged || authorizationChanges.otherAuthorizationChanged
+    )
+  ));
 
   const authorizationIssues = useMemo(() => authorizationCatalog && userToEdit
     ? validateAuthorizationUpdate({
@@ -111,6 +126,29 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     : [], [authorizationCatalog, authorizationChanged, authorizationReason, originalPermissionGrants, permissionGrants, userToEdit]);
 
   if (!isOpen) return null;
+
+  if (savedUserId) return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4">
+      <div role="alert" className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold">Đã lưu tài khoản — chưa tải lại được quyền</h2>
+        <p>Thay đổi đã được ghi nhận. Không cần lưu lại. Tải lại dữ liệu trước khi chỉnh sửa tiếp.</p>
+        <div className="flex gap-3">
+          <button type="button" disabled={saving} onClick={onClose} className="rounded-lg border px-4 py-2">Đóng</button>
+          <button type="button" disabled={saving} className="rounded-lg bg-accent px-4 py-2 text-white" onClick={async () => {
+            setSaving(true);
+            try {
+              await onAuthorizationSaved(savedUserId);
+              onClose();
+            } catch {
+              toast.error('Chưa tải lại được quyền', 'Tài khoản đã lưu. Kiểm tra kết nối rồi thử tải lại, không cần gửi lại thay đổi.');
+            } finally {
+              setSaving(false);
+            }
+          }}>{saving ? 'Đang tải...' : 'Tải lại dữ liệu'}</button>
+        </div>
+      </div>
+    </div>
+  );
 
   const validate = () => {
     const nextErrors: Record<string, string> = {};
@@ -125,6 +163,11 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     const grantIssue = authorizationIssues.find(issue => issue.field !== 'reason');
     if (grantIssue) nextErrors.authorizationGrants = grantIssue.message;
     if (userToEdit && !authorizationChanged) nextErrors.authorizationChanged = 'Chưa có thay đổi để lưu';
+    if (userToEdit && authorizationChanges
+      && authorizationChanges.accountRoleTransitionChanged
+      && authorizationChanges.otherAuthorizationChanged) {
+      nextErrors.authorizationChanged = 'Hãy lưu thay đổi hồ sơ/quyền trước, sau đó đổi loại tài khoản trong một lần lưu riêng.';
+    }
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -147,7 +190,25 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             permissionGrants,
           });
         } else {
-          await updateUserAuthorizationV2({
+          if (authorizationChanges && authorizationChanges.accountRoleTransitionChanged) {
+            const outcome = await saveAuthorizationAndRefresh(() => changeUserAccountRoleV2({
+              userId: userToEdit.id,
+              role: formData.role || Role.EMPLOYEE,
+              warehouseId: formData.role === Role.WAREHOUSE_KEEPER
+                ? formData.assignedWarehouseId || '*'
+                : null,
+              reason: authorizationReason,
+              expectedUpdatedAt: userToEdit.updatedAt || '',
+            }), async receipt => { await onAuthorizationSaved(receipt.userId); });
+            if (outcome.status === 'saved_refresh_pending') {
+              setSavedUserId(outcome.receipt.userId);
+              return;
+            }
+            toast.success('Đã chuyển loại tài khoản', 'Vai trò và phạm vi kho đã được đồng bộ trong một giao dịch.');
+            onClose();
+            return;
+          }
+          const outcome = await saveAuthorizationAndRefresh(() => updateUserAuthorizationV2({
             userId: userToEdit.id,
             profile: {
               name: formData.name || '',
@@ -159,8 +220,11 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             grants: permissionGrants,
             reason: authorizationReason,
             expectedUpdatedAt: userToEdit.updatedAt || '',
-          });
-          await onAuthorizationSaved(userToEdit.id);
+          }), async receipt => { await onAuthorizationSaved(receipt.userId); });
+          if (outcome.status === 'saved_refresh_pending') {
+            setSavedUserId(outcome.receipt.userId);
+            return;
+          }
         }
         toast.success('Đã cập nhật tài khoản', 'Hồ sơ và direct grants đã được lưu trong một giao dịch.');
       } else {
@@ -259,7 +323,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             </label>}
             <label className="space-y-1">
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Briefcase size={12} className="mr-1" /> Vai trò hệ thống</span>
-              <select value={formData.role || Role.EMPLOYEE} onChange={e => setFormData({ ...formData, role: e.target.value as Role })} disabled={Boolean(userToEdit)} className={fieldClass}>
+              <select value={formData.role || Role.EMPLOYEE} onChange={e => setFormData({ ...formData, role: e.target.value as Role })} className={fieldClass}>
                 <option value={Role.ADMIN}>Quản trị viên</option><option value={Role.WAREHOUSE_KEEPER}>Tài khoản kho</option><option value={Role.EMPLOYEE}>Tài khoản thường</option>
               </select>
             </label>
@@ -272,8 +336,8 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             </label>
             <label className="space-y-1">
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Building size={12} className="mr-1" /> Kho phụ trách</span>
-              <select value={formData.assignedWarehouseId || ''} onChange={e => setFormData({ ...formData, assignedWarehouseId: e.target.value })} disabled={!hasWmsAccess} className={fieldClass}>
-                <option value="">Phòng vật tư — toàn bộ kho</option>{warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+              <select value={formData.role === Role.WAREHOUSE_KEEPER ? formData.assignedWarehouseId || '*' : ''} onChange={e => setFormData({ ...formData, assignedWarehouseId: e.target.value })} disabled={formData.role !== Role.WAREHOUSE_KEEPER} className={fieldClass}>
+                <option value="*">Toàn bộ kho (phải chọn rõ)</option>{warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
               </select>
             </label>
           </div>

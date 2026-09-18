@@ -35,7 +35,7 @@ import ProjectWorkflowCommentsPanel from './project/ProjectWorkflowCommentsPanel
 import ProjectWorkflowStartDialog from './project/ProjectWorkflowStartDialog';
 import MaterialIssuePanel from './project/MaterialIssuePanel';
 import { useReservedStock } from '../hooks/useReservedStock';
-import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
+import { canApproveMaterialRequest, canApproveWmsTransaction, canDeleteWmsMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -2554,10 +2554,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
     const canDeleteRequest = !!request
         && [RequestStatus.DRAFT, RequestStatus.PENDING, RequestStatus.REJECTED].includes(request.status)
-        && (!isProjectRequest || canDeleteProjectRequest)
         && (
-            isAdmin(user)
-            || (request.requesterId === user.id && (request.status === RequestStatus.DRAFT || request.status === RequestStatus.REJECTED))
+            isProjectRequest
+                ? canDeleteProjectRequest && (
+                    isAdmin(user)
+                    || (request.requesterId === user.id && (request.status === RequestStatus.DRAFT || request.status === RequestStatus.REJECTED))
+                )
+                : canDeleteWmsMaterialRequest(user, request)
         );
     const isDynamicReturnedDraft = !!request
         && request.status === RequestStatus.DRAFT

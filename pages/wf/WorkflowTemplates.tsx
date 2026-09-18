@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import { Role } from '../../types';
-import { usePermission } from '../../hooks/usePermission';
-import { canAccessRoute } from '../../lib/routeAccess';
 import {
     Plus, GitBranch, Settings2, Trash2, ToggleLeft, ToggleRight,
     Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2, Shield, Eye, X
@@ -17,12 +15,12 @@ import {
 } from '../../lib/workflowVisibility';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage } from '../../lib/apiError';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 const WorkflowTemplates: React.FC = () => {
     const navigate = useNavigate();
     const { templates, createTemplate, updateTemplate, deleteTemplate, instances, getTemplateNodes } = useWorkflow();
     const { user, users } = useApp();
-    const { canManage } = usePermission();
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -85,12 +83,17 @@ const WorkflowTemplates: React.FC = () => {
     };
 
     const isSystemAdmin = user.role === Role.ADMIN;
-    const canManageWorkflowTemplates = canManage('/wf/templates');
-    const canViewAllTemplates = canAccessRoute(user, '/wf/templates') || canManageWorkflowTemplates;
-    const canManageTemplate = (template: typeof templates[0]) =>
-        canManageWorkflowTemplates || Boolean(template.managers?.includes(user.id));
+    const canViewTemplates = isSystemAdmin
+        || canPerform(user, 'workflow.template.view', { scopeType: 'global', scopeId: '*' });
+    const canCreateWorkflowTemplates = isSystemAdmin
+        || canPerform(user, 'workflow.template.create', { scopeType: 'global', scopeId: '*' });
+    const canEditWorkflowTemplates = isSystemAdmin
+        || canPerform(user, 'workflow.template.edit', { scopeType: 'global', scopeId: '*' });
+    const canPublishWorkflowTemplates = isSystemAdmin
+        || canPerform(user, 'workflow.template.publish', { scopeType: 'global', scopeId: '*' });
+    const canManageTemplate = (_template: typeof templates[0]) => canEditWorkflowTemplates;
 
-    if (!canViewAllTemplates && !templates.some(t => t.managers?.includes(user.id))) {
+    if (!canViewTemplates) {
         return (
             <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
                 <ShieldAlert size={48} className="mb-4 opacity-20" />
@@ -100,9 +103,7 @@ const WorkflowTemplates: React.FC = () => {
         );
     }
 
-    // Assigned managers only see templates they manage. WF module admins can
-    // manage every template but only System Admin can create or delete one.
-    const visibleTemplates = (canViewAllTemplates ? templates : templates.filter(t => t.managers?.includes(user.id)))
+    const visibleTemplates = templates
         .filter(t => !isRequestModuleWorkflowTemplate(t))
         .filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t));
 
@@ -112,7 +113,7 @@ const WorkflowTemplates: React.FC = () => {
 
     const handleCreate = async () => {
         setCreateError('');
-        if (!canManageWorkflowTemplates) {
+        if (!canCreateWorkflowTemplates) {
             setCreateError('Tài khoản chưa có quyền quản trị Mẫu quy trình.');
             return;
         }
@@ -136,7 +137,7 @@ const WorkflowTemplates: React.FC = () => {
     };
 
     const handleToggleActive = async (t: typeof templates[0]) => {
-        if (!canManageTemplate(t)) return;
+        if (!canPublishWorkflowTemplates) return;
         await updateTemplate({ ...t, isActive: !t.isActive });
     };
 
@@ -184,7 +185,7 @@ const WorkflowTemplates: React.FC = () => {
                     </h1>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Thiết kế và quản lý các mẫu quy trình duyệt phiếu cho công ty.</p>
                 </div>
-                {canManageWorkflowTemplates && (
+                {canCreateWorkflowTemplates && (
                     <button
                         onClick={() => setShowCreateModal(true)}
                         className="flex items-center px-4 py-2.5 bg-accent text-white rounded-xl hover:bg-emerald-600 transition font-bold shadow-lg shadow-emerald-500/20"
@@ -266,7 +267,7 @@ const WorkflowTemplates: React.FC = () => {
                                     <span>{creator?.name || 'N/A'}</span>
                                 </div>
                                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                                    {canManageThisTemplate && (
+                                    {canPublishWorkflowTemplates && (
                                         <button
                                             onClick={() => handleToggleActive(t)}
                                             className={`p-1.5 rounded-lg transition ${t.isActive ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}

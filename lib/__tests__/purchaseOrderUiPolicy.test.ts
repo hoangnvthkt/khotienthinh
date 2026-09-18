@@ -76,6 +76,21 @@ const baseInput = (patch: Parameters<typeof getPurchaseOrderUiPolicy>[0]) => ({
 });
 
 describe('purchaseOrderUiPolicy', () => {
+  it('shows supplier return from its dedicated capability without restricted PO access', () => {
+    const policy = getPurchaseOrderUiPolicy(baseInput({
+      po: makePo({ status: 'delivered' }),
+      supplierReturnableQty: 10,
+      canRunRestrictedPoActions: false,
+      canReturnSupplier: true,
+    }));
+
+    expect([
+      policy.primaryAction?.id,
+      ...policy.secondaryActions.map(action => action.id),
+      ...policy.menuActions.map(action => action.id),
+    ]).toContain('supplier_return');
+  });
+
   it('uses ordinary order approval for single delivery and batch approval for multiple delivery', () => {
     const singleDraft = getPurchaseOrderUiPolicy(baseInput({
       po: packagePo({ status: 'draft', purchaseMode: 'single' }),

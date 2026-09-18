@@ -1,0 +1,162 @@
+{
+  "DIRECT:system.ai.manage": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: separate AI use, configuration, provider administration, and sensitive-data access before replacing this global shell."
+  },
+  "DIRECT:system.ai.view": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: confirm whether this is application visibility or permission to submit AI workloads and define the intended scope."
+  },
+  "DIRECT:system.analytics.manage": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: distinguish dataset administration, dashboard publishing, and export privileges before replacement."
+  },
+  "DIRECT:system.analytics.view": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: define which datasets and organizational scopes the actor may read."
+  },
+  "DIRECT:system.audit_trail.manage": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: audit retention/export/administration is sensitive and is not equivalent to audit-log visibility."
+  },
+  "DIRECT:system.audit_trail.view": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: define which audit domains and scopes are visible before replacing this shell."
+  },
+  "DIRECT:system.authorization.audit": {
+    "disposition": "retain",
+    "reason": "Canonical authorization-control capability; retain until the authorization owner explicitly approves a successor."
+  },
+  "DIRECT:system.authorization.manage_grants": {
+    "disposition": "retain",
+    "reason": "Canonical sensitive authorization-control capability with mandatory expiry; never infer a replacement from a module shell."
+  },
+  "DIRECT:system.authorization.manage_roles": {
+    "disposition": "retain",
+    "reason": "Canonical sensitive authorization-control capability with mandatory expiry; never infer a replacement from a module shell."
+  },
+  "DIRECT:system.authorization.manage_scopes": {
+    "disposition": "retain",
+    "reason": "Canonical authorization-control capability; retain until the authorization owner explicitly approves a successor."
+  },
+  "DIRECT:system.authorization.override": {
+    "disposition": "retain",
+    "reason": "Canonical sensitive break-glass capability with mandatory expiry; never remove through a legacy-shell batch."
+  },
+  "DIRECT:system.authorization.view": {
+    "disposition": "retain",
+    "reason": "Canonical verified authorization-control capability used to read the authorization console."
+  },
+  "DIRECT:system.chat.manage": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: distinguish channel moderation, membership administration, and platform configuration."
+  },
+  "DIRECT:system.chat.view": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: confirm application entry and conversation-membership semantics before removing this high-fanout shell."
+  },
+  "DIRECT:system.custom_dashboard.manage": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: separate dashboard authoring, publishing, sharing, and data-source administration."
+  },
+  "DIRECT:system.custom_dashboard.view": {
+    "disposition": "manual_review",
+    "reason": "Owner decision required: dashboard visibility must remain bounded by the underlying dataset scopes."
+  },
+  "DIRECT:system.da.manage": {
+    "disposition": "manual_review",
+    "reason": "Project owner decision required: map each actor to Project Room actions and project/site scope; a global replacement would widen access."
+  },
+  "DIRECT:system.da.view": {
+    "disposition": "manual_review",
+    "reason": "Project owner decision required: preserve project/site and Room membership boundaries before removing this high-fanout shell."
+  },
+  "DIRECT:system.ep.manage": {
+    "disposition": "manual_review",
+    "reason": "HR owner decision required: separate employee profile, organization, payroll, and sensitive personnel administration."
+  },
+  "DIRECT:system.ep.view": {
+    "disposition": "manual_review",
+    "reason": "HR owner decision required: define self, team, department, and organization visibility including sensitive fields."
+  },
+  "DIRECT:system.ex.manage": {
+    "disposition": "manual_review",
+    "reason": "Expense owner decision required: separate submit, review, approve, settle, and configuration actions by organizational scope."
+  },
+  "DIRECT:system.ex.view": {
+    "disposition": "manual_review",
+    "reason": "Expense owner decision required: define own, assigned, department, and organization visibility."
+  },
+  "DIRECT:system.hd.manage": {
+    "disposition": "manual_review",
+    "reason": "Contract owner decision required: map management to contract lifecycle actions and project/company scope."
+  },
+  "DIRECT:system.hd.view": {
+    "disposition": "manual_review",
+    "reason": "Contract owner decision required: define project/company and confidential-contract visibility."
+  },
+  "DIRECT:system.kb.manage": {
+    "disposition": "manual_review",
+    "reason": "Knowledge-base owner decision required: separate authoring, publishing, taxonomy, and membership administration."
+  },
+  "DIRECT:system.kb.view": {
+    "disposition": "manual_review",
+    "reason": "Knowledge-base owner decision required: visibility must follow article, space, and audience scope."
+  },
+  "DIRECT:system.procurement.manage": {
+    "disposition": "manual_review",
+    "reason": "Procurement owner decision required: separate sourcing, bid evaluation, approval, purchase-order, and supplier administration."
+  },
+  "DIRECT:system.procurement.view": {
+    "disposition": "manual_review",
+    "reason": "Procurement owner decision required: define project/company and confidential-commercial visibility."
+  },
+  "DIRECT:system.rq.manage": {
+    "disposition": "manual_review",
+    "reason": "Request owner decision required: separate template/category administration from instance submit, act, approve, and cancel privileges."
+  },
+  "DIRECT:system.rq.view": {
+    "disposition": "manual_review",
+    "reason": "Request owner decision required: define own, participant, assigned, department, and global instance visibility."
+  },
+  "DIRECT:system.settings.manage": {
+    "disposition": "manual_review",
+    "reason": "Platform owner decision required: this legacy non-direct capability spans unrelated settings and must be decomposed into explicit controls."
+  },
+  "DIRECT:system.settings.view": {
+    "disposition": "manual_review",
+    "reason": "Platform owner decision required: distinguish harmless settings visibility from access to security and integration configuration."
+  },
+  "DIRECT:system.storage.manage": {
+    "disposition": "manual_review",
+    "reason": "Storage owner decision required: separate object upload/delete, bucket administration, and retention controls by namespace."
+  },
+  "DIRECT:system.storage.view": {
+    "disposition": "manual_review",
+    "reason": "Storage owner decision required: object visibility must follow the owning business record and storage namespace."
+  },
+  "DIRECT:system.tender_ai.manage": {
+    "disposition": "manual_review",
+    "reason": "Tender owner decision required: separate tender workflow administration, AI operation, and sensitive document access."
+  },
+  "DIRECT:system.tender_ai.view": {
+    "disposition": "manual_review",
+    "reason": "Tender owner decision required: define tender membership, document visibility, and AI-result visibility."
+  },
+  "DIRECT:system.ts.manage": {
+    "disposition": "manual_review",
+    "reason": "Asset owner decision required: separate catalog, assignment, transfer, maintenance, stock, and disposal actions by scope."
+  },
+  "DIRECT:system.ts.view": {
+    "disposition": "manual_review",
+    "reason": "Asset owner decision required: define catalog, custody, location, project, and audit visibility."
+  },
+  "DIRECT:system.wf.manage": {
+    "disposition": "manual_review",
+    "reason": "Workflow owner decision required: separate template edit/publish from instance start, act, administer, cancel, and reopen actions."
+  },
+  "DIRECT:system.wf.view": {
+    "disposition": "manual_review",
+    "reason": "Workflow owner decision required: define template visibility and instance visibility for initiator, participant, assignee, and administrator."
+  }
+}

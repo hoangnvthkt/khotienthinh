@@ -4,6 +4,7 @@ import {
   PermissionCatalogAction,
   PermissionCatalogApplication,
   PermissionScopeType,
+  PermissionScope,
 } from './permissionTypes';
 
 export type ApplicationGrantState = 'unchecked' | 'checked' | 'indeterminate';
@@ -40,6 +41,7 @@ interface SelectApplicationInput extends ApplicationInput {
 
 interface RemoveApplicationInput extends ApplicationInput {
   grants: readonly UserPermissionGrant[];
+  scope?: PermissionScope;
 }
 
 interface TogglePermissionInput {
@@ -265,10 +267,22 @@ export const selectApplicationDefaultViews = ({
   return next;
 };
 
+export const getApplicationDirectScopes = ({ catalog, applicationCode, grants }: RemoveApplicationInput): Required<PermissionScope>[] => {
+  const codes = new Set(getApplicationActions(getApplication(catalog, applicationCode)).map(action => action.permissionCode));
+  const scopes = new Map<string, Required<PermissionScope>>();
+  for (const grant of grants) {
+    if (!codes.has(grant.permissionCode)) continue;
+    const scope = { scopeType: grant.scopeType || 'global', scopeId: grant.scopeId || '*' };
+    scopes.set(JSON.stringify([scope.scopeType, scope.scopeId]), scope);
+  }
+  return [...scopes.values()];
+};
+
 export const removeApplicationDirectGrants = ({
   catalog,
   applicationCode,
   grants,
+  scope,
 }: RemoveApplicationInput): {
   grants: UserPermissionGrant[];
   removed: UserPermissionGrant[];
@@ -278,9 +292,20 @@ export const removeApplicationDirectGrants = ({
   const actions = getApplicationActions(application);
   const applicationCodes = new Set(actions.map(action => action.permissionCode));
   const defaultCodes = new Set(actions.filter(action => action.isDefaultView).map(action => action.permissionCode));
-  const removed = grants.filter(grant => applicationCodes.has(grant.permissionCode));
+  const scopes = getApplicationDirectScopes({ catalog, applicationCode, grants });
+  if (!scope && scopes.length > 1) {
+    throw new ModuleGrantSelectionError('Chọn phạm vi cần gỡ; các phạm vi khác sẽ được giữ nguyên.', 'scope_required');
+  }
+  const selectedScope = scope || scopes[0];
+  if (selectedScope && (!selectedScope.scopeType || !selectedScope.scopeId?.trim())) {
+    throw new ModuleGrantSelectionError('Cần loại và mã phạm vi cụ thể để gỡ quyền.', 'scope_required');
+  }
+  const shouldRemove = (grant: UserPermissionGrant) => applicationCodes.has(grant.permissionCode)
+    && (grant.scopeType || 'global') === selectedScope?.scopeType
+    && (grant.scopeId || '*') === selectedScope?.scopeId;
+  const removed = grants.filter(shouldRemove);
   return {
-    grants: grants.filter(grant => !applicationCodes.has(grant.permissionCode)),
+    grants: grants.filter(grant => !shouldRemove(grant)),
     removed,
     needsConfirmation: removed.some(grant => !defaultCodes.has(grant.permissionCode)),
   };

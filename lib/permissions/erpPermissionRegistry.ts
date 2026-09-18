@@ -7,6 +7,7 @@ import {
 
 const GLOBAL_SCOPE: readonly PermissionScopeType[] = ['global'];
 const WMS_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse', 'own', 'assigned'];
+const WMS_WAREHOUSE_SCOPE: readonly PermissionScopeType[] = ['global', 'warehouse'];
 const HRM_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'direct_reports', 'org_unit', 'assigned'];
 const EXPENSE_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'department'];
 const WORKFLOW_SCOPE: readonly PermissionScopeType[] = ['global', 'own', 'assigned'];
@@ -85,6 +86,13 @@ const module = (
   actions: moduleActions,
 });
 
+const settingsModule = (code: string, label: string, featureId: string, sortOrder: number): PermissionModuleDefinition =>
+  module(`settings.${code}`, label, 'SETTINGS', [`/settings/${featureId}`], sortOrder,
+    actions(`settings.${code}`, 'SETTINGS', `/settings/${featureId}`, GLOBAL_SCOPE, [
+      ['view', 'Xem', 10],
+      ['manage', 'Quản lý', 20],
+    ]));
+
 const vehicleBookingAction = (
   action: string,
   label: string,
@@ -105,6 +113,28 @@ const vehicleBookingAction = (
 
 export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefinition[] = [
   {
+    code: 'settings',
+    label: 'Cài đặt',
+    description: 'Các mục cấu hình được cấp riêng theo nghiệp vụ.',
+    sortOrder: 25,
+    modules: [
+      settingsModule('general', 'Chung', 'general', 10),
+      settingsModule('warehouses', 'Kho bãi', 'warehouses', 20),
+      settingsModule('master_data', 'Dữ liệu gốc', 'master-data', 30),
+      settingsModule('g8_cost_norms', 'Định mức G8', 'g8-cost-norms', 40),
+      settingsModule('project_master_data', 'Danh mục DA', 'project-master-data', 50),
+      settingsModule('inspection_templates', 'Mẫu nghiệm thu', 'inspection-templates', 60),
+      settingsModule('work_groups', 'Nhóm làm việc', 'work-groups', 70),
+      settingsModule('loss_norms', 'Định mức hao hụt', 'loss-norms', 80),
+      settingsModule('users', 'Người dùng', 'users', 90),
+      settingsModule('alerts', 'Cảnh báo', 'alerts', 100),
+      settingsModule('permission_health', 'Permission health', 'permission-health', 110),
+      settingsModule('chibi_bot', 'Trợ lý ảo', 'chibi-bot', 120),
+      settingsModule('ai_learning', 'AI Learning', 'ai-learning', 130),
+      settingsModule('maintenance', 'Bảo trì', 'maintenance', 140),
+    ],
+  },
+  {
     code: 'wms',
     label: 'Kho vật tư',
     sortOrder: 30,
@@ -119,6 +149,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['approve', 'Duyệt', 30],
         ['export', 'Xuất kho', 40],
         ['receive', 'Nhận kho', 50],
+        ['delete', 'Xóa yêu cầu WMS', 60, ['global', 'warehouse']],
       ])),
       module('wms.transaction', 'Giao dịch kho', 'WMS', ['/operations', '/audit', '/reports', '/misa-export'], 30, actions('wms.transaction', 'WMS', '/operations', WMS_SCOPE, [
         ['view', 'Xem', 10],
@@ -126,6 +157,13 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['approve', 'Duyệt', 30],
         ['complete', 'Hoàn tất', 40],
         ['reverse', 'Hủy duyệt', 50, ['global', 'warehouse']],
+      ])),
+      module('wms.material_issue', 'Xuất cấp thi công', 'WMS', ['/operations'], 35, actions('wms.material_issue', 'WMS', '/operations', WMS_WAREHOUSE_SCOPE, [
+        ['settle', 'Quyết toán xuất cấp', 10],
+        ['reverse_settlement', 'Hoàn tác quyết toán', 20],
+      ])),
+      module('wms.purchase_order', 'Hoàn trả nhà cung cấp', 'WMS', ['/operations'], 37, actions('wms.purchase_order', 'WMS', '/operations', WMS_WAREHOUSE_SCOPE, [
+        ['return_supplier', 'Trả hàng nhà cung cấp', 10],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10],
@@ -219,6 +257,11 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem', 10],
         ['create', 'Tạo', 20],
         ['act_assigned', 'Xử lý được giao', 30],
+        ['edit_own_draft', 'Sửa bản nháp của mình', 40, ['own']],
+        ['delete_own_draft', 'Xóa bản nháp của mình', 50, ['own']],
+        ['cancel', 'Hủy phiên quy trình', 60, ['global']],
+        ['reopen', 'Mở lại phiên quy trình', 70, ['global']],
+        ['administer', 'Quản trị phiên quy trình', 80, ['global']],
       ])),
       module('workflow.template', 'Mẫu quy trình', 'WF', ['/wf/templates', '/wf/builder/:id'], 20, actions('workflow.template', 'WF', '/wf/templates', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
@@ -311,8 +354,9 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       ])),
       module('asset.assignment', 'Cấp phát tài sản', 'TS', ['/ts/assignment'], 20, actions('asset.assignment', 'TS', '/ts/assignment', ASSET_SCOPE, [
         ['view', 'Xem', 10],
-        ['create', 'Tạo', 20],
-        ['approve', 'Duyệt', 30],
+        ['assign', 'Cấp phát', 20],
+        ['return', 'Thu hồi', 30],
+        ['transfer', 'Luân chuyển', 40],
       ])),
       module('asset.maintenance', 'Bảo trì tài sản', 'TS', ['/ts/maintenance'], 30, actions('asset.maintenance', 'TS', '/ts/maintenance', ASSET_SCOPE, [
         ['view', 'Xem', 10],

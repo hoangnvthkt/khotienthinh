@@ -85,6 +85,14 @@ begin
       true, v_actor_id, now(), now() + interval '1 day', 'rollback smoke'
     ),
     (
+      v_actor_id, 'wms.transaction.approve', 'warehouse', v_warehouse_id,
+      true, v_actor_id, now(), now() + interval '1 day', 'rollback smoke approval'
+    ),
+    (
+      v_actor_id, 'wms.transaction.complete', 'warehouse', v_warehouse_id,
+      true, v_actor_id, now(), now() + interval '1 day', 'rollback smoke completion'
+    ),
+    (
       v_wrong_actor_id, 'wms.transaction.reverse', 'warehouse', v_other_warehouse_id,
       true, v_actor_id, now(), now() + interval '1 day', 'rollback smoke wrong scope'
     );

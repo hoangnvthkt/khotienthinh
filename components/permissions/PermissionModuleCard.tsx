@@ -30,7 +30,7 @@ interface PermissionModuleCardProps {
   onCancelRemoval: () => void;
 }
 
-const SCOPE_LABELS: Record<PermissionScopeType, string> = {
+export const SCOPE_LABELS: Record<PermissionScopeType, string> = {
   global: 'Toàn công ty',
   own: 'Chính mình',
   assigned: 'Được phân công',
@@ -73,7 +73,10 @@ const ActionRow: React.FC<{
   onToggle: PermissionModuleCardProps['onToggleAction'];
 }> = ({ action, grants, inheritedSources, disabled, onToggle }) => {
   const directGrant = activeGrantFor(grants, action.permissionCode);
-  const inherited = inheritedSources.find(source => source.permissionCode === action.permissionCode);
+  const matchingSources = inheritedSources.filter(source => source.permissionCode === action.permissionCode
+    && (!source.startsAt || Date.parse(source.startsAt) <= Date.now())
+    && (!source.expiresAt || Date.parse(source.expiresAt) > Date.now()));
+  const inherited = matchingSources[0];
   const initialScope = directGrant?.scopeType || action.defaultScopeType || action.scopeTypes[0] || 'global';
   const [scopeType, setScopeType] = useState<PermissionScopeType>(initialScope);
   const [scopeId, setScopeId] = useState(directGrant?.scopeId === '*' ? '' : directGrant?.scopeId || '');
@@ -116,9 +119,14 @@ const ActionRow: React.FC<{
         )}
       </div>
 
-      {inherited && (
-        <p className="mt-1 text-[11px] font-semibold text-slate-500">Kế thừa từ {sourceLabel(inherited)}</p>
-      )}
+      {directGrant && <p className="mt-1 text-[11px] font-semibold text-blue-700">
+        Cấp trực tiếp · {SCOPE_LABELS[directGrant.scopeType || 'global']} · {directGrant.scopeId || '*'}
+      </p>}
+      {matchingSources.map((source, index) => (
+        <p key={`${source.sourceType}-${source.sourceCode}-${source.scopeType}-${source.scopeId}-${index}`} className="mt-1 text-[11px] font-semibold text-slate-500">
+          Kế thừa từ {sourceLabel(source)} · {SCOPE_LABELS[source.scopeType as PermissionScopeType] || source.scopeType} · {source.scopeId}
+        </p>
+      ))}
 
       {action.directGrantAllowed && !inherited && (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -163,6 +171,18 @@ const ActionRow: React.FC<{
       )}
     </div>
   );
+};
+
+// Each stored tuple has its own control and stable identity. Removing one scope
+// must not reuse component state initialized for a different scope.
+const ScopedActionRows: React.FC<React.ComponentProps<typeof ActionRow>> = props => {
+  const direct = props.grants.filter(grant => grant.permissionCode === props.action.permissionCode
+    && grant.isActive !== false && (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now()));
+  if (!direct.length) return <ActionRow key="unassigned" {...props} />;
+  return <>{direct.map(grant => <ActionRow
+    key={`${grant.permissionCode}-${grant.scopeType}-${grant.scopeId}-${grant.expiresAt || ''}`}
+    {...props} grants={[grant]}
+  />)}</>;
 };
 
 const PermissionModuleCard: React.FC<PermissionModuleCardProps> = ({
@@ -285,7 +305,7 @@ const PermissionModuleCard: React.FC<PermissionModuleCardProps> = ({
                   </div>
                   <div className="mt-2 space-y-2">
                     {defaultActions.map(action => (
-                      <ActionRow
+                      <ScopedActionRows
                         key={action.permissionCode}
                         action={action}
                         grants={grants}
@@ -295,7 +315,7 @@ const PermissionModuleCard: React.FC<PermissionModuleCardProps> = ({
                       />
                     ))}
                     {advancedExpanded && advancedActions.map(action => (
-                      <ActionRow
+                      <ScopedActionRows
                         key={action.permissionCode}
                         action={action}
                         grants={grants}

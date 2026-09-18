@@ -1,0 +1,498 @@
+# Task 12.4.2 — Rollout log
+
+Handoff mới nhất cho phiên làm việc kế tiếp: `authorization-v2-task12-4-2-handoff-2026-09-17.md` (chốt sau E34, Git/Cloud/CI đã đối soát).
+
+## Khởi động — 2026-09-14
+
+- Branch `feature/authorization-v2-task12-4-2`, worktree riêng từ `origin/main` tại `abc35de` sau fetch.
+- Cloud main `ftciqmqhmfvjtwoycswe`, xác minh linked ref; dùng `.env` hiện có. Chỉ read-only Cloud ở checkpoint này.
+- Baseline: 391 files / 1.862 tests pass (Vitest, 8.08s). Không dùng kết quả này để đánh dấu nghiệm thu release.
+- Inventory tại 08:20:54 UTC: 56 active, 3 disabled; nguồn grant/template/policy tổng hợp trong `authorization-v2-task12-4-2-inventory.json`. Không xuất tên/email hoặc dữ liệu nghiệp vụ.
+
+## A0 — Đối soát ledger
+
+Sáu migration đã apply ngày 12/09 còn thiếu trên main. Đã đối chiếu từng statement remote theo đúng thứ tự với file gốc worktree `task-participant-web-push`: toàn bộ 111 statements khớp nguyên văn, phần dư chỉ là dấu kết thúc statement/whitespace. Bản đưa vào branch mới byte-identical với source gốc; không replay SQL, không sửa history Cloud, không mở notification gate.
+
+| File | Statements | SHA-256 source |
+|---|---:|---|
+| 20260912044730_work_notification_preview_recipients.sql | 8 | 06ec61a4118b04682148aaab466f808e0944d2a7546684e9090566e00c86fe6d |
+| 20260912045358_workflow_notification_outbox.sql | 36 | bbf9d177e4085bfc480127eeccbabe8694dd926cc1dc4051c4c0a8a0b0f7061f |
+| 20260912045733_workflow_notification_commands.sql | 33 | 193d00f589e77121646997df583d728bd1362c7bdd7a6b60c4629c45b1eeea06 |
+| 20260912050458_request_participant_notifications.sql | 11 | 5cd6dbcd7b683d3197a3b977f65be9ab6410f3109ff9231cc6d2b428be138639 |
+| 20260912050744_task_notification_deadline_reminders.sql | 20 | d800ef5da6377a147d2b057ea00763c95f8ab225fa5ef46948b46b2063d8e719 |
+| 20260912052011_task_notification_source_guards.sql | 3 | e93c51546e09428dc09460a270699363c23dd9e6af91700fadcf520e6b4295a7 |
+
+Allowlist cũng bổ sung migration `20260914075111_request_discussion_rpc_permissions.sql` vốn đã nằm trong main và remote ledger nhưng bị thiếu trong current.json. Migration baseline sau đối soát: **52 active / 402 archived**, pass.
+
+## Trạng thái
+
+- A: đang thực hiện access-map/coverage và persona inventory; A0 đã xác minh source và ledger.
+- B–H: chưa triển khai. Không có migration phân quyền mới, không có thay đổi quyền tài khoản thật, chưa bắt đầu observation.
+- Task 13: blocked cho tới khi Task 12.4.2 và observation gate đạt.
+
+## A1 — Inventory và access-map
+
+- Đã lưu query read-only tái chạy được, inventory Cloud tổng hợp, access-map cho 18 mục Settings (gồm tab thực, account self-service và org-chart metadata lệch), danh sách 87 submodule registry/route/action/scope.
+- Mapping ghi rõ bảng/API owner, các capability dự kiến và quyền dùng chung với WMS/Project/HR; source chưa có phép thay thế tương đương được giữ/manual review, không auto-revoke theo tên.
+- Policy `loss_norms_all` vẫn ALL true sau active-account gate; các bảng dùng chung còn quyền read rộng hoặc write admin-only. B phải xử lý enforcement, không chỉ hiện thêm lựa chọn catalog.
+- Scope bug được chứng minh ở D: removeApplicationDirectGrants không lọc scope; ActionRow chỉ hiện grant và inherited source đầu tiên. Ưu tiên sửa tiểu-checkpoint D1 này trước batch dữ liệu, độc lập với migration Settings B. Đây là thay đổi thứ tự triển khai; B/C và phần D còn lại vẫn chưa đạt exit.
+
+## D1 — Đã kiểm thử editor, chưa release
+
+- Test RED: 5/6 ca scope thất bại đúng vì gỡ chéo scope; component test nhiều nguồn cũng fail do chỉ hiện grant/source đầu.
+- Sửa: chọn rõ phạm vi khi module có nhiều scope, giữ scope khác/nguồn ẩn; mỗi direct tuple có control ổn định; hiển thị tất cả nguồn kế thừa còn hiệu lực; reload làm mất hiệu lực preview cũ.
+- Targeted GREEN: 4 files / 26 tests; TypeScript pass, production build pass (chunk-size warning hiện hữu).
+- Playwright Chromium: 3/3 pass — gỡ kho A giữ B/global/ROLE C; gỡ từng row liên tiếp đúng tuple; reload hủy confirmation cũ. Playwright ban đầu thiếu browser, đã cài headless shell; test dùng click rồi kiểm draft vì row biến mất sau khi bỏ chọn, không chờ checkbox đã unmount.
+- Đây là kiểm editor với dữ liệu giả, không phải persona production hay kiểm RLS. Không có Cloud mutation cho D1. Phần receipt/refresh sau lưu và dẫn tới owner của nguồn thuộc D còn lại.
+
+## E1 — Bỏ redirect legacy, chưa release
+
+- App.tsx không còn dùng allowedSubModules để chọn landing khi route bị từ chối. Chỉ quay về tổng quan Dự án nếu capability hiện hành cho phép; nếu không về Home. ADMIN role đơn lẻ và quyền hết hạn không mở landing.
+- Scanner runtime mở rộng tới App/root, context và Edge Functions; mapper/type legacy còn giữ được allowlist riêng, không cho phép làm quyết định quyền.
+- RED: 5 ca thất bại trước sửa; GREEN targeted: 4 files / 35 tests. Hồi quy sau sửa: 393 files / 1.873 tests pass; TypeScript pass; baseline 52 active / 402 archived; audit/check Supabase queries đều 0 findings; git diff --check pass.
+- Chỉ hoàn tất tiểu-checkpoint redirect/scanner, không thay thế nghiệm thu toàn bộ menu/route/API E. Settings B, account transition C, receipt/refresh D, surface API coverage E và F–H vẫn đang chờ triển khai.
+
+## D2a — Tách trạng thái lưu khỏi tải lại
+
+- UserModal phân biệt mutation thất bại với mutation có receipt nhưng refresh thất bại. Trường hợp thứ hai khóa form sửa và hiện “Đã lưu tài khoản — chưa tải lại được quyền”; nút tải lại chỉ gọi read-refresh, không gửi mutation lần hai.
+- Receipt target được dùng để refresh. Trạng thái chờ không bị xóa chỉ vì parent thay object của cùng tài khoản. Đóng/mở hoặc chuyển tài khoản mới reset trạng thái.
+- RED đã tái hiện lỗi network sau write bị ném như lỗi save; GREEN 3 tests cho write reject, refresh reject và thứ tự write/read đúng target. Hồi quy 394 files / 1.876 tests pass; TypeScript/build pass (cảnh báo chunk-size hiện hữu).
+- Chưa nghiệm thu browser lỗi mạng trên UserModal thật, so version/count của snapshot với receipt, cross-session/offline refresh. Các mục này và B/C/F–H vẫn chưa hoàn tất; không diễn giải D2a là toàn bộ D đã đạt.
+
+## B1 — Capability Cài đặt chi tiết, chờ apply Cloud
+
+- Bổ sung 14 phân hệ Cài đặt với cặp Xem/Quản lý; gói Xem mặc định chỉ gồm 8 mục vận hành thông thường. Người dùng, Cảnh báo, Permission health, AI Learning và Bảo trì không nằm trong gói; các quyền nhạy cảm không cho direct grant.
+- UI mở đúng tab theo capability; manage kéo theo view; `system.settings.manage` tiếp tục là nguồn cha. Tài khoản chỉ có Xem thấy cảnh báo read-only và các control native bị khóa.
+- Backend thêm helper theo JWT actor, mở bổ sung RLS cho caller Settings nhưng giữ nguyên caller WMS/Dự án. RPC binding kho, danh mục DA và nhóm làm việc dùng cùng capability. Policy `loss_norms_all = true` được thay bằng view/manage riêng. Branding `app_settings` vẫn cho active account đọc vì cần lúc bootstrap, chỉ khóa write.
+- TDD frontend: 5/5 ca RED trước sửa; GREEN 2 files / 23 tests. Migration và SQL smoke được chạy ghép trên Cloud main trong transaction rồi rollback: view không update được app_settings, manage update được, capability không lan feature, sensitive bundle bị loại. Post-rollback xác nhận 0 module/action/policy thử nghiệm còn lại.
+- Hồi quy trước commit: 395 files / 1.881 tests pass; TypeScript và production build pass (chunk warning hiện hữu); migration baseline 53 active / 402 archived; query audit/check 0 finding; dry-run chỉ liệt kê migration `20260914084622`.
+- Chưa apply migration hoặc cấp/gỡ quyền tài khoản thật tại thời điểm ghi mục này. Các mục nhạy cảm còn `declared` và role-only cho tới khi endpoint tương ứng được audit ở checkpoint tiếp theo.
+
+### B1 Cloud postflight
+
+- Migration `20260914084622` đã apply lên Cloud main. Postflight: 14 module, 28 action, 18 action cho direct grant, 8 default-view; `loss_norms_all` còn 0; không có `settings.*` grant nào được tự tạo.
+- SQL smoke standalone exit 0 và rollback. Security advisor không chỉ ra finding mới gắn với helper; performance advisor báo `multiple_permissive_policies` trên 23 bảng do giữ policy nghiệp vụ cũ và thêm nhánh Settings. Đây là debt cần hợp nhất policy, không phải bằng chứng mở rộng quyền ngoài các nhánh OR đã kiểm.
+
+## C1 — Chuyển loại tài khoản nguyên tử, chờ apply Cloud
+
+- Client command bắt buộc reason >=10, version hiện hành và phạm vi Thủ kho tường minh (`warehouse id` hoặc `*` cho toàn bộ kho); role khác không gửi kho cũ.
+- RPC khóa tuần tự toàn bộ transition, lock target, kiểm actor có cả manage_roles và manage_grants, chặn stale version/self-promotion, giữ trigger lịch sử application, kiểm kho active và bảo vệ admin cuối cùng.
+- Role `ADMIN` và assignment `SYSTEM_ADMIN` được tạo/thu hồi cùng transaction; các business role khác không bị chạm; receipt và audit cùng giao dịch. Quick-role cũ đã bỏ, UserModal là đường duy nhất và không cho trộn role transition với thay đổi hồ sơ/direct grant.
+- RED frontend 4/4 trước sửa; GREEN 2 files / 7 tests. Rehearsal Cloud rollback đạt: stale reject, keeper all-warehouse, promote + mirror, demote + revoke mirror, audit và last-admin guard. Sau rollback role counts giữ nguyên 1 Admin / 50 Employee / 5 Warehouse keeper.
+- Hồi quy trước commit: 396 files / 1.885 tests pass; TypeScript/build pass; baseline 54 active / 402 archived; query audit/check 0 finding; dry-run chỉ liệt kê migration `20260914090003`.
+
+### C1 Cloud postflight
+
+- Migration `20260914090003` đã apply lên Cloud main; RPC public tồn tại đúng một signature. SQL smoke standalone exit 0 và rollback.
+- Postflight sau smoke giữ nguyên 1 Admin / 50 Employee / 5 Warehouse keeper và 1 assignment SYSTEM_ADMIN active. Không role hoặc assignment thật nào bị đổi bởi smoke.
+
+## F1 — Manifest builder an toàn, chưa có batch được duyệt
+
+- Builder tạo manifest ổn định theo source ID, hash toàn bộ source của từng user và loại trùng source. Unknown mapping luôn `manual_review`; `system.authorization.*` mặc định retain; source hết hạn giữ nguyên expiry và không sinh replacement.
+- Tập source cần chuyển đổi (`candidateSourceIds`) được tách khỏi snapshot dùng để khóa cạnh tranh: manifest chỉ sinh item cho source được chọn nhưng `expectedSourceHash` vẫn bao phủ toàn bộ source của user. Vì vậy một thay đổi quyền ngoài batch cũng làm batch cũ bị từ chối thay vì ghi đè trạng thái mới.
+- Unit test manifest: `8/8` đạt, gồm cả trường hợp source ngoài batch thay đổi làm hash thay đổi, nhận hash chuẩn từ Cloud và giữ state cần cho restore.
+- Replacement khác scope được kiểm chặn khi mở own/cụ thể thành global. Không có quy tắc xóa theo tiền tố `system.*` hoặc gán HR rộng.
+- RED ban đầu: module chưa tồn tại; bộ GREEN sau đó được mở rộng tới 8 test cho retain, unknown, scope expansion, expiry, idempotency/hash và hợp đồng snapshot Cloud.
+- Migration command thêm snapshot/hash bao phủ direct grant, role/template, Project Room và Vioo Work Workspace. Preview chỉ dành cho actor có `system.authorization.manage_grants`.
+- Apply fail-closed với batch/mapping/version/hash, chặn `manual_review`, khóa user theo thứ tự, audit và refresh trong cùng transaction; retry cùng nội dung không nhân đôi. Mutation ở F hiện chỉ cho source `DIRECT`; role/Room/Workspace bị từ chối rõ ràng cho tới khi có command chuyên biệt đã kiểm tương đương.
+- Restore chỉ chạy khi toàn bộ post-source hash còn nguyên; source thay đổi ngoài batch làm restore dừng. Grant thay thế do batch tạo bị xóa và source cũ được phục hồi từ state đã chụp.
+- Cloud rehearsal trong một transaction và rollback đạt: preview, manual-review rejection, unsupported-source rejection, stale apply rejection, apply, idempotent replay, stale restore rejection, restore và restore replay. Dry-run chỉ liệt kê migration `20260914091341`; query audit 0 finding.
+- Hồi quy trước commit: 397 files / 1.893 tests pass; TypeScript và production build pass (chỉ còn chunk-size warning hiện hữu); baseline 55 active / 402 archived; query baseline/check 0 finding.
+- Chưa tạo/apply manifest có user ID thật và chưa thu hồi grant thật. Operator approval cho manifest cụ thể vẫn là điều kiện bắt buộc trước checkpoint G.
+
+### F1 Cloud postflight
+
+- Migration `20260914091341` đã apply lên Cloud main; ba RPC preview/apply/restore tồn tại đúng một signature mỗi RPC.
+- Reconciliation và restore smoke chạy standalone đều exit 0 và rollback. Postflight: `persistedBatches=0`, direct grant `system.*=417`, role active giữ nguyên 1 Admin / 50 Employee / 5 Warehouse keeper. Không có batch hay thay đổi quyền thật được lưu bởi bước cài command.
+
+## E2 — Request template surface parity
+
+- Audit Cloud tìm thấy `app_private.request_user_can_manage` vẫn đọc `role`, `admin_modules` và `admin_sub_modules`; đây là fallback làm checkbox V2 có thể không thu hồi được quyền sửa Mẫu yêu cầu.
+- Hợp đồng mới: `request.template.view` mở danh sách read-only; `/rq/templates/new` và `/rq/templates/:id`, các nút tạo/sửa/sao chép/ngừng áp dụng và command ghi đều yêu cầu `request.template.manage`.
+- Backend `request_user_can_manage`, template/version select và `list_request_templates` được chuyển sang canonical capability. RED Cloud xác nhận legacy RQ còn giữ manage; GREEN rehearsal rollback xác nhận bỏ canonical manage thì legacy không giữ quyền, view vẫn đọc được list.
+- Regression mục tiêu: 4 files / 33 tests pass. Full suite: 398 files / 1.896 tests pass; TypeScript/build pass (chunk warning hiện hữu); baseline 56 active / 402 archived; query audit/check 0; dry-run chỉ có migration `20260914092853`.
+- Audit rộng còn thấy các helper compatibility khác (`is_module_admin`, `can_access_module`, Chat/AI và lifecycle/projection). Không xóa cơ học: phải phân loại consumer quyết định quyền với consumer audit/guard/projection trước Task 13.
+
+### E2 Cloud postflight
+
+- Migration `20260914092853` đã apply lên Cloud main; surface smoke standalone exit 0 và rollback.
+- Postflight: 6 canonical Request template managers, 32 canonical viewers, `legacyOnlyRequestManagers=0`, `persistedBatches=0`. Smoke không giữ lại thay đổi quyền tài khoản thật.
+
+## E3 — Canonical Chat và AI Learning helpers
+
+- `chat_v2_has_app_access` chuyển từ `role/allowed_modules` sang `system.chat.view/manage`; vì helper nằm trong restrictive RLS, bỏ grant canonical sẽ chặn API/storage Chat thay vì chỉ ẩn menu.
+- `can_manage_ai_learning` chuyển từ `role/admin_modules/admin_sub_modules` sang hợp đồng `settings_has_action('ai_learning', true)`; SYSTEM_ADMIN vẫn cấp quyền cha `system.settings.manage` cho Admin hiện hành.
+- RED Cloud: tắt `system.chat.view` trong transaction vẫn còn truy cập do legacy field. GREEN rehearsal rollback: helper trả deny và Admin vẫn quản trị AI Learning qua nguồn canonical.
+- Full suite: 398 files / 1.897 tests pass; TypeScript/build pass (chunk warning hiện hữu); baseline 57 active / 402 archived; query check 0; dry-run chỉ có migration `20260914093239`.
+
+### E3 Cloud postflight
+
+- Migration `20260914093239` đã apply lên Cloud main; helper smoke standalone exit 0 và rollback.
+- Postflight: 54 tài khoản có Chat qua capability canonical, `legacyOnlyChatUsers=0`, `persistedBatches=0`. Không có thay đổi grant thật được lưu.
+
+## E4 — Legacy runtime dependency gate
+
+- Cloud còn 17 function tham chiếu trực tiếp bốn cột legacy; phần lớn là guard/projection/lifecycle phải giữ đến Task 13. Hai decision helper còn hoạt động là `is_module_admin` và `can_access_module`.
+- Fan-out hiện tại: `is_module_admin` xuất hiện trong 57 function và 130 policy; `can_access_module` trong 2 function và 11 policy. Chi tiết và thứ tự chia cohort được ghi tại `authorization-v2-task12-4-2-legacy-runtime-dependencies.md`.
+- Kết luận kiểm soát: chưa có manifest thu hồi thật đủ điều kiện duyệt. Thay helper dùng chung bằng phép “any manage/view” bị loại vì có thể nâng quyền hẹp thành quyền toàn module.
+
+## F2 — Multi-replacement command và preview cohort WMS
+
+**Đính chính sau review F3:** mapping WMS v1 trong checkpoint này chưa tương đương về hành vi và không được sử dụng để apply. Các số 63/63 replace, 207 grant cần bổ sung chỉ mô tả preview v1 đã bị loại; trạng thái hiện hành ở F3 bên dưới.
+
+- Manifest builder hỗ trợ một source legacy được thay bằng nhiều DIRECT capability cùng scope/expiry. Nếu bất kỳ target nào thiếu permission hoặc mở rộng scope, toàn item chuyển sang `manual_review`; target trùng bị loại ổn định ở builder và bị Cloud command từ chối phòng thủ.
+- Migration `20260914095129` đã apply Cloud main. Command mới bao transaction cũ: target đầu tiên và mọi target bổ sung cùng commit/rollback; receipt lưu toàn bộ ID được dùng/tạo. Restore chỉ xóa grant do chính batch tạo, giữ grant đã tồn tại từ nguồn khác, rồi khôi phục source cũ. Entry point single-target cũ đã bị thu hồi quyền EXECUTE trực tiếp.
+- TDD: unit RED 2 ca multi-target trước sửa; GREEN hiện 11/11. Cloud reconciliation RED trên command cũ; GREEN sau migration với hai replacement, idempotent apply, stale apply/restore guard và restore đầy đủ. Bốn smoke tương thích ngược Task 12.4.2 đều exit 0; mọi fixture rollback.
+- Mapping WMS được chốt theo catalog Cloud active/direct-assignable: shell Xem → 3 quyền đọc; shell Quản lý → đủ 13 quyền đọc/thao tác. Tất cả source hiện hành đều `global/*`, không expiry.
+- Preview riêng tư hiện tại: 40 user, 63 source (`system.wms.view=40`, `system.wms.manage=23`), 63/63 item `replace`, 0 `manual_review`, 419 replacement references. Trong đó 212 reference đã có grant active và 207 grant thao tác còn thiếu sẽ được tạo; không có tên/email trong log, manifest có UUID chỉ nằm ở thư mục tạm mode 0700/file 0600.
+- **Chưa apply batch WMS thật.** 40 quyền shell và helper legacy vẫn còn nguyên. Cần operator duyệt đúng cohort/diff trước apply; helper WMS chỉ được cutover sau khi batch thành công, rồi mới quan sát và cân nhắc revoke các nguồn legacy tiếp theo.
+- Baseline sau migration: 58 active / 402 archived; TypeScript pass. Việc apply schema command không tự tạo grant và không đổi quyền tài khoản thật.
+
+## F3 — Loại mapping WMS làm tăng quyền ngoài ý muốn
+
+- Kiểm lại `app_private.material_issue_actor_can_reverse(uuid,text)` trên Cloud và `canReverseWmsTransaction` ở client: Hủy duyệt yêu cầu chính xác `wms.transaction.reverse` từ nguồn canonical; shell `system.wms.manage` không đáp ứng điều kiện này.
+- Cloud read-only xác nhận 23 tài khoản có shell Quản lý, **0/23 có quyền Hủy duyệt global**, `persistedBatches=0`. Vì vậy đề xuất v1 cấp đủ 13 quyền sẽ làm tăng quyền Hủy duyệt và chưa được phép gọi là chuyển đổi tương đương. Không batch v1 nào đã apply.
+- Mapping v2 đưa toàn bộ `system.wms.manage` vào `manual_review` để đối chiếu từng action/API. Preview mới: 40 user, 63 source, 40 read replacements/120 references và 23 manual-review items. Không tự cấp 207 grant của đề xuất cũ. Preview có blocker trả exit 2, chỉ xuất `review-required.json` quyền 0600, không xuất executable `manifest.json`.
+- Test builder đã tái hiện v1 fail và v2 pass. Cloud reconciliation mở rộng xác nhận: target thứ hai sai catalog rollback target đầu; duplicate bị từ chối; target đầu đã tồn tại được giữ, target thứ hai do batch tạo bị xóa khi restore; checksum toàn bộ source sau restore khớp trước apply. Tất cả writes trong test rollback.
+- Sửa selector fixture để tránh chọn tài khoản đã có `settings.general.view`; lần test đầu vướng unique constraint ở dữ liệu fixture, lần sau exit 0. Không xóa hay ghi đè grant thật để chạy test.
+- Fetch và merge-tree với `origin/main` (`abc35de`) không có conflict Git. Workspace root có chỉnh sửa chưa commit và một bản plan chưa tracked khác đúng dòng tiến độ; chưa thay đổi các file đó.
+- Gate dữ liệu còn mở: kiểm equivalence các thao tác WMS, hoàn thiện API coverage B–E và xác nhận persona trên frontend phát hành trước batch thật. Đây là việc triển khai còn lại, không phải thiếu xác nhận “tiếp tục” từ operator.
+
+## E5 — WMS từ chối action ngoài catalog
+
+- Cloud RED chứng minh `wms_has_action('wms.unknown_action.for_smoke')` trả allow cho Admin qua nhánh legacy. Migration `20260914151015` thêm điều kiện action WMS phải tồn tại và active trước khi xét các nguồn hiện hữu; null/khác module/unknown/inactive trả false.
+- Thử migration cùng smoke trong transaction rollback đạt. So trước/sau 91 tổ hợp action/kho trên 3 persona (Admin, Employee, Warehouse keeper) giữ nguyên quyết định cho action active. Đây không phải nghiệm thu toàn bộ endpoint WMS hay cutover các helper legacy.
+- Dry-run chỉ liệt kê migration trên; đã xác minh ref `.env` và linked đều là Cloud main `ftciqmqhmfvjtwoycswe`, apply và smoke standalone đạt. Postflight: 13 action WMS active, 40 view shell/23 manage shell và 0 transition batch thật.
+- Security advisor: 205 findings toàn project (15 search_path, 5 extension/public, 11 anon definer, 173 authenticated definer, 1 leaked-password protection); không finding nào chỉ tới `wms_has_action`. Không coi tổng advisor này là bằng chứng mọi finding cũ đã được xử lý.
+- Playwright editor 3/3 pass, targeted manifest/WMS/return-policy 23/23 pass. Migration baseline 59 active/402 archived. Test reconciliation bổ sung tại F3 cũng đã rollback thành công trên Cloud.
+
+## E6 — Bảo toàn capability Hủy duyệt canonical-only
+
+- Cloud RED sau E5: `wms_has_action('wms.transaction.reverse')` vẫn trả allow cho Admin không có capability reverse vì nhánh legacy/module/keeper. Điều này lệch hợp đồng đã phát hành của `material_issue_actor_can_reverse` và client `canReverseWmsTransaction`.
+- Migration `20260915010215` giới hạn riêng mã nhạy cảm `wms.transaction.reverse`: chỉ nguồn canonical global/warehouse qua `has_permission` được chấp nhận; Admin, shell WMS và Warehouse keeper không tự có quyền này. Các action WMS khác giữ nguyên hành vi E5.
+- Smoke tạo canonical reverse grant trong transaction để chứng minh deny-before/allow-after rồi rollback. Cloud standalone smoke và `material_issue_reversal_return_smoke` đều đạt; migration ledger có đúng một dòng.
+- Postflight giữ `persistedBatches=0`, 40 view shell và 23 manage shell. Không grant/revoke quyền tài khoản thật; thay đổi chỉ làm helper dùng chung tuân đúng quy tắc canonical-only đã có của Hủy duyệt.
+- Migration baseline: 60 active/402 archived. Task 12.4.2 vẫn chưa chuyển 23 WMS manage shell; các source này tiếp tục `manual_review` cho tới khi từng consumer/action được đối chiếu.
+
+## E7 — Nối capability đọc WMS tới resource helper
+
+- Cloud RED bằng employee không có bốn trường legacy WMS nhưng có DIRECT grant theo kho: `wms.inventory.view` chưa mở `can_read_inventory_scope`; test dừng trước ca phiếu xuất. Migration `20260915010425` nối `can_read_inventory_scope` với `wms.inventory.view` và `material_issue_can_view` với `wms.transaction.view`, truyền đúng kho/người lập/người phụ trách.
+- Các nhánh creator/approver/recipient, Project document và Warehouse keeper hiện hữu được giữ. `wms_has_action` tiếp tục cung cấp compatibility cho module-admin ở action không nhạy cảm, nên đây là cutover consumer đọc từng bước chứ chưa tắt fallback WMS.
+- Rehearsal rollback so 112 hàng trên toàn bộ 56 tài khoản active và hai kho: không có allow hiện hữu thành deny. Smoke canonical-only đạt sau migration; catalog/sensitive-action smoke vẫn đạt.
+- Migration đã dry-run một file, apply Cloud main và ledger có đúng một dòng. Postflight `persistedBatches=0`; số function chứa trực tiếp cả `is_module_admin` và `WMS` giảm từ 17 xuống 15.
+- Baseline: 61 active/402 archived. Chưa chuyển quyền quản lý/xóa/xử lý/PO/attachment; các consumer này vẫn nằm trong gate WMS.
+
+## Release/CI checkpoint — 2026-09-15
+
+- Git `main` đã nhận SHA `a2b7737`; GitHub CI run `34916870277`, Supabase Preview check và Vercel Production deployment đều thành công. Lỗi CI trước đó được truy về test catalog phụ thuộc `.env`; service hiện chỉ yêu cầu cấu hình Supabase khi dùng gateway mặc định, còn gateway được inject vẫn kiểm payload/RPC như cũ. Runtime không cấu hình tiếp tục fail-closed.
+- Phiên production hiện có là một tài khoản `EMPLOYEE`: màn hình Cài đặt chỉ hiện `Danh mục dùng chung HRM` và `Tài khoản`; khi mở danh mục HRM, UI báo chỉ có quyền Xem và toàn bộ thao tác thay đổi bị khóa. Đây là bằng chứng persona read-only cho checkpoint B, không thay cho persona Admin/HR/Thủ kho hoặc kiểm revoke.
+- Cloud main khớp tới migration `20260915010425` trước E8; 56 tài khoản active (1 Admin, 50 Employee, 5 Warehouse keeper), 3 disabled, 0 transition batch/item. Không dùng phiên production để đổi grant thật.
+
+## E8 — Tách quyền đọc và ghi tệp đính kèm WMS
+
+- Trước E8, cùng helper `wms_transaction_attachment_can_access` bảo vệ SELECT, INSERT và DELETE của bucket riêng `wms-transaction-attachments`; vì vậy nối quyền Xem canonical vào helper cũ sẽ đồng thời mở upload/xóa. Hợp đồng mới tách SELECT sang `wms.transaction.view`, INSERT/DELETE sang `wms.transaction.approve`; các nhánh Admin, WMS module-admin, global/scoped keeper và requester hiện hữu vẫn được giữ qua compatibility helper cũ.
+- TDD Cloud: smoke RED dừng ở helper đọc chưa tồn tại. Rehearsal migration + smoke rollback đạt; capability view đọc được nhưng không mutate, capability approve mutate được. Parity chạy 56 tài khoản trên 34 tổ hợp duy nhất `(type, source warehouse, target warehouse, requester)` và không có allow cũ thành deny.
+- Migration `20260915012751` đã apply Cloud main. Postflight đầu phát hiện hai helper mới lặp trực tiếp `is_module_admin('WMS')`, làm dependency function trực tiếp tăng 15→17. Không sửa migration đã chạy; forward migration `20260915013536` chuyển phần compatibility về helper cũ, rehearsal lại cùng parity rồi apply. Sau forward migration, số dependency WMS trực tiếp trở về 15.
+- Smoke attachment standalone, catalog WMS, canonical read, PO actual receipt và material issue reversal/return đều exit 0; fixture rollback. Ledger có đúng một row cho mỗi migration; policy SELECT/INSERT/DELETE trỏ đúng helper; `persistedBatches=0`, item=0, shell view/manage giữ 40/23.
+- Baseline Git: 63 active/402 archived. E8 chỉ gỡ coupling policy attachment và mở đường capability canonical; chưa thu hồi shell, helper compatibility cũ vẫn là blocker Task 13 và 23 source `system.wms.manage` vẫn `manual_review`.
+
+## E9 — Đồng bộ command trạng thái phiếu kho với capability
+
+- Audit boundary UI → RPC xác nhận `canApproveWmsTransaction`/`canReceiveWmsTransaction` dùng `wms.transaction.approve/complete`, nhưng Cloud `process_transaction_status` vẫn chỉ xét `is_module_admin`, requester và `assigned_warehouse_id`. Smoke RED chứng minh direct grant approve đúng kho vẫn nhận `42501`.
+- Migration `20260915015543` chuyển APPROVED/COMPLETED sang `wms_has_action`, giữ requester tự hủy và các persona Admin/module-admin/keeper qua compatibility hiện hành. Đồng thời đóng hai bypass không có trên UI: requester tự duyệt phiếu của mình và EMPLOYEE hoàn tất chỉ vì warehouse ID trùng hoặc cùng `NULL`.
+- Reconciliation không định danh trên 56 tài khoản active và 7 decision tuple phiếu chưa kết thúc: 1 EMPLOYEE có capability được mở duyệt (7 tuple), 1 requester-only mất tự duyệt (1 tuple), 29 EMPLOYEE không quyền không còn lọt qua complete (203 tuple). Không có Admin/WAREHOUSE_KEEPER hợp lệ bị mất trong diff.
+- Rehearsal migration + smoke rollback đạt; standalone smoke sau apply đạt, sai scope bị chặn, requester tự hủy vẫn hoạt động, fixture không rò. `po_actual_receipt_wms_smoke`, attachment/read smoke và material issue reversal/return đều đạt; fixture material return được sửa để cấp rõ approve/complete thay vì dựa vào requester bypass.
+- Hai smoke rộng cũ chưa dùng làm bằng chứng E9 vì đã lệch schema trước authorization assertion: `company_procurement_flow_smoke` thiếu business-event metadata khi hoàn tất; `purchase_package_delivery_receipt_v2_smoke` còn ghi bốn cột legacy đã bị guard chặn. Đây là test debt cần sửa ở cohort tương ứng, không được ghi nhận là pass.
+- Cloud postflight: migration ledger đúng 1 row, dry-run up-to-date, số function tham chiếu trực tiếp `is_module_admin('WMS')` giảm 15→14. Không grant/revoke tài khoản thật, không transition batch; 23 source `system.wms.manage` vẫn `manual_review`.
+- Hồi quy trước commit: 398 files / 1.901 tests pass; 7 test WMS/material mục tiêu / 30 ca pass; TypeScript, production build, migration baseline 64/402, query audit/check và `git diff --check` đều đạt. Security advisor giữ 205 warning hiện hữu; warning của RPC này là authenticated có thể gọi SECURITY DEFINER, nhưng RPC đã kiểm quyền nội bộ và đã chủ động revoke `public/anon`.
+
+## E10 — Đồng bộ điều chỉnh số lượng và nhận hàng theo đúng kho tác nghiệp
+
+- Audit UI → RPC phát hiện `TransactionDetailModal` đã quyết định bằng `wms.transaction.approve/complete`, nhưng `update_transaction_items_for_receipt` và `sync_fulfillment_receipt_for_transaction` vẫn chỉ xét legacy Admin/module-admin/keeper. RPC sync còn chấp nhận `p_actor_user_id` khác JWT, làm sai danh tính người nhận được ghi vào audit nghiệp vụ.
+- Migration `20260915020916` tạo helper riêng tư chọn duy nhất kho tác nghiệp như frontend: duyệt nhập và phiếu fulfillment ở kho đích, duyệt chuyển kho thường/xuất/thanh lý ở kho nguồn; hoàn tất nhập/chuyển ở kho đích và xuất/thanh lý ở kho nguồn. `process_transaction_status` được forward-fix để không còn chấp nhận grant ở sai phía của phiếu chuyển kho; hai RPC nhận hàng dùng cùng helper, và actor sync bắt buộc khớp JWT.
+- TDD Cloud RED tái hiện direct grant đúng kho bị RPC điều chỉnh từ chối và grant sai phía vẫn có thể duyệt phiếu chuyển kho. Rehearsal migration + hai smoke trong một transaction rollback đạt; sau apply, hai smoke standalone đạt, gồm allow đúng scope/trạng thái, deny khác kho, deny sai phía nguồn/đích, giữ requester tự hủy và deny actor giả mạo.
+- Reconciliation khử định danh quét 56 tài khoản active trên toàn bộ 20 cặp nguồn/đích của 5 kho cho phiếu chuyển kho thường: không có quyết định hiện hành nào đổi và không có allow mới. Smoke fixture riêng vẫn chứng minh grant chỉ ở sai phía bị deny, nên quy tắc mới đã được kiểm cả trên trạng thái Cloud hiện hành lẫn ca biên chủ động.
+- Hồi quy `po_actual_receipt_wms_smoke`, `material_issue_reversal_return_smoke`, WMS read và attachment đều đạt; mọi fixture rollback. Postflight: ledger migration đúng 1 row, helper tồn tại nhưng `authenticated` không được gọi trực tiếp, public RPC chỉ cấp cho `authenticated/service_role`, fixture=0, transition batch/item=0 và shell view/manage giữ 40/23.
+- Số function gọi trực tiếp literal `is_module_admin('WMS')` giảm 14→12; 23 source `system.wms.manage` vẫn `manual_review`. E10 không cấp hoặc thu hồi quyền tài khoản thật và chưa chạy batch WMS.
+- Hồi quy trước commit: 398 files / 1.901 tests pass; TypeScript, production build, migration baseline 65/402, query audit/check và `git diff --check` đều đạt. Cloud dry-run up-to-date và security advisor mức ERROR không có issue.
+- Release E10: commit `5a9bf93` đã fast-forward lên `main`; GitHub CI run `34921027177`, Supabase Preview check và Vercel Production deployment của đúng SHA đều thành công.
+
+## E11 — Khóa danh tính actor và target trạng thái ngoài hợp đồng
+
+- Self-review E10 phát hiện `process_transaction_status` kiểm quyền theo JWT nhưng vẫn ghi `p_approver_id` do client truyền, nên caller hợp lệ có thể ghi nhận một user khác; target `PENDING` cũng không đi qua nhánh kiểm quyền nào. Call graph hiện hành chỉ truyền user đang đăng nhập và chỉ dùng APPROVED/COMPLETED/CANCELLED, vì vậy hai hành vi này không phải yêu cầu tương thích.
+- Smoke RED trên Cloud E10 chứng minh approver giả mạo được chấp nhận. Migration `20260915022522` bắt buộc approver khác `NULL` phải khớp JWT, luôn ghi actor suy từ JWT và từ chối target ngoài APPROVED/COMPLETED/CANCELLED bằng `22023` trước khi đọc chứng từ.
+- Rehearsal migration + smoke rollback đạt và không để lại schema/fixture. Sau apply, smoke command, receipt, PO actual receipt và material issue reversal/return đều đạt; fixture=0, migration ledger đúng 1 row, actor/target guard có mặt, `anon` không có EXECUTE và transition batch/item vẫn bằng 0.
+- `phase4_permission_surface_smoke` ban đầu dừng ở fixture cũ trước assertion liên quan. Fixture đã được cập nhật để không ghi bốn cột legacy, dùng kho GENERAL, cấp quyền nhạy cảm có expiry và biểu diễn own scope bằng `*`; smoke sau đó đạt trên Cloud và rollback. Guard production không bị nới để phục vụ test.
+- Full gate: lần chạy song song đầu tiên có một timeout 15 giây ở test quét query trong lúc build/audit cùng dùng tài nguyên; chạy lại riêng toàn suite đạt 398/398 files, 1.901/1.901 tests. TypeScript, production build, migration baseline 66/402, query audit/check, Cloud dry-run up-to-date, Security Advisor mức ERROR và `git diff --check` đều đạt.
+- Release E11: commit `812c8a8` đã fast-forward lên `main`; GitHub CI run `34921408506`, Supabase Preview check và Vercel Production deployment của đúng SHA đều thành công.
+
+## E12 — Tách capability theo stage nhận hàng PO
+
+- Audit call graph xác nhận cùng helper legacy `current_user_can_receive_purchase_batch_v2` đang phục vụ ba private implementation: duyệt SL/CL cần `wms.transaction.approve`, còn finalize nhập kho cần `wms.transaction.complete`. Gộp hai capability thành một phép OR ở public boundary sẽ làm approve-only có thể complete hoặc ngược lại, nên phương án đó bị loại.
+- Migration `20260915023633` đặt guard action-specific tại bốn public wrapper, chuyển wrapper sang `SECURITY DEFINER` với `search_path=''`, và thu hồi EXECUTE của `authenticated` khỏi ba implementation cùng helper riêng tư. Helper nội bộ giữ legacy persona và nhận thêm hai capability canonical để implementation chạy sau khi public guard đã xác nhận đúng stage.
+- Smoke RED trước migration chứng minh authenticated còn gọi thẳng private implementation. Rehearsal migration + smoke + reconciliation rollback đạt: approve-only chỉ vào được duyệt SL/CL, complete-only chỉ vào được finalize, actor khác JWT bị chặn và private bypass bị đóng.
+- Reconciliation khử định danh trên 56 tài khoản active × 5 kho không có legacy allow nào bị mất; 1 employee đã có capability canonical được mở thêm đúng đường nhận hàng ở 5 kho. Sau apply, stage smoke, reconciliation, WMS receipt command và PO actual receipt đều đạt; mọi fixture rollback.
+- Postflight: migration ledger đúng 1 row, bốn public wrapper có `SECURITY DEFINER`, authenticated chỉ gọi public wrapper, transition batch/item=0 và shell view/manage giữ 40/23. `create_purchase_order_supplier_return` chưa cutover: UI chỉ cho Admin/thủ kho tổng, backend còn Project PO manager/WMS module-admin; gán sang `wms.transaction.create` lúc này có thể tăng quyền nên tiếp tục `manual_review`.
+- Full gate: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 67/402, query audit/check, Cloud dry-run up-to-date, Security Advisor mức ERROR và `git diff --check` đều đạt. E12 không tạo grant, không thu hồi shell và không chạy transition batch thật.
+- Release E12: commit `1449822` đã fast-forward lên `main`; GitHub CI run `34922221577`, Supabase Preview check và Vercel Production deployment của đúng SHA đều thành công.
+
+## E13 — Nối tạo/gửi phiếu xuất cấp với capability canonical
+
+- Audit tách riêng hai boundary rõ nghĩa: tạo draft và gửi phiếu đều sinh giao dịch xuất kho tại `source_warehouse_id`, nên dùng `wms.transaction.create`. Các thao tác xác nhận nhận, hoàn, quyết toán và hủy không được gộp vào E13 vì cùng helper legacy hiện phục vụ nhiều chủ thể và ý nghĩa nghiệp vụ khác nhau.
+- Smoke RED trên Cloud chứng minh employee có direct grant `wms.transaction.create` đúng kho vẫn bị `create_material_issue_order` từ chối. Migration `20260915024855` thêm helper canonical-only không kéo theo fallback module-admin/thủ kho, rồi cộng đúng capability này vào helper tạo/gửi trong khi giữ nguyên Admin, WMS module-admin, keeper, người lập và quyền Project hiện hữu.
+- Rehearsal migration với smoke, reconciliation, WMS catalog và material issue reversal/return đạt trong transaction rollback. Reconciliation trên 56 tài khoản active × 5 kho không có legacy allow nào bị mất; 1 employee có canonical create được mở đúng 5 quyết định tạo và 5 quyết định gửi phiếu của người khác.
+- Dry-run chỉ liệt kê migration E13; apply Cloud main và năm smoke/reconciliation standalone đều đạt. Postflight: ledger đúng 1 row, ba helper mới không cấp EXECUTE cho authenticated, direct dependency WMS giảm 12→11, fixture=0, transition batch/item=0 và shell view/manage giữ 40/23.
+- Full gate: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 68/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đạt. Security Advisor có 0 ERROR; ba WARN liên quan là public command `SECURITY DEFINER` chủ đích có kiểm quyền nội bộ. Cloud DB lint vẫn báo chín lỗi tồn đọng ở function ngoài E13 và không chỉ tới helper/function mới của checkpoint này.
+
+## E14 — Tách quyền xử lý phiếu xuất cấp theo nghiệp vụ
+
+- Cloud call graph trước migration xác nhận `material_issue_can_process` chỉ phục vụ bốn boundary: xác nhận nhận hàng, tạo hoàn trả, quyết toán và hoàn tác quyết toán. Không có nhánh Project/Room trong contract hiện hành. Phương án dùng một capability chung cho cả bốn bị loại.
+- Hợp đồng mới: `confirm_material_issue_receipt` nhận thêm canonical-only `wms.transaction.complete` đúng kho nguồn; `create_material_issue_return_v2_impl` nhận thêm canonical-only `wms.transaction.create` đúng kho nguồn. Cả hai vẫn giữ Admin, WMS module-admin, thủ kho đúng kho/toàn kho, creator, responsible và employee recipient. Quyết toán/hoàn tác có helper riêng nhưng giữ exact compatibility và tiếp tục `manual_review`; không suy `complete` hoặc `reverse` thành quyền quyết toán.
+- Smoke Cloud RED dừng đúng vì helper action-specific chưa tồn tại. Migration `20260915045138` tạo năm helper private với `search_path=''`, thu hồi EXECUTE client, nối bốn command và drop helper dùng chung cũ. Rehearsal migration + smoke capability + reconciliation + đảo/hoàn + quyết toán đạt trong transaction rollback.
+- Reconciliation trên 56 tài khoản active × 5 kho × bốn quan hệ actor không có `unexpected_legacy_loss` hoặc thay đổi ở quyết toán/hoàn tác. Chỉ 1 EMPLOYEE được mở xác nhận nhận ở 5 kho bởi `complete` và 1 EMPLOYEE được mở tạo hoàn ở 5 kho bởi `create`; smoke command thực tế xác nhận allow đúng kho, deny sai kho, đồng thời giữ creator/responsible/employee recipient/keeper.
+- Dry-run chỉ liệt kê migration E14; migration đã apply Cloud main và ledger có đúng một dòng. Bảy smoke/reconciliation standalone đạt; fixture còn lại 0. Postflight: helper cũ không còn, đủ 5 helper mới, `authenticatedPrivateExecute=0`, direct dependency literal WMS vẫn 11, transition batch/item=0, shell view/manage giữ 40/23 và bốn flag legacy giữ nguyên.
+- Security Advisor có 0 ERROR. Bốn WARN liên quan là bốn public command `SECURITY DEFINER` được client gọi có authorization guard nội bộ; năm helper private mới không xuất hiện trong finding. Tổng 209 WARN là baseline toàn project, không được diễn giải là advisor toàn dự án sạch.
+- Full gate sau apply: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 69/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Build chỉ còn cảnh báo chunk size hiện hữu.
+- Release E14: commit `96e31fe` đã fast-forward lên `main`; GitHub CI run `34931058538`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E15 — Nối hủy phiếu xuất cấp trước xuất với quyền duyệt
+
+- Audit xác nhận `cancel_material_issue_order` chỉ áp dụng trạng thái `draft/submitted/wms_pending`, đồng thời hủy giao dịch WMS còn `PENDING`. UI WMS dùng quyền approve cho hành động từ chối, nên E15 chốt canonical-only `wms.transaction.approve` đúng kho nguồn; `wms.transaction.reverse` dành cho đảo phiếu sau xuất và không được dùng ở boundary này.
+- Smoke Cloud RED dừng đúng vì helper cancel action-specific chưa tồn tại. Migration `20260915050534` tạo `app_private.material_issue_can_cancel`, giữ Admin/WMS module-admin/người lập, thêm canonical approve đúng kho, thu hồi EXECUTE client và nối public command tới helper.
+- Rehearsal migration + smoke/reconciliation + smoke E14/đảo hoàn/WMS command đạt trong transaction rollback. Smoke command thật xác nhận approve đúng kho hủy cả phiếu và WMS pending, ghi actor từ JWT; approve sai kho và reverse-only bị chặn; creator vẫn hủy draft của mình.
+- Reconciliation 56 tài khoản active × 5 kho × hai quan hệ creator không có `unexpected_legacy_loss`; chỉ 1 EMPLOYEE được mở hủy phiếu của người khác ở 5 kho bởi canonical approve. Dry-run chỉ liệt kê E15; migration đã apply Cloud main và năm smoke/reconciliation standalone đạt.
+- Postflight: ledger đúng 1 row, helper tồn tại/command đã nối, authenticated không gọi helper private, fixture=0, transition batch/item=0, shell view/manage giữ 40/23 và direct dependency literal WMS vẫn 11. Security Advisor có 0 ERROR; WARN liên quan duy nhất là public `cancel_material_issue_order` SECURITY DEFINER có guard nội bộ, helper private không có finding.
+- Full gate sau apply: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 70/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Build chỉ còn cảnh báo chunk size hiện hữu.
+- Release E15: commit `fa70e4c` đã fast-forward lên `main`; GitHub CI run `34931750215`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E16 — Đối chiếu boundary trả hàng nhà cung cấp
+
+- Audit xác nhận UI phát hành chỉ hiển thị/tác nghiệp trả NCC cho Admin hoặc thủ kho tổng, trong khi `create_purchase_order_supplier_return` còn cho WMS module-admin và actor có `project.material_po.manage`. Canonical `wms.transaction.create` là một tập quyền thứ ba; không tập nào có thể được coi là tương đương cơ học.
+- Reconciliation Cloud khử định danh trên 56 tài khoản active × 15 context PO/kho cho thấy RPC hiện rộng hơn UI ở 285 quyết định. Phương án cộng `wms.transaction.create` sẽ mở thêm 15 quyết định RPC và cả 15 đều rộng hơn UI phát hành; `unexpected_legacy_loss=0`. Test chạy trong transaction rollback, không để lại fixture hoặc grant.
+- E16 giữ `create_purchase_order_supplier_return` ở `manual_review`. Không có migration, không đổi catalog/UI/backend, không tạo batch và không cấp/thu hồi quyền tài khoản thật. Muốn cutover boundary này phải chốt capability trả NCC riêng cùng owner nghiệp vụ, sau đó đồng bộ UI + RPC + persona test; không suy từ quyền tạo giao dịch WMS.
+- Release evidence E16: commit `fcf4922` đã fast-forward lên `main`; GitHub CI run `34932234367`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E17 — Cô lập compatibility xóa yêu cầu WMS
+
+- Audit call graph xác nhận policy DELETE của `public.requests` chỉ gọi `material_request_can_delete_v3`: v3 tự xử lý origin Project bằng Room action `material_request/delete` và gọi `_v2` cho origin WMS. Helper v1 không có runtime caller; v1/v2 vẫn có thể bị client gọi trực tiếp và cùng lặp fallback `is_module_admin('WMS')` dù catalog chưa có action xóa WMS tương đương.
+- Smoke Cloud RED dừng đúng vì compatibility helper chưa tồn tại. Migration `20260915052209` gom nguyên predicate WMS vào `material_request_wms_can_delete_compatibility`, nối v1/v2 tới helper, giữ nhánh Project nguyên trạng và thu hồi direct EXECUTE của `authenticated` khỏi helper/v1/v2. v3 vẫn callable bởi `authenticated` để policy RLS hoạt động; service role giữ đường trusted.
+- Reconciliation Cloud trên 56 tài khoản active × 5 kho nguồn × 5 kho công trường × 4 trạng thái × 3 quan hệ actor, tổng 16.800 quyết định, có `unexpected_legacy_loss=0` và `unexpected_access_change=0`. Rehearsal và standalone sau apply đều rollback sạch; `project_warehouse_material_control_v1_smoke` cũng đạt.
+- Hai smoke cũ không được dùng làm bằng chứng E17 vì dừng trước assertion liên quan: Room pilot kỳ vọng bảy action nhưng catalog hiện trả 0; Phase 3 kỳ vọng action `project.custom_material.create` đã không còn trong catalog. Không nới production guard hoặc sửa dữ liệu Cloud để ép các fixture cũ qua.
+- Postflight: ledger migration đúng 1 row, helper tồn tại, authenticated EXECUTE helper/v1/v2 đều false và v3 true; số function chứa trực tiếp literal `is_module_admin('WMS')` giảm 11→10. 56 tài khoản active, transition batch/item=0. Security Advisor có 0 ERROR và không finding liên quan helper/function E17.
+- Full gate sau apply: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 71/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Build chỉ còn cảnh báo chunk size hiện hữu.
+- Release E17: commit `4f23db9` đã fast-forward lên `main`; GitHub CI run `34936388892`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E18 — Capability riêng cho quyết toán và hoàn tác quyết toán phiếu xuất cấp
+
+- Owner nghiệp vụ đã chấp thuận hai capability riêng: `wms.material_issue.settle` và `wms.material_issue.reverse_settlement`. Cả hai chỉ nhận scope `global/warehouse`; quyền hoàn tác ở mức `sensitive` và direct grant bắt buộc có thời hạn. Không suy quyền từ `wms.transaction.complete` hoặc `wms.transaction.reverse`.
+- TDD Cloud RED dừng đúng vì action catalog chưa tồn tại; registry unit RED thiếu đúng hai action. Migration `20260915064553` thêm module `wms.material_issue`, nối riêng từng capability vào helper quyết toán/hoàn tác và giữ toàn bộ nhánh compatibility Admin/WMS module-admin/thủ kho/creator/responsible/employee-recipient hiện hành.
+- Smoke command thực tế chứng minh capability quyết toán không thể hoàn tác, capability hoàn tác không thể tạo quyết toán, grant ở sai kho bị chặn và hoàn tác tạo bản ghi bù trừ. Reconciliation toàn bộ 56 tài khoản active × 5 kho × 4 quan hệ × 2 action, tổng 2.240 quyết định, có `legacy_losses=0` và `unexpected_changes=0`.
+- Migration đã rehearsal rollback, dry-run đúng một file rồi apply Cloud main. Năm smoke/reconciliation standalone đạt. Postflight: ledger đúng một dòng, hai action active/enforced/direct-assignable, helper private không cấp EXECUTE cho authenticated, fixture=0, transition batch/item=0 và direct dependency literal WMS giữ 10.
+- Full gate sau apply: 398/398 files, 1.901/1.901 tests; TypeScript, production build, migration baseline 72/402, query audit/check, Cloud dry-run up-to-date, Security Advisor 0 ERROR và `git diff --check` đều đạt. Build chỉ còn cảnh báo chunk size hiện hữu.
+- Release E18: commit `156ecf9` đã fast-forward lên `main`; GitHub CI run `34939140400`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E19 — Capability riêng cho trả hàng nhà cung cấp
+
+- Owner nghiệp vụ đã chấp thuận capability `wms.purchase_order.return_supplier`, scope `global/warehouse`. Action này không được suy từ `wms.transaction.create`: tạo phiếu trả mới sinh WMS export `PENDING`, còn stock và finance chỉ thay đổi ở bước xử lý sau.
+- TDD Cloud RED dừng đúng vì action catalog chưa tồn tại; frontend RED thiếu action và chưa hiển thị hành động từ capability riêng. Migration `20260915070008` thêm module/action, tạo helper private giữ toàn bộ Admin/WMS module-admin/thủ kho tổng/Project PO manager hiện hành rồi cộng đúng capability theo kho nguồn.
+- UI phát hành thêm hành động trả NCC khi actor có capability tại ít nhất một kho và chỉ truyền các kho actor được cấp vào dialog. Backend vẫn kiểm lại kho đã chọn. Smoke command thực tế xác nhận tạo đồng thời phiếu trả và WMS export chờ duyệt; grant sai kho và actor chỉ có `wms.transaction.create` đều bị từ chối.
+- Reconciliation 56 tài khoản active × 15 context, tổng 840 quyết định, có `legacy_losses=0`, `unexpected_changes=0`. 285 quyết định RPC rộng hơn UI là compatibility đã ghi ở E16 và tiếp tục được giữ để không gây breaking change; capability mới đồng bộ UI/RPC nhưng không biến generic create thành trả NCC.
+- Migration đã rehearsal rollback, dry-run đúng một file rồi apply Cloud main. Ba smoke/reconciliation standalone đạt. Postflight: ledger đúng một dòng, action active/enforced/direct-assignable, helper private không cấp EXECUTE cho authenticated, command chỉ callable bởi authenticated/service role, fixture=0, transition batch/item=0 và direct dependency literal WMS giữ 10.
+- Full gate sau apply: 398/398 files, 1.902/1.902 tests; TypeScript, production build, migration baseline 73/402, query audit/check, Cloud dry-run up-to-date, Security Advisor 0 ERROR và `git diff --check` đều đạt. Build chỉ còn cảnh báo chunk size hiện hữu.
+- Release E19: commit `2f85420` đã fast-forward lên `main`; GitHub CI run `34940087835`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E20 — Capability riêng cho xóa yêu cầu WMS
+
+- Owner nghiệp vụ đã chấp thuận capability `wms.request.delete`, scope `global/warehouse`. Capability chỉ áp dụng origin WMS ở trạng thái `DRAFT/PENDING/REJECTED` và được phép khớp kho nguồn hoặc kho công trường; nhánh capability không mở `APPROVED`. Quyền chung `wms.request.approve` không được suy thành quyền xóa; persona compatibility cũ vẫn được giữ riêng để không gây breaking change.
+- Frontend dùng cùng helper quyết định tại nút xóa và guard mutation; luồng Project/Room giữ nguyên. Backend thêm action helper private theo mô hình compatibility OR exact capability, nối vào nhánh WMS của v1/v2; policy production tiếp tục đi `material_request_can_delete_v3 → v2`, còn nhánh Project trong v3 không đổi. Authenticated không thể gọi trực tiếp compatibility/action helper hoặc v1/v2.
+- TDD Cloud RED dừng đúng vì capability chưa tồn tại. Rehearsal rollback và smoke DELETE thật đạt: direct grant đúng kho xóa được request `PENDING`; grant sai kho, actor chỉ có `wms.request.approve`, và request `APPROVED` đều không bị xóa. Mọi fixture/grant/kho/request của smoke rollback sạch.
+- Reconciliation snapshot kho trước khi đổi JWT để không bị RLS làm thiếu context, chia bốn shard do statement timeout Cloud. Tổng đủ 56 tài khoản active × 5 kho nguồn × 5 kho công trường × 4 trạng thái × 3 quan hệ = 16.800 quyết định; `legacy_losses=0`, `unexpected_changes=0`. Bốn shard đều báo 14 actor/4.200 quyết định.
+- Migration `20260915071458` đã dry-run đúng một file rồi apply Cloud main. Postflight: ledger đúng một dòng/latest, action active/enforced/direct-assignable, action/compatibility helper cùng v1/v2 không cấp EXECUTE client, v3 vẫn callable cho RLS, fixture=0, transition batch/item=0 và direct dependency literal WMS giữ 10.
+- Full gate sau apply: 398/398 files, 1.903/1.903 tests; TypeScript, production build, migration baseline 74/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Security Advisor có 0 ERROR và không finding liên quan capability/helper E20. Cloud DB lint vẫn có chín lỗi tồn đọng ngoài E20; helper/function mới không xuất hiện trong danh sách lỗi. Build chỉ còn cảnh báo chunk size hiện hữu.
+- Release E20: commit `1790ff6` đã fast-forward lên `main`; GitHub CI run `34942620397`, Supabase Preview và Vercel Production deployment của đúng SHA đều thành công.
+
+## E21 — Làm mới inventory và preview manifest WMS
+
+- Snapshot Cloud read-only lúc `2026-09-15T09:58:13Z` ghi nhận 56 tài khoản `ACTIVE`, 3 `DISABLED`, 50 nhóm grant hệ thống đang hoạt động và 12 nhóm assignment role đang hoạt động; không ghi định danh tài khoản vào Git và không tạo mutation.
+- Cờ hardening vẫn đúng: `legacy_fallback_disabled=true`, `legacy_governance_fallback_disabled=true`, `legacy_projection_enabled=false`, `legacy_permission_writes_disabled=true`. Cloud giữ `0 transition batch / 0 transition item`, migration mới nhất `20260915071458`, 10 function gọi trực tiếp literal `is_module_admin('WMS')`.
+- WMS preview dùng snapshot Cloud hiện tại: 40 nguồn `system.wms.view` → 120 replacement references (40 `replace`); 23 nguồn `system.wms.manage` vẫn `manual_review`, không sinh executable manifest. Đây là kết quả chủ ý vì shell manage không tương đương toàn bộ capability WMS.
+- Inventory SQL và preview script chạy thành công trên Supabase Cloud, không cấp/gỡ quyền và không tạo batch. Unit test manifest tiếp tục phải giữ các invariant stale hash, scope expansion, expired source và manual review.
+- E21 exit đạt ở mức inventory/preview. Bước kế tiếp là E22: đối chiếu 23 `system.wms.manage` theo consumer và persona để quyết định source nào `retain`, source nào có replacement canonical, và source nào cần operator duyệt riêng; chưa được apply batch thật.
+
+## E22 — Audit consumer/persona cho `system.wms.manage`
+
+- Cloud read-only xác nhận 23 shell grant đều `global/*`: 1 Admin, 17 Employee không gán kho, 3 thủ kho toàn kho và 2 thủ kho gán kho. Cả 23 đã có bốn direct canonical grant đọc/master-data (`wms.inventory.view`, `wms.master_data.manage`, `wms.request.view`, `wms.transaction.view`), nhưng chưa có direct grant canonical cho nhóm thao tác nhạy cảm từ snapshot này.
+- Call-graph audit xác nhận 10 function consumers và 17 policy rows còn đi qua `wms_has_action` hoặc compatibility: binding kho/site, nhận PO, custom-material select, hủy phiếu xuất cấp, tạo/gửi phiếu, xử lý phiếu, xóa yêu cầu, trả NCC, boundary WMS dùng chung và attachment object.
+- Ma trận consumer → capability ứng viên → disposition đã ghi tại [WMS manage audit](authorization-v2-task12-4-2-wms-manage-audit.md). Không consumer nào được tự động map `system.wms.manage` thành toàn bộ capability; các boundary composite đều `manual_review` hoặc giữ compatibility cho tới khi owner chốt actor/kho/nghiệp vụ.
+- E22 chạy inventory/persona/call-graph SQL read-only thành công, không cấp/gỡ quyền, không tạo batch và không đổi schema. E22 exit đạt ở mức audit: 23/23 source có lý do rõ; chưa đạt điều kiện để sinh manifest executable hoặc revoke shell.
+- Bước kế tiếp là E23: đóng các cohort ngoài WMS và thu thập owner decision cho các nhóm WMS có thể thay thế theo actor/kho; chỉ sau đó mới tạo manifest có định danh trong evidence store riêng.
+- Trong lúc kiểm release, Supabase Preview phát hiện remote-only migration `20260915094533_request_attachment_processor_rpc_wrappers` chưa có trong local checkout. Đã đối chiếu trực tiếp `supabase_migrations.schema_migrations.statements`, bổ sung đúng migration wrapper service-role vào local và allowlist baseline; không apply lại, không sửa Cloud và không thay đổi quyền tài khoản. Đây là drift reconciliation bắt buộc để ledger Git/Cloud khớp trước E23.
+
+## E23 — Audit cohort ngoài WMS và owner-decision gate
+
+- Snapshot Cloud read-only có 56 tài khoản active: 2 Admin, 49 Employee, 5 Warehouse Keeper. Thay đổi 1 Admin/50 Employee ở E22 thành 2 Admin/49 Employee là thao tác quản trị do người dùng thực hiện trước E23, không phải mutation của audit này. Hardening flags vẫn đúng và transition ledger giữ 0 batch/0 item.
+- Ngoài WMS có 356 direct source active thuộc 36 mã; catalog có 40 action. Mapping E23 ghi disposition rõ cho đủ 40/40: sáu capability `system.authorization.*` được bảo vệ bằng `retain`, mọi shell business còn lại là `manual_review` cho tới khi owner chốt action/actor/scope.
+- Persona reconciliation xác nhận role label không tương đương full app: Project Room đang có 39/398/104 membership và 174/993/258 active action tương ứng Admin/Employee/Warehouse Keeper; workspace có 2 Admin membership và 1 Employee membership. Không được thay shell bằng quyền global dựa trên persona.
+- Call graph còn literal legacy boundary tại DA 24 function/64 policy, EX 1/0, FEEDBACK 1/0, HD 0/76, PROCUREMENT 1/0, RQ 2/0, SETTINGS 2/26, TENDER_AI 0/24, TS 2/6 và WF 14/8. Consumer trực tiếp bằng permission code vẫn phải được audit riêng; không suy revoke từ việc không có literal hit.
+- Owner decision register ghi 15 cohort `owner_pending`, gồm 14 nhóm business ngoài authorization và `system.wms.manage`; không tái sử dụng disposition lịch sử như phê duyệt owner hiện tại.
+- Cloud preview đối chiếu đủ 356 source: 353 `manual_review`, 3 `retain`, 0 `replace`, 0 `revoke`, 0 replacement reference. Evidence directory/file đạt mode 0700/0600; script exit code 2 đúng gate, chỉ tạo `review-required.json`, không tạo executable manifest.
+- E23 hoàn tất sáu đầu việc audit/reconcile/call-graph/decision-register/preview/manifest-gate và không thay đổi Cloud. Bước kế tiếp chỉ được mở sau khi owner ký nhận mapping theo actor/scope và preview mới có 0 manual review.
+
+### E23 owner decision pack — kiến trúc mẫu quyền
+
+- Owner đã chốt: template chứa action, assignment mang concrete scope theo từng người; nút Toàn quyền của mẫu thường là snapshot và capability tương lai phải review; template không kế thừa động; Super Admin là system role khóa và tự nhận capability hiện tại/tương lai.
+- WMS được tách thành `WAREHOUSE_OPERATOR` 10 quyền vận hành theo kho và `WAREHOUSE_MANAGER` snapshot tường minh đủ 17 capability canonical. Quyền nhạy cảm hoàn tác, hoàn tác quyết toán, trả NCC và xóa yêu cầu không mặc định cấp cho mọi thủ kho.
+- Workflow User chỉ xem/khởi tạo/xử lý bước được giao và xem mẫu; Workflow Admin cộng tạo/sửa/publish mẫu. Owner đã chốt user thường chỉ sửa/xóa bản nháp của mình, nhưng catalog hiện thiếu edit/delete own draft cùng cancel/reopen/administer instance nên cohort vẫn `manual_review`.
+- Cloud read-only inventory có 17 application, 103 module, 372 action active và 65 action nhạy cảm. Blueprint đối chiếu đủ 17 application/84 canonical business module; `system.authorization` được giữ là control module, 18 shell `system.*` còn lại tiếp tục ở transition gate.
+- Chat và Procurement bị `catalog_blocked`; Contract, KB, Storage, Analytics, AI, Request và Workflow ghi catalog gap rõ. Không dùng shell view/manage để lấp gap và không tạo executable manifest.
+- Decision pack và blueprint đã được kiểm bằng unit test cùng Cloud reconciliation; bước này không tạo/sửa template, assignment, grant, schema hoặc transition ledger trên Cloud.
+
+## E24 — Capability lifecycle cho Workflow instance
+
+- Cloud audit xác nhận 147 instance thật (`47 RUNNING`, `86 COMPLETED`, `6 REJECTED`, `8 CANCELLED`) và enum không có `DRAFT`. Vì vậy không giả lập “bản nháp” bằng `RUNNING`: `edit_own_draft` và `delete_own_draft` được thêm vào catalog ở trạng thái `declared`, không cho direct grant cho tới khi có lifecycle/command thật.
+- Migration `20260916021848` thêm năm action tách biệt. `cancel`, `reopen`, `administer` dùng scope `global`, trạng thái `enforced`; `cancel_workflow_instance`, `reopen_workflow_instance` và `update_workflow_instance_watchers` kiểm capability qua backend. Owner hoặc template manager không còn tự có quyền quản trị phiên đang chạy; compatibility WF module-admin vẫn được giữ trong helper chuyển đổi.
+- UI context đã bỏ mutation trực tiếp cho hủy, mở lại và watcher, chuyển sang ba RPC có idempotency. Kanban nhận `workflow.instance.reopen` canonical, đồng thời giữ role Admin ở giao diện trong giai đoạn compatibility; backend vẫn là nguồn quyết định cuối.
+- Audit trước khi đóng E24 phát hiện client cũ vẫn có thể cập nhật/xóa trực tiếp instance và RLS cũ cho creator/template-manager sửa phiếu `RUNNING`. Forward migration `20260916095000` thêm `update_workflow_instance_content`: actor đang được giao chỉ sửa khóa `step_<currentNodeId>_*`, instance-admin mới sửa tiêu đề/dữ liệu cấp phiếu; workflow gắn Request/subject bị từ chối để giữ đúng module boundary. `authenticated` bị thu hồi `UPDATE/DELETE` trực tiếp trên instance và log; API xóa phiếu cũ được gỡ khỏi client vì chưa có `DRAFT`.
+- TDD đạt: unit RED thiếu đúng năm action và blueprint; Cloud RED thiếu catalog. Rehearsal rollback, smoke standalone và postflight đều đạt. Smoke kiểm actor đúng/sai quyền hủy, đúng/sai quyền mở lại, tự theo dõi, outsider không nhìn thấy bị chặn, actor thường không sửa watcher khác và instance-admin sửa được watcher.
+- Mutation-guard RED tái hiện role `authenticated` còn quyền ghi trực tiếp. GREEN Cloud smoke kiểm creator không được giao bị chặn, assignee sửa đúng namespace bước nhưng không sửa tiêu đề/dữ liệu cấp phiếu, outsider bị chặn và instance-admin sửa được. Reconciliation 56 user active trên 20 generic instance đang chạy = 1.120 cặp, `unexpected_gains=0`; 5 quyền sửa bước và 19 quyền sửa cấp instance cũ được thu hẹp đúng owner decision.
+- Reconciliation materialized toàn bộ 56 user active × 147 instance = 8.232 cặp: `unexpected_gains=0`; 14 quyền hủy của creator, 52 quyền mở lại của creator và 76 quyền quản trị của owner/template-manager được phân loại là thu hẹp đúng owner decision. Không tạo grant, assignment, transition batch/item hay dữ liệu fixture tồn lưu.
+- Postflight Cloud: cả migration `20260916021848` và `20260916095000` có trong ledger; 5/5 action active, gồm 3 enforced và 2 declared; tổng catalog tăng 372→377 action, `workflow.instance` có 8 action; ACL direct mutation đã đóng và Cloud dry-run up-to-date. Bước tiếp theo không được coi Workflow draft là xong: phải xây lifecycle nháp thật hoặc giữ hai action này ngoài manifest executable.
+- Full gate sau apply: 400/400 test files, 1.919/1.919 tests; TypeScript, production build, migration baseline 77/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Security Advisor có 0 ERROR (248 mục mức thấp hơn: 38 INFO/210 WARN); bốn public `SECURITY DEFINER` command của checkpoint có guard nội bộ và ACL authenticated chủ ý. DB lint còn chín lỗi tồn đọng ngoài E24; không lỗi nào trỏ tới function mới.
+
+## E25 — Runtime bản nháp thật cho Workflow
+
+- Cloud audit tách 47 instance Workflow generic khỏi 100 instance gắn Request/Project; `current_node_id` nullable nên draft có thể tồn tại mà không giả làm một bước đang chạy. Migration `20260916102000` chỉ thêm enum `DRAFT`; migration kế tiếp mới mở hành vi sau khi enum đã commit an toàn.
+- Migration `20260916102100` chuyển `edit_own_draft`/`delete_own_draft` từ `declared` sang `enforced`, cho phép direct grant và thêm bốn command idempotent: tạo, sửa, xóa, gửi nháp. Owner boundary là bắt buộc; module-admin/instance-admin không được sửa hoặc xóa draft của người khác. Submit kiểm mẫu active, START/first node, assignee active rồi cập nhật `RUNNING` và log `SUBMITTED` trong một transaction.
+- Client có hai lựa chọn rõ ở form tạo: `Lưu nháp` hoặc `Gửi phiếu`. Nháp xuất hiện trong danh sách của tôi; click mở editor, cho lưu tiếp, chọn người xử lý bước đầu, gửi hoặc xóa. Tạo/gửi trực tiếp cũng chuyển sang RPC; role `authenticated` không còn `INSERT/UPDATE/DELETE` trực tiếp trên instance/log.
+- Cloud RED dừng đúng tại thiếu enum `DRAFT`. Sau enum commit, rehearsal migration + smoke rollback đạt; standalone sau apply kiểm idempotency, không log trước submit, owner đúng/sai, edit/delete/submit, chuyển trạng thái nguyên tử và chặn sửa sau submit. Reconciliation 56 user active: 45 UI user cũ giữ quyền tạo, 0 gain/0 loss; 11 user không có WF mất raw-table insert ngoài UI như chủ đích. Không có draft fixture tồn lưu.
+- Full gate sau apply: 400/400 test files, 1.920/1.920 tests; TypeScript, production build, migration baseline 79/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Security Advisor có 0 ERROR (252 mục mức thấp hơn: 38 INFO/214 WARN). DB lint còn đúng chín lỗi tồn đọng ngoài E25; không lỗi nào trỏ tới command draft mới. Build chỉ còn cảnh báo chunk size hiện hữu.
+
+## E26 — Request lifecycle capabilities và protected dynamic Super Admin
+
+- Cloud audit xác nhận Request có 17 instance và runtime thật gồm `APPROVE`, `REJECT`, `RETURN`, `RESUBMIT`, `CANCEL`, `REASSIGN`, sửa nội dung; không có command create/save/delete `DRAFT`. Bảy capability tương ứng được thêm ở trạng thái `enforced`, có scope `assigned`, `own` hoặc `global` đúng quan hệ nghiệp vụ. Trigger guard tại instance/assignment buộc owner hoặc assignee thực tế; direct grant không bypass được quan hệ chứng từ.
+- Compatibility `request.instance.act_assigned` và `system.rq.view` được giữ có chủ đích. Reconciliation Cloud giữ `45/45` quyết định legacy hợp lệ, `unexpected_losses=0`; runtime smoke kiểm exact capability, compatibility, wrong actor/scope và các transition thật trong transaction rollback.
+- `SUPER_ADMIN` là system template khóa, không có item tĩnh. Resolver động trả mọi action active hiện tại/tương lai. Chỉ `PERMISSION_ADMIN` global active được gán/thu hồi, không được tự gán; assignment bắt buộc `global/*`, target active, không expiry, không sửa/reactivate và không thể thu hồi Super Admin cuối cùng. Migration không tạo assignment cho tài khoản thật.
+- Postflight Cloud: 384 action active, 11 action `request.instance`, đúng 1 template `SUPER_ADMIN`, 0 item tĩnh, 0 assignment; ba migration E26 có trong ledger và Cloud dry-run up-to-date. Forward hardening thứ ba chặn cả đổi `role_template_id` hai chiều và direct DELETE Super Admin cuối cùng. Catalog, runtime smoke và reconciliation standalone đều đạt. Baseline Git là 82 active/402 archived.
+- Giới hạn còn lại: Request chưa có lifecycle nháp thật; blueprint chỉ map thao tác runtime đã có và vẫn chờ owner chốt ba template Request. UI/command quản lý template-assignment cùng impact preview/audit là checkpoint tiếp theo, không được tự tạo executable manifest hoặc cấp Super Admin.
+- Full gate sau apply: 401/401 test files, 1.924/1.924 tests; TypeScript, production build, migration baseline 82/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Security Advisor có 0 ERROR (252 mục mức thấp hơn: 38 INFO/214 WARN) và không finding E26. DB lint còn đúng chín lỗi tồn đọng ngoài E26; không lỗi nào trỏ tới function/trigger mới. Build chỉ còn cảnh báo chunk size hiện hữu.
+
+## E27 — Wizard mẫu quyền và command assignment có governance
+
+- Settings có wizard ba bước `Thông tin chung` → `Cấu hình bảng phân quyền` → `Gán đối tượng`, nhóm capability theo Application/Module/Action. Chỉ actor có `system.authorization.manage_roles` truy cập; persona Employee không có quyền đã được kiểm bằng route thật và bị redirect.
+- Mẫu thường là snapshot action tường minh, chỉ nhận capability `enforced/verified`; mẫu đã có assignment không được sửa item tại chỗ. System template khóa; `SUPER_ADMIN` hiển thị dynamic và preview toàn bộ 384 action active mà không tạo item tĩnh.
+- RPC V2 thêm snapshot quản trị, save theo expected role version, preview impact có fingerprint, và assign bắt buộc version/fingerprint còn mới. Preview trả số capability tổng/nhạy cảm/cần phê duyệt, cảnh báo SoD và hard deny; SoD warning phải kèm audit owner, lý do, compensating control và expiry.
+- Hai public mutation legacy `save_business_role`/`assign_business_role` đã bị thu hồi EXECUTE của `anon/authenticated`; service role giữ compatibility. Command V2 tiếp tục dùng validation, audit và continuity/last-admin guard hiện hữu. Migration không tạo template, grant hay assignment thật.
+- Cloud rehearsal rollback đạt trước apply. Sau apply, E27 runtime smoke kiểm dynamic Super Admin, stale fingerprint/version, SoD acceptance, assign/revoke và save role rollback; E26 regression smoke cùng reconciliation giữ `45/45`, `unexpected_losses=0`. Postflight còn 12 template, 136 item, 114 assignment active và 0 Super Admin assignment.
+- Full gate sau apply: 403/403 test files, 1.929/1.929 tests; TypeScript, migration baseline 83/402, query audit/check, Cloud dry-run up-to-date, ACL/postflight và `git diff --check` đều đạt. Security Advisor có 0 ERROR (252 finding mức thấp hơn) và không finding E27. DB lint còn đúng chín lỗi tồn đọng ngoài E27; không lỗi nào trỏ tới function mới.
+- E27 hoàn tất bề mặt quản trị, không đồng nghĩa 15 cohort owner-pending đã được cấp quyền. Bước tiếp theo là owner approval actor/action/scope, pilot từng cohort và reconciliation trước khi tạo executable manifest hoặc revoke legacy shell.
+
+## E28 — Owner mapping WMS/Workflow và fail-closed pilot readiness
+
+- Decision register đã chuyển đúng hai cohort có phê duyệt trực tiếp của business owner sang `owner_approved`: WMS và Workflow. Mapping ghi actor, assignment scope và item-scope policy; 13 cohort còn lại tiếp tục `owner_pending`, trong đó Request chưa được suy diễn từ kiến trúc chung.
+- WMS Operator/Manager chỉ nhận assignment `warehouse/<id>`. Workflow User/Admin dùng item scope tường minh: nháp `own`, bước xử lý `assigned`, quản trị mẫu/phiên `global`; assignment `global/*` không làm mất record-bound scope của item.
+- Thêm Cloud readiness checker đối chiếu decision → blueprint → action catalog, chỉ chấp nhận `enforced/verified` và scope được catalog hỗ trợ. Unit test kiểm happy path, declared/legacy fail closed, unsupported scope và đúng danh sách cohort được duyệt.
+- Preflight Cloud trên 384 action active trả 0/4 template sẵn sàng, 4 template bị chặn, 19 action duy nhất chưa đạt readiness và 33 blocker theo template. WMS Operator có 10 action `declared`; WMS Manager cộng `wms.inventory.edit` declared và `wms.master_data.manage` legacy. Workflow User có 4 và Workflow Admin có 7 action declared.
+- Không tạo template, item, assignment, grant hay transition batch; Cloud không thay đổi. E28 đạt mục tiêu chốt mapping và dựng gate, đồng thời ngăn việc đổi metadata để lách runtime verification.
+- Bước kế tiếp là harden 10 action WMS Operator theo command/RLS thực tế, chạy allow/deny theo kho và reconciliation trước khi nâng readiness và pilot template. Manager/Workflow/Request chưa được mở nối tiếp khi WMS Operator chưa đạt.
+
+## E29 — Hardening runtime cho WAREHOUSE_OPERATOR
+
+- Audit UI → RLS/RPC xác nhận tám capability tồn kho/giao dịch đã có boundary backend, nhưng `wms.request.export` và `wms.request.receive` mới chỉ điều khiển giao diện; policy cập nhật request/fulfillment cũ còn đi qua quyền xem rộng. Migration `20260916110400` thêm helper private và trigger lifecycle bắt buộc đúng action cho create/approve/export/receive, kể cả khi gọi API trực tiếp.
+- Transaction gắn với request WMS giờ cần đồng thời `wms.transaction.create` và `wms.request.export`; nhánh Project Material Request giữ nguyên. Helper mới dùng `SECURITY DEFINER`, `search_path=''`, không cấp EXECUTE cho client; policy/trigger vẫn là boundary gọi nội bộ. Forward migration `20260916110500` xử lý đúng semantics Supabase upsert: bản ghi đã tồn tại bỏ qua pre-conflict INSERT hook và bắt buộc đi qua UPDATE action guard, nên duyệt/xuất/nhận không bị đòi thừa quyền tạo.
+- Cloud smoke rollback dùng một Employee cô lập và hai kho: đúng kho xem tồn/request, tạo request, duyệt, xuất, nhận, tạo/duyệt/hoàn tất transaction đều đạt; sai kho bị ẩn/chặn; bỏ riêng export hoặc receive làm transition tương ứng trả `42501`; upsert request đang vận chuyển vẫn đạt sau khi gỡ quyền create vì UPDATE guard dùng receive. Không để lại fixture/grant/request/transaction.
+- Sau runtime proof, đúng 10 action của `WAREHOUSE_OPERATOR` được nâng `grant_readiness=enforced`. Readiness checker Cloud chuyển từ 0/4 sang 1/4 template có thể pilot: `WAREHOUSE_OPERATOR` có 10 action và 0 blocker. `WAREHOUSE_MANAGER` vẫn fail closed vì `wms.inventory.edit` còn declared và `wms.master_data.manage` còn legacy; hai template Workflow vẫn bị chặn bởi chín action duy nhất còn declared.
+- Regression Cloud cho WMS read và transaction command reconciliation đạt. Reconciliation scope cũ chạy quá lâu và được dừng, không dùng làm bằng chứng pass; bằng chứng E29 là smoke action/scope hữu hạn, rollback và readiness checker nêu trên.
+- E29 chưa tạo role template hoặc assignment thật. Bước kế tiếp là pilot materialization `WAREHOUSE_OPERATOR` qua command V2 bằng fixture/rollback, kiểm preview fingerprint/SoD/audit và xác nhận không có gain ngoài một kho trước khi cân nhắc template persistent hoặc gán người dùng thật.
+
+## E30 — Pilot command V2 cho WAREHOUSE_OPERATOR
+
+- Pre-pilot audit phát hiện command V2 trước đây dựa vào bộ lọc UI nên crafted RPC vẫn có thể lưu action `declared/legacy`. Migration `20260916110600` thêm technical-readiness guard tại đủ ba boundary save, preview và assign; mẫu thường chỉ nhận action `enforced/verified`. `SUPER_ADMIN` giữ ngoại lệ động có chủ đích và các continuity/SoD guard cũ không đổi.
+- Cloud pilot rollback tạo `WAREHOUSE_OPERATOR` bằng `save_business_role_v2` với đúng 10 item `warehouse/*`, preview assignment về một kho cụ thể trả version/fingerprint, 10 permission concrete scope và 0 hard deny; warning nếu có được chấp thuận bởi auditor độc lập với thời hạn một ngày.
+- Assignment fixture qua `assign_business_role_v2` cho đủ 10 action tại kho A, 0 action tại kho B và 0 capability chỉ dành cho manager (`inventory.edit`, `request.delete`, `transaction.reverse`, `master_data.manage`). Sự kiện `business_role_created` và `business_role_assigned` đều hiện diện trước rollback.
+- Negative pilot gọi RPC trực tiếp với `wms.inventory.edit` còn `declared` và bị từ chối `23514`, chứng minh không thể lách readiness bằng cách bỏ qua wizard. E27 regression được đổi fixture từ action chưa ready sang `request.instance.cancel` enforced và đạt lại.
+- Pilot và toàn bộ template/assignment/audit fixture rollback sạch; Cloud vẫn chưa có `WAREHOUSE_OPERATOR` persistent và chưa gán người dùng thật. Readiness giữ 1/4 template có thể pilot, 3/4 fail closed.
+- Full gate sau apply: 406/406 test files, 1.941/1.941 tests; TypeScript, production build, migration baseline 86/402, query audit/check, Cloud dry-run up-to-date và `git diff --check` đều đạt. Commit E29 `47463e7` và E30 `d4d0d1b` đã fast-forward lên remote `main`; GitHub CI run `35068696239`, Supabase Preview và Vercel của SHA E30 đều thành công.
+- Bước kế tiếp có hai nhánh không nên trộn: materialize mẫu Thủ kho persistent qua tài khoản authorization-admin rồi chọn người+kho pilot thật, hoặc tiếp tục harden hai blocker riêng của `WAREHOUSE_MANAGER`. Không tự gán người dùng thật nếu chưa có target và kho cụ thể.
+
+## E31 — Hardening và pilot rollback cho WAREHOUSE_MANAGER
+
+- Chốt boundary thực tế cho hai blocker cuối: manager theo kho được điều chỉnh số tồn tại kho được gán và cập nhật thông tin của chính kho đó; không được dùng scope kho để sửa catalog vật tư, loại kho, tạo/xóa kho hoặc dữ liệu dùng chung. Các thao tác global này cần grant global riêng.
+- Migration `20260916161634` thêm `adjust_inventory_stock` với capability guard, lock hàng, optimistic quantity check, lý do bắt buộc và audit `wms_inventory_stock_adjusted`; thu hồi authenticated khỏi hai overload `apply_stock_change`. Private implementation chỉ cấp service role, public wrapper pin `search_path` và tự kiểm quyền nội bộ.
+- RLS `warehouses_phase4_select/update` được resource-bound theo `id`. Smoke persona chứng minh manager kho A chỉ nhìn/sửa A, không điều chỉnh hoặc cập nhật B; operator chỉ-view không mutate; global admin vẫn sửa được catalog item và kho toàn cục. Direct update item metadata của manager theo kho trả 0 hàng.
+- UI tồn kho đã bỏ quyền tạo vật tư suy từ `assignedWarehouseId`. Thêm/import/sửa dữ liệu gốc chỉ hiện với `wms.inventory.edit` global; xóa vật tư cần `wms.master_data.manage` global; manager theo kho có form điều chỉnh tồn riêng tại đúng kho, kèm lý do và xử lý stale quantity.
+- Pilot command V2 rollback materialize đúng 17 item `warehouse/*`, preview version/fingerprint và 0 hard deny, ghi audit create/assign, gán kho A trong một ngày với auditor acceptance, đủ 17 action tại A và 0 tại B. Không giữ template hay assignment thật: postflight xác nhận cả hai cùng bằng 0.
+- Cloud apply có đúng một ledger row. Tám smoke post-apply cho manager/operator, transaction, receipt, quyết toán, trả NCC và xóa request đều đạt. Readiness chuyển từ 1/4 sang 2/4; hai template Workflow tiếp tục bị khóa với 7 action declared nên checker chủ động trả trạng thái blocked tổng thể.
+- Full gate: 408/408 test files, 1.947/1.947 tests; TypeScript, production build, migration baseline 88/402, query audit/check và `git diff --check` đạt. Security Advisor có 0 ERROR; warning cho public SECURITY DEFINER RPC là đã biết và được kiểm soát bởi guard nội bộ cùng ACL private/public tách biệt.
+
+## E32 — Workflow boundary hardening và pilot-readiness
+
+- Bảy action còn thiếu của Workflow đã được harden và chuyển sang `enforced`: xem/khởi tạo/xử lý instance (`workflow.instance.view`, `create`, `act_assigned`) và xem/tạo/sửa/publish mẫu (`workflow.template.view`, `create`, `edit`, `publish`). Điều này đóng đúng các blocker E28 cho `WORKFLOW_USER` và `WORKFLOW_ADMIN`, không tự thêm quyền nghiệp vụ mới.
+- Instance Workflow generic chỉ hiển thị cho creator có `view/own`, assignee hiện tại có `view/assigned`, hoặc instance administrator global. Instance gắn Request/Project tiếp tục đi theo nhánh visibility của subject hiện hữu. Process step generic bắt buộc `act_assigned`; cancel vẫn do action `workflow.instance.cancel` riêng kiểm soát.
+- Lifecycle template không còn cho `authenticated` ghi trực tiếp vào `workflow_templates`, `workflow_nodes`, `workflow_edges`. Các command `create_workflow_template`, `update_workflow_template_metadata`, `publish_workflow_template`, `delete_workflow_template` và `save_workflow_template_structure` là boundary có guard capability; các helper RLS được cấp EXECUTE tường minh cho role được policy gọi.
+- Cloud smoke rollback chứng minh: creator/assignee đúng scope được allow; outsider bị chặn; người chỉ xem template không tạo được; template admin tạo/sửa/publish qua RPC được; INSERT template và UPDATE node trực tiếp bị chặn. Kết quả trả `status=ok`, `enforcedActions=7`; không còn fixture, grant hay dữ liệu Workflow sau rollback.
+- Regression full đạt `409/409` test files, `1952/1952` tests; `npm run lint`, production build, query audit, migration check và `git diff --check` đều đạt. Cloud ledger khớp đến `20260917025252`; readiness checker trả `4/4` pilot-ready: `WORKFLOW_USER`, `WORKFLOW_ADMIN`, `WAREHOUSE_OPERATOR`, `WAREHOUSE_MANAGER`.
+- E32 không tạo persistent role template, assignment hoặc direct grant. Bước vận hành kế tiếp là chọn một người và phạm vi pilot cụ thể cho một trong bốn template đã ready, chạy preview/fingerprint, SoD nếu có cảnh báo, persona allow/deny, reconciliation và audit trước khi lưu. Legacy Workflow shell vẫn giữ cho tới khi pilot đạt.
+
+## E33 — Pilot Workflow persistent, bounded
+
+- Owner đã chỉ định hai target active cho pilot: một `WORKFLOW_USER` và một `WORKFLOW_ADMIN`. Tên/email không ghi vào tài liệu evidence; ID assignment, target và actor lưu trong audit Cloud.
+- Rehearsal rollback dưới `PERMISSION_ADMIN` xác nhận template User có 6 action, template Admin có 12 action; cả hai preview có `0 hard deny`, `0 warning` và fingerprint hợp lệ. Không cần SoD acceptance vì preview không sinh cảnh báo.
+- Hai template persistent v1 được tạo qua `save_business_role_v2`, rồi assignment `global/*` được ghi qua `assign_business_role_v2` trong transaction với expiry 24 giờ. Item record-bound vẫn giữ `own`/`assigned`; global assignment không làm rộng scope item.
+- Postflight xác nhận đúng 6/12 item, hai assignment `ACTIVE`, mỗi assignment có một event `business_role_assigned`, actor audit là Permission Admin hiện hành. Resolver chứng minh User có view-own và act-assigned, không có template-create; Admin có template-create/publish và instance-administer.
+- Pilot chưa là điều kiện revoke `system.wf.*`. Trước khi gia hạn hoặc chuyển sang assignment không expiry cần ghi kết quả thao tác thực tế của hai persona, reconciliation gain/loss và review audit; nếu không đạt, thu hồi hai assignment bằng command V2 trước expiry.
+
+## E34 — Hotfix route access cho Workflow record-bound
+
+- Pilot `WORKFLOW_USER` không mở được `/wf` vì generic route guard mặc định kiểm `workflow.instance.view` tại `global/*`, trong khi blueprint cố ý cấp `own`. Đây là lỗi frontend; Cloud assignment, resolver và RLS đều đúng.
+- Guard cho `/wf`, dashboard và detail instance nay chấp nhận `workflow.instance.view` tại `own`, `assigned` hoặc `global`. Không cấp capability global để lách UI; RLS tiếp tục quyết định instance cụ thể nào được đọc.
+- Sidebar bỏ role-label gate `Role.ADMIN` ở mục Mẫu quy trình và dùng canonical route capability. Người xem mẫu thấy entry read-only, còn quyền tạo/sửa/publish vẫn do action guard trong UI và command backend quyết định.
+- Regression kiểm own/assigned allow, no-instance-view deny, template-viewer không mở list instance; full suite và production build đạt. Hotfix không thay đổi Cloud grant, assignment hoặc expiry của pilot.
+
+## E35 — Production evidence không đạt và thu hồi pilot Workflow
+
+- Checkpoint bắt đầu trên worktree được chỉ định với `HEAD = origin/main = 9766c5c`; Production application release được kiểm là `86e0e272ee0481e84cdf1ef6203fdcffc218e3fa` (commit `9766c5c` chỉ bổ sung handoff). Cloud migration dry-run trả `upToDate=true`; không có migration, seed hoặc role chờ apply. Tám artefact bắt buộc ở mục 6 của handoff ngày 17/09 đã được đọc trước khi kiểm pilot.
+- Hai assignment tạo lúc `2026-09-17 03:45:01 UTC` vẫn active khi preflight lúc `07:59:18 UTC`, đúng template v1 gồm `WORKFLOW_USER` 6 item và `WORKFLOW_ADMIN` 12 item, scope assignment `global/*`, expiry `2026-09-18 03:45:01 UTC`; mỗi assignment có một audit `business_role_assigned`.
+- Hương đã đăng nhập Production sau khi pilot bắt đầu (`last_sign_in_at 04:35:25 UTC`) và có session heartbeat. Xác nhận vận hành bổ sung từ người dùng cho biết Hương vào `Quy trình` bình thường trên Production/main; lỗi không vào được chỉ xảy ra trên localhost `:3000` đang chạy từ checkout gốc chậm hơn `origin/main` 65 commit. Phiên Production quan sát trong checkpoint có refresh token không hợp lệ nên phép thử điều hướng tự động lúc đó không được dùng làm bằng chứng Production deny. Cloud vẫn chưa ghi nhận Workflow command, instance, step action hoặc template lifecycle nào của Hương sau khi pilot bắt đầu, nên chuỗi allow tạo/sửa/xóa nháp và xử lý step được giao vẫn chưa đủ evidence để gia hạn.
+- Thuận chưa có login/session mới sau khi pilot bắt đầu; lần đăng nhập gần nhất là ngày 14/09. Không có Workflow command, instance, step action hoặc template lifecycle nào của Thuận trong cửa sổ pilot, nên không có evidence cho create/edit/publish template hoặc quản trị instance.
+- Resolver Cloud trước revoke trả đủ capability theo template (`6/6` cho User, `12/12` cho Admin), nhưng reconciliation deny của Hương không đạt: có 9 direct Workflow grant được tạo lúc `03:54:49 UTC` với lý do `Phân quyền Room dự án`, trong đó `workflow.instance.administer`, `cancel` và `reopen` là global ngoài blueprint `WORKFLOW_USER`. Các direct grant này không thuộc assignment pilot và chưa được sửa/thu hồi ở checkpoint này; cần owner/operator điều tra bằng một change set riêng có preview/audit.
+- Vì evidence vận hành đầy đủ vẫn chưa đạt — Thuận chưa có phiên nghiệm thu, chưa có thao tác lifecycle của cả hai persona và direct-grant anomaly làm sai lệch deny matrix của Hương — pilot không được gia hạn. Lúc `2026-09-17 08:04:26 UTC`, hai assignment được thu hồi nguyên tử qua `revoke_business_role_assignment` dưới actor Permission Admin hiện hành. Postflight xác nhận `WORKFLOW_USER` và `WORKFLOW_ADMIN` đều có `0` assignment active, mỗi assignment có đúng trạng thái `REVOKED` và audit `business_role_revoked`; template 6/12 item vẫn được giữ.
+- Sau xác nhận nguyên nhân localhost, `origin/main` vẫn ở `9766c5c` và đã là ancestor của worktree Authorization. Checkout gốc `/Users/admin/khotienthinh` ở `abc35de`, chậm 65 commit nhưng có thay đổi chưa commit trùng bốn file với incoming main, nên không fast-forward/không stash/không overwrite checkout này. Dev server localhost `127.0.0.1:3000` được khởi động trực tiếp từ worktree Authorization tại commit chứa toàn bộ main và evidence mới; HTTP preflight trả `200`.
+- Không tạo transition manifest, không revoke legacy shell, không đổi 9 direct grant bất thường và không mở cohort khác. Transition ledger giữ `0 batch / 0 item`; 13 cohort `owner_pending` giữ nguyên.
+- Task 13 tiếp tục blocked. Readiness read-only lúc `08:04:51 UTC` còn bốn cột legacy, 18 routine và một trigger phụ thuộc trực tiếp; 59 user còn dữ liệu legacy cấu hình. Dù hardening flags, `effectiveLegacySources=0`, snapshot coverage/checksum và RLS table gate hiện đạt, persona/observation, backup/restore rehearsal, dependency removal và private-routine ACL contract chưa đạt. Cloud migration dry-run sau revoke vẫn `upToDate=true`.
+
+## E36 — Preflight làm sạch và chạy lại pilot Workflow
+
+- Preflight lúc `2026-09-17 16:38 UTC` xác nhận worktree bắt đầu tại `5b9adcd`, remote `main` vẫn `9766c5c`, linked project đúng `ftciqmqhmfvjtwoycswe`, Cloud migration dry-run `upToDate=true`, readiness `4/4` và targeted Workflow regression đạt `41/41` sau khi bổ sung checker.
+- Checker read-only `check-task12-4-2-e36-workflow-pilot.mjs` nhận hai target ID cùng cửa sổ UTC qua biến môi trường, fail khi project ref/UUID/timestamp sai, và chỉ xuất evidence đã lược bỏ ID, email, tên, metadata/payload. Report bao phủ direct grant fingerprint, compatibility shell, effective source, template/assignment, audit, session heartbeat, Workflow command/log/instance và transition ledger.
+- Baseline Cloud giữ nguyên trạng thái E35: hai template v1 có `6/12` item, `0` assignment active, transition ledger `0 batch / 0 item`. Hương có `70` direct grant active gồm `61` ngoài Workflow và `9 workflow.*`; fingerprint của 61 grant ngoài Workflow đã được chốt riêng để bảo vệ khỏi thay đổi ngoài phạm vi. Thuận có `0 workflow.*` direct grant; shell của hai persona giữ nguyên.
+- Maintenance gate chưa mở: Hương có session Production vừa refresh, còn Thuận có `0` active session, `0` session refresh trong hai giờ gần nhất và `last_sign_in_at` vẫn là `2026-09-14 10:12:18 UTC`. Theo kế hoạch E36, không thu hồi chín grant, không tạo assignment và không tạo template/instance pilot cho tới khi Hương, Thuận và Permission Admin cùng xác nhận cửa sổ nghiệm thu.
+- E36 đang `INCOMPLETE/PREFLIGHT_READY`, chưa phải persona evidence và chưa mở observation T0. Không tạo migration, transition manifest, legacy-shell revoke hoặc thay đổi Task 13.
+
+### E36 scope update — owner chấp nhận persona Admin
+
+- Ngày `2026-09-18`, owner xác nhận đã tự kiểm thử tài khoản Thuận và chấp nhận kết quả `WORKFLOW_ADMIN`. Thuận được loại khỏi maintenance gate và không được assign lại trong E36; xác nhận này là owner acceptance, không được diễn giải thành assignment vĩnh viễn hoặc điều kiện mở Task 13.
+- Checker E36 cho phép bỏ `E36_WORKFLOW_ADMIN_ID`; khi bỏ biến này, report chỉ đối chiếu persona Hương. Template persistent `WORKFLOW_ADMIN` và lịch sử audit vẫn được giữ nguyên, không bị sửa hoặc xóa.
+- Phần còn lại của E36 chỉ gồm: loại đúng chín direct `workflow.*` của Hương bằng `update_user_authorization_v2`, bảo toàn 61 grant ngoài Workflow và `system.wf.view`, chạy lại bounded `WORKFLOW_USER` Production persona, reconciliation/audit, rồi revoke assignment ngay sau evidence.
+- Phát hiện riêng ở module Tài sản: Cloud xác nhận Thuận chỉ có `asset.assignment.view` và không có `asset.assignment.assign/return/transfer`; không có nguồn legacy Asset. Việc UI vẫn hiện nút và báo thành công là lỗi client do thiếu capability guard và mutation optimistic. Fix runtime được triển khai trong branch E36, không thay đổi grant Production hoặc schema Cloud.
+- Fix Tài sản đồng bộ registry frontend với catalog Cloud (`assign`, `return`, `transfer`), ẩn từng nút theo đúng global/warehouse/department/assigned scope, kiểm lại capability khi submit, và chỉ cập nhật state/toast sau khi RPC `record_asset_assignment` thành công. Cloud contract check xác nhận command có đủ ba guard, policy INSERT dùng đúng action, cập nhật asset nguyên tử, `authenticated` được execute còn `PUBLIC` không được execute, `SECURITY DEFINER` có pinned search path.
+- Verification sau fix và sau khi merge `origin/main` tại `363e477`: targeted `5/5` files, `30/30` tests; full regression `414/414` files, `1968/1968` tests; TypeScript, production build, migration baseline `91 active / 402 archived`, `git diff --check` đều đạt. Cloud migration dry-run trả `upToDate=true`; không có migration/seed/role chờ apply.
+
+### E36 execution checkpoint — gate chưa mở
+
+- Read-only checker chạy lúc `2026-09-18 02:58:56 UTC` trên Cloud `ftciqmqhmfvjtwoycswe` với riêng persona Hương (không truyền `E36_WORKFLOW_ADMIN_ID`). Kết quả đã lược PII: tài khoản active, `70` direct grants (`61` ngoài Workflow, `9 workflow.*`), fingerprint non-Workflow `ebb0b31ff1a5397d49f6c82a9aa6be3fa25c35d252b40b4d6e1ab30aedf9abdc`, một compatibility shell `system.wf.view`, không có Workflow command/instance/log mới; assignment `WORKFLOW_USER` cũ ở `REVOKED`.
+- Maintenance gate vẫn đóng: Hương có `0` active session và `0` refresh trong hai giờ gần nhất; Permission Admin có session hợp lệ. Vì vậy chưa gọi `update_user_authorization_v2`, chưa assign role mới và chưa tạo template/instance nghiệp vụ.
+- Template persistent vẫn `WORKFLOW_USER=6 items`, `WORKFLOW_ADMIN=12 items`; active assignment `0`; transition ledger `0 batch / 0 item`; Cloud migration dry-run `upToDate=true`. Chờ Hương đăng nhập Production và xác nhận cửa sổ nghiệm thu trước khi bước cleanup chín grant.
+
+### E36 follow-up — ẩn Sidebar khi chỉ còn compatibility shell
+
+- Điều tra phản ánh UI xác nhận nguyên nhân: `canViewModule('WF')` trước đây gom cả nguồn tương thích `system.wf.view`, còn route guard `/wf` chỉ chấp nhận capability Workflow canonical. Vì vậy icon `Quy trình` vẫn hiện dù click đã bị chặn.
+- Frontend nay dùng `canViewWorkflowModule`, chỉ coi `workflow.instance.view` hoặc `workflow.template.view` còn hiệu lực là điều kiện hiện icon; `system.wf.view` vẫn được giữ làm compatibility shell và không bị thu hồi trong E36. Nếu chỉ còn quyền xem mẫu, click module đi thẳng tới `/wf/templates`; nếu cả hai quyền canonical đều bị thu hồi, icon biến mất.
+- Regression bổ sung cho shell-only và template-viewer. Verification: targeted `3/3` files, `50/50` tests; full suite `414/414` files, `1970/1970` tests; TypeScript, production build, migration baseline `91 active / 402 archived`, Cloud migration dry-run `upToDate=true`, `git diff --check` đều đạt.
+- Đây là thay đổi client/read-only, không gọi mutation Cloud, không đổi schema/API, không tạo assignment/manifest và không mở Task 13. Cần merge/deploy branch rồi refresh session/browser để Production nhận Sidebar mới.
+
+### Navigation authorization parity follow-up
+
+- Pattern tương tự được xác nhận ở WMS, Dự án, Tài sản, Yêu cầu, Chi phí, Kho dữ liệu, Kho kiến thức, AI và Hợp đồng: `canViewModule()` có thể nhận compatibility `system.*.view` hoặc view của một submodule, trong khi landing route mặc định bị route guard từ chối.
+- Thêm `getAuthorizedModuleRoute` và `canAccessNavigationModule`: navigation chỉ hiện khi còn ít nhất một route canonical/thực sự mở được, đồng thời chọn route con được phép (ví dụ `asset.assignment.view` → `/ts/assignment`, `request.template.view` → `/rq/templates`). Module chỉ có system shell như Hồ sơ NV/Mua hàng/Tender AI vẫn giữ hành vi tương thích hiện hành.
+- Áp dụng resolver cho Sidebar, Neural App Hub, macOS Dock và BottomNav mobile. BottomNav cũng loại các item đã mất quyền khỏi danh sách persisted, thay vì chỉ lọc riêng Chat.
+- Verification: full `414/414` test files, `1973/1973` tests; TypeScript, production build, migration baseline `91 active / 402 archived` và `git diff --check` đều đạt. Thay đổi chỉ ở client/navigation và test; không gọi mutation Cloud, không đổi schema/API, không tạo assignment/manifest hay mở Task 13.

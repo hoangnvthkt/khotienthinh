@@ -22,6 +22,7 @@ const RetainedPermissionGrantNotice: React.FC<RetainedPermissionGrantNoticeProps
           </div>
           <p className="mt-1 text-[11px] text-slate-500">
             Các quyền chuyển đổi trước đây được giữ nguyên khi lưu, nhưng không thể cấp mới hoặc chỉnh sửa tại đây.
+            {' '}Bỏ tích Module chỉ gỡ quyền trực tiếp trong danh mục; các nguồn đang giữ lại có thể khiến Module vẫn còn quyền truy cập. Việc thu hồi nguồn chuyển đổi cần được đối soát riêng.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {grants.map(grant => (

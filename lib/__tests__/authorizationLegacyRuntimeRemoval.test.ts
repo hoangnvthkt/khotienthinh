@@ -6,6 +6,7 @@ const root = process.cwd();
 const legacyFieldPattern = /\b(?:allowedModules|adminModules|allowedSubModules|adminSubModules|allowed_modules|admin_modules|allowed_sub_modules|admin_sub_modules)\b/;
 
 const runtimeDecisionFiles = [
+  'App.tsx',
   'components/Layout.tsx',
   'components/Sidebar.tsx',
   'context/AppContext.tsx',

@@ -21,8 +21,11 @@ import { useChatV2UnreadCount } from '../hooks/useChatV2';
 import { Role, TransactionStatus, RequestStatus } from '../types';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { isChatEnabled, isChatV2Enabled, isViooWorkEnabled } from '../lib/featureFlags';
-import { canAccessRoute } from '../lib/routeAccess';
-import { canViewModule } from '../lib/permissions/permissionService';
+import {
+  canAccessNavigationModule,
+  canAccessRoute,
+  getAuthorizedModuleRoute,
+} from '../lib/routeAccess';
 import { getHrmNavigationItems } from '../lib/hrmNavigation';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -145,7 +148,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Filter modules by user permissions
   const userModules = useMemo(() => {
-    return MODULE_CONFIG.filter(m => (m.key !== 'work.module' || isViooWorkEnabled) && canViewModule(user, m.key));
+    return MODULE_CONFIG.filter(m => {
+      if (m.key === 'work.module' && !isViooWorkEnabled) return false;
+      return canAccessNavigationModule(user, m.key, m.route);
+    });
   }, [user]);
 
   // Sort by saved order
@@ -257,7 +263,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     WF: [
       { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
       { to: '/wf', icon: GitBranch, label: 'Quy trình' },
-      { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình', roles: [Role.ADMIN] },
+      { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình' },
     ],
     DA: [
       { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
@@ -347,8 +353,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';
 
   const handleModuleClick = (mod: typeof MODULE_CONFIG[number]) => {
+    const route = getAuthorizedModuleRoute(user, mod.key, mod.route);
+    if (!route) return;
     setView(mod.key);
-    navigate(mod.route);
+    navigate(route);
   };
 
   const goBackToHome = () => {

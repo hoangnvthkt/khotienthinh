@@ -69,6 +69,32 @@ const inheritedSources: EffectivePermissionSource[] = [{
 }];
 
 describe('PermissionModuleEditor', () => {
+  it('shows every direct and inherited scope for the same capability', () => {
+    const scopedApplication: PermissionCatalogApplication = {
+      ...assetApplication,
+      modules: [{ ...assetApplication.modules[0], actions: [{
+        ...assetApplication.modules[0].actions[0], scopeTypes: ['global', 'warehouse'],
+      }] }],
+    };
+    const html = renderToStaticMarkup(<PermissionModuleCard
+      application={scopedApplication} state="indeterminate" expanded
+      grants={['warehouse-A', 'warehouse-B'].map(id => ({
+        id, userId: 'user-1', permissionCode: 'asset.catalog.view',
+        scopeType: 'warehouse', scopeId: id, isActive: true,
+      }))}
+      inheritedSources={['role-C', 'role-D'].map(id => ({
+        permissionCode: 'asset.catalog.view', sourceType: 'ROLE', sourceCode: id,
+        scopeType: 'warehouse', scopeId: id, isBusinessApproval: false, metadata: {},
+      }))}
+      disabled={false} pendingRemovalCount={0} onToggleSelected={vi.fn()}
+      onToggleExpanded={vi.fn()} onToggleAction={vi.fn()}
+      onConfirmRemoval={vi.fn()} onCancelRemoval={vi.fn()}
+    />);
+    expect(html).toContain('warehouse-A');
+    expect(html).toContain('warehouse-B');
+    expect(html).toContain('role-C');
+    expect(html).toContain('role-D');
+  });
   it('shows retained hidden grants as read-only system permissions', () => {
     const html = renderToStaticMarkup(
       <RetainedPermissionGrantNotice grants={[{

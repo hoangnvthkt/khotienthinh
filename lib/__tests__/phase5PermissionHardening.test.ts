@@ -47,11 +47,16 @@ describe('Phase 5 permission hardening guards', () => {
       'components/permissions/LegacyPermissionReadOnly.tsx',
       'lib/auditService.ts',
       'lib/supabaseProjections.ts',
+      'context/authState.ts',
+      'types.ts',
     ]);
     const legacyFieldPattern = /\b(?:allowedModules|adminModules|allowedSubModules|adminSubModules|allowed_modules|admin_modules|allowed_sub_modules|admin_sub_modules)\b/;
-    const scannedRoots = ['components', 'hooks', 'lib', 'pages'];
-    const actualLegacyConsumers = scannedRoots
-      .flatMap(root => scanFiles(join(process.cwd(), root)))
+    const scannedRoots = ['components', 'hooks', 'lib', 'pages', 'context', 'supabase/functions'];
+    const rootFiles = readdirSync(process.cwd())
+      .filter(file => /\.(ts|tsx)$/.test(file) && statSync(join(process.cwd(), file)).isFile())
+      .map(file => join(process.cwd(), file));
+    const actualLegacyConsumers = [...rootFiles, ...scannedRoots
+      .flatMap(root => scanFiles(join(process.cwd(), root)))]
       .filter(file => legacyFieldPattern.test(readFileSync(file, 'utf8')))
       .map(file => relative(process.cwd(), file))
       .sort();

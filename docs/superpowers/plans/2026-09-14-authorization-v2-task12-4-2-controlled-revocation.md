@@ -12,6 +12,8 @@
 
 ## Môi trường và phạm vi
 
+**Tiến độ 2026-09-14:** A0 ledger đã commit `c3bc144`; A1 đã có inventory/access-map. D1 (gỡ đúng scope/hiển thị nguồn) được ưu tiên trước B vì lỗi gỡ chéo scope tái hiện được và sửa độc lập, chưa có Cloud mutation. B/C, API coverage chi tiết, batch F/G và release/observation H chưa hoàn tất.
+
 - Branch triển khai dự kiến: `feature/authorization-v2-task12-4-2`; worktree `.worktrees/authorization-v2-task12-4-2`, tạo từ `origin/main` đã fetch và kiểm tra khi bắt đầu thực hiện. Không triển khai trên branch Task 13 hoặc `vioo-work-r1a`.
 - Database: Supabase Cloud **main**, project ref `ftciqmqhmfvjtwoycswe`; dùng cấu hình `.env` hiện có, xác minh URL/ref trước mỗi thao tác Cloud. Không local, Docker hoặc branch `baseline-vioo-git`.
 - Tại lúc lập kế hoạch, root `main` ở `abc35de` và có thay đổi ngoài phạm vi. Chỉ bổ sung tài liệu kế hoạch; không gom các thay đổi đó vào checkpoint.

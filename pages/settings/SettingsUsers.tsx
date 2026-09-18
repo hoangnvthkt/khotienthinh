@@ -169,18 +169,6 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
     setPopoverPosition({ top, left });
   };
 
-  // Change user role quick action
-  const handleQuickRoleChange = async (targetUser: User, newRole: Role) => {
-    setSelectedUserForPopover(null);
-    if (targetUser.role === newRole) return;
-    try {
-      await handleSaveUser({ ...targetUser, role: newRole });
-      toast.success('Đã cập nhật vai trò', `Đã chuyển tài khoản ${targetUser.name} thành ${newRole}.`);
-    } catch (err: any) {
-      toast.error('Lỗi phân vai trò', err.message || 'Không thể đổi vai trò.');
-    }
-  };
-
   const getUserLifecycleAction = (targetUser: User): UserAccountLifecycleAction => {
     const disabled = targetUser.accountStatus === 'DISABLED' || targetUser.isActive === false;
     return targetUser.accountOperationStatus !== 'IDLE' && targetUser.accountOperationAction
@@ -528,32 +516,17 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
               <Eye className="w-4 h-4 text-blue-600 shrink-0" /> Xem trang cá nhân & Cấu hình
             </button>
 
-            {/* Role assignment dropdown */}
+            {/* Role changes use the audited atomic command in UserModal. */}
             <div className="pt-2 border-t border-slate-100 space-y-1">
               <p className="px-3 text-[10px] font-black text-slate-400 uppercase tracking-wider">Phân vai trò tài khoản</p>
               <button
-                onClick={() => handleQuickRoleChange(selectedUserForPopover, Role.EMPLOYEE)}
-                className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition ${
-                  selectedUserForPopover.role === Role.EMPLOYEE ? 'bg-teal-50 text-teal-700 font-bold' : 'text-slate-600 hover:bg-slate-50'
-                }`}
+                onClick={() => {
+                  handleEditUser(selectedUserForPopover);
+                  setSelectedUserForPopover(null);
+                }}
+                className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
               >
-                <UserCheck className="w-3.5 h-3.5 text-slate-500" /> Chọn làm Thành viên thông thường
-              </button>
-              <button
-                onClick={() => handleQuickRoleChange(selectedUserForPopover, Role.WAREHOUSE_KEEPER)}
-                className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition ${
-                  selectedUserForPopover.role === Role.WAREHOUSE_KEEPER ? 'bg-teal-50 text-teal-700 font-bold' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <Building className="w-3.5 h-3.5 text-emerald-600" /> Chọn làm Thủ kho / Quản lý Kho
-              </button>
-              <button
-                onClick={() => handleQuickRoleChange(selectedUserForPopover, Role.ADMIN)}
-                className={`w-full text-left px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition ${
-                  selectedUserForPopover.role === Role.ADMIN ? 'bg-purple-50 text-purple-700 font-bold' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Chọn làm Quản trị hệ thống
+                <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Đổi vai trò trong màn hình Chỉnh sửa
               </button>
             </div>
 

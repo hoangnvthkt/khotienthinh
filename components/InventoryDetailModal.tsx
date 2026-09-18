@@ -17,6 +17,8 @@ import { partnerService } from '../lib/partnerService';
 import SupplierCombobox from './SupplierCombobox';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { aggregateTransactionItemsForInventory } from '../lib/transactionItemAggregation';
+import { canPerform } from '../lib/permissions/permissionService';
+import { wmsInventoryManagementService } from '../lib/wmsInventoryManagementService';
 
 interface InventoryDetailModalProps {
   isOpen: boolean;
@@ -28,7 +30,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   const navigate = useNavigate();
   const {
     warehouses, user, addTransaction, logActivity, updateItem,
-    removeItem, categories, units, suppliers, transactions, users
+    removeItem, categories, units, suppliers, transactions, users, refreshWmsRecords
   } = useApp();
   const toast = useToast();
 
@@ -39,6 +41,10 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   const [reqNote, setReqNote] = useState('');
   const [requestSaving, setRequestSaving] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
+  const [adjustingWarehouseId, setAdjustingWarehouseId] = useState('');
+  const [adjustedQuantity, setAdjustedQuantity] = useState<number | string>('');
+  const [adjustmentReason, setAdjustmentReason] = useState('');
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false);
 
   // State cho Chế độ sửa Admin
   const [isEditing, setIsEditing] = useState(false);
@@ -57,6 +63,9 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
       setReqWarehouseId(user.assignedWarehouseId || warehouses[0]?.id || '');
       setEditData({ ...item });
       setShowDeleteConfirm(false);
+      setAdjustingWarehouseId('');
+      setAdjustedQuantity('');
+      setAdjustmentReason('');
     }
   }, [item, isOpen, warehouses, user]);
 
@@ -158,11 +167,75 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
     }
   };
 
+  const isAdmin = user.role === Role.ADMIN;
+  const canEditGlobalCatalog = isAdmin || canPerform(user, 'wms.inventory.edit', {
+    scopeType: 'global',
+    scopeId: '*',
+  });
+  const canDeleteGlobalCatalog = isAdmin || canPerform(user, 'wms.master_data.manage', {
+    scopeType: 'global',
+    scopeId: '*',
+  });
+
+  const manageableWarehouses = useMemo(() => warehouses.filter(warehouse =>
+    isAdmin || canPerform(user, 'wms.inventory.edit', {
+      scopeType: 'warehouse',
+      scopeId: warehouse.id,
+    })
+  ), [isAdmin, user, warehouses]);
+
   const displayWarehouses = useMemo(() => {
     if (!item) return [];
-    if (user.role === Role.ADMIN || !user.assignedWarehouseId) return warehouses;
-    return warehouses.filter(wh => wh.id === user.assignedWarehouseId);
-  }, [warehouses, user, item]);
+    if (isAdmin) return warehouses;
+    const visibleByCapability = warehouses.filter(warehouse =>
+      canPerform(user, 'wms.inventory.view', { scopeType: 'warehouse', scopeId: warehouse.id })
+      || canPerform(user, 'wms.inventory.edit', { scopeType: 'warehouse', scopeId: warehouse.id })
+      || canPerform(user, 'wms.master_data.manage', { scopeType: 'warehouse', scopeId: warehouse.id })
+    );
+    if (visibleByCapability.length > 0) return visibleByCapability;
+    if (user.assignedWarehouseId) {
+      return warehouses.filter(warehouse => warehouse.id === user.assignedWarehouseId);
+    }
+    return warehouses;
+  }, [warehouses, user, item, isAdmin]);
+
+  const handleStockAdjustment = async () => {
+    if (!item || !adjustingWarehouseId) return;
+    const rawQuantity = String(adjustedQuantity).trim();
+    const newQuantity = parseNonNegativeLocaleNumber(adjustedQuantity);
+    const reason = adjustmentReason.trim();
+    if (!rawQuantity || !/^\d[\d\s.,]*$/u.test(rawQuantity) || !Number.isFinite(newQuantity) || newQuantity < 0) {
+      toast.error('Số lượng không hợp lệ', 'Tồn kho mới phải là một số không âm.');
+      return;
+    }
+    if (reason.length < 10) {
+      toast.error('Thiếu lý do điều chỉnh', 'Lý do phải có ít nhất 10 ký tự để phục vụ kiểm toán.');
+      return;
+    }
+    const expectedCurrentQuantity = Number(item.stockByWarehouse[adjustingWarehouseId] || 0);
+    setAdjustmentSaving(true);
+    try {
+      await wmsInventoryManagementService.adjustStock({
+        itemId: item.id,
+        warehouseId: adjustingWarehouseId,
+        newQuantity,
+        expectedCurrentQuantity,
+        reason,
+      });
+      await refreshWmsRecords({ itemIds: [item.id] });
+      const warehouseName = warehouses.find(warehouse => warehouse.id === adjustingWarehouseId)?.name || adjustingWarehouseId;
+      toast.success('Đã điều chỉnh tồn kho', `${warehouseName}: ${newQuantity.toLocaleString('vi-VN')} ${item.unit}.`);
+      onClose();
+    } catch (error) {
+      logApiError('inventoryDetail.adjustStock', error);
+      const fallback = (error as { code?: string })?.code === '40001'
+        ? 'Tồn kho vừa thay đổi bởi người khác. Vui lòng mở lại vật tư và thử lại.'
+        : 'Không thể điều chỉnh tồn kho tại kho này.';
+      toast.error('Không thể điều chỉnh tồn kho', getApiErrorMessage(error, fallback));
+    } finally {
+      setAdjustmentSaving(false);
+    }
+  };
 
   // Logic lọc lịch sử giao dịch cho vật tư này
   const itemHistory = useMemo(() => {
@@ -199,8 +272,6 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
   }, [supplierPartners, suppliers]);
 
   if (!isOpen || !item) return null;
-
-  const isAdmin = user.role === Role.ADMIN;
 
   const getTxTypeBadge = (type: TransactionType) => {
     switch (type) {
@@ -283,21 +354,25 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                 </div>
               )}
               <div className="flex items-center gap-2">
-                {isAdmin && !isEditing && (
+                {(canEditGlobalCatalog || canDeleteGlobalCatalog) && !isEditing && (
                   <>
-                    <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                      className="p-2 text-slate-400 hover:text-red-600 transition-colors"
-                      title="Xoá vĩnh viễn"
-                    >
-                      <Trash2 size={20} />
-                    </button>
-                    <button
-                      onClick={() => setIsEditing(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-100 hover:bg-orange-600 hover:text-white transition-all"
-                    >
-                      <Edit3 size={14} /> SỬA GỐC
-                    </button>
+                    {canDeleteGlobalCatalog && (
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                        title="Xoá vĩnh viễn"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    )}
+                    {canEditGlobalCatalog && (
+                      <button
+                        onClick={() => setIsEditing(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-xs font-bold border border-orange-100 hover:bg-orange-600 hover:text-white transition-all"
+                      >
+                        <Edit3 size={14} /> SỬA GỐC
+                      </button>
+                    )}
                   </>
                 )}
                 <button onClick={onClose} className="text-slate-400 hover:text-slate-600 ml-2"><X size={24} /></button>
@@ -564,6 +639,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                     <tr>
                       <th className="p-3">Kho lưu trữ</th>
                       <th className="p-3 w-36 text-right">Số lượng tồn</th>
+                      {manageableWarehouses.length > 0 && <th className="p-3 w-32 text-right">Thao tác</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -579,12 +655,74 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
                             <span className={`font-bold ${qty > 0 ? 'text-slate-800' : 'text-slate-300'}`}>{qty.toLocaleString()}</span>
                             <span className="text-xs text-slate-400 ml-1">{item.unit}</span>
                           </td>
+                          {manageableWarehouses.length > 0 && (
+                            <td className="p-3 text-right">
+                              {manageableWarehouses.some(warehouse => warehouse.id === wh.id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAdjustingWarehouseId(wh.id);
+                                    setAdjustedQuantity(qty);
+                                    setAdjustmentReason('');
+                                  }}
+                                  className="text-xs font-bold text-blue-600 hover:text-blue-800"
+                                >
+                                  Điều chỉnh
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+              {adjustingWarehouseId && (
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-blue-900">Điều chỉnh tồn kiểm kê</div>
+                      <div className="text-xs text-blue-600">
+                        {warehouses.find(warehouse => warehouse.id === adjustingWarehouseId)?.name}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setAdjustingWarehouseId('')} className="text-blue-400 hover:text-blue-700">
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1 text-xs font-bold text-blue-800">
+                      Tồn kho mới
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={adjustedQuantity}
+                        onChange={event => setAdjustedQuantity(event.target.value)}
+                        className="w-full rounded-lg border border-blue-200 bg-white p-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs font-bold text-blue-800">
+                      Lý do kiểm kê / điều chỉnh
+                      <input
+                        type="text"
+                        value={adjustmentReason}
+                        onChange={event => setAdjustmentReason(event.target.value)}
+                        placeholder="Ít nhất 10 ký tự"
+                        className="w-full rounded-lg border border-blue-200 bg-white p-2 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStockAdjustment}
+                    disabled={adjustmentSaving}
+                    className="w-full rounded-lg bg-blue-600 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {adjustmentSaving ? 'Đang ghi nhận...' : 'Xác nhận điều chỉnh tồn'}
+                  </button>
+                </div>
+              )}
             </section>
 
             {/* Transaction History Section (Visible for Admin & Storekeepers) */}

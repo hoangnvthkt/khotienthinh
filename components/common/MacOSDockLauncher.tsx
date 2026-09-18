@@ -17,7 +17,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { User } from '../../types';
-import { canViewModule } from '../../lib/permissions/permissionService';
+import {
+  canAccessNavigationModule,
+  getAuthorizedModuleRoute,
+} from '../../lib/routeAccess';
 
 export interface DockModuleItem {
   key: string;
@@ -184,7 +187,7 @@ export const MacOSDockLauncher: React.FC<MacOSDockLauncherProps> = ({
 
   // Filter modules user is authorized to view
   const userModules = useMemo(() => {
-    return DOCK_MODULE_DEFS.filter(m => canViewModule(user, m.key));
+    return DOCK_MODULE_DEFS.filter(m => canAccessNavigationModule(user, m.key, m.route));
   }, [user]);
 
   const handleMouseEnterTrigger = () => {
@@ -214,7 +217,8 @@ export const MacOSDockLauncher: React.FC<MacOSDockLauncherProps> = ({
     setTimeout(() => {
       setBouncingKey(null);
       setIsOpen(false);
-      navigate(module.route);
+      const route = getAuthorizedModuleRoute(user, module.key, module.route);
+      if (route) navigate(route);
     }, 350);
   };
 
