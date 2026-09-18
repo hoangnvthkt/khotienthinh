@@ -1,0 +1,628 @@
+<div id="vioo-procurement-mock" aria-label="Phác thảo giao diện Mua hàng và Cung ứng">
+  <style>
+    #vioo-procurement-mock {
+      --vioo-bg: light-dark(#f3f6f9, #0b1018);
+      --vioo-shell: light-dark(#ffffff, #101722);
+      --vioo-panel: light-dark(#ffffff, #131c29);
+      --vioo-panel-soft: light-dark(#f8fafc, #172231);
+      --vioo-text: light-dark(#14202f, #edf4fb);
+      --vioo-muted: light-dark(#64748b, #9aacbf);
+      --vioo-line: light-dark(#dbe3ec, #283548);
+      --vioo-brand: light-dark(#087f5b, #35c792);
+      --vioo-brand-soft: light-dark(#e8f7f1, #12342c);
+      --vioo-blue: light-dark(#1d6fd8, #65a6ff);
+      --vioo-blue-soft: light-dark(#eaf2ff, #172d4a);
+      --vioo-orange: light-dark(#c86a12, #ffab55);
+      --vioo-orange-soft: light-dark(#fff2e5, #3a291a);
+      --vioo-red: light-dark(#c23b3b, #ff7777);
+      --vioo-red-soft: light-dark(#fff0f0, #3d2024);
+      --vioo-violet: light-dark(#7145b8, #b996ff);
+      --vioo-violet-soft: light-dark(#f3edff, #2b2340);
+      --vioo-sidebar-top: light-dark(#073d36, #061f1c);
+      --vioo-sidebar-mid: light-dark(#0a4b40, #08372f);
+      --vioo-sidebar-bottom: light-dark(#082f2b, #051916);
+      --vioo-sidebar-text: light-dark(#edfdf7, #f1fff9);
+      --vioo-sidebar-muted: light-dark(#a9d8cb, #8fc5b7);
+      --vioo-sidebar-item: light-dark(#cce8e0, #c3e7dc);
+      --vioo-sidebar-accent: light-dark(#dff9ee, #c9f4e5);
+      --vioo-sidebar-accent-text: light-dark(#073d36, #062c27);
+      --vioo-on-brand: light-dark(#ffffff, #ffffff);
+      color-scheme: light dark;
+      color: var(--vioo-text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      width: 100%;
+    }
+
+    #vioo-procurement-mock * { box-sizing: border-box; }
+    #vioo-procurement-mock button,
+    #vioo-procurement-mock input,
+    #vioo-procurement-mock select { font: inherit; }
+
+    #vioo-procurement-mock .vioo-window {
+      display: grid;
+      grid-template-columns: 188px minmax(0, 1fr);
+      min-height: 760px;
+      overflow: hidden;
+      border: 1px solid var(--vioo-line);
+      border-radius: 18px;
+      background: var(--vioo-bg);
+      box-shadow: 0 18px 50px light-dark(rgb(15 23 42 / 12%), rgb(0 0 0 / 34%));
+    }
+
+    #vioo-procurement-mock .vioo-sidebar {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 18px 12px;
+      color: var(--vioo-sidebar-text);
+      background: linear-gradient(180deg, var(--vioo-sidebar-top) 0%, var(--vioo-sidebar-mid) 48%, var(--vioo-sidebar-bottom) 100%);
+    }
+
+    #vioo-procurement-mock .vioo-brand-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 2px 8px 20px;
+    }
+
+    #vioo-procurement-mock .vioo-logo {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 10px;
+      color: var(--vioo-sidebar-accent-text);
+      background: var(--vioo-sidebar-accent);
+      font-weight: 500;
+    }
+
+    #vioo-procurement-mock .vioo-brand-copy strong,
+    #vioo-procurement-mock .vioo-brand-copy span { display: block; }
+    #vioo-procurement-mock .vioo-brand-copy strong { font-size: 14px; letter-spacing: .08em; }
+    #vioo-procurement-mock .vioo-brand-copy span { margin-top: 2px; color: var(--vioo-sidebar-muted); font-size: 11px; }
+
+    #vioo-procurement-mock .vioo-nav-label {
+      padding: 4px 10px 8px;
+      color: var(--vioo-sidebar-muted);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    #vioo-procurement-mock .vioo-nav {
+      display: grid;
+      gap: 4px;
+    }
+
+    #vioo-procurement-mock .vioo-nav button {
+      display: grid;
+      grid-template-columns: 19px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--vioo-sidebar-item);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    #vioo-procurement-mock .vioo-nav button:hover { background: rgb(255 255 255 / 8%); }
+    #vioo-procurement-mock .vioo-nav button.is-active { color: var(--vioo-on-brand); background: rgb(255 255 255 / 14%); }
+    #vioo-procurement-mock .vioo-nav button span:nth-child(2) { overflow: hidden; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+    #vioo-procurement-mock .vioo-nav-count { min-width: 21px; padding: 2px 6px; border-radius: 999px; color: var(--vioo-sidebar-accent-text); background: var(--vioo-sidebar-accent); font-size: 10px; font-weight: 500; text-align: center; }
+    #vioo-procurement-mock .vioo-sidebar-spacer { flex: 1; }
+
+    #vioo-procurement-mock .vioo-user {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 16px;
+      padding: 12px 8px 2px;
+      border-top: 1px solid rgb(255 255 255 / 12%);
+    }
+
+    #vioo-procurement-mock .vioo-avatar {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--vioo-sidebar-accent-text);
+      background: var(--vioo-sidebar-accent);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    #vioo-procurement-mock .vioo-user strong,
+    #vioo-procurement-mock .vioo-user span { display: block; }
+    #vioo-procurement-mock .vioo-user strong { font-size: 11px; }
+    #vioo-procurement-mock .vioo-user span { margin-top: 2px; color: var(--vioo-sidebar-muted); font-size: 10px; }
+
+    #vioo-procurement-mock .vioo-app {
+      min-width: 0;
+      padding: 22px 24px 26px;
+    }
+
+    #vioo-procurement-mock .vioo-topbar,
+    #vioo-procurement-mock .vioo-title-actions,
+    #vioo-procurement-mock .vioo-filterbar,
+    #vioo-procurement-mock .vioo-filter-group,
+    #vioo-procurement-mock .vioo-step-head,
+    #vioo-procurement-mock .vioo-detail-head,
+    #vioo-procurement-mock .vioo-inline,
+    #vioo-procurement-mock .vioo-action-row {
+      display: flex;
+      align-items: center;
+    }
+
+    #vioo-procurement-mock .vioo-topbar { justify-content: space-between; gap: 18px; }
+    #vioo-procurement-mock .vioo-eyebrow { color: var(--vioo-brand); font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; }
+    #vioo-procurement-mock h1 { margin: 4px 0 3px; font-size: 24px; font-weight: 500; letter-spacing: -.03em; }
+    #vioo-procurement-mock .vioo-subtitle { margin: 0; color: var(--vioo-muted); font-size: 12px; }
+    #vioo-procurement-mock .vioo-title-actions { gap: 8px; }
+
+    #vioo-procurement-mock .vioo-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 8px 12px;
+      border: 1px solid var(--vioo-line);
+      border-radius: 9px;
+      color: var(--vioo-text);
+      background: var(--vioo-panel);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    #vioo-procurement-mock .vioo-action:hover { border-color: var(--vioo-brand); }
+    #vioo-procurement-mock .vioo-action.is-primary { border-color: var(--vioo-brand); color: var(--vioo-on-brand); background: light-dark(#087f5b, #178664); }
+    #vioo-procurement-mock .vioo-action.is-quiet { border-color: transparent; background: transparent; }
+
+    #vioo-procurement-mock .vioo-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    #vioo-procurement-mock .vioo-stat {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      padding: 11px 12px;
+      border: 1px solid var(--vioo-line);
+      border-radius: 12px;
+      background: var(--vioo-panel);
+    }
+
+    #vioo-procurement-mock .vioo-stat-icon {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 9px;
+      color: var(--stat-color);
+      background: var(--stat-bg);
+    }
+
+    #vioo-procurement-mock .vioo-stat strong,
+    #vioo-procurement-mock .vioo-stat span { display: block; }
+    #vioo-procurement-mock .vioo-stat strong { font-size: 18px; line-height: 1; }
+    #vioo-procurement-mock .vioo-stat span { margin-top: 4px; overflow: hidden; color: var(--vioo-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+    #vioo-procurement-mock .vioo-filterbar {
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 13px;
+      padding: 9px;
+      border: 1px solid var(--vioo-line);
+      border-radius: 12px;
+      background: var(--vioo-panel);
+    }
+
+    #vioo-procurement-mock .vioo-filter-group { flex-wrap: wrap; gap: 7px; min-width: 0; }
+    #vioo-procurement-mock .vioo-segment { display: flex; padding: 3px; border-radius: 9px; background: var(--vioo-panel-soft); }
+    #vioo-procurement-mock .vioo-segment button { min-height: 29px; padding: 5px 9px; border: 0; border-radius: 7px; color: var(--vioo-muted); background: transparent; cursor: pointer; font-size: 10px; font-weight: 500; }
+    #vioo-procurement-mock .vioo-segment button.is-active { color: var(--vioo-text); background: var(--vioo-panel); box-shadow: 0 1px 4px rgb(15 23 42 / 10%); }
+
+    #vioo-procurement-mock .vioo-select,
+    #vioo-procurement-mock .vioo-search {
+      min-height: 34px;
+      border: 1px solid var(--vioo-line);
+      border-radius: 8px;
+      color: var(--vioo-text);
+      background: var(--vioo-panel-soft);
+      font-size: 10px;
+    }
+
+    #vioo-procurement-mock .vioo-select { max-width: 145px; padding: 6px 26px 6px 9px; }
+    #vioo-procurement-mock .vioo-search-wrap { position: relative; min-width: 188px; }
+    #vioo-procurement-mock .vioo-search-wrap svg { position: absolute; top: 9px; left: 9px; color: var(--vioo-muted); pointer-events: none; }
+    #vioo-procurement-mock .vioo-search { width: 100%; padding: 6px 9px 6px 31px; outline: none; }
+    #vioo-procurement-mock .vioo-search:focus { border-color: var(--vioo-brand); box-shadow: 0 0 0 3px var(--vioo-brand-soft); }
+
+    #vioo-procurement-mock .vioo-process {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin-top: 13px;
+      border-bottom: 1px solid var(--vioo-line);
+    }
+
+    #vioo-procurement-mock .vioo-process button {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 42px;
+      padding: 8px 6px 10px;
+      border: 0;
+      color: var(--vioo-muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    #vioo-procurement-mock .vioo-process button::after { content: ""; position: absolute; right: 22%; bottom: -1px; left: 22%; height: 2px; border-radius: 2px; background: transparent; }
+    #vioo-procurement-mock .vioo-process button.is-active { color: var(--vioo-brand); }
+    #vioo-procurement-mock .vioo-process button.is-active::after { background: var(--vioo-brand); }
+    #vioo-procurement-mock .vioo-process-count { display: inline-grid; min-width: 20px; height: 20px; padding: 0 5px; place-items: center; border-radius: 999px; color: var(--vioo-muted); background: var(--vioo-panel-soft); font-size: 9px; }
+    #vioo-procurement-mock .vioo-process button.is-active .vioo-process-count { color: var(--vioo-brand); background: var(--vioo-brand-soft); }
+
+    #vioo-procurement-mock .vioo-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.52fr) minmax(300px, .78fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    #vioo-procurement-mock[data-detail="off"] .vioo-workspace { grid-template-columns: minmax(0, 1fr); }
+    #vioo-procurement-mock[data-detail="off"] .vioo-detail { display: none; }
+
+    #vioo-procurement-mock .vioo-list,
+    #vioo-procurement-mock .vioo-detail {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--vioo-line);
+      border-radius: 12px;
+      background: var(--vioo-panel);
+    }
+
+    #vioo-procurement-mock .vioo-list-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--vioo-line);
+    }
+
+    #vioo-procurement-mock .vioo-list-title strong { font-size: 12px; }
+    #vioo-procurement-mock .vioo-list-title span { color: var(--vioo-muted); font-size: 10px; }
+    #vioo-procurement-mock .vioo-table-wrap { overflow-x: auto; }
+    #vioo-procurement-mock table { width: 100%; min-width: 640px; border-collapse: collapse; }
+    #vioo-procurement-mock th { padding: 9px 10px; color: var(--vioo-muted); background: var(--vioo-panel-soft); font-size: 9px; font-weight: 500; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+    #vioo-procurement-mock td { padding: 11px 10px; border-top: 1px solid var(--vioo-line); vertical-align: middle; font-size: 10px; }
+    #vioo-procurement-mock tbody tr { cursor: pointer; }
+    #vioo-procurement-mock tbody tr:hover { background: var(--vioo-panel-soft); }
+    #vioo-procurement-mock tbody tr.is-selected { background: var(--vioo-brand-soft); }
+    #vioo-procurement-mock .vioo-demand strong,
+    #vioo-procurement-mock .vioo-demand span { display: block; }
+    #vioo-procurement-mock .vioo-demand strong { max-width: 210px; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    #vioo-procurement-mock .vioo-demand span { margin-top: 4px; color: var(--vioo-muted); font-size: 9px; }
+    #vioo-procurement-mock .vioo-origin { display: inline-flex; align-items: center; gap: 5px; color: var(--origin-color); font-weight: 500; }
+    #vioo-procurement-mock .vioo-origin-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--origin-color); }
+    #vioo-procurement-mock .vioo-next { color: var(--vioo-brand); font-weight: 500; }
+    #vioo-procurement-mock .vioo-overdue { color: var(--vioo-red); }
+    #vioo-procurement-mock .vioo-method { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 999px; color: var(--method-color); background: var(--method-bg); font-size: 9px; font-weight: 500; white-space: nowrap; }
+    #vioo-procurement-mock .vioo-check { width: 14px; height: 14px; accent-color: var(--vioo-brand); }
+    #vioo-procurement-mock .vioo-table-note { color: var(--vioo-muted); }
+    #vioo-procurement-mock .vioo-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    #vioo-procurement-mock .vioo-detail { padding: 14px; }
+    #vioo-procurement-mock .vioo-detail-head { justify-content: space-between; gap: 10px; }
+    #vioo-procurement-mock .vioo-detail-kicker { color: var(--vioo-brand); font-size: 9px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+    #vioo-procurement-mock .vioo-detail h2 { margin: 4px 0 0; font-size: 16px; font-weight: 500; line-height: 1.3; }
+    #vioo-procurement-mock .vioo-source-link { display: inline-flex; align-items: center; gap: 5px; border: 0; color: var(--vioo-blue); background: transparent; cursor: pointer; font-size: 9px; font-weight: 500; }
+    #vioo-procurement-mock .vioo-detail-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    #vioo-procurement-mock .vioo-meta { padding: 9px; border-radius: 9px; background: var(--vioo-panel-soft); }
+    #vioo-procurement-mock .vioo-meta span,
+    #vioo-procurement-mock .vioo-meta strong { display: block; }
+    #vioo-procurement-mock .vioo-meta span { color: var(--vioo-muted); font-size: 9px; }
+    #vioo-procurement-mock .vioo-meta strong { margin-top: 4px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+    #vioo-procurement-mock .vioo-section { margin-top: 16px; }
+    #vioo-procurement-mock .vioo-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    #vioo-procurement-mock .vioo-section-title strong { font-size: 11px; }
+    #vioo-procurement-mock .vioo-section-title span { color: var(--vioo-muted); font-size: 9px; }
+    #vioo-procurement-mock .vioo-allocation { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; padding: 10px 0; border-top: 1px solid var(--vioo-line); }
+    #vioo-procurement-mock .vioo-allocation:first-of-type { border-top: 0; }
+    #vioo-procurement-mock .vioo-allocation strong { font-size: 10px; }
+    #vioo-procurement-mock .vioo-allocation span { color: var(--vioo-muted); font-size: 9px; }
+    #vioo-procurement-mock .vioo-allocation-qty { color: var(--vioo-text) !important; font-weight: 500; }
+    #vioo-procurement-mock .vioo-progress { grid-column: 1 / -1; height: 5px; overflow: hidden; border-radius: 999px; background: var(--vioo-panel-soft); }
+    #vioo-procurement-mock .vioo-progress div { height: 100%; border-radius: inherit; background: var(--progress-color); }
+
+    #vioo-procurement-mock .vioo-timeline { display: grid; gap: 0; }
+    #vioo-procurement-mock .vioo-timeline-row { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 8px; min-height: 40px; }
+    #vioo-procurement-mock .vioo-timeline-row::after { content: ""; position: absolute; top: 15px; bottom: -4px; left: 6px; width: 1px; background: var(--vioo-line); }
+    #vioo-procurement-mock .vioo-timeline-row:last-child::after { display: none; }
+    #vioo-procurement-mock .vioo-timeline-dot { position: relative; z-index: 1; width: 13px; height: 13px; margin-top: 2px; border: 3px solid var(--vioo-panel); border-radius: 50%; background: var(--dot-color); box-shadow: 0 0 0 1px var(--dot-color); }
+    #vioo-procurement-mock .vioo-timeline-row strong,
+    #vioo-procurement-mock .vioo-timeline-row span { display: block; }
+    #vioo-procurement-mock .vioo-timeline-row strong { font-size: 9px; }
+    #vioo-procurement-mock .vioo-timeline-row span { margin-top: 3px; color: var(--vioo-muted); font-size: 9px; }
+    #vioo-procurement-mock .vioo-action-row { flex-wrap: wrap; gap: 7px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--vioo-line); }
+
+    #vioo-procurement-mock[data-density="compact"] .vioo-app { padding: 17px 18px 20px; }
+    #vioo-procurement-mock[data-density="compact"] td { padding-top: 8px; padding-bottom: 8px; }
+    #vioo-procurement-mock[data-density="compact"] .vioo-stat { padding-top: 8px; padding-bottom: 8px; }
+
+    @media (max-width: 820px) {
+      #vioo-procurement-mock .vioo-window { grid-template-columns: 1fr; }
+      #vioo-procurement-mock .vioo-sidebar { display: block; padding: 10px 12px; }
+      #vioo-procurement-mock .vioo-brand-row { padding-bottom: 10px; }
+      #vioo-procurement-mock .vioo-sidebar .vioo-nav-label,
+      #vioo-procurement-mock .vioo-sidebar-spacer,
+      #vioo-procurement-mock .vioo-user { display: none; }
+      #vioo-procurement-mock .vioo-nav { display: flex; overflow-x: auto; }
+      #vioo-procurement-mock .vioo-nav button { grid-template-columns: 18px auto auto; width: auto; min-width: max-content; }
+      #vioo-procurement-mock .vioo-app { padding: 16px; }
+      #vioo-procurement-mock .vioo-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #vioo-procurement-mock .vioo-workspace { grid-template-columns: 1fr; }
+      #vioo-procurement-mock .vioo-detail { display: block; }
+    }
+
+    @media (max-width: 520px) {
+      #vioo-procurement-mock .vioo-topbar { align-items: flex-start; flex-direction: column; }
+      #vioo-procurement-mock .vioo-title-actions { width: 100%; }
+      #vioo-procurement-mock .vioo-title-actions .vioo-action { flex: 1; }
+      #vioo-procurement-mock .vioo-filterbar { align-items: stretch; flex-direction: column; }
+      #vioo-procurement-mock .vioo-filter-group { width: 100%; }
+      #vioo-procurement-mock .vioo-select,
+      #vioo-procurement-mock .vioo-search-wrap { max-width: none; flex: 1; }
+      #vioo-procurement-mock .vioo-process { grid-template-columns: repeat(3, 1fr); }
+      #vioo-procurement-mock .vioo-process button:nth-child(n+4) { display: none; }
+      #vioo-procurement-mock .vioo-stat:nth-child(n+3) { display: none; }
+    }
+  </style>
+
+  <section class="vioo-window">
+    <aside class="vioo-sidebar" aria-label="Điều hướng Mua hàng và Cung ứng">
+      <div class="vioo-brand-row">
+        <div class="vioo-logo">V</div>
+        <div class="vioo-brand-copy"><strong>VIOO</strong><span>Mua hàng &amp; Cung ứng</span></div>
+      </div>
+
+      <div class="vioo-nav-label">Không gian làm việc</div>
+      <nav class="vioo-nav">
+        <button type="button"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span>Tổng quan</span></button>
+        <button type="button" class="is-active"><i data-lucide="inbox" aria-hidden="true"></i><span>Việc của tôi</span><span class="vioo-nav-count">12</span></button>
+        <button type="button"><i data-lucide="clipboard-list" aria-hidden="true"></i><span>Nhu cầu cung ứng</span><span class="vioo-nav-count">125</span></button>
+        <button type="button"><i data-lucide="file-text" aria-hidden="true"></i><span>Đơn mua</span></button>
+        <button type="button"><i data-lucide="truck" aria-hidden="true"></i><span>Giao nhận</span><span class="vioo-nav-count">7</span></button>
+        <button type="button"><i data-lucide="scale" aria-hidden="true"></i><span>Đối chiếu</span><span class="vioo-nav-count">3</span></button>
+        <button type="button"><i data-lucide="handshake" aria-hidden="true"></i><span>Hợp đồng &amp; NCC</span></button>
+        <button type="button"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>Báo cáo</span></button>
+      </nav>
+
+      <div class="vioo-sidebar-spacer"></div>
+      <div class="vioo-user">
+        <div class="vioo-avatar">NH</div>
+        <div><strong>Nguyễn Văn Hoàng</strong><span>Trưởng phòng mua hàng</span></div>
+      </div>
+    </aside>
+
+    <main class="vioo-app">
+      <header class="vioo-topbar">
+        <div>
+          <div class="vioo-eyebrow">Trung tâm điều phối</div>
+          <h1>Việc của tôi</h1>
+          <p class="vioo-subtitle">Các nhu cầu cần anh xử lý, được gom từ mọi nguồn và sắp theo mức độ ưu tiên.</p>
+        </div>
+        <div class="vioo-title-actions">
+          <button type="button" class="vioo-action"><i data-lucide="refresh-cw" aria-hidden="true"></i>Làm mới</button>
+          <button type="button" class="vioo-action is-primary"><i data-lucide="plus" aria-hidden="true"></i>Tạo nhu cầu mua</button>
+        </div>
+      </header>
+
+      <section class="vioo-stats" aria-label="Tóm tắt công việc">
+        <div class="vioo-stat" style="--stat-color:var(--vioo-blue);--stat-bg:var(--vioo-blue-soft)">
+          <div class="vioo-stat-icon"><i data-lucide="inbox" aria-hidden="true"></i></div>
+          <div><strong>18</strong><span>Nhu cầu mới tiếp nhận</span></div>
+        </div>
+        <div class="vioo-stat" style="--stat-color:var(--vioo-orange);--stat-bg:var(--vioo-orange-soft)">
+          <div class="vioo-stat-icon"><i data-lucide="calendar-clock" aria-hidden="true"></i></div>
+          <div><strong>6</strong><span>Sắp quá hạn xử lý</span></div>
+        </div>
+        <div class="vioo-stat" style="--stat-color:var(--vioo-violet);--stat-bg:var(--vioo-violet-soft)">
+          <div class="vioo-stat-icon"><i data-lucide="file-signature" aria-hidden="true"></i></div>
+          <div><strong>4</strong><span>Đơn mua chờ duyệt</span></div>
+        </div>
+        <div class="vioo-stat" style="--stat-color:var(--vioo-red);--stat-bg:var(--vioo-red-soft)">
+          <div class="vioo-stat-icon"><i data-lucide="alert-triangle" aria-hidden="true"></i></div>
+          <div><strong>3</strong><span>Sai lệch cần đối chiếu</span></div>
+        </div>
+      </section>
+
+      <section class="vioo-filterbar" aria-label="Bộ lọc công việc">
+        <div class="vioo-filter-group">
+          <div class="vioo-segment" aria-label="Phạm vi công việc">
+            <button type="button" class="is-active">Của tôi</button>
+            <button type="button">Nhóm mua hàng</button>
+            <button type="button">Toàn công ty</button>
+          </div>
+          <select class="vioo-select" aria-label="Lọc theo dự án"><option>Tất cả dự án</option><option>Dự án Sơn Miền Bắc</option><option>Nhà máy KCT</option></select>
+          <select class="vioo-select" aria-label="Lọc theo nguồn"><option>Mọi nguồn gửi đến</option><option>Dự án</option><option>Quy trình</option><option>Đề xuất nội bộ</option><option>Tài sản</option></select>
+        </div>
+        <label class="vioo-search-wrap">
+          <span class="vioo-sr-only">Tìm nhu cầu</span>
+          <i data-lucide="search" aria-hidden="true"></i>
+          <input class="vioo-search" type="search" placeholder="Tìm mã, vật tư, người đề xuất…" />
+        </label>
+      </section>
+
+      <nav class="vioo-process" aria-label="Giai đoạn xử lý">
+        <button type="button" class="is-active" data-stage="intake">Tiếp nhận <span class="vioo-process-count">18</span></button>
+        <button type="button" data-stage="sourcing">Đang xử lý <span class="vioo-process-count">9</span></button>
+        <button type="button" data-stage="approval">Chờ duyệt <span class="vioo-process-count">4</span></button>
+        <button type="button" data-stage="delivery">Giao nhận <span class="vioo-process-count">7</span></button>
+        <button type="button" data-stage="reconcile">Đối chiếu <span class="vioo-process-count">3</span></button>
+      </nav>
+
+      <section class="vioo-workspace">
+        <div class="vioo-list">
+          <div class="vioo-list-title"><strong id="vioo-list-heading">Nhu cầu mới cần phân loại</strong><span id="vioo-list-count">4 công việc • ưu tiên theo hạn</span></div>
+          <div class="vioo-table-wrap">
+            <table aria-labelledby="vioo-list-heading">
+              <thead><tr><th></th><th>Nhu cầu</th><th>Nguồn</th><th>Hạn cần</th><th>Phương án</th><th>Việc tiếp theo</th></tr></thead>
+              <tbody id="vioo-demand-rows">
+                <tr class="is-selected" data-row="steel" data-stages="intake sourcing">
+                  <td><input class="vioo-check" type="checkbox" aria-label="Chọn MR-2026-2671" /></td>
+                  <td class="vioo-demand"><strong>Thép XD D16 • 5.322 kg</strong><span>MR-2026-2671 · Dự án Sơn Miền Bắc</span></td>
+                  <td><span class="vioo-origin" style="--origin-color:var(--vioo-blue)"><span class="vioo-origin-dot"></span>Dự án</span></td>
+                  <td><strong>15/09</strong><br><span class="vioo-table-note">Còn 3 ngày</span></td>
+                  <td><span class="vioo-method" style="--method-color:var(--vioo-brand);--method-bg:var(--vioo-brand-soft)"><i data-lucide="shopping-cart" aria-hidden="true"></i>PO</span></td>
+                  <td><span class="vioo-next">Chọn nhà cung cấp →</span></td>
+                </tr>
+                <tr data-row="flags" data-stages="intake approval">
+                  <td><input class="vioo-check" type="checkbox" aria-label="Chọn WF-2026-148" /></td>
+                  <td class="vioo-demand"><strong>In cờ quốc kỳ và cờ công ty</strong><span>WF-2026-148 · Khối Văn phòng</span></td>
+                  <td><span class="vioo-origin" style="--origin-color:var(--vioo-violet)"><span class="vioo-origin-dot"></span>Quy trình</span></td>
+                  <td><strong>16/09</strong><br><span class="vioo-table-note">Còn 4 ngày</span></td>
+                  <td><span class="vioo-method" style="--method-color:var(--vioo-violet);--method-bg:var(--vioo-violet-soft)"><i data-lucide="file-signature" aria-hidden="true"></i>Theo HĐ</span></td>
+                  <td><span class="vioo-next">Lập đơn theo HĐ →</span></td>
+                </tr>
+                <tr data-row="wifi" data-stages="intake sourcing">
+                  <td><input class="vioo-check" type="checkbox" aria-label="Chọn RQ-2026-000024" /></td>
+                  <td class="vioo-demand"><strong>Bộ phát Wi-Fi 4G • 2 bộ</strong><span>RQ-2026-000024 · Nhà máy KCT</span></td>
+                  <td><span class="vioo-origin" style="--origin-color:var(--vioo-orange)"><span class="vioo-origin-dot"></span>Đề xuất</span></td>
+                  <td><strong class="vioo-overdue">Hôm nay</strong><br><span class="vioo-overdue">Khẩn</span></td>
+                  <td><span class="vioo-method" style="--method-color:var(--vioo-orange);--method-bg:var(--vioo-orange-soft)"><i data-lucide="flame" aria-hidden="true"></i>Mua nóng</span></td>
+                  <td><span class="vioo-next">Xác nhận hạn mức →</span></td>
+                </tr>
+                <tr data-row="laptop" data-stages="intake delivery reconcile">
+                  <td><input class="vioo-check" type="checkbox" aria-label="Chọn TS-2026-0038" /></td>
+                  <td class="vioo-demand"><strong>Laptop kỹ sư hiện trường • 3 máy</strong><span>TS-2026-0038 · Phòng Thi công</span></td>
+                  <td><span class="vioo-origin" style="--origin-color:var(--vioo-blue)"><span class="vioo-origin-dot"></span>Tài sản</span></td>
+                  <td><strong>20/09</strong><br><span class="vioo-table-note">Còn 8 ngày</span></td>
+                  <td><span class="vioo-method" style="--method-color:var(--vioo-blue);--method-bg:var(--vioo-blue-soft)"><i data-lucide="shopping-cart" aria-hidden="true"></i>PO</span></td>
+                  <td><span class="vioo-next">Kiểm tra báo giá →</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <aside class="vioo-detail" aria-live="polite" aria-label="Chi tiết nhu cầu đang chọn">
+          <div class="vioo-detail-head">
+            <div><div class="vioo-detail-kicker" id="vioo-detail-code">MR-2026-2671</div><h2 id="vioo-detail-name">Thép XD D16</h2></div>
+            <button type="button" class="vioo-source-link">Mở hồ sơ nguồn <i data-lucide="arrow-up-right" aria-hidden="true"></i></button>
+          </div>
+
+          <div class="vioo-detail-meta">
+            <div class="vioo-meta"><span>Nguồn gửi</span><strong id="vioo-detail-source">Dự án Sơn Miền Bắc</strong></div>
+            <div class="vioo-meta"><span>Người đề xuất</span><strong id="vioo-detail-requester">Ban chỉ huy công trường</strong></div>
+            <div class="vioo-meta"><span>Ngày cần</span><strong id="vioo-detail-date">15/09/2026</strong></div>
+            <div class="vioo-meta"><span>Phụ trách</span><strong>Nguyễn Văn Hoàng</strong></div>
+          </div>
+
+          <div class="vioo-section">
+            <div class="vioo-section-title"><strong>Phương án cung ứng</strong><span id="vioo-detail-total">5.322 kg được duyệt</span></div>
+            <div class="vioo-allocation">
+              <div><strong>Cấp từ kho tổng</strong><br><span>Giữ chỗ tồn khả dụng</span></div><span class="vioo-allocation-qty">2.000 kg</span>
+              <div class="vioo-progress"><div style="width:38%;--progress-color:var(--vioo-blue)"></div></div>
+            </div>
+            <div class="vioo-allocation">
+              <div><strong>Lập PO mới</strong><br><span>Chưa chọn nhà cung cấp</span></div><span class="vioo-allocation-qty">3.322 kg</span>
+              <div class="vioo-progress"><div style="width:62%;--progress-color:var(--vioo-brand)"></div></div>
+            </div>
+          </div>
+
+          <div class="vioo-section">
+            <div class="vioo-section-title"><strong>Dòng thời gian</strong><span>Truy vết nguồn → mua → nhận</span></div>
+            <div class="vioo-timeline">
+              <div class="vioo-timeline-row"><span class="vioo-timeline-dot" style="--dot-color:var(--vioo-blue)"></span><div><strong>Đề xuất đã được duyệt</strong><span>12/09 · Quy trình vật tư dự án</span></div></div>
+              <div class="vioo-timeline-row"><span class="vioo-timeline-dot" style="--dot-color:var(--vioo-brand)"></span><div><strong>Đã tiếp nhận tại Mua hàng</strong><span>12/09 · Tự động phân công theo phạm vi</span></div></div>
+              <div class="vioo-timeline-row"><span class="vioo-timeline-dot" style="--dot-color:var(--vioo-orange)"></span><div><strong>Đang chờ chọn nhà cung cấp</strong><span>Việc tiếp theo của anh</span></div></div>
+            </div>
+          </div>
+
+          <div class="vioo-action-row">
+            <button type="button" class="vioo-action is-primary"><i data-lucide="handshake" aria-hidden="true"></i>Chọn nhà cung cấp</button>
+            <button type="button" class="vioo-action"><i data-lucide="warehouse" aria-hidden="true"></i>Điều chỉnh nguồn</button>
+            <button type="button" class="vioo-action is-quiet">Giao lại</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </section>
+
+  <script>
+    (() => {
+      const root = document.getElementById('vioo-procurement-mock');
+      const rows = Array.from(root.querySelectorAll('#vioo-demand-rows tr'));
+      const stageButtons = Array.from(root.querySelectorAll('.vioo-process button'));
+      const details = {
+        steel: { code: 'MR-2026-2671', name: 'Thép XD D16', source: 'Dự án Sơn Miền Bắc', requester: 'Ban chỉ huy công trường', date: '15/09/2026', total: '5.322 kg được duyệt' },
+        flags: { code: 'WF-2026-148', name: 'In cờ quốc kỳ và cờ công ty', source: 'Quy trình nội bộ', requester: 'Phòng Hành chính', date: '16/09/2026', total: '1 gói dịch vụ được duyệt' },
+        wifi: { code: 'RQ-2026-000024', name: 'Bộ phát Wi-Fi 4G', source: 'Đề xuất Nhà máy KCT', requester: 'Nguyễn Văn Hoàng', date: '12/09/2026', total: '2 bộ được duyệt' },
+        laptop: { code: 'TS-2026-0038', name: 'Laptop kỹ sư hiện trường', source: 'Module Tài sản', requester: 'Phòng Thi công', date: '20/09/2026', total: '3 máy được duyệt' }
+      };
+
+      function selectRow(row) {
+        rows.forEach(item => item.classList.toggle('is-selected', item === row));
+        const detail = details[row.dataset.row];
+        root.querySelector('#vioo-detail-code').textContent = detail.code;
+        root.querySelector('#vioo-detail-name').textContent = detail.name;
+        root.querySelector('#vioo-detail-source').textContent = detail.source;
+        root.querySelector('#vioo-detail-requester').textContent = detail.requester;
+        root.querySelector('#vioo-detail-date').textContent = detail.date;
+        root.querySelector('#vioo-detail-total').textContent = detail.total;
+      }
+
+      rows.forEach(row => row.addEventListener('click', event => {
+        if (event.target instanceof HTMLInputElement) return;
+        selectRow(row);
+      }));
+
+      stageButtons.forEach(button => button.addEventListener('click', () => {
+        const stage = button.dataset.stage;
+        stageButtons.forEach(item => item.classList.toggle('is-active', item === button));
+        rows.forEach(row => { row.hidden = !row.dataset.stages.split(' ').includes(stage); });
+        const visible = rows.filter(row => !row.hidden);
+        root.querySelector('#vioo-list-heading').textContent = button.childNodes[0].textContent.trim() === 'Tiếp nhận' ? 'Nhu cầu mới cần phân loại' : `Công việc ở bước ${button.childNodes[0].textContent.trim().toLowerCase()}`;
+        root.querySelector('#vioo-list-count').textContent = `${visible.length} công việc • ưu tiên theo hạn`;
+        if (visible.length) selectRow(visible[0]);
+      }));
+
+      root.querySelectorAll('.vioo-segment button').forEach(button => button.addEventListener('click', () => {
+        button.parentElement.querySelectorAll('button').forEach(item => item.classList.toggle('is-active', item === button));
+      }));
+
+      const state = { density: 'comfortable', showDetail: true };
+      function renderTweak() {
+        root.dataset.density = state.density;
+        root.dataset.detail = state.showDetail ? 'on' : 'off';
+      }
+      renderTweak();
+      if (globalThis.Tweak) {
+        const tweak = new Tweak({ container: root, onChange: renderTweak });
+        tweak.addSelect(state, 'density', { label: 'Mật độ hiển thị', options: [{ label: 'Thoáng', value: 'comfortable' }, { label: 'Gọn', value: 'compact' }], reference: 'procurement.density' });
+        tweak.addToggle(state, 'showDetail', { label: 'Hiện khung chi tiết', reference: 'procurement.showDetail' });
+      }
+    })();
+  </script>
+</div>
