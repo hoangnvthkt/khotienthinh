@@ -349,7 +349,7 @@ const CheckIn: React.FC = () => {
       await loadCheckInContext();
 
       if (action === 'check_in') {
-        setLastAction(`Da check-in luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
+        setLastAction(`Đã check-in lúc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
         celebrate({
           variant: 'checkin',
           title: 'Check-in thành công',
@@ -358,7 +358,7 @@ const CheckIn: React.FC = () => {
           duration: 1600,
         });
       } else {
-        setLastAction(`Da check-out luc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
+        setLastAction(`Đã check-out lúc ${timeLocal()} (${saved.eventCount || currentEventCount + 1}/6)`);
         showToast({
           type: 'success',
           title: 'Check-out thành công',
