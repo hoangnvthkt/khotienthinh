@@ -62,27 +62,33 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
   };
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/60">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Xử lý:</span>
-        {actions.map(item => {
-          const Icon = icons[item];
-          return (
-            <button
-              type="button"
-              key={item}
-              onClick={() => open(item)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition ${buttonStyles[item]}`}
-            >
-              <Icon size={16} />
-              {labels[item]}
-            </button>
-          );
-        })}
+      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5 sm:p-3 dark:border-slate-800 dark:bg-slate-900/60">
+        <div className="mb-2 flex items-center justify-between sm:hidden">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Thao tác xử lý</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2.5">
+          <span className="hidden sm:inline-block text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Xử lý:</span>
+          {actions.map(item => {
+            const Icon = icons[item];
+            return (
+              <button
+                type="button"
+                key={item}
+                onClick={() => open(item)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 sm:px-4 sm:py-2 text-xs font-bold transition active:scale-[0.98] min-h-[40px] sm:min-h-0 ${buttonStyles[item]}`}
+              >
+                <Icon size={15} className="shrink-0" />
+                <span className="truncate">{labels[item]}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {action && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+        <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full max-w-md rounded-t-3xl sm:rounded-2xl bg-white p-5 sm:p-6 shadow-2xl dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
+            <div className="mobile-sheet-handle sm:hidden mb-3" />
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">{labels[action]}</h2>
             <p className="mt-1 text-xs text-slate-500 font-mono">{detail.code} · {detail.title}</p>
 

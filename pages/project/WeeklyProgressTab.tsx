@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     X, Save, ChevronRight, ChevronDown, Search, Calendar, User, Clock,
     AlertTriangle, CheckCircle2, HelpCircle, Loader2, ArrowUpRight,
@@ -398,6 +399,17 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const toast = useToast();
     const confirm = useConfirm();
     const reasonConfirm = useReasonConfirm();
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const navigateToGanttTask = useCallback((taskId: string) => {
+        const query = new URLSearchParams(location.search);
+        query.set('tab', 'gantt');
+        query.set('taskId', taskId);
+        if (projectId) query.set('projectId', projectId);
+        if (constructionSiteId) query.set('siteId', constructionSiteId);
+        navigate(`/da?${query.toString()}`);
+    }, [location.search, navigate, projectId, constructionSiteId]);
 
     const effectiveId = projectId || constructionSiteId || '';
     const scopeKey = useMemo(() => getProjectScopeKey(projectId || null, constructionSiteId || null), [projectId, constructionSiteId]);
@@ -2011,91 +2023,94 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     return (
         <div className="space-y-6">
             {/* Top Controllers & Action Bar */}
-            <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    {/* Left: Searchable Select for WBS */}
-                    <div className="flex-1 min-w-0 space-y-1">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">Chọn hạng mục WBS cần xem/nhập</label>
-                        <div ref={dropdownRef} className="relative w-full max-w-md">
-                            <button
-                                type="button"
-                                onClick={() => setDropdownOpen(!dropdownOpen)}
-                                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-semibold text-zinc-800 dark:text-zinc-200 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
-                            >
-                                <div className="flex items-center gap-2 truncate">
-                                    <Sliders size={15} className="text-teal-700 dark:text-teal-400 shrink-0" />
-                                    <span className="truncate">
-                                        {activeFilterTask
-                                            ? `[${activeFilterTask.wbsCode}] ${activeFilterTask.name}`
-                                            : '— Hiển thị toàn bộ hạng mục —'}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0 text-zinc-400">
-                                    {selectedFilterTaskId && (
-                                        <X
-                                            size={14}
-                                            className="hover:text-zinc-600 cursor-pointer"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedFilterTaskId('');
-                                            }}
-                                        />
-                                    )}
-                                    <ChevronDown size={14} />
-                                </div>
-                            </button>
+            <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                {/* Row 1: Searchable Select for WBS */}
+                <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">
+                        Chọn hạng mục WBS cần xem/nhập
+                    </label>
+                    <div ref={dropdownRef} className="relative w-full">
+                        <button
+                            type="button"
+                            onClick={() => setDropdownOpen(!dropdownOpen)}
+                            className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/70 text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-200 shadow-xs hover:border-teal-500/50 dark:hover:border-teal-500/50 transition-colors min-h-[42px]"
+                        >
+                            <div className="flex items-center gap-2 truncate">
+                                <Sliders size={15} className="text-teal-700 dark:text-teal-400 shrink-0" />
+                                <span className="truncate">
+                                    {activeFilterTask
+                                        ? `[${activeFilterTask.wbsCode}] ${activeFilterTask.name}`
+                                        : '— Hiển thị toàn bộ hạng mục —'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 text-zinc-400">
+                                {selectedFilterTaskId && (
+                                    <X
+                                        size={14}
+                                        className="hover:text-zinc-600 cursor-pointer"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedFilterTaskId('');
+                                        }}
+                                    />
+                                )}
+                                <ChevronDown size={14} />
+                            </div>
+                        </button>
 
-                            {dropdownOpen && (
-                                <div className="absolute left-0 right-0 mt-2 z-50 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl p-2 max-h-[300px] flex flex-col">
-                                    <div className="relative mb-2 shrink-0">
-                                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                                        <input
-                                            type="text"
-                                            value={dropdownSearch}
-                                            onChange={e => setDropdownSearch(e.target.value)}
-                                            placeholder="Tìm mã WBS hoặc tên..."
-                                            className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 font-semibold outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                                        />
-                                    </div>
-                                    <div className="overflow-y-auto flex-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {dropdownOpen && (
+                            <div className="absolute left-0 right-0 mt-2 z-50 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl p-2 max-h-[300px] flex flex-col">
+                                <div className="relative mb-2 shrink-0">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                    <input
+                                        type="text"
+                                        value={dropdownSearch}
+                                        onChange={e => setDropdownSearch(e.target.value)}
+                                        placeholder="Tìm mã WBS hoặc tên..."
+                                        className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 font-semibold outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                                    />
+                                </div>
+                                <div className="overflow-y-auto flex-1 divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSelectedFilterTaskId('');
+                                            setDropdownOpen(false);
+                                            setDropdownSearch('');
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                                    >
+                                        — Hiển thị toàn bộ hạng mục —
+                                    </button>
+                                    {filteredDropdownTasks.map(t => (
                                         <button
+                                            key={t.id}
                                             type="button"
                                             onClick={() => {
-                                                setSelectedFilterTaskId('');
+                                                setSelectedFilterTaskId(t.id);
                                                 setDropdownOpen(false);
                                                 setDropdownSearch('');
                                             }}
-                                            className="w-full text-left px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                                            className={`w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2 ${selectedFilterTaskId === t.id ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400 font-bold' : 'text-zinc-700 dark:text-zinc-300 font-medium'
+                                                }`}
                                         >
-                                            — Hiển thị toàn bộ hạng mục —
+                                            <span className="font-mono text-teal-700 dark:text-teal-400 shrink-0 w-[50px]">{t.wbsCode}</span>
+                                            <span className="truncate">{t.name}</span>
                                         </button>
-                                        {filteredDropdownTasks.map(t => (
-                                            <button
-                                                key={t.id}
-                                                type="button"
-                                                onClick={() => {
-                                                    setSelectedFilterTaskId(t.id);
-                                                    setDropdownOpen(false);
-                                                    setDropdownSearch('');
-                                                }}
-                                                className={`w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2 ${selectedFilterTaskId === t.id ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-400 font-bold' : 'text-zinc-700 dark:text-zinc-300 font-medium'
-                                                    }`}
-                                            >
-                                                <span className="font-mono text-teal-700 dark:text-teal-400 shrink-0 w-[50px]">{t.wbsCode}</span>
-                                                <span className="truncate">{t.name}</span>
-                                            </button>
-                                        ))}
-                                    </div>
+                                    ))}
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
+                </div>
 
-                    {/* Right: Entry mode, date/week selection & Save button */}
-                    <div className="flex items-end justify-end gap-3 flex-wrap">
+                {/* Row 2: Settings & Actions */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
+                    {/* Left: Kiểu chốt & Ngày chốt */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full lg:w-auto">
                         <div className="space-y-1">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">Kiểu chốt</label>
-                            <div className="flex rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800">
+                            <div className="flex rounded-xl bg-zinc-100 p-0.5 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 min-h-[38px] items-center">
                                 {[
                                     { key: 'daily', label: 'Chốt ngày' },
                                     { key: 'weekly', label: 'Tổng hợp tuần' },
@@ -2115,9 +2130,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                             });
                                             setEntryMode(nextMode);
                                         }}
-                                        className={`rounded-lg px-3 py-1.5 text-[10px] font-bold transition-colors ${entryMode === option.key
-                                                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100'
-                                                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                                        className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${entryMode === option.key
+                                                ? 'bg-white text-teal-800 shadow-xs dark:bg-zinc-900 dark:text-teal-300 font-black'
+                                                : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400'
                                             }`}
                                     >
                                         {option.label}
@@ -2125,9 +2140,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                 ))}
                             </div>
                         </div>
+
                         <div className="space-y-1">
                             <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 block">
-                                {entryMode === 'daily' ? 'Chọn ngày chốt tiến độ' : 'Chọn tuần chốt tiến độ'}
+                                {entryMode === 'daily' ? 'Ngày chốt tiến độ' : 'Tuần chốt tiến độ'}
                             </label>
                             {entryMode === 'daily' ? (
                                 <input
@@ -2147,7 +2163,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                         setFilterWeek(nextWeekStart);
                                         setFilterMonth(nextWeekStart.substring(0, 7));
                                     }}
-                                    className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-zinc-800 dark:text-zinc-100"
+                                    className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-zinc-800 dark:text-zinc-100 min-h-[38px]"
                                     title="Ngày chốt"
                                 />
                             ) : (
@@ -2167,12 +2183,15 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                         setFilterWeek(nextWeekStart);
                                         setFilterMonth(nextWeekStart.substring(0, 7));
                                     }}
-                                    className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-zinc-800 dark:text-zinc-100"
+                                    className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-semibold bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none text-zinc-800 dark:text-zinc-100 min-h-[38px]"
                                     title="Tuần chốt"
                                 />
                             )}
                         </div>
+                    </div>
 
+                    {/* Right: Period controls ([Đang mở / Đã chốt] + [Lưu thay đổi] + [Chốt / Mở chốt]) */}
+                    <div className="flex items-center justify-end gap-2 pt-1 lg:pt-0">
                         {periodResourceLoadState === 'error' ? (
                             <WeeklyProgressPeriodUnavailable
                                 onRetry={() => setPeriodResourceRetryNonce(previous => previous + 1)}
@@ -2195,25 +2214,23 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     </div>
                 </div>
 
-                <div className="border-t border-slate-100 dark:border-slate-700 my-2"></div>
-
-                {/* Sub-Filters for History Visualisation */}
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-xs font-black text-slate-400 uppercase">Bộ lọc Biểu đồ Snapshots:</span>
-                        <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5">
+                {/* Row 3: Sub-Filters for History Visualisation & Expand/Collapse */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 min-w-0">
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-wider shrink-0">Biểu đồ Snapshots:</span>
+                        <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-xl p-0.5 border border-zinc-200 dark:border-zinc-700 shrink-0">
                             {[
                                 { key: 'recent', label: '8 tuần gần nhất' },
-                                { key: 'week', label: 'Lũy kế theo Tuần' },
-                                { key: 'month', label: 'Lũy kế theo Tháng' },
+                                { key: 'week', label: 'Lũy kế Tuần' },
+                                { key: 'month', label: 'Lũy kế Tháng' },
                                 { key: 'all', label: 'Toàn bộ' },
                             ].map(btn => (
                                 <button
                                     key={btn.key}
                                     onClick={() => setTimeFilterMode(btn.key as TimeFilterMode)}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${timeFilterMode === btn.key
-                                            ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm'
-                                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap ${timeFilterMode === btn.key
+                                            ? 'bg-white dark:bg-zinc-900 text-teal-800 dark:text-teal-300 shadow-xs'
+                                            : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400'
                                         }`}
                                 >
                                     {btn.label}
@@ -2226,7 +2243,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                             <select
                                 value={filterWeek}
                                 onChange={e => setFilterWeek(e.target.value)}
-                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-orange-500 outline-none"
+                                className="text-xs font-bold text-zinc-700 dark:text-zinc-300 px-2.5 py-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 outline-none shrink-0"
                             >
                                 {uniqueWeeks.map(w => (
                                     <option key={w} value={w}>{getISOWeekLabel(w)} ({w})</option>
@@ -2238,7 +2255,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                             <select
                                 value={filterMonth}
                                 onChange={e => setFilterMonth(e.target.value)}
-                                className="text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-orange-500 outline-none"
+                                className="text-xs font-bold text-zinc-700 dark:text-zinc-300 px-2.5 py-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 focus:ring-2 focus:ring-teal-500 outline-none shrink-0"
                             >
                                 {uniqueMonths.map(m => (
                                     <option key={m} value={m}>Tháng {m}</option>
@@ -2248,7 +2265,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     </div>
 
                     {/* Expand / Collapse all toggles */}
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                         <button
                             type="button"
                             onClick={() => {
@@ -2258,14 +2275,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                 });
                                 setWeeklyCollapsedParents(parentIds);
                             }}
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 text-[10px] font-black text-slate-500 transition-all"
+                            className="px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[11px] font-bold text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
                         >
                             Thu gọn hết
                         </button>
                         <button
                             type="button"
                             onClick={() => setWeeklyCollapsedParents(new Set())}
-                            className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 text-[10px] font-black text-slate-500 transition-all"
+                            className="px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[11px] font-bold text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
                         >
                             Mở rộng hết
                         </button>
@@ -2273,37 +2290,281 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 </div>
             </div>
 
-            {/* Quick KPI stats cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {[
-                    { label: entryMode === 'daily' ? 'Thi công ngày đang chốt' : 'Thi công tuần này', value: `${draftConstructionProgress}%`, sub: `Chốt gốc: ${weeklyConstructionProgress}%`, tone: 'text-orange-600 border-orange-100 bg-orange-50/20 dark:bg-orange-950/10' },
-                    { label: 'Tiến độ theo giá trị', value: `${valueProgressMetric.valueProgressPercent}%`, sub: 'Tổng giá trị WBS tính lũy kế', tone: 'text-emerald-600 border-emerald-100 bg-emerald-50/20 dark:bg-emerald-950/10' },
-                    { label: 'Đơn hàng PO hợp lệ', value: formatMoneyShort(valueProgressMetric.purchasedValue), sub: 'Ghi nhận từ PO đã duyệt', tone: 'text-blue-600 border-blue-100 bg-blue-50/20 dark:bg-blue-950/10' },
-                    { label: 'Vật tư đã cấp', value: formatMoneyShort(valueProgressMetric.issuedValue), sub: 'Ghi nhận thực cấp từ kho', tone: 'text-violet-600 border-violet-100 bg-violet-50/20 dark:bg-violet-950/10' },
-                ].map((item, idx) => (
-                    <div key={idx} className={`rounded-2xl p-5 border shadow-sm ${item.tone} transition-all hover:scale-[1.02]`}>
-                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{item.label}</div>
-                        <div className="mt-1 text-xl font-black">{item.value}</div>
-                        <div className="text-[10px] text-slate-400 mt-1 font-bold">{item.sub}</div>
+            {/* Chỉ giữ lại thông tin tổng tiến độ đã được chốt (Loại bỏ các card PO, Giá trị, Vật tư cấp) */}
+            <div className="bg-gradient-to-r from-teal-900 via-teal-800 to-emerald-900 text-white rounded-2xl p-4 sm:p-5 border border-teal-700/60 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="w-11 h-11 rounded-xl bg-white/10 backdrop-blur-sm border border-white/15 flex items-center justify-center text-teal-200 shrink-0">
+                            <ClipboardCheck size={22} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-teal-200/90">
+                                {entryMode === 'daily' ? 'Tổng tiến độ thi công đang chốt (ngày)' : 'Tổng tiến độ thi công đang chốt (tuần)'}
+                            </div>
+                            <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
+                                <span className="text-2xl sm:text-3xl font-black tracking-tight">{draftConstructionProgress}%</span>
+                                <span className="text-xs font-semibold text-teal-200/80">
+                                    (Gốc đã chốt: <strong className="text-white">{weeklyConstructionProgress}%</strong>
+                                    {draftConstructionProgress !== weeklyConstructionProgress && (
+                                        <span className={`ml-1 font-bold ${draftConstructionProgress > weeklyConstructionProgress ? 'text-emerald-300' : 'text-amber-300'}`}>
+                                            {draftConstructionProgress > weeklyConstructionProgress ? `+${(draftConstructionProgress - weeklyConstructionProgress).toFixed(1)}%` : `${(draftConstructionProgress - weeklyConstructionProgress).toFixed(1)}%`}
+                                        </span>
+                                    )}
+                                    )
+                                </span>
+                            </div>
+                        </div>
                     </div>
-                ))}
+
+                    <div className="flex items-center gap-3 sm:max-w-xs w-full sm:w-auto">
+                        <div className="w-full sm:w-48 bg-black/25 rounded-full h-2.5 overflow-hidden border border-white/10">
+                            <div
+                                className="bg-gradient-to-r from-teal-300 to-emerald-300 h-full rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(100, Math.max(0, draftConstructionProgress))}%` }}
+                            />
+                        </div>
+                        <span className="text-xs font-mono font-bold text-teal-100 shrink-0">{draftConstructionProgress}%</span>
+                    </div>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-teal-100/80 font-medium">
+                    <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        Bấm vào tên hạng mục để xem chi tiết trong bảng Tiến độ. Nhập % hoặc khối lượng và bấm <strong>[Lưu thay đổi]</strong>.
+                    </span>
+                    <span className="hidden md:inline text-teal-200/70">
+                        {wbsTreeRows.filter(r => !r.hasChildren).length} hạng mục cần nhập
+                    </span>
+                </div>
             </div>
 
-            {/* Tree WBS Table */}
-            <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700/60 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto max-h-[600px] scrollbar-thin">
+            {/* Mobile View: Thẻ nhập số liệu từng hạng mục trực tiếp, không cần cuộn ngang */}
+            <div className="md:hidden space-y-3">
+                {wbsTreeRows.map(task => {
+                    const isParent = task.hasChildren;
+                    const isCollapsed = weeklyCollapsedParents.has(task.id);
+                    const weeklyDraft = weeklyDrafts[task.id] || { progressPercent: String(task.progress || 0), quantityDone: '0', note: '' };
+                    const dailyDraft = dailyDrafts[task.id] || weeklyDraft;
+                    const activeDraft = entryMode === 'daily' ? dailyDraft : weeklyDraft;
+                    const linkedIds = taskContractLinks[task.id] || [];
+                    const draftProgress = parseWeeklyProgressPercent(activeDraft.progressPercent);
+                    const isOverProgress = draftProgress > 100;
+                    const taskUnit = getTaskUnit(task, linkedIds, contractItems);
+
+                    if (isParent) {
+                        return (
+                            <div
+                                key={task.id}
+                                className="bg-zinc-100/90 dark:bg-zinc-800/90 rounded-2xl p-3 border border-zinc-200 dark:border-zinc-700 shadow-xs"
+                                style={{ marginLeft: `${Math.min(task.depth * 10, 30)}px` }}
+                            >
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setWeeklyCollapsedParents(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(task.id)) {
+                                                        next.delete(task.id);
+                                                    } else {
+                                                        next.add(task.id);
+                                                    }
+                                                    return next;
+                                                });
+                                            }}
+                                            className="w-7 h-7 rounded-lg bg-white dark:bg-zinc-700 flex items-center justify-center text-zinc-600 dark:text-zinc-300 shadow-xs shrink-0 cursor-pointer"
+                                            title={isCollapsed ? 'Mở rộng hạng mục con' : 'Thu gọn hạng mục con'}
+                                        >
+                                            {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                                        </button>
+
+                                        <span className="shrink-0 text-amber-500">
+                                            {isCollapsed ? <Folder size={16} /> : <FolderOpen size={16} />}
+                                        </span>
+
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="font-mono font-black text-[11px] text-teal-700 dark:text-teal-400 shrink-0">
+                                                    [{task.wbsCode || '–'}]
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => navigateToGanttTask(task.id)}
+                                                    className="text-left font-black text-xs text-zinc-900 dark:text-zinc-100 hover:text-teal-600 dark:hover:text-teal-400 truncate cursor-pointer inline-flex items-center gap-1"
+                                                    title={`Xem "${task.name}" trong bảng Tiến độ`}
+                                                >
+                                                    <span className="truncate">{task.name}</span>
+                                                    <ArrowUpRight size={11} className="text-zinc-400 shrink-0" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="shrink-0 text-right">
+                                        <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-700 text-xs font-black text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 shadow-xs">
+                                            {task.progress}%
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // Leaf task card - Chuyên để nhập số liệu
+                    return (
+                        <div
+                            key={task.id}
+                            className={`bg-white dark:bg-zinc-900 rounded-2xl p-3.5 border shadow-xs transition-all space-y-3 ${
+                                isOverProgress
+                                    ? 'border-red-300 bg-red-50/20 dark:bg-red-950/20 dark:border-red-900/60'
+                                    : 'border-zinc-200 dark:border-zinc-800'
+                            }`}
+                            style={{ marginLeft: `${Math.min(task.depth * 10, 30)}px` }}
+                        >
+                            {/* Card Header: WBS Code + Task Name (Click to Gantt) */}
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-400 font-mono font-bold text-[10px] border border-teal-100 dark:border-teal-900 shrink-0">
+                                            WBS {task.wbsCode || '–'}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => navigateToGanttTask(task.id)}
+                                            className="text-left font-bold text-xs text-zinc-900 dark:text-zinc-100 hover:text-teal-600 dark:hover:text-teal-400 transition-colors inline-flex items-center gap-1 cursor-pointer group"
+                                            title={`Xem chi tiết "${task.name}" trong bảng Tiến độ`}
+                                        >
+                                            <span className="leading-snug">{task.name}</span>
+                                            <ArrowUpRight size={12} className="text-zinc-400 group-hover:text-teal-600 shrink-0" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <span className={`px-2 py-0.5 rounded-lg text-xs font-black shrink-0 ${
+                                    draftProgress >= 100
+                                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                        : draftProgress > 0
+                                            ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300'
+                                            : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                                }`}>
+                                    {draftProgress}%
+                                </span>
+                            </div>
+
+                            {/* Mini Snapshot Bars */}
+                            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-2.5 border border-zinc-100 dark:border-zinc-800 space-y-2">
+                                <div>
+                                    <div className="mb-1 flex items-center justify-between text-[9px] font-bold uppercase text-zinc-400">
+                                        <span>Tuần ({getISOWeekLabel(selectedWeekStart)})</span>
+                                    </div>
+                                    <WeeklySegmentedProgressBar taskId={task.id} />
+                                </div>
+                                <div>
+                                    <div className="mb-1 flex items-center justify-between text-[9px] font-bold uppercase text-zinc-400">
+                                        <span>Ngày ({selectedWeekStart.slice(5)} → {addDaysToIsoDate(selectedWeekStart, 6).slice(5)})</span>
+                                    </div>
+                                    <DailySegmentedProgressBar taskId={task.id} />
+                                </div>
+                            </div>
+
+                            {/* Direct Input Section - Ô nhập số liệu to, rõ, công thái học */}
+                            <div className="grid grid-cols-2 gap-2.5 pt-1">
+                                {/* Ô nhập % hoàn thành */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 block">
+                                        % Hoàn thành
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={activeDraft.progressPercent}
+                                            readOnly={!canEditSelectedPeriod}
+                                            onChange={e => {
+                                                if (entryMode === 'daily') {
+                                                    void updateDailyProgressPercent(task, e.target.value);
+                                                } else {
+                                                    void updateWeeklyProgressPercent(task, e.target.value);
+                                                }
+                                            }}
+                                            placeholder="0"
+                                            className={`w-full pl-3 pr-7 py-2 rounded-xl border text-right font-black text-sm bg-white dark:bg-zinc-950 outline-none transition-all ${
+                                                isOverProgress
+                                                    ? 'border-red-400 text-red-600 bg-red-50/60 focus:ring-2 focus:ring-red-400'
+                                                    : 'border-zinc-200 dark:border-zinc-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-zinc-900 dark:text-zinc-100'
+                                            }`}
+                                        />
+                                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 pointer-events-none">%</span>
+                                    </div>
+                                </div>
+
+                                {/* Ô nhập Khối lượng hoàn thành */}
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400 block truncate" title={`Khối lượng (${taskUnit})`}>
+                                        Khối lượng ({taskUnit})
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={activeDraft.quantityDone}
+                                            readOnly={!canEditSelectedPeriod}
+                                            onChange={e => {
+                                                if (entryMode === 'daily') {
+                                                    void updateDailyQuantityDone(task, e.target.value);
+                                                } else {
+                                                    void updateWeeklyQuantityDone(task, e.target.value);
+                                                }
+                                            }}
+                                            placeholder="0"
+                                            className={`w-full px-3 py-2 rounded-xl border text-right font-black text-sm bg-white dark:bg-zinc-950 outline-none transition-all ${
+                                                isOverProgress
+                                                    ? 'border-red-400 text-red-600 bg-red-50/60 focus:ring-2 focus:ring-red-400'
+                                                    : 'border-zinc-200 dark:border-zinc-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-zinc-900 dark:text-zinc-100'
+                                            }`}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Ô nhập Ghi chú */}
+                            <div className="space-y-1 pt-0.5">
+                                <input
+                                    type="text"
+                                    value={activeDraft.note}
+                                    readOnly={!canEditSelectedPeriod}
+                                    onChange={e => {
+                                        if (entryMode === 'daily') {
+                                            updateDailyDraft(task.id, { note: e.target.value });
+                                        } else {
+                                            updateWeeklyDraft(task.id, { note: e.target.value });
+                                        }
+                                    }}
+                                    placeholder={entryMode === 'daily' ? 'Ghi chú chốt ngày...' : 'Ghi chú chốt tuần...'}
+                                    className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/50 text-xs font-medium outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400"
+                                />
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto max-h-[650px] scrollbar-thin">
                     <table className="w-full min-w-[960px] text-xs">
-                        <thead className="sticky top-0 bg-slate-50 dark:bg-slate-700 z-10">
-                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
+                        <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-800 z-10">
+                            <tr className="text-[10px] font-black text-zinc-400 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-200 dark:border-zinc-700">
                                 <th className="px-4 py-3 text-left w-[100px]">WBS Code</th>
                                 <th className="px-4 py-3 text-left w-[300px]">Hạng mục thi công (WBS)</th>
                                 <th className="px-4 py-3 text-left">Biểu đồ tiến độ tuần/ngày (Gốc 100%)</th>
                                 <th className="px-4 py-3 text-right w-[110px]">% hoàn thành</th>
-                                <th className="px-4 py-3 text-right w-[130px]">Khối lượng hoàn thành</th>
+                                <th className="px-4 py-3 text-right w-[140px]">Khối lượng hoàn thành</th>
                                 <th className="px-4 py-3 text-left w-[220px]">Ghi chú chốt</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/40">
+                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                             {wbsTreeRows.map(task => {
                                 const isParent = task.hasChildren;
                                 const isCollapsed = weeklyCollapsedParents.has(task.id);
@@ -2313,15 +2574,17 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                 const linkedIds = taskContractLinks[task.id] || [];
                                 const draftProgress = parseWeeklyProgressPercent(activeDraft.progressPercent);
                                 const isOverProgress = draftProgress > 100;
+                                const taskUnit = getTaskUnit(task, linkedIds, contractItems);
 
                                 return (
                                     <tr
                                         key={task.id}
-                                        className={`hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors ${isParent ? 'bg-slate-50/20 dark:bg-slate-800/10 font-bold' : ''
-                                            } ${isOverProgress ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
+                                        className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors ${
+                                            isParent ? 'bg-zinc-50/50 dark:bg-zinc-800/30 font-bold' : ''
+                                        } ${isOverProgress ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}
                                     >
                                         {/* WBS Code */}
-                                        <td className="px-4 py-3 font-mono font-black text-indigo-500 text-[11px]">
+                                        <td className="px-4 py-3 font-mono font-black text-teal-700 dark:text-teal-400 text-[11px]">
                                             {task.wbsCode || '–'}
                                         </td>
 
@@ -2345,7 +2608,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                                                 return next;
                                                             });
                                                         }}
-                                                        className="w-5 h-5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+                                                        className="w-5 h-5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors cursor-pointer"
                                                     >
                                                         {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                                                     </button>
@@ -2353,19 +2616,24 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                                     <span className="w-5 h-5 inline-block shrink-0" />
                                                 )}
 
-                                                <span className="text-slate-400 shrink-0">
+                                                <span className="text-zinc-400 shrink-0">
                                                     {isParent
                                                         ? (isCollapsed ? <Folder size={14} className="text-amber-500" /> : <FolderOpen size={14} className="text-amber-500" />)
-                                                        : <PlayCircle size={13} className="text-indigo-400" />
+                                                        : <PlayCircle size={13} className="text-teal-600 dark:text-teal-400" />
                                                     }
                                                 </span>
 
-                                                <span
-                                                    className={`truncate block ${isParent ? 'text-slate-800 dark:text-slate-100 font-bold' : 'text-slate-600 dark:text-slate-300'}`}
-                                                    title={task.name}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => navigateToGanttTask(task.id)}
+                                                    className={`text-left truncate block hover:text-teal-600 dark:hover:text-teal-400 hover:underline transition-colors cursor-pointer group ${
+                                                        isParent ? 'text-zinc-900 dark:text-zinc-100 font-bold' : 'text-zinc-700 dark:text-zinc-300'
+                                                    }`}
+                                                    title={`Xem chi tiết "${task.name}" trong bảng Tiến độ`}
                                                 >
-                                                    {task.name}
-                                                </span>
+                                                    <span className="truncate">{task.name}</span>
+                                                    <ArrowUpRight size={11} className="inline ml-1 text-zinc-400 group-hover:text-teal-600 opacity-60 group-hover:opacity-100 transition-all" />
+                                                </button>
                                             </div>
                                         </td>
 
@@ -2373,14 +2641,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                         <td className="px-4 py-3 min-w-[200px]">
                                             <div className="space-y-2">
                                                 <div>
-                                                    <div className="mb-1 flex items-center justify-between text-[9px] font-black uppercase text-slate-400">
+                                                    <div className="mb-1 flex items-center justify-between text-[9px] font-black uppercase text-zinc-400">
                                                         <span>Tuần</span>
                                                         <span>{getISOWeekLabel(selectedWeekStart)}</span>
                                                     </div>
                                                     <WeeklySegmentedProgressBar taskId={task.id} />
                                                 </div>
                                                 <div>
-                                                    <div className="mb-1 flex items-center justify-between text-[9px] font-black uppercase text-slate-400">
+                                                    <div className="mb-1 flex items-center justify-between text-[9px] font-black uppercase text-zinc-400">
                                                         <span>Ngày trong tuần</span>
                                                         <span>{selectedWeekStart} → {addDaysToIsoDate(selectedWeekStart, 6)}</span>
                                                     </div>
@@ -2392,13 +2660,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                         {/* Percent Input/Text */}
                                         <td className="px-4 py-3">
                                             {isParent ? (
-                                                <div className="text-right text-xs font-bold text-slate-400 pr-2">
+                                                <div className="text-right text-xs font-bold text-zinc-400 pr-2">
                                                     {task.progress}%
                                                 </div>
                                             ) : (
                                                 <div className="relative">
                                                     <input
                                                         type="text"
+                                                        inputMode="decimal"
                                                         value={activeDraft.progressPercent}
                                                         readOnly={!canEditSelectedPeriod}
                                                         onChange={e => {
@@ -2408,12 +2677,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                                                 void updateWeeklyProgressPercent(task, e.target.value);
                                                             }
                                                         }}
-                                                        className={`w-full pl-2 pr-6 py-1 rounded-xl border text-right font-black bg-transparent text-[11px] focus:ring-2 outline-none ${isOverProgress
-                                                                ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400'
-                                                                : 'border-slate-200 dark:border-slate-700 focus:ring-orange-500 text-slate-800 dark:text-slate-200'
-                                                            }`}
+                                                        className={`w-full pl-2 pr-6 py-1.5 rounded-xl border text-right font-black bg-white dark:bg-zinc-950 text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all ${
+                                                            isOverProgress
+                                                                ? 'border-red-300 text-red-600 bg-red-50/60 focus:ring-red-400'
+                                                                : 'border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200'
+                                                        }`}
                                                     />
-                                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400 pointer-events-none">%</span>
+                                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-zinc-400 pointer-events-none">%</span>
                                                 </div>
                                             )}
                                         </td>
@@ -2421,13 +2691,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                         {/* Quantity Completed Input/Text */}
                                         <td className="px-4 py-3">
                                             {isParent ? (
-                                                <div className="text-right text-xs font-bold text-slate-400 pr-2">
+                                                <div className="text-right text-xs font-bold text-zinc-400 pr-2">
                                                     —
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-1.5 justify-end">
                                                     <input
                                                         type="text"
+                                                        inputMode="decimal"
                                                         value={activeDraft.quantityDone}
                                                         readOnly={!canEditSelectedPeriod}
                                                         onChange={e => {
@@ -2437,13 +2708,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                                                 void updateWeeklyQuantityDone(task, e.target.value);
                                                             }
                                                         }}
-                                                        className={`w-full max-w-[85px] px-2 py-1 rounded-xl border text-right font-black bg-transparent text-[11px] focus:ring-2 outline-none ${isOverProgress
-                                                                ? 'border-red-200 text-red-600 bg-red-50/60 focus:ring-red-400'
-                                                                : 'border-slate-200 dark:border-slate-700 focus:ring-orange-500 text-slate-800 dark:text-slate-200'
-                                                            }`}
+                                                        className={`w-full max-w-[85px] px-2 py-1.5 rounded-xl border text-right font-black bg-white dark:bg-zinc-950 text-xs focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none transition-all ${
+                                                            isOverProgress
+                                                                ? 'border-red-300 text-red-600 bg-red-50/60 focus:ring-red-400'
+                                                                : 'border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200'
+                                                        }`}
                                                     />
-                                                    <span className="text-[10px] font-bold text-slate-400 shrink-0 truncate max-w-[40px]" title={getTaskUnit(task, linkedIds, contractItems)}>
-                                                        {getTaskUnit(task, linkedIds, contractItems)}
+                                                    <span className="text-[10px] font-bold text-zinc-400 shrink-0 truncate max-w-[40px]" title={taskUnit}>
+                                                        {taskUnit}
                                                     </span>
                                                 </div>
                                             )}
@@ -2452,7 +2724,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                         {/* Notes */}
                                         <td className="px-4 py-3">
                                             {isParent ? (
-                                                <div className="text-slate-400 text-[10px] italic">
+                                                <div className="text-zinc-400 text-[10px] italic">
                                                     Tự động cộng dồn
                                                 </div>
                                             ) : (
@@ -2468,7 +2740,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                                         }
                                                     }}
                                                     placeholder={entryMode === 'daily' ? 'Ghi chú chốt ngày...' : 'Ghi chú chốt tuần...'}
-                                                    className="w-full px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-transparent text-[11px] outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-slate-200"
+                                                    className="w-full px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-xs outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400"
                                                 />
                                             )}
                                         </td>

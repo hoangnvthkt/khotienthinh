@@ -703,3 +703,36 @@ button:not(:disabled):active,
 .dark #scanner-overlay, .dark .fixed.inset-0.z-50 .bg-white {
   background-color: var(--card) !important;
 }
+
+/* 5. Mobile Enhancements for Request & Workflow Modules */
+@media (max-width: 640px) {
+  /* Scroll fade indicator for horizontal lists (status pills, stepper) */
+  .mobile-scroll-fade {
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%);
+  }
+
+  /* Bottom sheet drag handle indicator */
+  .mobile-sheet-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 9999px;
+    background-color: #cbd5e1;
+    margin: 8px auto 4px auto;
+  }
+  .dark .mobile-sheet-handle {
+    background-color: #475569;
+  }
+
+  /* Prevent badge text squeezing */
+  .badge-no-squeeze {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  /* Text clamp with proper word break */
+  .mobile-break-word {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}

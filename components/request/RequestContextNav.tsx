@@ -19,10 +19,10 @@ export const RequestContextNav: React.FC<{
 }> = ({ view, onChange, summary, isCollapsed = false, onToggleCollapse }) => (
   <nav
     aria-label="Điều hướng đề xuất"
-    className={`flex shrink-0 transition-all duration-200 border-b border-slate-200 bg-slate-50/80 px-2 py-2 dark:border-slate-800 dark:bg-slate-950/80 ${
+    className={`flex shrink-0 transition-all duration-200 border-b border-slate-200 bg-slate-50/90 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-950/90 ${
       isCollapsed
-        ? 'overflow-x-auto md:w-16 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-2 md:py-3'
-        : 'overflow-x-auto md:w-52 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-3 md:py-4'
+        ? 'overflow-x-auto no-scrollbar md:w-16 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-2 md:py-3'
+        : 'overflow-x-auto no-scrollbar md:w-52 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-3 md:py-4'
     }`}
   >
     <div className="hidden items-center justify-between px-2 pb-3 md:flex">
@@ -43,7 +43,7 @@ export const RequestContextNav: React.FC<{
       )}
     </div>
 
-    <div className="flex flex-row gap-1 md:flex-col">
+    <div className="flex flex-row items-center gap-1.5 md:flex-col md:items-stretch">
       {items.map(item => {
         const Icon = item.icon;
         const active = view === item.view;
@@ -56,13 +56,13 @@ export const RequestContextNav: React.FC<{
               type="button"
               onClick={() => onChange(item.view)}
               title={`${item.label}${count !== null ? ` (${count})` : ''}`}
-              className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
+              className={`relative flex h-9 w-9 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-xl transition ${
                 active
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
                   : 'text-slate-600 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:bg-slate-900'
               }`}
             >
-              <Icon size={18} />
+              <Icon size={17} />
               {count !== null && count > 0 && (
                 <span className={`absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
                   active ? 'bg-amber-400 text-slate-900' : 'bg-emerald-600 text-white'
@@ -79,18 +79,18 @@ export const RequestContextNav: React.FC<{
             key={item.view}
             type="button"
             onClick={() => onChange(item.view)}
-            className={`flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition ${
+            className={`flex shrink-0 items-center gap-2 rounded-xl px-2.5 py-1.5 sm:px-3 sm:py-2.5 text-left text-xs sm:text-sm font-medium transition active:scale-[0.98] ${
               active
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20 font-semibold'
                 : 'text-slate-600 hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
             }`}
           >
-            <Icon size={18} className={active ? 'text-white' : 'text-slate-400'} />
-            <span className="whitespace-nowrap font-semibold">{item.label}</span>
+            <Icon size={16} className={active ? 'text-white' : 'text-slate-400 shrink-0'} />
+            <span className="whitespace-nowrap">{item.label}</span>
             {count !== null && (
               <span
-                className={`ml-auto rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  active ? 'bg-emerald-700/60 text-emerald-100' : 'bg-slate-200/60 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                className={`ml-1 sm:ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                  active ? 'bg-emerald-700/70 text-emerald-100' : 'bg-slate-200/70 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}
               >
                 {count}

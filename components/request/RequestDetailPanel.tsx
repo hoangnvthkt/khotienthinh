@@ -153,36 +153,43 @@ export const RequestDetailPanel: React.FC<{
               )}
 
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    {detail.capabilities.canEditContent && <button
-                      type="button"
-                      onClick={() => setShowEditDialog(true)}
-                      className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
-                    ><Pencil size={14}/>Chỉnh sửa</button>}
-                    <span className="inline-flex items-center rounded-lg bg-emerald-100/90 px-2.5 py-1 text-xs font-mono font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-lg bg-emerald-100/90 px-2.5 py-1 text-xs font-mono font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0">
                       {detail.code}
                     </span>
-                    <RequestStatusBadge status={detail.status} />
+                    <div className="shrink-0">
+                      <RequestStatusBadge status={detail.status} />
+                    </div>
+                    {detail.capabilities.canEditContent && (
+                      <button
+                        type="button"
+                        onClick={() => setShowEditDialog(true)}
+                        className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 shrink-0"
+                      >
+                        <Pencil size={13}/>
+                        <span>Sửa</span>
+                      </button>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
                     <button
                       type="button"
                       onClick={() => setShowPrintPreview(true)}
                       disabled={!detail.printConfig.browserPrintEnabled}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                     >
-                      <Printer size={14} /> In
+                      <Printer size={14} /> <span>In</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => void copyLink()}
                       disabled={copying}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
                     >
-                      <Copy size={14} /> Sao chép link
+                      <Copy size={14} /> <span className="hidden xs:inline">Sao chép</span>
                     </button>
 
                     {onToggleInspectorCollapse && (
@@ -199,70 +206,70 @@ export const RequestDetailPanel: React.FC<{
                   </div>
                 </div>
 
-                <h1 className="mt-3 break-words [overflow-wrap:anywhere] text-xl font-extrabold text-slate-900 dark:text-white md:text-2xl leading-tight">
+                <h1 className="mt-2.5 break-words [overflow-wrap:anywhere] text-lg sm:text-xl md:text-2xl font-extrabold leading-snug text-slate-900 dark:text-white">
                   {detail.title}
                 </h1>
               </div>
             </div>
 
             {/* Action Bar */}
-            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800">
               <RequestActionBar detail={detail} onChanged={refresh} />
             </div>
           </div>
 
           {/* Section 1: Executive Overview Cards (Responsive 2x2 or 4 grid) */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 2xl:grid-cols-4 gap-3">
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-2.5 sm:gap-3">
+            <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="shrink-0 rounded-xl bg-emerald-50 p-2 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
                   <User size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">Người tạo</p>
-                  <p className="mt-0.5 text-xs font-extrabold text-slate-800 dark:text-white truncate" title={detail.creator.name}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Người tạo</p>
+                  <p className="mt-0.5 text-xs sm:text-sm font-extrabold text-slate-800 dark:text-white truncate" title={detail.creator.name}>
                     {detail.creator.name}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
+            <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="shrink-0 rounded-xl bg-blue-50 p-2 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
                   <FileText size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">Mẫu đề xuất</p>
-                  <p className="mt-0.5 text-xs font-extrabold text-slate-800 dark:text-white truncate" title={`${detail.templateName} v${detail.templateVersionNumber}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Mẫu đề xuất</p>
+                  <p className="mt-0.5 text-xs sm:text-sm font-extrabold text-slate-800 dark:text-white truncate" title={`${detail.templateName} v${detail.templateVersionNumber}`}>
                     {detail.templateName} <span className="font-normal text-slate-400">v{detail.templateVersionNumber}</span>
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
+            <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="shrink-0 rounded-xl bg-purple-50 p-2 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
                   <Calendar size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">Thời điểm tạo</p>
-                  <p className="mt-0.5 text-xs font-extrabold text-slate-800 dark:text-white truncate">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Thời điểm tạo</p>
+                  <p className="mt-0.5 text-xs sm:text-sm font-extrabold text-slate-800 dark:text-white">
                     {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(detail.createdAt))}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
+            <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="shrink-0 rounded-xl bg-amber-50 p-2 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400">
                   <Clock size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">Cập nhật gần nhất</p>
-                  <p className="mt-0.5 text-xs font-extrabold text-slate-800 dark:text-white truncate">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cập nhật gần nhất</p>
+                  <p className="mt-0.5 text-xs sm:text-sm font-extrabold text-slate-800 dark:text-white">
                     {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(detail.updatedAt))}
                   </p>
                 </div>
@@ -305,9 +312,9 @@ export const RequestDetailPanel: React.FC<{
                 }
 
                 return (
-                  <div key={field.key} className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3.5 rounded-xl bg-slate-50/60 border border-slate-100 dark:bg-slate-800/40 dark:border-slate-800 items-center">
-                    <dt className="text-xs font-bold text-slate-500">{field.label}</dt>
-                    <dd className="sm:col-span-2 text-sm">
+                  <div key={field.key} className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 sm:gap-2 p-3 sm:p-3.5 rounded-xl bg-slate-50/60 border border-slate-100 dark:bg-slate-800/40 dark:border-slate-800 items-start">
+                    <dt className="text-xs font-bold text-slate-500 pt-0.5">{field.label}</dt>
+                    <dd className="sm:col-span-2 text-sm text-slate-900 dark:text-slate-100 mobile-break-word">
                       {displayValue(rawValue, field.fieldType, field.options)}
                     </dd>
                   </div>

@@ -1362,7 +1362,7 @@ const WorkflowInstances: React.FC = () => {
             {viewMode === 'list' && (
                 <>
                     {/* PANEL 1: Workflow Categories & Status Sidebar (Width: 260px) */}
-                    <aside className="w-[260px] bg-slate-50 border-r border-slate-200 dark:bg-[#2b2d31] dark:border-slate-800 flex flex-col h-full shrink-0">
+                    <aside className="hidden md:flex w-[260px] bg-slate-50 border-r border-slate-200 dark:bg-[#2b2d31] dark:border-slate-800 flex-col h-full shrink-0">
                         {/* Sidebar Header */}
                         <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4">
                             <div className="flex items-center gap-2 min-w-0">
@@ -1518,10 +1518,67 @@ const WorkflowInstances: React.FC = () => {
                     {/* If no activeInstanceId is selected, show PANEL 2 (Master list) as flex-1 */}
                     {!activeInstanceId ? (
                         <section className="flex-1 bg-white dark:bg-[#1e1f22] flex flex-col h-full overflow-hidden">
+                            {/* Mobile Top Header & Tabs (Hidden on desktop) */}
+                            <div className="md:hidden border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-[#2b2d31]">
+                                <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                        <GitBranch className="text-accent shrink-0" size={18} />
+                                        <span className="text-sm font-black text-slate-800 dark:text-white">Quy trình duyệt</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={openCreateModal}
+                                        disabled={nonMaterialActiveTemplates.length === 0}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-accent text-white text-xs font-bold shadow-sm shadow-emerald-600/20 disabled:opacity-50"
+                                    >
+                                        <Plus size={14} /> <span>Tạo phiếu</span>
+                                    </button>
+                                </div>
+
+                                {/* Mobile Tabs */}
+                                <div className="flex overflow-x-auto no-scrollbar gap-1.5 px-3 py-2 bg-slate-50/80 dark:bg-slate-900/50">
+                                    {([
+                                        { id: 'mine', label: 'Của tôi', icon: FileText },
+                                        { id: 'pending', label: 'Chờ tôi duyệt', icon: Inbox },
+                                        { id: 'watching', label: 'Theo dõi', icon: Eye },
+                                    ] as { id: string; label: string; icon: any }[]).map(tab => {
+                                        const Icon = tab.icon;
+                                        const isActive = activeTab === tab.id;
+                                        const count = tab.id === 'pending'
+                                            ? visibleListInstances.filter(canActOnInstance).length
+                                            : tab.id === 'watching'
+                                                ? visibleListInstances.filter(i => i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id)).length
+                                                : 0;
+
+                                        return (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => { setActiveTab(tab.id as any); setExpandedId(null); }}
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition active:scale-95 ${
+                                                    isActive
+                                                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                                                        : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300'
+                                                }`}
+                                            >
+                                                <Icon size={13} />
+                                                <span>{tab.label}</span>
+                                                {count > 0 && (
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                                        isActive ? 'bg-white text-emerald-700' : 'bg-red-500 text-white'
+                                                    }`}>
+                                                        {count}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
                             {/* Search Panel */}
-                            <div className="p-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                                <div className="flex h-10 w-96 items-center gap-2.5 rounded-xl bg-slate-100 dark:bg-[#313338] px-3.5 text-slate-500 dark:text-slate-400">
-                                    <Search size={16} />
+                            <div className="p-3 sm:p-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div className="flex h-10 w-full sm:w-80 md:w-96 items-center gap-2.5 rounded-xl bg-slate-100 dark:bg-[#313338] px-3.5 text-slate-500 dark:text-slate-400">
+                                    <Search size={16} className="shrink-0" />
                                     <input
                                         value={searchTerm}
                                         onChange={event => setSearchTerm(event.target.value)}
@@ -1529,13 +1586,13 @@ const WorkflowInstances: React.FC = () => {
                                         className="h-full min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-850 dark:text-[#dbdee1] outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
                                     />
                                 </div>
-                                <div className="text-xs font-bold text-slate-400">
-                                    Hiển thị {filteredInstances.length} phiếu
+                                <div className="text-xs font-bold text-slate-400 self-end sm:self-auto">
+                                    {filteredInstances.length} phiếu
                                 </div>
                             </div>
 
                             {/* Instance Cards List */}
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/10">
+                            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5 sm:space-y-3 bg-slate-50/50 dark:bg-slate-900/10">
                                 {filteredInstances.map(instance => {
                                     const template = templates.find(t => t.id === instance.templateId);
                                     const creator = users.find(u => u.id === instance.createdBy);
@@ -1550,33 +1607,35 @@ const WorkflowInstances: React.FC = () => {
                                         <div
                                             key={instance.id}
                                             onClick={() => setExpandedId(instance.id)}
-                                            className="p-5 rounded-2xl border bg-white hover:bg-slate-50/50 dark:bg-[#1e1f22] dark:hover:bg-[#2e3035] border-slate-200 dark:border-slate-800 transition-all shadow-sm hover:shadow duration-200 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 select-none"
+                                            className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border bg-white hover:bg-slate-50/50 dark:bg-[#1e1f22] dark:hover:bg-[#2e3035] border-slate-200 dark:border-slate-800 transition-all shadow-sm hover:shadow duration-200 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 select-none active:scale-[0.99]"
                                         >
                                             <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                                    <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">{instance.code}</span>
-                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${statusInfo.color}`}>
+                                                <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 flex-wrap">
+                                                    <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500 shrink-0">{instance.code}</span>
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0 ${statusInfo.color}`}>
                                                         <StatusIcon size={10} /> {statusInfo.label}
                                                     </span>
                                                     {canAct && (
-                                                        <span className="text-[10px] font-bold text-amber-650 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded animate-pulse flex items-center gap-1">
+                                                        <span className="text-[10px] font-bold text-amber-650 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded animate-pulse flex items-center gap-1 shrink-0">
                                                             <AlertCircle size={10} /> Cần duyệt
                                                         </span>
                                                     )}
                                                 </div>
-                                                <h3 className="font-bold text-sm text-slate-800 dark:text-white leading-snug mb-1 truncate">{instance.title}</h3>
-                                                <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold">{template?.name}</p>
+                                                <h3 className="font-bold text-sm text-slate-800 dark:text-white leading-snug mb-1 line-clamp-2">{instance.title}</h3>
+                                                <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold truncate">{template?.name}</p>
                                             </div>
 
-                                            <div className="flex flex-row md:flex-col items-start md:items-end justify-between md:justify-center gap-2 shrink-0 md:text-right border-t md:border-t-0 pt-3 md:pt-0 border-slate-100 dark:border-slate-800">
-                                                <div className="text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-                                                    <User size={12} className="text-slate-400" /> {creator?.name}
-                                                </div>
-                                                <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5">
-                                                    <Clock size={11} className="text-slate-450" /> {new Date(instance.createdAt).toLocaleString('vi-VN')}
+                                            <div className="flex flex-col sm:flex-row md:flex-col items-start sm:items-center md:items-end justify-between md:justify-center gap-1.5 sm:gap-2 shrink-0 md:text-right border-t md:border-t-0 pt-2.5 md:pt-0 border-slate-100 dark:border-slate-800">
+                                                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
+                                                        <User size={12} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[120px]">{creator?.name}</span>
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5">
+                                                        <Clock size={11} className="text-slate-450 shrink-0" /> {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(instance.createdAt))}
+                                                    </div>
                                                 </div>
                                                 {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
-                                                    <>
+                                                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
                                                         <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-600 dark:text-sky-400" title="Người đang xử lý bước hiện tại">
                                                             <div className="flex -space-x-1.5 shrink-0">
                                                                 {currentAssigneeDisplay.visibleAssignees.length > 0 ? currentAssigneeDisplay.visibleAssignees.map(assignee => (
@@ -1591,12 +1650,12 @@ const WorkflowInstances: React.FC = () => {
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <span className="max-w-[190px] truncate">Xử lý: {currentAssigneeDisplay.label}</span>
+                                                            <span className="max-w-[180px] truncate">Xử lý: {currentAssigneeDisplay.label}</span>
                                                         </div>
                                                         <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400">
-                                                            Bước hiện tại: {currentNode.label}
+                                                            · Bước: {currentNode.label}
                                                         </div>
-                                                    </>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
@@ -1614,7 +1673,7 @@ const WorkflowInstances: React.FC = () => {
                     ) : (
                         /* If activeInstanceId is selected, show PANEL 3 (Detail view) as flex-1 */
                         <main className="flex-1 bg-white dark:bg-[#313338] flex flex-col h-full overflow-hidden relative">
-                            <div className="w-full h-full overflow-y-auto px-6 py-4 select-text">
+                            <div className="w-full h-full overflow-y-auto px-3.5 py-3 sm:px-6 sm:py-4 select-text">
                                 <WorkflowInstanceDetail
                                     instanceId={activeInstanceId}
                                     onBack={() => { setExpandedId(null); setSearchParams({}, { replace: true }); }}
@@ -1825,9 +1884,10 @@ const WorkflowInstances: React.FC = () => {
             {/* Shared Create Instance Modal */}
             {showCreateModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 h-[100dvh] max-h-[100dvh] overflow-hidden p-0 sm:p-4">
-                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl p-6 w-full sm:w-[75vw] xl:max-w-[1050px] 2xl:max-w-[1200px] shadow-2xl flex flex-col h-[100dvh] sm:h-auto max-h-[100dvh] sm:max-h-[90vh] overflow-hidden relative select-text animate-fade-in">
-                        <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                            <Send size={20} className="text-accent" /> Tạo phiếu mới
+                    <div className="glass-card bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-2xl p-4 sm:p-6 w-full sm:w-[75vw] xl:max-w-[1050px] 2xl:max-w-[1200px] shadow-2xl flex flex-col h-[92dvh] sm:h-auto max-h-[92dvh] sm:max-h-[90vh] overflow-hidden relative select-text animate-fade-in">
+                        <div className="mobile-sheet-handle sm:hidden" />
+                        <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white mb-3 sm:mb-4 flex items-center gap-2">
+                            <Send size={18} className="text-accent" /> Tạo phiếu mới
                         </h2>
                         <div className="space-y-4 flex-1 min-h-0 overflow-y-auto -webkit-overflow-scrolling-touch pr-1">
                             <div>

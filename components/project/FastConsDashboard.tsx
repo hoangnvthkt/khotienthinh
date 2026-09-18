@@ -11,6 +11,8 @@ import {
   CalendarClock,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleDollarSign,
   ClipboardCheck,
   Clock,
@@ -1128,6 +1130,7 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1435,158 +1438,218 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <TaskHighlightPanel
-          title="Đang thi công"
-          rows={taskHighlights.active}
-          empty="Chưa có hạng mục đang thi công."
-          tone="blue"
-          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
-          onOpenAll={() => openProjectTab('report', { reportStatus: 'active' })}
-        />
-        <TaskHighlightPanel
-          title="Đã hoàn thành"
-          rows={taskHighlights.completed}
-          empty="Chưa có hạng mục hoàn thành."
-          tone="emerald"
-          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
-          onOpenAll={() => openProjectTab('report', { reportStatus: 'completed' })}
-        />
-        <TaskHighlightPanel
-          title="Chậm / cần xử lý"
-          rows={taskHighlights.late}
-          empty="Chưa ghi nhận hạng mục chậm."
-          tone="red"
-          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
-          onOpenAll={() => openProjectTab('report', { reportStatus: 'late' })}
-        />
-        <TaskHighlightPanel
-          title="Sắp đến hạn"
-          rows={taskHighlights.upcoming}
-          empty="Chưa có hạng mục sắp đến hạn."
-          tone="orange"
-          onOpenTask={taskId => openProjectTab('gantt', { taskId })}
-          onOpenAll={() => openProjectTab('gantt')}
-        />
-      </div>
-
-      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 shadow-sm border border-zinc-200 dark:border-zinc-700">
-              <ListChecks size={15} />
-            </div>
-            <div>
-              <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Hành động nhanh</div>
-              <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Mở đúng tab và bộ lọc liên quan</div>
-            </div>
-          </div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">{actionLinks.length} lối tắt</div>
-        </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {actionLinks.slice(0, 8).map(action => (
-            <ExecutiveActionCard key={action.id} action={action} onOpen={openAction} />
-          ))}
-          {actionLinks.length === 0 && (
-            <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-8 text-center text-xs font-medium text-zinc-400 md:col-span-2 xl:col-span-4">
-              Cần bấm Cập nhật để tạo các lối tắt điều hành mới.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <ScheduleHealthPanel metrics={metrics} />
-        <PriorityAlertsPanel metrics={metrics} />
-        <ApprovalQueuePanel metrics={metrics} />
-      </div>
-
+      {/* 3. Biểu đồ S-Curve: Planned vs Actual S-Curve */}
       <WeeklyProgressTrendPanel constructionSiteId={constructionSiteId} projectId={projectId} currentMetrics={metrics} />
 
-      <PaymentRiskPanel metrics={metrics} />
-
-      {/* === Bảng Đối Soát 3 Bên (FastCons-style) === */}
-      <ReconciliationTable owner={metrics.owner} subcontractor={metrics.subcontractor} supplier={metrics.supplier} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
-              <ShieldCheck size={15} />
+      {/* 4. Toàn bộ các chi tiết còn lại: Thu gọn mặc định, bấm vào để sổ ra chi tiết */}
+      <div className="space-y-4 pt-1">
+        <button
+          type="button"
+          onClick={() => setShowDetails(prev => !prev)}
+          className="w-full flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:border-teal-500/50 hover:bg-teal-50/20 dark:hover:bg-teal-950/20 transition-all cursor-pointer group"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <ListChecks size={20} />
             </div>
-            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Chi phí theo KL thi công</h3>
-          </div>
-          <MetricRow label="Chi phí dự toán KL đã thực hiện" value={metrics.constructionCost.performedBudgetCost} highlight />
-          <MetricRow label="Chi phí trả thầu phụ" value={metrics.constructionCost.subcontractPaid} />
-          <MetricRow label="Chi phí trả NCC" value={metrics.constructionCost.supplierPaid} />
-          <MetricRow label="Chi phí khác" value={metrics.constructionCost.otherCost} />
-          <MetricRow label="Tổng chi phí thực tế" value={metrics.constructionCost.totalActualCost} highlight />
-          <div className={`mt-3 text-sm font-bold ${metricTone(metrics.constructionCost.forecastProfitLoss)}`}>
-            Dự trù lãi/lỗ: {fmtFull(metrics.constructionCost.forecastProfitLoss)}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 flex items-center justify-center">
-              <Package size={15} />
+            <div className="text-left min-w-0">
+              <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap">
+                <span>{showDetails ? 'Thu gọn chi tiết điều hành' : 'Xem chi tiết điều hành & đối soát'}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${showDetails ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' : 'bg-teal-100 text-teal-800 dark:bg-teal-900/60 dark:text-teal-300'}`}>
+                  {showDetails ? 'Bấm để thu gọn' : 'Bấm để mở chi tiết'}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                Hạng mục thi công · Lối tắt hành động · Sức khỏe & Cảnh báo · Đối soát 3 bên · Chi phí & Vật tư · Dòng tiền
+              </p>
             </div>
-            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Vật liệu và định mức</h3>
           </div>
-          <MetricRow label="CP vật liệu theo dự toán" value={metrics.material.materialPurchasedBudgetCost} highlight />
-          <MetricRow label="CP vật liệu theo PO/phiếu mua" value={metrics.material.materialPurchasedActualCost} />
-          <div className={`py-2 text-xs font-bold ${metricTone(metrics.material.materialPurchaseProfitLoss)}`}>
-            Dự trù lãi/lỗ vật liệu: {fmtFull(metrics.material.materialPurchaseProfitLoss)}
-          </div>
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            <MiniCount label="Vượt định mức" value={metrics.material.overLimitCount} />
-            <MiniCount label="Cảnh báo 1" value={metrics.material.warningLevel1Count} />
-            <MiniCount label="Cảnh báo 2" value={metrics.material.warningLevel2Count} />
-            <MiniCount label="CV vượt VT" value={metrics.material.taskMaterialOverCount} />
-          </div>
-        </div>
 
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center justify-center">
-              <FileText size={15} />
+          <div className="flex items-center gap-2 shrink-0 pl-2">
+            <span className="text-xs font-semibold text-teal-700 dark:text-teal-400 hidden sm:inline">
+              {showDetails ? 'Thu gọn' : 'Xem chi tiết'}
+            </span>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-transform duration-200 ${showDetails ? 'rotate-180 bg-teal-50 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300' : ''}`}>
+              <ChevronDown size={18} />
             </div>
-            <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Dòng tiền và công nợ</h3>
           </div>
-          <MetricRow label="Giá trị thu" value={metrics.cashFlow.cashIn} highlight />
-          <MetricRow label="Giá trị chi" value={metrics.cashFlow.cashOut} />
-          <MetricRow label="Số dư" value={metrics.cashFlow.balance} highlight />
-          <MetricRow label="Phải thu" value={metrics.cashFlow.receivable} />
-          <MetricRow label="Phải trả" value={metrics.cashFlow.payable} />
-          <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 px-3 py-2 flex items-center justify-between">
-            <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Khoản quá hạn</span>
-            <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{metrics.cashFlow.overdueCount}</span>
+        </button>
+
+        {showDetails && (
+          <div className="space-y-4 pt-1 animate-in fade-in slide-in-from-top-2 duration-300">
+            {/* Task Highlights: 4 panel hạng mục thi công */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
+              <TaskHighlightPanel
+                title="Đang thi công"
+                rows={taskHighlights.active}
+                empty="Chưa có hạng mục đang thi công."
+                tone="blue"
+                onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+                onOpenAll={() => openProjectTab('report', { reportStatus: 'active' })}
+              />
+              <TaskHighlightPanel
+                title="Đã hoàn thành"
+                rows={taskHighlights.completed}
+                empty="Chưa có hạng mục hoàn thành."
+                tone="emerald"
+                onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+                onOpenAll={() => openProjectTab('report', { reportStatus: 'completed' })}
+              />
+              <TaskHighlightPanel
+                title="Chậm / cần xử lý"
+                rows={taskHighlights.late}
+                empty="Chưa ghi nhận hạng mục chậm."
+                tone="red"
+                onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+                onOpenAll={() => openProjectTab('report', { reportStatus: 'late' })}
+              />
+              <TaskHighlightPanel
+                title="Sắp đến hạn"
+                rows={taskHighlights.upcoming}
+                empty="Chưa có hạng mục sắp đến hạn."
+                tone="orange"
+                onOpenTask={taskId => openProjectTab('gantt', { taskId })}
+                onOpenAll={() => openProjectTab('gantt')}
+              />
+            </div>
+
+            {/* Hành động nhanh */}
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 shadow-sm border border-zinc-200 dark:border-zinc-700">
+                    <ListChecks size={15} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Hành động nhanh</div>
+                    <div className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Mở đúng tab và bộ lọc liên quan</div>
+                  </div>
+                </div>
+                <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">{actionLinks.length} lối tắt</div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {actionLinks.slice(0, 8).map(action => (
+                  <ExecutiveActionCard key={action.id} action={action} onOpen={openAction} />
+                ))}
+                {actionLinks.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-8 text-center text-xs font-medium text-zinc-400 md:col-span-2 xl:col-span-4">
+                    Cần bấm Cập nhật để tạo các lối tắt điều hành mới.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sức khỏe tiến độ, Cảnh báo ưu tiên, Hàng đợi phê duyệt */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <ScheduleHealthPanel metrics={metrics} />
+              <PriorityAlertsPanel metrics={metrics} />
+              <ApprovalQueuePanel metrics={metrics} />
+            </div>
+
+            {/* Rủi ro thanh toán */}
+            <PaymentRiskPanel metrics={metrics} />
+
+            {/* === Bảng Đối Soát 3 Bên (FastCons-style) === */}
+            <ReconciliationTable owner={metrics.owner} subcontractor={metrics.subcontractor} supplier={metrics.supplier} />
+
+            {/* Chi tiết Chi phí KL, Vật liệu định mức, Dòng tiền công nợ */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
+                    <ShieldCheck size={15} />
+                  </div>
+                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Chi phí theo KL thi công</h3>
+                </div>
+                <MetricRow label="Chi phí dự toán KL đã thực hiện" value={metrics.constructionCost.performedBudgetCost} highlight />
+                <MetricRow label="Chi phí trả thầu phụ" value={metrics.constructionCost.subcontractPaid} />
+                <MetricRow label="Chi phí trả NCC" value={metrics.constructionCost.supplierPaid} />
+                <MetricRow label="Chi phí khác" value={metrics.constructionCost.otherCost} />
+                <MetricRow label="Tổng chi phí thực tế" value={metrics.constructionCost.totalActualCost} highlight />
+                <div className={`mt-3 text-sm font-bold ${metricTone(metrics.constructionCost.forecastProfitLoss)}`}>
+                  Dự trù lãi/lỗ: {fmtFull(metrics.constructionCost.forecastProfitLoss)}
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 flex items-center justify-center">
+                    <Package size={15} />
+                  </div>
+                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Vật liệu và định mức</h3>
+                </div>
+                <MetricRow label="CP vật liệu theo dự toán" value={metrics.material.materialPurchasedBudgetCost} highlight />
+                <MetricRow label="CP vật liệu theo PO/phiếu mua" value={metrics.material.materialPurchasedActualCost} />
+                <div className={`py-2 text-xs font-bold ${metricTone(metrics.material.materialPurchaseProfitLoss)}`}>
+                  Dự trù lãi/lỗ vật liệu: {fmtFull(metrics.material.materialPurchaseProfitLoss)}
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <MiniCount label="Vượt định mức" value={metrics.material.overLimitCount} />
+                  <MiniCount label="Cảnh báo 1" value={metrics.material.warningLevel1Count} />
+                  <MiniCount label="Cảnh báo 2" value={metrics.material.warningLevel2Count} />
+                  <MiniCount label="CV vượt VT" value={metrics.material.taskMaterialOverCount} />
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center justify-center">
+                    <FileText size={15} />
+                  </div>
+                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Dòng tiền và công nợ</h3>
+                </div>
+                <MetricRow label="Giá trị thu" value={metrics.cashFlow.cashIn} highlight />
+                <MetricRow label="Giá trị chi" value={metrics.cashFlow.cashOut} />
+                <MetricRow label="Số dư" value={metrics.cashFlow.balance} highlight />
+                <MetricRow label="Phải thu" value={metrics.cashFlow.receivable} />
+                <MetricRow label="Phải trả" value={metrics.cashFlow.payable} />
+                <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 px-3 py-2 flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Khoản quá hạn</span>
+                  <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{metrics.cashFlow.overdueCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tài chính nâng cao */}
+            {financial && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <SummaryCard title="Chênh lệch ngân sách" value={fmtMoney(financial.budgetVariance)} sub={`${financial.budgetVariancePercent}%`} icon={<Activity size={15} />} tone={financial.budgetVariance >= 0 ? 'emerald' : 'red'} />
+                <SummaryCard title="Biên lợi nhuận HĐ" value={fmtMoney(financial.contractMargin)} sub={`${financial.contractMarginPercent}%`} icon={<CircleDollarSign size={15} />} tone={financial.contractMargin >= 0 ? 'emerald' : 'orange'} />
+                <SummaryCard title="Doanh thu xác nhận" value={fmtMoney(financial.totalCertifiedRevenue)} sub={`Đã TT ${fmtMoney(financial.totalPaidRevenue)}`} icon={<ShieldCheck size={15} />} tone="blue" />
+                <SummaryCard title="Tạm ứng còn lại" value={fmtMoney(financial.totalAdvanceOutstanding)} sub={`Giữ lại ${fmtMoney(financial.totalRetentionHeld)}`} icon={<Banknote size={15} />} tone="violet" />
+              </div>
+            )}
+
+            {/* Ghi chú dữ liệu & Thiếu nguồn */}
+            {(metrics.warnings.length > 0 || metrics.sourceNotes.length > 0) && (
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4">
+                <div className="text-[11px] font-bold uppercase text-zinc-500 dark:text-zinc-400 mb-2">Ghi chú dữ liệu</div>
+                <div className="space-y-1">
+                  {metrics.sourceNotes.map((note, index) => (
+                    <p key={`note-${index}`} className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{note}</p>
+                  ))}
+                  {metrics.warnings.map((warning, index) => (
+                    <p key={`warning-${index}`} className="text-[11px] font-medium text-amber-700 dark:text-amber-400">Thiếu nguồn: {warning}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Nút thu gọn ở cuối */}
+            <div className="flex justify-center pt-2 pb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDetails(false);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shadow-sm cursor-pointer"
+              >
+                <ChevronUp size={15} /> Thu gọn chi tiết
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-
-      {financial && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <SummaryCard title="Chênh lệch ngân sách" value={fmtMoney(financial.budgetVariance)} sub={`${financial.budgetVariancePercent}%`} icon={<Activity size={15} />} tone={financial.budgetVariance >= 0 ? 'emerald' : 'red'} />
-          <SummaryCard title="Biên lợi nhuận HĐ" value={fmtMoney(financial.contractMargin)} sub={`${financial.contractMarginPercent}%`} icon={<CircleDollarSign size={15} />} tone={financial.contractMargin >= 0 ? 'emerald' : 'orange'} />
-          <SummaryCard title="Doanh thu xác nhận" value={fmtMoney(financial.totalCertifiedRevenue)} sub={`Đã TT ${fmtMoney(financial.totalPaidRevenue)}`} icon={<ShieldCheck size={15} />} tone="blue" />
-          <SummaryCard title="Tạm ứng còn lại" value={fmtMoney(financial.totalAdvanceOutstanding)} sub={`Giữ lại ${fmtMoney(financial.totalRetentionHeld)}`} icon={<Banknote size={15} />} tone="violet" />
-        </div>
-      )}
-
-      {(metrics.warnings.length > 0 || metrics.sourceNotes.length > 0) && (
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-4">
-          <div className="text-[11px] font-bold uppercase text-zinc-500 dark:text-zinc-400 mb-2">Ghi chú dữ liệu</div>
-          <div className="space-y-1">
-            {metrics.sourceNotes.map((note, index) => (
-              <p key={`note-${index}`} className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{note}</p>
-            ))}
-            {metrics.warnings.map((warning, index) => (
-              <p key={`warning-${index}`} className="text-[11px] font-medium text-amber-700 dark:text-amber-400">Thiếu nguồn: {warning}</p>
-            ))}
-          </div>
-        </div>
-      )}
     </section>
   );
 };

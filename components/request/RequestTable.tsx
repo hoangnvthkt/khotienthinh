@@ -16,7 +16,12 @@ const dateTime = (value: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle
 export const RequestStatusBadge: React.FC<{ status: RequestListItem['status'] }> = ({ status }) => {
   const item = statusStyle[status];
   const Icon = item.Icon;
-  return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-1 text-xs font-semibold ${item.className}`}><Icon size={13} />{item.label}</span>;
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[11px] font-bold shrink-0 badge-no-squeeze ${item.className}`}>
+      <Icon size={12} className="shrink-0" />
+      <span>{item.label}</span>
+    </span>
+  );
 };
 
 const RequestUserAvatar: React.FC<{ user: RequestUserSnapshot; className?: string }> = ({ user, className = 'h-7 w-7' }) => {

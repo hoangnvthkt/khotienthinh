@@ -3106,15 +3106,15 @@ const ProjectDashboard: React.FC = () => {
             <div className="space-y-3">
                 {/* Header Banner - Ultra Compact */}
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-zinc-900 dark:text-zinc-100 shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    <div className="flex flex-col gap-2.5 sm:gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-center gap-2.5 min-w-0 w-full lg:w-auto flex-1">
                             {/* GREEN "Dự án khác" Button */}
                             <button
                                 onClick={() => { setActiveView('list'); setSelectedSiteId(null); setSelectedProjectId(null); }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all shrink-0 cursor-pointer"
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all shrink-0 cursor-pointer min-h-[32px]"
                                 title="Quay lại danh sách dự án"
                             >
-                                ← Dự án khác
+                                ← <span className="hidden xs:inline">Dự án khác</span>
                             </button>
 
                             <div className="w-8 h-8 rounded-lg bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center shrink-0">
@@ -3122,15 +3122,15 @@ const ProjectDashboard: React.FC = () => {
                             </div>
 
                             <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <h2 className="text-base font-black leading-snug truncate">{selectedProject.name}</h2>
-                                    <span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">({selectedProject.code})</span>
-                                    {selectedSite && (
-                                        <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
-                                            • {selectedSite.name}
-                                        </span>
-                                    )}
+                                <div className="flex items-baseline gap-1.5 flex-wrap">
+                                    <h2 className="text-sm sm:text-base font-black leading-snug text-slate-900 dark:text-white break-words">{selectedProject.name}</h2>
+                                    <span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono shrink-0">({selectedProject.code})</span>
                                 </div>
+                                {selectedSite && (
+                                    <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
+                                        • {selectedSite.name}
+                                    </div>
+                                )}
                                 {metaChips.length > 0 && (
                                     <div className="mt-1 flex flex-wrap gap-1">
                                         {metaChips.map(chip => (
@@ -3144,44 +3144,48 @@ const ProjectDashboard: React.FC = () => {
                         </div>
 
                         {/* Right side: Action buttons + Status + Progress */}
-                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 max-w-full">
-                            {canManageProjects && (
-                                <button onClick={() => openEditProject(selectedProject)}
-                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                    <Edit2 size={12} /> Sửa
-                                </button>
-                            )}
-                            {hasSiteScope && (
-                                <>
-                                    {canManageCashflowTab && (
-                                        <>
-                                            <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
-                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 transition-colors shrink-0">
-                                                <Plus size={12} /> Giao dịch
+                        <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap pt-2 border-t border-zinc-100 dark:border-zinc-800/80 lg:border-0 lg:pt-0 w-full lg:w-auto shrink-0">
+                            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-w-0 flex-1">
+                                {canManageProjects && (
+                                    <button onClick={() => openEditProject(selectedProject)}
+                                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0 whitespace-nowrap min-h-[32px]">
+                                        <Edit2 size={12} /> Sửa
+                                    </button>
+                                )}
+                                {hasSiteScope && (
+                                    <>
+                                        {canManageCashflowTab && (
+                                            <>
+                                                <button onClick={() => { resetTxForm(); setShowTxForm(true); }}
+                                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 hover:bg-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 transition-colors shrink-0 whitespace-nowrap min-h-[32px]">
+                                                    <Plus size={12} /> Giao dịch
+                                                </button>
+                                                <button onClick={() => fileInputRef.current?.click()}
+                                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0 whitespace-nowrap min-h-[32px]">
+                                                    <Upload size={12} /> Import
+                                                </button>
+                                                <button onClick={handleDownloadTransactionTemplate}
+                                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0 whitespace-nowrap min-h-[32px]">
+                                                    <Download size={12} /> Mẫu
+                                                </button>
+                                            </>
+                                        )}
+                                        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
+                                        {canManageBudgetTab && (
+                                            <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
+                                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0 whitespace-nowrap min-h-[32px]">
+                                                <Edit2 size={12} /> Ngân sách
                                             </button>
-                                            <button onClick={() => fileInputRef.current?.click()}
-                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                                <Upload size={12} /> Import
-                                            </button>
-                                            <button onClick={handleDownloadTransactionTemplate}
-                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                                <Download size={12} /> Mẫu
-                                            </button>
-                                        </>
-                                    )}
-                                    <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportExcel} />
-                                    {canManageBudgetTab && (
-                                        <button onClick={() => effectiveSiteId && openBudgetForm(effectiveSiteId)}
-                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 transition-colors shrink-0">
-                                            <Edit2 size={12} /> Ngân sách
-                                        </button>
-                                    )}
-                                </>
-                            )}
+                                        )}
+                                    </>
+                                )}
+                            </div>
 
-                            <StatusBadge status={statusKey} label={STATUS_CONFIG[statusKey]?.label || statusKey} size="sm" />
-                            <div className="text-sm font-black text-teal-700 dark:text-teal-400 shrink-0">
-                                {progressDisplay.state === 'ready' ? `${displayProgress}%` : progressDisplay.label}
+                            <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-zinc-200 dark:border-zinc-800 lg:border-0 lg:pl-0">
+                                <StatusBadge status={statusKey} label={STATUS_CONFIG[statusKey]?.label || statusKey} size="sm" />
+                                <div className="text-xs sm:text-sm font-black text-teal-700 dark:text-teal-400 shrink-0">
+                                    {progressDisplay.state === 'ready' ? `${displayProgress}%` : progressDisplay.label}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3196,31 +3200,7 @@ const ProjectDashboard: React.FC = () => {
 
                 {renderSiteMetadataStatus()}
 
-                {attentionItems.length > 0 && (
-                    <section className="rounded-2xl border border-orange-100 bg-orange-50/60 p-4 dark:border-orange-900/40 dark:bg-orange-950/20">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                            <div>
-                                <h3 className="text-sm font-black text-slate-800 dark:text-white">Cần chú ý</h3>
-                                <p className="mt-0.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">Các tín hiệu vận hành được suy ra từ dữ liệu hiện có của dự án.</p>
-                            </div>
-                            <StatusBadge status="warning" label={`${attentionItems.length} cảnh báo`} tone="attention" />
-                        </div>
-                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                            {attentionItems.map(item => (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={() => goToProjectTab(item.tab)}
-                                    className="rounded-lg border border-white/70 bg-white p-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md dark:border-slate-700 dark:bg-slate-900"
-                                >
-                                    <StatusBadge status={item.id} label={item.tone === 'danger' ? 'Rủi ro cao' : 'Cần kiểm tra'} tone={item.tone} />
-                                    <div className="mt-2 text-sm font-black text-slate-800 dark:text-white">{item.title}</div>
-                                    <p className="mt-1 text-[11px] font-bold leading-5 text-slate-500 dark:text-slate-400">{item.message}</p>
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                )}
+                {/* Cần chú ý (attentionItems) - Ẩn theo yêu cầu */}
 
                 {/* Overview Sub-tabs */}
                 <div className="flex gap-1 bg-white dark:bg-zinc-900 rounded-xl p-1.5 border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">

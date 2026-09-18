@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { canPerformProjectRoomAction } from '../../lib/permissions/projectPermissionService';
 import { getSafetyEquipmentDocumentsStatus, safetyService, SafetyIssueFilters } from '../../lib/safetyService';
 import { supabase } from '../../lib/supabase';
 import {
@@ -100,6 +101,19 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
     const rows = users.length ? users : [user];
     return rows.filter(row => row?.id);
   }, [user, users]);
+
+  const canEditInspections = canManageTab || canPerformProjectRoomAction(
+    user,
+    'safety',
+    'edit',
+    { projectId, constructionSiteId },
+  );
+  const canDeleteInspections = canManageTab || canPerformProjectRoomAction(
+    user,
+    'safety',
+    'delete',
+    { projectId, constructionSiteId },
+  );
 
   const openAttachmentPreview = useCallback((attachments: SafetyAttachment[], index: number) => {
     if (!attachments.length) return;
@@ -282,6 +296,10 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
   };
 
   const saveInspection = async (input: any) => {
+    if (!canEditInspections) {
+      toast.warning('Không có quyền cập nhật an toàn', 'Bạn cần quyền Sửa trong Room An toàn để tạo hoặc cập nhật kiểm tra hiện trường.');
+      return;
+    }
     try {
       if (input.id) {
         const updated = await safetyService.updateInspection(input.id, {
@@ -471,8 +489,9 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
 
   const primaryAction = !canManageTab ? undefined : view === 'issues'
     ? { label: 'Ghi nhận nguy cơ', icon: <Plus size={15} />, onClick: () => { setEditingIssue(null); setShowIssueForm(true); } }
-    : view === 'inspections'
-      ? { label: 'Kiểm tra checklist', icon: <Plus size={15} />, onClick: () => { setEditingInspection(null); setShowInspectionForm(true); } }
+    : undefined;
+  const inspectionPrimaryAction = view === 'inspections' && canEditInspections
+      ? { label: 'Tạo kiểm tra hiện trường', icon: <Plus size={15} />, onClick: () => { setEditingInspection(null); setShowInspectionForm(true); } }
       : undefined;
 
   return (
@@ -488,7 +507,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
             <StatusBadge status="critical" label={`${summary?.criticalIssues || 0} nghiêm trọng`} tone={(summary?.criticalIssues || 0) > 0 ? 'danger' : 'neutral'} size="md" />
           </>
         }
-        primaryAction={primaryAction}
+        primaryAction={inspectionPrimaryAction || primaryAction}
         secondaryActions={[{
           label: 'Làm mới',
           icon: <RefreshCw size={15} />,
@@ -590,7 +609,8 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
           onDelete={deleteInspection}
           onPreviewAttachment={openAttachmentPreview}
           onCreate={() => { setEditingInspection(null); setShowInspectionForm(true); }}
-          canManage={canManageTab}
+          canManage={canEditInspections}
+          canDelete={canDeleteInspections}
         />
       )}
 
@@ -660,7 +680,7 @@ const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, ca
         />
       )}
 
-      {showInspectionForm && (
+      {showInspectionForm && canEditInspections && (
         <SafetyInspectionFormModal
           projectId={projectId}
           constructionSiteId={constructionSiteId}

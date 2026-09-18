@@ -83,18 +83,27 @@ const RequestList: React.FC = () => {
   ) : (
     <>
       <RequestTable items={list.items} onSelect={select} />
-      <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+      <div className="space-y-2.5 p-3 md:hidden">
         {list.items.map(item => (
           <button
             type="button"
             key={item.id}
             onClick={() => select(item.id)}
-            className="block w-full px-4 py-3 text-left"
+            className="w-full text-left rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-sm transition-all active:scale-[0.99] active:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:active:bg-slate-800/80"
           >
-            <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{item.title}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{item.code} · {item.templateName}</p>
-            <div className="mt-2">
-              <RequestStatusBadge status={item.status} />
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                {item.code}
+              </span>
+              <div className="shrink-0">
+                <RequestStatusBadge status={item.status} />
+              </div>
+            </div>
+            <p className="mt-1.5 text-sm font-semibold leading-snug text-slate-900 line-clamp-2 dark:text-white">
+              {item.title}
+            </p>
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <span className="truncate">{item.templateName}</span>
             </div>
           </button>
         ))}
@@ -121,29 +130,30 @@ const RequestList: React.FC = () => {
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-100 dark:bg-slate-950">
       {/* Header Bar */}
-      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-bold text-slate-900 dark:text-white">Danh sách đề xuất</h1>
-          <p className="hidden text-xs text-slate-500 sm:block">Phê duyệt tự động theo mẫu yêu cầu</p>
+      <header className="flex shrink-0 flex-col gap-2.5 border-b border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:gap-3 sm:px-4 sm:py-3 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg sm:text-xl font-bold text-slate-900 dark:text-white">Danh sách đề xuất</h1>
+            <p className="hidden text-xs text-slate-500 sm:block">Phê duyệt tự động theo mẫu yêu cầu</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreateDialog(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-700 active:scale-95 shrink-0"
+          >
+            <Plus size={16} /> <span>Tạo đề xuất</span>
+          </button>
         </div>
 
-        <div className="relative order-3 w-full sm:order-none sm:w-72">
+        <div className="relative w-full sm:ml-auto sm:w-72">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
             onChange={event => setSearch(event.target.value)}
             placeholder="Tìm mã, tiêu đề..."
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           />
         </div>
-
-        <button
-          type="button"
-          onClick={() => setShowCreateDialog(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 shadow-md shadow-emerald-600/20"
-        >
-          <Plus size={16} /> Tạo đề xuất
-        </button>
       </header>
 
       {/* 4-Column Workspace Layout with maximized Column 3 Area */}
@@ -160,7 +170,7 @@ const RequestList: React.FC = () => {
         {/* Main Content Area */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Status Filter Bar */}
-          <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 no-scrollbar sm:px-4 sm:gap-2 dark:border-slate-800 dark:bg-slate-900">
             {STATUS_FILTERS.map(item => {
               const active = status === item.status && overdue === Boolean(item.overdue);
               return (
@@ -171,10 +181,10 @@ const RequestList: React.FC = () => {
                     setStatus(item.status);
                     setOverdue(Boolean(item.overdue));
                   }}
-                  className={`whitespace-nowrap rounded-full px-3.5 py-1 text-xs font-semibold transition ${
+                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                     active
-                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 font-semibold'
+                      : 'bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
                   }`}
                 >
                   {item.label}

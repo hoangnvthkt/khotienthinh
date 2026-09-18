@@ -983,7 +983,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     return (
         <div className="min-h-[calc(100vh-120px)] space-y-5 text-slate-800 dark:text-slate-200">
             {/* Top Navigation & Action Header */}
-            <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-3">
+            <div className="rounded-xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3.5 sm:p-5 shadow-sm space-y-3">
                 {/* Breadcrumb & Navigation */}
                 <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                     <button
@@ -993,21 +993,21 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                     >
                         <ArrowLeft size={16} />
                     </button>
-                    <span>QT {template?.name?.toUpperCase() || 'QUY TRÌNH'}</span>
+                    <span className="truncate max-w-[120px] sm:max-w-none">QT {template?.name?.toUpperCase() || 'QUY TRÌNH'}</span>
                     <span>›</span>
-                    <span className="text-slate-700 dark:text-slate-300 font-extrabold">{currentNode?.label?.toUpperCase() || STATUS_LABEL[instance.status]}</span>
+                    <span className="text-slate-700 dark:text-slate-300 font-extrabold truncate max-w-[120px] sm:max-w-none">{currentNode?.label?.toUpperCase() || STATUS_LABEL[instance.status]}</span>
                 </div>
 
                 {/* Main Title & Action Bar Row */}
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-3.5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-3">
-                            <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight break-words">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 dark:text-white leading-snug break-words">
                                 {instance.title}
                             </h1>
                             {instance.status === WorkflowInstanceStatus.RUNNING && (
                                 <div
-                                    className="flex items-center gap-2 shrink-0 bg-sky-50 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800 rounded-full px-2.5 py-1 text-xs font-bold text-slate-700 dark:text-slate-200"
+                                    className="flex items-center gap-1.5 shrink-0 bg-sky-50 dark:bg-sky-950/30 border border-sky-200/80 dark:border-sky-800 rounded-full px-2.5 py-0.5 text-xs font-bold text-slate-700 dark:text-slate-200"
                                     title="Người đang xử lý bước hiện tại"
                                 >
                                     <div className="flex -space-x-1.5">
@@ -1023,63 +1023,73 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                             </div>
                                         )}
                                     </div>
-                                    <span className="text-sky-600 dark:text-sky-400">Đang xử lý:</span>
-                                    <span>{currentAssigneeDisplay.label}</span>
+                                    <span className="text-sky-600 dark:text-sky-400 text-[11px]">Xử lý:</span>
+                                    <span className="text-[11px] truncate max-w-[110px]">{currentAssigneeDisplay.label}</span>
                                 </div>
                             )}
                         </div>
 
                         {/* Sub Metadata Row */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
-                            <span className="flex items-center gap-1.5">
-                                <Bookmark size={14} className="text-slate-400" />
-                                {instance.formData?.note ? 'Có ghi chú tổng quan' : 'Không có tổng quan ngắn về nhiệm vụ'}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 pt-0.5">
+                            <span className="flex items-center gap-1">
+                                <Bookmark size={13} className="text-slate-400 shrink-0" />
+                                <span>{instance.formData?.note ? 'Có ghi chú' : 'Không có ghi chú'}</span>
                             </span>
                             <span>•</span>
-                            <span className="flex items-center gap-1.5">
-                                <AlertCircle size={14} className="text-slate-400" />
-                                Thời hạn trong giai đoạn: <strong className="text-slate-700 dark:text-slate-200">{currentNode?.config?.slaHours ? `${currentNode.config.slaHours}h` : 'Không thời hạn'}</strong> • SLA: <strong className="text-slate-700 dark:text-slate-200">{currentNode?.config?.slaHours || 0}h</strong>
+                            <span className="flex items-center gap-1">
+                                <AlertCircle size={13} className="text-slate-400 shrink-0" />
+                                <span>SLA: <strong className="text-slate-700 dark:text-slate-200">{currentNode?.config?.slaHours ? `${currentNode.config.slaHours}h` : 'Không hạn'}</strong></span>
                             </span>
                         </div>
                     </div>
 
                     {/* Top Action Buttons (Purple / Red / Actions) */}
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                        {canAct && (
-                            <>
+                    <div className="w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
+                        {canAct ? (
+                            <div className="grid grid-cols-3 gap-2 sm:flex sm:items-center sm:gap-2">
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.APPROVED); }}
-                                    className="inline-flex items-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2 text-xs font-black transition shadow-md shadow-purple-700/20"
+                                    className="col-span-3 sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
-                                    <CheckCircle size={14} /> Chuyển tiếp / Duyệt
+                                    <CheckCircle size={15} /> <span>Chuyển tiếp / Duyệt</span>
                                 </button>
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
-                                    className="inline-flex items-center gap-1.5 rounded-xl border border-pink-300 dark:border-pink-800 text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 px-3.5 py-2 text-xs font-black transition"
+                                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-pink-300 dark:border-pink-800 text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
-                                    <RotateCcw size={14} /> Yêu cầu bổ sung
+                                    <RotateCcw size={13} /> <span className="truncate">Yêu cầu bổ sung</span>
                                 </button>
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REJECTED); }}
-                                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-3.5 py-2 text-xs font-black transition"
+                                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
-                                    <XCircle size={14} /> Từ chối
+                                    <XCircle size={13} /> <span>Từ chối</span>
                                 </button>
-                            </>
+                                <button
+                                    onClick={() => refreshData()}
+                                    className="inline-flex items-center justify-center p-2.5 sm:p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[42px] sm:min-h-0"
+                                    title="Làm mới dữ liệu"
+                                >
+                                    <RefreshCcw size={15} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => refreshData()}
+                                    className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                    title="Làm mới dữ liệu"
+                                >
+                                    <RefreshCcw size={15} />
+                                </button>
+                            </div>
                         )}
-                        <button
-                            onClick={() => refreshData()}
-                            className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
-                            title="Làm mới dữ liệu"
-                        >
-                            <RefreshCcw size={15} />
-                        </button>
                     </div>
                 </div>
             </div>
 
             {/* Horizontal Stage Ribbon Stepper (Chevron Ribbon Layout) */}
-            <div className="flex items-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-1.5 scrollbar-none">
+            <div className="flex items-center overflow-x-auto no-scrollbar mobile-scroll-fade rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-1 sm:p-1.5">
                 {orderedSteps.map((step, index) => {
                     const isCurrent = step.id === instance.currentNodeId && instance.status === WorkflowInstanceStatus.RUNNING;
                     const stepLogs = instanceLogs.filter(log => log.nodeId === step.id);
@@ -1095,9 +1105,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                     return (
                         <div
                             key={step.id}
-                            className={`flex-1 min-w-[180px] px-4 py-2.5 rounded-xl flex items-center gap-2.5 text-xs uppercase tracking-wider transition-all border-r last:border-r-0 border-slate-100 dark:border-slate-800 ${itemStyle}`}
+                            className={`flex-1 min-w-[140px] sm:min-w-[180px] px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl flex items-center gap-2 text-[11px] sm:text-xs uppercase tracking-wider transition-all border-r last:border-r-0 border-slate-100 dark:border-slate-800 ${itemStyle}`}
                         >
-                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${isCurrent ? 'bg-white text-sky-600' : isCompleted ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                            <span className={`flex h-4.5 w-4.5 sm:h-5 sm:w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${isCurrent ? 'bg-white text-sky-600' : isCompleted ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                                 }`}>
                                 {index + 1}
                             </span>
@@ -1739,16 +1749,17 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
             {/* Action Dialog Modal */}
             {activeAction && (
-                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl animate-scale-in">
-                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-slate-700">
-                            <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white flex items-center gap-2">
+                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-2xl p-4 sm:p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto animate-scale-in">
+                        <div className="mobile-sheet-handle sm:hidden" />
+                        <div className="flex justify-between items-center mb-3 sm:mb-4 pb-2.5 sm:pb-3 border-b border-slate-100 dark:border-slate-700">
+                            <h3 className="text-xs sm:text-sm font-black uppercase text-slate-800 dark:text-white flex items-center gap-2">
                                 {activeAction === WorkflowInstanceAction.APPROVED ? (
-                                    <><CheckCircle className="text-emerald-500" size={18} /> Phê duyệt & chuyển bước</>
+                                    <><CheckCircle className="text-emerald-500 shrink-0" size={17} /> <span>Phê duyệt & chuyển bước</span></>
                                 ) : activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? (
-                                    <><RotateCcw className="text-amber-500" size={18} /> Yêu cầu chỉnh sửa / bổ sung</>
+                                    <><RotateCcw className="text-amber-500 shrink-0" size={17} /> <span>Yêu cầu chỉnh sửa / bổ sung</span></>
                                 ) : (
-                                    <><XCircle className="text-red-500" size={18} /> Từ chối đề xuất</>
+                                    <><XCircle className="text-red-500 shrink-0" size={17} /> <span>Từ chối đề xuất</span></>
                                 )}
                             </h3>
                             <button onClick={() => setActiveAction(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 transition-colors">
@@ -1776,7 +1787,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                                         key={candidate.id}
                                                         type="button"
                                                         onClick={() => toggleAssignee(candidate.id)}
-                                                        className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-left transition ${checked ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/30' : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'}`}
+                                                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${checked ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/30' : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'}`}
                                                     >
                                                         <span className={`flex h-5 w-5 items-center justify-center rounded border text-[10px] font-black ${checked ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}>{checked ? '✓' : ''}</span>
                                                         <span className="min-w-0">
@@ -1804,7 +1815,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                     onChange={event => setActionComment(event.target.value)}
                                     placeholder="Ý kiến phê duyệt hoặc lý do từ chối/yêu cầu bổ sung..."
                                     rows={3}
-                                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-850 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
+                                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-850 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
                                 />
                             </div>
 
@@ -1815,10 +1826,10 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                             )}
                         </div>
 
-                        <div className="flex gap-3 mt-6 pt-3 border-t border-slate-100 dark:border-slate-700">
+                        <div className="flex gap-2.5 mt-5 pt-3 border-t border-slate-100 dark:border-slate-700">
                             <button
                                 onClick={() => setActiveAction(null)}
-                                className="flex-1 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+                                className="flex-1 min-h-[42px] py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 transition"
                             >
                                 Hủy
                             </button>
@@ -1828,7 +1839,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                     const ok = await runAction(activeAction);
                                     if (ok) setActiveAction(null);
                                 }}
-                                className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-650 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition"
+                                className="flex-1 min-h-[42px] py-2.5 bg-indigo-500 hover:bg-indigo-650 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition"
                             >
                                 Xác nhận xử lý
                             </button>

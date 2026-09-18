@@ -1319,25 +1319,69 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
     };
 
     // ====== Tree & filtering ======
-    const toggleCollapse = (id: string) => {
+    // ====== Tree & filtering ======
+    const toggleCollapse = useCallback((id: string) => {
         setCollapsedParents(prev => {
             const next = new Set(prev);
             if (next.has(id)) next.delete(id); else next.add(id);
             return next;
         });
-    };
+    }, []);
 
-    const expandAll = () => {
+    const expandAll = useCallback(() => {
         setCollapsedParents(new Set());
-    };
+        toast.info('Đã mở rộng tất cả hạng mục');
+    }, [toast]);
 
-    const collapseAll = () => {
+    const collapseAll = useCallback(() => {
         const parentIds = new Set<string>();
         tasks.forEach(t => {
             if (t.parentId) parentIds.add(t.parentId);
         });
         setCollapsedParents(parentIds);
-    };
+        toast.info('Đã thu gọn tất cả hạng mục');
+    }, [tasks, toast]);
+
+    // Tự động mở rộng các nhánh cha khi người dùng tìm kiếm hoặc lọc trạng thái
+    useEffect(() => {
+        if (!searchQuery.trim() && filterStatus === 'all') return;
+        const q = searchQuery.trim().toLowerCase();
+        const parentsToExpand = new Set<string>();
+
+        tasks.forEach(t => {
+            let isMatch = true;
+            if (q) {
+                const searchStr = normalizeLookupText(t.name);
+                const searchAssignee = normalizeLookupText(t.assignee);
+                const searchWbs = normalizeLookupText(t.wbsCode);
+                const searchNotes = normalizeLookupText(t.notes);
+                const query = normalizeLookupText(searchQuery);
+
+                isMatch = searchStr.includes(query) ||
+                    searchAssignee.includes(query) ||
+                    searchWbs.includes(query) ||
+                    searchNotes.includes(query);
+            }
+            if (isMatch && filterStatus !== 'all') {
+                isMatch = getStatus(t) === filterStatus;
+            }
+            if (isMatch) {
+                let curr = t.parentId ? tasks.find(x => x.id === t.parentId) : null;
+                while (curr) {
+                    parentsToExpand.add(curr.id);
+                    curr = curr.parentId ? tasks.find(x => x.id === curr.parentId) : null;
+                }
+            }
+        });
+
+        if (parentsToExpand.size > 0) {
+            setCollapsedParents(prev => {
+                const next = new Set(prev);
+                parentsToExpand.forEach(id => next.delete(id));
+                return next;
+            });
+        }
+    }, [searchQuery, filterStatus, tasks]);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -1415,44 +1459,14 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         const getChildren = (parentId: string): ProjectTask[] =>
             sortTasksHelper(filteredTasks.filter(t => t.parentId === parentId));
 
-        // Find which parents contain matching tasks to force expansion
-        const parentsToForceExpand = new Set<string>();
-        if (searchQuery.trim() || filterStatus !== 'all') {
-            const q = searchQuery.trim().toLowerCase();
-            tasks.forEach(t => {
-                let isMatch = true;
-                if (q) {
-                    const searchStr = normalizeLookupText(t.name);
-                    const searchAssignee = normalizeLookupText(t.assignee);
-                    const searchWbs = normalizeLookupText(t.wbsCode);
-                    const searchNotes = normalizeLookupText(t.notes);
-                    const query = normalizeLookupText(searchQuery);
-
-                    isMatch = searchStr.includes(query) ||
-                        searchAssignee.includes(query) ||
-                        searchWbs.includes(query) ||
-                        searchNotes.includes(query);
-                }
-                if (isMatch && filterStatus !== 'all') {
-                    isMatch = getStatus(t) === filterStatus;
-                }
-                if (isMatch) {
-                    let curr = t.parentId ? tasks.find(x => x.id === t.parentId) : null;
-                    while (curr) {
-                        parentsToForceExpand.add(curr.id);
-                        curr = curr.parentId ? tasks.find(x => x.id === curr.parentId) : null;
-                    }
-                }
-            });
-        }
-
         const flatList: { task: ProjectTask; level: number; hasChildren: boolean }[] = [];
         const buildFlat = (items: ProjectTask[], level: number) => {
             items.forEach(t => {
                 const children = getChildren(t.id);
                 flatList.push({ task: t, level, hasChildren: children.length > 0 });
 
-                const shouldExpand = !collapsedParents.has(t.id) || parentsToForceExpand.has(t.id);
+                // Nút thu gọn / mở rộng tôn trọng 100% state collapsedParents
+                const shouldExpand = !collapsedParents.has(t.id);
                 if (shouldExpand) {
                     buildFlat(children, level + 1);
                 }
@@ -1460,7 +1474,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
         };
         buildFlat(roots, 0);
         return flatList;
-    }, [filteredTasks, sortTasksHelper, collapsedParents, searchQuery, filterStatus, tasks]);
+    }, [filteredTasks, sortTasksHelper, collapsedParents]);
 
     // ====== Stats ======
     const stats = useMemo(() => {
@@ -2059,33 +2073,16 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-                <div className="p-4 grid grid-cols-1 xl:grid-cols-[1fr_1.35fr] gap-4">
-                    <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center border border-teal-200/50 dark:border-teal-800/50 shrink-0">
-                            <CircleDollarSign size={18} />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="text-xs font-bold uppercase tracking-wide text-teal-700 dark:text-teal-400">Sản lượng thực tế</div>
-                            <div className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                                {valueProgressMetric.valueProgressPercent}% theo giá trị
-                            </div>
-                            <div className="mt-1 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                                {formatMoneyShort(valueProgressMetric.actualProductionValue)} / {formatMoneyShort(valueProgressMetric.contractTotalValue)} · PO/vật tư không còn dùng để tính tỷ lệ này
-                            </div>
-                            {currentProjectFinance?.actualProductionUpdatedAt && (
-                                <div className="mt-1 text-[10px] font-medium text-zinc-400">
-                                    Cập nhật {new Date(currentProjectFinance.actualProductionUpdatedAt).toLocaleString('vi-VN')}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 px-4 py-3">
-                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                            Chỉ hiển thị tại Room Tiến độ. Giá trị sản lượng và ghi chú được cập nhật trong khu vực Tài chính dự án.
-                        </p>
-                    </div>
+            <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 px-4 py-2.5 shadow-sm flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <CircleDollarSign size={16} className="text-teal-700 dark:text-teal-400 shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-400 shrink-0">Sản lượng thực tế:</span>
+                    <span className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                        {valueProgressMetric.valueProgressPercent}%
+                    </span>
+                </div>
+                <div className="w-28 sm:w-48 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shrink-0">
+                    <div className="h-full bg-teal-700 rounded-full transition-all" style={{ width: `${clampProgress(valueProgressMetric.valueProgressPercent)}%` }} />
                 </div>
             </div>
 
@@ -2365,68 +2362,153 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                 </div>
             )}
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
+            {/* Stats Cards - Interactive Status Filters */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
                 {[
-                    { label: 'Tổng hạng mục', value: stats.total, color: 'text-zinc-900 dark:text-zinc-100', icon: '📋' },
-                    { label: 'Tiến độ thi công', value: `${stats.avgProgress}%`, color: 'text-teal-700 dark:text-teal-400', icon: '📈', bar: stats.avgProgress },
                     {
+                        key: 'total',
+                        filterKey: 'all' as TaskStatus | 'all',
+                        label: 'Tổng hạng mục',
+                        value: stats.total,
+                        color: 'text-zinc-900 dark:text-zinc-100',
+                        icon: '📋',
+                        isFilterable: true,
+                        activeRing: 'ring-2 ring-slate-400 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/60',
+                        activeBadgeBg: 'bg-slate-600 text-white',
+                    },
+                    {
+                        key: 'avgProgress',
+                        label: 'Tiến độ thi công',
+                        value: `${stats.avgProgress}%`,
+                        color: 'text-teal-700 dark:text-teal-400',
+                        icon: '📈',
+                        bar: stats.avgProgress,
+                        isFilterable: false,
+                    },
+                    {
+                        key: 'valueProgress',
                         label: 'Tiến độ theo giá trị',
                         value: `${valueProgressMetric.valueProgressPercent}%`,
                         color: 'text-teal-700 dark:text-teal-400',
                         icon: '💰',
                         bar: valueProgressMetric.valueProgressPercent,
                         sub: `${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`,
+                        isFilterable: false,
                     },
-                    { label: 'Hoàn thành', value: stats.completed, color: 'text-teal-700 dark:text-teal-400', icon: '✅' },
-                    { label: 'Đang thực hiện', value: stats.inProgress, color: 'text-teal-700 dark:text-teal-400', icon: '🔄' },
-                    { label: 'Trễ hạn', value: stats.overdue, color: stats.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-400', icon: '⚠️' },
-                ].map((s, i) => (
-                    <div key={i} className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">{s.label}</span>
-                            <span className="text-sm">{s.icon}</span>
-                        </div>
-                        <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
-                        {'sub' in s && s.sub && (
-                            <div className="mt-0.5 text-[9px] font-medium text-zinc-400 dark:text-zinc-500 truncate" title={s.sub}>{s.sub}</div>
-                        )}
-                        {s.bar !== undefined && (
-                            <div className="mt-2 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-teal-700 rounded-full transition-all" style={{ width: `${clampProgress(s.bar)}%` }} />
+                    {
+                        key: 'completed',
+                        filterKey: 'completed' as TaskStatus | 'all',
+                        label: 'Hoàn thành',
+                        value: stats.completed,
+                        color: 'text-emerald-600 dark:text-emerald-400',
+                        icon: '✅',
+                        isFilterable: true,
+                        activeRing: 'ring-2 ring-emerald-500 border-emerald-400 bg-emerald-50/80 dark:bg-emerald-950/40 shadow-sm shadow-emerald-100 dark:shadow-none',
+                        activeBadgeBg: 'bg-emerald-600 text-white',
+                    },
+                    {
+                        key: 'inProgress',
+                        filterKey: 'in_progress' as TaskStatus | 'all',
+                        label: 'Đang thực hiện',
+                        value: stats.inProgress,
+                        color: 'text-teal-700 dark:text-teal-400',
+                        icon: '🔄',
+                        isFilterable: true,
+                        activeRing: 'ring-2 ring-teal-500 border-teal-400 bg-teal-50/80 dark:bg-teal-950/40 shadow-sm shadow-teal-100 dark:shadow-none',
+                        activeBadgeBg: 'bg-teal-600 text-white',
+                    },
+                    {
+                        key: 'overdue',
+                        filterKey: 'overdue' as TaskStatus | 'all',
+                        label: 'Trễ hạn',
+                        value: stats.overdue,
+                        color: stats.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-400',
+                        icon: '⚠️',
+                        isFilterable: true,
+                        activeRing: 'ring-2 ring-red-500 border-red-400 bg-red-50/80 dark:bg-red-950/40 shadow-sm shadow-red-100 dark:shadow-none',
+                        activeBadgeBg: 'bg-red-600 text-white',
+                    },
+                ].map((s) => {
+                    const isFilterActive = s.isFilterable && s.filterKey !== 'all' && filterStatus === s.filterKey;
+
+                    return (
+                        <div
+                            key={s.key}
+                            onClick={() => {
+                                if (!s.isFilterable || !s.filterKey) return;
+                                if (s.filterKey === 'all') {
+                                    setFilterStatus('all');
+                                    toast.info('Bộ lọc', 'Đang hiển thị toàn bộ hạng mục');
+                                } else if (filterStatus === s.filterKey) {
+                                    // Click lại chính card đang lọc để bỏ lọc
+                                    setFilterStatus('all');
+                                    toast.info('Bỏ lọc', 'Đang hiển thị toàn bộ hạng mục');
+                                } else {
+                                    setFilterStatus(s.filterKey);
+                                    toast.success(`Đang lọc: ${s.label}`);
+                                }
+                            }}
+                            className={`rounded-2xl p-3.5 border transition-all duration-200 select-none relative ${
+                                isFilterActive
+                                    ? s.activeRing
+                                    : s.isFilterable
+                                        ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-slate-600 hover:shadow-md cursor-pointer hover:-translate-y-0.5'
+                                        : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 shadow-sm'
+                            }`}
+                            title={s.isFilterable ? (isFilterActive ? `Bấm để bỏ lọc (${s.label})` : `Bấm để lọc theo: ${s.label}`) : undefined}
+                        >
+                            <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider truncate mr-1">{s.label}</span>
+                                <span className="text-sm shrink-0">{s.icon}</span>
                             </div>
-                        )}
-                    </div>
-                ))}
+                            <div className="flex items-baseline justify-between gap-1">
+                                <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
+                                {isFilterActive && (
+                                    <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${s.activeBadgeBg} shadow-xs shrink-0`}>
+                                        Đang lọc ✓
+                                    </span>
+                                )}
+                            </div>
+                            {'sub' in s && s.sub && (
+                                <div className="mt-0.5 text-[9px] font-medium text-zinc-400 dark:text-zinc-500 truncate" title={s.sub}>{s.sub}</div>
+                            )}
+                            {s.bar !== undefined && (
+                                <div className="mt-2 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                    <div className="h-full bg-teal-700 rounded-full transition-all" style={{ width: `${clampProgress(s.bar)}%` }} />
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Toolbar */}
             <div className="bg-card rounded-2xl border border-border shadow-sm">
-                <div className="p-3 flex items-center justify-between flex-wrap gap-2 border-b border-border dark:border-slate-700">
-                    {/* Left: View toggle + search */}
-                    <div className="flex items-center gap-2">
+                <div className="p-3 flex items-center justify-between flex-wrap gap-2.5 border-b border-border dark:border-slate-700">
+                    {/* Left: View toggle + search + filter + expand/collapse */}
+                    <div className="flex items-center flex-wrap gap-2">
                         {/* View mode toggle */}
-                        <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5">
+                        <div className="flex bg-slate-100 dark:bg-slate-700 rounded-xl p-0.5 shrink-0">
                             {([
                                 { mode: 'table' as ViewMode, icon: LayoutList, label: 'Bảng đầy đủ', className: 'flex' },
                                 { mode: 'split' as ViewMode, icon: Columns, label: 'Kết hợp', className: 'hidden lg:flex' },
                             ]).map(v => (
                                 <button key={v.mode} onClick={() => setViewMode(v.mode)}
-                                    className={`items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${v.className} ${viewMode === v.mode
-                                        ? 'bg-muted text-orange-500 shadow-sm'
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 whitespace-nowrap ${v.className} ${viewMode === v.mode
+                                        ? 'bg-white dark:bg-slate-800 text-orange-600 dark:text-orange-400 shadow-sm'
                                         : 'text-muted-foreground hover:text-slate-600'
                                         }`}>
-                                    <v.icon size={12} /> <span className="hidden sm:inline">{v.label}</span>
+                                    <v.icon size={13} className="shrink-0" /> <span className="whitespace-nowrap">{v.label}</span>
                                 </button>
                             ))}
                         </div>
 
                         {/* Search */}
-                        <div className="relative">
+                        <div className="relative shrink-0">
                             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                             <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                                 placeholder="Tìm hạng mục..."
-                                className="pl-7 pr-7 py-1.5 w-44 rounded-xl border border-border dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
+                                className="pl-7 pr-7 py-1.5 w-40 sm:w-48 rounded-xl border border-border dark:border-slate-600 text-xs bg-transparent focus:ring-2 focus:ring-orange-500 outline-none" />
                             {searchQuery && (
                                 <button
                                     onClick={() => setSearchQuery('')}
@@ -2437,8 +2519,8 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             )}
                         </div>
 
-                        {/* Filter */}
-                        <div className="relative">
+                        {/* Filter dropdown */}
+                        <div className="relative shrink-0">
                             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}
                                 className="pl-7 pr-8 py-1.5 rounded-xl border border-border dark:border-slate-600 text-xs bg-transparent appearance-none cursor-pointer focus:ring-2 focus:ring-orange-500 outline-none font-medium">
                                 <option value="all">Tất cả</option>
@@ -2450,22 +2532,34 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                             <Filter size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                         </div>
 
-                        {/* Expand/Collapse All */}
+                        {/* Expand/Collapse All buttons with prominent distinct colors */}
                         {(viewMode === 'split' || viewMode === 'table') && (
-                            <div className="flex items-center border border-border dark:border-slate-600 rounded-xl overflow-hidden bg-transparent shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                     onClick={expandAll}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border-r border-border dark:border-slate-600"
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-xs transition-all active:scale-95 whitespace-nowrap"
                                     title="Mở rộng tất cả hạng mục"
                                 >
-                                    <ChevronsDown size={11} /> Mở rộng hết
+                                    <ChevronsDown size={13} className="text-emerald-600 dark:text-emerald-400" />
+                                    <span>Mở rộng hết</span>
                                 </button>
                                 <button
                                     onClick={collapseAll}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/60 shadow-xs transition-all active:scale-95 whitespace-nowrap"
                                     title="Thu gọn tất cả hạng mục"
                                 >
-                                    <ChevronsUp size={11} /> Thu gọn hết
+                                    <ChevronsUp size={13} className="text-amber-600 dark:text-amber-400" />
+                                    <span>Thu gọn hết</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Active filter badge tag */}
+                        {filterStatus !== 'all' && (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-medium text-amber-800 dark:text-amber-300 shrink-0">
+                                <span>Đang lọc: <strong>{filterStatus === 'completed' ? 'Hoàn thành' : filterStatus === 'in_progress' ? 'Đang thực hiện' : filterStatus === 'overdue' ? 'Trễ hạn' : filterStatus}</strong></span>
+                                <button onClick={() => setFilterStatus('all')} className="p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 rounded-full transition-colors" title="Bỏ lọc">
+                                    <X size={11} />
                                 </button>
                             </div>
                         )}
@@ -2683,41 +2777,78 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                 const unitLabel = getTaskUnit(task, linkedIds, contractItems);
                                                 const unitTitle = getTaskUnitTitle(task, linkedIds, contractItems);
                                                 const rowHasChildren = hasChildren || !!childCountByTaskId.get(task.id);
+                                                const isTopLevel = level === 0;
+                                                const isSubHeader = level > 0 && rowHasChildren;
                                                 const progressReadOnly = !ganttCapabilities.canEdit || rowHasChildren || task.progressMode === 'weekly_report' || task.progressMode === 'daily_log' || task.progressMode === 'children_auto' || task.progressMode === 'derived_from_acceptance';
                                                 const isFocusedTask = task.id === focusTaskId;
                                                 const isSplitOrTable = viewMode === 'split' || viewMode === 'table';
                                                 return (
                                                     <tr key={task.id}
                                                         id={`gantt-task-row-${task.id}`}
-                                                        style={{ height: `${ROW_HEIGHT}px` }}
-                                                        className={`border-b border-slate-50 dark:border-slate-700/50 hover:bg-orange-50/30 dark:hover:bg-slate-700/30 group transition-colors ${status === 'overdue' ? 'bg-red-50/20' : ''} ${isFocusedTask ? 'bg-orange-100/80 dark:bg-orange-900/30 ring-2 ring-orange-400/60' : ''}`}>
+                                                        style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined, minHeight: `${ROW_HEIGHT}px` }}
+                                                        className={`border-b group transition-colors ${
+                                                            isTopLevel
+                                                                ? 'bg-amber-50/90 dark:bg-amber-950/35 border-t border-b-2 border-amber-200/90 dark:border-amber-800/80 hover:bg-amber-100/70 dark:hover:bg-amber-900/40'
+                                                                : isSubHeader
+                                                                    ? 'bg-slate-50/90 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700/80 hover:bg-slate-100/70'
+                                                                    : status === 'overdue'
+                                                                        ? 'bg-red-50/25 border-slate-100 dark:border-slate-800/60 hover:bg-red-50/40'
+                                                                        : 'bg-white dark:bg-zinc-900 border-slate-100 dark:border-slate-800/60 hover:bg-orange-50/30 dark:hover:bg-slate-800/30'
+                                                        } ${isFocusedTask ? 'ring-2 ring-orange-500 bg-orange-100/90 dark:bg-orange-950/60' : ''}`}>
                                                         {/* STT */}
                                                         {viewMode === 'table' && (
-                                                            <td className="px-2 py-2.5 text-center text-muted-foreground font-bold">{idx + 1}</td>
+                                                            <td className={`px-2 py-2 text-center align-middle ${
+                                                                isTopLevel
+                                                                    ? 'font-black text-amber-950 dark:text-amber-200 text-xs'
+                                                                    : isSubHeader
+                                                                        ? 'font-bold text-slate-700 dark:text-slate-300'
+                                                                        : 'text-muted-foreground font-medium'
+                                                            }`}>
+                                                                {idx + 1}
+                                                            </td>
                                                         )}
                                                         {/* Mã WBS */}
                                                         {(viewMode === 'table' || viewMode === 'split') && (
-                                                            <td className={`px-2 py-2.5 ${viewMode === 'split' ? '' : 'hidden sm:table-cell'}`}>
+                                                            <td className={`px-2 ${viewMode === 'split' ? 'py-0' : 'py-2 align-middle'} ${viewMode === 'split' ? '' : 'hidden sm:table-cell'}`}
+                                                                style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                                 {task.wbsCode ? (
-                                                                    <span className="text-indigo-600 dark:text-indigo-400 font-bold font-mono">{task.wbsCode}</span>
+                                                                    <span className={`font-mono inline-block ${
+                                                                        isTopLevel
+                                                                            ? 'text-amber-900 dark:text-amber-200 font-black px-1.5 py-0.5 rounded bg-amber-200/60 dark:bg-amber-900/50 text-xs'
+                                                                            : isSubHeader
+                                                                                ? 'text-indigo-700 dark:text-indigo-300 font-bold px-1 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40'
+                                                                                : 'text-indigo-600 dark:text-indigo-400 font-medium'
+                                                                    }`}>
+                                                                        {task.wbsCode}
+                                                                    </span>
                                                                 ) : (
                                                                     <span className="text-slate-300">–</span>
                                                                 )}
                                                             </td>
                                                         )}
                                                         {/* Name */}
-                                                        <td className={`px-3 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
-                                                            <div className="flex items-center gap-1 min-w-0 h-full" style={{ paddingLeft: isSplitOrTable ? `${level * 16}px` : 0 }}>
+                                                        <td className={`px-3 ${viewMode === 'split' ? 'py-0 overflow-hidden whitespace-nowrap' : 'py-2 align-middle'}`}
+                                                            style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
+                                                            <div className={`flex items-center gap-1.5 min-w-0 ${viewMode === 'split' ? 'h-full' : ''}`} style={{ paddingLeft: isSplitOrTable ? `${level * 16}px` : 0 }}>
                                                                 {isSplitOrTable && hasChildren ? (
-                                                                    <button onClick={() => toggleCollapse(task.id)} className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-orange-500 shrink-0 rounded hover:bg-orange-50 transition-colors">
-                                                                        {collapsedParents.has(task.id) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                                                    <button onClick={() => toggleCollapse(task.id)} className={`w-5 h-5 flex items-center justify-center shrink-0 rounded transition-colors ${
+                                                                        isTopLevel
+                                                                            ? 'text-amber-800 dark:text-amber-300 hover:bg-amber-200/60 dark:hover:bg-amber-900/50'
+                                                                            : 'text-muted-foreground hover:text-orange-500 hover:bg-orange-50'
+                                                                    }`}>
+                                                                        {collapsedParents.has(task.id) ? <ChevronRight size={14} className="font-bold" /> : <ChevronDown size={14} className="font-bold" />}
                                                                     </button>
                                                                 ) : isSplitOrTable ? (
                                                                     <span className="w-5 shrink-0" />
                                                                 ) : null}
                                                                 {task.isMilestone && <Flag size={11} className="text-red-500 shrink-0" />}
-                                                                <span className="font-bold text-foreground dark:text-slate-200 truncate cursor-pointer hover:text-orange-600 transition-colors"
+                                                                <span className={`truncate cursor-pointer hover:underline transition-colors ${
+                                                                    isTopLevel
+                                                                        ? 'font-black text-xs sm:text-[13px] uppercase tracking-wide text-amber-950 dark:text-amber-100 hover:text-amber-800'
+                                                                        : isSubHeader
+                                                                            ? 'font-bold text-xs text-slate-800 dark:text-slate-100 hover:text-orange-600'
+                                                                            : 'font-medium text-xs text-slate-700 dark:text-slate-300 hover:text-orange-600'
+                                                                }`}
                                                                     onClick={() => ganttCapabilities.canEdit && openEdit(task)} title={task.name}>
                                                                     {task.name}
                                                                 </span>
@@ -2728,11 +2859,11 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                                 )}
                                                             </div>
                                                             {viewMode === 'table' && (
-                                                                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[9px] font-bold text-muted-foreground md:hidden">
-                                                                    {task.wbsCode && <span>WBS {task.wbsCode}</span>}
-                                                                    {task.assignee && <span>{task.assignee}</span>}
-                                                                    <span>{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
-                                                                    {unitLabel !== '–' && <span>{unitLabel}</span>}
+                                                                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 md:hidden leading-normal pl-5">
+                                                                    {task.wbsCode && <span className="text-indigo-600 dark:text-indigo-400 font-mono font-bold sm:hidden">WBS {task.wbsCode}</span>}
+                                                                    {task.assignee && <span className="text-slate-600 dark:text-slate-300 font-semibold">{task.assignee}</span>}
+                                                                    <span className="text-slate-500">{fmtShort(task.startDate)}→{fmtShort(task.endDate)}</span>
+                                                                    {unitLabel !== '–' && <span className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[9px]">{unitLabel}</span>}
                                                                     {(task.provisionalQuantity || 0) > 0 && <span>KL {formatQuantity(task.provisionalQuantity)}</span>}
                                                                     <span>NC {formatQuantity(task.resourceCount ?? 1)}</span>
                                                                     {(task.watchers || []).length > 0 && <span>{task.watchers?.length} theo dõi</span>}
@@ -2749,7 +2880,7 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         )}
                                                         {/* Assignee */}
                                                         {viewMode === 'table' && (
-                                                            <td className="hidden md:table-cell px-2 py-2.5">
+                                                            <td className="hidden md:table-cell px-2 py-2 align-middle">
                                                                 {task.assignee ? (
                                                                     <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300 font-medium">
                                                                         <User size={10} className="text-muted-foreground" /> {task.assignee}
@@ -2761,17 +2892,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         )}
                                                         {/* Duration */}
                                                         {viewMode === 'table' && (
-                                                            <td className="hidden lg:table-cell px-2 py-2.5 text-center font-bold text-muted-foreground">{task.duration}</td>
+                                                            <td className="hidden lg:table-cell px-2 py-2 text-center font-bold text-muted-foreground align-middle">{task.duration}</td>
                                                         )}
                                                         {/* Planned Dates */}
-                                                        <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
-                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2 align-middle'} text-muted-foreground font-medium whitespace-nowrap`}
+                                                            style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className="flex items-center h-full">
                                                                 {fmtShort(task.startDate)}
                                                             </div>
                                                         </td>
-                                                        <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} text-muted-foreground font-medium whitespace-nowrap`}
-                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <td className={`${viewMode === 'table' ? 'hidden sm:table-cell' : ''} px-2 ${viewMode === 'split' ? 'py-0' : 'py-2 align-middle'} text-muted-foreground font-medium whitespace-nowrap`}
+                                                            style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className="flex items-center h-full">
                                                                 {fmtShort(task.endDate)}
                                                             </div>
@@ -2779,29 +2910,29 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         {/* Actual Dates (table mode only) */}
                                                         {viewMode === 'table' && (
                                                             <>
-                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
+                                                                <td className="hidden lg:table-cell px-2 py-2 text-emerald-600 font-medium align-middle" title={task.actualStartDate ? "Nhập tay" : derivedStart ? "Tính tự động" : ""}>
                                                                     {derivedStart ? fmtShort(derivedStart) : <span className="text-slate-300">–</span>}
                                                                 </td>
-                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-emerald-600 font-medium" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
+                                                                <td className="hidden lg:table-cell px-2 py-2 text-emerald-600 font-medium align-middle" title={task.actualEndDate ? "Nhập tay" : derivedEnd ? "Tính tự động" : ""}>
                                                                     {derivedEnd ? fmtShort(derivedEnd) : <span className="text-slate-300">–</span>}
                                                                 </td>
-                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
+                                                                <td className="hidden lg:table-cell px-2 py-2 text-slate-600 font-bold align-middle">
                                                                     {formatQuantity(task.provisionalQuantity)}
                                                                 </td>
-                                                                <td className="hidden lg:table-cell px-2 py-2.5 text-slate-600 font-bold">
+                                                                <td className="hidden lg:table-cell px-2 py-2 text-slate-600 font-bold align-middle">
                                                                     {formatQuantity(task.resourceCount ?? 1)}
                                                                 </td>
                                                             </>
                                                         )}
                                                         {/* Progress */}
-                                                        <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <td className={`px-2 ${viewMode === 'split' ? 'py-0 overflow-hidden whitespace-nowrap' : 'py-2 align-middle'}`}
+                                                            style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className="flex items-center h-full">
                                                                 <ProgressCell value={task.progress} onChange={v => updateProgress(task.id, v)} disabled={progressReadOnly} hint={getProgressHint(task, rowHasChildren)} />
                                                             </div>
                                                         </td>
-                                                        <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}
+                                                        <td className={`px-2 ${viewMode === 'split' ? 'py-0 overflow-hidden whitespace-nowrap' : 'py-2 align-middle'}`}
+                                                            style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}
                                                             title={`Sản lượng thực tế: ${formatMoneyShort(valueProgressMetric.actualProductionValue)} / ${formatMoneyShort(valueProgressMetric.contractTotalValue)}`}>
                                                             <div className="flex flex-col justify-center h-full gap-1">
                                                                 <div className="flex items-center gap-1.5">
@@ -2819,17 +2950,17 @@ const GanttTab: React.FC<GanttTabProps> = ({ constructionSiteId, projectId }) =>
                                                         </td>
                                                         {/* Unit (table mode only) */}
                                                         {viewMode === 'table' && (
-                                                            <td className="hidden xl:table-cell px-2 py-2.5 text-muted-foreground font-medium" title={unitTitle}>
+                                                            <td className="hidden xl:table-cell px-2 py-2 text-muted-foreground font-medium align-middle" title={unitTitle}>
                                                                 {unitLabel}
                                                             </td>
                                                         )}
                                                         {/* Status */}
                                                         {viewMode === 'table' && (
-                                                            <td className="px-2 py-0 overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
+                                                            <td className="px-2 py-2 align-middle overflow-hidden" style={{ maxWidth: "96px" }}><StatusBadge status={status} /></td>
                                                         )}
                                                         {/* Actions */}
-                                                        <td className={`px-2 ${isSplitOrTable ? 'py-0' : 'py-2.5'} overflow-hidden whitespace-nowrap`}
-                                                            style={{ height: isSplitOrTable ? `${ROW_HEIGHT}px` : undefined }}>
+                                                        <td className={`px-2 ${viewMode === 'split' ? 'py-0 overflow-hidden whitespace-nowrap' : 'py-2 align-middle'}`}
+                                                            style={{ height: viewMode === 'split' ? `${ROW_HEIGHT}px` : undefined }}>
                                                             <div className="flex items-center justify-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-full">
                                                                 {ganttCapabilities.canEdit && <>
                                                                     <button onClick={() => openEdit(task)} title="Sửa"
