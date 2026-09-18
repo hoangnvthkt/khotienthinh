@@ -5080,7 +5080,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <div><div class="label">Dự án/Công trường</div>${escapeHtml(printablePo.projectId || printablePo.constructionSiteId || '')}</div>
                         </div>
                     </div>
-                    <div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>
+                    ${qrSvg ? `<div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>` : ''}
                 </div>
                 <table>
                     <thead>
@@ -5208,6 +5208,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         <body>${sectionsHtml}</body>
         </html>
     `;
+
+    const buildPoQrSvg = (po: PurchaseOrder): string => {
+        if (!po.qrToken) return '';
+        return renderToStaticMarkup(
+            <QRCodeSVG value={buildPoReceiveUrl(po.qrToken)} size={90} level="H" includeMargin />,
+        );
+    };
 
     const openPoPrintWindow = () => {
         const printWindow = window.open('', '_blank', 'width=980,height=720');
@@ -5530,14 +5537,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             let html = '';
             if (template === 'approval_request') {
-                const poWithQr = await poService.ensureQrToken(po);
-                if (!po.qrToken) setPos(prev => prev.map(item => item.id === po.id ? poWithQr : item));
-                const receiveUrl = buildPoReceiveUrl(poWithQr.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const qrSvg = buildPoQrSvg(po);
                 html = buildPoPrintHtml(
                     `Đề nghị duyệt ${printablePo.poNumber}`,
                     buildPoApprovalRequestSection(
-                        { ...printablePo, qrToken: poWithQr.qrToken },
+                        printablePo,
                         false,
                         buildPrintablePoApprovalDeliveryBatch(printablePo, group),
                         qrSvg,
@@ -5550,14 +5554,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ),
                 );
             } else {
-                const poWithQr = await poService.ensureQrToken(po);
-                if (!po.qrToken) setPos(prev => prev.map(item => item.id === po.id ? poWithQr : item));
-                const receiveUrl = buildPoReceiveUrl(poWithQr.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const qrSvg = buildPoQrSvg(po);
                 html = buildPoPrintHtml(
                     printablePo.poNumber,
                     buildPoPrintSection(
-                        { ...printablePo, qrToken: poWithQr.qrToken },
+                        printablePo,
                         qrSvg,
                         false,
                         group.scheduleBatch ? [group.scheduleBatch] : [],
@@ -5582,14 +5583,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         try {
             let html = '';
             if (template === 'approval_request') {
-                const printablePo = await poService.ensureQrToken(po);
-                if (!po.qrToken) {
-                    setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
-                }
+                const printablePo = po;
                 const approvalGroups = await loadPoDeliveryPrintGroups(po, true);
                 const approvalDeliveryBatches = buildPurchaseOrderApprovalDeliveryBatches(printablePo, approvalGroups);
-                const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const qrSvg = buildPoQrSvg(printablePo);
                 html = buildPoPrintHtml(
                     `Đề nghị duyệt đơn hàng ${printablePo.poNumber}`,
                     buildPoApprovalRequestSection(printablePo, false, approvalDeliveryBatches, qrSvg, {
@@ -5597,12 +5594,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     }),
                 );
             } else {
-                const printablePo = await poService.ensureQrToken(po);
-                if (!po.qrToken) {
-                    setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
-                }
-                const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const printablePo = po;
+                const qrSvg = buildPoQrSvg(printablePo);
                 html = buildPoPrintHtml(
                     printablePo.poNumber,
                     buildPoPrintSection(printablePo, qrSvg, false, poDeliveryBatchesByPo[po.id] || []),
@@ -5634,14 +5627,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const deliveryGroupsByPoId = new Map<string, PoDeliveryPrintGroup[]>();
                 const printableOrders: PurchaseOrder[] = [];
                 for (const po of groupOrders) {
-                    const printablePo = await poService.ensureQrToken(po);
-                    printableOrders.push(printablePo);
+                    printableOrders.push(po);
                     deliveryGroupsByPoId.set(po.id, await loadPoDeliveryPrintGroups(po, true));
                 }
-                setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
                 const sections = printableOrders.map((po, index) => {
-                    const receiveUrl = buildPoReceiveUrl(po.qrToken!);
-                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                    const qrSvg = buildPoQrSvg(po);
                     return buildPoApprovalRequestSection(
                         po,
                         index > 0,
@@ -5654,13 +5644,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             } else {
                 const printableOrders: PurchaseOrder[] = [];
                 for (const po of groupOrders) {
-                    const printablePo = await poService.ensureQrToken(po);
-                    printableOrders.push(printablePo);
+                    printableOrders.push(po);
                 }
-                setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
                 const sections = printableOrders.map((po, index) => {
-                    const receiveUrl = buildPoReceiveUrl(po.qrToken!);
-                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                    const qrSvg = buildPoQrSvg(po);
                     return buildPoPrintSection(po, qrSvg, index > 0, poDeliveryBatchesByPo[po.id] || []);
                 }).join('');
                 html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
