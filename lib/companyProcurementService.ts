@@ -32,9 +32,6 @@ const ACTIVE_PO_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_
 const OPEN_REQUEST_STATUSES = new Set<string>([
   RequestStatus.APPROVED,
   RequestStatus.IN_TRANSIT,
-  RequestStatus.LEGACY_APPROVED,
-  'approved',
-  'in_transit',
 ]);
 
 const newId = (prefix: string) =>
