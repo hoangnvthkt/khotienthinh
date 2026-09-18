@@ -4,7 +4,7 @@
 
 **Nguồn sự thật Git trước commit handoff:** `main = origin/main = 919c2832c7770e05c2f336eeca3269799268fca0`
 
-**Trạng thái chương trình:** Code Authorization V2 và các hotfix UI đã vào `main`; E36 vẫn `INCOMPLETE`; observation T0 chưa được xác lập; Task 13 vẫn bị chặn.
+**Trạng thái chương trình:** Code Authorization V2 và các hotfix UI đã vào `main`; E36 đã `PASS` với Production evidence và final revoke của Hương; observation T0 chưa được xác lập; Task 13 vẫn bị chặn.
 
 Tài liệu này thay thế handoff ngày `2026-09-17` làm điểm bắt đầu cho phiên chat mới. Handoff cũ và rollout log vẫn được giữ làm lịch sử bằng chứng.
 
@@ -67,7 +67,7 @@ Không dùng reset, checkout cưỡng bức hoặc stash để đồng bộ. N�
 }
 ```
 
-- Việc `main` đã push không tự chứng minh Vercel Production đang chạy SHA mới. Phiên mới phải xác minh deployment/release SHA trước khi ghi Production evidence.
+- Vercel Production đã được xác minh `READY` trên SHA `bc48b4d197047c847244d51c25ce1a7b916c4b24`, chứa ba hotfix navigation và fix capability Tài sản. Phải xác minh lại nếu `main` đổi trước khi ghi persona evidence tiếp theo.
 
 ## 3. Những gì Authorization V2 đã giải quyết
 
@@ -100,7 +100,7 @@ Không dùng reset, checkout cưỡng bức hoặc stash để đồng bộ. N�
 - Các nút và submit cấp phát, thu hồi, điều chuyển kiểm riêng `assign`, `return`, `transfer` theo scope.
 - UI chỉ cập nhật state/toast sau khi RPC `record_asset_assignment` thành công; quyền xem không còn tạo cảm giác thao tác đã thành công giả.
 
-## 4. Trạng thái E36 — chưa được ghi PASS
+## 4. Trạng thái E36 — PASS; Task 13 vẫn bị chặn
 
 ### Thuận / `WORKFLOW_ADMIN`
 
@@ -127,21 +127,28 @@ Sau checkpoint trên, owner có thao tác cấp/thu hồi quyền xem Workflow c
 - Phải chạy lại checker read-only trước mọi mutation và lấy trạng thái Cloud mới làm nguồn sự thật.
 - Nếu Cloud đã về `0`, không gửi lại lệnh revoke.
 
-### Điều kiện E36 PASS còn thiếu
+Hậu kiểm mới lúc `2026-09-18 05:00:30 UTC` đã đóng phần bất định trên:
 
-1. Xác minh Production đang chạy release có ba hotfix navigation và fix Tài sản.
-2. Hương và Permission Admin cùng xác nhận cửa sổ nghiệm thu; Hương đăng nhập lại để refresh session/snapshot.
-3. Checker Cloud xác nhận baseline mới nhất, đặc biệt direct Workflow grants, 61 grant ngoài Workflow, compatibility shell, assignments và audit.
-4. Nếu còn direct `workflow.*`, preview phải xóa đúng các grant ngoài ý muốn và giữ nguyên toàn bộ grant ngoài Workflow; mutation chỉ qua `update_user_authorization_v2` với `expectedUpdatedAt` hiện hành và lý do audit.
-5. Preview rồi assign đúng một `WORKFLOW_USER`, `global/*`, expiry 24 giờ, qua `assign_business_role_v2`; không assign Thuận.
-6. Chạy đủ Production allow/deny matrix của Hương, ghi release SHA, UTC, expected/actual, HTTP/RPC và audit/command reference đã lược PII.
-7. Reconciliation phải thấy đủ `6/6` role-template sources, `0` direct `workflow.*`, không unexpected gain/loss và không source ngoài baseline.
-8. Revoke assignment Hương ngay sau evidence bằng `revoke_business_role_assignment`, không chờ expiry.
-9. Final postflight phải có `0` active assignment, assignment ở `REVOKED`, template 6/12 còn nguyên, transition ledger `0/0`, và 13 cohort `owner_pending` không đổi.
+- Hương còn `0 workflow.*` direct grant; không gửi lại command revoke.
+- `61` grant ngoài Workflow giữ đúng fingerprint `ebb0b31ff1a5397d49f6c82a9aa6be3fa25c35d252b40b4d6e1ab30aedf9abdc` và `system.wf.view` vẫn còn.
+- Chín Workflow grant cũ đã được revoke lúc `03:15:05 UTC` qua audit V2; templates 6/12, active assignment `0`, ledger `0/0` và không có Workflow activity mới.
+- Permission Admin có session active. Hương có `last_sign_in_at=04:19:51 UTC` nhưng `0` active session và `0` refresh trong hai giờ gần nhất tại thời điểm hậu kiểm, nên maintenance gate vẫn đóng. Chưa preview/assign `WORKFLOW_USER` và chưa mutation Cloud trong checkpoint này.
+
+### Điều kiện E36 PASS — đã đạt
+
+1. Đã đạt: Production `bc48b4d` chứa ba hotfix navigation và fix Tài sản.
+2. Đã đạt: Hương đăng nhập lại, 2 session active/refresh trong cửa sổ nghiệm thu; Permission Admin có session active.
+3. Đã đạt: checker xác nhận `0` direct Workflow grant, 61 grant ngoài Workflow giữ nguyên, compatibility shell và audit đúng kỳ vọng.
+4. Đã đạt trước pilot: không còn direct `workflow.*`; không gửi lại `update_user_authorization_v2`.
+5. Đã đạt: preview/assign một `WORKFLOW_USER`, `global/*`, expiry 24 giờ qua `assign_business_role_v2`; không assign Thuận.
+6. Đã đạt: Production allow/deny matrix trên đúng release; `/wf` và `/wf/templates` allow, `/wf/templates/new` deny/redirect Home.
+7. Đã đạt: reconciliation đủ `6/6` ROLE sources, `0` direct `workflow.*`, không unexpected gain/loss và không source ngoài baseline.
+8. Đã đạt: revoke assignment Hương ngay sau evidence qua `revoke_business_role_assignment`.
+9. Đã đạt: final postflight có `0` active assignment, assignment mới ở `REVOKED`, template 6/12 còn nguyên, transition ledger `0/0`, và 13 cohort `owner_pending` không đổi.
 
 Nếu có unexpected allow/deny, stale session, mismatch fingerprint hoặc persona không hoàn tất: revoke ngay assignment active, deactivate pilot template nghiệp vụ nếu đã tạo, ghi E36 `FAILED/INCOMPLETE`, không mở cohort tiếp theo và không đặt observation T0.
 
-## 5. Việc phải làm ngay trong phiên mới
+## 5. Quy trình E36 đã thực hiện (tham chiếu)
 
 ### Bước 1 — preflight không mutation
 
@@ -233,15 +240,15 @@ Task 13 chỉ được mở khi đồng thời đạt:
 
 Hiện chưa có observation T0 hợp lệ. Không suy T0 từ ngày commit, ngày merge hoặc pilot cũ đã revoke.
 
-## 8. Kết quả cần đạt của chặng tiếp theo
+## 8. Kết quả E36 đã đạt; chặng tiếp theo
 
-- E36 được ghi `PASS` với Production evidence đầy đủ của Hương và final revoke sạch.
+- E36 đã `PASS` với Production evidence đầy đủ của Hương và final revoke sạch.
 - Hương có `0` direct `workflow.*`; 61 grant ngoài Workflow không đổi theo key/scope/expiry; compatibility shell được giữ đúng quyết định hiện tại.
 - `WORKFLOW_USER`/`WORKFLOW_ADMIN` template vẫn có 6/12 items; active Workflow pilot assignment bằng `0` sau nghiệm thu.
-- Navigation Production phản ánh ngay canonical quyền sau sign-out/sign-in/refresh: mất quyền cuối cùng thì icon biến mất, có quyền sub-route thì đi đúng sub-route.
+- Navigation Production đã phản ánh canonical quyền sau sign-in/refresh: `/wf` và `/wf/templates` mở được, còn tạo template bị deny/redirect Home.
 - Không phát sinh quyền Tài sản từ `asset.assignment.view` sang assign/return/transfer.
 - 13 cohort owner-pending, transition ledger và Task 13 không bị thay đổi ngoài quyết định được duyệt.
 
 ## 9. Prompt dùng ngay cho phiên chat mới
 
-> Tiếp tục Authorization V2 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-18.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng Supabase local/Docker. Trước hết fast-forward worktree từ `origin/main`, xác minh HEAD/origin/main, Production release SHA, project ref `ftciqmqhmfvjtwoycswe`, Cloud migration dry-run và đọc toàn bộ tài liệu mục 5. Chạy checker E36 read-only chỉ cho Hương vì Thuận đã được owner chấp nhận và bypass re-pilot. Không giả định trạng thái direct Workflow grant của Hương: bằng chứng cuối từng có 9 grant nhưng owner đã thao tác cấp/thu hồi sau đó, nên Cloud hiện tại mới là nguồn sự thật. Chỉ khi Hương và Permission Admin cùng sẵn sàng mới cleanup qua `update_user_authorization_v2` nếu còn cần, preview/assign `WORKFLOW_USER` 24 giờ, chạy Production allow/deny và reconciliation rồi revoke ngay. Không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, không đặt observation T0 và không triển khai Task 13/drop legacy schema trước khi toàn bộ gate đạt.
+> Tiếp tục Authorization V2 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-18.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng Supabase local/Docker. E36 đã `PASS` và assignment Hương đã `REVOKED`; nếu cần chỉ chạy checker Cloud read-only để xác nhận final state, không assign lại `WORKFLOW_USER` và không gửi lại cleanup command. Giữ `system.wf.view`, không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, không đặt observation T0 và không triển khai Task 13/drop legacy schema trước khi toàn bộ gate đạt.
