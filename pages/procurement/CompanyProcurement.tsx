@@ -859,15 +859,10 @@ const CompanyProcurement: React.FC = () => {
   const printDeliveryGroup = async (detail: CompanyProcurementDeliveryGroupDetail) => {
     try {
       const fullDetail = detail.batches.length > 0 ? detail : await companyProcurementService.getDeliveryGroupDetail(detail.group.id);
-      const printablePo = fullDetail.purchaseOrder
-        ? await poService.ensureQrToken(fullDetail.purchaseOrder)
-        : null;
+      const printablePo = fullDetail.purchaseOrder;
       const printableDetail = printablePo
         ? { ...fullDetail, purchaseOrder: printablePo }
         : fullDetail;
-      if (printablePo && !fullDetail.purchaseOrder?.qrToken) {
-        setCompanyPos(prev => prev.map(po => po.id === printablePo.id ? printablePo : po));
-      }
       const qrSvg = printablePo?.qrToken
         ? renderToStaticMarkup(<QRCodeSVG value={buildPoReceiveUrl(printablePo.qrToken)} size={90} level="H" includeMargin />)
         : '';

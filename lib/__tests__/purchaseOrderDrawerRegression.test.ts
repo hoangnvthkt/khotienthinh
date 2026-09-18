@@ -96,4 +96,10 @@ describe('purchase order drawer regression guard', () => {
     expect(source).toContain('vatRateOverride: normalizeVatRate(group.scheduleBatch?.vatRate ?? po.vatRate)');
     expect(source).toContain('ĐỀ NGHỊ DUYỆT ĐỢT GIAO');
   });
+
+  it('keeps PO printing read-only for view/approve users when a legacy PO has no QR token', () => {
+    expect(source).toContain('const buildPoQrSvg = (po: PurchaseOrder): string => {');
+    expect(source).toContain("if (!po.qrToken) return '';");
+    expect(source).not.toContain('poService.ensureQrToken(po)');
+  });
 });

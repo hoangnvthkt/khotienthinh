@@ -4918,7 +4918,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 <div class="approval-signatures">
                     <div><strong>BP Vật tư-TB</strong><span>${escapeHtml(user.name || '')}</span></div>
                     <div><strong>CB Phụ trách DA</strong><span>Nguyễn Thành Đô</span></div>
-                    <div><strong>Trưởng P.QL DA</strong><span>Nguyễn Văn Biểu</span></div>
+                
                     <div><strong>Giám đốc vật tư</strong><span>Nguyễn Thị Mơ</span></div>
                     <div><strong>Tổng giám đốc</strong><span>Dương Xuân Thịnh</span></div>
                 </div>
@@ -5080,7 +5080,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <div><div class="label">Dự án/Công trường</div>${escapeHtml(printablePo.projectId || printablePo.constructionSiteId || '')}</div>
                         </div>
                     </div>
-                    <div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>
+                    ${qrSvg ? `<div class="qr">${qrSvg}<div>Quét QR để nhập kho</div></div>` : ''}
                 </div>
                 <table>
                     <thead>
@@ -5208,6 +5208,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         <body>${sectionsHtml}</body>
         </html>
     `;
+
+    const buildPoQrSvg = (po: PurchaseOrder): string => {
+        if (!po.qrToken) return '';
+        return renderToStaticMarkup(
+            <QRCodeSVG value={buildPoReceiveUrl(po.qrToken)} size={90} level="H" includeMargin />,
+        );
+    };
 
     const openPoPrintWindow = () => {
         const printWindow = window.open('', '_blank', 'width=980,height=720');
@@ -5530,14 +5537,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             }
             let html = '';
             if (template === 'approval_request') {
-                const poWithQr = await poService.ensureQrToken(po);
-                if (!po.qrToken) setPos(prev => prev.map(item => item.id === po.id ? poWithQr : item));
-                const receiveUrl = buildPoReceiveUrl(poWithQr.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const qrSvg = buildPoQrSvg(po);
                 html = buildPoPrintHtml(
                     `Đề nghị duyệt ${printablePo.poNumber}`,
                     buildPoApprovalRequestSection(
-                        { ...printablePo, qrToken: poWithQr.qrToken },
+                        printablePo,
                         false,
                         buildPrintablePoApprovalDeliveryBatch(printablePo, group),
                         qrSvg,
@@ -5550,14 +5554,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     ),
                 );
             } else {
-                const poWithQr = await poService.ensureQrToken(po);
-                if (!po.qrToken) setPos(prev => prev.map(item => item.id === po.id ? poWithQr : item));
-                const receiveUrl = buildPoReceiveUrl(poWithQr.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const qrSvg = buildPoQrSvg(po);
                 html = buildPoPrintHtml(
                     printablePo.poNumber,
                     buildPoPrintSection(
-                        { ...printablePo, qrToken: poWithQr.qrToken },
+                        printablePo,
                         qrSvg,
                         false,
                         group.scheduleBatch ? [group.scheduleBatch] : [],
@@ -5582,14 +5583,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         try {
             let html = '';
             if (template === 'approval_request') {
-                const printablePo = await poService.ensureQrToken(po);
-                if (!po.qrToken) {
-                    setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
-                }
+                const printablePo = po;
                 const approvalGroups = await loadPoDeliveryPrintGroups(po, true);
                 const approvalDeliveryBatches = buildPurchaseOrderApprovalDeliveryBatches(printablePo, approvalGroups);
-                const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const qrSvg = buildPoQrSvg(printablePo);
                 html = buildPoPrintHtml(
                     `Đề nghị duyệt đơn hàng ${printablePo.poNumber}`,
                     buildPoApprovalRequestSection(printablePo, false, approvalDeliveryBatches, qrSvg, {
@@ -5597,12 +5594,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                     }),
                 );
             } else {
-                const printablePo = await poService.ensureQrToken(po);
-                if (!po.qrToken) {
-                    setPos(prev => prev.map(item => item.id === po.id ? printablePo : item));
-                }
-                const receiveUrl = buildPoReceiveUrl(printablePo.qrToken!);
-                const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                const printablePo = po;
+                const qrSvg = buildPoQrSvg(printablePo);
                 html = buildPoPrintHtml(
                     printablePo.poNumber,
                     buildPoPrintSection(printablePo, qrSvg, false, poDeliveryBatchesByPo[po.id] || []),
@@ -5634,14 +5627,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const deliveryGroupsByPoId = new Map<string, PoDeliveryPrintGroup[]>();
                 const printableOrders: PurchaseOrder[] = [];
                 for (const po of groupOrders) {
-                    const printablePo = await poService.ensureQrToken(po);
-                    printableOrders.push(printablePo);
+                    printableOrders.push(po);
                     deliveryGroupsByPoId.set(po.id, await loadPoDeliveryPrintGroups(po, true));
                 }
-                setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
                 const sections = printableOrders.map((po, index) => {
-                    const receiveUrl = buildPoReceiveUrl(po.qrToken!);
-                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                    const qrSvg = buildPoQrSvg(po);
                     return buildPoApprovalRequestSection(
                         po,
                         index > 0,
@@ -5654,13 +5644,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
             } else {
                 const printableOrders: PurchaseOrder[] = [];
                 for (const po of groupOrders) {
-                    const printablePo = await poService.ensureQrToken(po);
-                    printableOrders.push(printablePo);
+                    printableOrders.push(po);
                 }
-                setPos(prev => prev.map(po => printableOrders.find(item => item.id === po.id) || po));
                 const sections = printableOrders.map((po, index) => {
-                    const receiveUrl = buildPoReceiveUrl(po.qrToken!);
-                    const qrSvg = renderToStaticMarkup(<QRCodeSVG value={receiveUrl} size={90} level="H" includeMargin />);
+                    const qrSvg = buildPoQrSvg(po);
                     return buildPoPrintSection(po, qrSvg, index > 0, poDeliveryBatchesByPo[po.id] || []);
                 }).join('');
                 html = buildPoPrintHtml(printableOrders[0].procurementGroupNo || 'Nhóm PO', sections);
@@ -7212,135 +7199,135 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             )}
                             <div className="divide-y divide-slate-50 dark:divide-slate-700/40">
                                 {pagedPos.map(po => {
-                                const stCfg = PO_STATUS[po.status];
-                                const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
-                                const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
-                                const supplierReturns = supplierReturnsByPo[po.id] || [];
-                                const deliveryBatches = poDeliveryBatchesByPo[po.id] || [];
-                                const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
-                                const completedReturnQty = Math.max(
-                                    po.items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0),
-                                    supplierReturns
-                                        .filter(item => item.status === 'completed')
-                                        .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
-                                );
-                                const pendingReturnQty = supplierReturns
-                                    .filter(item => item.status === 'pending')
-                                    .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
-                                const supplierReturnableQty = Math.max(0, totalReceivedQty - completedReturnQty - pendingReturnQty);
-                                const receiptStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
-                                const deliveryPrintGroups = poDeliveryPrintGroupsByPoId[po.id] || [];
-                                const fulfillmentBatchesForPo = deliveryPrintGroups.flatMap(group => group.batches);
-                                const poWorkSummary = summarizePurchaseOrderWork(po, fulfillmentBatchesForPo, deliveryBatches);
-                                const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
-                                const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
-                                const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                                const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
-                                const canSubmitPoDocument = Boolean(
-                                    (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
-                                    && ['draft', 'returned'].includes(po.status),
-                                );
-                                const canApprovePoDocument = Boolean(
-                                    effectivePoCapabilities.canApprovePo
-                                    && (
-                                        (po.status === 'sent' && isPoApprovalAssignee(po))
-                                        || (
-                                            po.sourceMode === 'from_request'
-                                            && po.purchaseMode === 'multiple'
-                                            && deliveryBatches.some(batch => (
-                                                batch.status === 'planned'
-                                                && batch.approvalStatus === 'pending_approval'
-                                                && isDeliveryBatchApprovalAssignee(batch)
-                                            ))
-                                        )
-                                    ),
-                                );
-                                const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
-                                const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
-                                const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
-                                const editBlockReason = isCompanyConsolidatedPo
-                                    ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
-                                    : poEditBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
-                                const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
-                                const poUiPolicy = getPurchaseOrderUiPolicy({
-                                    po,
-                                    receiptStats,
-                                    deliveryBatches,
-                                    supplierReturnableQty,
-                                    canEditPoDocument: canMutatePoDocument,
-                                    canSubmitPoDocument,
-                                    canApprovePoDocument,
-                                    canDeletePoDocument,
-                                    canClonePoDocument: effectivePoCapabilities.canEditPo,
-                                    canConfirmPo: effectivePoCapabilities.canConfirmPo,
-                                    canRunRestrictedPoActions,
-                                    canReturnSupplier,
-                                    editBlockReason,
-                                    removalBlockReason: poRemovalBlockReason,
-                                    hasStockImpact: poHasStockImpact,
-                                    isRejectedBeforeReceipt: poWorkSummary.isRejectedBeforeReceipt,
-                                    groupSize,
-                                    pendingSupplementalApprovalId: pendingSupplementalApproval?.id || null,
-                                    supplementalOverAmount: pendingSupplementalApproval?.overAmount || 0,
-                                });
-                                const isPrintMenuOpen = poPrintMenuId === po.id;
-                                const receiptProgressLabel = receiptStats.orderedQty > 0
-                                    ? `${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`
-                                    : '0/0';
-                                const receiptRemainingLabel = receiptStats.remainingQty > 0
-                                    ? `Còn thiếu ${fmtQty(receiptStats.remainingQty)}`
-                                    : 'Đủ nhu cầu';
-                                return (
-                                    <div key={po.id} className={isPrintMenuOpen ? 'relative z-50' : 'relative z-0'}>
-                                        <div className="px-5 py-3.5 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40 border-b border-zinc-200/80 dark:border-zinc-800">
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                                <div className="min-w-0 flex-1 flex flex-wrap items-center gap-3">
-                                                    <span className="font-mono text-xs font-semibold text-zinc-500 dark:text-zinc-400">{po.poNumber}</span>
-                                                    <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{poListSummary.requestTitle}</span>
-                                                    <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
-                                                </div>
-                                                <div className="flex items-center justify-end gap-2 shrink-0">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => openPoDetail(po)}
-                                                        className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 px-3.5 text-xs font-semibold text-white shadow-sm transition active:scale-[0.98]"
-                                                    >
-                                                        <FileText size={13} /> Chi tiết
-                                                    </button>
-                                                    <div className="relative">
+                                    const stCfg = PO_STATUS[po.status];
+                                    const sourceCfg = PO_SOURCE_MODE[po.sourceMode || 'proactive_project'];
+                                    const groupSize = po.procurementGroupId ? (procurementGroupCounts[po.procurementGroupId] || 0) : 0;
+                                    const supplierReturns = supplierReturnsByPo[po.id] || [];
+                                    const deliveryBatches = poDeliveryBatchesByPo[po.id] || [];
+                                    const totalReceivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty || 0), 0);
+                                    const completedReturnQty = Math.max(
+                                        po.items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0),
+                                        supplierReturns
+                                            .filter(item => item.status === 'completed')
+                                            .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0),
+                                    );
+                                    const pendingReturnQty = supplierReturns
+                                        .filter(item => item.status === 'pending')
+                                        .reduce((sum, item) => sum + item.lines.reduce((lineSum, line) => lineSum + Number(line.returnQty || 0), 0), 0);
+                                    const supplierReturnableQty = Math.max(0, totalReceivedQty - completedReturnQty - pendingReturnQty);
+                                    const receiptStats = getPurchaseOrderDemandStats(po, poRequestLinks, inventoryItems);
+                                    const deliveryPrintGroups = poDeliveryPrintGroupsByPoId[po.id] || [];
+                                    const fulfillmentBatchesForPo = deliveryPrintGroups.flatMap(group => group.batches);
+                                    const poWorkSummary = summarizePurchaseOrderWork(po, fulfillmentBatchesForPo, deliveryBatches);
+                                    const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
+                                    const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
+                                    const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
+                                    const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                                    const canSubmitPoDocument = Boolean(
+                                        (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
+                                        && ['draft', 'returned'].includes(po.status),
+                                    );
+                                    const canApprovePoDocument = Boolean(
+                                        effectivePoCapabilities.canApprovePo
+                                        && (
+                                            (po.status === 'sent' && isPoApprovalAssignee(po))
+                                            || (
+                                                po.sourceMode === 'from_request'
+                                                && po.purchaseMode === 'multiple'
+                                                && deliveryBatches.some(batch => (
+                                                    batch.status === 'planned'
+                                                    && batch.approvalStatus === 'pending_approval'
+                                                    && isDeliveryBatchApprovalAssignee(batch)
+                                                ))
+                                            )
+                                        ),
+                                    );
+                                    const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
+                                    const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
+                                    const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
+                                    const editBlockReason = isCompanyConsolidatedPo
+                                        ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
+                                        : poEditBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
+                                    const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
+                                    const poUiPolicy = getPurchaseOrderUiPolicy({
+                                        po,
+                                        receiptStats,
+                                        deliveryBatches,
+                                        supplierReturnableQty,
+                                        canEditPoDocument: canMutatePoDocument,
+                                        canSubmitPoDocument,
+                                        canApprovePoDocument,
+                                        canDeletePoDocument,
+                                        canClonePoDocument: effectivePoCapabilities.canEditPo,
+                                        canConfirmPo: effectivePoCapabilities.canConfirmPo,
+                                        canRunRestrictedPoActions,
+                                        canReturnSupplier,
+                                        editBlockReason,
+                                        removalBlockReason: poRemovalBlockReason,
+                                        hasStockImpact: poHasStockImpact,
+                                        isRejectedBeforeReceipt: poWorkSummary.isRejectedBeforeReceipt,
+                                        groupSize,
+                                        pendingSupplementalApprovalId: pendingSupplementalApproval?.id || null,
+                                        supplementalOverAmount: pendingSupplementalApproval?.overAmount || 0,
+                                    });
+                                    const isPrintMenuOpen = poPrintMenuId === po.id;
+                                    const receiptProgressLabel = receiptStats.orderedQty > 0
+                                        ? `${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`
+                                        : '0/0';
+                                    const receiptRemainingLabel = receiptStats.remainingQty > 0
+                                        ? `Còn thiếu ${fmtQty(receiptStats.remainingQty)}`
+                                        : 'Đủ nhu cầu';
+                                    return (
+                                        <div key={po.id} className={isPrintMenuOpen ? 'relative z-50' : 'relative z-0'}>
+                                            <div className="px-5 py-3.5 transition hover:bg-zinc-50 dark:hover:bg-zinc-800/40 border-b border-zinc-200/80 dark:border-zinc-800">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                    <div className="min-w-0 flex-1 flex flex-wrap items-center gap-3">
+                                                        <span className="font-mono text-xs font-semibold text-zinc-500 dark:text-zinc-400">{po.poNumber}</span>
+                                                        <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">{poListSummary.requestTitle}</span>
+                                                        <StatusBadge status={po.status} label={stCfg.label} tone={PO_STATUS_TONE[po.status]} showDot={false} />
+                                                    </div>
+                                                    <div className="flex items-center justify-end gap-2 shrink-0">
                                                         <button
                                                             type="button"
-                                                            onClick={event => {
-                                                                event.stopPropagation();
-                                                                setPoPrintMenuId(prev => prev === po.id ? null : po.id);
-                                                            }}
-                                                            className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                                                            title="Thao tác khác"
+                                                            onClick={() => openPoDetail(po)}
+                                                            className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 px-3.5 text-xs font-semibold text-white shadow-sm transition active:scale-[0.98]"
                                                         >
-                                                            <MoreVertical size={15} />
+                                                            <FileText size={13} /> Chi tiết
                                                         </button>
-                                                        {isPrintMenuOpen && (
-                                                            <div onClick={event => event.stopPropagation()} className="absolute right-0 top-10 z-[100] w-64 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
-                                                                {poUiPolicy.menuActions.map(action => (
-                                                                    <button
-                                                                        key={action.id}
-                                                                        type="button"
-                                                                        disabled={action.disabled}
-                                                                        title={action.disabledReason || action.label}
-                                                                        onClick={() => void runPoUiAction(po, action)}
-                                                                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold transition disabled:pointer-events-auto disabled:opacity-60 ${getPoMenuActionClass(action)}`}
-                                                                    >
-                                                                        {getPoActionIcon(action)} {action.label}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        )}
+                                                        <div className="relative">
+                                                            <button
+                                                                type="button"
+                                                                onClick={event => {
+                                                                    event.stopPropagation();
+                                                                    setPoPrintMenuId(prev => prev === po.id ? null : po.id);
+                                                                }}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                                                                title="Thao tác khác"
+                                                            >
+                                                                <MoreVertical size={15} />
+                                                            </button>
+                                                            {isPrintMenuOpen && (
+                                                                <div onClick={event => event.stopPropagation()} className="absolute right-0 top-10 z-[100] w-64 overflow-hidden rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-xl dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
+                                                                    {poUiPolicy.menuActions.map(action => (
+                                                                        <button
+                                                                            key={action.id}
+                                                                            type="button"
+                                                                            disabled={action.disabled}
+                                                                            title={action.disabledReason || action.label}
+                                                                            onClick={() => void runPoUiAction(po, action)}
+                                                                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[11px] font-semibold transition disabled:pointer-events-auto disabled:opacity-60 ${getPoMenuActionClass(action)}`}
+                                                                        >
+                                                                            {getPoActionIcon(action)} {action.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                );
+                                    );
                                 })}
                                 <div className="flex flex-col gap-3 bg-slate-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="text-xs font-bold text-slate-500">
@@ -7977,23 +7964,23 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         <td className="px-3 py-2">
                                                             {isDirectInOut ? (
                                                                 <div>
-                                                                  <select
-                                                                    value={line.targetWarehouseId || warehousePolicy.selectedWarehouseId || ''}
-                                                                    disabled={warehousePolicy.readOnly || warehousePolicy.blocked}
-                                                                    onChange={event => updateSupplierDeliveryLine(line.id, { targetWarehouseId: event.target.value || null })}
-                                                                    className={`${procurementInputClass} w-full disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500`}
-                                                                  >
-                                                                    <option value="">{warehousePolicy.blocked ? 'Chưa có kho hợp lệ' : 'Chọn kho nhập/xuất'}</option>
-                                                                    {historicalWarehouse && (
-                                                                        <option value={historicalWarehouse.id}>Ngoại lệ lịch sử: {historicalWarehouse.name}</option>
-                                                                    )}
-                                                                    {warehousePolicy.options.map(warehouse => (
-                                                                        <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
-                                                                    ))}
-                                                                  </select>
-                                                                  {warehousePolicy.readOnly && <div className="mt-1 text-[9px] font-bold text-emerald-600">Kho duy nhất của công trường · đã khóa chọn</div>}
-                                                                  {warehousePolicy.blocked && <div className="mt-1 text-[9px] font-bold text-red-600">Cần cấu hình tại Cài đặt → Kho bãi</div>}
-                                                                  {warehousePolicy.historicalException && <div className="mt-1 text-[9px] font-bold text-amber-600">Ngoại lệ lịch sử: kho không thuộc công trường hiện tại</div>}
+                                                                    <select
+                                                                        value={line.targetWarehouseId || warehousePolicy.selectedWarehouseId || ''}
+                                                                        disabled={warehousePolicy.readOnly || warehousePolicy.blocked}
+                                                                        onChange={event => updateSupplierDeliveryLine(line.id, { targetWarehouseId: event.target.value || null })}
+                                                                        className={`${procurementInputClass} w-full disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500`}
+                                                                    >
+                                                                        <option value="">{warehousePolicy.blocked ? 'Chưa có kho hợp lệ' : 'Chọn kho nhập/xuất'}</option>
+                                                                        {historicalWarehouse && (
+                                                                            <option value={historicalWarehouse.id}>Ngoại lệ lịch sử: {historicalWarehouse.name}</option>
+                                                                        )}
+                                                                        {warehousePolicy.options.map(warehouse => (
+                                                                            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                    {warehousePolicy.readOnly && <div className="mt-1 text-[9px] font-bold text-emerald-600">Kho duy nhất của công trường · đã khóa chọn</div>}
+                                                                    {warehousePolicy.blocked && <div className="mt-1 text-[9px] font-bold text-red-600">Cần cấu hình tại Cài đặt → Kho bãi</div>}
+                                                                    {warehousePolicy.historicalException && <div className="mt-1 text-[9px] font-bold text-amber-600">Ngoại lệ lịch sử: kho không thuộc công trường hiện tại</div>}
                                                                 </div>
                                                             ) : (
                                                                 <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black text-slate-500">Không qua kho</span>
@@ -8585,86 +8572,86 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                         </td>
                                                     </tr>
                                                     {group.rows.map(row => {
-                                            const inv = inventoryItems.find(item => item.id === row.line.itemId);
-                                            const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
-                                            const remaining = row.remainingQty;
-                                            const conversionLine = normalizePoItem({
-                                                lineId: row.requestLineId,
-                                                itemId: row.line.itemId,
-                                                ...buildPoUnitSnapshot(inv),
-                                                sku: inv?.sku || row.line.skuSnapshot || '',
-                                                name: resolveMaterialLineName(row.line, inv?.name),
-                                            }, inventoryItems);
-                                            const purchaseUnit = getPoLinePurchaseUnit(conversionLine, inv);
-                                            const stockUnit = getPoLineStockUnit(conversionLine, inv) || row.line.unitSnapshot || '';
-                                            const purchaseQty = poLineStockToPurchaseQty(conversionLine, remaining, inv);
-                                            const purchaseUnitPrice = stockUnitPriceToPurchaseUnitPrice(Number(inv?.priceIn || 0), inv);
-                                            const estimatedAmount = purchaseQty * purchaseUnitPrice;
-                                            const lineName = resolveMaterialLineName(row.line, inv?.name);
-                                            const siteName = row.request.constructionSiteId ? constructionSiteById.get(row.request.constructionSiteId)?.name : '';
-                                            const companyPoRefs = companyPoRefsByRequestLine.get(row.key) || [];
-                                            return (
-                                                <tr key={row.key} className="hover:bg-amber-50/40">
-                                                    <td className="px-4 py-3 text-center whitespace-nowrap">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedRequestLineKeys.includes(row.key)}
-                                                            onChange={event => setSelectedRequestLineKeys(prev => event.target.checked ? [...prev, row.key] : prev.filter(key => key !== row.key))}
-                                                            className="accent-amber-500"
-                                                        />
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <div className="font-mono font-black text-indigo-600">{row.request.code}</div>
-                                                        <div className="text-[10px] text-slate-400">{new Date(row.request.createdDate).toLocaleDateString('vi-VN')}</div>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap">
-                                                        <div className="font-bold text-slate-700">{siteName || row.request.constructionSiteId || '—'}</div>
-                                                        <div className="text-[10px] text-slate-400">{warehouses.find(warehouse => warehouse.id === row.request.siteWarehouseId)?.name || row.request.siteWarehouseId || 'Chưa có kho nhận'}</div>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <div className="font-bold text-slate-700">{lineName}</div>
-                                                        <div className="text-[10px] text-slate-400">
-                                                            {work?.wbsCode ? `${work.wbsCode} - ` : ''}{row.line.workBoqItemName || work?.name || 'Ngoài BOQ'}
-                                                            {row.line.materialBudgetItemName ? ` • ${row.line.materialBudgetItemName}` : ''}
-                                                        </div>
-                                                        {row.line.isManualItem ? <div className="text-[10px] font-bold text-amber-600">Dòng cần cấp mã vật tư trước</div> : null}
-                                                        {row.line.overBudgetQtySnapshot ? <div className="text-[10px] font-bold text-orange-600">Vượt định mức: {row.line.overBudgetReason || 'Đã nhập lý do'}</div> : null}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-bold whitespace-nowrap">{row.requestedQty.toLocaleString('vi-VN')} {stockUnit}</td>
-                                                    <td className="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">{row.stockCoveredQty.toLocaleString('vi-VN')} {stockUnit}</td>
-                                                    <td className="px-4 py-3 text-right text-emerald-600 font-bold whitespace-nowrap">{row.closedNeedQty.toLocaleString('vi-VN')} {stockUnit}</td>
-                                                    <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">
-                                                        <div>{row.orderedQty.toLocaleString('vi-VN')} {stockUnit}</div>
-                                                        {companyPoRefs.length > 0 && (
-                                                            <div className="mt-1 text-[9px] font-black text-emerald-600">
-                                                                Đã gom: {companyPoRefs.join(', ')}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{remaining.toLocaleString('vi-VN')} {stockUnit}</td>
-                                                    <td className="px-4 py-3 text-right font-black text-cyan-700 whitespace-nowrap">
-                                                        {purchaseQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {purchaseUnit}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-black text-emerald-700 whitespace-nowrap">
-                                                        {purchaseUnitPrice > 0 ? `${fmtMoney(estimatedAmount)} đ` : '—'}
-                                                        {purchaseUnitPrice > 0 && (
-                                                            <div className="text-[9px] font-bold text-slate-400">
-                                                                {fmtMoney(purchaseUnitPrice)} đ/{purchaseUnit}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{row.line.neededDate || row.request.expectedDate?.slice(0, 10) || '—'}</td>
-                                                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => closeRequestLineNeed(row)}
-                                                            className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700 hover:bg-emerald-100"
-                                                        >
-                                                            Xác nhận đủ
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
+                                                        const inv = inventoryItems.find(item => item.id === row.line.itemId);
+                                                        const work = row.line.workBoqItemId ? workBoqMap.get(row.line.workBoqItemId) : undefined;
+                                                        const remaining = row.remainingQty;
+                                                        const conversionLine = normalizePoItem({
+                                                            lineId: row.requestLineId,
+                                                            itemId: row.line.itemId,
+                                                            ...buildPoUnitSnapshot(inv),
+                                                            sku: inv?.sku || row.line.skuSnapshot || '',
+                                                            name: resolveMaterialLineName(row.line, inv?.name),
+                                                        }, inventoryItems);
+                                                        const purchaseUnit = getPoLinePurchaseUnit(conversionLine, inv);
+                                                        const stockUnit = getPoLineStockUnit(conversionLine, inv) || row.line.unitSnapshot || '';
+                                                        const purchaseQty = poLineStockToPurchaseQty(conversionLine, remaining, inv);
+                                                        const purchaseUnitPrice = stockUnitPriceToPurchaseUnitPrice(Number(inv?.priceIn || 0), inv);
+                                                        const estimatedAmount = purchaseQty * purchaseUnitPrice;
+                                                        const lineName = resolveMaterialLineName(row.line, inv?.name);
+                                                        const siteName = row.request.constructionSiteId ? constructionSiteById.get(row.request.constructionSiteId)?.name : '';
+                                                        const companyPoRefs = companyPoRefsByRequestLine.get(row.key) || [];
+                                                        return (
+                                                            <tr key={row.key} className="hover:bg-amber-50/40">
+                                                                <td className="px-4 py-3 text-center whitespace-nowrap">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedRequestLineKeys.includes(row.key)}
+                                                                        onChange={event => setSelectedRequestLineKeys(prev => event.target.checked ? [...prev, row.key] : prev.filter(key => key !== row.key))}
+                                                                        className="accent-amber-500"
+                                                                    />
+                                                                </td>
+                                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                                    <div className="font-mono font-black text-indigo-600">{row.request.code}</div>
+                                                                    <div className="text-[10px] text-slate-400">{new Date(row.request.createdDate).toLocaleDateString('vi-VN')}</div>
+                                                                </td>
+                                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                                    <div className="font-bold text-slate-700">{siteName || row.request.constructionSiteId || '—'}</div>
+                                                                    <div className="text-[10px] text-slate-400">{warehouses.find(warehouse => warehouse.id === row.request.siteWarehouseId)?.name || row.request.siteWarehouseId || 'Chưa có kho nhận'}</div>
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    <div className="font-bold text-slate-700">{lineName}</div>
+                                                                    <div className="text-[10px] text-slate-400">
+                                                                        {work?.wbsCode ? `${work.wbsCode} - ` : ''}{row.line.workBoqItemName || work?.name || 'Ngoài BOQ'}
+                                                                        {row.line.materialBudgetItemName ? ` • ${row.line.materialBudgetItemName}` : ''}
+                                                                    </div>
+                                                                    {row.line.isManualItem ? <div className="text-[10px] font-bold text-amber-600">Dòng cần cấp mã vật tư trước</div> : null}
+                                                                    {row.line.overBudgetQtySnapshot ? <div className="text-[10px] font-bold text-orange-600">Vượt định mức: {row.line.overBudgetReason || 'Đã nhập lý do'}</div> : null}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-bold whitespace-nowrap">{row.requestedQty.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                                <td className="px-4 py-3 text-right text-blue-600 font-bold whitespace-nowrap">{row.stockCoveredQty.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                                <td className="px-4 py-3 text-right text-emerald-600 font-bold whitespace-nowrap">{row.closedNeedQty.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                                <td className="px-4 py-3 text-right text-slate-500 whitespace-nowrap">
+                                                                    <div>{row.orderedQty.toLocaleString('vi-VN')} {stockUnit}</div>
+                                                                    {companyPoRefs.length > 0 && (
+                                                                        <div className="mt-1 text-[9px] font-black text-emerald-600">
+                                                                            Đã gom: {companyPoRefs.join(', ')}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-black text-amber-700 whitespace-nowrap">{remaining.toLocaleString('vi-VN')} {stockUnit}</td>
+                                                                <td className="px-4 py-3 text-right font-black text-cyan-700 whitespace-nowrap">
+                                                                    {purchaseQty.toLocaleString('vi-VN', { maximumFractionDigits: 6 })} {purchaseUnit}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-black text-emerald-700 whitespace-nowrap">
+                                                                    {purchaseUnitPrice > 0 ? `${fmtMoney(estimatedAmount)} đ` : '—'}
+                                                                    {purchaseUnitPrice > 0 && (
+                                                                        <div className="text-[9px] font-bold text-slate-400">
+                                                                            {fmtMoney(purchaseUnitPrice)} đ/{purchaseUnit}
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{row.line.neededDate || row.request.expectedDate?.slice(0, 10) || '—'}</td>
+                                                                <td className="px-4 py-3 text-right whitespace-nowrap">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => closeRequestLineNeed(row)}
+                                                                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700 hover:bg-emerald-100"
+                                                                    >
+                                                                        Xác nhận đủ
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        );
                                                     })}
                                                 </React.Fragment>
                                             );
@@ -9088,415 +9075,415 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                         </div>
                                     </div>
                                 ) : (
-                                <div className="space-y-3">
-                                    {pItems.map((item, i) => {
-                                        const normalizedLine = normalizePoItem(item, inventoryItems);
-                                        const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
-                                        const overBudgetQty = Number(previewLine.overBudgetQtySnapshot || 0);
-                                        const rowWork = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
-                                        const inventory = inventoryItems.find(inv => inv.id === previewLine.itemId);
-                                        const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
-                                        const stockUnit = getPoLineStockUnit(previewLine, inventory);
-                                        const lineKey = normalizedLine.lineId;
-                                        const scheduledLine = scheduledPItemByLineKey.get(lineKey);
-                                        const scheduleQtyPreview = Number(scheduledLine?.qty ?? previewLine.qty ?? 0);
-                                        const scheduleUnitPricePreview = Number(scheduledLine?.unitPrice ?? previewLine.unitPrice ?? 0);
-                                        const stockQtyPreview = poLinePurchaseToStockQty(previewLine, scheduleQtyPreview, inventory);
-                                        const lineTotalPreview = calculateLineTotal({
-                                            ...previewLine,
-                                            qty: scheduleQtyPreview,
-                                            unitPrice: scheduleUnitPricePreview,
-                                        });
-                                        const pricingPreviewLine = {
-                                            ...normalizedLine,
-                                            specs: item.specs,
-                                            pricingMode: item.pricingMode,
-                                            qty: pSourceMode === 'from_request' ? scheduleQtyPreview : normalizedLine.qty,
-                                            unitPrice: pSourceMode === 'from_request' ? scheduleUnitPricePreview : normalizedLine.unitPrice,
-                                        };
-                                        const editInlineRequestUnitPrice = shouldEditInlineRequestUnitPrice({
-                                            sourceMode: pSourceMode,
-                                            purchaseMode: pPurchaseMode,
-                                            isPurchasePackageV2Form,
-                                        });
-                                        const hasUnitConversion = hasPurchaseUnitConversion({
-                                            unit: stockUnit,
-                                            purchaseUnit,
-                                            purchaseConversionFactor: previewLine.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
-                                        });
-                                        const hasLineDetails = item.isManualItem
-                                            || item.requestCode
-                                            || item.materialBudgetItemName
-                                            || item.workBoqItemName
-                                            || rowWork?.name
-                                            || overBudgetQty > 0
-                                            || hasUnitConversion
-                                            || (item.specs && Object.keys(item.specs).length > 0);
-                                        const lineDetailsExpanded = expandedLineDetailsIdx.has(i);
-                                        const noteEnabled = Boolean(item.noteEnabled);
+                                    <div className="space-y-3">
+                                        {pItems.map((item, i) => {
+                                            const normalizedLine = normalizePoItem(item, inventoryItems);
+                                            const previewLine = pSourceMode === 'proactive_stock' ? normalizedLine : buildPoBudgetSnapshot(normalizedLine);
+                                            const overBudgetQty = Number(previewLine.overBudgetQtySnapshot || 0);
+                                            const rowWork = item.workBoqItemId ? workBoqMap.get(item.workBoqItemId) : undefined;
+                                            const inventory = inventoryItems.find(inv => inv.id === previewLine.itemId);
+                                            const purchaseUnit = getPoLinePurchaseUnit(previewLine, inventory);
+                                            const stockUnit = getPoLineStockUnit(previewLine, inventory);
+                                            const lineKey = normalizedLine.lineId;
+                                            const scheduledLine = scheduledPItemByLineKey.get(lineKey);
+                                            const scheduleQtyPreview = Number(scheduledLine?.qty ?? previewLine.qty ?? 0);
+                                            const scheduleUnitPricePreview = Number(scheduledLine?.unitPrice ?? previewLine.unitPrice ?? 0);
+                                            const stockQtyPreview = poLinePurchaseToStockQty(previewLine, scheduleQtyPreview, inventory);
+                                            const lineTotalPreview = calculateLineTotal({
+                                                ...previewLine,
+                                                qty: scheduleQtyPreview,
+                                                unitPrice: scheduleUnitPricePreview,
+                                            });
+                                            const pricingPreviewLine = {
+                                                ...normalizedLine,
+                                                specs: item.specs,
+                                                pricingMode: item.pricingMode,
+                                                qty: pSourceMode === 'from_request' ? scheduleQtyPreview : normalizedLine.qty,
+                                                unitPrice: pSourceMode === 'from_request' ? scheduleUnitPricePreview : normalizedLine.unitPrice,
+                                            };
+                                            const editInlineRequestUnitPrice = shouldEditInlineRequestUnitPrice({
+                                                sourceMode: pSourceMode,
+                                                purchaseMode: pPurchaseMode,
+                                                isPurchasePackageV2Form,
+                                            });
+                                            const hasUnitConversion = hasPurchaseUnitConversion({
+                                                unit: stockUnit,
+                                                purchaseUnit,
+                                                purchaseConversionFactor: previewLine.purchaseConversionFactor ?? inventory?.purchaseConversionFactor ?? 1,
+                                            });
+                                            const hasLineDetails = item.isManualItem
+                                                || item.requestCode
+                                                || item.materialBudgetItemName
+                                                || item.workBoqItemName
+                                                || rowWork?.name
+                                                || overBudgetQty > 0
+                                                || hasUnitConversion
+                                                || (item.specs && Object.keys(item.specs).length > 0);
+                                            const lineDetailsExpanded = expandedLineDetailsIdx.has(i);
+                                            const noteEnabled = Boolean(item.noteEnabled);
 
-                                        return (
-                                            <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 hover:border-blue-200 transition-colors">
-                                                {pSourceMode !== 'proactive_stock' && (
-                                                    <div className="mb-2">
-                                                        <select
-                                                            value={item.materialBudgetItemId || ''}
-                                                            onChange={e => selectPoBudgetItem(i, e.target.value)}
-                                                            disabled={!!item.requestId}
-                                                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
-                                                        >
-                                                            <option value="">Gắn BOQ triển khai / định mức vật tư (tuỳ chọn)</option>
-                                                            {materialBudgetItems.map(budget => {
-                                                                const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
-                                                                return (
-                                                                    <option key={budget.id} value={budget.id}>
-                                                                        {work?.wbsCode ? `${work.wbsCode} - ` : ''}{budget.itemName} ({Number(budget.budgetQty || 0).toLocaleString('vi-VN')} {budget.unit})
-                                                                    </option>
-                                                                );
-                                                            })}
-                                                        </select>
-                                                    </div>
-                                                )}
+                                            return (
+                                                <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/40 p-3 hover:border-blue-200 transition-colors">
+                                                    {pSourceMode !== 'proactive_stock' && (
+                                                        <div className="mb-2">
+                                                            <select
+                                                                value={item.materialBudgetItemId || ''}
+                                                                onChange={e => selectPoBudgetItem(i, e.target.value)}
+                                                                disabled={!!item.requestId}
+                                                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                                                            >
+                                                                <option value="">Gắn BOQ triển khai / định mức vật tư (tuỳ chọn)</option>
+                                                                {materialBudgetItems.map(budget => {
+                                                                    const work = budget.workBoqItemId ? workBoqMap.get(budget.workBoqItemId) : undefined;
+                                                                    return (
+                                                                        <option key={budget.id} value={budget.id}>
+                                                                            {work?.wbsCode ? `${work.wbsCode} - ` : ''}{budget.itemName} ({Number(budget.budgetQty || 0).toLocaleString('vi-VN')} {budget.unit})
+                                                                        </option>
+                                                                    );
+                                                                })}
+                                                            </select>
+                                                        </div>
+                                                    )}
 
-                                                <div className="grid grid-cols-12 gap-2 items-center lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.4fr)_76px_minmax(145px,0.8fr)_minmax(165px,0.9fr)_max-content]">
-                                                    <div className="col-span-12 md:col-span-3 lg:col-auto">
-                                                        <InventoryItemCombobox
-                                                            value={item.isManualItem ? '' : item.itemId}
-                                                            items={inventoryItems}
-                                                            onChange={selected => selectPoInventoryItem(i, selected?.id || '')}
-                                                            className="w-full"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-12 md:col-span-3 lg:col-auto">
-                                                        <SupplierCombobox
-                                                            value={item.vendorId || ''}
-                                                            suppliers={partners}
-                                                            onChange={supplier => updatePoItem(i, {
-                                                                vendorId: supplier?.id || null,
-                                                                vendorName: supplier?.name || null,
-                                                            })}
-                                                            placeholder="NCC dòng vật tư..."
-                                                            className="w-full"
-                                                        />
-                                                    </div>
-                                                    <div className="col-span-3 md:col-span-1 lg:col-auto flex items-center justify-center h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
-                                                        {purchaseUnit || item.unit || 'ĐVT'}
-                                                    </div>
-                                                    <div className="col-span-5 md:col-span-2 lg:col-auto">
-                                                        <div className="relative flex items-center h-9 rounded-lg border border-blue-200 bg-blue-50/80 px-2 text-xs font-bold focus-within:ring-2 focus-within:ring-blue-500">
-                                                            <span className="shrink-0 text-[9px] font-black uppercase text-blue-600 mr-1">SL MUA</span>
-                                                            <input
-                                                                type="text"
-                                                                inputMode="decimal"
-                                                                value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
-                                                                onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}
-                                                                placeholder="SL"
-                                                                className="w-full bg-transparent text-right text-xs font-black text-slate-900 outline-none"
+                                                    <div className="grid grid-cols-12 gap-2 items-center lg:grid-cols-[minmax(240px,1.4fr)_minmax(240px,1.4fr)_76px_minmax(145px,0.8fr)_minmax(165px,0.9fr)_max-content]">
+                                                        <div className="col-span-12 md:col-span-3 lg:col-auto">
+                                                            <InventoryItemCombobox
+                                                                value={item.isManualItem ? '' : item.itemId}
+                                                                items={inventoryItems}
+                                                                onChange={selected => selectPoInventoryItem(i, selected?.id || '')}
+                                                                className="w-full"
                                                             />
                                                         </div>
-                                                    </div>
-                                                    <div className="col-span-4 md:col-span-2 lg:col-auto min-w-0">
-                                                        {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
-                                                            <div className="flex items-center justify-between h-9 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2 text-right">
-                                                                <span className="shrink-0 text-[9px] font-black uppercase text-emerald-600 mr-1">GIÁ DUYỆT</span>
-                                                                <span className="truncate text-xs font-black text-emerald-800">{fmtMoney(scheduleUnitPricePreview)}</span>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="relative flex items-center h-9 rounded-lg border border-emerald-300 bg-emerald-50/80 px-2 focus-within:ring-2 focus-within:ring-emerald-500">
-                                                                <span className="shrink-0 text-[9px] font-black uppercase text-emerald-600 mr-1">ĐƠN GIÁ</span>
+                                                        <div className="col-span-12 md:col-span-3 lg:col-auto">
+                                                            <SupplierCombobox
+                                                                value={item.vendorId || ''}
+                                                                suppliers={partners}
+                                                                onChange={supplier => updatePoItem(i, {
+                                                                    vendorId: supplier?.id || null,
+                                                                    vendorName: supplier?.name || null,
+                                                                })}
+                                                                placeholder="NCC dòng vật tư..."
+                                                                className="w-full"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-3 md:col-span-1 lg:col-auto flex items-center justify-center h-9 px-2.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-600 font-bold text-center truncate">
+                                                            {purchaseUnit || item.unit || 'ĐVT'}
+                                                        </div>
+                                                        <div className="col-span-5 md:col-span-2 lg:col-auto">
+                                                            <div className="relative flex items-center h-9 rounded-lg border border-blue-200 bg-blue-50/80 px-2 text-xs font-bold focus-within:ring-2 focus-within:ring-blue-500">
+                                                                <span className="shrink-0 text-[9px] font-black uppercase text-blue-600 mr-1">SL MUA</span>
                                                                 <input
                                                                     type="text"
                                                                     inputMode="decimal"
-                                                                    value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
-                                                                    onChange={e => updatePoItem(i, { unitPriceInput: formatViLiveInput(e.target.value) })}
-                                                                    placeholder="Đơn giá"
-                                                                    className="w-full bg-transparent text-right text-xs font-black text-emerald-900 outline-none"
+                                                                    value={item.qtyInput ?? formatNumberInputValue(item.qty, 6)}
+                                                                    onChange={e => updatePoItem(i, { qtyInput: formatViLiveInput(e.target.value) })}
+                                                                    placeholder="SL"
+                                                                    className="w-full bg-transparent text-right text-xs font-black text-slate-900 outline-none"
                                                                 />
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="col-span-12 md:col-span-1 lg:col-auto flex min-w-max items-center justify-end gap-1.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleSpecsPanel(i)}
-                                                            className={`shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 ${(item.pricingMode && item.pricingMode !== 'standard') || (item.specs && Object.keys(item.specs).length > 0)
-                                                                ? 'bg-violet-50 text-violet-700 border-violet-200'
-                                                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                                                                }`}
-                                                            title="Quy cách / Phương thức tính giá"
-                                                        >
-                                                            QC {expandedSpecsIdx.has(i) ? '▲' : '▼'}
-                                                        </button>
-                                                        {hasLineDetails && (
+                                                        </div>
+                                                        <div className="col-span-4 md:col-span-2 lg:col-auto min-w-0">
+                                                            {pSourceMode === 'from_request' && !editInlineRequestUnitPrice ? (
+                                                                <div className="flex items-center justify-between h-9 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2 text-right">
+                                                                    <span className="shrink-0 text-[9px] font-black uppercase text-emerald-600 mr-1">GIÁ DUYỆT</span>
+                                                                    <span className="truncate text-xs font-black text-emerald-800">{fmtMoney(scheduleUnitPricePreview)}</span>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="relative flex items-center h-9 rounded-lg border border-emerald-300 bg-emerald-50/80 px-2 focus-within:ring-2 focus-within:ring-emerald-500">
+                                                                    <span className="shrink-0 text-[9px] font-black uppercase text-emerald-600 mr-1">ĐƠN GIÁ</span>
+                                                                    <input
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        value={item.unitPriceInput ?? formatNumberInputValue(item.unitPrice, 0)}
+                                                                        onChange={e => updatePoItem(i, { unitPriceInput: formatViLiveInput(e.target.value) })}
+                                                                        placeholder="Đơn giá"
+                                                                        className="w-full bg-transparent text-right text-xs font-black text-emerald-900 outline-none"
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="col-span-12 md:col-span-1 lg:col-auto flex min-w-max items-center justify-end gap-1.5">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => toggleLineDetailsPanel(i)}
-                                                                aria-expanded={lineDetailsExpanded}
-                                                                className="shrink-0 whitespace-nowrap px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-black text-amber-700 hover:bg-amber-100 flex items-center gap-0.5"
-                                                                title="Chi tiết đối soát"
+                                                                onClick={() => toggleSpecsPanel(i)}
+                                                                className={`shrink-0 whitespace-nowrap px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 ${(item.pricingMode && item.pricingMode !== 'standard') || (item.specs && Object.keys(item.specs).length > 0)
+                                                                    ? 'bg-violet-50 text-violet-700 border-violet-200'
+                                                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                                    }`}
+                                                                title="Quy cách / Phương thức tính giá"
                                                             >
-                                                                <ChevronDown size={13} className={`transition-transform ${lineDetailsExpanded ? 'rotate-180' : ''}`} />
+                                                                QC {expandedSpecsIdx.has(i) ? '▲' : '▼'}
                                                             </button>
-                                                        )}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
-                                                            className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                            title="Xóa dòng"
-                                                        >
-                                                            <X size={16} />
-                                                        </button>
+                                                            {hasLineDetails && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleLineDetailsPanel(i)}
+                                                                    aria-expanded={lineDetailsExpanded}
+                                                                    className="shrink-0 whitespace-nowrap px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-[11px] font-black text-amber-700 hover:bg-amber-100 flex items-center gap-0.5"
+                                                                    title="Chi tiết đối soát"
+                                                                >
+                                                                    <ChevronDown size={13} className={`transition-transform ${lineDetailsExpanded ? 'rotate-180' : ''}`} />
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setPItems(pItems.length > 1 ? pItems.filter((_, j) => j !== i) : [createEmptyPoItem()])}
+                                                                className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                                title="Xóa dòng"
+                                                            >
+                                                                <X size={16} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <MaterialCommercialDescriptionFields
-                                                    className="mt-3"
-                                                    sku={item.sku || inventory?.sku}
-                                                    name={item.itemNameSnapshot || item.name || inventory?.name || ''}
-                                                    disabled={savingPo}
-                                                    onNameChange={value => updatePoItem(i, { name: value, itemNameSnapshot: value })}
-                                                />
-                                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                                                    <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-black text-slate-600">
+                                                    <MaterialCommercialDescriptionFields
+                                                        className="mt-3"
+                                                        sku={item.sku || inventory?.sku}
+                                                        name={item.itemNameSnapshot || item.name || inventory?.name || ''}
+                                                        disabled={savingPo}
+                                                        onNameChange={value => updatePoItem(i, { name: value, itemNameSnapshot: value })}
+                                                    />
+                                                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                        <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-black text-slate-600">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={noteEnabled}
+                                                                onChange={e => updatePoItem(i, { noteEnabled: e.target.checked })}
+                                                                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                            />
+                                                            Thêm ghi chú
+                                                        </label>
+                                                        {noteEnabled && (
+                                                            <input
+                                                                type="text"
+                                                                value={item.note || ''}
+                                                                onChange={e => updatePoItem(i, { note: e.target.value })}
+                                                                placeholder="Ghi chú dòng vật tư"
+                                                                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                                                            />
+                                                        )}
+                                                    </div>
+                                                    {hasLineDetails && lineDetailsExpanded && (
+                                                        <div className="col-span-12 flex flex-wrap gap-1">
+                                                            {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
+                                                            {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
+                                                            {pSourceMode === 'from_request' && (
+                                                                <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">
+                                                                    Nhu cầu gốc {fmtQty(Number(previewLine.qty || 0))} {purchaseUnit || previewLine.unit}
+                                                                </span>
+                                                            )}
+                                                            {pSourceMode === 'from_request' && (
+                                                                <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">
+                                                                    {isPurchasePackageV2Form
+                                                                        ? 'Chưa tạo đợt giao trong bản nháp'
+                                                                        : `Đã lập lịch ${fmtQty(scheduleQtyPreview)}, còn ${fmtQty(Math.max(0, Number(previewLine.qty || 0) - scheduleQtyPreview))}`}
+                                                                </span>
+                                                            )}
+                                                            {(item.workBoqItemName || rowWork?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{rowWork?.wbsCode ? `${rowWork.wbsCode} - ` : ''}{item.workBoqItemName || rowWork?.name}</span>}
+                                                            {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">{item.materialBudgetItemName}</span>}
+                                                            {overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {overBudgetQty.toLocaleString('vi-VN')} {stockUnit || previewLine.unit}</span>}
+                                                            {hasUnitConversion && (
+                                                                <span className="px-1.5 py-0.5 rounded border border-cyan-100 bg-cyan-50 text-[9px] font-bold text-cyan-700">
+                                                                    Nhập kho {fmtQty(stockQtyPreview)} {stockUnit} (1 {purchaseUnit} = {fmtQty(Number(previewLine.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1))} {stockUnit})
+                                                                </span>
+                                                            )}
+                                                            {scheduleQtyPreview > 0 && scheduleUnitPricePreview > 0 && (
+                                                                <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">
+                                                                    Tính tiền {fmtQty(scheduleQtyPreview)} {purchaseUnit || previewLine.unit} × {fmtMoney(scheduleUnitPricePreview)} = {fmtMoney(lineTotalPreview)} đ
+                                                                </span>
+                                                            )}
+                                                            {formatSpecsSummary(item).map((badge, bIdx) => (
+                                                                <span key={bIdx} className="px-1.5 py-0.5 rounded border border-violet-100 bg-violet-50 text-[9px] font-bold text-violet-700">
+                                                                    {badge}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Specs Form Panel */}
+                                                    {expandedSpecsIdx.has(i) && (
+                                                        <div className="col-span-12 mt-2 p-3 bg-card border border-border rounded-xl space-y-3">
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Mẫu quy cách nhanh:</span>
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {Object.entries(SPEC_PRESETS).map(([key, preset]) => {
+                                                                        const isPresetActive = item.pricingMode === preset.pricingMode && item.specs && Object.keys(item.specs).every(k => preset.fields.some(f => f.key === k));
+                                                                        return (
+                                                                            <button
+                                                                                key={key}
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const nextSpecs: Record<string, SpecValue> = {};
+                                                                                    preset.fields.forEach(f => {
+                                                                                        nextSpecs[f.key] = { value: '', label: f.label, unit: f.unit };
+                                                                                    });
+                                                                                    updatePoItem(i, {
+                                                                                        pricingMode: preset.pricingMode,
+                                                                                        specs: nextSpecs,
+                                                                                        computedArea: undefined,
+                                                                                        computedWeight: undefined
+                                                                                    });
+                                                                                }}
+                                                                                className={`px-2 py-1 rounded text-[10px] font-semibold border ${isPresetActive
+                                                                                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                                                    }`}
+                                                                            >
+                                                                                {preset.label}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-12 gap-2">
+                                                                <div className="col-span-12 md:col-span-6">
+                                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Phương thức tính giá</label>
+                                                                    <select
+                                                                        value={item.pricingMode || 'standard'}
+                                                                        onChange={e => {
+                                                                            const mode = e.target.value as PricingMode;
+                                                                            updatePoItem(i, {
+                                                                                pricingMode: mode,
+                                                                                computedArea: mode === 'by_area' ? calculateArea(item.specs) : undefined,
+                                                                                computedWeight: mode === 'by_weight' ? getSpecNumeric(item.specs, 'weight') : undefined,
+                                                                            });
+                                                                        }}
+                                                                        className="w-full px-2.5 py-1.5 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
+                                                                    >
+                                                                        <option value="standard">Tiêu chuẩn (SL × Đơn giá)</option>
+                                                                        <option value="by_area">Theo diện tích (Rộng × Cao × SL × Đơn giá/m²)</option>
+                                                                        <option value="by_length">Theo chiều dài (Dài × SL × Đơn giá/m)</option>
+                                                                        <option value="by_weight">Theo trọng lượng (Trọng lượng × SL × Đơn giá/kg)</option>
+                                                                        <option value="by_volume">Theo thể tích (Rộng × Cao × Dài × SL × Đơn giá/m³)</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+
+                                                            {item.specs && Object.keys(item.specs).length > 0 && (
+                                                                <div className="grid grid-cols-12 gap-2 mt-2 pt-2 border-t border-slate-100">
+                                                                    {Object.entries(item.specs).map(([key, specVal]) => {
+                                                                        const isText = DEFAULT_SPEC_METADATA[key]?.unit === '';
+                                                                        return (
+                                                                            <div key={key} className="col-span-6 md:col-span-3">
+                                                                                <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                                                                    {specVal.label || key} {specVal.unit ? `(${specVal.unit})` : ''}
+                                                                                </label>
+                                                                                <div className="relative flex items-center">
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        inputMode={isText ? undefined : 'decimal'}
+                                                                                        value={specVal.value ?? ''}
+                                                                                        onChange={e => {
+                                                                                            const val = e.target.value;
+                                                                                            const nextSpecs = { ...(item.specs || {}) };
+                                                                                            nextSpecs[key] = {
+                                                                                                ...specVal,
+                                                                                                value: val
+                                                                                            };
+                                                                                            const area = item.pricingMode === 'by_area' ? calculateArea(nextSpecs) : undefined;
+                                                                                            const weight = item.pricingMode === 'by_weight' ? getSpecNumeric(nextSpecs, 'weight') : undefined;
+                                                                                            updatePoItem(i, {
+                                                                                                specs: nextSpecs,
+                                                                                                computedArea: area,
+                                                                                                computedWeight: weight
+                                                                                            });
+                                                                                        }}
+                                                                                        placeholder="Nhập..."
+                                                                                        className="w-full pl-2 pr-6 py-1.5 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
+                                                                                    />
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            const nextSpecs = { ...(item.specs || {}) };
+                                                                                            delete nextSpecs[key];
+                                                                                            updatePoItem(i, { specs: nextSpecs });
+                                                                                        }}
+                                                                                        className="absolute right-1 top-1 w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 bg-transparent border-0 cursor-pointer"
+                                                                                        title="Xoá thuộc tính này"
+                                                                                    >
+                                                                                        <X size={10} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
+                                                                <span className="text-[9px] font-bold text-slate-400 uppercase">Thêm nhanh thuộc tính khác:</span>
+                                                                {Object.entries(DEFAULT_SPEC_METADATA)
+                                                                    .filter(([k]) => !item.specs || !item.specs[k])
+                                                                    .slice(0, 8)
+                                                                    .map(([k, meta]) => (
+                                                                        <button
+                                                                            key={k}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const nextSpecs = { ...(item.specs || {}) };
+                                                                                nextSpecs[k] = { value: '', label: meta.label, unit: meta.unit };
+                                                                                updatePoItem(i, { specs: nextSpecs });
+                                                                            }}
+                                                                            className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-[9px] text-slate-600 font-semibold border-0 cursor-pointer"
+                                                                        >
+                                                                            + {meta.label}
+                                                                        </button>
+                                                                    ))}
+                                                            </div>
+
+                                                            <div className="mt-2.5 p-2 bg-slate-50 border border-slate-150 rounded-lg text-xs space-y-1">
+                                                                {item.pricingMode === 'by_area' && (
+                                                                    <div className="text-slate-600">
+                                                                        📐 Diện tích tính toán: <span className="font-bold text-slate-800">{calculateArea(item.specs)} m²</span>
+                                                                        {item.specs?.width?.value && item.specs?.height?.value && (
+                                                                            <span className="text-[10px] text-slate-400 ml-1">
+                                                                                (tính từ {item.specs.width.value} × {item.specs.height.value} mm)
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                {item.pricingMode === 'by_length' && (
+                                                                    <div className="text-slate-600">
+                                                                        📐 Chiều dài tính toán: <span className="font-bold text-slate-800">{(getSpecNumeric(item.specs, 'length') / 1000)} m</span>
+                                                                        {item.specs?.length?.value && (
+                                                                            <span className="text-[10px] text-slate-400 ml-1">
+                                                                                (tính từ {item.specs.length.value} mm)
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                {item.pricingMode === 'by_weight' && (
+                                                                    <div className="text-slate-600">
+                                                                        📐 Trọng lượng tính toán: <span className="font-bold text-slate-800">{getSpecNumeric(item.specs, 'weight')} kg</span>
+                                                                    </div>
+                                                                )}
+                                                                {item.pricingMode === 'by_volume' && (
+                                                                    <div className="text-slate-600">
+                                                                        📐 Thể tích tính toán: <span className="font-bold text-slate-800">{calculateVolume(item.specs)} m³</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className="text-blue-700 font-bold flex flex-wrap items-center justify-between">
+                                                                    <span>Công thức & Thành tiền tạm tính:</span>
+                                                                    <span>
+                                                                        {formatPricingFormula(pricingPreviewLine)} = <span className="text-sm font-black underline">{calculateLineTotal(pricingPreviewLine).toLocaleString('vi-VN')} đ</span>
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {overBudgetQty > 0 && pSourceMode !== 'proactive_stock' && (
                                                         <input
-                                                            type="checkbox"
-                                                            checked={noteEnabled}
-                                                            onChange={e => updatePoItem(i, { noteEnabled: e.target.checked })}
-                                                            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                        />
-                                                        Thêm ghi chú
-                                                    </label>
-                                                    {noteEnabled && (
-                                                        <input
-                                                            type="text"
-                                                            value={item.note || ''}
-                                                            onChange={e => updatePoItem(i, { note: e.target.value })}
-                                                            placeholder="Ghi chú dòng vật tư"
-                                                            className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                                                            value={item.overBudgetReason || ''}
+                                                            onChange={e => updatePoItem(i, { overBudgetReason: e.target.value })}
+                                                            placeholder="Nhập lý do mua vượt ngân sách/định mức"
+                                                            className="col-span-12 px-2.5 py-2 rounded-lg border border-orange-200 bg-orange-50 text-xs font-bold text-orange-700 focus:ring-2 focus:ring-orange-400 outline-none"
                                                         />
                                                     )}
                                                 </div>
-                                                {hasLineDetails && lineDetailsExpanded && (
-                                                    <div className="col-span-12 flex flex-wrap gap-1">
-                                                        {item.isManualItem && <span className="px-1.5 py-0.5 rounded border border-rose-100 bg-rose-50 text-[9px] font-bold text-rose-700">Cần cấp mã vật tư trước</span>}
-                                                        {item.requestCode && <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">YC {item.requestCode}</span>}
-                                                        {pSourceMode === 'from_request' && (
-                                                            <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">
-                                                                Nhu cầu gốc {fmtQty(Number(previewLine.qty || 0))} {purchaseUnit || previewLine.unit}
-                                                            </span>
-                                                        )}
-                                                        {pSourceMode === 'from_request' && (
-                                                            <span className="px-1.5 py-0.5 rounded border border-amber-100 bg-amber-50 text-[9px] font-bold text-amber-700">
-                                                                {isPurchasePackageV2Form
-                                                                    ? 'Chưa tạo đợt giao trong bản nháp'
-                                                                    : `Đã lập lịch ${fmtQty(scheduleQtyPreview)}, còn ${fmtQty(Math.max(0, Number(previewLine.qty || 0) - scheduleQtyPreview))}`}
-                                                            </span>
-                                                        )}
-                                                        {(item.workBoqItemName || rowWork?.name) && <span className="px-1.5 py-0.5 rounded border border-blue-100 bg-blue-50 text-[9px] font-bold text-blue-700">{rowWork?.wbsCode ? `${rowWork.wbsCode} - ` : ''}{item.workBoqItemName || rowWork?.name}</span>}
-                                                        {item.materialBudgetItemName && <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">{item.materialBudgetItemName}</span>}
-                                                        {overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded border border-orange-100 bg-orange-50 text-[9px] font-bold text-orange-700">Vượt {overBudgetQty.toLocaleString('vi-VN')} {stockUnit || previewLine.unit}</span>}
-                                                        {hasUnitConversion && (
-                                                            <span className="px-1.5 py-0.5 rounded border border-cyan-100 bg-cyan-50 text-[9px] font-bold text-cyan-700">
-                                                                Nhập kho {fmtQty(stockQtyPreview)} {stockUnit} (1 {purchaseUnit} = {fmtQty(Number(previewLine.purchaseConversionFactor || inventory?.purchaseConversionFactor || 1))} {stockUnit})
-                                                            </span>
-                                                        )}
-                                                        {scheduleQtyPreview > 0 && scheduleUnitPricePreview > 0 && (
-                                                            <span className="px-1.5 py-0.5 rounded border border-emerald-100 bg-emerald-50 text-[9px] font-bold text-emerald-700">
-                                                                Tính tiền {fmtQty(scheduleQtyPreview)} {purchaseUnit || previewLine.unit} × {fmtMoney(scheduleUnitPricePreview)} = {fmtMoney(lineTotalPreview)} đ
-                                                            </span>
-                                                        )}
-                                                        {formatSpecsSummary(item).map((badge, bIdx) => (
-                                                            <span key={bIdx} className="px-1.5 py-0.5 rounded border border-violet-100 bg-violet-50 text-[9px] font-bold text-violet-700">
-                                                                {badge}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {/* Specs Form Panel */}
-                                                {expandedSpecsIdx.has(i) && (
-                                                    <div className="col-span-12 mt-2 p-3 bg-card border border-border rounded-xl space-y-3">
-                                                        <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="text-[10px] font-bold text-slate-400 uppercase">Mẫu quy cách nhanh:</span>
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {Object.entries(SPEC_PRESETS).map(([key, preset]) => {
-                                                                    const isPresetActive = item.pricingMode === preset.pricingMode && item.specs && Object.keys(item.specs).every(k => preset.fields.some(f => f.key === k));
-                                                                    return (
-                                                                        <button
-                                                                            key={key}
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                const nextSpecs: Record<string, SpecValue> = {};
-                                                                                preset.fields.forEach(f => {
-                                                                                    nextSpecs[f.key] = { value: '', label: f.label, unit: f.unit };
-                                                                                });
-                                                                                updatePoItem(i, {
-                                                                                    pricingMode: preset.pricingMode,
-                                                                                    specs: nextSpecs,
-                                                                                    computedArea: undefined,
-                                                                                    computedWeight: undefined
-                                                                                });
-                                                                            }}
-                                                                            className={`px-2 py-1 rounded text-[10px] font-semibold border ${isPresetActive
-                                                                                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                                                                                }`}
-                                                                        >
-                                                                            {preset.label}
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-12 gap-2">
-                                                            <div className="col-span-12 md:col-span-6">
-                                                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Phương thức tính giá</label>
-                                                                <select
-                                                                    value={item.pricingMode || 'standard'}
-                                                                    onChange={e => {
-                                                                        const mode = e.target.value as PricingMode;
-                                                                        updatePoItem(i, {
-                                                                            pricingMode: mode,
-                                                                            computedArea: mode === 'by_area' ? calculateArea(item.specs) : undefined,
-                                                                            computedWeight: mode === 'by_weight' ? getSpecNumeric(item.specs, 'weight') : undefined,
-                                                                        });
-                                                                    }}
-                                                                    className="w-full px-2.5 py-1.5 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
-                                                                >
-                                                                    <option value="standard">Tiêu chuẩn (SL × Đơn giá)</option>
-                                                                    <option value="by_area">Theo diện tích (Rộng × Cao × SL × Đơn giá/m²)</option>
-                                                                    <option value="by_length">Theo chiều dài (Dài × SL × Đơn giá/m)</option>
-                                                                    <option value="by_weight">Theo trọng lượng (Trọng lượng × SL × Đơn giá/kg)</option>
-                                                                    <option value="by_volume">Theo thể tích (Rộng × Cao × Dài × SL × Đơn giá/m³)</option>
-                                                                </select>
-                                                            </div>
-                                                        </div>
-
-                                                        {item.specs && Object.keys(item.specs).length > 0 && (
-                                                            <div className="grid grid-cols-12 gap-2 mt-2 pt-2 border-t border-slate-100">
-                                                                {Object.entries(item.specs).map(([key, specVal]) => {
-                                                                    const isText = DEFAULT_SPEC_METADATA[key]?.unit === '';
-                                                                    return (
-                                                                        <div key={key} className="col-span-6 md:col-span-3">
-                                                                            <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                                                                                {specVal.label || key} {specVal.unit ? `(${specVal.unit})` : ''}
-                                                                            </label>
-                                                                            <div className="relative flex items-center">
-                                                                                <input
-                                                                                    type="text"
-                                                                                    inputMode={isText ? undefined : 'decimal'}
-                                                                                    value={specVal.value ?? ''}
-                                                                                    onChange={e => {
-                                                                                        const val = e.target.value;
-                                                                                        const nextSpecs = { ...(item.specs || {}) };
-                                                                                        nextSpecs[key] = {
-                                                                                            ...specVal,
-                                                                                            value: val
-                                                                                        };
-                                                                                        const area = item.pricingMode === 'by_area' ? calculateArea(nextSpecs) : undefined;
-                                                                                        const weight = item.pricingMode === 'by_weight' ? getSpecNumeric(nextSpecs, 'weight') : undefined;
-                                                                                        updatePoItem(i, {
-                                                                                            specs: nextSpecs,
-                                                                                            computedArea: area,
-                                                                                            computedWeight: weight
-                                                                                        });
-                                                                                    }}
-                                                                                    placeholder="Nhập..."
-                                                                                    className="w-full pl-2 pr-6 py-1.5 rounded-lg border border-border text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-muted/30 text-foreground"
-                                                                                />
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        const nextSpecs = { ...(item.specs || {}) };
-                                                                                        delete nextSpecs[key];
-                                                                                        updatePoItem(i, { specs: nextSpecs });
-                                                                                    }}
-                                                                                    className="absolute right-1 top-1 w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 bg-transparent border-0 cursor-pointer"
-                                                                                    title="Xoá thuộc tính này"
-                                                                                >
-                                                                                    <X size={10} />
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        )}
-
-                                                        <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
-                                                            <span className="text-[9px] font-bold text-slate-400 uppercase">Thêm nhanh thuộc tính khác:</span>
-                                                            {Object.entries(DEFAULT_SPEC_METADATA)
-                                                                .filter(([k]) => !item.specs || !item.specs[k])
-                                                                .slice(0, 8)
-                                                                .map(([k, meta]) => (
-                                                                    <button
-                                                                        key={k}
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            const nextSpecs = { ...(item.specs || {}) };
-                                                                            nextSpecs[k] = { value: '', label: meta.label, unit: meta.unit };
-                                                                            updatePoItem(i, { specs: nextSpecs });
-                                                                        }}
-                                                                        className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-[9px] text-slate-600 font-semibold border-0 cursor-pointer"
-                                                                    >
-                                                                        + {meta.label}
-                                                                    </button>
-                                                                ))}
-                                                        </div>
-
-                                                        <div className="mt-2.5 p-2 bg-slate-50 border border-slate-150 rounded-lg text-xs space-y-1">
-                                                            {item.pricingMode === 'by_area' && (
-                                                                <div className="text-slate-600">
-                                                                    📐 Diện tích tính toán: <span className="font-bold text-slate-800">{calculateArea(item.specs)} m²</span>
-                                                                    {item.specs?.width?.value && item.specs?.height?.value && (
-                                                                        <span className="text-[10px] text-slate-400 ml-1">
-                                                                            (tính từ {item.specs.width.value} × {item.specs.height.value} mm)
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                            {item.pricingMode === 'by_length' && (
-                                                                <div className="text-slate-600">
-                                                                    📐 Chiều dài tính toán: <span className="font-bold text-slate-800">{(getSpecNumeric(item.specs, 'length') / 1000)} m</span>
-                                                                    {item.specs?.length?.value && (
-                                                                        <span className="text-[10px] text-slate-400 ml-1">
-                                                                            (tính từ {item.specs.length.value} mm)
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                            {item.pricingMode === 'by_weight' && (
-                                                                <div className="text-slate-600">
-                                                                    📐 Trọng lượng tính toán: <span className="font-bold text-slate-800">{getSpecNumeric(item.specs, 'weight')} kg</span>
-                                                                </div>
-                                                            )}
-                                                            {item.pricingMode === 'by_volume' && (
-                                                                <div className="text-slate-600">
-                                                                    📐 Thể tích tính toán: <span className="font-bold text-slate-800">{calculateVolume(item.specs)} m³</span>
-                                                                </div>
-                                                            )}
-                                                            <div className="text-blue-700 font-bold flex flex-wrap items-center justify-between">
-                                                                <span>Công thức & Thành tiền tạm tính:</span>
-                                                                <span>
-                                                                    {formatPricingFormula(pricingPreviewLine)} = <span className="text-sm font-black underline">{calculateLineTotal(pricingPreviewLine).toLocaleString('vi-VN')} đ</span>
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {overBudgetQty > 0 && pSourceMode !== 'proactive_stock' && (
-                                                    <input
-                                                        value={item.overBudgetReason || ''}
-                                                        onChange={e => updatePoItem(i, { overBudgetReason: e.target.value })}
-                                                        placeholder="Nhập lý do mua vượt ngân sách/định mức"
-                                                        className="col-span-12 px-2.5 py-2 rounded-lg border border-orange-200 bg-orange-50 text-xs font-bold text-orange-700 focus:ring-2 focus:ring-orange-400 outline-none"
-                                                    />
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 )}
                             </div>
                             {isPurchasePackageV2Form && (
