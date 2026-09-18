@@ -354,8 +354,9 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       ])),
       module('asset.assignment', 'Cấp phát tài sản', 'TS', ['/ts/assignment'], 20, actions('asset.assignment', 'TS', '/ts/assignment', ASSET_SCOPE, [
         ['view', 'Xem', 10],
-        ['create', 'Tạo', 20],
-        ['approve', 'Duyệt', 30],
+        ['assign', 'Cấp phát', 20],
+        ['return', 'Thu hồi', 30],
+        ['transfer', 'Luân chuyển', 40],
       ])),
       module('asset.maintenance', 'Bảo trì tài sản', 'TS', ['/ts/maintenance'], 30, actions('asset.maintenance', 'TS', '/ts/maintenance', ASSET_SCOPE, [
         ['view', 'Xem', 10],

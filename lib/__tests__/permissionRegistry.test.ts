@@ -267,7 +267,9 @@ describe('permissionRegistry', () => {
       label: 'Quản trị phiên quy trình',
       scopeTypes: ['global'],
     });
-    expect(actionByCode['asset.assignment.approve'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
+    expect(actionByCode['asset.assignment.assign'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
+    expect(actionByCode['asset.assignment.return'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
+    expect(actionByCode['asset.assignment.transfer'].scopeTypes).toEqual(expect.arrayContaining(['global', 'warehouse', 'department', 'assigned']));
     expect(actionByCode['contract.supplier.manage'].scopeTypes).toEqual(['global']);
     expect(actionByCode['analytics.export'].scopeTypes).toEqual(['global']);
   });

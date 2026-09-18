@@ -1,7 +1,7 @@
 # Handoff - Authorization V2 Task 12.4.2 / Task 13
 
 **Thời điểm chốt:** 2026-09-17, Asia/Ho_Chi_Minh
-**Trạng thái:** Code E28-E34 đã lên Production; E35 đã revoke pilot; E36 đã sẵn sàng preflight nhưng chờ Thuận có mặt; Task 12.4.2 chưa kết thúc; Task 13 vẫn bị chặn.
+**Trạng thái:** Code E28-E34 đã lên Production; E35 đã revoke pilot; owner đã chấp nhận kết quả Thuận và loại persona này khỏi E36 re-pilot; E36 còn cleanup/re-pilot Hương; Task 12.4.2 chưa kết thúc; Task 13 vẫn bị chặn.
 
 Tài liệu này thay thế handoff ngày `2026-09-15` làm điểm bắt đầu cho phiên mới. Handoff cũ vẫn là lịch sử của E5-E13.
 
@@ -83,12 +83,14 @@ Khi sửa checkpoint mới, không dùng số trên làm thay bằng chứng m�
 
 ### E36 — làm sạch và chạy lại pilot Workflow
 
-E35 đã đóng pilot cũ. E36 bổ sung checker read-only, nhưng maintenance gate lúc `2026-09-17 16:38 UTC` chưa mở vì Thuận không có active session hoặc heartbeat mới. Chỉ tiếp tục khi Hương, Thuận và Permission Admin cùng xác nhận cửa sổ nghiệm thu:
+E35 đã đóng pilot cũ. E36 bổ sung checker read-only. Ngày `2026-09-18`, owner xác nhận đã tự kiểm thử Thuận và chấp nhận persona `WORKFLOW_ADMIN`, vì vậy không chờ session Thuận và không assign lại `WORKFLOW_ADMIN`. Chỉ tiếp tục phần còn lại khi Hương và Permission Admin cùng xác nhận cửa sổ nghiệm thu:
 
 1. Dùng fingerprint đã chốt để loại đúng 9 `workflow.*` direct grant của Hương qua `update_user_authorization_v2`, giữ nguyên 61 grant ngoài Workflow và `system.wf.view`; postflight audit trước khi assign.
-2. Preview rồi assign lại `WORKFLOW_USER`/`WORKFLOW_ADMIN` bằng V2 command với expiry 24 giờ; không assign nếu Thuận chưa có mặt.
-3. Chạy đủ allow/deny matrix Production của hai persona, đối chiếu Cloud audit/resolver/command activity và ghi evidence đã lược bỏ PII.
-4. Revoke ngay hai assignment sau evidence; E36 chỉ PASS nếu final postflight trở về `0` active assignment, Hương còn `0 workflow.*` direct grant và reconciliation không có unexpected gain/loss.
+2. Preview rồi chỉ assign lại `WORKFLOW_USER` bằng V2 command với expiry 24 giờ. Không tạo assignment mới cho Thuận.
+3. Chạy allow/deny matrix Production của Hương, đối chiếu Cloud audit/resolver/command activity và ghi evidence đã lược bỏ PII. Kết quả Thuận được ghi là owner acceptance riêng, không phải evidence session mới.
+4. Revoke ngay assignment Hương sau evidence; E36 chỉ PASS nếu final postflight trở về `0` active assignment, Hương còn `0 workflow.*` direct grant và reconciliation không có unexpected gain/loss.
+
+Ngoài E36 Workflow, kiểm tra Cloud ngày `2026-09-18` xác nhận Thuận chỉ có `asset.assignment.view`, không có `asset.assignment.assign`, `asset.assignment.return` hoặc `asset.assignment.transfer`, và không có nguồn legacy Asset. Lỗi thấy đủ nút thực thi nằm ở frontend Tài sản: action chưa được guard riêng và mutation cũ cập nhật state/toast trước khi backend trả kết quả. Branch hiện hành sửa UI theo từng capability và chuyển mutation sang command `record_asset_assignment`; không thay đổi grant thật.
 
 ### 13 cohort business còn owner-pending
 
@@ -129,4 +131,4 @@ Task 13 chỉ được mở khi đồng thời đạt:
 
 ## 8. Prompt dùng ngay cho phiên chat mới
 
-> Tiếp tục E36 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-17.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng local/Docker hay Superpowers/plugin workflow. Trước hết xác minh Git/Cloud ledger và chạy checker E36. Chỉ mở maintenance window khi Hương, Thuận và Permission Admin cùng sẵn sàng; hiện Thuận chưa có active session. Khi gate mở, loại đúng chín direct Workflow grant của Hương qua `update_user_authorization_v2`, assign pilot 24 giờ qua V2 preview/fingerprint, chạy đủ persona allow/deny rồi revoke ngay sau evidence. Không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, và không triển khai Task 13/drop legacy schema.
+> Tiếp tục E36 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-17.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng local/Docker hay Superpowers/plugin workflow. Trước hết xác minh Git/Cloud ledger và chạy checker E36 chỉ cho Hương; Thuận đã được owner chấp nhận và bypass khỏi re-pilot. Khi Hương và Permission Admin sẵn sàng, loại đúng chín direct Workflow grant của Hương qua `update_user_authorization_v2`, assign `WORKFLOW_USER` 24 giờ qua V2 preview/fingerprint, chạy persona allow/deny rồi revoke ngay sau evidence. Không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, và không triển khai Task 13/drop legacy schema.

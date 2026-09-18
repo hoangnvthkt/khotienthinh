@@ -70,6 +70,7 @@ import { useAuth } from './AuthContext';
 import { mapUserProfileRow as mapUserFromDb, serializeMockUser } from './authState';
 import { getSupabaseOrderColumns, getSupabaseProjection } from '../lib/supabaseProjections';
 import { fetchAllSupabaseRows } from '../lib/supabaseCompleteRead';
+import { assetAssignmentService, mapAssetAssignmentFromDb } from '../lib/assetAssignmentService';
 
 interface AppSettings {
   name: string;
@@ -246,7 +247,7 @@ interface AppContextType {
   addAssetCategory: (cat: AssetCategory) => void;
   updateAssetCategory: (cat: AssetCategory) => void;
   removeAssetCategory: (id: string) => void;
-  addAssetAssignment: (a: AssetAssignment) => void;
+  addAssetAssignment: (a: AssetAssignment) => Promise<void>;
   addAssetMaintenance: (m: AssetMaintenance) => void;
   updateAssetMaintenance: (m: AssetMaintenance) => void;
   addAssetTransfer: (transfer: AssetTransfer, updatedStocks: AssetLocationStock[]) => void;
@@ -1146,11 +1147,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (assetCatData && assetCatData.length > 0) setAssetCategories(assetCatData.map((c: any) => ({
             ...c, depreciationYears: c.depreciation_years
           })));
-          if (assetAssignData) setAssetAssignments(assetAssignData.map((a: any) => ({
-            ...a, assetId: a.asset_id, userId: a.user_id, userName: a.user_name,
-            fromUserId: a.from_user_id, fromUserName: a.from_user_name,
-            performedBy: a.performed_by, performedByName: a.performed_by_name
-          })));
+          if (assetAssignData) setAssetAssignments(assetAssignData.map(mapAssetAssignmentFromDb));
           if (assetMaintData) setAssetMaintenances(assetMaintData.map((m: any) => ({
             ...m, assetId: m.asset_id, startDate: m.start_date, endDate: m.end_date,
             performedBy: m.performed_by, performedByName: m.performed_by_name,
@@ -1341,17 +1338,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payload = {
           id: data.id, name: data.name, type: data.type,
           depreciation_years: data.depreciation_years ?? data.depreciationYears ?? 5
-        };
-      } else if (table === 'asset_assignments') {
-        payload = {
-          id: data.id, asset_id: data.asset_id || data.assetId,
-          type: data.type, user_id: data.user_id || data.userId,
-          user_name: data.user_name || data.userName,
-          from_user_id: data.from_user_id || data.fromUserId || null,
-          from_user_name: data.from_user_name || data.fromUserName || null,
-          date: data.date, note: data.note || null,
-          performed_by: data.performed_by || data.performedBy,
-          performed_by_name: data.performed_by_name || data.performedByName
         };
       } else if (table === 'asset_maintenances') {
         payload = {
@@ -3340,24 +3326,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addAssetAssignment = (a: AssetAssignment) => {
-    setAssetAssignments(prev => [a, ...prev]);
-    if (isSupabaseConfigured) {
-      syncToSupabase('asset_assignments', { ...a, asset_id: a.assetId, user_id: a.userId, user_name: a.userName, from_user_id: a.fromUserId, from_user_name: a.fromUserName, performed_by: a.performedBy, performed_by_name: a.performedByName });
-    }
-    // Update asset status
-    const asset = assets.find(ast => ast.id === a.assetId);
+  const addAssetAssignment = async (a: AssetAssignment): Promise<void> => {
+    const persistedAssignment = isSupabaseConfigured
+      ? await assetAssignmentService.record(a)
+      : a;
+
+    setAssetAssignments(prev => [persistedAssignment, ...prev.filter(item => item.id !== persistedAssignment.id)]);
+    const asset = assets.find(ast => ast.id === persistedAssignment.assetId);
     if (asset) {
-      if (a.type === 'assign') {
-        updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
-      } else if (a.type === 'transfer') {
-        // Luân chuyển: đổi người sử dụng, giữ nguyên status IN_USE
-        updateAsset({ ...asset, status: AssetStatus.IN_USE, assignedToUserId: a.userId, assignedToName: a.userName, assignedDate: a.date, updatedAt: new Date().toISOString() });
-      } else {
-        updateAsset({ ...asset, status: AssetStatus.AVAILABLE, assignedToUserId: undefined, assignedToName: undefined, assignedDate: undefined, updatedAt: new Date().toISOString() });
-      }
+      const updatedAsset = persistedAssignment.type === 'return'
+        ? { ...asset, status: AssetStatus.AVAILABLE, assignedToUserId: undefined, assignedToName: undefined, assignedDate: undefined, updatedAt: new Date().toISOString() }
+        : { ...asset, status: AssetStatus.IN_USE, assignedToUserId: persistedAssignment.userId, assignedToName: persistedAssignment.userName, assignedDate: persistedAssignment.date, updatedAt: new Date().toISOString() };
+      setAssets(prev => prev.map(item => item.id === updatedAsset.id ? updatedAsset : item));
     }
-    logActivity('SYSTEM', a.type === 'assign' ? 'Cấp phát tài sản' : a.type === 'transfer' ? 'Luân chuyển tài sản' : 'Thu hồi tài sản', `${a.type === 'assign' ? 'Cấp phát' : a.type === 'transfer' ? `Luân chuyển từ ${a.fromUserName} sang` : 'Thu hồi'} tài sản ${a.type !== 'return' ? 'cho' : 'từ'} ${a.userName}`, 'INFO');
+    logActivity('SYSTEM', persistedAssignment.type === 'assign' ? 'Cấp phát tài sản' : persistedAssignment.type === 'transfer' ? 'Luân chuyển tài sản' : 'Thu hồi tài sản', `${persistedAssignment.type === 'assign' ? 'Cấp phát' : persistedAssignment.type === 'transfer' ? `Luân chuyển từ ${persistedAssignment.fromUserName} sang` : 'Thu hồi'} tài sản ${persistedAssignment.type !== 'return' ? 'cho' : 'từ'} ${persistedAssignment.userName}`, 'INFO');
   };
 
   const addAssetMaintenance = (m: AssetMaintenance) => {

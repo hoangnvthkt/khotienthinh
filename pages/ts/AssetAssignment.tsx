@@ -9,11 +9,17 @@ import {
 } from 'lucide-react';
 import { Asset, AssetStatus, ASSET_STATUS_LABELS, AssetAssignment as AssetAssignmentType } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import {
+    canAssignAsset,
+    canReturnAsset,
+    canStartAssetAssignmentAction,
+    canTransferAsset,
+} from '../../lib/assetAssignmentPermissions';
 
 const AssetAssignment: React.FC = () => {
     const {
         assets, assetAssignments, assetCategories, users, user, orgUnits,
-        addAssetAssignment, updateAsset,
+        addAssetAssignment,
     } = useApp();
   useModuleData('ts');
     const toast = useToast();
@@ -29,6 +35,7 @@ const AssetAssignment: React.FC = () => {
     const [transferUserId, setTransferUserId] = useState('');
     const [transferNote, setTransferNote] = useState('');
     const [filterType, setFilterType] = useState<'all' | 'assign' | 'return' | 'transfer'>('all');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Departments from orgUnits
     const departments = useMemo(() => orgUnits.filter(u => u.type === 'department'), [orgUnits]);
@@ -71,75 +78,107 @@ const AssetAssignment: React.FC = () => {
         });
     }, [assetAssignments, filterType]);
 
-    const handleAssign = () => {
+    const handleAssign = async () => {
         if (!selectedAsset || !assignUserId) return;
         const targetUser = users.find(u => u.id === assignUserId);
         if (!targetUser) return;
+        if (!canAssignAsset(user, selectedAsset, assignUserId)) {
+            toast.error('Không có quyền cấp phát', 'Tài khoản chưa được cấp chức năng Cấp phát cho tài sản này.');
+            return;
+        }
 
-        addAssetAssignment({
-            id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            assetId: selectedAsset.id,
-            type: 'assign',
-            userId: assignUserId,
-            userName: targetUser.name,
-            date: new Date().toISOString(),
-            note: assignNote,
-            performedBy: user.id,
-            performedByName: user.name,
-        });
-
-        toast.success('Cấp phát thành công', `${selectedAsset.name} đã được giao cho ${targetUser.name}`);
-        setShowAssignModal(false);
-        setSelectedAsset(null);
-        setAssignUserId('');
-        setAssignNote('');
+        setIsSubmitting(true);
+        try {
+            await addAssetAssignment({
+                id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                assetId: selectedAsset.id,
+                type: 'assign',
+                userId: assignUserId,
+                userName: targetUser.name,
+                date: new Date().toISOString(),
+                note: assignNote,
+                performedBy: user.id,
+                performedByName: user.name,
+            });
+            toast.success('Cấp phát thành công', `${selectedAsset.name} đã được giao cho ${targetUser.name}`);
+            setShowAssignModal(false);
+            setSelectedAsset(null);
+            setAssignUserId('');
+            setAssignNote('');
+        } catch (error: any) {
+            toast.error('Không thể cấp phát', error?.message || 'Command cấp phát bị từ chối.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const handleReturn = () => {
+    const handleReturn = async () => {
         if (!selectedAsset) return;
+        if (!canReturnAsset(user, selectedAsset)) {
+            toast.error('Không có quyền thu hồi', 'Tài khoản chưa được cấp chức năng Thu hồi cho tài sản này.');
+            return;
+        }
 
-        addAssetAssignment({
-            id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            assetId: selectedAsset.id,
-            type: 'return',
-            userId: selectedAsset.assignedToUserId || '',
-            userName: selectedAsset.assignedToName || '',
-            date: new Date().toISOString(),
-            note: assignNote,
-            performedBy: user.id,
-            performedByName: user.name,
-        });
-
-        toast.success('Thu hồi thành công', `${selectedAsset.name} đã được thu hồi từ ${selectedAsset.assignedToName}`);
-        setShowReturnModal(false);
-        setSelectedAsset(null);
-        setAssignNote('');
+        setIsSubmitting(true);
+        try {
+            await addAssetAssignment({
+                id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                assetId: selectedAsset.id,
+                type: 'return',
+                userId: selectedAsset.assignedToUserId || '',
+                userName: selectedAsset.assignedToName || '',
+                fromUserId: selectedAsset.assignedToUserId,
+                fromUserName: selectedAsset.assignedToName,
+                date: new Date().toISOString(),
+                note: assignNote,
+                performedBy: user.id,
+                performedByName: user.name,
+            });
+            toast.success('Thu hồi thành công', `${selectedAsset.name} đã được thu hồi từ ${selectedAsset.assignedToName}`);
+            setShowReturnModal(false);
+            setSelectedAsset(null);
+            setAssignNote('');
+        } catch (error: any) {
+            toast.error('Không thể thu hồi', error?.message || 'Command thu hồi bị từ chối.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const handleTransfer = () => {
+    const handleTransfer = async () => {
         if (!selectedAsset || !transferUserId) return;
         const targetUser = users.find(u => u.id === transferUserId);
         if (!targetUser) return;
+        if (!canTransferAsset(user, selectedAsset, transferUserId)) {
+            toast.error('Không có quyền luân chuyển', 'Tài khoản chưa được cấp chức năng Luân chuyển cho tài sản này.');
+            return;
+        }
 
-        addAssetAssignment({
-            id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-            assetId: selectedAsset.id,
-            type: 'transfer',
-            userId: transferUserId,
-            userName: targetUser.name,
-            fromUserId: selectedAsset.assignedToUserId,
-            fromUserName: selectedAsset.assignedToName,
-            date: new Date().toISOString(),
-            note: transferNote,
-            performedBy: user.id,
-            performedByName: user.name,
-        });
-
-        toast.success('Luân chuyển thành công', `${selectedAsset.name}: ${selectedAsset.assignedToName} → ${targetUser.name}`);
-        setShowTransferModal(false);
-        setSelectedAsset(null);
-        setTransferUserId('');
-        setTransferNote('');
+        setIsSubmitting(true);
+        try {
+            await addAssetAssignment({
+                id: `aa-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                assetId: selectedAsset.id,
+                type: 'transfer',
+                userId: transferUserId,
+                userName: targetUser.name,
+                fromUserId: selectedAsset.assignedToUserId,
+                fromUserName: selectedAsset.assignedToName,
+                date: new Date().toISOString(),
+                note: transferNote,
+                performedBy: user.id,
+                performedByName: user.name,
+            });
+            toast.success('Luân chuyển thành công', `${selectedAsset.name}: ${selectedAsset.assignedToName} → ${targetUser.name}`);
+            setShowTransferModal(false);
+            setSelectedAsset(null);
+            setTransferUserId('');
+            setTransferNote('');
+        } catch (error: any) {
+            toast.error('Không thể luân chuyển', error?.message || 'Command luân chuyển bị từ chối.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || '';
@@ -256,10 +295,12 @@ const AssetAssignment: React.FC = () => {
                                                 <div className="text-[10px] text-slate-400">{getCategoryName(asset.categoryId)}</div>
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedAsset(asset); setShowAssignModal(true); setAssignUserId(''); setAssignNote(''); }}
-                                            className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 text-[10px] font-black uppercase hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors flex items-center gap-1 shrink-0">
-                                            <UserPlus size={12} /> Cấp phát
-                                        </button>
+                                        {canStartAssetAssignmentAction(user, 'assign', asset) && (
+                                            <button onClick={() => { setSelectedAsset(asset); setShowAssignModal(true); setAssignUserId(''); setAssignNote(''); }}
+                                                className="px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 text-[10px] font-black uppercase hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors flex items-center gap-1 shrink-0">
+                                                <UserPlus size={12} /> Cấp phát
+                                            </button>
+                                        )}
                                     </div>
                                 ))
                             )}
@@ -292,10 +333,12 @@ const AssetAssignment: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedAsset(asset); setShowReturnModal(true); setAssignNote(''); }}
-                                            className="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-600 text-[10px] font-black uppercase hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors flex items-center gap-1 shrink-0">
-                                            <UserMinus size={12} /> Thu hồi
-                                        </button>
+                                        {canStartAssetAssignmentAction(user, 'return', asset) && (
+                                            <button onClick={() => { setSelectedAsset(asset); setShowReturnModal(true); setAssignNote(''); }}
+                                                className="px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-600 text-[10px] font-black uppercase hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors flex items-center gap-1 shrink-0">
+                                                <UserMinus size={12} /> Thu hồi
+                                            </button>
+                                        )}
                                     </div>
                                 ))
                             )}
@@ -362,10 +405,12 @@ const AssetAssignment: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <button onClick={() => { setSelectedAsset(asset); setShowTransferModal(true); setTransferUserId(''); setTransferNote(''); }}
-                                            className="px-4 py-2 rounded-xl bg-violet-50 dark:bg-violet-950/30 text-violet-600 text-[10px] font-black uppercase hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm group-hover:shadow-md group-hover:shadow-violet-500/10">
-                                            <ArrowLeftRight size={14} /> Luân chuyển
-                                        </button>
+                                        {canStartAssetAssignmentAction(user, 'transfer', asset) && (
+                                            <button onClick={() => { setSelectedAsset(asset); setShowTransferModal(true); setTransferUserId(''); setTransferNote(''); }}
+                                                className="px-4 py-2 rounded-xl bg-violet-50 dark:bg-violet-950/30 text-violet-600 text-[10px] font-black uppercase hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm group-hover:shadow-md group-hover:shadow-violet-500/10">
+                                                <ArrowLeftRight size={14} /> Luân chuyển
+                                            </button>
+                                        )}
                                     </div>
                                 ))
                             )}
@@ -460,7 +505,7 @@ const AssetAssignment: React.FC = () => {
                                 <select value={assignUserId} onChange={e => setAssignUserId(e.target.value)}
                                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-emerald-500">
                                     <option value="">Chọn người nhận...</option>
-                                    {users.filter(u => u.id !== user.id).map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                                    {users.filter(u => canAssignAsset(user, selectedAsset, u.id)).map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                                 </select>
                             </div>
                             <div>
@@ -472,7 +517,7 @@ const AssetAssignment: React.FC = () => {
                         </div>
                         <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
                             <button onClick={() => setShowAssignModal(false)} className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 font-bold text-sm">Hủy</button>
-                            <button onClick={handleAssign} disabled={!assignUserId}
+                            <button onClick={handleAssign} disabled={!assignUserId || isSubmitting}
                                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 disabled:opacity-50">
                                 Xác nhận cấp phát
                             </button>
@@ -514,7 +559,7 @@ const AssetAssignment: React.FC = () => {
                         </div>
                         <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
                             <button onClick={() => setShowReturnModal(false)} className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 font-bold text-sm">Hủy</button>
-                            <button onClick={handleReturn}
+                            <button onClick={handleReturn} disabled={isSubmitting}
                                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-bold text-sm shadow-lg shadow-amber-500/20">
                                 Xác nhận thu hồi
                             </button>
@@ -586,7 +631,7 @@ const AssetAssignment: React.FC = () => {
                                 <select value={transferUserId} onChange={e => setTransferUserId(e.target.value)}
                                     className="w-full px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 font-bold outline-none focus:ring-2 focus:ring-violet-500">
                                     <option value="">Chọn người nhận mới...</option>
-                                    {users.filter(u => u.id !== selectedAsset.assignedToUserId).map(u => (
+                                    {users.filter(u => u.id !== selectedAsset.assignedToUserId && canTransferAsset(user, selectedAsset, u.id)).map(u => (
                                         <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                                     ))}
                                 </select>
@@ -602,7 +647,7 @@ const AssetAssignment: React.FC = () => {
                         </div>
                         <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
                             <button onClick={() => setShowTransferModal(false)} className="px-6 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 font-bold text-sm">Hủy</button>
-                            <button onClick={handleTransfer} disabled={!transferUserId}
+                            <button onClick={handleTransfer} disabled={!transferUserId || isSubmitting}
                                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold text-sm shadow-lg shadow-violet-500/20 disabled:opacity-50">
                                 <ArrowLeftRight size={14} className="inline mr-1.5" /> Xác nhận luân chuyển
                             </button>

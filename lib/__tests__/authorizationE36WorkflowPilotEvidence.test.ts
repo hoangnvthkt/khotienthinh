@@ -19,6 +19,15 @@ describe('E36 Workflow pilot evidence checker', () => {
       .toThrow('E36_WINDOW_START');
   });
 
+  it('allows the owner-accepted Workflow Admin persona to be omitted from the re-pilot', () => {
+    const inputs = validateE36Inputs({ workflowUserId, windowStart });
+    const sql = buildE36EvidenceSql({ workflowUserId, windowStart });
+
+    expect(inputs.workflowAdminId).toBeNull();
+    expect(sql).toContain("('workflowUser'::text");
+    expect(sql).not.toContain("('workflowAdmin'::text");
+  });
+
   it('builds a read-only query covering grants, assignments, sources, audits, activity and transition ledger', () => {
     const sql = buildE36EvidenceSql({ workflowUserId, workflowAdminId, windowStart }).toLowerCase();
 

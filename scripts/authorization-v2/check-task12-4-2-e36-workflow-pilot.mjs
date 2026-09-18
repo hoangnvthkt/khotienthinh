@@ -14,14 +14,14 @@ const droppedKeys = new Set([
   'roletemplateid', 'auditid', 'commandid', 'instanceid', 'nodeid',
 ]);
 
-export const validateE36Inputs = ({ workflowUserId, workflowAdminId, windowStart }) => {
+export const validateE36Inputs = ({ workflowUserId, workflowAdminId = null, windowStart }) => {
   if (!uuidPattern.test(String(workflowUserId || ''))) {
     throw new Error('E36_WORKFLOW_USER_ID must be a UUID');
   }
-  if (!uuidPattern.test(String(workflowAdminId || ''))) {
+  if (workflowAdminId && !uuidPattern.test(String(workflowAdminId))) {
     throw new Error('E36_WORKFLOW_ADMIN_ID must be a UUID');
   }
-  if (workflowUserId === workflowAdminId) {
+  if (workflowAdminId && workflowUserId === workflowAdminId) {
     throw new Error('E36 Workflow personas must be different users');
   }
   const parsedWindow = new Date(String(windowStart || ''));
@@ -30,7 +30,7 @@ export const validateE36Inputs = ({ workflowUserId, workflowAdminId, windowStart
   }
   return {
     workflowUserId: String(workflowUserId).toLowerCase(),
-    workflowAdminId: String(workflowAdminId).toLowerCase(),
+    workflowAdminId: workflowAdminId ? String(workflowAdminId).toLowerCase() : null,
     windowStart: parsedWindow.toISOString(),
   };
 };
@@ -51,6 +51,10 @@ export const redactE36Evidence = value => {
 
 export const buildE36EvidenceSql = inputs => {
   const { workflowUserId, workflowAdminId, windowStart } = validateE36Inputs(inputs);
+  const personaRows = [
+    `('workflowUser'::text, '${workflowUserId}'::uuid)`,
+    ...(workflowAdminId ? [`('workflowAdmin'::text, '${workflowAdminId}'::uuid)`] : []),
+  ].join(',\n    ');
   return `
 with
 inputs as (
@@ -58,8 +62,7 @@ inputs as (
 ),
 personas(label, user_id) as (
   values
-    ('workflowUser'::text, '${workflowUserId}'::uuid),
-    ('workflowAdmin'::text, '${workflowAdminId}'::uuid)
+    ${personaRows}
 ),
 persona_accounts as (
   select
