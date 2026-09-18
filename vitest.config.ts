@@ -10,7 +10,12 @@ export default defineConfig({
     },
   },
   test: {
-    exclude: [...configDefaults.exclude, 'tests/request/**/*.cloud.test.ts', 'tests/e2e/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      '.worktrees/**',
+      'tests/request/**/*.cloud.test.ts',
+      'tests/e2e/**',
+    ],
     setupFiles: ['./lib/__tests__/setupMigrationArchive.ts'],
   },
 });
