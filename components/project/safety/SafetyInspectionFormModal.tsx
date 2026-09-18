@@ -150,7 +150,7 @@ const SafetyInspectionFormModal: React.FC<Props> = ({ projectId, constructionSit
             attachments={attachments}
             onChange={setAttachments}
             uploadedBy={currentUser.name || currentUser.username}
-            label="Ảnh/file ban đầu"
+            label="Hình ảnh/file hiện trường"
             onPreview={onPreviewAttachment}
           />
         </div>

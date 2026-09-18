@@ -21,6 +21,7 @@ interface Props {
   onDelete?: (inspection: SafetyInspection) => void;
   onPreviewAttachment?: (attachments: SafetyAttachment[], index: number) => void;
   canManage?: boolean;
+  canDelete?: boolean;
   loading?: boolean;
 }
 
@@ -47,7 +48,8 @@ const InspectionDetail: React.FC<{
   onDelete?: Props['onDelete'];
   onPreviewAttachment?: Props['onPreviewAttachment'];
   canManage?: boolean;
-}> = ({ inspection, getItems, onUpdateItem, onComplete, onGenerateIssue, onEdit, onDelete, onPreviewAttachment, canManage }) => {
+  canDelete?: boolean;
+}> = ({ inspection, getItems, onUpdateItem, onComplete, onGenerateIssue, onEdit, onDelete, onPreviewAttachment, canManage, canDelete }) => {
   const [items, setItems] = useState<SafetyInspectionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -94,30 +96,34 @@ const InspectionDetail: React.FC<{
           >
             <Eye size={13} />
           </button>
-          {canManage && (
+          {(canManage || canDelete) && (
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit?.(inspection);
-                }}
-                className="rounded-lg border border-slate-200 p-1.5 text-blue-600 hover:bg-blue-50"
-                title="Sửa"
-              >
-                <Edit2 size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete?.(inspection);
-                }}
-                className="rounded-lg border border-slate-200 p-1.5 text-red-600 hover:bg-red-50"
-                title="Xóa"
-              >
-                <Trash2 size={13} />
-              </button>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit?.(inspection);
+                  }}
+                  className="rounded-lg border border-slate-200 p-1.5 text-blue-600 hover:bg-blue-50"
+                  title="Sửa"
+                >
+                  <Edit2 size={13} />
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete?.(inspection);
+                  }}
+                  className="rounded-lg border border-slate-200 p-1.5 text-red-600 hover:bg-red-50"
+                  title="Xóa"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -191,6 +197,7 @@ const SafetyInspectionList: React.FC<Props> = ({
   onDelete,
   onPreviewAttachment,
   canManage,
+  canDelete,
   loading,
 }) => {
   if (loading) {
@@ -205,7 +212,7 @@ const SafetyInspectionList: React.FC<Props> = ({
         message="Tạo checklist để ghi nhận kết quả kiểm tra hiện trường."
         action={canManage ? (
           <button type="button" onClick={onCreate} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white hover:bg-slate-800">
-            <Plus size={14} /> Tạo checklist
+            <Plus size={14} /> Tạo kiểm tra hiện trường
           </button>
         ) : undefined}
       />
@@ -217,7 +224,7 @@ const SafetyInspectionList: React.FC<Props> = ({
       <div className="flex justify-end">
         {canManage && (
           <button type="button" onClick={onCreate} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white hover:bg-slate-800">
-            <Plus size={14} /> Tạo checklist
+            <Plus size={14} /> Tạo kiểm tra hiện trường
           </button>
         )}
       </div>
@@ -234,6 +241,7 @@ const SafetyInspectionList: React.FC<Props> = ({
             onDelete={onDelete}
             onPreviewAttachment={onPreviewAttachment}
             canManage={canManage}
+            canDelete={canDelete}
           />
         ))}
       </div>
@@ -250,6 +258,7 @@ const SafetyInspectionList: React.FC<Props> = ({
             onDelete={onDelete}
             onPreviewAttachment={onPreviewAttachment}
             canManage={canManage}
+            canDelete={canDelete}
           />
         ))}
       </div>
