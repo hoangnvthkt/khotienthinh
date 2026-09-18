@@ -566,9 +566,24 @@ Expected: checksum trước/sau không đổi; không có SQL mutation trên b�
 
 **Kết quả dự kiến:** lỗi cảnh báo tám quyền không còn trong danh mục không chặn một thay đổi canonical hợp lệ, nhưng UI cũng không biến các shell grant đã ẩn thành cơ chế cấp quyền thứ hai. Task 13 tiếp tục chờ release, persona và observation gate.
 
+### Task 12.4.2: Hoàn thiện quản trị quyền và thu hồi có kiểm soát
+
+**Trạng thái:** kế hoạch đã soạn ngày 2026-09-14; chưa triển khai/thu hồi dữ liệu. Xem [kế hoạch chi tiết Task 12.4.2](2026-09-14-authorization-v2-task12-4-2-controlled-revocation.md).
+
+- [ ] A — Inventory và mapping từng surface/nguồn quyền hiện hành.
+- [ ] B — Quyền từng mục Cài đặt, enforcement tới API.
+- [ ] C — Chuyển Admin/Thủ kho/Thường bằng giao dịch có audit.
+- [ ] D — Checkbox theo scope, thể hiện quyền còn hiệu lực và nguồn cần sửa.
+- [ ] E — Đồng bộ menu/route/API toàn ứng dụng; bổ sung coverage file root.
+- [ ] F — Manifest từng tài khoản, snapshot và diễn tập restore có kiểm phiên bản.
+- [ ] G — Pilot rồi mở rộng thu hồi theo batch đã duyệt; không revoke theo tiền tố.
+- [ ] H — Nghiệm thu release/persona và quan sát ít nhất 7 ngày trước Task 13.
+
+**Môi trường dự kiến:** branch `feature/authorization-v2-task12-4-2` từ main hiện hành; Supabase Cloud main `ftciqmqhmfvjtwoycswe`. Giữ bốn cột legacy và snapshot. Mỗi checkpoint test/commit riêng, agent chính thực hiện.
+
 ### Task 13: Drop legacy schema sau observation gate
 
-**Observation gate:** tối thiểu 7 ngày sau bản phát hành Task 12.3; không incident rollback; deny anomaly không tăng; các persona trọng yếu được xác nhận; reconciliation vẫn đạt Phase 5 gates. Chưa đủ gate thì dừng ở Task 12.3 và không coi chương trình hoàn tất.
+**Observation gate (cập nhật 2026-09-14):** Task 12.4.2 A–G phải đạt trước; tối thiểu 7 ngày tính từ thời điểm muộn nhất của release cuối, batch thu hồi cuối và xác nhận persona Task 12.4.2. Không incident rollback/regression, không deny bất thường chưa giải thích, không mismatch/manual review, ledger khớp và restore đã kiểm chứng. Chưa đủ gate thì giữ Task 13 blocked; không tính từ ngày commit hoặc mốc Task 12.3 cũ.
 
 **Files:**
 - Create via CLI suffix: `_authorization_v2_phase6_drop_legacy_schema.sql`
