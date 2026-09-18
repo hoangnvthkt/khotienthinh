@@ -49,7 +49,9 @@
     "20260911074516_authorization_v2_module_first_catalog.sql",
     "20260911082117_authorization_v2_structured_grant_errors.sql",
     "20260914045955_request_content_revisions.sql",
-    "20260914045956_request_discussion_storage.sql"
+    "20260914045956_request_discussion_storage.sql",
+    "20260914075111_request_discussion_rpc_permissions.sql",
+    "20260915094533_request_attachment_processor_rpc_wrappers.sql"
   ],
   "forbidIncludeAll": true
 }

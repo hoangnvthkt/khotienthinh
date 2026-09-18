@@ -8,6 +8,7 @@ const migrationPaths = [
   'supabase/migrations/20260914045955_request_content_revisions.sql',
   'supabase/migrations/20260914045956_request_discussion_storage.sql',
   'supabase/migrations/20260914075111_request_discussion_rpc_permissions.sql',
+  'supabase/migrations/20260915094533_request_attachment_processor_rpc_wrappers.sql',
 ];
 
 describe('request discussion and content revision migrations on approved Cloud branch', () => {
@@ -30,7 +31,7 @@ describe('request discussion and content revision migrations on approved Cloud b
     await db.query('begin');
     const history = await db.query(`select version
       from supabase_migrations.schema_migrations
-      where version in ('20260914045955','20260914045956','20260914075111')`);
+      where version in ('20260914045955','20260914045956','20260914075111','20260915094533')`);
     const applied = new Set(history.rows.map(row => row.version));
     const baseCount = Number(applied.has('20260914045955')) + Number(applied.has('20260914045956'));
     if (baseCount === 0 || baseCount === 2) {
@@ -98,6 +99,26 @@ describe('request discussion and content revision migrations on approved Cloud b
     expect(permissions.rows[0]).toEqual({
       comment_command: true, comments_list: true, mention_candidates: true, activity_list: true,
       attachment_claim: true, attachment_authorize: true, comment_anchor: true, storage_insert: true,
+    });
+  });
+
+  it('exposes processor finalization and cleanup through service-role wrappers', async () => {
+    const result = await db.query(`select
+      to_regprocedure('public.finalize_request_attachment(uuid,boolean,jsonb,text)') is not null as finalize_wrapper,
+      to_regprocedure('public.claim_request_attachment_cleanup(integer)') is not null as claim_cleanup_wrapper,
+      to_regprocedure('public.finish_request_attachment_cleanup(uuid,uuid,boolean)') is not null as finish_cleanup_wrapper,
+      (select prosecdef from pg_proc where oid = to_regprocedure('public.finalize_request_attachment(uuid,boolean,jsonb,text)')) as finalize_public_definer,
+      has_function_privilege('service_role','public.finalize_request_attachment(uuid,boolean,jsonb,text)','execute') as finalize_service_exec,
+      has_function_privilege('service_role','public.claim_request_attachment_cleanup(integer)','execute') as claim_cleanup_service_exec,
+      has_function_privilege('service_role','public.finish_request_attachment_cleanup(uuid,uuid,boolean)','execute') as finish_cleanup_service_exec`);
+    expect(result.rows[0]).toEqual({
+      finalize_wrapper: true,
+      claim_cleanup_wrapper: true,
+      finish_cleanup_wrapper: true,
+      finalize_public_definer: false,
+      finalize_service_exec: true,
+      claim_cleanup_service_exec: true,
+      finish_cleanup_service_exec: true,
     });
   });
 
