@@ -95,7 +95,10 @@
     "20260916161634_authorization_v2_task12_4_2_warehouse_manager_hardening.sql",
     "20260917022452_authorization_v2_task12_4_2_workflow_boundary_hardening.sql",
     "20260917024602_authorization_v2_task12_4_2_workflow_boundary_acl_fix.sql",
-    "20260917025252_authorization_v2_task12_4_2_workflow_instance_rls_fix.sql"
+    "20260917025252_authorization_v2_task12_4_2_workflow_instance_rls_fix.sql",
+    "20260918103356_authorization_v2_workflow_participant_continuity.sql",
+    "20260918103357_authorization_v2_workflow_participant_notifications.sql",
+    "20260918105055_authorization_v2_workflow_notification_assignment_fix.sql"
   ],
   "forbidIncludeAll": true
 }

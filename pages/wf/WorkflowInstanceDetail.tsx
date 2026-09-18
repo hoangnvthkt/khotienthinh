@@ -4,7 +4,7 @@ import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
     MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
     AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check,
-    Search, Edit2, Bookmark, AtSign
+    Search, Edit2, Bookmark, AtSign, Copy
 } from 'lucide-react';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
@@ -41,6 +41,7 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
 import { canPerform } from '../../lib/permissions/permissionService';
+import { buildWorkflowRoute } from '../../lib/workflowRoutes';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     DRAFT: 'Bản nháp',
@@ -351,11 +352,11 @@ interface WorkflowInstanceDetailProps {
 
 // ========== Main Component ==========
 const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanceId, onBack }) => {
-    const { id: paramId } = useParams();
-    const id = instanceId || paramId;
+    const { instanceId: paramInstanceId } = useParams();
+    const id = instanceId || paramInstanceId;
     const navigate = useNavigate();
     const {
-        templates, instances, nodes, edges, logs, loadInstanceFormData,
+        templates, instances, nodes, edges, logs, loadInstanceById, loadInstanceFormData,
         processInstance, getInstanceLogs, refreshData, updateInstanceWatchers,
         updateInstance,
     } = useWorkflow();
@@ -376,6 +377,8 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const [activeAction, setActiveAction] = useState<WorkflowInstanceAction | null>(null);
     const [previewFile, setPreviewFile] = useState<any>(null);
     const [fieldsExpanded, setFieldsExpanded] = useState(true);
+    const [directLoadState, setDirectLoadState] = useState<'idle' | 'loading' | 'resolved'>('idle');
+    const [copiedLink, setCopiedLink] = useState(false);
     const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
     // Watchers selection modal state
@@ -392,6 +395,22 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const [isSavingEdit, setIsSavingEdit] = useState(false);
 
     const instance = useMemo(() => instances.find(item => item.id === id), [instances, id]);
+
+    useEffect(() => {
+        let active = true;
+        if (!id) {
+            setDirectLoadState('resolved');
+            return () => { active = false; };
+        }
+        setDirectLoadState('loading');
+        refreshData()
+            .then(() => loadInstanceById(id))
+            .catch(error => console.error('Direct workflow instance load error:', error))
+            .finally(() => {
+                if (active) setDirectLoadState('resolved');
+            });
+        return () => { active = false; };
+    }, [id, loadInstanceById, refreshData]);
     const template = useMemo(() => templates.find(item => item.id === instance?.templateId), [templates, instance?.templateId]);
     const currentNode = useMemo(() => nodes.find(node => node.id === instance?.currentNodeId), [nodes, instance?.currentNodeId]);
     const creator = useMemo(() => users.find(item => item.id === instance?.createdBy), [users, instance?.createdBy]);
@@ -863,11 +882,32 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         await updateInstanceWatchers(instance.id, newWatchers);
     };
 
+    const handleCopyLink = async () => {
+        if (!instance) return;
+        const link = `${window.location.origin}${window.location.pathname}#${buildWorkflowRoute(instance.id)}`;
+        try {
+            await navigator.clipboard.writeText(link);
+            setCopiedLink(true);
+            window.setTimeout(() => setCopiedLink(false), 1800);
+        } catch (error) {
+            console.error('Copy workflow link error:', error);
+        }
+    };
+
     const handleSaveWatchers = async () => {
         if (!instance) return;
         await updateInstanceWatchers(instance.id, tempSelectedWatcherIds);
         setShowWatchersModal(false);
     };
+
+    if (directLoadState !== 'resolved') {
+        return (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-12 text-center">
+                <RefreshCcw className="mx-auto mb-3 animate-spin text-sky-500" size={32} />
+                <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Đang tải phiên quy trình…</p>
+            </div>
+        );
+    }
 
     if (!instance) {
         return (
@@ -1538,10 +1578,18 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                             THÔNG TIN NHIỆM VỤ
                         </h4>
                         <div className="space-y-2.5 text-xs">
-                            <div className="flex items-start gap-2">
+                            <div className="flex items-center gap-2">
                                 <span className="text-slate-400 font-mono">#</span>
                                 <span className="text-slate-500 font-semibold">Mã nhiệm vụ:</span>
                                 <span className="ml-auto font-bold text-slate-800 dark:text-slate-200">{instance.code}</span>
+                                <button
+                                    type="button"
+                                    onClick={handleCopyLink}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-bold text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                                    title="Sao chép liên kết"
+                                >
+                                    <Copy size={12} /> {copiedLink ? 'Đã sao chép' : 'Sao chép liên kết'}
+                                </button>
                             </div>
                             <div className="flex items-start gap-2">
                                 <User size={14} className="text-slate-400 shrink-0 mt-0.5" />

@@ -108,6 +108,10 @@ const isRequestTemplateEditorRoute = (pathname: string): boolean =>
 const isWorkflowInstanceRoute = (pathname: string): boolean =>
   pathname === '/wf'
   || pathname === '/wf/dashboard'
+  || (!!matchPath({ path: '/wf/:instanceId', end: true }, pathname)
+    && pathname !== '/wf/templates'
+    && pathname !== '/wf/dashboard'
+    && !pathname.startsWith('/wf/builder/'))
   || !!matchPath({ path: '/wf/instances/:id', end: true }, pathname);
 
 const canViewWorkflowInstances = (user: Parameters<typeof canPerform>[0]): boolean =>

@@ -37,6 +37,7 @@ import {
 } from '../../lib/workflowVisibility';
 import WorkflowInstanceDetail from './WorkflowInstanceDetail';
 import { canPerform } from '../../lib/permissions/permissionService';
+import { buildWorkflowRoute } from '../../lib/workflowRoutes';
 
 const STATUS_MAP: Record<WorkflowInstanceStatus, { label: string; color: string; icon: any }> = {
     DRAFT: { label: 'Bản nháp', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300', icon: Edit2 },
@@ -644,6 +645,11 @@ const WorkflowInstances: React.FC = () => {
     const [selectedTemplateIdFilter, setSelectedTemplateIdFilter] = useState('');
     const instanceRefs = useRef<Record<string, HTMLDivElement | null>>({});
     const loadedFormDataIdsRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        if (!targetInstanceId) return;
+        navigate(buildWorkflowRoute(targetInstanceId), { replace: true });
+    }, [navigate, targetInstanceId]);
 
     // File preview state
     const [previewFile, setPreviewFile] = useState<any>(null);
@@ -1703,7 +1709,14 @@ const WorkflowInstances: React.FC = () => {
                                         >
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 flex-wrap">
-                                                    <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500 shrink-0">{instance.code}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={event => { event.stopPropagation(); navigate(buildWorkflowRoute(instance.id)); }}
+                                                        className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500 shrink-0 hover:text-emerald-600 hover:underline"
+                                                        title="Mở liên kết chuẩn"
+                                                    >
+                                                        {instance.code}
+                                                    </button>
                                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0 ${statusInfo.color}`}>
                                                         <StatusIcon size={10} /> {statusInfo.label}
                                                     </span>
@@ -1908,7 +1921,7 @@ const WorkflowInstances: React.FC = () => {
                             orgUnits={orgUnits}
                             onCardClick={async (instance) => {
                                 await ensureInstanceFormData(instance);
-                                navigate(`/wf/instances/${instance.id}`);
+                                navigate(buildWorkflowRoute(instance.id));
                             }}
                             onDragComplete={async (instanceId, action, comment, assigneeIds) => {
                                 const result = await processInstance(instanceId, action, user.id, comment, assigneeIds);
@@ -1948,7 +1961,14 @@ const WorkflowInstances: React.FC = () => {
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                            <span className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">{instance.code}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => navigate(buildWorkflowRoute(instance.id))}
+                                                className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500 hover:text-emerald-600 hover:underline"
+                                                title="Mở liên kết chuẩn"
+                                            >
+                                                {instance.code}
+                                            </button>
                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${statusInfo.color}`}>
                                                 <StatusIcon size={10} /> {statusInfo.label}
                                             </span>

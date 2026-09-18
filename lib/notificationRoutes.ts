@@ -1,4 +1,5 @@
 import type { AppNotification } from './notificationService';
+import { buildWorkflowRoute } from './workflowRoutes';
 
 const getMetaValue = (metadata: Record<string, any> | undefined, keys: string[]): string | undefined => {
   for (const key of keys) {
@@ -81,7 +82,12 @@ export const resolveNotificationPath = (notification: AppNotification): string |
     return notification.link;
   }
   if (workflowInstanceId || sourceType.startsWith('workflow')) {
-    return withQuery('/wf', { instanceId: workflowInstanceId });
+    if (!workflowInstanceId) return notification.link || '/wf';
+    return buildWorkflowRoute(workflowInstanceId, {
+      nodeId: getMetaValue(metadata, ['nodeId', 'node_id']),
+      commentId: getMetaValue(metadata, ['commentId', 'comment_id']),
+      eventKey: getMetaValue(metadata, ['eventKey', 'workflowEventKey', 'workflow_event_key']),
+    });
   }
 
   // ── Request instances (Yêu cầu / RQ module) ──────────

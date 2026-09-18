@@ -42,6 +42,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/wf/dashboard':  'WF',
   '/wf':            'WF',
   '/wf/instances/:id': 'WF',
+  '/wf/:instanceId': 'WF',
   '/wf/templates':  'WF',
   '/wf/builder/:id': 'WF',
 

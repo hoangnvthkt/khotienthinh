@@ -15,6 +15,7 @@ import {
     normalizeStepAssigneeIds,
 } from '../lib/workflowAssignmentResolver';
 import { chunkValues } from '../lib/supabasePagination';
+import { isWorkflowInstanceId } from '../lib/workflowRoutes';
 
 export interface WorkflowProcessResult {
     ok: boolean;
@@ -44,6 +45,7 @@ interface WorkflowContextType {
     // Instances
     createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>, firstAssigneeUserIds?: string | string[]) => Promise<WorkflowInstance | null>;
     createDraft: (templateId: string, title: string, formData?: Record<string, any>, firstAssigneeUserIds?: string | string[]) => Promise<WorkflowInstance | null>;
+    loadInstanceById: (instanceId: string) => Promise<WorkflowInstance | null>;
     loadInstanceFormData: (instanceId: string) => Promise<Record<string, any> | null>;
     updateInstance: (instanceId: string, updates: { title?: string; formData?: Record<string, any>; initialAssigneeUserIds?: string[] }) => Promise<boolean>;
     submitDraft: (instanceId: string, firstAssigneeUserIds?: string[]) => Promise<boolean>;
@@ -316,7 +318,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         };
     }, []);
 
-    const notifyWorkflowUsers = useCallback(async (input: {
+    // Generic Workflow notification delivery is server-authoritative. This client path
+    // remains only for the legacy Material/Request-owned workflow presentation.
+    const notifyMaterialWorkflowUsers = useCallback(async (input: {
         recipientIds: Array<string | null | undefined>;
         actorId?: string;
         type: 'info' | 'warning' | 'success' | 'error';
@@ -330,6 +334,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         sourceType?: string;
         metadata?: Record<string, any>;
     }) => {
+        if (input.category !== 'material' && input.sourceType !== 'material_request') return;
         try {
             await notificationService.notifyProjectUsers({
                 recipientIds: input.recipientIds,
@@ -506,23 +511,23 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // 🔔 Notify assignees when new WF instance is created
         if (firstTaskNodeId) {
             const firstNode = templateNodes.find(n => n.id === firstTaskNodeId);
-            const recipientIds = await getWorkflowNodeRecipientIds(firstNode, createdInstance.stepAssignees);
             const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(createdInstance);
-            await notifyWorkflowUsers({
-                recipientIds,
-                actorId: userId,
-                type: 'info',
-                title: materialNotificationContext ? 'Phiếu vật tư cần xử lý' : '📋 Phiếu quy trình mới cần xử lý',
-                message: materialNotificationContext
-                    ? `Phiếu ${materialNotificationContext.metadata.requestCode || createdInstance.code} đang chờ bạn xử lý bước "${firstNode?.label || ''}".`
-                    : `"${title}" (${createdInstance.code}) — Bạn cần duyệt bước "${firstNode?.label || ''}"`,
-                sourceId: materialNotificationContext?.sourceId || `wf_new_${createdInstance.id}`,
-                category: materialNotificationContext?.category,
-                icon: materialNotificationContext?.icon,
-                link: materialNotificationContext?.link,
-                sourceType: materialNotificationContext?.sourceType,
-                metadata: { ...(materialNotificationContext?.metadata || {}), instanceId: createdInstance.id, templateId, nodeId: firstTaskNodeId },
-            });
+            if (materialNotificationContext) {
+                const recipientIds = await getWorkflowNodeRecipientIds(firstNode, createdInstance.stepAssignees);
+                await notifyMaterialWorkflowUsers({
+                    recipientIds,
+                    actorId: userId,
+                    type: 'info',
+                    title: 'Phiếu vật tư cần xử lý',
+                    message: `Phiếu ${materialNotificationContext.metadata.requestCode || createdInstance.code} đang chờ bạn xử lý bước "${firstNode?.label || ''}".`,
+                    sourceId: materialNotificationContext.sourceId || `wf_new_${createdInstance.id}`,
+                    category: materialNotificationContext.category,
+                    icon: materialNotificationContext.icon,
+                    link: materialNotificationContext.link,
+                    sourceType: materialNotificationContext.sourceType,
+                    metadata: { ...materialNotificationContext.metadata, instanceId: createdInstance.id, templateId, nodeId: firstTaskNodeId },
+                });
+            }
         }
 
         return createdInstance;
@@ -568,6 +573,67 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return formData;
     }, []);
 
+    const loadInstanceById = useCallback(async (instanceId: string): Promise<WorkflowInstance | null> => {
+        if (!isWorkflowInstanceId(instanceId)) return null;
+
+        const { data: instanceRow, error: instanceError } = await supabase
+            .from('workflow_instances')
+            .select(WORKFLOW_INSTANCE_LIST_SELECT)
+            .eq('id', instanceId)
+            .maybeSingle();
+        if (instanceError || !instanceRow) {
+            if (instanceError) console.error('loadInstanceById instance error:', instanceError);
+            return null;
+        }
+
+        try {
+            const [templateRes, nodeRes, edgeRes, logRes, printTemplateRes] = await Promise.all([
+                supabase.from('workflow_templates').select(WORKFLOW_TEMPLATE_SELECT).eq('id', instanceRow.template_id).maybeSingle(),
+                supabase.from('workflow_nodes').select(WORKFLOW_NODE_SELECT).eq('template_id', instanceRow.template_id).order('id', { ascending: true }).limit(WORKFLOW_CHILD_MAX_ROWS),
+                supabase.from('workflow_edges').select(WORKFLOW_EDGE_SELECT).eq('template_id', instanceRow.template_id).order('id', { ascending: true }).limit(WORKFLOW_CHILD_MAX_ROWS),
+                supabase.from('workflow_instance_logs').select(WORKFLOW_LOG_SELECT).eq('instance_id', instanceId).order('created_at', { ascending: true }).limit(WORKFLOW_CHILD_MAX_ROWS),
+                supabase.from('workflow_print_templates').select(WORKFLOW_PRINT_TEMPLATE_SELECT).eq('template_id', instanceRow.template_id).order('created_at', { ascending: false }).limit(WORKFLOW_CHILD_MAX_ROWS),
+            ]);
+            const firstError = [templateRes.error, nodeRes.error, edgeRes.error, logRes.error, printTemplateRes.error].find(Boolean);
+            if (firstError) {
+                console.error('loadInstanceById related data error:', firstError);
+                return null;
+            }
+
+            const loadedInstance = mapInstanceFromDB(instanceRow);
+            const loadedTemplate = templateRes.data ? mapTemplateFromDB(templateRes.data) : null;
+            const loadedNodes = (nodeRes.data || []).map(mapNodeFromDB);
+            const loadedEdges = (edgeRes.data || []).map(mapEdgeFromDB);
+            const loadedLogs = (logRes.data || []).map(mapLogFromDB);
+            const loadedPrintTemplates = (printTemplateRes.data || []).map(mapPrintTemplateFromDB);
+
+            setInstances(previous => [loadedInstance, ...previous.filter(item => item.id !== loadedInstance.id)]);
+            if (loadedTemplate) {
+                setTemplates(previous => [loadedTemplate, ...previous.filter(item => item.id !== loadedTemplate.id)]);
+            }
+            setNodes(previous => [
+                ...previous.filter(item => item.templateId !== loadedInstance.templateId),
+                ...loadedNodes.filter(item => !isTemplateRemovedNode(item)),
+            ]);
+            setEdges(previous => [
+                ...previous.filter(item => item.templateId !== loadedInstance.templateId),
+                ...loadedEdges,
+            ]);
+            setLogs(previous => [
+                ...previous.filter(item => item.instanceId !== loadedInstance.id),
+                ...loadedLogs,
+            ].sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)) || left.id.localeCompare(right.id)));
+            setPrintTemplates(previous => [
+                ...previous.filter(item => item.templateId !== loadedInstance.templateId),
+                ...loadedPrintTemplates,
+            ]);
+            return loadedInstance;
+        } catch (error) {
+            console.error('loadInstanceById related data error:', error);
+            return null;
+        }
+    }, []);
+
     const processInstance = async (
         instanceId: string,
         action: WorkflowInstanceAction,
@@ -591,12 +657,6 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 errorMessage: getWorkflowProcessErrorMessage(freshInstanceError || undefined),
             };
         }
-
-        const templateId = freshInstance.template_id;
-
-        // Fetch fresh nodes from DB for notification routing
-        const nodesRes = await supabase.from('workflow_nodes').select(WORKFLOW_NODE_SELECT).eq('template_id', templateId).limit(WORKFLOW_CHILD_PAGE_SIZE);
-        const templateNodes = (nodesRes.data || []).map(mapNodeFromDB);
 
         let { data: processedData, error: processError } = await supabase.rpc('process_workflow_instance_fast', {
             p_instance_id: instanceId,
@@ -687,6 +747,8 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 }
                 : undefined;
             const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(inst);
+            if (!materialNotificationContext) return { ok: true };
+            const templateNodes = nodes.filter(node => node.templateId === inst.templateId);
             const workflowNotificationFields = (metadata: Record<string, any> = {}) => ({
                 sourceId: materialNotificationContext?.sourceId,
                 category: materialNotificationContext?.category,
@@ -697,7 +759,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             });
             if (action === WorkflowInstanceAction.APPROVED) {
                 const route = workflowNotificationFields({ instanceId, action, status: nextInstance?.status });
-                await notifyWorkflowUsers({
+                await notifyMaterialWorkflowUsers({
                     recipientIds: [inst.createdBy],
                     actorId: userId,
                     type: 'success',
@@ -718,7 +780,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     if (nextNode && nextNode.type !== WorkflowNodeType.END) {
                         const recipientIds = await getWorkflowNodeRecipientIds(nextNode, nextInstance.stepAssignees);
                         const nextRoute = workflowNotificationFields({ instanceId, nodeId: nextNode.id, assignedUserIds: normalizedNextAssigneeIds });
-                        await notifyWorkflowUsers({
+                        await notifyMaterialWorkflowUsers({
                             recipientIds,
                             actorId: userId,
                             type: 'info',
@@ -737,7 +799,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 }
             } else if (action === WorkflowInstanceAction.REJECTED) {
                 const route = workflowNotificationFields({ instanceId, action });
-                await notifyWorkflowUsers({
+                await notifyMaterialWorkflowUsers({
                     recipientIds: [inst.createdBy],
                     actorId: userId,
                     type: 'error',
@@ -755,7 +817,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 });
             } else if (action === WorkflowInstanceAction.REVISION_REQUESTED) {
                 const route = workflowNotificationFields({ instanceId, action, currentNodeId: nextInstance?.currentNodeId });
-                await notifyWorkflowUsers({
+                await notifyMaterialWorkflowUsers({
                     recipientIds: [inst.createdBy],
                     actorId: userId,
                     type: 'warning',
@@ -776,7 +838,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                     const revisionNode = templateNodes.find(n => n.id === nextInstance.currentNodeId);
                     const recipientIds = await getWorkflowNodeRecipientIds(revisionNode, nextInstance.stepAssignees);
                     const revisionRoute = workflowNotificationFields({ instanceId, nodeId: revisionNode?.id });
-                    await notifyWorkflowUsers({
+                    await notifyMaterialWorkflowUsers({
                         recipientIds,
                         actorId: userId,
                         type: 'info',
@@ -924,7 +986,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setInstances(prev => prev.map(i => i.id === instanceId ? { ...i, watchers } : i));
         if (currentInstance && addedWatchers.length > 0) {
             const materialNotificationContext = await getMaterialRequestWorkflowNotificationContext(currentInstance);
-            await notifyWorkflowUsers({
+            await notifyMaterialWorkflowUsers({
                 recipientIds: addedWatchers,
                 type: 'info',
                 title: materialNotificationContext ? 'Bạn được thêm theo dõi phiếu vật tư' : '👀 Bạn được tag theo dõi quy trình',
@@ -978,7 +1040,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         templates, nodes, edges, instances, logs, printTemplates, isLoading,
         createTemplate, updateTemplate, deleteTemplate,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
-        createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
+        createInstance, createDraft, loadInstanceById, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
         uploadPrintTemplate, deletePrintTemplate, getPrintTemplates,
         refreshData,
     };

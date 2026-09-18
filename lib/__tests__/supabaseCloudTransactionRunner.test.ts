@@ -32,4 +32,11 @@ describe('Supabase Cloud transaction runner', () => {
     expect(sql).toContain('release savepoint smoke_1;');
     expect(sql).toContain('savepoint smoke_2;');
   });
+
+  it('can compose dependent migration SQL in one rollback transaction', () => {
+    const sql = buildRollbackSql('create table one(id int);\n\ncreate table two(id int);');
+
+    expect(sql).toContain('create table one');
+    expect(sql).toContain('create table two');
+  });
 });

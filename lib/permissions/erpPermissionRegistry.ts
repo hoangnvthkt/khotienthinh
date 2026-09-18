@@ -253,7 +253,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     label: 'Quy trình',
     sortOrder: 60,
     modules: [
-      module('workflow.instance', 'Phiên quy trình', 'WF', ['/wf/dashboard', '/wf', '/wf/instances/:id'], 10, actions('workflow.instance', 'WF', '/wf', WORKFLOW_SCOPE, [
+      module('workflow.instance', 'Phiên quy trình', 'WF', ['/wf/dashboard', '/wf', '/wf/instances/:id', '/wf/:instanceId'], 10, actions('workflow.instance', 'WF', '/wf', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
         ['create', 'Tạo', 20],
         ['act_assigned', 'Xử lý được giao', 30],

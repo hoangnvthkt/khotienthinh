@@ -1,6 +1,6 @@
 
 import React, { Suspense, useEffect, useRef } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoadingSpinner from './components/LoadingSpinner';
 import Login from './pages/Login';
@@ -28,6 +28,7 @@ import { UserSessionTelemetryHost } from './hooks/useUserSessionTelemetry';
 import { DailyLoginXpHost } from './hooks/useDailyLoginXp';
 import { shouldWarmWorkflowData } from './lib/workflowWarmup';
 import { getWorkflowWarmupModules } from './lib/appDataWarmupPolicy';
+import { buildWorkflowRoute } from './lib/workflowRoutes';
 
 // Lazy load all page components for code splitting
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
@@ -163,6 +164,11 @@ const RequestListRoute: React.FC = () => {
 const RequestApprovalPhase1Guard: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   isRequestApprovalPhase1Enabled ? <>{children}</> : <Navigate to="/" replace />;
 
+const WorkflowLegacyInstanceRedirect: React.FC = () => {
+  const { id } = useParams();
+  return id ? <Navigate to={buildWorkflowRoute(id)} replace /> : <Navigate to="/wf" replace />;
+};
+
 const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
 const WorkHome = React.lazy(() => import('./pages/work/WorkHome'));
 const WorkSpacePage = React.lazy(() => import('./pages/work/WorkSpacePage'));
@@ -197,10 +203,11 @@ const AppRoutes: React.FC = () => {
           <Route path="reports" element={<Reports />} />
           <Route path="trace" element={<DocumentTracePage />} />
           <Route path="wf" element={<WorkflowInstances />} />
-          <Route path="wf/instances/:id" element={<WorkflowInstanceDetail />} />
           <Route path="wf/dashboard" element={<WorkflowDashboard />} />
           <Route path="wf/templates" element={<WorkflowTemplates />} />
           <Route path="wf/builder/:id" element={<WorkflowBuilder />} />
+          <Route path="wf/:instanceId" element={<WorkflowInstanceDetail />} />
+          <Route path="wf/instances/:id" element={<WorkflowLegacyInstanceRedirect />} />
           <Route path="users" element={<Navigate to="/settings" replace />} />
           <Route path="settings" element={<Settings />} />
           <Route path="settings/permission-health" element={<Settings />} />

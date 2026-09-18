@@ -49,6 +49,7 @@ import { useRequestList } from '../hooks/useRequestList';
 import { AppNotification, notificationService } from '../lib/notificationService';
 import { resolveNotificationPath } from '../lib/notificationRoutes';
 import { buildRequestRoute } from '../lib/requestRoutes';
+import { buildWorkflowRoute } from '../lib/workflowRoutes';
 import { canUseModule, resolveHomeCapabilities } from '../lib/homeCapabilities';
 import { isRequestModuleWorkflowTemplate } from '../lib/workflowVisibility';
 import { canViewModule } from '../lib/permissions/permissionService';
@@ -627,7 +628,7 @@ const Home: React.FC = () => {
         nextAction: `Xử lý bước ${currentNode?.label || 'hiện tại'}${template?.name ? ` • ${template.name}` : ''}`,
         actorName: label,
         dueAt: instance.updatedAt || instance.createdAt,
-        href: `/wf?instanceId=${instance.id}`,
+        href: buildWorkflowRoute(instance.id),
         actionLabel: 'Mở quy trình',
       } as HomeActionItem;
     })

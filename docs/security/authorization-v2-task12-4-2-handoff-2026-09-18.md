@@ -252,3 +252,10 @@ Hiện chưa có observation T0 hợp lệ. Không suy T0 từ ngày commit, ng�
 ## 9. Prompt dùng ngay cho phiên chat mới
 
 > Tiếp tục Authorization V2 theo `docs/security/authorization-v2-task12-4-2-handoff-2026-09-18.md`. Dùng worktree `/Users/admin/khotienthinh/.worktrees/authorization-v2-task12-4-2`, không tạo worktree/sub-agent, không dùng Supabase local/Docker. E36 đã `PASS` và assignment Hương đã `REVOKED`; nếu cần chỉ chạy checker Cloud read-only để xác nhận final state, không assign lại `WORKFLOW_USER` và không gửi lại cleanup command. Giữ `system.wf.view`, không tạo manifest/revoke legacy shell cho 13 cohort `owner_pending`, không đặt observation T0 và không triển khai Task 13/drop legacy schema trước khi toàn bộ gate đạt.
+
+## Cập nhật E37 — Workflow continuity/deeplink/notification
+
+- Generic Workflow đã có participant ledger với RLS/backfill và selector theo participant; prior approver của `WF-2026-172` đã được ghi nhận continuity (bằng chứng Cloud chỉ lưu count/boolean redacted).
+- Frontend đã có `/wf/:instanceId`, redirect legacy, direct loader vượt cache 300, canonical notification resolver, link mã nghiệp vụ và copy-link. Generic React fan-out đã cutover sang server worker; Request/Material specialized path được giữ.
+- Cloud đã apply participant/notification migrations và một forward-fix assignment resolver; Edge Function `process-workflow-notifications` đã deploy, health pass. Notification gate vẫn `enabled=false`; backlog cũ của `WF-2026-172` gồm 3 event đã được suppress `pre_rollout_backlog` sau cutoff.
+- Verification hiện tại: Vitest `422/422` files, `1993/1993` tests; TypeScript/build, baseline `94 active / 402 archived`, Cloud rollback smoke và migration dry-run đều pass. Chưa bật gate trước khi release frontend canonical route lên Production; sau deploy cần chạy canary/cron smoke rồi mới enable.

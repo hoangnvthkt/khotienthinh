@@ -42,6 +42,7 @@ export const runCloudRollbackTransaction = ({
   projectRoot,
   expectedProjectRef,
   migrationFile,
+  migrationFiles = [],
   smokeFiles = [],
   env = process.env,
   command = process.platform === 'win32' ? 'npx.cmd' : 'npx',
@@ -50,7 +51,8 @@ export const runCloudRollbackTransaction = ({
   const linkedRef = readFileSync(join(root, 'supabase', '.temp', 'project-ref'), 'utf8').trim();
   assertCloudTarget(linkedRef, expectedProjectRef);
 
-  const migrationSql = readFileSync(resolve(root, migrationFile), 'utf8');
+  const files = migrationFiles.length > 0 ? migrationFiles : [migrationFile];
+  const migrationSql = readSqlFiles(root, files).join('\n\n');
   const smokeSql = readSqlFiles(root, smokeFiles);
   const scratchDir = mkdtempSync(join(tmpdir(), 'vioo-supabase-cloud-'));
   const transactionFile = join(scratchDir, 'rollback.sql');

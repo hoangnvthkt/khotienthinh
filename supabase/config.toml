@@ -19,6 +19,14 @@ verify_jwt = false
 import_map = "./functions/process-request-notifications/deno.json"
 entrypoint = "./functions/process-request-notifications/index.ts"
 
+[functions.process-workflow-notifications]
+enabled = true
+# Cron authenticates this internal worker with the Vault-held secret API key.
+# Gateway JWT verification stays off; the secret-boundary handler validates the key.
+verify_jwt = false
+import_map = "./functions/process-workflow-notifications/deno.json"
+entrypoint = "./functions/process-workflow-notifications/index.ts"
+
 [functions.process-work-notifications]
 enabled = true
 # The worker validates x-web-push-secret against the existing Edge/Vault secret.

@@ -7,19 +7,19 @@ const args = process.argv.slice(2);
 const values = (flag) => args.flatMap((arg, index) => arg === flag ? [args[index + 1]] : []).filter(Boolean);
 const value = (flag) => values(flag).at(-1);
 
-const migrationFile = value('--migration');
+const migrationFiles = values('--migration');
 const expectedProjectRef = value('--expected-ref');
 const smokeFiles = values('--smoke');
 
-if (!migrationFile || !expectedProjectRef) {
-  process.stderr.write('Usage: node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration <file> [--smoke <file>]\n');
+if (migrationFiles.length === 0 || !expectedProjectRef) {
+  process.stderr.write('Usage: node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> --migration <file> [--migration <file>] [--smoke <file>]\n');
   process.exitCode = 2;
 } else {
   try {
     const output = runCloudRollbackTransaction({
       projectRoot: resolve('.'),
       expectedProjectRef,
-      migrationFile,
+      migrationFiles,
       smokeFiles,
     });
     if (output) process.stdout.write(`${output}\n`);
