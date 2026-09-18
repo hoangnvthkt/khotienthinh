@@ -4,6 +4,7 @@ import {
   canPerform,
   canPerformHrmTemplatePermission,
   canViewModule,
+  canViewWorkflowModule,
   canViewRoute,
   getUserAuthorizationSnapshot,
   getInheritedPermissionCodes,
@@ -273,6 +274,32 @@ describe('permissionService', () => {
     expect(canPerform(workflowUser, 'workflow.template.view')).toBe(false);
     expect(canViewRoute(workflowUser, '/wf/templates')).toBe(false);
     expect(canViewRoute(workflowUser, '/wf/builder/template-1')).toBe(false);
+  });
+
+  it('does not use the compatibility Workflow shell to keep the Sidebar module visible', () => {
+    const shellOnly = user({
+      permissionGrants: [{
+        id: 'workflow-shell',
+        userId: 'user-1',
+        permissionCode: 'system.wf.view',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    });
+    const templateViewer = user({
+      permissionGrants: [{
+        id: 'workflow-template-view',
+        userId: 'user-1',
+        permissionCode: 'workflow.template.view',
+        scopeType: 'global',
+        scopeId: '*',
+        isActive: true,
+      }],
+    });
+
+    expect(canViewWorkflowModule(shellOnly)).toBe(false);
+    expect(canViewWorkflowModule(templateViewer)).toBe(true);
   });
 
   it('does not fall back to HRM module-admin aliases', () => {

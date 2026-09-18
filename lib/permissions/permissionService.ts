@@ -209,6 +209,25 @@ export const canViewModule = (
   ));
 };
 
+/** Sidebar visibility for Workflow must use canonical workflow view actions only.
+ * The legacy system.wf.view shell remains for compatibility and must not keep
+ * the module icon visible after all workflow.* view capabilities are revoked.
+ */
+export const canViewWorkflowModule = (
+  user: PermissionUser,
+): boolean => {
+  const snapshot = getUserAuthorizationSnapshot(user);
+  if (!snapshot) return false;
+
+  return ['workflow.instance.view', 'workflow.template.view'].some(permissionCode =>
+    snapshot.sources.some(source => source.permissionCode === permissionCode
+      && evaluateCapability(snapshot, permissionCode, {
+        scopeType: source.scopeType,
+        scopeId: source.scopeId,
+      }).allowed)
+  );
+};
+
 export const canManageMaster = (
   user: Parameters<typeof canPerform>[0],
   permissionCode: string,

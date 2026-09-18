@@ -60,6 +60,20 @@ const requestTemplateManager = (): User => ({
   })),
 });
 
+const workflowShellOnly = (): User => ({
+  id: 'workflow-shell-only',
+  name: 'Workflow shell only',
+  email: 'workflow-shell@example.com',
+  role: Role.EMPLOYEE,
+  permissionGrants: [{
+    userId: 'workflow-shell-only',
+    permissionCode: 'system.wf.view',
+    scopeType: 'global',
+    scopeId: '*',
+    isActive: true,
+  }],
+});
+
 describe('Sidebar request navigation', () => {
   beforeEach(() => {
     currentUser = requestTemplateManager();
@@ -83,5 +97,21 @@ describe('Sidebar request navigation', () => {
 
     expect(html).toContain('Mẫu yêu cầu');
     expect(html).toContain('href="/rq/templates"');
+  });
+
+  it('does not show the Workflow module icon from a compatibility shell alone', () => {
+    currentUser = workflowShellOnly();
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/">
+        <Sidebar
+          isOpen
+          toggle={() => undefined}
+          collapsed={false}
+          setCollapsed={() => undefined}
+        />
+      </StaticRouter>,
+    );
+
+    expect(html).not.toContain('>QT<');
   });
 });
