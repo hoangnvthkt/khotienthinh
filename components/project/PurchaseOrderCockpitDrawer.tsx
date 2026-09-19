@@ -49,6 +49,7 @@ import {
 import { getPurchaseOrderDisplayLineAmount } from '../../lib/purchaseOrderAmount';
 import { getPurchaseOrderLineDemandQty } from '../../lib/purchaseOrderDemand';
 import { getPurchaseOrderScheduleLineUnitPrice } from '../../lib/purchaseOrderSchedulePricing';
+import { buildPurchaseOrderDossierQuantitySummary } from '../../lib/purchaseOrderDossierReadModel';
 import type {
   PurchaseOrderReceiptStats,
   PurchaseOrderUiAction,
@@ -119,6 +120,8 @@ export type PurchaseOrderCockpitDrawerProps = {
   onRemoveFailedDeliveryBatch: (batch: PurchaseOrderDeliveryBatch) => void | Promise<void>;
   onRemoveFailedDeliveryGroup: (group: PurchaseOrderDeliveryPrintGroupView) => void | Promise<void>;
   onBatchSaved?: (batchId?: string) => void | Promise<void>;
+  onRetrySupplierPayable?: () => void | Promise<void>;
+  onOpenSupplierPayable?: (document: SupplierPayableDocument) => void;
   onClose: () => void;
 };
 
@@ -299,6 +302,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   onRemoveFailedDeliveryBatch,
   onRemoveFailedDeliveryGroup,
   onBatchSaved,
+  onRetrySupplierPayable,
+  onOpenSupplierPayable,
   onClose,
 }) => {
   const { user, users = [], employees = [] } = useApp();
@@ -371,27 +376,29 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
     }
     : undefined;
   const practicalQuantitySummary = useMemo(() => {
-    const demandQty = po.items.reduce((sum, item) => sum + getPurchaseOrderLineDemandQty(
-      po,
-      item.lineId || item.itemId,
-      poRequestLinks,
-      inventoryItems,
-    ), 0);
-    const approvedBatches = deliveryBatches.filter(batch => (
-      batch.status !== 'cancelled' && batch.approvalStatus === 'approved'
-    ));
-    const approvedQty = approvedBatches.reduce(
-      (sum, batch) => sum + batch.lines.reduce((lineSum, line) => lineSum + Number(line.plannedQty || 0), 0),
-      0,
+    const deliveryLineByPoLineId = new Map(
+      deliveryBatches.flatMap(batch => batch.lines).map(line => [line.purchaseOrderLineId, line]),
     );
-    const receivedQty = approvedBatches
-      .filter(batch => ['received', 'received_short', 'received_over'].includes(batch.status))
-      .reduce(
-        (sum, batch) => sum + batch.lines.reduce((lineSum, line) => lineSum + Number(line.acceptedStockQty || 0), 0),
-        0,
-      );
-    return { demandQty, approvedQty, receivedQty, remainingQty: demandQty - receivedQty };
-  }, [deliveryBatches, inventoryItems, po, poRequestLinks]);
+    return buildPurchaseOrderDossierQuantitySummary({
+      demandLines: po.items.map(item => {
+        const purchaseOrderLineId = item.lineId || item.itemId;
+        const deliveryLine = deliveryLineByPoLineId.get(purchaseOrderLineId);
+        return {
+          purchaseOrderLineId,
+          itemId: item.itemId,
+          purchaseQty: getPurchaseOrderLineDemandQty(po, purchaseOrderLineId, poRequestLinks),
+          purchaseUnit: item.purchaseUnitSnapshot || item.unit || deliveryLine?.unit || null,
+          stockUnit: item.stockUnitSnapshot || item.unitSnapshot || deliveryLine?.stockUnit || null,
+          conversionFactor: item.purchaseConversionFactor ?? null,
+        };
+      }),
+      deliveryBatches,
+    });
+  }, [deliveryBatches, po, poRequestLinks]);
+  const practicalAggregate = practicalQuantitySummary.aggregate;
+  const displayedReceiptPercent = isPackageV2
+    ? practicalAggregate?.receivedPercent ?? null
+    : receiptPercent;
   const uniqueSpecKeys = useMemo(() => Array.from(
     new Set(
       po.items.flatMap(item =>
@@ -415,7 +422,12 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
     const scheduleGroups = deliveryBatches.map(batch => {
       const printGroup = getPrintGroupForBatch(batch);
       const targetWarehouse = warehouses.find(row => row.id === (batch as any).targetWarehouseId)?.name || targetWarehouseName || '—';
-      const totalQty = batch.lines.reduce((sum, line) => sum + Number(line.stockPlannedQty ?? line.plannedQty ?? 0), 0);
+      const physicalKeys = new Set(batch.lines.map(line => (
+        `${line.itemId}|${String(line.stockUnit || line.unit || '').trim().toLowerCase()}`
+      )));
+      const totalQty = physicalKeys.size === 1
+        ? batch.lines.reduce((sum, line) => sum + Number(line.stockPlannedQty ?? line.plannedQty ?? 0), 0)
+        : null;
       const totalAmount = batch.lines.reduce((sum, line) => (
         sum + Number(line.plannedQty || 0) * getPurchaseOrderScheduleLineUnitPrice({
           po,
@@ -457,7 +469,12 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
       .filter(group => !group.scheduleBatch && !schedulePrintGroupKeys.has(group.key))
       .map((group, index) => {
         const targetWarehouse = warehouses.find(row => row.id === group.targetWarehouseId)?.name || targetWarehouseName || '—';
-        const totalQty = group.lines.reduce((sum, line) => sum + Number(line.issuedQty || line.receivedQty || 0), 0);
+        const physicalKeys = new Set(group.lines.map(line => (
+          `${line.itemId}|${String(line.unit || line.deliveryUnit || '').trim().toLowerCase()}`
+        )));
+        const totalQty = physicalKeys.size === 1
+          ? group.lines.reduce((sum, line) => sum + Number(line.issuedQty || line.receivedQty || 0), 0)
+          : null;
         const totalAmount = group.lines.reduce((sum, line) => sum + Number(line.issuedQty || 0) * Number(line.deliveryUnitPrice || 0), 0);
         const vatRate = Number(group.scheduleBatch?.vatRate ?? po.vatRate ?? 0) || 0;
         const vatAmount = Math.round(totalAmount * vatRate / 100);
@@ -490,7 +507,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
   }, [deliveryBatches, deliveryPrintGroups, getPrintGroupForBatch, getWmsTransactionIdForBatch, po, targetWarehouseName, warehouses]);
 
   const hasWmsPending = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'wms_pending');
-  const hasReceivedDelivery = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'received') || receiptStats.receivedQty > 0;
+  const hasReceivedDelivery = deliveryTimelineGroups.some(group => normalizeDeliveryTimelineStatus(group.status) === 'received')
+    || (isPackageV2 ? practicalQuantitySummary.counts.terminalBatches > 0 : receiptStats.receivedQty > 0);
   const hasDelivery = deliveryTimelineGroups.length > 0;
 
   // Resolve actors for the stepper (Chỉ gán người cho bước Tạo và bước Duyệt)
@@ -559,7 +577,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         icon: <ShieldCheck size={15} className="text-amber-600 dark:text-amber-400" />,
         mainLabel: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Kiểm nhận SL/CL',
         roleLabel: 'Kiểm nhận',
-        dateLabel: `Nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)}`,
+        dateLabel: practicalAggregate
+          ? `Nhận ${fmtQty(practicalAggregate.receivedQty)}/${fmtQty(practicalAggregate.demandQty)} ${practicalAggregate.stockUnit}`
+          : `${practicalQuantitySummary.counts.receivedLines} dòng đã nhận`,
         statusBadge: hasReceivedDelivery ? 'Đã nhận hàng' : hasWmsPending ? 'Chờ kho duyệt' : 'Chờ giao',
         tone: hasReceivedDelivery ? 'emerald' : hasWmsPending ? 'amber' : 'slate',
       },
@@ -641,29 +661,29 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
         key: 'payable',
         stepNo: 5,
         title: 'Công nợ NCC',
-        done: supplierPayableDocuments.length > 0,
-        current: hasReceivedDelivery && supplierPayableDocuments.length === 0,
+        done: !supplierPayableError && supplierPayableDocuments.length > 0,
+        current: !supplierPayableError && hasReceivedDelivery && supplierPayableDocuments.length === 0,
         user: null,
         icon: <WalletCards size={15} className="text-indigo-600 dark:text-indigo-400" />,
-        mainLabel: supplierPayableDocuments.length > 0 ? payableView.label : 'Công nợ NCC',
+        mainLabel: supplierPayableError ? 'Không tải được công nợ' : supplierPayableDocuments.length > 0 ? payableView.label : 'Công nợ NCC',
         roleLabel: 'Hạch toán AP',
-        dateLabel: payableView.label,
-        statusBadge: supplierPayableDocuments.length > 0 ? 'Có AP' : 'Chưa tạo AP',
-        tone: supplierPayableDocuments.length > 0 ? 'emerald' : 'slate',
+        dateLabel: supplierPayableError ? 'Không xác định' : payableView.label,
+        statusBadge: supplierPayableError ? 'Lỗi dữ liệu AP' : supplierPayableDocuments.length > 0 ? 'Có AP' : 'Chưa tạo AP',
+        tone: supplierPayableError ? 'rose' : supplierPayableDocuments.length > 0 ? 'emerald' : 'slate',
       },
       {
         key: 'payment',
         stepNo: 6,
         title: 'Thanh toán',
-        done: payableStatus === 'paid',
-        current: supplierPayableDocuments.length > 0 && payableOutstanding > 0,
+        done: !supplierPayableError && payableStatus === 'paid',
+        current: !supplierPayableError && supplierPayableDocuments.length > 0 && payableOutstanding > 0,
         user: null,
         icon: <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />,
-        mainLabel: payableStatus === 'paid' ? 'Đã thanh toán' : payableOutstanding > 0 ? 'Còn phải trả' : 'Thanh toán',
+        mainLabel: supplierPayableError ? 'Chưa xác định' : payableStatus === 'paid' ? 'Đã thanh toán' : payableOutstanding > 0 ? 'Còn phải trả' : 'Thanh toán',
         roleLabel: 'Chi trả NCC',
-        dateLabel: payableOutstanding > 0 ? `Còn ${fmtMoney(payableOutstanding)} đ` : 'Hoàn tất',
-        statusBadge: payableStatus === 'paid' ? 'Đã chi' : 'Chưa trả hết',
-        tone: payableStatus === 'paid' ? 'emerald' : 'slate',
+        dateLabel: supplierPayableError ? 'Không xác định' : payableOutstanding > 0 ? `Còn ${fmtMoney(payableOutstanding)} đ` : 'Hoàn tất',
+        statusBadge: supplierPayableError ? 'Không xác định' : payableStatus === 'paid' ? 'Đã chi' : 'Chưa trả hết',
+        tone: supplierPayableError ? 'rose' : payableStatus === 'paid' ? 'emerald' : 'slate',
       },
     ];
 
@@ -790,7 +810,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                     const containerClass = isDone
                       ? 'border-emerald-200/80 bg-emerald-50/40 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/20'
                       : isCurrent
-                        ? 'border-teal-400 bg-teal-50/50 text-teal-900 ring-2 ring-teal-400/20 shadow-xs dark:border-teal-700 dark:bg-teal-950/30'
+                        ? 'border-cyan-400 bg-teal-50/50 text-teal-900 ring-2 ring-teal-400/20 shadow-xs dark:border-cyan-700 dark:bg-teal-950/30'
                         : 'border-slate-200/80 bg-slate-50/60 text-slate-400 dark:border-slate-800 dark:bg-slate-900/40';
 
                     return (
@@ -857,25 +877,39 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                       <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Nhu cầu Công trường</span>
-                      <strong className="mt-1 block text-lg font-black text-slate-800">{fmtQty(practicalQuantitySummary.demandQty)}</strong>
+                      <strong className="mt-1 block text-lg font-black text-slate-800">
+                        {practicalAggregate ? `${fmtQty(practicalAggregate.demandQty)} ${practicalAggregate.stockUnit}` : `${practicalQuantitySummary.counts.demandLines} dòng`}
+                      </strong>
                     </div>
                     <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3">
                       <span className="block text-[10px] font-black uppercase tracking-wider text-blue-500">Đã duyệt đặt</span>
-                      <strong className="mt-1 block text-lg font-black text-blue-700">{fmtQty(practicalQuantitySummary.approvedQty)}</strong>
+                      <strong className="mt-1 block text-lg font-black text-blue-700">
+                        {practicalAggregate ? `${fmtQty(practicalAggregate.approvedQty)} ${practicalAggregate.stockUnit}` : `${practicalQuantitySummary.counts.approvedLines} dòng`}
+                      </strong>
                     </div>
                     <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
                       <span className="block text-[10px] font-black uppercase tracking-wider text-emerald-600">Đã thực nhập</span>
-                      <strong className="mt-1 block text-lg font-black text-emerald-700">{fmtQty(practicalQuantitySummary.receivedQty)}</strong>
+                      <strong className="mt-1 block text-lg font-black text-emerald-700">
+                        {practicalAggregate ? `${fmtQty(practicalAggregate.receivedQty)} ${practicalAggregate.stockUnit}` : `${practicalQuantitySummary.counts.receivedLines} dòng`}
+                      </strong>
                     </div>
                     <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
                       <span className="block text-[10px] font-black uppercase tracking-wider text-amber-600">Còn lại / Vượt</span>
-                      <strong className={`mt-1 block text-lg font-black ${practicalQuantitySummary.remainingQty < 0 ? 'text-rose-700' : 'text-amber-700'}`}>
-                        {practicalQuantitySummary.remainingQty < 0
-                          ? `Vượt ${fmtQty(Math.abs(practicalQuantitySummary.remainingQty))}`
-                          : fmtQty(practicalQuantitySummary.remainingQty)}
+                      <strong className={`mt-1 block text-lg font-black ${practicalAggregate && practicalAggregate.remainingQty < 0 ? 'text-rose-700' : 'text-amber-700'}`}>
+                        {practicalAggregate
+                          ? practicalAggregate.remainingQty < 0
+                            ? `Vượt ${fmtQty(Math.abs(practicalAggregate.remainingQty))} ${practicalAggregate.stockUnit}`
+                            : `${fmtQty(practicalAggregate.remainingQty)} ${practicalAggregate.stockUnit}`
+                          : `${practicalQuantitySummary.groups.length} nhóm vật tư`}
                       </strong>
                     </div>
                   </div>
+                  {!practicalAggregate && practicalQuantitySummary.groups.length > 0 && (
+                    <p className="mt-3 text-[11px] font-bold text-amber-700">
+                      Đối chiếu theo từng vật tư và ĐVT kho; không cộng thành một tổng khối lượng vật lý.
+                      {practicalQuantitySummary.qualityIssues.length > 0 ? ' Có dòng thiếu snapshot quy đổi cần kiểm tra.' : ''}
+                    </p>
+                  )}
                 </section>
               )}
 
@@ -924,14 +958,20 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                       <div>
                         <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 mb-1">
                           <span>Tiến độ nhận hàng</span>
-                          <span className="text-teal-600 font-mono font-bold">{receiptPercent}%</span>
+                          <span className="text-teal-600 font-mono font-bold">
+                            {displayedReceiptPercent == null ? 'Theo từng dòng' : `${displayedReceiptPercent}%`}
+                          </span>
                         </div>
                         <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                          <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300" style={{ width: `${receiptPercent}%` }} />
+                          {displayedReceiptPercent != null && (
+                            <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-300" style={{ width: `${Math.min(100, displayedReceiptPercent)}%` }} />
+                          )}
                         </div>
                       </div>
                       <span className="mt-1 block text-[10px] font-bold text-slate-400 truncate">
-                        Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn {fmtQty(receiptStats.remainingQty)}
+                        {isPackageV2 && !practicalAggregate
+                          ? `${practicalQuantitySummary.counts.receivedLines} dòng đã nhận • ${practicalQuantitySummary.groups.length} nhóm vật tư`
+                          : `Đã nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)} • Còn ${fmtQty(receiptStats.remainingQty)}`}
                       </span>
                     </div>
                   </div>
@@ -955,7 +995,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                         Danh mục Hàng hóa & Vật tư ({po.items.length} mặt hàng)
                       </h4>
                       <p className="text-xs font-semibold text-slate-400 truncate">
-                        Đã nhận {fmtQty(receiptStats.receivedQty)}/{fmtQty(receiptStats.orderedQty)} • Còn thiếu {fmtQty(receiptStats.remainingQty)}
+                        {isPackageV2 && !practicalAggregate
+                          ? `${practicalQuantitySummary.counts.receivedLines} dòng đã nhận • ${practicalQuantitySummary.groups.length} nhóm vật tư`
+                          : `Đã nhận ${fmtQty(receiptStats.receivedQty)}/${fmtQty(receiptStats.orderedQty)} • Còn thiếu ${fmtQty(receiptStats.remainingQty)}`}
                       </p>
                     </div>
                   </div>
@@ -1144,7 +1186,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                   </div>
                                   <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
                                     <span className="block text-[10px] font-black uppercase text-slate-400">Tổng KL</span>
-                                    <strong className="text-xs font-black">{fmtQty(group.totalQty)}</strong>
+                                    <strong className="text-xs font-black">
+                                      {group.totalQty == null ? 'Theo từng dòng' : fmtQty(group.totalQty)}
+                                    </strong>
                                   </div>
                                   <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5">
                                     <span className="block text-[10px] font-black uppercase text-slate-400">Giá trị đợt gồm VAT</span>
@@ -1529,7 +1573,14 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                     {supplierPayableLoading && <Loader2 size={14} className="animate-spin text-slate-400" />}
                   </div>
                   {supplierPayableError ? (
-                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">{supplierPayableError}</div>
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-700">
+                      <div>{supplierPayableError}</div>
+                      {onRetrySupplierPayable && (
+                        <button type="button" onClick={() => void onRetrySupplierPayable()} className="mt-2 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-[11px] font-black text-rose-700 hover:bg-rose-100">
+                          Thử tải lại
+                        </button>
+                      )}
+                    </div>
                   ) : supplierPayableDocuments.length === 0 ? (
                     <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4 text-xs font-bold text-slate-400 text-center">
                       Chưa có chứng từ công nợ NCC cho PO này.
@@ -1537,7 +1588,13 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                   ) : (
                     <div className="mt-3 space-y-2">
                       {supplierPayableDocuments.map(document => (
-                        <div key={document.id} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-xs font-semibold">
+                        <button
+                          type="button"
+                          key={document.id}
+                          onClick={() => onOpenSupplierPayable?.(document)}
+                          disabled={!onOpenSupplierPayable}
+                          className="block w-full rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-left text-xs font-semibold hover:border-teal-200 hover:bg-teal-50/40 disabled:cursor-default disabled:hover:border-slate-100 disabled:hover:bg-slate-50/70"
+                        >
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-xs font-black text-slate-800">{document.code || document.documentNo}</div>
                             <span className={`rounded-full border px-2 py-0.2 text-[10px] font-black ${payableStatusView(document.status).className}`}>{payableStatusView(document.status).label}</span>
@@ -1547,7 +1604,7 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                             <span>Đã trả: <strong className="font-black text-slate-800">{fmtMoney(document.paidAmount)} đ</strong></span>
                             <span>Còn lại: <strong className="font-black text-emerald-700">{fmtMoney(document.outstandingAmount)} đ</strong></span>
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}

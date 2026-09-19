@@ -1130,6 +1130,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     const [poPayableDocumentsByPoId, setPoPayableDocumentsByPoId] = useState<Record<string, SupplierPayableDocument[]>>({});
     const [loadingPoPayableId, setLoadingPoPayableId] = useState<string | null>(null);
     const [poPayableErrorsByPoId, setPoPayableErrorsByPoId] = useState<Record<string, string | null>>({});
+    const poPayableRequestGenerationRef = useRef(0);
     const [directPurchases, setDirectPurchases] = useState<SiteDirectPurchase[]>([]);
     const [loadingDirectPurchases, setLoadingDirectPurchases] = useState(false);
     const [supplierContracts, setSupplierContracts] = useState<SupplierContract[]>([]);
@@ -6290,29 +6291,37 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     );
 
     const loadPoPayableDocuments = useCallback(async (po: PurchaseOrder) => {
+        const requestGeneration = ++poPayableRequestGenerationRef.current;
         setLoadingPoPayableId(po.id);
         setPoPayableErrorsByPoId(prev => ({ ...prev, [po.id]: null }));
         try {
-            const documents = await supplierPayableService.listDocuments({
+            const documents = await supplierPayableService.listDocumentsByPurchaseOrder({
+                purchaseOrderId: po.id,
                 projectId: po.projectId || projectId || null,
                 constructionSiteId: po.constructionSiteId || constructionSiteId || null,
-                sourceType: 'purchase_order',
-                sourceId: po.id,
             });
+            if (requestGeneration !== poPayableRequestGenerationRef.current) return documents;
             setPoPayableDocumentsByPoId(prev => ({ ...prev, [po.id]: documents }));
             return documents;
         } catch (error: any) {
+            if (requestGeneration !== poPayableRequestGenerationRef.current) return [];
             logApiError('supplyChain.loadPoPayableDocuments', error);
             const message = getApiErrorMessage(error, 'Không thể tải chứng từ công nợ NCC.');
             setPoPayableErrorsByPoId(prev => ({ ...prev, [po.id]: message }));
             return [];
         } finally {
-            setLoadingPoPayableId(current => current === po.id ? null : current);
+            if (requestGeneration === poPayableRequestGenerationRef.current) {
+                setLoadingPoPayableId(current => current === po.id ? null : current);
+            }
         }
     }, [constructionSiteId, projectId]);
 
     useEffect(() => {
-        if (!canViewPo || !selectedPo) return;
+        if (!canViewPo || !selectedPo) {
+            poPayableRequestGenerationRef.current += 1;
+            setLoadingPoPayableId(null);
+            return;
+        }
         void loadPoPayableDocuments(selectedPo);
     }, [canViewPo, loadPoPayableDocuments, selectedPo]);
 
@@ -7485,6 +7494,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         supplierPayableDocuments={payableDocuments}
                         supplierPayableLoading={loadingPoPayableId === po.id}
                         supplierPayableError={poPayableErrorsByPoId[po.id] || null}
+                        onRetrySupplierPayable={async () => {
+                            await loadPoPayableDocuments(po);
+                        }}
+                        onOpenSupplierPayable={document => openDocumentTrace(buildDocumentTracePath('supplier_payable_document', document.id, document.qrToken))}
                         supplierReturnableQty={supplierReturnableQty}
                         totalReceivedQty={totalReceivedQty}
                         completedReturnQty={completedReturnQty}

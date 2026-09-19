@@ -102,4 +102,20 @@ describe('purchase order drawer regression guard', () => {
     expect(source).toContain("if (!po.qrToken) return '';");
     expect(source).not.toContain('poService.ensureQrToken(po)');
   });
+
+  it('loads the full PO payable dossier without allowing stale PO responses to replace the active result', () => {
+    expect(source).toContain('supplierPayableService.listDocumentsByPurchaseOrder({');
+    expect(source).toContain('poPayableRequestGenerationRef');
+    expect(source).toContain('requestGeneration !== poPayableRequestGenerationRef.current');
+    expect(cockpitSource).toContain('onRetrySupplierPayable');
+    expect(cockpitSource).toContain('onOpenSupplierPayable?.(document)');
+    expect(source).toContain("buildDocumentTracePath('supplier_payable_document', document.id, document.qrToken)");
+  });
+
+  it('does not add physical quantities across different item and unit groups', () => {
+    expect(cockpitSource).toContain('physicalKeys.size === 1');
+    expect(cockpitSource).toContain("group.totalQty == null ? 'Theo từng dòng'");
+    expect(cockpitSource).toContain('practicalQuantitySummary.groups.length} nhóm vật tư');
+    expect(cockpitSource).toContain('practicalQuantitySummary.counts.receivedLines} dòng đã nhận');
+  });
 });

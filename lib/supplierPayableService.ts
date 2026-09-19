@@ -12,10 +12,12 @@ import { fromDb, toDb } from './dbMapping';
 import { supabase } from './supabase';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { chunkValues } from './supabasePagination';
 
 const DOCUMENT_TABLE = 'supplier_payable_documents';
 const DOCUMENT_BALANCE_VIEW = 'supplier_payable_document_balances';
 const BALANCE_VIEW = 'supplier_payable_balances';
+const PO_DELIVERY_BATCH_SCOPE_SELECT = 'id,purchase_order_id,project_id,construction_site_id';
 
 const numeric = (value: unknown) => {
   const amount = Number(value || 0);
@@ -263,6 +265,73 @@ export const supplierPayableService = {
       throw error;
     }
     return (data || []).map(normalizeDocument);
+  },
+
+  async listDocumentsByPurchaseOrder(input: {
+    purchaseOrderId: string;
+    projectId?: string | null;
+    constructionSiteId?: string | null;
+  }): Promise<SupplierPayableDocument[]> {
+    if (!input.purchaseOrderId) return [];
+
+    const applyScope = (query: any) => {
+      let scopedQuery = query;
+      if (input.projectId) scopedQuery = scopedQuery.eq('project_id', input.projectId);
+      if (input.constructionSiteId) scopedQuery = scopedQuery.eq('construction_site_id', input.constructionSiteId);
+      return scopedQuery;
+    };
+    let deliveryBatchQuery = supabase
+      .from('purchase_order_delivery_batches')
+      .select(PO_DELIVERY_BATCH_SCOPE_SELECT)
+      .eq('purchase_order_id', input.purchaseOrderId);
+    deliveryBatchQuery = applyScope(deliveryBatchQuery);
+    const { data: deliveryBatchRows, error: deliveryBatchError } = await fetchAllSupabaseRows(deliveryBatchQuery, {
+      label: 'supplierPayableService.listDocumentsByPurchaseOrder.deliveryBatches',
+      maxRows: 20_000,
+      orderBy: ['id'],
+    });
+    if (deliveryBatchError) throw deliveryBatchError;
+
+    let poDocumentQuery = supabase
+      .from(DOCUMENT_BALANCE_VIEW)
+      .select(getSupabaseProjection(DOCUMENT_BALANCE_VIEW))
+      .eq('source_type', 'purchase_order')
+      .eq('source_id', input.purchaseOrderId);
+    poDocumentQuery = applyScope(poDocumentQuery);
+    const { data: poDocuments, error: poDocumentError } = await fetchAllSupabaseRows(poDocumentQuery, {
+      label: 'supplierPayableService.listDocumentsByPurchaseOrder.purchaseOrder',
+      maxRows: 20_000,
+      orderBy: ['id'],
+    });
+    if (poDocumentError) throw poDocumentError;
+
+    const receiptDocuments: any[] = [];
+    const deliveryBatchIds = (deliveryBatchRows || []).map(row => String(row.id || '')).filter(Boolean);
+    for (const batchIdChunk of chunkValues(deliveryBatchIds, 100)) {
+      let receiptDocumentQuery = supabase
+        .from(DOCUMENT_BALANCE_VIEW)
+        .select(getSupabaseProjection(DOCUMENT_BALANCE_VIEW))
+        .eq('source_type', 'purchase_delivery_receipt')
+        .in('source_id', batchIdChunk);
+      receiptDocumentQuery = applyScope(receiptDocumentQuery);
+      const { data, error } = await fetchAllSupabaseRows(receiptDocumentQuery, {
+        label: 'supplierPayableService.listDocumentsByPurchaseOrder.deliveryReceipts',
+        maxRows: 20_000,
+        orderBy: ['id'],
+      });
+      if (error) throw error;
+      receiptDocuments.push(...(data || []));
+    }
+
+    const byId = new Map<string, SupplierPayableDocument>();
+    [...(poDocuments || []), ...receiptDocuments].forEach(row => {
+      const document = normalizeDocument(row);
+      if (document.id) byId.set(document.id, document);
+    });
+    return Array.from(byId.values()).sort((left, right) => (
+      String(right.documentDate || right.createdAt || '').localeCompare(String(left.documentDate || left.createdAt || ''))
+      || right.id.localeCompare(left.id)
+    ));
   },
 
   async listBalances(input: {

@@ -234,6 +234,175 @@ describe('supplierPayableService helpers', () => {
     expect(supabaseMocks.eq).toHaveBeenCalledWith('source_id', 'po-1');
   });
 
+  const installPoDossierReadMock = (input?: {
+    failSourceType?: string;
+    error?: unknown;
+    batchCount?: number;
+  }) => {
+    const queryCalls: Array<{
+      table: string;
+      eq: Array<[string, unknown]>;
+      in: Array<[string, unknown[]]>;
+    }> = [];
+    const batchCount = input?.batchCount ?? 2;
+    const batches = Array.from({ length: batchCount }, (_, index) => ({
+      id: `batch-${index + 1}`,
+      purchase_order_id: 'po-1',
+      project_id: 'project-1',
+      construction_site_id: 'site-1',
+    }));
+    const documents = [
+      {
+        id: 'ap-po', source_type: 'purchase_order', source_id: 'po-1', project_id: 'project-1', construction_site_id: 'site-1',
+        supplier_name_snapshot: 'NCC A', document_no: 'PO-001', currency: 'VND', committed_amount: 100, recognized_amount: 100,
+        paid_amount: 0, credit_amount: 0, outstanding_amount: 100, status: 'open', metadata: {}, created_at: '2026-09-19T00:00:00Z',
+      },
+      {
+        id: 'ap-duplicate', source_type: 'purchase_order', source_id: 'po-1', project_id: 'project-1', construction_site_id: 'site-1',
+        supplier_name_snapshot: 'NCC A', document_no: 'PO-001-D', currency: 'VND', committed_amount: 50, recognized_amount: 50,
+        paid_amount: 0, credit_amount: 0, outstanding_amount: 50, status: 'open', metadata: {}, created_at: '2026-09-19T00:00:00Z',
+      },
+      {
+        id: 'ap-receipt', source_type: 'purchase_delivery_receipt', source_id: 'batch-1', project_id: 'project-1', construction_site_id: 'site-1',
+        supplier_name_snapshot: 'NCC A', document_no: 'RCPT-001', currency: 'VND', committed_amount: 80, recognized_amount: 80,
+        paid_amount: 0, credit_amount: 0, outstanding_amount: 80, status: 'open', metadata: {}, created_at: '2026-09-19T01:00:00Z',
+      },
+      {
+        id: 'ap-duplicate', source_type: 'purchase_delivery_receipt', source_id: 'batch-2', project_id: 'project-1', construction_site_id: 'site-1',
+        supplier_name_snapshot: 'NCC A', document_no: 'RCPT-D', currency: 'VND', committed_amount: 50, recognized_amount: 50,
+        paid_amount: 0, credit_amount: 0, outstanding_amount: 50, status: 'open', metadata: {}, created_at: '2026-09-19T01:00:00Z',
+      },
+      {
+        id: 'ap-statement', source_type: 'supplier_delivery_statement', source_id: 'statement-1', project_id: 'project-1', construction_site_id: 'site-1',
+        supplier_name_snapshot: 'NCC A', document_no: 'ST-001', currency: 'VND', committed_amount: 90, recognized_amount: 90,
+        paid_amount: 0, credit_amount: 0, outstanding_amount: 90, status: 'open', metadata: {}, created_at: '2026-09-19T02:00:00Z',
+      },
+      ...(batchCount > 2 ? [{
+        id: 'ap-last-batch', source_type: 'purchase_delivery_receipt', source_id: `batch-${batchCount}`, project_id: 'project-1', construction_site_id: 'site-1',
+        supplier_name_snapshot: 'NCC A', document_no: 'RCPT-LAST', currency: 'VND', committed_amount: 10, recognized_amount: 10,
+        paid_amount: 0, credit_amount: 0, outstanding_amount: 10, status: 'open', metadata: {}, created_at: '2026-09-19T03:00:00Z',
+      }] : []),
+    ];
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      const call = { table, eq: [] as Array<[string, unknown]>, in: [] as Array<[string, unknown[]]> };
+      queryCalls.push(call);
+      const query: any = {
+        select: vi.fn(() => query),
+        eq: vi.fn((column: string, value: unknown) => {
+          call.eq.push([column, value]);
+          return query;
+        }),
+        in: vi.fn((column: string, values: unknown[]) => {
+          call.in.push([column, values]);
+          return query;
+        }),
+        order: vi.fn(() => query),
+        limit: vi.fn(() => query),
+        gt: vi.fn(() => query),
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => {
+          const sourceType = call.eq.find(([column]) => column === 'source_type')?.[1];
+          if (input?.failSourceType && sourceType === input.failSourceType) {
+            return Promise.resolve({ data: null, error: input?.error }).then(resolve, reject);
+          }
+          const sourceId = call.eq.find(([column]) => column === 'source_id')?.[1];
+          const sourceIds = call.in.find(([column]) => column === 'source_id')?.[1];
+          const projectId = call.eq.find(([column]) => column === 'project_id')?.[1];
+          const siteId = call.eq.find(([column]) => column === 'construction_site_id')?.[1];
+          const rows = table === 'purchase_order_delivery_batches'
+            ? batches
+            : documents.filter(row => (
+              (!sourceType || row.source_type === sourceType)
+              && (!sourceId || row.source_id === sourceId)
+              && (!sourceIds || sourceIds.includes(row.source_id))
+              && (!projectId || row.project_id === projectId)
+              && (!siteId || row.construction_site_id === siteId)
+            ));
+          return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+        },
+      };
+      return query;
+    });
+
+    return queryCalls;
+  };
+
+  it('loads legacy PO and receipt AP documents for every scoped delivery batch, then deduplicates by id', async () => {
+    const queryCalls = installPoDossierReadMock();
+
+    const documents = await supplierPayableService.listDocumentsByPurchaseOrder({
+      purchaseOrderId: 'po-1',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+    });
+
+    expect(queryCalls.map(call => call.table)).toEqual([
+      'purchase_order_delivery_batches',
+      'supplier_payable_document_balances',
+      'supplier_payable_document_balances',
+    ]);
+    expect(queryCalls.every(call => call.eq.some(filter => filter[0] === 'project_id' && filter[1] === 'project-1'))).toBe(true);
+    expect(queryCalls.every(call => call.eq.some(filter => filter[0] === 'construction_site_id' && filter[1] === 'site-1'))).toBe(true);
+    expect(queryCalls[2].eq).toContainEqual(['source_type', 'purchase_delivery_receipt']);
+    expect(queryCalls[2].in).toContainEqual(['source_id', ['batch-1', 'batch-2']]);
+    expect(documents.map(document => document.id)).toEqual(['ap-receipt', 'ap-duplicate', 'ap-po']);
+    expect(documents.map(document => document.id)).not.toContain('ap-statement');
+  });
+
+  it.each([
+    { code: '42501', message: 'denied' },
+    { code: '42P01', message: 'missing relation' },
+    { code: 'NETWORK', message: 'network failed' },
+  ])('rejects a $code error from the receipt AP branch', async error => {
+    installPoDossierReadMock({ failSourceType: 'purchase_delivery_receipt', error });
+
+    await expect(supplierPayableService.listDocumentsByPurchaseOrder({
+      purchaseOrderId: 'po-1',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+    })).rejects.toBe(error);
+  });
+
+  it('chunks all delivery batch ids before reading receipt AP documents', async () => {
+    const queryCalls = installPoDossierReadMock({ batchCount: 101 });
+
+    const documents = await supplierPayableService.listDocumentsByPurchaseOrder({
+      purchaseOrderId: 'po-1',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+    });
+
+    const receiptCalls = queryCalls.filter(call => (
+      call.eq.some(filter => filter[0] === 'source_type' && filter[1] === 'purchase_delivery_receipt')
+    ));
+    expect(receiptCalls).toHaveLength(2);
+    expect(receiptCalls[0].in[0][1]).toHaveLength(100);
+    expect(receiptCalls[1].in[0]).toEqual(['source_id', ['batch-101']]);
+    expect(documents.map(document => document.id)).toContain('ap-last-batch');
+  });
+
+  it('returns an empty dossier only when every scoped source is legitimately empty', async () => {
+    supabaseMocks.from.mockImplementation(() => {
+      const query: any = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        in: vi.fn(() => query),
+        order: vi.fn(() => query),
+        limit: vi.fn(() => query),
+        gt: vi.fn(() => query),
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null }).then(resolve, reject),
+      };
+      return query;
+    });
+
+    await expect(supplierPayableService.listDocumentsByPurchaseOrder({
+      purchaseOrderId: 'po-empty',
+      projectId: 'project-1',
+      constructionSiteId: 'site-1',
+    })).resolves.toEqual([]);
+  });
+
   it('syncs AP document from a site direct purchase through the posting RPC', async () => {
     supabaseMocks.rpc.mockResolvedValueOnce({
       data: {
