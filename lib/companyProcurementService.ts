@@ -27,6 +27,7 @@ import {
   poLineStockToPurchaseQty,
   stockUnitPriceToPurchaseUnitPrice,
 } from './materialUnitConversion';
+import { openCommitment } from './companyProcurementCommitment';
 
 const ACTIVE_PO_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_transit', 'partial']);
 const OPEN_REQUEST_STATUSES = new Set<string>([
@@ -49,6 +50,18 @@ const mapDeliveryGroup = (row: any): PurchaseOrderDeliveryGroup => fromDb(row) a
 const COMPANY_READ_PAGE_SIZE = 1000;
 const COMPANY_READ_MAX_ROWS = 20_000;
 const DELIVERY_GROUP_SELECT = 'id,project_id,purchase_order_id,delivery_no,planned_date,status,note,created_by,created_at,updated_at';
+const COMMITMENT_DELIVERY_BATCH_SELECT = 'id,purchase_order_id,status';
+const COMMITMENT_DELIVERY_LINE_SELECT = 'id,delivery_batch_id,purchase_order_id,purchase_order_line_id,item_id,accepted_stock_qty,stock_unit';
+const COMMITMENT_FULFILLMENT_LINE_SELECT = 'id,batch_id,material_request_id,request_line_id,item_id,po_id,po_line_id,received_qty,unit,purchase_order_request_line_id';
+const COMMITMENT_FULFILLMENT_BATCH_SELECT = 'id,status,source_type';
+const TERMINAL_RECEIPT_STATUSES = new Set(['received', 'received_short', 'received_over']);
+
+type DemandCommitmentRead = {
+  orderedQty: number;
+  openCommitmentQty: number | null;
+  remainingKnown: boolean;
+  reconciliationIssues: string[];
+};
 
 const loadChunkedRows = async (input: {
   table: string;
@@ -140,19 +153,26 @@ const resolveDemandLine = (
   index: number,
   inventoryById: Map<string, InventoryItem>,
   summaryByLine: Map<string, any>,
-  openOrderedByLine: Map<string, number>,
+  commitmentByLine: Map<string, DemandCommitmentRead>,
 ): CompanyProcurementDemandLine | null => {
   const requestLineId = getRequestLineId(request, line, index);
   const item = inventoryById.get(line.itemId);
   const requestedQty = getLineRequestedQty(line);
   const lineSummary = summaryByLine.get(requestLineId);
-  const actualReceivedQty = toFiniteNumber(lineSummary?.receivedQty);
+  const actualReceivedQty = toFiniteNumber(lineSummary?.netReceivedQty ?? lineSummary?.receivedQty);
   const closedNeedQty = toFiniteNumber(lineSummary?.closedNeedQty);
   const openNeedQty = Math.max(0, toFiniteNumber(lineSummary?.openNeedQty, requestedQty - actualReceivedQty - closedNeedQty));
-  const orderedQty = toFiniteNumber(openOrderedByLine.get(buildDemandKey(request.id, requestLineId)));
-  const remainingQty = Math.max(0, openNeedQty - orderedQty);
+  const commitment = commitmentByLine.get(buildDemandKey(request.id, requestLineId)) || {
+    orderedQty: 0,
+    openCommitmentQty: 0,
+    remainingKnown: true,
+    reconciliationIssues: [],
+  };
+  const remainingQty = commitment.remainingKnown && commitment.openCommitmentQty != null
+    ? Math.max(0, openNeedQty - commitment.openCommitmentQty)
+    : null;
 
-  if (remainingQty <= 0 && openNeedQty <= 0) return null;
+  if (openNeedQty <= 0) return null;
 
   return {
     key: buildDemandKey(request.id, requestLineId),
@@ -168,11 +188,14 @@ const resolveDemandLine = (
     unit: line.unitSnapshot || item?.unit || null,
     supplierId: item?.supplierId || null,
     requestedQty,
-    orderedQty,
+    orderedQty: commitment.orderedQty,
+    openCommitmentQty: commitment.openCommitmentQty,
     actualReceivedQty,
     closedNeedQty,
     openNeedQty,
     remainingQty,
+    remainingKnown: commitment.remainingKnown,
+    reconciliationIssues: commitment.reconciliationIssues,
     boqQty: line.budgetQtySnapshot ?? null,
     neededDate: line.neededDate || request.expectedDate || null,
   };
@@ -180,7 +203,7 @@ const resolveDemandLine = (
 
 const loadActivePoLinksByRequestIds = async (requestIds: string[]) => {
   const uniqueRequestIds = Array.from(new Set(requestIds.filter(Boolean)));
-  if (uniqueRequestIds.length === 0) return new Map<string, number>();
+  if (uniqueRequestIds.length === 0) return new Map<string, DemandCommitmentRead>();
 
   const linkRows = await loadChunkedRows({
     table: 'purchase_order_request_lines',
@@ -191,7 +214,7 @@ const loadActivePoLinksByRequestIds = async (requestIds: string[]) => {
 
   const links = linkRows.map(mapPoLink);
   const poIds = Array.from(new Set(links.map(link => link.purchaseOrderId).filter(Boolean)));
-  if (poIds.length === 0) return new Map<string, number>();
+  if (poIds.length === 0) return new Map<string, DemandCommitmentRead>();
 
   const poRows = await loadChunkedRows({
     table: 'purchase_orders',
@@ -203,13 +226,184 @@ const loadActivePoLinksByRequestIds = async (requestIds: string[]) => {
   const activePoIds = new Set((poRows || [])
     .filter(row => !row.archived_at && ACTIVE_PO_STATUSES.has(row.status as POStatus))
     .map(row => row.id));
+  const activeLinks = links.filter(link => activePoIds.has(link.purchaseOrderId));
+  if (activeLinks.length === 0) return new Map<string, DemandCommitmentRead>();
 
-  return links.reduce<Map<string, number>>((map, link) => {
-    if (!activePoIds.has(link.purchaseOrderId)) return map;
-    const key = buildDemandKey(link.materialRequestId, link.requestLineId);
-    map.set(key, (map.get(key) || 0) + toFiniteNumber(link.orderedQty || link.orderedStockQtySnapshot));
+  const activeIds = [...activePoIds];
+  const [deliveryBatchRows, deliveryLineRows, fulfillmentLineRows] = await Promise.all([
+    loadChunkedRows({
+      table: 'purchase_order_delivery_batches',
+      projection: COMMITMENT_DELIVERY_BATCH_SELECT,
+      filterColumn: 'purchase_order_id',
+      values: activeIds,
+    }),
+    loadChunkedRows({
+      table: 'purchase_order_delivery_lines',
+      projection: COMMITMENT_DELIVERY_LINE_SELECT,
+      filterColumn: 'purchase_order_id',
+      values: activeIds,
+    }),
+    loadChunkedRows({
+      table: 'material_request_fulfillment_lines',
+      projection: COMMITMENT_FULFILLMENT_LINE_SELECT,
+      filterColumn: 'po_id',
+      values: activeIds,
+    }),
+  ]);
+  const fulfillmentBatchRows = fulfillmentLineRows.length === 0
+    ? []
+    : await loadChunkedRows({
+      table: 'material_request_fulfillment_batches',
+      projection: COMMITMENT_FULFILLMENT_BATCH_SELECT,
+      filterColumn: 'id',
+      values: fulfillmentLineRows.map(row => row.batch_id),
+    });
+
+  const normalizedUnit = (value?: string | null) => String(value || '').trim().toLowerCase();
+  const strictQuantity = (value: unknown): number | null => {
+    const quantity = Number(value);
+    return Number.isFinite(quantity) && quantity >= 0 ? quantity : null;
+  };
+  const poLineKey = (poId: string, poLineId: string) => `${poId}:${poLineId}`;
+  const batchById = new Map(deliveryBatchRows.map(row => [row.id, row]));
+  const fulfillmentBatchById = new Map(fulfillmentBatchRows.map(row => [row.id, row]));
+  const linksByPoLine = activeLinks.reduce<Map<string, PurchaseOrderRequestLineLink[]>>((map, link) => {
+    const key = poLineKey(link.purchaseOrderId, link.purchaseOrderLineId);
+    map.set(key, [...(map.get(key) || []), link]);
     return map;
   }, new Map());
+  const deliveryLinesByPoLine = deliveryLineRows.reduce<Map<string, any[]>>((map, row) => {
+    const batch = batchById.get(row.delivery_batch_id);
+    if (!batch || !TERMINAL_RECEIPT_STATUSES.has(batch.status)) return map;
+    const key = poLineKey(row.purchase_order_id, row.purchase_order_line_id);
+    map.set(key, [...(map.get(key) || []), row]);
+    return map;
+  }, new Map());
+  const fulfillmentLinesByPoLine = fulfillmentLineRows.reduce<Map<string, any[]>>((map, row) => {
+    const key = poLineKey(row.po_id, row.po_line_id);
+    map.set(key, [...(map.get(key) || []), row]);
+    return map;
+  }, new Map());
+
+  const byDemand = new Map<string, {
+    orderedQty: number;
+    openCommitmentQty: number;
+    unknown: boolean;
+    issues: Set<string>;
+  }>();
+  const addIssue = (target: { unknown: boolean; issues: Set<string> }, issue: string) => {
+    target.unknown = true;
+    target.issues.add(issue);
+  };
+
+  for (const [lineKey, lineLinks] of linksByPoLine.entries()) {
+    const deliveryLines = deliveryLinesByPoLine.get(lineKey) || [];
+    const fulfillmentLines = fulfillmentLinesByPoLine.get(lineKey) || [];
+    const receivedByLinkId = new Map<string, number>();
+    const returnedLinkIds = new Set<string>();
+    let attributedTotal = 0;
+    let attributionMalformed = false;
+
+    const matchLink = (row: any) => {
+      if (row.purchase_order_request_line_id) {
+        return lineLinks.find(link => link.id === row.purchase_order_request_line_id) || null;
+      }
+      const matchingLinks = lineLinks.filter(link => (
+        link.materialRequestId === row.material_request_id
+        && link.requestLineId === row.request_line_id
+        && link.itemId === row.item_id
+      ));
+      return matchingLinks.length === 1 ? matchingLinks[0] : null;
+    };
+
+    fulfillmentLines.forEach(row => {
+      const batch = fulfillmentBatchById.get(row.batch_id);
+      if (!batch || batch.source_type !== 'po_receipt') return;
+      const link = matchLink(row);
+      if (!link?.id) return;
+      if (batch.status === 'returned') {
+        returnedLinkIds.add(link.id);
+        return;
+      }
+      if (batch.status !== 'received') return;
+      const quantity = strictQuantity(row.received_qty);
+      if (quantity == null || !normalizedUnit(row.unit) || normalizedUnit(row.unit) !== normalizedUnit(link.unit)) {
+        attributionMalformed = true;
+        return;
+      }
+      receivedByLinkId.set(link.id, (receivedByLinkId.get(link.id) || 0) + quantity);
+      attributedTotal += quantity;
+    });
+
+    const deliveryQuantities = deliveryLines.map(row => strictQuantity(row.accepted_stock_qty));
+    const deliveryMalformed = deliveryQuantities.some(quantity => quantity == null)
+      || deliveryLines.some(row => !normalizedUnit(row.stock_unit)
+        || lineLinks.some(link => normalizedUnit(link.unit) !== normalizedUnit(row.stock_unit)));
+    const acceptedTotal = deliveryQuantities.reduce((sum, quantity) => sum + Number(quantity || 0), 0);
+    const allocationExceedsReceipt = deliveryLines.length > 0 && attributedTotal > acceptedTotal + 0.000001;
+
+    lineLinks.forEach(link => {
+      const demandKey = buildDemandKey(link.materialRequestId, link.requestLineId);
+      const target = byDemand.get(demandKey) || {
+        orderedQty: 0,
+        openCommitmentQty: 0,
+        unknown: false,
+        issues: new Set<string>(),
+      };
+      byDemand.set(demandKey, target);
+
+      const ordered = strictQuantity(link.orderedStockQtySnapshot ?? link.orderedQty);
+      if (ordered == null) {
+        addIssue(target, 'invalid_ordered_quantity');
+        return;
+      }
+      target.orderedQty += ordered;
+      if (attributionMalformed || deliveryMalformed) {
+        addIssue(target, 'quantity_or_unit_mismatch');
+        return;
+      }
+      if (allocationExceedsReceipt) {
+        addIssue(target, 'receipt_attribution_exceeds_delivery');
+        return;
+      }
+      if (link.id && returnedLinkIds.has(link.id)) {
+        addIssue(target, 'return_disposition_unknown');
+        return;
+      }
+
+      let receivedAttributed: number | null;
+      if (link.id && receivedByLinkId.has(link.id)) {
+        receivedAttributed = receivedByLinkId.get(link.id)!;
+      } else if (lineLinks.length === 1 && deliveryLines.length > 0) {
+        receivedAttributed = acceptedTotal;
+      } else if (lineLinks.length > 1 && acceptedTotal > 0) {
+        const allocationIsComplete = deliveryLines.length > 0
+          && Math.abs(attributedTotal - acceptedTotal) <= 0.000001;
+        receivedAttributed = allocationIsComplete ? 0 : null;
+        if (!allocationIsComplete) addIssue(target, 'missing_receipt_attribution');
+      } else {
+        receivedAttributed = 0;
+      }
+
+      const quantity = openCommitment({
+        ordered,
+        receivedAttributed,
+        terminal: link.allocationStatus === 'cancelled' || link.allocationStatus === 'need_closed',
+      });
+      if (quantity == null) {
+        addIssue(target, 'missing_receipt_attribution');
+      } else {
+        target.openCommitmentQty += quantity;
+      }
+    });
+  }
+
+  return new Map(Array.from(byDemand.entries()).map(([key, value]) => [key, {
+    orderedQty: value.orderedQty,
+    openCommitmentQty: value.unknown ? null : value.openCommitmentQty,
+    remainingKnown: !value.unknown,
+    reconciliationIssues: [...value.issues],
+  }]));
 };
 
 const loadRequestsForOpenDemand = async (): Promise<MaterialRequest[]> => {
@@ -329,7 +523,7 @@ export const companyProcurementService = {
     const requests = await loadRequestsForOpenDemand();
     const requestIds = requests.map(request => request.id);
     const inventoryById = await loadInventoryByIds(requests.flatMap(request => (request.items || []).map(line => line.itemId)));
-    const [summaryBundle, openOrderedByLine] = await Promise.all([
+    const [summaryBundle, commitmentByLine] = await Promise.all([
       materialRequestFulfillmentService.listSummariesByRequests(requests),
       loadActivePoLinksByRequestIds(requestIds),
     ]);
@@ -338,7 +532,7 @@ export const companyProcurementService = {
       const lineSummaries = summaryBundle.summariesByRequestId[request.id]?.lineSummaries || [];
       const summaryByLine = new Map(lineSummaries.map(line => [line.requestLineId, line]));
       return (request.items || [])
-        .map((line, index) => resolveDemandLine(request, line, index, inventoryById, summaryByLine, openOrderedByLine))
+        .map((line, index) => resolveDemandLine(request, line, index, inventoryById, summaryByLine, commitmentByLine))
         .filter((line): line is CompanyProcurementDemandLine => !!line);
     });
 
@@ -360,6 +554,12 @@ export const companyProcurementService = {
     const demandByKey = new Map<string, CompanyProcurementDemandLine>(
       demandRows.map(row => [row.key, row] as const),
     );
+    const unknownDemand = validLines
+      .map(line => demandByKey.get(line.demandKey))
+      .find(demand => demand && (!demand.remainingKnown || demand.remainingQty == null));
+    if (unknownDemand) {
+      throw new Error('Dòng nhu cầu chưa đủ dữ liệu đối chiếu nhận hàng để tạo PO.');
+    }
     const inventoryById = await loadInventoryByIds(demandRows.map(row => row.itemId));
     const procurementGroupId = newId('proc-group');
     const procurementGroupNo = buildProcurementGroupNo();

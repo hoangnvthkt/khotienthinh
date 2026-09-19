@@ -3021,10 +3021,13 @@ export interface CompanyProcurementDemandLine {
   supplierId?: string | null;
   requestedQty: number;
   orderedQty: number;
+  openCommitmentQty: number | null;
   actualReceivedQty: number;
   closedNeedQty: number;
   openNeedQty: number;
-  remainingQty: number;
+  remainingQty: number | null;
+  remainingKnown: boolean;
+  reconciliationIssues: string[];
   boqQty?: number | null;
   neededDate?: string | null;
 }

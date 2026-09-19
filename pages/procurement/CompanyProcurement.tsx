@@ -356,7 +356,7 @@ const CompanyProcurement: React.FC = () => {
       setCustomRfqs(rfqs);
       setProjects(projectRows);
       setPartners(partnerRows);
-      setSelectedKeys(prev => prev.filter(key => demand.some(row => row.key === key)));
+      setSelectedKeys(prev => prev.filter(key => demand.some(row => row.key === key && row.remainingKnown)));
       setSelectedCustomKeys(prev => prev.filter(key => customDemand.some(row => row.key === key)));
     } catch (err: any) {
       logApiError('companyProcurement.refresh', err);
@@ -404,8 +404,8 @@ const CompanyProcurement: React.FC = () => {
     [customDemandRows, selectedCustomKeys]);
 
   const selectedSummary = useMemo(() => selectedRows.reduce((acc, row) => ({
-    qty: acc.qty + row.remainingQty,
-    value: acc.value + parseLocaleNumber(draftByKey[row.key]?.orderStockQty || row.remainingQty) * parseLocaleNumber(draftByKey[row.key]?.stockUnitPrice || itemById.get(row.itemId)?.priceIn || 0),
+    qty: acc.qty + (row.remainingQty ?? 0),
+    value: acc.value + parseLocaleNumber(draftByKey[row.key]?.orderStockQty ?? row.remainingQty ?? 0) * parseLocaleNumber(draftByKey[row.key]?.stockUnitPrice || itemById.get(row.itemId)?.priceIn || 0),
   }), { qty: 0, value: 0 }), [draftByKey, itemById, selectedRows]);
 
   const selectedCustomSummary = useMemo(() => selectedCustomRows.reduce((acc, row) => ({
@@ -414,6 +414,7 @@ const CompanyProcurement: React.FC = () => {
   }), { qty: 0, value: 0 }), [selectedCustomRows]);
 
   const toggleRow = (row: CompanyProcurementDemandLine) => {
+    if (!row.remainingKnown || row.remainingQty == null) return;
     const selected = selectedKeys.includes(row.key);
     if (selected) {
       setSelectedKeys(prev => prev.filter(key => key !== row.key));
@@ -427,7 +428,7 @@ const CompanyProcurement: React.FC = () => {
       [row.key]: prev[row.key] || {
         vendorId: row.supplierId || '',
         vendorName: partner?.name || '',
-        orderStockQty: String(row.remainingQty || row.openNeedQty || row.requestedQty || 0),
+        orderStockQty: String(row.remainingQty),
         stockUnitPrice: String(inventory?.priceIn || 0),
       },
     }));
@@ -997,7 +998,7 @@ const CompanyProcurement: React.FC = () => {
                           <th className="w-60 px-2 py-3">Nguồn</th>
                           <th className="w-24 px-2 py-3 text-right">BOQ</th>
                           <th className="w-28 px-2 py-3 text-right">Đề xuất</th>
-                          <th className="w-24 px-2 py-3 text-right">PO mở</th>
+                          <th className="w-24 px-2 py-3 text-right">Cam kết mở</th>
                           <th className="w-24 px-2 py-3 text-right">Thực nhận</th>
                           <th className="w-24 px-2 py-3 text-right">Còn cần</th>
 
@@ -1012,13 +1013,14 @@ const CompanyProcurement: React.FC = () => {
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                         {filteredDemandRows.map(row => {
                           const selected = selectedKeys.includes(row.key);
+                          const remainingUnknown = !row.remainingKnown || row.remainingQty == null;
                           const draft = draftByKey[row.key];
                           const price = selected
                             ? parseLocaleNumber(draft?.stockUnitPrice || 0)
                             : Number(itemById.get(row.itemId)?.priceIn || 0);
                           const qty = selected
                             ? parseLocaleNumber(draft?.orderStockQty || 0)
-                            : Number(row.remainingQty || 0);
+                            : Number(row.remainingQty ?? 0);
                           const lineAmount = qty * price;
 
                           return (
@@ -1027,7 +1029,9 @@ const CompanyProcurement: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => toggleRow(row)}
-                                  className={`flex h-6 w-6 items-center justify-center rounded border ${selected ? 'border-emerald-500 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent dark:border-slate-700 dark:bg-slate-950'}`}
+                                  disabled={remainingUnknown}
+                                  title={remainingUnknown ? 'Chưa đủ dữ liệu đối chiếu để mở mua.' : undefined}
+                                  className={`flex h-6 w-6 items-center justify-center rounded border disabled:cursor-not-allowed disabled:border-amber-300 disabled:bg-amber-50 ${selected ? 'border-emerald-500 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent dark:border-slate-700 dark:bg-slate-950'}`}
                                 >
                                   <Check size={14} />
                                 </button>
@@ -1040,6 +1044,11 @@ const CompanyProcurement: React.FC = () => {
                                     {row.requestLine.overBudgetReason}
                                   </div>
                                 )}
+                                {remainingUnknown && (
+                                  <div className="mt-1 max-w-[240px] rounded bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300" title={row.reconciliationIssues.join(', ')}>
+                                    Chưa đủ dữ liệu đối chiếu nhận hàng
+                                  </div>
+                                )}
                               </td>
                               <td className="w-60 px-2 py-3">
                                 <div className="font-bold text-slate-700 dark:text-slate-200 break-words">{getProjectName(row.projectId)}</div>
@@ -1049,9 +1058,9 @@ const CompanyProcurement: React.FC = () => {
                               </td>
                               <td className="w-24 px-2 py-3 text-right font-bold">{row.boqQty == null ? '—' : formatQty(Number(row.boqQty))}</td>
                               <td className="w-28 px-2 py-3 text-right font-bold">{formatQty(row.requestedQty)} {row.unit}</td>
-                              <td className="w-24 px-2 py-3 text-right font-bold text-blue-700">{formatQty(row.orderedQty)}</td>
+                              <td className="w-24 px-2 py-3 text-right font-bold text-blue-700">{row.openCommitmentQty == null ? 'Chưa xác định' : formatQty(row.openCommitmentQty)}</td>
                               <td className="w-24 px-2 py-3 text-right font-bold text-emerald-700">{formatQty(row.actualReceivedQty)}</td>
-                              <td className="w-24 px-2 py-3 text-right font-black text-amber-700">{formatQty(row.remainingQty)}</td>
+                              <td className="w-24 px-2 py-3 text-right font-black text-amber-700">{remainingUnknown ? 'Chưa xác định' : formatQty(row.remainingQty!)}</td>
 
                               <td className="w-32 px-2 py-3 text-right">
                                 {selected ? (
@@ -1061,7 +1070,7 @@ const CompanyProcurement: React.FC = () => {
                                     onChange={event => updateDraftLine(row.key, { orderStockQty: event.target.value })}
                                     className="w-full max-w-[110px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
                                   />
-                                ) : formatQty(row.remainingQty)}
+                                ) : remainingUnknown ? '—' : formatQty(row.remainingQty!)}
                               </td>
                               <td className="w-36 px-2 py-3 text-right">
                                 {selected ? (
@@ -1589,7 +1598,7 @@ const CompanyProcurement: React.FC = () => {
                         <th className="px-4 py-3">Vật tư</th>
                         <th className="px-4 py-3 text-right">BOQ</th>
                         <th className="px-4 py-3 text-right">Đề xuất</th>
-                        <th className="px-4 py-3 text-right">PO mở</th>
+                        <th className="px-4 py-3 text-right">Cam kết mở</th>
                         <th className="px-4 py-3 text-right">Thực nhận</th>
                         <th className="px-4 py-3 text-right">Chênh lệch nhận/BOQ</th>
                         <th className="px-4 py-3 text-right">Còn cần</th>
@@ -1608,10 +1617,10 @@ const CompanyProcurement: React.FC = () => {
                             <td className="px-4 py-3 font-bold">{row.itemName}</td>
                             <td className="px-4 py-3 text-right">{row.boqQty == null ? '—' : formatQty(boq)}</td>
                             <td className="px-4 py-3 text-right">{formatQty(row.requestedQty)}</td>
-                            <td className="px-4 py-3 text-right text-blue-700">{formatQty(row.orderedQty)}</td>
+                            <td className="px-4 py-3 text-right text-blue-700">{row.openCommitmentQty == null ? 'Chưa xác định' : formatQty(row.openCommitmentQty)}</td>
                             <td className="px-4 py-3 text-right text-emerald-700">{formatQty(row.actualReceivedQty)}</td>
                             <td className={`px-4 py-3 text-right font-black ${variance > 0 ? 'text-orange-700' : variance < 0 ? 'text-emerald-700' : 'text-slate-700'}`}>{row.boqQty == null ? '—' : formatQty(variance)}</td>
-                            <td className="px-4 py-3 text-right font-black text-amber-700">{formatQty(row.remainingQty)}</td>
+                            <td className="px-4 py-3 text-right font-black text-amber-700">{row.remainingQty == null ? 'Chưa xác định' : formatQty(row.remainingQty)}</td>
                           </tr>
                         );
                       })}
