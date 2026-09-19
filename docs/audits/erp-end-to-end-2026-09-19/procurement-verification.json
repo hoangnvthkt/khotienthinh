@@ -1,0 +1,20 @@
+{
+  "audit_date": "2026-09-19",
+  "worktree": ".worktrees/procurement-workbench-spec",
+  "branch": "docs/procurement-workbench-spec",
+  "commit": "420d11073858f134ebc4d247d22f3000579463ad",
+  "worktree_status": "",
+  "unit_test_files": 5,
+  "tests_passed": 124,
+  "tests_failed": 0,
+  "acceptance_manifest": {
+    "cases": 246,
+    "manifest": 246,
+    "passed": 0,
+    "notRun": 246,
+    "errors": []
+  },
+  "cloud_write_tests_rerun": false,
+  "application_changes": false,
+  "scope": "Design, source, existing historical evidence, fresh offline unit tests, official public references; no new Workbench UI observed"
+}

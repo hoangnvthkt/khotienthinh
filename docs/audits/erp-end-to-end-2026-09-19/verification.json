@@ -1,0 +1,12 @@
+{
+  "sections": "A-N complete",
+  "local_links_checked": 49,
+  "test_files": 14,
+  "tests_passed": 75,
+  "tests_failed": 0,
+  "cloud_queries": "four read-only SQL artifacts verified",
+  "source_changes": false,
+  "credential_scan": "no configured secrets found in artifacts",
+  "live_ui": "desktop sample only; mobile and role-specific write flows not exercised",
+  "procurement_addendum": "procurement-verification.json"
+}

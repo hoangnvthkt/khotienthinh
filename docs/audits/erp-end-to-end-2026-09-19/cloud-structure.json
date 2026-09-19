@@ -1,0 +1,2271 @@
+[
+  {
+    "audit": {
+      "columns": [
+        {
+          "column": "id",
+          "table": "inventory_balances",
+          "type": "uuid"
+        },
+        {
+          "column": "material_id",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "warehouse_id",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "project_id",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "lot_no",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "batch_no",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "serial_no",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "scope_key",
+          "table": "inventory_balances",
+          "type": "text"
+        },
+        {
+          "column": "on_hand_qty",
+          "table": "inventory_balances",
+          "type": "numeric"
+        },
+        {
+          "column": "total_value",
+          "table": "inventory_balances",
+          "type": "numeric"
+        },
+        {
+          "column": "average_unit_cost",
+          "table": "inventory_balances",
+          "type": "numeric"
+        },
+        {
+          "column": "last_ledger_entry_id",
+          "table": "inventory_balances",
+          "type": "uuid"
+        },
+        {
+          "column": "last_transaction_date",
+          "table": "inventory_balances",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "updated_at",
+          "table": "inventory_balances",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "id",
+          "table": "inventory_ledger_entries",
+          "type": "uuid"
+        },
+        {
+          "column": "inventory_transaction_id",
+          "table": "inventory_ledger_entries",
+          "type": "uuid"
+        },
+        {
+          "column": "entry_no",
+          "table": "inventory_ledger_entries",
+          "type": "integer"
+        },
+        {
+          "column": "document_code",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "transaction_date",
+          "table": "inventory_ledger_entries",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "transaction_type",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "movement_direction",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "material_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "warehouse_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "project_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "lot_no",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "batch_no",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "serial_no",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "source_type",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "source_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "source_code",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "source_line_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "related_request_id",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "quantity_in",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "quantity_out",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "quantity_delta",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "unit",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "unit_price",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "amount",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "balance_after_qty",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "balance_after_value",
+          "table": "inventory_ledger_entries",
+          "type": "numeric"
+        },
+        {
+          "column": "description",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "metadata",
+          "table": "inventory_ledger_entries",
+          "type": "jsonb"
+        },
+        {
+          "column": "created_by",
+          "table": "inventory_ledger_entries",
+          "type": "uuid"
+        },
+        {
+          "column": "approved_by",
+          "table": "inventory_ledger_entries",
+          "type": "uuid"
+        },
+        {
+          "column": "created_at",
+          "table": "inventory_ledger_entries",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "business_event_type",
+          "table": "inventory_ledger_entries",
+          "type": "text"
+        },
+        {
+          "column": "id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "category",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "item_name",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "unit",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "budget_qty",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "budget_unit_price",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "budget_total",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "actual_qty",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "actual_total",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "waste_qty",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "waste_percent",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "waste_threshold",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "notes",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "created_at",
+          "table": "material_budget_items",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "material_code",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "waste_value",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "cumulative_requested",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "cumulative_imported",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "cumulative_exported",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "stock_balance",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "budget_over_percent",
+          "table": "material_budget_items",
+          "type": "numeric"
+        },
+        {
+          "column": "auto_alert",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "inventory_item_id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "project_id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "work_boq_item_id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "sort_order",
+          "table": "material_budget_items",
+          "type": "integer"
+        },
+        {
+          "column": "source_type",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "source_norm_mapping_id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "source_norm_component_estimate_id",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "source_norm_code_snapshot",
+          "table": "material_budget_items",
+          "type": "text"
+        },
+        {
+          "column": "id",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "project_id",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "source_task_id",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "parent_id",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "wbs_code",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "name",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "unit",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "planned_qty",
+          "table": "project_work_boq_items",
+          "type": "numeric"
+        },
+        {
+          "column": "unit_price",
+          "table": "project_work_boq_items",
+          "type": "numeric"
+        },
+        {
+          "column": "total_amount",
+          "table": "project_work_boq_items",
+          "type": "numeric"
+        },
+        {
+          "column": "sort_order",
+          "table": "project_work_boq_items",
+          "type": "integer"
+        },
+        {
+          "column": "sync_status",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "notes",
+          "table": "project_work_boq_items",
+          "type": "text"
+        },
+        {
+          "column": "created_at",
+          "table": "project_work_boq_items",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "updated_at",
+          "table": "project_work_boq_items",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "id",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "purchase_order_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "project_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "delivery_no",
+          "table": "purchase_order_delivery_batches",
+          "type": "integer"
+        },
+        {
+          "column": "planned_delivery_date",
+          "table": "purchase_order_delivery_batches",
+          "type": "date"
+        },
+        {
+          "column": "status",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "fulfillment_batch_ids",
+          "table": "purchase_order_delivery_batches",
+          "type": "ARRAY"
+        },
+        {
+          "column": "note",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "created_by",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "created_at",
+          "table": "purchase_order_delivery_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "updated_at",
+          "table": "purchase_order_delivery_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "supplemental_approval_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "wms_transaction_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "supplier_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "supplier_name_snapshot",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "fulfillment_mode",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "vat_rate",
+          "table": "purchase_order_delivery_batches",
+          "type": "numeric"
+        },
+        {
+          "column": "qr_token",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "idempotency_key",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "quality_result",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "variance_reason",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "quality_approved_by",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "quality_approved_at",
+          "table": "purchase_order_delivery_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "received_by",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "received_at",
+          "table": "purchase_order_delivery_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "accepted_gross_amount",
+          "table": "purchase_order_delivery_batches",
+          "type": "numeric"
+        },
+        {
+          "column": "approval_status",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "approval_requested_by",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "approval_requested_at",
+          "table": "purchase_order_delivery_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "approval_decided_by",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "approval_decided_at",
+          "table": "purchase_order_delivery_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "approval_decision_note",
+          "table": "purchase_order_delivery_batches",
+          "type": "text"
+        },
+        {
+          "column": "approval_assignee_user_id",
+          "table": "purchase_order_delivery_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "id",
+          "table": "purchase_order_delivery_lines",
+          "type": "uuid"
+        },
+        {
+          "column": "delivery_batch_id",
+          "table": "purchase_order_delivery_lines",
+          "type": "uuid"
+        },
+        {
+          "column": "purchase_order_id",
+          "table": "purchase_order_delivery_lines",
+          "type": "text"
+        },
+        {
+          "column": "purchase_order_line_id",
+          "table": "purchase_order_delivery_lines",
+          "type": "text"
+        },
+        {
+          "column": "item_id",
+          "table": "purchase_order_delivery_lines",
+          "type": "text"
+        },
+        {
+          "column": "planned_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "unit",
+          "table": "purchase_order_delivery_lines",
+          "type": "text"
+        },
+        {
+          "column": "stock_planned_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "stock_unit",
+          "table": "purchase_order_delivery_lines",
+          "type": "text"
+        },
+        {
+          "column": "created_at",
+          "table": "purchase_order_delivery_lines",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "updated_at",
+          "table": "purchase_order_delivery_lines",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "delivery_unit_price",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "accepted_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "accepted_stock_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "returned_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "delivered_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "delivered_stock_qty",
+          "table": "purchase_order_delivery_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "id",
+          "table": "purchase_order_request_lines",
+          "type": "uuid"
+        },
+        {
+          "column": "project_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "purchase_order_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "purchase_order_line_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "material_request_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "material_request_code",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "request_line_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "item_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "work_boq_item_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "material_budget_item_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "requested_qty",
+          "table": "purchase_order_request_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "ordered_qty",
+          "table": "purchase_order_request_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "unit",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "note",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "created_at",
+          "table": "purchase_order_request_lines",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "target_warehouse_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "source_construction_site_id",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "allocation_status",
+          "table": "purchase_order_request_lines",
+          "type": "text"
+        },
+        {
+          "column": "requested_qty_snapshot",
+          "table": "purchase_order_request_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "ordered_stock_qty_snapshot",
+          "table": "purchase_order_request_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "actual_received_qty_snapshot",
+          "table": "purchase_order_request_lines",
+          "type": "numeric"
+        },
+        {
+          "column": "id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "vendor_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "vendor_name",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "po_number",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "items",
+          "table": "purchase_orders",
+          "type": "jsonb"
+        },
+        {
+          "column": "total_amount",
+          "table": "purchase_orders",
+          "type": "numeric"
+        },
+        {
+          "column": "order_date",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "expected_delivery_date",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "actual_delivery_date",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "status",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "material_request_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "delivery_note",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "note",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "created_at",
+          "table": "purchase_orders",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "project_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "qr_token",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "target_warehouse_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "received_transaction_ids",
+          "table": "purchase_orders",
+          "type": "jsonb"
+        },
+        {
+          "column": "source_mode",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "submitted_to_user_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "submitted_to_name",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "submitted_to_permission",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "submission_note",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "ever_submitted",
+          "table": "purchase_orders",
+          "type": "boolean"
+        },
+        {
+          "column": "last_action_by",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "last_action_at",
+          "table": "purchase_orders",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "procurement_group_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "procurement_group_no",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "archived_at",
+          "table": "purchase_orders",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "archived_by",
+          "table": "purchase_orders",
+          "type": "uuid"
+        },
+        {
+          "column": "archive_reason",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "created_by_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "vat_rate",
+          "table": "purchase_orders",
+          "type": "numeric"
+        },
+        {
+          "column": "approval_request_title",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "direct_purchase_id",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "payment_term",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "invoice_number",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "invoice_date",
+          "table": "purchase_orders",
+          "type": "date"
+        },
+        {
+          "column": "payment_status",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "metadata",
+          "table": "purchase_orders",
+          "type": "jsonb"
+        },
+        {
+          "column": "approved_total_amount",
+          "table": "purchase_orders",
+          "type": "numeric"
+        },
+        {
+          "column": "supplemental_approval_status",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "purchase_mode",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "fulfillment_mode",
+          "table": "purchase_orders",
+          "type": "text"
+        },
+        {
+          "column": "reference_gross_amount",
+          "table": "purchase_orders",
+          "type": "numeric"
+        },
+        {
+          "column": "closed_need_qty",
+          "table": "purchase_orders",
+          "type": "numeric"
+        },
+        {
+          "column": "procurement_flow_version",
+          "table": "purchase_orders",
+          "type": "integer"
+        },
+        {
+          "column": "invoice_id",
+          "table": "supplier_invoice_payable_links",
+          "type": "uuid"
+        },
+        {
+          "column": "payable_document_id",
+          "table": "supplier_invoice_payable_links",
+          "type": "uuid"
+        },
+        {
+          "column": "allocated_gross_amount",
+          "table": "supplier_invoice_payable_links",
+          "type": "numeric"
+        },
+        {
+          "column": "created_at",
+          "table": "supplier_invoice_payable_links",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "id",
+          "table": "supplier_invoices",
+          "type": "uuid"
+        },
+        {
+          "column": "supplier_id",
+          "table": "supplier_invoices",
+          "type": "text"
+        },
+        {
+          "column": "supplier_name_snapshot",
+          "table": "supplier_invoices",
+          "type": "text"
+        },
+        {
+          "column": "invoice_number",
+          "table": "supplier_invoices",
+          "type": "text"
+        },
+        {
+          "column": "invoice_date",
+          "table": "supplier_invoices",
+          "type": "date"
+        },
+        {
+          "column": "net_amount",
+          "table": "supplier_invoices",
+          "type": "numeric"
+        },
+        {
+          "column": "vat_amount",
+          "table": "supplier_invoices",
+          "type": "numeric"
+        },
+        {
+          "column": "gross_amount",
+          "table": "supplier_invoices",
+          "type": "numeric"
+        },
+        {
+          "column": "variance_reason",
+          "table": "supplier_invoices",
+          "type": "text"
+        },
+        {
+          "column": "attachments",
+          "table": "supplier_invoices",
+          "type": "jsonb"
+        },
+        {
+          "column": "created_by",
+          "table": "supplier_invoices",
+          "type": "uuid"
+        },
+        {
+          "column": "created_at",
+          "table": "supplier_invoices",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "updated_at",
+          "table": "supplier_invoices",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "id",
+          "table": "supplier_payment_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "code",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "project_id",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "construction_site_id",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "supplier_id",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "supplier_name_snapshot",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "period_month",
+          "table": "supplier_payment_batches",
+          "type": "date"
+        },
+        {
+          "column": "payment_date",
+          "table": "supplier_payment_batches",
+          "type": "date"
+        },
+        {
+          "column": "payment_method",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "cash_fund_id",
+          "table": "supplier_payment_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "cash_voucher_id",
+          "table": "supplier_payment_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "project_transaction_id",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "bank_account_snapshot",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "document_ref",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "total_recognized_snapshot",
+          "table": "supplier_payment_batches",
+          "type": "numeric"
+        },
+        {
+          "column": "payment_amount",
+          "table": "supplier_payment_batches",
+          "type": "numeric"
+        },
+        {
+          "column": "currency",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "allocation_mode",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "status",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "qr_token",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        },
+        {
+          "column": "attachments",
+          "table": "supplier_payment_batches",
+          "type": "jsonb"
+        },
+        {
+          "column": "metadata",
+          "table": "supplier_payment_batches",
+          "type": "jsonb"
+        },
+        {
+          "column": "created_by",
+          "table": "supplier_payment_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "approved_by",
+          "table": "supplier_payment_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "paid_by",
+          "table": "supplier_payment_batches",
+          "type": "uuid"
+        },
+        {
+          "column": "created_at",
+          "table": "supplier_payment_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "approved_at",
+          "table": "supplier_payment_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "paid_at",
+          "table": "supplier_payment_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "updated_at",
+          "table": "supplier_payment_batches",
+          "type": "timestamp with time zone"
+        },
+        {
+          "column": "note",
+          "table": "supplier_payment_batches",
+          "type": "text"
+        }
+      ],
+      "constraints": [
+        {
+          "definition": "CHECK ((issued_qty \u003e= (0)::numeric))",
+          "name": "material_request_fulfillment_lines_issued_qty_check",
+          "table": "material_request_fulfillment_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((received_qty \u003e= (0)::numeric))",
+          "name": "material_request_fulfillment_lines_received_qty_check",
+          "table": "material_request_fulfillment_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'reversed'::text, 'cancelled'::text, 'returned'::text, 'void'::text])))",
+          "name": "project_document_links_status_check",
+          "table": "project_document_links",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((status = ANY (ARRAY['draft'::text, 'sent'::text, 'confirmed'::text, 'in_transit'::text, 'partial'::text, 'delivered'::text, 'closed'::text, 'returned'::text, 'cancelled'::text])))",
+          "name": "purchase_orders_status_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "FOREIGN KEY (target_warehouse_id) REFERENCES warehouses(id) ON DELETE SET NULL",
+          "name": "purchase_order_request_lines_target_warehouse_id_fkey",
+          "table": "purchase_order_request_lines",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((allocation_status = ANY (ARRAY['open'::text, 'need_closed'::text, 'cancelled'::text])))",
+          "name": "purchase_order_request_lines_allocation_status_check",
+          "table": "purchase_order_request_lines",
+          "type": "c"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "inventory_balances_pkey",
+          "table": "inventory_balances",
+          "type": "p"
+        },
+        {
+          "definition": "UNIQUE (material_id, warehouse_id, scope_key)",
+          "name": "inventory_balances_unique_scope",
+          "table": "inventory_balances",
+          "type": "u"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "material_request_fulfillment_lines_pkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "p"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "project_document_links_pkey",
+          "table": "project_document_links",
+          "type": "p"
+        },
+        {
+          "definition": "UNIQUE (source_type, source_id, target_type, target_id, relation_type)",
+          "name": "project_document_links_source_type_source_id_target_type_ta_key",
+          "table": "project_document_links",
+          "type": "u"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "purchase_order_request_lines_pkey",
+          "table": "purchase_order_request_lines",
+          "type": "p"
+        },
+        {
+          "definition": "UNIQUE (purchase_order_id, purchase_order_line_id, material_request_id, request_line_id)",
+          "name": "purchase_order_request_lines_purchase_order_id_purchase_ord_key",
+          "table": "purchase_order_request_lines",
+          "type": "u"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "purchase_orders_pkey",
+          "table": "purchase_orders",
+          "type": "p"
+        },
+        {
+          "definition": "FOREIGN KEY (purchase_order_request_line_id) REFERENCES purchase_order_request_lines(id) ON DELETE SET NULL",
+          "name": "material_request_fulfillment__purchase_order_request_line__fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (batch_id) REFERENCES material_request_fulfillment_batches(id) ON DELETE CASCADE",
+          "name": "material_request_fulfillment_lines_batch_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE RESTRICT",
+          "name": "material_request_fulfillment_lines_item_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (material_budget_item_id) REFERENCES material_budget_items(id) ON DELETE SET NULL",
+          "name": "material_request_fulfillment_lines_material_budget_item_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (material_request_id) REFERENCES requests(id) ON DELETE CASCADE",
+          "name": "material_request_fulfillment_lines_material_request_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (po_id) REFERENCES purchase_orders(id) ON DELETE SET NULL",
+          "name": "material_request_fulfillment_lines_po_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (work_boq_item_id) REFERENCES project_work_boq_items(id) ON DELETE SET NULL",
+          "name": "material_request_fulfillment_lines_work_boq_item_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL",
+          "name": "project_document_links_project_id_fkey",
+          "table": "project_document_links",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (material_budget_item_id) REFERENCES material_budget_items(id) ON DELETE SET NULL",
+          "name": "purchase_order_request_lines_material_budget_item_id_fkey",
+          "table": "purchase_order_request_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (material_request_id) REFERENCES requests(id) ON DELETE CASCADE",
+          "name": "purchase_order_request_lines_material_request_id_fkey",
+          "table": "purchase_order_request_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL",
+          "name": "purchase_order_request_lines_project_id_fkey",
+          "table": "purchase_order_request_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE",
+          "name": "purchase_order_request_lines_purchase_order_id_fkey",
+          "table": "purchase_order_request_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (work_boq_item_id) REFERENCES project_work_boq_items(id) ON DELETE SET NULL",
+          "name": "purchase_order_request_lines_work_boq_item_id_fkey",
+          "table": "purchase_order_request_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL",
+          "name": "purchase_orders_project_id_fkey",
+          "table": "purchase_orders",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (archived_by) REFERENCES users(id) ON DELETE SET NULL",
+          "name": "purchase_orders_archived_by_fkey",
+          "table": "purchase_orders",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((delivery_no \u003e 0))",
+          "name": "purchase_order_delivery_batches_delivery_no_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "purchase_order_delivery_batches_pkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "p"
+        },
+        {
+          "definition": "UNIQUE (purchase_order_id, delivery_no)",
+          "name": "purchase_order_delivery_batch_purchase_order_id_delivery_no_key",
+          "table": "purchase_order_delivery_batches",
+          "type": "u"
+        },
+        {
+          "definition": "FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE",
+          "name": "purchase_order_delivery_batches_purchase_order_id_fkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL",
+          "name": "purchase_order_delivery_batches_project_id_fkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "name": "purchase_order_delivery_batches_created_by_fkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((planned_qty \u003e (0)::numeric))",
+          "name": "purchase_order_delivery_lines_planned_qty_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((stock_planned_qty \u003e= (0)::numeric))",
+          "name": "purchase_order_delivery_lines_stock_planned_qty_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "purchase_order_delivery_lines_pkey",
+          "table": "purchase_order_delivery_lines",
+          "type": "p"
+        },
+        {
+          "definition": "UNIQUE (delivery_batch_id, purchase_order_line_id)",
+          "name": "purchase_order_delivery_lines_delivery_batch_id_purchase_or_key",
+          "table": "purchase_order_delivery_lines",
+          "type": "u"
+        },
+        {
+          "definition": "FOREIGN KEY (delivery_batch_id) REFERENCES purchase_order_delivery_batches(id) ON DELETE CASCADE",
+          "name": "purchase_order_delivery_lines_delivery_batch_id_fkey",
+          "table": "purchase_order_delivery_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE",
+          "name": "purchase_order_delivery_lines_purchase_order_id_fkey",
+          "table": "purchase_order_delivery_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE RESTRICT",
+          "name": "purchase_order_delivery_lines_item_id_fkey",
+          "table": "purchase_order_delivery_lines",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (po_delivery_line_id) REFERENCES purchase_order_delivery_lines(id) ON DELETE SET NULL",
+          "name": "material_request_fulfillment_lines_po_delivery_line_id_fkey",
+          "table": "material_request_fulfillment_lines",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK (((vat_rate \u003e= (0)::numeric) AND (vat_rate \u003c= (100)::numeric)))",
+          "name": "purchase_orders_vat_rate_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "FOREIGN KEY (wms_transaction_id) REFERENCES transactions(id) ON DELETE SET NULL",
+          "name": "purchase_order_delivery_batches_wms_transaction_id_fkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((purchase_mode = ANY (ARRAY['single'::text, 'multiple'::text])))",
+          "name": "purchase_orders_purchase_mode_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((fulfillment_mode = ANY (ARRAY['RECEIVE_TO_STOCK'::text, 'DIRECT_CONSUMPTION'::text])))",
+          "name": "purchase_orders_fulfillment_mode_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((closed_need_qty \u003e= (0)::numeric))",
+          "name": "purchase_orders_closed_need_qty_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "FOREIGN KEY (quality_approved_by) REFERENCES users(id) ON DELETE SET NULL",
+          "name": "purchase_order_delivery_batches_quality_approved_by_fkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (received_by) REFERENCES users(id) ON DELETE SET NULL",
+          "name": "purchase_order_delivery_batches_received_by_fkey",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((status = ANY (ARRAY['planned'::text, 'supplemental_pending'::text, 'wms_pending'::text, 'waiting_delivery'::text, 'receiving'::text, 'quality_approved'::text, 'received'::text, 'received_short'::text, 'received_over'::text, 'cancelled'::text])))",
+          "name": "purchase_order_delivery_batches_status_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((fulfillment_mode = ANY (ARRAY['RECEIVE_TO_STOCK'::text, 'DIRECT_CONSUMPTION'::text])))",
+          "name": "purchase_order_delivery_batches_fulfillment_mode_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((vat_rate \u003e= (0)::numeric))",
+          "name": "purchase_order_delivery_batches_vat_rate_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK (((quality_result IS NULL) OR (quality_result = ANY (ARRAY['passed'::text, 'partial'::text, 'rejected'::text]))))",
+          "name": "purchase_order_delivery_batches_quality_result_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((accepted_gross_amount \u003e= (0)::numeric))",
+          "name": "purchase_order_delivery_batches_accepted_gross_amount_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((accepted_qty \u003e= (0)::numeric))",
+          "name": "purchase_order_delivery_lines_accepted_qty_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((accepted_stock_qty \u003e= (0)::numeric))",
+          "name": "purchase_order_delivery_lines_accepted_stock_qty_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((returned_qty \u003e= (0)::numeric))",
+          "name": "purchase_order_delivery_lines_returned_qty_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((returned_qty \u003c= accepted_qty))",
+          "name": "purchase_order_delivery_lines_returned_lte_accepted_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((procurement_flow_version = ANY (ARRAY[2, 3, 4])))",
+          "name": "purchase_orders_procurement_flow_version_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((source_mode = ANY (ARRAY['from_request'::text, 'proactive_project'::text, 'proactive_stock'::text, 'company_consolidated'::text, 'site_direct_planned'::text, 'site_direct_immediate'::text])))",
+          "name": "purchase_orders_source_mode_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((payment_status = ANY (ARRAY['unpaid'::text, 'partial'::text, 'paid'::text, 'overdue'::text, 'cancelled'::text])))",
+          "name": "purchase_orders_payment_status_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((allocation_mode = ANY (ARRAY['fifo'::text, 'manual'::text, 'proportional'::text])))",
+          "name": "supplier_payment_allocations_allocation_mode_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((recognized_amount_snapshot \u003e= (0)::numeric))",
+          "name": "supplier_payment_allocations_recognized_amount_snapshot_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((paid_before_snapshot \u003e= (0)::numeric))",
+          "name": "supplier_payment_allocations_paid_before_snapshot_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((outstanding_before_snapshot \u003e= (0)::numeric))",
+          "name": "supplier_payment_allocations_outstanding_before_snapshot_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((allocated_amount \u003e= (0)::numeric))",
+          "name": "supplier_payment_allocations_allocated_amount_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((discount_amount \u003e= (0)::numeric))",
+          "name": "supplier_payment_allocations_discount_amount_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((withholding_amount \u003e= (0)::numeric))",
+          "name": "supplier_payment_allocations_withholding_amount_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((((allocated_amount + discount_amount) + withholding_amount) \u003c= outstanding_before_snapshot))",
+          "name": "supplier_payment_allocations_check",
+          "table": "supplier_payment_allocations",
+          "type": "c"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "supplier_payment_allocations_pkey",
+          "table": "supplier_payment_allocations",
+          "type": "p"
+        },
+        {
+          "definition": "UNIQUE (payment_batch_id, payable_document_id)",
+          "name": "supplier_payment_allocations_payment_batch_id_payable_docum_key",
+          "table": "supplier_payment_allocations",
+          "type": "u"
+        },
+        {
+          "definition": "FOREIGN KEY (payment_batch_id) REFERENCES supplier_payment_batches(id) ON DELETE CASCADE",
+          "name": "supplier_payment_allocations_payment_batch_id_fkey",
+          "table": "supplier_payment_allocations",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (payable_document_id) REFERENCES supplier_payable_documents(id) ON DELETE RESTRICT",
+          "name": "supplier_payment_allocations_payable_document_id_fkey",
+          "table": "supplier_payment_allocations",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((net_amount \u003e= (0)::numeric))",
+          "name": "supplier_invoices_net_amount_check",
+          "table": "supplier_invoices",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((vat_amount \u003e= (0)::numeric))",
+          "name": "supplier_invoices_vat_amount_check",
+          "table": "supplier_invoices",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((gross_amount \u003e= (0)::numeric))",
+          "name": "supplier_invoices_gross_amount_check",
+          "table": "supplier_invoices",
+          "type": "c"
+        },
+        {
+          "definition": "PRIMARY KEY (id)",
+          "name": "supplier_invoices_pkey",
+          "table": "supplier_invoices",
+          "type": "p"
+        },
+        {
+          "definition": "FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL",
+          "name": "supplier_invoices_created_by_fkey",
+          "table": "supplier_invoices",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((allocated_gross_amount \u003e (0)::numeric))",
+          "name": "supplier_invoice_payable_links_allocated_gross_amount_check",
+          "table": "supplier_invoice_payable_links",
+          "type": "c"
+        },
+        {
+          "definition": "PRIMARY KEY (invoice_id, payable_document_id)",
+          "name": "supplier_invoice_payable_links_pkey",
+          "table": "supplier_invoice_payable_links",
+          "type": "p"
+        },
+        {
+          "definition": "FOREIGN KEY (invoice_id) REFERENCES supplier_invoices(id) ON DELETE CASCADE",
+          "name": "supplier_invoice_payable_links_invoice_id_fkey",
+          "table": "supplier_invoice_payable_links",
+          "type": "f"
+        },
+        {
+          "definition": "FOREIGN KEY (payable_document_id) REFERENCES supplier_payable_documents(id) ON DELETE RESTRICT",
+          "name": "supplier_invoice_payable_links_payable_document_id_fkey",
+          "table": "supplier_invoice_payable_links",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK ((supplemental_approval_status = ANY (ARRAY['none'::text, 'pending'::text, 'approved'::text, 'rejected'::text])))",
+          "name": "purchase_orders_supplemental_approval_status_check",
+          "table": "purchase_orders",
+          "type": "c"
+        },
+        {
+          "definition": "FOREIGN KEY (supplemental_approval_id) REFERENCES purchase_order_supplemental_approvals(id) ON DELETE SET NULL",
+          "name": "po_delivery_batches_supplemental_approval_fk",
+          "table": "purchase_order_delivery_batches",
+          "type": "f"
+        },
+        {
+          "definition": "CHECK (((delivered_qty \u003e= (0)::numeric) AND (accepted_qty \u003e= (0)::numeric) AND (delivered_stock_qty \u003e= (0)::numeric) AND (accepted_stock_qty \u003e= (0)::numeric) AND (accepted_qty \u003c= delivered_qty) AND (accepted_stock_qty \u003c= delivered_stock_qty)))",
+          "name": "purchase_order_delivery_lines_practical_qty_check",
+          "table": "purchase_order_delivery_lines",
+          "type": "c"
+        },
+        {
+          "definition": "CHECK ((approval_status = ANY (ARRAY['draft'::text, 'pending_approval'::text, 'approved'::text, 'revision_requested'::text, 'rejected'::text])))",
+          "name": "purchase_order_delivery_batches_approval_status_check",
+          "table": "purchase_order_delivery_batches",
+          "type": "c"
+        }
+      ],
+      "functions": [
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION public.approve_material_po_quality(p_delivery_batch_id uuid, p_wms_transaction_id text, p_actor_user_id uuid DEFAULT NULL::uuid, p_quality_result text DEFAULT 'passed'::text, p_lines jsonb DEFAULT '[]'::jsonb, p_attachments jsonb DEFAULT '[]'::jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_actor uuid;\nbegin\n  v_actor := app_private.require_purchase_receipt_stage_action(\n    p_wms_transaction_id,\n    p_actor_user_id,\n    'wms.transaction.approve'\n  );\n\n  return app_private.approve_material_po_quality(\n    p_delivery_batch_id,\n    p_wms_transaction_id,\n    v_actor,\n    p_quality_result,\n    p_lines,\n    p_attachments\n  );\nend;\n$function$\n",
+          "name": "approve_material_po_quality",
+          "schema": "public",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION app_private.approve_material_po_quality(p_delivery_batch_id uuid, p_wms_transaction_id text, p_actor_user_id uuid, p_quality_result text, p_lines jsonb, p_attachments jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_po_id text;\n  v_batch public.purchase_order_delivery_batches%rowtype;\n  v_tx public.transactions%rowtype;\n  v_line jsonb;\n  v_delivery_line public.purchase_order_delivery_lines%rowtype;\n  v_delivery_line_id uuid;\n  v_item_id text;\n  v_delivered_purchase_qty numeric;\n  v_accepted_purchase_qty numeric;\n  v_delivered_stock_qty numeric;\n  v_accepted_stock_qty numeric;\n  v_variance_reason text;\n  v_seen_line_ids uuid[] := '{}'::uuid[];\n  v_expected_line_count integer;\n  v_wms_items jsonb := '[]'::jsonb;\n  v_gross numeric := 0;\n  v_combined_reason text;\n  v_stock_factor numeric;\n  v_stock_unit_price numeric;\nbegin\n  if p_actor_user_id is null\n     or public.current_app_user_id() is null\n     or p_actor_user_id \u003c\u003e public.current_app_user_id() then\n    raise exception 'Người thực hiện lệnh không hợp lệ.' using errcode = '42501';\n  end if;\n  if p_quality_result not in ('passed', 'partial', 'rejected') then\n    raise exception 'Kết quả kiểm tra SL/CL không hợp lệ.' using errcode = '22023';\n  end if;\n  if jsonb_typeof(coalesce(p_lines, '[]'::jsonb)) \u003c\u003e 'array'\n     or jsonb_typeof(coalesce(p_attachments, '[]'::jsonb)) \u003c\u003e 'array' then\n    raise exception 'Dữ liệu nhận hàng không hợp lệ.' using errcode = '22023';\n  end if;\n\n  select batch.purchase_order_id into v_po_id\n  from public.purchase_order_delivery_batches batch\n  where batch.id = p_delivery_batch_id;\n  if not found then\n    raise exception 'Không tìm thấy đợt giao.' using errcode = '22023';\n  end if;\n\n  perform 1 from public.purchase_orders where id = v_po_id for update;\n  select * into v_batch\n  from public.purchase_order_delivery_batches\n  where id = p_delivery_batch_id\n  for update;\n  if v_batch.wms_transaction_id is distinct from p_wms_transaction_id\n     or v_batch.status \u003c\u003e 'receiving' then\n    raise exception 'Đợt giao không còn ở trạng thái chờ duyệt SL/CL.' using errcode = '22023';\n  end if;\n\n  select * into v_tx\n  from public.transactions\n  where id = p_wms_transaction_id\n  for update;\n  if not found\n     or v_tx.source_type \u003c\u003e 'po_delivery_batch'\n     or v_tx.source_id \u003c\u003e p_delivery_batch_id::text then\n    raise exception 'WMS không liên kết đúng đợt giao.' using errcode = '22023';\n  end if;\n  if v_tx.status \u003c\u003e 'PENDING'::public.transaction_status then\n    raise exception 'Phiếu WMS không còn chờ duyệt SL/CL.' using errcode = '22023';\n  end if;\n  if not app_private.current_user_can_receive_purchase_batch_v2(\n    p_actor_user_id,\n    v_tx.target_warehouse_id\n  ) then\n    raise exception 'Người dùng không có quyền duyệt SL/CL tại kho nhận.' using errcode = '42501';\n  end if;\n\n  select count(*) into v_expected_line_count\n  from public.purchase_order_delivery_lines\n  where delivery_batch_id = p_delivery_batch_id;\n  if v_expected_line_count = 0\n     or jsonb_array_length(p_lines) \u003c\u003e v_expected_line_count then\n    raise exception 'Payload nhận hàng phải khớp 1-1 với dòng đợt giao.' using errcode = '22023';\n  end if;\n\n  for v_line in\n    select value from jsonb_array_elements(p_lines) line(value)\n  loop\n    v_delivery_line_id := nullif(coalesce(\n      v_line -\u003e\u003e 'deliveryLineId', v_line -\u003e\u003e 'delivery_line_id'\n    ), '')::uuid;\n    v_item_id := nullif(coalesce(v_line -\u003e\u003e 'itemId', v_line -\u003e\u003e 'item_id'), '');\n    v_accepted_purchase_qty := coalesce(nullif(coalesce(\n      v_line -\u003e\u003e 'acceptedPurchaseQty', v_line -\u003e\u003e 'accepted_purchase_qty'\n    ), '')::numeric, 0);\n    v_delivered_purchase_qty := coalesce(nullif(coalesce(\n      v_line -\u003e\u003e 'deliveredPurchaseQty', v_line -\u003e\u003e 'delivered_purchase_qty'\n    ), '')::numeric, v_accepted_purchase_qty);\n    v_accepted_stock_qty := coalesce(nullif(coalesce(\n      v_line -\u003e\u003e 'acceptedStockQty', v_line -\u003e\u003e 'accepted_stock_qty'\n    ), '')::numeric, 0);\n    v_delivered_stock_qty := coalesce(nullif(coalesce(\n      v_line -\u003e\u003e 'deliveredStockQty', v_line -\u003e\u003e 'delivered_stock_qty'\n    ), '')::numeric, v_accepted_stock_qty);\n    v_variance_reason := nullif(trim(coalesce(\n      v_line -\u003e\u003e 'varianceReason', v_line -\u003e\u003e 'variance_reason', ''\n    )), '');\n\n    if v_delivery_line_id is null or v_item_id is null then\n      raise exception 'Dòng nhận hàng thiếu deliveryLineId hoặc itemId.' using errcode = '22023';\n    end if;\n    if v_delivery_line_id = any(v_seen_line_ids) then\n      raise exception 'Dòng nhận hàng bị lặp.' using errcode = '22023';\n    end if;\n    if v_delivered_purchase_qty \u003c 0\n       or v_accepted_purchase_qty \u003c 0\n       or v_delivered_stock_qty \u003c 0\n       or v_accepted_stock_qty \u003c 0 then\n      raise exception 'Số lượng thực tế không được âm.' using errcode = '22023';\n    end if;\n    if v_accepted_purchase_qty \u003e v_delivered_purchase_qty then\n      raise exception 'Số chấp nhận không được lớn hơn số giao thực tế.' using errcode = '22023';\n    end if;\n    if v_accepted_stock_qty \u003e v_delivered_stock_qty then\n      raise exception 'Số nhập kho không được lớn hơn số giao theo đơn vị tồn kho.' using errcode = '22023';\n    end if;\n\n    select * into v_delivery_line\n    from public.purchase_order_delivery_lines\n    where id = v_delivery_line_id\n      and delivery_batch_id = p_delivery_batch_id\n    for update;\n    if not found or v_delivery_line.item_id \u003c\u003e v_item_id then\n      raise exception 'Dòng nhận hàng không thuộc đợt giao.' using errcode = '22023';\n    end if;\n\n    if (\n      v_delivered_purchase_qty is distinct from coalesce(v_delivery_line.planned_qty, 0)\n      or v_accepted_purchase_qty is distinct from v_delivered_purchase_qty\n      or v_accepted_stock_qty is distinct from v_delivered_stock_qty\n    ) and v_variance_reason is null then\n      raise exception 'Phải nhập lý do khi số đặt, giao hoặc chấp nhận chênh lệch.' using errcode = '22023';\n    end if;\n\n    update public.purchase_order_delivery_lines\n    set delivered_qty = v_delivered_purchase_qty,\n        accepted_qty = v_accepted_purchase_qty,\n        delivered_stock_qty = v_delivered_stock_qty,\n        accepted_stock_qty = v_accepted_stock_qty,\n        updated_at = now()\n    where id = v_delivery_line.id;\n\n    v_seen_line_ids := array_append(v_seen_line_ids, v_delivery_line.id);\n    if v_variance_reason is not null then\n      v_combined_reason := concat_ws('; ', v_combined_reason, v_variance_reason);\n    end if;\n    v_stock_factor := case\n      when coalesce(v_delivery_line.planned_qty, 0) \u003e 0\n        and coalesce(v_delivery_line.stock_planned_qty, 0) \u003e 0 then\n          v_delivery_line.stock_planned_qty / v_delivery_line.planned_qty\n      else 1\n    end;\n    v_stock_unit_price := case\n      when v_stock_factor \u003e 0 then coalesce(v_delivery_line.delivery_unit_price, 0) / v_stock_factor\n      else coalesce(v_delivery_line.delivery_unit_price, 0)\n    end;\n    v_gross := v_gross\n      + v_accepted_purchase_qty\n      * coalesce(v_delivery_line.delivery_unit_price, 0)\n      * (1 + coalesce(v_batch.vat_rate, 0) / 100);\n\n    v_wms_items := v_wms_items || jsonb_build_array(jsonb_build_object(\n      'itemId', v_delivery_line.item_id,\n      'quantity', v_accepted_stock_qty,\n      'orderedQty', coalesce(v_delivery_line.stock_planned_qty, v_delivery_line.planned_qty, 0),\n      'deliveredStockQty', v_delivered_stock_qty,\n      'price', v_stock_unit_price,\n      'accountingQty', v_accepted_purchase_qty,\n      'orderedPurchaseQty', v_delivery_line.planned_qty,\n      'deliveredPurchaseQty', v_delivered_purchase_qty,\n      'accountingUnit', coalesce(v_delivery_line.unit, v_delivery_line.stock_unit, ''),\n      'accountingPrice', coalesce(v_delivery_line.delivery_unit_price, 0),\n      'varianceQty', v_accepted_purchase_qty - coalesce(v_delivery_line.planned_qty, 0),\n      'varianceReason', v_variance_reason,\n      'purchaseOrderLineId', v_delivery_line.purchase_order_line_id,\n      'purchaseOrderDeliveryBatchId', p_delivery_batch_id,\n      'purchaseOrderDeliveryLineId', v_delivery_line.id,\n      'fulfillmentMode', coalesce(v_batch.fulfillment_mode, 'RECEIVE_TO_STOCK')\n    ));\n  end loop;\n\n  if coalesce(array_length(v_seen_line_ids, 1), 0) \u003c\u003e v_expected_line_count then\n    raise exception 'Payload nhận hàng thiếu dòng đợt giao.' using errcode = '22023';\n  end if;\n\n  update public.transactions\n  set items = v_wms_items,\n      attachments = coalesce(p_attachments, '[]'::jsonb),\n      status = 'APPROVED'::public.transaction_status,\n      approver_id = p_actor_user_id,\n      approved_at = now()\n  where id = p_wms_transaction_id;\n\n  update public.purchase_order_delivery_batches\n  set status = 'quality_approved',\n      quality_result = p_quality_result,\n      variance_reason = v_combined_reason,\n      quality_approved_by = p_actor_user_id,\n      quality_approved_at = now(),\n      accepted_gross_amount = round(v_gross, 2),\n      updated_at = now()\n  where id = p_delivery_batch_id;\n\n  return app_private.purchase_receipt_command_result_v2(p_delivery_batch_id, false);\nend;\n$function$\n",
+          "name": "approve_material_po_quality",
+          "schema": "app_private",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION public.finalize_material_po_receipt(p_delivery_batch_id uuid, p_wms_transaction_id text, p_actor_user_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_actor uuid;\n  v_result jsonb;\n  v_po_id text;\n  v_purchase_mode text;\n  v_previous_guard text;\nbegin\n  v_actor := app_private.require_purchase_receipt_stage_action(\n    p_wms_transaction_id,\n    p_actor_user_id,\n    'wms.transaction.complete'\n  );\n\n  v_result := app_private.finalize_purchase_receipt_v2(\n    p_delivery_batch_id,\n    p_wms_transaction_id,\n    v_actor\n  );\n\n  select batch.purchase_order_id, po.purchase_mode\n  into v_po_id, v_purchase_mode\n  from public.purchase_order_delivery_batches batch\n  join public.purchase_orders po on po.id = batch.purchase_order_id\n  where batch.id = p_delivery_batch_id;\n\n  if coalesce(v_purchase_mode, 'single') = 'single'\n     and v_result -\u003e\u003e 'transactionStatus' = 'COMPLETED' then\n    v_previous_guard := current_setting('app.material_transition_context', true);\n    perform set_config('app.material_transition_context', 'on', true);\n    update public.purchase_orders\n    set status = 'delivered',\n        actual_delivery_date = coalesce(actual_delivery_date, current_date::text)\n    where id = v_po_id;\n    perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);\n    v_result := v_result || jsonb_build_object('purchaseOrderStatus', 'delivered');\n  else\n    v_result := v_result || jsonb_build_object(\n      'purchaseOrderStatus', (select status from public.purchase_orders where id = v_po_id)\n    );\n  end if;\n\n  return v_result;\nexception\n  when others then\n    perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);\n    raise;\nend;\n$function$\n",
+          "name": "finalize_material_po_receipt",
+          "schema": "public",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION app_private.post_inventory_ledger_entry(p_inventory_transaction_id uuid, p_entry_no integer, p_document_code text, p_transaction_date timestamp with time zone, p_transaction_type text, p_direction text, p_material_id text, p_warehouse_id text, p_project_id text, p_construction_site_id text, p_source_type text, p_source_id text, p_source_code text, p_source_line_id text, p_related_request_id text, p_qty numeric, p_unit_price numeric, p_description text, p_metadata jsonb, p_created_by uuid, p_approved_by uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_entry_id uuid := gen_random_uuid();\n  v_delta numeric;\n  v_value_delta numeric;\n  v_balance_after_qty numeric;\n  v_balance_after_value numeric;\n  v_unit text;\nbegin\n  if p_qty is null or p_qty \u003c= 0 then\n    raise exception 'ledger quantity must be positive';\n  end if;\n  if nullif(p_material_id, '') is null then\n    raise exception 'material id is required';\n  end if;\n  if nullif(p_warehouse_id, '') is null then\n    raise exception 'warehouse id is required';\n  end if;\n\n  select i.unit into v_unit\n  from public.items i\n  where i.id = p_material_id;\n\n  v_unit := coalesce(\n    v_unit,\n    nullif(p_metadata-\u003e\u003e'unit', ''),\n    nullif(p_metadata-\u003e\u003e'unitSnapshot', ''),\n    nullif(p_metadata-\u003e\u003e'accountingUnit', '')\n  );\n\n  v_delta := case when p_direction = 'in' then p_qty else -p_qty end;\n  v_value_delta := v_delta * coalesce(p_unit_price, 0);\n\n  insert into public.inventory_balances (\n    material_id, warehouse_id, project_id, construction_site_id,\n    on_hand_qty, total_value, average_unit_cost,\n    last_ledger_entry_id, last_transaction_date, updated_at\n  )\n  values (\n    p_material_id, p_warehouse_id, nullif(p_project_id, ''), nullif(p_construction_site_id, ''),\n    v_delta, v_value_delta,\n    case when v_delta = 0 then 0 else coalesce(p_unit_price, 0) end,\n    v_entry_id, p_transaction_date, now()\n  )\n  on conflict (material_id, warehouse_id, scope_key)\n  do update set\n    on_hand_qty = public.inventory_balances.on_hand_qty + excluded.on_hand_qty,\n    total_value = public.inventory_balances.total_value + excluded.total_value,\n    average_unit_cost = case\n      when (public.inventory_balances.on_hand_qty + excluded.on_hand_qty) = 0 then 0\n      else (public.inventory_balances.total_value + excluded.total_value)\n        / nullif(public.inventory_balances.on_hand_qty + excluded.on_hand_qty, 0)\n    end,\n    last_ledger_entry_id = excluded.last_ledger_entry_id,\n    last_transaction_date = excluded.last_transaction_date,\n    updated_at = now()\n  returning on_hand_qty, total_value\n    into v_balance_after_qty, v_balance_after_value;\n\n  insert into public.inventory_ledger_entries (\n    id, inventory_transaction_id, entry_no, document_code,\n    transaction_date, transaction_type, movement_direction,\n    material_id, warehouse_id, project_id, construction_site_id,\n    source_type, source_id, source_code, source_line_id, related_request_id,\n    quantity_in, quantity_out, unit, unit_price,\n    balance_after_qty, balance_after_value,\n    description, metadata, created_by, approved_by\n  )\n  values (\n    v_entry_id, p_inventory_transaction_id, p_entry_no, p_document_code,\n    p_transaction_date, p_transaction_type, p_direction,\n    p_material_id, p_warehouse_id, nullif(p_project_id, ''), nullif(p_construction_site_id, ''),\n    p_source_type, p_source_id, p_source_code, nullif(p_source_line_id, ''), nullif(p_related_request_id, ''),\n    case when p_direction = 'in' then p_qty else 0 end,\n    case when p_direction = 'out' then p_qty else 0 end,\n    v_unit, coalesce(p_unit_price, 0),\n    v_balance_after_qty, v_balance_after_value,\n    p_description, coalesce(p_metadata, '{}'::jsonb), p_created_by, p_approved_by\n  );\n\n  return v_entry_id;\nend;\n$function$\n",
+          "name": "post_inventory_ledger_entry",
+          "schema": "app_private",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION public.post_supplier_payment_batch(p_batch_id uuid, p_actor_id uuid DEFAULT NULL::uuid)\n RETURNS supplier_payment_batches\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_batch public.supplier_payment_batches%rowtype;\n  v_allocated numeric(18,2);\n  v_finance_id text := '';\n  v_tx_id text;\n  v_allocation record;\n  v_actor_id uuid := public.current_app_user_id();\nbegin\n  select * into v_batch\n  from public.supplier_payment_batches\n  where id = p_batch_id\n  for update;\n\n  if not found then\n    raise exception 'Không tìm thấy đợt thanh toán %. ', p_batch_id;\n  end if;\n\n  if v_actor_id is null or (p_actor_id is not null and p_actor_id \u003c\u003e v_actor_id) then\n    raise exception 'Người thực hiện thanh toán không khớp với phiên đăng nhập.';\n  end if;\n\n  if not app_private.can_manage_supplier_payments(v_batch.project_id, v_batch.construction_site_id) then\n    raise exception 'Bạn không có quyền post đợt thanh toán này.';\n  end if;\n\n  if v_batch.status in ('cancelled', 'reversed') then\n    raise exception 'Không thể post đợt thanh toán đã huỷ/đảo.';\n  end if;\n\n  if v_batch.status \u003c\u003e 'paid' then\n    select coalesce(sum(allocated_amount), 0)::numeric(18,2)\n    into v_allocated\n    from public.supplier_payment_allocations\n    where payment_batch_id = p_batch_id;\n\n    if v_allocated \u003c\u003e v_batch.payment_amount then\n      raise exception 'Tổng phân bổ (%) phải bằng số tiền thanh toán (%).', v_allocated, v_batch.payment_amount;\n    end if;\n\n    for v_allocation in\n      select\n        a.*,\n        d.document_no,\n        d.recognized_amount,\n        d.credit_amount,\n        coalesce((\n          select sum(a2.allocated_amount + a2.discount_amount + a2.withholding_amount)\n          from public.supplier_payment_allocations a2\n          join public.supplier_payment_batches b2 on b2.id = a2.payment_batch_id\n          where a2.payable_document_id = a.payable_document_id\n            and b2.status = 'paid'\n            and b2.id \u003c\u003e p_batch_id\n        ), 0) as paid_before\n      from public.supplier_payment_allocations a\n      join public.supplier_payable_documents d on d.id = a.payable_document_id\n      where a.payment_batch_id = p_batch_id\n      for update of d\n    loop\n      if v_allocation.paid_before + v_allocation.allocated_amount + v_allocation.discount_amount + v_allocation.withholding_amount\n        \u003e v_allocation.recognized_amount - v_allocation.credit_amount\n      then\n        raise exception 'Số phân bổ vượt công nợ của chứng từ %.', v_allocation.document_no;\n      end if;\n    end loop;\n  end if;\n\n  select finance.id into v_finance_id\n  from public.project_finances finance\n  where (v_batch.project_id is not null and finance.project_id = v_batch.project_id)\n     or (v_batch.construction_site_id is not null and finance.construction_site_id = v_batch.construction_site_id)\n  order by\n    case when v_batch.project_id is not null and finance.project_id = v_batch.project_id then 0 else 1 end,\n    finance.id\n  limit 1;\n\n  insert into public.project_transactions (\n    id, \"projectFinanceId\", \"constructionSiteId\", project_id, project_finance_id, construction_site_id,\n    type, category, amount, description, date, source, \"sourceRef\", source_ref,\n    attachments, \"createdBy\", \"createdAt\", counterparty_name, counterparty_partner_id\n  )\n  values (\n    'supplier-payment-' || p_batch_id::text,\n    coalesce(v_finance_id, ''),\n    coalesce(v_batch.construction_site_id, ''),\n    v_batch.project_id,\n    nullif(v_finance_id, ''),\n    v_batch.construction_site_id,\n    'expense',\n    'materials',\n    v_batch.payment_amount,\n    'Thanh toán NCC ' || v_batch.supplier_name_snapshot || ' - ' || v_batch.code,\n    v_batch.payment_date::text,\n    'workflow',\n    'supplier_payment_batch:' || p_batch_id::text,\n    'supplier_payment_batch:' || p_batch_id::text,\n    coalesce(v_batch.attachments, '[]'::jsonb),\n    coalesce(v_batch.paid_by, v_actor_id, v_batch.created_by)::text,\n    coalesce(v_batch.paid_at, now()),\n    v_batch.supplier_name_snapshot,\n    v_batch.supplier_id\n  )\n  on conflict (source_ref) do update\n  set\n    \"projectFinanceId\" = excluded.\"projectFinanceId\",\n    \"constructionSiteId\" = excluded.\"constructionSiteId\",\n    project_id = excluded.project_id,\n    project_finance_id = excluded.project_finance_id,\n    construction_site_id = excluded.construction_site_id,\n    type = excluded.type,\n    category = excluded.category,\n    amount = excluded.amount,\n    description = excluded.description,\n    date = excluded.date,\n    source = excluded.source,\n    \"sourceRef\" = excluded.\"sourceRef\",\n    attachments = excluded.attachments,\n    counterparty_name = excluded.counterparty_name,\n    counterparty_partner_id = excluded.counterparty_partner_id\n  returning id into v_tx_id;\n\n  update public.supplier_payment_batches\n  set\n    status = 'paid',\n    paid_by = coalesce(paid_by, v_actor_id),\n    paid_at = coalesce(paid_at, now()),\n    project_transaction_id = v_tx_id,\n    updated_at = now()\n  where id = p_batch_id\n  returning * into v_batch;\n\n  update public.supplier_payable_documents d\n  set\n    status = case\n      when balance.outstanding_amount \u003c= 0 then 'paid'\n      when balance.paid_amount \u003e 0 then 'partial'\n      else d.status\n    end,\n    updated_at = now()\n  from public.supplier_payable_document_balances balance\n  where balance.id = d.id\n    and d.id in (\n      select payable_document_id\n      from public.supplier_payment_allocations\n      where payment_batch_id = p_batch_id\n    );\n\n  return v_batch;\nend;\n$function$\n",
+          "name": "post_supplier_payment_batch",
+          "schema": "public",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION public.record_supplier_invoice_reconciliation_v2(p_invoice jsonb, p_links jsonb, p_actor_user_id uuid)\n RETURNS supplier_invoices\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  return app_private.record_supplier_invoice_reconciliation_v2(p_invoice, p_links, p_actor_user_id);\nend;\n$function$\n",
+          "name": "record_supplier_invoice_reconciliation_v2",
+          "schema": "public",
+          "security_definer": false
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION app_private.record_supplier_invoice_reconciliation_v2(p_invoice jsonb, p_links jsonb, p_actor_user_id uuid)\n RETURNS supplier_invoices\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_invoice public.supplier_invoices%rowtype;\n  v_invoice_id uuid := coalesce(nullif(p_invoice -\u003e\u003e 'id', '')::uuid, gen_random_uuid());\n  v_supplier_id text := nullif(trim(coalesce(p_invoice -\u003e\u003e 'supplierId', p_invoice -\u003e\u003e 'supplier_id')), '');\n  v_supplier_name text := nullif(trim(coalesce(p_invoice -\u003e\u003e 'supplierNameSnapshot', p_invoice -\u003e\u003e 'supplier_name_snapshot')), '');\n  v_invoice_number text := nullif(trim(coalesce(p_invoice -\u003e\u003e 'invoiceNumber', p_invoice -\u003e\u003e 'invoice_number')), '');\n  v_invoice_date date := nullif(coalesce(p_invoice -\u003e\u003e 'invoiceDate', p_invoice -\u003e\u003e 'invoice_date'), '')::date;\n  v_net_amount numeric(18,2) := round(coalesce(nullif(coalesce(p_invoice -\u003e\u003e 'netAmount', p_invoice -\u003e\u003e 'net_amount'), '')::numeric, 0), 2);\n  v_vat_amount numeric(18,2) := round(coalesce(nullif(coalesce(p_invoice -\u003e\u003e 'vatAmount', p_invoice -\u003e\u003e 'vat_amount'), '')::numeric, 0), 2);\n  v_gross_amount numeric(18,2) := round(coalesce(nullif(coalesce(p_invoice -\u003e\u003e 'grossAmount', p_invoice -\u003e\u003e 'gross_amount'), '')::numeric, 0), 2);\n  v_variance_reason text := nullif(trim(coalesce(p_invoice -\u003e\u003e 'varianceReason', p_invoice -\u003e\u003e 'variance_reason', '')), '');\n  v_attachments jsonb := coalesce(p_invoice -\u003e 'attachments', '[]'::jsonb);\n  v_link jsonb;\n  v_payable_id uuid;\n  v_allocated numeric(18,2);\n  v_allocated_total numeric(18,2) := 0;\n  v_estimated_total numeric(18,2) := 0;\n  v_variance numeric(18,2);\n  v_ap public.supplier_payable_documents%rowtype;\n  v_project_id text := null;\n  v_site_id text := null;\n  v_project_finance_id text := null;\n  v_adjustment_ref text;\n  v_adjustment_id text;\nbegin\n  if public.current_app_user_id() is null or p_actor_user_id \u003c\u003e public.current_app_user_id() then\n    raise exception 'Nguoi thao tac khong hop le.' using errcode = '42501';\n  end if;\n  if v_supplier_id is null or v_supplier_name is null or v_invoice_number is null then\n    raise exception 'Hoa don thieu NCC hoac so hoa don.' using errcode = '22023';\n  end if;\n  if v_gross_amount \u003c= 0 or v_net_amount \u003c 0 or v_vat_amount \u003c 0 then\n    raise exception 'Gia tri hoa don khong hop le.' using errcode = '22023';\n  end if;\n  if jsonb_typeof(coalesce(p_links, '[]'::jsonb)) \u003c\u003e 'array' or jsonb_array_length(p_links) = 0 then\n    raise exception 'Hoa don phai link it nhat mot AP.' using errcode = '22023';\n  end if;\n  if jsonb_typeof(v_attachments) \u003c\u003e 'array' then\n    raise exception 'Dinh kem hoa don phai la mang JSON.' using errcode = '22023';\n  end if;\n\n  for v_link in select value from jsonb_array_elements(p_links) as link(value)\n  loop\n    v_payable_id := nullif(coalesce(v_link -\u003e\u003e 'payableDocumentId', v_link -\u003e\u003e 'payable_document_id'), '')::uuid;\n    v_allocated := round(coalesce(nullif(coalesce(v_link -\u003e\u003e 'allocatedGrossAmount', v_link -\u003e\u003e 'allocated_gross_amount'), '')::numeric, 0), 2);\n    if v_payable_id is null or v_allocated \u003c= 0 then\n      raise exception 'Link AP hoa don khong hop le.' using errcode = '22023';\n    end if;\n\n    select * into v_ap\n    from public.supplier_payable_documents\n    where id = v_payable_id\n    for update;\n    if not found then\n      raise exception 'Khong tim thay AP %.', v_payable_id using errcode = '22023';\n    end if;\n    if coalesce(v_ap.supplier_id, '') \u003c\u003e v_supplier_id then\n      raise exception 'Tat ca AP duoc link phai cung nha cung cap voi hoa don.' using errcode = '22023';\n    end if;\n    if not app_private.ap_scope_can_mutate(v_ap.project_id, v_ap.construction_site_id) then\n      raise exception 'Nguoi dung khong co quyen doi soat AP.' using errcode = '42501';\n    end if;\n    if v_project_id is null and v_site_id is null then\n      v_project_id := v_ap.project_id;\n      v_site_id := v_ap.construction_site_id;\n    end if;\n\n    v_allocated_total := round(v_allocated_total + v_allocated, 2);\n    v_estimated_total := round(v_estimated_total + greatest(coalesce(v_ap.recognized_amount, 0) - coalesce(v_ap.credit_amount, 0), 0), 2);\n  end loop;\n\n  if v_allocated_total \u003c\u003e v_gross_amount then\n    raise exception 'Tong phan bo AP phai bang tong tien hoa don.' using errcode = '22023';\n  end if;\n\n  v_variance := round(v_gross_amount - v_estimated_total, 2);\n  if v_variance \u003c\u003e 0 and v_variance_reason is null then\n    raise exception 'Hoa don lech AP phai co ly do chenh lech.' using errcode = '22023';\n  end if;\n\n  insert into public.supplier_invoices (\n    id, supplier_id, supplier_name_snapshot, invoice_number, invoice_date,\n    net_amount, vat_amount, gross_amount, variance_reason, attachments, created_by\n  )\n  values (\n    v_invoice_id, v_supplier_id, v_supplier_name, v_invoice_number, v_invoice_date,\n    v_net_amount, v_vat_amount, v_gross_amount, v_variance_reason, v_attachments, p_actor_user_id\n  )\n  returning * into v_invoice;\n\n  for v_link in select value from jsonb_array_elements(p_links) as link(value)\n  loop\n    v_payable_id := nullif(coalesce(v_link -\u003e\u003e 'payableDocumentId', v_link -\u003e\u003e 'payable_document_id'), '')::uuid;\n    v_allocated := round(coalesce(nullif(coalesce(v_link -\u003e\u003e 'allocatedGrossAmount', v_link -\u003e\u003e 'allocated_gross_amount'), '')::numeric, 0), 2);\n\n    insert into public.supplier_invoice_payable_links (\n      invoice_id, payable_document_id, allocated_gross_amount\n    ) values (\n      v_invoice_id, v_payable_id, v_allocated\n    );\n\n    update public.supplier_payable_documents\n    set invoice_number = v_invoice_number,\n        invoice_date = v_invoice_date,\n        metadata = coalesce(metadata, '{}'::jsonb)\n          || jsonb_build_object('supplierInvoiceId', v_invoice_id, 'supplierInvoiceNumber', v_invoice_number),\n        updated_at = now()\n    where id = v_payable_id;\n  end loop;\n\n  if v_variance \u003c\u003e 0 then\n    select id into v_project_finance_id\n    from public.project_finances\n    where (v_project_id is not null and project_id = v_project_id)\n       or (v_site_id is not null and construction_site_id = v_site_id)\n    limit 1;\n\n    v_adjustment_ref := 'supplier_invoice_adjustment:' || v_invoice_id::text;\n    v_adjustment_id := 'supplier-invoice-adjustment-' || v_invoice_id::text;\n\n    insert into public.project_transactions (\n      id, \"projectFinanceId\", \"constructionSiteId\",\n      project_id, project_finance_id, construction_site_id,\n      type, category, amount, description, date, source,\n      \"sourceRef\", source_ref, contract_cost_item_id,\n      cost_classification_status, counterparty_partner_id,\n      counterparty_name, attachments, \"createdBy\", \"createdAt\"\n    )\n    values (\n      v_adjustment_id,\n      coalesce(v_project_finance_id, ''),\n      coalesce(v_site_id, ''),\n      v_project_id,\n      nullif(v_project_finance_id, ''),\n      v_site_id,\n      'expense',\n      'materials',\n      v_variance,\n      'Chênh lệch hóa đơn NCC ' || v_invoice_number,\n      v_invoice_date::text,\n      'workflow',\n      v_adjustment_ref,\n      v_adjustment_ref,\n      null,\n      'auto',\n      null,\n      v_supplier_name,\n      v_attachments,\n      p_actor_user_id::text,\n      now()\n    )\n    on conflict (source_ref) do nothing;\n\n    insert into public.supplier_payable_documents (\n      code, source_type, source_id, project_id, construction_site_id,\n      supplier_id, supplier_name_snapshot, document_no, document_date, due_date,\n      committed_amount, recognized_amount, credit_amount, status, qr_token,\n      invoice_number, invoice_date, metadata, created_by\n    )\n    values (\n      'AP-INV-ADJ-' || replace(v_invoice_id::text, '-', ''),\n      'supplier_invoice_adjustment',\n      v_invoice_id::text,\n      v_project_id,\n      v_site_id,\n      v_supplier_id,\n      v_supplier_name,\n      v_invoice_number || '-ADJ',\n      v_invoice_date,\n      null,\n      abs(v_variance),\n      greatest(v_variance, 0),\n      greatest(-v_variance, 0),\n      case when v_variance \u003e 0 then 'open' else 'paid' end,\n      'ap_invoice_adj_' || replace(v_invoice_id::text, '-', ''),\n      v_invoice_number,\n      v_invoice_date,\n      jsonb_build_object(\n        'supplierInvoiceId', v_invoice_id,\n        'supplierInvoiceNumber', v_invoice_number,\n        'sourceRef', v_adjustment_ref,\n        'varianceAmount', v_variance,\n        'varianceReason', v_variance_reason\n      ),\n      p_actor_user_id\n    )\n    on conflict (source_type, source_id) do nothing;\n  end if;\n\n  if to_regclass('public.project_document_links') is not null then\n    for v_link in select value from jsonb_array_elements(p_links) as link(value)\n    loop\n      v_payable_id := nullif(coalesce(v_link -\u003e\u003e 'payableDocumentId', v_link -\u003e\u003e 'payable_document_id'), '')::uuid;\n      v_allocated := round(coalesce(nullif(coalesce(v_link -\u003e\u003e 'allocatedGrossAmount', v_link -\u003e\u003e 'allocated_gross_amount'), '')::numeric, 0), 2);\n      insert into public.project_document_links (\n        source_type, source_id, target_type, target_id, project_id, relation_type, status, metadata\n      )\n      values (\n        'supplier_payable_document', v_payable_id::text,\n        'supplier_invoice', v_invoice_id::text,\n        v_project_id,\n        'invoiced_by',\n        'active',\n        jsonb_build_object('allocatedGrossAmount', v_allocated)\n      )\n      on conflict (source_type, source_id, target_type, target_id, relation_type) do update\n      set status = excluded.status,\n          metadata = coalesce(public.project_document_links.metadata, '{}'::jsonb) || excluded.metadata,\n          updated_at = now();\n    end loop;\n\n    if v_variance \u003c\u003e 0 then\n      insert into public.project_document_links (\n        source_type, source_id, target_type, target_id, project_id, relation_type, status, metadata\n      )\n      values (\n        'supplier_invoice', v_invoice_id::text,\n        'supplier_payable_document',\n        (select id::text from public.supplier_payable_documents\n         where source_type = 'supplier_invoice_adjustment' and source_id = v_invoice_id::text limit 1),\n        v_project_id,\n        'adjusts_ap',\n        'active',\n        jsonb_build_object('varianceAmount', v_variance)\n      )\n      on conflict (source_type, source_id, target_type, target_id, relation_type) do update\n      set status = excluded.status,\n          metadata = coalesce(public.project_document_links.metadata, '{}'::jsonb) || excluded.metadata,\n          updated_at = now();\n\n      insert into public.project_document_links (\n        source_type, source_id, target_type, target_id, project_id, relation_type, status, metadata\n      )\n      values (\n        'supplier_invoice', v_invoice_id::text,\n        'project_transaction', v_adjustment_id,\n        v_project_id,\n        'adjusts_cost',\n        'active',\n        jsonb_build_object('varianceAmount', v_variance)\n      )\n      on conflict (source_type, source_id, target_type, target_id, relation_type) do update\n      set status = excluded.status,\n          metadata = coalesce(public.project_document_links.metadata, '{}'::jsonb) || excluded.metadata,\n          updated_at = now();\n    end if;\n  end if;\n\n  return v_invoice;\nend;\n$function$\n",
+          "name": "record_supplier_invoice_reconciliation_v2",
+          "schema": "app_private",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=public, app_private"
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_fulfillment_receipt_for_transaction(p_transaction_id text, p_actor_user_id uuid DEFAULT NULL::uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'app_private'\nAS $function$\ndeclare\n  v_tx public.transactions%rowtype;\n  v_user public.users%rowtype;\n  v_batch public.material_request_fulfillment_batches%rowtype;\n  v_actor_user_id uuid;\n  v_can_sync boolean := false;\n  v_line record;\n  v_received_qty numeric;\n  v_reason text;\n  v_has_variance boolean := false;\n  v_po_id text;\n  v_po public.purchase_orders%rowtype;\n  v_next_items jsonb;\n  v_is_delivered boolean;\n  v_already_recorded boolean;\nbegin\n  select * into v_tx\n  from public.transactions\n  where id = p_transaction_id\n  for update;\n  if not found then\n    raise exception 'transaction not found: %', p_transaction_id;\n  end if;\n\n  select * into v_user\n  from public.users\n  where id = public.current_app_user_id();\n  if v_user.id is null then\n    raise exception 'authentication required';\n  end if;\n\n  if p_actor_user_id is not null and p_actor_user_id is distinct from v_user.id then\n    raise exception 'actor user id must match the authenticated user'\n      using errcode = '42501';\n  end if;\n  v_actor_user_id := v_user.id;\n\n  v_can_sync := app_private.wms_transaction_has_action(\n    'wms.transaction.complete', v_tx.type,\n    v_tx.source_warehouse_id, v_tx.target_warehouse_id, v_tx.items,\n    v_tx.requester_id, v_tx.approver_id, v_user.id\n  );\n\n  if not v_can_sync then\n    raise exception 'insufficient privilege to sync fulfillment receipt'\n      using errcode = '42501';\n  end if;\n\n  if v_tx.status \u003c\u003e 'COMPLETED'::public.transaction_status then\n    raise exception 'Chỉ đồng bộ nhận hàng cho phiếu kho đã hoàn tất.';\n  end if;\n\n  select * into v_batch\n  from public.material_request_fulfillment_batches\n  where transaction_id = p_transaction_id\n  for update;\n  if not found then\n    return jsonb_build_object('synced', false, 'reason', 'batch_not_found');\n  end if;\n\n  if v_batch.status not in ('issued', 'received') then\n    return jsonb_build_object('synced', false, 'reason', 'batch_not_receivable', 'batchStatus', v_batch.status);\n  end if;\n\n  for v_line in\n    select *\n    from public.material_request_fulfillment_lines\n    where batch_id = v_batch.id\n    order by created_at asc\n    for update\n  loop\n    select\n      coalesce(sum(coalesce(nullif(item.value-\u003e\u003e'quantity', '')::numeric, 0)), 0),\n      max(nullif(item.value-\u003e\u003e'varianceReason', ''))\n    into v_received_qty, v_reason\n    from jsonb_array_elements(coalesce(v_tx.items, '[]'::jsonb)) item(value)\n    where coalesce(item.value-\u003e\u003e'fulfillmentBatchId', '') = v_batch.id::text\n      and item.value-\u003e\u003e'requestLineId' = v_line.request_line_id;\n\n    if coalesce(v_received_qty, 0) = 0 then\n      select\n        coalesce(sum(coalesce(nullif(item.value-\u003e\u003e'quantity', '')::numeric, 0)), 0),\n        max(nullif(item.value-\u003e\u003e'varianceReason', ''))\n      into v_received_qty, v_reason\n      from jsonb_array_elements(coalesce(v_tx.items, '[]'::jsonb)) item(value)\n      where coalesce(item.value-\u003e\u003e'fulfillmentBatchId', '') = v_batch.id::text\n        and item.value-\u003e\u003e'itemId' = v_line.item_id;\n    end if;\n\n    if coalesce(v_received_qty, 0) \u003c\u003e coalesce(v_line.issued_qty, 0) then\n      v_has_variance := true;\n    end if;\n\n    update public.material_request_fulfillment_lines\n    set\n      received_qty = coalesce(v_received_qty, 0),\n      variance_reason = coalesce(\n        nullif(v_reason, ''),\n        variance_reason,\n        case\n          when coalesce(v_received_qty, 0) \u003c\u003e coalesce(v_line.issued_qty, 0)\n            then 'Thủ kho công trường xác nhận số lượng thực nhận lệch phiếu kho.'\n          else null\n        end\n      )\n    where id = v_line.id;\n  end loop;\n\n  if v_batch.status = 'issued' then\n    update public.material_request_fulfillment_batches\n    set\n      status = 'received',\n      received_by = v_actor_user_id,\n      received_at = now(),\n      reason = coalesce(\n        reason,\n        case when v_has_variance then 'Thủ kho công trường xác nhận nhận lệch theo thực tế.' else null end\n      )\n    where id = v_batch.id\n    returning * into v_batch;\n  end if;\n\n  for v_po_id in\n    select distinct po_id\n    from public.material_request_fulfillment_lines\n    where batch_id = v_batch.id\n      and po_id is not null\n  loop\n    select * into v_po\n    from public.purchase_orders\n    where id = v_po_id\n    for update;\n    if not found then continue; end if;\n\n    select exists (\n      select 1\n      from jsonb_array_elements_text(coalesce(v_po.received_transaction_ids, '[]'::jsonb)) existing(id)\n      where existing.id = v_tx.id\n    ) into v_already_recorded;\n    if v_already_recorded then continue; end if;\n\n    with receipt_by_line as (\n      select po_line_id, sum(coalesce(received_qty, 0)) as received_qty\n      from public.material_request_fulfillment_lines\n      where batch_id = v_batch.id\n        and po_id = v_po_id\n        and po_line_id is not null\n      group by po_line_id\n    ),\n    item_rows as (\n      select\n        item.value as item,\n        item.ordinality,\n        coalesce(item.value-\u003e\u003e'lineId', item.value-\u003e\u003e'line_id', item.value-\u003e\u003e'itemId', item.value-\u003e\u003e'item_id') as line_key,\n        coalesce(nullif(item.value-\u003e\u003e'qty', '')::numeric, 0) as ordered_qty,\n        coalesce(nullif(item.value-\u003e\u003e'receivedQty', '')::numeric, 0) as current_received_qty\n      from jsonb_array_elements(coalesce(v_po.items, '[]'::jsonb)) with ordinality item(value, ordinality)\n    ),\n    next_rows as (\n      select\n        case\n          when coalesce(r.received_qty, 0) \u003e 0 then\n            jsonb_set(\n              ir.item,\n              '{receivedQty}',\n              to_jsonb(ir.current_received_qty + coalesce(r.received_qty, 0)),\n              true\n            )\n          else ir.item\n        end as item,\n        ir.ordinality\n      from item_rows ir\n      left join receipt_by_line r on r.po_line_id = ir.line_key\n    )\n    select coalesce(jsonb_agg(item order by ordinality), '[]'::jsonb)\n    into v_next_items\n    from next_rows;\n\n    select coalesce(bool_and(\n      coalesce(nullif(item.value-\u003e\u003e'qty', '')::numeric, 0) \u003c= coalesce(nullif(item.value-\u003e\u003e'receivedQty', '')::numeric, 0)\n    ), false)\n    into v_is_delivered\n    from jsonb_array_elements(coalesce(v_next_items, '[]'::jsonb)) item(value);\n\n    update public.purchase_orders\n    set\n      items = v_next_items,\n      status = case when v_is_delivered then 'delivered' else 'partial' end,\n      actual_delivery_date = case when v_is_delivered then current_date::text else actual_delivery_date end,\n      received_transaction_ids = coalesce(received_transaction_ids, '[]'::jsonb) || jsonb_build_array(v_tx.id)\n    where id = v_po_id;\n  end loop;\n\n  perform app_private.sync_po_delivery_schedule_status_v1(v_batch.po_delivery_batch_id, v_batch.po_delivery_group_id);\n  perform app_private.sync_material_request_receipt_status_v1(\n    v_batch.material_request_id,\n    v_actor_user_id,\n    'Đồng bộ sau khi phiếu kho hoàn tất'\n  );\n\n  return jsonb_build_object(\n    'synced', true,\n    'batchId', v_batch.id,\n    'batchStatus', v_batch.status,\n    'hasVariance', v_has_variance\n  );\nend;\n$function$\n",
+          "name": "sync_fulfillment_receipt_for_transaction",
+          "schema": "public",
+          "security_definer": true
+        },
+        {
+          "acl": [
+            "postgres=X/postgres",
+            "authenticated=X/postgres",
+            "service_role=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION public.sync_supplier_payable_from_purchase_order(p_po_id text)\n RETURNS supplier_payable_documents\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare\n  v_po public.purchase_orders%rowtype;\n  v_recognized numeric(18,2);\n  v_committed numeric(18,2);\n  v_document public.supplier_payable_documents%rowtype;\nbegin\n  select * into v_po\n  from public.purchase_orders\n  where id = p_po_id\n    and archived_at is null;\n\n  if not found then\n    raise exception 'Không tìm thấy PO %. ', p_po_id;\n  end if;\n\n  if not app_private.ap_scope_can_mutate(v_po.project_id, v_po.construction_site_id) then\n    raise exception 'Bạn không có quyền đồng bộ công nợ PO này.';\n  end if;\n\n  v_recognized := app_private.calculate_po_payable_amount(v_po.items)::numeric(18,2);\n  v_committed := app_private.calculate_po_committed_amount(v_po.items, v_po.total_amount)::numeric(18,2);\n\n  insert into public.supplier_payable_documents (\n    code, source_type, source_id, project_id, construction_site_id,\n    supplier_id, supplier_name_snapshot, document_no, document_date, due_date,\n    committed_amount, recognized_amount, credit_amount, status, qr_token,\n    invoice_number, invoice_date, metadata, created_by\n  )\n  values (\n    'AP-' || coalesce(v_po.po_number, v_po.id),\n    'purchase_order',\n    v_po.id,\n    v_po.project_id,\n    v_po.construction_site_id,\n    v_po.vendor_id,\n    coalesce(v_po.vendor_name, v_po.vendor_id, 'Nhà cung cấp'),\n    coalesce(v_po.po_number, v_po.id),\n    coalesce(app_private.safe_date(v_po.order_date), v_po.created_at::date, current_date),\n    app_private.safe_date(v_po.expected_delivery_date),\n    v_committed,\n    v_recognized,\n    0,\n    case when v_recognized \u003e 0 then 'open' else 'draft' end,\n    coalesce(v_po.qr_token, 'ap_' || replace(v_po.id, '-', '')),\n    v_po.invoice_number,\n    v_po.invoice_date,\n    jsonb_build_object(\n      'sourceMode', v_po.source_mode,\n      'targetWarehouseId', v_po.target_warehouse_id,\n      'receivedTransactionIds', coalesce(v_po.received_transaction_ids, '[]'::jsonb)\n    ),\n    case\n      when nullif(v_po.created_by_id, '') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n        then v_po.created_by_id::uuid\n      else null\n    end\n  )\n  on conflict (source_type, source_id) do update\n  set\n    project_id = excluded.project_id,\n    construction_site_id = excluded.construction_site_id,\n    supplier_id = excluded.supplier_id,\n    supplier_name_snapshot = excluded.supplier_name_snapshot,\n    document_no = excluded.document_no,\n    document_date = excluded.document_date,\n    due_date = excluded.due_date,\n    committed_amount = excluded.committed_amount,\n    recognized_amount = excluded.recognized_amount,\n    invoice_number = excluded.invoice_number,\n    invoice_date = excluded.invoice_date,\n    metadata = public.supplier_payable_documents.metadata || excluded.metadata,\n    updated_at = now()\n  returning * into v_document;\n\n  return v_document;\nend;\n$function$\n",
+          "name": "sync_supplier_payable_from_purchase_order",
+          "schema": "public",
+          "security_definer": false
+        },
+        {
+          "acl": [
+            "postgres=X/postgres"
+          ],
+          "config": [
+            "search_path=\"\""
+          ],
+          "definition": "CREATE OR REPLACE FUNCTION app_private.sync_wms_transaction_to_inventory_ledger(p_transaction_id text)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_tx public.transactions%rowtype;\n  v_existing_id uuid;\n  v_original_inventory_transaction public.inventory_transactions%rowtype;\n  v_inventory_transaction_id uuid;\n  v_code text;\n  v_line jsonb;\n  v_entry_no integer := 0;\n  v_tx_date timestamptz;\n  v_item_id text;\n  v_qty numeric;\n  v_price numeric;\n  v_source_line_id text;\n  v_scope record;\n  v_metadata jsonb;\nbegin\n  select * into v_tx\n  from public.transactions\n  where id = p_transaction_id\n  for update;\n  if not found then raise exception 'transaction not found: %', p_transaction_id; end if;\n  if v_tx.status::text \u003c\u003e 'COMPLETED' then return null; end if;\n  if coalesce(v_tx.business_event_type, '') \u003c\u003e 'reversal' then\n    return app_private.sync_wms_transaction_to_inventory_ledger_pre_reversal_20260905(\n      p_transaction_id\n    );\n  end if;\n\n  select id into v_existing_id\n  from public.inventory_transactions\n  where source_type = 'wms_transaction' and source_id = v_tx.id\n  limit 1;\n  if v_existing_id is not null then return v_existing_id; end if;\n\n  if v_tx.type::text \u003c\u003e 'IMPORT'\n     or nullif(v_tx.reversal_of_transaction_id, '') is null then\n    raise exception 'Chứng từ đảo phải là IMPORT và liên kết phiếu WMS gốc.';\n  end if;\n\n  select original.* into v_original_inventory_transaction\n  from public.inventory_transactions original\n  where original.source_type = 'wms_transaction'\n    and original.source_id = v_tx.reversal_of_transaction_id\n  order by original.created_at\n  limit 1\n  for update;\n  if not found then\n    raise exception 'Không tìm thấy inventory transaction gốc để ghi đảo.';\n  end if;\n  if v_original_inventory_transaction.status \u003c\u003e 'posted' then\n    raise exception 'Inventory transaction gốc không còn ở trạng thái posted.';\n  end if;\n\n  v_code := app_private.next_inventory_ledger_code('in');\n  v_tx_date := coalesce(nullif(v_tx.date::text, '')::timestamptz, now());\n  select * into v_scope\n  from app_private.resolve_warehouse_project_scope(v_tx.target_warehouse_id);\n  v_metadata := jsonb_build_object(\n    'wmsTransactionId', v_tx.id,\n    'reversalOfTransactionId', v_tx.reversal_of_transaction_id,\n    'reversalOfInventoryTransactionId', v_original_inventory_transaction.id,\n    'businessEventType', 'reversal',\n    'businessEventReason', v_tx.business_event_reason,\n    'targetWarehouseId', v_tx.target_warehouse_id,\n    'items', coalesce(v_tx.items, '[]'::jsonb)\n  );\n\n  insert into public.inventory_transactions(\n    code, transaction_type, status, transaction_date,\n    source_type, source_id, source_code, related_request_id,\n    project_id, construction_site_id, business_event_type,\n    description, metadata, created_by, approved_by, posted_at,\n    reversal_of_inventory_transaction_id\n  ) values (\n    v_code, 'reversal', 'posted', v_tx_date,\n    'wms_transaction', v_tx.id, v_tx.id, v_tx.related_request_id,\n    v_scope.project_id, v_scope.construction_site_id, 'reversal',\n    v_tx.note, v_metadata, v_tx.requester_id, v_tx.approver_id, now(),\n    v_original_inventory_transaction.id\n  ) returning id into v_inventory_transaction_id;\n\n  for v_line in select value from jsonb_array_elements(coalesce(v_tx.items, '[]'::jsonb))\n  loop\n    v_item_id := v_line -\u003e\u003e 'itemId';\n    v_qty := coalesce(nullif(v_line -\u003e\u003e 'quantity', '')::numeric, 0);\n    v_price := coalesce(nullif(v_line -\u003e\u003e 'price', '')::numeric, 0);\n    v_source_line_id := nullif(coalesce(\n      v_line -\u003e\u003e 'materialIssueLineId',\n      v_line -\u003e\u003e 'requestLineId',\n      v_line -\u003e\u003e 'lineId'\n    ), '');\n    if v_item_id is null or v_qty \u003c= 0 then\n      raise exception 'invalid reversal transaction item payload';\n    end if;\n    v_entry_no := v_entry_no + 1;\n    perform app_private.post_inventory_ledger_entry(\n      v_inventory_transaction_id, v_entry_no, v_code, v_tx_date,\n      'reversal', 'in', v_item_id, v_tx.target_warehouse_id,\n      v_scope.project_id, v_scope.construction_site_id,\n      'wms_transaction', v_tx.id, v_tx.id, v_source_line_id,\n      v_tx.related_request_id, v_qty, v_price, v_tx.note,\n      v_line || jsonb_build_object(\n        'businessEventType', 'reversal',\n        'reversalOfTransactionId', v_tx.reversal_of_transaction_id,\n        'reversalOfInventoryTransactionId', v_original_inventory_transaction.id\n      ),\n      v_tx.requester_id, v_tx.approver_id\n    );\n  end loop;\n\n  update public.inventory_transactions\n  set status = 'reversed', reversed_at = now()\n  where id = v_original_inventory_transaction.id;\n\n  return v_inventory_transaction_id;\nend;\n$function$\n",
+          "name": "sync_wms_transaction_to_inventory_ledger",
+          "schema": "app_private",
+          "security_definer": true
+        }
+      ],
+      "policies": [
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "inventory_balances_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "inventory_balances"
+        },
+        {
+          "check": null,
+          "cmd": "SELECT",
+          "name": "inventory_balances_select",
+          "qual": "app_private.can_read_inventory_scope(warehouse_id, NULL::uuid, NULL::uuid)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "inventory_balances"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "inventory_ledger_entries_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "check": null,
+          "cmd": "SELECT",
+          "name": "inventory_ledger_entries_select",
+          "qual": "app_private.can_read_inventory_scope(warehouse_id, created_by, approved_by)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "check": null,
+          "cmd": "DELETE",
+          "name": "po_delivery_batches_delete",
+          "qual": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "check": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "cmd": "INSERT",
+          "name": "po_delivery_batches_insert",
+          "qual": null,
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "check": null,
+          "cmd": "SELECT",
+          "name": "po_delivery_batches_select",
+          "qual": "app_private.purchase_order_delivery_can_view(purchase_order_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "check": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "cmd": "UPDATE",
+          "name": "po_delivery_batches_update",
+          "qual": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "purchase_order_delivery_batches_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "check": null,
+          "cmd": "DELETE",
+          "name": "po_delivery_lines_delete",
+          "qual": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "check": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "cmd": "INSERT",
+          "name": "po_delivery_lines_insert",
+          "qual": null,
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "check": null,
+          "cmd": "SELECT",
+          "name": "po_delivery_lines_select",
+          "qual": "app_private.purchase_order_delivery_can_view(purchase_order_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "check": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "cmd": "UPDATE",
+          "name": "po_delivery_lines_update",
+          "qual": "app_private.purchase_order_delivery_can_mutate(purchase_order_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "purchase_order_delivery_lines_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "purchase_order_request_lines_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "check": "app_private.purchase_order_link_can_access(purchase_order_id, project_id, construction_site_id)",
+          "cmd": "ALL",
+          "name": "purchase_order_request_lines_project_access",
+          "qual": "app_private.purchase_order_link_can_access(purchase_order_id, project_id, construction_site_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "purchase_orders_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_orders"
+        },
+        {
+          "check": null,
+          "cmd": "DELETE",
+          "name": "purchase_orders_delete",
+          "qual": "false",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_orders"
+        },
+        {
+          "check": "(((source_mode = 'company_consolidated'::text) AND app_private.company_procurement_can_manage()) OR ((source_mode IS DISTINCT FROM 'company_consolidated'::text) AND (app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'edit'::text) AND (NULLIF(created_by_id, ''::text) = (current_app_user_id())::text) AND (status = 'draft'::text))))",
+          "cmd": "INSERT",
+          "name": "purchase_orders_insert",
+          "qual": null,
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_orders"
+        },
+        {
+          "check": null,
+          "cmd": "SELECT",
+          "name": "purchase_orders_select",
+          "qual": "((archived_at IS NULL) AND (((source_mode = 'company_consolidated'::text) AND (app_private.company_procurement_can_manage() OR app_private.company_purchase_order_can_view_from_links(id))) OR ((source_mode IS DISTINCT FROM 'company_consolidated'::text) AND (app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'view'::text) OR app_private.current_user_is_global_wms_keeper() OR app_private.current_user_is_wms_keeper_for(target_warehouse_id)))))",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_orders"
+        },
+        {
+          "check": "((archived_at IS NULL) AND (((source_mode = 'company_consolidated'::text) AND app_private.company_procurement_can_manage()) OR ((source_mode IS DISTINCT FROM 'company_consolidated'::text) AND (app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'edit'::text) OR app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'approve'::text) OR app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'confirm'::text) OR app_private.current_user_is_global_wms_keeper() OR app_private.current_user_is_wms_keeper_for(target_warehouse_id)))))",
+          "cmd": "UPDATE",
+          "name": "purchase_orders_update",
+          "qual": "((archived_at IS NULL) AND (((source_mode = 'company_consolidated'::text) AND app_private.company_procurement_can_manage()) OR ((source_mode IS DISTINCT FROM 'company_consolidated'::text) AND (app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'edit'::text) OR app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'approve'::text) OR app_private.current_actor_has_effective_room_action(project_id, construction_site_id, 'material_po'::text, 'confirm'::text) OR app_private.current_user_is_global_wms_keeper() OR app_private.current_user_is_wms_keeper_for(target_warehouse_id)))))",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "purchase_orders"
+        },
+        {
+          "check": "(is_admin() OR app_private.company_procurement_can_manage())",
+          "cmd": "ALL",
+          "name": "supplier_invoices_access_v2",
+          "qual": "(EXISTS ( SELECT 1\n   FROM (supplier_invoice_payable_links link\n     JOIN supplier_payable_documents ap ON ((ap.id = link.payable_document_id)))\n  WHERE ((link.invoice_id = supplier_invoices.id) AND app_private.ap_scope_can_view(ap.project_id, ap.construction_site_id))))",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "supplier_invoices"
+        },
+        {
+          "check": "(EXISTS ( SELECT 1\n   FROM supplier_payment_batches b\n  WHERE ((b.id = supplier_payment_allocations.payment_batch_id) AND app_private.ap_scope_can_mutate(b.project_id, b.construction_site_id))))",
+          "cmd": "ALL",
+          "name": "supplier_payment_allocations_access",
+          "qual": "(EXISTS ( SELECT 1\n   FROM supplier_payment_batches b\n  WHERE ((b.id = supplier_payment_allocations.payment_batch_id) AND app_private.ap_scope_can_view(b.project_id, b.construction_site_id))))",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "supplier_payment_allocations"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "supplier_payment_allocations_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "supplier_payment_allocations"
+        },
+        {
+          "check": "app_private.ap_scope_can_mutate(project_id, construction_site_id)",
+          "cmd": "ALL",
+          "name": "supplier_payment_batches_access",
+          "qual": "app_private.ap_scope_can_view(project_id, construction_site_id)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "supplier_payment_batches"
+        },
+        {
+          "check": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "cmd": "ALL",
+          "name": "supplier_payment_batches_active_actor_gate",
+          "qual": "(( SELECT current_app_user_id() AS current_app_user_id) IS NOT NULL)",
+          "roles": [
+            "authenticated"
+          ],
+          "table": "supplier_payment_batches"
+        }
+      ],
+      "views": [
+        {
+          "name": "supplier_payable_balances",
+          "options": [
+            "security_invoker=true"
+          ]
+        },
+        {
+          "name": "supplier_payable_document_balances",
+          "options": [
+            "security_invoker=true"
+          ]
+        },
+        {
+          "name": "material_items",
+          "options": [
+            "security_invoker=true"
+          ]
+        },
+        {
+          "name": "purchase_package_v2_anomalies",
+          "options": [
+            "security_invoker=true"
+          ]
+        }
+      ]
+    }
+  }
+]

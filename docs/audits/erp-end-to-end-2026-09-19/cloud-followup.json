@@ -1,0 +1,445 @@
+[
+  {
+    "audit": {
+      "critical_triggers": [
+        {
+          "definition": "CREATE TRIGGER trg_purchase_orders_project_doc_touch BEFORE INSERT OR UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.project_doc_touch()",
+          "name": "trg_purchase_orders_project_doc_touch",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_sync_mr_po_dependency AFTER INSERT OR DELETE OR UPDATE ON public.purchase_order_request_lines FOR EACH ROW EXECUTE FUNCTION app_private.sync_material_request_downstream_link()",
+          "name": "trg_sync_mr_po_dependency",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_sync_po_request_dependency_status AFTER UPDATE OF status ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.sync_purchase_order_request_dependencies()",
+          "name": "trg_sync_po_request_dependency_status",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_sync_purchase_order_archive_dependencies AFTER UPDATE OF archived_at ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.sync_purchase_order_archive_dependencies()",
+          "name": "trg_sync_purchase_order_archive_dependencies",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_enforce_purchase_order_number_v2 BEFORE INSERT OR UPDATE OF po_number ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.enforce_purchase_order_number_v2()",
+          "name": "trg_enforce_purchase_order_number_v2",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_enforce_purchase_order_archive_update BEFORE UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.enforce_purchase_order_archive_update()",
+          "name": "trg_enforce_purchase_order_archive_update",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER guard_project_purchase_order_room_write BEFORE INSERT OR DELETE OR UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.guard_project_purchase_order_room_write()",
+          "name": "guard_project_purchase_order_room_write",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_guard_paid_supplier_payment_allocation_write BEFORE INSERT OR DELETE OR UPDATE ON public.supplier_payment_allocations FOR EACH ROW EXECUTE FUNCTION app_private.guard_paid_supplier_payment_allocation_write()",
+          "name": "trg_guard_paid_supplier_payment_allocation_write",
+          "table": "supplier_payment_allocations"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_trace_supplier_payment_allocation AFTER INSERT OR DELETE OR UPDATE OF payment_batch_id, payable_document_id, allocated_amount ON public.supplier_payment_allocations FOR EACH ROW EXECUTE FUNCTION app_private.trg_supplier_payment_allocation_trace()",
+          "name": "trg_trace_supplier_payment_allocation",
+          "table": "supplier_payment_allocations"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_audit_supplier_payment_allocations AFTER INSERT OR DELETE OR UPDATE ON public.supplier_payment_allocations FOR EACH ROW EXECUTE FUNCTION app_private.audit_supplier_ap_change()",
+          "name": "trg_audit_supplier_payment_allocations",
+          "table": "supplier_payment_allocations"
+        },
+        {
+          "definition": "CREATE TRIGGER guard_purchase_order_direct_status_update BEFORE UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION app_private.guard_purchase_order_direct_status_update()",
+          "name": "guard_purchase_order_direct_status_update",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_supplier_invoices_updated_at BEFORE UPDATE ON public.supplier_invoices FOR EACH ROW EXECUTE FUNCTION set_updated_at()",
+          "name": "trg_supplier_invoices_updated_at",
+          "table": "supplier_invoices"
+        },
+        {
+          "definition": "CREATE TRIGGER trg_audit_supplier_invoices AFTER INSERT OR DELETE OR UPDATE ON public.supplier_invoices FOR EACH ROW EXECUTE FUNCTION app_private.audit_supplier_ap_change()",
+          "name": "trg_audit_supplier_invoices",
+          "table": "supplier_invoices"
+        }
+      ],
+      "indexes": [
+        {
+          "definition": "CREATE UNIQUE INDEX inventory_balances_pkey ON public.inventory_balances USING btree (id)",
+          "name": "inventory_balances_pkey",
+          "table": "inventory_balances"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX inventory_balances_unique_scope ON public.inventory_balances USING btree (material_id, warehouse_id, scope_key)",
+          "name": "inventory_balances_unique_scope",
+          "table": "inventory_balances"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_balances_material ON public.inventory_balances USING btree (material_id)",
+          "name": "idx_inventory_balances_material",
+          "table": "inventory_balances"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_balances_project ON public.inventory_balances USING btree (project_id, construction_site_id)",
+          "name": "idx_inventory_balances_project",
+          "table": "inventory_balances"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_balances_warehouse ON public.inventory_balances USING btree (warehouse_id)",
+          "name": "idx_inventory_balances_warehouse",
+          "table": "inventory_balances"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX inventory_ledger_entries_pkey ON public.inventory_ledger_entries USING btree (id)",
+          "name": "inventory_ledger_entries_pkey",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX inventory_ledger_entries_unique_line ON public.inventory_ledger_entries USING btree (inventory_transaction_id, entry_no)",
+          "name": "inventory_ledger_entries_unique_line",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_material_date ON public.inventory_ledger_entries USING btree (material_id, transaction_date DESC, id DESC)",
+          "name": "idx_inventory_ledger_material_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_material_warehouse_date ON public.inventory_ledger_entries USING btree (material_id, warehouse_id, transaction_date DESC, id DESC)",
+          "name": "idx_inventory_ledger_material_warehouse_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_project_date ON public.inventory_ledger_entries USING btree (project_id, construction_site_id, transaction_date DESC)",
+          "name": "idx_inventory_ledger_project_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_related_request ON public.inventory_ledger_entries USING btree (related_request_id)",
+          "name": "idx_inventory_ledger_related_request",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_source ON public.inventory_ledger_entries USING btree (source_type, source_id)",
+          "name": "idx_inventory_ledger_source",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_type_date ON public.inventory_ledger_entries USING btree (transaction_type, transaction_date DESC, id DESC)",
+          "name": "idx_inventory_ledger_type_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_warehouse_date ON public.inventory_ledger_entries USING btree (warehouse_id, transaction_date DESC, id DESC)",
+          "name": "idx_inventory_ledger_warehouse_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_warehouse_material_project_date ON public.inventory_ledger_entries USING btree (warehouse_id, material_id, project_id, construction_site_id, transaction_date DESC, id DESC)",
+          "name": "idx_inventory_ledger_warehouse_material_project_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_project_material_date ON public.inventory_ledger_entries USING btree (project_id, material_id, transaction_date, id)",
+          "name": "idx_inventory_ledger_project_material_date",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE INDEX idx_inventory_ledger_business_event ON public.inventory_ledger_entries USING btree (project_id, business_event_type, material_id, transaction_date) WHERE (business_event_type = ANY (ARRAY['construction_issue'::text, 'project_return_receipt'::text, 'warehouse_loss'::text]))",
+          "name": "idx_inventory_ledger_business_event",
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX project_document_links_pkey ON public.project_document_links USING btree (id)",
+          "name": "project_document_links_pkey",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX project_document_links_source_type_source_id_target_type_ta_key ON public.project_document_links USING btree (source_type, source_id, target_type, target_id, relation_type)",
+          "name": "project_document_links_source_type_source_id_target_type_ta_key",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE INDEX idx_project_document_links_project ON public.project_document_links USING btree (project_id) WHERE (project_id IS NOT NULL)",
+          "name": "idx_project_document_links_project",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE INDEX idx_project_document_links_source ON public.project_document_links USING btree (source_type, source_id, status)",
+          "name": "idx_project_document_links_source",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE INDEX idx_project_document_links_source_status ON public.project_document_links USING btree (source_type, source_id, status)",
+          "name": "idx_project_document_links_source_status",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE INDEX idx_project_document_links_target ON public.project_document_links USING btree (target_type, target_id, status)",
+          "name": "idx_project_document_links_target",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE INDEX idx_project_document_links_phase6_project_source_status ON public.project_document_links USING btree (project_id, source_type, source_id, status)",
+          "name": "idx_project_document_links_phase6_project_source_status",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE INDEX idx_project_document_links_phase6_project_target_status ON public.project_document_links USING btree (project_id, target_type, target_id, status)",
+          "name": "idx_project_document_links_phase6_project_target_status",
+          "table": "project_document_links"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_order_delivery_batches_pkey ON public.purchase_order_delivery_batches USING btree (id)",
+          "name": "purchase_order_delivery_batches_pkey",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_order_delivery_batch_purchase_order_id_delivery_no_key ON public.purchase_order_delivery_batches USING btree (purchase_order_id, delivery_no)",
+          "name": "purchase_order_delivery_batch_purchase_order_id_delivery_no_key",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_batches_po_no ON public.purchase_order_delivery_batches USING btree (purchase_order_id, delivery_no)",
+          "name": "idx_po_delivery_batches_po_no",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_batches_project_date ON public.purchase_order_delivery_batches USING btree (project_id, planned_delivery_date, delivery_no) WHERE (project_id IS NOT NULL)",
+          "name": "idx_po_delivery_batches_project_date",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_batches_site_date ON public.purchase_order_delivery_batches USING btree (construction_site_id, planned_delivery_date, delivery_no) WHERE (construction_site_id IS NOT NULL)",
+          "name": "idx_po_delivery_batches_site_date",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX uq_po_delivery_batch_wms_transaction ON public.purchase_order_delivery_batches USING btree (wms_transaction_id) WHERE (wms_transaction_id IS NOT NULL)",
+          "name": "uq_po_delivery_batch_wms_transaction",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX uq_po_delivery_batch_idempotency ON public.purchase_order_delivery_batches USING btree (purchase_order_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+          "name": "uq_po_delivery_batch_idempotency",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX uq_po_delivery_batch_qr_token ON public.purchase_order_delivery_batches USING btree (qr_token) WHERE (qr_token IS NOT NULL)",
+          "name": "uq_po_delivery_batch_qr_token",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_batches_po_status_no_v2 ON public.purchase_order_delivery_batches USING btree (purchase_order_id, status, delivery_no)",
+          "name": "idx_po_delivery_batches_po_status_no_v2",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_batches_wms_status_v2 ON public.purchase_order_delivery_batches USING btree (wms_transaction_id, status) WHERE (wms_transaction_id IS NOT NULL)",
+          "name": "idx_po_delivery_batches_wms_status_v2",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_batches_approval ON public.purchase_order_delivery_batches USING btree (purchase_order_id, approval_status, delivery_no)",
+          "name": "idx_po_delivery_batches_approval",
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_order_delivery_lines_pkey ON public.purchase_order_delivery_lines USING btree (id)",
+          "name": "purchase_order_delivery_lines_pkey",
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_order_delivery_lines_delivery_batch_id_purchase_or_key ON public.purchase_order_delivery_lines USING btree (delivery_batch_id, purchase_order_line_id)",
+          "name": "purchase_order_delivery_lines_delivery_batch_id_purchase_or_key",
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_lines_batch ON public.purchase_order_delivery_lines USING btree (delivery_batch_id)",
+          "name": "idx_po_delivery_lines_batch",
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_lines_po_line ON public.purchase_order_delivery_lines USING btree (purchase_order_id, purchase_order_line_id)",
+          "name": "idx_po_delivery_lines_po_line",
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_delivery_lines_batch_line_v2 ON public.purchase_order_delivery_lines USING btree (delivery_batch_id, purchase_order_line_id)",
+          "name": "idx_po_delivery_lines_batch_line_v2",
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_order_request_lines_pkey ON public.purchase_order_request_lines USING btree (id)",
+          "name": "purchase_order_request_lines_pkey",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_order_request_lines_purchase_order_id_purchase_ord_key ON public.purchase_order_request_lines USING btree (purchase_order_id, purchase_order_line_id, material_request_id, request_line_id)",
+          "name": "purchase_order_request_lines_purchase_order_id_purchase_ord_key",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_material_budget ON public.purchase_order_request_lines USING btree (material_budget_item_id) WHERE (material_budget_item_id IS NOT NULL)",
+          "name": "idx_po_request_lines_material_budget",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_po ON public.purchase_order_request_lines USING btree (purchase_order_id)",
+          "name": "idx_po_request_lines_po",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_project ON public.purchase_order_request_lines USING btree (project_id, created_at DESC) WHERE (project_id IS NOT NULL)",
+          "name": "idx_po_request_lines_project",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_request ON public.purchase_order_request_lines USING btree (material_request_id, request_line_id)",
+          "name": "idx_po_request_lines_request",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_site ON public.purchase_order_request_lines USING btree (construction_site_id, created_at DESC) WHERE (construction_site_id IS NOT NULL)",
+          "name": "idx_po_request_lines_site",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_target_warehouse ON public.purchase_order_request_lines USING btree (target_warehouse_id) WHERE (target_warehouse_id IS NOT NULL)",
+          "name": "idx_po_request_lines_target_warehouse",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE INDEX idx_po_request_lines_allocation_status ON public.purchase_order_request_lines USING btree (project_id, allocation_status, created_at DESC) WHERE (project_id IS NOT NULL)",
+          "name": "idx_po_request_lines_allocation_status",
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX purchase_orders_pkey ON public.purchase_orders USING btree (id)",
+          "name": "purchase_orders_pkey",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_ever_submitted_status ON public.purchase_orders USING btree (ever_submitted, status)",
+          "name": "idx_purchase_orders_ever_submitted_status",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_procurement_group ON public.purchase_orders USING btree (procurement_group_id) WHERE (procurement_group_id IS NOT NULL)",
+          "name": "idx_purchase_orders_procurement_group",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_procurement_group_no ON public.purchase_orders USING btree (procurement_group_no, created_at DESC) WHERE (procurement_group_no IS NOT NULL)",
+          "name": "idx_purchase_orders_procurement_group_no",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_project_created ON public.purchase_orders USING btree (project_id, created_at DESC) WHERE (project_id IS NOT NULL)",
+          "name": "idx_purchase_orders_project_created",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_project_id ON public.purchase_orders USING btree (project_id)",
+          "name": "idx_purchase_orders_project_id",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX idx_purchase_orders_qr_token_unique ON public.purchase_orders USING btree (qr_token) WHERE (qr_token IS NOT NULL)",
+          "name": "idx_purchase_orders_qr_token_unique",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_site_created_at ON public.purchase_orders USING btree (construction_site_id, created_at DESC)",
+          "name": "idx_purchase_orders_site_created_at",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_source_mode_created ON public.purchase_orders USING btree (source_mode, created_at DESC)",
+          "name": "idx_purchase_orders_source_mode_created",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_submitted_to ON public.purchase_orders USING btree (submitted_to_user_id, status, created_at DESC)",
+          "name": "idx_purchase_orders_submitted_to",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_target_warehouse_id ON public.purchase_orders USING btree (target_warehouse_id) WHERE (target_warehouse_id IS NOT NULL)",
+          "name": "idx_purchase_orders_target_warehouse_id",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_active_scope_created ON public.purchase_orders USING btree (project_id, construction_site_id, created_at DESC, id DESC) WHERE (archived_at IS NULL)",
+          "name": "idx_purchase_orders_active_scope_created",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_active_stock_created ON public.purchase_orders USING btree (source_mode, created_at DESC, id DESC) WHERE (archived_at IS NULL)",
+          "name": "idx_purchase_orders_active_stock_created",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX idx_purchase_orders_scope_po_number_unique ON public.purchase_orders USING btree (COALESCE(project_id, ''::text), COALESCE(construction_site_id, ''::text), po_number)",
+          "name": "idx_purchase_orders_scope_po_number_unique",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_company_procurement_created ON public.purchase_orders USING btree (source_mode, created_at DESC, id DESC) WHERE ((archived_at IS NULL) AND (source_mode = 'company_consolidated'::text))",
+          "name": "idx_purchase_orders_company_procurement_created",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX idx_purchase_orders_po_number_unique_global ON public.purchase_orders USING btree (po_number) WHERE (NULLIF(TRIM(BOTH FROM po_number), ''::text) IS NOT NULL)",
+          "name": "idx_purchase_orders_po_number_unique_global",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE INDEX idx_purchase_orders_created_by_id ON public.purchase_orders USING btree (created_by_id, created_at DESC) WHERE (created_by_id IS NOT NULL)",
+          "name": "idx_purchase_orders_created_by_id",
+          "table": "purchase_orders"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX supplier_invoices_pkey ON public.supplier_invoices USING btree (id)",
+          "name": "supplier_invoices_pkey",
+          "table": "supplier_invoices"
+        },
+        {
+          "definition": "CREATE UNIQUE INDEX uq_supplier_invoice_header_number ON public.supplier_invoices USING btree (supplier_id, lower(TRIM(BOTH FROM invoice_number)))",
+          "name": "uq_supplier_invoice_header_number",
+          "table": "supplier_invoices"
+        },
+        {
+          "definition": "CREATE INDEX idx_supplier_invoices_supplier_date_v2 ON public.supplier_invoices USING btree (supplier_id, invoice_date DESC)",
+          "name": "idx_supplier_invoices_supplier_date_v2",
+          "table": "supplier_invoices"
+        }
+      ],
+      "po360": {
+        "accepted_qty": 71,
+        "ap_sources": [
+          "purchase_delivery_receipt"
+        ],
+        "delivery_count": 1,
+        "delivery_statuses": [
+          {
+            "approval_status": "draft",
+            "status": "received"
+          }
+        ],
+        "items_count": 3,
+        "json_received_qty": 71,
+        "payable_count": 1,
+        "purchase_mode": "single",
+        "status": "delivered"
+      },
+      "read_at": "2026-09-19T03:37:21.637404+00:00",
+      "receipt_core": "CREATE OR REPLACE FUNCTION app_private.finalize_purchase_receipt_v2(p_delivery_batch_id uuid, p_wms_transaction_id text, p_actor_user_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_po_id text;\n  v_po public.purchase_orders%rowtype;\n  v_batch public.purchase_order_delivery_batches%rowtype;\n  v_tx public.transactions%rowtype;\n  v_item jsonb;\n  v_item_id text;\n  v_qty numeric;\n  v_planned_purchase_qty numeric;\n  v_accepted_purchase_qty numeric;\n  v_delivery_status text;\n  v_next_items jsonb;\n  v_is_delivered boolean;\n  v_already_recorded boolean;\n  v_previous_guard text;\nbegin\n  if p_actor_user_id is null then\n    raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';\n  end if;\n  if public.current_app_user_id() is null or p_actor_user_id \u003c\u003e public.current_app_user_id() then\n    raise exception 'Nguoi thuc hien lenh khong hop le.' using errcode = '42501';\n  end if;\n\n  select purchase_order_id into v_po_id\n  from public.purchase_order_delivery_batches\n  where id = p_delivery_batch_id;\n  if not found then\n    raise exception 'Khong tim thay Dot giao %.', p_delivery_batch_id using errcode = '22023';\n  end if;\n\n  select * into v_po\n  from public.purchase_orders\n  where id = v_po_id\n  for update;\n  if not found then\n    raise exception 'Khong tim thay Goi mua hang cua Dot giao %.', p_delivery_batch_id using errcode = '22023';\n  end if;\n\n  select * into v_batch\n  from public.purchase_order_delivery_batches\n  where id = p_delivery_batch_id\n  for update;\n  if not found then\n    raise exception 'Khong tim thay Dot giao %.', p_delivery_batch_id using errcode = '22023';\n  end if;\n  if v_batch.wms_transaction_id is distinct from p_wms_transaction_id then\n    raise exception 'WMS transaction khong khop Dot giao.' using errcode = '22023';\n  end if;\n\n  select * into v_tx\n  from public.transactions\n  where id = p_wms_transaction_id\n  for update;\n  if not found then\n    raise exception 'Khong tim thay WMS cua Dot giao.' using errcode = '22023';\n  end if;\n  if v_tx.source_type \u003c\u003e 'po_delivery_batch' or v_tx.source_id \u003c\u003e p_delivery_batch_id::text then\n    raise exception 'WMS khong lien ket dung Dot giao.' using errcode = '22023';\n  end if;\n  if not app_private.current_user_can_receive_purchase_batch_v2(p_actor_user_id, v_tx.target_warehouse_id) then\n    raise exception 'Nguoi dung khong co quyen xac nhan nhan hang tai kho nhan.' using errcode = '42501';\n  end if;\n\n  if v_batch.status in ('received', 'received_short', 'received_over')\n     and v_tx.status = 'COMPLETED'::public.transaction_status then\n    return app_private.purchase_receipt_command_result_v2(p_delivery_batch_id, true);\n  end if;\n  if v_batch.status in ('received', 'received_short', 'received_over')\n     or v_tx.status = 'COMPLETED'::public.transaction_status then\n    raise exception 'Anomaly: Dot giao va WMS khong dong bo trang thai finalize.' using errcode = 'P0001';\n  end if;\n  if v_batch.status \u003c\u003e 'quality_approved' or v_tx.status \u003c\u003e 'APPROVED'::public.transaction_status then\n    raise exception 'Chi finalize Dot da duyet SL/CL va WMS APPROVED.' using errcode = '22023';\n  end if;\n\n  perform 1\n  from public.purchase_order_delivery_lines\n  where delivery_batch_id = p_delivery_batch_id\n  order by id\n  for update;\n\n  perform 1\n  from public.items item\n  where item.id in (\n    select distinct line.value -\u003e\u003e 'itemId'\n    from jsonb_array_elements(coalesce(v_tx.items, '[]'::jsonb)) line(value)\n    where nullif(line.value -\u003e\u003e 'itemId', '') is not null\n  )\n  order by item.id\n  for update;\n\n  if coalesce(v_batch.fulfillment_mode, 'RECEIVE_TO_STOCK') = 'RECEIVE_TO_STOCK' then\n    for v_item in\n      select value from jsonb_array_elements(coalesce(v_tx.items, '[]'::jsonb)) as item(value)\n    loop\n      v_item_id := nullif(v_item -\u003e\u003e 'itemId', '');\n      v_qty := coalesce(nullif(v_item -\u003e\u003e 'quantity', '')::numeric, 0);\n      if v_item_id is null or v_qty \u003c 0 then\n        raise exception 'WMS item nhan hang khong hop le.' using errcode = '22023';\n      end if;\n      if v_qty \u003e 0 then\n        perform public.apply_stock_change(v_item_id, v_tx.target_warehouse_id, v_qty);\n      end if;\n    end loop;\n  elsif coalesce(v_batch.fulfillment_mode, '') \u003c\u003e 'DIRECT_CONSUMPTION' then\n    raise exception 'Fulfillment mode khong hop le: %', v_batch.fulfillment_mode using errcode = '22023';\n  end if;\n\n  update public.transactions\n  set status = 'COMPLETED'::public.transaction_status,\n      approver_id = p_actor_user_id,\n      approved_at = coalesce(approved_at, now())\n  where id = p_wms_transaction_id\n  returning * into v_tx;\n\n  select\n    coalesce(sum(coalesce(planned_qty, 0)), 0),\n    coalesce(sum(coalesce(accepted_qty, 0)), 0)\n  into v_planned_purchase_qty, v_accepted_purchase_qty\n  from public.purchase_order_delivery_lines\n  where delivery_batch_id = p_delivery_batch_id;\n\n  v_delivery_status := case\n    when v_accepted_purchase_qty \u003e v_planned_purchase_qty then 'received_over'\n    when v_accepted_purchase_qty \u003c v_planned_purchase_qty then 'received_short'\n    else 'received'\n  end;\n\n  update public.purchase_order_delivery_batches\n  set status = v_delivery_status,\n      received_by = p_actor_user_id,\n      received_at = now(),\n      updated_at = now()\n  where id = p_delivery_batch_id\n  returning * into v_batch;\n\n  select exists (\n    select 1\n    from jsonb_array_elements_text(coalesce(v_po.received_transaction_ids, '[]'::jsonb)) existing(id)\n    where existing.id = v_tx.id\n  ) into v_already_recorded;\n\n  with receipt_by_line as (\n    select\n      purchase_order_line_id,\n      sum(coalesce(accepted_qty, 0)) as accepted_purchase_qty\n    from public.purchase_order_delivery_lines\n    where delivery_batch_id = p_delivery_batch_id\n    group by purchase_order_line_id\n  ),\n  item_rows as (\n    select\n      item.value as item,\n      item.ordinality,\n      coalesce(item.value -\u003e\u003e 'lineId', item.value -\u003e\u003e 'line_id', item.value -\u003e\u003e 'itemId', item.value -\u003e\u003e 'item_id') as line_key,\n      coalesce(nullif(item.value -\u003e\u003e 'receivedQty', '')::numeric, 0) as current_received_qty\n    from jsonb_array_elements(coalesce(v_po.items, '[]'::jsonb)) with ordinality item(value, ordinality)\n  ),\n  next_rows as (\n    select\n      case\n        when coalesce(r.accepted_purchase_qty, 0) \u003e 0 then\n          jsonb_set(\n            ir.item,\n            '{receivedQty}',\n            to_jsonb(ir.current_received_qty + coalesce(r.accepted_purchase_qty, 0)),\n            true\n          )\n        else ir.item\n      end as item,\n      ir.ordinality\n    from item_rows ir\n    left join receipt_by_line r on r.purchase_order_line_id = ir.line_key\n  )\n  select coalesce(jsonb_agg(item order by ordinality), '[]'::jsonb)\n  into v_next_items\n  from next_rows;\n\n  select coalesce(bool_and(\n    coalesce(nullif(item.value -\u003e\u003e 'receivedQty', '')::numeric, 0)\n      \u003e= coalesce(nullif(item.value -\u003e\u003e 'qty', '')::numeric, 0)\n  ), false)\n  into v_is_delivered\n  from jsonb_array_elements(coalesce(v_next_items, '[]'::jsonb)) item(value);\n\n  v_previous_guard := current_setting('app.material_transition_context', true);\n  perform set_config('app.material_transition_context', 'on', true);\n\n  update public.purchase_orders\n  set items = v_next_items,\n      status = case when v_is_delivered then 'delivered' else 'partial' end,\n      actual_delivery_date = case when v_is_delivered then current_date::text else actual_delivery_date end,\n      received_transaction_ids = case\n        when v_already_recorded then coalesce(received_transaction_ids, '[]'::jsonb)\n        else coalesce(received_transaction_ids, '[]'::jsonb) || jsonb_build_array(v_tx.id)\n      end\n  where id = v_po.id;\n\n  perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);\n\n  update public.material_request_fulfillment_lines mfl\n  set received_qty = coalesce(line.accepted_stock_qty, line.accepted_qty, 0),\n      variance_reason = coalesce(v_batch.variance_reason, mfl.variance_reason),\n      updated_at = now()\n  from public.purchase_order_delivery_lines line\n  where mfl.po_delivery_line_id = line.id\n    and line.delivery_batch_id = p_delivery_batch_id;\n\n  update public.material_request_fulfillment_batches\n  set status = 'received',\n      received_by = p_actor_user_id,\n      received_at = now(),\n      updated_at = now()\n  where po_delivery_batch_id = p_delivery_batch_id\n    and status = 'issued';\n\n  return app_private.purchase_receipt_command_result_v2(p_delivery_batch_id, false);\nexception\n  when others then\n    perform set_config('app.material_transition_context', coalesce(v_previous_guard, ''), true);\n    raise;\nend;\n$function$\n"
+    }
+  }
+]

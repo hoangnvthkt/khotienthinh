@@ -1,0 +1,28 @@
+[
+  {
+    "audit": {
+      "delivery_lines_with_qty_variance": 0,
+      "invoice_count": 0,
+      "invoices_multi_project": 0,
+      "ledger_balance_disagreements": 0,
+      "ledger_zero_price_by_event": {
+        "adjustment_out": 10,
+        "loss_issue": 25,
+        "project_issue": 100,
+        "purchase_receipt": 147,
+        "transfer_issue": 53,
+        "transfer_receipt": 53
+      },
+      "legacy_material_request_count": 0,
+      "lineage_missing_po_json_line": 0,
+      "lineage_missing_request_json_line_candidate": 0,
+      "lineage_total": 114,
+      "nonzero_received_missing_wms": 0,
+      "payment_status_counts": null,
+      "po_anomalies": null,
+      "project_material_request_count": 61,
+      "read_at": "2026-09-19T03:11:15.866379+00:00",
+      "wms_ledger_full_outer_disagreements": 42
+    }
+  }
+]

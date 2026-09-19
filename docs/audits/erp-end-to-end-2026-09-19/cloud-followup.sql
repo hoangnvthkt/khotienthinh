@@ -1,0 +1,10 @@
+begin read only;
+set local statement_timeout='25s';
+select jsonb_build_object(
+'read_at',now(),
+'po360',(select jsonb_build_object('status',p.status,'purchase_mode',p.purchase_mode,'items_count',jsonb_array_length(p.items),'json_received_qty',(select sum(coalesce((x->>'receivedQty')::numeric,0)) from jsonb_array_elements(p.items)x),'delivery_statuses',(select jsonb_agg(jsonb_build_object('status',b.status,'approval_status',b.approval_status)) from public.purchase_order_delivery_batches b where b.purchase_order_id=p.id),'ap_sources',(select jsonb_agg(d.source_type) from public.supplier_payable_documents d where d.source_id=p.id or d.source_id in (select b.id::text from public.purchase_order_delivery_batches b where b.purchase_order_id=p.id)),'delivery_count',(select count(*) from public.purchase_order_delivery_batches b where b.purchase_order_id=p.id),'accepted_qty',(select sum(l.accepted_qty) from public.purchase_order_delivery_lines l where l.purchase_order_id=p.id),'payable_count',(select count(*) from public.supplier_payable_documents d where d.source_id=p.id or d.source_id in (select b.id::text from public.purchase_order_delivery_batches b where b.purchase_order_id=p.id))) from public.purchase_orders p where po_number='PO-360'),
+'indexes',(select jsonb_agg(jsonb_build_object('table',tablename,'name',indexname,'definition',indexdef)) from pg_indexes where schemaname='public' and tablename in ('purchase_orders','purchase_order_delivery_batches','purchase_order_delivery_lines','purchase_order_request_lines','supplier_invoices','inventory_balances','inventory_ledger_entries','project_document_links')),
+'critical_triggers',(select jsonb_agg(jsonb_build_object('table',t.tgrelid::regclass::text,'name',t.tgname,'definition',pg_get_triggerdef(t.oid))) from pg_trigger t where not t.tgisinternal and t.tgrelid::regclass::text in ('supplier_invoices','supplier_invoice_payable_links','purchase_orders','purchase_order_request_lines','supplier_payment_allocations')),
+'receipt_core',(select pg_get_functiondef(oid) from pg_proc where pronamespace='app_private'::regnamespace and proname='finalize_purchase_receipt_v2' limit 1)
+) as audit;
+rollback;

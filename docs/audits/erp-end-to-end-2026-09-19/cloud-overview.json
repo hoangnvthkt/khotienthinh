@@ -1,0 +1,577 @@
+[
+  {
+    "audit": {
+      "financial_po_relation": null,
+      "latest_migrations": [
+        {
+          "version": "20260918105055"
+        },
+        {
+          "version": "20260918103357"
+        },
+        {
+          "version": "20260918103356"
+        },
+        {
+          "version": "20260917025252"
+        },
+        {
+          "version": "20260917024602"
+        }
+      ],
+      "negative_inventory_balance": 18,
+      "payable_source_counts": {
+        "purchase_delivery_receipt": 7,
+        "supplier_delivery_statement": 18
+      },
+      "po_source_counts": {
+        "from_request": 48,
+        "proactive_project": 8
+      },
+      "po_status_counts": {
+        "confirmed": 12,
+        "delivered": 13,
+        "draft": 7,
+        "in_transit": 7,
+        "partial": 3,
+        "returned": 6,
+        "sent": 8
+      },
+      "positive_qty_negative_value": 2,
+      "read_at": "2026-09-19T03:08:52.271484+00:00",
+      "scope_tables": [
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "workflow_instance_comments"
+        },
+        {
+          "estimated_rows": 309,
+          "rls": true,
+          "table": "workflow_step_assignments"
+        },
+        {
+          "estimated_rows": 7,
+          "rls": true,
+          "table": "supplier_payable_documents"
+        },
+        {
+          "estimated_rows": 60,
+          "rls": true,
+          "table": "requests"
+        },
+        {
+          "estimated_rows": 101,
+          "rls": true,
+          "table": "workflow_subjects"
+        },
+        {
+          "estimated_rows": 61,
+          "rls": true,
+          "table": "material_issue_orders"
+        },
+        {
+          "estimated_rows": 4,
+          "rls": true,
+          "table": "purchase_order_supplier_returns"
+        },
+        {
+          "estimated_rows": 3,
+          "rls": true,
+          "table": "material_issue_returns"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "site_direct_purchase_lines"
+        },
+        {
+          "estimated_rows": 147,
+          "rls": true,
+          "table": "workflow_instances"
+        },
+        {
+          "estimated_rows": 288,
+          "rls": true,
+          "table": "transactions"
+        },
+        {
+          "estimated_rows": 10,
+          "rls": true,
+          "table": "project_workflow_bindings"
+        },
+        {
+          "estimated_rows": 31,
+          "rls": true,
+          "table": "project_progress_period_states"
+        },
+        {
+          "estimated_rows": 860,
+          "rls": true,
+          "table": "project_tasks"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "supplier_contract_lines"
+        },
+        {
+          "estimated_rows": 21,
+          "rls": true,
+          "table": "supplier_direct_delivery_lines"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "supplier_delivery_statement_lines"
+        },
+        {
+          "estimated_rows": 17,
+          "rls": true,
+          "table": "supplier_delivery_statements"
+        },
+        {
+          "estimated_rows": 126,
+          "rls": true,
+          "table": "purchase_order_delivery_lines"
+        },
+        {
+          "estimated_rows": 2,
+          "rls": true,
+          "table": "material_issue_settlements"
+        },
+        {
+          "estimated_rows": 2,
+          "rls": true,
+          "table": "material_issue_settlement_lines"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "material_request_line_need_closures"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "purchase_order_delivery_groups"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "site_cash_settlement_batches"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "site_cash_settlement_lines"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "supplier_payment_batches"
+        },
+        {
+          "estimated_rows": 1505,
+          "rls": true,
+          "table": "items"
+        },
+        {
+          "estimated_rows": 179,
+          "rls": true,
+          "table": "inventory_balances"
+        },
+        {
+          "estimated_rows": 273,
+          "rls": true,
+          "table": "inventory_transactions"
+        },
+        {
+          "estimated_rows": 427,
+          "rls": true,
+          "table": "inventory_ledger_entries"
+        },
+        {
+          "estimated_rows": 2,
+          "rls": true,
+          "table": "site_direct_purchases"
+        },
+        {
+          "estimated_rows": 851,
+          "rls": true,
+          "table": "material_budget_items"
+        },
+        {
+          "estimated_rows": 17,
+          "rls": true,
+          "table": "material_code_requests"
+        },
+        {
+          "estimated_rows": 150,
+          "rls": true,
+          "table": "material_issue_lines"
+        },
+        {
+          "estimated_rows": 57,
+          "rls": true,
+          "table": "material_issue_receipt_lines"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "material_issue_receipts"
+        },
+        {
+          "estimated_rows": 346,
+          "rls": true,
+          "table": "material_request_events"
+        },
+        {
+          "estimated_rows": 4,
+          "rls": true,
+          "table": "material_issue_return_lines"
+        },
+        {
+          "estimated_rows": 223,
+          "rls": true,
+          "table": "material_party_ledger"
+        },
+        {
+          "estimated_rows": 3,
+          "rls": true,
+          "table": "material_planning_rules"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "material_request_boq_line_snapshots"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "supplier_invoices"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "supplier_invoice_payable_links"
+        },
+        {
+          "estimated_rows": 14,
+          "rls": true,
+          "table": "material_request_fulfillment_batches"
+        },
+        {
+          "estimated_rows": 30,
+          "rls": true,
+          "table": "material_request_fulfillment_lines"
+        },
+        {
+          "estimated_rows": 607,
+          "rls": true,
+          "table": "project_permission_room_members"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "project_permission_rooms"
+        },
+        {
+          "estimated_rows": 1627,
+          "rls": true,
+          "table": "project_permission_room_member_actions"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "payment_certificate_advance_recoveries"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "payment_certificate_items"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "payment_certificates"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "payment_schedules"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_cost_actuals"
+        },
+        {
+          "estimated_rows": 66,
+          "rls": true,
+          "table": "project_cost_items"
+        },
+        {
+          "estimated_rows": 8,
+          "rls": true,
+          "table": "project_baselines"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_contracts"
+        },
+        {
+          "estimated_rows": 4,
+          "rls": true,
+          "table": "project_dashboard_snapshots"
+        },
+        {
+          "estimated_rows": 215,
+          "rls": true,
+          "table": "project_document_action_logs"
+        },
+        {
+          "estimated_rows": 377,
+          "rls": true,
+          "table": "project_document_links"
+        },
+        {
+          "estimated_rows": 2,
+          "rls": true,
+          "table": "project_documents"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_delay_events"
+        },
+        {
+          "estimated_rows": 86,
+          "rls": true,
+          "table": "project_opening_balance_lines"
+        },
+        {
+          "estimated_rows": 20,
+          "rls": true,
+          "table": "project_finances"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_opening_balances"
+        },
+        {
+          "estimated_rows": 2,
+          "rls": true,
+          "table": "project_groups"
+        },
+        {
+          "estimated_rows": 8,
+          "rls": true,
+          "table": "project_material_requests"
+        },
+        {
+          "estimated_rows": 36,
+          "rls": true,
+          "table": "purchase_order_delivery_batches"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_schedule_revisions"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_schedule_revision_tasks"
+        },
+        {
+          "estimated_rows": 8,
+          "rls": true,
+          "table": "project_permission_types"
+        },
+        {
+          "estimated_rows": 8,
+          "rls": true,
+          "table": "project_sectors"
+        },
+        {
+          "estimated_rows": 71,
+          "rls": true,
+          "table": "project_staff"
+        },
+        {
+          "estimated_rows": 15,
+          "rls": true,
+          "table": "supplier_direct_delivery_notes"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "purchase_order_supplemental_approvals"
+        },
+        {
+          "estimated_rows": 325,
+          "rls": true,
+          "table": "workflow_instance_participants"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "supplier_payment_allocations"
+        },
+        {
+          "estimated_rows": 3,
+          "rls": true,
+          "table": "project_task_completion_requests"
+        },
+        {
+          "estimated_rows": 153,
+          "rls": true,
+          "table": "project_staff_permissions"
+        },
+        {
+          "estimated_rows": 1083,
+          "rls": true,
+          "table": "project_transactions"
+        },
+        {
+          "estimated_rows": 6,
+          "rls": true,
+          "table": "project_types"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "project_vendors"
+        },
+        {
+          "estimated_rows": 6094,
+          "rls": true,
+          "table": "project_weekly_task_progress"
+        },
+        {
+          "estimated_rows": 14,
+          "rls": true,
+          "table": "project_work_boq_norm_component_estimates"
+        },
+        {
+          "estimated_rows": 46,
+          "rls": true,
+          "table": "purchase_orders"
+        },
+        {
+          "estimated_rows": 786,
+          "rls": true,
+          "table": "project_work_boq_items"
+        },
+        {
+          "estimated_rows": 106,
+          "rls": true,
+          "table": "purchase_order_request_lines"
+        },
+        {
+          "estimated_rows": 7,
+          "rls": true,
+          "table": "purchase_order_supplier_return_lines"
+        },
+        {
+          "estimated_rows": 2,
+          "rls": true,
+          "table": "project_work_boq_norm_mappings"
+        },
+        {
+          "estimated_rows": 85,
+          "rls": true,
+          "table": "projects"
+        },
+        {
+          "estimated_rows": 174,
+          "rls": true,
+          "table": "workflow_sla_notifications"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "workflow_step_tasks"
+        },
+        {
+          "estimated_rows": -1,
+          "rls": true,
+          "table": "material_request_material_group_snapshots"
+        },
+        {
+          "estimated_rows": 11734,
+          "rls": true,
+          "table": "project_daily_task_progress"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "suppliers"
+        },
+        {
+          "estimated_rows": 1,
+          "rls": true,
+          "table": "supplier_contracts"
+        },
+        {
+          "estimated_rows": 34,
+          "rls": true,
+          "table": "workflow_templates"
+        },
+        {
+          "estimated_rows": 5,
+          "rls": true,
+          "table": "warehouses"
+        },
+        {
+          "estimated_rows": 513,
+          "rls": true,
+          "table": "workflow_instance_nodes"
+        },
+        {
+          "estimated_rows": 332,
+          "rls": true,
+          "table": "workflow_instance_edges"
+        },
+        {
+          "estimated_rows": 101,
+          "rls": true,
+          "table": "workflow_edges"
+        },
+        {
+          "estimated_rows": 544,
+          "rls": true,
+          "table": "workflow_instance_logs"
+        },
+        {
+          "estimated_rows": 140,
+          "rls": true,
+          "table": "workflow_nodes"
+        },
+        {
+          "estimated_rows": 619,
+          "rls": true,
+          "table": "workflow_participants"
+        },
+        {
+          "estimated_rows": 0,
+          "rls": true,
+          "table": "workflow_print_templates"
+        },
+        {
+          "estimated_rows": 9,
+          "rls": true,
+          "table": "workflow_subject_comments"
+        },
+        {
+          "estimated_rows": 62,
+          "rls": true,
+          "table": "workflow_template_versions"
+        }
+      ],
+      "zero_qty_nonzero_value": 17
+    }
+  }
+]
