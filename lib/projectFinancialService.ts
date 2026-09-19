@@ -88,18 +88,25 @@ export const projectFinancialService = {
             .select('type, amount, source_ref, sourceRef')
             .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId),
           { label: "lib/projectFinancialService.ts:84", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_transactions') })
-          .then(r => (r.data || []).map((row: any) => ({
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return (data || []).map((row: any) => ({
               type: row.type,
               amount: row.amount,
               sourceRef: row.source_ref ?? row.sourceRef,
-            }))),
+            }));
+          }),
       projectCostItemService.getSummary(constructionSiteId, projectId),
       fetchAllSupabaseRows(supabase
-        .from('project_purchase_orders')
-        .select('total_amount, status')
-        .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId),
-      { label: "lib/projectFinancialService.ts:94", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_purchase_orders') })
-        .then(r => r.data || []),
+        .from('purchase_orders')
+        .select('id,total_amount,status,archived_at')
+        .eq(projectId ? 'project_id' : 'construction_site_id', projectId || constructionSiteId)
+        .is('archived_at', null),
+      { label: "lib/projectFinancialService.ts:98", maxRows: 50_000, orderBy: getSupabaseOrderColumns('purchase_orders') })
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return data || [];
+        }),
     ]);
 
     // ── Hợp đồng ──
@@ -136,10 +143,8 @@ export const projectFinancialService = {
       .reduce((s, c) => s + (c.retentionThisPeriod ?? c.retentionAmount ?? 0), 0);
 
     for (const contract of activeCustomerContracts) {
-      try {
-        const advBalance = await advancePaymentService.getBalance(contract.id, 'customer');
-        totalAdvanceOutstanding += advBalance.totalRemaining;
-      } catch { /* no advances */ }
+      const advBalance = await advancePaymentService.getBalance(contract.id, 'customer');
+      totalAdvanceOutstanding += advBalance.totalRemaining;
     }
 
     const certificationPercent = revisedContractValue > 0

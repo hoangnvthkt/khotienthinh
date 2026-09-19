@@ -44,6 +44,7 @@ const FinancialPipelineWidget: React.FC<Props> = ({ contractId, contractType, co
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'pipeline' | 'kpi'>('pipeline');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!contractId) return;
@@ -51,6 +52,9 @@ const FinancialPipelineWidget: React.FC<Props> = ({ contractId, contractType, co
 
     const load = async () => {
       setLoading(true);
+      setError(null);
+      setData(null);
+      setSiteKPIs(null);
       try {
         const [paymentSummary, advanceBalance, acceptances, boqItems, kpis] = await Promise.all([
           paymentCertificateService.getPaymentSummary(contractId, contractType),
@@ -89,7 +93,7 @@ const FinancialPipelineWidget: React.FC<Props> = ({ contractId, contractType, co
 
     load();
     return () => { cancelled = true; };
-  }, [contractId, contractType, constructionSiteId]);
+  }, [contractId, contractType, constructionSiteId, reloadKey]);
 
   if (loading) {
     return (
@@ -102,9 +106,18 @@ const FinancialPipelineWidget: React.FC<Props> = ({ contractId, contractType, co
 
   if (error || !data) {
     return (
-      <div className="flex items-center gap-2 text-red-500 text-sm p-4 bg-red-50 rounded-xl border border-red-200">
-        <AlertTriangle size={16} />
-        <span>Lỗi tải dữ liệu: {error}</span>
+      <div className="flex items-center justify-between gap-3 text-red-600 text-sm p-4 bg-red-50 rounded-xl border border-red-200">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={16} />
+          <span>Lỗi tải dữ liệu: {error || 'Không có dữ liệu.'}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setReloadKey(value => value + 1)}
+          className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"
+        >
+          Thử lại
+        </button>
       </div>
     );
   }
@@ -309,6 +322,10 @@ const FinancialPipelineWidget: React.FC<Props> = ({ contractId, contractType, co
 
       {activeTab === 'kpi' && siteKPIs && (
         <div className="space-y-3">
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span>Dự báo hiện cộng chi phí ghi nhận với toàn bộ cam kết PO. Chưa loại trừ phần đã ghi nhận.</span>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {kpiCards.map((kpi, i) => (
               <div key={i} className={`rounded-2xl border p-4 ${kpi.bg}`}>

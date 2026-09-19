@@ -3539,11 +3539,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   onClick={() => openTab('receivables')}
                 />
                 <KpiCard
-                  label="Đã chi"
+                  label="Giá trị ghi nhận"
                   value={summary.actualCost}
                   icon={ArrowDownRight}
                   tone="red"
-                  hint={`NS: ${fmtMoney(summary.budgetAmount)}`}
+                  hint={`NS: ${fmtMoney(summary.budgetAmount)} · Có thể gồm giá trị nhận mua/công nợ; chưa phải tiền đã trả hoặc tiêu hao.`}
                   onClick={() => {
                     setLedgerView('paid');
                     openTab('ledger');
