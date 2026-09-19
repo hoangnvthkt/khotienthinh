@@ -49,4 +49,13 @@ describe('PurchaseOrderCockpit practical material flow', () => {
     expect(source).toContain('Giá trị đợt gồm VAT');
     expect(source).toContain('VAT {fmtQty(group.vatRate)}%: {fmtMoney(group.vatAmount)} đ');
   });
+
+  it('separates recorded delivery from accepted stock quantity without fabricating zero', () => {
+    expect(source).toContain('Giao thực tế');
+    expect(source).toContain('Đạt theo ĐVT kho');
+    expect(source).toContain("batch.qualityApprovedAt && line.deliveredStockQty != null");
+    expect(source).toContain("'Chưa xác định'");
+    expect(source).toContain('fmtQty(line.acceptedStockQty ?? 0)');
+    expect(source).not.toContain('line.acceptedStockQty || line.deliveredQty || 0');
+  });
 });

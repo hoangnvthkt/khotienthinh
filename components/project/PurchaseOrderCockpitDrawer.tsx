@@ -1369,7 +1369,8 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                           <th className="px-3 py-2.5 text-right">SL quy đổi</th>
                                           <th className="px-3 py-2.5 text-right">Đơn giá</th>
                                           <th className="px-3 py-2.5 text-right">Thành tiền</th>
-                                          <th className="px-3 py-2.5 text-right">Đã nhận</th>
+                                          <th className="px-3 py-2.5 text-right">Giao thực tế</th>
+                                          <th className="px-3 py-2.5 text-right">Đạt theo ĐVT kho</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
@@ -1403,8 +1404,13 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                                 <td className="px-3 py-2.5 text-right font-black text-slate-900 dark:text-slate-100">
                                                   {fmtMoney(lineTotal)} đ
                                                 </td>
+                                                <td className="px-3 py-2.5 text-right font-black text-blue-700">
+                                                  {batch.qualityApprovedAt && line.deliveredStockQty != null
+                                                    ? fmtQty(line.deliveredStockQty)
+                                                    : 'Chưa xác định'}
+                                                </td>
                                                 <td className="px-3 py-2.5 text-right font-black text-emerald-700">
-                                                  {Number(line.acceptedStockQty || line.deliveredQty || 0) > 0 ? fmtQty(line.acceptedStockQty || line.deliveredQty || 0) : '0'}
+                                                  {fmtQty(line.acceptedStockQty ?? 0)}
                                                 </td>
                                               </tr>
                                             );
@@ -1421,6 +1427,9 @@ const PurchaseOrderCockpitDrawer: React.FC<PurchaseOrderCockpitDrawerProps> = ({
                                               <td className="px-3 py-2.5 text-right font-bold text-slate-400">—</td>
                                               <td className="px-3 py-2.5 text-right font-bold text-slate-700 dark:text-slate-300">—</td>
                                               <td className="px-3 py-2.5 text-right font-black text-slate-900 dark:text-slate-100">—</td>
+                                              <td className="px-3 py-2.5 text-right font-bold text-slate-400">
+                                                Chưa xác định
+                                              </td>
                                               <td className="px-3 py-2.5 text-right font-black text-emerald-700">
                                                 {fmtQty(line.receivedQty || 0)}
                                               </td>

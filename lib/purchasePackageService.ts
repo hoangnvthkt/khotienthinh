@@ -6,7 +6,7 @@ import { wmsTransactionListService } from './wmsTransactionListService';
 
 const PURCHASE_PACKAGE_PO_SELECT = 'id,construction_site_id,vendor_id,vendor_name,po_number,items,total_amount,order_date,expected_delivery_date,actual_delivery_date,status,material_request_id,delivery_note,note,created_at,project_id,qr_token,target_warehouse_id,received_transaction_ids,source_mode,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,procurement_group_id,procurement_group_no,archived_at,archived_by,archive_reason,created_by_id,vat_rate,approval_request_title,direct_purchase_id,payment_term,invoice_number,invoice_date,payment_status,metadata,approved_total_amount,supplemental_approval_status,purchase_mode,fulfillment_mode,reference_gross_amount,closed_need_qty';
 const PURCHASE_DELIVERY_BATCH_SELECT = 'id,purchase_order_id,project_id,construction_site_id,delivery_no,planned_delivery_date,status,fulfillment_batch_ids,note,created_by,created_at,updated_at,supplemental_approval_id,supplier_id,supplier_name_snapshot,fulfillment_mode,vat_rate,qr_token,idempotency_key,quality_result,variance_reason,quality_approved_by,quality_approved_at,received_by,received_at,accepted_gross_amount,wms_transaction_id';
-const PURCHASE_DELIVERY_LINE_SELECT = 'id,delivery_batch_id,purchase_order_id,purchase_order_line_id,item_id,planned_qty,unit,stock_planned_qty,stock_unit,created_at,updated_at,delivery_unit_price,accepted_qty,accepted_stock_qty,returned_qty';
+const PURCHASE_DELIVERY_LINE_SELECT = 'id,delivery_batch_id,purchase_order_id,purchase_order_line_id,item_id,planned_qty,unit,stock_planned_qty,stock_unit,created_at,updated_at,delivery_unit_price,delivered_qty,accepted_qty,delivered_stock_qty,accepted_stock_qty,returned_qty';
 
 export interface MaterialPoBatchDraftLineInput {
   purchaseOrderLineId: string;
@@ -149,17 +149,23 @@ const getDeliveryLookupBy = async (
     .single();
   if (poError) throw poError;
 
-  const lines = lineRows.map(row => ({
-    ...(fromDb(row) as PurchaseOrderDeliveryLine),
-    plannedQty: Number(row.planned_qty || 0),
-    deliveredQty: Number(row.delivered_qty ?? row.accepted_qty ?? 0),
-    acceptedQty: Number(row.accepted_qty || 0),
-    deliveredStockQty: Number(row.delivered_stock_qty ?? row.accepted_stock_qty ?? 0),
-    acceptedStockQty: Number(row.accepted_stock_qty || 0),
-    returnedQty: Number(row.returned_qty || 0),
-    deliveryUnitPrice: Number(row.delivery_unit_price || 0),
-    stockPlannedQty: Number(row.stock_planned_qty || 0),
-  }));
+  const lines = lineRows.map(row => {
+    const deliveredQty = row.delivered_qty == null ? undefined : Number(row.delivered_qty);
+    const deliveredStockQty = row.delivered_stock_qty == null
+      ? undefined
+      : Number(row.delivered_stock_qty);
+    return {
+      ...(fromDb(row) as PurchaseOrderDeliveryLine),
+      plannedQty: Number(row.planned_qty || 0),
+      deliveredQty,
+      acceptedQty: Number(row.accepted_qty || 0),
+      deliveredStockQty,
+      acceptedStockQty: Number(row.accepted_stock_qty || 0),
+      returnedQty: Number(row.returned_qty || 0),
+      deliveryUnitPrice: Number(row.delivery_unit_price || 0),
+      stockPlannedQty: Number(row.stock_planned_qty || 0),
+    };
+  });
 
   return {
     purchaseOrder: fromDb(poRow) as PurchaseOrder,

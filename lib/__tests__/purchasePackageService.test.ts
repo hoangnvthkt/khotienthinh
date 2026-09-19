@@ -36,6 +36,15 @@ const lines: MaterialPoBatchDraftLineInput[] = [{
     stockUnitPrice: 100,
   }];
 
+const selectProjectedColumns = (row: Record<string, unknown>, projection: string) =>
+  Object.fromEntries(
+    projection
+      .split(',')
+      .map(column => column.trim())
+      .filter(column => Object.prototype.hasOwnProperty.call(row, column))
+      .map(column => [column, row[column]]),
+  );
+
 describe('purchasePackageService', () => {
   beforeEach(() => {
     supabaseMocks.rpc.mockReset();
@@ -189,6 +198,134 @@ describe('purchasePackageService', () => {
     expect(eq).toHaveBeenCalledWith('id', 'tx-1');
     expect(result?.sourceType).toBe('po_delivery_batch');
     expect(result?.sourceId).toBe('batch-1');
+  });
+
+  it('preserves delivered quantities and unknowns across every QR delivery line page', async () => {
+    const deliveryRows = Array.from({ length: 1001 }, (_, index) => ({
+      id: `line-${String(index).padStart(4, '0')}`,
+      delivery_batch_id: 'batch-1',
+      purchase_order_id: 'po-1',
+      purchase_order_line_id: `po-line-${index}`,
+      item_id: `item-${index}`,
+      planned_qty: '100',
+      delivered_qty: index === 0 ? '98.5' : index === 1 ? '0' : index === 2 ? null : '100',
+      accepted_qty: index === 0 ? '98' : index === 2 ? '7' : '0',
+      delivered_stock_qty: index === 0 ? '197' : index === 1 ? '0' : index === 2 ? null : '200',
+      accepted_stock_qty: index === 0 ? '196' : index === 2 ? '14' : '0',
+      returned_qty: '0',
+      unit: 'bao',
+      stock_planned_qty: '200',
+      stock_unit: 'kg',
+      delivery_unit_price: '250000',
+      created_at: '2026-09-19T00:00:00Z',
+      updated_at: '2026-09-19T00:00:00Z',
+    }));
+    const selectedLineProjections: string[] = [];
+
+    supabaseMocks.from.mockImplementation((table: string) => {
+      if (table === 'purchase_order_delivery_batches') {
+        let projection = '';
+        const maybeSingle = vi.fn(async () => ({
+          data: selectProjectedColumns({
+            id: 'batch-1',
+            purchase_order_id: 'po-1',
+            delivery_no: 1,
+            status: 'quality_approved',
+            quality_result: 'partial',
+            quality_approved_at: '2026-09-19T01:00:00Z',
+          }, projection),
+          error: null,
+        }));
+        const query = {
+          select: vi.fn((value: string) => {
+            projection = value;
+            return query;
+          }),
+          eq: vi.fn(() => ({ maybeSingle })),
+        };
+        return query;
+      }
+
+      if (table === 'purchase_order_delivery_lines') {
+        let projection = '';
+        let cursor: string | undefined;
+        const query: any = {
+          select: vi.fn((value: string) => {
+            projection = value;
+            selectedLineProjections.push(value);
+            return query;
+          }),
+          eq: vi.fn(() => query),
+          order: vi.fn(() => query),
+          limit: vi.fn(() => query),
+          gt: vi.fn((_column: string, value: string) => {
+            cursor = value;
+            return query;
+          }),
+          then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => {
+            const rows = cursor
+              ? deliveryRows.filter(row => row.id > cursor)
+              : deliveryRows.slice(0, 1001);
+            return Promise.resolve({
+              data: rows.map(row => selectProjectedColumns(row, projection)),
+              error: null,
+            }).then(resolve, reject);
+          },
+        };
+        return query;
+      }
+
+      if (table === 'purchase_orders') {
+        let projection = '';
+        const single = vi.fn(async () => ({
+          data: selectProjectedColumns({
+            id: 'po-1',
+            po_number: 'PO-001',
+            items: [],
+            total_amount: 0,
+            order_date: '2026-09-19',
+            status: 'confirmed',
+          }, projection),
+          error: null,
+        }));
+        const query = {
+          select: vi.fn((value: string) => {
+            projection = value;
+            return query;
+          }),
+          eq: vi.fn(() => ({ single })),
+        };
+        return query;
+      }
+
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = await purchasePackageService.getDeliveryByQrToken('pod_batch_1');
+
+    expect(result?.deliveryBatch.lines).toHaveLength(1001);
+    expect(result?.deliveryBatch.lines[0]).toEqual(expect.objectContaining({
+      deliveredQty: 98.5,
+      acceptedQty: 98,
+      deliveredStockQty: 197,
+      acceptedStockQty: 196,
+    }));
+    expect(result?.deliveryBatch.lines[1]).toEqual(expect.objectContaining({
+      deliveredQty: 0,
+      deliveredStockQty: 0,
+    }));
+    expect(result?.deliveryBatch.lines[2]).toEqual(expect.objectContaining({
+      deliveredQty: undefined,
+      acceptedQty: 7,
+      deliveredStockQty: undefined,
+      acceptedStockQty: 14,
+    }));
+    expect(result?.deliveryBatch.lines.at(-1)?.id).toBe('line-1000');
+    expect(selectedLineProjections).toHaveLength(2);
+    expect(selectedLineProjections[0].split(',')).toEqual(expect.arrayContaining([
+      'delivered_qty',
+      'delivered_stock_qty',
+    ]));
   });
 
   it('returns the auto-created first delivery for a single package approval', async () => {
