@@ -1336,6 +1336,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
     }), []);
     const [showPackageReconcileDetails, setShowPackageReconcileDetails] = useState(false);
     const poSubmitLockRef = useRef(false);
+    const poAggregateCommandRef = useRef(new Map<string, { fingerprint: string; idempotencyKey: string }>());
     const poImportModeRef = useRef<ExcelImportMode>('create');
     const poBoqMetaScopeRef = useRef<string | null>(null);
     const lastInitialDraftPoKeyRef = useRef<number>(0);
@@ -3776,6 +3777,54 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 targetWarehouseId: pTargetWarehouseId,
                 summariesByRequestId: requestFulfillmentSummaries,
             });
+        const savePoAggregate = async (
+            po: PurchaseOrder,
+            links: PurchaseOrderRequestLineLink[],
+            batches: PurchaseOrderDeliveryBatch[],
+            isEditing: boolean,
+        ) => {
+            if (!user?.id) throw new Error('Không xác định được người thao tác PO.');
+            const currentLinks = isEditing
+                ? poRequestLinks.filter(link => link.purchaseOrderId === po.id)
+                : [];
+            const currentBatches = isEditing ? (poDeliveryBatchesByPo[po.id] || []) : [];
+            const expectedLinks = currentLinks.map(link => {
+                if (!link.id || !link.updatedAt) {
+                    throw new Error('Phiên bản liên kết PO chưa đầy đủ. Vui lòng tải lại dữ liệu.');
+                }
+                return { id: link.id, updatedAt: link.updatedAt };
+            });
+            const expectedBatches = currentBatches.map(batch => {
+                if (!batch.id || !batch.updatedAt) {
+                    throw new Error('Phiên bản lịch giao PO chưa đầy đủ. Vui lòng tải lại dữ liệu.');
+                }
+                return { id: batch.id, updatedAt: batch.updatedAt };
+            });
+            if (isEditing && po.rowVersion == null) {
+                throw new Error('Phiên bản PO chưa đầy đủ. Vui lòng tải lại dữ liệu.');
+            }
+            const expected = {
+                rowVersion: isEditing ? po.rowVersion! : null,
+                requestLineLinks: expectedLinks,
+                deliveryBatches: expectedBatches,
+            };
+            const fingerprint = JSON.stringify({ po, links, batches, expected });
+            const priorCommand = poAggregateCommandRef.current.get(po.id);
+            const idempotencyKey = priorCommand?.fingerprint === fingerprint
+                ? priorCommand.idempotencyKey
+                : crypto.randomUUID();
+            poAggregateCommandRef.current.set(po.id, { fingerprint, idempotencyKey });
+            const result = await poService.saveAggregate({
+                purchaseOrder: po,
+                requestLineLinks: links,
+                deliveryBatches: batches,
+                expected,
+                actorUserId: user.id,
+                idempotencyKey,
+            });
+            poAggregateCommandRef.current.delete(po.id);
+            return result;
+        };
 
         if (editingPo && groupEntries.length > 1) {
             toast.warning('PO đang sửa chỉ được có một NCC', 'Nếu cần tách nhiều NCC, hãy tạo nhóm mua hàng mới từ form tạo PO.');
@@ -3909,9 +3958,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         : poItem.approvedTotalAmount,
                     supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const,
                 };
-                await poService.update(poItemForSave);
-                await poService.replaceRequestLineLinks(poItemForSave.id, buildLinks(poItemForSave, groupItems));
-                await poDeliveryScheduleService.replaceForPurchaseOrder(poItemForSave, batches);
+                await savePoAggregate(
+                    poItemForSave,
+                    buildLinks(poItemForSave, groupItems),
+                    batches,
+                    true,
+                );
                 await poSupplementalApprovalService.syncPendingForPurchaseOrder(
                     poItemForSave,
                     supplementalRequests,
@@ -3987,9 +4039,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             : poItem.approvedTotalAmount,
                         supplementalApprovalStatus: supplementalRequests.length > 0 ? 'pending' as const : 'none' as const,
                     };
-                    await poService.upsert(poItemForSave);
-                    await poService.replaceRequestLineLinks(poItemForSave.id, buildLinks(poItemForSave, groupItems));
-                    await poDeliveryScheduleService.replaceForPurchaseOrder(poItemForSave, batches);
+                    await savePoAggregate(
+                        poItemForSave,
+                        buildLinks(poItemForSave, groupItems),
+                        batches,
+                        false,
+                    );
                     await poSupplementalApprovalService.syncPendingForPurchaseOrder(
                         poItemForSave,
                         supplementalRequests,
@@ -4024,6 +4079,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         } catch (e: any) {
             logApiError('supplyChain.savePo', e);
             toast.error('Không thể lưu PO', getApiErrorMessage(e, 'Không thể lưu đơn hàng lên Supabase.'));
+            await loadSupplyData().catch(error => console.warn('Cannot reload PO data after save failure', error));
         } finally {
             poSubmitLockRef.current = false;
             setSavingPo(false);
@@ -4242,14 +4298,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
 
         setDeletingDeliveryKey(`batch:${deliveryBatch.id}`);
         try {
-            const currentBatches = poDeliveryBatchesByPo[po.id] || [];
-            const remainingBatches = currentBatches.filter(batch => batch.id !== deliveryBatch.id);
-            const canRewriteSchedule = currentBatches.every(batch => ['planned', 'supplemental_pending', 'cancelled'].includes(batch.status));
-            if (canRewriteSchedule) {
-                await poDeliveryScheduleService.replaceForPurchaseOrder(po, remainingBatches);
-            } else {
-                await poDeliveryScheduleService.removePlannedBatch(deliveryBatch.id);
-            }
+            await poDeliveryScheduleService.removePlannedBatch(deliveryBatch.id);
             const schedules = await poDeliveryScheduleService.listByPurchaseOrderIds([po.id]);
             const scheduleBatches = schedules[po.id] || [];
             setPoDeliveryBatchesByPo(prev => ({ ...prev, [po.id]: scheduleBatches }));

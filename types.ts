@@ -2766,6 +2766,7 @@ export interface PurchaseOrder extends ProjectSubmissionFields {
   archiveReason?: string | null;
   createdById?: string | null;
   createdAt: string;
+  rowVersion?: number;
 }
 
 export interface PurchaseOrderRemovalResult {
@@ -2991,6 +2992,33 @@ export interface PurchaseOrderRequestLineLink {
   unit?: string | null;
   note?: string | null;
   createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PurchaseOrderAggregateChildVersion {
+  id: string;
+  updatedAt: string;
+}
+
+export interface SavePurchaseOrderAggregateInput {
+  purchaseOrder: PurchaseOrder;
+  requestLineLinks: PurchaseOrderRequestLineLink[];
+  deliveryBatches: PurchaseOrderDeliveryBatch[];
+  expected: {
+    rowVersion: number | null;
+    requestLineLinks: PurchaseOrderAggregateChildVersion[];
+    deliveryBatches: PurchaseOrderAggregateChildVersion[];
+  };
+  actorUserId: string;
+  idempotencyKey: string;
+}
+
+export interface SavePurchaseOrderAggregateResult {
+  purchaseOrderId: string;
+  rowVersion: number;
+  requestLineCount: number;
+  deliveryBatchCount: number;
+  replayed: boolean;
 }
 
 export interface PurchaseOrderDeliveryGroup {
@@ -3054,6 +3082,15 @@ export interface CompanyProcurementCreateResult {
   procurementGroupId: string;
   procurementGroupNo: string;
   purchaseOrders: PurchaseOrder[];
+  outcomes: CompanyProcurementCreateOutcome[];
+}
+
+export interface CompanyProcurementCreateOutcome {
+  vendorId: string;
+  vendorName?: string | null;
+  status: 'created' | 'failed';
+  purchaseOrder?: PurchaseOrder;
+  error?: string;
 }
 
 export interface CompanyProcurementDeliveryGroupDetail {

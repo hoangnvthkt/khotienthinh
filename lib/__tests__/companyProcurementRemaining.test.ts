@@ -69,11 +69,12 @@ const mocks = vi.hoisted(() => {
     batchCountsByRequestId: {},
     activeBatchCountsByRequestId: {},
   }));
+  const rpc = vi.fn();
 
-  return { state, from, listSummariesByRequests };
+  return { state, from, listSummariesByRequests, rpc };
 });
 
-vi.mock('../supabase', () => ({ supabase: { from: mocks.from } }));
+vi.mock('../supabase', () => ({ supabase: { from: mocks.from, rpc: mocks.rpc } }));
 vi.mock('../materialRequestFulfillmentService', () => ({
   getRequestLineId: (_request: unknown, line: { lineId?: string }, index: number) => line.lineId || `line-${index}`,
   materialRequestFulfillmentService: {
@@ -176,6 +177,7 @@ const setBaseFixture = () => {
 describe('company procurement remaining from open commitments', () => {
   beforeEach(() => {
     mocks.from.mockClear();
+    mocks.rpc.mockReset();
     mocks.listSummariesByRequests.mockClear();
     setBaseFixture();
   });
@@ -339,6 +341,84 @@ describe('company procurement remaining from open commitments', () => {
         stockUnitPrice: 1,
       }],
     })).rejects.toThrow('chưa đủ dữ liệu đối chiếu nhận hàng');
+  });
+
+  it('returns one explicit outcome per supplier when consolidated PO creation is partially successful', async () => {
+    const [firstDemand] = await companyProcurementService.listOpenDemand();
+    const secondDemand = {
+      ...firstDemand,
+      key: 'mr-2:mr-line-2',
+      itemId: 'item-2',
+      sku: 'ITEM-2',
+      itemName: 'Material 2',
+      requestLineId: 'mr-line-2',
+      request: {
+        ...firstDemand.request,
+        id: 'mr-2',
+        code: 'MR-002',
+      },
+      requestLine: {
+        ...firstDemand.requestLine,
+        lineId: 'mr-line-2',
+        itemId: 'item-2',
+      },
+    };
+    vi.spyOn(companyProcurementService, 'listOpenDemand').mockResolvedValueOnce([firstDemand, secondDemand]);
+    mocks.state.tables.items.push({
+      id: 'item-2',
+      sku: 'ITEM-2',
+      name: 'Material 2',
+      unit: 'kg',
+      purchase_unit: 'kg',
+      purchase_conversion_factor: 1,
+      stock_by_warehouse: {},
+    });
+    let poNumberCalls = 0;
+    mocks.rpc.mockImplementation(async (name: string, args: Record<string, any>) => {
+      if (name === 'next_purchase_order_number_v2') {
+        poNumberCalls += 1;
+        if (poNumberCalls === 2) {
+          return { data: null, error: { code: '42501', message: 'number denied' } };
+        }
+        return { data: `PO-${poNumberCalls}`, error: null };
+      }
+      if (name === 'save_purchase_order_aggregate_v1') {
+        return {
+          data: {
+            purchaseOrderId: args.p_purchase_order.id,
+            rowVersion: 1,
+            requestLineCount: 1,
+            deliveryBatchCount: 0,
+            replayed: false,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    const result = await companyProcurementService.createConsolidatedPurchaseOrders({
+      actorUserId: 'buyer-1',
+      lines: [{
+        demandKey: firstDemand.key,
+        vendorId: 'supplier-1',
+        vendorName: 'Supplier 1',
+        orderStockQty: 10,
+        stockUnitPrice: 2,
+      }, {
+        demandKey: secondDemand.key,
+        vendorId: 'supplier-2',
+        vendorName: 'Supplier 2',
+        orderStockQty: 20,
+        stockUnitPrice: 3,
+      }],
+    });
+
+    expect(result.purchaseOrders).toHaveLength(1);
+    expect(result.outcomes).toEqual([
+      expect.objectContaining({ vendorId: 'supplier-1', status: 'created' }),
+      expect.objectContaining({ vendorId: 'supplier-2', status: 'failed', error: 'number denied' }),
+    ]);
   });
 
   it('reads every page of PO links', async () => {

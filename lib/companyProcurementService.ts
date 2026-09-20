@@ -549,6 +549,9 @@ export const companyProcurementService = {
     if (validLines.length === 0) {
       throw new Error('Chưa có dòng nhu cầu hợp lệ để tạo PO gộp.');
     }
+    if (!input.actorUserId) {
+      throw new Error('Không xác định được người thao tác tạo PO gộp.');
+    }
 
     const demandRows = await this.listOpenDemand();
     const demandByKey = new Map<string, CompanyProcurementDemandLine>(
@@ -572,56 +575,82 @@ export const companyProcurementService = {
     }, new Map());
 
     const purchaseOrders: PurchaseOrder[] = [];
+    const outcomes: CompanyProcurementCreateResult['outcomes'] = [];
     for (const [vendorId, vendorLines] of linesByVendor.entries()) {
-      const poNumber = await poService.nextNumber();
       const firstLine = vendorLines[0];
-      const poItems = vendorLines.map(lineInput => {
-        const demand = demandByKey.get(lineInput.demandKey);
-        if (!demand) throw new Error('Một dòng nhu cầu đã được xử lý hoặc không còn mở.');
-        return buildPoItemFromDemand(demand, lineInput, inventoryById.get(demand.itemId));
-      });
-
-      const targetWarehouseIds = Array.from(new Set(vendorLines
-        .map(line => demandByKey.get(line.demandKey)?.targetWarehouseId || '')
-        .filter(Boolean)));
       const vendorName = firstLine.vendorName || vendorId;
-      const totalAmount = poItems.reduce((sum, item) => sum + toFiniteNumber(item.qty) * toFiniteNumber(item.unitPrice), 0);
-      const po: PurchaseOrder = {
-        id: newId('po'),
-        projectId: null,
-        constructionSiteId: null,
-        vendorId,
-        vendorName,
-        poNumber,
-        items: poItems,
-        totalAmount,
-        orderDate,
-        expectedDeliveryDate: input.expectedDeliveryDate || undefined,
-        status: 'draft',
-        sourceMode: 'company_consolidated',
-        procurementGroupId,
-        procurementGroupNo,
-        targetWarehouseId: targetWarehouseIds.length === 1 ? targetWarehouseIds[0] : undefined,
-        note: [
-          `PO công ty ${procurementGroupNo}`,
-          input.note || null,
-        ].filter(Boolean).join('\n'),
-        createdById: input.actorUserId || null,
-        createdAt: now,
-      };
+      try {
+        const poNumber = await poService.nextNumber();
+        const poItems = vendorLines.map(lineInput => {
+          const demand = demandByKey.get(lineInput.demandKey);
+          if (!demand) throw new Error('Một dòng nhu cầu đã được xử lý hoặc không còn mở.');
+          return buildPoItemFromDemand(demand, lineInput, inventoryById.get(demand.itemId));
+        });
 
-      const links = vendorLines.map((lineInput, index) => {
-        const demand = demandByKey.get(lineInput.demandKey);
-        if (!demand) throw new Error('Một dòng nhu cầu đã được xử lý hoặc không còn mở.');
-        return buildPoLinkFromDemand(po, poItems[index], demand, lineInput);
-      });
+        const targetWarehouseIds = Array.from(new Set(vendorLines
+          .map(line => demandByKey.get(line.demandKey)?.targetWarehouseId || '')
+          .filter(Boolean)));
+        const totalAmount = poItems.reduce((sum, item) => sum + toFiniteNumber(item.qty) * toFiniteNumber(item.unitPrice), 0);
+        const po: PurchaseOrder = {
+          id: newId('po'),
+          projectId: null,
+          constructionSiteId: null,
+          vendorId,
+          vendorName,
+          poNumber,
+          items: poItems,
+          totalAmount,
+          orderDate,
+          expectedDeliveryDate: input.expectedDeliveryDate || undefined,
+          status: 'draft',
+          sourceMode: 'company_consolidated',
+          procurementGroupId,
+          procurementGroupNo,
+          targetWarehouseId: targetWarehouseIds.length === 1 ? targetWarehouseIds[0] : undefined,
+          note: [
+            `PO công ty ${procurementGroupNo}`,
+            input.note || null,
+          ].filter(Boolean).join('\n'),
+          createdById: input.actorUserId || null,
+          createdAt: now,
+        };
 
-      await poService.upsert(po);
-      await poService.replaceRequestLineLinks(po.id, links);
-      purchaseOrders.push(po);
+        const links = vendorLines.map((lineInput, index) => {
+          const demand = demandByKey.get(lineInput.demandKey);
+          if (!demand) throw new Error('Một dòng nhu cầu đã được xử lý hoặc không còn mở.');
+          return buildPoLinkFromDemand(po, poItems[index], demand, lineInput);
+        });
+
+        await poService.saveAggregate({
+          purchaseOrder: po,
+          requestLineLinks: links,
+          deliveryBatches: [],
+          expected: {
+            rowVersion: null,
+            requestLineLinks: [],
+            deliveryBatches: [],
+          },
+          actorUserId: input.actorUserId,
+          idempotencyKey: globalThis.crypto.randomUUID(),
+        });
+        purchaseOrders.push(po);
+        outcomes.push({
+          vendorId,
+          vendorName,
+          status: 'created',
+          purchaseOrder: po,
+        });
+      } catch (error: any) {
+        outcomes.push({
+          vendorId,
+          vendorName,
+          status: 'failed',
+          error: String(error?.message || error || 'Không thể tạo PO.'),
+        });
+      }
     }
 
-    return { procurementGroupId, procurementGroupNo, purchaseOrders };
+    return { procurementGroupId, procurementGroupNo, purchaseOrders, outcomes };
   },
 
   async listCompanyPurchaseOrders(): Promise<PurchaseOrder[]> {

@@ -479,11 +479,26 @@ const CompanyProcurement: React.FC = () => {
         note: `Gom ${selectedRows.length} dòng nhu cầu cấp công ty`,
         actorUserId: user.id,
       });
-      toast.success('Đã tạo PO gộp', `${result.purchaseOrders.length} PO thuộc nhóm ${result.procurementGroupNo}.`);
-      setSelectedKeys([]);
-      setDraftByKey({});
+      const failedOutcomes = result.outcomes.filter(outcome => outcome.status === 'failed');
+      if (failedOutcomes.length > 0) {
+        const failedVendors = failedOutcomes.map(outcome => outcome.vendorName || outcome.vendorId).join(', ');
+        toast.warning(
+          'Tạo PO gộp chưa hoàn tất',
+          `Đã tạo ${result.purchaseOrders.length}/${result.outcomes.length} PO. Chưa tạo được: ${failedVendors}.`,
+        );
+      } else {
+        toast.success('Đã tạo PO gộp', `${result.purchaseOrders.length} PO thuộc nhóm ${result.procurementGroupNo}.`);
+      }
+      const failedVendorIds = new Set(failedOutcomes.map(outcome => outcome.vendorId));
+      const failedKeys = selectedRows
+        .filter(row => failedVendorIds.has(draftByKey[row.key]?.vendorId || ''))
+        .map(row => row.key);
+      setSelectedKeys(failedKeys);
+      setDraftByKey(previous => Object.fromEntries(
+        Object.entries(previous).filter(([key]) => failedKeys.includes(key)),
+      ));
       await refresh();
-      setActiveTab('po');
+      if (failedOutcomes.length === 0) setActiveTab('po');
     } catch (err: any) {
       logApiError('companyProcurement.createPo', err);
       toast.error('Không tạo được PO gộp', getApiErrorMessage(err));

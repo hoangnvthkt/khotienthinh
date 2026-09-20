@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MaterialRequestFulfillmentMode } from '../../types';
 
 const supabaseMock = vi.hoisted(() => ({
   from: vi.fn(),
@@ -21,6 +22,133 @@ beforeEach(() => {
 });
 
 describe('poService Phase 3.3 workflow transitions', () => {
+  it('saves the PO header, request links, and editable schedule through one idempotent command', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: {
+        purchaseOrderId: 'po-1',
+        rowVersion: 8,
+        requestLineCount: 1,
+        deliveryBatchCount: 1,
+        replayed: false,
+      },
+      error: null,
+    });
+    const { poService } = await import('../projectService');
+
+    const result = await poService.saveAggregate({
+      purchaseOrder: {
+        id: 'po-1',
+        projectId: 'project-1',
+        constructionSiteId: 'site-1',
+        vendorId: 'vendor-1',
+        vendorName: 'NCC 1',
+        poNumber: 'PO-001',
+        items: [{
+          lineId: 'po-line-1',
+          itemId: 'item-1',
+          sku: 'ITEM-1',
+          name: 'Material 1',
+          unit: 'bao',
+          qty: 2,
+          unitPrice: 100,
+        }],
+        totalAmount: 200,
+        orderDate: '2026-09-20',
+        status: 'draft',
+        sourceMode: 'from_request',
+        purchaseMode: 'multiple',
+        fulfillmentMode: MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
+        createdById: '11111111-1111-4111-8111-111111111111',
+        createdAt: '2026-09-20T00:00:00.000Z',
+        rowVersion: 7,
+      },
+      requestLineLinks: [{
+        purchaseOrderId: 'po-1',
+        purchaseOrderLineId: 'po-line-1',
+        materialRequestId: 'request-1',
+        requestLineId: 'request-line-1',
+        itemId: 'item-1',
+        requestedQty: 50,
+        orderedQty: 50,
+      }],
+      deliveryBatches: [{
+        id: '22222222-2222-4222-8222-222222222222',
+        purchaseOrderId: 'po-1',
+        deliveryNo: 1,
+        plannedDeliveryDate: '2026-09-25',
+        status: 'planned',
+        approvalStatus: 'draft',
+        lines: [{
+          id: '33333333-3333-4333-8333-333333333333',
+          deliveryBatchId: '22222222-2222-4222-8222-222222222222',
+          purchaseOrderId: 'po-1',
+          purchaseOrderLineId: 'po-line-1',
+          itemId: 'item-1',
+          plannedQty: 2,
+          stockPlannedQty: 50,
+          unit: 'bao',
+          stockUnit: 'kg',
+          deliveryUnitPrice: 100,
+        }],
+      }],
+      expected: {
+        rowVersion: 7,
+        requestLineLinks: [{
+          id: '44444444-4444-4444-8444-444444444444',
+          updatedAt: '2026-09-20T01:00:00.000Z',
+        }],
+        deliveryBatches: [{
+          id: '55555555-5555-4555-8555-555555555555',
+          updatedAt: '2026-09-20T01:00:00.000Z',
+        }],
+      },
+      actorUserId: '11111111-1111-4111-8111-111111111111',
+      idempotencyKey: '66666666-6666-4666-8666-666666666666',
+    });
+
+    expect(result).toEqual({
+      purchaseOrderId: 'po-1',
+      rowVersion: 8,
+      requestLineCount: 1,
+      deliveryBatchCount: 1,
+      replayed: false,
+    });
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('save_purchase_order_aggregate_v1', {
+      p_purchase_order: expect.objectContaining({
+        id: 'po-1',
+        project_id: 'project-1',
+        construction_site_id: 'site-1',
+      }),
+      p_request_line_links: [expect.objectContaining({
+        purchase_order_id: 'po-1',
+        purchase_order_line_id: 'po-line-1',
+        material_request_id: 'request-1',
+      })],
+      p_delivery_batches: [expect.objectContaining({
+        id: '22222222-2222-4222-8222-222222222222',
+        purchase_order_id: 'po-1',
+        lines: [expect.objectContaining({
+          purchase_order_line_id: 'po-line-1',
+          planned_qty: 2,
+          stock_planned_qty: 50,
+        })],
+      })],
+      p_expected_row_version: 7,
+      p_expected_request_line_links: [{
+        id: '44444444-4444-4444-8444-444444444444',
+        updatedAt: '2026-09-20T01:00:00.000Z',
+      }],
+      p_expected_delivery_batches: [{
+        id: '55555555-5555-4555-8555-555555555555',
+        updatedAt: '2026-09-20T01:00:00.000Z',
+      }],
+      p_actor_user_id: '11111111-1111-4111-8111-111111111111',
+      p_idempotency_key: '66666666-6666-4666-8666-666666666666',
+    });
+    expect(supabaseMock.rpc.mock.calls[0][1].p_purchase_order).not.toHaveProperty('row_version');
+    expect(supabaseMock.from).not.toHaveBeenCalled();
+  });
+
   it('updates an existing purchase order without evaluating its insert policy', async () => {
     const eq = vi.fn().mockResolvedValue({ error: null });
     const update = vi.fn().mockReturnValue({ eq });
