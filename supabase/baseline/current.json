@@ -104,7 +104,8 @@
     "20260920071120_atomic_supplier_payment_draft.sql",
     "20260920074054_guard_supplier_invoice_reconciliation.sql",
     "20260920081244_procurement_identity_revision_registry.sql",
-    "20260920082411_procurement_revisioned_demand_intake.sql"
+    "20260920082411_procurement_revisioned_demand_intake.sql",
+    "20260920083241_procurement_quantity_allocation.sql"
   ],
   "forbidIncludeAll": true
 }
