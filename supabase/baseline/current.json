@@ -98,7 +98,8 @@
     "20260917025252_authorization_v2_task12_4_2_workflow_instance_rls_fix.sql",
     "20260918103356_authorization_v2_workflow_participant_continuity.sql",
     "20260918103357_authorization_v2_workflow_participant_notifications.sql",
-    "20260918105055_authorization_v2_workflow_notification_assignment_fix.sql"
+    "20260918105055_authorization_v2_workflow_notification_assignment_fix.sql",
+    "20260919232000_atomic_material_request_fulfillment_receive.sql"
   ],
   "forbidIncludeAll": true
 }

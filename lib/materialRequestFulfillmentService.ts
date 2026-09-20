@@ -48,7 +48,6 @@ const FULFILLMENT_LINE_SELECT = 'id,batch_id,material_request_id,request_line_id
 const NEED_CLOSURE_SELECT = 'id,project_id,construction_site_id,material_request_id,request_line_id,item_id,work_boq_item_id,material_budget_item_id,closed_qty,actual_received_qty_snapshot,reason,status,closed_by,closed_at,cancelled_by,cancelled_at,cancel_reason,created_at,updated_at';
 const PO_REQUEST_LINE_SELECT = 'id,project_id,construction_site_id,purchase_order_id,purchase_order_line_id,material_request_id,material_request_code,request_line_id,item_id,work_boq_item_id,material_budget_item_id,requested_qty,ordered_qty,unit,note,created_at,target_warehouse_id,source_construction_site_id,allocation_status,requested_qty_snapshot,ordered_stock_qty_snapshot,actual_received_qty_snapshot';
 const DELIVERY_GROUP_SELECT = 'id,project_id,purchase_order_id,delivery_no,planned_date,status,note,created_by,created_at,updated_at';
-const PURCHASE_ORDER_RECEIPT_SYNC_SELECT = 'id,items,actual_delivery_date,received_transaction_ids';
 const PROCUREMENT_FILTER_CHUNK_SIZE = 100;
 const PROCUREMENT_READ_PAGE_SIZE = 1000;
 const PROCUREMENT_READ_MAX_ROWS = 20_000;
@@ -189,77 +188,31 @@ const normalizeBatch = (batch: any, lines: any[]): MaterialRequestFulfillmentBat
   lines: lines.map(fromDb),
 });
 
-const syncPurchaseOrderReceiptFromBatch = async (
-  batch: MaterialRequestFulfillmentBatch,
-  receivedByLineId: Map<string, { receivedQty: number; varianceReason?: string }>,
-) => {
-  const poLines = (batch.lines || []).filter(line => line.poId && line.poLineId);
-  if (poLines.length === 0) return;
-
-  const receiptStockByPo = new Map<string, Map<string, number>>();
-  poLines.forEach(line => {
-    const received = Number(receivedByLineId.get(line.id)?.receivedQty ?? line.receivedQty ?? 0);
-    if (received <= 0 || !line.poId || !line.poLineId) return;
-    const poReceipt = receiptStockByPo.get(line.poId) || new Map<string, number>();
-    poReceipt.set(line.poLineId, (poReceipt.get(line.poLineId) || 0) + received);
-    receiptStockByPo.set(line.poId, poReceipt);
-  });
-
-  for (const [poId, stockReceiptByLineId] of receiptStockByPo.entries()) {
-    const { data, error } = await supabase
-      .from('purchase_orders')
-      .select(PURCHASE_ORDER_RECEIPT_SYNC_SELECT)
-      .eq('id', poId)
-      .single();
-    if (error) throw error;
-
-    const po = fromDb(data) as PurchaseOrder;
-    const inventoryById = await loadInventoryForPo(po);
-    let hasReceipt = false;
-    const nextItems = (po.items || []).map(item => {
-      const key = item.lineId || item.itemId;
-      const stockReceivedNow = stockReceiptByLineId.get(key) || 0;
-      const inventory = inventoryById.get(item.itemId);
-      const receivedNow = poLineStockToPurchaseQty(item, stockReceivedNow, inventory);
-      if (receivedNow <= 0) return item;
-      const currentReceivedQty = Number(item.receivedQty || 0);
-      hasReceipt = true;
-      return { ...item, receivedQty: currentReceivedQty + receivedNow };
-    });
-
-    if (!hasReceipt) continue;
-    const isDelivered = nextItems.every(item => Number(item.receivedQty || 0) >= Number(item.qty || 0));
-    const receivedTransactionIds = Array.from(new Set([
-      ...(po.receivedTransactionIds || []),
-      ...(batch.transactionId ? [batch.transactionId] : []),
-    ]));
-
-    const { error: updateError } = await supabase
-      .from('purchase_orders')
-      .update({
-        items: nextItems,
-        status: isDelivered ? 'delivered' : 'partial',
-        actual_delivery_date: isDelivered ? new Date().toISOString().split('T')[0] : po.actualDeliveryDate || null,
-        received_transaction_ids: receivedTransactionIds,
-      })
-      .eq('id', poId);
-    if (updateError) throw updateError;
+const assertReceiveBatchCommandResult = (
+  data: unknown,
+  expectedBatchId: string,
+): MaterialRequestFulfillmentBatch => {
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result || typeof result !== 'object') {
+    throw new Error('Command nhận đợt cấp không trả về kết quả.');
   }
 
-  if (batch.poDeliveryBatchId) {
-    const { data: siblingBatches, error: siblingError } = await fetchAllSupabaseRows(supabase
-      .from(BATCH_TABLE)
-      .select('id,status')
-      .eq('po_delivery_batch_id', batch.poDeliveryBatchId), { label: "lib/materialRequestFulfillmentService.ts:248", maxRows: 20_000, orderBy: getSupabaseOrderColumns(BATCH_TABLE) });
-    if (siblingError) throw siblingError;
-    const allReceived = (siblingBatches || []).length > 0
-      && (siblingBatches || []).every(row => row.status === 'received');
-    const { error: scheduleError } = await supabase
-      .from('purchase_order_delivery_batches')
-      .update({ status: allReceived ? 'received' : 'wms_pending' })
-      .eq('id', batch.poDeliveryBatchId);
-    if (scheduleError && scheduleError.code !== '42P01') throw scheduleError;
+  const value = result as Record<string, unknown>;
+  const batch = value.batch;
+  const lines = value.lines;
+  if (!batch || typeof batch !== 'object' || !Array.isArray(lines)) {
+    throw new Error('Kết quả command nhận đợt cấp không hợp lệ.');
   }
+
+  const batchRow = batch as Record<string, unknown>;
+  if (String(batchRow.id || '') !== expectedBatchId) {
+    throw new Error('Kết quả command nhận hàng không khớp đợt cấp.');
+  }
+  if (batchRow.status !== 'received') {
+    throw new Error('Command nhận hàng chưa hoàn tất đợt cấp.');
+  }
+
+  return normalizeBatch(batchRow, lines);
 };
 
 export interface IssueFulfillmentLineInput {
@@ -2120,103 +2073,40 @@ export const materialRequestFulfillmentService = {
     if (input.batch.status !== 'issued') {
       throw new Error('Chỉ xác nhận nhận hàng cho đợt đang ở trạng thái đã xuất.');
     }
+    if (!input.batch.updatedAt) {
+      throw new Error('Thiếu phiên bản đợt cấp để xác nhận nhận hàng.');
+    }
 
     const receivedByLineId = new Map(input.lines.map(line => [line.lineId, {
-      receivedQty: Number(line.receivedQty || 0),
+      receivedQty: Number(line.receivedQty),
       varianceReason: line.varianceReason || '',
     }]));
+    const batchLineById = new Map(input.batch.lines.map(line => [line.id, line]));
 
     input.batch.lines.forEach(line => {
       const received = receivedByLineId.get(line.id);
       if (!received) throw new Error('Thiếu dữ liệu nhận hàng cho một dòng trong đợt cấp.');
-      if (received.receivedQty < 0) throw new Error('Số lượng nhận không được âm.');
+      if (!line.updatedAt) throw new Error('Thiếu phiên bản dòng nhận hàng để xác nhận.');
+      if (!Number.isFinite(received.receivedQty) || received.receivedQty < 0) {
+        throw new Error('Số lượng nhận không hợp lệ.');
+      }
     });
 
-    let hasVariance = false;
-    input.batch.lines.forEach(line => {
-      const received = receivedByLineId.get(line.id)!;
-      if (received.receivedQty !== Number(line.issuedQty || 0)) hasVariance = true;
+    const commandLines = input.lines.map(line => ({
+      ...line,
+      expectedUpdatedAt: batchLineById.get(line.lineId)?.updatedAt,
+    }));
+
+    const { data, error } = await supabase.rpc('receive_material_request_fulfillment_batch_v1', {
+      p_batch_id: input.batch.id,
+      p_expected_updated_at: input.batch.updatedAt,
+      p_actor_user_id: input.actorUserId,
+      p_idempotency_key: input.batch.id,
+      p_lines: commandLines,
+      p_override_reason: input.overrideReason,
     });
-
-    const now = new Date().toISOString();
-    for (const line of input.batch.lines) {
-      const received = receivedByLineId.get(line.id)!;
-      const { error } = await supabase
-        .from(LINE_TABLE)
-        .update({
-          received_qty: received.receivedQty,
-          variance_reason: received.varianceReason.trim() || line.varianceReason || null,
-        })
-        .eq('id', line.id)
-        .select('id')
-        .single();
-      if (error) throw error;
-    }
-
-    if (input.batch.transactionId) {
-      const { data: txRow, error: txReadError } = await supabase
-        .from('transactions')
-        .select('status, items')
-        .eq('id', input.batch.transactionId)
-        .maybeSingle();
-      if (txReadError) throw txReadError;
-
-      if (txRow?.status === TransactionStatus.PENDING) {
-        throw new Error('Đợt cấp cần được thủ kho công trường duyệt số lượng/chất lượng trước khi xác nhận nhập kho.');
-      }
-      if (txRow?.status && txRow.status !== TransactionStatus.APPROVED && txRow.status !== TransactionStatus.COMPLETED) {
-        throw new Error('Phiếu kho của đợt cấp không còn ở trạng thái có thể xác nhận nhập kho.');
-      }
-
-      if (hasVariance && txRow?.status !== TransactionStatus.COMPLETED) {
-        const receivedQtyByRequestLine = new Map(
-          input.batch.lines.map(line => [line.requestLineId, receivedByLineId.get(line.id)?.receivedQty ?? Number(line.issuedQty || 0)])
-        );
-        const adjustedItems = (txRow?.items || []).map((item: any) => ({
-          ...item,
-          quantity: receivedQtyByRequestLine.get(item.requestLineId) ?? Number(item.quantity || 0),
-        }));
-        const { error: updateTxError } = await supabase
-          .from('transactions')
-          .update({ items: adjustedItems })
-          .eq('id', input.batch.transactionId);
-        if (updateTxError) throw updateTxError;
-      }
-
-      if (txRow?.status !== TransactionStatus.COMPLETED) {
-        const { error: txError } = await supabase.rpc('process_transaction_status', {
-          p_transaction_id: input.batch.transactionId,
-          p_status: TransactionStatus.COMPLETED,
-          p_approver_id: input.actorUserId,
-        });
-        if (txError) throw txError;
-      }
-    }
-
-    const { data: batchRow, error: batchError } = await supabase
-      .from(BATCH_TABLE)
-      .update({
-        status: 'received',
-        received_by: input.actorUserId,
-        received_at: now,
-        reason: input.overrideReason || input.batch.reason || (hasVariance ? 'Thủ kho công trường xác nhận nhận lệch theo thực tế.' : null),
-      })
-      .eq('id', input.batch.id)
-      .select(FULFILLMENT_BATCH_SELECT)
-      .single();
-    if (batchError) throw batchError;
-
-    const { data: lineRows, error: lineError } = await fetchAllSupabaseRows(supabase
-      .from(LINE_TABLE)
-      .select(FULFILLMENT_LINE_SELECT)
-      .eq('batch_id', input.batch.id)
-      .order('created_at', { ascending: true }), { label: "lib/materialRequestFulfillmentService.ts:2207", maxRows: 20_000, orderBy: getSupabaseOrderColumns(LINE_TABLE) });
-    if (lineError) throw lineError;
-
-    await syncPurchaseOrderReceiptFromBatch(input.batch, receivedByLineId);
-    await syncDeliveryGroupStatus(input.batch.poDeliveryGroupId);
-
-    return normalizeBatch(batchRow, lineRows || []);
+    if (error) throw error;
+    return assertReceiveBatchCommandResult(data, input.batch.id);
   },
 
   async returnIssuedBatch(input: ReturnFulfillmentBatchInput): Promise<MaterialRequestFulfillmentBatch> {
