@@ -356,7 +356,7 @@ const CompanyProcurement: React.FC = () => {
       setCustomRfqs(rfqs);
       setProjects(projectRows);
       setPartners(partnerRows);
-      setSelectedKeys(prev => prev.filter(key => demand.some(row => row.key === key && row.remainingKnown)));
+      setSelectedKeys(prev => prev.filter(key => demand.some(row => row.key === key && row.remainingKnown && row.canAllocate !== false)));
       setSelectedCustomKeys(prev => prev.filter(key => customDemand.some(row => row.key === key)));
     } catch (err: any) {
       logApiError('companyProcurement.refresh', err);
@@ -414,7 +414,7 @@ const CompanyProcurement: React.FC = () => {
   }), { qty: 0, value: 0 }), [selectedCustomRows]);
 
   const toggleRow = (row: CompanyProcurementDemandLine) => {
-    if (!row.remainingKnown || row.remainingQty == null) return;
+    if (!row.remainingKnown || row.remainingQty == null || row.canAllocate === false) return;
     const selected = selectedKeys.includes(row.key);
     if (selected) {
       setSelectedKeys(prev => prev.filter(key => key !== row.key));
@@ -429,7 +429,7 @@ const CompanyProcurement: React.FC = () => {
         vendorId: row.supplierId || '',
         vendorName: partner?.name || '',
         orderStockQty: String(row.remainingQty),
-        stockUnitPrice: String(inventory?.priceIn || 0),
+        stockUnitPrice: row.canViewPrice === false ? '0' : String(inventory?.priceIn || 0),
       },
     }));
   };
@@ -1029,14 +1029,15 @@ const CompanyProcurement: React.FC = () => {
                         {filteredDemandRows.map(row => {
                           const selected = selectedKeys.includes(row.key);
                           const remainingUnknown = !row.remainingKnown || row.remainingQty == null;
+                          const allocationDenied = row.canAllocate === false;
                           const draft = draftByKey[row.key];
                           const price = selected
                             ? parseLocaleNumber(draft?.stockUnitPrice || 0)
-                            : Number(itemById.get(row.itemId)?.priceIn || 0);
+                            : row.canViewPrice === false ? 0 : Number(itemById.get(row.itemId)?.priceIn || 0);
                           const qty = selected
                             ? parseLocaleNumber(draft?.orderStockQty || 0)
                             : Number(row.remainingQty ?? 0);
-                          const lineAmount = qty * price;
+                          const lineAmount = row.canViewPrice === false && !selected ? null : qty * price;
 
                           return (
                             <tr key={row.key} className={selected ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : ''}>
@@ -1044,8 +1045,8 @@ const CompanyProcurement: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => toggleRow(row)}
-                                  disabled={remainingUnknown}
-                                  title={remainingUnknown ? 'Chưa đủ dữ liệu đối chiếu để mở mua.' : undefined}
+                                  disabled={remainingUnknown || allocationDenied}
+                                  title={remainingUnknown ? 'Chưa đủ dữ liệu đối chiếu để mở mua.' : allocationDenied ? 'Bạn không có quyền phân bổ mua hàng.' : undefined}
                                   className={`flex h-6 w-6 items-center justify-center rounded border disabled:cursor-not-allowed disabled:border-amber-300 disabled:bg-amber-50 ${selected ? 'border-emerald-500 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent dark:border-slate-700 dark:bg-slate-950'}`}
                                 >
                                   <Check size={14} />
@@ -1095,10 +1096,10 @@ const CompanyProcurement: React.FC = () => {
                                     onChange={event => updateDraftLine(row.key, { stockUnitPrice: event.target.value })}
                                     className="w-full max-w-[120px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-right text-xs font-bold dark:border-slate-700 dark:bg-slate-950"
                                   />
-                                ) : formatMoney(itemById.get(row.itemId)?.priceIn || 0)}
+                                ) : row.canViewPrice === false ? '—' : formatMoney(itemById.get(row.itemId)?.priceIn || 0)}
                               </td>
                               <td className="w-40 px-2 py-3 text-right font-black text-slate-900 dark:text-slate-100">
-                                {formatMoney(lineAmount)}
+                                {lineAmount == null ? '—' : formatMoney(lineAmount)}
                               </td>
                               <td className="w-60 px-2 py-3">
                                 {selected ? (

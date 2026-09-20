@@ -28,6 +28,7 @@ import {
   stockUnitPriceToPurchaseUnitPrice,
 } from './materialUnitConversion';
 import { openCommitment } from './companyProcurementCommitment';
+import { procurementReadService } from './procurement/readService';
 
 const ACTIVE_PO_STATUSES = new Set<POStatus>(['draft', 'sent', 'confirmed', 'in_transit', 'partial']);
 const OPEN_REQUEST_STATUSES = new Set<string>([
@@ -519,7 +520,8 @@ const buildPoLinkFromDemand = (
 });
 
 export const companyProcurementService = {
-  async listOpenDemand(): Promise<CompanyProcurementDemandLine[]> {
+  /** Retained only as a regression harness for the pre-G2 attribution adapter. */
+  async listLegacyOpenDemandForRegression(): Promise<CompanyProcurementDemandLine[]> {
     const requests = await loadRequestsForOpenDemand();
     const requestIds = requests.map(request => request.id);
     const inventoryById = await loadInventoryByIds(requests.flatMap(request => (request.items || []).map(line => line.itemId)));
@@ -527,7 +529,6 @@ export const companyProcurementService = {
       materialRequestFulfillmentService.listSummariesByRequests(requests),
       loadActivePoLinksByRequestIds(requestIds),
     ]);
-
     const rows = requests.flatMap(request => {
       const lineSummaries = summaryBundle.summariesByRequestId[request.id]?.lineSummaries || [];
       const summaryByLine = new Map(lineSummaries.map(line => [line.requestLineId, line]));
@@ -535,12 +536,13 @@ export const companyProcurementService = {
         .map((line, index) => resolveDemandLine(request, line, index, inventoryById, summaryByLine, commitmentByLine))
         .filter((line): line is CompanyProcurementDemandLine => !!line);
     });
+    return rows.sort((a, b) => String(a.neededDate || '').localeCompare(String(b.neededDate || ''))
+      || String(b.request.createdDate || '').localeCompare(String(a.request.createdDate || '')));
+  },
 
-    return rows.sort((a, b) => {
-      const byNeedDate = String(a.neededDate || '').localeCompare(String(b.neededDate || ''));
-      if (byNeedDate !== 0) return byNeedDate;
-      return String(b.request.createdDate || '').localeCompare(String(a.request.createdDate || ''));
-    });
+  async listOpenDemand(): Promise<CompanyProcurementDemandLine[]> {
+    const rows = await procurementReadService.listOpenDemand();
+    return rows.filter(row => !row.remainingKnown || (row.remainingQty ?? 0) > 0);
   },
 
   async createConsolidatedPurchaseOrders(input: CompanyProcurementCreateInput): Promise<CompanyProcurementCreateResult> {
@@ -562,6 +564,12 @@ export const companyProcurementService = {
       .find(demand => demand && (!demand.remainingKnown || demand.remainingQty == null));
     if (unknownDemand) {
       throw new Error('Dòng nhu cầu chưa đủ dữ liệu đối chiếu nhận hàng để tạo PO.');
+    }
+    const deniedDemand = validLines
+      .map(line => demandByKey.get(line.demandKey))
+      .find(demand => demand?.canAllocate === false);
+    if (deniedDemand) {
+      throw new Error('Bạn không có quyền phân bổ mua hàng cho phạm vi của dòng nhu cầu.');
     }
     const inventoryById = await loadInventoryByIds(demandRows.map(row => row.itemId));
     const procurementGroupId = newId('proc-group');

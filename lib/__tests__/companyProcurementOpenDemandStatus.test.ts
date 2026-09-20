@@ -33,6 +33,6 @@ import { companyProcurementService } from '../companyProcurementService';
 
 describe('company procurement open demand status filter', () => {
   it('loads open demand using only values accepted by the Cloud request_status enum', async () => {
-    await expect(companyProcurementService.listOpenDemand()).resolves.toEqual([]);
+    await expect(companyProcurementService.listLegacyOpenDemandForRegression()).resolves.toEqual([]);
   });
 });

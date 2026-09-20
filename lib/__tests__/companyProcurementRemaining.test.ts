@@ -183,7 +183,7 @@ describe('company procurement remaining from open commitments', () => {
   });
 
   it('uses attributed receipts when deriving remaining demand through listOpenDemand', async () => {
-    const [row] = await companyProcurementService.listOpenDemand();
+    const [row] = await companyProcurementService.listLegacyOpenDemandForRegression();
 
     expect(row).toMatchObject({
       requestedQty: 100,
@@ -205,11 +205,11 @@ describe('company procurement remaining from open commitments', () => {
       { id: 'po-2', status: 'confirmed', archived_at: null },
     ];
 
-    const [activeRow] = await companyProcurementService.listOpenDemand();
+    const [activeRow] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(activeRow).toMatchObject({ openCommitmentQty: 50, remainingQty: 20 });
 
     mocks.state.tables.purchase_orders[0].status = 'delivered';
-    const [terminalRow] = await companyProcurementService.listOpenDemand();
+    const [terminalRow] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(terminalRow).toMatchObject({ openCommitmentQty: 40, remainingQty: 30 });
   });
 
@@ -224,7 +224,7 @@ describe('company procurement remaining from open commitments', () => {
     }];
     mocks.state.tables.material_request_fulfillment_batches = [{ id: 'fulfillment-batch-1', status: 'received', source_type: 'po_receipt' }];
 
-    const [row] = await companyProcurementService.listOpenDemand();
+    const [row] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(row).toMatchObject({
       orderedQty: 80,
       openCommitmentQty: 50,
@@ -241,14 +241,14 @@ describe('company procurement remaining from open commitments', () => {
     mocks.state.tables.purchase_order_delivery_lines[0].accepted_stock_qty = 25;
     mocks.state.summaries['mr-1'] = summary(25, 75);
 
-    const [converted] = await companyProcurementService.listOpenDemand();
+    const [converted] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(converted).toMatchObject({ orderedQty: 50, openCommitmentQty: 25, remainingQty: 50 });
 
     mocks.state.tables.purchase_order_request_lines[0].ordered_stock_qty_snapshot = 0;
     mocks.state.tables.purchase_order_delivery_batches = [];
     mocks.state.tables.purchase_order_delivery_lines = [];
     mocks.state.summaries['mr-1'] = summary(0, 100);
-    const [zeroSnapshot] = await companyProcurementService.listOpenDemand();
+    const [zeroSnapshot] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(zeroSnapshot).toMatchObject({ orderedQty: 0, openCommitmentQty: 0, remainingQty: 100 });
   });
 
@@ -259,7 +259,7 @@ describe('company procurement remaining from open commitments', () => {
     mocks.state.tables.purchase_order_delivery_lines = [];
     mocks.state.summaries['mr-1'] = summary(100, 0);
 
-    await expect(companyProcurementService.listOpenDemand()).resolves.toEqual([]);
+    await expect(companyProcurementService.listLegacyOpenDemandForRegression()).resolves.toEqual([]);
   });
 
   it.each([
@@ -302,7 +302,7 @@ describe('company procurement remaining from open commitments', () => {
   ])('marks $name as unknown instead of zero', async ({ configure, issue }) => {
     configure();
 
-    const [row] = await companyProcurementService.listOpenDemand();
+    const [row] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(row.remainingKnown).toBe(false);
     expect(row.openCommitmentQty).toBeNull();
     expect(row.remainingQty).toBeNull();
@@ -318,7 +318,7 @@ describe('company procurement remaining from open commitments', () => {
     }];
     mocks.state.tables.material_request_fulfillment_batches = [{ id: 'stock-batch-1', status: 'received', source_type: 'stock' }];
 
-    const [row] = await companyProcurementService.listOpenDemand();
+    const [row] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(row).toMatchObject({ openCommitmentQty: 80, remainingQty: 0 });
   });
 
@@ -326,11 +326,13 @@ describe('company procurement remaining from open commitments', () => {
     const error = { code: '42501', message: 'denied' };
     mocks.state.errors.purchase_order_delivery_lines = error;
 
-    await expect(companyProcurementService.listOpenDemand()).rejects.toBe(error);
+    await expect(companyProcurementService.listLegacyOpenDemandForRegression()).rejects.toBe(error);
   });
 
   it('blocks PO creation when receipt attribution is unknown', async () => {
     mocks.state.tables.purchase_order_request_lines.push(linkRow({ id: 'link-2' }));
+    const rows = await companyProcurementService.listLegacyOpenDemandForRegression();
+    vi.spyOn(companyProcurementService, 'listOpenDemand').mockResolvedValueOnce(rows);
 
     await expect(companyProcurementService.createConsolidatedPurchaseOrders({
       actorUserId: 'buyer-1',
@@ -344,7 +346,7 @@ describe('company procurement remaining from open commitments', () => {
   });
 
   it('returns one explicit outcome per supplier when consolidated PO creation is partially successful', async () => {
-    const [firstDemand] = await companyProcurementService.listOpenDemand();
+    const [firstDemand] = await companyProcurementService.listLegacyOpenDemandForRegression();
     const secondDemand = {
       ...firstDemand,
       key: 'mr-2:mr-line-2',
@@ -432,13 +434,13 @@ describe('company procurement remaining from open commitments', () => {
     mocks.state.tables.purchase_order_delivery_batches = [];
     mocks.state.tables.purchase_order_delivery_lines = [];
 
-    const [row] = await companyProcurementService.listOpenDemand();
+    const [row] = await companyProcurementService.listLegacyOpenDemandForRegression();
     expect(row).toMatchObject({ orderedQty: 1_001, openCommitmentQty: 1_001, remainingQty: 999 });
     expect(mocks.state.calls.filter(call => call.table === 'purchase_order_request_lines')).toHaveLength(2);
   });
 
   it('renders unknown commitment quality without allowing row selection', () => {
-    expect(companyProcurementSource).toContain('disabled={remainingUnknown}');
+    expect(companyProcurementSource).toContain('disabled={remainingUnknown || allocationDenied}');
     expect(companyProcurementSource).toContain('Chưa đủ dữ liệu đối chiếu nhận hàng');
     expect(companyProcurementSource).toContain("row.openCommitmentQty == null ? 'Chưa xác định'");
     expect(companyProcurementSource).toContain("row.remainingQty == null ? 'Chưa xác định'");

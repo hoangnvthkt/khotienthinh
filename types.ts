@@ -3059,6 +3059,12 @@ export interface CompanyProcurementDemandLine {
   reconciliationIssues: string[];
   boqQty?: number | null;
   neededDate?: string | null;
+  g2DemandId?: string | null;
+  g2DemandLineId?: string | null;
+  g2SourceRevisionId?: string | null;
+  g2DemandLineVersion?: number | null;
+  canViewPrice?: boolean;
+  canAllocate?: boolean;
 }
 
 export interface CompanyProcurementCreateLine {
