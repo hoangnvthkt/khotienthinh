@@ -3966,6 +3966,10 @@ export interface MaterialRequest extends ProjectSubmissionFields {
   fulfillmentMode?: MaterialRequestFulfillmentMode;
   overrideReason?: string;
   relatedTransactionId?: string;
+  contentRevision?: number;
+  contentHash?: string;
+  approvedContentRevision?: number | null;
+  approvedContentHash?: string | null;
   logs: AuditLog[];
 }
 

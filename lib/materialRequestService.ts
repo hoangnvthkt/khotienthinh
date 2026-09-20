@@ -71,7 +71,7 @@ const normalizePageLimit = (limit?: number | null): number =>
 
 type ProjectRequestCursor = { createdDate: string; id: string };
 
-export const MATERIAL_REQUEST_LIST_SELECT = 'id,code,title,site_warehouse_id,source_warehouse_id,requester_id,status,items,created_date,expected_date,note,logs,fulfillment_mode,override_reason,related_transaction_id,project_id,construction_site_id,request_origin,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,workflow_step,workflow_step_started_at,workflow_step_due_at,workflow_step_sla_hours,workflow_step_actor_user_id,workflow_instance_id,workflow_subject_id,workflow_template_id';
+export const MATERIAL_REQUEST_LIST_SELECT = 'id,code,title,site_warehouse_id,source_warehouse_id,requester_id,status,items,created_date,expected_date,note,logs,fulfillment_mode,override_reason,related_transaction_id,project_id,construction_site_id,request_origin,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,workflow_step,workflow_step_started_at,workflow_step_due_at,workflow_step_sla_hours,workflow_step_actor_user_id,workflow_instance_id,workflow_subject_id,workflow_template_id,content_revision,content_hash,approved_content_revision,approved_content_hash';
 
 export interface MaterialRequestEventCursor {
   createdAt: string;
@@ -307,6 +307,10 @@ export const mapMaterialRequestFromDb = (row: any): MaterialRequest => ({
   fulfillmentMode: row.fulfillment_mode || row.fulfillmentMode || MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK,
   overrideReason: row.override_reason ?? row.overrideReason ?? undefined,
   relatedTransactionId: row.related_transaction_id ?? row.relatedTransactionId ?? undefined,
+  contentRevision: row.content_revision ?? row.contentRevision ?? undefined,
+  contentHash: row.content_hash ?? row.contentHash ?? undefined,
+  approvedContentRevision: row.approved_content_revision ?? row.approvedContentRevision ?? null,
+  approvedContentHash: row.approved_content_hash ?? row.approvedContentHash ?? null,
   submittedToUserId: row.submitted_to_user_id ?? row.submittedToUserId ?? undefined,
   submittedToName: row.submitted_to_name ?? row.submittedToName ?? undefined,
   submittedToPermission: row.submitted_to_permission ?? row.submittedToPermission ?? undefined,
