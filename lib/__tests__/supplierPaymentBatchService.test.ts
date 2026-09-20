@@ -218,7 +218,76 @@ describe('supplierPaymentBatchService helpers', () => {
     expect(detail.allocations[0].allocatedAmount).toBe(200_000_000);
   });
 
-  it('updates a draft batch by replacing its allocations', async () => {
+  it('creates a draft batch and allocations through one idempotent command', async () => {
+    const batch: SupplierPaymentBatch = {
+      id: 'batch-new',
+      code: 'PAY-20260715-0002',
+      projectId: 'project-1',
+      supplierNameSnapshot: 'NCC A',
+      paymentDate: '2026-07-15',
+      paymentAmount: 100_000_000,
+      amount: 100_000_000,
+      status: 'draft',
+      allocationMode: 'fifo',
+      createdBy: '11111111-1111-4111-8111-111111111111',
+      createdAt: '2026-07-15T00:00:00.000Z',
+    };
+    const allocations: SupplierPaymentAllocation[] = [{
+      id: 'allocation-new',
+      paymentBatchId: 'batch-new',
+      payableDocumentId: 'ap-1',
+      sourceType: 'purchase_order',
+      sourceId: 'po-1',
+      documentNoSnapshot: 'PO-001',
+      recognizedAmountSnapshot: 100_000_000,
+      paidBeforeSnapshot: 0,
+      outstandingBeforeSnapshot: 100_000_000,
+      allocatedAmount: 100_000_000,
+      discountAmount: 0,
+      withholdingAmount: 0,
+      allocationMode: 'fifo',
+      createdAt: '2026-07-15T00:00:00.000Z',
+    }];
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: {
+        paymentBatch: {
+          id: 'batch-new',
+          code: 'PAY-20260715-0002',
+          project_id: 'project-1',
+          supplier_name_snapshot: 'NCC A',
+          payment_date: '2026-07-15',
+          payment_amount: 100_000_000,
+          status: 'draft',
+          allocation_mode: 'fifo',
+          created_at: '2026-07-15T00:00:00.000Z',
+          row_version: 1,
+        },
+        replayed: false,
+      },
+      error: null,
+    });
+
+    const result = await supplierPaymentBatchService.createDraft(batch, allocations, {
+      actorUserId: '11111111-1111-4111-8111-111111111111',
+      idempotencyKey: '33333333-3333-4333-8333-333333333333',
+    });
+
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('save_supplier_payment_batch_draft_v1', {
+      p_batch: expect.objectContaining({ id: 'batch-new', payment_amount: 100_000_000 }),
+      p_allocations: [expect.objectContaining({
+        payment_batch_id: 'batch-new',
+        payable_document_id: 'ap-1',
+        allocated_amount: 100_000_000,
+      })],
+      p_expected_row_version: null,
+      p_actor_user_id: '11111111-1111-4111-8111-111111111111',
+      p_idempotency_key: '33333333-3333-4333-8333-333333333333',
+    });
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
+    expect(result.rowVersion).toBe(1);
+  });
+
+  it('updates a draft batch and allocations through one versioned idempotent command', async () => {
     const batch: SupplierPaymentBatch = {
       id: 'batch-1',
       code: 'PAY-20260715-0001',
@@ -229,6 +298,7 @@ describe('supplierPaymentBatchService helpers', () => {
       status: 'draft',
       allocationMode: 'manual',
       createdAt: '2026-07-15T00:00:00.000Z',
+      rowVersion: 4,
     };
     const allocations: SupplierPaymentAllocation[] = [{
       id: 'allocation-1',
@@ -240,38 +310,46 @@ describe('supplierPaymentBatchService helpers', () => {
       allocationMode: 'manual',
       createdAt: '2026-07-15T00:00:00.000Z',
     }];
-    const batchQuery = query({
+    supabaseMocks.rpc.mockResolvedValueOnce({
       data: {
-        id: 'batch-1',
-        code: 'PAY-20260715-0001',
-        supplier_name_snapshot: 'NCC A',
-        payment_date: '2026-07-15',
-        payment_amount: 300_000_000,
-        status: 'draft',
-        allocation_mode: 'manual',
-        created_at: '2026-07-15T00:00:00.000Z',
+        paymentBatch: {
+          id: 'batch-1',
+          code: 'PAY-20260715-0001',
+          supplier_name_snapshot: 'NCC A',
+          payment_date: '2026-07-15',
+          payment_amount: 300_000_000,
+          status: 'draft',
+          allocation_mode: 'manual',
+          created_at: '2026-07-15T00:00:00.000Z',
+          row_version: 5,
+        },
+        replayed: false,
       },
       error: null,
     });
-    const deleteQuery = query({ data: [], error: null });
-    const allocationQuery = query({ data: [], error: null });
-    supabaseMocks.from
-      .mockReturnValueOnce(batchQuery)
-      .mockReturnValueOnce(deleteQuery)
-      .mockReturnValueOnce(allocationQuery);
 
-    const result = await supplierPaymentBatchService.updateDraft(batch, allocations);
+    const result = await supplierPaymentBatchService.updateDraft(batch, allocations, {
+      actorUserId: '11111111-1111-4111-8111-111111111111',
+      idempotencyKey: '22222222-2222-4222-8222-222222222222',
+    });
 
-    expect(batchQuery.upsert).toHaveBeenCalled();
-    expect(deleteQuery.delete).toHaveBeenCalled();
-    expect(deleteQuery.eq).toHaveBeenCalledWith('payment_batch_id', 'batch-1');
-    expect(allocationQuery.upsert).toHaveBeenCalledWith(expect.arrayContaining([
-      expect.objectContaining({
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('save_supplier_payment_batch_draft_v1', {
+      p_batch: expect.objectContaining({
+        id: 'batch-1',
+        payment_amount: 300_000_000,
+        status: 'draft',
+      }),
+      p_allocations: [expect.objectContaining({
         payment_batch_id: 'batch-1',
         payable_document_id: 'ap-1',
         allocated_amount: 300_000_000,
-      }),
-    ]), { onConflict: 'payment_batch_id,payable_document_id' });
+      })],
+      p_expected_row_version: 4,
+      p_actor_user_id: '11111111-1111-4111-8111-111111111111',
+      p_idempotency_key: '22222222-2222-4222-8222-222222222222',
+    });
+    expect(supabaseMocks.from).not.toHaveBeenCalled();
     expect(result.id).toBe('batch-1');
+    expect(result.rowVersion).toBe(5);
   });
 });

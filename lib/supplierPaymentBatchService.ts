@@ -146,10 +146,43 @@ const normalizeAllocation = (row: any): SupplierPaymentAllocation => ({
 
 const batchPayload = (batch: SupplierPaymentBatch) => {
   const { amount, paymentAmount, ...rest } = batch;
-  return toDb({
+  const payload = toDb({
     ...rest,
     paymentAmount: paymentAmount ?? amount,
   });
+  delete payload.created_at;
+  delete payload.updated_at;
+  delete payload.row_version;
+  return payload;
+};
+
+export type SupplierPaymentDraftCommand = {
+  actorUserId: string;
+  idempotencyKey: string;
+};
+
+const allocationPayload = (allocation: SupplierPaymentAllocation) => {
+  const payload = toDb(allocation);
+  delete payload.id;
+  delete payload.created_at;
+  return payload;
+};
+
+const saveDraft = async (
+  input: SupplierPaymentBatch,
+  allocations: SupplierPaymentAllocation[],
+  expectedRowVersion: number | null,
+  command: SupplierPaymentDraftCommand,
+): Promise<SupplierPaymentBatch> => {
+  const { data, error } = await supabase.rpc('save_supplier_payment_batch_draft_v1', {
+    p_batch: batchPayload(input),
+    p_allocations: allocations.map(allocationPayload),
+    p_expected_row_version: expectedRowVersion,
+    p_actor_user_id: command.actorUserId,
+    p_idempotency_key: command.idempotencyKey,
+  });
+  if (error) throw error;
+  return normalizeBatch(data?.paymentBatch ?? data);
 };
 
 export const supplierPaymentBatchService = {
@@ -190,45 +223,20 @@ export const supplierPaymentBatchService = {
     };
   },
 
-  async createDraft(input: SupplierPaymentBatch, allocations: SupplierPaymentAllocation[] = []): Promise<SupplierPaymentBatch> {
-    const { data, error } = await supabase
-      .from(BATCH_TABLE)
-      .upsert(batchPayload(input), { onConflict: 'id' })
-      .select('*')
-      .single();
-    if (error) throw error;
-    const batch = normalizeBatch(data);
-
-    if (allocations.length > 0) {
-      const { error: allocationError } = await supabase
-        .from(ALLOCATION_TABLE)
-        .upsert(allocations.map(toDb), { onConflict: 'payment_batch_id,payable_document_id' });
-      if (allocationError) throw allocationError;
-    }
-    return batch;
+  async createDraft(
+    input: SupplierPaymentBatch,
+    allocations: SupplierPaymentAllocation[] = [],
+    command: SupplierPaymentDraftCommand,
+  ): Promise<SupplierPaymentBatch> {
+    return saveDraft(input, allocations, null, command);
   },
 
-  async updateDraft(input: SupplierPaymentBatch, allocations: SupplierPaymentAllocation[] = []): Promise<SupplierPaymentBatch> {
-    const { data, error } = await supabase
-      .from(BATCH_TABLE)
-      .upsert(batchPayload(input), { onConflict: 'id' })
-      .select('*')
-      .single();
-    if (error) throw error;
-
-    const { error: deleteError } = await supabase
-      .from(ALLOCATION_TABLE)
-      .delete()
-      .eq('payment_batch_id', input.id);
-    if (deleteError) throw deleteError;
-
-    if (allocations.length > 0) {
-      const { error: allocationError } = await supabase
-        .from(ALLOCATION_TABLE)
-        .upsert(allocations.map(toDb), { onConflict: 'payment_batch_id,payable_document_id' });
-      if (allocationError) throw allocationError;
-    }
-    return normalizeBatch(data);
+  async updateDraft(
+    input: SupplierPaymentBatch,
+    allocations: SupplierPaymentAllocation[] = [],
+    command: SupplierPaymentDraftCommand,
+  ): Promise<SupplierPaymentBatch> {
+    return saveDraft(input, allocations, input.rowVersion ?? null, command);
   },
 
   async listAllocations(paymentBatchId: string): Promise<SupplierPaymentAllocation[]> {

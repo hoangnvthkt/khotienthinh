@@ -2296,6 +2296,7 @@ export interface SupplierPaymentBatch {
   approvedAt?: string | null;
   paidAt?: string | null;
   updatedAt?: string;
+  rowVersion?: number;
   note?: string | null;
 }
 

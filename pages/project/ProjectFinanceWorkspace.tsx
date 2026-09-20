@@ -2877,6 +2877,10 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
 
   const saveSupplierPaymentBatch = async () => {
     if (!supplierPaymentForm) return;
+    if (!user?.id) {
+      toast.error('Phiên đăng nhập không hợp lệ', 'Đăng nhập lại trước khi ghi thanh toán NCC.');
+      return;
+    }
     const form = supplierPaymentForm;
     const amount = Math.round(Number(form.amount || 0));
     const documents = form.documents.filter(document => Number(document.outstandingAmount || 0) > 0);
@@ -2943,8 +2947,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         createdAt: now,
         updatedAt: now,
         note: form.note.trim() || null,
-      }, allocations);
-      await supplierPaymentBatchService.post(form.batchId, user?.id || null);
+      }, allocations, {
+        actorUserId: user.id,
+        idempotencyKey: form.batchId,
+      });
+      await supplierPaymentBatchService.post(form.batchId, user.id);
       setSupplierPaymentForm(null);
       toast.success('Đã tạo đợt thanh toán NCC', `${form.supplierName || documents[0]?.supplierNameSnapshot} đã thanh toán ${fmtMoney(amount)}.`);
       await Promise.all([load(), loadSupplierPaymentBatches()]);
@@ -3154,6 +3161,10 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
 
   const savePoPayment = async () => {
     if (!poPaymentForm) return;
+    if (!user?.id) {
+      toast.error('Phiên đăng nhập không hợp lệ', 'Đăng nhập lại trước khi ghi thanh toán PO.');
+      return;
+    }
     const amount = Math.round(Number(poPaymentForm.amount || 0));
     const outstandingAmount = Math.round(Number(poPaymentForm.row.outstandingAmount || 0));
     if (amount <= 0) {
@@ -3215,8 +3226,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         note: note || null,
-      }, allocations);
-      await supplierPaymentBatchService.post(batchId, user?.id || null);
+      }, allocations, {
+        actorUserId: user.id,
+        idempotencyKey: batchId,
+      });
+      await supplierPaymentBatchService.post(batchId, user.id);
       setPoPaymentForm(null);
       toast.success('Đã tạo đợt thanh toán NCC', `${poPaymentForm.row.counterpartyName} đã được ghi nhận qua AP batch.`);
       await load();
