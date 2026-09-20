@@ -167,6 +167,87 @@ describe('supplierPayableService helpers', () => {
     })).rejects.toThrow('Số hóa đơn đã tồn tại cho NCC này.');
   });
 
+  it('maps an invoice replay conflict to a Vietnamese error', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '22023',
+        message: 'SUPPLIER_INVOICE_REPLAY_CONFLICT',
+      },
+    });
+
+    await expect(supplierPayableService.recordSupplierInvoiceReconciliation({
+      invoice: {
+        supplierId: 'vendor-1',
+        supplierNameSnapshot: 'NCC 1',
+        invoiceNumber: 'HD-001',
+        invoiceDate: '2026-09-20',
+        netAmount: 90,
+        vatAmount: 10,
+        grossAmount: 100,
+        varianceReason: null,
+        attachments: [],
+      },
+      links: [{ payableDocumentId: 'ap-1', allocatedGrossAmount: 100 }],
+      actorUserId: 'user-1',
+    })).rejects.toThrow('Số hóa đơn đã tồn tại với nội dung đối soát khác.');
+  });
+
+  it('maps unsupported partial invoice coverage to an actionable error', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '0A000',
+        message: 'SUPPLIER_INVOICE_COVERAGE_UNSUPPORTED',
+      },
+    });
+
+    await expect(supplierPayableService.recordSupplierInvoiceReconciliation({
+      invoice: {
+        supplierId: 'vendor-1',
+        supplierNameSnapshot: 'NCC 1',
+        invoiceNumber: 'HD-PARTIAL-001',
+        invoiceDate: '2026-09-20',
+        netAmount: 60,
+        vatAmount: 0,
+        grossAmount: 60,
+        varianceReason: null,
+        attachments: [],
+      },
+      links: [{ payableDocumentId: 'ap-1', allocatedGrossAmount: 60 }],
+      actorUserId: 'user-1',
+    })).rejects.toThrow('Chưa hỗ trợ hóa đơn phân bổ một phần hoặc có chênh lệch. Hãy đối soát đủ giá trị AP.');
+  });
+
+  it('maps unsupported multi-scope invoice matching to an actionable error', async () => {
+    supabaseMocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '0A000',
+        message: 'SUPPLIER_INVOICE_MULTI_SCOPE_UNSUPPORTED',
+      },
+    });
+
+    await expect(supplierPayableService.recordSupplierInvoiceReconciliation({
+      invoice: {
+        supplierId: 'vendor-1',
+        supplierNameSnapshot: 'NCC 1',
+        invoiceNumber: 'HD-MULTI-001',
+        invoiceDate: '2026-09-20',
+        netAmount: 200,
+        vatAmount: 0,
+        grossAmount: 200,
+        varianceReason: null,
+        attachments: [],
+      },
+      links: [
+        { payableDocumentId: 'ap-1', allocatedGrossAmount: 100 },
+        { payableDocumentId: 'ap-2', allocatedGrossAmount: 100 },
+      ],
+      actorUserId: 'user-1',
+    })).rejects.toThrow('Chưa hỗ trợ đối soát một hóa đơn qua nhiều phạm vi dự án/công trường.');
+  });
+
   it('builds an AP document snapshot from a received purchase order', () => {
     const document = buildPayableDocumentFromPurchaseOrder(basePo());
 

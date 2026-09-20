@@ -1023,14 +1023,14 @@ begin
       'supplierNameSnapshot', 'NCC Smoke',
       'invoiceNumber', 'INV-SMOKE-001',
       'invoiceDate', current_date::text,
-      'netAmount', 1709090.91,
-      'vatAmount', 170909.09,
-      'grossAmount', 1880000,
-      'varianceReason', 'Invoice smoke variance',
+      'netAmount', 1700000,
+      'vatAmount', 170000,
+      'grossAmount', 1870000,
+      'varianceReason', null,
       'attachments', '[]'::jsonb
     ),
     jsonb_build_array(
-      jsonb_build_object('payableDocumentId', v_receipt_ap_id, 'allocatedGrossAmount', 890000),
+      jsonb_build_object('payableDocumentId', v_receipt_ap_id, 'allocatedGrossAmount', 880000),
       jsonb_build_object('payableDocumentId', v_direct_ap_id, 'allocatedGrossAmount', 990000)
     ),
     v_ids.actor_id
@@ -1044,23 +1044,21 @@ begin
     raise exception 'Supplier invoice should link exactly two AP documents.';
   end if;
 
-  if not exists (
+  if exists (
     select 1
     from public.project_transactions
     where source_ref = 'supplier_invoice_adjustment:' || v_invoice.id::text
-      and amount = 10000
   ) then
-    raise exception 'Supplier invoice variance did not create 10000 cost adjustment.';
+    raise exception 'Exact supplier invoice unexpectedly created a cost adjustment.';
   end if;
 
-  if not exists (
+  if exists (
     select 1
     from public.supplier_payable_documents
     where source_type = 'supplier_invoice_adjustment'
       and source_id = v_invoice.id::text
-      and recognized_amount = 10000
   ) then
-    raise exception 'Supplier invoice variance did not create 10000 AP adjustment.';
+    raise exception 'Exact supplier invoice unexpectedly created an AP adjustment.';
   end if;
 
   begin
@@ -1080,9 +1078,8 @@ begin
       v_ids.actor_id
     );
     raise exception 'Duplicate invoice number for same supplier unexpectedly succeeded.';
-  exception
-    when unique_violation then
-      null;
+  exception when invalid_parameter_value then
+    if sqlerrm <> 'SUPPLIER_INVOICE_REPLAY_CONFLICT' then raise; end if;
   end;
 
   insert into public.supplier_payable_documents (

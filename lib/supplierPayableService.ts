@@ -234,6 +234,15 @@ const normalizeInvoice = (row: any): SupplierInvoice => ({
 });
 
 const mapSupplierInvoiceError = (error: any): Error => {
+  if (error?.code === '22023' && String(error?.message || '').includes('SUPPLIER_INVOICE_REPLAY_CONFLICT')) {
+    return new Error('Số hóa đơn đã tồn tại với nội dung đối soát khác.');
+  }
+  if (error?.code === '0A000' && String(error?.message || '').includes('SUPPLIER_INVOICE_COVERAGE_UNSUPPORTED')) {
+    return new Error('Chưa hỗ trợ hóa đơn phân bổ một phần hoặc có chênh lệch. Hãy đối soát đủ giá trị AP.');
+  }
+  if (error?.code === '0A000' && String(error?.message || '').includes('SUPPLIER_INVOICE_MULTI_SCOPE_UNSUPPORTED')) {
+    return new Error('Chưa hỗ trợ đối soát một hóa đơn qua nhiều phạm vi dự án/công trường.');
+  }
   if (
     error?.code === '23505'
     && String(error?.message || '').includes('uq_supplier_invoice_header_number')
