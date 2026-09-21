@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "releaseId": "g9-preview-candidate-20260921",
   "commitSha": "172c6c6",
-  "migrationHead": "20260921183000",
+  "migrationHead": "20260921190000",
   "environment": "preview",
   "status": "draft",
   "scope": {

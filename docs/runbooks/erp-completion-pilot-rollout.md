@@ -4,9 +4,9 @@ Runbook này áp dụng cho G9. Nó không tự cấp quyền, không tự chọ
 
 ## Điều kiện trước khi mở pilot
 
-1. Artifact đã deploy phải đúng `commitSha`; Cloud migration head phải có `20260921183000` và không có migration ngoài release manifest.
+1. Artifact đã deploy phải đúng `commitSha`; Cloud migration head phải có `20260921190000` và không có migration ngoài release manifest.
 2. Chạy `node scripts/g9/release-manifest.mjs docs/runbooks/erp-completion-pilot-manifest.json --activatable`. Manifest phải ở trạng thái `ready`.
-3. Xác minh riêng sáu người dùng buyer, QS, kho, QC, kế toán và quản lý đang active, có quyền nghiệp vụ hiện hữu đúng scope. Rollout gate không cấp thêm quyền.
+3. Xác minh riêng sáu người dùng buyer, QS, kho, QC, kế toán và quản lý đang active. Mọi grant bổ sung phải qua preview/apply V3 với fingerprint mới đọc, expiry và warning acceptance đã có control owner; rollout gate không tự cấp quyền.
 4. Project/site, mọi kho và NCC trong manifest phải tồn tại và cùng scope dự kiến. Không dùng admin làm bằng chứng cho persona.
 5. Health snapshot không có mismatch nghiêm trọng. `permissionErrors`, `commandLatency` và `clientReplayConflicts` phải có bằng chứng từ log/monitoring ngoài DB; giá trị `external_evidence_required` không được hiểu là đạt.
 6. Chạy regression release, smoke rollback trên preview và walkthrough 390/768/desktop. Fixture chỉ là bằng chứng kỹ thuật.
@@ -51,6 +51,7 @@ Mỗi evidence record phải có run ID, release ID, commit, môi trường, act
 
 - `ERP_COMPLETION_PILOT_COMMAND_DISABLED`: command chưa mở, scope/actor không khớp, scope đã hết hạn hoặc pilot đang pause. Không retry bằng actor/admin khác; kiểm manifest, access RPC và audit config.
 - `40001`/stale version: reload record, giữ nội dung người dùng, so revision rồi thực hiện lại với key phù hợp.
+- `SoD warning acknowledgement required`: dừng apply quyền, review rule/scope và chỉ tiếp tục khi control owner có `system.authorization.audit` chấp nhận reason, compensating controls và expiry cụ thể.
 - Timeout sau submit: không tạo key mới. Đọc lại aggregate/command result bằng cùng scope rồi replay cùng idempotency key.
 - Unknown/partial/denied: không sửa chứng từ hoặc điền 0 để làm màn hình xanh; giao cho data exception owner kèm source IDs.
 - Outbox/backlog tăng: dừng mở rộng cohort, xác định oldest pending và consumer owner. Không xóa event để giảm count.

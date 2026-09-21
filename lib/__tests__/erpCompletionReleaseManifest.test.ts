@@ -8,7 +8,7 @@ const readyManifest = () => ({
   schemaVersion: 1,
   releaseId: 'erp-completion-pilot-2026-09-21-a',
   commitSha: '172c6c6abc123',
-  migrationHead: '20260921183000',
+  migrationHead: '20260921190000',
   environment: 'production',
   status: 'ready',
   scope: {
