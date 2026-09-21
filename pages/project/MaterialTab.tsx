@@ -71,6 +71,8 @@ import { summarizeProjectMaterialReconciliation } from '../../lib/projectMateria
 
 const SupplyChainTab = React.lazy(() => import('./SupplyChainTab'));
 const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
+const BoqMaterialPlanningWorkspace = React.lazy(() => import('../../components/project/material/BoqMaterialPlanningWorkspace')
+    .then(module => ({ default: module.BoqMaterialPlanningWorkspace })));
 const ProjectRoomSubmissionDialog = React.lazy(() => import('../../components/project/ProjectRoomSubmissionDialog'));
 const ProjectWorkflowActionDialog = React.lazy(() => import('../../components/project/ProjectWorkflowActionDialog'));
 const ProjectWorkflowStartDialog = React.lazy(() => import('../../components/project/ProjectWorkflowStartDialog'));
@@ -2916,28 +2918,50 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {materialAccess.planning.canView && activeSubTab === 'planning' && (
-                <React.Suspense fallback={<LazyPanelFallback label="Đang tải kế hoạch vật tư..." />}>
-                    <MaterialPlanningPanel
-                        projectId={projectId || null}
-                        constructionSiteId={constructionSiteId || null}
-                        scopeKey={planningScopeKey}
-                        siteWarehouseId={defaultSiteWarehouseId}
-                        canManage={canEditPlanning}
-                        userId={user.id}
-                        tasks={tasks}
-                        workBoqItems={workBoqItems}
-                        materialBudgetItems={computedBoqItems}
-                        inventoryItems={inventoryItems}
-                        purchaseOrders={purchaseOrders}
-                        transactions={transactions}
-                        rules={planningRules}
-                        curveTemplates={planningCurveTemplates}
-                        loading={planningLoading}
-                        onRefresh={loadPlanningData}
-                        onRuleSaved={handlePlanningRuleSaved}
-                        onCreateDraftPo={handleCreatePlanningDraftPo}
-                    />
-                </React.Suspense>
+                <div className="space-y-6">
+                    <React.Suspense fallback={<LazyPanelFallback label="Đang tải cân đối BOQ..." />}>
+                        <BoqMaterialPlanningWorkspace
+                            projectId={projectId || null}
+                            constructionSiteId={constructionSiteId || null}
+                            defaultDestination={siteName || ''}
+                        />
+                    </React.Suspense>
+                    <section aria-label="Dự báo tham khảo" className="space-y-3">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <h3 className="text-sm font-black text-slate-800">Dự báo tham khảo</h3>
+                            <p className="mt-1 text-[10px] font-bold text-slate-500">Quy tắc tiến độ và đường cong nhu cầu dùng để tham khảo; không thay thế cân đối BOQ và không tạo PO trực tiếp tại bước G3.</p>
+                        </div>
+                        {canViewPo ? (
+                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải dự báo vật tư..." />}>
+                                <MaterialPlanningPanel
+                                    projectId={projectId || null}
+                                    constructionSiteId={constructionSiteId || null}
+                                    scopeKey={planningScopeKey}
+                                    siteWarehouseId={defaultSiteWarehouseId}
+                                    canManage={canEditPlanning}
+                                    userId={user.id}
+                                    tasks={tasks}
+                                    workBoqItems={workBoqItems}
+                                    materialBudgetItems={computedBoqItems}
+                                    inventoryItems={inventoryItems}
+                                    purchaseOrders={purchaseOrders}
+                                    transactions={transactions}
+                                    rules={planningRules}
+                                    curveTemplates={planningCurveTemplates}
+                                    loading={planningLoading}
+                                    allowCreatePo={false}
+                                    onRefresh={loadPlanningData}
+                                    onRuleSaved={handlePlanningRuleSaved}
+                                    onCreateDraftPo={handleCreatePlanningDraftPo}
+                                />
+                            </React.Suspense>
+                        ) : (
+                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-xs font-bold text-slate-500">
+                                Dự báo tham khảo có dữ liệu giá nên chỉ hiển thị khi có quyền xem PO.
+                            </div>
+                        )}
+                    </section>
+                </div>
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}

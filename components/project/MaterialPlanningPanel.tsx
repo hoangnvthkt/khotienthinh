@@ -48,6 +48,7 @@ interface MaterialPlanningPanelProps {
   rules: MaterialPlanningRule[];
   curveTemplates: PlanningCurveTemplate[];
   loading?: boolean;
+  allowCreatePo?: boolean;
   onRefresh?: () => void;
   onRuleSaved: (rule: MaterialPlanningRule) => void;
   onCreateDraftPo: (draft: MaterialPlanningDraftPo) => void;
@@ -117,6 +118,7 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
   rules,
   curveTemplates,
   loading = false,
+  allowCreatePo = true,
   onRefresh,
   onRuleSaved,
   onCreateDraftPo,
@@ -416,7 +418,7 @@ const MaterialPlanningPanel: React.FC<MaterialPlanningPanelProps> = ({
               {pageRows.map(row => {
                 const expanded = expandedRows.has(row.key);
                 const shortage = row.shortageQty['30d'] > 0;
-                const canCreatePo = canManage && shortage && !!row.inventoryItemId && !!siteWarehouseId;
+                const canCreatePo = allowCreatePo && canManage && shortage && !!row.inventoryItemId && !!siteWarehouseId;
                 return (
                   <React.Fragment key={row.key}>
                     <tr className={`${row.shortageQty['7d'] > 0 ? 'bg-red-50/40 dark:bg-red-950/20' : shortage ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''} hover:bg-slate-50/80 dark:hover:bg-slate-700/30`}>
