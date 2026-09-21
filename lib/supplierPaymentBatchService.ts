@@ -161,6 +161,15 @@ export type SupplierPaymentDraftCommand = {
   idempotencyKey: string;
 };
 
+export type SupplierPaymentPostCommand = {
+  expectedRowVersion: number;
+  idempotencyKey: string;
+};
+
+export type SupplierPaymentReverseCommand = SupplierPaymentPostCommand & {
+  reason: string;
+};
+
 const allocationPayload = (allocation: SupplierPaymentAllocation) => {
   const payload = toDb(allocation);
   delete payload.id;
@@ -252,21 +261,24 @@ export const supplierPaymentBatchService = {
     return (data || []).map(normalizeAllocation);
   },
 
-  async post(paymentBatchId: string, actorId?: string | null): Promise<SupplierPaymentBatch> {
-    const { data, error } = await supabase.rpc('post_supplier_payment_batch', {
+  async post(paymentBatchId: string, command: SupplierPaymentPostCommand): Promise<SupplierPaymentBatch> {
+    const { data, error } = await supabase.rpc('post_supplier_payment_batch_v2', {
       p_batch_id: paymentBatchId,
-      p_actor_id: actorId || null,
+      p_expected_row_version: command.expectedRowVersion,
+      p_idempotency_key: command.idempotencyKey,
     });
     if (error) throw error;
-    return normalizeBatch(Array.isArray(data) ? data[0] : data);
+    return normalizeBatch(data?.paymentBatch ?? data);
   },
 
-  async reverse(paymentBatchId: string, actorId?: string | null): Promise<SupplierPaymentBatch> {
-    const { data, error } = await supabase.rpc('reverse_supplier_payment_batch', {
+  async reverse(paymentBatchId: string, command: SupplierPaymentReverseCommand): Promise<SupplierPaymentBatch> {
+    const { data, error } = await supabase.rpc('reverse_supplier_payment_batch_v2', {
       p_batch_id: paymentBatchId,
-      p_actor_id: actorId || null,
+      p_expected_row_version: command.expectedRowVersion,
+      p_idempotency_key: command.idempotencyKey,
+      p_reason: command.reason,
     });
     if (error) throw error;
-    return normalizeBatch(Array.isArray(data) ? data[0] : data);
+    return normalizeBatch(data?.paymentBatch ?? data);
   },
 };

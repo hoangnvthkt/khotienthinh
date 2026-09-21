@@ -111,7 +111,8 @@
     "20260921093000_material_plan_revision_aggregate.sql",
     "20260921110500_procurement_workbench_assignment_read_model.sql",
     "20260921113000_procurement_atomic_purchase_order_allocation.sql",
-    "20260921120000_g6_wms_custody_transfer_inventory_count.sql"
+    "20260921120000_g6_wms_custody_transfer_inventory_count.sql",
+    "20260921143000_g7_supplier_finance_matching_valuation.sql"
   ],
   "forbidIncludeAll": true
 }

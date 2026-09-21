@@ -49,6 +49,7 @@ import {
   SupplierPaymentAllocationMode,
   SupplierPaymentBatch,
   SupplierPaymentMethod,
+  SupplierFinanceControlSnapshot,
   SiteCashSettlementBatch,
   SiteCashSettlementLine,
 } from '../../types';
@@ -66,6 +67,10 @@ import {
 } from '../../lib/projectFinanceWorkspaceService';
 import { allocateSupplierPayment, assertSupplierPaymentBatchCanPost, supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
 import { supplierPayableService } from '../../lib/supplierPayableService';
+import {
+  supplierFinanceControlService,
+  type SupplierInvoiceMatchingCandidates,
+} from '../../lib/supplierFinanceControlService';
 import {
   calculateSiteCashSettlementSummary,
   siteCashSettlementService,
@@ -98,6 +103,8 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import CashFlowTab from './CashFlowTab';
 import PaymentWorkbenchTab from './PaymentWorkbenchTab';
+import SupplierFinanceFlowPanel from '../../components/project/SupplierFinanceFlowPanel';
+import SupplierInvoiceMatchingModal, { type SupplierInvoiceMatchingSubmit } from '../../components/project/SupplierInvoiceMatchingModal';
 
 interface ProjectFinanceWorkspaceProps {
   projectId?: string | null;
@@ -146,6 +153,15 @@ interface SupplierPaymentBatchDetailState {
 interface SupplierPayableDocumentDrawerState {
   row: ProjectFinancePayableRow;
   documents: SupplierPayableDocument[];
+  loading: boolean;
+  error?: string | null;
+}
+
+interface SupplierInvoiceMatchingState {
+  supplierId: string;
+  supplierName: string;
+  commandId: string;
+  candidates: SupplierInvoiceMatchingCandidates | null;
   loading: boolean;
   error?: string | null;
 }
@@ -1472,9 +1488,11 @@ const SupplierPaymentBatchDetailDrawer = ({
   state: SupplierPaymentBatchDetailState | null;
   reversing: boolean;
   onClose: () => void;
-  onReverse: (batch: SupplierPaymentBatch) => void;
+  onReverse: (batch: SupplierPaymentBatch, reason: string) => void;
   onOpenTrace: (batch: SupplierPaymentBatch) => void;
 }) => {
+  const [reversalReason, setReversalReason] = useState('');
+  useEffect(() => { setReversalReason(''); }, [state?.batchId]);
   if (!state) return null;
   const batch = state.batch || null;
   return (
@@ -1557,10 +1575,15 @@ const SupplierPaymentBatchDetailDrawer = ({
           )}
         </div>
         {batch?.status === 'paid' && (
-          <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4 dark:border-slate-800">
-            <button type="button" onClick={() => onReverse(batch)} disabled={reversing} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-50">
+          <div className="border-t border-slate-100 px-5 py-4 dark:border-slate-800">
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-300">Lý do đảo thanh toán
+              <input value={reversalReason} onChange={event => setReversalReason(event.target.value)} placeholder="Nhập lý do để tạo bút toán đảo" className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-red-400 dark:border-slate-700 dark:bg-slate-900" />
+            </label>
+            <div className="mt-3 flex justify-end">
+            <button type="button" onClick={() => onReverse(batch, reversalReason.trim())} disabled={reversing || !reversalReason.trim()} className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-50">
               {reversing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} Đảo thanh toán
             </button>
+            </div>
           </div>
         )}
       </div>
@@ -1573,11 +1596,15 @@ const SupplierPayableDocumentsDrawer = ({
   onClose,
   onOpenDocumentSource,
   onOpenTrace,
+  canMatchInvoice,
+  onMatchInvoice,
 }: {
   state: SupplierPayableDocumentDrawerState | null;
   onClose: () => void;
   onOpenDocumentSource: (document: SupplierPayableDocument) => void;
   onOpenTrace: (document: SupplierPayableDocument) => void;
+  canMatchInvoice?: boolean;
+  onMatchInvoice?: (row: ProjectFinancePayableRow) => void;
 }) => {
   if (!state) return null;
   const { row, documents, loading, error } = state;
@@ -1616,6 +1643,14 @@ const SupplierPayableDocumentsDrawer = ({
             <div className="mt-1 font-black text-red-600">{fmtMoney(row.outstandingAmount)}</div>
           </div>
         </div>
+
+        {canMatchInvoice && (
+          <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-800">
+            <button type="button" onClick={() => onMatchInvoice?.(row)} className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-4 text-xs font-black text-white shadow-sm hover:bg-teal-800 sm:w-auto">
+              <ReceiptText size={14} /> Đối soát hóa đơn NCC
+            </button>
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/70 p-5 dark:bg-slate-900/40">
           {loading && (
@@ -2368,6 +2403,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     users,
   } = useApp();
   const ledgerImportInputRef = useRef<HTMLInputElement>(null);
+  const supplierFinanceRequestRef = useRef(0);
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [activeTab, setActiveTab] = useState<ProjectFinanceWorkspaceTab>(() => {
     const paramTab = queryParams.get('financeTab');
@@ -2376,6 +2412,9 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [data, setData] = useState<ProjectFinanceWorkspaceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [supplierFinanceControl, setSupplierFinanceControl] = useState<SupplierFinanceControlSnapshot | null>(null);
+  const [loadingSupplierFinanceControl, setLoadingSupplierFinanceControl] = useState(false);
+  const [supplierFinanceControlError, setSupplierFinanceControlError] = useState<string | null>(null);
   const [contractCostItems, setContractCostItems] = useState<ContractCostItem[]>([]);
   const [partners, setPartners] = useState<BusinessPartner[]>([]);
   const [scheduleForm, setScheduleForm] = useState<PaymentSchedule | null>(null);
@@ -2388,6 +2427,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const [poPaymentForm, setPoPaymentForm] = useState<PurchaseOrderPaymentForm | null>(null);
   const [savingPoPayment, setSavingPoPayment] = useState(false);
   const [supplierPayableDrawer, setSupplierPayableDrawer] = useState<SupplierPayableDocumentDrawerState | null>(null);
+  const [supplierInvoiceMatching, setSupplierInvoiceMatching] = useState<SupplierInvoiceMatchingState | null>(null);
+  const [savingSupplierInvoiceMatching, setSavingSupplierInvoiceMatching] = useState(false);
   const [payablesView, setPayablesView] = useState<'documents' | 'payments' | 'settlements'>('documents');
   const [ledgerView, setLedgerView] = useState<'paid' | 'received'>('paid');
   const [supplierPaymentBatches, setSupplierPaymentBatches] = useState<SupplierPaymentBatch[]>([]);
@@ -2466,6 +2507,28 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   }, [constructionSiteId, projectId, transactions]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadSupplierFinanceControl = useCallback(async () => {
+    const requestId = ++supplierFinanceRequestRef.current;
+    setLoadingSupplierFinanceControl(true);
+    setSupplierFinanceControlError(null);
+    try {
+      const snapshot = await supplierFinanceControlService.getSnapshot({ projectId, constructionSiteId });
+      if (requestId === supplierFinanceRequestRef.current) setSupplierFinanceControl(snapshot);
+    } catch (err: any) {
+      if (requestId === supplierFinanceRequestRef.current) {
+        setSupplierFinanceControl(null);
+        setSupplierFinanceControlError(err?.message || 'Không tải được luồng giá trị nhà cung cấp.');
+      }
+    } finally {
+      if (requestId === supplierFinanceRequestRef.current) setLoadingSupplierFinanceControl(false);
+    }
+  }, [constructionSiteId, projectId]);
+
+  useEffect(() => {
+    void loadSupplierFinanceControl();
+    return () => { supplierFinanceRequestRef.current += 1; };
+  }, [loadSupplierFinanceControl]);
 
   const loadContractCostItems = useCallback(async () => {
     try {
@@ -2666,6 +2729,86 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   const openSupplierPayableDocumentTrace = useCallback((document: SupplierPayableDocument) => {
     navigate(buildDocumentTracePath('supplier_payable_document', document.id, document.qrToken));
   }, [navigate]);
+
+  const loadSupplierInvoiceCandidates = useCallback(async (state: Pick<SupplierInvoiceMatchingState, 'supplierId' | 'supplierName' | 'commandId'>) => {
+    setSupplierInvoiceMatching({ ...state, candidates: null, loading: true, error: null });
+    try {
+      const candidates = await supplierFinanceControlService.getInvoiceCandidates({
+        projectId: projectId || null,
+        constructionSiteId,
+        supplierId: state.supplierId,
+      });
+      setSupplierInvoiceMatching(current => current?.commandId === state.commandId
+        ? { ...current, candidates, loading: false, error: null }
+        : current);
+    } catch (err: any) {
+      setSupplierInvoiceMatching(current => current?.commandId === state.commandId
+        ? { ...current, candidates: null, loading: false, error: err?.message || 'Không tải được AP và dòng nhận mua.' }
+        : current);
+    }
+  }, [constructionSiteId, projectId]);
+
+  const openSupplierInvoiceMatching = useCallback((row: ProjectFinancePayableRow) => {
+    const state = {
+      supplierId: row.sourceId,
+      supplierName: row.counterpartyName,
+      commandId: crypto.randomUUID(),
+    };
+    setSupplierPayableDrawer(null);
+    void loadSupplierInvoiceCandidates(state);
+  }, [loadSupplierInvoiceCandidates]);
+
+  const submitSupplierInvoiceMatching = async (input: SupplierInvoiceMatchingSubmit) => {
+    const state = supplierInvoiceMatching;
+    const document = state?.candidates?.documents.find(row => row.id === input.documentId);
+    const receiptLine = state?.candidates?.receiptLines.find(row => row.deliveryLineId === input.receiptLineId);
+    if (!state || !document) return;
+    setSavingSupplierInvoiceMatching(true);
+    try {
+      await supplierFinanceControlService.recordInvoiceMatch({
+        invoice: {
+          supplierId: state.supplierId,
+          supplierNameSnapshot: state.supplierName,
+          invoiceNumber: input.invoiceNumber,
+          invoiceDate: input.invoiceDate,
+          netAmount: input.netAmount,
+          vatAmount: input.vatAmount,
+          grossAmount: input.grossAmount,
+          currency: document.currency,
+          varianceReason: null,
+          attachments: [],
+        },
+        payableLinks: [{
+          invoiceId: '',
+          payableDocumentId: document.id,
+          allocatedNetAmount: input.netAmount,
+          allocatedVatAmount: input.vatAmount,
+          allocatedGrossAmount: input.grossAmount,
+          coverageMode: input.grossAmount === document.uninvoicedAmount ? 'full' : 'partial',
+          currency: document.currency,
+        }],
+        receiptAllocations: receiptLine && input.quantity ? [{
+          payableDocumentId: document.id,
+          deliveryLineId: receiptLine.deliveryLineId,
+          quantity: input.quantity,
+          unit: receiptLine.unit,
+          unitPrice: input.netAmount / input.quantity,
+          netAmount: input.netAmount,
+          vatAmount: input.vatAmount,
+          grossAmount: input.grossAmount,
+          priceSource: 'supplier_invoice',
+        }] : [],
+        idempotencyKey: state.commandId,
+      });
+      setSupplierInvoiceMatching(null);
+      toast.success('Đã đối soát hóa đơn', `${input.invoiceNumber} đã được phân bổ ${fmtMoney(input.grossAmount)} vào AP.`);
+      await Promise.all([load(), loadSupplierFinanceControl()]);
+    } catch (err: any) {
+      toast.error('Không ghi được đối soát hóa đơn', err?.message || 'Vui lòng kiểm tra AP, dòng nhận và kỳ kế toán.');
+    } finally {
+      setSavingSupplierInvoiceMatching(false);
+    }
+  };
 
   const openSupplierPaymentBatchTrace = useCallback((batch: SupplierPaymentBatch) => {
     navigate(buildDocumentTracePath('supplier_payment_batch', batch.id, batch.qrToken));
@@ -2923,7 +3066,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     try {
       const now = new Date().toISOString();
       const batchCode = buildSupplierPaymentBatchCode(form.paymentDate, form.batchId);
-      await supplierPaymentBatchService.updateDraft({
+      const savedBatch = await supplierPaymentBatchService.updateDraft({
         id: form.batchId,
         code: batchCode,
         projectId: projectId || null,
@@ -2951,7 +3094,10 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         actorUserId: user.id,
         idempotencyKey: form.batchId,
       });
-      await supplierPaymentBatchService.post(form.batchId, user.id);
+      await supplierPaymentBatchService.post(form.batchId, {
+        expectedRowVersion: savedBatch.rowVersion || 1,
+        idempotencyKey: `${form.batchId}:post`,
+      });
       setSupplierPaymentForm(null);
       toast.success('Đã tạo đợt thanh toán NCC', `${form.supplierName || documents[0]?.supplierNameSnapshot} đã thanh toán ${fmtMoney(amount)}.`);
       await Promise.all([load(), loadSupplierPaymentBatches()]);
@@ -2972,7 +3118,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   };
 
-  const reverseSupplierPaymentBatch = async (batch: SupplierPaymentBatch) => {
+  const reverseSupplierPaymentBatch = async (batch: SupplierPaymentBatch, reason: string) => {
     const ok = await confirm({
       title: 'Đảo thanh toán NCC',
       targetName: batch.code,
@@ -2983,7 +3129,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     if (!ok) return;
     setReversingSupplierPaymentBatch(true);
     try {
-      await supplierPaymentBatchService.reverse(batch.id, user?.id || null);
+      await supplierPaymentBatchService.reverse(batch.id, {
+        expectedRowVersion: batch.rowVersion || 1,
+        idempotencyKey: `${batch.id}:reverse:${batch.rowVersion || 1}`,
+        reason,
+      });
       toast.success('Đã đảo thanh toán NCC', batch.code);
       setSupplierPaymentBatchDetail(null);
       await Promise.all([load(), loadSupplierPaymentBatches()]);
@@ -3199,7 +3349,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       });
       if (allocations.length === 0) throw new Error('Không tìm thấy chứng từ AP còn phải trả để phân bổ.');
       const batchCode = `PAY-${(poPaymentForm.date || todayIso()).replaceAll('-', '')}-${batchId.slice(0, 8).toUpperCase()}`;
-      await supplierPaymentBatchService.createDraft({
+      const savedBatch = await supplierPaymentBatchService.createDraft({
         id: batchId,
         code: batchCode,
         projectId: projectId || null,
@@ -3230,7 +3380,10 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         actorUserId: user.id,
         idempotencyKey: batchId,
       });
-      await supplierPaymentBatchService.post(batchId, user.id);
+      await supplierPaymentBatchService.post(batchId, {
+        expectedRowVersion: savedBatch.rowVersion || 1,
+        idempotencyKey: `${batchId}:post`,
+      });
       setPoPaymentForm(null);
       toast.success('Đã tạo đợt thanh toán NCC', `${poPaymentForm.row.counterpartyName} đã được ghi nhận qua AP batch.`);
       await load();
@@ -3589,6 +3742,13 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   }}
                 />
               </div>
+
+              <SupplierFinanceFlowPanel
+                snapshot={supplierFinanceControl}
+                loading={loadingSupplierFinanceControl}
+                error={supplierFinanceControlError}
+                onRetry={() => void loadSupplierFinanceControl()}
+              />
 
               <section className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4 shadow-sm dark:border-teal-900/70 dark:from-teal-950/40 dark:to-zinc-900">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -3983,7 +4143,21 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         onClose={() => setSupplierPayableDrawer(null)}
         onOpenDocumentSource={openSupplierPayableDocumentSource}
         onOpenTrace={openSupplierPayableDocumentTrace}
+        canMatchInvoice={canManageFinance}
+        onMatchInvoice={openSupplierInvoiceMatching}
       />
+      {supplierInvoiceMatching && (
+        <SupplierInvoiceMatchingModal
+          supplierName={supplierInvoiceMatching.supplierName}
+          candidates={supplierInvoiceMatching.candidates}
+          loading={supplierInvoiceMatching.loading}
+          error={supplierInvoiceMatching.error}
+          saving={savingSupplierInvoiceMatching}
+          onRetry={() => void loadSupplierInvoiceCandidates(supplierInvoiceMatching)}
+          onClose={() => !savingSupplierInvoiceMatching && setSupplierInvoiceMatching(null)}
+          onSubmit={input => void submitSupplierInvoiceMatching(input)}
+        />
+      )}
     </div>
   );
 };

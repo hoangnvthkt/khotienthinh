@@ -352,4 +352,20 @@ describe('supplierPaymentBatchService helpers', () => {
     expect(result.id).toBe('batch-1');
     expect(result.rowVersion).toBe(5);
   });
+
+  it('posts and reverses through versioned idempotent payment commands', async () => {
+    supabaseMocks.rpc
+      .mockResolvedValueOnce({ data: { paymentBatch: { id: 'batch-1', code: 'PAY-1', supplier_name_snapshot: 'NCC A', payment_date: '2026-09-21', payment_amount: 60, status: 'paid', allocation_mode: 'fifo', row_version: 5, created_at: '2026-09-21T00:00:00Z' } }, error: null })
+      .mockResolvedValueOnce({ data: { paymentBatch: { id: 'batch-1', code: 'PAY-1', supplier_name_snapshot: 'NCC A', payment_date: '2026-09-21', payment_amount: 60, status: 'reversed', allocation_mode: 'fifo', row_version: 6, created_at: '2026-09-21T00:00:00Z' } }, error: null });
+
+    await supplierPaymentBatchService.post('batch-1', { expectedRowVersion: 4, idempotencyKey: 'post-1' });
+    await supplierPaymentBatchService.reverse('batch-1', { expectedRowVersion: 5, idempotencyKey: 'reverse-1', reason: 'Sai tài khoản' });
+
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(1, 'post_supplier_payment_batch_v2', {
+      p_batch_id: 'batch-1', p_expected_row_version: 4, p_idempotency_key: 'post-1',
+    });
+    expect(supabaseMocks.rpc).toHaveBeenNthCalledWith(2, 'reverse_supplier_payment_batch_v2', {
+      p_batch_id: 'batch-1', p_expected_row_version: 5, p_idempotency_key: 'reverse-1', p_reason: 'Sai tài khoản',
+    });
+  });
 });

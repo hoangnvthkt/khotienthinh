@@ -2247,6 +2247,13 @@ export interface SupplierInvoice {
   netAmount: number;
   vatAmount: number;
   grossAmount: number;
+  currency?: string;
+  status?: 'posted' | 'reversed';
+  matchingVersion?: number;
+  rowVersion?: number;
+  reversedAt?: string | null;
+  reversedBy?: string | null;
+  reversalReason?: string | null;
   varianceReason?: string | null;
   attachments: Attachment[];
   createdBy?: string | null;
@@ -2258,7 +2265,50 @@ export interface SupplierInvoicePayableLink {
   invoiceId: string;
   payableDocumentId: string;
   allocatedGrossAmount: number;
+  allocatedNetAmount?: number;
+  allocatedVatAmount?: number;
+  varianceAmount?: number;
+  coverageMode?: 'partial' | 'full';
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  currency?: string;
   createdAt?: string;
+}
+
+export interface SupplierInvoiceReceiptAllocation {
+  invoiceId?: string;
+  payableDocumentId: string;
+  deliveryLineId: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  netAmount: number;
+  vatAmount: number;
+  grossAmount: number;
+  priceSource: string;
+  createdAt?: string;
+}
+
+export type SupplierFinanceLayer = 'purchase_receipt' | 'inventory' | 'consumption' | 'ap' | 'cash';
+export type SupplierFinanceCompleteness = 'complete' | 'partial' | 'unknown';
+
+export interface SupplierFinanceLayerMetric {
+  layer: SupplierFinanceLayer;
+  amount: number | null;
+  currency: string;
+  completeness: SupplierFinanceCompleteness;
+  source: string;
+  documentCount: number;
+  issues: string[];
+}
+
+export interface SupplierFinanceControlSnapshot {
+  asOf: string;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  authoritative: boolean;
+  layers: SupplierFinanceLayerMetric[];
+  issues: string[];
 }
 
 export type SupplierPaymentAllocationMode = 'fifo' | 'manual' | 'proportional';
