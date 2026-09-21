@@ -9,6 +9,7 @@ import type {
   SupplierPaymentAllocation,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { mapErpCompletionCommandError } from './erpCompletionRollout';
 import { supabase } from './supabase';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
@@ -234,6 +235,8 @@ const normalizeInvoice = (row: any): SupplierInvoice => ({
 });
 
 const mapSupplierInvoiceError = (error: any): Error => {
+  const rolloutError = mapErpCompletionCommandError(error);
+  if (rolloutError !== error) return rolloutError as Error;
   if (error?.code === '22023' && String(error?.message || '').includes('SUPPLIER_INVOICE_REPLAY_CONFLICT')) {
     return new Error('Số hóa đơn đã tồn tại với nội dung đối soát khác.');
   }

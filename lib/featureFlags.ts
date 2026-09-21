@@ -18,8 +18,18 @@ export const isPerf02RequestPagingEnabled =
 export const isViooWorkEnabled =
   import.meta.env.VITE_ENABLE_VIOO_WORK === 'true';
 
+export const isErpCompletionPilotEnabled =
+  import.meta.env.VITE_ENABLE_ERP_COMPLETION_PILOT === 'true';
+
 const purchasePackageV2SiteIds = new Set(
   String(import.meta.env.VITE_PURCHASE_PACKAGE_V2_SITE_IDS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean),
+);
+
+const erpCompletionPilotSiteIds = new Set(
+  String(import.meta.env.VITE_ERP_COMPLETION_PILOT_SITE_IDS || '')
     .split(',')
     .map(value => value.trim())
     .filter(Boolean),
@@ -31,3 +41,9 @@ export const isPurchasePackageV2EnabledForSite = (constructionSiteId?: string | 
     purchasePackageV2SiteIds.size === 0
     || (!!constructionSiteId && purchasePackageV2SiteIds.has(constructionSiteId))
   );
+
+export const isErpCompletionPilotEnabledForSite = (constructionSiteId?: string | null) =>
+  isErpCompletionPilotEnabled
+  && erpCompletionPilotSiteIds.size > 0
+  && !!constructionSiteId
+  && erpCompletionPilotSiteIds.has(constructionSiteId);

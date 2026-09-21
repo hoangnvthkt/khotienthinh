@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "g9-preview-candidate-20260921",
+  "commitSha": "172c6c6",
+  "migrationHead": "20260921183000",
+  "environment": "preview",
+  "status": "draft",
+  "scope": {
+    "projectId": "g9-preview-project",
+    "constructionSiteId": "g9-preview-site",
+    "warehouseIds": ["g9-preview-warehouse"],
+    "supplierIds": ["g9-preview-supplier"]
+  },
+  "actors": [
+    { "persona": "buyer", "userId": "81111111-1111-4111-8111-111111111111" },
+    { "persona": "qs", "userId": "82222222-2222-4222-8222-222222222222" },
+    { "persona": "warehouse", "userId": "83333333-3333-4333-8333-333333333333" },
+    { "persona": "qc", "userId": "84444444-4444-4444-8444-444444444444" },
+    { "persona": "accountant", "userId": "85555555-5555-4555-8555-555555555555" },
+    { "persona": "manager", "userId": "86666666-6666-4666-8666-666666666666" }
+  ],
+  "commands": {
+    "enabled": [
+      "material_plan.save",
+      "material_plan.convert",
+      "procurement.assign",
+      "procurement.allocate",
+      "procurement.po.create",
+      "wms.transfer.dispatch",
+      "wms.transfer.receive",
+      "wms.transfer.dispose",
+      "wms.inventory_count.start",
+      "wms.inventory_count.post",
+      "finance.invoice.record",
+      "finance.invoice.reverse",
+      "finance.payment.post",
+      "finance.payment.reverse"
+    ],
+    "completion": [
+      "wms.transfer.receive",
+      "wms.transfer.dispose",
+      "wms.inventory_count.post",
+      "finance.invoice.reverse",
+      "finance.payment.reverse"
+    ]
+  },
+  "journeys": [
+    { "id": "J01", "status": "not_run", "expected": "QS lập kế hoạch 10+5 cùng SKU, preview 15 và giữ allocation 10/5", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J02", "status": "not_run", "expected": "Người duyệt thấy đúng revision, trả sửa và không duyệt nhầm revision cũ", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J03", "status": "not_run", "expected": "Buyer phân cấp 5, mua 10 và không mua trùng phần đã phân bổ", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J04", "status": "not_run", "expected": "Kho giữ riêng đặt 100, chứng từ 98.5, đếm 98.2, đạt 98 và custody 0.2", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J05", "status": "not_run", "expected": "Cấp 60, dùng 40, hoàn 10 để đội còn 10 và kho chỉ tăng sau thực nhận", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J06", "status": "not_run", "expected": "Kế toán match partial, trả một phần và retry không tạo credit hoặc payment lặp", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J07", "status": "not_run", "expected": "Quản lý drill từ giao trễ tới PO, MR và BOQ cùng filter", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null },
+    { "id": "J08", "status": "not_run", "expected": "Kho không thấy giá, deep link đúng scope dùng được ở 390px và khác scope bị từ chối", "actual": null, "evidence": null, "cleanup": "Ghi nhận hoặc đảo chứng từ theo runbook", "signedOffBy": null }
+  ],
+  "owners": {
+    "release": "ERP release owner",
+    "dataException": "ERP data reconciliation owner",
+    "support": "ERP pilot support owner",
+    "rollback": "ERP incident commander"
+  },
+  "sla": { "criticalMinutes": 30, "highMinutes": 120, "standardMinutes": 480 },
+  "window": {
+    "startsAt": "2026-09-22T01:00:00.000Z",
+    "expiresAt": "2026-10-22T01:00:00.000Z"
+  },
+  "rollback": {
+    "previousArtifact": "sha:172c6c6",
+    "pauseOn": ["integrity_mismatch", "scope_or_price_leak", "duplicate_financial_or_stock_effect"],
+    "recoveryRunbook": "docs/runbooks/erp-completion-pilot-rollout.md"
+  },
+  "limitations": [
+    { "id": "D13", "owner": "Finance policy owner", "disposition": "Forecast cost remains unavailable until valuation policy is signed" },
+    { "id": "D15", "owner": "Supply chain policy owner", "disposition": "Unmapped return disposition remains unknown" },
+    { "id": "D16", "owner": "Finance matching owner", "disposition": "Only G7 supported invoice coverage is enabled" }
+  ]
+}

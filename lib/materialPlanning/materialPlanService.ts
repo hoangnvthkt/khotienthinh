@@ -14,6 +14,7 @@ import type {
   SaveMaterialPlanInput,
 } from '../../types/materialPlanning';
 import { formatDecimal6, parseQuantity6 } from '../procurement/decimal';
+import { mapErpCompletionCommandError } from '../erpCompletionRollout';
 import { supabase } from '../supabase';
 
 type JsonObject = Record<string, unknown>;
@@ -284,7 +285,7 @@ export const materialPlanService = {
       p_payload_schema_version: input.payloadSchemaVersion,
       p_idempotency_key: input.idempotencyKey,
     } as never);
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     const result = object(data, 'MATERIAL_PLAN_COMMAND_RESPONSE_INVALID');
     return {
       plan: mapDetail(result.plan, { projectId: input.projectId, constructionSiteId: input.constructionSiteId }),
@@ -339,7 +340,7 @@ export const materialPlanService = {
       p_payload_schema_version: input.payloadSchemaVersion,
       p_idempotency_key: input.idempotencyKey,
     } as never);
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     const source = object(data, 'MATERIAL_PLAN_COMMAND_RESPONSE_INVALID');
     const command = mapCommand(source);
     return {

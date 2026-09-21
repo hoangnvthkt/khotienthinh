@@ -1,4 +1,5 @@
 import type { ProcurementCommandRequest, ProcurementCommandResult } from '../../types/procurementIdentity';
+import { mapErpCompletionCommandError } from '../erpCompletionRollout';
 import { supabase } from '../supabase';
 
 export type ProcurementCommandType =
@@ -65,7 +66,7 @@ export async function runProcurementCommand(
   }
 
   const { data, error } = await supabase.rpc(rpc, params);
-  if (error) throw error;
+  if (error) throw mapErpCompletionCommandError(error);
   if (!data || typeof data !== 'object') throw new Error('PROCUREMENT_COMMAND_RESPONSE_INVALID');
   return data as ProcurementCommandResult;
 }

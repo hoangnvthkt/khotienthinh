@@ -9,6 +9,7 @@ import {
     SaveProcurementPurchaseOrderInput, SaveProcurementPurchaseOrderResult
 } from '../types';
 import { auditService } from './auditService';
+import { mapErpCompletionCommandError } from './erpCompletionRollout';
 import { dailyLogDetailService } from './dailyLogDetailService';
 import { buildProjectScopeFilter, dedupeRowsById } from './projectScope';
 import { createPoQrToken } from './poQr';
@@ -1219,7 +1220,7 @@ export const poService = {
             p_actor_user_id: input.actorUserId,
             p_idempotency_key: input.idempotencyKey,
         });
-        if (error) throw error;
+        if (error) throw mapErpCompletionCommandError(error);
         if (!data || typeof data !== 'object') throw new Error('PROCUREMENT_PURCHASE_ORDER_RESPONSE_INVALID');
         return data as SaveProcurementPurchaseOrderResult;
     },

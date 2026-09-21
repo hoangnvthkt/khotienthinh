@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { mapErpCompletionCommandError } from './erpCompletionRollout';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type WmsInventoryClassification = 'matched' | 'cache_missing' | 'negative_quantity' | 'quantity_mismatch' | 'unclassified' | string;
@@ -122,7 +123,7 @@ export const wmsWorkspaceService = {
     const { data, error } = await supabase.rpc('start_wms_inventory_count_v1', {
       p_warehouse_id: input.warehouseId, p_item_ids: input.itemIds, p_reason: input.reason, p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return objectValue(data, 'Kết quả mở kiểm kê') as { inventoryCountId: string; countNo: string; warehouseId: string; status: 'counting'; rowVersion: number; snapshotAt: string; replayed: boolean };
   },
 
@@ -143,7 +144,7 @@ export const wmsWorkspaceService = {
       p_inventory_count_id: input.inventoryCountId, p_lines: input.lines,
       p_expected_version: input.expectedVersion, p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return objectValue(data, 'Kết quả chốt kiểm kê') as { inventoryCountId: string; countNo: string; status: 'posted'; rowVersion: number; adjustmentTransactionId: string | null; replayed: boolean };
   },
 };

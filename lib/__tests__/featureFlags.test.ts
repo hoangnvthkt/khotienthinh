@@ -4,11 +4,15 @@ const loadFeatureFlags = async (env: {
   purchasePackageV2?: string;
   purchasePackageV2SiteIds?: string;
   viooWork?: string;
+  erpCompletionPilot?: string;
+  erpCompletionPilotSiteIds?: string;
 } = {}) => {
   vi.resetModules();
   vi.stubEnv('VITE_ENABLE_PURCHASE_PACKAGE_V2', env.purchasePackageV2);
   vi.stubEnv('VITE_PURCHASE_PACKAGE_V2_SITE_IDS', env.purchasePackageV2SiteIds);
   vi.stubEnv('VITE_ENABLE_VIOO_WORK', env.viooWork);
+  vi.stubEnv('VITE_ENABLE_ERP_COMPLETION_PILOT', env.erpCompletionPilot);
+  vi.stubEnv('VITE_ERP_COMPLETION_PILOT_SITE_IDS', env.erpCompletionPilotSiteIds);
 
   return import('../featureFlags');
 };
@@ -50,5 +54,22 @@ describe('feature flags', () => {
 
     const enabledFlags = await loadFeatureFlags({ viooWork: 'true' });
     expect(enabledFlags.isViooWorkEnabled).toBe(true);
+  });
+
+  it('keeps ERP completion off unless both the release and exact site are configured', async () => {
+    const off = await loadFeatureFlags();
+    expect(off.isErpCompletionPilotEnabled).toBe(false);
+    expect(off.isErpCompletionPilotEnabledForSite('site-1')).toBe(false);
+
+    const missingScope = await loadFeatureFlags({ erpCompletionPilot: 'true' });
+    expect(missingScope.isErpCompletionPilotEnabledForSite('site-1')).toBe(false);
+
+    const scoped = await loadFeatureFlags({
+      erpCompletionPilot: 'true',
+      erpCompletionPilotSiteIds: 'site-1, site-2',
+    });
+    expect(scoped.isErpCompletionPilotEnabledForSite('site-1')).toBe(true);
+    expect(scoped.isErpCompletionPilotEnabledForSite('site-3')).toBe(false);
+    expect(scoped.isErpCompletionPilotEnabledForSite(null)).toBe(false);
   });
 });

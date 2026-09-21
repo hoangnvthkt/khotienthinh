@@ -5,6 +5,7 @@ import type {
   SupplierPaymentBatch,
 } from '../types';
 import { fromDb, toDb } from './dbMapping';
+import { mapErpCompletionCommandError } from './erpCompletionRollout';
 import { supabase } from './supabase';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
@@ -267,7 +268,7 @@ export const supplierPaymentBatchService = {
       p_expected_row_version: command.expectedRowVersion,
       p_idempotency_key: command.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return normalizeBatch(data?.paymentBatch ?? data);
   },
 
@@ -278,7 +279,7 @@ export const supplierPaymentBatchService = {
       p_idempotency_key: command.idempotencyKey,
       p_reason: command.reason,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return normalizeBatch(data?.paymentBatch ?? data);
   },
 };

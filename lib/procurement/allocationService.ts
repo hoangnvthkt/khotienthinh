@@ -1,4 +1,5 @@
 import type { ProcurementCommandResult } from '../../types/procurementIdentity';
+import { mapErpCompletionCommandError } from '../erpCompletionRollout';
 import { formatDecimal6, parseDecimal6, parseQuantity6 } from './decimal';
 import { supabase } from '../supabase';
 
@@ -86,7 +87,7 @@ export const procurementAllocationService = {
       p_reason: input.reason.trim(),
       p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     if (!data || typeof data !== 'object') throw new Error('PROCUREMENT_COMMAND_RESPONSE_INVALID');
     return data as ProcurementCommandResult;
   },

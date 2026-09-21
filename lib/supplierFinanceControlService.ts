@@ -5,6 +5,7 @@ import type {
   SupplierInvoiceReceiptAllocation,
 } from '../types';
 import { fromDb } from './dbMapping';
+import { mapErpCompletionCommandError } from './erpCompletionRollout';
 import { supabase } from './supabase';
 import { validateSupplierInvoiceMatch } from './supplierFinanceMatching';
 
@@ -117,7 +118,7 @@ export const supplierFinanceControlService = {
       p_receipt_allocations: input.receiptAllocations,
       p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return normalizeInvoice(data?.invoice ?? data);
   },
 
@@ -128,7 +129,7 @@ export const supplierFinanceControlService = {
       p_idempotency_key: input.idempotencyKey,
       p_reason: input.reason,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return normalizeInvoice(data?.invoice ?? data);
   },
 

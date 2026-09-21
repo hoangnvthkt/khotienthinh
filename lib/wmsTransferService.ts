@@ -1,4 +1,5 @@
 import { TransactionStatus } from '../types';
+import { mapErpCompletionCommandError } from './erpCompletionRollout';
 import { supabase } from './supabase';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
@@ -99,7 +100,7 @@ export const wmsTransferService = {
       p_expected_version: input.expectedVersion,
       p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return mapResult(data, input.transactionId);
   },
 
@@ -110,7 +111,7 @@ export const wmsTransferService = {
       p_expected_version: input.expectedVersion,
       p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return mapResult(data, input.transactionId);
   },
 
@@ -124,7 +125,7 @@ export const wmsTransferService = {
       p_expected_version: input.expectedVersion,
       p_idempotency_key: input.idempotencyKey,
     });
-    if (error) throw error;
+    if (error) throw mapErpCompletionCommandError(error);
     return mapResult(data, input.transactionId);
   },
 };
