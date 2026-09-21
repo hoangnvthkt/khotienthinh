@@ -18,8 +18,15 @@ import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 export const DOCUMENT_QR_PARAM = 'docQr';
 
 const TRACE_NODE_TYPES: DocumentTraceNodeType[] = [
+  'project_task',
+  'boq_work_item',
+  'material_budget_line',
+  'material_plan',
+  'material_plan_line',
   'material_request',
   'purchase_order',
+  'purchase_delivery_batch',
+  'quality_check',
   'wms_transaction',
   'supplier_contract',
   'supplier_direct_delivery_note',
@@ -294,6 +301,26 @@ type TraceNodeConfig = {
 const firstText = (...values: unknown[]) => values.map(value => String(value || '').trim()).find(Boolean) || '';
 
 const traceNodeConfig: Record<DocumentTraceNodeType, TraceNodeConfig> = {
+  project_task: {
+    table: 'project_tasks',
+    toNode: row => ({ id: row.id, type: 'project_task', label: firstText(row.name, row.id), documentNo: firstText(row.code, row.id), status: row.progress == null ? null : `${row.progress}%`, metadata: row }),
+  },
+  boq_work_item: {
+    table: 'project_work_boq_items',
+    toNode: row => ({ id: row.id, type: 'boq_work_item', label: firstText(row.name, row.id), documentNo: firstText(row.wbs_code, row.id), metadata: row }),
+  },
+  material_budget_line: {
+    table: 'material_budget_items',
+    toNode: row => ({ id: row.id, type: 'material_budget_line', label: firstText(row.item_name, row.id), documentNo: firstText(row.material_code, row.id), metadata: row }),
+  },
+  material_plan: {
+    table: 'material_plans',
+    toNode: row => ({ id: row.id, type: 'material_plan', label: firstText(row.title, row.id), documentNo: firstText(row.plan_no, row.id), status: row.status || null, metadata: row }),
+  },
+  material_plan_line: {
+    table: 'material_plan_lines',
+    toNode: row => ({ id: row.id, type: 'material_plan_line', label: firstText(row.item_name_snapshot, row.id), documentNo: firstText(row.sku_snapshot, row.id), metadata: row }),
+  },
   material_request: {
     table: 'requests',
     toNode: row => ({
@@ -319,6 +346,14 @@ const traceNodeConfig: Record<DocumentTraceNodeType, TraceNodeConfig> = {
       qrToken: row.qr_token || null,
       metadata: row,
     }),
+  },
+  purchase_delivery_batch: {
+    table: 'purchase_order_delivery_batches',
+    toNode: row => ({ id: row.id, type: 'purchase_delivery_batch', label: firstText(row.delivery_no, row.id), documentNo: firstText(row.delivery_no, row.id), status: row.status || null, metadata: row }),
+  },
+  quality_check: {
+    table: 'purchase_order_delivery_batches',
+    toNode: row => ({ id: row.id, type: 'quality_check', label: `QC ${firstText(row.delivery_no, row.id)}`, documentNo: firstText(row.delivery_no, row.id), status: row.quality_result || 'pending', metadata: row }),
   },
   wms_transaction: {
     table: 'transactions',
@@ -753,6 +788,41 @@ export const getTraceGraph = async (
   options: { depth?: number } = {},
 ): Promise<DocumentTraceGraph> => {
   const maxDepth = Math.max(1, Math.min(12, options.depth ?? 6));
+  const managementTypes = new Set<DocumentTraceNodeType>([
+    'project_task', 'boq_work_item', 'material_budget_line', 'material_plan', 'material_plan_line',
+    'material_request', 'purchase_order', 'purchase_delivery_batch', 'quality_check',
+  ]);
+  if (managementTypes.has(seed.type)) {
+    const { data, error } = await supabase.rpc('get_management_lineage_v1', {
+      p_seed_type: seed.type,
+      p_seed_id: seed.id,
+      p_max_depth: maxDepth,
+    });
+    if (!error) {
+      if (!data || data.metricVersion !== 'g8.lineage.v1' || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+        throw new Error('MANAGEMENT_LINEAGE_RESPONSE_INVALID');
+      }
+      return {
+        nodes: data.nodes.map((node: any) => ({
+          id: String(node.id), type: node.type as DocumentTraceNodeType,
+          label: String(node.label || node.id), documentNo: node.documentNo ?? null,
+          status: node.status ?? null, amount: node.amount == null ? null : Number(node.amount),
+          metadata: node.metadata || {},
+        })),
+        edges: data.edges.map((edge: any) => ({
+          from: String(edge.from), to: String(edge.to), relation: String(edge.relation),
+          amount: edge.amount == null ? null : Number(edge.amount), metadata: edge.metadata || {},
+        })),
+        completeness: {
+          financeRestricted: data.completeness?.financeRestricted === true,
+          hasInferredHistory: data.completeness?.hasInferredHistory === true,
+        },
+      };
+    }
+    if (error.code !== '42883' || !['material_request', 'purchase_order'].includes(seed.type)) {
+      throw error;
+    }
+  }
   const seenNodes = new Set([nodeKey(seed.type, seed.id)]);
   const linksById = new Map<string, ProjectDocumentLink>();
   let frontier: DocumentTraceSeed[] = [seed];

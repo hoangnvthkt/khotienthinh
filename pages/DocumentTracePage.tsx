@@ -21,8 +21,15 @@ import {
 import { validateProcurementReturnTo } from '../lib/procurement/documentAdapters';
 
 const traceNodeTypes: DocumentTraceNodeType[] = [
+  'project_task',
+  'boq_work_item',
+  'material_budget_line',
+  'material_plan',
+  'material_plan_line',
   'material_request',
   'purchase_order',
+  'purchase_delivery_batch',
+  'quality_check',
   'wms_transaction',
   'supplier_contract',
   'supplier_direct_delivery_note',
@@ -36,8 +43,15 @@ const traceNodeTypes: DocumentTraceNodeType[] = [
 ];
 
 const nodeLabels: Record<DocumentTraceNodeType, string> = {
+  project_task: 'Công tác',
+  boq_work_item: 'Hạng mục BOQ',
+  material_budget_line: 'Dòng ngân sách vật tư',
+  material_plan: 'Kế hoạch vật tư',
+  material_plan_line: 'Dòng kế hoạch',
   material_request: 'Yêu cầu vật tư',
   purchase_order: 'PO',
+  purchase_delivery_batch: 'Đợt giao',
+  quality_check: 'Kiểm tra chất lượng',
   wms_transaction: 'WMS',
   supplier_contract: 'HĐ NCC',
   supplier_direct_delivery_note: 'Phiếu giao HĐ NCC',
@@ -51,6 +65,17 @@ const nodeLabels: Record<DocumentTraceNodeType, string> = {
 };
 
 const relationLabels: Record<string, string> = {
+  defines_work: 'gắn công tác BOQ',
+  budgets_material: 'lập ngân sách vật tư',
+  allocates_plan: 'phân bổ kế hoạch',
+  belongs_to_plan: 'thuộc kế hoạch',
+  converted_to_request: 'chuyển thành MR',
+  ordered_by_line: 'đặt mua theo dòng',
+  legacy_order_reference: 'liên kết lịch sử suy luận',
+  scheduled_delivery: 'lập đợt giao',
+  quality_control: 'kiểm tra chất lượng',
+  recognizes_ap: 'ghi nhận AP',
+  matched_invoice: 'đối chiếu hóa đơn',
   delivery_note: 'phát sinh phiếu giao',
   wms_import: 'nhập WMS',
   wms_export: 'xuất dùng',
@@ -126,8 +151,23 @@ const sortGraphNodes = (graph: DocumentTraceGraph): DocumentTraceNode[] => {
 
 const openNode = (navigate: ReturnType<typeof useNavigate>, node: DocumentTraceNode) => {
   switch (node.type) {
+    case 'project_task':
+      navigate(`/da?tab=gantt&taskId=${encodeURIComponent(node.id)}`);
+      break;
+    case 'boq_work_item':
+    case 'material_budget_line':
+      navigate('/da?tab=material&materialTab=planning');
+      break;
+    case 'material_plan':
+    case 'material_plan_line':
+      navigate(`/da?tab=material&materialTab=planning&planId=${encodeURIComponent(node.type === 'material_plan' ? node.id : String(node.metadata?.planId || ''))}`);
+      break;
     case 'purchase_order':
       navigate(`/da?tab=material&materialTab=po&poId=${encodeURIComponent(node.id)}`);
+      break;
+    case 'purchase_delivery_batch':
+    case 'quality_check':
+      navigate('/da?tab=material&materialTab=po');
       break;
     case 'site_direct_purchase':
       navigate(`/da?tab=material&materialTab=direct&siteDirectPurchaseId=${encodeURIComponent(node.id)}`);
@@ -287,7 +327,18 @@ const DocumentTracePage: React.FC = () => {
             Chưa có liên kết chứng từ cho QR này.
           </div>
         ) : (
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-3">
+            {graph.completeness?.financeRestricted && (
+              <div className="rounded-lg border border-violet-200 bg-violet-50 p-4 text-sm font-bold text-violet-800 dark:border-violet-900/60 dark:bg-violet-950/30 dark:text-violet-200">
+                Phần công nợ, hóa đơn và thanh toán đang bị ẩn theo quyền. Chuỗi dừng tại đây không có nghĩa là chưa phát sinh tài chính.
+              </div>
+            )}
+            {graph.completeness?.hasInferredHistory && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                Chuỗi có liên kết lịch sử suy luận. Hãy kiểm tra nhãn trên cạnh trước khi dùng để đối soát.
+              </div>
+            )}
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-3">
               {sortedNodes.map((node, index) => {
                 const incomingEdge = edgeByTarget.get(nodeKey(node));
@@ -361,6 +412,7 @@ const DocumentTracePage: React.FC = () => {
                 </div>
               </div>
             </aside>
+            </div>
           </div>
         )}
       </div>

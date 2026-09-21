@@ -1,448 +1,232 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-    AreaChart, Area, ComposedChart, Line, Scatter, ScatterChart, ZAxis
-} from 'recharts';
-import {
-    Building2, TrendingUp, TrendingDown, DollarSign, Activity, Target,
-    AlertTriangle, CheckCircle2, Users, Truck, Package, Clock,
-    ArrowUpRight, ArrowDownRight, BarChart3, Layers, Flame, Shield,
-    ChevronDown, ChevronUp, ExternalLink
+  AlertCircle, AlertTriangle, ArrowRight, Building2, CheckCircle2, Download,
+  FileSearch, GitBranch, Loader2, PackageCheck, RefreshCcw, Search, ShieldAlert,
+  ShoppingCart, Warehouse, WalletCards,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { portfolioService, ProjectSummary, PortfolioKPIs } from '../lib/portfolioService';
+import { useAuth } from '../context/AuthContext';
 import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
+import { buildDocumentTracePath } from '../lib/documentTraceService';
+import {
+  type ManagementDatasetPage, type ManagementDatasetRow, type ManagementSeverity,
+  type ManagementViewId,
+} from '../lib/managementDataset';
+import { managementDatasetService } from '../lib/managementDatasetService';
 
-const fmt = (n: number) => {
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' tỷ';
-    if (n >= 1e6) return (n / 1e6).toFixed(0) + ' tr';
-    if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
-    return n.toLocaleString('vi-VN');
+const VIEWS: Array<{ id: ManagementViewId; label: string; short: string; description: string; icon: React.ReactNode }> = [
+  { id: 'M05', label: 'Điều hành tổng thể', short: 'Lãnh đạo', description: 'Dự án cần can thiệp và chất lượng nguồn', icon: <Building2 size={17} /> },
+  { id: 'M01', label: 'Điều hành dự án', short: 'Dự án', description: 'Công tác thiếu vật tư và nhu cầu chưa bố trí', icon: <PackageCheck size={17} /> },
+  { id: 'M02', label: 'Quản lý mua hàng', short: 'Mua hàng', description: 'Backlog, PO mở và giao trễ', icon: <ShoppingCart size={17} /> },
+  { id: 'M03', label: 'Quản lý kho', short: 'Kho', description: 'QC và chênh lệch cần đối soát', icon: <Warehouse size={17} /> },
+  { id: 'M04', label: 'Quản lý tài chính', short: 'Tài chính', description: 'AP, hóa đơn và thanh toán theo quyền', icon: <WalletCards size={17} /> },
+];
+
+const TRACE_TYPES = new Set([
+  'project_task', 'material_request', 'purchase_order', 'purchase_delivery_batch', 'quality_check',
+  'supplier_payable_document', 'supplier_invoice', 'supplier_payment_batch',
+]);
+
+const severityLabel: Record<ManagementSeverity, string> = {
+  critical: 'Cần xử lý ngay', warning: 'Cần theo dõi', info: 'Thông tin',
+};
+const severityClass: Record<ManagementSeverity, string> = {
+  critical: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300',
+  warning: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300',
+  info: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300',
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-    planning: { label: 'Lập KH', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', dot: '#3b82f6' },
-    active: { label: 'Đang TC', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', dot: '#10b981' },
-    paused: { label: 'Tạm dừng', color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', dot: '#f59e0b' },
-    completed: { label: 'Hoàn thành', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200', dot: '#8b5cf6' },
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Chưa có hạn';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Ngày chưa hợp lệ' : date.toLocaleDateString('vi-VN');
+};
+const formatValue = (row: ManagementDatasetRow) => {
+  if (row.value == null) return 'Chưa xác định';
+  if (row.currency) return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: row.currency, maximumFractionDigits: 0 }).format(row.value);
+  return `${row.value.toLocaleString('vi-VN')} ${row.unit === 'record' ? 'hồ sơ' : row.unit}`;
+};
+const csvCell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+const downloadCsv = (page: ManagementDatasetPage) => {
+  const headers = ['view', 'metric', 'definition_version', 'as_of', 'project', 'title', 'severity', 'owner', 'due_at', 'value', 'unit', 'currency', 'vat_basis', 'completeness', 'quality_issues', 'source_type', 'source_id', 'inferred'];
+  const rows = page.rows.map(row => [row.viewId, row.metricId, row.metricDefinitionVersion, page.asOf, row.projectName || row.projectId, row.title, row.severity, row.ownerName || row.ownerId, row.dueAt, row.value, row.unit, row.currency, row.vatBasis, row.completeness, row.qualityIssues.join('|'), row.source.type, row.source.id, row.source.inferred]);
+  const blob = new Blob([[headers, ...rows].map(line => line.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `erp-management-${page.filter.viewId || 'dataset'}-${page.asOf.slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 };
 
-const CHART_COLORS = ['#818cf8', '#f472b6', '#34d399', '#fbbf24', '#60a5fa', '#f87171', '#a78bfa', '#fb923c'];
+type ManagementDatasetDataSource = Pick<typeof managementDatasetService,
+  'list' | 'listAllForExport' | 'invalidate' | 'setActor' | 'bindRealtimeInvalidation'>;
+
+export const PortfolioDashboardContent: React.FC<{
+  actorId?: string | null;
+  dataSource?: ManagementDatasetDataSource;
+}> = ({ actorId, dataSource = managementDatasetService }) => {
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const paramView = params.get('view') as ManagementViewId | null;
+  const [viewId, setViewId] = useState<ManagementViewId>(VIEWS.some(view => view.id === paramView) ? paramView! : 'M05');
+  const [projectId, setProjectId] = useState(params.get('project') || '');
+  const [severity, setSeverity] = useState<ManagementSeverity | ''>((params.get('severity') as ManagementSeverity) || '');
+  const [search, setSearch] = useState(params.get('q') || '');
+  const deferredSearch = useDeferredValue(search.trim());
+  const [page, setPage] = useState<ManagementDatasetPage | null>(null);
+  const [projectOptions, setProjectOptions] = useState<ManagementDatasetPage['options']['projects']>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const requestGeneration = useRef(0);
+
+  const filter = useMemo(() => ({
+    viewId, ...(projectId ? { projectId } : {}), ...(severity ? { severity } : {}),
+    ...(deferredSearch ? { search: deferredSearch } : {}),
+  }), [viewId, projectId, severity, deferredSearch]);
+
+  const load = useCallback(async () => {
+    const requestId = ++requestGeneration.current;
+    setLoading(true);
+    setError(null);
+    setPage(null);
+    try {
+      const next = await dataSource.list({ ...filter, limit: 50 });
+      if (requestId !== requestGeneration.current) return;
+      setPage(next);
+      setProjectOptions(current => next.options.projects.length >= current.length ? next.options.projects : current);
+    } catch (nextError) {
+      if (requestId === requestGeneration.current) setError(nextError);
+    } finally {
+      if (requestId === requestGeneration.current) setLoading(false);
+    }
+  }, [actorId, dataSource, filter, refreshVersion]);
+
+  useEffect(() => {
+    dataSource.setActor(actorId);
+    setProjectOptions([]);
+    setPage(null);
+  }, [actorId, dataSource]);
+  useEffect(() => {
+    const next = new URLSearchParams();
+    next.set('view', viewId);
+    if (projectId) next.set('project', projectId);
+    if (severity) next.set('severity', severity);
+    if (deferredSearch) next.set('q', deferredSearch);
+    setParams(next, { replace: true });
+  }, [viewId, projectId, severity, deferredSearch, setParams]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => dataSource.bindRealtimeInvalidation(() => setRefreshVersion(value => value + 1)), [dataSource]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const denied = Boolean(error && typeof error === 'object' && (error as { code?: string }).code === '42501');
+  const stale = Boolean(page && Date.parse(page.staleAfter) < now);
+  const unavailable = page?.catalog.filter(metric => metric.viewId === viewId && metric.availability !== 'available') || [];
+
+  const loadMore = async () => {
+    if (!page?.nextCursor) return;
+    const requestId = requestGeneration.current;
+    setLoadingMore(true);
+    try {
+      const next = await dataSource.list({ ...filter, cursor: page.nextCursor, asOf: page.asOf, limit: 50 });
+      if (requestId === requestGeneration.current) {
+        setPage(current => current ? { ...next, rows: [...current.rows, ...next.rows] } : next);
+      }
+    } catch (nextError) {
+      if (requestId === requestGeneration.current) setError(nextError);
+    } finally {
+      if (requestId === requestGeneration.current) setLoadingMore(false);
+    }
+  };
+  const exportDataset = async () => {
+    if (!page?.capabilities.canExport) return;
+    setExporting(true);
+    try { downloadCsv(await dataSource.listAllForExport(filter)); }
+    catch (nextError) { setError(nextError); }
+    finally { setExporting(false); }
+  };
+  const openTrace = (row: ManagementDatasetRow) => {
+    if (TRACE_TYPES.has(row.source.type)) navigate(buildDocumentTracePath(row.source.type as Parameters<typeof buildDocumentTracePath>[0], row.source.id));
+  };
+
+  return <div className="space-y-5 pb-8">
+    <PageHeader eyebrow="ERP Management Dataset · v1" icon={<Building2 size={19} />} title="Trung tâm điều hành"
+      description="Ưu tiên các việc cần quyết định. Mỗi chỉ số dùng cùng nguồn, quyền và ngày chốt từ tổng quan đến export."
+      meta={page ? <>
+        <StatusBadge status="in_progress" label={`Chốt ${new Date(page.asOf).toLocaleString('vi-VN')}`} tone="info" size="md" />
+        <StatusBadge status={stale ? 'warning' : 'completed'} label={stale ? 'Dữ liệu cần làm mới' : 'Dữ liệu đang hiệu lực'} tone={stale ? 'attention' : 'success'} size="md" />
+        {page.totals.unknownCount > 0 && <StatusBadge status="warning" label={`${page.totals.unknownCount} dòng chưa đủ nguồn`} tone="attention" size="md" />}
+      </> : undefined}
+      secondaryActions={[
+        { label: 'Làm mới', icon: <RefreshCcw size={15} className={loading ? 'animate-spin' : ''} />, onClick: () => { dataSource.invalidate(); setRefreshVersion(value => value + 1); }, disabled: loading },
+        { label: exporting ? 'Đang xuất…' : 'Xuất đúng bộ lọc', icon: exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />, onClick: exportDataset, disabled: !page?.capabilities.canExport || exporting, title: page && !page.capabilities.canExport ? 'Bạn chưa có quyền export trong phạm vi này.' : undefined },
+      ]} />
+
+    <nav aria-label="Góc nhìn quản trị" className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+      {VIEWS.map(view => {
+        const active = view.id === viewId;
+        return <button key={view.id} type="button" aria-pressed={active} onClick={() => setViewId(view.id)}
+          className={`min-h-[82px] rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${active ? 'border-emerald-300 bg-emerald-50 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30' : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900'}`}>
+          <div className={`flex items-center gap-2 text-sm font-black ${active ? 'text-emerald-800 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-200'}`}>{view.icon}<span>{view.short}</span></div>
+          <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-slate-500 dark:text-slate-400">{view.description}</p>
+        </button>;
+      })}
+    </nav>
+
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="Bộ lọc dataset">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_170px_auto]">
+        <label className="relative block"><span className="sr-only">Tìm trong dataset</span><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm dự án, hồ sơ, người xử lý…" className="min-h-11 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" /></label>
+        <label><span className="sr-only">Lọc dự án</span><select value={projectId} onChange={event => setProjectId(event.target.value)} className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="">Tất cả dự án được phép xem</option>{projectOptions.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label><span className="sr-only">Lọc mức độ</span><select value={severity} onChange={event => setSeverity(event.target.value as ManagementSeverity | '')} className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"><option value="">Mọi mức độ</option><option value="critical">Cần xử lý ngay</option><option value="warning">Cần theo dõi</option><option value="info">Thông tin</option></select></label>
+        <button type="button" onClick={() => { setProjectId(''); setSeverity(''); setSearch(''); }} disabled={!projectId && !severity && !search} className="min-h-11 rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Xóa bộ lọc</button>
+      </div>
+    </section>
+
+    {loading && <LoadingState />}
+    {!loading && error && <section role="alert" className={`rounded-xl border p-5 ${denied ? 'border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30' : 'border-rose-200 bg-rose-50 dark:border-rose-900/60 dark:bg-rose-950/30'}`}><div className="flex gap-3">{denied ? <ShieldAlert className="mt-0.5 shrink-0 text-amber-600" /> : <AlertCircle className="mt-0.5 shrink-0 text-rose-600" />}<div><h2 className="font-black text-slate-900 dark:text-white">{denied ? 'Bạn chưa có quyền xem phạm vi này' : 'Không đọc được dataset quản trị'}</h2><p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">{denied ? 'Hãy chọn dự án bạn được phân quyền hoặc liên hệ quản trị viên.' : 'Dữ liệu cũ không được giữ như dữ liệu mới. Hãy thử tải lại.'}</p><button type="button" onClick={() => setRefreshVersion(value => value + 1)} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-black text-white dark:bg-white dark:text-slate-900"><RefreshCcw size={14} /> Thử lại</button></div></div></section>}
+
+    {!loading && !error && page && <>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Tổng hợp ngoại lệ">
+        <SummaryCard label="Tổng hồ sơ" value={page.totals.rowCount} icon={<FileSearch size={17} />} tone="slate" />
+        <SummaryCard label="Cần xử lý ngay" value={page.totals.criticalCount} icon={<AlertCircle size={17} />} tone="rose" />
+        <SummaryCard label="Cần theo dõi" value={page.totals.warningCount} icon={<AlertTriangle size={17} />} tone="amber" />
+        <SummaryCard label="Chưa đủ nguồn" value={page.totals.unknownCount} icon={<ShieldAlert size={17} />} tone="violet" />
+      </section>
+      {unavailable.length > 0 && <section className="rounded-xl border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-900/60 dark:bg-violet-950/20"><div className="flex items-start gap-3"><ShieldAlert size={18} className="mt-0.5 shrink-0 text-violet-600" /><div><h2 className="text-sm font-black text-violet-950 dark:text-violet-200">Một số chỉ tiêu chưa thể công bố</h2><p className="mt-1 text-xs font-medium leading-5 text-violet-800 dark:text-violet-300">{unavailable.map(metric => metric.label).join(', ')}. Hệ thống giữ trạng thái chưa xác định thay vì hiển thị 0 hoặc dự báo thiếu căn cứ.</p></div></div></section>}
+      {page.rows.length === 0 ? <EmptyState icon={<CheckCircle2 size={22} />} title="Không có hồ sơ trong bộ lọc này" message="Đây là kết quả rỗng hợp lệ tại ngày chốt hiện tại. Thử đổi góc nhìn hoặc bộ lọc để xem phạm vi khác." /> : <DatasetTable page={page} viewId={viewId} navigate={navigate} openTrace={openTrace} loadMore={loadMore} loadingMore={loadingMore} />}
+    </>}
+  </div>;
+};
+
+const LoadingState = () => <div className="grid gap-3" aria-label="Đang tải dataset quản trị" aria-busy="true"><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" />)}</div><div className="h-72 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800" /></div>;
+
+const SummaryCard: React.FC<{ label: string; value: number; icon: React.ReactNode; tone: 'slate' | 'rose' | 'amber' | 'violet' }> = ({ label, value, icon, tone }) => {
+  const color = { slate: 'text-slate-700 bg-slate-100 dark:bg-slate-800 dark:text-slate-200', rose: 'text-rose-700 bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300', amber: 'text-amber-700 bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300', violet: 'text-violet-700 bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300' }[tone];
+  return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className={`flex h-9 w-9 items-center justify-center rounded-lg ${color}`}>{icon}</div><div className="mt-3 text-2xl font-black text-slate-900 dark:text-white">{value.toLocaleString('vi-VN')}</div><div className="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400">{label}</div></div>;
+};
+
+const DatasetTable: React.FC<{ page: ManagementDatasetPage; viewId: ManagementViewId; navigate: ReturnType<typeof useNavigate>; openTrace: (row: ManagementDatasetRow) => void; loadMore: () => void; loadingMore: boolean }> = ({ page, viewId, navigate, openTrace, loadMore, loadingMore }) => <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800"><div><h2 className="text-sm font-black text-slate-900 dark:text-white">Việc cần xem xét</h2><p className="text-xs font-medium text-slate-500">{VIEWS.find(view => view.id === viewId)?.label} · {page.rows.length}/{page.totals.rowCount} hồ sơ đã tải</p></div><span className="hidden text-[10px] font-black uppercase tracking-wide text-slate-400 sm:block">Cùng cutoff và metric version</span></div>
+  <div className="hidden overflow-x-auto md:block"><table className="w-full text-left"><thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-950/50 dark:text-slate-400"><tr><th className="px-4 py-3">Việc / nguồn</th><th className="px-4 py-3">Tác động</th><th className="px-4 py-3">Người giữ</th><th className="px-4 py-3">Hạn</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{page.rows.map(row => <ManagementRow key={row.id} row={row} navigate={navigate} openTrace={openTrace} />)}</tbody></table></div>
+  <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">{page.rows.map(row => <ManagementCard key={row.id} row={row} navigate={navigate} openTrace={openTrace} />)}</div>
+  {page.nextCursor && <div className="border-t border-slate-200 p-3 text-center dark:border-slate-800"><button type="button" onClick={loadMore} disabled={loadingMore} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">{loadingMore && <Loader2 size={14} className="animate-spin" />} Tải thêm</button></div>}
+</section>;
+
+const ManagementRow: React.FC<{ row: ManagementDatasetRow; navigate: ReturnType<typeof useNavigate>; openTrace: (row: ManagementDatasetRow) => void }> = ({ row, navigate, openTrace }) => <tr className="align-top hover:bg-slate-50/70 dark:hover:bg-slate-800/30"><td className="px-4 py-3"><RowIdentity row={row} /></td><td className="px-4 py-3"><div className="text-sm font-black text-slate-800 dark:text-slate-100">{formatValue(row)}</div>{row.completeness !== 'complete' && <div className="mt-1 text-[10px] font-bold text-violet-600 dark:text-violet-300">Nguồn chưa đầy đủ</div>}</td><td className="px-4 py-3 text-xs font-bold text-slate-600 dark:text-slate-300">{row.ownerName || 'Chưa phân công'}</td><td className="px-4 py-3 text-xs font-bold text-slate-600 dark:text-slate-300">{formatDate(row.dueAt)}</td><td className="px-4 py-3"><RowActions row={row} navigate={navigate} openTrace={openTrace} /></td></tr>;
+const ManagementCard: React.FC<{ row: ManagementDatasetRow; navigate: ReturnType<typeof useNavigate>; openTrace: (row: ManagementDatasetRow) => void }> = ({ row, navigate, openTrace }) => <article className="space-y-3 p-4"><RowIdentity row={row} /><div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-950/40"><div><div className="font-bold text-slate-400">Tác động</div><div className="mt-1 font-black text-slate-800 dark:text-slate-100">{formatValue(row)}</div></div><div><div className="font-bold text-slate-400">Người giữ · hạn</div><div className="mt-1 font-black text-slate-800 dark:text-slate-100">{row.ownerName || 'Chưa phân công'} · {formatDate(row.dueAt)}</div></div></div><RowActions row={row} navigate={navigate} openTrace={openTrace} mobile /></article>;
+const RowIdentity: React.FC<{ row: ManagementDatasetRow }> = ({ row }) => <div className="min-w-[220px]"><span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-black ${severityClass[row.severity]}`}>{severityLabel[row.severity]}</span><div className="mt-2 text-sm font-black text-slate-900 dark:text-white">{row.title}</div>{row.description && <div className="mt-0.5 max-w-lg text-xs font-medium leading-5 text-slate-500 dark:text-slate-400">{row.description}</div>}<div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold text-slate-400"><span>{row.projectName || 'Phạm vi kho'}</span><span>•</span><span>{row.source.label}</span>{row.source.inferred && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">Lịch sử suy luận</span>}</div></div>;
+const RowActions: React.FC<{ row: ManagementDatasetRow; navigate: ReturnType<typeof useNavigate>; openTrace: (row: ManagementDatasetRow) => void; mobile?: boolean }> = ({ row, navigate, openTrace, mobile }) => <div className={`flex gap-2 ${mobile ? '' : 'justify-end'}`}>{TRACE_TYPES.has(row.source.type) && <button type="button" onClick={() => openTrace(row)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-black text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"><GitBranch size={13} /> Trace</button>}<button type="button" onClick={() => navigate(row.drill.path)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-black text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900">Mở nguồn <ArrowRight size={13} /></button></div>;
 
 const PortfolioDashboard: React.FC = () => {
-    const navigate = useNavigate();
-    const [summaries, setSummaries] = useState<ProjectSummary[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [sortField, setSortField] = useState<'profit' | 'progressPercent' | 'contractValue' | 'overduePayments'>('contractValue');
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-
-    useEffect(() => {
-        portfolioService.getSummaries()
-            .then(setSummaries)
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, []);
-
-    const kpis = useMemo(() => portfolioService.getKPIs(summaries), [summaries]);
-
-    // ── Chart data ──
-    const statusPie = useMemo(() => {
-        const counts: Record<string, number> = {};
-        summaries.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
-        return Object.entries(counts).map(([k, v]) => ({
-            name: STATUS_CONFIG[k]?.label || k,
-            value: v,
-            fill: STATUS_CONFIG[k]?.dot || '#94a3b8',
-        }));
-    }, [summaries]);
-
-    const budgetComparison = useMemo(() => {
-        return summaries.map(s => ({
-            name: s.siteName.length > 10 ? s.siteName.slice(0, 10) + '…' : s.siteName,
-            'Giá trị HĐ': s.contractValue,
-            'Chi phí': s.totalExpense,
-            'Lợi nhuận': s.profit,
-        }));
-    }, [summaries]);
-
-    const profitRanking = useMemo(() => {
-        return [...summaries]
-            .sort((a, b) => b.profitPercent - a.profitPercent)
-            .map(s => ({
-                name: s.siteName.length > 15 ? s.siteName.slice(0, 15) + '…' : s.siteName,
-                value: s.profitPercent,
-                fill: s.profitPercent >= 0 ? '#34d399' : '#ef4444',
-            }));
-    }, [summaries]);
-
-    const riskMatrix = useMemo(() => {
-        return summaries.map(s => {
-            const budgetRisk = s.contractValue > 0 ? Math.max(0, (s.totalExpense / s.contractValue) * 100 - s.progressPercent) : 0;
-            const scheduleRisk = Math.max(0, 100 - s.progressPercent) / 10;
-            return {
-                name: s.siteName,
-                x: Math.min(budgetRisk, 100),  // Budget overrun risk
-                y: scheduleRisk * 10,           // Schedule delay risk  
-                z: s.contractValue,
-                fill: budgetRisk > 30 && scheduleRisk > 5 ? '#ef4444' : budgetRisk > 15 || scheduleRisk > 5 ? '#f59e0b' : '#34d399',
-            };
-        });
-    }, [summaries]);
-
-    const progressVsExpense = useMemo(() => {
-        return summaries.map(s => ({
-            name: s.siteName.length > 10 ? s.siteName.slice(0, 10) + '…' : s.siteName,
-            'Tiến độ (%)': s.progressPercent,
-            'Chi phí (%)': s.contractValue > 0 ? Math.round((s.totalExpense / s.contractValue) * 100) : 0,
-        }));
-    }, [summaries]);
-
-    const sortedSummaries = useMemo(() => {
-        return [...summaries].sort((a, b) => {
-            const av = a[sortField];
-            const bv = b[sortField];
-            return sortDir === 'desc' ? (bv as number) - (av as number) : (av as number) - (bv as number);
-        });
-    }, [summaries, sortField, sortDir]);
-
-    const handleSort = (field: typeof sortField) => {
-        if (sortField === field) {
-            setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-        } else {
-            setSortField(field);
-            setSortDir('desc');
-        }
-    };
-
-    const SortIcon = ({ field }: { field: typeof sortField }) => {
-        if (sortField !== field) return null;
-        return sortDir === 'desc' ? <ChevronDown size={10} /> : <ChevronUp size={10} />;
-    };
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-96">
-                <div className="text-center">
-                    <Layers size={48} className="mx-auto mb-4 text-indigo-300 animate-pulse" />
-                    <p className="text-sm font-bold text-slate-400">Đang tải dữ liệu đa dự án...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (summaries.length === 0) {
-        return (
-            <div className="py-12">
-                <EmptyState
-                    icon={<Building2 size={22} />}
-                    title="Chưa có dự án nào"
-                    message="Tạo công trình và thêm dữ liệu dự án để xem tổng quan đa dự án."
-                />
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-6">
-            <PageHeader
-                eyebrow="DA Portfolio"
-                title="Tổng quan đa dự án"
-                description="Theo dõi danh mục dự án theo tiến độ, chi phí, lợi nhuận và rủi ro cần chú ý."
-                meta={
-                    <>
-                        <StatusBadge status="completed" label={`${summaries.length} dự án`} tone="neutral" size="md" />
-                        <StatusBadge status="in_progress" label={`${kpis.activeProjects} đang thi công`} tone="info" size="md" />
-                        <StatusBadge status="warning" label={`${kpis.totalWasteOver} vượt hao hụt`} tone={kpis.totalWasteOver > 0 ? 'attention' : 'success'} size="md" />
-                        <StatusBadge status={kpis.totalProfit >= 0 ? 'completed' : 'warning'} label={`LN ${fmt(kpis.totalProfit)}`} tone={kpis.totalProfit >= 0 ? 'success' : 'danger'} size="md" />
-                    </>
-                }
-            />
-
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {[
-                    { label: 'Tổng dự án', value: kpis.totalProjects, sub: `${kpis.activeProjects} đang TC`, icon: <Building2 size={14} />, color: 'from-indigo-500 to-blue-500', textColor: 'text-indigo-600', link: '/da' },
-                    { label: 'Giá trị HĐ', value: fmt(kpis.totalContractValue), sub: '', icon: <DollarSign size={14} />, color: 'from-emerald-500 to-teal-500', textColor: 'text-emerald-600', link: '/da' },
-                    { label: 'Tổng chi', value: fmt(kpis.totalExpense), sub: `${((kpis.totalExpense / (kpis.totalContractValue || 1)) * 100).toFixed(1)}% HĐ`, icon: <TrendingDown size={14} />, color: 'from-orange-500 to-red-500', textColor: 'text-orange-600', link: '/da' },
-                    { label: 'Lợi nhuận', value: fmt(kpis.totalProfit), sub: `${((kpis.totalProfit / (kpis.totalContractValue || 1)) * 100).toFixed(1)}%`, icon: kpis.totalProfit >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />, color: kpis.totalProfit >= 0 ? 'from-green-500 to-emerald-500' : 'from-red-500 to-rose-500', textColor: kpis.totalProfit >= 0 ? 'text-emerald-600' : 'text-red-600', link: '/da' },
-                    { label: 'Tiến độ TB', value: `${kpis.avgProgress}%`, sub: kpis.totalWasteOver > 0 ? `⚠️ ${kpis.totalWasteOver} vượt HH` : '✅ OK', icon: <Activity size={14} />, color: 'from-violet-500 to-purple-500', textColor: 'text-violet-600', link: '/da' },
-                ].map((k, i) => (
-                    <div key={i} onClick={() => navigate(k.link)}
-                        className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider group-hover:text-indigo-500 transition-colors">{k.label}</span>
-                            <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${k.color} flex items-center justify-center text-white shadow-sm`}>{k.icon}</div>
-                        </div>
-                        <div className={`text-xl font-black ${k.textColor} dark:opacity-90`}>{k.value}</div>
-                        {k.sub && <div className="text-[10px] text-slate-400 mt-1 font-bold">{k.sub}</div>}
-                        <div className="text-[8px] text-slate-300 mt-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                            <ExternalLink size={7} /> Xem chi tiết
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-                {/* 1. Status Distribution */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-700 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white"><BarChart3 size={14} /></div>
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-200">Trạng thái Dự án</span>
-                    </div>
-                    <div className="p-4">
-                        {statusPie.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={240}>
-                                <PieChart>
-                                    <Pie data={statusPie} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={4}
-                                        dataKey="value" label={({ name, value }) => `${name}: ${value}`} labelLine={{ strokeWidth: 1 }}>
-                                        {statusPie.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                                    </Pie>
-                                    <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11, border: '1px solid #e2e8f0' }} />
-                                </PieChart>
-                            </ResponsiveContainer>
-                        ) : <EmptyChart text="Chưa có dữ liệu" />}
-                    </div>
-                </div>
-
-                {/* 2. Progress vs Expense */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-700 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-white"><Target size={14} /></div>
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-200">Tiến độ vs Chi phí (%)</span>
-                    </div>
-                    <div className="p-4">
-                        {progressVsExpense.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={240}>
-                                <ComposedChart data={progressVsExpense}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                    <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                                    <YAxis domain={[0, 120]} tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => `${v}%`} />
-                                    <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} formatter={(v: number) => `${v}%`} />
-                                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                                    <Bar dataKey="Tiến độ (%)" fill="#818cf8" radius={[4, 4, 0, 0]} barSize={24} />
-                                    <Line type="monotone" dataKey="Chi phí (%)" stroke="#f97316" strokeWidth={2.5} dot={{ r: 4, fill: '#f97316' }} />
-                                </ComposedChart>
-                            </ResponsiveContainer>
-                        ) : <EmptyChart text="Chưa có dữ liệu" />}
-                    </div>
-                </div>
-
-                {/* 3. Budget vs Actual */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden lg:col-span-2">
-                    <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-700 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white"><DollarSign size={14} /></div>
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-200">So sánh Ngân sách theo Dự án</span>
-                    </div>
-                    <div className="p-4">
-                        {budgetComparison.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={280}>
-                                <BarChart data={budgetComparison} barGap={3}>
-                                    <defs>
-                                        <linearGradient id="gradContract" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#818cf8" stopOpacity={0.9} />
-                                            <stop offset="100%" stopColor="#6366f1" stopOpacity={0.7} />
-                                        </linearGradient>
-                                        <linearGradient id="gradExpense" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#f97316" stopOpacity={0.9} />
-                                            <stop offset="100%" stopColor="#ea580c" stopOpacity={0.7} />
-                                        </linearGradient>
-                                        <linearGradient id="gradProfit" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="#34d399" stopOpacity={0.9} />
-                                            <stop offset="100%" stopColor="#10b981" stopOpacity={0.7} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => fmt(v)} />
-                                    <Tooltip formatter={(v: number) => fmt(v) + ' đ'} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 11 }} />
-                                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                                    <Bar dataKey="Giá trị HĐ" fill="url(#gradContract)" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="Chi phí" fill="url(#gradExpense)" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="Lợi nhuận" fill="url(#gradProfit)" radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        ) : <EmptyChart text="Chưa có dữ liệu" />}
-                    </div>
-                </div>
-
-                {/* 4. Profit Ranking */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-700 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-white"><TrendingUp size={14} /></div>
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-200">Xếp hạng Lợi nhuận (%)</span>
-                    </div>
-                    <div className="p-4">
-                        {profitRanking.length > 0 ? (
-                            <ResponsiveContainer width="100%" height={240}>
-                                <BarChart layout="vertical" data={profitRanking}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                    <XAxis type="number" tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={v => `${v}%`} />
-                                    <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 9, fill: '#64748b' }} />
-                                    <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} contentStyle={{ borderRadius: 12, fontSize: 11 }} />
-                                    <Bar dataKey="value" barSize={18} radius={[0, 4, 4, 0]}>
-                                        {profitRanking.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        ) : <EmptyChart text="Chưa có dữ liệu" />}
-                    </div>
-                </div>
-
-                {/* 5. Risk Heatmap */}
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                    <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-700 flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white"><Flame size={14} /></div>
-                        <span className="text-xs font-black text-slate-700 dark:text-slate-200">Ma trận Rủi ro</span>
-                        <span className="text-[9px] text-slate-400 ml-auto">X: Vượt NS • Y: Chậm TĐ</span>
-                    </div>
-                    <div className="p-4">
-                        {riskMatrix.length > 0 ? (
-                            <div>
-                                <ResponsiveContainer width="100%" height={200}>
-                                    <ScatterChart>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                        <XAxis type="number" dataKey="x" name="Vượt NS (%)" tick={{ fontSize: 9, fill: '#94a3b8' }} label={{ value: 'Vượt ngân sách (%)', fontSize: 9, fill: '#94a3b8', position: 'bottom' }} />
-                                        <YAxis type="number" dataKey="y" name="Chậm TĐ (%)" tick={{ fontSize: 9, fill: '#94a3b8' }} label={{ value: 'Chậm tiến độ', fontSize: 9, fill: '#94a3b8', angle: -90, position: 'insideLeft' }} />
-                                        <ZAxis type="number" dataKey="z" range={[60, 300]} />
-                                        <Tooltip cursor={{ strokeDasharray: '3 3' }}
-                                            content={({ payload }) => {
-                                                if (!payload || payload.length === 0) return null;
-                                                const d = payload[0].payload;
-                                                return (
-                                                    <div className="bg-white rounded-xl shadow-lg border border-slate-200 px-3 py-2 text-[10px]">
-                                                        <p className="font-black text-slate-700">{d.name}</p>
-                                                        <p className="text-slate-500">Vượt NS: {d.x.toFixed(1)}%</p>
-                                                        <p className="text-slate-500">Chậm TĐ: {d.y.toFixed(1)}%</p>
-                                                    </div>
-                                                );
-                                            }}
-                                        />
-                                        <Scatter data={riskMatrix}>
-                                            {riskMatrix.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                                        </Scatter>
-                                    </ScatterChart>
-                                </ResponsiveContainer>
-                                {/* Risk legend */}
-                                <div className="flex justify-center gap-4 mt-2">
-                                    {[
-                                        { color: '#34d399', label: 'An toàn' },
-                                        { color: '#f59e0b', label: 'Cảnh báo' },
-                                        { color: '#ef4444', label: 'Nguy hiểm' },
-                                    ].map(l => (
-                                        <div key={l.label} className="flex items-center gap-1">
-                                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: l.color }} />
-                                            <span className="text-[9px] font-bold text-slate-400">{l.label}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : <EmptyChart text="Chưa có dữ liệu" />}
-                    </div>
-                </div>
-            </div>
-
-            {/* Project Ranking Table */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-slate-50 dark:border-slate-700 flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center text-white"><Shield size={14} /></div>
-                    <span className="text-xs font-black text-slate-700 dark:text-slate-200">Bảng xếp hạng Dự án</span>
-                    <span className="text-[9px] text-slate-400 ml-auto">Nhấn tiêu đề cột để sắp xếp</span>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-slate-50/80 dark:bg-slate-700/30 text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest border-b border-slate-100 dark:border-slate-700">
-                                <th className="p-3 w-8">#</th>
-                                <th className="p-3">Dự án</th>
-                                <th className="p-3 text-center">Trạng thái</th>
-                                <th className="p-3 text-right cursor-pointer hover:text-slate-600 select-none" onClick={() => handleSort('contractValue')}>
-                                    Giá trị HĐ <SortIcon field="contractValue" />
-                                </th>
-                                <th className="p-3 text-right cursor-pointer hover:text-slate-600 select-none" onClick={() => handleSort('progressPercent')}>
-                                    Tiến độ <SortIcon field="progressPercent" />
-                                </th>
-                                <th className="p-3 text-right cursor-pointer hover:text-slate-600 select-none" onClick={() => handleSort('profit')}>
-                                    Lợi nhuận <SortIcon field="profit" />
-                                </th>
-                                <th className="p-3 text-center">HĐ</th>
-                                <th className="p-3 text-center">NCC</th>
-                                <th className="p-3 text-center">PO</th>
-                                <th className="p-3 text-center cursor-pointer hover:text-slate-600 select-none" onClick={() => handleSort('overduePayments')}>
-                                    ⚠️ <SortIcon field="overduePayments" />
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50 text-xs">
-                            {sortedSummaries.map((s, i) => {
-                                const stConfig = STATUS_CONFIG[s.status] || STATUS_CONFIG.planning;
-                                return (
-                                    <tr key={s.projectId} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors group cursor-pointer"
-                                        onClick={() => navigate('/da')}>
-                                        <td className="p-3 text-slate-400 font-bold">{i + 1}</td>
-                                        <td className="p-3">
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-[10px] font-black shrink-0 shadow-sm">
-                                                    {s.siteName.charAt(0).toUpperCase()}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 transition-colors flex items-center gap-1">
-                                                        {s.siteName}
-                                                        <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 text-indigo-400" />
-                                                    </div>
-                                                    {s.siteAddress && <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.siteAddress}</div>}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-3 text-center">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold border ${stConfig.bg} ${stConfig.color}`}>
-                                                {stConfig.label}
-                                            </span>
-                                        </td>
-                                        <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-300">{s.contractValue > 0 ? fmt(s.contractValue) + ' đ' : '—'}</td>
-                                        <td className="p-3 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <div className="w-16 h-1.5 bg-slate-100 dark:bg-slate-600 rounded-full overflow-hidden">
-                                                    <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all"
-                                                        style={{ width: `${Math.min(s.progressPercent, 100)}%` }} />
-                                                </div>
-                                                <span className="font-bold text-slate-600 dark:text-slate-400 w-8 text-right">{s.progressPercent}%</span>
-                                            </div>
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            <span className={`font-black ${s.profit >= 0 ? 'text-emerald-600' : 'text-red-500'} flex items-center justify-end gap-0.5`}>
-                                                {s.profit >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
-                                                {fmt(s.profit)} đ
-                                            </span>
-                                            <span className={`text-[9px] ${s.profitPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{s.profitPercent.toFixed(1)}%</span>
-                                        </td>
-                                        <td className="p-3 text-center text-slate-500">{s.contractCount}</td>
-                                        <td className="p-3 text-center text-slate-500">{s.vendorCount}</td>
-                                        <td className="p-3 text-center text-slate-500">{s.poCount}</td>
-                                        <td className="p-3 text-center">
-                                            {s.overduePayments > 0 ? (
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-50 border border-red-200 text-red-600 text-[9px] font-bold">
-                                                    <AlertTriangle size={9} /> {s.overduePayments}
-                                                </span>
-                                            ) : (
-                                                <CheckCircle2 size={12} className="mx-auto text-emerald-400" />
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
+  const { user } = useAuth();
+  return <PortfolioDashboardContent actorId={user?.id} />;
 };
-
-const EmptyChart = ({ text }: { text: string }) => (
-    <div className="h-[200px] flex items-center justify-center text-xs text-slate-300 font-bold">{text}</div>
-);
 
 export default PortfolioDashboard;

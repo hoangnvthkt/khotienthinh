@@ -2694,8 +2694,15 @@ export interface CashFund {
 }
 
 export type DocumentTraceNodeType =
+  | 'project_task'
+  | 'boq_work_item'
+  | 'material_budget_line'
+  | 'material_plan'
+  | 'material_plan_line'
   | 'material_request'
   | 'purchase_order'
+  | 'purchase_delivery_batch'
+  | 'quality_check'
   | 'wms_transaction'
   | 'supplier_contract'
   | 'supplier_direct_delivery_note'
@@ -2762,6 +2769,10 @@ export interface DocumentTraceEdge {
 export interface DocumentTraceGraph {
   nodes: DocumentTraceNode[];
   edges: DocumentTraceEdge[];
+  completeness?: {
+    financeRestricted: boolean;
+    hasInferredHistory: boolean;
+  };
 }
 
 export interface ProjectVendor {
