@@ -35,13 +35,13 @@ describe('G3 BOQ material planning UI contract', () => {
     expect(tree).toContain('aria-label={`Nơi nhận cho ${line.itemName}`}');
   });
 
-  it('renders price only behind the server capability and has no save or request command', () => {
+  it('renders price only behind the server capability and keeps direct PO creation out', () => {
     const tree = read('components/project/material/BoqMaterialTree.tsx');
     const workspace = read('components/project/material/BoqMaterialPlanningWorkspace.tsx');
     const preview = read('components/project/material/BoqMaterialPlanPreview.tsx');
     expect(tree).toContain('canViewPrice &&');
     expect(workspace).toContain('Xem preview');
-    expect(preview).toContain('Chưa lưu kế hoạch / chưa tạo MR');
-    expect(`${workspace}\n${preview}`).not.toMatch(/syncFrom|create_material_request|onCreateRequest|savePlan|submitPlan/);
+    expect(preview).toContain('Chưa tạo MR');
+    expect(`${workspace}\n${preview}`).not.toMatch(/syncFrom|create_material_request|onCreatePo/);
   });
 });

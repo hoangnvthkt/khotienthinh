@@ -1124,6 +1124,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             });
     }, [hydrateProjectRequestDetail]);
 
+    const openMaterialPlanRequest = useCallback(async (requestId: string) => {
+        try {
+            const request = await materialRequestService.getById(requestId);
+            if (!request) {
+                toast.error('Không tìm thấy MR', 'Phiếu có thể đã thay đổi hoặc bạn không còn quyền xem.');
+                return;
+            }
+            upsertProjectRequest(request);
+            openProjectRequestDetail(request);
+        } catch (error) {
+            console.warn('Failed to open material-plan request:', error);
+            toast.error('Không thể mở MR', 'Hãy kiểm tra quyền Yêu cầu vật tư và thử lại.');
+        }
+    }, [openProjectRequestDetail, toast]);
+
     const performRequestTransition = async (params: {
         request: MaterialRequest;
         toStep: MaterialRequestWorkflowStep;
@@ -2924,6 +2939,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                             projectId={projectId || null}
                             constructionSiteId={constructionSiteId || null}
                             defaultDestination={siteName || ''}
+                            defaultSiteWarehouseId={defaultSiteWarehouseId}
+                            canManage={canEditPlanning}
+                            onOpenRequest={openMaterialPlanRequest}
                         />
                     </React.Suspense>
                     <section aria-label="Dự báo tham khảo" className="space-y-3">
