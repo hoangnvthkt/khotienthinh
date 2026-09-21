@@ -80,21 +80,21 @@ insert into public.material_budget_items(
 
 insert into public.material_issue_orders(
   id, issue_no, project_id, source_warehouse_id, recipient_type, recipient_name,
-  status, created_by, issued_by, issued_at
+  status, material_request_id, created_by, issued_by, issued_at
 ) select '31000000-0000-4000-8000-000000000001', 'G3-ISSUE-1', 'g3-project', 'g3-warehouse',
-  'manual', 'G3 recipient', 'issued', price_id, price_id, now() from g3_boq_ids;
+  'manual', 'G3 recipient', 'issued', null, price_id, price_id, now() from g3_boq_ids;
 insert into public.material_issue_lines(
   issue_order_id, item_id, sku_snapshot, item_name_snapshot, unit,
   requested_qty, approved_qty, issued_qty, received_qty, returned_qty,
-  consumed_qty, lost_qty, unit_price, material_budget_item_id, work_boq_item_id
+  consumed_qty, lost_qty, unit_price, material_budget_item_id, material_request_line_id, work_boq_item_id
 ) values
   ('31000000-0000-4000-8000-000000000001', 'g3-steel', 'STEEL', 'Steel', 'kg',
-    70, 70, 70, 70, 10, 0, 0, 10, 'g3-budget-a', 'g3-work-a'),
+    70, 70, 70, 70, 10, 0, 0, 10, 'g3-budget-a', 'g3-line-pending', 'g3-work-a'),
   ('31000000-0000-4000-8000-000000000001', 'g3-cement', 'CEMENT', 'Cement', 'bag',
-    5, 5, 5, 5, 0, 0, 0, 20, null, null);
+    5, 5, 5, 5, 0, 0, 0, 20, null, null, null);
 
 insert into app_private.material_request_code_registry(code)
-values ('MR-2026-9001'), ('MR-2026-9002'), ('MR-2026-9003'), ('MR-2026-9004');
+values ('MR-2026-9001'), ('MR-2026-9002'), ('MR-2026-9003'), ('MR-2026-9004'), ('MR-2026-9005');
 insert into public.requests(
   id, code, title, site_warehouse_id, requester_id, status, items,
   created_date, expected_date, project_id, request_origin, fulfillment_mode
@@ -110,8 +110,13 @@ cross join (values
   ('g3-mr-pending', 'MR-2026-9001', 'PENDING', 'g3-line-pending', 'g3-steel', 'kg', 10::numeric, 'g3-work-a', 'g3-budget-a'),
   ('g3-mr-approved', 'MR-2026-9002', 'APPROVED', 'g3-line-approved', 'g3-steel', 'kg', 15::numeric, 'g3-work-b', 'g3-budget-b'),
   ('g3-mr-transit', 'MR-2026-9003', 'IN_TRANSIT', 'g3-line-transit', 'g3-steel', 'kg', 5::numeric, 'g3-work-b', 'g3-budget-b'),
-  ('g3-mr-legacy', 'MR-2026-9004', 'PENDING', 'g3-line-legacy', 'g3-cement', 'bag', 4::numeric, null, null)
+  ('g3-mr-legacy', 'MR-2026-9004', 'PENDING', 'g3-line-legacy', 'g3-cement', 'bag', 4::numeric, null, null),
+  ('g3-mr-pending-duplicate', 'MR-2026-9005', 'PENDING', 'g3-line-pending', 'g3-steel', 'kg', 10::numeric, 'g3-work-a', 'g3-budget-a')
 ) fixture(request_id, request_code, request_status, line_id, item_id, unit_name, quantity, work_id, budget_id);
+
+update public.material_issue_orders
+set material_request_id = 'g3-mr-pending'
+where id = '31000000-0000-4000-8000-000000000001';
 
 insert into public.procurement_demands(
   owner_context_id, source_document_id, current_source_revision_id,
@@ -152,8 +157,12 @@ do $$
 declare
   v_root jsonb;
   v_next jsonb;
+  v_third jsonb;
   v_unallocated jsonb;
   v_child jsonb;
+  v_search_root jsonb;
+  v_search_child jsonb;
+  v_changed jsonb;
   v_line jsonb;
 begin
   v_root := public.list_boq_material_planning_v1('g3-project', null, null, null, 1, null, null);
@@ -176,6 +185,15 @@ begin
     raise exception 'G3_BALANCE_INVALID: %', v_line;
   end if;
 
+  update public.material_budget_items set budget_qty = 101 where id = 'g3-budget-a';
+  v_changed := public.list_boq_material_planning_v1(
+    'g3-project', null, null, null, 1, null, (v_root ->> 'asOf')::timestamptz
+  );
+  if v_changed ->> 'metricVersion' = v_root ->> 'metricVersion' then
+    raise exception 'G3_METRIC_VERSION_DID_NOT_CHANGE: % / %', v_root, v_changed;
+  end if;
+  update public.material_budget_items set budget_qty = 100 where id = 'g3-budget-a';
+
   v_next := public.list_boq_material_planning_v1(
     'g3-project', null, null, null, 1, v_root ->> 'nextCursor', (v_root ->> 'asOf')::timestamptz
   );
@@ -191,6 +209,14 @@ begin
     raise exception 'G3_OPEN_BUCKET_INVALID: %', v_line;
   end if;
 
+  v_third := public.list_boq_material_planning_v1(
+    'g3-project', null, null, null, 1, v_next ->> 'nextCursor', (v_root ->> 'asOf')::timestamptz
+  );
+  if v_third #>> '{nodes,0,id}' <> '__unallocated__'
+     or v_third ->> 'nextCursor' is not null then
+    raise exception 'G3_UNALLOCATED_PAGINATION_INVALID: %', v_third;
+  end if;
+
   v_child := public.list_boq_material_planning_v1(
     'g3-project', null, 'g3-work-a', null, 50, null, (v_root ->> 'asOf')::timestamptz
   );
@@ -200,6 +226,17 @@ begin
      or not (v_line #> '{balance,blockingIssues}') ? 'boq_issue_allocation_missing'
      or not (v_line #> '{balance,blockingIssues}') ? 'boq_request_allocation_missing' then
     raise exception 'G3_UNKNOWN_ATTRIBUTION_INVALID: %', v_child;
+  end if;
+
+  v_search_root := public.list_boq_material_planning_v1(
+    'g3-project', null, null, 'Cement', 50, null, (v_root ->> 'asOf')::timestamptz
+  );
+  v_search_child := public.list_boq_material_planning_v1(
+    'g3-project', null, 'g3-work-a', 'Cement', 50, null, (v_root ->> 'asOf')::timestamptz
+  );
+  if v_search_root #>> '{nodes,0,id}' <> 'g3-work-a'
+     or v_search_child #>> '{nodes,0,id}' <> 'g3-work-child' then
+    raise exception 'G3_SEARCH_ANCESTOR_INVALID: % / %', v_search_root, v_search_child;
   end if;
 
   v_unallocated := public.list_boq_material_planning_v1(

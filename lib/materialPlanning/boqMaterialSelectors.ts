@@ -135,4 +135,3 @@ export function groupBoqTreePage(input: Omit<BoqMaterialTreePage, 'nodes'> & { n
   });
   return { ...input, nodes };
 }
-

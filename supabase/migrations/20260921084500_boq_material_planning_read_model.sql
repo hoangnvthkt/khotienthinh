@@ -41,7 +41,7 @@ begin
     p_actor, p_project_id, v_site, 'material_po', 'view'
   );
 
-  with
+  with recursive
   scoped_work as materialized (
     select work.id, work.parent_id, work.source_task_id, work.wbs_code, work.name,
       work.sort_order, work.created_at, work.updated_at,
@@ -73,6 +73,7 @@ begin
     join public.material_issue_orders issue on issue.id = line.issue_order_id
     join scoped_budget budget
       on budget.id = line.material_budget_item_id
+      and budget.work_boq_item_id is not distinct from line.work_boq_item_id
       and budget.item_id = line.item_id
       and budget.unit is not distinct from line.unit
     where issue.project_id = p_project_id
@@ -90,7 +91,9 @@ begin
       and issue.construction_site_id is not distinct from v_site
       and issue.status in ('issued', 'partially_received', 'received', 'settling', 'partially_returned', 'closed')
       and line.created_at <= v_as_of
-      and (budget.item_id is distinct from line.item_id or budget.unit is distinct from line.unit)
+      and (budget.work_boq_item_id is distinct from line.work_boq_item_id
+        or budget.item_id is distinct from line.item_id
+        or budget.unit is distinct from line.unit)
     group by line.material_budget_item_id
   ),
   unallocated_issue as materialized (
@@ -102,13 +105,18 @@ begin
       and issue.construction_site_id is not distinct from v_site
       and issue.status in ('issued', 'partially_received', 'received', 'settling', 'partially_returned', 'closed')
       and line.created_at <= v_as_of
-      and (budget.id is null or budget.item_id is distinct from line.item_id or budget.unit is distinct from line.unit)
+      and (budget.id is null
+        or budget.work_boq_item_id is distinct from line.work_boq_item_id
+        or budget.item_id is distinct from line.item_id
+        or budget.unit is distinct from line.unit)
       and line.issued_qty - line.returned_qty <> 0
     group by line.item_id, line.unit
   ),
   linked_issue_by_request_line as materialized (
-    select line.material_request_line_id request_line_id,
+    select issue.material_request_id request_id,
+      line.material_request_line_id request_line_id,
       line.material_budget_item_id budget_id,
+      line.work_boq_item_id work_id,
       sum(greatest(line.issued_qty - line.returned_qty, 0))::numeric(20,6) issued_net
     from public.material_issue_lines line
     join public.material_issue_orders issue on issue.id = line.issue_order_id
@@ -117,12 +125,13 @@ begin
       and issue.status in ('issued', 'partially_received', 'received', 'settling', 'partially_returned', 'closed')
       and nullif(line.material_request_line_id, '') is not null
       and line.created_at <= v_as_of
-    group by line.material_request_line_id, line.material_budget_item_id
+    group by issue.material_request_id, line.material_request_line_id,
+      line.material_budget_item_id, line.work_boq_item_id
   ),
   request_sources as materialized (
     select request.id request_id, request.status::text request_status,
       registry.source_line_id request_line_id, registry.item_id, registry.unit,
-      registry.material_budget_item_id budget_id,
+      registry.material_budget_item_id budget_id, registry.work_boq_item_id work_id,
       demand_line.requested_qty,
       demand_line.approved_qty,
       demand_line.intake_state,
@@ -150,8 +159,10 @@ begin
       on demand_line.demand_id = demand.id
       and demand_line.source_line_registry_id = registry.id
     left join linked_issue_by_request_line linked
-      on linked.request_line_id = registry.source_line_id
+      on linked.request_id = request.id
+      and linked.request_line_id = registry.source_line_id
       and linked.budget_id is not distinct from registry.material_budget_item_id
+      and linked.work_id is not distinct from registry.work_boq_item_id
     where request.project_id = p_project_id
       and request.construction_site_id is not distinct from v_site
       and request.request_origin = 'project'
@@ -170,6 +181,7 @@ begin
     from request_sources source
     join scoped_budget budget
       on budget.id = source.budget_id
+      and budget.work_boq_item_id is not distinct from source.work_id
       and budget.item_id = source.item_id
       and budget.unit = source.unit
     group by source.budget_id
@@ -179,6 +191,7 @@ begin
     from request_sources source
     left join scoped_budget budget
       on budget.id = source.budget_id
+      and budget.work_boq_item_id is not distinct from source.work_id
       and budget.item_id = source.item_id
       and budget.unit = source.unit
     where budget.id is null or source.blocking_issue is not null
@@ -241,7 +254,7 @@ begin
       or coalesce(work.name, '') ilike '%' || v_search || '%'
       or coalesce(work.wbs_code, '') ilike '%' || v_search || '%'
   ),
-  filtered_work as materialized (
+  matched_work as materialized (
     select work.*
     from scoped_work work
     where v_search is null
@@ -250,23 +263,46 @@ begin
       or coalesce(work.task_name, '') ilike '%' || v_search || '%'
       or exists (select 1 from filtered_lines line where line.work_boq_item_id = work.id)
   ),
+  work_filter_tree as (
+    select work.id, work.parent_id from matched_work work
+    union
+    select parent.id, parent.parent_id
+    from scoped_work parent
+    join work_filter_tree child on child.parent_id = parent.id
+  ),
+  filtered_work as materialized (
+    select work.*
+    from scoped_work work
+    join work_filter_tree included on included.id = work.id
+  ),
   work_page_candidates as materialized (
     select work.*, false synthetic
     from filtered_work work
     where p_parent_id is distinct from '__unallocated__'
       and work.parent_id is not distinct from nullif(p_parent_id, '')
       and (p_cursor is null or (work.sort_order, work.id) > (
-        coalesce((select cursor_work.sort_order from scoped_work cursor_work where cursor_work.id = p_cursor), -2147483648),
+        coalesce(
+          (select cursor_work.sort_order from scoped_work cursor_work where cursor_work.id = p_cursor),
+          case when p_cursor = '__unallocated__' then 2147483647 else -2147483648 end
+        ),
         p_cursor
       ))
     union all
     select '__unallocated__', null, null, null, 'Chưa phân bổ', 2147483647,
       v_as_of, v_as_of, null, null, null, null, true
-    where p_parent_id is null and p_cursor is null and (
-      exists (select 1 from filtered_lines line where line.work_boq_item_id is null)
-      or exists (select 1 from unallocated_issue)
-      or exists (select 1 from unallocated_request)
-    )
+    where p_parent_id is null
+      and (p_cursor is null or (2147483647, '__unallocated__') > (
+        coalesce(
+          (select cursor_work.sort_order from scoped_work cursor_work where cursor_work.id = p_cursor),
+          case when p_cursor = '__unallocated__' then 2147483647 else -2147483648 end
+        ),
+        p_cursor
+      ))
+      and (
+        exists (select 1 from filtered_lines line where line.work_boq_item_id is null)
+        or exists (select 1 from unallocated_issue)
+        or exists (select 1 from unallocated_request)
+      )
   ),
   work_page as materialized (
     select * from work_page_candidates order by sort_order, id limit v_limit + 1
@@ -289,14 +325,32 @@ begin
   version_source as (
     select encode(extensions.digest(concat_ws('|',
       p_project_id, coalesce(v_site, ''), v_as_of::text,
-      (select count(*) from scoped_work),
-      (select coalesce(max(updated_at)::text, '') from scoped_work),
-      (select count(*) from scoped_budget),
-      (select coalesce(max(created_at)::text, '') from scoped_budget),
-      (select count(*) from request_sources),
-      (select count(*) from exact_issue),
-      (select coalesce(max(content_revision)::text, '') from public.requests request
-        where request.project_id = p_project_id and request.construction_site_id is not distinct from v_site)
+      (select coalesce(string_agg(concat_ws(':',
+        work.id, coalesce(work.parent_id, ''), coalesce(work.source_task_id, ''),
+        coalesce(work.wbs_code, ''), work.name, work.sort_order::text, work.updated_at::text
+      ), '|' order by work.id), '') from scoped_work work),
+      (select coalesce(string_agg(concat_ws(':',
+        budget.id, coalesce(budget.work_boq_item_id, ''), coalesce(budget.item_id, ''),
+        coalesce(budget.sku, ''), budget.unit, budget.budget_qty::text,
+        coalesce(budget.budget_unit_price::text, ''), budget.created_at::text
+      ), '|' order by budget.id), '') from scoped_budget budget),
+      (select coalesce(string_agg(concat_ws(':',
+        exact.budget_id, exact.issued_net::text
+      ), '|' order by exact.budget_id), '') from exact_issue exact),
+      (select coalesce(string_agg(concat_ws(':',
+        mismatch.budget_id, mismatch.issue_count::text
+      ), '|' order by mismatch.budget_id), '') from issue_mismatch mismatch),
+      (select coalesce(string_agg(concat_ws(':',
+        coalesce(unallocated.item_id, ''), coalesce(unallocated.unit, ''), unallocated.issue_count::text
+      ), '|' order by unallocated.item_id, unallocated.unit), '') from unallocated_issue unallocated),
+      (select coalesce(string_agg(concat_ws(':',
+        source.request_id, source.request_line_id, coalesce(source.budget_id, ''),
+        coalesce(source.work_id, ''), coalesce(source.item_id, ''), coalesce(source.unit, ''), source.request_status,
+        coalesce(source.requested_qty::text, ''), coalesce(source.approved_qty::text, ''),
+        coalesce(source.intake_state, ''), coalesce(source.health_state, ''),
+        coalesce(source.blocking_issue, ''), source.issued_net::text
+      ), '|' order by source.request_id, source.request_line_id, source.budget_id), '')
+        from request_sources source)
     ), 'sha256'), 'hex') value
   ),
   line_json as (
@@ -427,4 +481,3 @@ revoke all on function public.list_boq_material_planning_v1(
 grant execute on function public.list_boq_material_planning_v1(
   text, text, text, text, integer, text, timestamptz
 ) to authenticated, service_role;
-

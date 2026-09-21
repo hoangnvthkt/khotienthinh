@@ -112,4 +112,3 @@ export interface BoqMaterialPlanPreview {
   groups: BoqMaterialPlanPreviewGroup[];
   sourceLineCount: number;
 }
-

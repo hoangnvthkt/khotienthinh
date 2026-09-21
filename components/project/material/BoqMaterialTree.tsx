@@ -208,7 +208,7 @@ const TreeLevel = ({
         </div>
         {props.loadingParents.has(node.id) && <span className="text-[10px] font-bold text-blue-600">Đang tải…</span>}
       </div>
-      {node.materials.map(line => (
+      {(node.synthetic !== 'unallocated' || isExpanded) && node.materials.map(line => (
         <MaterialLine
           key={line.id}
           line={line}

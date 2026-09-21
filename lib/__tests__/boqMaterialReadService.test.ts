@@ -87,6 +87,19 @@ describe('boqMaterialReadService', () => {
       .resolves.toMatchObject({ nodes: [], nextCursor: null });
   });
 
+  it('accepts an unallocated-only result without counting its synthetic node as work', async () => {
+    mocks.rpc.mockResolvedValue({ data: page({
+      nodes: [{
+        ...page().nodes[0], id: '__unallocated__', taskId: null, wbsCode: null,
+        name: 'Chưa phân bổ', synthetic: 'unallocated', materials: [material({ workBoqItemId: null, taskId: null })],
+      }],
+      totals: { workNodeCount: 0, materialLineCount: 1, selectableLineCount: 1, unallocatedEffectCount: 1 },
+    }), error: null });
+
+    await expect(boqMaterialReadService.listPage({ projectId: 'project-1', constructionSiteId: 'site-1' }))
+      .resolves.toMatchObject({ nodes: [{ id: '__unallocated__' }], totals: { workNodeCount: 0 } });
+  });
+
   it.each([
     ['missing asOf', page({ asOf: null })],
     ['missing metric version', page({ metricVersion: '' })],

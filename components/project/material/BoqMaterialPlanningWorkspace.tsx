@@ -51,6 +51,24 @@ const flattenLines = (
   return lines;
 };
 
+const mergeUnallocatedNode = (
+  current: BoqMaterialTreeNode,
+  loaded: BoqMaterialTreeNode,
+  append: boolean,
+): BoqMaterialTreeNode => {
+  const materials = append
+    ? [...current.materials, ...loaded.materials.filter(line => !current.materials.some(row => row.id === line.id))]
+    : loaded.materials;
+  const unitCounts = new Map<string, number>();
+  materials.forEach(line => unitCounts.set(line.unit, (unitCounts.get(line.unit) || 0) + 1));
+  return {
+    ...loaded,
+    childCount: current.childCount,
+    materials,
+    quantityGroups: [...unitCounts].map(([unit, lineCount]) => ({ unit, lineCount })),
+  };
+};
+
 const errorCode = (error: unknown): string => {
   if (!error || typeof error !== 'object') return '';
   return String((error as { code?: unknown; message?: unknown }).code
@@ -118,7 +136,9 @@ export const BoqMaterialPlanningWorkspace: React.FC<BoqMaterialPlanningWorkspace
         if (loaded) {
           setRootPage(current => current ? {
             ...current,
-            nodes: current.nodes.map(node => node.id === parentId ? loaded : node),
+            nodes: current.nodes.map(node => node.id === parentId
+              ? mergeUnallocatedNode(node, loaded, append)
+              : node),
           } : current);
         }
       } else {
@@ -175,6 +195,8 @@ export const BoqMaterialPlanningWorkspace: React.FC<BoqMaterialPlanningWorkspace
     setSelected(new Set());
     setDrafts({});
   }, [constructionSiteId, projectId]);
+
+  useEffect(() => setVersionNotice(false), [constructionSiteId, projectId, search]);
 
   const allLines = useMemo(
     () => flattenLines(rootPage?.nodes || [], childrenByParent),

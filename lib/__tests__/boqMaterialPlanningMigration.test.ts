@@ -30,6 +30,16 @@ describe('BOQ material planning read model migration', () => {
     expect(sql).not.toMatch(/lower\([^)]*item_name[^)]*\)\s*=/);
   });
 
+  it('requires budget, work, item and unit identities to agree', () => {
+    expect(sql).toMatch(/budget\.work_boq_item_id is not distinct from line\.work_boq_item_id/);
+    expect(sql).toMatch(/budget\.work_boq_item_id is not distinct from source\.work_id/);
+  });
+
+  it('scopes issued-request subtraction by both request and line identity', () => {
+    expect(sql).toMatch(/issue\.material_request_id request_id[\s\S]+line\.material_request_line_id request_line_id/);
+    expect(sql).toMatch(/linked\.request_id = request\.id[\s\S]+linked\.request_line_id = registry\.source_line_id/);
+  });
+
   it('returns decimal strings, whole-filter totals and a stable page cursor', () => {
     expect(sql).toContain("'metricversion'");
     expect(sql).toContain("'nextcursor'");
@@ -37,6 +47,24 @@ describe('BOQ material planning read model migration', () => {
     expect(sql).toContain("'unallocatedeffectcount'");
     expect(sql).toContain('::text');
     expect(sql).toContain('p_cursor');
+  });
+
+  it('versions contributing quantities and identities rather than counts alone', () => {
+    const versionSource = sql.match(/version_source as \([\s\S]+?\n  \),\n  line_json as/)?.[0] || '';
+    expect(versionSource).toContain('string_agg');
+    expect(versionSource).toContain('budget_qty');
+    expect(versionSource).toContain('issued_net');
+    expect(versionSource).toContain('request_status');
+  });
+
+  it('keeps the synthetic unallocated node reachable after paginated work nodes', () => {
+    expect(sql).toMatch(/select '__unallocated__'[\s\S]+p_cursor is null or \(2147483647, '__unallocated__'/);
+    expect(sql).toContain("when p_cursor = '__unallocated__' then 2147483647");
+  });
+
+  it('retains the ancestor path when search matches only a child work or material', () => {
+    expect(sql).toContain('with recursive');
+    expect(sql).toMatch(/matched_work as materialized[\s\S]+work_filter_tree as \([\s\S]+join work_filter_tree child/);
   });
 
   it('does not grant new direct table access', () => {

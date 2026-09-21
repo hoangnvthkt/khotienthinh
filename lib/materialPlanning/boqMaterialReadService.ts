@@ -157,7 +157,8 @@ const mapPage = (value: unknown, input: ListBoqMaterialPageInput): BoqMaterialTr
   const nodes = array(source.nodes, 'BOQ_PLANNING_NODES_INVALID').map(item => mapNode(item, canViewPrice));
   const totals = mapTotals(source.totals);
   const materialCount = nodes.reduce((count, node) => count + node.materials.length, 0);
-  if (nodes.length > totals.workNodeCount || materialCount > totals.materialLineCount) {
+  const workNodeCount = nodes.filter(node => node.synthetic !== 'unallocated').length;
+  if (workNodeCount > totals.workNodeCount || materialCount > totals.materialLineCount) {
     fail('BOQ_PLANNING_TOTALS_MISMATCH');
   }
   return groupBoqTreePage({
