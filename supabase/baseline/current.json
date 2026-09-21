@@ -106,7 +106,8 @@
     "20260920081244_procurement_identity_revision_registry.sql",
     "20260920082411_procurement_revisioned_demand_intake.sql",
     "20260920083241_procurement_quantity_allocation.sql",
-    "20260920155632_procurement_identity_authorization.sql"
+    "20260920155632_procurement_identity_authorization.sql",
+    "20260921084500_boq_material_planning_read_model.sql"
   ],
   "forbidIncludeAll": true
 }
