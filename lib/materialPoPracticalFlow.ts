@@ -2,34 +2,40 @@ import type { PurchaseMode } from '../types';
 
 export interface MaterialPoVarianceInput {
   orderedQty: number;
-  deliveredQty: number;
+  documentedQty: number;
+  countedQty: number;
   acceptedQty: number;
-  deliveredStockQty: number;
+  documentedStockQty: number;
+  countedStockQty: number;
   acceptedStockQty: number;
 }
 
 export interface MaterialPoVariance {
-  deliveryVarianceQty: number;
-  rejectedPurchaseQty: number;
-  rejectedStockQty: number;
+  documentVarianceQty: number;
+  physicalVarianceQty: number;
+  custodyPurchaseQty: number;
+  custodyStockQty: number;
 }
 
 export type MaterialPoCompletion = 'open' | 'partial' | 'delivered';
 
 const QUANTITY_LABELS: Record<keyof MaterialPoVarianceInput, string> = {
   orderedQty: 'Số lượng đặt',
-  deliveredQty: 'Số lượng giao thực tế',
-  acceptedQty: 'Số lượng chấp nhận',
-  deliveredStockQty: 'Số lượng giao theo đơn vị tồn kho',
-  acceptedStockQty: 'Số lượng nhập kho',
+  documentedQty: 'Số lượng trên chứng từ nhà cung cấp',
+  countedQty: 'Số lượng đếm/cân thực tế',
+  acceptedQty: 'Số lượng đạt',
+  documentedStockQty: 'Số lượng chứng từ theo đơn vị kho',
+  countedStockQty: 'Số lượng đếm/cân theo đơn vị kho',
+  acceptedStockQty: 'Số lượng đạt theo đơn vị kho',
 };
 
 export const getMaterialPoVariance = (
   input: MaterialPoVarianceInput,
 ): MaterialPoVariance => ({
-  deliveryVarianceQty: input.deliveredQty - input.orderedQty,
-  rejectedPurchaseQty: input.deliveredQty - input.acceptedQty,
-  rejectedStockQty: input.deliveredStockQty - input.acceptedStockQty,
+  documentVarianceQty: input.documentedQty - input.orderedQty,
+  physicalVarianceQty: Number((input.countedQty - input.documentedQty).toFixed(6)),
+  custodyPurchaseQty: Number((input.countedQty - input.acceptedQty).toFixed(6)),
+  custodyStockQty: Number((input.countedStockQty - input.acceptedStockQty).toFixed(6)),
 });
 
 export const requiresMaterialPoVarianceReason = (
@@ -48,12 +54,12 @@ export const assertMaterialPoPhysicalQuantities = (
     }
   }
 
-  if (input.acceptedQty > input.deliveredQty) {
-    throw new Error('Số lượng chấp nhận không được lớn hơn số lượng giao thực tế.');
+  if (input.acceptedQty > input.countedQty) {
+    throw new Error('Số lượng đạt không được lớn hơn số lượng đếm/cân thực tế.');
   }
 
-  if (input.acceptedStockQty > input.deliveredStockQty) {
-    throw new Error('Số lượng nhập kho không được lớn hơn số lượng giao theo đơn vị tồn kho.');
+  if (input.acceptedStockQty > input.countedStockQty) {
+    throw new Error('Số lượng đạt theo đơn vị kho không được lớn hơn số lượng đếm/cân.');
   }
 };
 

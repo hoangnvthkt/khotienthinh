@@ -11,15 +11,37 @@ describe('materialPoPracticalFlow', () => {
     expect(
       getMaterialPoVariance({
         orderedQty: 100,
-        deliveredQty: 95,
+        documentedQty: 98.5,
+        countedQty: 98.2,
         acceptedQty: 90,
-        deliveredStockQty: 95,
+        documentedStockQty: 98.5,
+        countedStockQty: 98.2,
         acceptedStockQty: 89,
       }),
     ).toEqual({
-      deliveryVarianceQty: -5,
-      rejectedPurchaseQty: 5,
-      rejectedStockQty: 6,
+      documentVarianceQty: -1.5,
+      physicalVarianceQty: -0.3,
+      custodyPurchaseQty: 8.2,
+      custodyStockQty: 9.2,
+    });
+  });
+
+  it('keeps supplier document, physical count, acceptance and custody separate', () => {
+    expect(
+      getMaterialPoVariance({
+        orderedQty: 100,
+        documentedQty: 98.5,
+        countedQty: 98.2,
+        acceptedQty: 98,
+        documentedStockQty: 98.5,
+        countedStockQty: 98.2,
+        acceptedStockQty: 98,
+      }),
+    ).toEqual({
+      documentVarianceQty: -1.5,
+      physicalVarianceQty: -0.3,
+      custodyPurchaseQty: 0.2,
+      custodyStockQty: 0.2,
     });
   });
 
@@ -27,9 +49,11 @@ describe('materialPoPracticalFlow', () => {
     expect(
       requiresMaterialPoVarianceReason({
         orderedQty: 100,
-        deliveredQty: 100,
+        documentedQty: 100,
+        countedQty: 100,
         acceptedQty: 100,
-        deliveredStockQty: 100,
+        documentedStockQty: 100,
+        countedStockQty: 100,
         acceptedStockQty: 100,
       }),
     ).toBe(false);
@@ -37,9 +61,11 @@ describe('materialPoPracticalFlow', () => {
     expect(
       requiresMaterialPoVarianceReason({
         orderedQty: 100,
-        deliveredQty: 103,
+        documentedQty: 103,
+        countedQty: 102,
         acceptedQty: 102,
-        deliveredStockQty: 103,
+        documentedStockQty: 103,
+        countedStockQty: 102,
         acceptedStockQty: 101,
       }),
     ).toBe(true);
@@ -49,24 +75,28 @@ describe('materialPoPracticalFlow', () => {
     expect(() =>
       assertMaterialPoPhysicalQuantities({
         orderedQty: 100,
-        deliveredQty: 95,
+        documentedQty: 95,
+        countedQty: 95,
         acceptedQty: 96,
-        deliveredStockQty: 95,
+        documentedStockQty: 95,
+        countedStockQty: 95,
         acceptedStockQty: 95,
       }),
-    ).toThrow('Số lượng chấp nhận không được lớn hơn số lượng giao thực tế.');
+    ).toThrow('Số lượng đạt không được lớn hơn số lượng đếm/cân thực tế.');
   });
 
   it('rejects an accepted stock quantity greater than delivered stock quantity', () => {
     expect(() =>
       assertMaterialPoPhysicalQuantities({
         orderedQty: 100,
-        deliveredQty: 95,
+        documentedQty: 95,
+        countedQty: 95,
         acceptedQty: 95,
-        deliveredStockQty: 95,
+        documentedStockQty: 95,
+        countedStockQty: 95,
         acceptedStockQty: 96,
       }),
-    ).toThrow('Số lượng nhập kho không được lớn hơn số lượng giao theo đơn vị tồn kho.');
+    ).toThrow('Số lượng đạt theo đơn vị kho không được lớn hơn số lượng đếm/cân.');
   });
 
   it('completes a single-delivery PO after its one receipt regardless of shortage', () => {

@@ -115,9 +115,11 @@ describe('actual PO receipt contract', () => {
       p_lines: [{
         deliveryLineId: 'delivery-line-1',
         itemId: 'item-1',
-        deliveredPurchaseQty: 9.5,
+        documentedPurchaseQty: 9.5,
+        countedPurchaseQty: 9.5,
         acceptedPurchaseQty: 9.5,
-        deliveredStockQty: 68.4,
+        documentedStockQty: 68.4,
+        countedStockQty: 68.4,
         acceptedStockQty: 68.4,
         varianceReason: 'NCC giao thiếu',
       }],

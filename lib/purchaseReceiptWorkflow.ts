@@ -20,9 +20,11 @@ export const getPurchaseReceiptStep = (
 export interface PurchaseReceiptQuantityLine {
   index: number;
   quantity: number;
-  deliveredPurchaseQty?: number;
+  documentedPurchaseQty?: number;
+  countedPurchaseQty?: number;
   acceptedPurchaseQty?: number;
-  deliveredStockQty?: number;
+  documentedStockQty?: number;
+  countedStockQty?: number;
   acceptedStockQty?: number;
   reason: string;
 }
@@ -40,7 +42,8 @@ export const buildPurchaseReceiptQualityPayloadFromTransaction = (
   const lines = transaction.items.map((item, index): MaterialPoQualityLineInput => {
     const draft = lineByIndex.get(index);
     const acceptedStockQty = Number(draft?.acceptedStockQty ?? draft?.quantity ?? item.quantity ?? 0);
-    const deliveredStockQty = Number(draft?.deliveredStockQty ?? acceptedStockQty);
+    const documentedStockQty = Number(draft?.documentedStockQty ?? acceptedStockQty);
+    const countedStockQty = Number(draft?.countedStockQty ?? documentedStockQty);
     const stockBaselineQty = Number(item.quantity || 0);
     const purchaseBaselineQty = Number(item.accountingQty || stockBaselineQty);
     const acceptedPurchaseQty = Number(draft?.acceptedPurchaseQty ?? (
@@ -48,13 +51,16 @@ export const buildPurchaseReceiptQualityPayloadFromTransaction = (
         ? acceptedStockQty * (purchaseBaselineQty / stockBaselineQty)
         : acceptedStockQty
     ));
-    const deliveredPurchaseQty = Number(draft?.deliveredPurchaseQty ?? acceptedPurchaseQty);
+    const documentedPurchaseQty = Number(draft?.documentedPurchaseQty ?? acceptedPurchaseQty);
+    const countedPurchaseQty = Number(draft?.countedPurchaseQty ?? documentedPurchaseQty);
     const varianceReason = draft?.reason.trim() || null;
     const quantities = {
       orderedQty: purchaseBaselineQty,
-      deliveredQty: deliveredPurchaseQty,
+      documentedQty: documentedPurchaseQty,
+      countedQty: countedPurchaseQty,
       acceptedQty: acceptedPurchaseQty,
-      deliveredStockQty,
+      documentedStockQty,
+      countedStockQty,
       acceptedStockQty,
     };
     assertMaterialPoPhysicalQuantities(quantities);
@@ -64,9 +70,11 @@ export const buildPurchaseReceiptQualityPayloadFromTransaction = (
     return {
       deliveryLineId: item.purchaseOrderDeliveryLineId || '',
       itemId: item.itemId,
-      deliveredPurchaseQty,
+      documentedPurchaseQty,
+      countedPurchaseQty,
       acceptedPurchaseQty,
-      deliveredStockQty,
+      documentedStockQty,
+      countedStockQty,
       acceptedStockQty,
       varianceReason,
     };
@@ -82,9 +90,11 @@ export const buildPurchaseReceiptQualityPayloadFromTransaction = (
   const isFullReceipt = transaction.items.every((item, index) => {
     const draft = lineByIndex.get(index);
     const acceptedStockQty = Number(draft?.acceptedStockQty ?? draft?.quantity ?? item.quantity ?? 0);
-    const deliveredStockQty = Number(draft?.deliveredStockQty ?? acceptedStockQty);
-    return acceptedStockQty === deliveredStockQty
-      && deliveredStockQty === Number(item.orderedQty ?? item.quantity ?? 0);
+    const documentedStockQty = Number(draft?.documentedStockQty ?? acceptedStockQty);
+    const countedStockQty = Number(draft?.countedStockQty ?? documentedStockQty);
+    return acceptedStockQty === countedStockQty
+      && countedStockQty === documentedStockQty
+      && documentedStockQty === Number(item.orderedQty ?? item.quantity ?? 0);
   });
   return {
     qualityResult: isFullReceipt ? 'passed' : 'partial',

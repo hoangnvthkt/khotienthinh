@@ -40,9 +40,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   const { canManage } = usePermission();
   const toast = useToast();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const [deliveredPurchaseQuantities, setDeliveredPurchaseQuantities] = useState<Record<string, string>>({});
+  const [documentedPurchaseQuantities, setDocumentedPurchaseQuantities] = useState<Record<string, string>>({});
+  const [countedPurchaseQuantities, setCountedPurchaseQuantities] = useState<Record<string, string>>({});
   const [acceptedPurchaseQuantities, setAcceptedPurchaseQuantities] = useState<Record<string, string>>({});
-  const [deliveredStockQuantities, setDeliveredStockQuantities] = useState<Record<string, string>>({});
+  const [documentedStockQuantities, setDocumentedStockQuantities] = useState<Record<string, string>>({});
+  const [countedStockQuantities, setCountedStockQuantities] = useState<Record<string, string>>({});
   const [acceptedStockQuantities, setAcceptedStockQuantities] = useState<Record<string, string>>({});
   const [varianceReasons, setVarianceReasons] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -107,30 +109,40 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
   useEffect(() => {
     if (!po || !isOpen) return;
     const defaults: Record<string, string> = {};
-    const deliveredPurchaseDefaults: Record<string, string> = {};
+    const documentedPurchaseDefaults: Record<string, string> = {};
+    const countedPurchaseDefaults: Record<string, string> = {};
     const acceptedPurchaseDefaults: Record<string, string> = {};
-    const deliveredStockDefaults: Record<string, string> = {};
+    const documentedStockDefaults: Record<string, string> = {};
+    const countedStockDefaults: Record<string, string> = {};
     const acceptedStockDefaults: Record<string, string> = {};
     if (deliveryBatch) {
       deliveryBatch.lines.forEach(line => {
         const remainingQty = Math.max((Number(line.plannedQty) || 0) - (Number(line.acceptedQty) || 0), 0);
         defaults[line.id] = String(remainingQty);
         const isPendingQuality = transaction?.status === TransactionStatus.PENDING;
-        const deliveredPurchaseQty = isPendingQuality
+        const documentedPurchaseQty = isPendingQuality
           ? Number(line.plannedQty || 0)
           : Number(line.deliveredQty ?? line.acceptedQty ?? 0);
+        const countedPurchaseQty = isPendingQuality
+          ? documentedPurchaseQty
+          : Number(line.physicalCountedQty ?? documentedPurchaseQty);
         const acceptedPurchaseQty = isPendingQuality
-          ? deliveredPurchaseQty
-          : Number(line.acceptedQty ?? deliveredPurchaseQty);
-        const deliveredStockQty = isPendingQuality
+          ? countedPurchaseQty
+          : Number(line.acceptedQty ?? countedPurchaseQty);
+        const documentedStockQty = isPendingQuality
           ? Number(line.stockPlannedQty ?? line.plannedQty ?? 0)
           : Number(line.deliveredStockQty ?? line.acceptedStockQty ?? 0);
+        const countedStockQty = isPendingQuality
+          ? documentedStockQty
+          : Number(line.physicalCountedStockQty ?? documentedStockQty);
         const acceptedStockQty = isPendingQuality
-          ? deliveredStockQty
-          : Number(line.acceptedStockQty ?? deliveredStockQty);
-        deliveredPurchaseDefaults[line.id] = String(deliveredPurchaseQty);
+          ? countedStockQty
+          : Number(line.acceptedStockQty ?? countedStockQty);
+        documentedPurchaseDefaults[line.id] = String(documentedPurchaseQty);
+        countedPurchaseDefaults[line.id] = String(countedPurchaseQty);
         acceptedPurchaseDefaults[line.id] = String(acceptedPurchaseQty);
-        deliveredStockDefaults[line.id] = String(deliveredStockQty);
+        documentedStockDefaults[line.id] = String(documentedStockQty);
+        countedStockDefaults[line.id] = String(countedStockQty);
         acceptedStockDefaults[line.id] = String(acceptedStockQty);
       });
     } else {
@@ -140,9 +152,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
       });
     }
     setQuantities(defaults);
-    setDeliveredPurchaseQuantities(deliveredPurchaseDefaults);
+    setDocumentedPurchaseQuantities(documentedPurchaseDefaults);
+    setCountedPurchaseQuantities(countedPurchaseDefaults);
     setAcceptedPurchaseQuantities(acceptedPurchaseDefaults);
-    setDeliveredStockQuantities(deliveredStockDefaults);
+    setDocumentedStockQuantities(documentedStockDefaults);
+    setCountedStockQuantities(countedStockDefaults);
     setAcceptedStockQuantities(acceptedStockDefaults);
     setVarianceReasons({});
   }, [deliveryBatch, po, isOpen, transaction]);
@@ -164,16 +178,20 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     return line.remainingQty > 0 && (qty <= 0 || (qty !== line.remainingQty && !reason));
   });
   const qualityLines = isDeliveryReceipt ? lines.map(line => {
-    const deliveredPurchaseQty = parseQuantityInput(deliveredPurchaseQuantities[line.key]);
+    const documentedPurchaseQty = parseQuantityInput(documentedPurchaseQuantities[line.key]);
+    const countedPurchaseQty = parseQuantityInput(countedPurchaseQuantities[line.key]);
     const acceptedPurchaseQty = parseQuantityInput(acceptedPurchaseQuantities[line.key]);
-    const deliveredStockQty = parseQuantityInput(deliveredStockQuantities[line.key]);
+    const documentedStockQty = parseQuantityInput(documentedStockQuantities[line.key]);
+    const countedStockQty = parseQuantityInput(countedStockQuantities[line.key]);
     const acceptedStockQty = parseQuantityInput(acceptedStockQuantities[line.key]);
     const varianceReason = (varianceReasons[line.key] || '').trim() || null;
     const quantitiesInput = {
       orderedQty: Number(line.orderedQty || 0),
-      deliveredQty: deliveredPurchaseQty,
+      documentedQty: documentedPurchaseQty,
+      countedQty: countedPurchaseQty,
       acceptedQty: acceptedPurchaseQty,
-      deliveredStockQty,
+      documentedStockQty,
+      countedStockQty,
       acceptedStockQty,
     };
     let invalid = false;
@@ -186,9 +204,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
     return {
       deliveryLineId: line.deliveryLineId || '',
       itemId: line.itemId,
-      deliveredPurchaseQty,
+      documentedPurchaseQty,
+      countedPurchaseQty,
       acceptedPurchaseQty,
-      deliveredStockQty,
+      documentedStockQty,
+      countedStockQty,
       acceptedStockQty,
       varianceReason,
       invalid,
@@ -256,9 +276,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
           const qualityResult = qualityLines.every(line => line.acceptedPurchaseQty === 0)
             ? 'rejected'
             : qualityLines.every((line, index) => (
-              line.deliveredPurchaseQty === line.acceptedPurchaseQty
-              && line.deliveredStockQty === line.acceptedStockQty
-              && line.deliveredPurchaseQty === Number(lines[index]?.orderedQty || 0)
+              line.documentedPurchaseQty === line.countedPurchaseQty
+              && line.countedPurchaseQty === line.acceptedPurchaseQty
+              && line.documentedStockQty === line.countedStockQty
+              && line.countedStockQty === line.acceptedStockQty
+              && line.documentedPurchaseQty === Number(lines[index]?.orderedQty || 0)
             )) ? 'passed' : 'partial';
           const result = await purchaseReceiptService.approveQuality({
             deliveryBatchId: deliveryBatch.id,
@@ -333,7 +355,7 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-5">
           <div className="p-3 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-bold flex items-start gap-2">
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            Duyệt SL/CL ghi nhận số thực giao và số đạt. Chỉ bước Nhập kho kế tiếp mới cộng số thực nhập vào tồn kho thực tế.
+            Ghi lần lượt số trên chứng từ, số đếm/cân và số đạt. Phần đã đếm nhưng chưa đạt được giữ ở trạng thái chờ xử lý; chỉ số đạt mới được nhập tồn khả dụng.
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -392,9 +414,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                     const qualityLine = qualityLines.find(item => item.deliveryLineId === line.deliveryLineId);
                     const qualityHasVariance = qualityLine ? requiresMaterialPoVarianceReason({
                       orderedQty: line.orderedQty,
-                      deliveredQty: qualityLine.deliveredPurchaseQty,
+                      documentedQty: qualityLine.documentedPurchaseQty,
+                      countedQty: qualityLine.countedPurchaseQty,
                       acceptedQty: qualityLine.acceptedPurchaseQty,
-                      deliveredStockQty: qualityLine.deliveredStockQty,
+                      documentedStockQty: qualityLine.documentedStockQty,
+                      countedStockQty: qualityLine.countedStockQty,
                       acceptedStockQty: qualityLine.acceptedStockQty,
                     }) : false;
                     return (
@@ -414,12 +438,14 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                         <td className="p-4">
                           {isDeliveryReceipt ? (
                             <div className="space-y-2">
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
                                 {[
-                                  ['SL thực giao', deliveredPurchaseQuantities, setDeliveredPurchaseQuantities, line.purchaseUnit],
-                                  ['SL đạt chất lượng', acceptedPurchaseQuantities, setAcceptedPurchaseQuantities, line.purchaseUnit],
-                                  ['SL giao theo đơn vị kho', deliveredStockQuantities, setDeliveredStockQuantities, line.stockUnit],
-                                  ['SL thực nhập kho', acceptedStockQuantities, setAcceptedStockQuantities, line.stockUnit],
+                                  ['1. Chứng từ NCC', documentedPurchaseQuantities, setDocumentedPurchaseQuantities, line.purchaseUnit],
+                                  ['2. Đếm/cân thực tế', countedPurchaseQuantities, setCountedPurchaseQuantities, line.purchaseUnit],
+                                  ['3. Đạt chất lượng', acceptedPurchaseQuantities, setAcceptedPurchaseQuantities, line.purchaseUnit],
+                                  ['Chứng từ · ĐVT kho', documentedStockQuantities, setDocumentedStockQuantities, line.stockUnit],
+                                  ['Đếm/cân · ĐVT kho', countedStockQuantities, setCountedStockQuantities, line.stockUnit],
+                                  ['Đạt · ĐVT kho', acceptedStockQuantities, setAcceptedStockQuantities, line.stockUnit],
                                 ].map(([label, values, setter, unit]) => (
                                   <label key={label as string} className="block text-[9px] font-black uppercase text-slate-500">
                                     {label as string}
@@ -501,9 +527,11 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                 const qualityLine = qualityLines.find(item => item.deliveryLineId === line.deliveryLineId);
                 const qualityHasVariance = qualityLine ? requiresMaterialPoVarianceReason({
                   orderedQty: line.orderedQty,
-                  deliveredQty: qualityLine.deliveredPurchaseQty,
+                  documentedQty: qualityLine.documentedPurchaseQty,
+                  countedQty: qualityLine.countedPurchaseQty,
                   acceptedQty: qualityLine.acceptedPurchaseQty,
-                  deliveredStockQty: qualityLine.deliveredStockQty,
+                  documentedStockQty: qualityLine.documentedStockQty,
+                  countedStockQty: qualityLine.countedStockQty,
                   acceptedStockQty: qualityLine.acceptedStockQty,
                 }) : false;
                 return (
@@ -537,10 +565,12 @@ const ReceivePurchaseOrderModal: React.FC<ReceivePurchaseOrderModalProps> = ({
                       <div className="space-y-2 pt-1">
                         <div className="grid grid-cols-2 gap-2">
                           {[
-                            ['SL thực giao', deliveredPurchaseQuantities, setDeliveredPurchaseQuantities, line.purchaseUnit],
-                            ['SL đạt chất lượng', acceptedPurchaseQuantities, setAcceptedPurchaseQuantities, line.purchaseUnit],
-                            ['SL giao theo đơn vị kho', deliveredStockQuantities, setDeliveredStockQuantities, line.stockUnit],
-                            ['SL thực nhập kho', acceptedStockQuantities, setAcceptedStockQuantities, line.stockUnit],
+                            ['1. Chứng từ NCC', documentedPurchaseQuantities, setDocumentedPurchaseQuantities, line.purchaseUnit],
+                            ['2. Đếm/cân thực tế', countedPurchaseQuantities, setCountedPurchaseQuantities, line.purchaseUnit],
+                            ['3. Đạt chất lượng', acceptedPurchaseQuantities, setAcceptedPurchaseQuantities, line.purchaseUnit],
+                            ['Chứng từ · ĐVT kho', documentedStockQuantities, setDocumentedStockQuantities, line.stockUnit],
+                            ['Đếm/cân · ĐVT kho', countedStockQuantities, setCountedStockQuantities, line.stockUnit],
+                            ['Đạt · ĐVT kho', acceptedStockQuantities, setAcceptedStockQuantities, line.stockUnit],
                           ].map(([label, values, setter, unit]) => (
                             <label key={label as string} className="block text-[9px] font-black uppercase text-slate-500">
                               {label as string}

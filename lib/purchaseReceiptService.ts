@@ -5,9 +5,11 @@ import { supabase } from './supabase';
 export interface MaterialPoQualityLineInput {
   deliveryLineId: string;
   itemId: string;
-  deliveredPurchaseQty: number;
+  documentedPurchaseQty: number;
+  countedPurchaseQty: number;
   acceptedPurchaseQty: number;
-  deliveredStockQty: number;
+  documentedStockQty: number;
+  countedStockQty: number;
   acceptedStockQty: number;
   varianceReason?: string | null;
 }

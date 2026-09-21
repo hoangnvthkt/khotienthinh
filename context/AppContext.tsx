@@ -29,6 +29,7 @@ import { materialRequestBoqLineSnapshotService } from '../lib/materialRequestBoq
 import { materialRequestMaterialGroupSnapshotService } from '../lib/materialRequestMaterialGroupSnapshotService';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import { purchaseReceiptService } from '../lib/purchaseReceiptService';
+import { wmsTransferService } from '../lib/wmsTransferService';
 import {
   formatStockDecreaseIssues,
   getStockDecreaseIssues,
@@ -1844,7 +1845,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tx = transactions.find(t => t.id === id);
     if (!tx) throw new Error('Không tìm thấy phiếu kho cần cập nhật.');
 
-    if (status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED) {
+    if ((status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED)
+      && !(tx.type === TransactionType.TRANSFER && status === TransactionStatus.COMPLETED)) {
       assertTransactionStockAvailable(tx, {
         excludeTransactionId: id,
         actionLabel: status === TransactionStatus.APPROVED ? 'giữ chỗ' : 'xuất/trả kho',
@@ -1852,6 +1854,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (isSupabaseConfigured) {
+      if (tx.type === TransactionType.TRANSFER
+        && (status === TransactionStatus.APPROVED || status === TransactionStatus.COMPLETED)) {
+        const commandKey = `wms-transfer-${id}-${status.toLowerCase()}-v${tx.rowVersion || 1}`;
+        const result = status === TransactionStatus.APPROVED
+          ? await wmsTransferService.dispatch({
+            transactionId: id,
+            expectedVersion: tx.rowVersion || 1,
+            idempotencyKey: commandKey,
+          })
+          : await (async () => {
+            const progress = await wmsTransferService.listProgress(id);
+            const lines = progress
+              .filter(line => line.inTransitQty > 0)
+              .map(line => ({ transferLineId: line.id, quantity: line.inTransitQty }));
+            if (!lines.length) throw new Error('Phiếu chuyển kho không còn số lượng đang vận chuyển.');
+            return wmsTransferService.receive({
+              transactionId: id,
+              lines,
+              expectedVersion: tx.rowVersion || 1,
+              idempotencyKey: commandKey,
+            });
+          })();
+        const storedTx: Transaction = {
+          ...tx,
+          status: result.status,
+          rowVersion: result.rowVersion,
+          approverId: approverId || user.id,
+          approvedAt: approval?.approvedAt || new Date().toISOString(),
+          approvalNote: approval?.approvalNote || null,
+        };
+        setTransactions(prev => prev.map(candidate => candidate.id === id ? storedTx : candidate));
+        await refreshWmsRecords({ itemIds: getTransactionItemIds(storedTx, tx), transactionIds: [id] });
+        logActivity(
+          'TRANSACTION',
+          status === TransactionStatus.APPROVED ? 'Xuất chuyển kho' : 'Nhận chuyển kho',
+          `Phiếu mã ${id.slice(-6)} còn ${result.inTransitQty.toLocaleString('vi-VN')} đang chuyển`,
+          result.status === TransactionStatus.COMPLETED ? 'SUCCESS' : 'INFO',
+          tx.targetWarehouseId || tx.sourceWarehouseId,
+        );
+        return;
+      }
+
       if (status === TransactionStatus.COMPLETED && tx.sourceType === 'po_delivery_batch') {
         if (!tx.sourceId) throw new Error('Phiếu nhận PO thiếu mã Đợt giao.');
 

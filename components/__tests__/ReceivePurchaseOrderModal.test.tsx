@@ -9,11 +9,12 @@ const inventorySource = readFileSync(new URL('../../pages/Inventory.tsx', import
 const operationsSource = readFileSync(new URL('../../pages/Operations.tsx', import.meta.url), 'utf8');
 
 describe('ReceivePurchaseOrderModal practical flow', () => {
-  it('captures actual delivered, quality accepted, and stock quantities separately', () => {
-    expect(source).toContain("['SL thực giao'");
-    expect(source).toContain("['SL đạt chất lượng'");
-    expect(source).toContain("['SL giao theo đơn vị kho'");
-    expect(source).toContain("['SL thực nhập kho'");
+  it('captures documented, physically counted, accepted, and custody quantities separately', () => {
+    expect(source).toContain("['1. Chứng từ NCC'");
+    expect(source).toContain("['2. Đếm/cân thực tế'");
+    expect(source).toContain("['3. Đạt chất lượng'");
+    expect(source).toContain("['Đếm/cân · ĐVT kho'");
+    expect(source).toContain('Phần đã đếm nhưng chưa đạt được giữ ở trạng thái chờ xử lý');
   });
 
   it('uses a quality action for PENDING and a stock action for APPROVED', () => {

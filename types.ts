@@ -2826,9 +2826,13 @@ export interface PurchaseOrderDeliveryLine {
   itemId: string;
   plannedQty: number;
   deliveredQty?: number;
+  physicalCountedQty?: number;
   acceptedQty?: number;
   deliveredStockQty?: number;
+  physicalCountedStockQty?: number;
   acceptedStockQty?: number;
+  custodyQty?: number;
+  custodyStockQty?: number;
   returnedQty?: number;
   unit?: string | null;
   deliveryUnitPrice?: number;
@@ -3533,6 +3537,7 @@ export interface Transaction {
   relatedRequestId?: string; // Link to MaterialRequest
   pendingItems?: InventoryItem[]; // Full metadata for new items created during bulk import
   attachments?: WmsTransactionAttachment[];
+  rowVersion?: number;
 }
 
 export type WmsBusinessEventType =

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, CheckCircle, Loader2, AlertTriangle, Paperclip, ExternalLink, Download } from 'lucide-react';
 import { Transaction, TransactionStatus, TransactionType, WmsTransactionAttachment } from '../types';
 import { useApp } from '../context/AppContext';
@@ -13,6 +13,7 @@ import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { canEditTransactionVoucher } from '../lib/transactionVoucherMetadata';
 import { buildActualReceiptItems, validateReceiptQuantityLines } from '../lib/poActualReceipt';
+import { wmsTransferService, type WmsTransferProgressLine } from '../lib/wmsTransferService';
 import {
   cleanupTransactionAttachmentPaths,
   getTransactionAttachmentUrl,
@@ -39,6 +40,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [attachmentDrafts, setAttachmentDrafts] = useState<File[]>([]);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [attachmentLoadingId, setAttachmentLoadingId] = useState<string | null>(null);
+  const [transferProgress, setTransferProgress] = useState<WmsTransferProgressLine[]>([]);
+  const [transferReceiveDrafts, setTransferReceiveDrafts] = useState<Record<string, string>>({});
+  const [transferProgressState, setTransferProgressState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const transferReceiveCommandRef = useRef<{ signature: string; key: string } | null>(null);
 
   useEffect(() => {
     if (transactionProp) {
@@ -50,8 +55,31 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
       setVoucherNote(transactionProp.note || '');
       setAttachmentDrafts([]);
       setAttachmentUrls({});
+      transferReceiveCommandRef.current = null;
     }
   }, [transactionProp]);
+
+  useEffect(() => {
+    if (!isOpen || transactionProp?.type !== TransactionType.TRANSFER
+      || transactionProp.status !== TransactionStatus.APPROVED) {
+      setTransferProgress([]);
+      setTransferProgressState('idle');
+      return;
+    }
+    let active = true;
+    setTransferProgressState('loading');
+    void wmsTransferService.listProgress(transactionProp.id).then(lines => {
+      if (!active) return;
+      setTransferProgress(lines);
+      setTransferReceiveDrafts(Object.fromEntries(lines.map(line => [line.id, formatQuantityInput(line.inTransitQty)])));
+      setTransferProgressState('ready');
+    }).catch(error => {
+      if (!active) return;
+      logApiError('transactionDetail.transferProgress', error);
+      setTransferProgressState('error');
+    });
+    return () => { active = false; };
+  }, [isOpen, transactionProp?.id, transactionProp?.status, transactionProp?.type]);
 
   if (!isOpen || !localTransaction) return null;
 
@@ -72,6 +100,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const receiptStep = getPurchaseReceiptStep(transaction.status, transaction.sourceType);
   const canAdjustQuantities = !!actionMode
     && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER)
+    && transaction.type !== TransactionType.TRANSFER
     && (!isPoDeliveryTx || receiptStep === 'quality');
 
   const requester = users.find(u => u.id === transaction.requesterId);
@@ -216,6 +245,49 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           return;
         }
       }
+      if (latestTransaction.type === TransactionType.TRANSFER && actionMode === 'receipt') {
+        if (transferProgressState !== 'ready') throw new Error('Chưa tải được số lượng đang vận chuyển.');
+        const lines = transferProgress.map(line => ({
+          transferLineId: line.id,
+          quantity: parseQuantityInput(transferReceiveDrafts[line.id] ?? '0'),
+          maximum: line.inTransitQty,
+        })).filter(line => line.quantity > 0);
+        if (!lines.length || lines.some(line => line.quantity > line.maximum)) {
+          throw new Error('Số nhận phải lớn hơn 0 và không vượt số đang vận chuyển.');
+        }
+        const signature = JSON.stringify({
+          transactionId: latestTransaction.id,
+          expectedVersion: latestTransaction.rowVersion || 1,
+          lines: lines.map(({ transferLineId, quantity }) => ({ transferLineId, quantity })),
+        });
+        if (transferReceiveCommandRef.current?.signature !== signature) {
+          transferReceiveCommandRef.current = { signature, key: crypto.randomUUID() };
+        }
+        const result = await wmsTransferService.receive({
+          transactionId: latestTransaction.id,
+          lines: lines.map(({ transferLineId, quantity }) => ({ transferLineId, quantity })),
+          expectedVersion: latestTransaction.rowVersion || 1,
+          idempotencyKey: transferReceiveCommandRef.current.key,
+        });
+        transferReceiveCommandRef.current = null;
+        await refreshWmsRecords({
+          itemIds: latestTransaction.items.map(item => item.itemId),
+          transactionIds: [latestTransaction.id],
+        });
+        if (result.status === TransactionStatus.COMPLETED) {
+          onClose();
+          toast.success('Đã nhận đủ chuyển kho', 'Hàng đã được cộng vào kho đích đúng một lần.');
+          return;
+        }
+        const updated = { ...latestTransaction, status: result.status, rowVersion: result.rowVersion };
+        setLocalTransaction(updated);
+        onUpdated?.(updated);
+        const progress = await wmsTransferService.listProgress(latestTransaction.id);
+        setTransferProgress(progress);
+        setTransferReceiveDrafts(Object.fromEntries(progress.map(line => [line.id, formatQuantityInput(line.inTransitQty)])));
+        toast.success('Đã nhận một phần', `Còn ${result.inTransitQty.toLocaleString('vi-VN')} đang vận chuyển.`);
+        return;
+      }
       if (canAdjustQuantities) {
         await materialRequestFulfillmentService.updateTransactionReceiptQuantities({
           transaction: latestTransaction,
@@ -321,10 +393,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
 
   const statusInfo = getStatusInfo(transaction.status);
   const primaryActionLabel = actionMode === 'receipt'
-    ? 'Xác nhận nhập'
+    ? transaction.type === TransactionType.TRANSFER ? 'Xác nhận số đã nhận' : 'Xác nhận nhập'
     : isQualityApprovalTx
       ? 'Duyệt SL/CL'
-      : 'Duyệt phiếu';
+      : transaction.type === TransactionType.TRANSFER ? 'Xuất khỏi kho nguồn' : 'Duyệt phiếu';
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -461,6 +533,45 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               </div>
             </div>
           </div>
+
+          {transaction.type === TransactionType.TRANSFER && transaction.status === TransactionStatus.APPROVED && (
+            <section className="rounded-xl border border-blue-200 bg-blue-50/70 p-4" aria-label="Tiến độ chuyển kho">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Hàng đang vận chuyển</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">Nhập đúng số kho đích đã nhận. Phần còn lại tiếp tục ở trạng thái đang chuyển.</p>
+                </div>
+                <Truck size={20} className="shrink-0 text-blue-600" />
+              </div>
+              {transferProgressState === 'loading' && <div className="mt-4 flex items-center gap-2 text-xs font-bold text-blue-700"><Loader2 size={14} className="animate-spin" /> Đang tải tiến độ…</div>}
+              {transferProgressState === 'error' && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">Không thể tải số đang vận chuyển. Đóng và mở lại phiếu để thử lại.</div>}
+              {transferProgressState === 'ready' && (
+                <div className="mt-4 space-y-2">
+                  {transferProgress.map(line => {
+                    const item = items.find(candidate => candidate.id === line.itemId);
+                    return (
+                      <label key={line.id} className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-3 rounded-lg border border-blue-100 bg-white p-3">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black text-slate-800">{item?.name || line.itemId}</span>
+                          <span className="text-[10px] font-bold text-slate-500">Đã xuất {line.dispatchedQty.toLocaleString('vi-VN')} · còn {line.inTransitQty.toLocaleString('vi-VN')} {line.unit || item?.unit}</span>
+                        </span>
+                        <span>
+                          <span className="block text-[9px] font-black uppercase text-slate-500">Nhận lần này</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={transferReceiveDrafts[line.id] ?? '0'}
+                            onChange={event => setTransferReceiveDrafts(previous => ({ ...previous, [line.id]: sanitizeQuantityInput(event.target.value, { previousValue: previous[line.id] ?? '0' }) }))}
+                            className="mt-1 w-full rounded-lg border border-blue-200 px-3 py-2 text-right text-sm font-black outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          />
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Items List */}
        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">

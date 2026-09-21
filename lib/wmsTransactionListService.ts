@@ -20,7 +20,7 @@ export interface WmsTransactionListFilters {
   dateTo?: string | null;
 }
 
-export const WMS_TRANSACTION_LIST_SELECT = 'id,type,date,items,source_warehouse_id,target_warehouse_id,supplier_id,requester_id,created_by,updated_by,business_partner_id,business_partner_name_snapshot,approved_at,approval_note,approver_id,status,note,business_event_type,business_event_reason,source_type,source_id,reversal_of_transaction_id,idempotency_key,related_request_id';
+export const WMS_TRANSACTION_LIST_SELECT = 'id,type,date,items,source_warehouse_id,target_warehouse_id,supplier_id,requester_id,created_by,updated_by,business_partner_id,business_partner_name_snapshot,approved_at,approval_note,approver_id,status,note,business_event_type,business_event_reason,source_type,source_id,reversal_of_transaction_id,idempotency_key,related_request_id,row_version';
 
 export const WMS_TRANSACTION_DETAIL_SELECT = `${WMS_TRANSACTION_LIST_SELECT},pending_items,attachments`;
 
@@ -52,6 +52,7 @@ export const mapWmsTransactionFromDb = (row: any): Transaction => ({
   reversalOfTransactionId: row.reversal_of_transaction_id ?? row.reversalOfTransactionId ?? null,
   idempotencyKey: row.idempotency_key ?? row.idempotencyKey ?? null,
   relatedRequestId: row.related_request_id ?? row.relatedRequestId,
+  rowVersion: Number(row.row_version ?? row.rowVersion ?? 1),
   pendingItems: row.pending_items ?? row.pendingItems,
 });
 

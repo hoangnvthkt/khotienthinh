@@ -179,7 +179,7 @@ export const PURCHASE_ORDER_SELECT = 'id,construction_site_id,vendor_id,vendor_n
 export const PURCHASE_ORDER_REQUEST_LINE_SELECT = 'id,project_id,construction_site_id,purchase_order_id,purchase_order_line_id,material_request_id,material_request_code,request_line_id,item_id,work_boq_item_id,material_budget_item_id,requested_qty,ordered_qty,unit,note,created_at,updated_at,target_warehouse_id,source_construction_site_id,allocation_status,requested_qty_snapshot,ordered_stock_qty_snapshot,actual_received_qty_snapshot';
 const PO_SUPPLEMENTAL_APPROVAL_SELECT = 'id,purchase_order_id,delivery_batch_id,project_id,construction_site_id,previous_approved_amount,requested_total_amount,over_amount,status,note,decision_note,requested_by,approved_by,approved_at,rejected_by,rejected_at,submitted_to_user_id,submitted_to_name,submitted_to_permission,submission_note,ever_submitted,last_action_by,last_action_at,created_at,updated_at';
 const PO_DELIVERY_BATCH_SELECT = getSupabaseProjection('purchase_order_delivery_batches');
-const PO_DELIVERY_LINE_SELECT = 'id,delivery_batch_id,purchase_order_id,purchase_order_line_id,item_id,planned_qty,unit,stock_planned_qty,stock_unit,created_at,updated_at,delivery_unit_price,delivered_qty,accepted_qty,delivered_stock_qty,accepted_stock_qty,returned_qty';
+const PO_DELIVERY_LINE_SELECT = 'id,delivery_batch_id,purchase_order_id,purchase_order_line_id,item_id,planned_qty,unit,stock_planned_qty,stock_unit,created_at,updated_at,delivery_unit_price,delivered_qty,physical_counted_qty,accepted_qty,delivered_stock_qty,physical_counted_stock_qty,accepted_stock_qty,custody_qty,custody_stock_qty,returned_qty';
 const PROJECT_PROCUREMENT_PAGE_SIZE = 1000;
 
 const loadProjectRowsByChunkedValue = async (input: {
@@ -906,13 +906,23 @@ const poDeliveryBatchFromRows = (batch: any, lineRows: any[]): PurchaseOrderDeli
         const deliveredStockQty = row.delivered_stock_qty == null
             ? undefined
             : Number(row.delivered_stock_qty);
+        const physicalCountedQty = row.physical_counted_qty == null
+            ? undefined
+            : Number(row.physical_counted_qty);
+        const physicalCountedStockQty = row.physical_counted_stock_qty == null
+            ? undefined
+            : Number(row.physical_counted_stock_qty);
         return {
             ...(fromDb(row) as PurchaseOrderDeliveryLine),
             plannedQty: Number(row.planned_qty || 0),
             deliveredQty,
+            physicalCountedQty,
             acceptedQty: Number(row.accepted_qty || 0),
             deliveredStockQty,
+            physicalCountedStockQty,
             acceptedStockQty: Number(row.accepted_stock_qty || 0),
+            custodyQty: row.custody_qty == null ? undefined : Number(row.custody_qty),
+            custodyStockQty: row.custody_stock_qty == null ? undefined : Number(row.custody_stock_qty),
             returnedQty: Number(row.returned_qty || 0),
             deliveryUnitPrice: Number(row.delivery_unit_price || 0),
             stockPlannedQty: Number(row.stock_planned_qty || 0),
