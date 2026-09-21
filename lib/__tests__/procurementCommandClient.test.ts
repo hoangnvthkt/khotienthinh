@@ -54,4 +54,19 @@ describe('procurement command client', () => {
       payloadSchemaVersion: 1, payload: { requestId: 'mr-1' },
     })).rejects.toBe(denied);
   });
+
+  it('assigns a demand with the current version and a stable command key', async () => {
+    mocks.rpc.mockResolvedValue({ data: { commandId: 'cmd-3', outcome: 'committed' }, error: null });
+    await runProcurementCommand('assign_procurement_demand', {
+      idempotencyKey: 'assign-1',
+      expectedVersions: [{ type: 'demand', id: 'demand-1', version: '7' }],
+      payloadSchemaVersion: 1,
+      payload: { demandId: 'demand-1', assigneeUserId: 'user-2' },
+      reason: 'Phân công buyer phụ trách',
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('assign_procurement_demand_v1', {
+      p_demand_id: 'demand-1', p_assignee_user_id: 'user-2', p_expected_version: 7,
+      p_reason: 'Phân công buyer phụ trách', p_idempotency_key: 'assign-1',
+    });
+  });
 });

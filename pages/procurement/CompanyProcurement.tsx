@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   Ban,
@@ -314,6 +314,11 @@ const CompanyProcurement: React.FC = () => {
   const [customSupplierId, setCustomSupplierId] = useState('');
   const [customQuoteDraft, setCustomQuoteDraft] = useState<CustomQuoteDraft | null>(null);
   const [draftByKey, setDraftByKey] = useState<Record<string, DraftLine>>({});
+  const createPoAttemptRef = useRef<{
+    fingerprint: string;
+    idempotencyKey: string;
+    orderDate: string;
+  } | null>(null);
   const [query, setQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [selectedPoForDelivery, setSelectedPoForDelivery] = useState<PurchaseOrder | null>(null);
@@ -472,10 +477,21 @@ const CompanyProcurement: React.FC = () => {
       return;
     }
 
+    const fingerprint = JSON.stringify(lines);
+    if (createPoAttemptRef.current?.fingerprint !== fingerprint) {
+      createPoAttemptRef.current = {
+        fingerprint,
+        idempotencyKey: globalThis.crypto.randomUUID(),
+        orderDate: new Date().toISOString().slice(0, 10),
+      };
+    }
+
     setSaving(true);
     try {
       const result = await companyProcurementService.createConsolidatedPurchaseOrders({
         lines,
+        idempotencyKey: createPoAttemptRef.current.idempotencyKey,
+        orderDate: createPoAttemptRef.current.orderDate,
         note: `Gom ${selectedRows.length} dòng nhu cầu cấp công ty`,
         actorUserId: user.id,
       });
@@ -489,16 +505,14 @@ const CompanyProcurement: React.FC = () => {
       } else {
         toast.success('Đã tạo PO gộp', `${result.purchaseOrders.length} PO thuộc nhóm ${result.procurementGroupNo}.`);
       }
-      const failedVendorIds = new Set(failedOutcomes.map(outcome => outcome.vendorId));
-      const failedKeys = selectedRows
-        .filter(row => failedVendorIds.has(draftByKey[row.key]?.vendorId || ''))
-        .map(row => row.key);
+      const failedKeys = Array.from(new Set(failedOutcomes.flatMap(outcome => outcome.demandKeys)));
       setSelectedKeys(failedKeys);
       setDraftByKey(previous => Object.fromEntries(
         Object.entries(previous).filter(([key]) => failedKeys.includes(key)),
       ));
       await refresh();
       if (failedOutcomes.length === 0) setActiveTab('po');
+      createPoAttemptRef.current = null;
     } catch (err: any) {
       logApiError('companyProcurement.createPo', err);
       toast.error('Không tạo được PO gộp', getApiErrorMessage(err));

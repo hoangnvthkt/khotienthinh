@@ -3,7 +3,8 @@ import { supabase } from '../supabase';
 
 export type ProcurementCommandType =
   | 'sync_project_material_request_demand'
-  | 'resolve_procurement_source_change';
+  | 'resolve_procurement_source_change'
+  | 'assign_procurement_demand';
 
 const expectedVersion = (
   request: ProcurementCommandRequest,
@@ -37,7 +38,7 @@ export async function runProcurementCommand(
       p_expected_source_revision: expectedVersion(request, 'source', requestId),
       p_idempotency_key: request.idempotencyKey,
     };
-  } else {
+  } else if (commandType === 'resolve_procurement_source_change') {
     const demandId = String(request.payload.demandId || '');
     const disposition = String(request.payload.disposition || '');
     if (!demandId || !disposition || !request.reason?.trim()) throw new Error('PROCUREMENT_COMMAND_INVALID');
@@ -46,6 +47,18 @@ export async function runProcurementCommand(
       p_demand_id: demandId,
       p_expected_version: expectedVersion(request, 'demand', demandId),
       p_disposition: disposition,
+      p_reason: request.reason.trim(),
+      p_idempotency_key: request.idempotencyKey,
+    };
+  } else {
+    const demandId = String(request.payload.demandId || '');
+    const assigneeUserId = String(request.payload.assigneeUserId || '');
+    if (!demandId || !assigneeUserId || !request.reason?.trim()) throw new Error('PROCUREMENT_COMMAND_INVALID');
+    rpc = 'assign_procurement_demand_v1';
+    params = {
+      p_demand_id: demandId,
+      p_assignee_user_id: assigneeUserId,
+      p_expected_version: expectedVersion(request, 'demand', demandId),
       p_reason: request.reason.trim(),
       p_idempotency_key: request.idempotencyKey,
     };

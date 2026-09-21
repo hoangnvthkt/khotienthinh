@@ -25,4 +25,20 @@ export const procurementDemandService = {
       reason: input.reason,
     });
   },
+
+  assign(input: {
+    demandId: string;
+    assigneeUserId: string;
+    expectedVersion: number;
+    reason: string;
+    idempotencyKey: string;
+  }) {
+    return runProcurementCommand('assign_procurement_demand', {
+      idempotencyKey: input.idempotencyKey,
+      expectedVersions: [{ type: 'demand', id: input.demandId, version: String(input.expectedVersion) }],
+      payloadSchemaVersion: 1,
+      payload: { demandId: input.demandId, assigneeUserId: input.assigneeUserId },
+      reason: input.reason,
+    });
+  },
 };

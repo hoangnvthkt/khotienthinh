@@ -39,6 +39,31 @@ const OPEN_REQUEST_STATUSES = new Set<string>([
 const newId = (prefix: string) =>
   `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
+export const procurementAttemptCommandId = (attemptId: string, scopeKey: string): string => {
+  const bytes = new Uint8Array(16);
+  const input = `${attemptId}:${scopeKey}`;
+  for (let index = 0; index < bytes.length; index += 1) {
+    let hash = 0x811c9dc5 ^ index;
+    for (let charIndex = 0; charIndex < input.length; charIndex += 1) {
+      hash ^= input.charCodeAt(charIndex) + index;
+      hash = Math.imul(hash, 0x01000193);
+    }
+    bytes[index] = hash & 0xff;
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+export const procurementAttemptGroup = (attemptId: string): { id: string; number: string } => {
+  const identity = procurementAttemptCommandId(attemptId, 'procurement-group');
+  return {
+    id: `proc-group-${identity}`,
+    number: `MUA-${identity.replaceAll('-', '').slice(0, 12).toUpperCase()}`,
+  };
+};
+
 const toFiniteNumber = (value: unknown, fallback = 0) => {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -136,17 +161,6 @@ const loadInventoryByIds = async (ids: string[]): Promise<Map<string, InventoryI
 const getLineRequestedQty = (line: RequestItem) => toFiniteNumber(line.requestQty || line.approvedQty || 0);
 
 const buildDemandKey = (requestId: string, requestLineId: string) => `${requestId}:${requestLineId}`;
-
-const buildProcurementGroupNo = () => {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mi = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-  return `MUA-${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
-};
 
 const resolveDemandLine = (
   request: MaterialRequest,
@@ -571,22 +585,32 @@ export const companyProcurementService = {
     if (deniedDemand) {
       throw new Error('Bạn không có quyền phân bổ mua hàng cho phạm vi của dòng nhu cầu.');
     }
+    const attemptId = input.idempotencyKey || globalThis.crypto.randomUUID();
     const inventoryById = await loadInventoryByIds(demandRows.map(row => row.itemId));
-    const procurementGroupId = newId('proc-group');
-    const procurementGroupNo = buildProcurementGroupNo();
+    const procurementGroup = procurementAttemptGroup(attemptId);
+    const procurementGroupId = procurementGroup.id;
+    const procurementGroupNo = procurementGroup.number;
     const now = new Date().toISOString();
     const orderDate = input.orderDate || now.split('T')[0];
 
-    const linesByVendor = validLines.reduce<Map<string, CompanyProcurementCreateLine[]>>((map, line) => {
-      map.set(line.vendorId, [...(map.get(line.vendorId) || []), line]);
+    const linesByScope = validLines.reduce<Map<string, CompanyProcurementCreateLine[]>>((map, line) => {
+      const demand = demandByKey.get(line.demandKey);
+      if (!demand?.g2DemandLineId || !demand.g2SourceRevisionId || !demand.g2DemandLineVersion) {
+        throw new Error('Dòng nhu cầu chưa có identity/revision G2 để chống mua trùng.');
+      }
+      const scopeKey = [line.vendorId, demand.projectId || '', demand.constructionSiteId || '', demand.targetWarehouseId || ''].join('::');
+      map.set(scopeKey, [...(map.get(scopeKey) || []), line]);
       return map;
     }, new Map());
 
     const purchaseOrders: PurchaseOrder[] = [];
     const outcomes: CompanyProcurementCreateResult['outcomes'] = [];
-    for (const [vendorId, vendorLines] of linesByVendor.entries()) {
+    for (const [scopeKey, vendorLines] of linesByScope.entries()) {
       const firstLine = vendorLines[0];
+      const firstDemand = demandByKey.get(firstLine.demandKey)!;
+      const vendorId = firstLine.vendorId;
       const vendorName = firstLine.vendorName || vendorId;
+      const commandId = procurementAttemptCommandId(attemptId, scopeKey);
       try {
         const poNumber = await poService.nextNumber();
         const poItems = vendorLines.map(lineInput => {
@@ -600,9 +624,9 @@ export const companyProcurementService = {
           .filter(Boolean)));
         const totalAmount = poItems.reduce((sum, item) => sum + toFiniteNumber(item.qty) * toFiniteNumber(item.unitPrice), 0);
         const po: PurchaseOrder = {
-          id: newId('po'),
-          projectId: null,
-          constructionSiteId: null,
+          id: `po-${commandId}`,
+          projectId: firstDemand.projectId || null,
+          constructionSiteId: firstDemand.constructionSiteId || null,
           vendorId,
           vendorName,
           poNumber,
@@ -629,29 +653,49 @@ export const companyProcurementService = {
           return buildPoLinkFromDemand(po, poItems[index], demand, lineInput);
         });
 
-        await poService.saveAggregate({
+        const saved = await poService.saveProcurementPurchaseOrder({
           purchaseOrder: po,
           requestLineLinks: links,
-          deliveryBatches: [],
-          expected: {
-            rowVersion: null,
-            requestLineLinks: [],
-            deliveryBatches: [],
-          },
+          allocations: vendorLines.map((lineInput, index) => {
+            const demand = demandByKey.get(lineInput.demandKey)!;
+            const poItem = poItems[index];
+            const factor = Number(poItem.purchaseConversionFactor || 1);
+            return {
+              demandLineId: demand.g2DemandLineId!,
+              sourceRevisionId: demand.g2SourceRevisionId!,
+              purchaseOrderLineId: poItem.lineId || poItem.itemId,
+              expectedVersion: demand.g2DemandLineVersion!,
+              needQty: String(Math.max(0, toFiniteNumber(lineInput.orderStockQty))),
+              needUnit: demand.unit || poItem.stockUnitSnapshot || poItem.unit,
+              executionQty: String(Math.max(0, toFiniteNumber(poItem.qty))),
+              executionUnit: poItem.purchaseUnitSnapshot || poItem.unit,
+              conversionNumerator: String(Number.isFinite(factor) && factor > 0 ? factor : 1),
+              conversionDenominator: '1',
+              reason: lineInput.note || `Lập PO từ ${demand.request.code}`,
+            };
+          }),
           actorUserId: input.actorUserId,
-          idempotencyKey: globalThis.crypto.randomUUID(),
+          idempotencyKey: commandId,
         });
-        purchaseOrders.push(po);
+        let savedPurchaseOrder = po;
+        if (saved.outcome === 'replayed') {
+          const [persisted] = await poService.listByIds([saved.purchaseOrderId]);
+          if (!persisted) throw new Error('Không tìm thấy PO đã tạo từ lần gửi trước.');
+          savedPurchaseOrder = persisted;
+        }
+        purchaseOrders.push(savedPurchaseOrder);
         outcomes.push({
           vendorId,
           vendorName,
+          demandKeys: vendorLines.map(line => line.demandKey),
           status: 'created',
-          purchaseOrder: po,
+          purchaseOrder: savedPurchaseOrder,
         });
       } catch (error: any) {
         outcomes.push({
           vendorId,
           vendorName,
+          demandKeys: vendorLines.map(line => line.demandKey),
           status: 'failed',
           error: String(error?.message || error || 'Không thể tạo PO.'),
         });

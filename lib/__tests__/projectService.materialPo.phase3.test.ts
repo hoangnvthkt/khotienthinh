@@ -22,6 +22,35 @@ beforeEach(() => {
 });
 
 describe('poService Phase 3.3 workflow transitions', () => {
+  it('creates a company PO and its committed demand allocation through one RPC', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: { purchaseOrderId: 'po-1', rowVersion: 1, requestLineCount: 1, deliveryBatchCount: 0, replayed: false, allocationIds: ['allocation-1'], outcome: 'committed' },
+      error: null,
+    });
+    const { poService } = await import('../projectService');
+    await poService.saveProcurementPurchaseOrder({
+      purchaseOrder: {
+        id: 'po-1', projectId: 'project-1', constructionSiteId: 'site-1', vendorId: 'vendor-1',
+        poNumber: 'PO-001', items: [{ lineId: 'po-line-1', itemId: 'item-1', sku: 'THEP-D20', name: 'Thép', unit: 'kg', qty: 20, unitPrice: 10 }],
+        totalAmount: 200, orderDate: '2026-09-21', status: 'draft', sourceMode: 'company_consolidated', createdById: 'user-1', createdAt: '2026-09-21T00:00:00Z',
+      },
+      requestLineLinks: [{
+        purchaseOrderId: 'po-1', purchaseOrderLineId: 'po-line-1', materialRequestId: 'mr-1',
+        requestLineId: 'mr-line-1', itemId: 'item-1', requestedQty: 100, orderedQty: 20,
+      }],
+      allocations: [{
+        demandLineId: 'demand-line-1', sourceRevisionId: 'revision-1', purchaseOrderLineId: 'po-line-1',
+        expectedVersion: 4, needQty: '20', needUnit: 'kg', executionQty: '20', executionUnit: 'kg',
+        conversionNumerator: '1', conversionDenominator: '1', reason: 'Lập PO từ Workbench',
+      }],
+      actorUserId: 'user-1', idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('create_procurement_purchase_order_v1', expect.objectContaining({
+      p_actor_user_id: 'user-1', p_idempotency_key: '11111111-1111-4111-8111-111111111111',
+      p_allocations: [expect.objectContaining({ demandLineId: 'demand-line-1', needQty: '20' })],
+    }));
+  });
+
   it('saves the PO header, request links, and editable schedule through one idempotent command', async () => {
     supabaseMock.rpc.mockResolvedValueOnce({
       data: {

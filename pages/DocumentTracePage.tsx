@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   ExternalLink,
   FileText,
@@ -17,6 +18,7 @@ import {
   buildDocumentQrUrl,
   documentTraceService,
 } from '../lib/documentTraceService';
+import { validateProcurementReturnTo } from '../lib/procurement/documentAdapters';
 
 const traceNodeTypes: DocumentTraceNodeType[] = [
   'material_request',
@@ -168,6 +170,11 @@ const DocumentTracePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const returnTo = useMemo(() => {
+    const value = new URLSearchParams(location.search).get('returnTo');
+    if (!value) return null;
+    try { return validateProcurementReturnTo(value); } catch { return null; }
+  }, [location.search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -243,6 +250,13 @@ const DocumentTracePage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {returnTo && <button
+              type="button"
+              onClick={() => navigate(returnTo)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <ArrowLeft size={14} /> Quay lại
+            </button>}
             {qrUrl && (
               <div className="hidden rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 md:block">
                 <QRCodeSVG value={qrUrl} size={74} level="M" includeMargin />

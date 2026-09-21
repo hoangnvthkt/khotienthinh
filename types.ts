@@ -3022,6 +3022,33 @@ export interface SavePurchaseOrderAggregateResult {
   replayed: boolean;
 }
 
+export interface ProcurementPurchaseOrderAllocationInput {
+  demandLineId: string;
+  sourceRevisionId: string;
+  purchaseOrderLineId: string;
+  expectedVersion: number;
+  needQty: string;
+  needUnit: string;
+  executionQty: string;
+  executionUnit: string;
+  conversionNumerator: string;
+  conversionDenominator: string;
+  reason: string;
+}
+
+export interface SaveProcurementPurchaseOrderInput {
+  purchaseOrder: PurchaseOrder;
+  requestLineLinks: PurchaseOrderRequestLineLink[];
+  allocations: ProcurementPurchaseOrderAllocationInput[];
+  actorUserId: string;
+  idempotencyKey: string;
+}
+
+export interface SaveProcurementPurchaseOrderResult extends SavePurchaseOrderAggregateResult {
+  allocationIds: string[];
+  outcome: 'committed' | 'replayed';
+}
+
 export interface PurchaseOrderDeliveryGroup {
   id: string;
   projectId?: string | null;
@@ -3079,6 +3106,7 @@ export interface CompanyProcurementCreateLine {
 
 export interface CompanyProcurementCreateInput {
   lines: CompanyProcurementCreateLine[];
+  idempotencyKey?: string;
   orderDate?: string;
   expectedDeliveryDate?: string | null;
   note?: string | null;
@@ -3095,6 +3123,7 @@ export interface CompanyProcurementCreateResult {
 export interface CompanyProcurementCreateOutcome {
   vendorId: string;
   vendorName?: string | null;
+  demandKeys: string[];
   status: 'created' | 'failed';
   purchaseOrder?: PurchaseOrder;
   error?: string;

@@ -108,7 +108,9 @@
     "20260920083241_procurement_quantity_allocation.sql",
     "20260920155632_procurement_identity_authorization.sql",
     "20260921084500_boq_material_planning_read_model.sql",
-    "20260921093000_material_plan_revision_aggregate.sql"
+    "20260921093000_material_plan_revision_aggregate.sql",
+    "20260921110500_procurement_workbench_assignment_read_model.sql",
+    "20260921113000_procurement_atomic_purchase_order_allocation.sql"
   ],
   "forbidIncludeAll": true
 }

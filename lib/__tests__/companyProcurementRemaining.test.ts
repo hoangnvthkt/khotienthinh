@@ -82,7 +82,11 @@ vi.mock('../materialRequestFulfillmentService', () => ({
   },
 }));
 
-import { companyProcurementService } from '../companyProcurementService';
+import {
+  companyProcurementService,
+  procurementAttemptCommandId,
+  procurementAttemptGroup,
+} from '../companyProcurementService';
 
 const companyProcurementSource = readFileSync(
   new URL('../../pages/procurement/CompanyProcurement.tsx', import.meta.url),
@@ -175,6 +179,21 @@ const setBaseFixture = () => {
 };
 
 describe('company procurement remaining from open commitments', () => {
+  it('derives a stable UUID per submission attempt and scope', () => {
+    const first = procurementAttemptCommandId('attempt-a', 'vendor-a::project-a::site-a::warehouse-a');
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(procurementAttemptCommandId('attempt-a', 'vendor-a::project-a::site-a::warehouse-a')).toBe(first);
+    expect(procurementAttemptCommandId('attempt-a', 'vendor-b::project-a::site-a::warehouse-a')).not.toBe(first);
+  });
+
+  it('keeps the procurement group stable across an exact retry', () => {
+    const group = procurementAttemptGroup('attempt-a');
+    expect(group.id).toMatch(/^proc-group-[0-9a-f-]{36}$/);
+    expect(group.number).toMatch(/^MUA-[0-9A-F]{12}$/);
+    expect(procurementAttemptGroup('attempt-a')).toEqual(group);
+    expect(procurementAttemptGroup('attempt-b')).not.toEqual(group);
+  });
+
   beforeEach(() => {
     mocks.from.mockClear();
     mocks.rpc.mockReset();
@@ -347,6 +366,11 @@ describe('company procurement remaining from open commitments', () => {
 
   it('returns one explicit outcome per supplier when consolidated PO creation is partially successful', async () => {
     const [firstDemand] = await companyProcurementService.listLegacyOpenDemandForRegression();
+    Object.assign(firstDemand, {
+      g2DemandLineId: '11111111-1111-4111-8111-111111111111',
+      g2SourceRevisionId: '22222222-2222-4222-8222-222222222222',
+      g2DemandLineVersion: 1,
+    });
     const secondDemand = {
       ...firstDemand,
       key: 'mr-2:mr-line-2',
@@ -354,6 +378,8 @@ describe('company procurement remaining from open commitments', () => {
       sku: 'ITEM-2',
       itemName: 'Material 2',
       requestLineId: 'mr-line-2',
+      g2DemandLineId: '33333333-3333-4333-8333-333333333333',
+      g2SourceRevisionId: '44444444-4444-4444-8444-444444444444',
       request: {
         ...firstDemand.request,
         id: 'mr-2',
@@ -384,7 +410,7 @@ describe('company procurement remaining from open commitments', () => {
         }
         return { data: `PO-${poNumberCalls}`, error: null };
       }
-      if (name === 'save_purchase_order_aggregate_v1') {
+      if (name === 'create_procurement_purchase_order_v1') {
         return {
           data: {
             purchaseOrderId: args.p_purchase_order.id,
@@ -392,6 +418,8 @@ describe('company procurement remaining from open commitments', () => {
             requestLineCount: 1,
             deliveryBatchCount: 0,
             replayed: false,
+            allocationIds: ['allocation-1'],
+            outcome: 'committed',
           },
           error: null,
         };

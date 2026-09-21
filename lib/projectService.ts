@@ -5,7 +5,8 @@ import {
     PurchaseOrder, PaymentSchedule, ProjectBaseline, ProjectWorkBoqItem, PurchaseOrderRequestLineLink,
     PaymentDossierStatus, PaymentQualityStatus, PaymentScheduleMilestoneType, PurchaseOrderDeliveryRemovalResult, PurchaseOrderRemovalResult,
     PurchaseOrderDeliveryBatch, PurchaseOrderDeliveryLine, PurchaseOrderSupplementalApproval, ProjectSubmissionTarget,
-    SavePurchaseOrderAggregateInput, SavePurchaseOrderAggregateResult
+    SavePurchaseOrderAggregateInput, SavePurchaseOrderAggregateResult,
+    SaveProcurementPurchaseOrderInput, SaveProcurementPurchaseOrderResult
 } from '../types';
 import { auditService } from './auditService';
 import { dailyLogDetailService } from './dailyLogDetailService';
@@ -1199,6 +1200,18 @@ export const poService = {
         });
         if (error) throw error;
         return data as SavePurchaseOrderAggregateResult;
+    },
+    async saveProcurementPurchaseOrder(input: SaveProcurementPurchaseOrderInput): Promise<SaveProcurementPurchaseOrderResult> {
+        const { data, error } = await supabase.rpc('create_procurement_purchase_order_v1', {
+            p_purchase_order: poToDb(input.purchaseOrder),
+            p_request_line_links: input.requestLineLinks.map(poRequestLineLinkToDb),
+            p_allocations: input.allocations,
+            p_actor_user_id: input.actorUserId,
+            p_idempotency_key: input.idempotencyKey,
+        });
+        if (error) throw error;
+        if (!data || typeof data !== 'object') throw new Error('PROCUREMENT_PURCHASE_ORDER_RESPONSE_INVALID');
+        return data as SaveProcurementPurchaseOrderResult;
     },
     async nextNumber(projectIdOrSiteId?: string | null, constructionSiteId?: string | null): Promise<string> {
         const { data, error } = await supabase.rpc('next_purchase_order_number_v2');
