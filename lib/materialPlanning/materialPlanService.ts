@@ -30,6 +30,9 @@ const nullableString = (value: unknown, code: string): string | null => value ==
 const integer = (value: unknown, code: string): number => (
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fail(code)
 );
+const count = (value: unknown, code: string): number => (
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fail(code)
+);
 const boolean = (value: unknown, code: string): boolean => typeof value === 'boolean' ? value : fail(code);
 const isoDate = (value: unknown, code: string): string => {
   const result = string(value, code);
@@ -318,8 +321,8 @@ export const materialPlanService = {
         periodEnd: isoDate(source.periodEnd, 'MATERIAL_PLAN_DATE_INVALID'),
         status: status(source.status),
         version: integer(source.version, 'MATERIAL_PLAN_VERSION_INVALID'),
-        lineCount: Number(source.lineCount),
-        remainingAllocationCount: Number(source.remainingAllocationCount),
+        lineCount: count(source.lineCount, 'MATERIAL_PLAN_COUNT_INVALID'),
+        remainingAllocationCount: count(source.remainingAllocationCount, 'MATERIAL_PLAN_COUNT_INVALID'),
         updatedAt: instant(source.updatedAt, 'MATERIAL_PLAN_INSTANT_INVALID'),
       };
     });

@@ -101,4 +101,19 @@ describe('materialPlanService', () => {
     await expect(materialPlanService.get({ planId: detail().id, projectId: 'project-1', constructionSiteId: 'site-1' }))
       .rejects.toBe(denied);
   });
+
+  it('accepts zero summary counts and rejects count coercion', async () => {
+    const summary = {
+      id: detail().id, planNo: 'MP-2026-0001', title: 'Kế hoạch tháng 10',
+      periodStart: '2026-10-01', periodEnd: '2026-10-31', status: 'draft', version: 1,
+      lineCount: 0, remainingAllocationCount: 0, updatedAt: '2026-09-21T02:00:00Z',
+    };
+    mocks.rpc.mockResolvedValueOnce({ data: [summary], error: null });
+    await expect(materialPlanService.list({ projectId: 'project-1', constructionSiteId: 'site-1' }))
+      .resolves.toMatchObject([{ lineCount: 0, remainingAllocationCount: 0 }]);
+
+    mocks.rpc.mockResolvedValueOnce({ data: [{ ...summary, lineCount: '0' }], error: null });
+    await expect(materialPlanService.list({ projectId: 'project-1', constructionSiteId: 'site-1' }))
+      .rejects.toThrow('MATERIAL_PLAN_COUNT_INVALID');
+  });
 });
