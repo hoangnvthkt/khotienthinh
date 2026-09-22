@@ -13,7 +13,7 @@ begin
     raise exception 'G3_BOQ_PRIVATE_CONTRACT_INVALID';
   end if;
   if not exists (
-    select 1 from pg_proc where oid = v_public and not prosecdef
+    select 1 from pg_proc where oid = v_public and prosecdef
       and proconfig @> array['search_path=""']::text[]
   ) then
     raise exception 'G3_BOQ_PUBLIC_CONTRACT_INVALID';
