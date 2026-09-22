@@ -40,6 +40,21 @@ test('keeps the tablet overlay within the viewport', async ({ page }) => {
   await page.screenshot({ path: '/tmp/g5-workbench-tablet.png', fullPage: true });
 });
 
+test('explains legacy reconciliation rows instead of accepting a silent click', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const reconciliationRow = page.getByRole('button', { name: /Xi măng PCB40/ });
+  await expect(reconciliationRow).toContainText('Xem lý do chưa thể xử lý');
+  await reconciliationRow.click();
+  const panel = page.getByRole('complementary', { name: 'Chi tiết đối chiếu' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText('Chưa thể mở hồ sơ hoặc lập đơn mua')).toBeVisible();
+  await expect(panel.getByText(/tránh mua trùng/)).toBeVisible();
+  await page.screenshot({ path: '/tmp/g5-reconciliation-mobile.png', fullPage: true });
+  await panel.getByRole('button', { name: 'Đóng đối chiếu' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(reconciliationRow).toBeFocused();
+});
+
 test('shows queue and decision detail together on desktop with accessible primary actions', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button', { name: /Thép D16/ }).click();

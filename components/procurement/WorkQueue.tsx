@@ -45,7 +45,7 @@ export const WorkQueue: React.FC<{
             </div>
             <p className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-slate-700 dark:text-slate-200">
               {row.actionKind === 'reconcile' && <AlertTriangle size={15} className="text-amber-600" />}
-              {row.nextActionLabel}
+              {row.demandId ? row.nextActionLabel : 'Xem lý do chưa thể xử lý'}
             </p>
           </div>
           <div className="rounded-xl bg-slate-50 px-3 py-2.5 text-right dark:bg-slate-950/70">

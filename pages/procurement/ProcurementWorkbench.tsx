@@ -2,6 +2,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import { AlertCircle, ArrowUpRight, ClipboardList, FileWarning, Loader2, Search, ShieldAlert, SlidersHorizontal } from 'lucide-react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { DemandPanel } from '../../components/procurement/DemandPanel';
+import { ReconciliationPanel } from '../../components/procurement/ReconciliationPanel';
 import { WorkbenchShell } from '../../components/procurement/WorkbenchShell';
 import { WorkQueue } from '../../components/procurement/WorkQueue';
 import { SupplyPlanDialog } from '../../components/procurement/SupplyPlanDialog';
@@ -94,6 +95,7 @@ const ProcurementWorkbench: React.FC = () => {
   const [searchDraft, setSearchDraft] = useState(query.search || '');
   const [page, setPage] = useState<ProcurementWorkbenchPage | null>(null);
   const [detail, setDetail] = useState<ProcurementDemandDetail | null>(null);
+  const [reconciliationRow, setReconciliationRow] = useState<ProcurementWorkbenchRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -158,6 +160,7 @@ const ProcurementWorkbench: React.FC = () => {
     listGeneration.current += 1;
     setPage(null);
     setError(null);
+    setReconciliationRow(null);
   }, [listQuery]);
   useEffect(() => { void load(null); }, [load, refreshKey]);
 
@@ -185,11 +188,18 @@ const ProcurementWorkbench: React.FC = () => {
 
   const selectRow = (row: ProcurementWorkbenchRow) => {
     detailTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!row.demandId) {
+      setQuery({ demandId: undefined }, false);
+      setReconciliationRow(row);
+      return;
+    }
+    setReconciliationRow(null);
     setQuery({ demandId: row.demandId }, false);
   };
 
   const closeDetail = useCallback(() => {
     setQuery({ demandId: undefined });
+    setReconciliationRow(null);
     window.requestAnimationFrame(() => detailTriggerRef.current?.focus());
   }, [setQuery]);
   const closePlan = useCallback(() => setPlanOpen(false), []);
@@ -228,7 +238,7 @@ const ProcurementWorkbench: React.FC = () => {
   const legacyView = legacyFallback || (query.view !== 'partners' && !MODERN_VIEWS.has(query.view));
   return <WorkbenchShell
     view={query.view}
-    onViewChange={view => { setLegacyReason(null); setQuery({ view, demandId: undefined }); }}
+    onViewChange={view => { setLegacyReason(null); setReconciliationRow(null); setQuery({ view, demandId: undefined }); }}
     onRefresh={() => setRefreshKey(value => value + 1)}
     refreshing={loading}
   >
@@ -252,13 +262,13 @@ const ProcurementWorkbench: React.FC = () => {
         </label>
       </div>
 
-      <div className={`mt-3 grid gap-3 ${query.demandId ? 'xl:grid-cols-[minmax(0,3fr)_minmax(380px,2fr)]' : ''}`}>
+      <div className={`mt-3 grid gap-3 ${query.demandId || reconciliationRow ? 'xl:grid-cols-[minmax(0,3fr)_minmax(380px,2fr)]' : ''}`}>
         <div>
           {loading && !page ? <WorkbenchState kind="loading" />
             : error && !page ? <WorkbenchState kind={isDenied(error) ? 'denied' : 'error'} message={getApiErrorMessage(error)} onRetry={isDenied(error) ? undefined : () => setRefreshKey(value => value + 1)} />
               : page?.items.length ? <>
                 {error && <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">Chưa cập nhật · đang hiển thị dữ liệu lúc {new Date(page.asOf).toLocaleString('vi-VN')}</div>}
-                <WorkQueue rows={page.items} selectedId={page.items.find(item => item.demandId === query.demandId)?.id} onSelect={selectRow} />
+                <WorkQueue rows={page.items} selectedId={reconciliationRow?.id || page.items.find(item => item.demandId === query.demandId)?.id} onSelect={selectRow} />
                 {page.nextCursor && <button
                   type="button"
                   disabled={loadingMore}
@@ -278,6 +288,9 @@ const ProcurementWorkbench: React.FC = () => {
             onPlanSupply={() => setPlanOpen(true)}
             onOpenDocument={ref => navigate(resolveProcurementDocument(ref, `${location.pathname}${location.search}`).route)}
           />
+        </div>}
+        {reconciliationRow && <div className="fixed inset-0 z-50 bg-slate-950/45 p-2 sm:p-4 xl:static xl:z-auto xl:bg-transparent xl:p-0">
+          <ReconciliationPanel row={reconciliationRow} onClose={closeDetail} />
         </div>}
       </div>
       <SupplyPlanDialog

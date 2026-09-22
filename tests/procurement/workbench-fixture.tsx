@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../../index.css';
 import { DemandPanel } from '../../components/procurement/DemandPanel';
+import { ReconciliationPanel } from '../../components/procurement/ReconciliationPanel';
 import { WorkbenchShell } from '../../components/procurement/WorkbenchShell';
 import { WorkQueue } from '../../components/procurement/WorkQueue';
 import { SupplyPlanDialog } from '../../components/procurement/SupplyPlanDialog';
@@ -18,7 +19,7 @@ const rows: ProcurementWorkbenchRow[] = [{
   nextActionLabel: 'Lập phương án cung ứng', tags: [{ label: 'Sẵn sàng', tone: 'success' }],
 }, {
   id: 'work-2', objectType: 'demand_line', objectId: 'line-2', actionKind: 'reconcile',
-  demandId: 'demand-2', demandLineId: 'line-2', title: 'Xi măng PCB40', sourceLabel: 'Đề xuất dự án',
+  demandId: null, demandLineId: null, title: 'Xi măng PCB40', sourceLabel: 'Đề xuất dự án',
   sourceCode: 'MR-2026-0187', projectId: 'project-a', constructionSiteId: 'site-a',
   destinationLabel: null, assigneeUserId: 'buyer-a', unit: 'bao',
   balance: { openNeed: null, availableToPlan: null, coverageExcess: null, receivedExcess: null },
@@ -50,22 +51,28 @@ const users = [
 const Fixture = () => {
   const [view, setView] = useState<ProcurementView>('work');
   const [selected, setSelected] = useState(false);
+  const [reconciliationRow, setReconciliationRow] = useState<ProcurementWorkbenchRow | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const detailTriggerRef = useRef<HTMLElement | null>(null);
   const closeDetail = () => {
     setSelected(false);
+    setReconciliationRow(null);
     window.requestAnimationFrame(() => detailTriggerRef.current?.focus());
   };
   return <WorkbenchShell view={view} onViewChange={setView} onRefresh={() => {}} refreshing={false}>
-    <div className={`grid gap-3 ${selected ? 'xl:grid-cols-[minmax(0,3fr)_minmax(380px,2fr)]' : ''}`}>
-      <WorkQueue rows={rows} selectedId={selected ? 'work-1' : undefined} onSelect={() => {
+    <div className={`grid gap-3 ${selected || reconciliationRow ? 'xl:grid-cols-[minmax(0,3fr)_minmax(380px,2fr)]' : ''}`}>
+      <WorkQueue rows={rows} selectedId={selected ? 'work-1' : reconciliationRow?.id} onSelect={row => {
         detailTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        setSelected(true);
+        setSelected(Boolean(row.demandId));
+        setReconciliationRow(row.demandId ? null : row);
       }} />
       {selected && <div className="fixed inset-0 z-50 bg-slate-950/45 p-2 sm:p-4 xl:static xl:z-auto xl:bg-transparent xl:p-0">
         <DemandPanel detail={detail} loading={false} error={null} users={users}
           onClose={closeDetail} onOpenDocument={() => {}} onPlanSupply={() => setPlanOpen(true)}
           onAssign={async () => {}} />
+      </div>}
+      {reconciliationRow && <div className="fixed inset-0 z-50 bg-slate-950/45 p-2 sm:p-4 xl:static xl:z-auto xl:bg-transparent xl:p-0">
+        <ReconciliationPanel row={reconciliationRow} onClose={closeDetail} />
       </div>}
     </div>
     <SupplyPlanDialog open={planOpen} demandLabel="MR-2026-0184" onClose={() => setPlanOpen(false)} onContinuePurchase={() => setPlanOpen(false)} />

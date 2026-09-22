@@ -32,9 +32,9 @@ export interface ProcurementDocumentRef {
 export interface ProcurementWorkbenchRow {
   id: string;
   objectType: 'demand' | 'demand_line' | 'purchase_order' | 'receipt' | 'reconciliation_issue';
-  objectId: string;
+  objectId: string | null;
   actionKind: string;
-  demandId: string;
+  demandId: string | null;
   demandLineId: string | null;
   title: string;
   sourceLabel: string;
