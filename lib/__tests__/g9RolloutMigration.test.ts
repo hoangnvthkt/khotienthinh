@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const sql = readFileSync(new URL('../../supabase/migrations/20260921183000_g9_erp_completion_rollout_control.sql', import.meta.url), 'utf8');
+const operationSql = readFileSync(new URL('../../supabase/operations/g9_erp_completion_pilot.sql', import.meta.url), 'utf8');
 
 describe('G9 rollout control migration', () => {
   it('keeps rollout private, empty by default, audited, scoped, and expiring', () => {
@@ -49,5 +50,13 @@ describe('G9 rollout control migration', () => {
     expect(sql).toContain("'procurementOutbox'");
     expect(sql).toContain("'reconciliationIssues'");
     expect(sql).toContain('security definer set search_path');
+  });
+
+  it('requires concrete rollout owners instead of persisting release placeholders', () => {
+    expect(operationSql).toContain("\\set release_owner REQUIRED_RELEASE_OWNER");
+    expect(operationSql).toContain("\\set support_owner REQUIRED_SUPPORT_OWNER");
+    expect(operationSql).toContain("or v_input.release_owner like 'REQUIRED_%'");
+    expect(operationSql).toContain('starts_at,expires_at,release_id,release_owner,support_owner,reason');
+    expect(operationSql).not.toContain("'ERP release owner','ERP pilot support owner'");
   });
 });

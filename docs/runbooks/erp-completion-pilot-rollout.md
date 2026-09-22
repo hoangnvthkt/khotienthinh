@@ -14,7 +14,7 @@ Runbook này áp dụng cho G9. Nó không tự cấp quyền, không tự chọ
 
 ## Cách mở an toàn
 
-1. Chạy `supabase/operations/g9_erp_completion_pilot.sql` với `commit_changes=false`. Review exact rows và các lỗi preflight.
+1. Chạy `supabase/operations/g9_erp_completion_pilot.sql` với `commit_changes=false`, truyền `release_owner` và `support_owner` đúng manifest. Review exact rows và các lỗi preflight.
 2. Chạy lại với `target_mode=read_only`, `commit_changes=true`. Kiểm tra access RPC theo từng actor và giữ command bị khóa.
 3. Thu health snapshot, test deep link/giá/quyền bằng từng persona và lưu run ID, thời điểm, actor, expected/actual, evidence, cleanup.
 4. Khi review đạt, đổi config sang `pilot` bằng cùng operations script và reason mới. Bật frontend bằng cả `VITE_ENABLE_ERP_COMPLETION_PILOT=true` và exact `VITE_ERP_COMPLETION_PILOT_SITE_IDS`; server vẫn là authority.

@@ -2,7 +2,8 @@
 
 -- Required psql variables: release_id, scope_key, project_id,
 -- construction_site_id, warehouse_ids_csv, supplier_ids_csv, starts_at,
--- expires_at, reason and six *_user_id variables. Dry-run is the default.
+-- expires_at, release_owner, support_owner, reason and six *_user_id
+-- variables. Dry-run is the default.
 \if :{?commit_changes}
 \else
   \set commit_changes false
@@ -42,6 +43,14 @@
 \if :{?expires_at}
 \else
   \set expires_at REQUIRED_EXPIRY_TIME
+\endif
+\if :{?release_owner}
+\else
+  \set release_owner REQUIRED_RELEASE_OWNER
+\endif
+\if :{?support_owner}
+\else
+  \set support_owner REQUIRED_SUPPORT_OWNER
 \endif
 \if :{?reason}
 \else
@@ -85,6 +94,8 @@ select
   :'target_mode'::text as target_mode,
   :'starts_at'::timestamptz as starts_at,
   :'expires_at'::timestamptz as expires_at,
+  :'release_owner'::text as release_owner,
+  :'support_owner'::text as support_owner,
   :'reason'::text as reason;
 
 create temp table g9_rollout_actor_input(persona text,user_id uuid) on commit drop;
@@ -101,7 +112,10 @@ declare v_input g9_rollout_input%rowtype;
 begin
   select * into strict v_input from g9_rollout_input;
   if v_input.release_id like 'REQUIRED_%' or v_input.scope_key like 'REQUIRED_%'
-     or v_input.project_id like 'REQUIRED_%' or v_input.reason like 'REQUIRED_%' then
+     or v_input.project_id like 'REQUIRED_%'
+     or v_input.release_owner like 'REQUIRED_%'
+     or v_input.support_owner like 'REQUIRED_%'
+     or v_input.reason like 'REQUIRED_%' then
     raise exception 'G9_OPERATION_INPUT_REQUIRED';
   end if;
   if v_input.target_mode not in ('read_only','pilot','paused') then
@@ -164,7 +178,7 @@ with created as (
     ]::text[],
     array['wms.transfer.receive','wms.transfer.dispose','wms.inventory_count.post',
       'finance.invoice.reverse','finance.payment.reverse']::text[],
-    starts_at,expires_at,release_id,'ERP release owner','ERP pilot support owner',reason
+    starts_at,expires_at,release_id,release_owner,support_owner,reason
   from g9_rollout_input
   returning id
 )
