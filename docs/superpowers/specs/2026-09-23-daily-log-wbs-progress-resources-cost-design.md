@@ -2,7 +2,7 @@
 
 **Ngày thiết kế:** 23/09/2026
 
-**Trạng thái:** Đã bổ sung luồng tổng hợp theo khu vực, chờ duyệt lại trước khi lập kế hoạch triển khai
+**Trạng thái:** Đã được người dùng xác nhận ngày 23/09/2026; kế hoạch triển khai đã được lập
 
 **Phạm vi:** Nhật ký công trường, tiến độ ngày/tuần, nhân công, giờ máy và chi phí nguồn lực tạm tính
 
