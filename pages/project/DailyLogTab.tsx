@@ -919,6 +919,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryWbsLoading, setSummaryWbsLoading] = useState(false);
     const [summaryWbsError, setSummaryWbsError] = useState<string | null>(null);
     const [reviewWbsBundle, setReviewWbsBundle] = useState<DailyLogWbsBundle | null>(null);
+    const publishCommandIdsRef = useRef<Record<string, string>>({});
 
     // Effective Room actions are the UI capability source. The backend RPC
     // resolves System Admin, Room membership and the temporary PBAC fallback.
@@ -2420,7 +2421,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         return fresh.summaryLog;
     }, [constructionSiteId, effectiveId, logs, projectId, summaryDate, summaryDescription, summaryIssues, summaryLogId, summaryNextPlan, summaryPhotos, summaryWeather, user?.id, user?.name, user?.username]);
 
-    const submitWbsSummary = useCallback(async () => {
+    const submitWbsSummary = useCallback(async (expectedUpdatedAt: string) => {
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
         const summaryApprover = summaryApprovers.find(staff => staff.userId === summaryApproverUserId);
         if (!summaryApprover) {
@@ -2433,12 +2434,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
         setSummarySaving(true);
         try {
-            await dailyLogService.updateStatus({
-                logId: summaryLogId,
-                status: 'submitted',
-                requestedVerifierId: summaryApproverUserId,
-                requestedVerifierName: summaryApprover.userName || null,
-                actorUserId: user?.id,
+            await dailyLogWbsService.submitSummary({
+                dailyLogId: summaryLogId,
+                expectedUpdatedAt,
+                approverUserId: summaryApproverUserId,
             });
             await reloadDailyLogRecords();
             toast.success('Đã gửi CHT duyệt');
@@ -2448,7 +2447,23 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         } finally {
             setSummarySaving(false);
         }
-    }, [reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast, user?.id]);
+    }, [reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast]);
+
+    const publishWbsSummary = useCallback(async () => {
+        const log = reviewWbsBundle?.summaryLog;
+        if (!log) throw new Error('Không tìm thấy bản tổng hợp cần công bố.');
+        const commandId = publishCommandIdsRef.current[log.id] || globalThis.crypto.randomUUID();
+        publishCommandIdsRef.current[log.id] = commandId;
+        await dailyLogWbsService.publishSummary({
+            commandId,
+            dailyLogId: log.id,
+            expectedUpdatedAt: log.lastActionAt || log.createdAt,
+        });
+        delete publishCommandIdsRef.current[log.id];
+        await reloadDailyLogRecords();
+        setViewLogId(null);
+        toast.success('Đã duyệt và công bố tiến độ');
+    }, [reloadDailyLogRecords, reviewWbsBundle?.summaryLog, toast]);
 
     const returnSourceLog = async (log: DailyLog) => {
         const reason = await reasonConfirm({
@@ -2900,7 +2915,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                                 dailyLogId: summaryLogId,
                                             }).then(setSummaryWbsBundle).catch(console.error);
                                         }}
-                                        onSubmit={() => { submitWbsSummary().catch(console.error); }}
+                                        onSubmit={receipt => submitWbsSummary(receipt.updatedAt)}
                                     />
                                 ) : summaryWbsLoading ? (
                                     <div className="rounded-2xl border border-slate-200 p-8 text-center text-sm font-semibold text-slate-500">Đang tải các phiếu nguồn theo WBS...</div>
@@ -3283,7 +3298,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 intent: 'danger',
                             }).then(reason => { if (reason) handleStatusChange(viewingLog, 'rejected', undefined, reason); });
                         }}
-                        onPublish={() => { handleStatusChange(viewingLog, 'verified'); }}
+                        onPublish={publishWbsSummary}
                     /> : undefined}
                     busy={busyLogIds.has(viewingLog.id)}
                     onClose={() => setViewLogId(null)}

@@ -106,11 +106,44 @@ describe('dailyLogWbsService', () => {
     expect(bundle.permissions.canEditSource).toBe(true);
   });
 
+  it('submits the summary and publishes progress through dedicated commands', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { daily_log_id: 'summary-1', status: 'submitted', updated_at: '2026-09-23T03:00:00Z' }, error: null })
+      .mockResolvedValueOnce({ data: { command_id: 'command-1', daily_log_id: 'summary-1', progress_date: '2026-09-23', published_task_ids: ['task-1'], verified_resource_line_ids: ['labor-1'], progress_fingerprint: 'progress-fp', resource_evidence_fingerprint: 'resource-fp', published_at: '2026-09-23T03:05:00Z' }, error: null });
+
+    const submitted = await dailyLogWbsService.submitSummary({
+      dailyLogId: 'summary-1',
+      expectedUpdatedAt: '2026-09-23T02:59:00Z',
+      approverUserId: 'approver-1',
+    });
+    const published = await dailyLogWbsService.publishSummary({
+      commandId: 'command-1',
+      dailyLogId: 'summary-1',
+      expectedUpdatedAt: '2026-09-23T03:00:00Z',
+    });
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'submit_daily_log_summary_v1', {
+      p_daily_log_id: 'summary-1',
+      p_expected_updated_at: '2026-09-23T02:59:00Z',
+      p_approver_user_id: 'approver-1',
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'publish_daily_log_summary_v1', {
+      p_command_id: 'command-1',
+      p_daily_log_id: 'summary-1',
+      p_expected_updated_at: '2026-09-23T03:00:00Z',
+    });
+    expect(submitted).toEqual({ dailyLogId: 'summary-1', status: 'submitted', updatedAt: '2026-09-23T03:00:00Z' });
+    expect(published).toEqual({ commandId: 'command-1', dailyLogId: 'summary-1', progressDate: '2026-09-23', publishedTaskIds: ['task-1'], verifiedResourceLineIds: ['labor-1'], progressFingerprint: 'progress-fp', resourceEvidenceFingerprint: 'resource-fp', publishedAt: '2026-09-23T03:05:00Z' });
+  });
+
   it.each([
     ['ROW_VERSION_CONFLICT', 'người khác vừa cập nhật'],
     ['SOURCE_CHANGED', 'nguồn đã thay đổi'],
     ['SOURCE_RETURNED', 'đã bị trả lại'],
     ['PERIOD_LOCKED', 'đã khóa'],
+    ['STALE_PROGRESS_BASELINE', 'tải lại bản tổng hợp'],
+    ['FORECAST_CHANGE_REASON_REQUIRED', 'bổ sung lý do'],
+    ['CATALOG_PROVIDER_NOT_ACTIVE', 'không còn hoạt động'],
   ])('maps %s to an actionable Vietnamese error', async (code, message) => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: code } });
     await expect(dailyLogWbsService.saveContribution({
