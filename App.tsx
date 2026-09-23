@@ -47,7 +47,8 @@ const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
 const ProcurementWorkbench = React.lazy(() => import('./pages/procurement/ProcurementWorkbench'));
 const ProcurementHub = React.lazy(() => import('./pages/procurement/ProcurementHub'));
-const V2FoundationNotice = React.lazy(() => import('./components/erp/V2FoundationNotice'));
+const ProcurementV2Inbox = React.lazy(() => import('./pages/procurement-v2/ProcurementV2Inbox'));
+const ProcurementV2DemandDetail = React.lazy(() => import('./pages/procurement-v2/ProcurementV2DemandDetail'));
 const ProjectV2Workspace = React.lazy(() => import('./pages/project-v2/ProjectV2Workspace'));
 const ProjectV2PlanDetail = React.lazy(() => import('./pages/project-v2/ProjectV2PlanDetail'));
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
@@ -238,8 +239,8 @@ const AppRoutes: React.FC = () => {
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="procurement" element={<ProcurementHub />} />
           <Route path="procurement/legacy" element={<ProcurementWorkbench />} />
-          <Route path="procurement-v2" element={<V2FoundationNotice area="procurement" />} />
-          <Route path="procurement-v2/demands/:demandId" element={<V2FoundationNotice area="procurement" />} />
+          <Route path="procurement-v2" element={<ProcurementV2Inbox />} />
+          <Route path="procurement-v2/demands/:demandId" element={<ProcurementV2DemandDetail />} />
           <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />
