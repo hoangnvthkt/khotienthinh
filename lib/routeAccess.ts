@@ -190,16 +190,20 @@ export const getAuthorizedModuleRoute = (
   user: Parameters<typeof canAccessRoute>[0],
   moduleKey: string,
   preferredRoute?: string,
-): string | null => getConcreteModuleNavigationRoutes(moduleKey, preferredRoute)
-  .find(route => canAccessRoute(user, route)) || null;
+  options?: { requirePreferredRoute?: boolean },
+): string | null => options?.requirePreferredRoute
+  ? preferredRoute && canAccessRoute(user, preferredRoute) ? preferredRoute : null
+  : getConcreteModuleNavigationRoutes(moduleKey, preferredRoute)
+    .find(route => canAccessRoute(user, route)) || null;
 
 /** Navigation surfaces must have at least one route the user can open. */
 export const canAccessNavigationModule = (
   user: Parameters<typeof canAccessRoute>[0],
   moduleKey: string,
   preferredRoute?: string,
+  options?: { requirePreferredRoute?: boolean },
 ): boolean => canViewModule(user, moduleKey)
-  && Boolean(getAuthorizedModuleRoute(user, moduleKey, preferredRoute));
+  && Boolean(getAuthorizedModuleRoute(user, moduleKey, preferredRoute, options));
 
 /** Choose a permitted landing after a denied route; never consult retained legacy fields. */
 export const getAuthorizedRouteFallback = (

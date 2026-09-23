@@ -3,6 +3,7 @@ export const PROJECT_ROOM_ACTION_CODES = [
   'edit',
   'delete',
   'submit',
+  'return',
   'verify',
   'confirm',
   'approve',
@@ -14,6 +15,9 @@ export type ProjectRoomActionCode = typeof PROJECT_ROOM_ACTION_CODES[number];
 
 export const PROJECT_PERMISSION_ROOM_CODES = [
   'daily_log',
+  'v2_month_plan',
+  'v2_construction_plan',
+  'v2_material_plan',
   'material_planning',
   'material_request',
   'material_po',
@@ -29,6 +33,7 @@ export type ProjectPermissionRoomCode = typeof PROJECT_PERMISSION_ROOM_CODES[num
 
 export type ProjectPermissionRoomGroupCode =
   | 'daily_log'
+  | 'planning'
   | 'material'
   | 'progress'
   | 'finance'
@@ -71,6 +76,15 @@ const defineRoom = (
 });
 
 export const PROJECT_PERMISSION_ROOMS = Object.freeze([
+  defineRoom('v2_month_plan', 'planning', 'Kế hoạch tháng V2', 'Lập và duyệt khối lượng tháng.',
+    ['view', 'edit', 'delete', 'submit', 'return', 'approve'], [], 11,
+    { edit: ['view'], delete: ['view'], submit: ['view'], return: ['view'], approve: ['view'] }),
+  defineRoom('v2_construction_plan', 'planning', 'Kế hoạch thi công V2', 'Lập và duyệt công việc thi công.',
+    ['view', 'edit', 'delete', 'submit', 'return', 'approve'], [], 12,
+    { edit: ['view'], delete: ['view'], submit: ['view'], return: ['view'], approve: ['view'] }),
+  defineRoom('v2_material_plan', 'planning', 'Kế hoạch vật tư V2', 'Lập và duyệt nhu cầu vật tư từ thi công.',
+    ['view', 'edit', 'delete', 'submit', 'return', 'approve'], [], 13,
+    { edit: ['view'], delete: ['view'], submit: ['view'], return: ['view'], approve: ['view'] }),
   defineRoom('daily_log', 'daily_log', 'Nhật ký công trường', 'Lập, kiểm tra và duyệt nhật ký.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'publish_progress'], ['verify', 'approve'], 10, { publish_progress: ['approve'] }),
   defineRoom('material_planning', 'material', 'Kế hoạch & BOQ vật tư', 'Quản lý kế hoạch và BOQ vật tư.', ['view', 'edit', 'delete'], [], 20),
   defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'confirm', 'approve', 'view_available_stock'], [], 30),
@@ -96,6 +110,7 @@ const GENERIC_ROOM_ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
   edit: 'Sửa',
   delete: 'Xóa',
   submit: 'Gửi',
+  return: 'Trả lại',
   verify: 'Kiểm tra',
   confirm: 'Xác nhận',
   approve: 'Duyệt',

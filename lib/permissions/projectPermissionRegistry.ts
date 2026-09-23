@@ -23,6 +23,9 @@ export const PROJECT_PERMISSION_MODULE_CODES = [
   'project.org',
   'project.executive',
   'project.daily_log',
+  'project.v2_month_plan',
+  'project.v2_construction_plan',
+  'project.v2_material_plan',
   'project.material_request',
   'project.material_plan',
   'project.material_boq',
@@ -155,6 +158,19 @@ const moduleDefinition = (
 });
 
 export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] = [
+  ...([
+    ['project.v2_month_plan', 'Kế hoạch tháng V2', 41],
+    ['project.v2_construction_plan', 'Kế hoạch thi công V2', 42],
+    ['project.v2_material_plan', 'Kế hoạch vật tư V2', 43],
+  ] as const).map(([code, label, order]) => moduleDefinition(
+    code, label, ['/project-v2', '/project-v2/plans/:planId'], order,
+    actionSet(code, '/project-v2', [
+      ['view', 'Xem', 10], ['create', 'Tạo', 20], ['edit_own', 'Sửa của mình', 30],
+      ['edit_all', 'Sửa tất cả', 40], ['delete_own', 'Xóa của mình', 50],
+      ['delete_all', 'Xóa tất cả', 60], ['submit', 'Gửi duyệt', 70],
+      ['return', 'Trả lại', 80], ['approve', 'Duyệt', 90], ['manage', 'Quản trị', 100],
+    ]),
+  )),
   moduleDefinition('project.master', 'Danh mục dự án', [], 5, actionSet('project.master', '/da', [
     ['view', 'Xem', 10],
     ['create', 'Tạo', 20],

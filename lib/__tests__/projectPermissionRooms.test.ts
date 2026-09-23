@@ -6,10 +6,10 @@ import {
 } from '../permissions/projectPermissionRooms';
 
 describe('projectPermissionRooms', () => {
-  it('exposes 10 unique active Room codes', () => {
+  it('exposes 13 unique active Room codes', () => {
     const codes = PROJECT_PERMISSION_ROOMS.map(room => room.code);
 
-    expect(codes).toHaveLength(10);
+    expect(codes).toHaveLength(13);
     expect(new Set(codes).size).toBe(codes.length);
     expect(codes).toEqual(expect.arrayContaining([
       'daily_log',
