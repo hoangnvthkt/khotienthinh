@@ -2,7 +2,7 @@
 
 **Ngày thiết kế:** 23/09/2026
 
-**Trạng thái:** Đã cập nhật theo đính chính nghiệp vụ ngày 23/09/2026; chờ duyệt lại bản đặc tả trước khi cập nhật kế hoạch triển khai
+**Trạng thái:** Đã được người dùng xác nhận bản điều chỉnh ngày 23/09/2026; kế hoạch triển khai đã được cập nhật
 
 **Phạm vi:** Nhật ký công trường, tiến độ ngày/tuần, nhân công, giờ máy và bằng chứng nguồn lực phục vụ thanh toán nhà cung cấp về sau
 

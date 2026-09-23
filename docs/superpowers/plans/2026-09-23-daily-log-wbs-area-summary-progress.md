@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
-**Goal:** Cho phép nhiều cán bộ lập phiếu nguồn theo khu vực/WBS, người tổng hợp chỉnh từng card khu vực và gửi một bản tổng hợp cho CHT; chỉ bản được CHT xác nhận mới công bố tiến độ ngày/tuần.
+**Goal:** Cho phép nhiều cán bộ lập phiếu nguồn theo khu vực/WBS, bắt buộc khai báo nguồn cung cấp cho nhân công/máy, người tổng hợp chỉnh từng card và chỉ bản được CHT xác nhận mới công bố tiến độ cùng bằng chứng nguồn lực.
 
-**Architecture:** Mở rộng daily_log_contributions và daily_log_summary_sources đang có, thêm daily_log_work_items chuẩn hóa và command RPC theo transaction. UI tách thành editor phiếu nguồn, workspace tổng hợp hai tầng và chế độ duyệt CHT; project_daily_task_progress tiếp tục là sổ tiến độ chính thức nhưng chỉ nhận dữ liệu qua command công bố idempotent.
+**Architecture:** Mở rộng daily_log_contributions và daily_log_summary_sources đang có, thêm daily_log_work_items cùng semantics nguồn lực/nguồn cung cấp chuẩn hóa và command RPC theo transaction. UI tách thành editor phiếu nguồn, workspace tổng hợp hai tầng và chế độ duyệt CHT; project_daily_task_progress tiếp tục là sổ tiến độ chính thức, còn chi tiết nhân công/máy của summary verified là bằng chứng vật lý, không chứa giá hoặc tiền.
 
 **Tech Stack:** React 18, TypeScript 5.8, Vite 6, Vitest 4, Playwright 1.60, Supabase/PostgreSQL/RLS/RPC, Tailwind utility classes, lucide-react.
 
@@ -16,6 +16,8 @@
 - Mọi thao tác Supabase dùng Supabase Cloud từ cấu hình .env; không dùng Supabase local hoặc Docker.
 - Không ghi trực tiếp project_daily_task_progress, project_weekly_task_progress hoặc trạng thái workflow từ frontend.
 - Phiếu nguồn không công bố tiến độ; chỉ bản tổng hợp member_contributions được CHT xác nhận mới công bố.
+- Mỗi dòng nhân công/máy mới bắt buộc chọn nguồn danh mục hoặc nhập tay có loại và tên.
+- Không đọc internal_price_book, không nhận/ghi unit_cost hoặc total_cost, không tạo accrual/project_transactions.
 - Người tổng hợp sửa bản sao trong daily_log_summary_sources; không sửa ngược contribution gốc.
 - Giá trị chưa biết lưu null và hiển thị “Chưa có cơ sở quy đổi”; không biến unknown thành 0.
 - Không cộng hoặc lấy trung bình phần trăm lũy kế giữa các khu vực.
@@ -30,13 +32,14 @@
 2. Contribution đổi sau khi đã chụp snapshot: giữ bản chỉnh hiện tại, báo source_changed và chỉ cập nhật khi người tổng hợp chủ động — Task 4, 6.
 3. Hai lần duyệt hoặc retry sau mất mạng: chỉ một progress row/task/day và một receipt cho command_id — Task 7.
 4. Ngày hoặc tuần bị khóa, hoặc baseline trước/sau đã đổi: command rollback toàn bộ và trả lỗi có thể hành động — Task 7, 9.
-5. WBS thiếu khối lượng, nguồn bị trả lại/mất hoặc thiết bị mobile hẹp: vẫn xem được nguồn gốc, không hiển thị 0 giả và không gửi CHT khi còn blocker — Task 5, 6, 10.
+5. NCC bị khóa, nguồn nhập tay thiếu loại/tên hoặc payload cố gửi giá/tiền: giữ snapshot để xem nhưng chặn gửi nguồn không hợp lệ; command không ghi cột giá legacy — Task 1, 2, 4, 5, 7.
 
 ## File Map
 
 **Tạo mới:**
 
 - lib/dailyLogWorkItemRules.ts: công thức tiến độ, tổng hợp theo khu vực và conflict model.
+- lib/dailyLogResourceRules.ts: semantics nhân công/máy và validation hai mode nguồn cung cấp.
 - lib/dailyLogWbsService.ts: adapter cho bundle, contribution draft, summary draft, submit, publish và revision RPC.
 - components/project/daily-log/DailyLogWbsPicker.tsx: drawer chọn leaf WBS.
 - components/project/daily-log/DailyLogWorkItemTable.tsx: bảng WBS desktop và card mobile.
@@ -67,15 +70,17 @@
 
 ---
 
-### Task 1: Khóa kiểu dữ liệu và công thức WBS theo khu vực
+### Task 1: Khóa kiểu dữ liệu, công thức WBS và semantics nguồn lực
 
 **Files:**
 - Create: lib/dailyLogWorkItemRules.ts
 - Create: lib/__tests__/dailyLogWorkItemRules.test.ts
+- Create: lib/dailyLogResourceRules.ts
+- Create: lib/__tests__/dailyLogResourceRules.test.ts
 - Modify: types.ts
 
 **Interfaces:**
-- Produces: DailyLogWorkItem, DailyLogWbsDecision, DailyLogWorkConflictCode, DerivedWorkItemProgress, AggregatedDailyLogWorkItem, deriveWorkItemProgress(), deriveWorkItemProgressFromQuantity(), validateWorkItemProgressInput(), aggregateAreaWorkItems().
+- Produces: DailyLogWorkItem, DailyLogWbsDecision, DailyLogResourceProvider, DailyLogLaborInput, DailyLogMachineInput, validateResourceProvider(), calculateLaborHours(), calculateMachineHours(), deriveWorkItemProgress(), deriveWorkItemProgressFromQuantity(), validateWorkItemProgressInput(), aggregateAreaWorkItems().
 - Consumes: ProjectTask, ProjectWorkBoqItem và số liệu progress chính thức gần nhất.
 
 - [ ] **Step 1: Viết test fail cho quy đổi, unknown và tổng hợp nhiều khu vực**
@@ -87,6 +92,11 @@
       deriveWorkItemProgressFromQuantity,
       validateWorkItemProgressInput,
     } from '../dailyLogWorkItemRules';
+    import {
+      calculateLaborHours,
+      calculateMachineHours,
+      validateResourceProvider,
+    } from '../dailyLogResourceRules';
 
     describe('dailyLogWorkItemRules', () => {
       it('derives cumulative and daily quantities from percent', () => {
@@ -150,9 +160,33 @@
       });
     });
 
+    describe('dailyLogResourceRules', () => {
+      it('accepts a catalog provider snapshot', () => {
+        expect(validateResourceProvider({
+          entryMode: 'catalog',
+          partnerId: 'partner-1',
+          providerCodeSnapshot: 'NCC-001',
+          providerNameSnapshot: 'Công ty An Phát',
+        })).toEqual({ valid: true, errorCode: null });
+      });
+
+      it('requires type and name for a manual provider', () => {
+        expect(validateResourceProvider({
+          entryMode: 'manual',
+          manualProviderType: 'day_labor',
+          manualProviderName: '',
+        })).toEqual({ valid: false, errorCode: 'manual_provider_name_required' });
+      });
+
+      it('calculates only physical usage', () => {
+        expect(calculateLaborHours({ peopleCount: 5, hoursPerPerson: 6 })).toBe(30);
+        expect(calculateMachineHours({ machineCount: 2, hoursPerMachine: 7.5 })).toBe(15);
+      });
+    });
+
 - [ ] **Step 2: Chạy test để xác nhận fail**
 
-Run: npm test -- lib/__tests__/dailyLogWorkItemRules.test.ts
+Run: npm test -- lib/__tests__/dailyLogWorkItemRules.test.ts lib/__tests__/dailyLogResourceRules.test.ts
 
 Expected: FAIL vì module và types chưa tồn tại.
 
@@ -227,6 +261,45 @@ Expected: FAIL vì module và types chưa tồn tại.
       sourceFingerprint: string;
     }
 
+    export type DailyLogProviderEntryMode = 'catalog' | 'manual';
+    export type DailyLogManualProviderType =
+      | 'free_crew'
+      | 'day_labor'
+      | 'unregistered_provider'
+      | 'machine_owner'
+      | 'unregistered_rental_provider'
+      | 'other';
+
+    export interface DailyLogResourceProvider {
+      entryMode: DailyLogProviderEntryMode;
+      partnerId?: string | null;
+      providerCodeSnapshot?: string | null;
+      providerNameSnapshot?: string | null;
+      manualProviderType?: DailyLogManualProviderType | null;
+      manualProviderName?: string | null;
+      manualProviderNote?: string | null;
+    }
+
+    export interface DailyLogLaborInput {
+      workItemClientKey: string;
+      workItemId?: string | null;
+      provider: DailyLogResourceProvider;
+      laborType: string;
+      peopleCount: number;
+      hoursPerPerson: number;
+      note?: string | null;
+    }
+
+    export interface DailyLogMachineInput {
+      workItemClientKey: string;
+      workItemId?: string | null;
+      provider: DailyLogResourceProvider;
+      machineType: string;
+      machineCount: number;
+      hoursPerMachine: number;
+      note?: string | null;
+    }
+
 - [ ] **Step 4: Implement công thức thuần**
 
     export const deriveWorkItemProgress = (input: {
@@ -272,9 +345,31 @@ Expected: FAIL vì module và types chưa tồn tại.
 
 Server/UI dùng cùng tolerance và decimal rounding helper hiện có. `deriveWorkItemProgressFromQuantity()` chỉ được gọi khi plannedQuantity dương; nếu thiếu planned quantity, UI chỉ cho nhập phần trăm. Validation bổ sung rule không giảm so với baseline, không vượt progress ngày kế tiếp khi backdate và tôn trọng cấu hình over-100 của leaf task. `aggregateAreaWorkItems()` nhóm theo taskId. Chỉ tính phần trăm có trọng số khi mọi dòng có areaPlannedQuantity dương; nếu không thì officialCumulativePercent = null và thêm missing_area_allocation. Không tự lấy max hoặc average.
 
+`validateResourceProvider()` chấp nhận đúng một mode. Mode `catalog` bắt buộc partnerId/providerNameSnapshot và không nhận manual fields. Mode `manual` bắt buộc manualProviderType/manualProviderName và partnerId phải null. `calculateLaborHours()` và `calculateMachineHours()` chỉ nhân hai đại lượng dương, làm tròn 4 chữ số và không có tham số giá/tiền.
+
+    export const calculateLaborHours = (input: { peopleCount: number; hoursPerPerson: number }) =>
+      Math.round(input.peopleCount * input.hoursPerPerson * 10_000) / 10_000;
+
+    export const calculateMachineHours = (input: { machineCount: number; hoursPerMachine: number }) =>
+      Math.round(input.machineCount * input.hoursPerMachine * 10_000) / 10_000;
+
+    export const validateResourceProvider = (provider: DailyLogResourceProvider) => {
+      if (provider.entryMode === 'catalog') {
+        return provider.partnerId && provider.providerNameSnapshot?.trim()
+          ? { valid: true as const, errorCode: null }
+          : { valid: false as const, errorCode: 'catalog_provider_required' as const };
+      }
+      if (!provider.manualProviderType) {
+        return { valid: false as const, errorCode: 'manual_provider_type_required' as const };
+      }
+      return provider.manualProviderName?.trim()
+        ? { valid: true as const, errorCode: null }
+        : { valid: false as const, errorCode: 'manual_provider_name_required' as const };
+    };
+
 - [ ] **Step 5: Chạy unit test và typecheck**
 
-Run: npm test -- lib/__tests__/dailyLogWorkItemRules.test.ts
+Run: npm test -- lib/__tests__/dailyLogWorkItemRules.test.ts lib/__tests__/dailyLogResourceRules.test.ts
 
 Run: npm run lint
 
@@ -282,8 +377,8 @@ Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
-    git add types.ts lib/dailyLogWorkItemRules.ts lib/__tests__/dailyLogWorkItemRules.test.ts
-    git commit -m "feat(daily-log): define WBS area work item rules"
+    git add types.ts lib/dailyLogWorkItemRules.ts lib/dailyLogResourceRules.ts lib/__tests__/dailyLogWorkItemRules.test.ts lib/__tests__/dailyLogResourceRules.test.ts
+    git commit -m "feat(daily-log): define WBS and resource evidence rules"
 
 ---
 
@@ -297,7 +392,7 @@ Expected: PASS.
 
 **Interfaces:**
 - Consumes: daily_log_contributions, daily_log_summary_sources, daily_logs, daily_log_labor, daily_log_machines, project_tasks, project_work_boq_items.
-- Produces: daily_log_work_items, daily_log_wbs_decisions, typed area/snapshot columns, owner constraints, RLS and get_daily_log_wbs_rollout_access_v1().
+- Produces: daily_log_work_items, daily_log_wbs_decisions, typed provider/resource columns, owner constraints, RLS and get_daily_log_wbs_rollout_access_v1().
 
 - [ ] **Step 1: Viết migration contract test fail**
 
@@ -311,6 +406,11 @@ Expected: PASS.
     expect(sql).toContain('daily_log_work_items_owner_check');
     expect(sql).toContain('work_area_name');
     expect(sql).toContain('source_fingerprint');
+    expect(sql).toContain('provider_entry_mode');
+    expect(sql).toContain('manual_provider_name');
+    expect(sql).toContain('resource_semantics_version');
+    expect(sql).toContain('daily_log_labor_provider_check');
+    expect(sql).toContain('daily_log_machines_provider_check');
     expect(sql).toContain('get_daily_log_wbs_rollout_access_v1');
     expect(sql).toContain('enable row level security');
     expect(sql).not.toContain('grant insert, update, delete on public.daily_log_work_items to authenticated');
@@ -424,7 +524,55 @@ Expected: FAIL vì migration chưa tồn tại.
       check (jsonb_typeof(included_source_work_item_ids) = 'array')
     );
 
-Thêm partial unique indexes đúng đặc tả; thêm contribution_id, summary_source_id, source line id và semantics fields cho daily_log_labor/machines. `daily_log_wbs_decisions` là bản quyết định chính thức theo task của phiếu tổng hợp, tách khỏi các row nguồn theo khu vực để publish/retry không phải suy diễn lại từ UI. Drop NOT NULL của daily_log_id chỉ sau khi owner check mới đã tồn tại trong cùng transaction.
+    alter table public.daily_log_labor
+      alter column daily_log_id drop not null,
+      add column daily_log_work_item_id uuid references public.daily_log_work_items(id),
+      add column contribution_id uuid references public.daily_log_contributions(id),
+      add column summary_source_id uuid references public.daily_log_summary_sources(id),
+      add column source_labor_line_id uuid,
+      add column people_count numeric,
+      add column hours_per_person numeric,
+      add column total_labor_hours numeric,
+      add column provider_entry_mode text,
+      add column provider_code_snapshot text,
+      add column provider_name_snapshot text,
+      add column manual_provider_type text,
+      add column manual_provider_name text,
+      add column manual_provider_note text,
+      add column resource_semantics_version integer not null default 1;
+
+    alter table public.daily_log_machines
+      alter column daily_log_id drop not null,
+      add column daily_log_work_item_id uuid references public.daily_log_work_items(id),
+      add column contribution_id uuid references public.daily_log_contributions(id),
+      add column summary_source_id uuid references public.daily_log_summary_sources(id),
+      add column source_machine_line_id uuid,
+      add column machine_count numeric,
+      add column hours_per_machine numeric,
+      add column total_machine_hours numeric,
+      add column provider_entry_mode text,
+      add column provider_code_snapshot text,
+      add column provider_name_snapshot text,
+      add column manual_provider_type text,
+      add column manual_provider_name text,
+      add column manual_provider_note text,
+      add column resource_semantics_version integer not null default 1;
+
+    alter table public.daily_log_labor
+      add constraint daily_log_labor_provider_check check (
+        resource_semantics_version = 1
+        or (provider_entry_mode = 'catalog' and partner_id is not null and nullif(trim(provider_name_snapshot), '') is not null and manual_provider_name is null)
+        or (provider_entry_mode = 'manual' and partner_id is null and manual_provider_type in ('free_crew','day_labor','unregistered_provider','other') and nullif(trim(manual_provider_name), '') is not null)
+      );
+
+    alter table public.daily_log_machines
+      add constraint daily_log_machines_provider_check check (
+        resource_semantics_version = 1
+        or (provider_entry_mode = 'catalog' and partner_id is not null and nullif(trim(provider_name_snapshot), '') is not null and manual_provider_name is null)
+        or (provider_entry_mode = 'manual' and partner_id is null and manual_provider_type in ('machine_owner','unregistered_rental_provider','other') and nullif(trim(manual_provider_name), '') is not null)
+      );
+
+Thêm owner checks/partial indexes cho labor/machines trước khi drop NOT NULL; bản ghi mới luôn dùng `resource_semantics_version = 2`, còn dòng cũ giữ version 1 và không bị backfill. `unit_cost`/`total_cost` legacy vẫn tồn tại để đọc lịch sử nhưng command mới không ghi. `daily_log_wbs_decisions` là bản quyết định chính thức theo task của phiếu tổng hợp, tách khỏi các row nguồn theo khu vực để publish/retry không phải suy diễn lại từ UI.
 
 - [ ] **Step 4: Tạo fail-closed rollout gate theo scope/date**
 
@@ -547,8 +695,14 @@ Expected: PASS.
       expectedRowVersion: 3,
       workAreaCode: 'A',
       workAreaName: 'Khu A',
-      items: [{ taskId: 'task-1', cumulativeProgressPercent: 35 }],
-      labor: [],
+      items: [{ clientKey: 'work-1', taskId: 'task-1', cumulativeProgressPercent: 35 }],
+      labor: [{
+        workItemClientKey: 'work-1',
+        laborType: 'Tổ xây dựng',
+        peopleCount: 5,
+        hoursPerPerson: 8,
+        provider: { entryMode: 'manual', manualProviderType: 'free_crew', manualProviderName: 'Tổ anh Minh' },
+      }],
       machines: [],
     });
 
@@ -557,6 +711,8 @@ Expected: PASS.
       p_expected_row_version: 3,
       p_work_area_code: 'A',
     }));
+
+Contract test SQL thêm hai case: manual provider thiếu tên trả `MANUAL_PROVIDER_NAME_REQUIRED`; payload labor có `unitCost` hoặc `totalCost` trả `RESOURCE_PRICE_FIELDS_NOT_ALLOWED` và không ghi bất kỳ dòng chi tiết nào.
 
 - [ ] **Step 2: Chạy test để xác nhận fail**
 
@@ -572,6 +728,7 @@ Khóa contract TypeScript trước khi viết adapter:
       rollout: { mode: 'off' | 'pilot' | 'enforced' | 'paused'; cutoverDate: string; enabled: boolean };
       tasks: ProjectTask[];
       workBoqItems: ProjectWorkBoqItem[];
+      resourceProviders: BusinessPartner[];
       previousProgressRows: ProjectDailyTaskProgress[];
       nextProgressRows: ProjectDailyTaskProgress[];
       contribution: DailyLogContribution | null;
@@ -600,7 +757,7 @@ Khóa contract TypeScript trước khi viết adapter:
       p_daily_log_id text default null
     ) returns jsonb
 
-Bundle trả rollout, leafTasks, workBoqItems, previousProgressRows, nextProgressRows, contribution, contributionsForSummary, summaryLog, summarySources, workItems, decisions, labor, machines, periodState và permissions. Query theo tập id, không loop N+1.
+Bundle trả rollout, leafTasks, workBoqItems, resourceProviders active có classification supplier/contractor, previousProgressRows, nextProgressRows, contribution, contributionsForSummary, summaryLog, summarySources, workItems, decisions, labor, machines, periodState và permissions. Query theo tập id, không loop N+1; không select `unit_cost`/`total_cost` trong luồng mới.
 
 - [ ] **Step 4: Tạo command lưu contribution**
 
@@ -614,7 +771,7 @@ Bundle trả rollout, leafTasks, workBoqItems, previousProgressRows, nextProgres
       p_machines jsonb
     ) returns jsonb
 
-Helper app_private khóa contribution FOR UPDATE, xác thực author/scope/status draft hoặc returned, rollout/date, leaf task và baseline fingerprint. Server tự tính cumulative/daily quantity; xóa-thêm chi tiết của đúng owner trong transaction; tăng row_version.
+Helper app_private khóa contribution FOR UPDATE, xác thực author/scope/status draft hoặc returned, rollout/date, leaf task và baseline fingerprint. Mỗi item có `clientKey`; labor/machine tham chiếu bằng `workItemClientKey`. Server xác thực provider mode, snapshot lại catalog provider active, tính total hours, ghi semantics version 2, buộc `unit_cost`/`total_cost = null`, tự tính cumulative/daily quantity; xóa-thêm chi tiết của đúng owner trong transaction và tăng row_version. JSON có trường price/amount ngoài contract bị reject bằng `RESOURCE_PRICE_FIELDS_NOT_ALLOWED`.
 
 - [ ] **Step 5: Tạo command lưu summary snapshot**
 
@@ -628,7 +785,7 @@ Helper app_private khóa contribution FOR UPDATE, xác thực author/scope/statu
       p_machines jsonb
     ) returns jsonb
 
-Command chỉ nhận summary_source_type = member_contributions ở draft/rejected, kiểm tra summarize permission, unique contribution, source status/version và lưu snapshot. `p_decisions` phải có đúng một quyết định cho mỗi task được tổng hợp; manual override bắt buộc lý do. Server tính lại fingerprint của source rows và các giá trị quy đổi trước khi ghi `daily_log_wbs_decisions`. Nếu card đã chỉnh và source mới hơn, giữ bản chỉnh trừ khi payload có refreshSource = true; trả conflicts theo card.
+Command chỉ nhận summary_source_type = member_contributions ở draft/rejected, kiểm tra summarize permission, unique contribution, source status/version và lưu snapshot. `p_decisions` phải có đúng một quyết định cho mỗi task được tổng hợp; manual override bắt buộc lý do. Server tính lại fingerprint của source rows, nguồn cung cấp và các giá trị quy đổi trước khi ghi; không sao chép giá legacy. Nếu card đã chỉnh và source mới hơn, giữ bản chỉnh trừ khi payload có refreshSource = true; trả conflicts theo card.
 
 - [ ] **Step 6: Tạo command yêu cầu sửa riêng một card nguồn**
 
@@ -650,7 +807,7 @@ Command yêu cầu Daily Log approve, comment không rỗng, khóa summary/sourc
       requestSourceChange(input: RequestDailyLogSourceChangeInput): Promise<DailyLogWorkSaveReceipt>,
     };
 
-DailyLogWbsBundleInput gồm projectId, constructionSiteId, logDate và dailyLogId tùy chọn. SaveDailyLogContributionWorkInput và SaveDailyLogSummaryWorkInput dùng đúng payload trong chữ ký RPC ở Step 4–5; không gửi quantity/amount đã tính từ client như dữ liệu tin cậy.
+DailyLogWbsBundleInput gồm projectId, constructionSiteId, logDate và dailyLogId tùy chọn. SaveDailyLogContributionWorkInput và SaveDailyLogSummaryWorkInput dùng đúng payload trong chữ ký RPC ở Step 4–5; không có thuộc tính price/cost/amount và không gửi total hours đã tính từ client như dữ liệu tin cậy.
 
 Map snake/camel bằng dbMapping hiện có; map mã lỗi ROW_VERSION_CONFLICT, SOURCE_CHANGED, SOURCE_RETURNED, PERIOD_LOCKED thành copy tiếng Việt có hành động.
 
@@ -697,6 +854,13 @@ Với plannedQuantity null:
     expect(screen.getByText('Chưa có cơ sở quy đổi')).toBeVisible();
     expect(screen.queryByText('0 m³')).not.toBeInTheDocument();
 
+Với một dòng nhân công chưa chọn nguồn:
+
+    expect(screen.getByText('Chọn NCC/đội hoặc nhập tay')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Lưu nháp' })).toBeDisabled();
+
+Chọn `Nhập tay`, loại `Nhân công nhật`, nhập `Tổ anh Minh` rồi kiểm tra payload chỉ có số lượng/thời gian/provider và không có `unitCost`, `totalCost`, `rate` hoặc `amount`.
+
 - [ ] **Step 2: Chạy test để xác nhận fail**
 
 Run: npm test -- lib/__tests__/dailyLogContributionWorkEditor.test.tsx
@@ -720,7 +884,7 @@ Search không dấu; filter planned_today, planned_week, active, recent, all. Pa
 
 - [ ] **Step 4: Implement bảng và resource editor**
 
-Desktop dùng sticky header/WBS; tablet horizontal scroll; mobile card accordion. Mỗi row hiển thị baseline, cumulative, daily delta, labor summary, machine summary, forecast. Resource editor nhập peopleCount × hoursPerPerson và machineCount × hoursPerMachine; chưa có cost trong plan này.
+Desktop dùng sticky header/WBS; tablet horizontal scroll; mobile card accordion. Mỗi row hiển thị baseline, cumulative, daily delta, labor summary, machine summary, forecast. Resource editor nhập peopleCount × hoursPerPerson và machineCount × hoursPerMachine. Mỗi dòng có combobox `Nguồn cung cấp` lấy từ resourceProviders và lựa chọn cuối `Nhập tay`; mode nhập tay mở loại nguồn, tên bắt buộc và ghi chú tùy chọn. Không render hoặc giữ trong form state bất kỳ trường giá/tiền nào.
 
 - [ ] **Step 5: Gắn vào DailyLogTab theo rollout/date**
 
@@ -728,7 +892,7 @@ Nếu bundle.rollout.enabled và log date >= cutoverDate, dùng DailyLogContribu
 
 - [ ] **Step 6: Kiểm tra trạng thái UX**
 
-Test loading, empty WBS, denied, source returned, version conflict, missing planned quantity, submitted read-only và mobile 390 px. Primary actions là Lưu nháp và Gửi tổng hợp.
+Test loading, empty WBS, denied, source returned, version conflict, missing planned quantity, catalog provider inactive, manual provider thiếu tên, submitted read-only và mobile 390 px. Primary actions là Lưu nháp và Gửi tổng hợp.
 
 - [ ] **Step 7: Chạy test và typecheck**
 
@@ -773,6 +937,8 @@ Test source changed giữ edited value và hiện nút Cập nhật từ phiếu
 
 Thêm case source missing/returned: card vẫn hiện snapshot và attribution, nhưng Gửi CHT bị khóa cho tới khi bỏ card hoặc nguồn hợp lệ trở lại.
 
+Thêm case một dòng dùng NCC danh mục và một dòng nhập tay: card hiển thị đúng badge `Danh mục`/`Nhập tay`, tổng số người/giờ nhưng không có nhãn đơn giá, thành tiền hoặc định giá.
+
 - [ ] **Step 2: Chạy test để xác nhận fail**
 
 Run: npm test -- lib/__tests__/dailyLogSummaryWorkspace.test.tsx
@@ -781,7 +947,7 @@ Expected: FAIL vì workspace chưa tồn tại.
 
 - [ ] **Step 3: Implement card và diff**
 
-DailyLogAreaCard header luôn có workAreaName, sourceUserName, sourceState, updatedAt, số WBS/nhân công/giờ máy và badge Đã điều chỉnh. DailyLogSourceDiff so sánh sourceSnapshot với normalized edited rows và chỉ hiển thị trường thay đổi.
+DailyLogAreaCard header luôn có workAreaName, sourceUserName, sourceState, updatedAt, số WBS/nhân công/giờ máy và badge Đã điều chỉnh. Dòng resource luôn hiển thị providerNameSnapshot hoặc manualProviderName cùng loại nguồn. DailyLogSourceDiff so sánh sourceSnapshot với normalized edited rows và chỉ hiển thị trường thay đổi, gồm cả thay đổi nguồn cung cấp.
 
 - [ ] **Step 4: Implement overview và bảng WBS**
 
@@ -853,7 +1019,7 @@ Expected: FAIL vì migration chưa tồn tại.
       p_submission_note text default null
     ) returns jsonb
 
-Command kiểm tra summary, sources, conflicts, forecast reason, actor summarize/submit và approver Daily Log approve; sau đó dùng workflow transition hiện có trong cùng transaction.
+Command kiểm tra summary, sources, conflicts, forecast reason, actor summarize/submit và approver Daily Log approve. Mỗi resource line phải có semantics version 2 và provider hợp lệ; catalog provider đã inactive hoặc manual provider thiếu type/name chặn submit. Sau đó command dùng workflow transition hiện có trong cùng transaction.
 
 - [ ] **Step 4: Tạo publish command và receipt**
 
@@ -879,11 +1045,13 @@ Receipt TypeScript:
       dailyLogId: string;
       progressDate: string;
       publishedTaskIds: string[];
+      verifiedResourceLineIds: string[];
       progressFingerprint: string;
+      resourceEvidenceFingerprint: string;
       publishedAt: string;
     }
 
-Helper khóa command/log/source/progress state. Server xác thực lại từng `daily_log_wbs_decisions` với source fingerprint và baseline, chặn locked period/backdated violation, tạo đúng một row mỗi task/day từ quyết định chính thức với source_daily_log_id = summary id, gọi helper progress rollup hiện có, cập nhật task actual dates, chuyển log verified và contribution included. Phiếu nguồn không được gọi command.
+Helper khóa command/log/source/progress state. Server xác thực lại từng `daily_log_wbs_decisions`, resource provider snapshot và baseline; chặn locked period/backdated violation; tạo đúng một row mỗi task/day từ quyết định chính thức với source_daily_log_id = summary id; gọi helper progress rollup hiện có; cập nhật task actual dates; chuyển log verified và contribution included. Receipt liệt kê resource line đã trở thành bằng chứng đang hiệu lực. Command không đọc price book, không ghi `unit_cost`/`total_cost`, accrual hoặc `project_transactions`. Phiếu nguồn không được gọi command.
 
 - [ ] **Step 5: Thêm idempotency/concurrency smoke**
 
@@ -895,6 +1063,9 @@ Trong một transaction:
 - khóa tuần rồi xác nhận command rollback cả status và progress;
 - đổi baseline fingerprint rồi xác nhận lỗi STALE_PROGRESS_BASELINE.
 - đổi forecast nhưng bỏ trống forecast_change_reason rồi xác nhận command rollback.
+- khóa catalog provider sau khi draft rồi xác nhận submit/publish bị chặn; manual provider hợp lệ vẫn publish được.
+- gửi payload chứa price/cost/amount rồi xác nhận reject và `unit_cost`/`total_cost` của dòng mới vẫn null.
+- kiểm tra count `project_transactions` không đổi và không có bảng/command accrual nào được gọi.
 - yêu cầu sửa một card rồi xác nhận đúng card có `change_requested`, summary về `rejected`, các snapshot khác không đổi.
 
 - [ ] **Step 6: Gắn service/UI**
@@ -1011,11 +1182,11 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement revision command**
 
-Command chỉ nhận verified member_contributions, yêu cầu reason và quyền approve/publish_progress. Nếu period locked, trả PERIOD_LOCKED_WITH_REOPEN_REQUIRED. Command tạo draft revision, copy summary sources/work items/resources/snapshots, liên kết hai chiều và không thay đổi progress cho đến lần publish revision.
+Command chỉ nhận verified member_contributions, yêu cầu reason và quyền approve/publish_progress. Nếu period locked, trả PERIOD_LOCKED_WITH_REOPEN_REQUIRED. Command tạo draft revision, copy summary sources/work items/resource provider snapshots, liên kết hai chiều và không thay đổi progress hoặc bằng chứng đang hiệu lực cho đến lần publish revision.
 
 - [ ] **Step 4: Mở rộng publish cho revision**
 
-Khi publish revision, khóa chuỗi log và progress ngày liền trước/sau; thay source_daily_log_id sang revision, tính lại daily delta về sau nhưng giữ cumulative đã xác nhận. Log cũ có nhãn superseded, không xóa.
+Khi publish revision, khóa chuỗi log và progress ngày liền trước/sau; thay source_daily_log_id sang revision, tính lại daily delta về sau nhưng giữ cumulative đã xác nhận. Resource lines của log cũ chuyển sang evidence superseded qua lineage của log; revision mới là evidence đang hiệu lực. Không xóa hoặc sửa snapshot provider cũ.
 
 - [ ] **Step 5: Implement UI revision**
 
@@ -1073,12 +1244,12 @@ dailyLogDetailService đọc daily_log_work_items trước cho log mới; nếu 
 
 Journey gồm:
 
-1. Người A tạo phiếu Khu A với WBS, 30%, 5 người.
-2. Người B tạo phiếu Khu B cùng WBS thiếu area allocation.
+1. Người A tạo phiếu Khu A với WBS, 30%, 5 người và chọn NCC danh mục.
+2. Người B tạo phiếu Khu B cùng WBS thiếu area allocation, khai báo 2 máy bằng nguồn nhập tay `Chủ máy anh Bình`.
 3. Người tổng hợp chọn hai phiếu, thấy hai card và blocker.
 4. Người tổng hợp chốt official cumulative + reason, gửi CHT.
 5. CHT xem overview/diff, duyệt & công bố.
-6. Tab tiến độ hiển thị một row nguồn Nhật ký tổng hợp.
+6. Tab tiến độ hiển thị một row nguồn Nhật ký tổng hợp; detail verified hiển thị hai provider snapshot và không có giá/tiền.
 7. Mobile viewport 390 px hiển thị card theo accordion.
 
 - [ ] **Step 5: Tạo operation pilot fail-closed**
@@ -1105,7 +1276,7 @@ Expected: tất cả PASS.
 
 - [ ] **Step 7: Walkthrough nghiệp vụ pilot**
 
-Kiểm tra bằng bốn persona thật: người lập, người tổng hợp, CHT, người chỉ xem. Ghi bằng chứng desktop/tablet/mobile, command receipt, progress lineage, denied action, báo cáo shadow compare và rollback. Chỉ chuyển mode enforced sau khi không có duplicate progress, không còn sai khác shadow chưa giải thích và mọi card truy ngược được nguồn.
+Kiểm tra bằng năm persona thật: người lập, người tổng hợp, CHT, QS/thanh toán chỉ đọc, người bị từ chối. Ghi bằng chứng desktop/tablet/mobile, catalog/manual provider, command receipt, progress/resource lineage, denied action, báo cáo shadow compare và rollback. Chỉ chuyển mode enforced sau khi không có duplicate progress/evidence, không còn sai khác shadow chưa giải thích và mọi card truy ngược được nguồn.
 
 - [ ] **Step 8: Cập nhật tài liệu**
 
@@ -1123,12 +1294,13 @@ Runbook ghi enable, pause, rollback, source conflict, locked period và support 
 Plan 1 hoàn thành khi:
 
 - Phiếu nguồn mới bắt buộc người + khu vực + WBS và không tự ghi progress.
+- Mỗi labor/machine line mới có provider catalog hoặc manual hợp lệ; không có giá/tiền.
 - Người tổng hợp chỉnh được từng card, thấy diff/conflict và gửi một bản ngày.
 - CHT duyệt bằng command atomic/idempotent và tab tiến độ hiển thị lineage về summary/card/source.
 - Legacy trước cutover vẫn đọc được, không có backfill đoán dữ liệu.
 - Unit, contract, Cloud smoke, E2E, typecheck và build đều pass.
 - Pilot có bằng chứng bốn persona, desktop/tablet/mobile và rollback đã diễn tập.
 
-Chỉ sau gate này mới thực hiện plan chi phí nguồn lực:
+Chỉ sau gate này mới thực hiện plan báo cáo bằng chứng nguồn lực:
 
-docs/superpowers/plans/2026-09-23-daily-log-resource-cost-accrual-reconciliation.md
+docs/superpowers/plans/2026-09-23-daily-log-resource-evidence-supplier-payment-readiness.md
