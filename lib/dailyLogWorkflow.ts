@@ -7,6 +7,21 @@ import type {
 
 export const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
 
+const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
+  ROW_VERSION_CONFLICT: 'Phiếu đã được người khác vừa cập nhật. Hãy tải lại dữ liệu rồi thử lại.',
+  SOURCE_CHANGED: 'Phiếu nguồn đã thay đổi. Hãy rà soát lại card nguồn trước khi lưu.',
+  SOURCE_RETURNED: 'Phiếu nguồn đã bị trả lại. Hãy loại nguồn này hoặc chờ thành viên gửi lại.',
+  PERIOD_LOCKED: 'Kỳ tiến độ đã khóa. Hãy liên hệ người có quyền mở kỳ trước khi chỉnh sửa.',
+};
+
+export const mapDailyLogWbsCommandError = (error: unknown): Error => {
+  const candidate = error as { message?: string; code?: string; details?: string } | null;
+  const raw = [candidate?.message, candidate?.code, candidate?.details].filter(Boolean).join(' ');
+  const code = Object.keys(DAILY_LOG_WBS_ERROR_MESSAGES).find(key => raw.includes(key));
+  if (!code) return error instanceof Error ? error : new Error(candidate?.message || 'Không thể lưu dữ liệu nhật ký.');
+  return new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error });
+};
+
 export const getDailyLogWorkflowStatus = (log: DailyLog) => (
   log.status || (log.verified ? 'verified' : 'draft')
 );

@@ -118,7 +118,8 @@
     "20260921190000_g9_pilot_permission_command.sql",
     "20260922064202_fix_boq_material_planning_wrapper_security.sql",
     "20260923090000_daily_log_wbs_area_foundation.sql",
-    "20260923091500_daily_log_publish_progress_permission.sql"
+    "20260923091500_daily_log_publish_progress_permission.sql",
+    "20260923093000_daily_log_wbs_area_commands.sql"
   ],
   "forbidIncludeAll": true
 }

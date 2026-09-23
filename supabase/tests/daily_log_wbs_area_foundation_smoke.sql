@@ -103,4 +103,53 @@ begin
 end;
 $$;
 
+do $$
+declare
+  v_labor_before bigint;
+  v_machine_before bigint;
+begin
+  if to_regprocedure('app_private.assert_daily_log_wbs_resource_payload_v1(jsonb,jsonb)') is null then
+    raise exception 'daily log WBS resource payload validator is missing';
+  end if;
+
+  begin
+    perform app_private.assert_daily_log_wbs_resource_payload_v1(
+      '[{"workItemClientKey":"work-1","laborType":"Tổ xây dựng","peopleCount":5,"hoursPerPerson":8,"provider":{"entryMode":"manual","manualProviderType":"free_crew"}}]'::jsonb,
+      '[]'::jsonb
+    );
+    raise exception 'manual provider without a name was accepted';
+  exception
+    when others then
+      if sqlerrm <> 'MANUAL_PROVIDER_NAME_REQUIRED' then raise; end if;
+  end;
+
+  select count(*) into v_labor_before from public.daily_log_labor;
+  select count(*) into v_machine_before from public.daily_log_machines;
+  begin
+    perform app_private.assert_daily_log_wbs_resource_payload_v1(
+      '[{"workItemClientKey":"work-1","laborType":"Tổ xây dựng","peopleCount":5,"hoursPerPerson":8,"unitCost":1000,"provider":{"entryMode":"manual","manualProviderType":"free_crew","manualProviderName":"Tổ anh Minh"}}]'::jsonb,
+      '[]'::jsonb
+    );
+    raise exception 'labor unitCost was accepted';
+  exception
+    when others then
+      if sqlerrm <> 'RESOURCE_PRICE_FIELDS_NOT_ALLOWED' then raise; end if;
+  end;
+  begin
+    perform app_private.assert_daily_log_wbs_resource_payload_v1(
+      '[{"workItemClientKey":"work-1","laborType":"Tổ xây dựng","peopleCount":5,"hoursPerPerson":8,"totalCost":5000,"provider":{"entryMode":"manual","manualProviderType":"free_crew","manualProviderName":"Tổ anh Minh"}}]'::jsonb,
+      '[]'::jsonb
+    );
+    raise exception 'labor totalCost was accepted';
+  exception
+    when others then
+      if sqlerrm <> 'RESOURCE_PRICE_FIELDS_NOT_ALLOWED' then raise; end if;
+  end;
+  if (select count(*) from public.daily_log_labor) <> v_labor_before
+    or (select count(*) from public.daily_log_machines) <> v_machine_before then
+    raise exception 'resource validation failure wrote detail rows';
+  end if;
+end;
+$$;
+
 rollback;
