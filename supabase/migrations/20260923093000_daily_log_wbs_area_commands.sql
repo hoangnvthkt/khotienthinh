@@ -694,7 +694,12 @@ begin
     coalesce((payload->>'sourceIndex')::integer, original.source_index), v_now
   from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) payload
   join public.daily_log_summary_sources source
-    on source.id = (payload->>'summarySourceId')::uuid and source.daily_log_id = p_daily_log_id
+    on source.daily_log_id = p_daily_log_id
+   and (
+     (nullif(payload->>'summarySourceId', '') is not null
+       and source.id = (payload->>'summarySourceId')::uuid)
+     or source.contribution_id = (payload->>'contributionId')::uuid
+   )
   join public.daily_log_work_items original
     on original.id = (payload->>'sourceWorkItemId')::uuid
    and original.contribution_id = source.contribution_id
@@ -732,7 +737,8 @@ begin
     ) included(work_item_id)
     where not exists (
       select 1 from public.daily_log_work_items item
-      where item.id = included.work_item_id::uuid
+      where (item.id = included.work_item_id::uuid
+          or item.source_work_item_id = included.work_item_id::uuid)
         and item.daily_log_id = p_daily_log_id
         and item.task_id = decision->>'taskId'
     )

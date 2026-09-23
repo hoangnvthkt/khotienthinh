@@ -4,6 +4,7 @@ import {
   buildDailyLogSourceSnapshot,
   buildDailyLogSummaryDetails,
   buildDailyLogSummaryVolumes,
+  canPublishDailyLogSummary,
   canReturnDailyLogSource,
   DAILY_SUMMARY_SOURCE_TYPE,
   getDefaultDailyLogSummaryApprover,
@@ -50,6 +51,14 @@ const summaryLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
 });
 
 describe('daily log source workflow', () => {
+  it('requires both approve and publish_progress capabilities to publish a submitted summary', () => {
+    const submitted = summaryLog({ status: 'submitted' });
+    expect(canPublishDailyLogSummary({ log: submitted, canApprove: true, canPublishProgress: true })).toBe(true);
+    expect(canPublishDailyLogSummary({ log: submitted, canApprove: true, canPublishProgress: false })).toBe(false);
+    expect(canPublishDailyLogSummary({ log: submitted, canApprove: false, canPublishProgress: true })).toBe(false);
+    expect(canPublishDailyLogSummary({ log: summaryLog({ status: 'draft' }), canApprove: true, canPublishProgress: true })).toBe(false);
+  });
+
   it('keeps a returned member-contribution summary on the approver route', () => {
     expect(getDailyLogTargetPermission(summaryLog({
       status: 'rejected',
