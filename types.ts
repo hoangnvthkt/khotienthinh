@@ -1237,6 +1237,10 @@ export interface DailyLogContribution {
   issues?: string | null;
   photos?: DailyLogPhoto[];
   status: DailyLogContributionStatus;
+  workAreaCode?: string | null;
+  workAreaName?: string | null;
+  rowVersion?: number;
+  sourceFingerprint?: string | null;
   submittedToUserId?: string | null;
   submittedToName?: string | null;
   submittedAt?: string | null;
@@ -1264,6 +1268,22 @@ export interface DailyLogSummarySource {
   metadata?: Record<string, unknown>;
   createdBy?: string | null;
   createdAt?: string;
+  sortOrder?: number;
+  sourceVersion?: number | null;
+  sourceFingerprint?: string | null;
+  sourceSnapshot?: Record<string, unknown>;
+  sourceState?: 'current' | 'changed' | 'returned' | 'missing';
+  workAreaCode?: string | null;
+  workAreaName?: string | null;
+  hasAdjustments?: boolean;
+  adjustmentReason?: string | null;
+  adjustedBy?: string | null;
+  adjustedAt?: string | null;
+  reviewStatus?: 'draft' | 'ready' | 'change_requested' | 'accepted' | 'superseded';
+  reviewComment?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  updatedAt?: string;
 }
 
 export interface DailyLog {

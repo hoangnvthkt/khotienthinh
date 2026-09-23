@@ -1725,3 +1725,5 @@ export const baselineService = {
         if (error) throw error;
     },
 };
+
+export { dailyLogWbsService } from './dailyLogWbsService';
