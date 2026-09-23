@@ -47,6 +47,7 @@ const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
 const ProcurementWorkbench = React.lazy(() => import('./pages/procurement/ProcurementWorkbench'));
 const V2FoundationNotice = React.lazy(() => import('./components/erp/V2FoundationNotice'));
+const ProjectV2Workspace = React.lazy(() => import('./pages/project-v2/ProjectV2Workspace'));
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
 const EmployeeDashboard = React.lazy(() => import('./pages/EmployeeDashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -229,7 +230,7 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/documents" element={<HrmDocuments />} />
           <Route path="hrm/ranking" element={<EmployeeRanking />} />
           <Route path="da" element={<ProjectDashboard />} />
-          <Route path="project-v2" element={<V2FoundationNotice area="project" />} />
+          <Route path="project-v2" element={<ProjectV2Workspace />} />
           <Route path="project-v2/plans/:planId" element={<V2FoundationNotice area="project" />} />
           <Route path="safety-card/:qrToken" element={<SafetyCardLookup />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />

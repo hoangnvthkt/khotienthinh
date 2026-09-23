@@ -4,6 +4,7 @@ import { fromDb, toDb } from './dbMapping';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { buildProjectV2ExclusionFilter } from './projectV2/queryState';
 
 const TABLE = 'projects';
 
@@ -31,6 +32,7 @@ type ProjectListOptions = {
 export type ProjectListSortKey = 'updatedAt' | 'code' | 'name' | 'startDate';
 
 export type ProjectListPageOptions = ProjectListOptions & {
+  excludeIds?: string[];
   page?: number;
   pageSize?: number;
   query?: string;
@@ -123,6 +125,7 @@ const projectSortColumnByKey: Record<ProjectListSortKey, string> = {
 
 const applyProjectListFilters = (baseQuery: any, options: ProjectListPageOptions) => {
   let query = baseQuery;
+  if (options.excludeIds?.length) query = query.not('id', 'in', buildProjectV2ExclusionFilter(options.excludeIds));
   const hidden = options.hidden || (options.includeHidden ? 'all' : 'active');
 
   if (hidden === 'active') query = query.eq('is_hidden', false);

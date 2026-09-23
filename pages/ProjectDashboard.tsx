@@ -34,6 +34,8 @@ import { usePermission } from '../hooks/usePermission';
 import { taskService } from '../lib/projectService';
 import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService, type ProjectListSortKey } from '../lib/projectMasterService';
+import { projectV2ReadService } from '../lib/projectV2/readService';
+import { filterLegacyProjectCohort } from '../lib/projectV2/queryState';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
 import { projectStaffService } from '../lib/projectStaffService';
 import { workGroupService } from '../lib/workGroupService';
@@ -467,6 +469,7 @@ const ProjectDashboard: React.FC = () => {
     const [taskProgressBySite, setTaskProgressBySite] = useState<Record<string, { progressPercent: number; leafTaskCount: number }>>({});
     const [taskProgressStatus, setTaskProgressStatus] = useState<ProjectProgressLoadStatus>('idle');
     const [projects, setProjects] = useState<Project[]>([]);
+    const [activeV2CohortIds, setActiveV2CohortIds] = useState<string[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
     const [projectPage, setProjectPage] = useState(1);
@@ -577,9 +580,11 @@ const ProjectDashboard: React.FC = () => {
     const loadProjects = useCallback(async (page = projectPage) => {
         setProjectsLoading(true);
         try {
+            const cohortIds = await projectV2ReadService.listActiveCohortIds();
             const data = await projectMasterService.listPage({
                 page,
                 pageSize: PROJECT_LIST_PAGE_SIZE,
+                excludeIds: cohortIds,
                 includeHidden: isAdmin,
                 query: projectFilters.query,
                 status: projectFilters.status,
@@ -596,6 +601,7 @@ const ProjectDashboard: React.FC = () => {
                 sort: projectServerSort,
                 ascending: projectSortAsc,
             });
+            setActiveV2CohortIds(cohortIds);
             setProjects(data.rows);
             setProjectPage(data.page);
             setProjectTotal(data.total);
@@ -682,10 +688,12 @@ const ProjectDashboard: React.FC = () => {
     }, [loadWorkGroups, refreshWorkflowData, showProjectForm]);
 
     const projectRows = useMemo(() => {
-        if (projects.length > 0) return projects;
+        if (projects.length > 0) return filterLegacyProjectCohort(projects,
+            activeV2CohortIds.map(projectId => ({ projectId, lifecycle: 'active' })));
         if (!projectLoadError) return [];
-        return hrmConstructionSites.map(siteToProjectFallback);
-    }, [projects, projectLoadError, hrmConstructionSites]);
+        return filterLegacyProjectCohort(hrmConstructionSites.map(siteToProjectFallback),
+            activeV2CohortIds.map(projectId => ({ projectId, lifecycle: 'active' })));
+    }, [projects, projectLoadError, hrmConstructionSites, activeV2CohortIds]);
 
     const goToProjectTab = useCallback((tabKey: ProjectOverviewTabKey) => {
         if (canViewProjectTab(tabKey)) {

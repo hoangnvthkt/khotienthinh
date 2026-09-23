@@ -66,4 +66,13 @@ describe('projectV2CommandService', () => {
       p_period_start: '2026-10-01', p_period_end: '2026-10-31', p_lines: lines,
     });
   });
+
+  it('activates an existing project without a client actor claim', async () => {
+    await projectV2CommandService.activateWorkspace({ projectId: 'project-1',
+      primaryConstructionSiteId: null, idempotencyKey: 'activate-1' });
+    expect(mocks.rpc).toHaveBeenCalledWith('activate_project_v2_workspace_v1', {
+      p_project_id: 'project-1', p_primary_construction_site_id: null,
+      p_idempotency_key: 'activate-1',
+    });
+  });
 });
