@@ -40,6 +40,14 @@ describe('dailyLogWorkItemRules', () => {
     })).toEqual({ valid: false, errorCode: 'inconsistent_progress_inputs' });
   });
 
+  it('rejects negative cumulative progress even when percent and quantity agree', () => {
+    expect(validateWorkItemProgressInput({
+      plannedQuantity: 200,
+      cumulativePercent: -10,
+      cumulativeQuantity: -20,
+    })).toEqual({ valid: false, errorCode: 'progress_below_allowed_minimum' });
+  });
+
   it('rejects cumulative progress below the official baseline', () => {
     expect(validateWorkItemProgressInput({
       plannedQuantity: 200,
@@ -93,7 +101,9 @@ describe('dailyLogWorkItemRules', () => {
     ]);
 
     expect(result[0].conflicts).toContain('missing_area_allocation');
+    expect(result[0].conflicts).toContain('duplicate_daily_quantity');
     expect(result[0].officialCumulativePercent).toBeNull();
+    expect(result[0].dailyQuantity).toBeNull();
   });
 
   it('weights the same task by allocated planned quantity', () => {

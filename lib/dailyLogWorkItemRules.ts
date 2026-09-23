@@ -28,6 +28,7 @@ export interface ValidateWorkItemProgressInput {
 
 export type WorkItemProgressValidationError =
   | 'inconsistent_progress_inputs'
+  | 'progress_below_allowed_minimum'
   | 'progress_below_baseline'
   | 'progress_above_next'
   | 'progress_above_allowed_maximum';
@@ -75,6 +76,13 @@ export const deriveWorkItemProgressFromQuantity = (input: {
 export const validateWorkItemProgressInput = (
   input: ValidateWorkItemProgressInput,
 ): WorkItemProgressValidationResult => {
+  if (
+    input.plannedQuantity <= 0
+    || input.cumulativePercent < 0
+    || input.cumulativeQuantity < 0
+  ) {
+    return { valid: false, errorCode: 'progress_below_allowed_minimum' };
+  }
   const derivedQuantity = input.plannedQuantity * input.cumulativePercent / 100;
   if (Math.abs(derivedQuantity - input.cumulativeQuantity) > PROGRESS_TOLERANCE) {
     return { valid: false, errorCode: 'inconsistent_progress_inputs' };
@@ -134,8 +142,8 @@ export const aggregateAreaWorkItems = (
         taskId,
         officialCumulativePercent: null,
         cumulativeQuantity: null,
-        dailyQuantity,
-        conflicts: ['missing_area_allocation'],
+        dailyQuantity: null,
+        conflicts: ['missing_area_allocation', 'duplicate_daily_quantity'],
         sourceWorkItemIds,
       };
     }
