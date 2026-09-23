@@ -35,6 +35,8 @@ export interface ProjectV2ConstructionLine {
   workStart: string | null;
   workEnd: string | null;
   crewId: string | null;
+  baselineRevision?: string | null;
+  baselineExceptionReason?: string | null;
   sources: ProjectV2LineSource[];
 }
 
