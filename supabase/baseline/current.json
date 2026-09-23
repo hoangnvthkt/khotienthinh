@@ -116,7 +116,8 @@
     "20260921170000_g8_management_dataset_lineage.sql",
     "20260921183000_g9_erp_completion_rollout_control.sql",
     "20260921190000_g9_pilot_permission_command.sql",
-    "20260922064202_fix_boq_material_planning_wrapper_security.sql"
+    "20260922064202_fix_boq_material_planning_wrapper_security.sql",
+    "20260923090000_daily_log_wbs_area_foundation.sql"
   ],
   "forbidIncludeAll": true
 }
