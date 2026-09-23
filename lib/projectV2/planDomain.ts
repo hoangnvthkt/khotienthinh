@@ -114,7 +114,10 @@ export function validateProjectV2PlanDraft(draft: ProjectV2PlanDraft): ProjectV2
       if (!line.workItemId) issues.push(issue(`${prefix}.workItemId`, 'missing_work_item'));
       if (!validDate(line.workStart)) issues.push(issue(`${prefix}.workStart`, 'invalid_date'));
       if (!validDate(line.workEnd) || (line.workStart && line.workEnd && line.workEnd < line.workStart)) issues.push(issue(`${prefix}.workEnd`, 'invalid_date'));
-      if (!line.sources.length) issues.push(issue(`${prefix}.sources`, 'missing_source'));
+      if (!line.sources.length && !line.baselineExceptionReason?.trim())
+        issues.push(issue(`${prefix}.sources`, 'missing_source'));
+      if (line.sources.length && line.baselineExceptionReason?.trim())
+        issues.push(issue(`${prefix}.sources`, 'source_exception_conflict'));
     }
   } else {
     for (const line of draft.lines) {

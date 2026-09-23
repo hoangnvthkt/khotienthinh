@@ -54,6 +54,7 @@ export interface ProjectV2PlanSummary {
   id: string; workspaceId: string; planType: ProjectV2PlanType; code: string; title: string;
   status: ProjectV2PlanStatus; periodStart: string; periodEnd: string;
   ownerUserId: string | null; creatorUserId: string; submitterUserId: string | null;
+  followerUserId?: string | null;
   approverUserId: string | null; revision: number; version: number;
   createdAt: string; updatedAt: string;
 }
@@ -78,7 +79,8 @@ function plan(value: unknown): ProjectV2PlanSummary {
   return { id: string(row.id), workspaceId: string(row.workspace_id),
     planType: planType(row.plan_type), code: string(row.code), title: string(row.title),
     status: status(row.status), periodStart: date(row.period_start), periodEnd: date(row.period_end),
-    ownerUserId: nullableString(row.owner_user_id), creatorUserId: string(row.creator_user_id),
+    ownerUserId: nullableString(row.owner_user_id), followerUserId: nullableString(row.follower_user_id ?? null),
+    creatorUserId: string(row.creator_user_id),
     submitterUserId: nullableString(row.submitter_user_id), approverUserId: nullableString(row.approver_user_id),
     revision: integer(row.revision_no), version: integer(row.version),
     createdAt: instant(row.created_at), updatedAt: instant(row.updated_at) };
@@ -99,6 +101,22 @@ async function rpc(name: string, args?: Json): Promise<Json> {
 }
 
 export const projectV2ReadService = {
+  async getDiscussion(planId: string) {
+    const payload = await rpc('get_project_v2_plan_discussion_v1', { p_plan_id: planId });
+    return { asOf: instant(payload.asOf),
+      comments: unique(array(payload.comments).map(value => {
+        const row = object(value);
+        return { id: string(row.id), revision: integer(row.revision),
+          authorUserId: string(row.authorUserId), body: string(row.body),
+          createdAt: instant(row.createdAt) };
+      }), item => item.id),
+      events: unique(array(payload.events).map(value => {
+        const row = object(value);
+        return { id: string(row.id), revision: integer(row.revision),
+          eventType: string(row.eventType), actorUserId: string(row.actorUserId),
+          reason: nullableString(row.reason), occurredAt: instant(row.occurredAt) };
+      }), item => item.id) };
+  },
   async listActiveCohortIds(projectIds: string[] | null = null): Promise<string[]> {
     if (projectIds && projectIds.length > 100) fail('PROJECT_V2_COHORT_SCOPE_INVALID');
     if (projectIds?.length === 0) return [];

@@ -139,4 +139,17 @@ describe('Project V2 planning domain', () => {
     ]));
     expect(issues.every(issue => issue.blocking)).toBe(true);
   });
+
+  it('allows a reasoned construction baseline exception but rejects an empty reason', () => {
+    const draft: ProjectV2PlanDraft = { type: 'construction', projectId: 'p',
+      periodStart: '2026-09-01', periodEnd: '2026-09-07', lines: [{ lineId: 'l', kind: 'construction',
+        workItemId: 'contract-1', unit: 'm3', quantity: '2.000000',
+        workStart: '2026-09-02', workEnd: '2026-09-05', crewId: null, sources: [],
+        baselineRevision: '2026-09-01T00:00:00Z', baselineExceptionReason: 'Làm trước kỳ tháng',
+      }] };
+    expect(validateProjectV2PlanDraft(draft).some(issue => issue.code === 'missing_source')).toBe(false);
+    draft.lines[0].baselineExceptionReason = ' ';
+    expect(validateProjectV2PlanDraft(draft)).toContainEqual({ field: 'lines.l.sources',
+      code: 'missing_source', blocking: true });
+  });
 });
