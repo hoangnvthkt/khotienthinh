@@ -53,6 +53,16 @@ function commandPayload(input: CommandBase): Record<string, unknown> {
 }
 
 export const projectV2CommandService = {
+  activateWorkspace(input: { projectId: string; primaryConstructionSiteId: string | null;
+    idempotencyKey: string }) {
+    required(input.projectId, 'PROJECT_V2_PROJECT_ID_REQUIRED');
+    required(input.idempotencyKey, 'PROJECT_V2_IDEMPOTENCY_KEY_REQUIRED');
+    return rpc('activate_project_v2_workspace_v1', {
+      p_project_id: input.projectId,
+      p_primary_construction_site_id: input.primaryConstructionSiteId,
+      p_idempotency_key: input.idempotencyKey,
+    });
+  },
   save(input: SaveInput) {
     required(input.workspaceId, 'PROJECT_V2_WORKSPACE_ID_REQUIRED');
     required(input.idempotencyKey, 'PROJECT_V2_IDEMPOTENCY_KEY_REQUIRED');
