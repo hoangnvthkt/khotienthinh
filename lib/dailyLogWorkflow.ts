@@ -35,6 +35,18 @@ export const getDailyLogTargetPermission = (log: DailyLog): 'verify' | 'approve'
 export const isDailyLogSummaryEditable = (log?: DailyLog | null): boolean =>
   !!log && isDailyLogSummaryRow(log) && ['draft', 'rejected'].includes(getDailyLogWorkflowStatus(log));
 
+export const canPublishDailyLogSummary = (input: {
+  log?: DailyLog | null;
+  canApprove: boolean;
+  canPublishProgress: boolean;
+}): boolean => Boolean(
+  input.log
+  && isDailyLogSummaryRow(input.log)
+  && getDailyLogWorkflowStatus(input.log) === 'submitted'
+  && input.canApprove
+  && input.canPublishProgress,
+);
+
 export type DailyLogSourceReviewState = 'waiting_review' | 'included' | 'needs_rereview' | 'returned';
 
 export interface DailyLogSummarySourceLogOptions {

@@ -25,6 +25,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 import { DailyLogContributionWorkEditor } from '../../components/project/daily-log/DailyLogContributionWorkEditor';
+import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
 import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
 import { buildDailyLogVolumesFromDailyProgress } from '../../lib/dailyLogProgressImport';
 import { getProjectScopeKey, projectWeeklyProgressService } from '../../lib/projectWeeklyProgressService';
@@ -362,6 +363,7 @@ interface DailyLogViewerProps {
     onVerify: () => void;
     onReject: () => void | Promise<void>;
     onReturnSourceLog?: (log: DailyLog) => void | Promise<void>;
+    wbsWorkspace?: React.ReactNode;
 }
 
 const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
@@ -390,6 +392,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     onVerify,
     onReject,
     onReturnSourceLog,
+    wbsWorkspace,
 }) => {
     const [showSourceLogs, setShowSourceLogs] = useState(false);
     const materialRows = log.materials || [];
@@ -579,7 +582,9 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </div>
                     </div>
 
-                    {summarySourceLogs.length > 0 && (
+                    {wbsWorkspace}
+
+                    {!wbsWorkspace && summarySourceLogs.length > 0 && (
                         <section className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4 transition-all">
                             <button
                                 type="button"
@@ -678,7 +683,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </section>
                     )}
 
-                    <section className="rounded-2xl border-amber-500/20 p-4">
+                    {!wbsWorkspace && <section className="rounded-2xl border-amber-500/20 p-4">
                         <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Layers size={13} className="text-amber-600" /> Khối lượng</h4>
                         {displayVolumes.length === 0 ? (
                             <p className="text-xs font-bold text-muted-foreground">Chưa có khối lượng.</p>
@@ -758,9 +763,9 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 })}
                             </div>
                         )}
-                    </section>
+                    </section>}
 
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    {!wbsWorkspace && <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <section className="rounded-2xl border-orange-500/20 p-4">
                             <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Package size={13} className="text-orange-500" /> Vật tư</h4>
                             {(log.materials || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có vật tư.</p> : (
@@ -816,7 +821,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 </div>
                             )}
                         </section>
-                    </div>
+                    </div>}
 
                     {(log.delayTasks || []).length > 0 && (
                         <section className="rounded-2xl border-destructive/20 p-4">
@@ -835,12 +840,12 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                 </div>
 
                 <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-border flex flex-wrap items-center justify-end gap-2">
-                    {canReturn && (
+                    {!wbsWorkspace && canReturn && (
                         <button onClick={onReject} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 disabled:opacity-50 flex items-center gap-1.5">
                             {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />} Trả lại
                         </button>
                     )}
-                    {canVerify && (
+                    {!wbsWorkspace && canVerify && (
                         <button onClick={onVerify} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
                             {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} {log.submittedToPermission === 'approve' ? 'Duyệt CHT' : 'Xác nhận'}
                         </button>
@@ -910,6 +915,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryPhotos, setSummaryPhotos] = useState<DailyLogPhoto[]>([]);
     const [selectedSummaryLegacyLogIds, setSelectedSummaryLegacyLogIds] = useState<string[]>([]);
     const [summarySourceSnapshots, setSummarySourceSnapshots] = useState<Record<string, DailyLogSummarySourceSnapshot>>({});
+    const [summaryWbsBundle, setSummaryWbsBundle] = useState<DailyLogWbsBundle | null>(null);
+    const [summaryWbsLoading, setSummaryWbsLoading] = useState(false);
+    const [summaryWbsError, setSummaryWbsError] = useState<string | null>(null);
+    const [reviewWbsBundle, setReviewWbsBundle] = useState<DailyLogWbsBundle | null>(null);
 
     // Effective Room actions are the UI capability source. The backend RPC
     // resolves System Admin, Room membership and the temporary PBAC fallback.
@@ -1319,6 +1328,24 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     ), [logs, viewLogId]);
 
     useEffect(() => {
+        if (!viewingLog || !isSummaryDailyLog(viewingLog) || !effectiveId) {
+            setReviewWbsBundle(null);
+            return;
+        }
+        setReviewWbsBundle(null);
+        let cancelled = false;
+        dailyLogWbsService.getBundle({
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            logDate: viewingLog.date,
+            dailyLogId: viewingLog.id,
+        }).then(bundle => {
+            if (!cancelled && bundle.rollout.enabled && bundle.rollout.cutoverDate && viewingLog.date >= bundle.rollout.cutoverDate) setReviewWbsBundle(bundle);
+        }).catch(error => console.warn('Cannot load WBS summary review bundle', error));
+        return () => { cancelled = true; };
+    }, [constructionSiteId, effectiveId, projectId, viewingLog]);
+
+    useEffect(() => {
         if (!targetDailyLogId || logs.length === 0) return;
         const target = logs.find(log => log.id === targetDailyLogId);
         if (!target) return;
@@ -1403,6 +1430,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
         setSummaryDate(date);
         setSummaryLogId(id);
+        setSummaryWbsLoading(true);
+        setSummaryWbsError(null);
         setSummaryApprovers(approvers);
         const previousApproverUserId = existingSummary?.requestedVerifierId || existingSummary?.submittedToUserId;
         setSummaryApproverUserId(
@@ -1424,7 +1453,21 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos(existingSummary?.photos || []);
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
-    }, [constructionSiteId, logs, projectId, requireDailyLogAction]);
+        try {
+            const bundle = await dailyLogWbsService.getBundle({
+                projectId: projectId || effectiveId,
+                constructionSiteId: constructionSiteId || null,
+                logDate: date,
+                dailyLogId: id,
+            });
+            setSummaryWbsBundle(bundle);
+        } catch (caught) {
+            setSummaryWbsBundle(null);
+            setSummaryWbsError(caught instanceof Error ? caught.message : 'Không thể tải dữ liệu WBS để tổng hợp.');
+        } finally {
+            setSummaryWbsLoading(false);
+        }
+    }, [constructionSiteId, effectiveId, logs, projectId, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
@@ -1438,6 +1481,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos([]);
         setSelectedSummaryLegacyLogIds([]);
         setSummarySourceSnapshots({});
+        setSummaryWbsBundle(null);
+        setSummaryWbsError(null);
+        setSummaryWbsLoading(false);
     };
 
     const includeLegacyLogInSummary = (log: DailyLog) => {
@@ -2316,6 +2362,93 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const activeSummaryLaborHours = activeSummaryDetails.laborDetails.reduce((sum, row) => sum + Number(row.hours || 0), 0);
     const activeSummaryMachineShifts = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.shifts || 0), 0);
     const activeSummaryMachineHours = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.hours || 0), 0);
+    const isWbsSummaryFlow = Boolean(
+        summaryDate
+        && summaryWbsBundle?.rollout.enabled
+        && summaryWbsBundle.rollout.cutoverDate
+        && summaryDate >= summaryWbsBundle.rollout.cutoverDate,
+    );
+    const shouldRenderWbsSummary = Boolean(summaryWbsLoading || summaryWbsError || isWbsSummaryFlow);
+
+    const prepareWbsSummaryLog = useCallback(async (): Promise<DailyLog> => {
+        if (!summaryDate || !summaryLogId) throw new Error('Chưa xác định ngày tổng hợp.');
+        const existing = logs.find(log => log.id === summaryLogId);
+        const now = new Date().toISOString();
+        const item: DailyLog = existing ? {
+            ...existing,
+            weather: summaryWeather,
+            description: summaryDescription.trim(),
+            issues: summaryIssues.trim() || undefined,
+            nextDayPlan: summaryNextPlan.trim() || undefined,
+            photos: summaryPhotos,
+            summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
+            summarizedById: user?.id || null,
+            summarizedByName: user?.name || user?.username || user?.id || null,
+            summarizedAt: now,
+        } : {
+            id: summaryLogId,
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            date: summaryDate,
+            weather: summaryWeather,
+            workerCount: 0,
+            description: summaryDescription.trim(),
+            issues: summaryIssues.trim() || undefined,
+            nextDayPlan: summaryNextPlan.trim() || undefined,
+            photos: summaryPhotos,
+            photoRequired: false,
+            verified: false,
+            status: 'draft',
+            submittedToPermission: 'approve',
+            summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
+            summarizedById: user?.id || null,
+            summarizedByName: user?.name || user?.username || user?.id || null,
+            summarizedAt: now,
+            createdBy: user?.name || user?.id || 'admin',
+            createdById: user?.id,
+            createdAt: now,
+        };
+        await dailyLogService.upsert(item);
+        const fresh = await dailyLogWbsService.getBundle({
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            logDate: summaryDate,
+            dailyLogId: summaryLogId,
+        });
+        setSummaryWbsBundle(fresh);
+        if (!fresh.summaryLog) throw new Error('Không thể đọc lại bản tổng hợp vừa lưu.');
+        return fresh.summaryLog;
+    }, [constructionSiteId, effectiveId, logs, projectId, summaryDate, summaryDescription, summaryIssues, summaryLogId, summaryNextPlan, summaryPhotos, summaryWeather, user?.id, user?.name, user?.username]);
+
+    const submitWbsSummary = useCallback(async () => {
+        if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
+        const summaryApprover = summaryApprovers.find(staff => staff.userId === summaryApproverUserId);
+        if (!summaryApprover) {
+            toast.warning('Chưa chọn CHT duyệt', 'Vui lòng chọn người có quyền duyệt trong Room Nhật ký công trường.');
+            return;
+        }
+        if (!summaryDescription.trim() && summaryPhotos.length === 0) {
+            toast.warning('Thiếu nội dung tổng hợp', 'Vui lòng nhập nội dung hoặc chọn ảnh từ báo cáo thành viên.');
+            return;
+        }
+        setSummarySaving(true);
+        try {
+            await dailyLogService.updateStatus({
+                logId: summaryLogId,
+                status: 'submitted',
+                requestedVerifierId: summaryApproverUserId,
+                requestedVerifierName: summaryApprover.userName || null,
+                actorUserId: user?.id,
+            });
+            await reloadDailyLogRecords();
+            toast.success('Đã gửi CHT duyệt');
+            closeSummary(true);
+        } catch (caught) {
+            toast.error('Không gửi được bản tổng hợp', caught instanceof Error ? caught.message : 'Vui lòng thử lại.');
+        } finally {
+            setSummarySaving(false);
+        }
+    }, [reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast, user?.id]);
 
     const returnSourceLog = async (log: DailyLog) => {
         const reason = await reasonConfirm({
@@ -2749,8 +2882,31 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 <X size={16} />
                             </button>
                         </div>
-                        <div className="grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[0.9fr_1.1fr]">
+                        <div className={shouldRenderWbsSummary
+                            ? 'block flex-1 overflow-y-auto'
+                            : 'grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[0.9fr_1.1fr]'}>
                             <div className="overflow-y-auto border-b border-border p-4 lg:border-b-0 lg:border-r">
+                                {isWbsSummaryFlow && summaryWbsBundle ? (
+                                    <DailyLogSummaryWorkspace
+                                        key={`${summaryLogId}:${summaryWbsBundle.summaryLog?.lastActionAt || 'new'}`}
+                                        bundle={summaryWbsBundle}
+                                        mode="summarize"
+                                        ensureSummaryLog={prepareWbsSummaryLog}
+                                        onSaved={() => {
+                                            dailyLogWbsService.getBundle({
+                                                projectId: projectId || effectiveId,
+                                                constructionSiteId: constructionSiteId || null,
+                                                logDate: summaryDate,
+                                                dailyLogId: summaryLogId,
+                                            }).then(setSummaryWbsBundle).catch(console.error);
+                                        }}
+                                        onSubmit={() => { submitWbsSummary().catch(console.error); }}
+                                    />
+                                ) : summaryWbsLoading ? (
+                                    <div className="rounded-2xl border border-slate-200 p-8 text-center text-sm font-semibold text-slate-500">Đang tải các phiếu nguồn theo WBS...</div>
+                                ) : summaryWbsError ? (
+                                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{summaryWbsError}</div>
+                                ) : <>
                                 <div className="mb-3 flex items-center justify-between">
                                     <div className="text-xs font-black uppercase text-muted-foreground">Phiếu nhật ký nguồn</div>
                                     <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">{activeSummarySourceCount}</span>
@@ -2854,6 +3010,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         </>
                                     )}
                                 </div>
+                                </>}
                             </div>
                             <div className="overflow-y-auto p-4">
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2933,7 +3090,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         ))}
                                     </div>
                                 </div>
-                                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                                {!shouldRenderWbsSummary && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                                     <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5">
                                         <div className="text-[9px] font-black uppercase text-amber-700">Hạng mục</div>
                                         <div className="mt-1 text-base font-black text-amber-800">{activeSummaryDetails.volumes.length}</div>
@@ -2954,8 +3111,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         <div className="text-[9px] font-black uppercase text-violet-700">Giờ máy</div>
                                         <div className="mt-1 text-base font-black text-violet-800">{formatNumber(activeSummaryMachineHours)} giờ</div>
                                     </div>
-                                </div>
-                                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                                </div>}
+                                {!shouldRenderWbsSummary && <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
                                     <div className="mb-2 flex items-center justify-between gap-2">
                                         <div className="text-[10px] font-black uppercase text-amber-700">Hạng mục thi công từ chốt ngày</div>
                                         <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-amber-700">{activeSummaryDetails.volumes.length}</span>
@@ -2976,10 +3133,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                             ))}
                                         </div>
                                     )}
-                                </div>
+                                </div>}
                             </div>
                         </div>
-                        <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
+                        {!shouldRenderWbsSummary && <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
                             <button onClick={() => closeSummary()} disabled={summarySaving}
                                 className="rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
                                 Đóng
@@ -2992,7 +3149,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 className="flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2 text-sm font-bold text-white hover:bg-teal-700 disabled:opacity-50">
                                 {summarySaving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Gửi CHT
                             </button>
-                        </div>
+                        </div>}
                     </div>
                 </div>
             )}
@@ -3104,6 +3261,30 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     sourceSummaryLog={viewingSourceSummaryLog}
                     summarySourceLogs={viewingSummarySourceLogs}
                     canReturnSourceLog={canReviewDailyLog}
+                    wbsWorkspace={reviewWbsBundle ? <DailyLogSummaryWorkspace
+                        key={`${reviewWbsBundle.summaryLog?.id}:${reviewWbsBundle.summaryLog?.lastActionAt || ''}`}
+                        bundle={reviewWbsBundle}
+                        mode="review"
+                        onSaved={() => {
+                            dailyLogWbsService.getBundle({
+                                projectId: projectId || effectiveId,
+                                constructionSiteId: constructionSiteId || null,
+                                logDate: viewingLog.date,
+                                dailyLogId: viewingLog.id,
+                            }).then(setReviewWbsBundle).catch(console.error);
+                        }}
+                        onReturnAll={() => {
+                            reasonConfirm({
+                                title: 'Trả lại bản tổng hợp',
+                                targetName: viewingLog.description || viewingLog.date,
+                                warningText: 'Toàn bộ bản tổng hợp sẽ quay về Kỹ thuật trưởng để chỉnh sửa.',
+                                reasonPlaceholder: 'Nhập lý do trả lại...',
+                                actionLabel: 'Trả lại',
+                                intent: 'danger',
+                            }).then(reason => { if (reason) handleStatusChange(viewingLog, 'rejected', undefined, reason); });
+                        }}
+                        onPublish={() => { handleStatusChange(viewingLog, 'verified'); }}
+                    /> : undefined}
                     busy={busyLogIds.has(viewingLog.id)}
                     onClose={() => setViewLogId(null)}
                     onPreviewImage={(list, idx) => {
