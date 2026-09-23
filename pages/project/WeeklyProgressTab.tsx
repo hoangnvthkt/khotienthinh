@@ -23,7 +23,7 @@ import {
     mergeDailyProgressRows, rollupDailyRowsToWeeklyRows,
     getProjectProgressMutationErrorMessage,
     type ProjectProgressPeriodBundle, type ProjectProgressPeriodState, type ProjectProgressSnapshotPayload,
-    type SaveProjectProgressPeriodResult,
+    type DailyProgressAuthority, type SaveProjectProgressPeriodResult,
 } from '../../lib/projectWeeklyProgressService';
 import { deriveProjectTaskProgress, clampProgress } from '../../lib/projectScheduleRules';
 import { projectPermissionRoomService } from '../../lib/projectPermissionRoomService';
@@ -121,6 +121,46 @@ export const WeeklyProgressPeriodControls: React.FC<WeeklyProgressPeriodControls
 type ProgressEntryMode = 'daily' | 'weekly';
 type ProgressDraft = { progressPercent: string; quantityDone: string; note: string };
 type TimeFilterMode = 'recent' | 'week' | 'month' | 'all';
+
+interface DailyProgressCutoverFieldsProps {
+    authoritative: boolean;
+    row: ProjectDailyTaskProgress | null;
+    progressPercent: string;
+    quantityDone: string;
+    note: string;
+    unit: string;
+    dailyLogHref: string | null;
+    onChange: (patch: Partial<ProgressDraft>) => void;
+    canRequestException?: boolean;
+    onRequestException?: () => void;
+}
+
+export const DailyProgressCutoverFields: React.FC<DailyProgressCutoverFieldsProps> = ({
+    authoritative, row, progressPercent, quantityDone, note, unit, dailyLogHref, onChange,
+    canRequestException, onRequestException,
+}) => {
+    if (authoritative) {
+        return <div className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/70 p-3 dark:border-teal-900 dark:bg-teal-950/20">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="rounded-full bg-teal-700 px-2 py-1 text-[10px] font-black text-white">
+                    {row?.sourceDailyLogId ? 'Nguồn: Nhật ký tổng hợp' : 'Chờ nhật ký tổng hợp'}
+                </span>
+                {dailyLogHref && <a href={dailyLogHref} className="text-xs font-bold text-teal-800 underline underline-offset-2 dark:text-teal-300">Mở nhật ký</a>}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><div className="text-[10px] font-bold uppercase text-slate-500">% hoàn thành</div><div className="font-black text-slate-900 dark:text-white">{progressPercent || 'Chưa có'}{progressPercent ? '%' : ''}</div></div>
+                <div><div className="text-[10px] font-bold uppercase text-slate-500">Khối lượng</div><div className="font-black text-slate-900 dark:text-white">{quantityDone || 'Chưa xác định'}{quantityDone ? ` ${unit}` : ''}</div></div>
+            </div>
+            {note && <p className="text-xs text-slate-600 dark:text-slate-300">{note}</p>}
+            {row && canRequestException && onRequestException && <button type="button" onClick={onRequestException} className="text-left text-xs font-bold text-amber-700 underline underline-offset-2">Điều chỉnh ngoại lệ</button>}
+        </div>;
+    }
+    return <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <label className="space-y-1 text-[10px] font-bold uppercase text-slate-500">% hoàn thành<input aria-label="% hoàn thành" type="number" min="0" step="0.01" value={progressPercent} onChange={event => onChange({ progressPercent: event.target.value })} className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-right text-sm font-black text-slate-900" /></label>
+        <label className="space-y-1 text-[10px] font-bold uppercase text-slate-500">Khối lượng ({unit})<input aria-label="Khối lượng hoàn thành" type="number" min="0" step="0.01" value={quantityDone} onChange={event => onChange({ quantityDone: event.target.value })} className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-right text-sm font-black text-slate-900" /></label>
+        <label className="space-y-1 text-[10px] font-bold uppercase text-slate-500">Ghi chú<input aria-label="Ghi chú chốt" type="text" value={note} onChange={event => onChange({ note: event.target.value })} className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-900" /></label>
+    </div>;
+};
 
 export const getLatestDailyProgressRow = (
     rows: ProjectDailyTaskProgress[],
@@ -456,6 +496,14 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     const [weeklyDraftKey, setWeeklyDraftKey] = useState<string | null>(null);
     const [selectedDailyMutationRows, setSelectedDailyMutationRows] = useState<ProjectDailyTaskProgress[]>([]);
     const [selectedWeeklyMutationRows, setSelectedWeeklyMutationRows] = useState<ProjectWeeklyTaskProgress[]>([]);
+    const [dailyProgressAuthority, setDailyProgressAuthority] = useState<DailyProgressAuthority | null>(null);
+    const [exceptionRow, setExceptionRow] = useState<ProjectDailyTaskProgress | null>(null);
+    const [exceptionProgress, setExceptionProgress] = useState('');
+    const [exceptionQuantity, setExceptionQuantity] = useState('');
+    const [exceptionDailyQuantity, setExceptionDailyQuantity] = useState('');
+    const [exceptionNote, setExceptionNote] = useState('');
+    const [exceptionReason, setExceptionReason] = useState('');
+    const [savingException, setSavingException] = useState(false);
     const [periodResourceLoadState, setPeriodResourceLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
     const [periodResourceRetryNonce, setPeriodResourceRetryNonce] = useState(0);
     const periodStateRequestGeneration = useRef(0);
@@ -788,6 +836,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         setWeeklyDraftKey(null);
         setSelectedDailyMutationRows([]);
         setSelectedWeeklyMutationRows([]);
+        setDailyProgressAuthority(null);
         setPeriodResourceLoadState('loading');
     }, []);
 
@@ -815,15 +864,24 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
             getGeneration: () => periodStateRequestGeneration.current,
             onInvalidate: invalidateSelectedPeriodResources,
             read: async () => {
-                const bundle = await projectWeeklyProgressService.getPeriodBundle({
-                    projectId,
-                    constructionSiteId: constructionSiteId || null,
-                    periodType: target.periodType,
-                    periodStart: target.periodStart,
-                    windowFromWeek: progressWeekWindow?.fromWeek || null,
-                    windowToWeek: progressWeekWindow?.toWeek || null,
-                });
-                return { target, bundle };
+                const [bundle, authority] = await Promise.all([
+                    projectWeeklyProgressService.getPeriodBundle({
+                        projectId,
+                        constructionSiteId: constructionSiteId || null,
+                        periodType: target.periodType,
+                        periodStart: target.periodStart,
+                        windowFromWeek: progressWeekWindow?.fromWeek || null,
+                        windowToWeek: progressWeekWindow?.toWeek || null,
+                    }),
+                    target.periodType === 'daily'
+                        ? projectWeeklyProgressService.getDailyProgressAuthority({
+                            projectId,
+                            constructionSiteId: constructionSiteId || null,
+                            progressDate: target.periodStart,
+                        })
+                        : Promise.resolve(null),
+                ]);
+                return { target, bundle, authority };
             },
             onReady: resource => {
                 const { bundle } = resource;
@@ -857,6 +915,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 setLoadedWeekRange(bundleView.loadedWeekRange);
 
                 if (resource.target.periodType === 'daily') {
+                    setDailyProgressAuthority(resource.authority);
                     const nextDrafts: Record<string, ProgressDraft> = {};
                     leafTasks.forEach(task => {
                         const found = bundleView.selectedDailyMutationRows
@@ -883,6 +942,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     setSelectedDailyMutationRows(bundleView.selectedDailyMutationRows);
                     setSelectedWeeklyMutationRows(bundleView.selectedWeeklyMutationRows);
                 } else {
+                    setDailyProgressAuthority(null);
                     const nextDrafts: Record<string, ProgressDraft> = {};
                     leafTasks.forEach(task => {
                         const found = bundleView.selectedWeeklyMutationRows.find(row => row.taskId === task.id);
@@ -1134,8 +1194,34 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         draftKey: selectedDraftKey,
         isLocked: selectedPeriodLocked,
     });
-    const canEditSelectedPeriod = selectedMutationReadiness.canSave;
-    const canConfirmSelectedPeriod = selectedMutationReadiness.canClose || selectedMutationReadiness.canReopen;
+    const dailyModeAuthoritative = entryMode === 'daily' && dailyProgressAuthority?.authoritative === true;
+    const canEditSelectedPeriod = selectedMutationReadiness.canSave && !dailyModeAuthoritative;
+    const canConfirmSelectedPeriod = !dailyModeAuthoritative
+        && (selectedMutationReadiness.canClose || selectedMutationReadiness.canReopen);
+
+    const getSelectedDailySourceRow = useCallback((taskId: string) => allDailyProgress
+        .filter(row => row.scopeKey === scopeKey && row.taskId === taskId && row.progressDate === selectedProgressDate)
+        .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0] || null,
+    [allDailyProgress, scopeKey, selectedProgressDate]);
+
+    const buildDailyLogHref = useCallback((dailyLogId?: string | null) => {
+        if (!dailyLogId) return null;
+        const query = new URLSearchParams(location.search);
+        query.set('tab', 'dailylog');
+        query.set('dailyLogId', dailyLogId);
+        if (projectId) query.set('projectId', projectId);
+        if (constructionSiteId) query.set('siteId', constructionSiteId);
+        return `/da?${query.toString()}`;
+    }, [constructionSiteId, location.search, projectId]);
+
+    const openDailyProgressException = useCallback((row: ProjectDailyTaskProgress) => {
+        setExceptionRow(row);
+        setExceptionProgress(formatNumberInput(row.progressPercent, 2));
+        setExceptionQuantity(row.quantityDone == null ? '' : formatNumberInput(row.quantityDone, 2));
+        setExceptionDailyQuantity(row.dailyQuantityDone == null ? '' : formatNumberInput(row.dailyQuantityDone, 2));
+        setExceptionNote(row.note || '');
+        setExceptionReason('');
+    }, []);
 
     const ensureWeeklyProgressAction = useCallback((action: 'edit' | 'confirm'): boolean => {
         if (actionLoadState !== 'loaded') {
@@ -1447,6 +1533,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     ]);
 
     const handleSaveDailyProgress = useCallback(async () => {
+        if (dailyModeAuthoritative) {
+            toast.info('Tiến độ do nhật ký tổng hợp quản lý', 'Ngày sau cutover chỉ đọc tại màn hình này. Dùng điều chỉnh ngoại lệ khi thật sự cần.');
+            return;
+        }
         if (!ensureWeeklyProgressAction('edit')) return;
         if (!selectedMutationReadiness.canSave) return;
         if (selectedPeriodLocked) {
@@ -1459,6 +1549,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         }
 
         const draft = buildDailyMutationDraft();
+        const sourceTaskIds = new Set(selectedDailyMutationRows
+            .filter(row => row.progressDate === selectedProgressDate && row.sourceDailyLogId)
+            .map(row => row.taskId));
+        const mutableRows = draft.dailyRows.filter(row => !sourceTaskIds.has(row.taskId));
+        if (mutableRows.length === 0) return;
         const capturedTarget = currentPeriodTargetRef.current;
         setSavingDailyProgress(true);
         try {
@@ -1471,7 +1566,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     constructionSiteId: constructionSiteId || null,
                     periodType: 'daily',
                     periodStart: capturedTarget.periodStart,
-                    rows: draft.dailyRows,
+                    rows: mutableRows,
                     snapshot: draft.snapshot,
                 }),
             });
@@ -1506,15 +1601,41 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
     }, [
         buildDailyMutationDraft,
         constructionSiteId,
+        dailyModeAuthoritative,
         ensureWeeklyProgressAction,
         projectId,
         reloadAuthoritativePeriodResources,
         scopeKey,
         selectedPeriodLocked,
         selectedMutationReadiness.canSave,
+        selectedDailyMutationRows,
+        selectedProgressDate,
         toast,
         weeklyLeafTasks.length,
     ]);
+
+    const handleSaveDailyProgressException = useCallback(async () => {
+        if (!exceptionRow?.id || !exceptionRow.updatedAt || !exceptionReason.trim()) return;
+        setSavingException(true);
+        try {
+            await projectWeeklyProgressService.saveDailyProgressException({
+                progressRowId: exceptionRow.id,
+                expectedUpdatedAt: exceptionRow.updatedAt,
+                progressPercent: parseWeeklyProgressPercent(exceptionProgress),
+                quantityDone: exceptionQuantity.trim() === '' ? null : parseNonNegativeNumber(exceptionQuantity),
+                dailyQuantityDone: exceptionDailyQuantity.trim() === '' ? null : parseNonNegativeNumber(exceptionDailyQuantity),
+                note: exceptionNote,
+                reason: exceptionReason,
+            });
+            setExceptionRow(null);
+            await reloadAuthoritativePeriodResources();
+            toast.success('Đã lưu điều chỉnh ngoại lệ', 'Lý do và số liệu trước/sau đã được ghi vào nhật ký kiểm toán.');
+        } catch (error) {
+            toast.error('Không thể điều chỉnh ngoại lệ', getProjectProgressMutationErrorMessage(error, error instanceof Error ? error.message : 'Vui lòng thử lại.'));
+        } finally {
+            setSavingException(false);
+        }
+    }, [exceptionDailyQuantity, exceptionNote, exceptionProgress, exceptionQuantity, exceptionReason, exceptionRow, reloadAuthoritativePeriodResources, toast]);
 
     const handleSaveWeeklyProgress = useCallback(async () => {
         if (!ensureWeeklyProgressAction('edit')) return;
@@ -2214,6 +2335,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     </div>
                 </div>
 
+                {dailyModeAuthoritative && <div className="mt-3 flex flex-col gap-2 rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900 sm:flex-row sm:items-center sm:justify-between dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-200">
+                    <div><strong>Tiến độ ngày lấy từ Nhật ký tổng hợp.</strong> Màn hình này chỉ đọc để tránh hai nguồn cùng sửa một số liệu.</div>
+                    {!dailyProgressAuthority?.canEditException && <span className="font-semibold">Liên hệ người có cả quyền sửa tiến độ và công bố nhật ký nếu cần điều chỉnh.</span>}
+                </div>}
+
                 {/* Row 3: Sub-Filters for History Visualisation & Expand/Collapse */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
                     <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 min-w-0">
@@ -2350,6 +2476,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     const draftProgress = parseWeeklyProgressPercent(activeDraft.progressPercent);
                     const isOverProgress = draftProgress > 100;
                     const taskUnit = getTaskUnit(task, linkedIds, contractItems);
+                    const exactDailyRow = getSelectedDailySourceRow(task.id);
 
                     if (isParent) {
                         return (
@@ -2468,6 +2595,18 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                 </div>
                             </div>
 
+                            {dailyModeAuthoritative ? <DailyProgressCutoverFields
+                                authoritative
+                                row={exactDailyRow}
+                                progressPercent={exactDailyRow ? formatNumberInput(exactDailyRow.progressPercent, 2) : activeDraft.progressPercent}
+                                quantityDone={exactDailyRow?.quantityDone == null ? '' : formatNumberInput(exactDailyRow.quantityDone, 2)}
+                                note={exactDailyRow?.note || ''}
+                                unit={taskUnit}
+                                dailyLogHref={buildDailyLogHref(exactDailyRow?.sourceDailyLogId)}
+                                onChange={() => undefined}
+                                canRequestException={dailyProgressAuthority?.canEditException}
+                                onRequestException={exactDailyRow ? () => openDailyProgressException(exactDailyRow) : undefined}
+                            /> : <>
                             {/* Direct Input Section - Ô nhập số liệu to, rõ, công thái học */}
                             <div className="grid grid-cols-2 gap-2.5 pt-1">
                                 {/* Ô nhập % hoàn thành */}
@@ -2545,6 +2684,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                     className="w-full px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-950/50 text-xs font-medium outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400"
                                 />
                             </div>
+                            </>}
                         </div>
                     );
                 })}
@@ -2575,6 +2715,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                 const draftProgress = parseWeeklyProgressPercent(activeDraft.progressPercent);
                                 const isOverProgress = draftProgress > 100;
                                 const taskUnit = getTaskUnit(task, linkedIds, contractItems);
+                                const exactDailyRow = getSelectedDailySourceRow(task.id);
 
                                 return (
                                     <tr
@@ -2663,6 +2804,11 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                                 <div className="text-right text-xs font-bold text-zinc-400 pr-2">
                                                     {task.progress}%
                                                 </div>
+                                            ) : dailyModeAuthoritative ? (
+                                                <div className="space-y-1 text-right">
+                                                    <div className="font-black text-teal-800 dark:text-teal-300">{exactDailyRow?.progressPercent ?? activeDraft.progressPercent}%</div>
+                                                    <span className="inline-flex rounded-full bg-teal-100 px-2 py-0.5 text-[9px] font-black text-teal-800">Nhật ký tổng hợp</span>
+                                                </div>
                                             ) : (
                                                 <div className="relative">
                                                     <input
@@ -2693,6 +2839,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                             {isParent ? (
                                                 <div className="text-right text-xs font-bold text-zinc-400 pr-2">
                                                     —
+                                                </div>
+                                            ) : dailyModeAuthoritative ? (
+                                                <div className="text-right font-black text-zinc-800 dark:text-zinc-200">
+                                                    {exactDailyRow?.quantityDone == null ? 'Chưa xác định' : `${formatNumberInput(exactDailyRow.quantityDone, 2)} ${taskUnit}`}
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-1.5 justify-end">
@@ -2726,6 +2876,12 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                                             {isParent ? (
                                                 <div className="text-zinc-400 text-[10px] italic">
                                                     Tự động cộng dồn
+                                                </div>
+                                            ) : dailyModeAuthoritative ? (
+                                                <div className="space-y-1.5">
+                                                    <div className="text-xs text-zinc-600 dark:text-zinc-300">{exactDailyRow?.note || 'Không có ghi chú'}</div>
+                                                    {buildDailyLogHref(exactDailyRow?.sourceDailyLogId) && <a href={buildDailyLogHref(exactDailyRow?.sourceDailyLogId)!} className="block font-bold text-teal-700 underline underline-offset-2">Mở nhật ký</a>}
+                                                    {exactDailyRow && dailyProgressAuthority?.canEditException && <button type="button" onClick={() => openDailyProgressException(exactDailyRow)} className="font-bold text-amber-700 underline underline-offset-2">Điều chỉnh ngoại lệ</button>}
                                                 </div>
                                             ) : (
                                                 <input
@@ -2790,6 +2946,28 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                     ))}
                 </div>
             </div> */}
+            {exceptionRow && <div className="fixed inset-0 z-[1000] flex justify-end bg-black/35" onClick={event => event.target === event.currentTarget && !savingException && setExceptionRow(null)}>
+                <aside className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl dark:bg-zinc-900" aria-label="Điều chỉnh tiến độ ngoại lệ">
+                    <div className="flex items-start justify-between border-b border-zinc-200 p-5 dark:border-zinc-800">
+                        <div><h3 className="font-black text-zinc-900 dark:text-white">Điều chỉnh ngoại lệ</h3><p className="mt-1 text-xs text-zinc-500">Chỉ dùng khi tiến độ từ Nhật ký tổng hợp cần sửa có kiểm soát.</p></div>
+                        <button type="button" disabled={savingException} onClick={() => setExceptionRow(null)} className="rounded-xl p-2 text-zinc-500 hover:bg-zinc-100"><X size={18} /></button>
+                    </div>
+                    <div className="flex-1 space-y-4 overflow-y-auto p-5">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Hệ thống sẽ lưu người thực hiện, lý do và toàn bộ số liệu trước/sau vào audit.</div>
+                        <label className="block space-y-1 text-xs font-bold text-zinc-700 dark:text-zinc-200">% hoàn thành<input type="number" min="0" step="0.01" value={exceptionProgress} onChange={event => setExceptionProgress(event.target.value)} className="block w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950" /></label>
+                        <div className="grid grid-cols-2 gap-3">
+                            <label className="block space-y-1 text-xs font-bold text-zinc-700 dark:text-zinc-200">Khối lượng lũy kế<input type="number" min="0" step="0.01" value={exceptionQuantity} onChange={event => setExceptionQuantity(event.target.value)} className="block w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950" /></label>
+                            <label className="block space-y-1 text-xs font-bold text-zinc-700 dark:text-zinc-200">Khối lượng hôm nay<input type="number" min="0" step="0.01" value={exceptionDailyQuantity} onChange={event => setExceptionDailyQuantity(event.target.value)} className="block w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950" /></label>
+                        </div>
+                        <label className="block space-y-1 text-xs font-bold text-zinc-700 dark:text-zinc-200">Ghi chú<input type="text" value={exceptionNote} onChange={event => setExceptionNote(event.target.value)} className="block w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950" /></label>
+                        <label className="block space-y-1 text-xs font-bold text-zinc-700 dark:text-zinc-200">Lý do điều chỉnh <span className="text-red-600">*</span><textarea value={exceptionReason} onChange={event => setExceptionReason(event.target.value)} rows={4} placeholder="Mô tả bằng chứng và lý do cần sửa số liệu đã công bố..." className="block w-full resize-none rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950" /></label>
+                    </div>
+                    <div className="flex flex-col-reverse gap-2 border-t border-zinc-200 p-4 sm:flex-row sm:justify-end dark:border-zinc-800">
+                        <button type="button" disabled={savingException} onClick={() => setExceptionRow(null)} className="h-11 rounded-xl border border-zinc-300 px-4 text-sm font-bold text-zinc-700 disabled:opacity-50">Hủy</button>
+                        <button type="button" disabled={savingException || !exceptionReason.trim()} onClick={handleSaveDailyProgressException} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-600 px-5 text-sm font-bold text-white disabled:opacity-50">{savingException && <Loader2 size={16} className="animate-spin" />} Lưu ngoại lệ</button>
+                    </div>
+                </aside>
+            </div>}
         </div>
     );
 }

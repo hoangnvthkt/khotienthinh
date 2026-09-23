@@ -3745,7 +3745,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 siteWarehouseName={siteWarehouse?.name}
                                 dailyProgressDate={fDate}
                                 importingDailyProgressVolumes={importingProgressVolumes}
-                                onImportDailyProgressVolumes={handleImportDailyProgressVolumes}
+                                onImportDailyProgressVolumes={isWbsContributionFlow ? undefined : handleImportDailyProgressVolumes}
                                 hideDailyProgressImport={shouldRenderWbsEditor}
                             />}
                         </div>

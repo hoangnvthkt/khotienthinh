@@ -800,14 +800,29 @@ export interface ProjectDailyTaskProgress {
   progressDate: string;
   weekStart: string;
   progressPercent: number;
-  quantityDone: number;
-  dailyQuantityDone: number;
+  quantityDone: number | null;
+  dailyQuantityDone: number | null;
   note?: string | null;
   attachments?: Attachment[];
   sourceDailyLogId?: string | null;
   updatedBy?: string | null;
   updatedAt?: string;
   createdAt?: string;
+}
+
+export interface DailyProgressExceptionAudit {
+  id: string;
+  progressRowId: string;
+  projectId: string;
+  constructionSiteId?: string | null;
+  taskId: string;
+  progressDate: string;
+  sourceDailyLogId: string;
+  beforeData: Record<string, unknown>;
+  afterData: Record<string, unknown>;
+  reason: string;
+  actorUserId: string;
+  createdAt: string;
 }
 
 export interface ProjectValueProgressMetric {
