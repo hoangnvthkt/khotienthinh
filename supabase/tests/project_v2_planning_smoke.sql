@@ -7,6 +7,7 @@ select gen_random_uuid() admin_id, gen_random_uuid() reviewer_id,
   gen_random_uuid() outsider_id, gen_random_uuid() workspace_id,
   gen_random_uuid() month_plan_id, gen_random_uuid() construction_plan_id,
   gen_random_uuid() material_plan_id, gen_random_uuid() month_line_id,
+  gen_random_uuid() command_month_line_id,
   gen_random_uuid() construction_line_id, gen_random_uuid() material_line_id,
   ('project-v2-smoke-' || gen_random_uuid()::text) project_id;
 
@@ -59,10 +60,16 @@ from project_v2_smoke_ids ids join public.project_v2_workspaces w on w.project_i
 
 insert into public.project_v2_plan_revisions(plan_id, revision_no, content_hash, approved_snapshot, approved_by)
 select month_plan_id, 1, 'month-hash', '{}'::jsonb, reviewer_id from project_v2_smoke_ids;
+update public.project_v2_plans p set effective_revision_no = 1
+from project_v2_smoke_ids ids where p.id = ids.month_plan_id;
 
 insert into public.project_v2_plan_lines(id, plan_id, revision_no, plan_type,
   baseline_revision, unit, quantity)
 select month_line_id, month_plan_id, 1, 'month', 'baseline-smoke', 'm3', 12.500001
+from project_v2_smoke_ids;
+insert into public.project_v2_plan_lines(id, plan_id, revision_no, plan_type,
+  baseline_revision, unit, quantity)
+select command_month_line_id, month_plan_id, 1, 'month', 'baseline-command', 'm3', 100.000000
 from project_v2_smoke_ids;
 
 insert into public.project_v2_plans(id, workspace_id, plan_type, code, title, status,
@@ -72,6 +79,8 @@ select construction_plan_id, w.id, 'construction', 'C-1', 'Construction', 'appro
 from project_v2_smoke_ids ids join public.project_v2_workspaces w on w.project_id = ids.project_id;
 insert into public.project_v2_plan_revisions(plan_id, revision_no, content_hash, approved_snapshot, approved_by)
 select construction_plan_id, 1, 'construction-hash', '{}'::jsonb, reviewer_id from project_v2_smoke_ids;
+update public.project_v2_plans p set effective_revision_no = 1
+from project_v2_smoke_ids ids where p.id = ids.construction_plan_id;
 insert into public.project_v2_plan_lines(id, plan_id, revision_no, plan_type,
   work_item_id, unit, quantity, work_start, work_end)
 select construction_line_id, construction_plan_id, 1, 'construction',
@@ -126,6 +135,73 @@ begin
   end;
 end $$;
 
+-- Command path: only the session actor writes audit metadata; an independent
+-- reviewer approves. The source is an exact approved month revision/line.
+do $$
+declare
+  v_ids record;
+  v_result jsonb;
+  v_plan_id uuid;
+begin
+  select * into v_ids from project_v2_smoke_ids;
+  update public.users set role = 'ADMIN' where id = v_ids.reviewer_id;
+  select public.save_project_v2_plan_v1(w.id, null, null, 'smoke-save-1',
+    'construction', 'C-COMMAND', 'Command construction', date '2026-10-01',
+    date '2026-10-07', jsonb_build_array(jsonb_build_object(
+      'id', gen_random_uuid(), 'workItemId', 'work-smoke-command',
+      'unit', 'm3', 'quantity', '10.000000', 'workStart', '2026-10-01',
+      'workEnd', '2026-10-07', 'sources', jsonb_build_array(jsonb_build_object(
+        'sourcePlanId', v_ids.month_plan_id, 'sourceRevision', 1,
+        'sourceLineId', v_ids.command_month_line_id, 'sourcePlanHash', 'month-hash',
+        'sourceQuantity', '10.000000', 'sourceUnit', 'm3')))))
+  into v_result from public.project_v2_workspaces w where w.project_id = v_ids.project_id;
+  v_plan_id := (v_result ->> 'planId')::uuid;
+  if v_plan_id is null or v_result ->> 'status' <> 'draft' then
+    raise exception 'PROJECT_V2_SAVE_FAILED';
+  end if;
+  v_result := public.submit_project_v2_plan_v1(v_plan_id, 1, 'smoke-submit-1', 'Đủ hồ sơ');
+  if v_result ->> 'status' <> 'pending_approval' then
+    raise exception 'PROJECT_V2_SUBMIT_FAILED';
+  end if;
+  begin
+    perform public.approve_project_v2_plan_v1(v_plan_id, 2, 'smoke-approve-self');
+    raise exception 'PROJECT_V2_SELF_APPROVAL_ALLOWED';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('request.jwt.claims',
+    '{"email":"project-v2-smoke-reviewer@example.invalid"}', true);
+  v_result := public.approve_project_v2_plan_v1(v_plan_id, 2, 'smoke-approve-1');
+  if v_result ->> 'status' <> 'approved'
+    or (select count(*) from public.project_v2_plan_revisions where plan_id = v_plan_id) <> 1 then
+    raise exception 'PROJECT_V2_APPROVAL_FAILED';
+  end if;
+  v_result := public.approve_project_v2_plan_v1(v_plan_id, 2, 'smoke-approve-1');
+  if v_result ->> 'planId' <> v_plan_id::text then
+    raise exception 'PROJECT_V2_IDEMPOTENT_REPLAY_FAILED';
+  end if;
+  begin
+    perform public.approve_project_v2_plan_v1(v_plan_id, 999, 'smoke-approve-1');
+    raise exception 'PROJECT_V2_IDEMPOTENCY_PAYLOAD_CHANGE_ALLOWED';
+  exception when unique_violation then null;
+  end;
+  begin
+    perform public.create_project_v2_plan_revision_v1(v_plan_id, 2, 'smoke-revise-stale');
+    raise exception 'PROJECT_V2_STALE_VERSION_ALLOWED';
+  exception when serialization_failure then null;
+  end;
+  perform set_config('request.jwt.claims',
+    '{"email":"project-v2-smoke-admin@example.invalid"}', true);
+  v_result := public.create_project_v2_plan_revision_v1(v_plan_id, 3, 'smoke-revise-1');
+  if v_result ->> 'status' <> 'draft'
+    or (v_result ->> 'revision')::integer <> 2
+    or (select effective_revision_no from public.project_v2_plans where id = v_plan_id) <> 1
+    or (select count(*) from public.project_v2_plan_line_sources s
+      join public.project_v2_plan_lines l on l.id = s.target_line_id
+      where l.plan_id = v_plan_id and l.revision_no = 2) <> 1 then
+    raise exception 'PROJECT_V2_REVISION_LINEAGE_LOST';
+  end if;
+end $$;
+
 -- Direct authenticated DML is forbidden even for a valid account.
 set local role authenticated;
 do $$
@@ -151,8 +227,12 @@ begin
   end;
 end $$;
 
+select set_config('app.account_lifecycle_command', 'on', true);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 update public.users set is_active = false, account_status = 'DISABLED'
 where email = 'project-v2-smoke-outsider@example.invalid';
+select set_config('app.account_lifecycle_command', '', true);
+select set_config('request.jwt.claims', '{"email":"project-v2-smoke-outsider@example.invalid"}', true);
 do $$
 begin
   begin
