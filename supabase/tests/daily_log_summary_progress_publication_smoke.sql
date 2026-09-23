@@ -46,6 +46,24 @@ values (
   '71000000-0000-4000-8000-000000000001', '71000000-0000-4000-8000-000000000002', current_date
 );
 
+insert into public.users (id, name, email, username, role)
+values (
+  '71000000-0000-4000-8000-000000000007', 'Daily Progress Exception Editor',
+  'daily-progress-exception-editor@example.invalid', 'daily_progress_exception_editor', 'EMPLOYEE'
+);
+
+insert into auth.users (id, email, raw_user_meta_data)
+values (
+  '71000000-0000-4000-8000-000000000007', 'daily-progress-exception-editor@example.invalid',
+  '{"name":"Daily Progress Exception Editor"}'::jsonb
+);
+
+insert into public.project_staff (id, project_id, user_id, position_id, start_date)
+values (
+  '71000000-0000-4000-8000-000000000008', 'daily-log-publish-smoke-project',
+  '71000000-0000-4000-8000-000000000007', '71000000-0000-4000-8000-000000000002', current_date
+);
+
 insert into public.project_permission_room_members (
   id, project_id, room_code, project_staff_id, is_active, created_by
 ) values (
@@ -60,6 +78,26 @@ insert into public.project_permission_room_member_actions (
   ('71000000-0000-4000-8000-000000000004', 'publish_progress', true, '71000000-0000-4000-8000-000000000001', 'manual_room'),
   ('71000000-0000-4000-8000-000000000004', 'verify', true, '71000000-0000-4000-8000-000000000001', 'manual_room'),
   ('71000000-0000-4000-8000-000000000004', 'submit', true, '71000000-0000-4000-8000-000000000001', 'manual_room');
+
+insert into public.project_permission_room_members (
+  id, project_id, room_code, project_staff_id, is_active, created_by
+) values (
+  '71000000-0000-4000-8000-000000000009', 'daily-log-publish-smoke-project', 'weekly_progress',
+  '71000000-0000-4000-8000-000000000008', true, '71000000-0000-4000-8000-000000000001'
+);
+
+insert into public.project_permission_room_member_actions (
+  room_member_id, action_code, is_active, granted_by, grant_source
+) values
+  ('71000000-0000-4000-8000-000000000009', 'view', true, '71000000-0000-4000-8000-000000000001', 'manual_room'),
+  ('71000000-0000-4000-8000-000000000009', 'edit', true, '71000000-0000-4000-8000-000000000001', 'manual_room');
+
+insert into app_private.daily_log_wbs_rollout_scopes (
+  project_id, construction_site_id, mode, cutover_date, reason, created_by
+) values (
+  'daily-log-publish-smoke-project', null, 'pilot', '2026-09-23',
+  'Daily progress exception smoke', '71000000-0000-4000-8000-000000000001'
+);
 
 insert into public.project_tasks (
   id, project_id, name, start_date, end_date, progress, code, wbs_code, quantity, unit
@@ -330,6 +368,96 @@ begin
     raise exception 'project_transactions count changed';
   end if;
   -- Daily Log publication intentionally invokes no accrual table or command.
+end;
+$$;
+
+do $$
+declare
+  v_progress_row public.project_daily_task_progress%rowtype;
+  v_audit_before bigint;
+  v_transactions_before bigint;
+  v_result jsonb;
+begin
+  select progress.* into strict v_progress_row
+  from public.project_daily_task_progress progress
+  where progress.source_daily_log_id = 'daily-log-publish-smoke-summary'
+    and progress.task_id = 'daily-log-publish-smoke-task'
+    and progress.progress_date = '2026-09-23';
+
+  select count(*) into v_audit_before from public.daily_progress_exception_audit;
+  select count(*) into v_transactions_before from public.project_transactions;
+
+  begin
+    perform public.save_daily_progress_exception_v1(
+      v_progress_row.id, v_progress_row.updated_at, 31, 31, 1, 'Ngoại lệ smoke', '   '
+    );
+    raise exception 'empty exception reason was accepted';
+  exception when others then
+    if sqlerrm <> 'DAILY_PROGRESS_EXCEPTION_REASON_REQUIRED' then raise; end if;
+  end;
+
+  perform set_config('request.jwt.claims', jsonb_build_object(
+    'sub', '71000000-0000-4000-8000-000000000007', 'role', 'authenticated'
+  )::text, true);
+  begin
+    perform public.save_daily_progress_exception_v1(
+      v_progress_row.id, v_progress_row.updated_at, 31, 31, 1,
+      'Ngoại lệ smoke', 'Actor chỉ có quyền sửa tiến độ tuần'
+    );
+    raise exception 'actor missing Daily Log publish permission was accepted';
+  exception when others then
+    if sqlerrm <> 'DAILY_PROGRESS_EXCEPTION_DUAL_PERMISSION_REQUIRED' then raise; end if;
+  end;
+  perform set_config('request.jwt.claims', jsonb_build_object(
+    'sub', '71000000-0000-4000-8000-000000000001', 'role', 'authenticated'
+  )::text, true);
+
+  insert into public.project_progress_period_states (
+    scope_key, project_id, period_type, period_start, is_locked, locked_by, locked_at
+  ) values (
+    'daily-log-publish-smoke-project', 'daily-log-publish-smoke-project', 'daily',
+    '2026-09-23', true, '71000000-0000-4000-8000-000000000001', now()
+  ) on conflict (scope_key, period_type, period_start) do update
+    set is_locked = true,
+        locked_by = excluded.locked_by,
+        locked_at = excluded.locked_at;
+  begin
+    perform public.save_daily_progress_exception_v1(
+      v_progress_row.id, v_progress_row.updated_at, 31, 31, 1,
+      'Ngoại lệ smoke', 'Kiểm tra kỳ khóa'
+    );
+    raise exception 'locked period exception was accepted';
+  exception when others then
+    if sqlerrm <> 'PERIOD_LOCKED' then raise; end if;
+  end;
+  if (select progress_percent from public.project_daily_task_progress where id = v_progress_row.id) <> 30
+    or (select count(*) from public.daily_progress_exception_audit) <> v_audit_before then
+    raise exception 'locked exception changed progress or audit';
+  end if;
+  update public.project_progress_period_states
+  set is_locked = false, locked_by = null, locked_at = null
+  where scope_key = 'daily-log-publish-smoke-project'
+    and period_type = 'daily' and period_start = '2026-09-23';
+
+  v_result := public.save_daily_progress_exception_v1(
+    v_progress_row.id, v_progress_row.updated_at, 31, 31, 1,
+    'Ngoại lệ smoke', 'Điều chỉnh theo biên bản hiện trường'
+  );
+  if (v_result ->> 'auditId') is null
+    or (select count(*) from public.daily_progress_exception_audit) <> v_audit_before + 1
+    or not exists (
+      select 1 from public.daily_progress_exception_audit audit
+      where audit.id = (v_result ->> 'auditId')::uuid
+        and audit.reason = 'Điều chỉnh theo biên bản hiện trường'
+        and (audit.before_data ->> 'progress_percent')::numeric = 30
+        and (audit.after_data ->> 'progress_percent')::numeric = 31
+        and audit.source_daily_log_id = 'daily-log-publish-smoke-summary'
+    ) then
+    raise exception 'exception audit did not preserve before/after evidence';
+  end if;
+  if (select count(*) from public.project_transactions) <> v_transactions_before then
+    raise exception 'daily progress exception created a project transaction';
+  end if;
 end;
 $$;
 

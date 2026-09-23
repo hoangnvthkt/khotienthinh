@@ -365,6 +365,29 @@ export interface ProjectProgressPeriodBundle {
   windowToWeek: string | null;
 }
 
+export interface DailyProgressAuthority {
+  mode: 'off' | 'pilot' | 'enforced' | 'paused';
+  cutoverDate: string | null;
+  authoritative: boolean;
+  canEditException: boolean;
+}
+
+export interface SaveDailyProgressExceptionInput {
+  progressRowId: string;
+  expectedUpdatedAt: string;
+  progressPercent: number;
+  quantityDone: number | null;
+  dailyQuantityDone: number | null;
+  note?: string | null;
+  reason: string;
+}
+
+export interface SaveDailyProgressExceptionResult {
+  auditId: string;
+  progressRow: ProjectDailyTaskProgress;
+  reason: string;
+}
+
 export type SaveProjectProgressPeriodInput =
   | (ProjectProgressPeriodScopeInput & {
     periodType: 'daily';
@@ -621,6 +644,38 @@ export const getProjectProgressMutationErrorMessage = (
 };
 
 export const projectWeeklyProgressService = {
+  async getDailyProgressAuthority(input: {
+    projectId: string;
+    constructionSiteId?: string | null;
+    progressDate: string;
+  }): Promise<DailyProgressAuthority> {
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('get_daily_progress_authority_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_progress_date: input.progressDate,
+    });
+    if (error) throw error;
+    return fromDb(data) as DailyProgressAuthority;
+  },
+
+  async saveDailyProgressException(input: SaveDailyProgressExceptionInput): Promise<SaveDailyProgressExceptionResult> {
+    const reason = input.reason.trim();
+    if (!reason) throw new Error('Vui lòng nhập lý do điều chỉnh ngoại lệ.');
+    assertProgressRpcAvailable();
+    const { data, error } = await supabase.rpc('save_daily_progress_exception_v1', {
+      p_progress_row_id: input.progressRowId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_progress_percent: input.progressPercent,
+      p_quantity_done: input.quantityDone,
+      p_daily_quantity_done: input.dailyQuantityDone,
+      p_note: input.note?.trim() || null,
+      p_reason: reason,
+    });
+    if (error) throw error;
+    return fromDb(data) as SaveDailyProgressExceptionResult;
+  },
+
   async getPeriodBundle(input: ProjectProgressPeriodBundleInput): Promise<ProjectProgressPeriodBundle> {
     assertProgressRpcAvailable();
     const { data, error } = await supabase.rpc('get_project_progress_period_bundle', {
