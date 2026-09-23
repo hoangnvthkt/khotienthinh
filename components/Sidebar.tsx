@@ -51,7 +51,9 @@ const MODULE_CONFIG = [
   { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile', gradient: 'from-purple-500 to-pink-600', shadow: 'shadow-purple-500/25' },
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
   { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', route: '/da', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/25' },
+  { key: 'PROJECT_V2' as const, authorizationKey: 'DA' as const, icon: Layers, label: 'Dự án V2', shortLabel: 'DA V2', route: '/project-v2', gradient: 'from-teal-600 to-cyan-700', shadow: 'shadow-teal-600/25' },
   { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', route: '/procurement', gradient: 'from-emerald-600 to-teal-700', shadow: 'shadow-emerald-600/25' },
+  { key: 'PROCUREMENT_V2' as const, authorizationKey: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng V2', shortLabel: 'MH V2', route: '/procurement-v2', gradient: 'from-cyan-600 to-blue-700', shadow: 'shadow-cyan-600/25' },
   { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
   { key: 'EX' as const, icon: Calculator, label: 'Chi phí', shortLabel: 'CP', route: '/expense', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
@@ -112,6 +114,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
     if (p.startsWith('/hrm') || p === '/my-profile' || p === '/my-payroll' || p === '/employee-dashboard') return 'HRM';
     if (p.startsWith('/wf')) return 'WF';
+    if (p.startsWith('/project-v2')) return 'PROJECT_V2';
+    if (p.startsWith('/procurement-v2')) return 'PROCUREMENT_V2';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/procurement')) return 'PROCUREMENT';
     if (p.startsWith('/ts')) return 'TS';
@@ -150,7 +154,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const userModules = useMemo(() => {
     return MODULE_CONFIG.filter(m => {
       if (m.key === 'work.module' && !isViooWorkEnabled) return false;
-      return canAccessNavigationModule(user, m.key, m.route);
+      return canAccessNavigationModule(user, 'authorizationKey' in m ? m.authorizationKey : m.key,
+        m.route, 'authorizationKey' in m ? { requirePreferredRoute: true } : undefined);
     });
   }, [user]);
 
@@ -266,11 +271,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình' },
     ],
     DA: [
-      { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
+      { to: '/da', icon: BarChart3, label: 'Dự án hiện tại' },
       { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
     ],
+    PROJECT_V2: [
+      { to: '/project-v2', icon: Layers, label: 'Không gian dự án V2' },
+    ],
     PROCUREMENT: [
-      { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
+      { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng hiện tại' },
+    ],
+    PROCUREMENT_V2: [
+      { to: '/procurement-v2', icon: ShoppingCart, label: 'Hồ sơ mua hàng V2' },
     ],
     TS: [
       { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
@@ -353,7 +364,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';
 
   const handleModuleClick = (mod: typeof MODULE_CONFIG[number]) => {
-    const route = getAuthorizedModuleRoute(user, mod.key, mod.route);
+    const route = getAuthorizedModuleRoute(user, 'authorizationKey' in mod ? mod.authorizationKey : mod.key,
+      mod.route, 'authorizationKey' in mod ? { requirePreferredRoute: true } : undefined);
     if (!route) return;
     setView(mod.key);
     navigate(route);

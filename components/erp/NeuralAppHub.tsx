@@ -30,6 +30,7 @@ import StatusBadge from './StatusBadge';
 
 export interface ModuleAppDefinition {
   key: string;
+  authorizationKey?: string;
   label: string;
   shortLabel: string;
   description: string;
@@ -42,6 +43,12 @@ export interface ModuleAppDefinition {
 }
 
 const ALL_MODULE_DEFS: ModuleAppDefinition[] = [
+  {
+    key: 'PROJECT_V2', authorizationKey: 'DA', label: 'Dự án V2', shortLabel: 'DA V2',
+    description: 'Không gian lập kế hoạch dự án', route: '/project-v2', icon: BarChart3,
+    gradient: 'from-teal-600 to-cyan-700', glowColor: 'rgba(13, 148, 136, 0.4)',
+    strokeColor: '#0d9488', badgeTone: 'emerald',
+  },
   {
     key: 'DA',
     label: 'Dự án',
@@ -101,6 +108,12 @@ const ALL_MODULE_DEFS: ModuleAppDefinition[] = [
     glowColor: 'rgba(6, 182, 212, 0.4)',
     strokeColor: '#06b6d4',
     badgeTone: 'cyan',
+  },
+  {
+    key: 'PROCUREMENT_V2', authorizationKey: 'PROCUREMENT', label: 'Mua hàng V2', shortLabel: 'MH V2',
+    description: 'Hồ sơ nhu cầu và phương án cung ứng', route: '/procurement-v2', icon: ShoppingCart,
+    gradient: 'from-cyan-600 to-blue-700', glowColor: 'rgba(8, 145, 178, 0.4)',
+    strokeColor: '#0891b2', badgeTone: 'cyan',
   },
   {
     key: 'TS',
@@ -237,7 +250,9 @@ export const NeuralAppHub: React.FC<NeuralAppHubProps> = ({
 
   // Filter modules user is authorized to view
   const userModules = useMemo(() => {
-    return ALL_MODULE_DEFS.filter(m => canAccessNavigationModule(user, m.key, m.route));
+    return ALL_MODULE_DEFS.filter(m => canAccessNavigationModule(user,
+      m.authorizationKey ?? m.key, m.route,
+      m.authorizationKey ? { requirePreferredRoute: true } : undefined));
   }, [user]);
 
   // Calculate layout coordinates for Neural Radial Graph
@@ -271,7 +286,8 @@ export const NeuralAppHub: React.FC<NeuralAppHubProps> = ({
   const handleLaunchModule = (module: ModuleAppDefinition) => {
     setActiveRippleKey(module.key);
     setTimeout(() => {
-      const route = getAuthorizedModuleRoute(user, module.key, module.route);
+      const route = getAuthorizedModuleRoute(user, module.authorizationKey ?? module.key,
+        module.route, module.authorizationKey ? { requirePreferredRoute: true } : undefined);
       if (route) navigate(route);
     }, 220);
   };

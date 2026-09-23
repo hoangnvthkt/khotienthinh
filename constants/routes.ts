@@ -49,10 +49,14 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── DỰ ÁN ────────────────────────────────────────────
   '/da':            'DA',
   '/da/portfolio':  'DA',
+  '/project-v2': 'DA',
+  '/project-v2/plans/:planId': 'DA',
   ...Object.fromEntries(PROJECT_TAB_PERMISSIONS.map(tab => [tab.route, 'DA'])),
 
   // ── MUA HÀNG CẤP CÔNG TY ─────────────────────────────
   '/procurement': 'PROCUREMENT',
+  '/procurement-v2': 'PROCUREMENT',
+  '/procurement-v2/demands/:demandId': 'PROCUREMENT',
 
   // ── TÀI SẢN ──────────────────────────────────────────
   '/ts/dashboard':   'TS',
