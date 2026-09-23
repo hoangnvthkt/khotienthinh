@@ -90,7 +90,7 @@ begin
 
   return jsonb_build_object(
     'rollout', v_rollout,
-    'leafTasks', coalesce((
+    'tasks', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', task.id,
         'projectId', task.project_id,
@@ -112,12 +112,6 @@ begin
       from public.project_tasks task
       where task.project_id = p_project_id
         and task.construction_site_id is not distinct from p_construction_site_id
-        and not exists (
-          select 1 from public.project_tasks child
-          where child.parent_id = task.id
-            and child.project_id = task.project_id
-            and child.construction_site_id is not distinct from task.construction_site_id
-        )
     ), '[]'::jsonb),
     'workBoqItems', coalesce((
       select jsonb_agg(jsonb_build_object(
