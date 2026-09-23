@@ -25,10 +25,13 @@ export interface ProcurementSourceLineSnapshot {
   unit: string;
   workBoqItemId: string | null;
   materialBudgetItemId: string | null;
+  neededDate?: string | null;
+  destinationId?: string | null;
+  calculatedQty?: ProcurementDecimal | null;
 }
 
 export interface ProcurementSourceSnapshot {
-  adapter: 'project_material_request';
+  adapter: 'project_material_request' | 'material_plan';
   sourceDocumentId: string;
   sourceCode: string;
   sourceRevision: string;
