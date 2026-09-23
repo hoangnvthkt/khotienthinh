@@ -12,6 +12,13 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   SOURCE_CHANGED: 'Phiếu nguồn đã thay đổi. Hãy rà soát lại card nguồn trước khi lưu.',
   SOURCE_RETURNED: 'Phiếu nguồn đã bị trả lại. Hãy loại nguồn này hoặc chờ thành viên gửi lại.',
   PERIOD_LOCKED: 'Kỳ tiến độ đã khóa. Hãy liên hệ người có quyền mở kỳ trước khi chỉnh sửa.',
+  STALE_PROGRESS_BASELINE: 'Mốc tiến độ nền đã thay đổi. Hãy tải lại bản tổng hợp và rà soát trước khi công bố.',
+  BACKDATED_PROGRESS_CONFLICT: 'Tiến độ ngày này xung đột với mốc đã ghi ở ngày sau. Hãy rà soát lại chuỗi tiến độ.',
+  FORECAST_CHANGE_REASON_REQUIRED: 'Ngày dự báo đã thay đổi nhưng chưa có lý do. Hãy bổ sung lý do trước khi gửi.',
+  SUMMARY_SOURCE_REVIEW_BLOCKED: 'Có phiếu nguồn đã thay đổi hoặc đang chờ sửa. Hãy xử lý card nguồn trước khi tiếp tục.',
+  CATALOG_PROVIDER_NOT_ACTIVE: 'Nhà cung cấp hoặc tổ đội trong danh mục không còn hoạt động. Hãy chọn nguồn đang hoạt động hoặc nhập tay.',
+  MANUAL_PROVIDER_TYPE_REQUIRED: 'Hãy chọn loại nguồn cung cấp nhập tay.',
+  MANUAL_PROVIDER_NAME_REQUIRED: 'Hãy nhập tên nguồn cung cấp.',
 };
 
 export const mapDailyLogWbsCommandError = (error: unknown): Error => {

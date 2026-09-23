@@ -93,6 +93,7 @@ describe('DailyLogSummaryWorkspace', () => {
   it('blocks submission until ambiguous task scope has an official decision', () => {
     const draft = buildDailyLogSummaryDraft(bundle);
     expect(draft.blockers).toContain('missing_area_allocation');
+    expect(draft.blockers).toContain('source_changed');
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={bundle} mode="summarize" />);
     expect(html).toContain('Nhập % lũy kế chính thức');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Gửi CHT/);
@@ -143,5 +144,9 @@ describe('DailyLogSummaryWorkspace', () => {
     expect(page).toContain('mode="review"');
     expect(page).toContain('summaryDate >= summaryWbsBundle.rollout.cutoverDate');
     expect(page).toContain('prepareWbsSummaryLog');
+    expect(page).toContain('dailyLogWbsService.submitSummary');
+    expect(page).toContain('dailyLogWbsService.publishSummary');
+    expect(page).toContain('publishCommandIdsRef.current[log.id]');
+    expect(page).not.toContain("onPublish={() => { handleStatusChange(viewingLog, 'verified'); }}");
   });
 });

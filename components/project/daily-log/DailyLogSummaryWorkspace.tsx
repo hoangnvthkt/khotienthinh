@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, Save, Send } from 'luc
 import type { DailyLog, DailyLogContribution, DailyLogResourceProvider, DailyLogSummarySource, DailyLogWbsDecision, DailyLogWorkItem } from '../../../types';
 import { aggregateAreaWorkItems } from '../../../lib/dailyLogWorkItemRules';
 import { canPublishDailyLogSummary } from '../../../lib/dailyLogWorkflow';
-import { dailyLogWbsService, type DailyLogWbsBundle, type SaveDailyLogSummaryWorkInput } from '../../../lib/dailyLogWbsService';
+import { dailyLogWbsService, type DailyLogWbsBundle, type DailyLogWorkSaveReceipt, type SaveDailyLogSummaryWorkInput } from '../../../lib/dailyLogWbsService';
 import { DailyLogAreaCard, type DailyLogAreaCardModel, type SummaryResourceLine } from './DailyLogAreaCard';
 import { DailyLogConsolidatedWbsTable, type ConsolidatedTaskGroup } from './DailyLogConsolidatedWbsTable';
 
@@ -11,9 +11,9 @@ interface Props {
   bundle: DailyLogWbsBundle;
   mode: 'summarize' | 'review';
   ensureSummaryLog?: () => Promise<DailyLog>;
-  onSaved?: () => void;
-  onSubmit?: () => void;
-  onPublish?: () => void;
+  onSaved?: (receipt?: DailyLogWorkSaveReceipt) => void | Promise<void>;
+  onSubmit?: (receipt: DailyLogWorkSaveReceipt) => void | Promise<void>;
+  onPublish?: () => void | Promise<void>;
   onReturnAll?: () => void;
 }
 
@@ -112,7 +112,7 @@ export const buildDailyLogSummaryDraft = (bundle: DailyLogWbsBundle): SummaryDra
   const sourceWarnings = cards.filter(card => card.source.sourceState && card.source.sourceState !== 'current').length;
   const taskWarnings = groups.filter(group => group.aggregate.conflicts.length > 0).length;
   const blockers = [
-    ...cards.filter(card => ['missing', 'returned'].includes(card.source.sourceState || '')).map(card => `source_${card.source.sourceState}`),
+    ...cards.filter(card => ['missing', 'returned', 'changed'].includes(card.source.sourceState || '')).map(card => `source_${card.source.sourceState}`),
     ...groups.flatMap(group => group.aggregate.conflicts),
   ];
   return { cards, groups, decisions, warningCount: sourceWarnings + taskWarnings, blockers };
@@ -132,7 +132,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       .map(aggregate => ({ aggregate, items: items.filter(item => item.taskId === aggregate.taskId) }));
   }, [cards]);
   const people = cards.flatMap(card => card.resources).filter(row => row.kind === 'labor').reduce((sum, row) => sum + row.count, 0);
-  const sourceBlockers = cards.filter(card => ['missing', 'returned'].includes(card.source.sourceState || '')).length;
+  const sourceBlockers = cards.filter(card => ['missing', 'returned', 'changed'].includes(card.source.sourceState || '')).length;
   const unresolved = groups.filter(group => {
     if (group.aggregate.conflicts.length === 0) return false;
     const decision = decisions[group.aggregate.taskId];
@@ -188,10 +188,18 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
           provider: resourceProvider(line.raw), note: line.raw.note, sourceMachineLineId: line.id, sourceIndex: index,
         })),
       };
-      await dailyLogWbsService.saveSummary(input);
-      onSaved?.();
-      if (submit) onSubmit?.();
+      const receipt = await dailyLogWbsService.saveSummary(input);
+      await onSaved?.(receipt);
+      if (submit) await onSubmit?.(receipt);
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể lưu bản tổng hợp.'); }
+    finally { setBusy(false); }
+  };
+
+  const publish = async () => {
+    if (!onPublish) return;
+    setBusy(true); setError(null);
+    try { await onPublish(); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể công bố tiến độ.'); }
     finally { setBusy(false); }
   };
 
@@ -201,7 +209,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
     {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
     {cards.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Chưa có phiếu nguồn đã gửi để tổng hợp.</div> : <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{cards.map(card => <DailyLogAreaCard key={card.contribution.id} card={card} mode={mode} onProgressChange={updateProgress} onRefresh={sourceId => setCards(current => current.map(value => value.source.id === sourceId ? { ...value, source: { ...value.source, sourceState: 'current', hasAdjustments: false, refreshSource: true } as DailyLogSummarySource & { refreshSource: boolean }, editedItems: value.sourceItems, resources: value.sourceResources } : value))} onRemove={sourceId => setCards(current => current.filter(value => value.source.id !== sourceId))} onRequestChange={async (sourceId, comment) => { if (!bundle.summaryLog) return; setBusy(true); try { await dailyLogWbsService.requestSourceChange({ dailyLogId: bundle.summaryLog.id, summarySourceId: sourceId, comment, expectedUpdatedAt: expectedUpdatedAt(bundle.summaryLog) }); onSaved?.(); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể yêu cầu sửa khu vực.'); } finally { setBusy(false); } }} />)}</div>}
     <DailyLogConsolidatedWbsTable groups={groups} decisions={decisions} readOnly={mode === 'review'} onDecisionChange={(taskId, patch) => setDecisions(current => ({ ...current, [taskId]: { ...current[taskId], ...patch } }))} />
-    {(sourceBlockers > 0 || unresolved > 0) && <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{sourceBlockers > 0 ? 'Có nguồn bị thiếu hoặc đã trả lại. ' : ''}{unresolved > 0 ? `${unresolved} WBS chưa có quyết định chính thức và lý do.` : ''}</span></div>}
-    {mode === 'summarize' ? <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 py-3 backdrop-blur sm:flex-row sm:justify-end dark:border-slate-700 dark:bg-slate-900/95"><button type="button" disabled={busy || !canSubmit} onClick={() => save(false)} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-teal-700 px-5 text-sm font-bold text-teal-800 disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Lưu tổng hợp</button><button type="button" disabled={busy || !canSubmit} onClick={() => save(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Gửi CHT</button></div> : <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 py-3 sm:flex-row sm:justify-end dark:border-slate-700 dark:bg-slate-900/95"><button type="button" onClick={onReturnAll} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700"><RotateCcw size={15} /> Trả lại toàn bộ</button>{canPublishDailyLogSummary({ log: bundle.summaryLog, canApprove: bundle.permissions.canApprove, canPublishProgress: bundle.permissions.canPublishProgress }) && <button type="button" onClick={onPublish} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-bold text-white"><CheckCircle2 size={16} /> Duyệt & công bố</button>}</div>}
+    {(sourceBlockers > 0 || unresolved > 0) && <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{sourceBlockers > 0 ? 'Có nguồn đã thay đổi, bị thiếu hoặc đã trả lại; hãy xử lý từng card trước khi gửi. ' : ''}{unresolved > 0 ? `${unresolved} WBS chưa có quyết định chính thức và lý do.` : ''}</span></div>}
+    {mode === 'summarize' ? <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 py-3 backdrop-blur sm:flex-row sm:justify-end dark:border-slate-700 dark:bg-slate-900/95"><button type="button" disabled={busy || !canSubmit} onClick={() => save(false)} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-teal-700 px-5 text-sm font-bold text-teal-800 disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Lưu tổng hợp</button><button type="button" disabled={busy || !canSubmit} onClick={() => save(true)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Gửi CHT</button></div> : <div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-slate-200 bg-white/95 py-3 sm:flex-row sm:justify-end dark:border-slate-700 dark:bg-slate-900/95"><button type="button" disabled={busy} onClick={onReturnAll} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 disabled:opacity-50"><RotateCcw size={15} /> Trả lại toàn bộ</button>{canPublishDailyLogSummary({ log: bundle.summaryLog, canApprove: bundle.permissions.canApprove, canPublishProgress: bundle.permissions.canPublishProgress }) && <button type="button" disabled={busy} onClick={publish} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 text-sm font-bold text-white disabled:opacity-50">{busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Duyệt & công bố</button>}</div>}
   </section>;
 };

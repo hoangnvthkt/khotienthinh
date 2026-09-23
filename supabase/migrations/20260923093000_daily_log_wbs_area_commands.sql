@@ -246,7 +246,7 @@ begin
           and contribution.status in ('draft', 'returned')
       ),
       'canSummarize', app_private.current_actor_has_effective_room_action(
-        p_project_id, p_construction_site_id, 'daily_log', 'summarize'
+        p_project_id, p_construction_site_id, 'daily_log', 'verify'
       ),
       'canApprove', app_private.current_actor_has_effective_room_action(
         p_project_id, p_construction_site_id, 'daily_log', 'approve'
@@ -558,7 +558,7 @@ begin
     raise exception using errcode = '42501', message = 'SUMMARY_NOT_EDITABLE';
   end if;
   if not app_private.current_actor_has_effective_room_action(
-    v_log.project_id, v_log.construction_site_id, 'daily_log', 'summarize'
+    v_log.project_id, v_log.construction_site_id, 'daily_log', 'verify'
   ) then raise exception using errcode = '42501', message = 'DAILY_LOG_SUMMARIZE_REQUIRED'; end if;
   if coalesce(v_log.last_action_at, v_log.created_at) is distinct from p_expected_updated_at then
     raise exception using errcode = '40001', message = 'ROW_VERSION_CONFLICT';
@@ -888,11 +888,11 @@ begin
     review_comment = trim(p_comment), reviewed_by = v_actor_id::text,
     reviewed_at = v_now, updated_at = v_now
   where source.id = p_summary_source_id;
-  update public.daily_logs log set status = 'rejected', rejected_by_id = v_actor_id::text,
-    rejected_by = v_actor_id::text, rejected_at = v_now, rejection_reason = trim(p_comment),
-    last_action_by = v_actor_id::text, last_action_at = v_now
-  where log.id = p_daily_log_id;
-  return jsonb_build_object('rowVersion', 1, 'updatedAt', v_now,
+  perform public.transition_daily_log_status(
+    p_daily_log_id, 'rejected', null, null, trim(p_comment)
+  );
+  select log.* into v_log from public.daily_logs log where log.id = p_daily_log_id;
+  return jsonb_build_object('rowVersion', 1, 'updatedAt', v_log.last_action_at,
     'sourceFingerprint', coalesce(v_source.source_fingerprint, ''), 'conflicts', '[]'::jsonb);
 end;
 $$;

@@ -104,6 +104,35 @@ export interface RequestDailyLogSourceChangeInput {
   expectedUpdatedAt: string;
 }
 
+export interface SubmitDailyLogSummaryInput {
+  dailyLogId: string;
+  expectedUpdatedAt: string;
+  approverUserId: string;
+}
+
+export interface DailyLogSummarySubmitReceipt {
+  dailyLogId: string;
+  status: 'submitted';
+  updatedAt: string;
+}
+
+export interface PublishDailyLogSummaryInput {
+  commandId: string;
+  dailyLogId: string;
+  expectedUpdatedAt: string;
+}
+
+export interface DailyLogPublishReceipt {
+  commandId: string;
+  dailyLogId: string;
+  progressDate: string;
+  publishedTaskIds: string[];
+  verifiedResourceLineIds: string[];
+  progressFingerprint: string;
+  resourceEvidenceFingerprint: string;
+  publishedAt: string;
+}
+
 const callRpc = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
   if (error) throw mapDailyLogWbsCommandError(error);
@@ -152,6 +181,22 @@ export const dailyLogWbsService = {
       p_daily_log_id: input.dailyLogId,
       p_summary_source_id: input.summarySourceId,
       p_comment: input.comment,
+      p_expected_updated_at: input.expectedUpdatedAt,
+    });
+  },
+
+  submitSummary(input: SubmitDailyLogSummaryInput): Promise<DailyLogSummarySubmitReceipt> {
+    return callRpc('submit_daily_log_summary_v1', {
+      p_daily_log_id: input.dailyLogId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+      p_approver_user_id: input.approverUserId,
+    });
+  },
+
+  publishSummary(input: PublishDailyLogSummaryInput): Promise<DailyLogPublishReceipt> {
+    return callRpc('publish_daily_log_summary_v1', {
+      p_command_id: input.commandId,
+      p_daily_log_id: input.dailyLogId,
       p_expected_updated_at: input.expectedUpdatedAt,
     });
   },
