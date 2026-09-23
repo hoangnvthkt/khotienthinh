@@ -563,6 +563,22 @@ create policy daily_log_labor_update
     and contribution_id is null
     and summary_source_id is null
     and daily_log_work_item_id is null
+    and exists (
+      select 1
+      from public.daily_logs daily_log
+      where daily_log.id = daily_log_labor.daily_log_id
+        and app_private.daily_log_can_edit(
+          daily_log.project_id,
+          daily_log.construction_site_id,
+          daily_log.status,
+          daily_log.summary_source_type,
+          daily_log.created_by_id,
+          daily_log.submitted_by_id,
+          daily_log.submitted_by,
+          daily_log.created_by,
+          public.current_app_user_id()
+        )
+    )
   );
 
 drop policy daily_log_labor_delete on public.daily_log_labor;
@@ -682,6 +698,22 @@ create policy daily_log_machines_update
     and contribution_id is null
     and summary_source_id is null
     and daily_log_work_item_id is null
+    and exists (
+      select 1
+      from public.daily_logs daily_log
+      where daily_log.id = daily_log_machines.daily_log_id
+        and app_private.daily_log_can_edit(
+          daily_log.project_id,
+          daily_log.construction_site_id,
+          daily_log.status,
+          daily_log.summary_source_type,
+          daily_log.created_by_id,
+          daily_log.submitted_by_id,
+          daily_log.submitted_by,
+          daily_log.created_by,
+          public.current_app_user_id()
+        )
+    )
   );
 
 drop policy daily_log_machines_delete on public.daily_log_machines;

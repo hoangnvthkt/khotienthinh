@@ -43,4 +43,19 @@ describe('daily log WBS area foundation migration', () => {
     expect(sql).toContain('resource_semantics_version integer not null default 1');
     expect(sql).not.toMatch(/update\s+public\.daily_log_(labor|machines)[\s\S]*resource_semantics_version\s*=\s*2/);
   });
+
+  it('rechecks the target daily log scope when a legacy resource row is updated', () => {
+    const sql = readFileSync(migrationPath, 'utf8').toLowerCase();
+    const laborUpdatePolicy = sql.slice(
+      sql.indexOf('create policy daily_log_labor_update'),
+      sql.indexOf('drop policy daily_log_labor_delete'),
+    );
+    const machineUpdatePolicy = sql.slice(
+      sql.indexOf('create policy daily_log_machines_update'),
+      sql.indexOf('drop policy daily_log_machines_delete'),
+    );
+
+    expect(laborUpdatePolicy).toMatch(/with check \([\s\S]*app_private\.daily_log_can_edit/);
+    expect(machineUpdatePolicy).toMatch(/with check \([\s\S]*app_private\.daily_log_can_edit/);
+  });
 });
