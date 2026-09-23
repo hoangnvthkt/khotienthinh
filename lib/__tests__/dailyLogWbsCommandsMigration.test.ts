@@ -59,4 +59,15 @@ describe('daily log WBS area command migration', () => {
     expect(bundle).toContain("to_jsonb(machine) - 'unit_cost' - 'total_cost'");
     expect(bundle).not.toMatch(/work\.unit_price|work\.total_amount|task\.unit_price|task\.total_price/);
   });
+
+  it('returns the full WBS tree so parents can be used for navigation but not selection', () => {
+    const source = sql();
+    const bundle = source.slice(
+      source.indexOf('create function public.get_daily_log_wbs_bundle_v1'),
+      source.indexOf('create function public.save_daily_log_contribution_work_v1'),
+    );
+    expect(bundle).toContain("'tasks'");
+    expect(bundle).not.toContain("'leafTasks'");
+    expect(bundle).not.toMatch(/not exists \(\s*select 1 from public\.project_tasks child/);
+  });
 });

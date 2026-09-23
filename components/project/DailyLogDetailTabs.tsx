@@ -26,6 +26,7 @@ interface Props {
   dailyProgressDate?: string;
   importingDailyProgressVolumes?: boolean;
   onImportDailyProgressVolumes?: () => void;
+  hideDailyProgressImport?: boolean;
 }
 
 type TabKey = 'volumes' | 'materials' | 'labor' | 'machines';
@@ -236,6 +237,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
   dailyProgressDate,
   importingDailyProgressVolumes = false,
   onImportDailyProgressVolumes,
+  hideDailyProgressImport = false,
 }) => {
   const [tab, setTab] = useState<TabKey>('volumes');
   const [laborModes, setLaborModes] = useState<Record<number, 'catalog' | 'partner'>>({});
@@ -677,7 +679,7 @@ const DailyLogDetailTabs: React.FC<Props> = ({
       {/* Volumes Tab */}
       {tab === 'volumes' && (
         <div className="space-y-3">
-          {onImportDailyProgressVolumes && (
+          {onImportDailyProgressVolumes && !hideDailyProgressImport && (
             <div className="rounded-xl border border-cyan-100 bg-cyan-50/70 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[11px] font-black text-cyan-800">Chốt tiến độ ngày</div>

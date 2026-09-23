@@ -60,7 +60,7 @@ export interface DailyLogWorkSaveReceipt {
 
 export interface DailyLogWbsBundleInput {
   projectId: string;
-  constructionSiteId: string;
+  constructionSiteId?: string | null;
   logDate: string;
   dailyLogId?: string | null;
 }
