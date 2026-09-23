@@ -30,6 +30,7 @@ const DAILY_LOG_ROOM_ACTION_PERMISSION_CODES: Partial<Record<
     'project.daily_log.summarize',
   ],
   approve: ['project.daily_log.approve', 'project.daily_log.return'],
+  publish_progress: ['project.daily_log.publish_progress'],
 };
 
 export const getDailyLogPermissionCodesForEffectiveRoomActions = (

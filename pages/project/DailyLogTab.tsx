@@ -113,6 +113,7 @@ const DAILY_LOG_ACTION = {
     verify: 'project.daily_log.verify',
     approve: 'project.daily_log.approve',
     summarize: 'project.daily_log.summarize',
+    publishProgress: 'project.daily_log.publish_progress',
 } as const;
 
 type DailyLogActionCode = typeof DAILY_LOG_ACTION[keyof typeof DAILY_LOG_ACTION];
