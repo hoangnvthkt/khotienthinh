@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUpRight, CalendarDays, CircleAlert, FolderOpen, Loader2, MapPin, UserRound } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -7,6 +7,8 @@ import { procurementV2Service } from '../../lib/procurement/procurementV2Service
 import { dossierSourceLabel, resolveDossierDocumentRef, resolveDossierSourceRoute } from '../../lib/procurement/procurementV2Presentation';
 import { ProcurementV2DemandLines } from '../../components/procurement-v2/ProcurementV2DemandLines';
 import { ProcurementV2SupplyDialog } from '../../components/procurement-v2/ProcurementV2SupplyDialog';
+import { ProcurementV2PurchaseDialog, type PurchaseDialogInput } from '../../components/procurement-v2/ProcurementV2PurchaseDialog';
+import { procurementPurchaseOrderService, type ProcurementPurchaseCandidate } from '../../lib/procurement/procurementPurchaseOrderService';
 import type { ProcurementV2Dossier } from '../../types/procurementV2';
 import type { ProcurementDocumentRef } from '../../types/procurementWorkbench';
 
@@ -62,13 +64,19 @@ const ProcurementV2DemandDetail: React.FC = () => {
   const { demandId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { constructionSites } = useApp();
+  const { constructionSites, suppliers, warehouses, user } = useApp();
   const [dossier, setDossier] = useState<ProcurementV2Dossier | null>(null);
   const [projectName, setProjectName] = useState('Dự án chưa có tên');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<'denied' | 'error' | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [supplyOpen, setSupplyOpen] = useState(false);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseCandidates, setPurchaseCandidates] = useState<ProcurementPurchaseCandidate[]>([]);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [purchaseError, setPurchaseError] = useState('');
+  const attempt = useRef<{ signature: string; id: string; key: string; number: string;
+    orderDate: string; lineIds: Record<string, string> } | null>(null);
   const back = useCallback(() => navigate(`/procurement-v2${location.search}`), [location.search, navigate]);
   useEffect(() => {
     if (!demandId) { setError('error'); setLoading(false); return; }
@@ -90,11 +98,11 @@ const ProcurementV2DemandDetail: React.FC = () => {
     return () => { active = false; };
   }, [dossier?.projectId]);
   useEffect(() => {
-    if (supplyOpen) return undefined;
+    if (supplyOpen || purchaseOpen) return undefined;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') back(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [back, supplyOpen]);
+  }, [back, supplyOpen, purchaseOpen]);
   if (loading) return <main role="status" className="grid min-h-[50vh] place-items-center"><div className="text-center"><Loader2 className="mx-auto animate-spin" /><p className="mt-2">Đang tải hồ sơ…</p></div></main>;
   if (error || !dossier) return <main className="mx-auto max-w-3xl p-6"><button type="button" onClick={back} className="min-h-11 text-sm font-semibold">← Về danh sách</button><section role="alert" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-6"><h1 className="font-semibold">{error === 'denied' ? 'Bạn chưa được cấp quyền xem hồ sơ này' : 'Chưa tải được hồ sơ'}</h1>{error !== 'denied' && <button type="button" onClick={() => setRefresh(value => value + 1)} className="mt-3 min-h-11 rounded-xl bg-slate-900 px-4 text-white">Thử lại</button>}</section></main>;
   const siteName = constructionSites.find(site => site.id === dossier.constructionSiteId)?.name || 'Chưa rõ công trường';
@@ -102,15 +110,60 @@ const ProcurementV2DemandDetail: React.FC = () => {
     try { navigate(resolveDossierDocumentRef(ref, location.pathname + location.search).route); }
     catch { /* Invalid or unsupported trace refs stay in the dossier. */ }
   };
+  const startPurchase = async () => {
+    if (!demandId) return;
+    setSupplyOpen(false); setPurchaseLoading(true); setPurchaseError('');
+    try {
+      const page = await procurementPurchaseOrderService.listCandidates(demandId);
+      if (!page.canAllocate) throw new Error('Bạn chưa có quyền lập PO cho nhu cầu này.');
+      setPurchaseCandidates(page.lines); setPurchaseOpen(true);
+    } catch (cause) {
+      setPurchaseError(cause instanceof Error ? cause.message : 'Chưa tải được vật tư có thể mua.');
+    } finally { setPurchaseLoading(false); }
+  };
+  const createPurchase = async (input: PurchaseDialogInput) => {
+    const selected = input.lines.filter(line => line.selected);
+    const signature = JSON.stringify(input);
+    if (!attempt.current || attempt.current.signature !== signature) {
+      attempt.current = { signature, id: crypto.randomUUID(), key: crypto.randomUUID(),
+        number: await procurementPurchaseOrderService.nextNumber(),
+        orderDate: new Date().toLocaleDateString('sv-SE'),
+        lineIds: Object.fromEntries(selected.map(line => [line.demandLineId, crypto.randomUUID()])) };
+    }
+    const order = attempt.current;
+    const vendor = suppliers.find(row => row.id === input.supplierId);
+    if (!vendor) throw new Error('Nhà cung cấp không còn hợp lệ.');
+    const lines = selected.map(line => {
+      const candidate = purchaseCandidates.find(row => row.demandLineId === line.demandLineId);
+      if (!candidate || candidate.fulfilledQty === null) throw new Error('Số lượng đã thực hiện chưa rõ.');
+      return { ...candidate, ...line, vendorId: vendor.id, vendorName: vendor.name,
+        warehouseId: input.warehouseId, note: input.note,
+        unitPrice: line.unitPrice, poLineId: order.lineIds[line.demandLineId] };
+    });
+    await procurementPurchaseOrderService.create(lines, {
+      id: order.id, poNumber: order.number, idempotencyKey: order.key, actorUserId: user.id,
+      orderDate: order.orderDate,
+      expectedDeliveryDate: input.expectedDeliveryDate, note: input.note,
+    });
+    attempt.current = null;
+    setPurchaseOpen(false); setRefresh(value => value + 1);
+  };
   return <><ProcurementV2DemandDetailView dossier={dossier} projectName={projectName}
     siteName={siteName} onBack={back}
     onOpenSource={() => navigate(resolveDossierSourceRoute(dossier.sourceRef))}
     onOpenDocument={openDocument} onPlanSupply={() => setSupplyOpen(true)} />
     <ProcurementV2SupplyDialog open={supplyOpen} demandLabel={dossier.sourceCode}
-      canPurchase={dossier.sourceAdapter === 'project_material_request'
-        && dossier.allowedActions.includes('plan_supply')}
+      canPurchase={dossier.allowedActions.includes('plan_supply')}
       onClose={() => setSupplyOpen(false)}
-      onPurchase={() => navigate('/procurement?legacy=1')} />
+      onPurchase={startPurchase} />
+    {purchaseLoading && <div role="status" className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/50"><div className="rounded-xl bg-white p-5"><Loader2 className="animate-spin" />Đang tải vật tư có thể mua…</div></div>}
+    {purchaseError && <div role="alert" className="fixed bottom-4 right-4 z-[70] max-w-sm rounded-xl bg-rose-50 p-4 text-rose-800 shadow-lg">{purchaseError}<button type="button" onClick={() => setPurchaseError('')} className="ml-3 font-semibold">Đóng</button></div>}
+    <ProcurementV2PurchaseDialog open={purchaseOpen} candidates={purchaseCandidates}
+      suppliers={suppliers} warehouses={warehouses.filter(row =>
+        (!row.projectId || row.projectId === dossier.projectId)
+        && (!row.constructionSiteId || row.constructionSiteId === dossier.constructionSiteId))}
+      onClose={() => setPurchaseOpen(false)}
+      onCreate={createPurchase} />
   </>;
 };
 export default ProcurementV2DemandDetail;

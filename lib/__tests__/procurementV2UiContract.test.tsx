@@ -75,6 +75,6 @@ describe('Procurement V2 first-use UI contract', () => {
       canPurchase={false} onClose={() => {}} onPurchase={() => {}} />);
     for (const label of ['Cấp từ kho', 'Điều chuyển', 'Gọi theo hợp đồng', 'Mua theo PO'])
       expect(html).toContain(label);
-    expect(html).toContain('Chưa thể lập PO từ kế hoạch vật tư');
+    expect(html).toContain('Hồ sơ cần đối chiếu trước khi lập PO.');
   });
 });

@@ -22,6 +22,7 @@ import { purchasePackageService, type ApprovePurchasePackageResult } from './pur
 import { chunkValues, decodeCursor, encodeCursor, fetchAllPages } from './supabasePagination';
 import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjections';
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
+import { procurementPurchaseOrderService } from './procurement/procurementPurchaseOrderService';
 
 // ==================== HELPER ====================
 // snake_case ↔ camelCase mapping
@@ -1213,16 +1214,17 @@ export const poService = {
         return data as SavePurchaseOrderAggregateResult;
     },
     async saveProcurementPurchaseOrder(input: SaveProcurementPurchaseOrderInput): Promise<SaveProcurementPurchaseOrderResult> {
-        const { data, error } = await supabase.rpc('create_procurement_purchase_order_v1', {
-            p_purchase_order: poToDb(input.purchaseOrder),
-            p_request_line_links: input.requestLineLinks.map(poRequestLineLinkToDb),
-            p_allocations: input.allocations,
-            p_actor_user_id: input.actorUserId,
-            p_idempotency_key: input.idempotencyKey,
-        });
-        if (error) throw mapErpCompletionCommandError(error);
-        if (!data || typeof data !== 'object') throw new Error('PROCUREMENT_PURCHASE_ORDER_RESPONSE_INVALID');
-        return data as SaveProcurementPurchaseOrderResult;
+        try {
+            return await procurementPurchaseOrderService.saveRaw({
+                purchaseOrder: poToDb(input.purchaseOrder),
+                requestLineLinks: input.requestLineLinks.map(poRequestLineLinkToDb),
+                allocations: input.allocations.map(allocation => ({ ...allocation })),
+                actorUserId: input.actorUserId,
+                idempotencyKey: input.idempotencyKey,
+            }) as unknown as SaveProcurementPurchaseOrderResult;
+        } catch (error) {
+            throw mapErpCompletionCommandError(error);
+        }
     },
     async nextNumber(projectIdOrSiteId?: string | null, constructionSiteId?: string | null): Promise<string> {
         const { data, error } = await supabase.rpc('next_purchase_order_number_v2');
