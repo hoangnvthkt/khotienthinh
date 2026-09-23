@@ -181,6 +181,7 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
   moduleDefinition('project.daily_log', 'Nhật ký dự án', [PROJECT_TAB_ROUTE_BY_KEY.dailylog], 40, [
     ...workflowActions('project.daily_log', PROJECT_TAB_ROUTE_BY_KEY.dailylog),
     projectAction('summarize', 'Tổng hợp', 'project.daily_log', PROJECT_TAB_ROUTE_BY_KEY.dailylog, 130),
+    projectAction('publish_progress', 'Công bố tiến độ ngày', 'project.daily_log', PROJECT_TAB_ROUTE_BY_KEY.dailylog, 140),
   ]),
   moduleDefinition('project.material_request', 'Đề xuất vật tư', [
     PROJECT_TAB_ROUTE_BY_KEY.material,
