@@ -7,6 +7,7 @@ import { projectV2CommandService } from '../../lib/projectV2/commandService';
 import { getProjectV2StatusLabel } from '../../lib/projectV2/presentation';
 import { ProjectV2PlanWorkflowActions } from '../../components/project-v2/ProjectV2PlanWorkflowActions';
 import { ProjectV2CreatePlanDialog } from '../../components/project-v2/ProjectV2CreatePlanDialog';
+import { ProjectV2MaterialPlanDialog } from '../../components/project-v2/ProjectV2MaterialPlanDialog';
 import { formatDecimal6, parseQuantity6 } from '../../lib/procurement/decimal';
 import { projectV2CandidateService } from '../../lib/projectV2/candidateService';
 
@@ -30,6 +31,7 @@ const ProjectV2PlanDetail: React.FC = () => {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [crewNames, setCrewNames] = useState<Record<string, string>>({});
+  const [materialScope, setMaterialScope] = useState<{ projectId: string; siteId: string | null; siteName: string } | null>(null);
   const [tab, setTab] = useState<Tab>('lines');
   const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState('');
@@ -49,6 +51,13 @@ const ProjectV2PlanDetail: React.FC = () => {
         if (plan.plan.planType === 'construction') {
           const crews = await projectV2CandidateService.listCrews(plan.plan.workspaceId);
           if (active) setCrewNames(Object.fromEntries(crews.map(crew => [crew.id, crew.name])));
+        }
+        if (plan.plan.planType === 'material') {
+          const workspaces = await projectV2ReadService.listWorkspaces();
+          const workspace = workspaces.workspaces.find(item => item.id === plan.plan.workspaceId);
+          if (!workspace) throw new Error('Không tìm thấy dự án của kế hoạch vật tư.');
+          if (active) setMaterialScope({ projectId: workspace.projectId,
+            siteId: workspace.primaryConstructionSiteId, siteName: workspace.siteName ?? 'Công trường' });
         }
         if (active) { setDetail(plan); setDiscussion(thread); }
       })
@@ -118,6 +127,11 @@ const ProjectV2PlanDetail: React.FC = () => {
         canUseBaselineException={detail.capabilities.baselineException === true} actorNames={names}
         onClose={() => setEditing(false)} onReload={() => { setEditing(false); reload(); }}
         onCreated={() => { setEditing(false); reload(); }} />}
+    {editing && plan.planType === 'material' && materialScope &&
+      <ProjectV2MaterialPlanDialog workspaceId={plan.workspaceId} projectId={materialScope.projectId}
+        siteId={materialScope.siteId} siteName={materialScope.siteName} existing={detail}
+        onClose={() => setEditing(false)} onReload={() => { setEditing(false); reload(); }}
+        onSaved={() => { setEditing(false); reload(); }} />}
     <button type="button" onClick={navigateBack} className="inline-flex items-center gap-2 text-sm font-semibold text-teal-800 dark:text-teal-300"><ArrowLeft size={17} /> Trở về không gian kế hoạch</button>
     <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -126,7 +140,7 @@ const ProjectV2PlanDetail: React.FC = () => {
           <span className="mt-3 inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 dark:bg-teal-950 dark:text-teal-200">{getProjectV2StatusLabel(plan.status)}</span></div>
         <div className="flex flex-wrap gap-2">
           {(plan.status === 'draft' || plan.status === 'returned') && detail.capabilities.edit === true &&
-            plan.planType !== 'material' && <button type="button" onClick={() => setEditing(true)}
+            <button type="button" onClick={() => setEditing(true)}
               className="min-h-11 rounded-xl border border-teal-700 px-4 text-sm font-semibold text-teal-800 dark:text-teal-300">Sửa bản nháp</button>}
           <ProjectV2PlanWorkflowActions plan={plan} capabilities={detail.capabilities} actorId={user.id} busy={busy} onAction={act} />
         </div>
@@ -150,15 +164,17 @@ const ProjectV2PlanDetail: React.FC = () => {
     </div>
     {tab === 'lines' && <section className="min-w-0 overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" aria-label="Khối lượng kế hoạch">
       <table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><tr>
-        <th className="px-4 py-3">Công việc / nguồn</th><th className="px-4 py-3">Đơn vị</th><th className="px-4 py-3 text-right">Khối lượng</th>
+        <th className="px-4 py-3">{plan.planType === 'material' ? 'Mã và tên vật tư' : 'Công việc / nguồn'}</th><th className="px-4 py-3">Đơn vị</th><th className="px-4 py-3 text-right">{plan.planType === 'material' ? 'Số lượng đề nghị' : 'Khối lượng'}</th>
         {plan.planType === 'month' && detail.capabilities.priceVisible === true && <><th className="px-4 py-3 text-right">Đơn giá hợp đồng</th><th className="px-4 py-3 text-right">Thành tiền</th></>}
-        <th className="px-4 py-3">Thời gian</th><th className="px-4 py-3">Tổ đội</th>
+        <th className="px-4 py-3">{plan.planType === 'material' ? 'Ngày cần' : 'Thời gian'}</th><th className="px-4 py-3">{plan.planType === 'material' ? 'Điểm nhận' : 'Tổ đội'}</th>
       </tr></thead><tbody>{detail.lines.map(row => {
         const raw = row as Record<string, unknown>;
         return <tr key={row.id} className="border-t border-slate-100 dark:border-slate-700">
           <td className="px-4 py-3"><span className="font-medium">{raw.displayName
             ? `${raw.displayCode ? `${String(raw.displayCode)} · ` : ''}${String(raw.displayName)}`
-            : 'Công việc chưa xác định'}</span>
+            : 'Chưa xác định'}</span>
+            {plan.planType === 'material' && <span className="mt-1 block text-xs text-slate-500">Nhu cầu tính toán: {raw.calculated_quantity == null ? 'Chưa xác định' : String(raw.calculated_quantity)}</span>}
+            {plan.planType === 'material' && raw.override_reason && <span className="mt-1 block text-xs text-amber-700">Lý do điều chỉnh: {String(raw.override_reason)}</span>}
             {detail.sources.filter(source => (source as Record<string, unknown>).target_line_id === row.id).map(source => {
               const sourceRaw = source as Record<string, unknown>;
               return <Link key={source.id} to={`/project-v2/plans/${String(sourceRaw.source_plan_id)}`}
@@ -169,8 +185,10 @@ const ProjectV2PlanDetail: React.FC = () => {
           {plan.planType === 'month' && detail.capabilities.priceVisible === true && <>
             <td className="px-4 py-3 text-right tabular-nums">{raw.unit_price_snapshot == null ? 'Chưa xác định' : String(raw.unit_price_snapshot)}</td>
             <td className="px-4 py-3 text-right tabular-nums">{amount(row.quantity, raw.unit_price_snapshot)}</td></>}
-          <td className="px-4 py-3">{raw.work_start && raw.work_end ? `${raw.work_start} → ${raw.work_end}` : '—'}</td>
-          <td className="px-4 py-3">{raw.crew_id ? crewNames[String(raw.crew_id)] ?? 'Tổ đội không còn hoạt động' : 'Chưa phân công'}</td>
+          <td className="px-4 py-3">{plan.planType === 'material' ? label(raw.needed_date as string | null)
+            : raw.work_start && raw.work_end ? `${raw.work_start} → ${raw.work_end}` : '—'}</td>
+          <td className="px-4 py-3">{plan.planType === 'material' ? label(materialScope?.siteId === raw.destination_id ? materialScope.siteName : raw.destination_id as string | null)
+            : raw.crew_id ? crewNames[String(raw.crew_id)] ?? 'Tổ đội không còn hoạt động' : 'Chưa phân công'}</td>
         </tr>;
       })}</tbody></table>
       {!detail.lines.length && <p className="p-5 text-sm text-slate-500">Chưa có dòng kế hoạch.</p>}

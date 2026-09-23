@@ -46,12 +46,13 @@ export interface ProjectV2MaterialDerivation {
   sourceLineId: string;
   sourceWorkQuantity: string;
   normResourceId: string | null;
-  normRevision: number | null;
+  normRevision: string | null;
   normFactor: string | null;
   coefficient: string | null;
   conversionNumerator: string | null;
   conversionDenominator: string | null;
   derivedQuantity: string | null;
+  allocatedQuantity?: string | null;
 }
 
 export interface ProjectV2MaterialLine {
@@ -60,6 +61,8 @@ export interface ProjectV2MaterialLine {
   itemId: string | null;
   unit: string | null;
   quantity: string | null;
+  calculatedQuantity?: string | null;
+  overrideReason?: string | null;
   neededDate: string | null;
   destinationId: string | null;
   derivations: ProjectV2MaterialDerivation[];

@@ -18,7 +18,7 @@ function materialCandidate(overrides: Partial<ProjectV2MaterialCandidate> = {}):
     neededDate: '2026-10-01', destinationId: 'site-a',
     derivations: [{ sourcePlanId: 'construction-1', sourceRevision: 1,
       sourceLineId: lineId.replace('line', 'work'), sourceWorkQuantity: '2.000000',
-      normResourceId: 'norm-1', normRevision: 3, normFactor: '1.000000',
+      normResourceId: 'norm-1', normRevision: 'rev-3', normFactor: '1.000000',
       coefficient: '1.000000', conversionNumerator: '1.000000',
       conversionDenominator: '1.000000', derivedQuantity: '2.000000' }],
     ...overrides,
@@ -113,6 +113,16 @@ describe('Project V2 planning domain', () => {
     expect(validateProjectV2PlanDraft(draft)).toContainEqual({
       field: 'lines.line-1.quantity', code: 'derived_quantity_mismatch', blocking: true,
     });
+  });
+
+  it('accepts a reasoned partial allocation while preserving the full calculation', () => {
+    const draft: ProjectV2PlanDraft = {
+      type: 'material', projectId: 'project-1', periodStart: '2026-10-01', periodEnd: '2026-10-31',
+      lines: [materialCandidate({ quantity: '1.500000', calculatedQuantity: '2.000000',
+        overrideReason: 'Chỉ cần đợt đầu', derivations: [{ ...materialCandidate().derivations[0],
+          allocatedQuantity: '1.500000' }] })],
+    };
+    expect(validateProjectV2PlanDraft(draft)).toEqual([]);
   });
 
   it('blocks a derivation whose stated quantity differs from exact norm calculation', () => {
