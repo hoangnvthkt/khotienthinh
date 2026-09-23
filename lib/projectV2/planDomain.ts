@@ -129,6 +129,7 @@ export function validateProjectV2PlanDraft(draft: ProjectV2PlanDraft): ProjectV2
       if (!line.destinationId) issues.push(issue(`${prefix}.destinationId`, 'missing_destination'));
       if (!line.derivations.length) issues.push(issue(`${prefix}.derivations`, 'missing_source'));
       let derivedTotal = 0n;
+      let allocatedTotal = 0n;
       let allDerivedKnown = line.derivations.length > 0;
       for (const [index, derivation] of line.derivations.entries()) {
         const sourcePrefix = `${prefix}.derivations.${index}`;
@@ -145,6 +146,15 @@ export function validateProjectV2PlanDraft(draft: ProjectV2PlanDraft): ProjectV2
         if (derivation.derivedQuantity === null || !validQuantity(derivation.derivedQuantity)) issues.push(issue(`${sourcePrefix}.derivedQuantity`, 'unknown_quantity'));
         if (validQuantity(derivation.derivedQuantity)) derivedTotal += parseQuantity6(derivation.derivedQuantity!);
         else allDerivedKnown = false;
+        const allocated = derivation.allocatedQuantity === undefined
+          ? derivation.derivedQuantity : derivation.allocatedQuantity;
+        if (!validQuantity(allocated)) issues.push(issue(`${sourcePrefix}.allocatedQuantity`, 'invalid_quantity'));
+        else {
+          allocatedTotal += parseQuantity6(allocated!);
+          if (validQuantity(derivation.derivedQuantity) &&
+            parseQuantity6(allocated!) > parseQuantity6(derivation.derivedQuantity!))
+            issues.push(issue(`${sourcePrefix}.allocatedQuantity`, 'allocation_exceeds_calculation'));
+        }
         if (validQuantity(derivation.sourceWorkQuantity) && validQuantity(derivation.normFactor)
           && validQuantity(derivation.coefficient) && validQuantity(derivation.conversionNumerator)
           && validQuantity(derivation.conversionDenominator)
@@ -159,9 +169,16 @@ export function validateProjectV2PlanDraft(draft: ProjectV2PlanDraft): ProjectV2
           }
         }
       }
-      if (allDerivedKnown && validQuantity(line.quantity) && derivedTotal !== parseQuantity6(line.quantity!)) {
+      if (line.calculatedQuantity !== undefined && (line.calculatedQuantity === null ||
+        !validQuantity(line.calculatedQuantity) ||
+        allDerivedKnown && derivedTotal !== parseQuantity6(line.calculatedQuantity))) {
+        issues.push(issue(`${prefix}.calculatedQuantity`, 'calculated_quantity_mismatch'));
+      }
+      if (allDerivedKnown && validQuantity(line.quantity) && allocatedTotal !== parseQuantity6(line.quantity!)) {
         issues.push(issue(`${prefix}.quantity`, 'derived_quantity_mismatch'));
       }
+      if (allDerivedKnown && validQuantity(line.quantity) && derivedTotal !== parseQuantity6(line.quantity!)
+        && !line.overrideReason?.trim()) issues.push(issue(`${prefix}.overrideReason`, 'override_reason_required'));
     }
   }
   return issues;

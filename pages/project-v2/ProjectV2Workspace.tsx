@@ -12,6 +12,7 @@ import { createProjectV2RequestGate, parseProjectV2Query,
 import { ProjectV2Shell } from '../../components/project-v2/ProjectV2Shell';
 import { ProjectV2PlanList } from '../../components/project-v2/ProjectV2PlanList';
 import { ProjectV2CreatePlanDialog } from '../../components/project-v2/ProjectV2CreatePlanDialog';
+import { ProjectV2MaterialPlanDialog } from '../../components/project-v2/ProjectV2MaterialPlanDialog';
 import { getProjectV2StatusLabel } from '../../lib/projectV2/presentation';
 import type { ProjectV2PlanStatus, ProjectV2PlanType } from '../../types/projectV2';
 
@@ -217,9 +218,8 @@ const ProjectV2Workspace: React.FC = () => {
   return <ProjectV2Shell projectName={selected.projectName} projectCode={selected.projectCode}
     clientName={selected.clientName} siteName={selected.siteName}
     planType={query.planType}
-    primaryAction={<button type="button" disabled={query.planType === 'material' ||
+    primaryAction={<button type="button" disabled={
       (capabilities?.[query.planType] as Record<string, unknown> | undefined)?.create !== true}
-      title={query.planType === 'material' ? 'Kế hoạch vật tư ở bước tiếp theo' : undefined}
       onClick={() => setCreating(true)}
       className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
       <Plus size={17} aria-hidden="true" /> Tạo {typeLabels[query.planType].toLowerCase()}</button>}>
@@ -228,6 +228,10 @@ const ProjectV2Workspace: React.FC = () => {
       canUseBaselineException={(capabilities?.construction as Record<string, unknown> | undefined)?.baselineException === true}
       onClose={() => setCreating(false)}
       onCreated={planId => { setCreating(false); navigate(`/project-v2/plans/${planId}`); }} />}
+    {creating && query.planType === 'material' && <ProjectV2MaterialPlanDialog key={`${selected.id}:material`}
+      workspaceId={selected.id} projectId={selected.projectId}
+      siteId={selected.primaryConstructionSiteId} siteName={selected.siteName ?? 'Công trường'}
+      onClose={() => setCreating(false)} onSaved={planId => { setCreating(false); navigate(`/project-v2/plans/${planId}`); }} />}
     {workspaces.length > 1 && <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Dự án
       <select value={selected.projectId} onChange={event => changeQuery({ projectId: event.target.value })}
         className="ml-3 max-w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800">
