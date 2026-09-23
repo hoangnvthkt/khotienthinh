@@ -2,9 +2,9 @@
 
 **Ngày thiết kế:** 23/09/2026
 
-**Trạng thái:** Đã được người dùng xác nhận ngày 23/09/2026; kế hoạch triển khai đã được lập
+**Trạng thái:** Đã cập nhật theo đính chính nghiệp vụ ngày 23/09/2026; chờ duyệt lại bản đặc tả trước khi cập nhật kế hoạch triển khai
 
-**Phạm vi:** Nhật ký công trường, tiến độ ngày/tuần, nhân công, giờ máy và chi phí nguồn lực tạm tính
+**Phạm vi:** Nhật ký công trường, tiến độ ngày/tuần, nhân công, giờ máy và bằng chứng nguồn lực phục vụ thanh toán nhà cung cấp về sau
 
 ## 1. Kết luận thiết kế
 
@@ -14,10 +14,11 @@ Nhật ký công trường trở thành điểm nhập liệu nghiệp vụ chí
 - Trên từng công việc, người dùng khai báo `% hoàn thành lũy kế đến ngày lập nhật ký`, khối lượng lũy kế, khối lượng phát sinh trong ngày, nhân công, giờ máy và ngày dự kiến hoàn thành.
 - Mỗi cán bộ hiện trường gửi một phiếu nguồn theo khu vực/mũi thi công mình phụ trách. Phiếu nguồn giữ riêng người báo cáo, khu vực, WBS, nguồn lực, sự cố và ảnh.
 - Người tổng hợp chọn các phiếu nguồn để tạo một bản tổng hợp ngày; mỗi phiếu được giữ thành một ô khu vực có thể chỉnh trên bản sao tổng hợp mà không làm thay đổi phiếu gốc.
-- Khi phiếu nguồn hoặc bản tổng hợp còn ở trạng thái nháp/chờ duyệt, dữ liệu chưa làm thay đổi tiến độ chính thức và chưa ghi nhận chi phí tài chính thực tế.
-- Chỉ khi CHT xác nhận bản tổng hợp ngày, một lệnh giao dịch duy nhất mới công bố tiến độ ngày, cập nhật tổng hợp tuần, ghi nhận tiêu hao nguồn lực và tạo chi phí tạm tính nếu có đủ đơn giá.
+- Khi phiếu nguồn hoặc bản tổng hợp còn ở trạng thái nháp/chờ duyệt, dữ liệu chưa làm thay đổi tiến độ chính thức và chưa trở thành bằng chứng nguồn lực đã xác nhận.
+- Mỗi dòng nhân công hoặc máy bắt buộc xác định NCC/đội/đơn vị cung cấp. Người dùng chọn từ danh mục hoặc dùng chế độ nhập tay cho tổ đội tự do, công nhật, chủ máy hay đơn vị chưa có hợp đồng.
+- Chỉ khi CHT xác nhận bản tổng hợp ngày, một lệnh giao dịch duy nhất mới công bố tiến độ ngày, cập nhật tổng hợp tuần và xác nhận số liệu nguồn lực theo WBS/khu vực/nguồn cung cấp.
 - Tab Chốt tiến độ tiếp tục là nơi xem tổng hợp, lịch sử, khóa kỳ và xử lý ngoại lệ; không còn là nơi nhập lại dữ liệu ngày trong luồng thông thường.
-- Chi phí từ nhật ký là chi phí ước tính/tạm tính. Chi phí thực tế chỉ hình thành khi đối soát với bảng lương, nghiệm thu thầu phụ, hóa đơn thuê máy hoặc chứng từ tài chính tương ứng.
+- Nhật ký không lưu đơn giá, không tính thành tiền, không tạo chi phí tạm tính và không ghi giao dịch tài chính. Số liệu được CHT xác nhận chỉ làm căn cứ khối lượng cho quy trình thanh toán NCC về sau.
 
 Thiết kế này giữ nguyên dữ liệu lịch sử, không suy đoán để backfill và không thay đổi kiến trúc ngoài phạm vi Nhật ký - Tiến độ - Nguồn lực.
 
@@ -29,14 +30,15 @@ Thiết kế này giữ nguyên dữ liệu lịch sử, không suy đoán để
 - Người tổng hợp: cần rà soát từng khu vực, chỉnh bản tổng hợp mà không làm mất báo cáo gốc, phát hiện trùng và gửi một hồ sơ ngày duy nhất cho CHT.
 - Chỉ huy trưởng/người duyệt: cần thấy tổng quan toàn công trường trước, sau đó drill-down theo từng khu vực và người phụ trách.
 - Kế hoạch/tiến độ: cần chuỗi tiến độ lũy kế nhất quán theo ngày và dữ liệu tổng hợp tuần có thể truy vết.
-- QS/kiểm soát chi phí: cần biết nguồn lực đã tiêu hao theo WBS, phần đã định giá, chưa định giá và chênh lệch với chứng từ thực tế.
+- QS/thanh toán: cần tra cứu số liệu nhân công và máy đã được CHT xác nhận theo NCC/đội, ngày, khu vực và WBS để làm căn cứ lập hồ sơ thanh toán sau này.
 
 ### 2.2 Kết quả mong muốn
 
 - Một lần nhập tại phiếu nguồn phục vụ bản tổng hợp ngày, tiến độ và dữ liệu tiêu hao nguồn lực; người tổng hợp chỉ rà soát và điều chỉnh ngoại lệ.
 - Mọi dòng tiến độ chính thức truy ngược được về bản tổng hợp đã được CHT xác nhận, ô khu vực và phiếu nguồn ban đầu.
 - Nhân công và máy được gắn với công việc WBS thay vì chỉ tồn tại như danh sách rời.
-- Không ghi trùng chi phí giữa nhật ký và các chứng từ tài chính.
+- Mọi dòng nhân công/máy xác định được nguồn cung cấp, kể cả trường hợp nhập tay, và giữ nguyên snapshot tên nguồn tại thời điểm báo cáo.
+- Nhật ký không chứa giá trị tiền; quy trình thanh toán về sau tham chiếu số liệu đã xác nhận mà không sửa ngược lịch sử Nhật ký.
 - Người dùng nhìn vào màn hình trong vài giây là biết cần chọn công việc nào, nhập gì và hành động tiếp theo là gì.
 
 ## 3. Phạm vi và ngoài phạm vi
@@ -50,13 +52,16 @@ Thiết kế này giữ nguyên dữ liệu lịch sử, không suy đoán để
 - Chọn nhiều phiếu nguồn, giữ thành các ô khu vực độc lập và chỉnh bản sao của từng ô trước khi gửi CHT.
 - Tổng hợp toàn công trường nhưng vẫn truy nguyên được người phụ trách/khu vực.
 - Công bố tiến độ chỉ khi bản tổng hợp ngày được CHT xác nhận.
-- Ghi nhận chi phí nguồn lực tạm tính và trạng thái đối soát.
+- Bắt buộc khai báo nguồn cung cấp cho từng dòng nhân công/máy bằng lựa chọn danh mục hoặc nhập tay có phân loại.
+- Cung cấp read model số liệu nguồn lực đã xác nhận theo NCC/đội, ngày, khu vực và WBS để quy trình thanh toán sử dụng về sau.
 - Chuyển tab tiến độ ngày sang vai trò tổng hợp/ngoại lệ sau thời điểm cutover.
 - Hỗ trợ dữ liệu lịch sử và rollout theo dự án/công trường.
 
 ### 3.2 Ngoài phạm vi
 
 - Tính lương hoặc chấm công nhân sự.
+- Khai báo đơn giá, tính thành tiền hoặc tạo chi phí tạm tính từ Nhật ký.
+- Lập, duyệt, đối soát hoặc hạch toán hồ sơ thanh toán NCC.
 - Duyệt hóa đơn thuê máy, nghiệm thu thầu phụ hoặc hạch toán kế toán đầy đủ.
 - Thay thế hệ thống Gantt/WBS hiện tại.
 - Tự động suy diễn WBS cho nhật ký lịch sử.
@@ -72,19 +77,19 @@ Thiết kế này giữ nguyên dữ liệu lịch sử, không suy đoán để
 - Nhật ký đang có hành động lấy khối lượng từ tiến độ ngày. Đây là chiều dữ liệu ngược với mục tiêu mới.
 - Tiến độ ngày được lưu tại `project_daily_task_progress`; bảng đã có `source_daily_log_id` nhưng chưa được dùng làm nguồn chính từ Nhật ký.
 - Tiến độ ngày/tuần đã có lệnh ghi tập trung, khóa kỳ và cơ chế tính lại tiến độ công việc/cha WBS.
-- Nhân công và máy có `task_id`, nhưng tỷ lệ liên kết thực tế còn thấp và `total_cost` gần như chưa được hình thành.
+- Nhân công và máy có `task_id` và trường đối tác, nhưng tỷ lệ liên kết WBS còn thấp, nguồn cung cấp chưa bắt buộc và dữ liệu nhập tay chưa có semantics thống nhất.
 - Báo cáo tiến độ có dùng nhật ký đã xác nhận để suy ra ngày bắt đầu thực tế; tổng hợp nhật ký có cộng số người, giờ công, ca và giờ máy.
-- Chi phí thực tế của dự án hiện lấy từ `project_transactions`, không lấy từ chi tiết nhân công/máy trong nhật ký.
+- Chi phí thực tế của dự án hiện lấy từ `project_transactions`, không lấy từ chi tiết nhân công/máy trong Nhật ký; thiết kế mới tiếp tục giữ ranh giới này.
 
 Tài liệu [Tổng hợp dữ liệu nhật ký ngày](./2026-07-22-daily-log-summary-aggregation-design.md) tiếp tục mô tả hành vi legacy đang chạy. Tài liệu hiện tại mở rộng và thay thế quy tắc gộp đối với WBS, tiến độ lũy kế, nguồn lực theo khu vực và công bố dữ liệu chính thức sau cutover.
 
 ### 4.2 Số liệu production tham chiếu tại thời điểm thiết kế
 
-- Nhân công: 741 dòng; 42 dòng có liên kết WBS; 2 dòng có đơn giá; không có dòng phát sinh `total_cost`.
-- Máy: 372 dòng; 89 dòng có liên kết WBS; 79 dòng có đơn giá; không có dòng phát sinh `total_cost`.
+- Nhân công: 741 dòng; 42 dòng có liên kết WBS; trường nguồn cung cấp và ý nghĩa `hours` chưa đồng nhất.
+- Máy: 372 dòng; 89 dòng có liên kết WBS; trường nguồn cung cấp và ý nghĩa giờ/ca chưa đồng nhất.
 - Không có giao dịch chi phí thực tế nào trong `project_transactions` có nguồn từ nhật ký.
 
-Kết luận: dữ liệu nhân công và máy hiện có tác dụng vận hành/báo cáo, nhưng chưa tạo được chuỗi kiểm soát chi phí công trình.
+Kết luận: dữ liệu nhân công và máy hiện có tác dụng vận hành/báo cáo nhưng chưa đủ độ tin cậy để làm căn cứ khối lượng thanh toán theo NCC/đội. Thiết kế mới chuẩn hóa số lượng, thời gian, WBS, khu vực và nguồn cung cấp; không mở rộng sang định giá.
 
 ## 5. Các phương án đã cân nhắc
 
@@ -98,7 +103,7 @@ Kết luận: dữ liệu nhân công và máy hiện có tác dụng vận hàn
 
 ### Phương án C - Phiếu nguồn theo khu vực, bản tổng hợp ngày là nguồn chính thức
 
-Mỗi phiếu nguồn giữ nguyên ngữ cảnh người phụ trách/khu vực. Người tổng hợp làm việc trên các bản sao theo khu vực và một bảng WBS toàn công trường. Chỉ bản tổng hợp ngày được CHT xác nhận mới công bố sang tiến độ ngày, tổng hợp tuần và chi phí nguồn lực tạm tính. Phương án này vừa giữ trách nhiệm từng người, vừa cho CHT góc nhìn tổng quan và tránh ghi trùng. **Chọn phương án C.**
+Mỗi phiếu nguồn giữ nguyên ngữ cảnh người phụ trách/khu vực. Người tổng hợp làm việc trên các bản sao theo khu vực và một bảng WBS toàn công trường. Chỉ bản tổng hợp ngày được CHT xác nhận mới công bố sang tiến độ ngày, tổng hợp tuần và trở thành bằng chứng nguồn lực chính thức. Phương án này vừa giữ trách nhiệm từng người, vừa cho CHT góc nhìn tổng quan và tránh ghi nhận trùng. **Chọn phương án C.**
 
 ## 6. Mô hình nghiệp vụ đích
 
@@ -119,16 +124,14 @@ Cây WBS + tiến độ gần nhất + lịch kế hoạch
                          ▼
                 CHT xác nhận bản tổng hợp
                     │ một giao dịch
-       ┌────────────┼───────────────┐
-       ▼            ▼               ▼
- Tiến độ ngày   Tổng hợp tuần   Chi phí tạm tính
- (chính thức)   nếu chưa khóa   (không phải actual)
-                                      │
-                                      ▼
-                               Đối soát chứng từ
-                                      │
-                                      ▼
-                              Chi phí thực tế tài chính
+       ┌────────────┼────────────────────────┐
+       ▼            ▼                        ▼
+ Tiến độ ngày   Tổng hợp tuần      Bằng chứng nguồn lực
+ (chính thức)   nếu chưa khóa      theo NCC/WBS/khu vực
+                                             │
+                                             ▼
+                               Hồ sơ thanh toán NCC về sau
+                               (ngoài phạm vi Nhật ký)
 ```
 
 ## 7. Thiết kế trải nghiệm người dùng
@@ -145,7 +148,7 @@ Khối `Nội dung công việc` trở thành bảng công việc WBS chính. C�
 
 - Một người phụ trách hai khu vực tạo hai phiếu nguồn để CHT nhìn đúng phạm vi trách nhiệm.
 - Một phiếu nguồn khai báo rõ khu vực, WBS, tiến độ đề xuất, nhân công, máy, sự cố, kế hoạch ngày sau và ảnh.
-- Phiếu nguồn đã gửi chỉ là dữ liệu đầu vào cho tổng hợp; không tự công bố tiến độ và không tạo accrual.
+- Phiếu nguồn đã gửi chỉ là dữ liệu đầu vào cho tổng hợp; không tự công bố tiến độ và chưa trở thành bằng chứng nguồn lực đã xác nhận.
 - Khi được chọn, hệ thống chụp snapshot phiếu nguồn vào bản tổng hợp. Người tổng hợp chỉnh bản sao theo khu vực, không sửa ngược phiếu nguồn.
 - Nội dung đã chỉnh có nhãn `Đã điều chỉnh`, lưu người chỉnh, thời điểm, lý do và cho phép so sánh với bản nguồn.
 
@@ -166,8 +169,8 @@ CHT xem cùng cấu trúc ở chế độ chỉ đọc: tổng quan trước, dr
 |---|---|---|
 | Hạng mục WBS | Mã WBS, tên công việc, cấp cây, đơn vị, khối lượng kế hoạch | Chọn từ cây; chỉ chọn công việc lá |
 | Tiến độ đến ngày nhật ký | `% lũy kế`, khối lượng lũy kế, khối lượng trong ngày | Nhập `%` hoặc khối lượng lũy kế; giá trị còn lại tự tính |
-| Nhân công hôm nay | Tổng số người và tổng giờ công; cảnh báo chưa gắn nguồn/chưa định giá | Bấm mở chi tiết nhiều dòng |
-| Máy hôm nay | Tổng số máy và tổng giờ máy; cảnh báo chưa gắn nguồn/chưa định giá | Bấm mở chi tiết nhiều dòng |
+| Nhân công hôm nay | Tổng số người, tổng giờ công và nguồn cung cấp; cảnh báo thiếu nguồn | Bấm mở chi tiết nhiều dòng |
+| Máy hôm nay | Tổng số máy, tổng giờ máy và nguồn cung cấp; cảnh báo thiếu nguồn | Bấm mở chi tiết nhiều dòng |
 | Dự kiến hoàn thành | Ngày `dd/mm/yyyy`, nhãn thay đổi so với lịch gần nhất | Sửa ngày; bắt buộc lý do nếu thay đổi |
 | Ghi chú/bằng chứng | Ghi chú ngắn, số tệp/ảnh | Mở panel chi tiết |
 
@@ -196,28 +199,29 @@ Nếu công việc chưa có khối lượng kế hoạch, người dùng vẫn 
 
 Mỗi công việc có thể có nhiều dòng nhân công. Một dòng gồm:
 
-- Nguồn/nhóm nhân công từ catalog hoặc đối tác.
+- Nguồn cung cấp bắt buộc theo một trong hai chế độ: chọn NCC/đội/đơn vị từ danh mục hoặc chọn `Nhập tay`.
+- Khi nhập tay, bắt buộc tên hiển thị và loại nguồn: `Tổ đội tự do`, `Nhân công nhật`, `Đơn vị chưa có trong danh mục` hoặc `Khác`; ghi chú nhận diện là tùy chọn.
+- Nhóm/loại nhân công từ catalog nếu có.
 - Số người.
 - Số giờ mỗi người trong ngày.
 - Tổng giờ công do hệ thống tính: `số người × giờ/người`.
 - Ghi chú nếu cần.
-- Trạng thái định giá chỉ hiển thị cho người có quyền xem chi phí.
 
-Không yêu cầu cán bộ hiện trường nhập đơn giá. Đơn giá được tra theo nguồn giá được quản trị và ngày hiệu lực. Đối với dữ liệu cũ, trường `hours` không được tự diễn giải lại nếu chưa xác định nó là giờ/người hay tổng giờ.
+Không có trường đơn giá hoặc thành tiền. Đối với dữ liệu cũ, trường `hours` không được tự diễn giải lại nếu chưa xác định nó là giờ/người hay tổng giờ.
 
 ### 7.7 Chi tiết máy trong một WBS
 
 Mỗi công việc có thể có nhiều dòng máy. Một dòng gồm:
 
+- Nguồn cung cấp/chủ máy bắt buộc theo một trong hai chế độ: chọn từ danh mục hoặc chọn `Nhập tay`.
+- Khi nhập tay, bắt buộc tên hiển thị và loại nguồn: `Chủ máy`, `Đơn vị cho thuê chưa có trong danh mục` hoặc `Khác`; ghi chú nhận diện là tùy chọn.
 - Loại máy/thiết bị từ catalog, tài sản hoặc đối tác cho thuê.
 - Số lượng máy.
 - Số giờ mỗi máy trong ngày.
 - Tổng giờ máy do hệ thống tính: `số máy × giờ/máy`.
-- Số ca quy đổi chỉ đọc nếu nguồn giá tính theo ca.
 - Ghi chú nếu cần.
-- Trạng thái định giá chỉ hiển thị cho người có quyền xem chi phí.
 
-Không cho phép đồng thời sửa cả giờ máy và số ca như hai đại lượng độc lập. Một đại lượng là đầu vào, đại lượng còn lại là kết quả quy đổi theo số giờ/ca được cấu hình và chụp snapshot.
+Không có trường đơn giá hoặc thành tiền. Trường legacy `hours`/`shifts` được giữ để đọc lịch sử nhưng bản ghi mới chỉ dùng `số máy × giờ/máy`; không tự quy đổi ca nếu chưa có semantics rõ ràng.
 
 ### 7.8 Tablet và mobile
 
@@ -232,7 +236,7 @@ Không cho phép đồng thời sửa cả giờ máy và số ca như hai đạ
 - Chưa có WBS: hướng dẫn tạo/nhập tiến độ trước khi lập nhật ký.
 - Không có kết quả tìm kiếm: giữ bộ lọc và cho phép xóa nhanh.
 - Thiếu khối lượng kế hoạch: hiển thị `Chưa có cơ sở quy đổi`.
-- Thiếu đơn giá: hiển thị `Chưa định giá`, không dùng `0 đồng`.
+- Thiếu nguồn cung cấp: đánh dấu lỗi tại đúng dòng và không cho lưu/gửi cho đến khi chọn danh mục hoặc hoàn tất thông tin nhập tay.
 - Không đủ quyền: giải thích hành động nào bị hạn chế; không ẩn lỗi.
 - Dữ liệu đã thay đổi ở nơi khác: hiển thị xung đột và tải lại baseline trước khi cho ghi đè.
 - Phiếu nguồn thay đổi sau khi được chọn: card chuyển sang `Nguồn đã thay đổi`; người tổng hợp chọn cập nhật snapshot hoặc giữ bản đã chỉnh với lý do.
@@ -240,7 +244,7 @@ Không cho phép đồng thời sửa cả giờ máy và số ca như hai đạ
 - Trùng nguồn lực/khối lượng giữa khu vực: hiển thị cảnh báo theo dòng và yêu cầu người tổng hợp xác nhận cách xử lý.
 - Ngày/tuần đã khóa: chỉ đọc và chỉ dẫn luồng mở khóa/điều chỉnh.
 - Chờ duyệt: khóa các trường ảnh hưởng tiến độ, cho phép rút lại nếu quy trình hiện tại cho phép.
-- Đã xác nhận: chỉ đọc, có liên kết sang bản ghi tiến độ và chi phí tạm tính.
+- Đã xác nhận: chỉ đọc, có liên kết sang bản ghi tiến độ và báo cáo bằng chứng nguồn lực.
 - Đã điều chỉnh/thay thế: gắn nhãn phiên bản và liên kết nhật ký thay thế.
 
 ## 8. Quy tắc tiến độ
@@ -302,69 +306,64 @@ Không cộng hoặc lấy trung bình đơn giản `% lũy kế` từ các phi�
 
 Bảng WBS tổng hợp luôn cho phép mở các dòng con theo khu vực để CHT biết tổng số được hình thành từ ai và ở đâu.
 
-## 9. Quy tắc nguồn lực và chi phí
+## 9. Quy tắc nguồn lực và nguồn cung cấp
 
-### 9.1 Nhân công
+### 9.1 Hai chế độ xác định nguồn cung cấp
 
-Đại lượng vận hành chuẩn là `giờ công`:
+Mỗi dòng nhân công hoặc máy bắt buộc chọn đúng một chế độ:
+
+1. `catalog`: chọn NCC/đội/đơn vị/chủ máy đã có trong danh mục. Hệ thống lưu ID tham chiếu và snapshot mã, tên tại thời điểm nhập.
+2. `manual`: dùng khi chưa có hợp đồng, tổ đội tự do, nhân công công nhật hoặc chủ máy chưa có trong danh mục. Hệ thống bắt buộc tên hiển thị và loại nguồn, cho phép thêm ghi chú nhận diện.
+
+Các loại nguồn nhập tay:
+
+- Nhân công: `free_crew`, `day_labor`, `unregistered_provider`, `other`.
+- Máy: `machine_owner`, `unregistered_rental_provider`, `other`.
+
+Không tự động tạo đối tác/danh mục mới từ dữ liệu nhập tay. Nếu sau này một nguồn nhập tay được chuẩn hóa thành NCC chính thức, hệ thống có thể lưu ánh xạ phục vụ tìm kiếm nhưng không sửa snapshot lịch sử của Nhật ký.
+
+### 9.2 Nhân công
+
+Đại lượng vận hành chuẩn là:
 
 ```text
 tổng giờ công = số người × giờ mỗi người
 ```
 
-Đơn giá được khai báo rõ đơn vị:
+`people_count` và `hours_per_person` phải dương; `total_labor_hours` do máy chủ tính lại. Nhật ký không lưu đơn giá, ngày công quy đổi hoặc thành tiền. Dữ liệu cũ chỉ có `hours` được giữ nguyên và gắn trạng thái semantics chưa xác định; không dùng để tự tạo số liệu mới.
 
-- `VND/giờ công`; hoặc
-- `VND/ngày công`, với số giờ/ngày tiêu chuẩn lấy từ cấu hình và được snapshot tại thời điểm xác nhận.
+### 9.3 Máy
 
-Nếu dùng đơn giá ngày công:
-
-```text
-ngày công quy đổi = tổng giờ công / số giờ tiêu chuẩn mỗi ngày
-chi phí tạm tính = ngày công quy đổi × đơn giá ngày công
-```
-
-Không mặc định ngầm 8 giờ. Giao diện có thể gợi ý theo cấu hình công ty/công trường, nhưng phải lưu số giờ tiêu chuẩn đã dùng.
-
-### 9.2 Máy
-
-Đại lượng vận hành chuẩn là `giờ máy`:
+Đại lượng vận hành chuẩn là:
 
 ```text
 tổng giờ máy = số máy × giờ mỗi máy
 ```
 
-Đơn giá được khai báo rõ đơn vị:
+`machine_count` và `hours_per_machine` phải dương; `total_machine_hours` do máy chủ tính lại. Nhật ký không lưu đơn giá, giá ca, số ca quy đổi hoặc thành tiền. Các trường `hours`/`shifts` legacy tiếp tục hiển thị lịch sử nhưng không được tự diễn giải lại.
 
-- `VND/giờ máy`; hoặc
-- `VND/ca`, với số giờ/ca tiêu chuẩn lấy từ cấu hình và được snapshot.
+### 9.4 Bằng chứng nguồn lực đã xác nhận
 
-Nếu dùng đơn giá ca:
+Chỉ chi tiết nhân công/máy thuộc bản tổng hợp đã được CHT xác nhận mới là bằng chứng nguồn lực chính thức. Mỗi dòng phải truy ngược được:
 
-```text
-ca quy đổi = tổng giờ máy / số giờ tiêu chuẩn mỗi ca
-chi phí tạm tính = ca quy đổi × đơn giá ca
-```
+- Nhật ký tổng hợp và ngày thực hiện.
+- Phiếu nguồn, người báo cáo và khu vực/mũi thi công.
+- WBS/công việc.
+- Nguồn cung cấp theo danh mục hoặc snapshot nhập tay.
+- Số lượng, thời gian và công thức tổng.
+- Người điều chỉnh, lý do và revision nếu có.
 
-### 9.3 Ba lớp giá trị chi phí
+Read model phục vụ tra cứu nhóm theo `nguồn cung cấp → ngày → khu vực → WBS` và cho phép mở lại Nhật ký gốc. Read model chỉ trả số liệu vật lý, không có cột giá hoặc tiền.
 
-| Lớp | Nguồn | Ý nghĩa | Có vào actual cost không |
-|---|---|---|---|
-| Tiêu hao vận hành | Bản tổng hợp đã được CHT xác nhận | Số người, giờ công, số máy, giờ máy theo WBS | Không |
-| Chi phí tạm tính | Tiêu hao × đơn giá hiệu lực | Dự báo/kiểm soát sớm; có thể chưa định giá | Không |
-| Chi phí thực tế | Bảng lương, nghiệm thu thầu phụ, hóa đơn thuê máy, giao dịch tài chính | Giá trị đã được đối soát/chấp nhận | Có |
+### 9.5 Ranh giới với thanh toán NCC
 
-Không tự động tạo `project_transactions` từ Nhật ký. Khi chứng từ thực tế xuất hiện, hệ thống liên kết và đối soát với chi phí tạm tính; báo cáo trình bày riêng `Tạm tính`, `Thực tế`, `Chưa đối soát` và `Chênh lệch`.
+Quy trình thanh toán NCC về sau được phép tham chiếu ID của các dòng bằng chứng đã xác nhận, nhưng tự quản lý hợp đồng, đơn giá, nghiệm thu, số tiền, duyệt và hạch toán. Nhật ký:
 
-### 9.4 Trạng thái định giá/đối soát
-
-- `unpriced`: có tiêu hao nhưng chưa tìm được đơn giá hợp lệ.
-- `estimated`: đã tính chi phí tạm tính, chưa có chứng từ thực tế.
-- `partially_matched`: mới đối soát một phần.
-- `matched`: đã đối soát đủ theo nguyên tắc nghiệp vụ.
-- `void`: bị hủy do bản tổng hợp bị thay thế hoặc điều chỉnh.
-
-Người không có quyền tài chính chỉ nhìn thấy trạng thái `Đã định giá/Chưa định giá`, không thấy đơn giá hoặc số tiền.
+- Không đọc `internal_price_book` để định giá nhân công/máy.
+- Không ghi `project_resource_cost_accruals` hoặc bảng tương đương.
+- Không tạo hoặc cập nhật `project_transactions`.
+- Không hiển thị trạng thái định giá hay đối soát tiền.
+- Không bị sửa ngược khi nguồn nhập tay được ánh xạ sang NCC chính thức hoặc khi hồ sơ thanh toán thay đổi.
 
 ## 10. Mô hình dữ liệu đề xuất
 
@@ -422,10 +421,16 @@ Thêm các trường:
 - `people_count` hoặc chuẩn hóa ý nghĩa của `count` là số người.
 - `hours_per_person`.
 - `total_labor_hours`.
-- `standard_hours_snapshot`.
-- `rate_unit` và `rate_source_id` chỉ lưu qua lệnh phía máy chủ khi cần.
+- `provider_entry_mode`: `catalog` hoặc `manual`.
+- `partner_id`, `provider_code_snapshot`, `provider_name_snapshot` cho nguồn từ danh mục.
+- `manual_provider_type`, `manual_provider_name`, `manual_provider_note` cho nguồn nhập tay.
+- `resource_semantics_version` để phân biệt bản ghi mới với dữ liệu legacy.
 
-Cho phép `daily_log_id` rỗng đối với dòng thuộc phiếu nguồn và bổ sung owner check tương tự `daily_log_work_items`. Giữ `task_id` để tương thích, nhưng lệnh lưu phải đảm bảo nó trùng với WBS của `daily_log_work_item_id`.
+Cho phép `daily_log_id` rỗng đối với dòng thuộc phiếu nguồn và bổ sung owner check tương tự `daily_log_work_items`. Giữ `task_id` để tương thích, nhưng lệnh lưu phải đảm bảo nó trùng với WBS của `daily_log_work_item_id`. Check constraint yêu cầu:
+
+- Mode `catalog`: `partner_id` và `provider_name_snapshot` không rỗng; các trường manual rỗng.
+- Mode `manual`: `partner_id` rỗng; `manual_provider_type` và `manual_provider_name` không rỗng.
+- Không có cột giá mới; các cột `unit_cost`/`total_cost` legacy không được ghi trong luồng mới.
 
 ### 10.4 Mở rộng `daily_log_machines`
 
@@ -436,40 +441,33 @@ Thêm các trường:
 - `machine_count`.
 - `hours_per_machine`.
 - `total_machine_hours`.
-- `standard_shift_hours_snapshot`.
-- `shift_equivalent`.
-- `rate_unit` và `rate_source_id` chỉ lưu qua lệnh phía máy chủ khi cần.
+- `provider_entry_mode`: `catalog` hoặc `manual`.
+- `partner_id`, `provider_code_snapshot`, `provider_name_snapshot` cho nguồn từ danh mục.
+- `manual_provider_type`, `manual_provider_name`, `manual_provider_note` cho nguồn nhập tay.
+- `resource_semantics_version` để phân biệt bản ghi mới với dữ liệu legacy.
 
-Cho phép `daily_log_id` rỗng đối với dòng thuộc phiếu nguồn và bổ sung owner check tương tự `daily_log_work_items`. Giữ `hours`, `shifts` và `task_id` cho tương thích trong thời gian chuyển đổi; bản ghi mới phải có trường semantics/version để không trộn ý nghĩa với dữ liệu cũ.
+Cho phép `daily_log_id` rỗng đối với dòng thuộc phiếu nguồn và bổ sung owner check tương tự `daily_log_work_items`. Giữ `hours`, `shifts` và `task_id` cho tương thích trong thời gian chuyển đổi; bản ghi mới dùng `machine_count`, `hours_per_machine` và semantics version mới. Check constraint nguồn cung cấp tương tự nhân công. Luồng mới không ghi `unit_cost`/`total_cost` và không tự quy đổi `shifts`.
 
-### 10.5 `project_resource_cost_accruals`
+### 10.5 Read model bằng chứng nguồn lực
 
-Bảng mới ghi chi phí nguồn lực tạm tính từ bản tổng hợp ngày đã được CHT xác nhận:
+Không tạo bảng accrual. RPC/read model `get_verified_resource_usage_evidence_v1` đọc trực tiếp các dòng nhân công/máy thuộc bản tổng hợp đã xác nhận và trả:
 
 | Nhóm trường | Trường chính |
 |---|---|
-| Phạm vi | `project_id`, `construction_site_id`, `task_id`, `work_item_id` |
-| Nguồn | `resource_type`, `source_table`, `source_line_id`, `source_daily_log_id` |
-| Tiêu hao | `usage_quantity`, `usage_unit`, `standard_hours_snapshot` |
-| Đơn giá | `rate_amount`, `rate_unit`, `rate_source_type`, `rate_source_id`, `rate_effective_date` |
-| Giá trị | `estimated_amount`, `matched_actual_amount`, `variance_amount` |
-| Trạng thái | `pricing_status`, `reconciliation_status`, `voided_at`, `void_reason` |
-| Audit | `created_by`, `created_at`, `updated_at` |
+| Nguồn chứng cứ | `daily_log_id`, `summary_source_id`, `contribution_id`, `resource_line_id`, `revision_no` |
+| Phạm vi | `project_id`, `construction_site_id`, `log_date`, `work_area_code`, `task_id`, `work_item_id` |
+| Nguồn cung cấp | `provider_entry_mode`, `partner_id`, mã/tên snapshot hoặc loại/tên nhập tay |
+| Nhân công | `people_count`, `hours_per_person`, `total_labor_hours` |
+| Máy | `machine_count`, `hours_per_machine`, `total_machine_hours` |
+| Truy vết | người báo cáo, người điều chỉnh, người xác nhận, thời điểm xác nhận |
 
-Ràng buộc idempotency đảm bảo một dòng chi tiết thuộc bản tổng hợp đang hiệu lực chỉ tạo một accrual đang hiệu lực. Phiếu nguồn không tạo accrual. Bản tổng hợp bị thay thế sẽ void accrual cũ và tạo accrual mới, không sửa mất lịch sử.
+Read model mặc định chỉ lấy revision đang hiệu lực, nhưng cho phép mở lịch sử superseded. Nó không trả `unit_cost`, `total_cost`, đơn giá, số tiền hoặc trạng thái thanh toán.
 
-### 10.6 Liên kết đối soát
+### 10.6 Điểm mở rộng cho thanh toán về sau
 
-Dùng bảng liên kết riêng giữa accrual và chứng từ thực tế để hỗ trợ một-nhiều/nhiều-một:
+Tính năng thanh toán tương lai có thể tạo bảng liên kết riêng tới `resource_line_id` của bằng chứng đã xác nhận. Thiết kế hiện tại chỉ bảo đảm ID ổn định và lineage đầy đủ; chưa tạo bảng liên kết, trạng thái đối soát hoặc command thanh toán.
 
-- `accrual_id`.
-- `actual_source_type`.
-- `actual_source_id`.
-- `matched_amount`.
-- `matched_quantity`.
-- `matched_by`, `matched_at`, `note`.
-
-Tổng phân bổ không được vượt giá trị chứng từ hoặc accrual nếu không có quyền ngoại lệ và lý do.
+Nguồn nhập tay có thể được ánh xạ sang `partner_id` ở lớp thanh toán về sau. Ánh xạ đó không cập nhật `provider_name_snapshot` hoặc nội dung bản tổng hợp đã xác nhận.
 
 ## 11. Lệnh nghiệp vụ và tính toàn vẹn giao dịch
 
@@ -481,8 +479,8 @@ Một RPC/read model duy nhất tải theo project/site/ngày:
 - Khối lượng kế hoạch, đơn vị, ngày kế hoạch.
 - Tiến độ chính thức gần nhất trước ngày và bản ghi kế tiếp nếu đang nhập quá khứ.
 - Phiếu nguồn, card khu vực, snapshot/diff, dòng WBS, nhân công và máy hiện có.
+- Danh mục NCC/đội/đơn vị được phép chọn và danh sách loại nguồn nhập tay.
 - Trạng thái khóa ngày và tuần.
-- Khả năng định giá; chỉ trả số tiền khi người dùng có quyền.
 - Version/fingerprint dùng cho optimistic concurrency.
 
 Không thực hiện truy vấn đơn lẻ theo từng hàng WBS.
@@ -494,10 +492,10 @@ Lệnh lưu/gửi phiếu nguồn:
 - Kiểm tra quyền sửa nhật ký, phạm vi project/site và trạng thái nhật ký.
 - Bắt buộc khu vực/mũi thi công và gắn người chịu trách nhiệm từ actor/assignment; không suy ra khu vực chỉ từ tên người dùng.
 - Upsert các dòng WBS và nguồn lực trong một transaction.
-- Kiểm tra semantics số người/giờ và số máy/giờ.
+- Kiểm tra semantics số người/giờ, số máy/giờ và check constraint nguồn cung cấp.
 - Không ghi `project_daily_task_progress`.
-- Không tạo chi phí tạm tính.
-- Trả lại version mới và các cảnh báo `thiếu khối lượng`, `thiếu nguồn`, `chưa định giá`.
+- Không ghi đơn giá, thành tiền hoặc giao dịch tài chính.
+- Trả lại version mới và các cảnh báo `thiếu khối lượng`, `thiếu nguồn cung cấp`, `nguồn nhập tay cần nhận diện`.
 
 ### 11.3 Tạo và chỉnh bản tổng hợp
 
@@ -518,9 +516,9 @@ Preflight trước khi gửi:
 - Không có dòng trùng WBS trong cùng card; cùng WBS giữa nhiều card phải có kết quả tổng hợp chính thức.
 - Các giá trị lũy kế hợp lệ với baseline và ngày kế tiếp.
 - Mọi thay đổi forecast có lý do.
-- Nhân công/máy có số lượng và thời gian hợp lệ.
+- Nhân công/máy có số lượng, thời gian và nguồn cung cấp hợp lệ; mode nhập tay có đủ loại và tên.
 - Mọi chỉnh sửa của người tổng hợp có audit; thay đổi trọng yếu có lý do.
-- Cảnh báo thiếu đơn giá không chặn gửi; lỗi liên kết WBS hoặc xung đột tiến độ thì chặn.
+- Thiếu nguồn cung cấp, lỗi liên kết WBS hoặc xung đột tiến độ đều chặn gửi.
 
 ### 11.5 CHT xác nhận và công bố
 
@@ -530,22 +528,22 @@ Dùng một RPC command `SECURITY DEFINER` với helper trong `app_private`, `se
 2. Kiểm tra quyền xác nhận nhật ký và quyền công bố tiến độ trong đúng phạm vi.
 3. Xác nhận đối tượng là bản tổng hợp ngày hợp lệ, không phải phiếu nguồn; có ít nhất một card nguồn và mọi nguồn đều đúng scope/date.
 4. Khóa bản tổng hợp, các summary source, trạng thái kỳ, các dòng tiến độ liên quan và kiểm tra expected version/fingerprint của toàn chuỗi nguồn.
-5. Tính lại baseline và kết quả gộp khu vực phía máy chủ; không tin `daily_quantity_done`, tổng nguồn lực hoặc chi phí do client gửi.
+5. Tính lại baseline, kết quả gộp khu vực và tổng giờ nguồn lực phía máy chủ; không tin `daily_quantity_done` hoặc tổng nguồn lực do client gửi.
 6. Kiểm tra khóa kỳ, tính đơn điệu, bản ghi liền trước/liền sau, WBS lá và các xác nhận không trùng phạm vi.
 7. Upsert đúng một `project_daily_task_progress` cho mỗi `(scope_key, task_id, progress_date)`, với `source_daily_log_id` trỏ đến bản tổng hợp.
 8. Tính lại rollup tuần nếu tuần chưa khóa, dùng cơ chế hiện có.
 9. Cập nhật tiến độ và ngày thực tế của `project_tasks` theo quy tắc hiện có.
-10. Tạo/void `project_resource_cost_accruals` chỉ từ chi tiết nguồn lực của bản tổng hợp.
+10. Xác nhận các dòng nhân công/máy của bản tổng hợp là bằng chứng nguồn lực đang hiệu lực; không tạo giá trị tiền.
 11. Chuyển trạng thái bản tổng hợp và các phiếu nguồn sang trạng thái tương ứng, ghi audit và trả receipt/fingerprint.
 
-Toàn bộ thành công hoặc toàn bộ rollback. Gọi lại cùng `command_id` phải trả cùng kết quả, không tạo trùng tiến độ hay chi phí.
+Toàn bộ thành công hoặc toàn bộ rollback. Gọi lại cùng `command_id` phải trả cùng kết quả, không tạo trùng tiến độ hoặc bằng chứng nguồn lực.
 
 ## 12. Nguồn dữ liệu chính thức và tab Tiến độ
 
 ### 12.1 Sau cutover
 
 - Với ngày sau mốc cutover của project/site, tiến độ ngày thông thường chỉ được công bố từ **bản tổng hợp ngày đã được CHT xác nhận**.
-- Phiếu nguồn và card khu vực không được tạo bản ghi tiến độ hoặc chi phí độc lập.
+- Phiếu nguồn và card khu vực chưa xác nhận không được tạo bản ghi tiến độ hoặc bằng chứng nguồn lực chính thức độc lập.
 - Tab Tiến độ ngày hiển thị nguồn `Nhật ký tổng hợp`, liên kết đến bản tổng hợp và cho phép drill-down đến card khu vực/phiếu nguồn ở trạng thái chỉ đọc.
 - Người có quyền đặc biệt có thể tạo điều chỉnh/ngoại lệ; mọi ngoại lệ bắt buộc lý do và audit.
 - Tiến độ tuần tiếp tục tổng hợp từ các ngày, cho phép khóa/mở khóa theo luồng hiện có.
@@ -564,18 +562,17 @@ Toàn bộ thành công hoặc toàn bộ rollback. Gọi lại cùng `command_i
 - Người lập phiếu nguồn: quyền tạo/sửa phiếu của mình và quyền xem WBS/tiến độ của đúng Room/phạm vi; không có quyền công bố tiến độ.
 - Người tổng hợp: quyền chọn/bỏ nguồn, chỉnh bản sao theo khu vực, xử lý xung đột và gửi bản tổng hợp cho CHT; không được sửa phiếu nguồn gốc.
 - CHT/người xác nhận: quyền xác nhận bản tổng hợp và một action rõ ràng để công bố tiến độ; không mặc định nâng quyền chỉ vì có quyền sửa nhật ký.
-- Người xem chi phí: quyền tài chính/chi phí riêng; dữ liệu đơn giá không đi kèm payload cho người không có quyền.
-- Người đối soát: quyền liên kết accrual với chứng từ thực tế và xử lý chênh lệch.
+- QS/thanh toán: quyền đọc bằng chứng nguồn lực đã xác nhận theo đúng phạm vi; không có quyền sửa nội dung Nhật ký đã xác nhận.
 
 Đề xuất thêm action Room rõ nghĩa `publish_daily_progress` cho Room Nhật ký hoặc Tiến độ, thay vì suy diễn từ `edit_all`. Template vai trò được gán có chủ đích cho chỉ huy/người duyệt.
 
 ### 13.2 RLS và command boundary
 
 - RLS mới bám theo quyền Room hiện hành và phạm vi project/site.
-- Client không được ghi trực tiếp vào bảng tiến độ chính thức hoặc accrual.
+- Client không được ghi trực tiếp vào bảng tiến độ chính thức hoặc sửa trạng thái xác nhận của dòng nguồn lực.
 - Mọi RPC ghi kiểm tra actor, scope, trạng thái kỳ và expected version ở phía cơ sở dữ liệu.
 - Không dùng service role ở frontend.
-- Các projection trả về không làm rò rỉ đơn giá, nguồn giá hoặc chi phí ước tính.
+- Bundle và read model nguồn lực không select/trả `unit_cost`, `total_cost`, đơn giá hoặc số tiền.
 
 ## 14. Xử lý lỗi và xung đột
 
@@ -588,20 +585,22 @@ Toàn bộ thành công hoặc toàn bộ rollback. Gọi lại cùng `command_i
 | Một nguồn lực có dấu hiệu xuất hiện ở nhiều card | Không tự cộng im lặng; yêu cầu xác nhận/loại trùng và ghi audit |
 | Tiến độ bị thay đổi sau khi mở form | Chặn gửi/xác nhận; tải lại baseline và tính lại delta |
 | Tuần bị khóa trong khi nhật ký chờ duyệt | Không công bố; hiển thị người/ thời điểm khóa và luồng mở khóa |
-| Thiếu đơn giá | Vẫn xác nhận tiêu hao; accrual ở `unpriced` |
+| Chưa chọn nguồn cung cấp | Chặn lưu/gửi tại đúng dòng; cho phép chọn danh mục hoặc chuyển sang nhập tay |
+| Nguồn nhập tay thiếu tên/loại | Chặn lưu và giữ nội dung người dùng đã nhập để hoàn tất |
+| NCC danh mục bị khóa sau khi đã lập phiếu | Giữ snapshot để xem; khi phiếu còn nháp thì yêu cầu chọn nguồn hợp lệ khác trước khi gửi |
 | WBS bị xóa/di chuyển | Chặn lưu nếu sai scope; bản đã xác nhận vẫn hiển thị từ snapshot |
 | Mất mạng khi xác nhận | Cho phép retry cùng command id; không tạo trùng |
 | Dữ liệu công thức không khớp | Máy chủ tính lại và trả lỗi theo từng dòng, không âm thầm sửa |
-| Nhật ký bị điều chỉnh | Void accrual cũ, thay nguồn tiến độ theo revision, giữ audit đầy đủ |
+| Nhật ký bị điều chỉnh | Revision mới thay nguồn tiến độ/bằng chứng đang hiệu lực; bản cũ giữ trạng thái superseded và audit đầy đủ |
 
 ## 15. Hiệu năng và khả năng mở rộng
 
 - Tải bundle theo scope/date, không N+1.
 - Tìm kiếm cây WBS phía máy chủ khi số node lớn; client chỉ mở các nhánh cần thiết.
-- Index theo `daily_log_id`, `(project_id, construction_site_id, task_id)`, `(scope_key, task_id, progress_date)` và trạng thái đối soát.
+- Index theo `daily_log_id`, `(project_id, construction_site_id, task_id)`, `(scope_key, task_id, progress_date)`, `partner_id` và tên nguồn nhập tay chuẩn hóa.
 - Summary cell được tính từ dữ liệu tải cùng bundle hoặc view tổng hợp, không gọi riêng từng dòng.
 - Cache cây WBS theo scope và version; tiến độ/baseline theo ngày không được cache vượt phiên bản.
-- Các báo cáo chi phí dùng view/materialized strategy sau khi đo dữ liệu thực tế; không tối ưu sớm bằng cách trộn actual với accrual.
+- Read model bằng chứng nguồn lực dùng view/RPC trước; chỉ cân nhắc materialized strategy sau khi đo dữ liệu thực tế.
 
 ## 16. Chuyển đổi và rollout
 
@@ -618,16 +617,17 @@ Toàn bộ thành công hoặc toàn bộ rollback. Gọi lại cùng `command_i
 - Chạy shadow compare giữa kết quả Nhật ký và tiến độ ngày hiện tại ở dự án pilot.
 - Chỉ cutover khi không còn sai khác ngoài các trường hợp đã giải thích.
 
-### Giai đoạn 3 - Chi phí nguồn lực tạm tính
+### Giai đoạn 3 - Chuẩn hóa nguồn cung cấp và bằng chứng nguồn lực
 
-- Thêm nguồn đơn giá có đơn vị rõ ràng.
-- Tạo accrual `unpriced/estimated` khi xác nhận.
-- Phân quyền hiển thị chi phí.
+- Bắt buộc nguồn danh mục hoặc nhập tay trên từng dòng nhân công/máy.
+- Xác nhận snapshot nguồn cung cấp và số liệu vật lý cùng bản tổng hợp.
+- Cung cấp read model theo NCC/đội, ngày, khu vực và WBS.
 
-### Giai đoạn 4 - Đối soát và báo cáo
+### Giai đoạn 4 - Sẵn sàng tích hợp thanh toán NCC
 
-- Liên kết accrual với bảng lương/nghiệm thu/hóa đơn/giao dịch thực tế.
-- Báo cáo tạm tính, thực tế, chưa đối soát và chênh lệch theo WBS.
+- Kiểm chứng ID/lineage của từng dòng bằng chứng và revision.
+- Tài liệu hóa contract chỉ đọc để quy trình thanh toán tương lai tham chiếu.
+- Không triển khai đơn giá, thành tiền, đối soát hay hạch toán trong giai đoạn này.
 
 ### Giai đoạn 5 - Hoàn tất cutover
 
@@ -644,8 +644,9 @@ Rollout dùng feature flag theo project/site. Không dùng migration đoán dữ
 - Quy đổi `%` ↔ khối lượng lũy kế.
 - Tính khối lượng ngày từ baseline.
 - Xử lý thiếu khối lượng kế hoạch.
-- Tổng giờ công, giờ máy, ngày công/ca quy đổi.
-- Chọn đúng đơn giá theo đơn vị và ngày hiệu lực.
+- Tổng giờ công và tổng giờ máy từ semantics mới.
+- Validation hai mode nguồn cung cấp và snapshot tên nguồn.
+- Không tự diễn giải `hours`/`shifts` legacy.
 - Không cho giá trị lũy kế giảm hoặc vượt bản ghi ngày sau ngoài luồng điều chỉnh.
 - Gộp cùng WBS theo khối lượng kế hoạch phân bổ; không cộng hoặc trung bình phần trăm trực tiếp.
 - Phát hiện thiếu cơ sở phân bổ, nguồn trùng và khác biệt forecast giữa các card.
@@ -653,15 +654,17 @@ Rollout dùng feature flag theo project/site. Không dùng migration đoán dữ
 ### 17.2 Database contract
 
 - RLS đúng theo Room, scope và action.
-- Client không thể ghi trực tiếp tiến độ/accrual.
+- Client không thể ghi trực tiếp tiến độ hoặc trạng thái bằng chứng đã xác nhận.
 - Command xác nhận atomic và idempotent.
-- Phiếu nguồn không thể gọi command công bố tiến độ/accrual; chỉ bản tổng hợp hợp lệ được phép.
+- Phiếu nguồn không thể gọi command công bố tiến độ/bằng chứng; chỉ bản tổng hợp hợp lệ được phép.
 - Một phiếu nguồn không thể được thêm hai lần vào cùng bản tổng hợp.
+- Mọi dòng nguồn lực mới phải có nguồn danh mục hợp lệ hoặc bộ trường nhập tay đầy đủ.
 - Snapshot nguồn và diff điều chỉnh không bị thay đổi ngầm khi phiếu nguồn cập nhật.
 - Hai command đồng thời không tạo trùng hoặc mất cập nhật.
 - Khóa ngày/tuần được tôn trọng.
-- Revision void đúng accrual cũ và giữ audit.
-- Không rò rỉ rate/cost cho người thiếu quyền.
+- Revision đánh dấu đúng bằng chứng cũ là superseded và giữ audit.
+- Read model không trả trường giá/tiền và không ghi `project_transactions`.
+- RPC lưu nguồn lực không nhận trường đơn giá/thành tiền; dòng mới giữ `unit_cost`/`total_cost` legacy ở `NULL`.
 
 ### 17.3 UI và hành trình người dùng
 
@@ -671,26 +674,28 @@ Rollout dùng feature flag theo project/site. Không dùng migration đoán dữ
 - Chọn/bỏ nhiều WBS, tìm kiếm và lọc cây lớn.
 - Nhập `%` rồi thấy khối lượng; nhập khối lượng rồi thấy `%`.
 - Mở chi tiết nhiều dòng nhân công/máy trong một WBS.
+- Chọn nguồn từ danh mục hoặc nhập tay; thiếu nguồn không thể lưu/gửi.
+- Bản đã xác nhận tra cứu được theo nguồn cung cấp nhưng không có giá hoặc thành tiền.
 - Các trạng thái loading, empty, unknown, denied, locked, conflict, pending, verified và superseded.
 - Walkthrough desktop, tablet và mobile.
 - Người dùng lần đầu nhận biết được action chính mà không cần hiểu cấu trúc database.
 
 ### 17.4 Cloud smoke
 
-- Chạy với tài khoản thật đại diện người lập, người duyệt, người xem chi phí và người bị từ chối.
+- Chạy với tài khoản thật đại diện người lập, người tổng hợp, CHT, QS/thanh toán chỉ đọc và người bị từ chối.
 - Test trong transaction có rollback khi phù hợp.
 - Kiểm tra một lần gọi lại cùng command id trả cùng receipt.
-- Kiểm tra query plan cho bundle WBS và báo cáo accrual trước pilot.
+- Kiểm tra query plan cho bundle WBS và read model bằng chứng nguồn lực trước pilot.
 
 ## 18. Chỉ số thành công pilot
 
-- 100% tiến độ/chi phí tạm tính của ngày có nhiều người báo cáo chỉ phát sinh từ bản tổng hợp được CHT xác nhận.
+- 100% tiến độ và bằng chứng nguồn lực của ngày có nhiều người báo cáo chỉ phát sinh từ bản tổng hợp được CHT xác nhận.
 - 100% card khu vực truy ngược được người phụ trách, phiếu nguồn và các điều chỉnh của người tổng hợp.
 - Tối thiểu 90% dòng công việc của nhật ký chính thức được gắn WBS.
-- Tối thiểu 90% dòng nhân công và máy mới được gắn WBS.
-- Không có bản ghi tiến độ ngày hoặc accrual bị tạo trùng.
-- Không có chi phí thực tế bị ghi hai lần từ nhật ký và chứng từ tài chính.
-- Dữ liệu thiếu đơn giá luôn được nhìn thấy dưới trạng thái `Chưa định giá`, không bị biến thành `0`.
+- 100% dòng nhân công và máy mới được gắn WBS và nguồn cung cấp hợp lệ.
+- 100% nguồn nhập tay có loại và tên snapshot; không tự tạo đối tác mới.
+- Không có bản ghi tiến độ ngày hoặc dòng bằng chứng đang hiệu lực bị tạo trùng.
+- Nhật ký không phát sinh đơn giá, thành tiền hoặc giao dịch tài chính.
 - Giảm rõ rệt số thao tác nhập tiến độ ngày thủ công sau khi lập nhật ký.
 - Thời gian trung vị hoàn thành một nhật ký không tăng sau giai đoạn làm quen và giảm sau pilot.
 
@@ -700,8 +705,9 @@ Thiết kế được coi là đủ điều kiện chuyển sang kế hoạch tr
 
 1. Chỉ bản tổng hợp ngày được CHT xác nhận là nguồn chính thức của tiến độ ngày sau cutover; phiếu nguồn không tự công bố.
 2. Nhân công dùng `số người × giờ/người`; máy dùng `số máy × giờ/máy` làm đại lượng nhập chuẩn.
-3. Chi phí nhật ký chỉ là tạm tính; actual cost chỉ hình thành sau đối soát chứng từ.
+3. Nhật ký chỉ ghi số liệu vật lý và nguồn cung cấp; không lưu giá, không tính tiền và không tạo chi phí tạm tính.
 4. Dữ liệu cũ được giữ nguyên và không backfill bằng suy đoán.
 5. Bản tổng hợp giữ riêng từng card `người phụ trách + khu vực`, cho phép chỉnh bản sao có audit và cung cấp bảng WBS tổng quan cho CHT.
+6. Mỗi dòng nhân công/máy bắt buộc chọn nguồn từ danh mục hoặc nhập tay có loại và tên; bản xác nhận có thể tra cứu làm căn cứ thanh toán NCC về sau.
 
 Sau khi tài liệu này được duyệt, bước kế tiếp mới là lập kế hoạch triển khai theo task/file/migration/test cụ thể.
