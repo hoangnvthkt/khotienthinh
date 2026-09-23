@@ -56,7 +56,7 @@ export const ProcurementV2SupplyDialog: React.FC<{
         <div className={`rounded-2xl border-2 p-4 ${canPurchase ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950/60'}`}>
           <div className="flex justify-between text-emerald-700"><FileText size={21} />{!canPurchase && <LockKeyhole size={16} />}</div>
           <h3 className="mt-3 font-semibold">Mua theo PO</h3>
-          <p className="mt-1 text-sm leading-6">{canPurchase ? 'Chọn các dòng, nhà cung cấp và số lượng trên màn lập đơn mua.' : 'Chưa thể lập PO từ kế hoạch vật tư: cần kết nối phân bổ PO trực tiếp với hồ sơ này.'}</p>
+          <p className="mt-1 text-sm leading-6">{canPurchase ? 'Chọn các dòng, nhà cung cấp và số lượng trên màn lập đơn mua.' : 'Hồ sơ cần đối chiếu trước khi lập PO.'}</p>
           {canPurchase && <button type="button" onClick={onPurchase} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">Tiếp tục lập PO<ArrowRight size={16} /></button>}
         </div>
       </div>
