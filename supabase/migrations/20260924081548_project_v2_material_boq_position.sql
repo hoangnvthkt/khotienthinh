@@ -1,6 +1,6 @@
 -- Whole-project BOQ and confirmed net arrivals into its site warehouses.
 -- Pending orders/transfers and current on-hand stock are separate measures.
-create function public.list_project_v2_material_boq_positions_v1(
+create function app_private.project_v2_material_boq_positions_v1(
   p_workspace_id uuid, p_item_ids text[]
 ) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
@@ -120,6 +120,19 @@ begin
   from position;
   return v_result;
 end;
+$$;
+
+revoke all on function app_private.project_v2_material_boq_positions_v1(uuid, text[])
+  from public, anon, authenticated;
+grant usage on schema app_private to authenticated;
+grant execute on function app_private.project_v2_material_boq_positions_v1(uuid, text[])
+  to authenticated;
+
+create function public.list_project_v2_material_boq_positions_v1(
+  p_workspace_id uuid, p_item_ids text[]
+) returns jsonb
+language sql stable security invoker set search_path = '' as $$
+  select app_private.project_v2_material_boq_positions_v1(p_workspace_id, p_item_ids);
 $$;
 
 revoke all on function public.list_project_v2_material_boq_positions_v1(uuid, text[])

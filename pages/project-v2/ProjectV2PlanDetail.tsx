@@ -13,6 +13,9 @@ import { projectV2CandidateService } from '../../lib/projectV2/candidateService'
 import { exportProjectV2PlanCsv } from '../../lib/projectV2/csvExport';
 import { ProjectV2PlanDiscussion } from '../../components/project-v2/ProjectV2PlanDiscussion';
 import { ProjectV2PlanActivity } from '../../components/project-v2/ProjectV2PlanActivity';
+import { MaterialBoqPositionSummary, type MaterialBoqReadState } from '../../components/project-v2/MaterialBoqPositionSummary';
+import { materialBoqPositionService } from '../../lib/projectV2/materialBoqPositionService';
+import { logApiError } from '../../lib/apiError';
 import type { ProjectV2PlanLink } from '../../lib/projectV2/readService';
 
 type Detail = Awaited<ReturnType<typeof projectV2ReadService.getPlan>>;
@@ -36,6 +39,7 @@ const ProjectV2PlanDetail: React.FC = () => {
     downstream: ProjectV2PlanLink[] } | null>(null);
   const [crewNames, setCrewNames] = useState<Record<string, string>>({});
   const [materialScope, setMaterialScope] = useState<{ projectId: string; siteId: string | null; siteName: string } | null>(null);
+  const [boqState, setBoqState] = useState<MaterialBoqReadState>({ status: 'loading', positions: new Map() });
   const [tab, setTab] = useState<Tab>('lines');
   const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const [commentDirty, setCommentDirty] = useState(false);
@@ -46,6 +50,22 @@ const ProjectV2PlanDetail: React.FC = () => {
   const previousHash = useRef(window.location.hash);
   const names = useMemo(() => Object.fromEntries(users.map(person => [person.id, person.name])), [users]);
   const reload = useCallback(() => { setRefresh(value => value + 1); }, []);
+
+  useEffect(() => {
+    if (!detail || detail.plan.planType !== 'material') return;
+    const itemIds = [...new Set(detail.lines.map(line => (line as Record<string, unknown>).inventory_item_id)
+      .filter((id): id is string => typeof id === 'string' && Boolean(id)))];
+    if (!itemIds.length) { setBoqState({ status: 'ready', positions: new Map() }); return; }
+    let active = true;
+    setBoqState({ status: 'loading', positions: new Map() });
+    materialBoqPositionService.list(detail.plan.workspaceId, itemIds)
+      .then(positions => { if (active) setBoqState({ status: 'ready', positions }); })
+      .catch(cause => {
+        logApiError('projectV2.materialBoqPosition', cause);
+        if (active) setBoqState({ status: 'error', positions: new Map() });
+      });
+    return () => { active = false; };
+  }, [detail]);
 
   useEffect(() => {
     let active = true;
@@ -179,6 +199,7 @@ const ProjectV2PlanDetail: React.FC = () => {
           className={`shrink-0 border-b-2 px-3 py-3 text-sm font-semibold ${tab === id ? 'border-teal-700 text-teal-800' : 'border-transparent text-slate-500'}`}>{title}</button>)}
     </div>
     {tab === 'lines' && <section className="min-w-0 overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" aria-label="Khối lượng kế hoạch">
+      {plan.planType === 'material' && <p className="px-4 py-3 text-xs text-slate-500">Cân đối BOQ hiện tại theo số kho đã xác nhận; số đang đặt hoặc chuyển được theo dõi riêng.</p>}
       <table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><tr>
         <th className="px-4 py-3">{plan.planType === 'material' ? 'Mã và tên vật tư' : 'Công việc / nguồn'}</th><th className="px-4 py-3">Đơn vị</th><th className="px-4 py-3 text-right">{plan.planType === 'material' ? 'Số lượng đề nghị' : 'Khối lượng'}</th>
         {plan.planType === 'month' && detail.capabilities.priceVisible === true && <><th className="px-4 py-3 text-right">Đơn giá hợp đồng</th><th className="px-4 py-3 text-right">Thành tiền</th></>}
@@ -186,10 +207,13 @@ const ProjectV2PlanDetail: React.FC = () => {
       </tr></thead><tbody>{detail.lines.map(row => {
         const raw = row as Record<string, unknown>;
         return <tr key={row.id} className="border-t border-slate-100 dark:border-slate-700">
-          <td className="px-4 py-3"><span className="font-medium">{raw.displayName
+          <td className={`${plan.planType === 'material' ? 'min-w-72 ' : ''}px-4 py-3`}><span className="font-medium">{raw.displayName
             ? `${raw.displayCode ? `${String(raw.displayCode)} · ` : ''}${String(raw.displayName)}`
             : 'Chưa xác định'}</span>
             {plan.planType === 'material' && <span className="mt-1 block text-xs text-slate-500">Nhu cầu tính toán: {raw.calculated_quantity == null ? 'Chưa xác định' : String(raw.calculated_quantity)}</span>}
+            {plan.planType === 'material' && <MaterialBoqPositionSummary
+              itemId={typeof raw.inventory_item_id === 'string' ? raw.inventory_item_id : null}
+              unit={typeof raw.unit === 'string' ? raw.unit : null} readState={boqState} />}
             {plan.planType === 'material' && raw.override_reason && <span className="mt-1 block text-xs text-amber-700">Lý do điều chỉnh: {String(raw.override_reason)}</span>}
           </td>
           <td className="px-4 py-3">{label(raw.unit as string | null)}</td>

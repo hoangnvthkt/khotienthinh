@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { MaterialPlanEditor } from '../../components/project-v2/MaterialPlanEditor';
 import { MaterialBasisDrawer } from '../../components/project-v2/MaterialBasisDrawer';
+import { MaterialBoqPositionSummary } from '../../components/project-v2/MaterialBoqPositionSummary';
 import type { MaterialCandidate, MaterialCandidateGroup } from '../projectV2/materialCandidateService';
 
 vi.mock('react-router-dom', async () => {
@@ -61,5 +62,55 @@ describe('Project V2 material plan editor', () => {
       periodStart="2026-10-01" periodEnd="2026-10-31" siteName="Công trường A" siteId="site-a" />);
     expect(html).toContain('Nhu cầu tính toán: 10');
     expect(html).not.toContain('10.000000');
+  });
+
+  it('shows the project BOQ, confirmed site receipts, and remaining quantity without subtracting pending supply', () => {
+    const html = renderToStaticMarkup(<MaterialPlanEditor groups={[{
+      ...group, calculatedQty: '20.000000', availableQty: '20.000000', diagnostics: [], selectable: true,
+    }]} selectedKeys={[]} entries={{}} onSelect={() => {}} onChange={() => {}}
+      boqState={{ status: 'ready', positions: new Map([['item', {
+        itemId: 'item', unit: 'kg', state: 'known', boqQuantity: '100.000000',
+        receivedQuantity: '50.000000', remainingQuantity: '50.000000',
+        pendingQuantity: '10.000000', issues: [],
+      }]]) }}
+      periodStart="2026-10-01" periodEnd="2026-10-31" siteName="Công trường A" siteId="site-a" />);
+    for (const value of ['Định mức', '100 kg', 'Đã nhập kho', '50 kg', 'Còn lại', 'Đang đặt hoặc chuyển'])
+      expect(html).toContain(value);
+    expect(html).not.toContain('40 kg');
+  });
+
+  it('keeps missing or unverified BOQ figures visibly unknown', () => {
+    const html = renderToStaticMarkup(<MaterialBoqPositionSummary itemId="item" unit="kg"
+      readState={{ status: 'ready', positions: new Map([['item', {
+        itemId: 'item', unit: 'kg', state: 'unknown', boqQuantity: null,
+        receivedQuantity: null, remainingQuantity: null, pendingQuantity: null,
+        issues: ['boq_source_unknown'],
+      }]]) }} />);
+    expect(html).toContain('Chưa xác định');
+    expect(html).toContain('Có số liệu cần đối chiếu');
+    expect(html).not.toContain('>0 kg<');
+    expect(html).not.toContain('boq_source_unknown');
+  });
+
+  it('does not present a balance as known when the material units differ', () => {
+    const html = renderToStaticMarkup(<MaterialBoqPositionSummary itemId="item" unit="kg"
+      readState={{ status: 'ready', positions: new Map([['item', {
+        itemId: 'item', unit: 'm3', state: 'known', boqQuantity: '100.000000',
+        receivedQuantity: '50.000000', remainingQuantity: '50.000000', pendingQuantity: null,
+        issues: [],
+      }]]) }} />);
+    expect(html).toContain('Chưa xác định');
+    expect(html).not.toContain('100 kg');
+    expect(html).not.toContain('50 kg');
+  });
+
+  it('shows an over-received BOQ as a negative remaining quantity', () => {
+    const html = renderToStaticMarkup(<MaterialBoqPositionSummary itemId="item" unit="kg"
+      readState={{ status: 'ready', positions: new Map([['item', {
+        itemId: 'item', unit: 'kg', state: 'known', boqQuantity: '100.000000',
+        receivedQuantity: '101.000000', remainingQuantity: '-1.000000', pendingQuantity: null,
+        issues: [],
+      }]]) }} />);
+    expect(html).toContain('-1 kg');
   });
 });

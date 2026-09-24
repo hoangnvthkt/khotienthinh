@@ -3,6 +3,7 @@ import type { MaterialCandidateGroup } from '../../lib/projectV2/materialCandida
 import { MaterialBasisDrawer } from './MaterialBasisDrawer';
 import { parseQuantity6 } from '../../lib/procurement/decimal';
 import { formatProjectV2Quantity } from '../../lib/projectV2/presentation';
+import { MaterialBoqPositionSummary, type MaterialBoqReadState } from './MaterialBoqPositionSummary';
 
 export interface MaterialEntry {
   quantity: string; neededDate: string; destinationId: string; note: string; overrideReason: string;
@@ -12,6 +13,7 @@ interface Props {
   onSelect: (key: string, checked: boolean) => void;
   onChange: (key: string, patch: Partial<MaterialEntry>) => void;
   periodStart: string; periodEnd: string; siteName: string; siteId: string | null;
+  boqState?: MaterialBoqReadState;
 }
 const inputClass = 'min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-600 dark:bg-slate-800';
 const readable = (value: string | null) => value ?? 'Chưa xác định';
@@ -23,7 +25,7 @@ const adjusted = (requested: string | undefined, calculated: string | null): boo
 };
 
 export function MaterialPlanEditor({ groups, selectedKeys, entries, onSelect, onChange,
-  periodStart, periodEnd, siteName, siteId }: Props) {
+  periodStart, periodEnd, siteName, siteId, boqState }: Props) {
   const [basis, setBasis] = useState<MaterialCandidateGroup | null>(null);
   return <section className="space-y-3" aria-label="Dòng kế hoạch vật tư">
     <div><h3 className="font-semibold text-slate-900 dark:text-white">Nhu cầu vật tư</h3>
@@ -39,7 +41,8 @@ export function MaterialPlanEditor({ groups, selectedKeys, entries, onSelect, on
         return <React.Fragment key={group.key}><tr className="border-t border-slate-200 align-top dark:border-slate-700">
           <td className="px-3 py-3"><input type="checkbox" aria-label={`Chọn ${group.itemName}`} checked={selected}
             onChange={event => onSelect(group.key, event.target.checked)} className="mt-2 h-4 w-4 accent-teal-700" /></td>
-          <td className="min-w-48 px-3 py-3"><strong>{group.itemCode && `${group.itemCode} · `}{group.itemName}</strong>
+          <td className="min-w-72 px-3 py-3"><strong>{group.itemCode && `${group.itemCode} · `}{group.itemName}</strong>
+            {boqState && <MaterialBoqPositionSummary itemId={group.itemId} unit={group.unit} readState={boqState} />}
             <button type="button" onClick={() => setBasis(group)} className="mt-1 block text-xs font-semibold text-teal-700 underline">Cơ sở tính toán</button>
             {group.diagnostics.length > 0 && <span className="mt-1 block text-xs text-amber-700">Cần hoàn thiện dữ liệu nguồn</span>}</td>
           <td className="px-3 py-3">{readable(group.unit)}</td>
@@ -66,6 +69,7 @@ export function MaterialPlanEditor({ groups, selectedKeys, entries, onSelect, on
           onChange={event => onSelect(group.key, event.target.checked)} className="mt-1 h-4 w-4 accent-teal-700" />
           <span className="font-semibold">{group.itemCode && `${group.itemCode} · `}{group.itemName}</span></label>
         <div className="mt-2 pl-7 text-sm text-slate-600">{readable(group.unit)} · Nhu cầu tính toán: {readableQuantity(group.calculatedQty)}</div>
+        {boqState && <div className="pl-7"><MaterialBoqPositionSummary itemId={group.itemId} unit={group.unit} readState={boqState} /></div>}
         <button type="button" onClick={() => setBasis(group)} className="mt-2 pl-7 text-xs font-semibold text-teal-700 underline">Cơ sở tính toán</button>
         {group.diagnostics.length > 0 && <p className="mt-2 pl-7 text-xs text-amber-700">Cần hoàn thiện dữ liệu nguồn</p>}
         {selected && <div className="mt-4 grid gap-3 sm:grid-cols-2">

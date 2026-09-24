@@ -68,9 +68,14 @@ function Fixture() {
         crews={[{ id: 'crew-1', name: 'Tổ thi công số 1', workspaceId: 'w' }]}
         periodStart="2026-09-23" periodEnd="2026-09-29" />}
       {type === 'material' && <MaterialPlanEditor groups={groupMaterialCandidates(material)} selectedKeys={materialKeys}
+        boqState={{ status: 'ready', positions: new Map([['cement', {
+          itemId: 'cement', unit: 'kg', state: 'known', boqQuantity: '100.000000',
+          receivedQuantity: '50.000000', remainingQuantity: '50.000000',
+          pendingQuantity: null, issues: [],
+        }]]) }}
         entries={materialEntries} onSelect={(key, checked) => {
           setMaterialKeys(checked ? [key] : []);
-          if (checked) setMaterialEntries({ [key]: { quantity: '40.000000', neededDate: '2026-09-25',
+          if (checked) setMaterialEntries({ [key]: { quantity: '40', neededDate: '2026-09-25',
             destinationId: 'site-1', note: '', overrideReason: 'Giao đợt đầu' } });
         }} onChange={(key, patch) => setMaterialEntries(previous => ({ ...previous,
           [key]: { ...previous[key], ...patch } }))}

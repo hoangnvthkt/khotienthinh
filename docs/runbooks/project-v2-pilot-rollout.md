@@ -10,7 +10,8 @@ Keep the V2 cohort and navigation disabled until the release owner records all o
 2. Record active, separate planner, approver, buyer, warehouse and finance users. Review each plan-type Room grant, project/site scope, price visibility, and the no-self-approval rule using the actual personas, never an administrator substitute.
 3. Record one versioned contract/BOQ task with a complete norm resource, inventory identity, coefficient, and exact UOM conversion. A missing norm or mapping must remain blocked with a visible reason.
 4. Verify overlapping source quantity, unknown norm, approved-revision decrease, duplicate approval/intake, mixed MR and material-plan PO, competing buyers, price hiding, cross-scope denial, and retry after timeout. Unknown balances stay unknown; no command treats them as zero.
-5. Name a release owner, support owner, business approver and evidence location. Confirm the recovery procedure below before enabling any command.
+5. For the material-plan screen, reconcile each displayed material against whole-project BOQ and confirmed net site receipts. Include a supplier return, an unreceived PO or transfer, a material outside BOQ, a mixed-unit/source group, and receipts above BOQ. The unreceived quantity must stay separate from “Còn lại”; unresolved evidence must display as unknown.
+6. Name a release owner, support owner, business approver and evidence location. Confirm the recovery procedure below before enabling any command.
 
 ## Enable in stages
 
@@ -29,6 +30,7 @@ For **each** journey, record run ID, timestamp, environment, commit/migration he
 | Cohort entry and monthly plan | Planner, approver | The named project opens V2; monthly quantities come from the approved contract/BOQ baseline; save, submit, return and independent approval persist audit actor/time/reason. |
 | Construction plan | Planner, approver | An approved weekly plan links to the exact approved monthly source revision; overlapping quantity is rejected. |
 | Material plan | Planner, approver | A missing norm is blocked; after the source norm/UOM is fixed, the calculated and overridden quantities remain distinguishable; approval creates one immutable revision. |
+| Project BOQ balance | Planner, warehouse | “Định mức” is the whole-project BOQ, “Đã nhập kho” is confirmed site receipts from every source less supplier returns, and “Còn lại” is their difference. Pending orders/transfers remain separate; mixed or missing evidence is visibly unknown. |
 | Purchasing intake | Buyer | Exactly one canonical demand dossier appears for the approved material plan, separate from an independent site MR; source identity and revision are traceable. |
 | Supply and PO | Buyer | Only eligible external-purchase lines enter a supplier PO; mixed MR/material-plan lines retain their own source links and do not exceed remaining demand. Timeout retry reuses the same command identity and creates no duplicate PO. |
 | Receipt and return path | Buyer, warehouse, finance | The user can follow plan → demand → PO → receipt and return to the dossier; stock and finance effects are checked in their own ledgers. |
