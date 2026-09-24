@@ -60,6 +60,7 @@ do $$
 declare
   result jsonb;
   denied boolean := false;
+  missing_item_id text;
 begin
   result := public.get_project_material_request_site_stock_context_v1(
     current_setting('smoke.project_id'), nullif(current_setting('smoke.site_id'), ''),
@@ -68,6 +69,26 @@ begin
   if result ->> 'metricVersion' <> 'project.site-stock.g6.v1'
      or jsonb_array_length(result -> 'rows') <> 1 then
     raise exception 'Permitted stock read returned an invalid response';
+  end if;
+  if not (result -> 'rows' -> 0 ? 'onHandQty') then
+    raise exception 'Verified on-hand field is missing';
+  end if;
+  if (result -> 'rows' -> 0 ->> 'onHandQty')::numeric < 0 then
+    raise exception 'Verified on-hand cannot be negative';
+  end if;
+  select item.id into missing_item_id from public.items item
+  where not (item.stock_by_warehouse ? current_setting('smoke.warehouse_id'))
+    and not exists (
+      select 1 from public.inventory_balances balance
+      where balance.material_id = item.id and balance.warehouse_id = current_setting('smoke.warehouse_id')
+    ) limit 1;
+  if missing_item_id is null then raise exception 'No stock-absent item found for unknown check'; end if;
+  result := public.get_project_material_request_site_stock_context_v1(
+    current_setting('smoke.project_id'), nullif(current_setting('smoke.site_id'), ''),
+    current_setting('smoke.warehouse_id'), array[missing_item_id]
+  );
+  if result -> 'rows' -> 0 ->> 'onHandQty' is not null then
+    raise exception 'Missing cache and ledger evidence became zero on-hand';
   end if;
   begin
     perform public.get_project_material_request_site_stock_context_v1(
@@ -101,6 +122,9 @@ begin
   );
   if result -> 'rows' -> 0 ->> 'availableQty' is not null then
     raise exception 'Open reconciliation issue did not make availability unknown';
+  end if;
+  if result -> 'rows' -> 0 ->> 'onHandQty' is not null then
+    raise exception 'Open reconciliation issue did not make on-hand unknown';
   end if;
 end;
 $$;
