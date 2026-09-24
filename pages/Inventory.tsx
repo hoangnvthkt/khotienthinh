@@ -38,7 +38,6 @@ import {
   parseExcelRows,
 } from '../lib/excelImport';
 import { EmptyState, FilterBar, PageHeader, StatusBadge } from '../components/erp';
-import WmsControlPanel from '../components/WmsControlPanel';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -848,14 +847,6 @@ const Inventory: React.FC = () => {
             </button>
           </>
         }
-      />
-
-      <WmsControlPanel
-        warehouseId={filterWarehouse === 'all' ? null : filterWarehouse}
-        warehouses={warehouses}
-        items={items}
-        canCount={canCRUD}
-        onPosted={() => refreshWmsRecords({})}
       />
 
       <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-200 dark:border-zinc-800 overflow-hidden">
