@@ -4,6 +4,7 @@ import { parseQuantity6 } from '../procurement/decimal';
 export interface SiteStockContext {
   itemId: string;
   availableQuantity: string | null;
+  onHandQuantity: string | null;
   inTransitQuantity: string;
   receiptCustodyQuantity: string | null;
 }
@@ -31,6 +32,7 @@ export function parseSiteStockContext(data: unknown, warehouseId: string): SiteS
     return {
       itemId: row.itemId,
       availableQuantity: quantity(row.availableQty, true),
+      onHandQuantity: row.onHandQty === undefined ? null : quantity(row.onHandQty, true),
       inTransitQuantity: quantity(row.inTransitQty)!,
       receiptCustodyQuantity: quantity(row.receiptCustodyQty, true),
     };
