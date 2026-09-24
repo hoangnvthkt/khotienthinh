@@ -6,14 +6,16 @@
 >
 > Branch đang dùng: `feature/refactor-du-an-t9-1`
 >
-> Trạng thái: luồng nghiệp vụ và kế hoạch triển khai đã được chốt; **chưa bắt đầu implement Project V2 / Procurement V2**.
+> Trạng thái cập nhật 2026-09-24: **Task 1–12 đã implement và commit; Task 13 đang kiểm chứng tích hợp.** Không kích hoạt pilot hoặc coi automation là business signoff. Xem [evidence](../designs/erp-completion-2026-09-19/evidence/project-v2-validation-20260923.md) và [runbook](../runbooks/project-v2-pilot-rollout.md). Các mô tả “chưa bắt đầu” bên dưới là baseline lịch sử ngày 23/09, không phải trạng thái hiện tại.
+
+Task 13 còn mở: replay full chain trên Cloud có dữ liệu vướng migration daily-log `20260923091500` ở Room constraint; baseline allowlist chưa chứa migration V2; `npm run lint` còn 185 lỗi từ prototype untracked. Chuỗi migration V2 và các smoke kế hoạch/intake/dossier/collaboration đã chạy trên Cloud preview rồi xóa branch. Mixed-source PO có bằng chứng Task 11 trên preview riêng, nhưng smoke cùng data clone bị G9 gate chặn synthetic project. Chưa có UAT nghiệp vụ theo persona hay business signoff.
 
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
 Đọc toàn bộ docs/superpowers/2026-09-23-project-v2-planning-procurement-HANDOFF.md và tiếp tục đúng trạng thái hiện tại.
 
-Luồng nghiệp vụ và kế hoạch triển khai Project V2 → Procurement V2 đã được chốt. Không re-plan, không hỏi duyệt lại các quyết định đã ghi trong handoff. Bắt đầu từ Task 1 của docs/superpowers/plans/2026-09-23-project-v2-planning-procurement-flow.md theo TDD, trừ khi anh báo một regression cụ thể.
+Luồng nghiệp vụ và kế hoạch triển khai Project V2 → Procurement V2 đã được chốt. Không re-plan, không hỏi duyệt lại các quyết định đã ghi trong handoff. Task 1–12 đã commit trên branch hiện tại; tiếp tục Task 13 của docs/superpowers/plans/2026-09-23-project-v2-planning-procurement-flow.md từ evidence và runbook, trừ khi anh báo một regression cụ thể.
 
 Giữ một branch/một worktree, không sub-agent, không dùng taste skill. Supabase chỉ dùng Cloud qua .env, không local/Docker. Không chạm docs/audits/erp-end-to-end-2026-09-19/README.md và không trộn các thay đổi daily-log/auth/procurement đang dở vào commit Project V2. Không coi automation là business signoff; không đổi unknown thành 0. Cập nhật làm việc bằng tiếng Anh và báo cáo hoàn tất bằng tiếng Việt.
 ```
@@ -45,7 +47,9 @@ Song song, công trường vẫn được tạo **Đề xuất vật tư** độ
 
 Kế hoạch vật tư được duyệt đi thẳng sang Mua hàng như canonical demand; **không bắt người dùng tạo lại một MR và không lặp thêm vòng duyệt MR**. Tuy nhiên, kế hoạch vật tư cũng **không tự động tạo PO**. Mua hàng vẫn phải chọn phương án cung ứng; PO chỉ sinh khi thực sự mua ngoài.
 
-## 2. Trạng thái hiện tại — điều đã xong và chưa xong
+## 2. Baseline lịch sử trước khi bắt đầu Task 1
+
+Mục này ghi trạng thái ngày 23/09. Trạng thái thực thi mới nhất nằm ở đầu file, trong SDD ledger và evidence Task 13.
 
 ### Đã xong
 
@@ -68,7 +72,7 @@ Kế hoạch vật tư được duyệt đi thẳng sang Mua hàng như canonica
 - Chưa publish material-plan V2 sang canonical demand G2.
 - Chưa mở Cloud preview hoặc pilot V2.
 
-Vì vậy phiên mới phải bắt đầu tại **Task 1**, không bắt đầu bằng việc sửa UI hiện hữu hoặc deploy.
+Đó là điểm bắt đầu lịch sử của chuỗi triển khai; hiện tại tiếp tục tại **Task 13**.
 
 ## 3. Thứ tự đọc bắt buộc ở phiên mới
 
@@ -255,7 +259,9 @@ Thực hiện tuần tự theo file plan chi tiết:
 
 Không nhảy trực tiếp sang Task 6/10 để dựng màn hình khi state machine, quantity và lineage chưa được khóa.
 
-## 10. Việc đầu tiên phiên mới phải làm
+## 10. Hướng dẫn khởi động ban đầu (lịch sử trước Task 1)
+
+Các bước trong mục này đã được thực hiện; không chạy lại chỉ vì mở một phiên mới. Tiếp tục từ Task 13 và evidence nêu ở đầu handoff.
 
 ### 10.1 Kiểm tra read-only
 
