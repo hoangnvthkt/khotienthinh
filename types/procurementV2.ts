@@ -18,7 +18,7 @@ export interface ProcurementV2DossierCard {
   id: string;
   sourceAdapter: ProcurementV2Source;
   sourceCode: string;
-  sourceDocumentId: string;
+  sourceDocumentId: string | null;
   projectId: string;
   constructionSiteId: string | null;
   assigneeUserId: string | null;
@@ -52,7 +52,8 @@ export interface ProcurementV2DossierLine {
 }
 
 export interface ProcurementV2Dossier extends ProcurementV2DossierCard {
-  sourceRef: { adapter: ProcurementV2Source; id: string };
+  sourceRef: { adapter: ProcurementV2Source; id: string | null;
+    revision?: number | null; canOpen?: boolean };
   lines: ProcurementV2DossierLine[];
   issues: Array<{ id: string; code: string; severity: string; sourceLineId: string | null }>;
   allowedActions: Array<'view' | 'assign' | 'plan_supply'>;

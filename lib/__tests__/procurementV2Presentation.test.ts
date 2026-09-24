@@ -9,6 +9,10 @@ describe('Procurement V2 dossier presentation', () => {
       .toBe('/project-v2/plans/plan-1');
     expect(resolveDossierSourceRoute({ adapter: 'project_material_request', id: 'mr-1' }))
       .toBe('/rq/mr-1');
+    expect(resolveDossierSourceRoute({ adapter: 'material_plan', id: 'plan-1', revision: 3,
+      canOpen: true })).toBe('/project-v2/plans/plan-1?revision=3');
+    expect(() => resolveDossierSourceRoute({ adapter: 'material_plan', id: null,
+      canOpen: false })).toThrow('PROCUREMENT_SOURCE_REF_INVALID');
   });
 
   it('validates return route through the existing trace adapter', () => {
