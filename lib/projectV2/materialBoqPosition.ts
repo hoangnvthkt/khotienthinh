@@ -8,7 +8,8 @@ interface MaterialBoqLine {
 export interface ProjectV2MaterialBoqPositionInput {
   unit: string;
   boqLines: readonly MaterialBoqLine[] | null;
-  receivedQuantity: string | null;
+  grossSiteReceipts: string | null;
+  supplierReturns: string | null;
   pendingQuantity: string | null;
 }
 
@@ -29,7 +30,11 @@ const canonical = (value: bigint): string => {
 export function calculateProjectV2MaterialBoqPosition(
   input: ProjectV2MaterialBoqPositionInput,
 ): ProjectV2MaterialBoqPosition {
-  const received = input.receivedQuantity === null ? null : parseQuantity6(input.receivedQuantity);
+  const gross = input.grossSiteReceipts === null ? null : parseQuantity6(input.grossSiteReceipts);
+  const returned = input.supplierReturns === null ? null : parseQuantity6(input.supplierReturns);
+  if (gross !== null && returned !== null && returned > gross)
+    throw new Error('INVALID_RECEIPT_POSITION: Supplier returns exceed site receipts.');
+  const received = gross === null || returned === null ? null : gross - returned;
   const pending = input.pendingQuantity === null ? null : parseQuantity6(input.pendingQuantity);
   const receivedQuantity = received === null ? null : canonical(received);
   const pendingQuantity = pending === null ? null : canonical(pending);
