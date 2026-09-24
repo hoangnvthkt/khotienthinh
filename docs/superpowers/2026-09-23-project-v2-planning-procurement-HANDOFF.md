@@ -12,6 +12,8 @@
 
 Task 13 còn mở: replay full chain trên Cloud có dữ liệu vướng migration daily-log `20260923091500` ở Room constraint; baseline allowlist chưa chứa migration V2; `npm run lint` còn 185 lỗi từ prototype untracked. Chuỗi migration V2 và các smoke kế hoạch/intake/dossier/collaboration đã chạy trên Cloud preview rồi xóa branch. Mixed-source PO có bằng chứng Task 11 trên preview riêng, nhưng smoke cùng data clone bị G9 gate chặn synthetic project. Chưa có UAT nghiệp vụ theo persona hay business signoff.
 
+Đợt tiếp theo ngày 24/09 đã nối cân đối BOQ tổng công trình vào màn hình nhập và chi tiết kế hoạch vật tư. Reader tính lũy kế nhập kho công trường từ mọi nguồn, trừ hàng trả NCC; đơn đang đặt/chuyển chưa nhập không trừ vào “Còn lại”. Trạng thái thiếu dữ liệu và ngoài BOQ vẫn tách bạch. Migration reader chỉ được chạy trên Cloud preview có dữ liệu và branch đã xóa; chưa deploy Project V2 lên production. Xem evidence Task 13 và smoke `supabase/tests/project_v2_material_boq_position_smoke.sql`. Pending supply hiện vẫn “Chưa xác định” vì chưa có reader riêng. Full migration parity, actual app-route walkthrough theo persona và business signoff vẫn mở.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text

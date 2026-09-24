@@ -20,6 +20,10 @@ for (const width of [390, 768, 1440]) {
     await page.goto('/tests/project-v2/planning-fixture.html');
     await page.getByRole('button', { name: 'Vật tư', exact: true }).click();
     await expect(page.getByText('Xi măng PCB40').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText('Định mức').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText('100 kg').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText('Đã nhập kho').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText('50 kg').filter({ visible: true }).first()).toBeVisible();
     if (width >= 1024) await expect(page.getByRole('columnheader', { name: 'Nhu cầu tính toán' })).toBeVisible();
     else await expect(page.getByText('Nhu cầu tính toán:', { exact: false }).filter({ visible: true }).first()).toBeVisible();
     await page.getByRole('checkbox', { name: /Chọn Xi măng PCB40|Xi măng PCB40/ }).first().check();

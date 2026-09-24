@@ -6,6 +6,9 @@ import { projectV2CommandService } from '../../lib/projectV2/commandService';
 import { projectV2ReadService } from '../../lib/projectV2/readService';
 import { formatProjectV2EditableQuantity, presentProjectV2Error } from '../../lib/projectV2/presentation';
 import { MaterialPlanEditor, type MaterialEntry } from './MaterialPlanEditor';
+import { materialBoqPositionService } from '../../lib/projectV2/materialBoqPositionService';
+import type { MaterialBoqReadState } from './MaterialBoqPositionSummary';
+import { logApiError } from '../../lib/apiError';
 
 type Detail = Awaited<ReturnType<typeof projectV2ReadService.getPlan>>;
 interface Props { workspaceId: string; projectId: string; siteId: string | null; siteName: string;
@@ -79,6 +82,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>(() => [...new Set(existing?.sources.map(
     source => String((source as Record<string, unknown>).source_plan_id)) ?? [])]);
   const [rows, setRows] = useState<Awaited<ReturnType<typeof materialCandidateService.list>> | null>(null);
+  const [boqState, setBoqState] = useState<MaterialBoqReadState>({ status: 'loading', positions: new Map() });
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [entries, setEntries] = useState<Record<string, MaterialEntry>>({});
   const [loading, setLoading] = useState(false); const [saving, setSaving] = useState(false);
@@ -110,6 +114,20 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
     });
     return [...preserved, ...groupMaterialCandidates(rows.filter(row => !used.has(row.candidateId)))];
   }, [rows, existing]);
+  const boqItemIds = useMemo(() => [...new Set(groups.map(group => group.itemId)
+    .filter((id): id is string => Boolean(id)))].sort(), [groups]);
+  useEffect(() => {
+    if (!boqItemIds.length) { setBoqState({ status: 'ready', positions: new Map() }); return; }
+    let active = true;
+    setBoqState({ status: 'loading', positions: new Map() });
+    materialBoqPositionService.list(workspaceId, boqItemIds)
+      .then(positions => { if (active) setBoqState({ status: 'ready', positions }); })
+      .catch(cause => {
+        logApiError('projectV2.materialBoqPosition', cause);
+        if (active) setBoqState({ status: 'error', positions: new Map() });
+      });
+    return () => { active = false; };
+  }, [workspaceId, boqItemIds]);
   const change = () => { keyRef.current = crypto.randomUUID(); setDirty(true); setError(null); };
 
   useEffect(() => {
@@ -233,7 +251,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
                 : <p className="mt-2 rounded-xl border border-dashed p-4 text-sm text-slate-500">Chưa có kế hoạch thi công đã duyệt.</p>}
           </section>
           {loading || rows === null && selectedPlanIds.length > 0 ? <p className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={16} /> Đang tính nhu cầu…</p>
-            : <MaterialPlanEditor groups={groups} selectedKeys={selectedKeys} entries={entries}
+            : <MaterialPlanEditor groups={groups} selectedKeys={selectedKeys} entries={entries} boqState={boqState}
               onSelect={select} onChange={(key, patch) => { change(); setEntries(previous => ({ ...previous,
                 [key]: { ...(previous[key] ?? emptyEntry(siteId)), ...patch } })); }}
               periodStart={periodStart} periodEnd={periodEnd} siteName={siteName} siteId={siteId} />}
