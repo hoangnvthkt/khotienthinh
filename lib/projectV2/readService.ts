@@ -59,6 +59,14 @@ export interface ProjectV2PlanSummary {
   createdAt: string; updatedAt: string;
 }
 export interface ProjectV2PlanCursor { createdAt: string; id: string }
+export interface ProjectV2CollaborationCursor { at: string; id: string }
+export type ProjectV2Comment = { kind: 'comments'; id: string; revision: number;
+  authorUserId: string; body: string; createdAt: string };
+export type ProjectV2Event = { kind: 'events'; id: string; revision: number;
+  eventType: string; actorUserId: string; reason: string | null;
+  metadata: Json; occurredAt: string };
+export type ProjectV2PlanLink = { canOpen: false } | { canOpen: true; id: string;
+  revision: number | null; code: string; title: string; planType: ProjectV2PlanType };
 export interface ProjectV2PlanListQuery {
   workspaceId: string; planType: ProjectV2PlanType | null; status: ProjectV2PlanStatus | null;
   limit: number; cursor: ProjectV2PlanCursor | null; snapshotToken: string | null;
@@ -101,6 +109,47 @@ async function rpc(name: string, args?: Json): Promise<Json> {
 }
 
 export const projectV2ReadService = {
+  async getCollaborationPage(planId: string, kind: 'comments' | 'events', limit = 30,
+    cursor: ProjectV2CollaborationCursor | null = null) {
+    if (!planId.trim() || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      fail('PROJECT_V2_COLLABORATION_QUERY_INVALID');
+    const payload = await rpc('list_project_v2_plan_collaboration_v1', {
+      p_plan_id: planId, p_kind: kind, p_limit: limit,
+      p_before_at: cursor?.at ?? null, p_before_id: cursor?.id ?? null,
+    });
+    const items = unique(array(payload.items).map(value => {
+      const row = object(value);
+      const common = { id: string(row.id), revision: integer(row.revision) };
+      return kind === 'comments' ? { ...common, kind, authorUserId: string(row.authorUserId),
+        body: string(row.body), createdAt: instant(row.createdAt) } as ProjectV2Comment
+        : { ...common, kind, eventType: string(row.eventType),
+          actorUserId: string(row.actorUserId), reason: nullableString(row.reason),
+          metadata: object(row.metadata), occurredAt: instant(row.occurredAt) } as ProjectV2Event;
+    }), item => item.id);
+    const rawCursor = payload.nextCursor === null ? null : object(payload.nextCursor);
+    const nextCursor = rawCursor ? { at: instant(rawCursor.at), id: string(rawCursor.id) } : null;
+    if (nextCursor && !items.some(item => item.id === nextCursor.id))
+      fail('PROJECT_V2_COLLABORATION_CURSOR_INVALID');
+    return { asOf: instant(payload.asOf), items, nextCursor };
+  },
+  async getLineage(planId: string, revision: number): Promise<{
+    sources: ProjectV2PlanLink[]; downstream: ProjectV2PlanLink[] }> {
+    if (!planId.trim() || !Number.isSafeInteger(revision) || revision < 1)
+      fail('PROJECT_V2_LINEAGE_QUERY_INVALID');
+    const payload = await rpc('get_project_v2_plan_lineage_v1', {
+      p_plan_id: planId, p_revision_no: revision,
+    });
+    const link = (value: unknown): ProjectV2PlanLink => {
+      const row = object(value);
+      if (row.canOpen === false) return { canOpen: false };
+      if (row.canOpen !== true) fail('PROJECT_V2_LINEAGE_INVALID');
+      return { canOpen: true, id: string(row.id),
+        revision: row.revision === null ? null : integer(row.revision),
+        code: string(row.code), title: string(row.title), planType: planType(row.planType) };
+    };
+    return { sources: array(payload.sources).map(link),
+      downstream: array(payload.downstream).map(link) };
+  },
   async getDiscussion(planId: string) {
     const payload = await rpc('get_project_v2_plan_discussion_v1', { p_plan_id: planId });
     return { asOf: instant(payload.asOf),
@@ -153,8 +202,13 @@ export const projectV2ReadService = {
       statusCounts, capabilities: object(payload.capabilities), plans,
       nextCursor: plans.length === query.limit && last ? { createdAt: last.createdAt, id: last.id } : null };
   },
-  async getPlan(planId: string) {
-    const payload = await rpc('get_project_v2_plan_v1', { p_plan_id: planId });
+  async getPlan(planId: string, revision: number | null = null) {
+    if (revision !== null && (!Number.isSafeInteger(revision) || revision < 1))
+      fail('PROJECT_V2_REVISION_INVALID');
+    const payload = revision === null
+      ? await rpc('get_project_v2_plan_v1', { p_plan_id: planId })
+      : await rpc('get_project_v2_plan_revision_v1', {
+        p_plan_id: planId, p_revision_no: revision });
     const selected = plan(payload.plan);
     if (selected.id !== planId) fail('PROJECT_V2_SCOPE_MISMATCH');
     const lines = unique(array(payload.lines).map(value => {
@@ -170,7 +224,8 @@ export const projectV2ReadService = {
       return { ...row, id: string(row.id), sourceWorkQuantity: decimal(row.source_work_quantity),
         derivedQuantity: decimal(row.derived_quantity) };
     }), item => item.id);
-    return { asOf: instant(payload.asOf), plan: selected,
+    return { asOf: instant(payload.asOf), historical: payload.historical === true,
+      plan: selected,
       capabilities: object(payload.capabilities), lines, sources };
   },
 };

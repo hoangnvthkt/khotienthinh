@@ -87,4 +87,38 @@ describe('projectV2ReadService', () => {
       p_project_ids: ['project-1', 'project-2'],
     });
   });
+
+  it('pages persisted comments with a guarded cursor and server actor/time', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { asOf: plan.updated_at,
+      items: [{ id: 'comment-1', revision: 2, authorUserId: 'user-2',
+        body: 'Đã kiểm tra', createdAt: plan.updated_at }],
+      nextCursor: { at: plan.updated_at, id: 'comment-1' } }, error: null });
+    await expect(projectV2ReadService.getCollaborationPage('plan-1', 'comments', 20, null))
+      .resolves.toMatchObject({ items: [{ authorUserId: 'user-2', body: 'Đã kiểm tra' }],
+        nextCursor: { id: 'comment-1' } });
+    expect(mocks.rpc).toHaveBeenCalledWith('list_project_v2_plan_collaboration_v1', {
+      p_plan_id: 'plan-1', p_kind: 'comments', p_limit: 20,
+      p_before_at: null, p_before_id: null,
+    });
+    const denied = { code: '42501', message: 'PROJECT_V2_READ_DENIED' };
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: denied });
+    await expect(projectV2ReadService.getCollaborationPage('plan-1', 'events', 20, null))
+      .rejects.toBe(denied);
+  });
+
+  it('reads an exact approved revision and never treats a protected related plan as a route', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: { asOf: plan.updated_at,
+      plan: { ...plan, status: 'approved', revision_no: 2 }, capabilities: { view: true },
+      lines: [], sources: [], historical: true }, error: null });
+    await expect(projectV2ReadService.getPlan('plan-1', 2)).resolves.toMatchObject({
+      plan: { revision: 2, status: 'approved' }, historical: true,
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('get_project_v2_plan_revision_v1', {
+      p_plan_id: 'plan-1', p_revision_no: 2,
+    });
+    mocks.rpc.mockResolvedValueOnce({ data: { sources: [{ canOpen: false }], downstream: [] }, error: null });
+    await expect(projectV2ReadService.getLineage('plan-1', 2)).resolves.toEqual({
+      sources: [{ canOpen: false }], downstream: [],
+    });
+  });
 });

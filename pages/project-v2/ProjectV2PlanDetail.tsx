@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Download, Loader2, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { projectV2ReadService } from '../../lib/projectV2/readService';
 import { projectV2CommandService } from '../../lib/projectV2/commandService';
@@ -10,13 +10,13 @@ import { ProjectV2CreatePlanDialog } from '../../components/project-v2/ProjectV2
 import { ProjectV2MaterialPlanDialog } from '../../components/project-v2/ProjectV2MaterialPlanDialog';
 import { formatDecimal6, parseQuantity6 } from '../../lib/procurement/decimal';
 import { projectV2CandidateService } from '../../lib/projectV2/candidateService';
+import { exportProjectV2PlanCsv } from '../../lib/projectV2/csvExport';
+import { ProjectV2PlanDiscussion } from '../../components/project-v2/ProjectV2PlanDiscussion';
+import { ProjectV2PlanActivity } from '../../components/project-v2/ProjectV2PlanActivity';
+import type { ProjectV2PlanLink } from '../../lib/projectV2/readService';
 
 type Detail = Awaited<ReturnType<typeof projectV2ReadService.getPlan>>;
-type Discussion = Awaited<ReturnType<typeof projectV2ReadService.getDiscussion>>;
 type Tab = 'lines' | 'discussion' | 'activity';
-const eventLabels: Record<string, string> = { saved: 'Đã lưu bản nháp', submitted: 'Đã gửi duyệt',
-  returned: 'Đã trả lại', approved: 'Đã phê duyệt', revised: 'Đã tạo bản điều chỉnh',
-  cancelled: 'Đã hủy', commented: 'Đã trao đổi' };
 const label = (value: string | null | undefined) => value?.trim() || 'Chưa xác định';
 const when = (value: string) => new Date(value).toLocaleString('vi-VN');
 const amount = (quantity: string | null, price: unknown) => {
@@ -27,27 +27,35 @@ const amount = (quantity: string | null, price: unknown) => {
 
 const ProjectV2PlanDetail: React.FC = () => {
   const { planId = '' } = useParams(); const navigate = useNavigate();
+  const location = useLocation();
+  const rawRevision = new URLSearchParams(location.search).get('revision');
+  const viewedRevision = rawRevision === null ? null : Number(rawRevision);
   const { user, users } = useApp();
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [discussion, setDiscussion] = useState<Discussion | null>(null);
+  const [lineage, setLineage] = useState<{ sources: ProjectV2PlanLink[];
+    downstream: ProjectV2PlanLink[] } | null>(null);
   const [crewNames, setCrewNames] = useState<Record<string, string>>({});
   const [materialScope, setMaterialScope] = useState<{ projectId: string; siteId: string | null; siteName: string } | null>(null);
   const [tab, setTab] = useState<Tab>('lines');
   const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);
-  const [comment, setComment] = useState('');
+  const [commentDirty, setCommentDirty] = useState(false);
   const [editing, setEditing] = useState(false);
   const [conflict, setConflict] = useState<{ message: string; updatedAt: string | null } | null>(null);
   const [refresh, setRefresh] = useState(0);
-  const dirty = Boolean(comment.trim());
+  const dirty = editing || commentDirty;
   const previousHash = useRef(window.location.hash);
   const names = useMemo(() => Object.fromEntries(users.map(person => [person.id, person.name])), [users]);
   const reload = useCallback(() => { setRefresh(value => value + 1); }, []);
 
   useEffect(() => {
     let active = true;
-    setDetail(null); setDiscussion(null); setError(null);
-    Promise.all([projectV2ReadService.getPlan(planId), projectV2ReadService.getDiscussion(planId)])
-      .then(async ([plan, thread]) => {
+    setDetail(null); setLineage(null); setError(null);
+    if (viewedRevision !== null && (!Number.isSafeInteger(viewedRevision) || viewedRevision < 1)) {
+      setError('Bản kế hoạch không hợp lệ.'); return undefined;
+    }
+    projectV2ReadService.getPlan(planId, viewedRevision)
+      .then(async plan => {
+        const links = await projectV2ReadService.getLineage(planId, plan.plan.revision);
         if (plan.plan.planType === 'construction') {
           const crews = await projectV2CandidateService.listCrews(plan.plan.workspaceId);
           if (active) setCrewNames(Object.fromEntries(crews.map(crew => [crew.id, crew.name])));
@@ -59,11 +67,11 @@ const ProjectV2PlanDetail: React.FC = () => {
           if (active) setMaterialScope({ projectId: workspace.projectId,
             siteId: workspace.primaryConstructionSiteId, siteName: workspace.siteName ?? 'Công trường' });
         }
-        if (active) { setDetail(plan); setDiscussion(thread); }
+        if (active) { setDetail(plan); setLineage(links); }
       })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Không tải được kế hoạch'); });
     return () => { active = false; };
-  }, [planId, refresh]);
+  }, [planId, viewedRevision, refresh]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } };
     const onHashChange = () => {
@@ -105,22 +113,24 @@ const ProjectV2PlanDetail: React.FC = () => {
     } catch (cause) { await handleError(cause); }
     finally { setBusy(false); }
   };
-  const sendComment = async () => {
-    if (!detail || !comment.trim() || busy) return;
-    setBusy(true); setError(null); setConflict(null);
-    try {
-      await projectV2CommandService.addComment({ planId, expectedVersion: detail.plan.version,
-        idempotencyKey: crypto.randomUUID(), body: comment.trim() });
-      setComment(''); reload();
-    } catch (cause) { await handleError(cause); }
-    finally { setBusy(false); }
-  };
-
   if (error && !detail) return <main className="mx-auto max-w-3xl px-4 py-10"><div role="alert" className="rounded-xl bg-red-50 p-5 text-red-800">{error}</div>
     <button onClick={reload} className="mt-4 rounded-lg border px-4 py-2">Thử lại</button></main>;
-  if (!detail || !discussion) return <main className="flex min-h-[40vh] items-center justify-center gap-2 text-slate-500"><Loader2 className="animate-spin" /> Đang tải kế hoạch…</main>;
+  if (!detail || !lineage) return <main className="flex min-h-[40vh] items-center justify-center gap-2 text-slate-500"><Loader2 className="animate-spin" /> Đang tải kế hoạch…</main>;
   const plan = detail.plan;
   const typeLabel = plan.planType === 'month' ? 'Kế hoạch tháng' : plan.planType === 'construction' ? 'Kế hoạch thi công' : 'Kế hoạch vật tư';
+  const downloadCsv = () => {
+    const csv = exportProjectV2PlanCsv({ plan, lines: detail.lines,
+      priceVisible: detail.capabilities.priceVisible === true });
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url;
+    anchor.download = `${plan.code.replace(/[^a-zA-Z0-9_-]/g, '_')}-ban-${plan.revision}.csv`;
+    document.body.append(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const renderReference = (reference: ProjectV2PlanLink, index: number) => reference.canOpen
+    ? <Link key={`${reference.id}:${reference.revision ?? 'current'}`} to={`/project-v2/plans/${reference.id}${reference.revision ? `?revision=${reference.revision}` : ''}`}
+      className="block rounded-xl border border-teal-200 p-3 text-sm font-semibold text-teal-800 hover:bg-teal-50 dark:border-teal-900 dark:text-teal-300 dark:hover:bg-teal-950/40">{reference.code} · {reference.title}{reference.revision ? ` · bản ${reference.revision}` : ''}</Link>
+    : <div key={`protected-${index}`} className="rounded-xl border border-slate-200 p-3 text-sm text-slate-500 dark:border-slate-700">Tài liệu liên quan được bảo vệ</div>;
   return <main className="mx-auto w-full max-w-7xl min-w-0 space-y-5 px-4 py-6 sm:px-6 lg:px-8">
     {editing && (plan.planType === 'month' || plan.planType === 'construction') &&
       <ProjectV2CreatePlanDialog workspaceId={plan.workspaceId} type={plan.planType} existing={detail}
@@ -139,6 +149,8 @@ const ProjectV2PlanDetail: React.FC = () => {
           <h1 className="mt-1 break-words text-2xl font-bold text-slate-950 dark:text-white sm:text-3xl">{plan.title}</h1>
           <span className="mt-3 inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 dark:bg-teal-950 dark:text-teal-200">{getProjectV2StatusLabel(plan.status)}</span></div>
         <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={downloadCsv}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"><Download size={16} />Xuất CSV bản đang xem</button>
           {(plan.status === 'draft' || plan.status === 'returned') && detail.capabilities.edit === true &&
             <button type="button" onClick={() => setEditing(true)}
               className="min-h-11 rounded-xl border border-teal-700 px-4 text-sm font-semibold text-teal-800 dark:text-teal-300">Sửa bản nháp</button>}
@@ -153,6 +165,10 @@ const ProjectV2PlanDetail: React.FC = () => {
           ? `${detail.lines.length} hạng mục hợp đồng / BOQ` : `${detail.sources.length} liên kết dòng`}</dd></div>
       </dl>
     </header>
+    {(lineage.sources.length > 0 || lineage.downstream.length > 0) && <section className="grid gap-4 sm:grid-cols-2" aria-label="Liên kết kế hoạch">
+      <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><h2 className="font-bold">Kế hoạch nguồn</h2>{lineage.sources.length ? lineage.sources.map(renderReference) : <p className="text-sm text-slate-500">Không có kế hoạch nguồn.</p>}</div>
+      <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"><h2 className="font-bold">Kế hoạch sử dụng tiếp</h2>{lineage.downstream.length ? lineage.downstream.map(renderReference) : <p className="text-sm text-slate-500">Chưa có kế hoạch tiếp theo.</p>}</div>
+    </section>}
     {conflict && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
       {conflict.message} {conflict.updatedAt && <span>Lần đổi gần nhất: {when(conflict.updatedAt)}.</span>}
       <button type="button" className="ml-2 font-semibold underline" onClick={() => { setConflict(null); reload(); }}>Tải lại</button></div>}
@@ -175,11 +191,7 @@ const ProjectV2PlanDetail: React.FC = () => {
             : 'Chưa xác định'}</span>
             {plan.planType === 'material' && <span className="mt-1 block text-xs text-slate-500">Nhu cầu tính toán: {raw.calculated_quantity == null ? 'Chưa xác định' : String(raw.calculated_quantity)}</span>}
             {plan.planType === 'material' && raw.override_reason && <span className="mt-1 block text-xs text-amber-700">Lý do điều chỉnh: {String(raw.override_reason)}</span>}
-            {detail.sources.filter(source => (source as Record<string, unknown>).target_line_id === row.id).map(source => {
-              const sourceRaw = source as Record<string, unknown>;
-              return <Link key={source.id} to={`/project-v2/plans/${String(sourceRaw.source_plan_id)}`}
-                className="mt-1 block text-xs text-teal-700 underline">Xem kế hoạch nguồn · bản {String(sourceRaw.source_plan_revision_no)}</Link>;
-            })}</td>
+          </td>
           <td className="px-4 py-3">{label(raw.unit as string | null)}</td>
           <td className="px-4 py-3 text-right tabular-nums">{row.quantity ?? 'Chưa xác định'}</td>
           {plan.planType === 'month' && detail.capabilities.priceVisible === true && <>
@@ -193,22 +205,10 @@ const ProjectV2PlanDetail: React.FC = () => {
       })}</tbody></table>
       {!detail.lines.length && <p className="p-5 text-sm text-slate-500">Chưa có dòng kế hoạch.</p>}
     </section>}
-    {tab === 'discussion' && <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900" aria-label="Trao đổi">
-      {discussion.comments.length ? discussion.comments.map(item => <article key={item.id} className="rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-800">
-        <p className="font-semibold">{names[item.authorUserId] ?? 'Người dùng'} <span className="font-normal text-slate-500">· {when(item.createdAt)} · bản {item.revision}</span></p>
-        <p className="mt-2 whitespace-pre-wrap">{item.body}</p></article>) : <p className="text-sm text-slate-500">Chưa có trao đổi.</p>}
-      <label className="block text-sm font-medium">Thêm trao đổi<textarea value={comment} onChange={event => setComment(event.target.value)}
-        className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 p-3 dark:border-slate-600 dark:bg-slate-800" /></label>
-      <button type="button" disabled={!comment.trim() || busy} onClick={sendComment}
-        className="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white disabled:opacity-50">Gửi trao đổi</button>
-    </section>}
-    {tab === 'activity' && <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900" aria-label="Hoạt động">
-      {discussion.events.length ? discussion.events.map(event => <div key={event.id} className="border-l-2 border-teal-600 py-1 pl-4 text-sm">
-        <p className="font-semibold">{eventLabels[event.eventType] ?? event.eventType}</p>
-        <p className="text-slate-500">{names[event.actorUserId] ?? 'Người dùng'} · {when(event.occurredAt)} · bản {event.revision}</p>
-        {event.reason && <p className="mt-1">{event.reason}</p>}
-      </div>) : <p className="text-sm text-slate-500">Chưa có hoạt động.</p>}
-    </section>}
+    <div hidden={tab !== 'discussion'}><ProjectV2PlanDiscussion planId={planId} version={plan.version}
+      names={names} formDirty={editing} readOnly={detail.historical}
+      onDraftChange={setCommentDirty} onChanged={reload} onError={handleError} /></div>
+    {tab === 'activity' && <ProjectV2PlanActivity planId={planId} names={names} />}
     <button type="button" onClick={reload} className="inline-flex items-center gap-2 text-xs font-medium text-slate-500"><RefreshCw size={14} /> Cập nhật dữ liệu</button>
   </main>;
 };
