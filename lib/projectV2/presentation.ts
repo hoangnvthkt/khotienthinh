@@ -29,6 +29,12 @@ export function formatProjectV2Quantity(quantity: ProjectV2Quantity, unit: strin
   return `${grouped}${fraction ? `,${fraction}` : ''} ${unit}`.trim();
 }
 
+export function formatProjectV2EditableQuantity(value: string | null): string {
+  if (value === null) return '';
+  try { return formatDecimal6(parseQuantity6(value)); }
+  catch { return value; }
+}
+
 const issueMessages: Record<string, string> = {
   missing_norm: 'Thiếu định mức vật tư. Chọn định mức hợp lệ trước khi gửi duyệt.',
   missing_conversion: 'Thiếu quy đổi đơn vị. Chọn hệ số quy đổi hợp lệ trước khi gửi duyệt.',

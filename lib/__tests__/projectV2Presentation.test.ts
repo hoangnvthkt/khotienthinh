@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatProjectV2Destination, formatProjectV2Quantity, getProjectV2SourceLabel,
+import { formatProjectV2Destination, formatProjectV2EditableQuantity, formatProjectV2Quantity, getProjectV2SourceLabel,
   getProjectV2StatusLabel, presentProjectV2Error, presentProjectV2Issue } from '../projectV2/presentation';
 
 describe('Project V2 presentation', () => {
@@ -39,5 +39,11 @@ describe('Project V2 presentation', () => {
       .toBe('Điểm nhận cần đối chiếu');
     expect(formatProjectV2Destination(null, 'site-a', 'Công trường A'))
       .toBe('Chưa xác định điểm nhận');
+  });
+
+  it('prefills quantity inputs without technical trailing decimals', () => {
+    expect(formatProjectV2EditableQuantity('100.000000')).toBe('100');
+    expect(formatProjectV2EditableQuantity('0.125000')).toBe('0.125');
+    expect(formatProjectV2EditableQuantity(null)).toBe('');
   });
 });

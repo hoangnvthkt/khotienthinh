@@ -52,4 +52,14 @@ describe('Project V2 material plan editor', () => {
     expect(html).not.toContain('g8:internal-resource-id');
     expect(html).not.toContain('internal-revision-id');
   });
+
+  it('shows a readable calculated quantity on desktop and mobile', () => {
+    const html = renderToStaticMarkup(<MaterialPlanEditor groups={[{
+      ...group, calculatedQty: '10.000000', availableQty: '10.000000',
+      diagnostics: [], selectable: true,
+    }]} selectedKeys={[]} entries={{}} onSelect={() => {}} onChange={() => {}}
+      periodStart="2026-10-01" periodEnd="2026-10-31" siteName="Công trường A" siteId="site-a" />);
+    expect(html).toContain('Nhu cầu tính toán: 10');
+    expect(html).not.toContain('10.000000');
+  });
 });
