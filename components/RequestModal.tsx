@@ -50,6 +50,8 @@ import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/l
 import { BoqSummaryStrip } from './erp';
 import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
 import { getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
+import { siteStockContextService, type SiteStockContext } from '../lib/projectV2/siteStockContextService';
+import { evaluateSiteStockWarning } from '../lib/projectV2/siteStockWarning';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -366,6 +368,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [expandedMaterialGroupKeys, setExpandedMaterialGroupKeys] = useState<Set<string>>(() => new Set());
     const [poSourceLabelsById, setPoSourceLabelsById] = useState<Record<string, string>>({});
     const [projectAvailableStock, setProjectAvailableStock] = useState<Record<string, { onHand: number; reserved: number; available: number }>>({});
+    const [siteStockByItemId, setSiteStockByItemId] = useState<Record<string, SiteStockContext>>({});
 
     useEffect(() => {
         if (isOpen) {
@@ -384,6 +387,31 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const effectiveProjectId = projectId || request?.projectId || null;
     const effectiveConstructionSiteId = constructionSiteId || request?.constructionSiteId || null;
     const projectStockWarehouseId = stockPreviewWarehouseId || sourceWarehouseId || siteWarehouseId;
+    const stockItemIdsKey = useMemo(() => [...new Set(reqItems.map(line => line.itemId).filter(Boolean))].sort().join('|'), [reqItems]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const itemIds = stockItemIdsKey ? stockItemIdsKey.split('|') : [];
+        setSiteStockByItemId({});
+        if (!isOpen || !isProjectRequest || !canViewAvailableStock || !effectiveProjectId || !siteWarehouseId || itemIds.length === 0) return;
+        siteStockContextService.get({
+            projectId: effectiveProjectId,
+            constructionSiteId: effectiveConstructionSiteId,
+            warehouseId: siteWarehouseId,
+            itemIds,
+        }).then(rows => {
+            if (!cancelled) setSiteStockByItemId(Object.fromEntries(rows.map(row => [row.itemId, row])));
+        }).catch(error => {
+            logApiError('requestModal.siteStockContext', error);
+            if (!cancelled) setSiteStockByItemId({});
+        });
+        return () => { cancelled = true; };
+    }, [canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, siteWarehouseId, stockItemIdsKey]);
+
+    const getSiteStockWarning = (line: RequestLineDraft, stockByItemId = siteStockByItemId) => evaluateSiteStockWarning(
+        String(line.qty ?? ''),
+        stockByItemId[line.itemId]?.availableQuantity ?? null,
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -1237,7 +1265,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             items: reqItems.map(i => {
                 const snapshot = sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id);
                 const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
-                const overReason = i.overBudgetReason || undefined;
+                const overReason = i.overBudgetReason?.trim() || undefined;
                 return {
                     lineId: i.lineId,
                     itemId: i.itemId,
@@ -1295,15 +1323,33 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
 
         if (isProjectRequest) {
+            let latestSiteStock = siteStockByItemId;
+            if (canViewAvailableStock && effectiveProjectId && siteWarehouseId) {
+                try {
+                    const rows = await siteStockContextService.get({
+                        projectId: effectiveProjectId,
+                        constructionSiteId: effectiveConstructionSiteId,
+                        warehouseId: siteWarehouseId,
+                        itemIds: [...new Set(reqItems.map(line => line.itemId).filter(Boolean))],
+                    });
+                    latestSiteStock = Object.fromEntries(rows.map(row => [row.itemId, row]));
+                    setSiteStockByItemId(latestSiteStock);
+                } catch (error) {
+                    logApiError('requestModal.siteStockRecheck', error);
+                    latestSiteStock = {};
+                    setSiteStockByItemId({});
+                }
+            }
             const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
             const invalidLine = reqItems.find(line => {
                 const snapshot = sequentialSnapshots.get(line.lineId) || buildLineBudgetSnapshot(line, request?.id);
                 const outsideBoq = !line.materialBudgetItemId;
-                return (outsideBoq || snapshot.overBudgetQty > 0) && !line.overBudgetReason?.trim();
+                return (outsideBoq || snapshot.overBudgetQty > 0 || getSiteStockWarning(line, latestSiteStock).state === 'over_stock')
+                    && !line.overBudgetReason?.trim();
             });
             if (invalidLine) {
                 const item = items.find(i => i.id === invalidLine.itemId);
-                toast.warning('Thiếu lý do vượt/ngoài BOQ', `${item?.name || invalidLine.itemId} cần nhập lý do để gửi đề xuất.`);
+                toast.warning('Thiếu lý do đề xuất', `${item?.name || invalidLine.itemNameSnapshot || 'Vật tư'} cần nhập lý do để gửi đề xuất.`);
                 return false;
             }
         }
@@ -2739,23 +2785,6 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                 )}
                             </div>
 
-                            {/* Xem tồn kho khi đề xuất */}
-                            {isEditable && isProjectRequest && canSeeAvailability && (
-                                <div className="space-y-1 rounded-xl border border-cyan-200/80 bg-white p-3 shadow-xs dark:border-cyan-900/40 dark:bg-slate-950">
-                                    <label className="text-[10px] uppercase tracking-wide font-black text-cyan-600 dark:text-cyan-400 flex items-center gap-1">
-                                        <PackageCheck size={12} className="text-cyan-500" /> Xem tồn kho khi đề xuất
-                                    </label>
-                                    <select
-                                        value={stockPreviewWarehouseId}
-                                        onChange={(e) => setStockPreviewWarehouseId(e.target.value)}
-                                        className="w-full bg-transparent outline-none text-xs font-black text-slate-800 dark:text-white"
-                                    >
-                                        <option value="">Tổng tồn tất cả kho</option>
-                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                                    </select>
-                                </div>
-                            )}
-
                             {/* Kho cung cấp */}
                             {showSourceWarehouseField && (
                                 <div className="space-y-1 rounded-xl border border-blue-200/80 bg-white p-3 shadow-xs dark:border-blue-900/40 dark:bg-slate-950">
@@ -3113,7 +3142,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     <th className="py-3 px-4 w-32 text-right">Số lượng Y/C</th>
                                     {!isEditable && (
                                         <>
-                                            {canSeeAvailability && <th className="py-3 px-3 w-28 text-right text-blue-600 bg-blue-50/40 dark:bg-blue-950/20">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>}
+                                            {canSeeAvailability && <th className="py-3 px-3 w-28 text-right text-blue-600 bg-blue-50/40 dark:bg-blue-950/20">{isProjectRequest ? 'Khả dụng kho công trường' : stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>}
                                             <th className="py-3 px-3 w-28 text-right text-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/20">Cam kết</th>
                                             <th className="py-3 px-3 w-24 text-right text-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/20">Đã xuất</th>
                                             <th className="py-3 px-3 w-24 text-right text-cyan-600 bg-cyan-50/40 dark:bg-cyan-950/20">Đã nhận</th>
@@ -3131,6 +3160,10 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     const isExpanded = expandedMaterialGroupKeys.has(group.key);
                                     const stockSummary = canSeeAvailability ? getAggregateStockSummary(group.itemId, stockContextWarehouseId, request?.id) : null;
                                     const sourceStock = stockSummary?.available || 0;
+                                    const siteStock = isProjectRequest ? siteStockByItemId[group.itemId] : undefined;
+                                    const stockWarning = isEditable && isProjectRequest && !hasMultipleSources
+                                        ? getSiteStockWarning(primaryRow as RequestLineDraft) : null;
+                                    const isOverSiteStock = stockWarning?.state === 'over_stock';
                                     const canEditGroupQty = isEditable && !hasMultipleSources;
                                     const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
                                     const groupColSpan = isEditable ? 4 : canSeeAvailability ? 8 : 7;
@@ -3184,7 +3217,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                                 {!primaryRow.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
                                                                                 {canSeeAvailability && isEditable && primaryRow.materialBudgetItemId && (
                                                                                     <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
-                                                                                        Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
+                                                                                        BOQ còn trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
                                                                                     </span>
                                                                                 )}
                                                                                 {canSeeAvailability && isEditable && budgetSnapshot.pendingSources.length > 0 && (
@@ -3210,7 +3243,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                                     compact
                                                                                 />
                                                                             )}
-                                                                            {needsReason && (
+                                                                    {needsReason && !isOverSiteStock && (
                                                                                 <input
                                                                                     value={(primaryRow as RequestLineDraft).overBudgetReason || ''}
                                                                                     onChange={event => handleUpdateItem(primary.index, 'overBudgetReason', event.target.value)}
@@ -3233,18 +3266,41 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                             inputMode="decimal"
                                                             value={(primaryRow as RequestLineDraft).qty ?? ''}
                                                             onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
-                                                            className="w-28 text-right px-3 py-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-800 dark:text-white rounded-xl font-black text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 shadow-xs"
+                                                            aria-invalid={isOverSiteStock}
+                                                            className={`w-28 text-right px-3 py-1.5 border bg-white dark:bg-slate-950 rounded-xl font-black text-xs outline-none focus:ring-2 shadow-xs ${isOverSiteStock ? 'border-red-500 text-red-700 dark:text-red-300 focus:ring-red-500/20' : 'border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:border-indigo-500 focus:ring-indigo-500/10'}`}
                                                         />
                                                     ) : (
                                                         <span className="font-bold text-foreground text-xs">{group.requestQty.toLocaleString('vi-VN')}</span>
+                                                    )}
+                                                    {isOverSiteStock && (
+                                                        <div className="mt-2 min-w-44 space-y-1 text-left">
+                                                            <p className="text-[11px] font-semibold text-red-700 dark:text-red-300">Vượt tồn khả dụng tại kho công trường{siteStock?.availableQuantity != null ? ` (${Number(siteStock.availableQuantity).toLocaleString('vi-VN')} ${group.unit || ''})` : ''}</p>
+                                                            <input
+                                                                value={(primaryRow as RequestLineDraft).overBudgetReason || ''}
+                                                                onChange={event => handleUpdateItem(primary.index, 'overBudgetReason', event.target.value)}
+                                                                placeholder="Nhập lý do đề xuất..."
+                                                                aria-label="Lý do đề xuất vượt tồn kho khả dụng"
+                                                                className="w-full rounded-lg border border-red-200 bg-card px-2 py-1.5 text-xs text-foreground outline-none focus:ring-2 focus:ring-red-300"
+                                                            />
+                                                            {(Number(siteStock?.inTransitQuantity || 0) > 0 || Number(siteStock?.receiptCustodyQuantity || 0) > 0) && (
+                                                                <p className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                                                                    {Number(siteStock?.inTransitQuantity || 0) > 0 && `Đang chuyển: ${Number(siteStock?.inTransitQuantity).toLocaleString('vi-VN')} ${group.unit || ''}`}
+                                                                    {Number(siteStock?.inTransitQuantity || 0) > 0 && Number(siteStock?.receiptCustodyQuantity || 0) > 0 && ' · '}
+                                                                    {Number(siteStock?.receiptCustodyQuantity || 0) > 0 && `Chờ xác nhận nhận: ${Number(siteStock?.receiptCustodyQuantity).toLocaleString('vi-VN')} ${group.unit || ''}`}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    {canEditGroupQty && isProjectRequest && canViewAvailableStock && siteStock?.availableQuantity == null && (
+                                                        <div className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">Tồn khả dụng chưa xác định</div>
                                                     )}
                                                 </td>
                                                 {!isEditable && (
                                                     <>
                                                         {canSeeAvailability && (
                                                             <td className="py-2.5 px-3 text-right font-bold text-blue-600 text-xs">
-                                                                {sourceStock.toLocaleString('vi-VN')}
-                                                                {(stockSummary?.reserved || 0) > 0 && (
+                                                                {isProjectRequest ? (siteStock?.availableQuantity == null ? 'Chưa xác định' : Number(siteStock.availableQuantity).toLocaleString('vi-VN')) : sourceStock.toLocaleString('vi-VN')}
+                                                                {!isProjectRequest && (stockSummary?.reserved || 0) > 0 && (
                                                                     <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary?.reserved}</div>
                                                                 )}
                                                             </td>
@@ -3387,10 +3443,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             const isExpanded = expandedMaterialGroupKeys.has(group.key);
                             const stockSummary = canSeeAvailability ? getAggregateStockSummary(group.itemId, stockContextWarehouseId, request?.id) : null;
                             const sourceStock = stockSummary?.available || 0;
+                            const siteStock = isProjectRequest ? siteStockByItemId[group.itemId] : undefined;
                             const canEditGroupQty = isEditable && !hasMultipleSources;
                             const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
                             const budgetSnapshot = editableBudgetSnapshots?.get((primaryRow as RequestLineDraft).lineId) || buildLineBudgetSnapshot(primaryRow as RequestLineDraft, request?.id);
                             const needsReason = isEditable && isProjectRequest && !hasMultipleSources && (!primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0);
+                            const isOverSiteStock = isEditable && isProjectRequest && !hasMultipleSources
+                                && getSiteStockWarning(primaryRow as RequestLineDraft).state === 'over_stock';
 
                             return (
                                 <div key={group.key} className={`bg-card rounded-xl p-3 border ${group.isExcess ? 'border-orange-200 bg-orange-50/10 dark:bg-orange-955/20' : 'border-border'} shadow-sm`}>
@@ -3426,7 +3485,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     {!primaryRow.materialBudgetItemId && <span className="px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-650 dark:text-red-400 border border-red-200/40 dark:border-red-900/40 text-[9px] font-bold">Ngoài BOQ</span>}
                                                     {canSeeAvailability && isEditable && primaryRow.materialBudgetItemId && (
                                                         <span className="px-1.5 py-0.5 rounded bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-400 border border-cyan-200/40 dark:border-cyan-800/40 text-[9px] font-bold">
-                                                            Khả dụng trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
+                                                            BOQ còn trước dòng {Math.max(0, budgetSnapshot.availableQty).toLocaleString('vi-VN')} {budgetSnapshot.budget?.unit || ''}
                                                         </span>
                                                     )}
                                                     {budgetSnapshot.overBudgetQty > 0 && <span className="px-1.5 py-0.5 rounded bg-orange-50 dark:bg-orange-950/40 text-orange-650 dark:text-orange-400 border border-orange-200/40 dark:border-orange-900/40 text-[9px] font-bold">{canSeeAvailability ? `Vượt ${budgetSnapshot.overBudgetQty.toLocaleString('vi-VN')} ${budgetSnapshot.budget?.unit || ''}` : 'Vượt định mức'}</span>}
@@ -3453,7 +3512,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             </button>
                                         )}
                                     </div>
-                                    {needsReason && (
+                                    {needsReason && !isOverSiteStock && (
                                         <input
                                             value={(primaryRow as RequestLineDraft).overBudgetReason || ''}
                                             onChange={event => handleUpdateItem(primary.index, 'overBudgetReason', event.target.value)}
@@ -3468,19 +3527,21 @@ const RequestModal: React.FC<RequestModalProps> = ({
 	                                                <input
 	                                                    type="text"
 	                                                    inputMode="decimal"
-	                                                    value={(primaryRow as RequestLineDraft).qty ?? ''}
+                                                    value={(primaryRow as RequestLineDraft).qty ?? ''}
                                                     onChange={(e) => handleUpdateItem(primary.index, 'qty', e.target.value)}
-                                                    className="w-full text-center p-2 border border-border bg-card text-foreground rounded-lg font-bold text-sm"
+                                                    aria-invalid={isOverSiteStock}
+                                                    className={`w-full text-center p-2 border bg-card rounded-lg font-bold text-sm ${isOverSiteStock ? 'border-red-500 text-red-700 dark:text-red-300 focus:ring-2 focus:ring-red-300' : 'border-border text-foreground'}`}
                                                 />
                                             ) : (
                                                 <div className="font-bold text-foreground text-sm">{group.requestQty.toLocaleString('vi-VN')}</div>
                                             )}
+                                            {canEditGroupQty && isProjectRequest && canViewAvailableStock && siteStock?.availableQuantity == null && <div className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">Tồn khả dụng chưa xác định</div>}
                                         </div>
                                         {!isEditable && canSeeAvailability && (
                                             <div className="flex-1">
-                                                <div className="text-[9px] uppercase font-bold text-blue-500 mb-0.5">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
-                                                <div className="font-bold text-blue-600 dark:text-blue-400 text-sm">{sourceStock.toLocaleString('vi-VN')}</div>
-                                                {(stockSummary?.reserved || 0) > 0 && <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary?.reserved}</div>}
+                                                <div className="text-[9px] uppercase font-bold text-blue-500 mb-0.5">{isProjectRequest ? 'Khả dụng kho công trường' : stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</div>
+                                                <div className="font-bold text-blue-600 dark:text-blue-400 text-sm">{isProjectRequest ? (siteStock?.availableQuantity == null ? 'Chưa xác định' : Number(siteStock.availableQuantity).toLocaleString('vi-VN')) : sourceStock.toLocaleString('vi-VN')}</div>
+                                                {!isProjectRequest && (stockSummary?.reserved || 0) > 0 && <div className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Giữ chỗ: {stockSummary?.reserved}</div>}
                                             </div>
                                         )}
                                         {!isEditable && (
@@ -3502,6 +3563,25 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             </div>
                                         )}
                                     </div>
+                                    {isOverSiteStock && (
+                                        <div className="mt-2 space-y-1.5 rounded-lg border border-red-200 bg-red-50/60 p-2 dark:border-red-900/50 dark:bg-red-950/20">
+                                            <p className="text-xs font-semibold text-red-700 dark:text-red-300">Vượt tồn khả dụng tại kho công trường{siteStock?.availableQuantity != null ? ` (${Number(siteStock.availableQuantity).toLocaleString('vi-VN')} ${group.unit || ''})` : ''}</p>
+                                            <input
+                                                value={(primaryRow as RequestLineDraft).overBudgetReason || ''}
+                                                onChange={event => handleUpdateItem(primary.index, 'overBudgetReason', event.target.value)}
+                                                placeholder="Nhập lý do đề xuất..."
+                                                aria-label="Lý do đề xuất vượt tồn kho khả dụng"
+                                                className="w-full rounded-lg border border-red-200 bg-card px-2 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-red-300"
+                                            />
+                                            {(Number(siteStock?.inTransitQuantity || 0) > 0 || Number(siteStock?.receiptCustodyQuantity || 0) > 0) && (
+                                                <p className="text-xs text-amber-700 dark:text-amber-300">
+                                                    {Number(siteStock?.inTransitQuantity || 0) > 0 && `Đang chuyển: ${Number(siteStock?.inTransitQuantity).toLocaleString('vi-VN')} ${group.unit || ''}`}
+                                                    {Number(siteStock?.inTransitQuantity || 0) > 0 && Number(siteStock?.receiptCustodyQuantity || 0) > 0 && ' · '}
+                                                    {Number(siteStock?.receiptCustodyQuantity || 0) > 0 && `Chờ xác nhận nhận: ${Number(siteStock?.receiptCustodyQuantity).toLocaleString('vi-VN')} ${group.unit || ''}`}
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
                                     {!isEditable && (
                                         <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted border border-border p-2">
                                             <div>
