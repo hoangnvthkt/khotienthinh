@@ -29,10 +29,12 @@ const lineName = (line: RequestItem): string | null =>
 const lineUnit = (line: RequestItem): string | null =>
   line.unitSnapshot || null;
 
-const buildSnapshotRows = (request: MaterialRequest): MaterialRequestBoqLineSnapshot[] => {
+export const buildSnapshotRows = (request: MaterialRequest): MaterialRequestBoqLineSnapshot[] => {
   return (request.items || [])
     .map((line, index) => {
       if (!line.materialBudgetItemId) return null;
+      if (request.requestOrigin === 'project'
+        && (line.budgetQtySnapshot == null || line.reservedBeforeQtySnapshot == null)) return null;
       const overQty = Number(line.overQty ?? line.overBudgetQtySnapshot ?? 0);
       const overPercent = Number(line.overPercent ?? line.overBudgetPercentSnapshot ?? 0);
       return {

@@ -50,7 +50,7 @@ import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/l
 import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
 import { getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
 import { siteStockContextService, type SiteStockContext } from '../lib/projectV2/siteStockContextService';
-import { evaluatePurchaseBoqWarning, sumMaterialProposalQuantity, sumProjectMaterialBoq } from '../lib/projectV2/purchaseBoqWarning';
+import { buildPurchaseBoqLineSnapshots, evaluatePurchaseBoqWarning, sumMaterialProposalQuantity, sumProjectMaterialBoq } from '../lib/projectV2/purchaseBoqWarning';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -368,6 +368,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [poSourceLabelsById, setPoSourceLabelsById] = useState<Record<string, string>>({});
     const [projectAvailableStock, setProjectAvailableStock] = useState<Record<string, { onHand: number; reserved: number; available: number }>>({});
     const [siteStockByItemId, setSiteStockByItemId] = useState<Record<string, SiteStockContext>>({});
+    const siteStockByItemIdRef = useRef<Record<string, SiteStockContext>>({});
 
     useEffect(() => {
         if (isOpen) {
@@ -392,6 +393,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         let cancelled = false;
         const itemIds = stockItemIdsKey ? stockItemIdsKey.split('|') : [];
         setSiteStockByItemId({});
+        siteStockByItemIdRef.current = {};
         if (!isOpen || !isProjectRequest || !canViewAvailableStock || !effectiveProjectId || !siteWarehouseId || itemIds.length === 0) return;
         siteStockContextService.get({
             projectId: effectiveProjectId,
@@ -399,10 +401,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
             warehouseId: siteWarehouseId,
             itemIds,
         }).then(rows => {
-            if (!cancelled) setSiteStockByItemId(Object.fromEntries(rows.map(row => [row.itemId, row])));
+            if (!cancelled) {
+                const stock = Object.fromEntries(rows.map(row => [row.itemId, row]));
+                siteStockByItemIdRef.current = stock;
+                setSiteStockByItemId(stock);
+            }
         }).catch(error => {
             logApiError('requestModal.siteStockContext', error);
-            if (!cancelled) setSiteStockByItemId({});
+            if (!cancelled) {
+                siteStockByItemIdRef.current = {};
+                setSiteStockByItemId({});
+            }
         });
         return () => { cancelled = true; };
     }, [canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, siteWarehouseId, stockItemIdsKey]);
@@ -1200,6 +1209,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
             ? getMaterialRequestWorkflowPatch(request?.workflowStep === 'returned_to_creator' ? 'returned_to_creator' : 'draft', user.id)
             : {};
         const sequentialSnapshots = buildSequentialLineBudgetSnapshots(reqItems, request?.id);
+        const purchaseSnapshots = isProjectRequest ? buildPurchaseBoqLineSnapshots(
+            reqItems.map(line => ({ lineId: line.lineId, itemId: line.itemId,
+                unit: line.unitSnapshot || getLineInventory(line.itemId)?.unit || '', qty: line.qty })),
+            materialBudgetItems,
+            Object.fromEntries(Object.entries(siteStockByItemIdRef.current)
+                .map(([itemId, row]) => [itemId, row.onHandQuantity])),
+        ) : null;
         const requestCode = request?.code || issuedCode;
         if (!requestCode) {
             throw new Error('Hệ thống chưa cấp được mã phiếu MR mới.');
@@ -1227,8 +1243,16 @@ const RequestModal: React.FC<RequestModalProps> = ({
             fulfillmentMode,
             items: reqItems.map(i => {
                 const snapshot = sequentialSnapshots.get(i.lineId) || buildLineBudgetSnapshot(i, request?.id);
+                const purchase = purchaseSnapshots?.get(i.lineId);
+                const overQty = isProjectRequest
+                    ? (purchase?.state === 'known' ? purchase.overQuantity! : 0)
+                    : snapshot.overBudgetQty;
+                const overPercent = isProjectRequest
+                    ? (purchase?.state === 'known' ? purchase.overPercent! : 0)
+                    : snapshot.overBudgetPercent;
+                const knownPurchase = !isProjectRequest || purchase?.state === 'known';
                 const work = i.workBoqItemId ? workBoqMap.get(i.workBoqItemId) : undefined;
-                const overReason = i.overBudgetReason?.trim() || undefined;
+                const overReason = (overQty > 0 || !i.materialBudgetItemId) ? i.overBudgetReason?.trim() || undefined : undefined;
                 return {
                     lineId: i.lineId,
                     itemId: i.itemId,
@@ -1240,15 +1264,15 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     materialBudgetItemName: i.materialBudgetItemName || snapshot.budget?.itemName || null,
                     neededDate: i.neededDate || undefined,
                     note: i.note || undefined,
-                    budgetQtySnapshot: snapshot.budgetQty,
-                    reservedBeforeQtySnapshot: snapshot.reservedBeforeQty,
+                    budgetQtySnapshot: knownPurchase ? (purchase?.boqQuantity ?? snapshot.budgetQty) : undefined,
+                    reservedBeforeQtySnapshot: knownPurchase ? (purchase?.stockBefore ?? snapshot.reservedBeforeQty) : undefined,
                     previousRequestedQtySnapshot: snapshot.previousRequested,
-                    isOverBoq: snapshot.overBudgetQty > 0,
-                    overQty: snapshot.overBudgetQty,
-                    overPercent: snapshot.overBudgetPercent,
+                    isOverBoq: knownPurchase ? overQty > 0 : undefined,
+                    overQty: knownPurchase ? overQty : undefined,
+                    overPercent: knownPurchase ? overPercent : undefined,
                     overReason,
-                    overBudgetQtySnapshot: snapshot.overBudgetQty,
-                    overBudgetPercentSnapshot: snapshot.overBudgetPercent,
+                    overBudgetQtySnapshot: knownPurchase ? overQty : undefined,
+                    overBudgetPercentSnapshot: knownPurchase ? overPercent : undefined,
                     overBudgetReason: overReason,
                     isManualItem: i.isManualItem || false,
                     itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
@@ -1296,10 +1320,12 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         itemIds: [...new Set(reqItems.map(line => line.itemId).filter(Boolean))],
                     });
                     latestSiteStock = Object.fromEntries(rows.map(row => [row.itemId, row]));
+                    siteStockByItemIdRef.current = latestSiteStock;
                     setSiteStockByItemId(latestSiteStock);
                 } catch (error) {
                     logApiError('requestModal.siteStockRecheck', error);
                     latestSiteStock = {};
+                    siteStockByItemIdRef.current = {};
                     setSiteStockByItemId({});
                 }
             }
