@@ -1,6 +1,6 @@
 -- Project material request warning: the G6 site-warehouse availability rule,
 -- exposed only within the actor's material-request Room scope.
-create or replace function public.get_project_material_request_site_stock_context_v1(
+create or replace function app_private.get_project_material_request_site_stock_context_v1(
   p_project_id text,
   p_construction_site_id text,
   p_warehouse_id text,
@@ -105,6 +105,19 @@ begin
 end;
 $$;
 
+revoke all on function app_private.get_project_material_request_site_stock_context_v1(text, text, text, text[]) from public, anon;
+grant execute on function app_private.get_project_material_request_site_stock_context_v1(text, text, text, text[]) to authenticated, service_role;
+
+create or replace function public.get_project_material_request_site_stock_context_v1(
+  p_project_id text,
+  p_construction_site_id text,
+  p_warehouse_id text,
+  p_item_ids text[]
+) returns jsonb language sql stable security invoker set search_path = '' as $$
+  select app_private.get_project_material_request_site_stock_context_v1(
+    p_project_id, p_construction_site_id, p_warehouse_id, p_item_ids
+  );
+$$;
 revoke all on function public.get_project_material_request_site_stock_context_v1(text, text, text, text[]) from public, anon;
 grant execute on function public.get_project_material_request_site_stock_context_v1(text, text, text, text[]) to authenticated, service_role;
 notify pgrst, 'reload schema';
