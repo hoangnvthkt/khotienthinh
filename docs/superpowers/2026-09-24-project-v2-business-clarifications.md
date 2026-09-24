@@ -26,3 +26,12 @@ These decisions were given by the business owner after the 23 September Project 
 ## Release boundary
 
 These clarifications change parts of the earlier Project V2/Procurement V2 implementation assumptions. Reconcile the affected read models and workflows before enabling a V2 cohort or claiming the existing Task 13 pilot gates are met. Do not apply migrations or create production data from this note alone.
+
+## Read-model reconciliation found on 24 September
+
+- The existing `projectMaterialPlanningService` computes its `remainingBoqQty` by subtracting cumulative requests. That value must not be reused for the new **Còn lại** column.
+- The existing `get_project_material_boq_reconciliation` groups ledger entries by project without restricting them to site warehouses; its gross inbound quantity also includes project returns. It cannot be directly reused as the new **Đã nhập kho** figure.
+- A read-only Cloud check found 930 material BOQ lines across 4 projects. One project/material group contains mixed BOQ units and one contains mixed source types. A material code is therefore not enough to sum quantities safely; the authoritative reader must resolve item identity, unit, and source overlap or return unknown with a clear data issue.
+- The Cloud ledger currently has 32 inbound site-warehouse transfer entries. Their posted inventory-transaction metadata identifies 30 as coming from general warehouses and 2 from other projects. Joining only the legacy transaction ID leaves 26 entries unresolved, so that join must not be used as the transfer source of truth.
+- The reader should count confirmed inbound supply into the project's site warehouses, including PO, direct/urgent, and incoming internal transfer sources. A return of material previously issued from the same project is a second physical inbound movement of already received material, so it must be shown separately rather than counted again as fresh BOQ supply. Same-project site-to-site transfers must likewise not increase the project total. Supplier return and reversal treatment needs an explicit correction rule before a cumulative figure is published.
+- The pure quantity contract now preserves `unknown`, `outside_boq`, and known zero separately, uses exact six-decimal arithmetic, and leaves pending orders/transfers outside the subtraction. It is not connected to live Cloud data or the input screen yet.
