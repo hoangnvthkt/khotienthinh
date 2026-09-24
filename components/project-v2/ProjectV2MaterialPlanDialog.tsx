@@ -4,7 +4,7 @@ import { parseQuantity6 } from '../../lib/procurement/decimal';
 import { materialCandidateService, groupMaterialCandidates, type MaterialCandidateGroup } from '../../lib/projectV2/materialCandidateService';
 import { projectV2CommandService } from '../../lib/projectV2/commandService';
 import { projectV2ReadService } from '../../lib/projectV2/readService';
-import { presentProjectV2Error } from '../../lib/projectV2/presentation';
+import { formatProjectV2EditableQuantity, presentProjectV2Error } from '../../lib/projectV2/presentation';
 import { MaterialPlanEditor, type MaterialEntry } from './MaterialPlanEditor';
 
 type Detail = Awaited<ReturnType<typeof projectV2ReadService.getPlan>>;
@@ -137,7 +137,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
         const line = existing.lines.find(item => item.id === group.key)!;
         const raw = line as Record<string, unknown>;
         keys.push(group.key);
-        restored[group.key] = { quantity: line.quantity ?? '', neededDate: String(raw.needed_date ?? ''),
+        restored[group.key] = { quantity: formatProjectV2EditableQuantity(line.quantity), neededDate: String(raw.needed_date ?? ''),
           destinationId: String(raw.destination_id ?? siteId ?? ''), note: String(raw.note ?? ''),
           overrideReason: String(raw.override_reason ?? '') };
         continue;
@@ -151,7 +151,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
       if (!line) continue;
       const raw = line as Record<string, unknown>;
       keys.push(group.key);
-      restored[group.key] = { quantity: line.quantity ?? '', neededDate: String(raw.needed_date ?? ''),
+      restored[group.key] = { quantity: formatProjectV2EditableQuantity(line.quantity), neededDate: String(raw.needed_date ?? ''),
         destinationId: String(raw.destination_id ?? siteId ?? ''), note: String(raw.note ?? ''),
         overrideReason: String(raw.override_reason ?? '') };
     }
@@ -170,7 +170,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
   const select = (key: string, checked: boolean) => {
     change(); setSelectedKeys(previous => checked ? [...new Set([...previous, key])] : previous.filter(id => id !== key));
     if (checked) setEntries(previous => ({ ...previous, [key]: previous[key] ?? {
-      ...emptyEntry(siteId), quantity: groups.find(item => item.key === key)?.availableQty ?? '' } }));
+      ...emptyEntry(siteId), quantity: formatProjectV2EditableQuantity(groups.find(item => item.key === key)?.availableQty ?? null) } }));
   };
   const save = async () => {
     if (saving) return;
@@ -208,7 +208,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
     <div role="dialog" aria-modal="true" aria-labelledby="material-plan-title"
       className="mx-auto w-full max-w-7xl rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900 sm:p-6">
       <header className="flex items-start justify-between gap-4"><div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Bước {step}/2 · Dự án V2</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Bước {step}/2 · Kế hoạch vật tư</p>
         <h2 id="material-plan-title" className="mt-1 text-xl font-bold">{existing ? 'Sửa' : 'Tạo'} kế hoạch vật tư</h2>
         <p className="mt-1 text-sm text-slate-500">Nhu cầu lấy từ công việc thi công đã duyệt và định mức có liên kết vật tư kho.</p>
       </div><button type="button" aria-label="Đóng" onClick={close} className="rounded-lg p-2 text-slate-500"><X size={20} /></button></header>

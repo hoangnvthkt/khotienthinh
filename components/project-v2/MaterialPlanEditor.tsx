@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { MaterialCandidateGroup } from '../../lib/projectV2/materialCandidateService';
 import { MaterialBasisDrawer } from './MaterialBasisDrawer';
 import { parseQuantity6 } from '../../lib/procurement/decimal';
+import { formatProjectV2Quantity } from '../../lib/projectV2/presentation';
 
 export interface MaterialEntry {
   quantity: string; neededDate: string; destinationId: string; note: string; overrideReason: string;
@@ -14,6 +15,8 @@ interface Props {
 }
 const inputClass = 'min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-600 dark:bg-slate-800';
 const readable = (value: string | null) => value ?? 'Chưa xác định';
+const readableQuantity = (value: string | null) => value === null ? 'Chưa xác định'
+  : formatProjectV2Quantity({ state: 'known', value }, '');
 const adjusted = (requested: string | undefined, calculated: string | null): boolean => {
   if (!requested || calculated === null) return false;
   try { return parseQuantity6(requested) !== parseQuantity6(calculated); } catch { return true; }
@@ -40,7 +43,7 @@ export function MaterialPlanEditor({ groups, selectedKeys, entries, onSelect, on
             <button type="button" onClick={() => setBasis(group)} className="mt-1 block text-xs font-semibold text-teal-700 underline">Cơ sở tính toán</button>
             {group.diagnostics.length > 0 && <span className="mt-1 block text-xs text-amber-700">Cần hoàn thiện dữ liệu nguồn</span>}</td>
           <td className="px-3 py-3">{readable(group.unit)}</td>
-          <td className="px-3 py-3 text-right tabular-nums">{readable(group.calculatedQty)}</td>
+          <td className="px-3 py-3 text-right tabular-nums">{readableQuantity(group.calculatedQty)}</td>
           <td className="min-w-32 px-3 py-3"><input aria-label={`Số lượng đề nghị ${group.itemName}`} inputMode="decimal"
             disabled={!selected} value={entry?.quantity ?? ''} onChange={event => onChange(group.key, { quantity: event.target.value })}
             className={inputClass} /></td>
@@ -62,7 +65,7 @@ export function MaterialPlanEditor({ groups, selectedKeys, entries, onSelect, on
         <label className="flex items-start gap-3"><input type="checkbox" checked={selected}
           onChange={event => onSelect(group.key, event.target.checked)} className="mt-1 h-4 w-4 accent-teal-700" />
           <span className="font-semibold">{group.itemCode && `${group.itemCode} · `}{group.itemName}</span></label>
-        <div className="mt-2 pl-7 text-sm text-slate-600">{readable(group.unit)} · Nhu cầu tính toán: {readable(group.calculatedQty)}</div>
+        <div className="mt-2 pl-7 text-sm text-slate-600">{readable(group.unit)} · Nhu cầu tính toán: {readableQuantity(group.calculatedQty)}</div>
         <button type="button" onClick={() => setBasis(group)} className="mt-2 pl-7 text-xs font-semibold text-teal-700 underline">Cơ sở tính toán</button>
         {group.diagnostics.length > 0 && <p className="mt-2 pl-7 text-xs text-amber-700">Cần hoàn thiện dữ liệu nguồn</p>}
         {selected && <div className="mt-4 grid gap-3 sm:grid-cols-2">
