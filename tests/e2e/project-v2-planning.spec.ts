@@ -26,7 +26,7 @@ for (const width of [390, 768, 1440]) {
     await expect(page.getByRole('textbox', { name: 'Lý do điều chỉnh số lượng' })).toBeVisible();
     await page.getByRole('button', { name: 'Cơ sở tính toán' }).first().click();
     await expect(page.getByRole('dialog', { name: 'Cơ sở tính toán' })).toBeVisible();
-    await expect(page.getByText('Còn khả dụng:', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('Còn có thể lập từ các công việc này:', { exact: false }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: `/tmp/project-v2-material-${width}.png`, fullPage: true });
     await page.getByRole('button', { name: 'Đóng cơ sở tính toán' }).click();

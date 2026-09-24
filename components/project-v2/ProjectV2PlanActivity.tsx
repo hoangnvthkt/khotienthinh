@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { presentProjectV2Error } from '../../lib/projectV2/presentation';
 import { projectV2ReadService, type ProjectV2CollaborationCursor,
   type ProjectV2Event } from '../../lib/projectV2/readService';
 import { projectV2ActivityLabel } from '../../lib/projectV2/collaboration';
@@ -16,7 +17,7 @@ export function ProjectV2PlanActivity({ planId, names }: {
       const rows = page.items.filter((item): item is ProjectV2Event => item.kind === 'events');
       setEvents(current => before ? [...current, ...rows.filter(row => !current.some(old => old.id === row.id))] : rows);
       setCursor(page.nextCursor);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không tải được hoạt động.'); }
+    } catch (cause) { setError(presentProjectV2Error(cause, 'Không tải được hoạt động.')); }
     finally { setLoading(false); }
   }, [planId]);
   useEffect(() => { void load(null); }, [load]);

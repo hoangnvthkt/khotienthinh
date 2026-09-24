@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { candidateUnavailableReason, filterCandidates, selectDisplayed } from '../../lib/projectV2/sourcePicker';
+import { candidateUnavailableReason, filterCandidates, presentSourceReason, selectDisplayed } from '../../lib/projectV2/sourcePicker';
 import type { ConstructionCandidate, MonthCandidate } from '../../lib/projectV2/candidateService';
 import { formatProjectV2Quantity } from '../../lib/projectV2/presentation';
 
@@ -24,8 +24,8 @@ export function ProjectV2SourcePicker({ workspaceId, type, monthCandidates = [],
   const reason = (row: MonthCandidate | ConstructionCandidate) => {
     if ('sourceLineId' in row) return candidateUnavailableReason(row, workspaceId);
     if (row.isGroup) return 'Nhóm tổng hợp, chọn công việc con';
-    if (row.baselineState !== 'verified') return 'Baseline chưa được xác nhận';
-    if (row.unavailableReason) return row.unavailableReason;
+    if (row.baselineState !== 'verified') return 'Tiến độ gốc chưa được xác nhận';
+    if (row.unavailableReason) return presentSourceReason(row.unavailableReason);
     if (row.availableQuantity === null) return 'Chưa xác định khối lượng khả dụng';
     if (Number(row.availableQuantity) <= 0) return 'Đã phân bổ hết';
     return null;

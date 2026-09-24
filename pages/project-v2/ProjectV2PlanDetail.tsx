@@ -4,7 +4,7 @@ import { ArrowLeft, Download, Loader2, RefreshCw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { projectV2ReadService } from '../../lib/projectV2/readService';
 import { projectV2CommandService } from '../../lib/projectV2/commandService';
-import { getProjectV2StatusLabel } from '../../lib/projectV2/presentation';
+import { formatProjectV2Destination, getProjectV2StatusLabel, presentProjectV2Error } from '../../lib/projectV2/presentation';
 import { ProjectV2PlanWorkflowActions } from '../../components/project-v2/ProjectV2PlanWorkflowActions';
 import { ProjectV2CreatePlanDialog } from '../../components/project-v2/ProjectV2CreatePlanDialog';
 import { ProjectV2MaterialPlanDialog } from '../../components/project-v2/ProjectV2MaterialPlanDialog';
@@ -69,7 +69,7 @@ const ProjectV2PlanDetail: React.FC = () => {
         }
         if (active) { setDetail(plan); setLineage(links); }
       })
-      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Không tải được kế hoạch'); });
+      .catch(cause => { if (active) setError(presentProjectV2Error(cause, 'Không tải được kế hoạch.')); });
     return () => { active = false; };
   }, [planId, viewedRevision, refresh]);
   useEffect(() => {
@@ -91,7 +91,7 @@ const ProjectV2PlanDetail: React.FC = () => {
         setConflict({ message: 'Kế hoạch đã được người khác thay đổi. Tải lại để xem phiên bản mới.',
           updatedAt: current.plan.updatedAt });
       } catch { setConflict({ message: 'Kế hoạch đã đổi phiên bản. Tải lại trước khi thao tác.', updatedAt: null }); }
-    } else setError(message);
+    } else setError(presentProjectV2Error(cause, 'Thao tác không thành công.'));
   };
   const act = async (action: 'submit' | 'approve' | 'return' | 'revise' | 'cancel') => {
     if (!detail || busy) return;
@@ -199,7 +199,8 @@ const ProjectV2PlanDetail: React.FC = () => {
             <td className="px-4 py-3 text-right tabular-nums">{amount(row.quantity, raw.unit_price_snapshot)}</td></>}
           <td className="px-4 py-3">{plan.planType === 'material' ? label(raw.needed_date as string | null)
             : raw.work_start && raw.work_end ? `${raw.work_start} → ${raw.work_end}` : '—'}</td>
-          <td className="px-4 py-3">{plan.planType === 'material' ? label(materialScope?.siteId === raw.destination_id ? materialScope.siteName : raw.destination_id as string | null)
+          <td className="px-4 py-3">{plan.planType === 'material' ? formatProjectV2Destination(raw.destination_id as string | null,
+            materialScope?.siteId, materialScope?.siteName)
             : raw.crew_id ? crewNames[String(raw.crew_id)] ?? 'Tổ đội không còn hoạt động' : 'Chưa phân công'}</td>
         </tr>;
       })}</tbody></table>

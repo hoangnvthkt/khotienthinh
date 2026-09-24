@@ -13,7 +13,7 @@ import { ProjectV2Shell } from '../../components/project-v2/ProjectV2Shell';
 import { ProjectV2PlanList } from '../../components/project-v2/ProjectV2PlanList';
 import { ProjectV2CreatePlanDialog } from '../../components/project-v2/ProjectV2CreatePlanDialog';
 import { ProjectV2MaterialPlanDialog } from '../../components/project-v2/ProjectV2MaterialPlanDialog';
-import { getProjectV2StatusLabel } from '../../lib/projectV2/presentation';
+import { getProjectV2StatusLabel, presentProjectV2Error } from '../../lib/projectV2/presentation';
 import type { ProjectV2PlanStatus, ProjectV2PlanType } from '../../types/projectV2';
 
 const typeLabels: Record<ProjectV2PlanType, string> = {
@@ -81,7 +81,7 @@ const ProjectV2Workspace: React.FC = () => {
     projectV2ReadService.listWorkspaces().then(data => {
       if (active) setWorkspaces(data.workspaces);
     }).catch(error => {
-      if (active) setWorkspaceError(error instanceof Error ? error.message : 'Không tải được dự án V2');
+      if (active) setWorkspaceError(presentProjectV2Error(error, 'Không tải được dự án V2.'));
     });
     return () => { active = false; };
   }, [refresh]);
@@ -119,7 +119,7 @@ const ProjectV2Workspace: React.FC = () => {
       throw new Error('PROJECT_V2_RESULT_LIMIT');
     })().catch(error => {
       if (requestGate.current.isCurrent(generation)) {
-        setPlanError(error instanceof Error ? error.message : 'Không tải được kế hoạch');
+        setPlanError(presentProjectV2Error(error, 'Không tải được kế hoạch.'));
       }
     });
     return () => { requestGate.current.next(); };
@@ -132,7 +132,7 @@ const ProjectV2Workspace: React.FC = () => {
     projectMasterService.listPage({ page: 1, pageSize: 100, query: enrollmentSearch }).then(data => {
       if (active) { setEnrollmentProjects(data.rows); setEnrollmentError(null); }
     }).catch(error => {
-      if (active) setEnrollmentError(error instanceof Error ? error.message : 'Không tải được dự án');
+      if (active) setEnrollmentError(presentProjectV2Error(error, 'Không tải được dự án.'));
     }).finally(() => { if (active) setEnrollmentLoading(false); });
     return () => { active = false; };
   }, [isAdmin, workspaces, enrollmentSearch]);
@@ -174,7 +174,7 @@ const ProjectV2Workspace: React.FC = () => {
       setRefresh(value => value + 1);
       changeQuery({ projectId: selectedEnrollmentProject.id });
     } catch (error) {
-      setEnrollmentError(error instanceof Error ? error.message : 'Không kích hoạt được dự án');
+      setEnrollmentError(presentProjectV2Error(error, 'Không kích hoạt được dự án.'));
     } finally { setEnrolling(false); }
   };
 

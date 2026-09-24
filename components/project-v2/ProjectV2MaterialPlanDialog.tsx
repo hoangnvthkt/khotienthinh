@@ -4,6 +4,7 @@ import { parseQuantity6 } from '../../lib/procurement/decimal';
 import { materialCandidateService, groupMaterialCandidates, type MaterialCandidateGroup } from '../../lib/projectV2/materialCandidateService';
 import { projectV2CommandService } from '../../lib/projectV2/commandService';
 import { projectV2ReadService } from '../../lib/projectV2/readService';
+import { presentProjectV2Error } from '../../lib/projectV2/presentation';
 import { MaterialPlanEditor, type MaterialEntry } from './MaterialPlanEditor';
 
 type Detail = Awaited<ReturnType<typeof projectV2ReadService.getPlan>>;
@@ -115,7 +116,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
     let active = true;
     materialCandidateService.listSourcePlans(workspaceId).then(value => {
       if (active) setSourcePlans(value);
-    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Không tải được kế hoạch thi công.'); });
+    }).catch(cause => { if (active) setError(presentProjectV2Error(cause, 'Không tải được kế hoạch thi công.')); });
     return () => { active = false; };
   }, [workspaceId]);
   useEffect(() => {
@@ -124,7 +125,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
     materialCandidateService.list({ projectId, constructionSiteId: siteId,
       sourcePlanIds: selectedPlanIds, excludePlanId: existing?.plan.id ?? null })
       .then(value => { if (active) setRows(value); })
-      .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'Không tải được vật tư nguồn.'); })
+      .catch(cause => { if (active) setError(presentProjectV2Error(cause, 'Không tải được vật tư nguồn.')); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [projectId, siteId, selectedPlanIds, existing?.plan.id]);
@@ -200,7 +201,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Không lưu được kế hoạch.';
       if (message.includes('PROJECT_V2_VERSION_STALE') || message.includes('40001')) setConflict(true);
-      else setError(message);
+      else setError(presentProjectV2Error(cause, 'Không lưu được kế hoạch.'));
     } finally { setSaving(false); }
   };
   return <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 px-3 py-4 sm:px-6 sm:py-8" role="presentation">

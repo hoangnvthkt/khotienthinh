@@ -14,6 +14,12 @@ export function getProjectV2SourceLabel(source: 'material_plan' | 'project_mater
   return source === 'material_plan' ? 'Kế hoạch vật tư' : 'Đề xuất vật tư';
 }
 
+export function formatProjectV2Destination(destinationId: string | null | undefined,
+  siteId: string | null | undefined, siteName: string | null | undefined): string {
+  if (!destinationId) return 'Chưa xác định điểm nhận';
+  return destinationId === siteId && siteName?.trim() ? siteName : 'Điểm nhận cần đối chiếu';
+}
+
 export function formatProjectV2Quantity(quantity: ProjectV2Quantity, unit: string): string {
   if (quantity.state === 'unknown') return 'Chưa xác định';
   if (quantity.state === 'incomplete') return quantity.reason;
@@ -35,4 +41,24 @@ const issueMessages: Record<string, string> = {
 
 export function presentProjectV2Issue(issue: ProjectV2ValidationIssue): string {
   return issueMessages[issue.code] ?? 'Dữ liệu chưa đầy đủ. Kiểm tra lại dòng kế hoạch trước khi gửi duyệt.';
+}
+
+export function presentProjectV2Error(error: unknown, fallback: string): string {
+  const row = error && typeof error === 'object' ? error as { code?: unknown; message?: unknown } : null;
+  const message = error instanceof Error ? error.message
+    : typeof row?.message === 'string' ? row.message : '';
+  const code = typeof row?.code === 'string' ? row.code : '';
+  const raw = `${code} ${message}`;
+  if (code === '42501' || /PROJECT_V2_[A-Z_]*DENIED|permission denied/i.test(raw))
+    return 'Bạn không có quyền thực hiện thao tác này.';
+  if (/PROJECT_V2_(?:MATERIAL_)?NORM_(?:INCOMPLETE|STALE)/.test(raw))
+    return 'Thiếu định mức vật tư. Kiểm tra lại nguồn trước khi lưu.';
+  if (/PROJECT_V2_(?:VERSION_STALE|SOURCE_HASH_STALE|MATERIAL_REVISION_STALE)|40001/.test(raw))
+    return 'Kế hoạch đã đổi phiên bản. Tải lại trước khi tiếp tục.';
+  if (/PROJECT_V2_[A-Z_]+/.test(raw) || /^[A-Z][A-Z0-9_]+$/.test(message)) return fallback;
+  if (/failed to fetch|network|timeout/i.test(raw))
+    return 'Không kết nối được máy chủ. Vui lòng thử lại.';
+  if (/[À-ỹ]/.test(message) && !/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(message))
+    return message;
+  return fallback;
 }
