@@ -5,6 +5,7 @@ import { projectV2CandidateService, type ConstructionCandidate, type MonthCandid
   type ProjectV2Crew } from '../../lib/projectV2/candidateService';
 import { projectV2CommandService } from '../../lib/projectV2/commandService';
 import { projectV2ReadService } from '../../lib/projectV2/readService';
+import { presentProjectV2Error } from '../../lib/projectV2/presentation';
 import { validateSelectedSources } from '../../lib/projectV2/sourcePicker';
 import { ProjectV2SourcePicker } from './ProjectV2SourcePicker';
 import { MonthPlanEditor } from './MonthPlanEditor';
@@ -88,10 +89,10 @@ export function ProjectV2CreatePlanDialog({ workspaceId, type, onClose, onCreate
           if (canUseBaselineException) {
             try { const baseline = await projectV2CandidateService.listMonth(workspaceId);
               if (active) setExceptionCandidates(baseline); }
-            catch (cause) { if (active) setExceptionError(cause instanceof Error ? cause.message : 'Không tải được baseline'); }
+            catch (cause) { if (active) setExceptionError(presentProjectV2Error(cause, 'Không tải được công việc nguồn.')); }
           }
         }
-      } catch (cause) { if (active) setLoadingError(cause instanceof Error ? cause.message : 'Không tải được nguồn'); }
+      } catch (cause) { if (active) setLoadingError(presentProjectV2Error(cause, 'Không tải được nguồn kế hoạch.')); }
     })();
     return () => { active = false; };
   }, [workspaceId, type, canUseBaselineException, existing?.plan.id]);
@@ -189,8 +190,8 @@ export function ProjectV2CreatePlanDialog({ workspaceId, type, onClose, onCreate
       if (typeof response.planId !== 'string') throw new Error('Phản hồi tạo kế hoạch không hợp lệ.');
       onCreated(response.planId);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Không lưu được kế hoạch.';
-      if (existing && (message.includes('PROJECT_V2_VERSION_STALE') || message.includes('40001'))) {
+      const rawMessage = cause instanceof Error ? cause.message : '';
+      if (existing && (rawMessage.includes('PROJECT_V2_VERSION_STALE') || rawMessage.includes('40001'))) {
         try {
           const [current, thread] = await Promise.all([projectV2ReadService.getPlan(existing.plan.id),
             projectV2ReadService.getDiscussion(existing.plan.id)]);
@@ -198,7 +199,7 @@ export function ProjectV2CreatePlanDialog({ workspaceId, type, onClose, onCreate
           setConflict({ updatedAt: current.plan.updatedAt,
             actor: last ? actorNames[last.actorUserId] ?? 'Người dùng khác' : 'Người dùng khác' });
         } catch { setError('Kế hoạch đã đổi phiên bản. Tải lại trước khi lưu.'); }
-      } else setError(message);
+      } else setError(presentProjectV2Error(cause, 'Không lưu được kế hoạch.'));
     }
     finally { setSaving(false); }
   };

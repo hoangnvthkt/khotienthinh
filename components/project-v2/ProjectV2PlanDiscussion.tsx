@@ -3,6 +3,7 @@ import { projectV2ReadService, type ProjectV2CollaborationCursor,
   type ProjectV2Comment } from '../../lib/projectV2/readService';
 import { projectV2CommandService } from '../../lib/projectV2/commandService';
 import { canSubmitProjectV2Comment } from '../../lib/projectV2/collaboration';
+import { presentProjectV2Error } from '../../lib/projectV2/presentation';
 
 export function ProjectV2PlanDiscussion({ planId, version, names, formDirty, readOnly,
   onDraftChange, onChanged, onError }: { planId: string; version: number;
@@ -24,7 +25,7 @@ export function ProjectV2PlanDiscussion({ planId, version, names, formDirty, rea
       const rows = page.items.filter((item): item is ProjectV2Comment => item.kind === 'comments');
       setComments(current => before ? [...current, ...rows.filter(row => !current.some(old => old.id === row.id))] : rows);
       setCursor(page.nextCursor);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Không tải được trao đổi.'); }
+    } catch (cause) { setError(presentProjectV2Error(cause, 'Không tải được trao đổi.')); }
     finally { setLoading(false); }
   }, [planId]);
   useEffect(() => { void load(null); }, [load, version]);

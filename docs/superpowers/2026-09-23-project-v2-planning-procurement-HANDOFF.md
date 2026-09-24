@@ -8,6 +8,8 @@
 >
 > Trạng thái cập nhật 2026-09-24: **Task 1–12 đã implement và commit; Task 13 đang kiểm chứng tích hợp.** Không kích hoạt pilot hoặc coi automation là business signoff. Xem [evidence](../designs/erp-completion-2026-09-19/evidence/project-v2-validation-20260923.md) và [runbook](../runbooks/project-v2-pilot-rollout.md). Các mô tả “chưa bắt đầu” bên dưới là baseline lịch sử ngày 23/09, không phải trạng thái hiện tại.
 
+**Business clarification after this handoff:** the owner has refined the project-wide material BOQ, cumulative site receipts, remaining BOQ quantity, month/week construction periods, clean input screens, and the procurement/warehouse/AP boundaries. Read [24 September business clarifications](2026-09-24-project-v2-business-clarifications.md) before changing the pilot or planning UI. The earlier implementation plan remains an execution record; conflicting assumptions must be reconciled against these newer owner decisions.
+
 Task 13 còn mở: replay full chain trên Cloud có dữ liệu vướng migration daily-log `20260923091500` ở Room constraint; baseline allowlist chưa chứa migration V2; `npm run lint` còn 185 lỗi từ prototype untracked. Chuỗi migration V2 và các smoke kế hoạch/intake/dossier/collaboration đã chạy trên Cloud preview rồi xóa branch. Mixed-source PO có bằng chứng Task 11 trên preview riêng, nhưng smoke cùng data clone bị G9 gate chặn synthetic project. Chưa có UAT nghiệp vụ theo persona hay business signoff.
 
 ## Prompt bắt đầu nhanh cho phiên chat mới

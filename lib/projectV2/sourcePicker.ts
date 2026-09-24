@@ -1,5 +1,15 @@
 import { parseQuantity6 } from '../procurement/decimal';
 
+const sourceReasonLabels: Record<string, string> = {
+  'Baseline chưa được xác nhận': 'Tiến độ gốc chưa được xác nhận',
+  'Chưa xác định khối lượng hợp đồng': 'Chưa xác định khối lượng hợp đồng',
+  'Chưa xác định khối lượng nguồn': 'Chưa xác định khối lượng nguồn',
+  'Đã phân bổ hết': 'Đã phân bổ hết',
+  'Nguồn hết hiệu lực': 'Nguồn hết hiệu lực',
+};
+export const presentSourceReason = (reason: string): string => sourceReasonLabels[reason]
+  ?? 'Nguồn chưa thể chọn. Kiểm tra dữ liệu kế hoạch.';
+
 export interface ProjectV2SourceCandidate {
   sourcePlanId: string;
   sourceRevision: number;
@@ -26,7 +36,7 @@ export function filterCandidates<T extends ProjectV2SourceCandidate>(
 export function candidateUnavailableReason(row: ProjectV2SourceCandidate, workspaceId: string): string | null {
   if (row.workspaceId !== workspaceId) return 'Nguồn không thuộc dự án này';
   if (row.sourceStatus !== 'approved') return 'Nguồn chưa được duyệt';
-  if (row.unavailableReason) return row.unavailableReason;
+  if (row.unavailableReason) return presentSourceReason(row.unavailableReason);
   if (row.availableQuantity === null) return 'Chưa xác định khối lượng khả dụng';
   try {
     if (parseQuantity6(row.availableQuantity) <= 0n) return 'Đã phân bổ hết';

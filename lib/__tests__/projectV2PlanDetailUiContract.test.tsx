@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { MonthPlanEditor } from '../../components/project-v2/MonthPlanEditor';
 import { ConstructionPlanEditor } from '../../components/project-v2/ConstructionPlanEditor';
+import { ProjectV2SourcePicker } from '../../components/project-v2/ProjectV2SourcePicker';
 import { ProjectV2PlanWorkflowActions } from '../../components/project-v2/ProjectV2PlanWorkflowActions';
 import type { ProjectV2PlanSummary } from '../projectV2/readService';
 
@@ -15,6 +16,30 @@ const plan = (status: ProjectV2PlanSummary['status']): ProjectV2PlanSummary => (
 });
 
 describe('Project V2 plan UI contract', () => {
+  it('does not show internal source codes in the monthly work picker', () => {
+    const html = renderToStaticMarkup(<ProjectV2SourcePicker workspaceId="w" type="month"
+      monthCandidates={[{ contractItemId: 'i', code: '01', title: 'Móng', unit: 'm3',
+        parentId: null, isGroup: false, contractQuantity: '100.000000',
+        previousPlannedQuantity: '20.000000', availableQuantity: '80.000000',
+        baselineRevision: 'v1', baselineState: 'verified', workspaceId: 'w',
+        unavailableReason: 'boq_closure_not_supported' }]}
+      selectedIds={[]} onChange={() => {}} />);
+    expect(html).toContain('Nguồn chưa thể chọn. Kiểm tra dữ liệu kế hoạch.');
+    expect(html).not.toContain('boq_closure_not_supported');
+  });
+
+  it('explains an unconfirmed schedule in business language', () => {
+    const html = renderToStaticMarkup(<ProjectV2SourcePicker workspaceId="w" type="month"
+      monthCandidates={[{ contractItemId: 'i', code: '01', title: 'Móng', unit: 'm3',
+        parentId: null, isGroup: false, contractQuantity: null,
+        previousPlannedQuantity: null, availableQuantity: null,
+        baselineRevision: null, baselineState: 'unverified', workspaceId: 'w',
+        unavailableReason: 'Baseline chưa được xác nhận' }]}
+      selectedIds={[]} onChange={() => {}} />);
+    expect(html).toContain('Tiến độ gốc chưa được xác nhận');
+    expect(html).not.toContain('Baseline chưa được xác nhận');
+  });
+
   it('shows monthly business columns without price when capability is absent', () => {
     const html = renderToStaticMarkup(<MonthPlanEditor rows={[{
       contractItemId: 'i', code: '01', title: 'Móng', unit: 'm3', parentId: null,

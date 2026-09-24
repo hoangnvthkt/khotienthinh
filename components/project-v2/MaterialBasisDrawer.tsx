@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import type { MaterialCandidateGroup } from '../../lib/projectV2/materialCandidateService';
+import { formatProjectV2Quantity } from '../../lib/projectV2/presentation';
 
 const diagnosticLabel: Record<string, string> = {
   missing_inventory_identity: 'Chưa liên kết vật tư kho',
@@ -14,7 +15,8 @@ const diagnosticLabel: Record<string, string> = {
   already_allocated: 'Nguồn đã được phân bổ vượt mức',
   unit_mismatch: 'Đơn vị vật tư không khớp',
 };
-const display = (value: string | null) => value ?? 'Chưa xác định';
+const display = (value: string | null, unit = '') => value === null ? 'Chưa xác định'
+  : formatProjectV2Quantity({ state: 'known', value }, unit);
 
 export function MaterialBasisDrawer({ group, onClose }: { group: MaterialCandidateGroup; onClose: () => void }) {
   return <div className="fixed inset-0 z-[120] bg-slate-950/50" role="presentation" onClick={onClose}>
@@ -25,23 +27,24 @@ export function MaterialBasisDrawer({ group, onClose }: { group: MaterialCandida
         <h2 className="mt-1 text-xl font-bold">{group.itemCode ? `${group.itemCode} · ` : ''}{group.itemName}</h2>
       </div><button type="button" aria-label="Đóng cơ sở tính toán" onClick={onClose}
         className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={20} /></button></div>
-      <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">Nhu cầu tính toán: {display(group.calculatedQty)} {group.unit ?? ''} · Đã lập: {display(group.alreadyPlannedQty)} · Còn khả dụng: {display(group.availableQty)}</p>
+      <div className="mt-4 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+        <p>Nhu cầu tính toán: {display(group.calculatedQty, group.unit ?? '')}</p>
+        <p>Đã lập từ các công việc này: {display(group.alreadyPlannedQty, group.unit ?? '')}</p>
+        <p>Còn có thể lập từ các công việc này: {display(group.availableQty, group.unit ?? '')}</p>
+      </div>
       <div className="mt-5 space-y-4">{group.derivations.map(row => <article key={row.candidateId}
         className="rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700">
         <h3 className="font-semibold">{row.sourceWorkName}</h3>
         <Link to={`/project-v2/plans/${row.sourcePlanId}`} target="_blank" rel="noopener noreferrer"
           className="mt-1 inline-block text-teal-700 underline dark:text-teal-300">Xem kế hoạch thi công · bản {row.sourceRevision}</Link>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
-          <div><dt className="text-slate-500">Khối lượng công việc</dt><dd>{display(row.sourceWorkQuantity)} {row.sourceUnit ?? ''}</dd></div>
-          <div><dt className="text-slate-500">Tài nguyên định mức</dt><dd className="break-all">{display(row.normResourceId)}</dd></div>
-          <div><dt className="text-slate-500">Phiên bản định mức</dt><dd className="break-all">{display(row.normRevision)}</dd></div>
-          <div><dt className="text-slate-500">Định mức</dt><dd>{display(row.normFactor)}</dd></div>
-          <div><dt className="text-slate-500">Hệ số</dt><dd>{display(row.coefficient)}</dd></div>
-          <div><dt className="text-slate-500">Quy đổi</dt><dd>{display(row.conversionNumerator)} / {display(row.conversionDenominator)}</dd></div>
-          <div><dt className="text-slate-500">Nhu cầu</dt><dd>{display(row.calculatedQty)}</dd></div>
-          <div><dt className="text-slate-500">Đã lập</dt><dd>{display(row.alreadyPlannedQty)}</dd></div>
-          <div><dt className="text-slate-500">Còn khả dụng</dt><dd>{display(row.availableQty)}</dd></div>
+          <div><dt className="text-slate-500">Khối lượng công việc</dt><dd>{display(row.sourceWorkQuantity, row.sourceUnit ?? '')}</dd></div>
+          <div><dt className="text-slate-500">Hao phí cho một đơn vị công việc</dt><dd>{display(row.normFactor, `${group.unit ?? 'đơn vị vật tư'}/${row.sourceUnit ?? 'đơn vị công việc'}`)}</dd></div>
+          <div><dt className="text-slate-500">Vật tư cần cho công việc</dt><dd>{display(row.calculatedQty, group.unit ?? '')}</dd></div>
         </dl>
+        <details className="mt-3 text-xs text-slate-600 dark:text-slate-300"><summary className="cursor-pointer font-medium">Xem hệ số và quy đổi</summary>
+          <p className="mt-2">Hệ số: {display(row.coefficient)} · Quy đổi: {display(row.conversionNumerator)} / {display(row.conversionDenominator)}</p>
+        </details>
         {row.diagnostics.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-800 dark:text-amber-300">
           {row.diagnostics.map(code => <li key={code}>{diagnosticLabel[code] ?? 'Dữ liệu nguồn cần kiểm tra'}</li>)}
         </ul>}

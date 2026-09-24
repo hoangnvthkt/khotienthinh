@@ -38,4 +38,10 @@ describe('Project V2 source selection', () => {
     expect(validateSelectedSources([source({ availableQuantity: null })], ['line-a'], 'workspace-a'))
       .toEqual([{ sourceLineId: 'line-a', reason: 'Chưa xác định khối lượng khả dụng' }]);
   });
+
+  it('does not expose server reason codes in the source picker', () => {
+    expect(validateSelectedSources([source({ unavailableReason: 'boq_closure_not_supported' })],
+      ['line-a'], 'workspace-a')).toEqual([{ sourceLineId: 'line-a',
+      reason: 'Nguồn chưa thể chọn. Kiểm tra dữ liệu kế hoạch.' }]);
+  });
 });
