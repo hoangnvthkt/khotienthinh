@@ -169,7 +169,16 @@ export const projectV2ReadService = {
   async listActiveCohortIds(projectIds: string[] | null = null): Promise<string[]> {
     if (projectIds && projectIds.length > 100) fail('PROJECT_V2_COHORT_SCOPE_INVALID');
     if (projectIds?.length === 0) return [];
-    const payload = await rpc('list_project_v2_cohort_ids_v1', { p_project_ids: projectIds });
+    let payload: Json;
+    try {
+      payload = await rpc('list_project_v2_cohort_ids_v1', { p_project_ids: projectIds });
+    } catch (error) {
+      // The legacy project list must remain usable before the V2 migration is deployed.
+      if (error && typeof error === 'object' && 'code' in error && 'message' in error &&
+        error.code === 'PGRST202' && typeof error.message === 'string' &&
+        error.message.includes('public.list_project_v2_cohort_ids_v1(')) return [];
+      throw error;
+    }
     const ids = unique(array(payload.projectIds).map(string), item => item);
     if (projectIds && ids.some(id => !projectIds.includes(id))) fail('PROJECT_V2_SCOPE_MISMATCH');
     return ids;

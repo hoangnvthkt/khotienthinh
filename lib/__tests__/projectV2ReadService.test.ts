@@ -88,6 +88,18 @@ describe('projectV2ReadService', () => {
     });
   });
 
+  it('keeps the legacy project list available before the cohort RPC is deployed', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: {
+      code: 'PGRST202',
+      message: 'Could not find the function public.list_project_v2_cohort_ids_v1(p_project_ids) in the schema cache',
+    } });
+    await expect(projectV2ReadService.listActiveCohortIds()).resolves.toEqual([]);
+
+    const unrelated = { code: 'PGRST202', message: 'Could not find another function' };
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: unrelated });
+    await expect(projectV2ReadService.listActiveCohortIds()).rejects.toBe(unrelated);
+  });
+
   it('pages persisted comments with a guarded cursor and server actor/time', async () => {
     mocks.rpc.mockResolvedValueOnce({ data: { asOf: plan.updated_at,
       items: [{ id: 'comment-1', revision: 2, authorUserId: 'user-2',
