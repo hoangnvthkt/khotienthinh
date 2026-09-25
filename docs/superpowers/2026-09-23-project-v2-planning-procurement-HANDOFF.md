@@ -32,6 +32,8 @@ Chủ dự án xác nhận tiếp **50 m³ Bê tông M300 và 50 m³ Cát trát 
 
 Audit event Room mới nhất xác nhận payload đã lưu vẫn chứa `submit` cho Thảo/Thịnh, nên không phải chậm đồng bộ Cloud. V2 candidate/validation yêu cầu norm resource/revision và hệ số trên một đơn vị công tác; số 50 m³ chỉ là lượng kế hoạch dự kiến, chưa thể duyệt/publish material plan bằng nguồn không có định mức. Chờ người dùng xác nhận suất tiêu hao đúng và thao tác bỏ action “Gửi” trong Room, rồi query lại Cloud. Không chạm workstream daily-log.
 
+Cloud check sau khi chủ dự án lưu Room lần nữa: `material_po.submit` của Thảo/Thịnh đã **inactive**, quyền duyệt cũng inactive; Năm còn gửi, Mơ còn duyệt. Thảo/Thịnh vẫn có `edit` và `delete` trong Room PO; `edit` ánh xạ sang quyền tạo PO draft, nên đã hỏi chủ dự án có cố ý giữ hay muốn giới hạn về chỉ `view`. Chưa tự sửa grant. Chưa có suất tiêu hao trên mỗi đơn vị công tác và schema V2 production vẫn chưa triển khai.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
