@@ -89,12 +89,30 @@ export const dailyLogDetailService = {
       });
     }
 
+    if (normalizedIds.size) {
+      const ids = [...normalizedIds];
+      for (let offset = 0; offset < ids.length; offset += 500) {
+        const { data, error } = await supabase.rpc('get_daily_log_physical_resources_v1', {
+          p_log_ids: ids.slice(offset, offset + 500),
+        });
+        if (error) throw error;
+        for (const row of (data || []) as Array<Record<string, any>>) {
+          if (!normalizedIds.has(row.daily_log_id)) continue;
+          const { resource_type: resourceType, ...physical } = row;
+          if (resourceType === 'labor') result[row.daily_log_id].laborDetails.push(fromDb(physical));
+          if (resourceType === 'machine') result[row.daily_log_id].machines.push(fromDb(physical));
+        }
+      }
+    }
+
+    const legacyIds = logIds.filter(id => !normalizedIds.has(id));
+
     try {
       const [volumes, materials, labor, machines] = await Promise.all([
         fetchAllSupabaseRows(supabase.from('daily_log_volumes').select(getSupabaseProjection('daily_log_volumes')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:69", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_volumes') }),
         fetchAllSupabaseRows(supabase.from('daily_log_materials').select(getSupabaseProjection('daily_log_materials')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:70", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_materials') }),
-        fetchAllSupabaseRows(supabase.from('daily_log_labor').select(getSupabaseProjection('daily_log_labor')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:71", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_labor') }),
-        fetchAllSupabaseRows(supabase.from('daily_log_machines').select(getSupabaseProjection('daily_log_machines')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:72", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_machines') }),
+        legacyIds.length ? fetchAllSupabaseRows(supabase.from('daily_log_labor').select(getSupabaseProjection('daily_log_labor')).in('daily_log_id', legacyIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:71", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_labor') }) : Promise.resolve({ data: [], error: null }),
+        legacyIds.length ? fetchAllSupabaseRows(supabase.from('daily_log_machines').select(getSupabaseProjection('daily_log_machines')).in('daily_log_id', legacyIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:72", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_machines') }) : Promise.resolve({ data: [], error: null }),
       ]);
 
       for (const response of [volumes, materials, labor, machines]) {
