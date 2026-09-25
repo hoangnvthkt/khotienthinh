@@ -97,7 +97,8 @@ begin
   where log.id = p_daily_log_id
   for update;
   if not found then raise exception using errcode = 'P0002', message = 'DAILY_LOG_NOT_FOUND'; end if;
-  if not (v_log.summary_source_type = 'member_contributions' and v_log.status = 'verified') then
+  if v_log.summary_source_type is distinct from 'member_contributions'
+    or v_log.status is distinct from 'verified' then
     raise exception using errcode = '42501', message = 'VERIFIED_SUMMARY_REQUIRED';
   end if;
   if v_log.superseded_by_daily_log_id is not null then
@@ -317,7 +318,8 @@ declare
 begin
   select log.* into v_log from public.daily_logs log where log.id = p_daily_log_id for update;
   if not found then raise exception using errcode = 'P0002', message = 'DAILY_LOG_NOT_FOUND'; end if;
-  if not (v_log.summary_source_type = 'member_contributions' and v_log.status in ('draft', 'rejected')) then
+  if v_log.summary_source_type is distinct from 'member_contributions'
+    or coalesce(v_log.status, '') not in ('draft', 'rejected') then
     raise exception using errcode = '42501', message = 'SUMMARY_NOT_SUBMITTABLE';
   end if;
   if coalesce(v_log.last_action_at, v_log.created_at) is distinct from p_expected_updated_at then
