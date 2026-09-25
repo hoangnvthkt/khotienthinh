@@ -30,6 +30,8 @@ Cập nhật quyền sau khi chủ dự án chỉnh lại: Cloud xác nhận **c
 
 Chủ dự án xác nhận tiếp **50 m³ Bê tông M300 và 50 m³ Cát trát là tổng lượng của từng kế hoạch pilot**, không phải định mức trên một đơn vị công tác. Giữ tách biệt với tổng BOQ công trình 100 m³ cho mỗi loại. Chủ dự án nói đã bỏ quyền gửi PO của Thảo/Thịnh, nhưng Cloud read-only check ngay sau đó vẫn thấy `material_po.submit` của cả hai đang active; `approve` đã inactive. Cần đối chiếu thao tác trong Room “Đơn hàng PO” (action “Gửi”) với trạng thái DB trước negative persona UAT. Không ghi norm giả hoặc coi quyền đã gỡ khi Cloud chưa xác nhận.
 
+Audit event Room mới nhất xác nhận payload đã lưu vẫn chứa `submit` cho Thảo/Thịnh, nên không phải chậm đồng bộ Cloud. V2 candidate/validation yêu cầu norm resource/revision và hệ số trên một đơn vị công tác; số 50 m³ chỉ là lượng kế hoạch dự kiến, chưa thể duyệt/publish material plan bằng nguồn không có định mức. Chờ người dùng xác nhận suất tiêu hao đúng và thao tác bỏ action “Gửi” trong Room, rồi query lại Cloud. Không chạm workstream daily-log.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
