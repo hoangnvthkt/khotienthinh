@@ -38,6 +38,8 @@ Chủ dự án cho phép giả định số liệu **trên môi trường test**
 
 Cập nhật mới nhất 25/09: Cloud read-only đã xác nhận Thảo và Thịnh **chỉ còn `view`** trong Room Đơn hàng PO; Năm có `view/edit/delete/submit`, Mơ có `view/edit/delete/submit/confirm/approve`. Quyền PO của hai người lập/duyệt kế hoạch đã đúng phạm vi pilot. Focused Project V2 test qua **46/46**, Vite build qua. Tuy nhiên migration baseline check vẫn đỏ với **14 file chưa nằm trong allowlist** của nhiều workstream; marker chung đang dirty và migration daily-log revision vẫn untracked. Production Cloud vẫn ở **116 migration**, head `20260924165000`, chưa có bảng `project_v2_workspaces`. Chưa deploy hay mở cohort RICO. Bước kế tiếp là hòa giải release gate chung theo từng workstream, xác nhận commit app/schema khớp Cloud, rồi mới triển khai schema V2 và chạy UAT người dùng thật theo runbook. Không lấy kết quả fixture hoặc giả định hệ số trên preview làm business signoff.
 
+Tiếp tục 25/09: commit `0b0c4c0` chỉ thêm **10 migration Project V2/Procurement V2 đã tracked** vào allowlist; auth đang sửa dở vẫn là diff riêng. Baseline check còn **4 file** thuộc daily-log và material-request/purchase-warning. Khi rà security gate, phát hiện RPC `list_project_v2_cohort_ids_v1` cho phép filter null và trả danh sách ID cohort active cho mọi tài khoản đã xác thực; cần giới hạn theo quyền xem dự án/V2 trước khi khép advisor review. Đây là vấn đề tách khỏi quyền PO vừa xác nhận. Chưa deploy production hay cấp quyền V2 cho RICO.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
