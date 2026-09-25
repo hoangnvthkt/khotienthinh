@@ -40,6 +40,8 @@ Cập nhật mới nhất 25/09: Cloud read-only đã xác nhận Thảo và Th�
 
 Tiếp tục 25/09: commit `0b0c4c0` chỉ thêm **10 migration Project V2/Procurement V2 đã tracked** vào allowlist; auth đang sửa dở vẫn là diff riêng. Baseline check còn **4 file** thuộc daily-log và material-request/purchase-warning. Khi rà security gate, phát hiện RPC `list_project_v2_cohort_ids_v1` cho phép filter null và trả danh sách ID cohort active cho mọi tài khoản đã xác thực; cần giới hạn theo quyền xem dự án/V2 trước khi khép advisor review. Đây là vấn đề tách khỏi quyền PO vừa xác nhận. Chưa deploy production hay cấp quyền V2 cho RICO.
 
+Đã thêm migration mới `20260925042331_project_v2_cohort_access_guard.sql` để RPC danh sách cohort chỉ trả dự án khi actor có quyền xem ít nhất một loại kế hoạch V2 tại đúng project/site. Test đỏ trước khi có migration, sau đó 12/12 focused test qua. Trên Cloud preview có dữ liệu, replay 10 migration V2 cũ và migration guard qua; smoke transaction rollback-only xác nhận actor được xem thấy ID, outsider không thấy dù filter null hay nêu ID cụ thể. Sau smoke còn 0 workspace/fixture, anon không có quyền execute; preview đã xóa. Management API không ghi migration history nên lần này **không chứng minh version parity**. Production vẫn 116 migration, chưa có schema/cohort V2. Shared baseline vẫn 4 lỗi ngoài Project V2; không trộn daily-log/auth/material-request vào commit này.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text

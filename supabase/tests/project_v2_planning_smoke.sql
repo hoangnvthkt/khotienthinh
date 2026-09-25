@@ -50,7 +50,22 @@ begin
   if jsonb_array_length(public.list_project_v2_workspaces_v1() -> 'workspaces') <> 1 then
     raise exception 'PROJECT_V2_WORKSPACE_READ_FAILED';
   end if;
+  if not ((public.list_project_v2_cohort_ids_v1(null) -> 'projectIds')
+    ? (select project_id from project_v2_smoke_ids)) then
+    raise exception 'PROJECT_V2_VISIBLE_COHORT_MISSING';
+  end if;
 end $$;
+
+select set_config('request.jwt.claims', '{"email":"project-v2-smoke-outsider@example.invalid"}', true);
+do $$
+declare v_project_id text := (select project_id from project_v2_smoke_ids);
+begin
+  if public.list_project_v2_cohort_ids_v1(null) -> 'projectIds' <> '[]'::jsonb
+    or public.list_project_v2_cohort_ids_v1(array[v_project_id]) -> 'projectIds' <> '[]'::jsonb then
+    raise exception 'PROJECT_V2_COHORT_ID_DISCLOSED_TO_OUTSIDER';
+  end if;
+end $$;
+select set_config('request.jwt.claims', '{"email":"project-v2-smoke-admin@example.invalid"}', true);
 
 insert into public.project_v2_plans(id, workspace_id, plan_type, code, title, status,
   period_start, period_end, creator_user_id, approver_user_id, approved_at, content_hash)

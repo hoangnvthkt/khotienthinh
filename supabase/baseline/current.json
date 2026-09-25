@@ -131,7 +131,8 @@
     "20260923103023_procurement_v2_dossier_read_model.sql",
     "20260923161912_procurement_material_plan_po_allocation.sql",
     "20260923165407_project_v2_collaboration_lineage.sql",
-    "20260924081548_project_v2_material_boq_position.sql"
+    "20260924081548_project_v2_material_boq_position.sql",
+    "20260925042331_project_v2_cohort_access_guard.sql"
   ],
   "forbidIncludeAll": true
 }

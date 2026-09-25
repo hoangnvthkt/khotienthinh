@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const sql = readFileSync('supabase/migrations/20260923083354_project_v2_cohort_visibility.sql', 'utf8').toLowerCase();
+const guard = () => readFileSync('supabase/migrations/20260925042331_project_v2_cohort_access_guard.sql', 'utf8').toLowerCase();
 
 describe('Project V2 legacy-picker cohort visibility', () => {
   it('returns only requested active cohort IDs through a guarded RPC', () => {
@@ -16,5 +17,15 @@ describe('Project V2 legacy-picker cohort visibility', () => {
     expect(sql).toContain('p.code as project_code');
     expect(sql).toContain('p.client_name');
     expect(sql).toContain('site.name as construction_site_name');
+  });
+  it('requires a V2 view permission before returning an active cohort ID', () => {
+    const fix = guard();
+    expect(fix).toContain('function public.list_project_v2_cohort_ids_v1');
+    expect(fix).toContain('public.current_app_user_id()');
+    expect(fix).toContain('app_private.project_has_permission_v2');
+    expect(fix).toContain("'project.v2_month_plan.view'");
+    expect(fix).toContain("'project.v2_construction_plan.view'");
+    expect(fix).toContain("'project.v2_material_plan.view'");
+    expect(fix).toContain('w.project_id = any(p_project_ids)');
   });
 });
