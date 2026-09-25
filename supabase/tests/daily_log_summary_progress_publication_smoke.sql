@@ -471,6 +471,15 @@ declare
 begin
   select to_jsonb(labor) into strict v_labor_before from public.daily_log_labor labor
   where id = '71000000-0000-4000-8000-000000000040';
+  insert into public.daily_logs (id, project_id, date, status, description, created_by)
+  values ('daily-log-legacy-revision-denied', 'daily-log-publish-smoke-project', '2026-09-23',
+    'verified', 'Legacy standalone, not a normalized summary', 'Smoke');
+  begin
+    perform public.create_daily_log_summary_revision_v1('daily-log-legacy-revision-denied', 'Không chuyển đổi legacy');
+    raise exception 'legacy standalone log was converted into a summary revision';
+  exception when others then
+    if sqlerrm <> 'VERIFIED_SUMMARY_REQUIRED' then raise; end if;
+  end;
   begin
     perform public.create_daily_log_summary_revision_v1('daily-log-publish-smoke-summary', '   ');
     raise exception 'empty revision reason accepted';
