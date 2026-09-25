@@ -140,7 +140,8 @@
     "20260925062233_daily_log_shadow_pilot_gate.sql",
     "20260925063126_daily_log_contribution_room_insert.sql",
     "20260925065524_daily_log_enforced_write_boundary.sql",
-    "20260925153000_daily_log_shadow_all_submitted_gate.sql"
+    "20260925153000_daily_log_shadow_all_submitted_gate.sql",
+    "20260925160000_resource_evidence_permission.sql"
   ],
   "forbidIncludeAll": true
 }

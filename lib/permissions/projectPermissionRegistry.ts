@@ -294,6 +294,7 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
   ])),
   moduleDefinition('project.payment', 'Nghiệm thu và thanh toán', [PROJECT_TAB_ROUTE_BY_KEY.payment], 140, [
     ...workflowActions('project.payment', PROJECT_TAB_ROUTE_BY_KEY.payment),
+    projectAction('view_resource_evidence', 'Xem bằng chứng nguồn lực', 'project.payment', PROJECT_TAB_ROUTE_BY_KEY.payment, 125),
     projectAction('mark_paid', 'Đánh dấu đã thanh toán', 'project.payment', PROJECT_TAB_ROUTE_BY_KEY.payment, 130),
   ]),
   moduleDefinition('project.quantity_acceptance', 'Nghiệm thu khối lượng', [PROJECT_TAB_ROUTE_BY_KEY.payment], 150, actionSet('project.quantity_acceptance', PROJECT_TAB_ROUTE_BY_KEY.payment, [
