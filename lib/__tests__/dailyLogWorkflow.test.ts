@@ -4,6 +4,7 @@ import {
   buildDailyLogSourceSnapshot,
   buildDailyLogSummaryDetails,
   buildDailyLogSummaryVolumes,
+  canCreateDailyLogSummaryRevision,
   canPublishDailyLogSummary,
   canReturnDailyLogSource,
   DAILY_SUMMARY_SOURCE_TYPE,
@@ -12,6 +13,7 @@ import {
   getMissingDailyLogSummarySourceIds,
   getDailyLogTargetPermission,
   getDailyLogSummarySourceLogs,
+  mapDailyLogWbsCommandError,
   resolveDailyLogSummaryDetails,
   withDailyLogSummaryDetails,
 } from '../dailyLogWorkflow';
@@ -51,6 +53,18 @@ const summaryLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
 });
 
 describe('daily log source workflow', () => {
+  it('keeps revision reopen instructions instead of matching the shorter period lock code', () => {
+    expect(mapDailyLogWbsCommandError(new Error('PERIOD_LOCKED_WITH_REOPEN_REQUIRED')).message)
+      .toBe('Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.');
+  });
+  it('offers a summary revision only for the active verified version with dual capability and an open period', () => {
+    const verified = summaryLog({ status: 'verified', revisionNo: 1 });
+    expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: true, periodLocked: false })).toBe(true);
+    expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: true, periodLocked: true })).toBe(false);
+    expect(canCreateDailyLogSummaryRevision({ log: { ...verified, supersededByDailyLogId: 'summary-2' }, canApprove: true, canPublishProgress: true, periodLocked: false })).toBe(false);
+    expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: false, periodLocked: false })).toBe(false);
+  });
+
   it('requires both approve and publish_progress capabilities to publish a submitted summary', () => {
     const submitted = summaryLog({ status: 'submitted' });
     expect(canPublishDailyLogSummary({ log: submitted, canApprove: true, canPublishProgress: true })).toBe(true);

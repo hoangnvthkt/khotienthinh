@@ -121,7 +121,8 @@
     "20260923091500_daily_log_publish_progress_permission.sql",
     "20260923093000_daily_log_wbs_area_commands.sql",
     "20260923100000_daily_log_summary_progress_publication.sql",
-    "20260923101500_daily_progress_exception_command.sql"
+    "20260923101500_daily_progress_exception_command.sql",
+    "20260923103000_daily_log_summary_revisions.sql"
   ],
   "forbidIncludeAll": true
 }
