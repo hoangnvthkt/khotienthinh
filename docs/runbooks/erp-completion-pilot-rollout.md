@@ -86,7 +86,7 @@ quyền Project V2/Procurement. Chỉ dùng Supabase Cloud, không Docker/local 
 ### Điều kiện và thao tác operator
 
 1. Xác minh Cloud ref, project/site, release, ngày cutover và owner đang ACTIVE.
-   Kiểm tra đủ migration Nhật ký đến `20260925065524`; không áp dụng lại migration
+   Kiểm tra đủ migration Nhật ký đến `20260925153000`; không áp dụng lại migration
    đã có trong history. Lưu source/hash của migration trong bằng chứng release.
 2. Người tổng hợp phải có Room `verify` + `submit`; CHT có `approve` +
    `publish_progress`, assignment hợp lệ. QS chỉ đọc; kiểm thử user bị từ chối.
@@ -106,8 +106,10 @@ quyền Project V2/Procurement. Chỉ dùng Supabase Cloud, không Docker/local 
    không được thay bằng 0. Owner xử lý nguyên nhân sai khác, không sửa số liệu
    thật chỉ để đạt shadow xanh.
 5. Chỉ đổi `enforced` cùng release/ngày cutover khi shadow mới nhất từng summary
-   không sai khác và còn khớp dữ liệu hiện hành. Cổng server từ chối thiếu shadow,
-   shadow stale hoặc mismatch. Sau cutover, manual save/close kèm draft bị chặn;
+   không sai khác và còn khớp dữ liệu hiện hành. Mọi bản tổng hợp chuẩn hóa đã
+   `submitted` trong scope/ngày cutover đều phải có shadow khớp của release này;
+   cổng server từ chối thiếu shadow, shadow stale hoặc mismatch. Sau cutover,
+   manual save/close kèm draft bị chặn;
    chốt kỳ không kèm draft và mở kỳ vẫn giữ quyền quản trị kỳ hiện có.
 6. Kiểm tra một summary → một progress/task/day, lineage source/card, provider
    catalog/manual, replay command không nhân đôi và không có giao dịch/giá/tiền

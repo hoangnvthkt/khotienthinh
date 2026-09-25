@@ -12,7 +12,7 @@ Status: API/database, integrated browser journeys and full ERP-shell read route 
 
 ## Migrations installed on this branch
 
-`20260923090000`, `20260923091500`, `20260923093000`, `20260923100000`, `20260923101500`, `20260923103000`, `20260925062233`, `20260925063126`, `20260925065524`.
+`20260923090000`, `20260923091500`, `20260923093000`, `20260923100000`, `20260923101500`, `20260923103000`, `20260925062233`, `20260925063126`, `20260925065524`, `20260925153000`.
 
 Each exact migration source was recorded in branch migration history. No unrelated module migrations were installed.
 
@@ -60,8 +60,9 @@ Rollout remains **paused**. Synthetic users/project/sources/summary/progress/sha
 
 ### Follow-up verification, 2026-09-25
 
-- Five Cloud rollback SQL suites PASS through `node tests/daily-log/run-cloud-smokes.mjs`: foundation, publication/revision, Room INSERT, shadow pilot, enforced cutover. Operator missing-parameter denial and pause audit PASS. The runner targets only the authorized branch, not the root linked main project.
+- Six Cloud rollback SQL suites PASS through `node tests/daily-log/run-cloud-smokes.mjs`: foundation, publication/revision, Room INSERT, shadow pilot, missing shadow for another submitted summary, enforced cutover. Operator missing-parameter denial and pause audit PASS. The runner targets only the authorized branch, not the root linked main project.
 - The enforced guard was developed RED→GREEN against real authenticated RPCs: manual save and close-with-draft are denied; close without draft/reopen remain possible; exception outside enforced is denied. New migration SHA256: `49db8a3dde8a06d1c90dd6abee5aef79babe2603e2ec6e321c66b2f0deb41e1b`.
+- Gate self-review reproduced `UNSHADOWED_SUMMARY_ACCEPTED` in a rollback Cloud transaction: one matching shadow let another submitted summary enter enforced mode without comparison. Migration `20260925153000` now requires current, matching shadow evidence for **every submitted normalized summary** in scope for that release. SHA256: `c4785d32957f6de9118dad3006ebbc613163f6e0efb05faa72789032f0a6b031`. Six rollback smoke suites passed together with this migration before deployment; the exact source was then recorded in baseline branch migration history.
 - Browser run: `npx playwright test --config tests/daily-log/cloud-playwright.config.ts` — **3 passed (54.1s)** at 1440/900/390. Six real EMPLOYEE sessions; source A/B, catalog/manual resources, manual official decision, reader/denied actor, mismatch blocks promotion, matched shadow, publication/lineage and pause in finally. Latest synthetic journey dates: 2026-10-04/05/06.
 - The main three journeys use production components/services and live Cloud Auth/RPC in a navigation fixture. A separate Playwright case opens the latest verified summary through the **real ERP shell** at `/#/da?projectId=...&tab=dailylog&dailyLogId=...` with an authenticated CHT, then observes its WBS/provider evidence and no verified mutation action. Initial RED exposed a missing project-scoped navigation grant; `project.daily_log.view` was granted only to the five authorized synthetic personas on the dedicated project. The denied persona received no grant. Full run after that correction: **4 passed (1.0m)** at 1440/900/390 plus the ERP route. The shell case covers read/deep-link navigation; mutations remain covered by the Cloud component journey.
 - Browser exposed and fixed source contamination: a new author inherited another contribution's work/resources. Initial editor state is now scoped to its own contribution. Submit uses saved rowVersion/fingerprint. Regression tests preserve those boundaries.
