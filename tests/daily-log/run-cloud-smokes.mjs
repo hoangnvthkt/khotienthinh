@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { query, ref } from './cloud.mjs';
 // This runner intentionally refuses main and uses the same branch guard as E2E.
 for (const name of ['daily_log_wbs_area_foundation_smoke.sql','daily_log_summary_progress_publication_smoke.sql',
-  'daily_log_contribution_room_insert_smoke.sql','daily_log_shadow_pilot_smoke.sql','daily_log_cutover_guard_smoke.sql']) {
+  'daily_log_contribution_room_insert_smoke.sql','daily_log_shadow_pilot_smoke.sql',
+  'daily_log_shadow_uncompared_smoke.sql','daily_log_cutover_guard_smoke.sql']) {
   await query(readFileSync(`supabase/tests/${name}`,'utf8'),false);
   console.log(JSON.stringify({ref,test:name,result:'PASS',writes:'rolled back'}));
 }
