@@ -28,6 +28,8 @@ Sau khi chủ dự án cấp thêm quyền, Cloud read-only check thấy cả b�
 
 Cập nhật quyền sau khi chủ dự án chỉnh lại: Cloud xác nhận **chỉ Mơ còn `material_po.approve`** trong bốn persona; cả bốn vẫn có `material_po.submit`, nên cần rà quyền gửi PO của Thảo/Thịnh theo vai trò pilot trước UAT. Hai vật tư pilot đều liên kết item kho có thật. Cần chủ dự án cung cấp suất tiêu hao/nguồn định mức được duyệt cho từng cặp công tác–vật tư; hai tổng BOQ 100 m³ không thể tự dùng làm hệ số. Phần kỹ thuật migration, V2 Room grants và test tiếp tục xử lý riêng; không stage file migration daily-log đang untracked hoặc shared baseline marker đang dirty vào commit Project V2.
 
+Chủ dự án xác nhận tiếp **50 m³ Bê tông M300 và 50 m³ Cát trát là tổng lượng của từng kế hoạch pilot**, không phải định mức trên một đơn vị công tác. Giữ tách biệt với tổng BOQ công trình 100 m³ cho mỗi loại. Chủ dự án nói đã bỏ quyền gửi PO của Thảo/Thịnh, nhưng Cloud read-only check ngay sau đó vẫn thấy `material_po.submit` của cả hai đang active; `approve` đã inactive. Cần đối chiếu thao tác trong Room “Đơn hàng PO” (action “Gửi”) với trạng thái DB trước negative persona UAT. Không ghi norm giả hoặc coi quyền đã gỡ khi Cloud chưa xác nhận.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
