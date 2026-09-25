@@ -14,6 +14,8 @@ Task 13 còn mở: replay full chain trên Cloud có dữ liệu vướng migrat
 
 Đợt tiếp theo ngày 24/09 đã nối cân đối BOQ tổng công trình vào màn hình nhập và chi tiết kế hoạch vật tư. Reader tính lũy kế nhập kho công trường từ mọi nguồn, trừ hàng trả NCC; đơn đang đặt/chuyển chưa nhập không trừ vào “Còn lại”. Trạng thái thiếu dữ liệu và ngoài BOQ vẫn tách bạch. Migration reader chỉ được chạy trên Cloud preview có dữ liệu và branch đã xóa; chưa deploy Project V2 lên production. Xem evidence Task 13 và smoke `supabase/tests/project_v2_material_boq_position_smoke.sql`. Pending supply hiện vẫn “Chưa xác định” vì chưa có reader riêng. Full migration parity, actual app-route walkthrough theo persona và business signoff vẫn mở.
 
+Ngày 25/09, giao diện mẫu và shell Project V2 được chỉnh theo phong cách trang “Hôm nay”; mẫu ghi rõ dữ liệu minh họa, không còn nút gửi duyệt giả. Phần này chỉ là UX preview, không thay đổi tình trạng Cloud gate. Một read-only check cùng ngày xác nhận production Cloud vẫn chưa có `project_v2_workspaces` và BOQ reader, nên `/project-v2` chưa dùng cho dữ liệu thật.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text

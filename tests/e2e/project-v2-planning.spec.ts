@@ -5,11 +5,14 @@ for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/tests/project-v2/planning-fixture.html');
     await expect(page.getByRole('heading', { name: 'Chọn công việc và khối lượng' })).toBeVisible();
+    await expect(page.getByText('Bản xem trước · Dữ liệu mẫu')).toBeVisible();
+    await expect(page.getByText('Các thay đổi trên trang này không được lưu.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Gửi duyệt' })).toHaveCount(0);
     await expect(page.getByText('Khả dụng:', { exact: false }).first()).toBeVisible();
     await page.getByRole('checkbox').nth(1).check();
     await expect(page.getByRole('columnheader', { name: 'Kế hoạch kỳ này' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.getByRole('button', { name: 'Thi công', exact: true }).click();
+    await page.getByRole('tab', { name: 'Thi công', exact: true }).click();
     await page.getByRole('checkbox').first().check();
     await expect(page.getByRole('columnheader', { name: 'Tổ đội' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -18,7 +21,7 @@ for (const width of [390, 768, 1440]) {
   test(`material plan and calculation basis fit ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/tests/project-v2/planning-fixture.html');
-    await page.getByRole('button', { name: 'Vật tư', exact: true }).click();
+    await page.getByRole('tab', { name: 'Vật tư', exact: true }).click();
     await expect(page.getByText('Xi măng PCB40').filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText('Định mức').filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText('100 kg').filter({ visible: true }).first()).toBeVisible();
@@ -37,3 +40,14 @@ for (const width of [390, 768, 1440]) {
     await page.screenshot({ path: `/tmp/project-v2-material-editor-${width}.png`, fullPage: true });
   });
 }
+
+test('material sample remains usable at 200% zoom', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/tests/project-v2/planning-fixture.html');
+  await page.getByRole('tab', { name: 'Vật tư', exact: true }).click();
+  await page.evaluate(() => { document.body.style.zoom = '2'; });
+  await expect(page.getByText('Định mức').filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText('Còn lại').filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: /Chọn Xi măng PCB40|Xi măng PCB40/ }).first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

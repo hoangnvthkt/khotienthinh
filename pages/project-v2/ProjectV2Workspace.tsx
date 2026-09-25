@@ -251,8 +251,8 @@ const ProjectV2Workspace: React.FC = () => {
           <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Loại kế hoạch">
             {(['month', 'construction', 'material'] as const).map(type => <button key={type} type="button" role="tab"
               aria-selected={query.planType === type} onClick={() => changeQuery({ planType: type })}
-              className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold ${query.planType === type
-                ? 'bg-teal-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200'}`}>
+              className={`shrink-0 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors ${query.planType === type
+                ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'}`}>
               {typeLabels[type]}</button>)}
           </div>
           <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">

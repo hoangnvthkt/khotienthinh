@@ -5,12 +5,10 @@ import { ProjectV2Shell } from '../../components/project-v2/ProjectV2Shell';
 import { ProjectV2SourcePicker } from '../../components/project-v2/ProjectV2SourcePicker';
 import { MonthPlanEditor } from '../../components/project-v2/MonthPlanEditor';
 import { ConstructionPlanEditor, type ConstructionEntry } from '../../components/project-v2/ConstructionPlanEditor';
-import { ProjectV2PlanWorkflowActions } from '../../components/project-v2/ProjectV2PlanWorkflowActions';
 import { MaterialPlanEditor, type MaterialEntry } from '../../components/project-v2/MaterialPlanEditor';
 import { groupMaterialCandidates, type MaterialCandidate } from '../../lib/projectV2/materialCandidateService';
 import { MemoryRouter } from 'react-router-dom';
 import type { MonthCandidate, ConstructionCandidate } from '../../lib/projectV2/candidateService';
-import type { ProjectV2PlanSummary } from '../../lib/projectV2/readService';
 
 const month: MonthCandidate[] = [
   { contractItemId: 'group', code: '01', title: 'Phần móng', unit: 'm3', parentId: null, isGroup: true,
@@ -35,12 +33,6 @@ const material: MaterialCandidate[] = [{ candidateId: 'work-1:g8:cement', worksp
   sourceWorkQuantity: '10.000000', sourceUnit: 'm3', normResourceId: 'g8:cement',
   normRevision: 'rev-1', normFactor: '5.000000', coefficient: '1.000000',
   conversionNumerator: '1.000000', conversionDenominator: '1.000000' }];
-const plan: ProjectV2PlanSummary = { id: 'plan-1', workspaceId: 'w', planType: 'month', code: 'KT-09',
-  title: 'Kế hoạch khối lượng tháng 9', status: 'draft', periodStart: '2026-09-01', periodEnd: '2026-09-30',
-  ownerUserId: null, followerUserId: null, creatorUserId: 'u', submitterUserId: null,
-  approverUserId: null, revision: 1, version: 1, createdAt: '2026-09-23T00:00:00Z',
-  updatedAt: '2026-09-23T00:00:00Z' };
-
 function Fixture() {
   const [type, setType] = useState<'month' | 'construction' | 'material'>('month');
   const [selected, setSelected] = useState<string[]>([]);
@@ -48,16 +40,22 @@ function Fixture() {
   const [entries, setEntries] = useState<Record<string, ConstructionEntry>>({});
   const [materialKeys, setMaterialKeys] = useState<string[]>([]);
   const [materialEntries, setMaterialEntries] = useState<Record<string, MaterialEntry>>({});
-  return <div className="min-h-screen bg-slate-50"><ProjectV2Shell projectName="Dự án Riverside" projectCode="DA29"
-    clientName="Công ty Xin Hai Vina" siteName="Công trường Riverside" planType={type}
-    primaryAction={<button className="min-h-11 rounded-xl bg-teal-700 px-4 font-semibold text-white">Tạo kế hoạch {type === 'month' ? 'tháng' : type === 'construction' ? 'thi công' : 'vật tư'}</button>}>
-    <div className="flex gap-2"><button type="button" onClick={() => { setType('month'); setSelected([]); }} className="rounded-xl border bg-white px-4 py-2">Tháng</button>
-      <button type="button" onClick={() => { setType('construction'); setSelected([]); }} className="rounded-xl border bg-white px-4 py-2">Thi công</button>
-      <button type="button" onClick={() => { setType('material'); setSelected([]); }} className="rounded-xl border bg-white px-4 py-2">Vật tư</button></div>
-    <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-      <div><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">Bước 2/2 · Nguồn kế hoạch</p>
-        <h2 className="mt-1 text-xl font-bold">Chọn công việc và khối lượng</h2>
-        <p className="mt-1 text-sm text-slate-500">Nguồn được duyệt và khối lượng khả dụng từ máy chủ.</p></div>
+  return <ProjectV2Shell projectName="Dự án mẫu Riverside" projectCode="DEMO"
+    clientName="Công ty mẫu" siteName="Công trường mẫu" planType={type}
+    primaryAction={<span className="inline-flex min-h-10 items-center rounded-xl border border-white/20 bg-white/10 px-3 text-xs font-bold text-white">Bản xem trước · Dữ liệu mẫu</span>}>
+    <div className="flex flex-wrap gap-2" role="tablist" aria-label="Loại kế hoạch">
+      {([['month', 'Tháng'], ['construction', 'Thi công'], ['material', 'Vật tư']] as const).map(([key, label]) =>
+        <button key={key} type="button" role="tab" aria-selected={type === key}
+          onClick={() => { setType(key); setSelected([]); }}
+          className={`min-h-10 rounded-xl border px-4 text-sm font-semibold transition-colors ${type === key
+            ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'}`}>{label}</button>)}</div>
+    <section className="min-w-0 space-y-5 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_8px_24px_-16px_rgba(30,41,59,0.35)] dark:border-slate-700 dark:bg-slate-900 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4 dark:border-slate-800">
+        <div><p className="text-[11px] font-bold uppercase tracking-[0.15em] text-indigo-600 dark:text-indigo-300">Bước 2/2 · Nguồn kế hoạch</p>
+          <h2 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">Chọn công việc và khối lượng</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Xem nguồn, chọn dòng cần lập và kiểm tra số lượng trước khi lưu.</p></div>
+        <span className="rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200">{type === 'month' ? 'Kế hoạch tháng' : type === 'construction' ? 'Kế hoạch thi công' : 'Kế hoạch vật tư'}</span>
+      </div>
       {type !== 'material' && <ProjectV2SourcePicker workspaceId="w" type={type} monthCandidates={month}
         constructionCandidates={construction} selectedIds={selected} onChange={setSelected} />
       }
@@ -79,12 +77,9 @@ function Fixture() {
             destinationId: 'site-1', note: '', overrideReason: 'Giao đợt đầu' } });
         }} onChange={(key, patch) => setMaterialEntries(previous => ({ ...previous,
           [key]: { ...previous[key], ...patch } }))}
-        periodStart="2026-09-23" periodEnd="2026-09-29" siteName="Công trường Riverside" siteId="site-1" />}
+        periodStart="2026-09-23" periodEnd="2026-09-29" siteName="Công trường mẫu" siteId="site-1" />}
     </section>
-    <section className="rounded-2xl border bg-white p-4"><p className="mb-3 text-xs font-semibold uppercase tracking-wide text-teal-700">Thao tác bản nháp</p>
-      <ProjectV2PlanWorkflowActions plan={plan} actorId="u"
-        capabilities={{ edit: true, submit: true, approve: false, return: false, revise: false, cancel: false }}
-        busy={false} onAction={() => {}} /></section>
-  </ProjectV2Shell></div>;
+    <p className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-4 py-3 text-sm text-slate-600 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-slate-300">Đây là dữ liệu minh họa để xem và thử nhập liệu. Các thay đổi trên trang này không được lưu.</p>
+  </ProjectV2Shell>;
 }
 createRoot(document.getElementById('root')!).render(<MemoryRouter><Fixture /></MemoryRouter>);
