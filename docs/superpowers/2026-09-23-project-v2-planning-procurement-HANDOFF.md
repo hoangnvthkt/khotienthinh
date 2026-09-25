@@ -34,6 +34,8 @@ Audit event Room mới nhất xác nhận payload đã lưu vẫn chứa `submit
 
 Cloud check sau khi chủ dự án lưu Room lần nữa: `material_po.submit` của Thảo/Thịnh đã **inactive**, quyền duyệt cũng inactive; Năm còn gửi, Mơ còn duyệt. Thảo/Thịnh vẫn có `edit` và `delete` trong Room PO; `edit` ánh xạ sang quyền tạo PO draft, nên đã hỏi chủ dự án có cố ý giữ hay muốn giới hạn về chỉ `view`. Chưa tự sửa grant. Chưa có suất tiêu hao trên mỗi đơn vị công tác và schema V2 production vẫn chưa triển khai.
 
+Chủ dự án cho phép giả định số liệu **trên môi trường test** để kiểm chứng các bước và nói sẽ bỏ `Sửa/Xóa` PO của Thảo/Thịnh. Trên Cloud branch có bản sao dữ liệu RICO, CLI đã replay đúng 16 migration với version/name parity. Transaction rollback-only dùng đúng project/site, hai work BOQ, hai material BOQ, item kho và actor Thảo/Thịnh; giả định **5 m³ công tác × 10 m³ vật tư / 1 m³ công tác = 50 m³** cho mỗi cặp. Hai candidate đều selectable, Thảo gửi kế hoạch vật tư, Thịnh duyệt, G2 tạo một demand dossier. Đây chỉ là hệ số giả lập, **không phải định mức được duyệt**. Sau rollback không còn workspace/plan/norm giả; preview và credential tạm đã xóa. Production chưa deploy V2. Cloud check gần nhất vẫn thấy Thảo/Thịnh có `view/edit/delete` PO, chưa thấy `Sửa/Xóa` được gỡ; `submit/approve` đã tắt. Không trộn daily-log vào commit Project V2. Xem evidence Task 13.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
