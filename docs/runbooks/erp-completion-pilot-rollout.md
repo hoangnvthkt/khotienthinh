@@ -90,6 +90,8 @@ quyền Project V2/Procurement. Chỉ dùng Supabase Cloud, không Docker/local 
    đã có trong history. Lưu source/hash của migration trong bằng chứng release.
 2. Người tổng hợp phải có Room `verify` + `submit`; CHT có `approve` +
    `publish_progress`, assignment hợp lệ. QS chỉ đọc; kiểm thử user bị từ chối.
+   Điều hướng ERP còn cần `project.daily_log.view` theo đúng project scope để
+   project hiện trong danh sách; Room grant một mình không đủ cho RLS `projects`.
    Không thay bằng admin để vượt lỗi quyền nghiệp vụ.
 3. Mở transaction trên Cloud đã xác minh. Dùng `set_config` đặt
    `app.daily_log_operation` là JSON với đủ `projectId`, `constructionSiteId`
@@ -141,7 +143,8 @@ npx playwright test --config tests/daily-log/cloud-playwright.config.ts
 
 SQL smokes rollback; browser test **ghi dữ liệu synthetic**, xoay password của
 sáu persona test và pause scope trong finally. Không chạy song song runner này.
-Không tự xóa dữ liệu sau test. Fixture browser dùng component/service production
-và Auth/RPC Cloud thật nhưng thay shell điều hướng ERP: không coi đây là bằng
-chứng full-shell navigation. Xem evidence riêng trong
+Không tự xóa dữ liệu sau test. Fixture browser gồm hành trình component/service
+và một ca mở summary qua shell ERP thật bằng phiên CHT cùng deep link.
+Ca shell kiểm tra đọc/lineage; các mutation được kiểm bằng harness Cloud.
+Xem evidence riêng trong
 `docs/superpowers/evidence/2026-09-25-daily-log-baseline-cloud-smoke.md`.
