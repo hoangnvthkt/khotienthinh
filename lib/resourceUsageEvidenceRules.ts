@@ -9,6 +9,7 @@ import type {
 const normalizeProviderName = (value: string): string => value
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[đĐ]/g, 'd')
   .trim()
   .toLowerCase()
   .replace(/\s+/g, ' ');
