@@ -16,6 +16,8 @@ Task 13 còn mở: replay full chain trên Cloud có dữ liệu vướng migrat
 
 Ngày 25/09, giao diện mẫu và shell Project V2 được chỉnh theo phong cách trang “Hôm nay”; mẫu ghi rõ dữ liệu minh họa, không còn nút gửi duyệt giả. Phần này chỉ là UX preview, không thay đổi tình trạng Cloud gate. Một read-only check cùng ngày xác nhận production Cloud vẫn chưa có `project_v2_workspaces` và BOQ reader, nên `/project-v2` chưa dùng cho dữ liệu thật.
 
+Đợt kiểm chứng tiếp theo ngày 25/09 trên Cloud branch có bản sao dữ liệu production đã replay được chuỗi schema V2, daily-log và Procurement theo thứ tự sau khi sửa constraint daily-log giữ action `return` của Project V2. Các smoke rollback-only planning, BOQ, intake/dossier, collaboration và mixed-source PO trong G9 scope đều qua; không còn fixture. Tuy nhiên Management API ghi migration bằng timestamp mới, **chưa có parity theo version file**, shared migration marker còn đỏ, và chưa có UAT trên app route bằng persona thật. Production chưa được deploy V2. Xem evidence Task 13; cần hoàn tất parity, advisor review, named cohort/personas và business UAT trước khi mở V2 với dữ liệu thật.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
