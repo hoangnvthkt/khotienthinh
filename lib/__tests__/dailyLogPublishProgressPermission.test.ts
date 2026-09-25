@@ -43,4 +43,16 @@ describe('Daily Log progress publication permission', () => {
     expect(sql).toContain('project_permission_room_member_actions_code_check');
     expect(sql).not.toContain('insert into public.project_permission_room_member_actions');
   });
+
+  it('keeps the Project V2 return action in both Room constraints', () => {
+    const sql = readFileSync(join(
+      process.cwd(),
+      'supabase/migrations/20260923091500_daily_log_publish_progress_permission.sql',
+    ), 'utf8').toLowerCase();
+
+    const roomActions = sql.match(/project_permission_rooms_allowed_actions_check[\s\S]*?array\[([\s\S]*?)\]::text\[\]/)?.[1];
+    const memberActions = sql.match(/project_permission_room_member_actions_code_check[\s\S]*?array\[([\s\S]*?)\]::text\[\]/)?.[1];
+    expect(roomActions).toContain("'return'");
+    expect(memberActions).toContain("'return'");
+  });
 });
