@@ -2,7 +2,8 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { DailyProgressCutoverFields } from '../../pages/project/WeeklyProgressTab';
+import { MemoryRouter } from 'react-router-dom';
+import { DailyProgressCutoverFields, getDailyLogCutoverControls } from '../../pages/project/WeeklyProgressTab';
 
 const row = {
   id: 'progress-1', scopeKey: 'project-1', projectId: 'project-1', taskId: 'task-1',
@@ -12,8 +13,16 @@ const row = {
 };
 
 describe('Weekly Progress daily-log cutover', () => {
+  it('preserves period close/reopen while forbidding draft saves after cutover', () => {
+    expect(getDailyLogCutoverControls(true, { canSave: true, canClose: true, canReopen: false })).toEqual({
+      canEdit: false, canConfirm: true, saveDraftOnClose: false,
+    });
+    expect(getDailyLogCutoverControls(true, { canSave: false, canClose: false, canReopen: true })).toEqual({
+      canEdit: false, canConfirm: true, saveDraftOnClose: false,
+    });
+  });
   it('presents Daily Log progress as read-only with source attribution after cutover', () => {
-    const html = renderToStaticMarkup(<DailyProgressCutoverFields
+    const html = renderToStaticMarkup(<MemoryRouter basename="/app" initialEntries={['/app']}><DailyProgressCutoverFields
       authoritative
       row={row}
       progressPercent="30"
@@ -22,11 +31,12 @@ describe('Weekly Progress daily-log cutover', () => {
       unit="m³"
       dailyLogHref="/da?tab=dailylog&dailyLogId=summary-1"
       onChange={() => undefined}
-    />);
+    /></MemoryRouter>);
 
     expect(html).toContain('Nguồn: Nhật ký tổng hợp');
     expect(html).toContain('Mở nhật ký');
     expect(html).toContain('dailyLogId=summary-1');
+    expect(html).toContain('href="/app/da?');
     expect(html).not.toContain('aria-label="% hoàn thành"');
   });
 

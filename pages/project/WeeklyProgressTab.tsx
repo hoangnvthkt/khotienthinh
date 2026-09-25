@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
     X, Save, ChevronRight, ChevronDown, Search, Calendar, User, Clock,
     AlertTriangle, CheckCircle2, HelpCircle, Loader2, ArrowUpRight,
@@ -145,7 +145,7 @@ export const DailyProgressCutoverFields: React.FC<DailyProgressCutoverFieldsProp
                 <span className="rounded-full bg-teal-700 px-2 py-1 text-[10px] font-black text-white">
                     {row?.sourceDailyLogId ? 'Nguồn: Nhật ký tổng hợp' : 'Chờ nhật ký tổng hợp'}
                 </span>
-                {dailyLogHref && <a href={dailyLogHref} className="text-xs font-bold text-teal-800 underline underline-offset-2 dark:text-teal-300">Mở nhật ký</a>}
+                {dailyLogHref && <Link to={dailyLogHref} className="text-xs font-bold text-teal-800 underline underline-offset-2 dark:text-teal-300">Mở nhật ký</Link>}
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><div className="text-[10px] font-bold uppercase text-slate-500">% hoàn thành</div><div className="font-black text-slate-900 dark:text-white">{progressPercent || 'Chưa có'}{progressPercent ? '%' : ''}</div></div>
@@ -200,6 +200,14 @@ export const getWeeklyProgressPeriodKey = (
     periodType: ProgressEntryMode,
     periodStart: string,
 ): string => `${scopeKey}__${periodType}__${periodStart}`;
+
+export const getDailyLogCutoverControls = (authoritative: boolean, readiness: {
+    canSave: boolean; canClose: boolean; canReopen: boolean;
+}) => ({
+    canEdit: readiness.canSave && !authoritative,
+    canConfirm: readiness.canClose || readiness.canReopen,
+    saveDraftOnClose: readiness.canSave && !authoritative,
+});
 
 export const getWeeklyProgressMutationReadiness = (input: {
     actionsLoaded: boolean;
@@ -1195,9 +1203,9 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         isLocked: selectedPeriodLocked,
     });
     const dailyModeAuthoritative = entryMode === 'daily' && dailyProgressAuthority?.authoritative === true;
-    const canEditSelectedPeriod = selectedMutationReadiness.canSave && !dailyModeAuthoritative;
-    const canConfirmSelectedPeriod = !dailyModeAuthoritative
-        && (selectedMutationReadiness.canClose || selectedMutationReadiness.canReopen);
+    const cutoverControls = getDailyLogCutoverControls(dailyModeAuthoritative, selectedMutationReadiness);
+    const canEditSelectedPeriod = cutoverControls.canEdit;
+    const canConfirmSelectedPeriod = cutoverControls.canConfirm;
 
     const getSelectedDailySourceRow = useCallback((taskId: string) => allDailyProgress
         .filter(row => row.scopeKey === scopeKey && row.taskId === taskId && row.progressDate === selectedProgressDate)
@@ -1716,7 +1724,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 ? new Date(`${selectedProgressDate}T00:00:00`).toLocaleDateString('vi-VN')
                 : getISOWeekLabel(selectedWeekStart),
             confirmText: 'Sau khi chốt, dữ liệu kỳ này chỉ có thể sửa khi được mở chốt.',
-            warningText: weeklyProgressCapabilities.canEdit
+            warningText: cutoverControls.saveDraftOnClose
                 ? 'Các thay đổi đang hiển thị sẽ được lưu và chốt trong cùng một giao dịch.'
                 : 'Kỳ sẽ được chốt với dữ liệu đã lưu hiện tại.',
             actionLabel: 'Chốt',
@@ -1732,7 +1740,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         try {
             let outcome: WeeklyProgressMutationOutcome<ProjectProgressPeriodState>;
             if (entryMode === 'daily') {
-                const draft = weeklyProgressCapabilities.canEdit && weeklyLeafTasks.length > 0
+                const draft = cutoverControls.saveDraftOnClose && weeklyLeafTasks.length > 0
                     ? buildDailyMutationDraft()
                     : null;
                 outcome = await completeWeeklyProgressMutationWithReload({
@@ -1790,6 +1798,7 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         buildDailyMutationDraft,
         buildWeeklyMutationDraft,
         confirm,
+        cutoverControls.saveDraftOnClose,
         constructionSiteId,
         ensureWeeklyProgressAction,
         entryMode,

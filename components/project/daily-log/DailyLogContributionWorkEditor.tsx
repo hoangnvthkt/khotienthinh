@@ -76,7 +76,7 @@ export const DailyLogContributionWorkEditor: React.FC<DailyLogContributionWorkEd
 }) => {
   const contribution = bundle?.contribution || null;
   const initialRows = useMemo<DailyLogWorkItemEditorRow[]>(() => (bundle?.workItems || [])
-    .filter(item => !contribution || item.contributionId === contribution.id)
+    .filter(item => contribution && item.contributionId === contribution.id && !item.dailyLogId)
     .map(item => {
       const task = bundle?.tasks.find(candidate => candidate.id === item.taskId);
       const previous = bundle?.previousProgressRows.find(row => row.taskId === item.taskId);
@@ -93,18 +93,18 @@ export const DailyLogContributionWorkEditor: React.FC<DailyLogContributionWorkEd
         forecastFinishDate: item.forecastFinishDate,
       };
     }), [bundle, contribution]);
-  const initialLabor = useMemo<DailyLogLaborInput[]>(() => (bundle?.labor || []).map((line: any) => ({
+  const initialLabor = useMemo<DailyLogLaborInput[]>(() => (bundle?.labor || []).filter(line => contribution && line.contributionId === contribution.id).map((line: any) => ({
     workItemClientKey: line.dailyLogWorkItemId || initialRows.find(row => row.taskId === line.taskId)?.clientKey || '',
     laborType: line.laborType || '', peopleCount: Number(line.peopleCount ?? line.count ?? 0),
     hoursPerPerson: Number(line.hoursPerPerson ?? 0), note: line.note,
     provider: providerFromBundleLine(line),
-  })).filter(line => line.workItemClientKey), [bundle, initialRows]);
-  const initialMachines = useMemo<DailyLogMachineInput[]>(() => (bundle?.machines || []).map((line: any) => ({
+  })).filter(line => line.workItemClientKey), [bundle, initialRows, contribution]);
+  const initialMachines = useMemo<DailyLogMachineInput[]>(() => (bundle?.machines || []).filter(line => contribution && line.contributionId === contribution.id).map((line: any) => ({
     workItemClientKey: line.dailyLogWorkItemId || initialRows.find(row => row.taskId === line.taskId)?.clientKey || '',
     machineType: line.machineType || line.machineName || '', machineCount: Number(line.machineCount ?? 0),
     hoursPerMachine: Number(line.hoursPerMachine ?? 0), note: line.note,
     provider: providerFromBundleLine(line),
-  })).filter(line => line.workItemClientKey), [bundle, initialRows]);
+  })).filter(line => line.workItemClientKey), [bundle, initialRows, contribution]);
 
   const [rows, setRows] = useState(initialRows);
   const [labor, setLabor] = useState(initialLabor);
@@ -156,7 +156,10 @@ export const DailyLogContributionWorkEditor: React.FC<DailyLogContributionWorkEd
       const receipt = await dailyLogWbsService.saveContribution(buildContributionSaveInput(targetContribution, draft));
       onSaved?.(receipt);
       if (submit) {
-        await dailyLogContributionService.submit({ contribution: { ...targetContribution, workAreaCode, workAreaName } });
+        await dailyLogContributionService.submit({ contribution: {
+          ...targetContribution, workAreaCode, workAreaName,
+          rowVersion: receipt.rowVersion, sourceFingerprint: receipt.sourceFingerprint,
+        } });
         onSubmitted?.();
       }
     } catch (caught) {

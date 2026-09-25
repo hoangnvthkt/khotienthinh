@@ -223,6 +223,18 @@ interface CanReturnDailyLogSourceInput {
   permissions: Iterable<string>;
 }
 
+export const getDailyLogReviewSurface = (input: {
+  isSummary: boolean; loading?: boolean; error?: string | null; loaded?: boolean;
+  normalized?: boolean; rolloutEnabled?: boolean;
+  logDate?: string; cutoverDate?: string | null;
+}): 'loading' | 'error' | 'wbs' | 'legacy' => {
+  if (!input.isSummary) return 'legacy';
+  if (input.error) return 'error';
+  if (input.loading || !input.loaded) return 'loading';
+  const afterCutover = input.rolloutEnabled && input.logDate && input.cutoverDate && input.logDate >= input.cutoverDate;
+  return input.normalized || afterCutover ? 'wbs' : 'legacy';
+};
+
 const hasPermission = (permissions: Iterable<string>, code: string): boolean =>
   new Set(permissions).has(code);
 
@@ -505,7 +517,7 @@ export const resolveDailyLogSummaryDetails = (
   if (!isDailyLogSummaryRow(summaryLog)) return { details: persisted, source: 'persisted' };
 
   const metadata = summaryLog.summarySourceMetadata || {};
-  if (Number(metadata.aggregationVersion || 0) >= 2) {
+  if (summaryLog.normalizedWbs || Number(metadata.aggregationVersion || 0) >= 2) {
     return { details: persisted, source: 'persisted' };
   }
 

@@ -30,6 +30,7 @@ export interface DailyLogAreaCardModel {
 interface DailyLogAreaCardProps {
   card: DailyLogAreaCardModel;
   mode: 'summarize' | 'review';
+  canRequestChange?: boolean;
   onProgressChange?: (itemId: string, value: number) => void;
   onRefresh?: (sourceId: string) => void;
   onRemove?: (sourceId: string) => void;
@@ -41,7 +42,7 @@ const STATE_LABELS: Record<string, string> = {
 };
 
 export const DailyLogAreaCard: React.FC<DailyLogAreaCardProps> = ({
-  card, mode, onProgressChange, onRefresh, onRemove, onRequestChange,
+  card, mode, canRequestChange = false, onProgressChange, onRefresh, onRemove, onRequestChange,
 }) => {
   const [comment, setComment] = React.useState('');
   const people = card.resources.filter(row => row.kind === 'labor').reduce((sum, row) => sum + row.count, 0);
@@ -78,7 +79,7 @@ export const DailyLogAreaCard: React.FC<DailyLogAreaCardProps> = ({
           {mode === 'summarize' && sourceState === 'changed' && <button type="button" onClick={() => onRefresh?.(card.source.id || '')} className="flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 px-3 text-xs font-bold text-amber-800"><RefreshCw size={13} /> Cập nhật từ phiếu</button>}
           {mode === 'summarize' && <button type="button" onClick={() => onRemove?.(card.source.id || '')} className="h-9 rounded-lg px-3 text-xs font-bold text-red-600 hover:bg-red-50">Bỏ card</button>}
         </div>
-        {mode === 'review' && <div className="flex flex-col gap-2 sm:flex-row"><input aria-label={`Nhận xét ${card.source.workAreaName || ''}`} value={comment} onChange={event => setComment(event.target.value)} placeholder="Nhận xét bắt buộc khi yêu cầu sửa" className="h-10 flex-1 rounded-lg border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-950" /><button type="button" disabled={!comment.trim()} onClick={() => onRequestChange?.(card.source.id || '', comment.trim())} className="h-10 rounded-lg border border-amber-300 px-3 text-xs font-bold text-amber-800 disabled:opacity-50">Yêu cầu sửa khu vực</button></div>}
+        {mode === 'review' && canRequestChange && <div className="flex flex-col gap-2 sm:flex-row"><input aria-label={`Nhận xét ${card.source.workAreaName || ''}`} value={comment} onChange={event => setComment(event.target.value)} placeholder="Nhận xét bắt buộc khi yêu cầu sửa" className="h-10 flex-1 rounded-lg border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-950" /><button type="button" disabled={!comment.trim()} onClick={() => onRequestChange?.(card.source.id || '', comment.trim())} className="h-10 rounded-lg border border-amber-300 px-3 text-xs font-bold text-amber-800 disabled:opacity-50">Yêu cầu sửa khu vực</button></div>}
       </div>
     </details>
   </article>;

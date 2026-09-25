@@ -16,7 +16,14 @@ begin
   where role = 'ADMIN' and auth_id is not null
   order by created_at
   limit 1;
-  if v_admin_auth_id is null then raise exception 'smoke requires an existing Cloud admin identity'; end if;
+  if v_admin_auth_id is null then
+    -- The empty test branch has no existing admin. Use the rollback-only profile
+    -- email fallback to bootstrap its Auth link, never promote a real actor.
+    perform set_config('request.jwt.claims', jsonb_build_object(
+      'sub','71000000-0000-4000-8000-000000000001','email','daily-log-publish-smoke@example.invalid','role','authenticated'
+    )::text,true);
+    return;
+  end if;
   perform set_config('request.jwt.claims', jsonb_build_object(
     'sub', v_admin_auth_id, 'role', 'authenticated'
   )::text, true);
@@ -95,7 +102,7 @@ insert into public.project_permission_room_member_actions (
 insert into app_private.daily_log_wbs_rollout_scopes (
   project_id, construction_site_id, mode, cutover_date, reason, created_by
 ) values (
-  'daily-log-publish-smoke-project', null, 'pilot', '2026-09-23',
+  'daily-log-publish-smoke-project', null, 'enforced', '2026-09-23',
   'Daily progress exception smoke', '71000000-0000-4000-8000-000000000001'
 );
 

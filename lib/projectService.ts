@@ -395,10 +395,11 @@ export const dailyLogService = {
             if (!details) return log;
             return {
                 ...log,
-                volumes: details.volumes.length > 0 ? details.volumes : log.volumes,
+                normalizedWbs: details.normalizedWbs,
+                volumes: details.normalizedWbs || details.volumes.length > 0 ? details.volumes : log.volumes,
                 materials: details.materials.length > 0 ? details.materials : log.materials,
-                laborDetails: details.laborDetails.length > 0 ? details.laborDetails : log.laborDetails,
-                machines: details.machines.length > 0 ? details.machines : log.machines,
+                laborDetails: details.normalizedWbs || details.laborDetails.length > 0 ? details.laborDetails : log.laborDetails,
+                machines: details.normalizedWbs || details.machines.length > 0 ? details.machines : log.machines,
             };
         });
     },
@@ -421,7 +422,7 @@ export const dailyLogService = {
         // Mục 8: Strip JSONB array fields — data chi tiết lưu trong normalized tables
         // (daily_log_volumes, daily_log_materials, daily_log_labor, daily_log_machines)
         // Không gửi lên daily_logs để tránh double-write và drift
-        const { volumes, materials, laborDetails, machines, ...metaItem } = item;
+        const { volumes, materials, laborDetails, machines, normalizedWbs: _normalizedWbs, ...metaItem } = item;
         const { error } = await supabase
             .from('daily_logs')
             .upsert(toDb({

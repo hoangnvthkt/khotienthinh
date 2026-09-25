@@ -3,10 +3,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock('../supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 
-import { dailyLogWbsService } from '../dailyLogWbsService';
+import { dailyLogWbsService, getDailyLogPublicationOutcome } from '../dailyLogWbsService';
 
 describe('dailyLogWbsService', () => {
   beforeEach(() => mocks.rpc.mockReset());
+
+  it('keeps a shadow receipt in review without claiming official publication', () => {
+    expect(getDailyLogPublicationOutcome({ publishedProgress: false, mismatchCount: 2 })).toEqual({
+      closeReview: false, message: 'Đã đối chiếu thử nghiệm: 2 WBS còn sai khác. Chưa công bố tiến độ.',
+    });
+    expect(getDailyLogPublicationOutcome({ publishedProgress: false, mismatchCount: 0 })).toEqual({
+      closeReview: false, message: 'Đối chiếu thử nghiệm khớp. Chưa công bố tiến độ; cần bật chế độ chính thức.',
+    });
+    expect(getDailyLogPublicationOutcome({ publishedProgress: true })).toEqual({
+      closeReview: true, message: 'Đã duyệt và công bố tiến độ',
+    });
+  });
+
+  it('maps stored WBS snapshots to editor fields without replacing unknown quantities with zero', async () => {
+    mocks.rpc.mockResolvedValue({ data: { work_items: [{ id: 'w1', daily_log_id: 's1',
+      task_id: 't1', work_area_name_snapshot: 'Khu A', task_name_snapshot: 'Tên đã chốt',
+      wbs_code_snapshot: '1.1', unit_snapshot: 'm3', planned_quantity_snapshot: null,
+      area_planned_quantity_snapshot: 40, schedule_finish_date_snapshot: '2026-10-01',
+    }] }, error: null });
+    const bundle = await dailyLogWbsService.getBundle({ projectId: 'p1', constructionSiteId: null, logDate: '2026-09-23' });
+    expect(bundle.workItems[0]).toMatchObject({ ownerType: 'summary_source', taskName: 'Tên đã chốt',
+      workAreaName: 'Khu A', wbsCode: '1.1', unit: 'm3', plannedQuantity: null,
+      areaPlannedQuantity: 40, scheduleFinishDate: '2026-10-01' });
+  });
 
   it('saves contribution work with server-owned physical resource totals', async () => {
     mocks.rpc.mockResolvedValue({

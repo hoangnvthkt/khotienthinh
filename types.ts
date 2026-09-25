@@ -1302,6 +1302,8 @@ export interface DailyLogSummarySource {
 }
 
 export interface DailyLog {
+  /** Read-model marker only; never persisted in daily_logs. */
+  normalizedWbs?: boolean;
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
