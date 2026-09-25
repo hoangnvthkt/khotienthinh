@@ -1210,6 +1210,70 @@ export interface DailyLogResourceProvider {
   manualProviderNote?: string | null;
 }
 
+export type ResourceEvidenceType = 'labor' | 'machine';
+export type ResourceEvidenceRevisionState = 'current' | 'superseded';
+
+export interface ResourceEvidenceProvider {
+  entryMode: DailyLogProviderEntryMode;
+  partnerId?: string | null;
+  providerCodeSnapshot?: string | null;
+  providerNameSnapshot?: string | null;
+  manualProviderType?: DailyLogManualProviderType | null;
+  manualProviderName?: string | null;
+  manualProviderNote?: string | null;
+}
+
+export interface VerifiedResourceUsageEvidence {
+  resourceLineId: string;
+  resourceType: ResourceEvidenceType;
+  dailyLogId: string;
+  summarySourceId: string;
+  contributionId: string;
+  revisionNo: number;
+  revisionState: ResourceEvidenceRevisionState;
+  projectId?: string | null;
+  constructionSiteId?: string | null;
+  logDate: string;
+  workAreaCode: string;
+  workAreaName: string;
+  taskId: string;
+  wbsCode?: string | null;
+  taskName: string;
+  provider: ResourceEvidenceProvider;
+  peopleCount?: number | null;
+  hoursPerPerson?: number | null;
+  totalLaborHours?: number | null;
+  machineCount?: number | null;
+  hoursPerMachine?: number | null;
+  totalMachineHours?: number | null;
+  sourceUserName?: string | null;
+  verifiedByName?: string | null;
+  verifiedAt: string;
+}
+
+export interface ResourceEvidenceFilters {
+  projectId: string;
+  constructionSiteId?: string | null;
+  fromDate: string;
+  toDate: string;
+  providerKey?: string | null;
+  taskId?: string | null;
+  resourceType?: ResourceEvidenceType | null;
+  includeSuperseded?: boolean;
+  cursor?: string | null;
+  limit?: number;
+}
+
+export interface ResourceEvidenceGroup {
+  providerKey: string;
+  provider: ResourceEvidenceProvider;
+  peopleCount: number;
+  totalLaborHours: number;
+  machineCount: number;
+  totalMachineHours: number;
+  lineCount: number;
+}
+
 export interface DailyLogLaborInput {
   workItemClientKey: string;
   workItemId?: string | null;
