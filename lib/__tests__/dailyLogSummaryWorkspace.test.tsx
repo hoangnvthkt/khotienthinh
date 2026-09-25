@@ -68,6 +68,12 @@ const bundle: DailyLogWbsBundle = {
 };
 
 describe('DailyLogSummaryWorkspace', () => {
+  it('lets the summarizer explicitly resolve physical quantities without guessing missing values', () => {
+    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={bundle} mode="summarize" />);
+    expect(html).toContain('Khối lượng lũy kế chính thức');
+    expect(html).toContain('Khối lượng trong ngày chính thức');
+    expect(html).toContain('Chưa xác định');
+  });
   it('renders four area cards and a useful operational overview', () => {
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={bundle} mode="summarize" />);
     expect((html.match(/data-testid="daily-log-area-card"/g) || [])).toHaveLength(4);
@@ -123,7 +129,7 @@ describe('DailyLogSummaryWorkspace', () => {
   });
 
   it('renders review actions only when approve and publish permissions are both present', () => {
-    const reviewBundle = { ...bundle, summaryLog: { ...bundle.summaryLog!, status: 'submitted' as const } };
+    const reviewBundle = { ...bundle, rollout: { ...bundle.rollout, mode: 'enforced' as const }, summaryLog: { ...bundle.summaryLog!, status: 'submitted' as const } };
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={reviewBundle} mode="review" />);
     expect(html).toContain('Duyệt &amp; công bố');
     expect(html).toContain('Trả lại toàn bộ');
@@ -148,5 +154,38 @@ describe('DailyLogSummaryWorkspace', () => {
     expect(page).toContain('dailyLogWbsService.publishSummary');
     expect(page).toContain('publishCommandIdsRef.current[log.id]');
     expect(page).not.toContain("onPublish={() => { handleStatusChange(viewingLog, 'verified'); }}");
+  });
+
+  it('shows resolved overlap as a recorded decision, not an outstanding action', () => {
+    const resolved = { ...bundle, decisions: [{ taskId: workItems[0].taskId,
+      dailyLogId: 'summary-1', officialCumulativePercent: 30,
+      aggregationMethod: 'manual_override' as const, dailyQuantityMethod: 'manual_override' as const,
+      resolutionReason: 'Đã đối chiếu phạm vi', includedSourceWorkItemIds: workItems.map(item => item.id!), sourceFingerprint: '',
+    }] };
+    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={resolved} mode="review" />);
+    expect(html).not.toContain('Cần quyết định');
+    expect(html).toContain('Đã chốt quyết định');
+  });
+
+  it('labels pilot review as shadow comparison, not official publication', () => {
+    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={{ ...bundle,
+      summaryLog: { ...bundle.summaryLog!, status: 'submitted' },
+    }} mode="review" />);
+    expect(html).toContain('Đối chiếu thử nghiệm');
+    expect(html).not.toContain('Duyệt &amp; công bố');
+  });
+
+  it('keeps reader and verified summary review free of mutation actions', () => {
+    for (const restricted of [
+      { ...bundle, summaryLog: { ...bundle.summaryLog!, status: 'verified' as const } },
+      { ...bundle, summaryLog: { ...bundle.summaryLog!, status: 'submitted' as const },
+        permissions: { ...bundle.permissions, canApprove: false, canPublishProgress: false } },
+    ]) {
+      const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={restricted} mode="review" />);
+      expect(html).not.toContain('Trả lại toàn bộ');
+      expect(html).not.toContain('Yêu cầu sửa khu vực');
+      expect(html).not.toContain('Đối chiếu thử nghiệm');
+      expect(html).not.toContain('sticky bottom-0');
+    }
   });
 });

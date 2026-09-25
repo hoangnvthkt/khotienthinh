@@ -5,7 +5,7 @@ import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Us
 import { DailyLog, DailyLogContribution, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogContributionService, dailyLogService, dailyLogWbsService, workBoqService } from '../../lib/projectService';
-import type { DailyLogWbsBundle } from '../../lib/dailyLogWbsService';
+import { getDailyLogPublicationOutcome, type DailyLogWbsBundle } from '../../lib/dailyLogWbsService';
 import { loadDailyLogGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
@@ -32,6 +32,7 @@ import { buildDailyLogVolumesFromDailyProgress } from '../../lib/dailyLogProgres
 import { getProjectScopeKey, projectWeeklyProgressService } from '../../lib/projectWeeklyProgressService';
 import {
     buildDailyLogSourceSnapshot,
+    getDailyLogReviewSurface,
     buildDailyLogSummaryDetails,
     canCreateDailyLogSummaryRevision,
     canReturnDailyLogSource,
@@ -924,6 +925,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryWbsLoading, setSummaryWbsLoading] = useState(false);
     const [summaryWbsError, setSummaryWbsError] = useState<string | null>(null);
     const [reviewWbsBundle, setReviewWbsBundle] = useState<DailyLogWbsBundle | null>(null);
+    const [reviewWbsLoading, setReviewWbsLoading] = useState(false);
+    const [reviewWbsError, setReviewWbsError] = useState<string | null>(null);
+    const [reviewWbsRetry, setReviewWbsRetry] = useState(0);
+    const [reviewWbsLoadedId, setReviewWbsLoadedId] = useState<string | null>(null);
     const publishCommandIdsRef = useRef<Record<string, string>>({});
 
     // Effective Room actions are the UI capability source. The backend RPC
@@ -1339,6 +1344,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             return;
         }
         setReviewWbsBundle(null);
+        setReviewWbsLoading(true);
+        setReviewWbsError(null);
+        setReviewWbsLoadedId(null);
         let cancelled = false;
         dailyLogWbsService.getBundle({
             projectId: projectId || effectiveId,
@@ -1346,10 +1354,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             logDate: viewingLog.date,
             dailyLogId: viewingLog.id,
         }).then(bundle => {
-            if (!cancelled && bundle.rollout.enabled && bundle.rollout.cutoverDate && viewingLog.date >= bundle.rollout.cutoverDate) setReviewWbsBundle(bundle);
-        }).catch(error => console.warn('Cannot load WBS summary review bundle', error));
+            if (!cancelled) { setReviewWbsBundle(bundle); setReviewWbsLoadedId(viewingLog.id); }
+        }).catch(error => {
+            if (!cancelled) setReviewWbsError(error instanceof Error ? error.message : 'Không thể tải bản tổng hợp. Vui lòng thử lại.');
+        }).finally(() => { if (!cancelled) setReviewWbsLoading(false); });
         return () => { cancelled = true; };
-    }, [constructionSiteId, effectiveId, projectId, viewingLog]);
+    }, [constructionSiteId, effectiveId, projectId, viewingLog, reviewWbsRetry]);
 
     useEffect(() => {
         if (!targetDailyLogId || logs.length === 0) return;
@@ -2311,19 +2321,32 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             .map(sourceId => logs.find(log => log.id === sourceId))
             .filter((log): log is DailyLog => Boolean(log))
         : [];
-    const canReturnViewingLog = !!viewingLog && canReviewDailyLog(viewingLog);
+    const reviewSurface = getDailyLogReviewSurface({
+        isSummary: Boolean(viewingLog && isSummaryDailyLog(viewingLog)),
+        loading: reviewWbsLoading, error: reviewWbsError,
+        loaded: Boolean(reviewWbsBundle && reviewWbsLoadedId === viewingLog?.id),
+        normalized: viewingLog?.normalizedWbs || reviewWbsBundle?.workItems.some(item => item.dailyLogId === viewingLog?.id),
+        rolloutEnabled: reviewWbsBundle?.rollout.enabled,
+        logDate: viewingLog?.date, cutoverDate: reviewWbsBundle?.rollout.cutoverDate,
+    });
+    const allowLegacyReviewActions = reviewSurface === 'legacy';
+    const canReturnViewingLog = allowLegacyReviewActions && !!viewingLog && canReviewDailyLog(viewingLog);
     const canVerifyViewingLog = !!viewingLog
+        && allowLegacyReviewActions
         && canProcessDailyLog(viewingLog)
         && !isLegacyDailyLogSource(viewingLog);
     const canRollbackViewingLog = !!viewingLog
         && viewingLogStatus === 'verified'
-        && !reviewWbsBundle?.workItems.length
+        && allowLegacyReviewActions
+        && !viewingLog.normalizedWbs
         && isAdminUser;
     const canSubmitViewingLog = !!viewingLog
+        && allowLegacyReviewActions
         && ['draft', 'rejected'].includes(viewingLogStatus)
         && canModifyViewingSource
         && canSubmitDailyLog(viewingLog);
     const canDeleteViewingLog = !!viewingLog
+        && allowLegacyReviewActions
         && ['draft', 'rejected'].includes(viewingLogStatus)
         && canModifyViewingSource
         && canDeleteDailyLog(viewingLog);
@@ -2371,7 +2394,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const activeSummaryMachineShifts = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.shifts || 0), 0);
     const activeSummaryMachineHours = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.hours || 0), 0);
     const isWbsSummaryFlow = Boolean(
-        summaryDate
+        summaryWbsBundle?.workItems.some(item => item.dailyLogId === summaryLogId)
+        || summaryDate
         && summaryWbsBundle?.rollout.enabled
         && summaryWbsBundle.rollout.cutoverDate
         && summaryDate >= summaryWbsBundle.rollout.cutoverDate,
@@ -2461,15 +2485,16 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (!log) throw new Error('Không tìm thấy bản tổng hợp cần công bố.');
         const commandId = publishCommandIdsRef.current[log.id] || globalThis.crypto.randomUUID();
         publishCommandIdsRef.current[log.id] = commandId;
-        await dailyLogWbsService.publishSummary({
+        const receipt = await dailyLogWbsService.publishSummary({
             commandId,
             dailyLogId: log.id,
             expectedUpdatedAt: log.lastActionAt || log.createdAt,
         });
         delete publishCommandIdsRef.current[log.id];
         await reloadDailyLogRecords();
-        setViewLogId(null);
-        toast.success('Đã duyệt và công bố tiến độ');
+        const outcome = getDailyLogPublicationOutcome(receipt);
+        if (outcome.closeReview) setViewLogId(null);
+        toast.success(outcome.message);
     }, [reloadDailyLogRecords, reviewWbsBundle?.summaryLog, toast]);
 
     const createSummaryRevision = async () => {
@@ -3300,7 +3325,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     statusClassName={STATUS_CFG[viewingLogStatus].cls}
                     weatherLabel={WEATHER[viewingLog.weather]?.label || ''}
                     weatherEmoji={WEATHER[viewingLog.weather]?.emoji || ''}
-                    canEdit={canEditDailyLog(viewingLog) && canModifyViewingSource}
+                    canEdit={allowLegacyReviewActions && canEditDailyLog(viewingLog) && canModifyViewingSource}
                     canReturn={canReturnViewingLog}
                     canVerify={canVerifyViewingLog}
                     canRollback={canRollbackViewingLog}
@@ -3308,20 +3333,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     canDelete={canDeleteViewingLog}
                     sourceSummaryLog={viewingSourceSummaryLog}
                     summarySourceLogs={viewingSummarySourceLogs}
-                    revisionActions={reviewWbsBundle && <DailyLogRevisionActions
+                    revisionActions={reviewSurface === 'wbs' && reviewWbsBundle && <DailyLogRevisionActions
                         revisionNo={viewingLog.revisionNo}
                         revisionReason={viewingLog.revisionReason}
                         supersededByDailyLogId={viewingLog.supersededByDailyLogId}
                         status={viewingLogStatus}
                         periodLocked={reviewWbsBundle.periodState?.isLocked === true}
-                        canCreate={canCreateDailyLogSummaryRevision({ log: viewingLog, canApprove: reviewWbsBundle.permissions.canApprove, canPublishProgress: reviewWbsBundle.permissions.canPublishProgress, periodLocked: false })}
+                        canCreate={reviewWbsBundle.rollout.enabled && canCreateDailyLogSummaryRevision({ log: viewingLog, canApprove: reviewWbsBundle.permissions.canApprove, canPublishProgress: reviewWbsBundle.permissions.canPublishProgress, periodLocked: false })}
                         reopenUrl={`/da?${new URLSearchParams({ projectId: projectId || effectiveId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'weekly_progress' })}`}
                         busy={busyLogIds.has(viewingLog.id)}
                         onCreate={createSummaryRevision}
                         onOpenRevision={setViewLogId}
                     />}
                     canReturnSourceLog={canReviewDailyLog}
-                    wbsWorkspace={reviewWbsBundle ? <DailyLogSummaryWorkspace
+                    wbsWorkspace={reviewSurface === 'loading' ? <p role="status" className="p-4 text-sm text-slate-500">Đang tải bản tổng hợp…</p>
+                        : reviewSurface === 'error' ? <div role="alert" className="space-y-3 rounded-xl bg-red-50 p-4 text-sm text-red-800"><p>{reviewWbsError}</p><button type="button" className="rounded-lg border border-red-300 px-4 py-2 font-bold" onClick={() => setReviewWbsRetry(value => value + 1)}>Thử lại</button></div>
+                        : reviewSurface === 'wbs' && reviewWbsBundle ? <DailyLogSummaryWorkspace
                         key={`${reviewWbsBundle.summaryLog?.id}:${reviewWbsBundle.summaryLog?.lastActionAt || ''}`}
                         bundle={reviewWbsBundle}
                         mode="review"

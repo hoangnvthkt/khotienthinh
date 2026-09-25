@@ -76,3 +76,72 @@ Sai stock/AP/cash, lộ scope/giá hoặc effect tài chính/kho trùng là crit
 ## Exit criteria
 
 Pilot chỉ hoàn tất khi J01–J08 và các A-case áp dụng có evidence đúng lớp, một chu kỳ nghiệp vụ thật đã đối soát, sáu persona xác nhận phần việc, critical/high issue đã đóng hoặc có disposition/owner, và manifest chuyển `completed`. Preview smoke, automation hoặc dữ liệu synthetic không thay thế điều kiện này.
+
+## Daily Log WBS: pilot riêng, không dùng mode của Procurement
+
+Phạm vi này dùng `app_private.daily_log_wbs_rollout_scopes` và operation
+`supabase/operations/daily_log_wbs_area_pilot.sql`. Không thay đổi manifest hoặc
+quyền Project V2/Procurement. Chỉ dùng Supabase Cloud, không Docker/local DB.
+
+### Điều kiện và thao tác operator
+
+1. Xác minh Cloud ref, project/site, release, ngày cutover và owner đang ACTIVE.
+   Kiểm tra đủ migration Nhật ký đến `20260925065524`; không áp dụng lại migration
+   đã có trong history. Lưu source/hash của migration trong bằng chứng release.
+2. Người tổng hợp phải có Room `verify` + `submit`; CHT có `approve` +
+   `publish_progress`, assignment hợp lệ. QS chỉ đọc; kiểm thử user bị từ chối.
+   Không thay bằng admin để vượt lỗi quyền nghiệp vụ.
+3. Mở transaction trên Cloud đã xác minh. Dùng `set_config` đặt
+   `app.daily_log_operation` là JSON với đủ `projectId`, `constructionSiteId`
+   (null tường minh nếu không có site), `mode`, `cutoverDate`, `releaseId`,
+   `ownerUserId`, `reason`. Chạy nội dung operation trong **cùng transaction**.
+   Dry-run bằng ROLLBACK; chỉ COMMIT sau khi kiểm đúng scope/owner/receipt.
+   Operation ghi audit before/after, reason và operator role; không gọi trực tiếp
+   helper configure để bỏ qua audit. Không đưa service key vào trình duyệt.
+4. Bắt đầu `pilot`: nguồn mới không ghi progress; CHT “Đối chiếu thử nghiệm” chỉ
+   ghi shadow, không xác nhận đã công bố. Đường nhập tiến độ cũ vẫn hoạt động.
+   Đối chiếu phần trăm, khối lượng lũy kế/ngày, row identity/version; unknown
+   không được thay bằng 0. Owner xử lý nguyên nhân sai khác, không sửa số liệu
+   thật chỉ để đạt shadow xanh.
+5. Chỉ đổi `enforced` cùng release/ngày cutover khi shadow mới nhất từng summary
+   không sai khác và còn khớp dữ liệu hiện hành. Cổng server từ chối thiếu shadow,
+   shadow stale hoặc mismatch. Sau cutover, manual save/close kèm draft bị chặn;
+   chốt kỳ không kèm draft và mở kỳ vẫn giữ quyền quản trị kỳ hiện có.
+6. Kiểm tra một summary → một progress/task/day, lineage source/card, provider
+   catalog/manual, replay command không nhân đôi và không có giao dịch/giá/tiền
+   từ Nhật ký. Ghi receipt/command ID, actor, thời điểm và screenshot.
+
+### Pause, rollback và hỗ trợ
+
+- Dùng operation với `paused` hoặc `off`, reason mới và cùng scope; giữ toàn bộ
+  nguồn/snapshot/audit/progress, không delete hoặc backfill. Hai mode này ngừng
+  publish WBS và trả authority về đường legacy; **không phải khóa toàn bộ nhập
+  tiến độ**. Nếu cần ngừng mọi ghi, owner phải xử lý quyền/kỳ theo quy trình riêng.
+- `ROW_VERSION_CONFLICT`, `SHADOW_COMMAND_INPUT_CHANGED`, nguồn changed/returned:
+  reload và so diff; không âm thầm ghi đè snapshot. Chỉ cấp command ID mới khi
+  đó thật sự là một lần so sánh mới, không phải retry sau timeout.
+- Kỳ ngày/tuần khóa: không bypass guard. Gửi owner kỳ để quyết định mở kỳ có audit;
+  sửa bản verified bằng revision, không rollback legacy. Exception tiến độ cần
+  quyền kép, reason và before/after audit; chỉ dùng trong enforced scope.
+- Support owner là `ownerUserId` của release; kèm release/project/site, summary,
+  command ID, mã lỗi và version (không kèm token/password). Pause ngay khi có
+  duplicate/lineage sai hoặc lộ quyền; giữ evidence trước khi xử lý.
+
+### Kiểm thử nhánh baseline được ủy quyền
+
+Hiện fixture dành riêng cho `baseline-vioo-git` (`oymkraihhqahqvzahhtx`), project
+`DL-WBS-PILOT-20260925`; runner từ chối đổi sang main. Cần fixture project/WBS,
+Room và provider đã tạo trên nhánh. Root `.env` không bị thay đổi; nạp cấu hình
+vào environment shell mà không in secret, rồi chạy:
+
+```sh
+node tests/daily-log/run-cloud-smokes.mjs
+npx playwright test --config tests/daily-log/cloud-playwright.config.ts
+```
+
+SQL smokes rollback; browser test **ghi dữ liệu synthetic**, xoay password của
+sáu persona test và pause scope trong finally. Không chạy song song runner này.
+Không tự xóa dữ liệu sau test. Fixture browser dùng component/service production
+và Auth/RPC Cloud thật nhưng thay shell điều hướng ERP: không coi đây là bằng
+chứng full-shell navigation. Xem evidence riêng trong
+`docs/superpowers/evidence/2026-09-25-daily-log-baseline-cloud-smoke.md`.

@@ -45,6 +45,13 @@ const bundle: DailyLogWbsBundle = {
 };
 
 describe('DailyLogContributionWorkEditor', () => {
+  it('starts a new author with no other authors work or resources', () => {
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={{ ...bundle, contribution: null,
+      labor: [{ contributionId: 'contribution-1', dailyLogWorkItemId: 'work-1', peopleCount: 5, hoursPerPerson: 8 } as any],
+    }} />);
+    expect(html).toContain('Chưa có WBS để ghi nhận');
+    expect(html).not.toContain('value="30"');
+  });
   it('only exposes checkboxes for leaf WBS tasks', () => {
     const html = renderToStaticMarkup(<DailyLogWbsPicker
       tasks={tasks} workBoqItems={[]} selectedTaskIds={new Set()} recentTaskIds={[]}
@@ -76,7 +83,7 @@ describe('DailyLogContributionWorkEditor', () => {
 
   it('blocks draft saving when a physical resource has no provider', () => {
     const html = renderToStaticMarkup(<DailyLogContributionWorkEditor
-      bundle={{ ...bundle, labor: [{ laborType: 'Tổ xây dựng', taskId: 'task-1', count: 5, hours: 8 }] }}
+      bundle={{ ...bundle, labor: [{ contributionId: 'contribution-1', laborType: 'Tổ xây dựng', taskId: 'task-1', count: 5, hours: 8 }] }}
     />);
     expect(html).toContain('Chọn NCC/đội hoặc nhập tay');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[^<]*Lưu nháp|<button[^>]*disabled=""[^>]*[\s\S]*Lưu nháp/);
@@ -87,7 +94,7 @@ describe('DailyLogContributionWorkEditor', () => {
       ...bundle,
       resourceProviders: [{ id: 'provider-1', name: 'Đội cọc cũ', code: 'NCC-01', classifications: [], isActive: false }],
       labor: [{
-        laborType: 'Tổ xây dựng', taskId: 'task-1', count: 5, hoursPerPerson: 8,
+        contributionId: 'contribution-1', laborType: 'Tổ xây dựng', taskId: 'task-1', count: 5, hoursPerPerson: 8,
         partnerId: 'provider-1', providerEntryMode: 'catalog', partnerName: 'Đội cọc cũ',
       } as any],
     }} />);

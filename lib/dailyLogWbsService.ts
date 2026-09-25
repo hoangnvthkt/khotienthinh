@@ -40,8 +40,8 @@ export interface DailyLogWbsBundle {
   summarySources: DailyLogSummarySource[];
   workItems: DailyLogWorkItem[];
   decisions: DailyLogWbsDecision[];
-  labor: DailyLogLabor[];
-  machines: DailyLogMachine[];
+  labor: Array<DailyLogLabor & { contributionId?: string | null }>;
+  machines: Array<DailyLogMachine & { contributionId?: string | null }>;
   periodState: ProjectProgressPeriodState | null;
   permissions: {
     canEditSource: boolean;
@@ -123,6 +123,9 @@ export interface PublishDailyLogSummaryInput {
 }
 
 export interface DailyLogPublishReceipt {
+  publishedProgress?: boolean;
+  mismatchCount?: number;
+  shadowId?: string;
   commandId: string;
   dailyLogId: string;
   progressDate: string;
@@ -131,6 +134,18 @@ export interface DailyLogPublishReceipt {
   progressFingerprint: string;
   resourceEvidenceFingerprint: string;
   publishedAt: string;
+}
+
+export function getDailyLogPublicationOutcome(receipt: Pick<DailyLogPublishReceipt, 'publishedProgress' | 'mismatchCount'>) {
+  if (receipt.publishedProgress === false) {
+    return {
+      closeReview: false,
+      message: receipt.mismatchCount === 0
+        ? 'Đối chiếu thử nghiệm khớp. Chưa công bố tiến độ; cần bật chế độ chính thức.'
+        : `Đã đối chiếu thử nghiệm: ${receipt.mismatchCount ?? 'chưa xác định số'} WBS còn sai khác. Chưa công bố tiến độ.`,
+    };
+  }
+  return { closeReview: true, message: 'Đã duyệt và công bố tiến độ' };
 }
 
 export interface CreateDailyLogSummaryRevisionInput {
@@ -163,6 +178,17 @@ export const dailyLogWbsService = {
     }).then(bundle => ({
       ...bundle,
       tasks: bundle.tasks || bundle.leafTasks || [],
+      workItems: (bundle.workItems || []).map((item: Record<string, any>) => ({
+        ...item,
+        ownerType: item.dailyLogId ? 'summary_source' : 'contribution',
+        workAreaName: item.workAreaNameSnapshot ?? item.workAreaName,
+        taskName: item.taskNameSnapshot ?? item.taskName,
+        wbsCode: item.wbsCodeSnapshot ?? item.wbsCode,
+        unit: item.unitSnapshot ?? item.unit,
+        plannedQuantity: 'plannedQuantitySnapshot' in item ? item.plannedQuantitySnapshot : item.plannedQuantity,
+        areaPlannedQuantity: 'areaPlannedQuantitySnapshot' in item ? item.areaPlannedQuantitySnapshot : item.areaPlannedQuantity,
+        scheduleFinishDate: item.scheduleFinishDateSnapshot ?? item.scheduleFinishDate,
+      })),
     } as DailyLogWbsBundle));
   },
 

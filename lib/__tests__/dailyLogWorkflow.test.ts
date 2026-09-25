@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DailyLog } from '../../types';
 import {
   buildDailyLogSourceSnapshot,
+  getDailyLogReviewSurface,
   buildDailyLogSummaryDetails,
   buildDailyLogSummaryVolumes,
   canCreateDailyLogSummaryRevision,
@@ -17,6 +18,22 @@ import {
   resolveDailyLogSummaryDetails,
   withDailyLogSummaryDetails,
 } from '../dailyLogWorkflow';
+
+describe('Daily Log review boundary', () => {
+  it('preserves legacy review before cutover even when the project pilot is enabled', () => {
+    const scope = { isSummary: true, loaded: true, rolloutEnabled: true, cutoverDate: '2026-09-25' };
+    expect(getDailyLogReviewSurface({ ...scope, logDate: '2026-09-24' })).toBe('legacy');
+    expect(getDailyLogReviewSurface({ ...scope, logDate: '2026-09-25' })).toBe('wbs');
+  });
+  it('never enables legacy actions while normalized data is unknown or unavailable', () => {
+    expect(getDailyLogReviewSurface({ isSummary: true, loading: true })).toBe('loading');
+    expect(getDailyLogReviewSurface({ isSummary: true, error: 'denied' })).toBe('error');
+    expect(getDailyLogReviewSurface({ isSummary: true })).toBe('loading');
+    expect(getDailyLogReviewSurface({ isSummary: true, loaded: true, normalized: true, rolloutEnabled: false })).toBe('wbs');
+    expect(getDailyLogReviewSurface({ isSummary: true, loaded: true, normalized: false, rolloutEnabled: false })).toBe('legacy');
+    expect(getDailyLogReviewSurface({ isSummary: false })).toBe('legacy');
+  });
+});
 
 const sourceLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
   id: 'source-1',
