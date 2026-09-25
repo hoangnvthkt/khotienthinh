@@ -26,6 +26,8 @@ Chủ dự án chọn hai cặp thử đầu tiên: `Đổ bê tông lót → B�
 
 Sau khi chủ dự án cấp thêm quyền, Cloud read-only check thấy cả bốn người là RICO site staff và Mơ đã có `material_po.approve`. Tuy nhiên Thảo, Thịnh và Năm cũng đang có `material_po.approve`, rộng hơn vai trò pilot được chỉ định; cần rà lại trước UAT persona. Production vẫn 116 migration, chưa có bảng V2, ba Room V2, thành viên Room V2 hay norm mapping RICO. Fixture UI chạy qua 11 test Project V2 + 5 test Procurement V2; 46 focused unit tests qua. Đây chỉ là technical test trên dữ liệu mẫu, chưa thể test giao dịch RICO thật cho đến khi release gate/schema được triển khai. Không ghi dữ liệu production ở đợt kiểm chứng này.
 
+Cập nhật quyền sau khi chủ dự án chỉnh lại: Cloud xác nhận **chỉ Mơ còn `material_po.approve`** trong bốn persona; cả bốn vẫn có `material_po.submit`, nên cần rà quyền gửi PO của Thảo/Thịnh theo vai trò pilot trước UAT. Hai vật tư pilot đều liên kết item kho có thật. Cần chủ dự án cung cấp suất tiêu hao/nguồn định mức được duyệt cho từng cặp công tác–vật tư; hai tổng BOQ 100 m³ không thể tự dùng làm hệ số. Phần kỹ thuật migration, V2 Room grants và test tiếp tục xử lý riêng; không stage file migration daily-log đang untracked hoặc shared baseline marker đang dirty vào commit Project V2.
+
 ## Prompt bắt đầu nhanh cho phiên chat mới
 
 ```text
