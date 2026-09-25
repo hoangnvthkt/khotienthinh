@@ -8,6 +8,7 @@ export const PROJECT_ROOM_ACTION_CODES = [
   'approve',
   'publish_progress',
   'view_available_stock',
+  'view_resource_evidence',
 ] as const;
 
 export type ProjectRoomActionCode = typeof PROJECT_ROOM_ACTION_CODES[number];
@@ -78,7 +79,7 @@ export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý hạng mục và tiến độ thi công.', ['view', 'edit', 'delete'], [], 70, { edit: ['view'], delete: ['view'] }),
   defineRoom('weekly_progress', 'progress', 'Chốt tiến độ ngày/tuần', 'Cập nhật và chốt/mở chốt kỳ tiến độ.', ['view', 'edit', 'confirm'], [], 80, { edit: ['view'], confirm: ['view'] }),
   defineRoom('quantity_acceptance', 'finance', 'Nghiệm thu khối lượng', 'Lập và duyệt nghiệm thu khối lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 90, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], approve: ['view'] }),
-  defineRoom('payment', 'finance', 'Thanh toán', 'Lập, duyệt và xác nhận thanh toán.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'confirm'], ['approve', 'confirm'], 100, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], approve: ['view'], confirm: ['view'] }),
+  defineRoom('payment', 'finance', 'Thanh toán', 'Lập, duyệt và xác nhận thanh toán.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'confirm', 'view_resource_evidence'], ['approve', 'confirm'], 100, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], approve: ['view'], confirm: ['view'] }),
   defineRoom('quality', 'quality', 'Hồ sơ & checklist chất lượng', 'Lập, kiểm tra và duyệt chất lượng.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['approve'], 120),
   defineRoom('safety', 'safety', 'Hồ sơ & sự cố an toàn', 'Quản lý hồ sơ và đóng sự cố.', ['view', 'edit', 'delete', 'submit', 'verify', 'confirm', 'approve'], ['approve'], 130, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], confirm: ['view'], approve: ['view'] }),
 ] satisfies readonly ProjectPermissionRoomDefinition[]);
@@ -101,6 +102,7 @@ const GENERIC_ROOM_ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
   approve: 'Duyệt',
   publish_progress: 'Công bố tiến độ ngày',
   view_available_stock: 'Xem tồn khả dụng',
+  view_resource_evidence: 'Xem bằng chứng nguồn lực',
 };
 
 export const getProjectPermissionRoomActionLabel = (
