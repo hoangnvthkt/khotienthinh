@@ -133,6 +133,20 @@ export interface DailyLogPublishReceipt {
   publishedAt: string;
 }
 
+export interface CreateDailyLogSummaryRevisionInput {
+  dailyLogId: string;
+  reason: string;
+}
+
+export interface DailyLogSummaryRevisionReceipt {
+  dailyLogId: string;
+  revisionNo: number;
+  supersedesDailyLogId: string;
+  status: 'draft';
+  revisionReason: string;
+  createdAt: string;
+}
+
 const callRpc = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
   if (error) throw mapDailyLogWbsCommandError(error);
@@ -198,6 +212,15 @@ export const dailyLogWbsService = {
       p_command_id: input.commandId,
       p_daily_log_id: input.dailyLogId,
       p_expected_updated_at: input.expectedUpdatedAt,
+    });
+  },
+
+  createSummaryRevision(input: CreateDailyLogSummaryRevisionInput): Promise<DailyLogSummaryRevisionReceipt> {
+    const reason = input.reason.trim();
+    if (!reason) throw new Error('Vui lòng nhập lý do tạo bản điều chỉnh.');
+    return callRpc('create_daily_log_summary_revision_v1', {
+      p_daily_log_id: input.dailyLogId,
+      p_reason: reason,
     });
   },
 };

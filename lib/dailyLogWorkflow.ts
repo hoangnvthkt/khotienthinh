@@ -12,6 +12,9 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   SOURCE_CHANGED: 'Phiếu nguồn đã thay đổi. Hãy rà soát lại card nguồn trước khi lưu.',
   SOURCE_RETURNED: 'Phiếu nguồn đã bị trả lại. Hãy loại nguồn này hoặc chờ thành viên gửi lại.',
   PERIOD_LOCKED: 'Kỳ tiến độ đã khóa. Hãy liên hệ người có quyền mở kỳ trước khi chỉnh sửa.',
+  PERIOD_LOCKED_WITH_REOPEN_REQUIRED: 'Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.',
+  REVISION_REASON_REQUIRED: 'Vui lòng nhập lý do tạo bản điều chỉnh.',
+  SUMMARY_REVISION_ALREADY_EXISTS: 'Bản tổng hợp này đã có bản điều chỉnh mới hơn.',
   STALE_PROGRESS_BASELINE: 'Mốc tiến độ nền đã thay đổi. Hãy tải lại bản tổng hợp và rà soát trước khi công bố.',
   BACKDATED_PROGRESS_CONFLICT: 'Tiến độ ngày này xung đột với mốc đã ghi ở ngày sau. Hãy rà soát lại chuỗi tiến độ.',
   FORECAST_CHANGE_REASON_REQUIRED: 'Ngày dự báo đã thay đổi nhưng chưa có lý do. Hãy bổ sung lý do trước khi gửi.',
@@ -24,7 +27,8 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
 export const mapDailyLogWbsCommandError = (error: unknown): Error => {
   const candidate = error as { message?: string; code?: string; details?: string } | null;
   const raw = [candidate?.message, candidate?.code, candidate?.details].filter(Boolean).join(' ');
-  const code = Object.keys(DAILY_LOG_WBS_ERROR_MESSAGES).find(key => raw.includes(key));
+  const code = Object.keys(DAILY_LOG_WBS_ERROR_MESSAGES)
+    .sort((a, b) => b.length - a.length).find(key => raw.includes(key));
   if (!code) return error instanceof Error ? error : new Error(candidate?.message || 'Không thể lưu dữ liệu nhật ký.');
   return new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error });
 };
@@ -52,6 +56,21 @@ export const canPublishDailyLogSummary = (input: {
   && getDailyLogWorkflowStatus(input.log) === 'submitted'
   && input.canApprove
   && input.canPublishProgress,
+);
+
+export const canCreateDailyLogSummaryRevision = (input: {
+  log?: DailyLog | null;
+  canApprove: boolean;
+  canPublishProgress: boolean;
+  periodLocked: boolean;
+}): boolean => Boolean(
+  input.log
+  && isDailyLogSummaryRow(input.log)
+  && getDailyLogWorkflowStatus(input.log) === 'verified'
+  && !input.log.supersededByDailyLogId
+  && input.canApprove
+  && input.canPublishProgress
+  && !input.periodLocked,
 );
 
 export type DailyLogSourceReviewState = 'waiting_review' | 'included' | 'needs_rereview' | 'returned';

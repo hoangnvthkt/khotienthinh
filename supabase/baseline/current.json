@@ -128,6 +128,7 @@
     "20260923100000_daily_log_summary_progress_publication.sql",
     "20260923100750_material_plan_procurement_intake.sql",
     "20260923101500_daily_progress_exception_command.sql",
+    "20260923103000_daily_log_summary_revisions.sql",
     "20260923103023_procurement_v2_dossier_read_model.sql",
     "20260923161912_procurement_material_plan_po_allocation.sql",
     "20260923165407_project_v2_collaboration_lineage.sql",

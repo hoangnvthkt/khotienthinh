@@ -461,4 +461,150 @@ begin
 end;
 $$;
 
+do $$
+declare
+  v_revision jsonb;
+  v_id text;
+  v_version timestamptz;
+  v_receipt jsonb;
+  v_labor_before jsonb;
+begin
+  select to_jsonb(labor) into strict v_labor_before from public.daily_log_labor labor
+  where id = '71000000-0000-4000-8000-000000000040';
+  begin
+    perform public.create_daily_log_summary_revision_v1('daily-log-publish-smoke-summary', '   ');
+    raise exception 'empty revision reason accepted';
+  exception when others then
+    if sqlerrm <> 'REVISION_REASON_REQUIRED' then raise; end if;
+  end;
+  update public.project_progress_period_states set is_locked = true,
+    locked_by = '71000000-0000-4000-8000-000000000001', locked_at = now()
+  where scope_key = 'daily-log-publish-smoke-project' and period_type = 'daily' and period_start = '2026-09-23';
+  begin
+    perform public.create_daily_log_summary_revision_v1('daily-log-publish-smoke-summary', 'Điều chỉnh smoke');
+    raise exception 'locked revision accepted';
+  exception when others then
+    if sqlerrm <> 'PERIOD_LOCKED_WITH_REOPEN_REQUIRED' then raise; end if;
+  end;
+  update public.project_progress_period_states set is_locked = false, locked_by = null, locked_at = null
+  where scope_key = 'daily-log-publish-smoke-project' and period_type = 'daily' and period_start = '2026-09-23';
+  update public.project_progress_period_states set is_locked = true,
+    locked_by = '71000000-0000-4000-8000-000000000001', locked_at = now()
+  where scope_key = 'daily-log-publish-smoke-project' and period_type = 'weekly' and period_start = '2026-09-21';
+  if (public.get_daily_log_wbs_bundle_v1('daily-log-publish-smoke-project', null, '2026-09-23',
+    'daily-log-publish-smoke-summary') #>> '{periodState,is_locked}')::boolean is distinct from true then
+    raise exception 'summary bundle hid the weekly period lock';
+  end if;
+  update public.project_progress_period_states set is_locked = false, locked_by = null, locked_at = null
+  where scope_key = 'daily-log-publish-smoke-project' and period_type = 'weekly' and period_start = '2026-09-21';
+  -- Both source ids and summary-item ids are valid decision references.
+  update public.daily_log_wbs_decisions set included_source_work_item_ids =
+    '["71000000-0000-4000-8000-000000000031"]'::jsonb where daily_log_id = 'daily-log-publish-smoke-summary';
+  v_revision := public.create_daily_log_summary_revision_v1('daily-log-publish-smoke-summary', 'Điều chỉnh smoke');
+  v_id := v_revision ->> 'dailyLogId';
+  if v_id is null or (v_revision ->> 'revisionNo')::integer <> 2
+    or not exists (select 1 from public.daily_logs where id = v_id and status = 'draft'
+      and supersedes_daily_log_id = 'daily-log-publish-smoke-summary')
+    or not exists (select 1 from public.daily_logs where id = 'daily-log-publish-smoke-summary'
+      and superseded_by_daily_log_id = v_id and status = 'verified') then
+    raise exception 'revision lineage or draft status incorrect';
+  end if;
+  if not exists (select 1 from public.project_daily_task_progress
+    where source_daily_log_id = 'daily-log-publish-smoke-summary' and quantity_done = 31)
+    or exists (select 1 from public.daily_log_summary_sources
+      where daily_log_id = 'daily-log-publish-smoke-summary' and review_status = 'superseded') then
+    raise exception 'draft revision replaced effective evidence';
+  end if;
+  if not exists (select 1 from public.daily_log_labor where daily_log_id = v_id
+    and source_labor_line_id = '71000000-0000-4000-8000-000000000040'
+    and manual_provider_name = v_labor_before ->> 'manual_provider_name'
+    and unit_cost is null and total_cost is null) then
+    raise exception 'revision did not preserve physical provider evidence';
+  end if;
+  begin
+    perform public.create_daily_log_summary_revision_v1('daily-log-publish-smoke-summary', 'Lặp');
+    raise exception 'duplicate revision accepted';
+  exception when others then
+    if sqlerrm <> 'SUMMARY_REVISION_ALREADY_EXISTS' then raise; end if;
+  end;
+  update public.daily_log_wbs_decisions set official_cumulative_percent = 40,
+    official_cumulative_quantity = 40, official_daily_quantity = 40,
+    resolution_reason = 'Điều chỉnh theo biên bản' where daily_log_id = v_id;
+  select last_action_at into v_version from public.daily_logs where id = v_id;
+  perform public.submit_daily_log_summary_v1(v_id, v_version, '71000000-0000-4000-8000-000000000001', 'Revision smoke');
+  if not exists (select 1 from public.daily_logs where id = v_id
+    and submitted_to_permission = 'approve' and submission_note = 'Revision smoke') then
+    raise exception 'revision was not assigned to approver with its submission note';
+  end if;
+  insert into public.project_daily_task_progress (
+    scope_key, project_id, task_id, progress_date, week_start, progress_percent, quantity_done, daily_quantity_done
+  ) values ('daily-log-publish-smoke-project', 'daily-log-publish-smoke-project',
+    'daily-log-publish-smoke-task', '2026-09-24', '2026-09-21', 60, 60, 29);
+  insert into public.project_progress_period_states (
+    scope_key, project_id, period_type, period_start, is_locked, locked_by, locked_at
+  ) values ('daily-log-publish-smoke-project', 'daily-log-publish-smoke-project', 'daily',
+    '2026-09-24', true, '71000000-0000-4000-8000-000000000001', now());
+  select last_action_at into v_version from public.daily_logs where id = v_id;
+  begin
+    perform public.publish_daily_log_summary_v1(v_id, v_version, '71000000-0000-4000-8000-000000000062');
+    raise exception 'revision changed a locked future period';
+  exception when others then
+    if sqlerrm <> 'REVISION_AFFECTED_PERIOD_LOCKED' then raise; end if;
+  end;
+  update public.project_progress_period_states set is_locked = false, locked_by = null, locked_at = null
+  where scope_key = 'daily-log-publish-smoke-project' and period_type = 'daily' and period_start = '2026-09-24';
+  begin
+    update public.daily_log_wbs_decisions set official_cumulative_percent = 70 where daily_log_id = v_id;
+    perform public.publish_daily_log_summary_v1(v_id, v_version, '71000000-0000-4000-8000-000000000062');
+    raise exception 'backdated revision exceeded following cumulative progress';
+  exception when others then
+    if sqlerrm <> 'BACKDATED_PROGRESS_CONFLICT' then raise; end if;
+  end;
+  v_receipt := public.publish_daily_log_summary_v1(v_id, v_version, '71000000-0000-4000-8000-000000000062');
+  if not exists (select 1 from public.project_daily_task_progress
+    where scope_key = 'daily-log-publish-smoke-project' and task_id = 'daily-log-publish-smoke-task'
+      and progress_date = '2026-09-24' and progress_percent = 60 and quantity_done = 60 and daily_quantity_done = 20) then
+    raise exception 'revision did not recompute next delta while preserving cumulative progress';
+  end if;
+  if not exists (select 1 from public.project_daily_task_progress
+    where source_daily_log_id = v_id and quantity_done = 40 and progress_date = '2026-09-23')
+    or not exists (select 1 from public.daily_log_summary_sources
+      where daily_log_id = 'daily-log-publish-smoke-summary' and review_status = 'superseded') then
+    raise exception 'published revision did not replace official evidence';
+  end if;
+  if (select to_jsonb(labor) from public.daily_log_labor labor
+      where id = '71000000-0000-4000-8000-000000000040') is distinct from v_labor_before then
+    raise exception 'revision mutated old provider snapshot';
+  end if;
+  -- A later audited exception must not be overwritten by a publication retry.
+  update public.project_daily_task_progress set daily_quantity_done = 19
+  where scope_key = 'daily-log-publish-smoke-project' and progress_date = '2026-09-24';
+  if public.publish_daily_log_summary_v1(v_id, '1999-01-01', '71000000-0000-4000-8000-000000000063')
+    is distinct from v_receipt then raise exception 'revision retry changed receipt'; end if;
+  if not exists (select 1 from public.project_daily_task_progress
+    where scope_key = 'daily-log-publish-smoke-project' and progress_date = '2026-09-24' and daily_quantity_done = 19) then
+    raise exception 'revision retry mutated downstream progress';
+  end if;
+  begin
+    perform public.publish_daily_log_summary_v1(v_id, v_version, '71000000-0000-4000-8000-000000000060');
+    raise exception 'command id belonging to another summary was accepted';
+  exception when others then
+    if sqlerrm <> 'COMMAND_ID_LOG_MISMATCH' then raise; end if;
+  end;
+  perform set_config('request.jwt.claims', '{"sub":"71000000-0000-4000-8000-000000000007","role":"authenticated"}', true);
+  begin
+    perform public.publish_daily_log_summary_v1(v_id, v_version, '71000000-0000-4000-8000-000000000062');
+    raise exception 'unauthorized actor read publication receipt';
+  exception when others then
+    if sqlerrm <> 'DAILY_LOG_APPROVE_AND_PUBLISH_REQUIRED' then raise; end if;
+  end;
+  begin
+    perform public.create_daily_log_summary_revision_v1(v_id, 'Không có quyền');
+    raise exception 'unauthorized actor created revision';
+  exception when others then
+    if sqlerrm <> 'DAILY_LOG_APPROVE_AND_PUBLISH_REQUIRED' then raise; end if;
+  end;
+end;
+$$;
+
 rollback;

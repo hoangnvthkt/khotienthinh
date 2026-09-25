@@ -1354,6 +1354,10 @@ export interface DailyLog {
   summarySourceType?: 'member_contributions' | 'manual' | string | null;
   summarySourceMetadata?: Record<string, unknown> | null;
   summaryContributionCount?: number;
+  revisionNo?: number;
+  supersedesDailyLogId?: string | null;
+  supersededByDailyLogId?: string | null;
+  revisionReason?: string | null;
   createdBy: string;
   createdById?: string;
   createdAt: string;
