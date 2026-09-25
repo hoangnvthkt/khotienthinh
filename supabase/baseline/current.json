@@ -117,11 +117,21 @@
     "20260921183000_g9_erp_completion_rollout_control.sql",
     "20260921190000_g9_pilot_permission_command.sql",
     "20260922064202_fix_boq_material_planning_wrapper_security.sql",
+    "20260923073010_project_v2_planning_foundation.sql",
+    "20260923075546_project_v2_planning_commands.sql",
+    "20260923083354_project_v2_cohort_visibility.sql",
     "20260923090000_daily_log_wbs_area_foundation.sql",
+    "20260923090853_project_v2_source_availability_and_crews.sql",
     "20260923091500_daily_log_publish_progress_permission.sql",
+    "20260923092758_project_v2_material_candidates.sql",
     "20260923093000_daily_log_wbs_area_commands.sql",
     "20260923100000_daily_log_summary_progress_publication.sql",
-    "20260923101500_daily_progress_exception_command.sql"
+    "20260923100750_material_plan_procurement_intake.sql",
+    "20260923101500_daily_progress_exception_command.sql",
+    "20260923103023_procurement_v2_dossier_read_model.sql",
+    "20260923161912_procurement_material_plan_po_allocation.sql",
+    "20260923165407_project_v2_collaboration_lineage.sql",
+    "20260924081548_project_v2_material_boq_position.sql"
   ],
   "forbidIncludeAll": true
 }
