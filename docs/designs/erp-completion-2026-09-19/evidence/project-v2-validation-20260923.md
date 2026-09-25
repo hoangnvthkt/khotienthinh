@@ -37,6 +37,12 @@ Validation date: 24 September 2026. Git branch: `feature/refactor-du-an-t9-1`. I
 
 ## Outstanding release gates
 
+### 25 September PO permission recheck and release preflight
+
+After the owner removed `Sửa/Xóa` from Thảo and Thịnh in the **Đơn hàng PO** Room, a read-only production Cloud query confirmed the effective action split: **Thảo = view only; Thịnh = view only; Năm = view/edit/delete/submit; Mơ = view/edit/delete/submit/confirm/approve**. This resolves the previously observed excess PO draft capability for the planner and plan approver. It does not grant or imply V2 Room access.
+
+The current worktree's focused Project V2 test run passed **46/46**, and `npm run build` completed successfully. `npm run check:supabase-migrations` still failed on **14 unallowlisted files** spanning Project V2 and the parallel daily-log/material-request workstreams. The shared `supabase/baseline/current.json` remains dirty and `20260923103000_daily_log_summary_revisions.sql` remains untracked; neither is part of a Project V2 release commit. A fresh read-only production Cloud check found **116** recorded migrations, head `20260924165000`, and no `public.project_v2_workspaces` table. No production migration, cohort, norm, Room grant or pilot document was written. The successful build reflects this mixed local worktree, not a reviewed deployed artifact; production activation remains closed until the shared release gate and app/Cloud parity are resolved.
+
 ### RICO pilot target — 25 September read-only Cloud audit
 
 The business owner named **DỰ ÁN RICO** (`PRJ-12788C72`) for the V2 pilot: Nguyễn Phương Thảo plans, Dương Xuân Thịnh independently approves the month/construction/material plans, Nguyễn Văn Năm creates POs, and Nguyễn Thị Mơ approves POs and handles warehouse/finance. Production Cloud identifies one exact project/site pair: project `12788c72-391c-4fcf-8d8c-71112eeab3d4` and `Công trường RICO` with the same site ID. This is distinct from the two other RiCo-named projects (`DA25001`, `DA25001LT`), which must not be enrolled by a name search. All four named accounts are active. Thảo and Mơ are already project staff scoped to that site; Thịnh and Năm are **not** yet RICO project staff and have no RICO Room bindings. Thảo currently has no project Room membership; Mơ has legacy Rooms including `material_po` with `view/edit/submit` but **no `approve`**, and none has V2 Room grants (the V2 catalog is not deployed). No V2 workspace was created.
