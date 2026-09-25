@@ -43,6 +43,9 @@ describe('resourceUsageEvidenceRules', () => {
     expect(buildResourceEvidenceProviderKey({
       entryMode: 'manual', manualProviderType: 'day_labor', manualProviderName: 'to anh minh',
     })).toBe('manual:day_labor:to anh minh');
+    expect(buildResourceEvidenceProviderKey({
+      entryMode: 'manual', manualProviderType: 'free_crew', manualProviderName: 'Đội Cọc',
+    })).toBe('manual:free_crew:doi coc');
   });
 
   it('groups catalog evidence by partner id using only current physical quantities', () => {
