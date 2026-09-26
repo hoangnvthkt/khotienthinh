@@ -121,6 +121,14 @@ describe('project operational UX policy', () => {
     )).toBe('Chứng từ liên quan vừa thay đổi. Hãy mở PO/đợt cấp đang hoạt động để xử lý, sau đó thử lại.');
   });
 
+  it('never renders a Supabase error object as "[object Object]"', () => {
+    const message = getWorkflowActionErrorMessage({ code: '42703', message: 'column does not exist', details: null, hint: null });
+    expect(message).not.toContain('[object Object]');
+    expect(message).toBe('Không xử lý được workflow.');
+    expect(getWorkflowActionErrorMessage({ code: 'P0001', message: 'Bạn không phải người xử lý bước này.' }))
+      .toBe('Bạn không phải người xử lý bước này.');
+  });
+
   it('does not show a temporary zero while Gantt progress is loading', () => {
     expect(resolveProjectProgressDisplay({
       mode: 'gantt_weighted',

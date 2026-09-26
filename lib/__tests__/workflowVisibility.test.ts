@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isMaterialRequestWorkflowTemplate,
+  isProjectOwnedWorkflowTemplate,
   isRequestModuleWorkflowTemplate,
 } from '../workflowVisibility';
 
@@ -26,5 +27,20 @@ describe('workflow visibility', () => {
     expect(isRequestModuleWorkflowTemplate({
       customFields: [{ _requestTemplateId: 'template-1' }],
     } as never)).toBe(true);
+  });
+
+  it('hides project-owned copies from the Quy trình catalog', () => {
+    expect(isProjectOwnedWorkflowTemplate({ ownerProjectId: 'project-1' })).toBe(true);
+    expect(isProjectOwnedWorkflowTemplate({ ownerProjectId: null })).toBe(false);
+    expect(isProjectOwnedWorkflowTemplate({})).toBe(false);
+    expect(isProjectOwnedWorkflowTemplate(null)).toBe(false);
+  });
+
+  it('treats a renamed project copy as a material-request workflow', () => {
+    expect(isMaterialRequestWorkflowTemplate({
+      name: 'Quy trình cấp vật tư công trường (riêng dự án DA01)',
+      ownerSubjectType: 'material_request',
+    })).toBe(true);
+    expect(isMaterialRequestWorkflowTemplate({ name: 'Quy trình mua sắm' })).toBe(false);
   });
 });
