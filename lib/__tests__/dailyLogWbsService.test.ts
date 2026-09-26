@@ -8,6 +8,35 @@ import { dailyLogWbsService, getDailyLogPublicationOutcome } from '../dailyLogWb
 describe('dailyLogWbsService', () => {
   beforeEach(() => mocks.rpc.mockReset());
 
+  it('opens the explicitly selected older slip without replacing it with the latest area', async () => {
+    mocks.rpc.mockResolvedValue({ data: { contribution: { id: 'area-a' }, my_contributions: [{ id: 'area-a' }, { id: 'area-b' }], baseline_quantity_states: { 'task_wbs_1': 'unknown' }, work_items: [] }, error: null });
+    const bundle = await dailyLogWbsService.getDocumentBundle({ projectId: 'p1', constructionSiteId: null, logDate: '2026-09-26', contributionId: 'area-a' });
+    expect(mocks.rpc).toHaveBeenCalledWith('get_daily_log_document_bundle_v2', { p_project_id: 'p1', p_construction_site_id: null, p_log_date: '2026-09-26', p_daily_log_id: null, p_contribution_id: 'area-a' });
+    expect(bundle.contribution?.id).toBe('area-a');
+    expect(bundle.myContributions.map(source => source.id)).toEqual(['area-a', 'area-b']);
+    expect(bundle.baselineQuantityStates['task_wbs_1']).toBe('unknown');
+  });
+
+  it('starts with no selected source instead of choosing the newest slip', async () => {
+    mocks.rpc.mockResolvedValue({ data: { contribution: null, my_contributions: [{ id: 'area-b' }], work_items: [] }, error: null });
+    const bundle = await dailyLogWbsService.getDocumentBundle({ projectId: 'p1', logDate: '2026-09-26' });
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({ p_contribution_id: null, p_construction_site_id: null });
+    expect(bundle.contribution).toBeNull();
+  });
+
+  it('creates an area slip using a stable command ID and no client supplied author', async () => {
+    mocks.rpc.mockResolvedValue({ data: { contribution_id: 'area-b', row_version: 1, updated_at: '2026-09-26T00:00:00Z' }, error: null });
+    const receipt = await dailyLogWbsService.createSource({ commandId: 'command-b', projectId: 'p1', constructionSiteId: null, date: '2026-09-26', workAreaCode: 'B', workAreaName: 'Khu B' });
+    expect(mocks.rpc).toHaveBeenCalledWith('create_daily_log_source_v2', { p_command_id: 'command-b', p_project_id: 'p1', p_construction_site_id: null, p_log_date: '2026-09-26', p_work_area_code: 'B', p_work_area_name: 'Khu B' });
+    expect(receipt).toEqual({ contributionId: 'area-b', rowVersion: 1, updatedAt: '2026-09-26T00:00:00Z' });
+  });
+
+  it('preserves the existing area ID when a second tab attempts a duplicate create', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'DAILY_LOG_SOURCE_AREA_EXISTS', details: '{"contributionId":"area-a"}' } });
+    await expect(dailyLogWbsService.createSource({ commandId: 'command-b', projectId: 'p1', date: '2026-09-26', workAreaCode: 'A', workAreaName: 'Khu A' }))
+      .rejects.toMatchObject({ code: 'DAILY_LOG_SOURCE_AREA_EXISTS', existingContributionId: 'area-a', message: expect.stringContaining('Mở phiếu') });
+  });
+
   it('keeps a shadow receipt in review without claiming official publication', () => {
     expect(getDailyLogPublicationOutcome({ publishedProgress: false, mismatchCount: 2 })).toEqual({
       closeReview: false, message: 'Đã đối chiếu thử nghiệm: 2 WBS còn sai khác. Chưa công bố tiến độ.',

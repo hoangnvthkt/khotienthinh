@@ -84,6 +84,8 @@ Lấy **phiếu của kỹ sư** làm đối tượng chính, WBS là mã hạng
 
 ## 5. Bằng chứng và giới hạn rà soát
 
+**Đính chính khi triển khai Task 2 (26/09/2026):** Kiểm tra index thực tế Cloud và baseline SQL cho thấy `ux_daily_log_contrib_scope_day_author` chặn nhiều phiếu cùng người/ngày dù khu vực khác nhau. Vì vậy khoảng thiếu ở mục 3.B.7 không chỉ là UI/bundle: còn thiếu phân tách ràng buộc dữ liệu của luồng WBS mới với legacy. Chưa xóa/thay index, chưa áp dụng migration hoặc sửa dữ liệu lịch sử. Chi tiết ở [checkpoint Task 2](2026-09-26-daily-log-source-selection-checkpoint.md).
+
 Đã đọc đặc tả §1, §7, code editor/workspace/card/viewer, service lấy/lưu dữ liệu và command yêu cầu sửa nguồn. Đã kiểm tra Cloud chỉ đọc đúng phiếu trong ảnh. Không chạy hành động gửi/duyệt/trả phiếu trong lần rà soát.
 
 Lệnh kiểm tra:

@@ -69,11 +69,15 @@ Migration: plan khóa suffix và phạm vi; timestamp do CLI sinh lúc thực th
 - [x] **Step 2:** `npm run test -- lib/__tests__/dailyLogPresentation.test.ts lib/__tests__/dailyLogDocumentHeader.test.tsx`; xác nhận fail vì contract chưa có, không lỗi môi trường.
 - [x] **Step 3 — GREEN:** Implement signatures. Theo §5 spec: Inter, title20–22/600, dữ liệu14px, mobile input16px, viền1px, primary#0f766e. Một vùng action responsive: desktop top sticky, mobile bottom safe-area, không hai bộ nút cùng lúc.
 - [x] **Step 4:** Chạy lại tests và `npm run lint`; kiểm tra thông tin chính không dùng font9–10px, action chưa đủ quyền có lời giải thích, không thay font/theme global.
-- [ ] **Step 5:** Stage đúng files task; commit `feat(daily-log): add user-centered document presentation`.
+- [x] **Step 5:** Stage đúng files task; commit `feat(daily-log): add user-centered document presentation` (`e75fa64`). Kiểm chứng sau commit: 29 tests targeted pass; full suite 2.395 pass, 2 skips có sẵn; typecheck pass. Header chưa nối ERP, walkthrough thuộc Tasks 5–8.
 
 ### Task 2: Chọn đúng phiếu và tạo phiếu khu vực thứ hai
 
+**Checkpoint 26/09/2026 đã được xử lý theo phê duyệt “Anh cho phép”:** Index baseline unique theo ngày/người chặn A+B. Thêm marker phiên bản nguồn mặc định v1, giữ unique tương đương cho v1 và lọc `findMine` của legacy về v1; chỉ command kiểm quyền tạo v2. Không suy đoán/backfill lịch sử. Migration `20260926102824` đã apply riêng trên baseline-vioo-git, Cloud compatibility/concurrency qua kiểm chứng; xem `../evidence/2026-09-26-daily-log-source-selection-checkpoint.md`.
+
 **Files:** Modify `lib/dailyLogWbsService.ts`, `lib/dailyLogWorkflow.ts`, `types.ts`; create `components/project/daily-log/DailyLogSourcePicker.tsx`, `lib/__tests__/dailyLogSourcePicker.test.tsx`, `lib/__tests__/dailyLogSourceSelectionMigration.test.ts`, `supabase/tests/daily_log_source_selection_smoke.sql`; extend `lib/__tests__/dailyLogWbsService.test.ts`. Migration suffix `daily_log_source_selection_v2`.
+
+**File-map extension approved at checkpoint:** `lib/projectService.ts` (one lookup filter), `lib/__tests__/projectService.dailyLog.test.ts`, `supabase/baseline/current.json` (only this Daily Log entry), guarded Task 2 Cloud staging/concurrency runners and their boundary tests.
 
 **Interfaces:**
 - `getDocumentBundle(input: DailyLogWbsBundleInput & { contributionId?: string | null }): Promise<DailyLogDocumentBundle>` → `get_daily_log_document_bundle_v2(p_project_id text,p_construction_site_id text,p_log_date date,p_daily_log_id text,p_contribution_id uuid)`.
@@ -82,11 +86,11 @@ Migration: plan khóa suffix và phạm vi; timestamp do CLI sinh lúc thực th
 - Picker props `{ sources, selectedIds, selectionMode: 'single'|'multiple', onChange, onCreateArea? }`.
 - Private table `app_private.daily_log_source_command_receipts`: commandUUID PK, actor/scope/operation/payloadFingerprint/receipt, không browser direct write. Retry cùngUUID/payload trả receipt; đổi payload với UUID cũ reject.
 
-- [ ] **Step 1 — RED:** Test chọn phiếu A cũ mà không lấy B mới, null selection bắt đầu rỗng, wrong owner/scope deny, project nullsite hợp lệ, tạo A+B được, retry create một nguồn, command reuse sai payload reject. Returned source nhìn thấy nhưng không chọn để gửi summary.
-- [ ] **Step 2:** Run service/picker/migration tests RED. SQL smoke authenticates non-admin đúng actor, expected missingRPC khác bootstrap/network error.
-- [ ] **Step 3 — GREEN:** Additive migration/RPC v2, v1 không đổi. Server author/current permissions. Serialize create theo scope+actor+ngày+khu vực chống hai tab; nếu trùng area mới trả lỗi có existing ID để UI mở phiếu. Không thêm constraint làm hỏng historical duplicates. Bundle chỉ nguồn có quyền xem. State `none` = không có prior official row, `unknown` = có row nhưng quantity null.
-- [ ] **Step 4:** Unit/RPC Cloud GREEN; nguồn A/B và receipt đúng, scope/denied tests pass, không progress/evidence/transaction mới. Không dùng service_role/admin làm persona.
-- [ ] **Step 5:** Commit `feat(daily-log): select source slips explicitly by area`.
+- [x] **Step 1 — RED:** Test chọn phiếu A cũ mà không lấy B mới, null selection bắt đầu rỗng, wrong owner/scope deny, project nullsite hợp lệ, tạo A+B được, retry create một nguồn, command reuse sai payload reject. Returned source nhìn thấy nhưng không chọn để gửi summary.
+- [x] **Step 2:** Run service/picker/migration tests RED. SQL smoke authenticates non-admin đúng actor, expected missingRPC khác bootstrap/network error.
+- [x] **Step 3 — GREEN:** Additive migration/RPC v2, v1 không đổi. Server author/current permissions. Serialize create theo scope+actor+ngày+khu vực chống hai tab; nếu trùng area mới trả lỗi có existing ID để UI mở phiếu. Không thêm constraint làm hỏng historical duplicates. Bundle chỉ nguồn có quyền xem. State `none` = không có prior official row, `unknown` = có row nhưng quantity null.
+- [x] **Step 4:** Unit/RPC Cloud GREEN; nguồn A/B và receipt đúng, scope/denied tests pass, không progress/evidence/transaction mới. Không dùng service_role/admin làm persona.
+- [x] **Step 5:** Commit `feat(daily-log): select source slips explicitly by area`; isolated task scope, Cloud gates and fresh verification recorded in checkpoint evidence.
 
 ### Task 3: Nhập khối lượng thuận tiện và lưu nguyên phiếu an toàn
 

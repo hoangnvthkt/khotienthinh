@@ -1,5 +1,6 @@
 import type {
   DailyLog,
+  DailyLogContribution,
   DailyLogLabor,
   DailyLogMachine,
   DailyLogVolume,
@@ -22,6 +23,13 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   CATALOG_PROVIDER_NOT_ACTIVE: 'Nhà cung cấp hoặc tổ đội trong danh mục không còn hoạt động. Hãy chọn nguồn đang hoạt động hoặc nhập tay.',
   MANUAL_PROVIDER_TYPE_REQUIRED: 'Hãy chọn loại nguồn cung cấp nhập tay.',
   MANUAL_PROVIDER_NAME_REQUIRED: 'Hãy nhập tên nguồn cung cấp.',
+  DAILY_LOG_SOURCE_AREA_EXISTS: 'Khu vực này đã có phiếu trong ngày. Mở phiếu hiện có để tiếp tục.',
+  DAILY_LOG_SOURCE_COMMAND_REUSE_MISMATCH: 'Yêu cầu này đã được dùng cho thao tác khác. Hãy tải lại danh sách phiếu trước khi thử lại.',
+  DAILY_LOG_SOURCE_SELECTION_DENIED: 'Không thể mở phiếu này: sai người lập, ngày hoặc phạm vi. Hãy chọn lại phiếu của bạn.',
+  DAILY_LOG_SOURCE_CREATE_DENIED: 'Bạn chưa có quyền lập phiếu tại khu vực này.',
+  DAILY_LOG_SOURCE_AREA_REQUIRED: 'Hãy nhập mã và tên khu vực / mũi thi công.',
+  DAILY_LOG_SOURCE_ROLLOUT_DISABLED: 'Nhật ký WBS chưa được mở cho ngày và phạm vi này.',
+  DAILY_LOG_SOURCE_SCOPE_DENIED: 'Dự án hoặc công trường không khớp. Hãy tải lại và chọn đúng phạm vi.',
 };
 
 export const mapDailyLogWbsCommandError = (error: unknown): Error => {
@@ -30,7 +38,28 @@ export const mapDailyLogWbsCommandError = (error: unknown): Error => {
   const code = Object.keys(DAILY_LOG_WBS_ERROR_MESSAGES)
     .sort((a, b) => b.length - a.length).find(key => raw.includes(key));
   if (!code) return error instanceof Error ? error : new Error(candidate?.message || 'Không thể lưu dữ liệu nhật ký.');
-  return new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error });
+  const mapped = Object.assign(new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error }), { code });
+  if (code === 'DAILY_LOG_SOURCE_AREA_EXISTS') {
+    try {
+      const details = JSON.parse(candidate?.details || '{}');
+      if (typeof details.contributionId === 'string') Object.assign(mapped, { existingContributionId: details.contributionId });
+    } catch { /* Unparseable server details must not hide the actionable message. */ }
+  }
+  return mapped;
+};
+
+export const toggleDailyLogSourceSelection = (input: {
+  sources: ReadonlyArray<DailyLogContribution>;
+  selectedIds: ReadonlyArray<string>;
+  sourceId: string;
+  selectionMode: 'single' | 'multiple';
+}): string[] => {
+  const source = input.sources.find(row => row.id === input.sourceId);
+  if (!source) return [...input.selectedIds];
+  if (input.selectionMode === 'single') return [source.id];
+  if (input.selectedIds.includes(source.id)) return input.selectedIds.filter(id => id !== source.id);
+  if (source.status !== 'submitted' && source.status !== 'included') return [...input.selectedIds];
+  return [...new Set([...input.selectedIds, source.id])];
 };
 
 export const getDailyLogWorkflowStatus = (log: DailyLog) => (

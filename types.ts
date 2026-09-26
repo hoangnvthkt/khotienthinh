@@ -1303,6 +1303,7 @@ export interface DailyLogPhoto {
 }
 
 export type DailyLogContributionStatus = 'draft' | 'submitted' | 'returned' | 'included';
+export type DailyLogBaselineQuantityState = 'none' | 'known' | 'unknown';
 
 export interface DailyLogContribution {
   id: string;
@@ -1320,6 +1321,7 @@ export interface DailyLogContribution {
   workAreaName?: string | null;
   rowVersion?: number;
   sourceFingerprint?: string | null;
+  sourceDocumentVersion?: 1 | 2;
   submittedToUserId?: string | null;
   submittedToName?: string | null;
   submittedAt?: string | null;

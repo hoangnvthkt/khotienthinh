@@ -503,6 +503,7 @@ export const dailyLogContributionService = {
             .or(buildProjectScopeFilter(input.projectIdOrSiteId, input.constructionSiteId))
             .eq('date', input.date)
             .eq('author_user_id', input.authorUserId)
+            .eq('source_document_version', 1)
             .maybeSingle();
         if (error) throw error;
         return data ? fromDb(data) as DailyLogContribution : null;

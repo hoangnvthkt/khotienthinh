@@ -1,5 +1,6 @@
 import type {
   BusinessPartner,
+  DailyLogBaselineQuantityState,
   DailyLog,
   DailyLogContribution,
   DailyLogLabor,
@@ -22,7 +23,11 @@ const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) =>
 const fromDb = (value: unknown): any => {
   if (Array.isArray(value)) return value.map(fromDb);
   if (value && typeof value === 'object' && !(value instanceof Date)) {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [toCamel(key), fromDb(child)]));
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => {
+      const mappedKey = toCamel(key);
+      // Dictionary keys are task IDs, not database column names.
+      return [mappedKey, mappedKey === 'baselineQuantityStates' ? child : fromDb(child)];
+    }));
   }
   return value;
 };
@@ -56,6 +61,27 @@ export interface DailyLogWorkSaveReceipt {
   updatedAt: string;
   sourceFingerprint: string;
   conflicts: Array<{ code: DailyLogWorkConflictCode; taskId?: string; summarySourceId?: string }>;
+}
+
+export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
+  myContributions: DailyLogContribution[];
+  baselineQuantityStates: Record<string, DailyLogBaselineQuantityState>;
+  permissions: DailyLogWbsBundle['permissions'] & { canCreateSource: boolean; canSubmitSource: boolean };
+}
+
+export interface CreateDailyLogSourceInput {
+  commandId: string;
+  projectId: string;
+  constructionSiteId?: string | null;
+  date: string;
+  workAreaCode: string;
+  workAreaName: string;
+}
+
+export interface DailyLogSourceCreateReceipt {
+  contributionId: string;
+  rowVersion: number;
+  updatedAt: string;
 }
 
 export interface DailyLogWbsBundleInput {
@@ -169,6 +195,43 @@ const callRpc = async <T>(name: string, params: Record<string, unknown>): Promis
 };
 
 export const dailyLogWbsService = {
+  getDocumentBundle(input: DailyLogWbsBundleInput & { contributionId?: string | null }): Promise<DailyLogDocumentBundle> {
+    return callRpc<Record<string, any>>('get_daily_log_document_bundle_v2', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId ?? null,
+      p_log_date: input.logDate,
+      p_daily_log_id: input.dailyLogId ?? null,
+      p_contribution_id: input.contributionId ?? null,
+    }).then(bundle => ({
+      ...bundle,
+      tasks: bundle.tasks || [],
+      myContributions: bundle.myContributions || [],
+      baselineQuantityStates: bundle.baselineQuantityStates || {},
+      workItems: (bundle.workItems || []).map((item: Record<string, any>) => ({
+        ...item,
+        ownerType: item.dailyLogId ? 'summary_source' : 'contribution',
+        workAreaName: item.workAreaNameSnapshot ?? item.workAreaName,
+        taskName: item.taskNameSnapshot ?? item.taskName,
+        wbsCode: item.wbsCodeSnapshot ?? item.wbsCode,
+        unit: item.unitSnapshot ?? item.unit,
+        plannedQuantity: 'plannedQuantitySnapshot' in item ? item.plannedQuantitySnapshot : item.plannedQuantity,
+        areaPlannedQuantity: 'areaPlannedQuantitySnapshot' in item ? item.areaPlannedQuantitySnapshot : item.areaPlannedQuantity,
+        scheduleFinishDate: item.scheduleFinishDateSnapshot ?? item.scheduleFinishDate,
+      })),
+    } as DailyLogDocumentBundle));
+  },
+
+  createSource(input: CreateDailyLogSourceInput): Promise<DailyLogSourceCreateReceipt> {
+    return callRpc('create_daily_log_source_v2', {
+      p_command_id: input.commandId,
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId ?? null,
+      p_log_date: input.date,
+      p_work_area_code: input.workAreaCode,
+      p_work_area_name: input.workAreaName,
+    });
+  },
+
   getBundle(input: DailyLogWbsBundleInput): Promise<DailyLogWbsBundle> {
     return callRpc<Record<string, any>>('get_daily_log_wbs_bundle_v1', {
       p_project_id: input.projectId,

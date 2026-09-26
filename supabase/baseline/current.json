@@ -130,7 +130,8 @@
     "20260925153000_daily_log_shadow_all_submitted_gate.sql",
     "20260925160000_resource_evidence_permission.sql",
     "20260925161000_verified_resource_usage_evidence.sql",
-    "20260926022433_secure_daily_log_physical_resources.sql"
+    "20260926022433_secure_daily_log_physical_resources.sql",
+    "20260926102824_daily_log_source_selection_v2.sql"
   ],
   "forbidIncludeAll": true
 }

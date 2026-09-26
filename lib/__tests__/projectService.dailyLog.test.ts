@@ -6,6 +6,7 @@ const supabaseMock = vi.hoisted(() => ({
 }));
 
 let dailyLogRows: any[] = [];
+let contributionRows: any[] = [];
 let blockDelete = false;
 let dailyLogUpdatePayloads: any[] = [];
 
@@ -48,6 +49,9 @@ class MockQuery {
 
   maybeSingle() {
     const result = this.execute();
+    if (this.tableName === 'daily_log_contributions' && result.data.length > 1) {
+      return Promise.resolve({ data: null, error: { message: 'Expected a single legacy source' } });
+    }
     const first = Array.isArray(result.data) ? result.data[0] || null : result.data || null;
     return Promise.resolve({ data: first, error: result.error });
   }
@@ -57,11 +61,12 @@ class MockQuery {
   }
 
   private rows() {
-    if (this.tableName !== 'daily_logs') return [];
-    return dailyLogRows.filter(row => Object.entries(this.filters).every(([key, value]) => row[key] === value));
+    const rows = this.tableName === 'daily_logs' ? dailyLogRows : this.tableName === 'daily_log_contributions' ? contributionRows : [];
+    return rows.filter(row => Object.entries(this.filters).every(([key, value]) => row[key] === value));
   }
 
   private execute() {
+    if (this.tableName === 'daily_log_contributions') return { data: this.rows(), error: null };
     if (this.tableName !== 'daily_logs') return { data: [], error: null };
     if (this.operation === 'delete') {
       const rows = this.rows();
@@ -98,10 +103,31 @@ vi.mock('../dailyLogDetailService', () => ({
 
 beforeEach(() => {
   dailyLogRows = [];
+  contributionRows = [];
   blockDelete = false;
   dailyLogUpdatePayloads = [];
   supabaseMock.from.mockImplementation((tableName: string) => new MockQuery(tableName));
   supabaseMock.rpc.mockResolvedValue({ data: null, error: null });
+});
+
+describe('dailyLogContributionService legacy lookup', () => {
+  it('returns the legacy day slip even when the same engineer has two new WBS area slips', async () => {
+    contributionRows = [
+      { id: 'legacy', date: '2026-09-26', author_user_id: 'engineer', source_document_version: 1, content: 'Original legacy' },
+      { id: 'area-a', date: '2026-09-26', author_user_id: 'engineer', source_document_version: 2, content: 'New A' },
+      { id: 'area-b', date: '2026-09-26', author_user_id: 'engineer', source_document_version: 2, content: 'New B' },
+    ];
+    const { dailyLogContributionService } = await import('../projectService');
+    await expect(dailyLogContributionService.findMine({ projectIdOrSiteId: 'p1', date: '2026-09-26', authorUserId: 'engineer' }))
+      .resolves.toMatchObject({ id: 'legacy', content: 'Original legacy' });
+  });
+
+  it('does not adopt a v2 area slip as a legacy day slip', async () => {
+    contributionRows = [{ id: 'area-a', date: '2026-09-26', author_user_id: 'engineer', source_document_version: 2 }];
+    const { dailyLogContributionService } = await import('../projectService');
+    await expect(dailyLogContributionService.findMine({ projectIdOrSiteId: 'p1', date: '2026-09-26', authorUserId: 'engineer' }))
+      .resolves.toBeNull();
+  });
 });
 
 describe('dailyLogService.updateStatus', () => {
