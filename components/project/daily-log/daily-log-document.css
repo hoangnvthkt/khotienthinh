@@ -1,0 +1,95 @@
+/* Daily Log only. Consumers reserve mobile action space with
+   .daily-log-document-body; shared theme/font/mobile rules stay untouched. */
+.daily-log-document-header {
+  --daily-log-accent: #0f766e;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.daily-log-document-header .daily-log-document-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.daily-log-document-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.daily-log-document-header .daily-log-document-metadata {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+}
+
+.daily-log-document-metadata dt { color: var(--muted-foreground); font-size: 13px; }
+.daily-log-document-metadata dd { margin: 4px 0 0; font-weight: 500; overflow-wrap: anywhere; }
+.daily-log-document-header .daily-log-document-actionbar { grid-column: 2; grid-row: 1; max-width: 34rem; }
+.daily-log-document-actionbar .daily-log-document-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+.daily-log-document-actionbar .daily-log-document-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.daily-log-document-actionbar .daily-log-document-button--primary { background: var(--daily-log-accent); border-color: var(--daily-log-accent); color: white; }
+.daily-log-document-actionbar .daily-log-document-button--close { background: var(--muted); }
+.daily-log-document-actionbar .daily-log-document-button:focus-visible { outline: 2px solid var(--daily-log-accent); outline-offset: 3px; }
+.daily-log-document-actionbar .daily-log-document-action-reason { margin: 8px 0 0; color: var(--foreground); font-size: 13px; overflow-wrap: anywhere; }
+
+.daily-log-document-header .daily-log-document-status { border-radius: 4px; padding: 4px 8px; font-size: 13px; font-weight: 500; background: var(--muted); }
+.daily-log-document-header .daily-log-document-status--pending { background: #f0fdfa; color: #115e59; }
+.daily-log-document-header .daily-log-document-status--returned { background: #fffbeb; color: #92400e; }
+.daily-log-document-header .daily-log-document-status--verified { background: #f0fdf4; color: #166534; }
+.dark .daily-log-document-header .daily-log-document-status--pending { background: #134e4a; color: #ccfbf1; }
+.dark .daily-log-document-header .daily-log-document-status--returned { background: #451a03; color: #fef3c7; }
+.dark .daily-log-document-header .daily-log-document-status--verified { background: #14532d; color: #dcfce7; }
+
+@media (max-width: 767px) {
+  .daily-log-document-header { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
+  .daily-log-document-header h2 { font-size: 20px; }
+  .daily-log-document-header .daily-log-document-metadata { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .daily-log-document-header .daily-log-document-actionbar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    max-width: none;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--card);
+  }
+  .daily-log-document-actionbar .daily-log-document-buttons { gap: 8px; }
+  .daily-log-document-actionbar .daily-log-document-button { min-height: 44px; flex: 1 1 auto; }
+  .daily-log-document-body { padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px)); }
+}
