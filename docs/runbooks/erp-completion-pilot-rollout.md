@@ -76,3 +76,117 @@ Sai stock/AP/cash, lộ scope/giá hoặc effect tài chính/kho trùng là crit
 ## Exit criteria
 
 Pilot chỉ hoàn tất khi J01–J08 và các A-case áp dụng có evidence đúng lớp, một chu kỳ nghiệp vụ thật đã đối soát, sáu persona xác nhận phần việc, critical/high issue đã đóng hoặc có disposition/owner, và manifest chuyển `completed`. Preview smoke, automation hoặc dữ liệu synthetic không thay thế điều kiện này.
+
+## Daily Log WBS: pilot riêng, không dùng mode của Procurement
+
+Phạm vi này dùng `app_private.daily_log_wbs_rollout_scopes` và operation
+`supabase/operations/daily_log_wbs_area_pilot.sql`. Không thay đổi manifest hoặc
+quyền Project V2/Procurement. Chỉ dùng Supabase Cloud, không Docker/local DB.
+
+### Điều kiện và thao tác operator
+
+1. Xác minh Cloud ref, project/site, release, ngày cutover và owner đang ACTIVE.
+   Kiểm tra đủ migration Nhật ký đến `20260925153000`; không áp dụng lại migration
+   đã có trong history. Lưu source/hash của migration trong bằng chứng release.
+2. Người tổng hợp phải có Room `verify` + `submit`; CHT có `approve` +
+   `publish_progress`, assignment hợp lệ. QS chỉ đọc; kiểm thử user bị từ chối.
+   Điều hướng ERP còn cần `project.daily_log.view` theo đúng project scope để
+   project hiện trong danh sách; Room grant một mình không đủ cho RLS `projects`.
+   Không thay bằng admin để vượt lỗi quyền nghiệp vụ.
+3. Mở transaction trên Cloud đã xác minh. Dùng `set_config` đặt
+   `app.daily_log_operation` là JSON với đủ `projectId`, `constructionSiteId`
+   (null tường minh nếu không có site), `mode`, `cutoverDate`, `releaseId`,
+   `ownerUserId`, `reason`. Chạy nội dung operation trong **cùng transaction**.
+   Dry-run bằng ROLLBACK; chỉ COMMIT sau khi kiểm đúng scope/owner/receipt.
+   Operation ghi audit before/after, reason và operator role; không gọi trực tiếp
+   helper configure để bỏ qua audit. Không đưa service key vào trình duyệt.
+4. Bắt đầu `pilot`: nguồn mới không ghi progress; CHT “Đối chiếu thử nghiệm” chỉ
+   ghi shadow, không xác nhận đã công bố. Đường nhập tiến độ cũ vẫn hoạt động.
+   Đối chiếu phần trăm, khối lượng lũy kế/ngày, row identity/version; unknown
+   không được thay bằng 0. Owner xử lý nguyên nhân sai khác, không sửa số liệu
+   thật chỉ để đạt shadow xanh.
+5. Chỉ đổi `enforced` cùng release/ngày cutover khi shadow mới nhất từng summary
+   không sai khác và còn khớp dữ liệu hiện hành. Mọi bản tổng hợp chuẩn hóa đã
+   `submitted` trong scope/ngày cutover đều phải có shadow khớp của release này;
+   cổng server từ chối thiếu shadow, shadow stale hoặc mismatch. Sau cutover,
+   manual save/close kèm draft bị chặn;
+   chốt kỳ không kèm draft và mở kỳ vẫn giữ quyền quản trị kỳ hiện có.
+6. Kiểm tra một summary → một progress/task/day, lineage source/card, provider
+   catalog/manual, replay command không nhân đôi và không có giao dịch/giá/tiền
+   từ Nhật ký. Ghi receipt/command ID, actor, thời điểm và screenshot.
+
+### Pause, rollback và hỗ trợ
+
+- Dùng operation với `paused` hoặc `off`, reason mới và cùng scope; giữ toàn bộ
+  nguồn/snapshot/audit/progress, không delete hoặc backfill. Hai mode này ngừng
+  publish WBS và trả authority về đường legacy; **không phải khóa toàn bộ nhập
+  tiến độ**. Nếu cần ngừng mọi ghi, owner phải xử lý quyền/kỳ theo quy trình riêng.
+- `ROW_VERSION_CONFLICT`, `SHADOW_COMMAND_INPUT_CHANGED`, nguồn changed/returned:
+  reload và so diff; không âm thầm ghi đè snapshot. Chỉ cấp command ID mới khi
+  đó thật sự là một lần so sánh mới, không phải retry sau timeout.
+- Kỳ ngày/tuần khóa: không bypass guard. Gửi owner kỳ để quyết định mở kỳ có audit;
+  sửa bản verified bằng revision, không rollback legacy. Exception tiến độ cần
+  quyền kép, reason và before/after audit; chỉ dùng trong enforced scope.
+- Support owner là `ownerUserId` của release; kèm release/project/site, summary,
+  command ID, mã lỗi và version (không kèm token/password). Pause ngay khi có
+  duplicate/lineage sai hoặc lộ quyền; giữ evidence trước khi xử lý.
+
+### Kiểm thử nhánh baseline được ủy quyền
+
+Hiện fixture dành riêng cho `baseline-vioo-git` (`oymkraihhqahqvzahhtx`), project
+`DL-WBS-PILOT-20260925`; runner từ chối đổi sang main. Cần fixture project/WBS,
+Room và provider đã tạo trên nhánh. Root `.env` không bị thay đổi; nạp cấu hình
+vào environment shell mà không in secret, rồi chạy:
+
+```sh
+node tests/daily-log/run-cloud-smokes.mjs
+npx playwright test --config tests/daily-log/cloud-playwright.config.ts
+```
+
+SQL smokes rollback; browser test **ghi dữ liệu synthetic**, xoay password của
+sáu persona test và pause scope trong finally. Không chạy song song runner này.
+Không tự xóa dữ liệu sau test. Fixture browser gồm hành trình component/service
+và một ca mở summary qua shell ERP thật bằng phiên CHT cùng deep link.
+Ca shell kiểm tra đọc/lineage; các mutation được kiểm bằng harness Cloud.
+Xem evidence riêng trong
+`docs/superpowers/evidence/2026-09-25-daily-log-baseline-cloud-smoke.md`.
+
+## Bằng chứng nguồn lực Nhật ký → Thanh toán: read-only pilot riêng
+
+Phạm vi này chỉ đọc nhân công/máy đã verified trong summary WBS. Không dùng
+cost/accrual/transaction của Nhật ký, không đổi rollout Plan 1 và không đụng
+Project V2/Procurement. Migration Cloud cần có `20260925160000`,
+`20260925161000` và bản hardening `20260926022433` (private definer/public
+invoker); kiểm source hash trong evidence release trước khi bật.
+
+1. Xác minh đúng branch/project/site, owner active, date range tối đa 366 ngày,
+   `releaseId`, `reason`, `expiresAt` trong vòng 30 ngày. Kiểm ít nhất một QS
+   active có Payment Room `view_resource_evidence` đúng scope; không cấp từ
+   quyền xem Thanh toán chung. Binding ban đầu là `audit_only`.
+2. Chạy `supabase/operations/resource_usage_evidence_pilot.sql` trong transaction
+   với `app.resource_evidence_operation` JSON. Dry-run ROLLBACK trước; review
+   missing provider/lineage, duplicate current, recipient và grant ở scope khác.
+   Operation fail-closed nếu thiếu bất kỳ điều kiện nào. `EXPLAIN` đi kèm để lưu
+   query-plan evidence. Chỉ COMMIT `mode=pilot` khi release owner chấp thuận.
+3. Dùng QS thật đăng nhập đọc NCC → ngày → khu vực → WBS → Nhật ký gốc ở
+   desktop/tablet/mobile. Thử user thiếu quyền và khác scope. Mỗi dòng chỉ có
+   số người/máy và giờ công/giờ máy; `unknownLegacyCount` không được cộng vào
+   tổng và không được diễn giải thành giờ. Provider inactive vẫn đọc snapshot
+   đã xác nhận; nguồn nhập tay không bị tự ghép vào BusinessPartner.
+4. Revision current là mặc định; toggle lịch sử hiển thị `superseded` rõ ràng
+   nhưng không cộng lại vào KPI. Kiểm JSON và UI không có khóa tiền, và
+   `project_transactions` không đổi. Nếu sai quyền, lineage, revision hoặc lọt
+   giá/tiền: dừng pilot, giữ evidence, báo support owner.
+5. Pause/rollback bằng cùng operation với `mode=audit_only`, reason mới, sau đó
+   vô hiệu hóa grant test. Không xóa Nhật ký, source, revision hay legacy; không
+   backfill. Binding này là toàn cục nên preflight chặn active grant ở project
+   khác. `expiresAt` là deadline operator, không có auto-expiry DB: support owner
+   phải chủ động pause trước deadline. Muốn rollout nhiều project cần thiết kế
+   cohort binding riêng, không dùng operation pilot này.
+
+Test branch `baseline-vioo-git` dùng `node --env-file=/Users/admin/khotienthinh/.env
+tests/daily-log/run-resource-evidence-pilot.mjs` và browser config
+`tests/daily-log/resource-evidence-playwright.config.mjs`. Runner tạo/đăng nhập
+persona synthetic, chỉ mở binding trong thời gian test, rồi trả `audit_only` và
+deactivate grant trong `finally`; không chạy song song với runner Plan 1. Evidence
+ghi ở `docs/superpowers/evidence/2026-09-25-resource-usage-evidence-pilot.md`.

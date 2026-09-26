@@ -7,6 +7,7 @@
   "archiveManifestSha256": "c4b344c05053fb0259b7f16f93dc6fa3f59473834694133b0dd06d882cef62f4",
   "allowedPostBaselineFiles": [
     "20260903063821_perf02_query_indexes.sql",
+    "20260903063822_authorization_room_catalog_bootstrap.sql",
     "20260903093652_remediate_supplier_delivery_wms_event_permissions.sql",
     "20260904015927_allow_pending_material_review_po_demand.sql",
     "20260904081841_allow_generated_hrm_employee_code.sql",
@@ -116,7 +117,20 @@
     "20260921170000_g8_management_dataset_lineage.sql",
     "20260921183000_g9_erp_completion_rollout_control.sql",
     "20260921190000_g9_pilot_permission_command.sql",
-    "20260922064202_fix_boq_material_planning_wrapper_security.sql"
+    "20260922064202_fix_boq_material_planning_wrapper_security.sql",
+    "20260923090000_daily_log_wbs_area_foundation.sql",
+    "20260923091500_daily_log_publish_progress_permission.sql",
+    "20260923093000_daily_log_wbs_area_commands.sql",
+    "20260923100000_daily_log_summary_progress_publication.sql",
+    "20260923101500_daily_progress_exception_command.sql",
+    "20260923103000_daily_log_summary_revisions.sql",
+    "20260925062233_daily_log_shadow_pilot_gate.sql",
+    "20260925063126_daily_log_contribution_room_insert.sql",
+    "20260925065524_daily_log_enforced_write_boundary.sql",
+    "20260925153000_daily_log_shadow_all_submitted_gate.sql",
+    "20260925160000_resource_evidence_permission.sql",
+    "20260925161000_verified_resource_usage_evidence.sql",
+    "20260926022433_secure_daily_log_physical_resources.sql"
   ],
   "forbidIncludeAll": true
 }

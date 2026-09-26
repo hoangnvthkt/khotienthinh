@@ -184,7 +184,7 @@ const FINANCE_LEGACY_TAB_TO_WORKSPACE_TAB: Record<(typeof PROJECT_FINANCE_LEGACY
     payment: 'payments',
 };
 
-const FINANCE_WORKSPACE_TABS: ProjectFinanceWorkspaceTab[] = ['overview', 'budget', 'payables', 'receivables', 'payments', 'cashflow', 'ledger'];
+const FINANCE_WORKSPACE_TABS: ProjectFinanceWorkspaceTab[] = ['overview', 'budget', 'payables', 'receivables', 'payments', 'evidence', 'cashflow', 'ledger'];
 const normalizeFinanceWorkspaceTab = (value?: string | null): ProjectFinanceWorkspaceTab | null =>
     FINANCE_WORKSPACE_TABS.includes(value as ProjectFinanceWorkspaceTab) ? value as ProjectFinanceWorkspaceTab : null;
 

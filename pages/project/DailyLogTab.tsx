@@ -2,9 +2,10 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
 import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText } from 'lucide-react';
-import { DailyLog, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
+import { DailyLog, DailyLogContribution, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { dailyLogService, workBoqService } from '../../lib/projectService';
+import { dailyLogContributionService, dailyLogService, dailyLogWbsService, workBoqService } from '../../lib/projectService';
+import { getDailyLogPublicationOutcome, type DailyLogWbsBundle } from '../../lib/dailyLogWbsService';
 import { loadDailyLogGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
@@ -23,12 +24,17 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
+import { DailyLogContributionWorkEditor } from '../../components/project/daily-log/DailyLogContributionWorkEditor';
+import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
+import { DailyLogRevisionActions } from '../../components/project/daily-log/DailyLogRevisionActions';
 import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
 import { buildDailyLogVolumesFromDailyProgress } from '../../lib/dailyLogProgressImport';
 import { getProjectScopeKey, projectWeeklyProgressService } from '../../lib/projectWeeklyProgressService';
 import {
     buildDailyLogSourceSnapshot,
+    getDailyLogReviewSurface,
     buildDailyLogSummaryDetails,
+    canCreateDailyLogSummaryRevision,
     canReturnDailyLogSource,
     getDailyLogSummarySourceLogs,
     getDailyLogSourceReviewState,
@@ -113,6 +119,7 @@ const DAILY_LOG_ACTION = {
     verify: 'project.daily_log.verify',
     approve: 'project.daily_log.approve',
     summarize: 'project.daily_log.summarize',
+    publishProgress: 'project.daily_log.publish_progress',
 } as const;
 
 type DailyLogActionCode = typeof DAILY_LOG_ACTION[keyof typeof DAILY_LOG_ACTION];
@@ -359,6 +366,8 @@ interface DailyLogViewerProps {
     onVerify: () => void;
     onReject: () => void | Promise<void>;
     onReturnSourceLog?: (log: DailyLog) => void | Promise<void>;
+    wbsWorkspace?: React.ReactNode;
+    revisionActions?: React.ReactNode;
 }
 
 const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
@@ -387,6 +396,8 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     onVerify,
     onReject,
     onReturnSourceLog,
+    wbsWorkspace,
+    revisionActions,
 }) => {
     const [showSourceLogs, setShowSourceLogs] = useState(false);
     const materialRows = log.materials || [];
@@ -430,6 +441,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                 </div>
 
                 <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-5">
+                    {revisionActions}
                     {detailResolution.source === 'unresolved' && (
                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
                             Dữ liệu nguồn của bản tổng hợp cũ đã thay đổi hoặc thiếu snapshot. Hệ thống đang giữ nguyên chi tiết đã lưu để tránh làm sai hồ sơ đã duyệt.
@@ -576,7 +588,9 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </div>
                     </div>
 
-                    {summarySourceLogs.length > 0 && (
+                    {wbsWorkspace}
+
+                    {!wbsWorkspace && summarySourceLogs.length > 0 && (
                         <section className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-4 transition-all">
                             <button
                                 type="button"
@@ -675,7 +689,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                         </section>
                     )}
 
-                    <section className="rounded-2xl border-amber-500/20 p-4">
+                    {!wbsWorkspace && <section className="rounded-2xl border-amber-500/20 p-4">
                         <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Layers size={13} className="text-amber-600" /> Khối lượng</h4>
                         {displayVolumes.length === 0 ? (
                             <p className="text-xs font-bold text-muted-foreground">Chưa có khối lượng.</p>
@@ -755,9 +769,9 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 })}
                             </div>
                         )}
-                    </section>
+                    </section>}
 
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    {!wbsWorkspace && <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                         <section className="rounded-2xl border-orange-500/20 p-4">
                             <h4 className="text-xs font-black text-muted-foreground uppercase mb-3 flex items-center gap-1"><Package size={13} className="text-orange-500" /> Vật tư</h4>
                             {(log.materials || []).length === 0 ? <p className="text-xs font-bold text-muted-foreground">Chưa có vật tư.</p> : (
@@ -813,7 +827,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                                 </div>
                             )}
                         </section>
-                    </div>
+                    </div>}
 
                     {(log.delayTasks || []).length > 0 && (
                         <section className="rounded-2xl border-destructive/20 p-4">
@@ -832,12 +846,12 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
                 </div>
 
                 <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-border flex flex-wrap items-center justify-end gap-2">
-                    {canReturn && (
+                    {!wbsWorkspace && canReturn && (
                         <button onClick={onReject} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-destructive bg-destructive/10 hover:bg-destructive/20 disabled:opacity-50 flex items-center gap-1.5">
                             {busy ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />} Trả lại
                         </button>
                     )}
-                    {canVerify && (
+                    {!wbsWorkspace && canVerify && (
                         <button onClick={onVerify} disabled={busy} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1.5">
                             {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} {log.submittedToPermission === 'approve' ? 'Duyệt CHT' : 'Xác nhận'}
                         </button>
@@ -907,6 +921,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryPhotos, setSummaryPhotos] = useState<DailyLogPhoto[]>([]);
     const [selectedSummaryLegacyLogIds, setSelectedSummaryLegacyLogIds] = useState<string[]>([]);
     const [summarySourceSnapshots, setSummarySourceSnapshots] = useState<Record<string, DailyLogSummarySourceSnapshot>>({});
+    const [summaryWbsBundle, setSummaryWbsBundle] = useState<DailyLogWbsBundle | null>(null);
+    const [summaryWbsLoading, setSummaryWbsLoading] = useState(false);
+    const [summaryWbsError, setSummaryWbsError] = useState<string | null>(null);
+    const [reviewWbsBundle, setReviewWbsBundle] = useState<DailyLogWbsBundle | null>(null);
+    const [reviewWbsLoading, setReviewWbsLoading] = useState(false);
+    const [reviewWbsError, setReviewWbsError] = useState<string | null>(null);
+    const [reviewWbsRetry, setReviewWbsRetry] = useState(0);
+    const [reviewWbsLoadedId, setReviewWbsLoadedId] = useState<string | null>(null);
+    const publishCommandIdsRef = useRef<Record<string, string>>({});
 
     // Effective Room actions are the UI capability source. The backend RPC
     // resolves System Admin, Room membership and the temporary PBAC fallback.
@@ -1116,6 +1139,79 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [fLabor, setFLabor] = useState<DailyLogLabor[]>([]);
     const [fMachines, setFMachines] = useState<DailyLogMachine[]>([]);
 
+    const [wbsBundle, setWbsBundle] = useState<DailyLogWbsBundle | null>(null);
+    const [wbsBundleLoading, setWbsBundleLoading] = useState(false);
+    const [wbsBundleError, setWbsBundleError] = useState<string | null>(null);
+    const [wbsBundleDenied, setWbsBundleDenied] = useState(false);
+
+    const reloadWbsBundle = useCallback(async () => {
+        if (!showForm || editing || !effectiveId || !fDate) {
+            setWbsBundle(null);
+            return;
+        }
+        setWbsBundleLoading(true);
+        setWbsBundleError(null);
+        setWbsBundleDenied(false);
+        try {
+            const bundle = await dailyLogWbsService.getBundle({
+                projectId: projectId || effectiveId,
+                constructionSiteId: constructionSiteId || null,
+                logDate: fDate,
+            });
+            setWbsBundle(bundle);
+        } catch (caught: any) {
+            const message = caught?.message || 'Không thể tải dữ liệu WBS cho ngày đã chọn.';
+            setWbsBundleDenied(caught?.code === '42501' || /quyền|ACCESS_DENIED/i.test(message));
+            setWbsBundleError(message);
+            setWbsBundle(null);
+        } finally {
+            setWbsBundleLoading(false);
+        }
+    }, [constructionSiteId, editing, effectiveId, fDate, projectId, showForm]);
+
+    useEffect(() => {
+        reloadWbsBundle().catch(console.error);
+    }, [reloadWbsBundle]);
+
+    const isWbsContributionFlow = Boolean(
+        !editing
+        && wbsBundle?.rollout.enabled
+        && wbsBundle.rollout.cutoverDate
+        && fDate >= wbsBundle.rollout.cutoverDate,
+    );
+    const shouldRenderWbsEditor = Boolean(
+        !editing && (wbsBundleLoading || wbsBundleDenied || wbsBundleError || isWbsContributionFlow),
+    );
+
+    const ensureWbsContribution = useCallback(async (): Promise<DailyLogContribution> => {
+        if (!user?.id) throw new Error('Không xác định được người lập phiếu nguồn.');
+        const now = new Date().toISOString();
+        const existing = wbsBundle?.contribution;
+        const contribution: DailyLogContribution = existing ? {
+            ...existing,
+            content: fDesc.trim(),
+            issues: fIssues.trim() || null,
+            photos: fPhotos,
+            updatedAt: now,
+        } : {
+            id: crypto.randomUUID(),
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            date: fDate,
+            authorUserId: user.id,
+            authorName: user.name || user.username || user.id,
+            content: fDesc.trim(),
+            issues: fIssues.trim() || null,
+            photos: fPhotos,
+            status: 'draft',
+            rowVersion: 1,
+            createdAt: now,
+            updatedAt: now,
+        };
+        await dailyLogContributionService.upsert(contribution);
+        return contribution;
+    }, [constructionSiteId, effectiveId, fDate, fDesc, fIssues, fPhotos, projectId, user?.id, user?.name, user?.username, wbsBundle?.contribution]);
+
     const targetDailyLogId = useMemo(() => new URLSearchParams(location.search).get('dailyLogId'), [location.search]);
 
     const buildDailyLogLink = useCallback((logId: string) => {
@@ -1201,6 +1297,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setPhotoRequired(true);
         setFDelayTasks([]);
         setFVolumes([]); setFMaterials([]); setFLabor([]); setFMachines([]);
+        setWbsBundle(null); setWbsBundleError(null); setWbsBundleDenied(false);
         setShowForm(false);
     };
 
@@ -1240,6 +1337,29 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const viewingLog = useMemo(() => (
         viewLogId ? logs.find(log => log.id === viewLogId) || null : null
     ), [logs, viewLogId]);
+
+    useEffect(() => {
+        if (!viewingLog || !isSummaryDailyLog(viewingLog) || !effectiveId) {
+            setReviewWbsBundle(null);
+            return;
+        }
+        setReviewWbsBundle(null);
+        setReviewWbsLoading(true);
+        setReviewWbsError(null);
+        setReviewWbsLoadedId(null);
+        let cancelled = false;
+        dailyLogWbsService.getBundle({
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            logDate: viewingLog.date,
+            dailyLogId: viewingLog.id,
+        }).then(bundle => {
+            if (!cancelled) { setReviewWbsBundle(bundle); setReviewWbsLoadedId(viewingLog.id); }
+        }).catch(error => {
+            if (!cancelled) setReviewWbsError(error instanceof Error ? error.message : 'Không thể tải bản tổng hợp. Vui lòng thử lại.');
+        }).finally(() => { if (!cancelled) setReviewWbsLoading(false); });
+        return () => { cancelled = true; };
+    }, [constructionSiteId, effectiveId, projectId, viewingLog, reviewWbsRetry]);
 
     useEffect(() => {
         if (!targetDailyLogId || logs.length === 0) return;
@@ -1312,10 +1432,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }
     };
 
-    const openSummaryForDate = useCallback(async (date: string) => {
+    const openSummaryForDate = useCallback(async (date: string, revision?: DailyLog) => {
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.summarize, 'tổng hợp nhật ký'))) return;
         const dayLogs = logs.filter(log => log.date === date);
-        const existingSummary = dayLogs.find(isSummaryDailyLog);
+        const existingSummary = revision || dayLogs.filter(isSummaryDailyLog)
+            .sort((a, b) => (b.revisionNo || 1) - (a.revisionNo || 1))[0];
         const id = existingSummary?.id || crypto.randomUUID();
         const metadata = existingSummary?.summarySourceMetadata || {};
         const metadataLegacyLogIds = toStringArray(metadata.legacyDailyLogIds);
@@ -1326,6 +1447,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
         setSummaryDate(date);
         setSummaryLogId(id);
+        setSummaryWbsLoading(true);
+        setSummaryWbsError(null);
         setSummaryApprovers(approvers);
         const previousApproverUserId = existingSummary?.requestedVerifierId || existingSummary?.submittedToUserId;
         setSummaryApproverUserId(
@@ -1347,7 +1470,21 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos(existingSummary?.photos || []);
         setSelectedSummaryLegacyLogIds(existingSummary ? metadataLegacyLogIds : []);
         setSummarySourceSnapshots(existingSummary ? metadataSourceSnapshots : {});
-    }, [constructionSiteId, logs, projectId, requireDailyLogAction]);
+        try {
+            const bundle = await dailyLogWbsService.getBundle({
+                projectId: projectId || effectiveId,
+                constructionSiteId: constructionSiteId || null,
+                logDate: date,
+                dailyLogId: id,
+            });
+            setSummaryWbsBundle(bundle);
+        } catch (caught) {
+            setSummaryWbsBundle(null);
+            setSummaryWbsError(caught instanceof Error ? caught.message : 'Không thể tải dữ liệu WBS để tổng hợp.');
+        } finally {
+            setSummaryWbsLoading(false);
+        }
+    }, [constructionSiteId, effectiveId, logs, projectId, requireDailyLogAction]);
 
     const closeSummary = (force = false) => {
         if (!force && summarySaving) return;
@@ -1361,6 +1498,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setSummaryPhotos([]);
         setSelectedSummaryLegacyLogIds([]);
         setSummarySourceSnapshots({});
+        setSummaryWbsBundle(null);
+        setSummaryWbsError(null);
+        setSummaryWbsLoading(false);
     };
 
     const includeLegacyLogInSummary = (log: DailyLog) => {
@@ -2181,18 +2321,32 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             .map(sourceId => logs.find(log => log.id === sourceId))
             .filter((log): log is DailyLog => Boolean(log))
         : [];
-    const canReturnViewingLog = !!viewingLog && canReviewDailyLog(viewingLog);
+    const reviewSurface = getDailyLogReviewSurface({
+        isSummary: Boolean(viewingLog && isSummaryDailyLog(viewingLog)),
+        loading: reviewWbsLoading, error: reviewWbsError,
+        loaded: Boolean(reviewWbsBundle && reviewWbsLoadedId === viewingLog?.id),
+        normalized: viewingLog?.normalizedWbs || reviewWbsBundle?.workItems.some(item => item.dailyLogId === viewingLog?.id),
+        rolloutEnabled: reviewWbsBundle?.rollout.enabled,
+        logDate: viewingLog?.date, cutoverDate: reviewWbsBundle?.rollout.cutoverDate,
+    });
+    const allowLegacyReviewActions = reviewSurface === 'legacy';
+    const canReturnViewingLog = allowLegacyReviewActions && !!viewingLog && canReviewDailyLog(viewingLog);
     const canVerifyViewingLog = !!viewingLog
+        && allowLegacyReviewActions
         && canProcessDailyLog(viewingLog)
         && !isLegacyDailyLogSource(viewingLog);
     const canRollbackViewingLog = !!viewingLog
         && viewingLogStatus === 'verified'
+        && allowLegacyReviewActions
+        && !viewingLog.normalizedWbs
         && isAdminUser;
     const canSubmitViewingLog = !!viewingLog
+        && allowLegacyReviewActions
         && ['draft', 'rejected'].includes(viewingLogStatus)
         && canModifyViewingSource
         && canSubmitDailyLog(viewingLog);
     const canDeleteViewingLog = !!viewingLog
+        && allowLegacyReviewActions
         && ['draft', 'rejected'].includes(viewingLogStatus)
         && canModifyViewingSource
         && canDeleteDailyLog(viewingLog);
@@ -2239,6 +2393,135 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const activeSummaryLaborHours = activeSummaryDetails.laborDetails.reduce((sum, row) => sum + Number(row.hours || 0), 0);
     const activeSummaryMachineShifts = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.shifts || 0), 0);
     const activeSummaryMachineHours = activeSummaryDetails.machines.reduce((sum, row) => sum + Number(row.hours || 0), 0);
+    const isWbsSummaryFlow = Boolean(
+        summaryWbsBundle?.workItems.some(item => item.dailyLogId === summaryLogId)
+        || summaryDate
+        && summaryWbsBundle?.rollout.enabled
+        && summaryWbsBundle.rollout.cutoverDate
+        && summaryDate >= summaryWbsBundle.rollout.cutoverDate,
+    );
+    const shouldRenderWbsSummary = Boolean(summaryWbsLoading || summaryWbsError || isWbsSummaryFlow);
+
+    const prepareWbsSummaryLog = useCallback(async (): Promise<DailyLog> => {
+        if (!summaryDate || !summaryLogId) throw new Error('Chưa xác định ngày tổng hợp.');
+        const existing = logs.find(log => log.id === summaryLogId);
+        const now = new Date().toISOString();
+        const item: DailyLog = existing ? {
+            ...existing,
+            weather: summaryWeather,
+            description: summaryDescription.trim(),
+            issues: summaryIssues.trim() || undefined,
+            nextDayPlan: summaryNextPlan.trim() || undefined,
+            photos: summaryPhotos,
+            summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
+            summarizedById: user?.id || null,
+            summarizedByName: user?.name || user?.username || user?.id || null,
+            summarizedAt: now,
+        } : {
+            id: summaryLogId,
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            date: summaryDate,
+            weather: summaryWeather,
+            workerCount: 0,
+            description: summaryDescription.trim(),
+            issues: summaryIssues.trim() || undefined,
+            nextDayPlan: summaryNextPlan.trim() || undefined,
+            photos: summaryPhotos,
+            photoRequired: false,
+            verified: false,
+            status: 'draft',
+            submittedToPermission: 'approve',
+            summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
+            summarizedById: user?.id || null,
+            summarizedByName: user?.name || user?.username || user?.id || null,
+            summarizedAt: now,
+            createdBy: user?.name || user?.id || 'admin',
+            createdById: user?.id,
+            createdAt: now,
+        };
+        await dailyLogService.upsert(item);
+        const fresh = await dailyLogWbsService.getBundle({
+            projectId: projectId || effectiveId,
+            constructionSiteId: constructionSiteId || null,
+            logDate: summaryDate,
+            dailyLogId: summaryLogId,
+        });
+        setSummaryWbsBundle(fresh);
+        if (!fresh.summaryLog) throw new Error('Không thể đọc lại bản tổng hợp vừa lưu.');
+        return fresh.summaryLog;
+    }, [constructionSiteId, effectiveId, logs, projectId, summaryDate, summaryDescription, summaryIssues, summaryLogId, summaryNextPlan, summaryPhotos, summaryWeather, user?.id, user?.name, user?.username]);
+
+    const submitWbsSummary = useCallback(async (expectedUpdatedAt: string) => {
+        if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
+        const summaryApprover = summaryApprovers.find(staff => staff.userId === summaryApproverUserId);
+        if (!summaryApprover) {
+            toast.warning('Chưa chọn CHT duyệt', 'Vui lòng chọn người có quyền duyệt trong Room Nhật ký công trường.');
+            return;
+        }
+        if (!summaryDescription.trim() && summaryPhotos.length === 0) {
+            toast.warning('Thiếu nội dung tổng hợp', 'Vui lòng nhập nội dung hoặc chọn ảnh từ báo cáo thành viên.');
+            return;
+        }
+        setSummarySaving(true);
+        try {
+            await dailyLogWbsService.submitSummary({
+                dailyLogId: summaryLogId,
+                expectedUpdatedAt,
+                approverUserId: summaryApproverUserId,
+            });
+            await reloadDailyLogRecords();
+            toast.success('Đã gửi CHT duyệt');
+            closeSummary(true);
+        } catch (caught) {
+            toast.error('Không gửi được bản tổng hợp', caught instanceof Error ? caught.message : 'Vui lòng thử lại.');
+        } finally {
+            setSummarySaving(false);
+        }
+    }, [reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast]);
+
+    const publishWbsSummary = useCallback(async () => {
+        const log = reviewWbsBundle?.summaryLog;
+        if (!log) throw new Error('Không tìm thấy bản tổng hợp cần công bố.');
+        const commandId = publishCommandIdsRef.current[log.id] || globalThis.crypto.randomUUID();
+        publishCommandIdsRef.current[log.id] = commandId;
+        const receipt = await dailyLogWbsService.publishSummary({
+            commandId,
+            dailyLogId: log.id,
+            expectedUpdatedAt: log.lastActionAt || log.createdAt,
+        });
+        delete publishCommandIdsRef.current[log.id];
+        await reloadDailyLogRecords();
+        const outcome = getDailyLogPublicationOutcome(receipt);
+        if (outcome.closeReview) setViewLogId(null);
+        toast.success(outcome.message);
+    }, [reloadDailyLogRecords, reviewWbsBundle?.summaryLog, toast]);
+
+    const createSummaryRevision = async () => {
+        const log = reviewWbsBundle?.summaryLog;
+        if (!log || !canCreateDailyLogSummaryRevision({
+            log, canApprove: reviewWbsBundle.permissions.canApprove,
+            canPublishProgress: reviewWbsBundle.permissions.canPublishProgress,
+            periodLocked: reviewWbsBundle.periodState?.isLocked === true,
+        })) return;
+        const reason = await reasonConfirm({
+            title: 'Tạo bản điều chỉnh', targetName: `Nhật ký ngày ${log.date}`,
+            warningText: 'Bản đang xác nhận vẫn có hiệu lực cho đến khi bản điều chỉnh được duyệt và công bố.',
+            reasonPlaceholder: 'Nhập lý do điều chỉnh...', actionLabel: 'Tạo bản điều chỉnh', intent: 'warning',
+        });
+        if (!reason) return;
+        setBusyLogIds(previous => new Set(previous).add(log.id));
+        try {
+            const receipt = await dailyLogWbsService.createSummaryRevision({ dailyLogId: log.id, reason });
+            await reloadDailyLogRecords();
+            setViewLogId(receipt.dailyLogId);
+            toast.success('Đã tạo bản điều chỉnh', 'Mở Sửa phiếu để rà soát trước khi gửi duyệt.');
+        } catch (error) {
+            toast.error('Không tạo được bản điều chỉnh', error instanceof Error ? error.message : 'Vui lòng thử lại.');
+        } finally {
+            setBusyLogIds(previous => { const next = new Set(previous); next.delete(log.id); return next; });
+        }
+    };
 
     const returnSourceLog = async (log: DailyLog) => {
         const reason = await reasonConfirm({
@@ -2672,8 +2955,31 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 <X size={16} />
                             </button>
                         </div>
-                        <div className="grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[0.9fr_1.1fr]">
+                        <div className={shouldRenderWbsSummary
+                            ? 'block flex-1 overflow-y-auto'
+                            : 'grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[0.9fr_1.1fr]'}>
                             <div className="overflow-y-auto border-b border-border p-4 lg:border-b-0 lg:border-r">
+                                {isWbsSummaryFlow && summaryWbsBundle ? (
+                                    <DailyLogSummaryWorkspace
+                                        key={`${summaryLogId}:${summaryWbsBundle.summaryLog?.lastActionAt || 'new'}`}
+                                        bundle={summaryWbsBundle}
+                                        mode="summarize"
+                                        ensureSummaryLog={prepareWbsSummaryLog}
+                                        onSaved={() => {
+                                            dailyLogWbsService.getBundle({
+                                                projectId: projectId || effectiveId,
+                                                constructionSiteId: constructionSiteId || null,
+                                                logDate: summaryDate,
+                                                dailyLogId: summaryLogId,
+                                            }).then(setSummaryWbsBundle).catch(console.error);
+                                        }}
+                                        onSubmit={receipt => submitWbsSummary(receipt.updatedAt)}
+                                    />
+                                ) : summaryWbsLoading ? (
+                                    <div className="rounded-2xl border border-slate-200 p-8 text-center text-sm font-semibold text-slate-500">Đang tải các phiếu nguồn theo WBS...</div>
+                                ) : summaryWbsError ? (
+                                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{summaryWbsError}</div>
+                                ) : <>
                                 <div className="mb-3 flex items-center justify-between">
                                     <div className="text-xs font-black uppercase text-muted-foreground">Phiếu nhật ký nguồn</div>
                                     <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">{activeSummarySourceCount}</span>
@@ -2777,6 +3083,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         </>
                                     )}
                                 </div>
+                                </>}
                             </div>
                             <div className="overflow-y-auto p-4">
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2856,7 +3163,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         ))}
                                     </div>
                                 </div>
-                                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                                {!shouldRenderWbsSummary && <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                                     <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-2.5">
                                         <div className="text-[9px] font-black uppercase text-amber-700">Hạng mục</div>
                                         <div className="mt-1 text-base font-black text-amber-800">{activeSummaryDetails.volumes.length}</div>
@@ -2877,8 +3184,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         <div className="text-[9px] font-black uppercase text-violet-700">Giờ máy</div>
                                         <div className="mt-1 text-base font-black text-violet-800">{formatNumber(activeSummaryMachineHours)} giờ</div>
                                     </div>
-                                </div>
-                                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                                </div>}
+                                {!shouldRenderWbsSummary && <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
                                     <div className="mb-2 flex items-center justify-between gap-2">
                                         <div className="text-[10px] font-black uppercase text-amber-700">Hạng mục thi công từ chốt ngày</div>
                                         <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-amber-700">{activeSummaryDetails.volumes.length}</span>
@@ -2899,10 +3206,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                             ))}
                                         </div>
                                     )}
-                                </div>
+                                </div>}
                             </div>
                         </div>
-                        <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
+                        {!shouldRenderWbsSummary && <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
                             <button onClick={() => closeSummary()} disabled={summarySaving}
                                 className="rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
                                 Đóng
@@ -2915,7 +3222,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 className="flex items-center gap-2 rounded-xl bg-teal-600 px-5 py-2 text-sm font-bold text-white hover:bg-teal-700 disabled:opacity-50">
                                 {summarySaving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Gửi CHT
                             </button>
-                        </div>
+                        </div>}
                     </div>
                 </div>
             )}
@@ -3018,7 +3325,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     statusClassName={STATUS_CFG[viewingLogStatus].cls}
                     weatherLabel={WEATHER[viewingLog.weather]?.label || ''}
                     weatherEmoji={WEATHER[viewingLog.weather]?.emoji || ''}
-                    canEdit={canEditDailyLog(viewingLog) && canModifyViewingSource}
+                    canEdit={allowLegacyReviewActions && canEditDailyLog(viewingLog) && canModifyViewingSource}
                     canReturn={canReturnViewingLog}
                     canVerify={canVerifyViewingLog}
                     canRollback={canRollbackViewingLog}
@@ -3026,7 +3333,45 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     canDelete={canDeleteViewingLog}
                     sourceSummaryLog={viewingSourceSummaryLog}
                     summarySourceLogs={viewingSummarySourceLogs}
+                    revisionActions={reviewSurface === 'wbs' && reviewWbsBundle && <DailyLogRevisionActions
+                        revisionNo={viewingLog.revisionNo}
+                        revisionReason={viewingLog.revisionReason}
+                        supersededByDailyLogId={viewingLog.supersededByDailyLogId}
+                        status={viewingLogStatus}
+                        periodLocked={reviewWbsBundle.periodState?.isLocked === true}
+                        canCreate={reviewWbsBundle.rollout.enabled && canCreateDailyLogSummaryRevision({ log: viewingLog, canApprove: reviewWbsBundle.permissions.canApprove, canPublishProgress: reviewWbsBundle.permissions.canPublishProgress, periodLocked: false })}
+                        reopenUrl={`/da?${new URLSearchParams({ projectId: projectId || effectiveId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'weekly_progress' })}`}
+                        busy={busyLogIds.has(viewingLog.id)}
+                        onCreate={createSummaryRevision}
+                        onOpenRevision={setViewLogId}
+                    />}
                     canReturnSourceLog={canReviewDailyLog}
+                    wbsWorkspace={reviewSurface === 'loading' ? <p role="status" className="p-4 text-sm text-slate-500">Đang tải bản tổng hợp…</p>
+                        : reviewSurface === 'error' ? <div role="alert" className="space-y-3 rounded-xl bg-red-50 p-4 text-sm text-red-800"><p>{reviewWbsError}</p><button type="button" className="rounded-lg border border-red-300 px-4 py-2 font-bold" onClick={() => setReviewWbsRetry(value => value + 1)}>Thử lại</button></div>
+                        : reviewSurface === 'wbs' && reviewWbsBundle ? <DailyLogSummaryWorkspace
+                        key={`${reviewWbsBundle.summaryLog?.id}:${reviewWbsBundle.summaryLog?.lastActionAt || ''}`}
+                        bundle={reviewWbsBundle}
+                        mode="review"
+                        onSaved={() => {
+                            dailyLogWbsService.getBundle({
+                                projectId: projectId || effectiveId,
+                                constructionSiteId: constructionSiteId || null,
+                                logDate: viewingLog.date,
+                                dailyLogId: viewingLog.id,
+                            }).then(setReviewWbsBundle).catch(console.error);
+                        }}
+                        onReturnAll={() => {
+                            reasonConfirm({
+                                title: 'Trả lại bản tổng hợp',
+                                targetName: viewingLog.description || viewingLog.date,
+                                warningText: 'Toàn bộ bản tổng hợp sẽ quay về Kỹ thuật trưởng để chỉnh sửa.',
+                                reasonPlaceholder: 'Nhập lý do trả lại...',
+                                actionLabel: 'Trả lại',
+                                intent: 'danger',
+                            }).then(reason => { if (reason) handleStatusChange(viewingLog, 'rejected', undefined, reason); });
+                        }}
+                        onPublish={publishWbsSummary}
+                    /> : undefined}
                     busy={busyLogIds.has(viewingLog.id)}
                     onClose={() => setViewLogId(null)}
                     onPreviewImage={(list, idx) => {
@@ -3036,7 +3381,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     onEdit={() => {
                         setViewLogId(null);
                         if (isSummaryDailyLog(viewingLog)) {
-                            openSummaryForDate(viewingLog.date);
+                            openSummaryForDate(viewingLog.date, viewingLog);
                         } else {
                             openEdit(viewingLog);
                         }
@@ -3085,7 +3430,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     <div className="bg-card border border-border rounded-3xl shadow-2xl w-[95vw] h-[90dvh] sm:w-[80vw] sm:h-[80dvh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
-                                {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : <><Plus size={18} /> Ghi nhật ký</>}
+                                {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : shouldRenderWbsEditor ? <><Layers size={18} /> Phiếu nguồn theo khu vực</> : <><Plus size={18} /> Ghi nhật ký</>}
                             </span>
                             <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
                         </div>
@@ -3099,9 +3444,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nhân công</label>
                                     <div className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-900/50 text-sm font-black text-slate-700 dark:text-slate-300">
-                                        {getWorkerCountFromLabor(fLabor)} người
+                                        {shouldRenderWbsEditor ? 'Theo từng WBS' : `${getWorkerCountFromLabor(fLabor)} người`}
                                     </div>
-                                    <p className="mt-1 text-[10px] font-medium text-muted-foreground">Tự cộng từ Chi tiết thi công &gt; Nhân công.</p>
+                                    <p className="mt-1 text-[10px] font-medium text-muted-foreground">{shouldRenderWbsEditor ? 'Tự cộng từ các dòng nguồn lực trong bảng WBS.' : 'Tự cộng từ Chi tiết thi công > Nhân công.'}</p>
                                 </div>
                             </div>
                             <div>
@@ -3438,7 +3783,26 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             )}
 
                             {/* FastCons Detail Tabs */}
-                            <DailyLogDetailTabs
+                            {shouldRenderWbsEditor ? (
+                                <DailyLogContributionWorkEditor
+                                    key={`${fDate}:${wbsBundle?.contribution?.id || 'new'}`}
+                                    bundle={wbsBundle}
+                                    loading={wbsBundleLoading}
+                                    denied={wbsBundleDenied}
+                                    error={wbsBundleError}
+                                    onReload={reloadWbsBundle}
+                                    ensureContribution={ensureWbsContribution}
+                                    onSaved={() => {
+                                        toast.success('Đã lưu nháp phiếu nguồn');
+                                        reloadWbsBundle().catch(console.error);
+                                    }}
+                                    onSubmitted={() => {
+                                        toast.success('Đã gửi phiếu nguồn để tổng hợp');
+                                        resetForm();
+                                        reloadDailyLogRecords().catch(console.error);
+                                    }}
+                                />
+                            ) : <DailyLogDetailTabs
                                 volumes={fVolumes} materials={fMaterials}
                                 laborDetails={fLabor} machines={fMachines}
                                 onVolumesChange={setFVolumes} onMaterialsChange={setFMaterials}
@@ -3453,16 +3817,17 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 siteWarehouseName={siteWarehouse?.name}
                                 dailyProgressDate={fDate}
                                 importingDailyProgressVolumes={importingProgressVolumes}
-                                onImportDailyProgressVolumes={handleImportDailyProgressVolumes}
-                            />
+                                onImportDailyProgressVolumes={isWbsContributionFlow ? undefined : handleImportDailyProgressVolumes}
+                                hideDailyProgressImport={shouldRenderWbsEditor}
+                            />}
                         </div>
-                        <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
+                        {!shouldRenderWbsEditor && <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
                             <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700/60 disabled:opacity-50 transition-colors">Huỷ</button>
                             <button onClick={handleSave} disabled={savingLog || !fDate || !fDesc || (photoRequired && fPhotos.length === 0)}
                                 className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-teal-500 to-cyan-500 shadow-lg hover:shadow-xl flex items-center gap-2 disabled:opacity-50 transition-all hover:-translate-y-0.5 active:translate-y-0">
                                 {savingLog ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} {savingLog ? 'Đang lưu...' : editing ? 'Lưu' : 'Ghi nhật ký'}
                             </button>
-                        </div>
+                        </div>}
                     </div>
                 </div>
             )}

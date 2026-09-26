@@ -30,6 +30,7 @@ const DAILY_LOG_ROOM_ACTION_PERMISSION_CODES: Partial<Record<
     'project.daily_log.summarize',
   ],
   approve: ['project.daily_log.approve', 'project.daily_log.return'],
+  publish_progress: ['project.daily_log.publish_progress'],
 };
 
 export const getDailyLogPermissionCodesForEffectiveRoomActions = (
@@ -51,6 +52,16 @@ export const getWeeklyProgressPermissionCodesForEffectiveRoomActions = (
   actionCodes: readonly ProjectRoomActionCode[],
 ): string[] => Array.from(new Set(actionCodes.flatMap(
   actionCode => WEEKLY_PROGRESS_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
+)));
+
+const PAYMENT_ROOM_ACTION_PERMISSION_CODES: Partial<Record<ProjectRoomActionCode, readonly string[]>> = {
+  view_resource_evidence: ['project.payment.view_resource_evidence'],
+};
+
+export const getPaymentPermissionCodesForEffectiveRoomActions = (
+  actionCodes: readonly ProjectRoomActionCode[],
+): string[] => Array.from(new Set(actionCodes.flatMap(
+  actionCode => PAYMENT_ROOM_ACTION_PERMISSION_CODES[actionCode] || [],
 )));
 
 export interface WeeklyProgressEffectiveCapabilities {

@@ -7,6 +7,32 @@ import type {
 
 export const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
 
+const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
+  ROW_VERSION_CONFLICT: 'Phiếu đã được người khác vừa cập nhật. Hãy tải lại dữ liệu rồi thử lại.',
+  SOURCE_CHANGED: 'Phiếu nguồn đã thay đổi. Hãy rà soát lại card nguồn trước khi lưu.',
+  SOURCE_RETURNED: 'Phiếu nguồn đã bị trả lại. Hãy loại nguồn này hoặc chờ thành viên gửi lại.',
+  PERIOD_LOCKED: 'Kỳ tiến độ đã khóa. Hãy liên hệ người có quyền mở kỳ trước khi chỉnh sửa.',
+  PERIOD_LOCKED_WITH_REOPEN_REQUIRED: 'Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.',
+  REVISION_REASON_REQUIRED: 'Vui lòng nhập lý do tạo bản điều chỉnh.',
+  SUMMARY_REVISION_ALREADY_EXISTS: 'Bản tổng hợp này đã có bản điều chỉnh mới hơn.',
+  STALE_PROGRESS_BASELINE: 'Mốc tiến độ nền đã thay đổi. Hãy tải lại bản tổng hợp và rà soát trước khi công bố.',
+  BACKDATED_PROGRESS_CONFLICT: 'Tiến độ ngày này xung đột với mốc đã ghi ở ngày sau. Hãy rà soát lại chuỗi tiến độ.',
+  FORECAST_CHANGE_REASON_REQUIRED: 'Ngày dự báo đã thay đổi nhưng chưa có lý do. Hãy bổ sung lý do trước khi gửi.',
+  SUMMARY_SOURCE_REVIEW_BLOCKED: 'Có phiếu nguồn đã thay đổi hoặc đang chờ sửa. Hãy xử lý card nguồn trước khi tiếp tục.',
+  CATALOG_PROVIDER_NOT_ACTIVE: 'Nhà cung cấp hoặc tổ đội trong danh mục không còn hoạt động. Hãy chọn nguồn đang hoạt động hoặc nhập tay.',
+  MANUAL_PROVIDER_TYPE_REQUIRED: 'Hãy chọn loại nguồn cung cấp nhập tay.',
+  MANUAL_PROVIDER_NAME_REQUIRED: 'Hãy nhập tên nguồn cung cấp.',
+};
+
+export const mapDailyLogWbsCommandError = (error: unknown): Error => {
+  const candidate = error as { message?: string; code?: string; details?: string } | null;
+  const raw = [candidate?.message, candidate?.code, candidate?.details].filter(Boolean).join(' ');
+  const code = Object.keys(DAILY_LOG_WBS_ERROR_MESSAGES)
+    .sort((a, b) => b.length - a.length).find(key => raw.includes(key));
+  if (!code) return error instanceof Error ? error : new Error(candidate?.message || 'Không thể lưu dữ liệu nhật ký.');
+  return new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error });
+};
+
 export const getDailyLogWorkflowStatus = (log: DailyLog) => (
   log.status || (log.verified ? 'verified' : 'draft')
 );
@@ -19,6 +45,33 @@ export const getDailyLogTargetPermission = (log: DailyLog): 'verify' | 'approve'
 
 export const isDailyLogSummaryEditable = (log?: DailyLog | null): boolean =>
   !!log && isDailyLogSummaryRow(log) && ['draft', 'rejected'].includes(getDailyLogWorkflowStatus(log));
+
+export const canPublishDailyLogSummary = (input: {
+  log?: DailyLog | null;
+  canApprove: boolean;
+  canPublishProgress: boolean;
+}): boolean => Boolean(
+  input.log
+  && isDailyLogSummaryRow(input.log)
+  && getDailyLogWorkflowStatus(input.log) === 'submitted'
+  && input.canApprove
+  && input.canPublishProgress,
+);
+
+export const canCreateDailyLogSummaryRevision = (input: {
+  log?: DailyLog | null;
+  canApprove: boolean;
+  canPublishProgress: boolean;
+  periodLocked: boolean;
+}): boolean => Boolean(
+  input.log
+  && isDailyLogSummaryRow(input.log)
+  && getDailyLogWorkflowStatus(input.log) === 'verified'
+  && !input.log.supersededByDailyLogId
+  && input.canApprove
+  && input.canPublishProgress
+  && !input.periodLocked,
+);
 
 export type DailyLogSourceReviewState = 'waiting_review' | 'included' | 'needs_rereview' | 'returned';
 
@@ -169,6 +222,18 @@ interface CanReturnDailyLogSourceInput {
   isAdmin: boolean;
   permissions: Iterable<string>;
 }
+
+export const getDailyLogReviewSurface = (input: {
+  isSummary: boolean; loading?: boolean; error?: string | null; loaded?: boolean;
+  normalized?: boolean; rolloutEnabled?: boolean;
+  logDate?: string; cutoverDate?: string | null;
+}): 'loading' | 'error' | 'wbs' | 'legacy' => {
+  if (!input.isSummary) return 'legacy';
+  if (input.error) return 'error';
+  if (input.loading || !input.loaded) return 'loading';
+  const afterCutover = input.rolloutEnabled && input.logDate && input.cutoverDate && input.logDate >= input.cutoverDate;
+  return input.normalized || afterCutover ? 'wbs' : 'legacy';
+};
 
 const hasPermission = (permissions: Iterable<string>, code: string): boolean =>
   new Set(permissions).has(code);
@@ -452,7 +517,7 @@ export const resolveDailyLogSummaryDetails = (
   if (!isDailyLogSummaryRow(summaryLog)) return { details: persisted, source: 'persisted' };
 
   const metadata = summaryLog.summarySourceMetadata || {};
-  if (Number(metadata.aggregationVersion || 0) >= 2) {
+  if (summaryLog.normalizedWbs || Number(metadata.aggregationVersion || 0) >= 2) {
     return { details: persisted, source: 'persisted' };
   }
 

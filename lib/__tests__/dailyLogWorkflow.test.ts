@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { DailyLog } from '../../types';
 import {
   buildDailyLogSourceSnapshot,
+  getDailyLogReviewSurface,
   buildDailyLogSummaryDetails,
   buildDailyLogSummaryVolumes,
+  canCreateDailyLogSummaryRevision,
+  canPublishDailyLogSummary,
   canReturnDailyLogSource,
   DAILY_SUMMARY_SOURCE_TYPE,
   getDefaultDailyLogSummaryApprover,
@@ -11,9 +14,26 @@ import {
   getMissingDailyLogSummarySourceIds,
   getDailyLogTargetPermission,
   getDailyLogSummarySourceLogs,
+  mapDailyLogWbsCommandError,
   resolveDailyLogSummaryDetails,
   withDailyLogSummaryDetails,
 } from '../dailyLogWorkflow';
+
+describe('Daily Log review boundary', () => {
+  it('preserves legacy review before cutover even when the project pilot is enabled', () => {
+    const scope = { isSummary: true, loaded: true, rolloutEnabled: true, cutoverDate: '2026-09-25' };
+    expect(getDailyLogReviewSurface({ ...scope, logDate: '2026-09-24' })).toBe('legacy');
+    expect(getDailyLogReviewSurface({ ...scope, logDate: '2026-09-25' })).toBe('wbs');
+  });
+  it('never enables legacy actions while normalized data is unknown or unavailable', () => {
+    expect(getDailyLogReviewSurface({ isSummary: true, loading: true })).toBe('loading');
+    expect(getDailyLogReviewSurface({ isSummary: true, error: 'denied' })).toBe('error');
+    expect(getDailyLogReviewSurface({ isSummary: true })).toBe('loading');
+    expect(getDailyLogReviewSurface({ isSummary: true, loaded: true, normalized: true, rolloutEnabled: false })).toBe('wbs');
+    expect(getDailyLogReviewSurface({ isSummary: true, loaded: true, normalized: false, rolloutEnabled: false })).toBe('legacy');
+    expect(getDailyLogReviewSurface({ isSummary: false })).toBe('legacy');
+  });
+});
 
 const sourceLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
   id: 'source-1',
@@ -50,6 +70,26 @@ const summaryLog = (patch: Partial<DailyLog> = {}): DailyLog => ({
 });
 
 describe('daily log source workflow', () => {
+  it('keeps revision reopen instructions instead of matching the shorter period lock code', () => {
+    expect(mapDailyLogWbsCommandError(new Error('PERIOD_LOCKED_WITH_REOPEN_REQUIRED')).message)
+      .toBe('Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.');
+  });
+  it('offers a summary revision only for the active verified version with dual capability and an open period', () => {
+    const verified = summaryLog({ status: 'verified', revisionNo: 1 });
+    expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: true, periodLocked: false })).toBe(true);
+    expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: true, periodLocked: true })).toBe(false);
+    expect(canCreateDailyLogSummaryRevision({ log: { ...verified, supersededByDailyLogId: 'summary-2' }, canApprove: true, canPublishProgress: true, periodLocked: false })).toBe(false);
+    expect(canCreateDailyLogSummaryRevision({ log: verified, canApprove: true, canPublishProgress: false, periodLocked: false })).toBe(false);
+  });
+
+  it('requires both approve and publish_progress capabilities to publish a submitted summary', () => {
+    const submitted = summaryLog({ status: 'submitted' });
+    expect(canPublishDailyLogSummary({ log: submitted, canApprove: true, canPublishProgress: true })).toBe(true);
+    expect(canPublishDailyLogSummary({ log: submitted, canApprove: true, canPublishProgress: false })).toBe(false);
+    expect(canPublishDailyLogSummary({ log: submitted, canApprove: false, canPublishProgress: true })).toBe(false);
+    expect(canPublishDailyLogSummary({ log: summaryLog({ status: 'draft' }), canApprove: true, canPublishProgress: true })).toBe(false);
+  });
+
   it('keeps a returned member-contribution summary on the approver route', () => {
     expect(getDailyLogTargetPermission(summaryLog({
       status: 'rejected',

@@ -3,10 +3,28 @@
 -- Restore self-service semantics for migrated view-only profiles. Templates
 -- that can edit/approve attendance remain global operators.
 
+-- Schema-only previews have no actors or migrated HR profiles to reconcile.
+-- Snapshot this narrow bootstrap condition once; a populated or partial
+-- inventory must still satisfy every original reconciliation guard below.
+create temporary table authorization_v2_hrm_bootstrap_context on commit drop as
+select not exists (select 1 from auth.users)
+  and not exists (select 1 from public.users)
+  and not exists (select 1 from public.projects)
+  and not exists (select 1 from public.project_staff)
+  and not exists (select 1 from app_private.authorization_legacy_user_snapshots)
+  and not exists (select 1 from public.role_permission_templates where code like 'LEGACY_HR_%')
+  and not exists (select 1 from public.principal_role_assignments)
+  and not exists (select 1 from public.user_permission_grants)
+  as is_empty_bootstrap;
+
 do $$
 begin
   if not app_private.permission_hardening_flag('legacy_fallback_disabled') then
     raise exception 'Task 12.3 requires canonical-only authorization';
+  end if;
+
+  if (select is_empty_bootstrap from pg_temp.authorization_v2_hrm_bootstrap_context) then
+    return;
   end if;
 
   if not exists (
@@ -80,6 +98,10 @@ where view_item.template_id = template.id
 
 do $$
 begin
+  if (select is_empty_bootstrap from pg_temp.authorization_v2_hrm_bootstrap_context) then
+    return;
+  end if;
+
   if exists (
     select 1
     from public.role_permission_templates template

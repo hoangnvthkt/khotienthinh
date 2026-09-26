@@ -94,7 +94,7 @@ captured command outputs in this directory for machine-readable evidence.
 ## PERF02 Deployment Note
 
 PERF02 remains ordered after the baseline and is now applied on production. Its
-three indexes use `CREATE INDEX CONCURRENTLY` to avoid blocking live writes.
+original deployment used `CREATE INDEX CONCURRENTLY` to avoid blocking live writes.
 The Cloud migration runner could not execute that migration through its
 pipeline and retried it on later `main` pushes, leaving two same-named indexes
 invalid. A standalone `psql` execution correctly created the third index but
@@ -114,3 +114,30 @@ PERF02.
 
 The retained no-data preview is `baseline-vioo-git`; redundant manual preview
 branches were deleted after their evidence was recorded.
+
+### Preview migration compatibility (2026-09-26)
+
+The historical PERF02 source was revised for new, empty Supabase Preview Branch
+databases because the migration runner wraps each file in a transaction and
+cannot run `CREATE INDEX CONCURRENTLY`. The original deployed source SHA-256 was
+`0287d934fc6d741a9986f6fd9659c1df7adbca9d82bb6924150ad2c2ee26e744`;
+the preview-compatible source SHA-256 is
+`c0305b56fa3c2fb44ff3ae3f1ddf0330f9e28bf97a2951e674f346f43de3f910`.
+The version, three index names, key columns, sort directions, and partial-index
+predicates are unchanged. No production migration ledger or index was modified
+by this source change.
+
+The revised file checks both `public.transactions` and `public.requests` before
+creating any index. If either table has a row, it raises
+`PERF02_NONEMPTY_DATABASE_REQUIRES_CONCURRENT_APPLY` and must not be forced
+through the transactional runner. A populated database requires the original
+standalone concurrent-index procedure, validation of all three indexes as
+`indisvalid` and `indisready`, and a deliberately reviewed migration-history
+repair; this is not an automatic fallback.
+
+On the authorized `baseline-vioo-git` Cloud branch, both tables were empty.
+Running the exact revised file inside `BEGIN` produced three valid and ready
+indexes, followed by `ROLLBACK`; a subsequent query confirmed none remained.
+A separate rollback test inserted a synthetic transaction row, ran the file,
+observed the expected guard error, and confirmed neither the row nor any
+PERF02 index remained. These tests did not change production.
