@@ -150,3 +150,43 @@ và một ca mở summary qua shell ERP thật bằng phiên CHT cùng deep link
 Ca shell kiểm tra đọc/lineage; các mutation được kiểm bằng harness Cloud.
 Xem evidence riêng trong
 `docs/superpowers/evidence/2026-09-25-daily-log-baseline-cloud-smoke.md`.
+
+## Bằng chứng nguồn lực Nhật ký → Thanh toán: read-only pilot riêng
+
+Phạm vi này chỉ đọc nhân công/máy đã verified trong summary WBS. Không dùng
+cost/accrual/transaction của Nhật ký, không đổi rollout Plan 1 và không đụng
+Project V2/Procurement. Migration Cloud cần có `20260925160000`,
+`20260925161000` và bản hardening `20260926022433` (private definer/public
+invoker); kiểm source hash trong evidence release trước khi bật.
+
+1. Xác minh đúng branch/project/site, owner active, date range tối đa 366 ngày,
+   `releaseId`, `reason`, `expiresAt` trong vòng 30 ngày. Kiểm ít nhất một QS
+   active có Payment Room `view_resource_evidence` đúng scope; không cấp từ
+   quyền xem Thanh toán chung. Binding ban đầu là `audit_only`.
+2. Chạy `supabase/operations/resource_usage_evidence_pilot.sql` trong transaction
+   với `app.resource_evidence_operation` JSON. Dry-run ROLLBACK trước; review
+   missing provider/lineage, duplicate current, recipient và grant ở scope khác.
+   Operation fail-closed nếu thiếu bất kỳ điều kiện nào. `EXPLAIN` đi kèm để lưu
+   query-plan evidence. Chỉ COMMIT `mode=pilot` khi release owner chấp thuận.
+3. Dùng QS thật đăng nhập đọc NCC → ngày → khu vực → WBS → Nhật ký gốc ở
+   desktop/tablet/mobile. Thử user thiếu quyền và khác scope. Mỗi dòng chỉ có
+   số người/máy và giờ công/giờ máy; `unknownLegacyCount` không được cộng vào
+   tổng và không được diễn giải thành giờ. Provider inactive vẫn đọc snapshot
+   đã xác nhận; nguồn nhập tay không bị tự ghép vào BusinessPartner.
+4. Revision current là mặc định; toggle lịch sử hiển thị `superseded` rõ ràng
+   nhưng không cộng lại vào KPI. Kiểm JSON và UI không có khóa tiền, và
+   `project_transactions` không đổi. Nếu sai quyền, lineage, revision hoặc lọt
+   giá/tiền: dừng pilot, giữ evidence, báo support owner.
+5. Pause/rollback bằng cùng operation với `mode=audit_only`, reason mới, sau đó
+   vô hiệu hóa grant test. Không xóa Nhật ký, source, revision hay legacy; không
+   backfill. Binding này là toàn cục nên preflight chặn active grant ở project
+   khác. `expiresAt` là deadline operator, không có auto-expiry DB: support owner
+   phải chủ động pause trước deadline. Muốn rollout nhiều project cần thiết kế
+   cohort binding riêng, không dùng operation pilot này.
+
+Test branch `baseline-vioo-git` dùng `node --env-file=/Users/admin/khotienthinh/.env
+tests/daily-log/run-resource-evidence-pilot.mjs` và browser config
+`tests/daily-log/resource-evidence-playwright.config.mjs`. Runner tạo/đăng nhập
+persona synthetic, chỉ mở binding trong thời gian test, rồi trả `audit_only` và
+deactivate grant trong `finally`; không chạy song song với runner Plan 1. Evidence
+ghi ở `docs/superpowers/evidence/2026-09-25-resource-usage-evidence-pilot.md`.
