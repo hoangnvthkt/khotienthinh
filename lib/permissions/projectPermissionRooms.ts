@@ -6,6 +6,7 @@ export const PROJECT_ROOM_ACTION_CODES = [
   'verify',
   'confirm',
   'approve',
+  'publish_progress',
   'view_available_stock',
 ] as const;
 
@@ -70,7 +71,7 @@ const defineRoom = (
 });
 
 export const PROJECT_PERMISSION_ROOMS = Object.freeze([
-  defineRoom('daily_log', 'daily_log', 'Nhật ký công trường', 'Lập, kiểm tra và duyệt nhật ký.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], ['verify', 'approve'], 10),
+  defineRoom('daily_log', 'daily_log', 'Nhật ký công trường', 'Lập, kiểm tra và duyệt nhật ký.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'publish_progress'], ['verify', 'approve'], 10, { publish_progress: ['approve'] }),
   defineRoom('material_planning', 'material', 'Kế hoạch & BOQ vật tư', 'Quản lý kế hoạch và BOQ vật tư.', ['view', 'edit', 'delete'], [], 20),
   defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'confirm', 'approve', 'view_available_stock'], [], 30),
   defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], [], 40),
@@ -98,6 +99,7 @@ const GENERIC_ROOM_ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
   verify: 'Kiểm tra',
   confirm: 'Xác nhận',
   approve: 'Duyệt',
+  publish_progress: 'Công bố tiến độ ngày',
   view_available_stock: 'Xem tồn khả dụng',
 };
 

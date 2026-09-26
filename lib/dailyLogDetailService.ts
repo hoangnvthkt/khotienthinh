@@ -10,6 +10,7 @@ import { getSupabaseOrderColumns, getSupabaseProjection } from './supabaseProjec
 import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export interface DailyLogDetails {
+  normalizedWbs?: boolean;
   volumes: DailyLogVolume[];
   materials: DailyLogMaterial[];
   laborDetails: DailyLogLabor[];
@@ -65,6 +66,29 @@ export const dailyLogDetailService = {
     if (logIds.length === 0) return {};
     const result: Record<string, DailyLogDetails> = Object.fromEntries(logIds.map(id => [id, emptyDetails()]));
 
+    const work = await fetchAllSupabaseRows(supabase.from('daily_log_work_items')
+      .select(getSupabaseProjection('daily_log_work_items')).in('daily_log_id', logIds),
+    { label: 'Daily Log normalized work', maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_work_items') });
+    if (work.error) throw work.error;
+    const normalizedIds = new Set<string>((work.data || []).map(row => row.daily_log_id));
+    const decisions = normalizedIds.size ? await fetchAllSupabaseRows(supabase.from('daily_log_wbs_decisions')
+      .select(getSupabaseProjection('daily_log_wbs_decisions')).in('daily_log_id', [...normalizedIds]),
+    { label: 'Daily Log official decisions', maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_wbs_decisions') })
+      : { data: [], error: null };
+    if (decisions.error) throw decisions.error;
+    for (const id of normalizedIds) result[id].normalizedWbs = true;
+    for (const decision of decisions.data || []) {
+      const item = work.data?.find(row => row.daily_log_id === decision.daily_log_id && row.task_id === decision.task_id);
+      // Unknown quantities stay absent from numeric totals; never substitute JSONB or zero.
+      if (!item || decision.official_daily_quantity == null) continue;
+      result[decision.daily_log_id].volumes.push({
+        taskId: item.task_id, taskName: item.task_name_snapshot,
+        workBoqItemId: item.work_boq_item_id || undefined,
+        quantity: Number(decision.official_daily_quantity), unit: item.unit_snapshot || '',
+        note: decision.resolution_reason || undefined,
+      });
+    }
+
     try {
       const [volumes, materials, labor, machines] = await Promise.all([
         fetchAllSupabaseRows(supabase.from('daily_log_volumes').select(getSupabaseProjection('daily_log_volumes')).in('daily_log_id', logIds).order('source_index', { ascending: true }), { label: "lib/dailyLogDetailService.ts:69", maxRows: 20_000, orderBy: getSupabaseOrderColumns('daily_log_volumes') }),
@@ -77,11 +101,14 @@ export const dailyLogDetailService = {
         if (response.error) throw response.error;
       }
 
-      for (const row of volumes.data || []) result[row.daily_log_id].volumes.push(fromDb(row));
+      for (const row of volumes.data || []) {
+        if (!normalizedIds.has(row.daily_log_id)) result[row.daily_log_id].volumes.push(fromDb(row));
+      }
       for (const row of materials.data || []) result[row.daily_log_id].materials.push(fromDb(row));
       for (const row of labor.data || []) result[row.daily_log_id].laborDetails.push(fromDb(row));
       for (const row of machines.data || []) result[row.daily_log_id].machines.push(fromDb(row));
     } catch (error: any) {
+      if (normalizedIds.size || !['42P01', 'PGRST205'].includes(error?.code)) throw error;
       console.warn('Daily log detail tables unavailable; using JSONB fallback', error?.message || error);
     }
 

@@ -116,7 +116,17 @@
     "20260921170000_g8_management_dataset_lineage.sql",
     "20260921183000_g9_erp_completion_rollout_control.sql",
     "20260921190000_g9_pilot_permission_command.sql",
-    "20260922064202_fix_boq_material_planning_wrapper_security.sql"
+    "20260922064202_fix_boq_material_planning_wrapper_security.sql",
+    "20260923090000_daily_log_wbs_area_foundation.sql",
+    "20260923091500_daily_log_publish_progress_permission.sql",
+    "20260923093000_daily_log_wbs_area_commands.sql",
+    "20260923100000_daily_log_summary_progress_publication.sql",
+    "20260923101500_daily_progress_exception_command.sql",
+    "20260923103000_daily_log_summary_revisions.sql",
+    "20260925062233_daily_log_shadow_pilot_gate.sql",
+    "20260925063126_daily_log_contribution_room_insert.sql",
+    "20260925065524_daily_log_enforced_write_boundary.sql",
+    "20260925153000_daily_log_shadow_all_submitted_gate.sql"
   ],
   "forbidIncludeAll": true
 }

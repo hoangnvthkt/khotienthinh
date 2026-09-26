@@ -800,14 +800,29 @@ export interface ProjectDailyTaskProgress {
   progressDate: string;
   weekStart: string;
   progressPercent: number;
-  quantityDone: number;
-  dailyQuantityDone: number;
+  quantityDone: number | null;
+  dailyQuantityDone: number | null;
   note?: string | null;
   attachments?: Attachment[];
   sourceDailyLogId?: string | null;
   updatedBy?: string | null;
   updatedAt?: string;
   createdAt?: string;
+}
+
+export interface DailyProgressExceptionAudit {
+  id: string;
+  progressRowId: string;
+  projectId: string;
+  constructionSiteId?: string | null;
+  taskId: string;
+  progressDate: string;
+  sourceDailyLogId: string;
+  beforeData: Record<string, unknown>;
+  afterData: Record<string, unknown>;
+  reason: string;
+  actorUserId: string;
+  createdAt: string;
 }
 
 export interface ProjectValueProgressMetric {
@@ -1107,6 +1122,114 @@ export interface DailyLogMachine {
   note?: string;
 }
 
+export type DailyLogWorkOwnerType = 'contribution' | 'summary_source';
+export type DailyLogWorkConversionStatus = 'ready' | 'missing_planned_quantity';
+export type DailyLogWorkConflictCode =
+  | 'missing_area_allocation'
+  | 'duplicate_daily_quantity'
+  | 'forecast_mismatch'
+  | 'source_changed'
+  | 'source_returned';
+
+export interface DailyLogWorkItem {
+  id?: string;
+  ownerType: DailyLogWorkOwnerType;
+  contributionId?: string | null;
+  dailyLogId?: string | null;
+  summarySourceId?: string | null;
+  sourceWorkItemId?: string | null;
+  taskId: string;
+  workBoqItemId?: string | null;
+  workAreaCode: string;
+  workAreaName: string;
+  wbsCode?: string | null;
+  taskName: string;
+  unit?: string | null;
+  plannedQuantity?: number | null;
+  areaPlannedQuantity?: number | null;
+  baselineProgressPercent: number;
+  baselineQuantityDone?: number | null;
+  cumulativeProgressPercent: number;
+  cumulativeQuantityDone?: number | null;
+  dailyQuantityDone?: number | null;
+  scheduleFinishDate?: string | null;
+  forecastFinishDate?: string | null;
+  forecastChangeReason?: string | null;
+  note?: string | null;
+  attachments?: Attachment[];
+}
+
+export interface DerivedWorkItemProgress {
+  cumulativePercent: number;
+  cumulativeQuantity: number | null;
+  dailyQuantity: number | null;
+  conversionStatus: DailyLogWorkConversionStatus;
+}
+
+export interface AggregatedDailyLogWorkItem {
+  taskId: string;
+  officialCumulativePercent: number | null;
+  cumulativeQuantity: number | null;
+  dailyQuantity: number | null;
+  conflicts: DailyLogWorkConflictCode[];
+  sourceWorkItemIds: string[];
+}
+
+export interface DailyLogWbsDecision {
+  id?: string;
+  dailyLogId: string;
+  taskId: string;
+  officialCumulativePercent: number;
+  officialCumulativeQuantity?: number | null;
+  officialDailyQuantity?: number | null;
+  forecastFinishDate?: string | null;
+  aggregationMethod: 'single_source' | 'weighted_area_allocation' | 'manual_override';
+  dailyQuantityMethod: 'sum_non_overlapping' | 'keep_selected_sources' | 'manual_override';
+  includedSourceWorkItemIds: string[];
+  resolutionReason?: string | null;
+  forecastResolutionReason?: string | null;
+  sourceFingerprint: string;
+}
+
+export type DailyLogProviderEntryMode = 'catalog' | 'manual';
+export type DailyLogManualProviderType =
+  | 'free_crew'
+  | 'day_labor'
+  | 'unregistered_provider'
+  | 'machine_owner'
+  | 'unregistered_rental_provider'
+  | 'other';
+
+export interface DailyLogResourceProvider {
+  entryMode: DailyLogProviderEntryMode;
+  partnerId?: string | null;
+  providerCodeSnapshot?: string | null;
+  providerNameSnapshot?: string | null;
+  manualProviderType?: DailyLogManualProviderType | null;
+  manualProviderName?: string | null;
+  manualProviderNote?: string | null;
+}
+
+export interface DailyLogLaborInput {
+  workItemClientKey: string;
+  workItemId?: string | null;
+  provider: DailyLogResourceProvider;
+  laborType: string;
+  peopleCount: number;
+  hoursPerPerson: number;
+  note?: string | null;
+}
+
+export interface DailyLogMachineInput {
+  workItemClientKey: string;
+  workItemId?: string | null;
+  provider: DailyLogResourceProvider;
+  machineType: string;
+  machineCount: number;
+  hoursPerMachine: number;
+  note?: string | null;
+}
+
 export interface DailyLogPhoto {
   name: string;
   url: string;
@@ -1129,6 +1252,10 @@ export interface DailyLogContribution {
   issues?: string | null;
   photos?: DailyLogPhoto[];
   status: DailyLogContributionStatus;
+  workAreaCode?: string | null;
+  workAreaName?: string | null;
+  rowVersion?: number;
+  sourceFingerprint?: string | null;
   submittedToUserId?: string | null;
   submittedToName?: string | null;
   submittedAt?: string | null;
@@ -1156,9 +1283,27 @@ export interface DailyLogSummarySource {
   metadata?: Record<string, unknown>;
   createdBy?: string | null;
   createdAt?: string;
+  sortOrder?: number;
+  sourceVersion?: number | null;
+  sourceFingerprint?: string | null;
+  sourceSnapshot?: Record<string, unknown>;
+  sourceState?: 'current' | 'changed' | 'returned' | 'missing';
+  workAreaCode?: string | null;
+  workAreaName?: string | null;
+  hasAdjustments?: boolean;
+  adjustmentReason?: string | null;
+  adjustedBy?: string | null;
+  adjustedAt?: string | null;
+  reviewStatus?: 'draft' | 'ready' | 'change_requested' | 'accepted' | 'superseded';
+  reviewComment?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  updatedAt?: string;
 }
 
 export interface DailyLog {
+  /** Read-model marker only; never persisted in daily_logs. */
+  normalizedWbs?: boolean;
   id: string;
   projectId?: string | null;
   constructionSiteId?: string | null;
@@ -1211,6 +1356,10 @@ export interface DailyLog {
   summarySourceType?: 'member_contributions' | 'manual' | string | null;
   summarySourceMetadata?: Record<string, unknown> | null;
   summaryContributionCount?: number;
+  revisionNo?: number;
+  supersedesDailyLogId?: string | null;
+  supersededByDailyLogId?: string | null;
+  revisionReason?: string | null;
   createdBy: string;
   createdById?: string;
   createdAt: string;
