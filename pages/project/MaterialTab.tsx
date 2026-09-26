@@ -20,7 +20,7 @@ import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import type { ProjectMaterialTabKey, ProjectMaterialTabPermissionMap } from '../../lib/projectTabPermissions';
 import { getMaterialRequestWorkflowLaneId, materialRequestService, type MaterialRequestAggregateRow } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
-import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import { getRuntimeWorkflowFlowNodes, projectWorkflowService } from '../../lib/projectWorkflowService';
 import { projectWorkflowBoardService } from '../../lib/projectWorkflowBoardService';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -654,7 +654,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         [workflowNodes],
     );
     const requestWorkflowRuntimeNodes = useMemo(
-        () => Object.values(requestWorkflowRuntimeContexts).flatMap(context => context.nodes),
+        () => Object.values(requestWorkflowRuntimeContexts).flatMap(getRuntimeWorkflowFlowNodes),
         [requestWorkflowRuntimeContexts],
     );
     const workflowEdgesBySource = useMemo(() => {
@@ -734,6 +734,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         () => selectedRequest ? requests.find(request => request.id === selectedRequest.id) || selectedRequest : undefined,
         [requests, selectedRequest],
     );
+    const selectedRequestWorkflowFlowNodes = useMemo(() => {
+        const subject = selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : undefined;
+        const context = subject ? requestWorkflowRuntimeContexts[subject.id] : undefined;
+        return context
+            ? getRuntimeWorkflowFlowNodes(context).map(node => runtimeNodeToWorkflowNode(node)).filter(Boolean) as WorkflowNode[]
+            : undefined;
+    }, [requestWorkflowRuntimeContexts, requestWorkflowSubjects, runtimeNodeToWorkflowNode, selectedRequestLive]);
 
     useEffect(() => {
         const subject = selectedRequestLive ? requestWorkflowSubjects[selectedRequestLive.id] : null;
@@ -3307,9 +3314,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         }
                         projectWorkflowNodes={
                             selectedRequestLive && requestWorkflowSubjects[selectedRequestLive.id]
-                                ? requestWorkflowRuntimeContexts[requestWorkflowSubjects[selectedRequestLive.id].id]?.nodes
-                                    .map(node => runtimeNodeToWorkflowNode(node))
-                                    .filter(Boolean) as WorkflowNode[] || workflowNodes
+                                ? selectedRequestWorkflowFlowNodes || workflowNodes
                                 : workflowNodes
                         }
                         projectWorkflowNextNode={selectedRequestLive ? getWorkflowNextNode(requestWorkflowSubjects[selectedRequestLive.id]) : null}

@@ -219,6 +219,31 @@ const loadWorkflowRowsByChunkedValue = async (input: {
   return rows;
 };
 
+/**
+ * Snapshot nodes reachable from START, in flow order. Older snapshots keep steps
+ * that were unlinked from the flow (e.g. "Tạo đề xuất" at the same position as
+ * "BCH CT Duyệt"); those must not show up as steps. A context without edges (only
+ * the current node is known yet) is returned unchanged.
+ */
+export const getRuntimeWorkflowFlowNodes = (context: Pick<ProjectWorkflowRuntimeContext, 'nodes' | 'edges'>): WorkflowRuntimeNode[] => {
+  const start = context.nodes.find(node => node.type === WorkflowNodeType.START);
+  if (!start || context.edges.length === 0) return context.nodes;
+  const nodeById = new Map(context.nodes.map(node => [node.id, node]));
+  const edges = context.edges.slice().sort((a, b) => a.sortOrder - b.sortOrder);
+  const ordered: WorkflowRuntimeNode[] = [];
+  const visited = new Set<string>();
+  const queue = [start.id];
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    const node = nodeById.get(nodeId);
+    if (!node || visited.has(nodeId)) continue;
+    visited.add(nodeId);
+    ordered.push(node);
+    edges.filter(edge => edge.sourceInstanceNodeId === nodeId).forEach(edge => queue.push(edge.targetInstanceNodeId));
+  }
+  return ordered;
+};
+
 export const projectWorkflowService = {
   async getConfiguration(
     subjectType: ProjectWorkflowSubjectType,

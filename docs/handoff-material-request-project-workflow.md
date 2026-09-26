@@ -100,6 +100,7 @@ Bất biến phải giữ:
 5. **Kéo thả Kanban bị chặn "Chỉ được chuyển sang đúng bước workflow kế tiếp"** (§4A). Nguyên nhân thật: nhánh hydrate từ board RPC (`MaterialTab.tsx` ~396) tạo runtime context chỉ có node hiện tại, `edges: []` → `getWorkflowNextNode` luôn `null` (không phải do clone). Sửa: sau hydrate, tải nền snapshot đủ (`listRuntimeContextsBySubjects`) cho phiếu RUNNING; khi chưa tải xong → toast "Đang tải quy trình của phiếu"; kéo sai cột → toast nêu tên bước kế tiếp + hướng dẫn "Trả lại" trong phiếu. Đã kiểm Thiện (`4a0b3a22…`) có `approve` ở công trường `240ac280…` của 9834/9833.
 6. **"Chọn nhanh theo nhóm cấu hình" hiện phòng ban lạ** (§4B): `ProjectWorkflowAssigneeSelect.tsx` chỉ hiện phòng ban có trong `assignmentTargets` của bước (phương án 1). Test: `components/project/__tests__/ProjectWorkflowAssigneeSelect.test.tsx`.
 - Verify sau khi sửa: lint, 484 file / 2288 test pass (2 skip), build OK. Chờ người dùng thử lại trên localhost:3100.
+7. **"Tạo đề xuất" chen trước "BCH CT Duyệt"** (27/09, sau khi mục 5 tải đủ snapshot): snapshot của MR-2026-9828…9834 còn node "Tạo đề xuất" (ACTION, `position_y` 100 trùng BCH) nhưng không có cạnh nối. `getRuntimeWorkflowFlowNodes` (`lib/projectWorkflowService.ts`) chỉ giữ node đi được từ START theo cạnh; dùng cho cột Kanban và danh sách bước trong chi tiết phiếu. Test: `lib/__tests__/runtimeWorkflowFlowNodes.test.ts`.
 
 ## 4. (LƯU TRỮ) 2 lỗi người dùng báo 26/09 — đã sửa, xem §3 mục 5–6
 
