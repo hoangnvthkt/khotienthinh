@@ -66,7 +66,7 @@ counting, direct-table deny, exact project/site permission and legacy separation
 No source row was deleted or backfilled. Tests used synthetic records and do
 not replace real business-user acceptance.
 
-Final verification: 2,518 unit tests passed (2 pre-existing skips), TypeScript
+Final verification: 2,519 unit tests passed (2 pre-existing skips), TypeScript
 typecheck passed, Vite production build passed, migration baseline check passed,
 Cloud deployed smoke passed after the pilot cleanup, and 4/4 evidence browser
 tests plus the existing Plan 1 ERP-shell regression passed. After the final
