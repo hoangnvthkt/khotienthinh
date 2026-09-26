@@ -112,6 +112,32 @@ export interface SaveDailyLogSourceDocumentInput {
   machines: DailyLogMachineInput[];
 }
 
+export interface DailyLogSourceTransitionReceipt {
+  contributionId: string;
+  status: 'submitted' | 'returned';
+  rowVersion: number;
+  updatedAt: string;
+  sourceFingerprint: string;
+  dailyLogId?: string;
+  summaryUpdatedAt?: string;
+}
+
+export interface ReturnDailyLogSourceInput {
+  commandId: string;
+  dailyLogId: string;
+  summarySourceId: string;
+  contributionId: string;
+  expectedSummaryUpdatedAt: string;
+  expectedRowVersion: number;
+  reason: string;
+}
+
+export interface SubmitDailyLogSourceInput {
+  commandId: string;
+  contributionId: string;
+  expectedRowVersion: number;
+}
+
 export interface DailyLogWbsBundleInput {
   projectId: string;
   constructionSiteId?: string | null;
@@ -223,6 +249,12 @@ const callRpc = async <T>(name: string, params: Record<string, unknown>): Promis
 };
 
 export const dailyLogWbsService = {
+  returnSource(input: ReturnDailyLogSourceInput): Promise<DailyLogSourceTransitionReceipt> {
+    return callRpc('return_daily_log_source_v2', { p_input: input });
+  },
+  submitSource(input: SubmitDailyLogSourceInput): Promise<DailyLogSourceTransitionReceipt> {
+    return callRpc('submit_daily_log_source_v2', { p_input: input });
+  },
   saveSourceDocument(input: SaveDailyLogSourceDocumentInput): Promise<DailyLogWorkSaveReceipt> {
     return callRpc('save_daily_log_source_document_v2', { p_input: input });
   },

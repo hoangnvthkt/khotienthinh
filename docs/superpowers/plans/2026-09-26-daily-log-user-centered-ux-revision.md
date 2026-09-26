@@ -129,11 +129,13 @@ Task3 verification/rulings: [quantity checkpoint](../evidence/2026-09-26-daily-l
 - Receipt `{ contributionId: string; status: 'submitted'|'returned'; rowVersion: number; updatedAt: string; sourceFingerprint: string; dailyLogId?: string; summaryUpdatedAt?: string }`, private idempotency Task2.
 - Return actions: verify→người tổng hợp, approve→CHT, scope room đúng; owner sửa draft/returned và submit own only. Trả bản tổng hợp giữ command riêng hiện có.
 
-- [ ] **Step 1 — RED:** Non-admin CHT trả phiếu A, B không đổi; người tổng hợp đúng scope trả được; tác giả chỉ gửi lại phiếu của mình; reader bị từ chối. Sai cặp source–summary, lý do trống, version cũ hoặc kỳ khóa đều reject. Source gắn bất kỳ hồ sơ verified còn hiệu lực không được trả. Retry có một receipt, duyệt–trả đồng thời không tạo nửa trạng thái.
-- [ ] **Step 2:** Run new unit/migration tests RED; SQL Cloud smoke ghi fingerprints/counts trước thao tác, không admin/service_role bypass làm bằng chứng.
-- [ ] **Step 3 — GREEN:** Transaction source→returned cùng reason/actor/time; summary source→change_requested/comment; pending summary→rejected. Không đổi nội dung/nguồn lực gốc hoặc verified snapshot. Pending summary khác giữ snapshot và bị chặn do returned/fingerprint. Lock logs theo ID→sources theo ID→contribution; save nguồn chỉ lock contribution, không khóa ngược log. Trigger support hẹp sau cutover, không fallback quyền legacy rộng. Submit validate completeness/provider/forecast/version, giữ reviewComment trước summary refresh.
-- [ ] **Step 4:** Cloud retry/concurrency/auth tests GREEN; A returned, B không đổi; source đã verified bị deny; gửi lại tăng version, chưa tạo evidence. Existing publication/revision/Room security tests pass. Browser WBS không `.update(status)` trực tiếp.
-- [ ] **Step 5:** Commit `feat(daily-log): close scoped source return and resubmit workflow`.
+- [x] **Step 1 — RED:** Non-admin CHT trả phiếu A, B không đổi; người tổng hợp đúng scope trả được; tác giả chỉ gửi lại phiếu của mình; reader bị từ chối. Sai cặp source–summary, lý do trống, version cũ hoặc kỳ khóa đều reject. Source gắn bất kỳ hồ sơ verified còn hiệu lực không được trả. Retry có một receipt, duyệt–trả đồng thời không tạo nửa trạng thái.
+- [x] **Step 2:** Run new unit/migration tests RED; SQL Cloud smoke ghi fingerprints/counts trước thao tác, không admin/service_role bypass làm bằng chứng.
+- [x] **Step 3 — GREEN:** Transaction source→returned cùng reason/actor/time; summary source→change_requested/comment; pending summary→rejected. Không đổi nội dung/nguồn lực gốc hoặc verified snapshot. Pending summary khác giữ snapshot và bị chặn do returned/fingerprint. Lock logs theo ID→sources theo ID→contribution; save nguồn chỉ lock contribution, không khóa ngược log. Trigger support hẹp sau cutover, không fallback quyền legacy rộng. Submit validate completeness/provider/forecast/version, giữ reviewComment trước summary refresh.
+- [x] **Step 4:** Cloud retry/concurrency/auth tests GREEN; A returned, B không đổi; source đã verified bị deny; gửi lại tăng version, chưa tạo evidence. Existing publication/revision/Room security tests pass. Browser WBS không `.update(status)` trực tiếp. Backend chặn bypass v2; wiring editor/workspace thực hiện tại Tasks5–7, không kết luận ERP UI đã xong.
+- [x] **Step 5:** Commit `feat(daily-log): close scoped source return and resubmit workflow`.
+
+Evidence: [Task4 checkpoint](../evidence/2026-09-27-daily-log-source-return-resubmit-checkpoint.md).
 
 ### Task 5: Phiếu kỹ sư — layout bảng và action theo trạng thái
 

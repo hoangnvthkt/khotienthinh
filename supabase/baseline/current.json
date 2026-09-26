@@ -135,7 +135,9 @@
     "20260926113919_daily_log_source_quantity_entry_v2.sql",
     "20260926163158_daily_log_source_save_conflict_http_v2.sql",
     "20260926163810_daily_log_source_entry_bounds_v2.sql",
-    "20260926164443_daily_log_source_missing_basis_null_v2.sql"
+    "20260926164443_daily_log_source_missing_basis_null_v2.sql",
+    "20260926165732_daily_log_source_return_resubmit_v2.sql",
+    "20260926174010_daily_log_source_readiness_scope_v2.sql"
   ],
   "forbidIncludeAll": true
 }

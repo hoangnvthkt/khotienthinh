@@ -41,6 +41,12 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   LABOR_PHYSICAL_USAGE_INVALID: 'Số người và giờ mỗi người phải là số lớn hơn 0.',
   MACHINE_PHYSICAL_USAGE_INVALID: 'Số máy và giờ mỗi máy phải là số lớn hơn 0.',
   DAILY_LOG_SOURCE_SAVE_DENIED: 'Bạn chưa có quyền sửa phiếu này hoặc phiếu không thuộc bạn.',
+  DAILY_LOG_SOURCE_RETURN_REASON_REQUIRED: 'Hãy nhập lý do trả phiếu để kỹ sư biết nội dung cần sửa.',
+  DAILY_LOG_SOURCE_RETURN_DENIED: 'Bạn chưa có quyền trả phiếu trong phạm vi này.',
+  DAILY_LOG_SOURCE_SUBMIT_DENIED: 'Bạn chưa có quyền gửi phiếu này hoặc phiếu không thuộc bạn.',
+  DAILY_LOG_SOURCE_RELATION_MISMATCH: 'Phiếu không khớp bản tổng hợp đang xem. Hãy tải lại dữ liệu.',
+  DAILY_LOG_SOURCE_NOT_COMPLETE: 'Hãy hoàn thiện hạng mục, khối lượng và nguồn lực trước khi gửi phiếu.',
+  SUMMARY_UPDATED_AT_CONFLICT: 'Bản tổng hợp vừa thay đổi. Hãy tải lại dữ liệu rồi thử lại.',
   VERIFIED_SOURCE_IMMUTABLE: 'Phiếu đã tham gia hồ sơ được xác nhận. Hãy tạo bản điều chỉnh, không sửa nguồn đã duyệt.',
   DAILY_LOG_SOURCE_AREA_IMMUTABLE: 'Không đổi khu vực của phiếu đã lập. Hãy tạo phiếu riêng cho khu vực khác.',
 };
