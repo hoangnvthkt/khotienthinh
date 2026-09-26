@@ -1,6 +1,7 @@
 import type { ResourceEvidenceFilters, ResourceEvidenceGroup, VerifiedResourceUsageEvidence } from '../types';
 import { groupResourceEvidence, sanitizeResourceEvidenceRow } from './resourceUsageEvidenceRules';
 import { supabase } from './supabase';
+import { assertResourceEvidenceHasNoMoneyKeys } from './resourceEvidenceNoMoneyLeak';
 
 export interface ResourceEvidenceTotals {
   providerCount: number;
@@ -56,7 +57,7 @@ export const projectResourceEvidenceService = {
       .map(row => sanitizeResourceEvidenceRow(row as Record<string, unknown>));
     const rawTotals = result.totals && typeof result.totals === 'object'
       ? result.totals as Record<string, unknown> : {};
-    return {
+    const page: ResourceEvidencePage = {
       rows,
       groups: groupResourceEvidence(rows),
       totals: {
@@ -70,5 +71,7 @@ export const projectResourceEvidenceService = {
       unknownLegacyCount: numberField(result.unknownLegacyCount),
       nextCursor: typeof result.nextCursor === 'string' ? result.nextCursor : null,
     };
+    assertResourceEvidenceHasNoMoneyKeys(page);
+    return page;
   },
 };

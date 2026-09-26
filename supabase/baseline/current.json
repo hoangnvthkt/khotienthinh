@@ -142,7 +142,8 @@
     "20260925065524_daily_log_enforced_write_boundary.sql",
     "20260925153000_daily_log_shadow_all_submitted_gate.sql",
     "20260925160000_resource_evidence_permission.sql",
-    "20260925161000_verified_resource_usage_evidence.sql"
+    "20260925161000_verified_resource_usage_evidence.sql",
+    "20260926022433_secure_daily_log_physical_resources.sql"
   ],
   "forbidIncludeAll": true
 }

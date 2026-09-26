@@ -22,6 +22,13 @@ begin
   end if;
   perform set_config('app.resource_evidence_smoke_date', v_log.date, true);
   perform set_config('app.resource_evidence_smoke_log_id', v_log.id, true);
+  perform set_config('app.resource_evidence_smoke_member_id', coalesce((
+    select member.id::text from public.project_permission_room_members member
+    where member.project_id = 'DL-WBS-PILOT-20260925'
+      and member.construction_site_id is null and member.room_code = 'payment'
+      and member.project_staff_id = '72000000-0000-4000-8002-000000000005'
+    limit 1
+  ), gen_random_uuid()::text), true);
   select count(*) into v_before from public.project_transactions
   where project_id = v_log.project_id;
   perform set_config('app.resource_evidence_tx_before', v_before::text, true);
@@ -72,16 +79,16 @@ reset role;
 insert into public.project_permission_room_members(
   id, project_id, room_code, project_staff_id, is_active, created_by
 ) values (
-  '73000000-0000-4000-8000-000000000001', 'DL-WBS-PILOT-20260925', 'payment',
+  current_setting('app.resource_evidence_smoke_member_id')::uuid, 'DL-WBS-PILOT-20260925', 'payment',
   '72000000-0000-4000-8002-000000000005', true,
   '72000000-0000-4000-8000-000000000004'
-);
+) on conflict (id) do update set is_active = true;
 insert into public.project_permission_room_member_actions(
   room_member_id, action_code, is_active, granted_by, grant_source
 ) values (
-  '73000000-0000-4000-8000-000000000001', 'view_resource_evidence', true,
+  current_setting('app.resource_evidence_smoke_member_id')::uuid, 'view_resource_evidence', true,
   '72000000-0000-4000-8000-000000000004', 'manual_room'
-);
+) on conflict (room_member_id, action_code) do update set is_active = true;
 update app_private.project_permission_room_action_bindings
 set enforcement_status = 'pilot', pbac_fallback_enabled = false
 where room_code = 'payment' and action_code = 'view_resource_evidence';
