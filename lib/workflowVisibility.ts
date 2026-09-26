@@ -5,8 +5,16 @@ export const MATERIAL_REQUEST_WORKFLOW_NAME = 'Quy trình cấp vật tư công 
 const normalizeWorkflowName = (value?: string | null) =>
   (value || '').trim().toLocaleLowerCase('vi-VN');
 
-export const isMaterialRequestWorkflowTemplate = (template?: Pick<WorkflowTemplate, 'name'> | null) =>
-  normalizeWorkflowName(template?.name) === normalizeWorkflowName(MATERIAL_REQUEST_WORKFLOW_NAME);
+type MaterialRequestTemplateProbe = Pick<WorkflowTemplate, 'name'> & Partial<Pick<WorkflowTemplate, 'ownerSubjectType'>>;
+
+export const isMaterialRequestWorkflowTemplate = (template?: MaterialRequestTemplateProbe | null) =>
+  template?.ownerSubjectType === 'material_request'
+  || normalizeWorkflowName(template?.name) === normalizeWorkflowName(MATERIAL_REQUEST_WORKFLOW_NAME);
+
+/** A private copy one project configured from Dự án » Vật tư; never listed in Quy trình. */
+export const isProjectOwnedWorkflowTemplate = (
+  template?: Partial<Pick<WorkflowTemplate, 'ownerProjectId'>> | null,
+) => Boolean(template?.ownerProjectId);
 
 export const isRequestModuleWorkflowTemplate = (
   template?: Pick<WorkflowTemplate, 'customFields'> | null,

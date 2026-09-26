@@ -18,7 +18,7 @@ import { contractItemService } from '../../lib/contractItemService';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import type { ProjectMaterialTabKey, ProjectMaterialTabPermissionMap } from '../../lib/projectTabPermissions';
-import { materialRequestService, type MaterialRequestAggregateRow } from '../../lib/materialRequestService';
+import { getMaterialRequestWorkflowLaneId, materialRequestService, type MaterialRequestAggregateRow } from '../../lib/materialRequestService';
 import { projectSubmissionService } from '../../lib/projectSubmissionService';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
 import { projectWorkflowBoardService } from '../../lib/projectWorkflowBoardService';
@@ -402,6 +402,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     }
                     return acc;
                 }, {}));
+                // Board chỉ trả node hiện tại; kéo thả cần đủ snapshot (nodes + edges) để biết bước kế tiếp.
+                const runningSubjects = Object.values(subjects).filter(subject => subject.status === 'RUNNING' && subject.workflowInstanceId);
+                if (runningSubjects.length > 0) {
+                    void projectWorkflowService.listRuntimeContextsBySubjects(runningSubjects)
+                        .then(runtimeContexts => setRequestWorkflowRuntimeContexts(prev => {
+                            const next = { ...prev };
+                            Object.entries(runtimeContexts).forEach(([subjectId, context]) => {
+                                if (next[subjectId]) next[subjectId] = context;
+                            });
+                            return next;
+                        }))
+                        .catch(error => console.warn('Failed to load material request workflow snapshots', error));
+                }
                 setRequestFulfillmentSummaries(
                     boardCards.reduce<Record<string, MaterialRequestFulfillmentSummary>>((acc, card) => {
                         const summary = card.fulfillmentSummary;
@@ -1248,9 +1261,19 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 });
             }
 
-            const updated = await refreshSingleProjectRequestWorkflow(params.request.id, subject);
+            // The transition is already committed server-side; a failed re-read must not
+            // report the step as failed, or users re-submit an action that already happened.
+            let updated: MaterialRequest | null = null;
+            let refreshFailed = false;
+            try {
+                updated = await refreshSingleProjectRequestWorkflow(params.request.id, subject);
+            } catch (refreshError) {
+                refreshFailed = true;
+                logApiError('materialTab.dynamicRequestTransition.refresh', refreshError);
+            }
+            const notifySource = updated || params.request;
 
-            if (targetUserIds.length > 0 && updated) {
+            if (targetUserIds.length > 0) {
                 targetUserIds.forEach(targetUserId => {
                     const targetName = userById.get(targetUserId)?.name || targetUserId;
                     void projectSubmissionService.notifyTarget({
@@ -1263,17 +1286,21 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         actorId: user.id,
                         category: 'material',
                         title: 'Phiếu vật tư cần xử lý',
-                        message: `Phiếu ${updated.code} đang chờ bạn xử lý.`,
+                        message: `Phiếu ${notifySource.code} đang chờ bạn xử lý.`,
                         sourceType: 'material_request',
-                        sourceId: updated.id,
-                        constructionSiteId: updated.constructionSiteId || undefined,
-                        link: `/da?projectId=${updated.projectId || ''}&siteId=${updated.constructionSiteId || ''}&tab=material&materialTab=request&requestId=${updated.id}`,
-                        metadata: { requestId: updated.id, workflowSubjectId: subject?.id, assigneeUserIds: targetUserIds, ...params.metadata },
+                        sourceId: notifySource.id,
+                        constructionSiteId: notifySource.constructionSiteId || undefined,
+                        link: `/da?projectId=${notifySource.projectId || ''}&siteId=${notifySource.constructionSiteId || ''}&tab=material&materialTab=request&requestId=${notifySource.id}`,
+                        metadata: { requestId: notifySource.id, workflowSubjectId: subject?.id, assigneeUserIds: targetUserIds, ...params.metadata },
                     });
                 });
             }
 
-            toast.success('Đã cập nhật luồng vật tư', `Phiếu ${(updated || params.request).code} đã chuyển bước.`);
+            if (refreshFailed) {
+                toast.warning('Đã chuyển bước', `Phiếu ${params.request.code} đã chuyển bước nhưng chưa tải lại được dữ liệu. Tải lại trang để xem trạng thái mới nhất.`);
+            } else {
+                toast.success('Đã cập nhật luồng vật tư', `Phiếu ${notifySource.code} đã chuyển bước.`);
+            }
         } catch (error: any) {
             logApiError('materialTab.dynamicRequestTransition', error);
             toast.error('Không thể chuyển bước', getApiErrorMessage(error, 'Không cập nhật được workflow động của phiếu vật tư.'));
@@ -1298,9 +1325,20 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             return;
         }
         if (dynamicSubject?.workflowInstanceId && dynamicSubject.status === 'RUNNING' && toStage.startsWith('workflow:')) {
+            if (requestWorkflowRuntimeContexts[dynamicSubject.id]?.edges.length === 0) {
+                toast.info('Đang tải quy trình của phiếu', 'Vui lòng thử lại sau vài giây.');
+                return;
+            }
             const nextNode = getWorkflowNextNode(dynamicSubject);
-            if (!nextNode || toStage !== `workflow:${nextNode.id}`) {
-                toast.warning('Không thể chuyển bước', 'Chỉ được chuyển sang đúng bước workflow kế tiếp.');
+            if (!nextNode) {
+                toast.warning('Không thể chuyển bước', 'Không tìm thấy bước kế tiếp của phiếu này.');
+                return;
+            }
+            if (toStage !== getMaterialRequestWorkflowLaneId(nextNode.label)) {
+                toast.warning(
+                    'Không thể chuyển bước',
+                    `Kéo thả chỉ dùng để duyệt sang bước kế tiếp "${nextNode.label}". Muốn trả lại bước trước, mở phiếu và chọn Trả lại.`,
+                );
                 return;
             }
             setWorkflowActionTransition({ request, subject: dynamicSubject, nextNode });

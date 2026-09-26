@@ -4194,6 +4194,10 @@ export interface WorkflowTemplate {
   defaultWatchers: string[];  // user IDs — view-only on all instances
   createdAt: string;
   updatedAt: string;
+  /** Set when this is a private copy owned by one project (hidden from Quy trình). */
+  ownerSubjectType?: 'material_request' | null;
+  ownerProjectId?: string | null;
+  clonedFromTemplateId?: string | null;
 }
 
 export interface WorkflowNode {
@@ -4320,6 +4324,12 @@ export interface ProjectWorkflowConfiguration {
   valid: boolean;
   errors: string[];
   canManage: boolean;
+  /** Room `material_request` edit + view: may take and edit a project-owned copy. */
+  canCustomize?: boolean;
+  /** Undefined when the server predates 20260926090000. */
+  templateName?: string | null;
+  templateOwnedByProject?: boolean;
+  clonedFromTemplateId?: string | null;
   validation?: {
     valid: boolean;
     errors: string[];

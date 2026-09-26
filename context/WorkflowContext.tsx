@@ -68,7 +68,23 @@ const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined
 
 const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, created_at, updated_at';
 const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
-const WORKFLOW_TEMPLATE_SELECT = 'id,name,description,created_by,is_active,custom_fields,managers,default_watchers,created_at,updated_at';
+const WORKFLOW_TEMPLATE_LEGACY_SELECT = 'id,name,description,created_by,is_active,custom_fields,managers,default_watchers,created_at,updated_at';
+const WORKFLOW_TEMPLATE_SELECT = `${WORKFLOW_TEMPLATE_LEGACY_SELECT},owner_subject_type,owner_project_id,cloned_from_template_id`;
+let workflowTemplateOwnershipColumnsAvailable = true;
+const isMissingColumnError = (error: any) => ['42703', 'PGRST204'].includes(String(error?.code || ''));
+
+// Ownership columns arrive with 20260926090000; until that migration is applied
+// the catalog must keep loading with the legacy projection.
+const queryWorkflowTemplates = async <T,>(
+    run: (projection: string) => PromiseLike<{ data: T; error: any }>,
+): Promise<{ data: T; error: any }> => {
+    if (workflowTemplateOwnershipColumnsAvailable) {
+        const result = await run(WORKFLOW_TEMPLATE_SELECT);
+        if (!isMissingColumnError(result.error)) return result;
+        workflowTemplateOwnershipColumnsAvailable = false;
+    }
+    return run(WORKFLOW_TEMPLATE_LEGACY_SELECT);
+};
 const WORKFLOW_NODE_SELECT = 'id,template_id,type,label,config,position_x,position_y';
 const WORKFLOW_EDGE_SELECT = 'id,template_id,source_node_id,target_node_id,label';
 const WORKFLOW_LOG_SELECT = 'id,instance_id,node_id,action,acted_by,comment,created_at';
@@ -123,6 +139,9 @@ const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
     defaultWatchers: row.default_watchers || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ownerSubjectType: row.owner_subject_type ?? null,
+    ownerProjectId: row.owner_project_id ?? null,
+    clonedFromTemplateId: row.cloned_from_template_id ?? null,
 });
 
 const mapNodeFromDB = (row: any): WorkflowNode => ({
@@ -208,7 +227,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsLoading(true);
         const refreshTask = (async () => {
             const [tRes, iRes, ptRes] = await Promise.all([
-                supabase.from('workflow_templates').select(WORKFLOW_TEMPLATE_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_TEMPLATE_CATALOG_LIMIT),
+                queryWorkflowTemplates(projection => supabase.from('workflow_templates').select(projection).order('created_at', { ascending: false }).limit(WORKFLOW_TEMPLATE_CATALOG_LIMIT)),
                 supabase.from('workflow_instances').select(WORKFLOW_INSTANCE_LIST_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_INSTANCE_LIST_LIMIT),
                 supabase.from('workflow_print_templates').select(WORKFLOW_PRINT_TEMPLATE_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_PRINT_TEMPLATE_LIMIT),
             ]);
@@ -588,7 +607,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         try {
             const [templateRes, nodeRes, edgeRes, logRes, printTemplateRes] = await Promise.all([
-                supabase.from('workflow_templates').select(WORKFLOW_TEMPLATE_SELECT).eq('id', instanceRow.template_id).maybeSingle(),
+                queryWorkflowTemplates(projection => supabase.from('workflow_templates').select(projection).eq('id', instanceRow.template_id).maybeSingle()),
                 supabase.from('workflow_nodes').select(WORKFLOW_NODE_SELECT).eq('template_id', instanceRow.template_id).order('id', { ascending: true }).limit(WORKFLOW_CHILD_MAX_ROWS),
                 supabase.from('workflow_edges').select(WORKFLOW_EDGE_SELECT).eq('template_id', instanceRow.template_id).order('id', { ascending: true }).limit(WORKFLOW_CHILD_MAX_ROWS),
                 supabase.from('workflow_instance_logs').select(WORKFLOW_LOG_SELECT).eq('instance_id', instanceId).order('created_at', { ascending: true }).limit(WORKFLOW_CHILD_MAX_ROWS),

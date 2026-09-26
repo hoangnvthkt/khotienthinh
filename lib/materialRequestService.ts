@@ -95,6 +95,12 @@ export const MATERIAL_REQUEST_STEP_SLA_HOURS: Record<MaterialRequestWorkflowStep
   returned_to_creator: null,
 };
 
+// Kanban lanes are keyed by step name, not node id. A project-owned clone gives every
+// step a new node id while in-flight requests keep the source template's ids in their
+// snapshot; keying by id would render "Phòng QLDA duyệt" twice on the same board.
+export const getMaterialRequestWorkflowLaneId = (label?: string | null): `workflow:${string}` =>
+  `workflow:${(label || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('vi')}`;
+
 export const MATERIAL_REQUEST_KANBAN_COLUMNS: Array<{ id: MaterialRequestKanbanStage; label: string; hint: string }> = [
   { id: 'draft', label: 'Nháp', hint: 'Phiếu đang soạn hoặc chưa gửi duyệt' },
   { id: 'site_manager_review', label: 'Chờ quản lý CT duyệt', hint: 'Đang chờ người duyệt tại công trường' },

@@ -37,7 +37,7 @@ const WORKFLOW_NODE_SELECT = 'id,template_id,type,label,config,position_x,positi
 const WORKFLOW_EDGE_SELECT = 'id,template_id,source_node_id,target_node_id,label';
 const WORKFLOW_RUNTIME_NODE_SELECT = 'id,workflow_instance_id,template_version_id,template_node_id,type,label,config,position_x,position_y,created_at';
 const WORKFLOW_RUNTIME_EDGE_SELECT = 'id,workflow_instance_id,template_version_id,template_edge_id,source_instance_node_id,target_instance_node_id,label,sort_order,created_at';
-const WORKFLOW_ASSIGNMENT_SELECT = 'id,workflow_subject_id,workflow_instance_id,node_id,assignee_user_id,assigned_by,status,assigned_at,acted_at,action_comment,return_to_node_id,metadata,instance_node_id,return_to_instance_node_id';
+const WORKFLOW_ASSIGNMENT_SELECT = 'id,workflow_subject_id,workflow_instance_id,node_id,assignee_user_id,assigned_by,status,assigned_at,acted_at,action_comment,return_to_node_id,metadata,instance_node_id';
 const WORKFLOW_QUERY_PAGE_SIZE = 1000;
 const WORKFLOW_QUERY_MAX_ROWS = 10_000;
 const ASSIGNEE_CANDIDATE_CACHE_TTL_MS = 60_000;
@@ -71,6 +71,9 @@ const mapWorkflowTemplate = (row: any): WorkflowTemplate | null => {
     defaultWatchers: row.default_watchers || [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ownerSubjectType: row.owner_subject_type ?? null,
+    ownerProjectId: row.owner_project_id ?? null,
+    clonedFromTemplateId: row.cloned_from_template_id ?? null,
   };
 };
 
@@ -227,6 +230,10 @@ export const projectWorkflowService = {
       p_project_id: projectId || null,
       p_construction_site_id: constructionSiteId || null,
     });
+    if (error?.code === '42501') {
+      // Server denies the read (no room `view` here); keep the code so callers can show a denied state.
+      throw Object.assign(new Error('Bạn chưa có quyền Xem trong room Đề xuất vật tư của dự án này.'), { code: '42501' });
+    }
     if (error) throw error;
     const bindingRow = data?.binding;
     return {
@@ -238,7 +245,39 @@ export const projectWorkflowService = {
       valid: Boolean(data?.valid),
       errors: Array.isArray(data?.errors) ? data.errors : [],
       canManage: Boolean(data?.canManage),
+      canCustomize: Boolean(data?.canCustomize),
+      templateName: typeof data?.templateName === 'string' ? data.templateName : null,
+      templateOwnedByProject: Boolean(data?.templateOwnedByProject),
+      clonedFromTemplateId: data?.clonedFromTemplateId ?? null,
       validation: data?.validation || undefined,
+    };
+  },
+
+  /**
+   * Give the project its own editable copy of the approval flow it currently
+   * uses. Idempotent server-side: returns the existing copy when there is one.
+   * Returns null when the server has not been migrated yet.
+   */
+  async cloneProjectTemplate(input: {
+    subjectType: ProjectWorkflowSubjectType;
+    projectId: string;
+    sourceTemplateId?: string | null;
+  }): Promise<{ template: WorkflowTemplate; binding: ProjectWorkflowBinding | null; cloned: boolean } | null> {
+    const { data, error } = await supabase.rpc('clone_project_workflow_template', {
+      p_subject_type: input.subjectType,
+      p_project_id: input.projectId,
+      p_source_template_id: input.sourceTemplateId || null,
+    });
+    if (error) {
+      if (isMissingProjectWorkflowError(error)) return null;
+      throw error;
+    }
+    const template = mapWorkflowTemplate(data?.template);
+    if (!template) throw new Error('clone_project_workflow_template returned no template');
+    return {
+      template,
+      binding: data?.binding ? mapBinding(data.binding) : null,
+      cloned: Boolean(data?.cloned),
     };
   },
 

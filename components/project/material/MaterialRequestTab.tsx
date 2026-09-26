@@ -148,8 +148,13 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
     const [isImporting, setIsImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Soft-removed steps stay in the table for history; they must not become lanes.
     const workflowTemplateNodes = workflowConfiguration?.binding
-        ? workflowNodes.filter(node => node.templateId === workflowConfiguration.binding?.workflowTemplateId)
+        ? workflowNodes.filter(node => {
+            if (node.templateId !== workflowConfiguration.binding?.workflowTemplateId) return false;
+            const removed = (node.config as Record<string, unknown> | undefined)?.__templateRemoved;
+            return removed !== true && removed !== 'true';
+        })
         : [];
     const currentUser = userById.get(currentUserId) || users.find(item => item.id === currentUserId);
 
@@ -465,6 +470,8 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                             projectId={projectId || null}
                             constructionSiteId={constructionSiteId || null}
                             templates={workflowTemplates}
+                            templateNodes={workflowTemplateNodes}
+                            users={users}
                             onConfigurationChange={onConfigurationChange}
                         />
                     </React.Suspense>

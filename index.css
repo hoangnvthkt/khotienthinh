@@ -736,3 +736,110 @@ button:not(:disabled):active,
     overflow-wrap: anywhere;
   }
 }
+
+/* ==========================================================================
+   WORKFLOW MODULE (Base-style) — scoped green accent
+   Chỉ áp dụng trong phạm vi .wf-base, không ảnh hưởng accent teal toàn app.
+   ========================================================================== */
+.wf-base {
+  --wf-green: #4caf50;
+  --wf-green-hover: #43a047;
+  --wf-green-dark: #388e3c;
+  --wf-green-soft: #e8f5e9;
+  --wf-green-text: #2e7d32;
+
+  --wf-surface: #ffffff;
+  --wf-canvas: #f5f6f7;
+  --wf-column: #f0f1f3;
+  --wf-border: #e3e5e8;
+  --wf-border-strong: #d0d4d9;
+
+  --wf-text: #1f2329;
+  --wf-text-muted: #646a73;
+  --wf-text-faint: #8f959e;
+
+  --wf-overdue: #e74c3c;
+  --wf-overdue-soft: #fdecea;
+  --wf-overdue-text: #c0392b;
+  --wf-urgent: #d97706;
+  --wf-urgent-soft: #fef3c7;
+}
+
+.dark .wf-base {
+  --wf-green: #4caf50;
+  --wf-green-hover: #56b95a;
+  --wf-green-dark: #2e7d32;
+  --wf-green-soft: rgba(76, 175, 80, 0.14);
+  --wf-green-text: #81c784;
+
+  --wf-surface: #26282c;
+  --wf-canvas: #1a1c1f;
+  --wf-column: #202226;
+  --wf-border: #35373c;
+  --wf-border-strong: #43464d;
+
+  --wf-text: #e6e8ea;
+  --wf-text-muted: #a3a8af;
+  --wf-text-faint: #7f858d;
+
+  --wf-overdue: #e74c3c;
+  --wf-overdue-soft: rgba(231, 76, 60, 0.16);
+  --wf-overdue-text: #f08b80;
+  --wf-urgent: #f0a020;
+  --wf-urgent-soft: rgba(240, 160, 32, 0.16);
+}
+
+/* Dark-mode global overrides above use !important on .bg-white/.bg-slate-*;
+   the workflow surfaces opt out by driving color from the vars instead. */
+.wf-base .wf-surface {
+  background-color: var(--wf-surface) !important;
+}
+.wf-base .wf-canvas {
+  background-color: var(--wf-canvas) !important;
+}
+.wf-base .wf-column-bg {
+  background-color: var(--wf-column) !important;
+}
+
+/* Base-style board scrollbars: thin, unobtrusive */
+.wf-base .wf-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--wf-border-strong) transparent;
+}
+.wf-base .wf-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 10px;
+}
+.wf-base .wf-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wf-base .wf-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--wf-border-strong);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.wf-base .wf-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--wf-text-faint);
+  background-clip: content-box;
+}
+
+/* Card lift on hover, Base keeps it subtle */
+.wf-base .wf-card {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.wf-base .wf-card:hover {
+  box-shadow: 0 2px 8px rgba(31, 35, 41, 0.12);
+}
+.dark .wf-base .wf-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.wf-base .wf-card-dragging {
+  opacity: 0.45;
+}
+
+/* Drop target highlight */
+.wf-base .wf-drop-active {
+  background-color: var(--wf-green-soft) !important;
+  box-shadow: inset 0 0 0 2px var(--wf-green);
+}

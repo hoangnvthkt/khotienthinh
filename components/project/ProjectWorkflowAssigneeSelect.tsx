@@ -194,17 +194,12 @@ const ProjectWorkflowAssigneeSelect: React.FC<Props> = ({
     () => new Set(displayCandidates.map(candidate => candidate.userId)),
     [displayCandidates],
   );
+  // Chỉ gợi ý nhóm được cấu hình ở bước này; không suy ra từ phòng ban của ứng viên.
   const departments = useMemo(
     () => orgUnits
       .filter(unit => unit.type === 'department')
-      .filter(unit =>
-        configuredDepartmentIds.has(unit.id)
-        || activeEmployees.some(employee =>
-          candidateUserIds.has(employee.userId!)
-          && (employee.departmentId === unit.id || employee.orgUnitId === unit.id)
-        )
-      ),
-    [activeEmployees, candidateUserIds, configuredDepartmentIds, orgUnits],
+      .filter(unit => configuredDepartmentIds.has(unit.id)),
+    [configuredDepartmentIds, orgUnits],
   );
 
   const setDistinctSelection = (ids: string[]) => {

@@ -67,7 +67,12 @@ describe('workflow instance capability commands', () => {
 
   it('exposes reopen drag only to the canonical capability or compatibility admin', () => {
     expect(kanbanSource).toContain("canPerform(user, 'workflow.instance.reopen'");
-    expect(kanbanSource).toContain('if (!canReopenWorkflowInstance) return;');
+    // The gate must stay, but it may explain the refusal instead of returning
+    // silently — a blocked drop that says nothing looks like a broken board.
+    const reopenGate = kanbanSource.match(
+      /if \(!canReopenWorkflowInstance\) \{?\s*(?:rejectDrop\([^)]*\);\s*)?return;/,
+    );
+    expect(reopenGate).not.toBeNull();
   });
 
   it('limits running content edits to current-step assignees or instance administrators', () => {
