@@ -3,7 +3,7 @@ import type { DailyLog } from '../../types';
 import { dailyLogSummaryService } from '../dailyLogSummaryService';
 
 const database = vi.hoisted(() => ({ rows: {} as Record<string, any[]>, error: null as any }));
-vi.mock('../supabase', () => ({ supabase: { from: (table: string) => {
+vi.mock('../supabase', () => ({ supabase: { rpc: (_name: string, _args: unknown) => Promise.resolve({ data: database.rows.normalized_resource_rows || [], error: null }), from: (table: string) => {
   let ids: string[] = [];
   const query = {
     select: () => query, order: () => query, limit: () => query,
@@ -79,5 +79,17 @@ describe('Daily Log WBS / legacy compatibility', () => {
     const report = summarize([log('new', { ...details.new, summarySourceMetadata: {} })]);
     expect(report.overview.unresolvedLegacySummaryCount).toBe(0);
     expect(report.periods[0].volumes).toEqual([]);
+  });
+
+  it('reads normalized physical resources through the scoped RPC while legacy stays on direct table reads', async () => {
+    database.rows = {
+      daily_log_work_items: [{ id: 'w1', daily_log_id: 'new', task_id: 't1', task_name_snapshot: 'Task' }],
+      daily_log_labor: [{ daily_log_id: 'legacy', labor_type: 'Legacy', count: 1, hours: 8, unit_cost: 10 }],
+      normalized_resource_rows: [{ resource_type: 'labor', daily_log_id: 'new', labor_type: 'Crew', people_count: 2, total_labor_hours: 12 }],
+    };
+    const details = await dailyLogDetailService.listByLogIds(['new', 'legacy']);
+    expect(details.new.laborDetails).toEqual([expect.objectContaining({ laborType: 'Crew', peopleCount: 2, totalLaborHours: 12 })]);
+    expect(details.new.laborDetails[0]).not.toHaveProperty('unitCost');
+    expect(details.legacy.laborDetails).toEqual([expect.objectContaining({ laborType: 'Legacy', unitCost: 10 })]);
   });
 });
