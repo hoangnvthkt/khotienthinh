@@ -72,15 +72,17 @@ ${bootstrap}
 rollback;`), /AUTHORIZATION_BOOTSTRAP_NONEMPTY/);
 console.log('PASS: missing catalog in a populated database fails closed');
 
-if (process.argv.includes('--remaining-chain')) {
+const throughHrm = process.argv.includes('--through-hrm');
+if (process.argv.includes('--remaining-chain') || throughHrm) {
   const chain = readdirSync('supabase/migrations').sort()
     .filter(file => file >= '20260910031856_' && file.endsWith('.sql'))
+    .filter(file => !throughHrm || file <= '20260911041501_authorization_v2_task12_3_restore_own_attendance_scope.sql')
     .map(file => readFileSync(`supabase/migrations/${file}`, 'utf8'));
   // A nested COMMIT would violate this runner's rollback-only contract.
   assert(!/^\s*(?:begin|commit|rollback)\s*;/im.test(chain.join('\n')), 'Migration owns a transaction; stop');
   try {
     await query(`begin;\n${bootstrap}\n${retire}\n${chain.join('\n')}\nrollback;`);
-    console.log(`PASS: all ${chain.length} remaining migrations execute in Cloud rollback`);
+    console.log(`PASS: ${chain.length} migrations ${throughHrm ? 'through HRM Task 12.3' : 'in remaining chain'} execute in Cloud rollback`);
   } finally {
     assert.deepEqual(await query(inventorySql, true), before, 'Failed chain must also leave preview unchanged');
   }
