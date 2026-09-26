@@ -77,6 +77,15 @@ describe('resource usage evidence panel', () => {
       .rejects.toThrow('Khoảng ngày không hợp lệ');
   });
 
+  it('rejects incomplete RPC totals instead of showing unknown as zero', async () => {
+    rpc.mockResolvedValue({ data: {
+      rows: [labor], totals: { providerCount: 1 }, unknownLegacyCount: 0, nextCursor: null,
+    }, error: null });
+    await expect(projectResourceEvidenceService.getEvidence({
+      projectId: 'project-1', fromDate: '2026-09-01', toDate: '2026-09-30',
+    })).rejects.toThrow('Dữ liệu bằng chứng nguồn lực chưa đầy đủ');
+  });
+
   it('keeps provider snapshot, revision state, lineage and the original Daily Log link in the drawer', () => {
     const html = renderToStaticMarkup(<MemoryRouter><ResourceUsageEvidenceDrawer row={{
       ...labor, revisionState: 'superseded', revisionNo: 2,

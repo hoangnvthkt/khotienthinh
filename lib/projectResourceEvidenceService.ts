@@ -20,9 +20,13 @@ export interface ResourceEvidencePage {
   nextCursor: string | null;
 }
 
+const invalidResponse = (): Error => new Error('Dữ liệu bằng chứng nguồn lực chưa đầy đủ. Hãy tải lại hoặc liên hệ quản trị dự án.');
+
 const numberField = (value: unknown): number => {
+  if (value == null || value === '') throw invalidResponse();
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
+  if (!Number.isFinite(parsed)) throw invalidResponse();
+  return parsed;
 };
 
 const evidenceError = (error: { message?: string; code?: string }): Error => {
@@ -51,12 +55,13 @@ export const projectResourceEvidenceService = {
       p_limit: input.limit ?? 200,
     });
     if (error) throw evidenceError(error);
-    const result = data && typeof data === 'object' && !Array.isArray(data)
-      ? data as Record<string, unknown> : {};
-    const rows = (Array.isArray(result.rows) ? result.rows : [])
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw invalidResponse();
+    const result = data as Record<string, unknown>;
+    if (!Array.isArray(result.rows) || !result.totals || typeof result.totals !== 'object'
+      || Array.isArray(result.totals)) throw invalidResponse();
+    const rows = result.rows
       .map(row => sanitizeResourceEvidenceRow(row as Record<string, unknown>));
-    const rawTotals = result.totals && typeof result.totals === 'object'
-      ? result.totals as Record<string, unknown> : {};
+    const rawTotals = result.totals as Record<string, unknown>;
     const page: ResourceEvidencePage = {
       rows,
       groups: groupResourceEvidence(rows),
