@@ -131,7 +131,11 @@
     "20260925160000_resource_evidence_permission.sql",
     "20260925161000_verified_resource_usage_evidence.sql",
     "20260926022433_secure_daily_log_physical_resources.sql",
-    "20260926102824_daily_log_source_selection_v2.sql"
+    "20260926102824_daily_log_source_selection_v2.sql",
+    "20260926113919_daily_log_source_quantity_entry_v2.sql",
+    "20260926163158_daily_log_source_save_conflict_http_v2.sql",
+    "20260926163810_daily_log_source_entry_bounds_v2.sql",
+    "20260926164443_daily_log_source_missing_basis_null_v2.sql"
   ],
   "forbidIncludeAll": true
 }

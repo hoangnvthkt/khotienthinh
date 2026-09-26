@@ -30,6 +30,19 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   DAILY_LOG_SOURCE_AREA_REQUIRED: 'Hãy nhập mã và tên khu vực / mũi thi công.',
   DAILY_LOG_SOURCE_ROLLOUT_DISABLED: 'Nhật ký WBS chưa được mở cho ngày và phạm vi này.',
   DAILY_LOG_SOURCE_SCOPE_DENIED: 'Dự án hoặc công trường không khớp. Hãy tải lại và chọn đúng phạm vi.',
+  DAILY_LOG_ENTRY_UNKNOWN_BASELINE: 'Chưa có mốc khối lượng của khu vực. Hãy nhập lũy kế hoặc %; không thể suy ra khối lượng hôm nay.',
+  DAILY_LOG_ENTRY_QUANTITY_BASIS_REQUIRED: 'Chưa có đơn vị hoặc khối lượng kế hoạch để quy đổi. Hãy dùng chế độ nhập %.',
+  DAILY_LOG_ENTRY_NUMBER_REQUIRED: 'Hãy nhập một số hợp lệ; có thể dùng dấu phẩy cho phần thập phân.',
+  DAILY_LOG_ENTRY_NEGATIVE: 'Khối lượng hoặc phần trăm không được âm.',
+  PROGRESS_BELOW_BASELINE: 'Lũy kế không được nhỏ hơn mốc lũy kế đã xác nhận của khu vực.',
+  PROGRESS_ABOVE_NEXT_ENTRY: 'Lũy kế vượt mốc đã xác nhận ở ngày sau. Hãy kiểm tra lại ngày và khối lượng.',
+  PROGRESS_ABOVE_ALLOWED_MAXIMUM: 'Khối lượng vượt kế hoạch hoặc tiến độ vượt 100%. Hãy kiểm tra lại số nhập.',
+  RESOURCE_PRICE_FIELDS_NOT_ALLOWED: 'Phiếu chỉ ghi khối lượng, nhân công, giờ máy và nguồn cung cấp; không ghi giá hoặc tiền.',
+  LABOR_PHYSICAL_USAGE_INVALID: 'Số người và giờ mỗi người phải là số lớn hơn 0.',
+  MACHINE_PHYSICAL_USAGE_INVALID: 'Số máy và giờ mỗi máy phải là số lớn hơn 0.',
+  DAILY_LOG_SOURCE_SAVE_DENIED: 'Bạn chưa có quyền sửa phiếu này hoặc phiếu không thuộc bạn.',
+  VERIFIED_SOURCE_IMMUTABLE: 'Phiếu đã tham gia hồ sơ được xác nhận. Hãy tạo bản điều chỉnh, không sửa nguồn đã duyệt.',
+  DAILY_LOG_SOURCE_AREA_IMMUTABLE: 'Không đổi khu vực của phiếu đã lập. Hãy tạo phiếu riêng cho khu vực khác.',
 };
 
 export const mapDailyLogWbsCommandError = (error: unknown): Error => {

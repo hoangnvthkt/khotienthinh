@@ -8,6 +8,37 @@ import { dailyLogWbsService, getDailyLogPublicationOutcome } from '../dailyLogWb
 describe('dailyLogWbsService', () => {
   beforeEach(() => mocks.rpc.mockReset());
 
+  it('preserves task IDs in server-issued quantity dictionaries while mapping snapshot fields', async () => {
+    mocks.rpc.mockResolvedValue({data:{contribution:null,myContributions:[],workItems:[],
+      baselineQuantityFingerprints:{'task_wbs_1':'server-token'},quantityBaselines:{'task_wbs_1':{
+        state:'known',fingerprint:'server-token',previousItem:{cumulative_quantity_done:40,area_planned_quantity_snapshot:100,unit_snapshot:'m³'},nextItem:null,priorRowId:'prior-row'}}},error:null});
+    const bundle=await dailyLogWbsService.getDocumentBundle({projectId:'p1',logDate:'2026-09-26'});
+    expect(bundle.baselineQuantityFingerprints['task_wbs_1']).toBe('server-token');
+    expect(bundle.quantityBaselines['task_wbs_1']).toMatchObject({state:'known',previousItem:{cumulativeQuantityDone:40,areaPlannedQuantitySnapshot:100,unitSnapshot:'m³'}});
+  });
+
+  it.each([
+    ['DAILY_LOG_ENTRY_UNKNOWN_BASELINE','mốc'],
+    ['DAILY_LOG_ENTRY_QUANTITY_BASIS_REQUIRED','đơn vị'],
+    ['PROGRESS_BELOW_BASELINE','lũy kế'],
+    ['PROGRESS_ABOVE_NEXT_ENTRY','ngày sau'],
+    ['RESOURCE_PRICE_FIELDS_NOT_ALLOWED','tiền'],
+  ])('makes %s actionable without discarding the selected source', async (code, hint) => {
+    mocks.rpc.mockResolvedValue({data:null,error:{message:code}});
+    await expect(dailyLogWbsService.saveSourceDocument({contributionId:'area-a',expectedRowVersion:1,
+      workAreaCode:'A',workAreaName:'A',content:'',issues:'',photos:[],items:[],labor:[],machines:[]}))
+      .rejects.toMatchObject({code,message:expect.stringContaining(hint)});
+  });
+
+  it('saves the entire selected source document in one command, including old metadata and physical rows', async () => {
+    const input={contributionId:'area-a',expectedRowVersion:3,workAreaCode:'A',workAreaName:'Khu A',
+      content:'Nội dung đã sửa',issues:'Vướng mắc',photos:[],
+      items:[{clientKey:'work-a',taskId:'t1',entryMode:'daily_quantity' as const,enteredValue:'12,5',baselineFingerprint:'baseline-40'}],labor:[],machines:[]};
+    mocks.rpc.mockResolvedValue({data:{row_version:4,source_fingerprint:'fp-4',updated_at:'2026-09-26T00:00:00Z',conflicts:[]},error:null});
+    expect(await dailyLogWbsService.saveSourceDocument(input)).toMatchObject({rowVersion:4,sourceFingerprint:'fp-4'});
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('save_daily_log_source_document_v2',{p_input:input});
+  });
+
   it('opens the explicitly selected older slip without replacing it with the latest area', async () => {
     mocks.rpc.mockResolvedValue({ data: { contribution: { id: 'area-a' }, my_contributions: [{ id: 'area-a' }, { id: 'area-b' }], baseline_quantity_states: { 'task_wbs_1': 'unknown' }, work_items: [] }, error: null });
     const bundle = await dailyLogWbsService.getDocumentBundle({ projectId: 'p1', constructionSiteId: null, logDate: '2026-09-26', contributionId: 'area-a' });

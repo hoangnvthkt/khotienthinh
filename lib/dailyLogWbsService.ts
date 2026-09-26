@@ -7,6 +7,8 @@ import type {
   DailyLogLaborInput,
   DailyLogMachine,
   DailyLogMachineInput,
+  DailyLogPhoto,
+  DailyLogSourceItemV2,
   DailyLogSummarySource,
   DailyLogWbsDecision,
   DailyLogWorkConflictCode,
@@ -26,7 +28,11 @@ const fromDb = (value: unknown): any => {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => {
       const mappedKey = toCamel(key);
       // Dictionary keys are task IDs, not database column names.
-      return [mappedKey, mappedKey === 'baselineQuantityStates' ? child : fromDb(child)];
+      if (mappedKey === 'baselineQuantityStates' || mappedKey === 'baselineQuantityFingerprints') return [mappedKey, child];
+      if (mappedKey === 'quantityBaselines' && child && typeof child === 'object') {
+        return [mappedKey, Object.fromEntries(Object.entries(child).map(([taskId, context]) => [taskId, fromDb(context)]))];
+      }
+      return [mappedKey, fromDb(child)];
     }));
   }
   return value;
@@ -66,6 +72,15 @@ export interface DailyLogWorkSaveReceipt {
 export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
   myContributions: DailyLogContribution[];
   baselineQuantityStates: Record<string, DailyLogBaselineQuantityState>;
+  baselineQuantityFingerprints: Record<string, string>;
+  quantityBaselines: Record<string, {
+    state: DailyLogBaselineQuantityState;
+    fingerprint: string;
+    allowOver100: boolean;
+    priorRowId: string | null;
+    previousItem: { cumulativeQuantityDone: number; areaPlannedQuantitySnapshot: number; unitSnapshot: string } | null;
+    nextItem: { cumulativeQuantityDone: number | null; areaPlannedQuantitySnapshot: number | null; unitSnapshot: string | null } | null;
+  }>;
   permissions: DailyLogWbsBundle['permissions'] & { canCreateSource: boolean; canSubmitSource: boolean };
 }
 
@@ -82,6 +97,19 @@ export interface DailyLogSourceCreateReceipt {
   contributionId: string;
   rowVersion: number;
   updatedAt: string;
+}
+
+export interface SaveDailyLogSourceDocumentInput {
+  contributionId: string;
+  expectedRowVersion: number;
+  workAreaCode: string;
+  workAreaName: string;
+  content: string;
+  issues: string;
+  photos: DailyLogPhoto[];
+  items: DailyLogSourceItemV2[];
+  labor: DailyLogLaborInput[];
+  machines: DailyLogMachineInput[];
 }
 
 export interface DailyLogWbsBundleInput {
@@ -195,6 +223,9 @@ const callRpc = async <T>(name: string, params: Record<string, unknown>): Promis
 };
 
 export const dailyLogWbsService = {
+  saveSourceDocument(input: SaveDailyLogSourceDocumentInput): Promise<DailyLogWorkSaveReceipt> {
+    return callRpc('save_daily_log_source_document_v2', { p_input: input });
+  },
   getDocumentBundle(input: DailyLogWbsBundleInput & { contributionId?: string | null }): Promise<DailyLogDocumentBundle> {
     return callRpc<Record<string, any>>('get_daily_log_document_bundle_v2', {
       p_project_id: input.projectId,

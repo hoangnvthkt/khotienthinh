@@ -102,7 +102,7 @@ Migration: plan khóa suffix và phạm vi; timestamp do CLI sinh lúc thực th
 - `DailyLogSourceItemV2 = { clientKey, taskId, workBoqItemId?, areaPlannedQuantity?, entryMode, enteredValue, baselineFingerprint, forecastFinishDate?, forecastChangeReason?, note?, attachments? }`.
 - `saveSourceDocument({ contributionId, expectedRowVersion, workAreaCode, workAreaName, content, issues, photos, items: DailyLogSourceItemV2[], labor: DailyLogLaborInput[], machines: DailyLogMachineInput[] }): Promise<DailyLogWorkSaveReceipt>` → `save_daily_log_source_document_v2(p_input jsonb)`.
 
-- [ ] **Step 1 — RED:** Pin plan100/baseline40/today12→52m³/52%/12m³; cumulative52/percent52 tương đương. Parser hiện có `12,5`→12.5, blank/NaN không→0. Unknown baseline→daily null hoặc daily entry bị chặn; none+unit/plan hợp lệ mới được baseline0. Missingunit/planned chỉ percent mode hợp lệ với qtynull. Leaf sai scope, stale baseline fingerprint, số âm, belowbaseline/abovenext, forecast đổi thiếu lý do reject toàn bộ.
+- [x] **Step 1 — RED:** Pin plan100/baseline40/today12→52m³/52%/12m³; cumulative52/percent52 tương đương. Parser hiện có `12,5`→12.5, blank/NaN không→0. Unknown baseline→daily null hoặc daily entry bị chặn; none+unit/plan hợp lệ mới được baseline0. Missingunit/planned chỉ percent mode hợp lệ với qtynull. Leaf sai scope, stale baseline fingerprint, số âm, belowbaseline/abovenext, forecast đổi thiếu lý do reject toàn bộ.
 
   Test `daily_entry_preserves_cumulative_semantics` phải có:
 
@@ -112,10 +112,12 @@ Migration: plan khóa suffix và phạm vi; timestamp do CLI sinh lúc thực th
     baselineQuantityState: 'known' })).toMatchObject({ valid: true,
       cumulativePercent: 52, cumulativeQuantity: 52, dailyQuantity: 12 });
   ```
-- [ ] **Step 2:** `npm run test -- lib/__tests__/dailyLogEntryRules.test.ts lib/__tests__/dailyLogSourceQuantityMigration.test.ts lib/__tests__/dailyLogWbsService.test.ts`; RED do contract chưa có. Cloud SQL smoke pin metadata/work/resources rollback.
-- [ ] **Step 3 — GREEN:** Wrapper rule cho v2; reuse `lib/quantityInput.ts` preserve dấu phẩy/blank, không sửa shared parser. Server tính lại từ scoped task/BOQ/baseline, không tin total/clientplan. Check trước replace resources; không greatest(...,0) để che số âm. Metadata/work/resources cùng transaction kể cả nguồn đã tồn tại. Cho lưu nháp chưa hoàn chỉnh nhưng không lưu dòng resource sai/thiếu provider. Reject price/cost/amount payload, không ghi cột giá.
-- [ ] **Step 4:** GREEN unit/non-admin RPC; sửa nội dung/ảnh nguồn cũ rồi reload không mất. Chạy existing workItemRules/resourceRules/legacyCompatibility tests; draft chưa publication/evidence.
-- [ ] **Step 5:** Commit `feat(daily-log): capture physical quantities with safe source saves`.
+- [x] **Step 2:** `npm run test -- lib/__tests__/dailyLogEntryRules.test.ts lib/__tests__/dailyLogSourceQuantityMigration.test.ts lib/__tests__/dailyLogWbsService.test.ts`; RED do contract chưa có. Cloud SQL smoke pin metadata/work/resources rollback.
+- [x] **Step 3 — GREEN:** Wrapper rule cho v2; reuse `lib/quantityInput.ts` preserve dấu phẩy/blank, không sửa shared parser. Server tính lại từ scoped task/BOQ/baseline, không tin total/clientplan. Check trước replace resources; không greatest(...,0) để che số âm. Metadata/work/resources cùng transaction kể cả nguồn đã tồn tại. Cho lưu nháp chưa hoàn chỉnh nhưng không lưu dòng resource sai/thiếu provider. Reject price/cost/amount payload, không ghi cột giá.
+- [x] **Step 4:** GREEN unit/non-admin RPC; sửa nội dung/ảnh nguồn cũ rồi reload không mất. Chạy existing workItemRules/resourceRules/legacyCompatibility tests; draft chưa publication/evidence.
+- [x] **Step 5:** Commit `feat(daily-log): capture physical quantities with safe source saves`.
+
+Task3 verification/rulings: [quantity checkpoint](../evidence/2026-09-26-daily-log-source-quantity-checkpoint.md). Four additive test-Cloud migrations preserve applied history; PT409 prevents REST infinite retry; existing canonical leaf rules determine over-completion, not an invented task field. Safe incomplete drafts retained separately; submit completeness belongs to Task4. No ERP UI completion claim.
 
 ### Task 4: Khép vòng trả đúng phiếu → kỹ sư sửa → gửi lại
 

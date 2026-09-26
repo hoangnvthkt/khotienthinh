@@ -1304,6 +1304,21 @@ export interface DailyLogPhoto {
 
 export type DailyLogContributionStatus = 'draft' | 'submitted' | 'returned' | 'included';
 export type DailyLogBaselineQuantityState = 'none' | 'known' | 'unknown';
+export type DailyLogEntryMode = 'daily_quantity' | 'cumulative_quantity' | 'percent';
+
+export interface DailyLogSourceItemV2 {
+  clientKey: string;
+  taskId: string;
+  workBoqItemId?: string | null;
+  areaPlannedQuantity?: number | null;
+  entryMode: DailyLogEntryMode;
+  enteredValue: number | string | null;
+  baselineFingerprint: string;
+  forecastFinishDate?: string | null;
+  forecastChangeReason?: string | null;
+  note?: string | null;
+  attachments?: Attachment[];
+}
 
 export interface DailyLogContribution {
   id: string;
@@ -1322,6 +1337,17 @@ export interface DailyLogContribution {
   rowVersion?: number;
   sourceFingerprint?: string | null;
   sourceDocumentVersion?: 1 | 2;
+  sourceDraftPayload?: {
+    workAreaCode: string;
+    workAreaName: string;
+    content: string;
+    issues: string;
+    photos: DailyLogPhoto[];
+    items: DailyLogSourceItemV2[];
+    labor: DailyLogLaborInput[];
+    machines: DailyLogMachineInput[];
+    savedRowVersion: number;
+  } | null;
   submittedToUserId?: string | null;
   submittedToName?: string | null;
   submittedAt?: string | null;
