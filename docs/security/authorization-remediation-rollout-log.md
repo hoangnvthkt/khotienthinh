@@ -254,3 +254,26 @@ Quyết định của chủ sản phẩm ngày 27/09/2026:
 - **Sửa:** chỉ thành viên có thao tác `edit`, `submit`, `verify`, `approve` hoặc `confirm` mới tự động được xem, đúng với lý do "cần xem để lập và duyệt chứng từ". Thành viên chỉ có quyền Xem do công tắc quyết định.
 - **Migration:** `20260927073423_authorization_p0c_room_workers_only`. Dry-run PASS, **ĐÃ APPLY**.
 - **Kiểm lại trên UI** (dev server nhánh P0, cổng 3200): 18/28 người chỉnh được; 8 người khóa vì đang xử lý chứng từ, 2 người khóa vì là Admin.
+
+### C-2b — thu gọn công tắc thành một ô Room
+
+- Mục "Ai được xem Tài chính & Hợp đồng" giờ là một ô trong lưới Room (nhóm Tài chính), cho biết số người đang xem, số người theo từng loại, và số người được xem tất cả dự án.
+- Bấm vào ô để mở ngăn kéo bên phải, dùng lại toàn bộ danh sách công tắc cũ.
+- Ngăn kéo render qua portal để không dính CSS thu gọn chữ của lưới trên mobile.
+- Đã xem lại trên desktop và mobile (375px): không tràn ngang, Esc để đóng.
+
+## P1
+
+### P1.1 — gỡ DA legacy (quyết định Q3)
+
+- **Kiểm tác động trước khi siết:**
+  - `is_module_admin('DA')` còn trong 23 bảng và 22 hàm (mẫu nghiệm thu, dự toán, quy tắc duyệt, loại quyền, vật tư, nhật ký, an toàn…).
+  - 38 người có cờ DA, không ai là Admin: 33 nhân viên, 5 thủ kho. 33 người có mặt trong dự án; 28 người đã có Room.
+  - Trong 60 ngày gần nhất, không có bản ghi vật tư tùy chỉnh, nhật ký, sự cố an toàn, dự toán hay mẫu nghiệm thu nào do nhóm này tạo ngoài dự án của họ.
+  - Frontend không còn đọc cột legacy để quyết định quyền.
+- **Migration** `20260927080700_authorization_p1_retire_legacy_da_admin`:
+  - Sao lưu cờ cũ vào `app_private.legacy_da_admin_backup_20260927`.
+  - Xóa `DA` khỏi `admin_modules` / `admin_sub_modules`, qua cờ migration chính thức của trigger chặn ghi legacy. Mỗi người được ghi một dòng `authorization_legacy_write_audit`.
+  - `is_module_admin('DA')` chỉ còn đúng với Admin, kể cả khi cờ DA bị ghi lại sau này. Các module legacy khác (HD, WMS, WF, TS) không đổi.
+- **Dry-run trên Cloud** (gồm cả script rollback `supabase/operations/authorization_p1_retire_legacy_da_rollback.sql`) **PASS**: 38 người được sao lưu và gỡ; người từng có DA không còn qua kiểm tra; Admin và HD legacy giữ nguyên; rollback khôi phục đủ.
+- Chủ sản phẩm đồng ý. **ĐÃ APPLY.** Smoke sau apply **PASS**.

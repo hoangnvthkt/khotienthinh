@@ -122,7 +122,8 @@
     "20260927042947_authorization_p0b_broadcast_state_and_avatars.sql",
     "20260927071707_authorization_p0c_sensitive_view_grants.sql",
     "20260927073423_authorization_p0c_room_workers_only.sql",
-    "20260927074935_authorization_p0c_enforce_sensitive_reads.sql"
+    "20260927074935_authorization_p0c_enforce_sensitive_reads.sql",
+    "20260927080700_authorization_p1_retire_legacy_da_admin.sql"
   ],
   "forbidIncludeAll": true
 }
