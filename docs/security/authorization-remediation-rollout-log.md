@@ -346,3 +346,34 @@ Chỉ sửa frontend, không có migration.
 - **Còn mở:** bảng `activities` vẫn `select true` (nội dung là mô tả thao tác, ít nhạy cảm hơn). Đề xuất đánh giá cùng P2.
 - Dry-run và smoke sau apply của cả hai migration **PASS**. Chủ sản phẩm đồng ý apply. Script rollback `supabase/operations/authorization_p1_4_rollback.sql` đã chạy thử (rollback) **PASS**.
 - Walkthrough Admin ở độ rộng desktop: đủ 4 mục hệ thống trong sidebar; trang Nhật ký thay đổi tải đủ dữ liệu.
+
+### P1.5 — gỡ quản trị module legacy (HD, WMS, WF, TS)
+
+- **Kiểm kê trước khi siết** (chỉ ghi số đếm):
+  - Cờ legacy đang hoạt động: HD 7, WMS 22, WF 23, TS 1.
+  - Server còn gọi cờ này ở: HD 76 policy + 1 hàm; WMS 7 policy + 10 hàm; WF 2 policy + 11 hàm; TS 6 policy + 2 hàm.
+  - Nhiều chỗ **chỉ** chấp nhận cờ legacy, không có đường capability: tạo/sửa hợp đồng chủ đầu tư, đối tác, mẫu hợp đồng; tạo và điều chuyển tài sản.
+  - 23 người có cờ WF không có `workflow.instance.act_assigned` / `create`: việc duyệt và tạo phiếu quy trình của họ đi qua cờ quản trị.
+  - Hoạt động 90 ngày (audit trail và dữ liệu nghiệp vụ): HD 0/7; TS 0/1; WMS chỉ 5 thủ kho có hoạt động; WF có một số người sửa mẫu.
+  - Capability `system.<x>.manage` là grant thật (tạo lúc migrate lên Authorization V2), và tập người giữ **trùng khớp** tập người có cờ legacy.
+- **Bước 1 — migration `20260927091559_authorization_p1_5_module_admin_from_capability`** (không đổi quyền của ai):
+  - `is_module_admin(X)` = Admin, hoặc có `system.<x>.manage` với X ∈ {HD, WMS, WF, TS, RQ, SETTINGS, TENDER_AI, EX, FEEDBACK}. Không còn đọc cột legacy; DA vẫn chỉ Admin.
+  - PROCUREMENT (luồng V2) giữ chỉ Admin: 4 người có `system.procurement.manage` nhưng không có cờ, áp luật mới sẽ tự mở quyền cho họ.
+  - `wms_user_has_action` và `list_project_sensitive_view_access` cũng chuyển sang capability.
+  - Smoke so luật cũ và mới trên mọi người dùng × 11 module: **0 lệch**. Smoke người nhận WMS (P1.4) vẫn **0 lệch**.
+  - Từ nay, bỏ tick "Quản trị" module trong Cài đặt có tác dụng thật ở server.
+- **Bước 2 — migration `20260927091643_authorization_p1_5_owner_module_admin_decisions`**, theo quyết định chủ sản phẩm ngày 27/09:
+  - Quy trình: cả 23 người được vai trò "Người dùng quy trình"; 7 người giữ `system.wf.manage`, thu hồi 16.
+  - Kho: thu hồi `system.wms.manage` của cả 22. Thủ kho vẫn làm việc qua vai trò thủ kho; 2 nhân viên giữ capability theo kho.
+  - Hợp đồng: thu hồi `system.hd.manage` của 7 người, và 30 quyền `contract.*.manage` của 6 người trong số đó. Quản trị hợp đồng chỉ còn Admin.
+  - Tài sản: giữ nguyên người duy nhất đang quản lý.
+  - Xóa cờ legacy HD/WMS/WF/TS của 33 người (đã vô tác dụng sau Bước 1); mỗi người có một dòng `authorization_legacy_write_audit`.
+  - Sao lưu vào `app_private.p1_5_backup_20260927`: 75 grant, 23 vai trò, 33 bộ cờ.
+- **Kiểm tra:**
+  - Dry-run của cả hai bước và rollback `supabase/operations/authorization_p1_5_rollback.sql` **PASS**.
+  - Chủ sản phẩm đồng ý. **ĐÃ APPLY.** Smoke sau apply **PASS**: không còn cờ legacy; không còn quản trị Kho/Hợp đồng ngoài Admin; đúng 7 quản trị quy trình và 1 quản trị tài sản; cả 23 người dùng quy trình vẫn duyệt và tạo phiếu được.
+- **Không sửa frontend:** `isModuleAdmin` phía giao diện đã kiểm `system.<x>.manage` từ trước.
+- **Còn lại:**
+  - RQ (15 người) vẫn giữ `system.rq.manage` như cũ, chưa rà theo từng người.
+  - "Đồng bộ MISA" vẫn chỉ Admin.
+  - `can_access_module` và phép chiếu legacy (`allowed_modules`) để lại cho P3 (Task 13).
