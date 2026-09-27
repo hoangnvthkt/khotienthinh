@@ -6,7 +6,7 @@ import { supabase } from './supabase';
  * turn it into a short-lived signed URL at display time, so stored data does
  * not have to change. The bucket's storage RLS decides who may sign.
  */
-export const PRIVATE_LEGACY_PUBLIC_BUCKETS = new Set(['checkin-photos']);
+export const PRIVATE_LEGACY_PUBLIC_BUCKETS = new Set(['checkin-photos', 'project-attachments', 'project-files']);
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
@@ -18,7 +18,8 @@ export interface StorageObjectRef {
 
 export const parsePrivateStorageUrl = (url: string | null | undefined): StorageObjectRef | null => {
   if (!url) return null;
-  const match = /\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/?#]+)\/([^?#]+)/.exec(url);
+  // Only the old public form: signed URLs (/object/sign/…) must not be re-signed.
+  const match = /\/storage\/v1\/object\/public\/([^/?#]+)\/([^?#]+)/.exec(url);
   if (!match || !PRIVATE_LEGACY_PUBLIC_BUCKETS.has(match[1])) return null;
   try {
     return { bucket: match[1], path: decodeURIComponent(match[2]) };
@@ -30,11 +31,21 @@ export const parsePrivateStorageUrl = (url: string | null | undefined): StorageO
 const cache = new Map<string, { url: string; expiresAt: number }>();
 const pending = new Map<string, Promise<string>>();
 
+const cacheKey = (ref: StorageObjectRef) => `${ref.bucket}/${ref.path}`;
+
+/** Already-signed URL for a stored URL, without a network call. */
+export const getCachedSignedUrl = (url: string): string | null => {
+  const ref = parsePrivateStorageUrl(url);
+  if (!ref) return null;
+  const cached = cache.get(cacheKey(ref));
+  return cached && cached.expiresAt - REFRESH_MARGIN_MS > Date.now() ? cached.url : null;
+};
+
 /** Signed URL for a stored URL, or the URL unchanged when it is not private. */
 export const resolveStorageUrl = async (url: string): Promise<string> => {
   const ref = parsePrivateStorageUrl(url);
   if (!ref) return url;
-  const key = `${ref.bucket}/${ref.path}`;
+  const key = cacheKey(ref);
   const cached = cache.get(key);
   if (cached && cached.expiresAt - REFRESH_MARGIN_MS > Date.now()) return cached.url;
   const inFlight = pending.get(key);

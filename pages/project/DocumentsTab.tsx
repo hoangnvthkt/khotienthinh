@@ -165,14 +165,22 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
     };
 
     const handleDownload = async (doc: ProjectDocument) => {
-        const url = await documentService.getSignedUrl(doc.storagePath);
-        window.open(url, '_blank');
+        try {
+            const url = await documentService.getSignedUrl(doc.storagePath);
+            window.open(url, '_blank');
+        } catch (e: any) {
+            toast.error('Không mở được tài liệu', e?.message || 'Bạn không có quyền xem tệp này hoặc tệp không còn.');
+        }
     };
 
     const handlePreview = async (doc: ProjectDocument) => {
-        const url = await documentService.getSignedUrl(doc.storagePath);
-        setPreviewUrl(url);
-        setPreviewDoc(doc);
+        try {
+            const url = await documentService.getSignedUrl(doc.storagePath);
+            setPreviewUrl(url);
+            setPreviewDoc(doc);
+        } catch (e: any) {
+            toast.error('Không mở được tài liệu', e?.message || 'Bạn không có quyền xem tệp này hoặc tệp không còn.');
+        }
     };
 
     // Stats

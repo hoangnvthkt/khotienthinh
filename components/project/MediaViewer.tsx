@@ -9,6 +9,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { resolveStorageUrl } from '../../lib/storageSignedUrl';
 
 export interface MediaItem {
   url: string;
@@ -156,7 +157,7 @@ const MediaViewer: React.FC<MediaViewerProps> = ({
 
   const handleDownload = async (url: string, name: string) => {
     try {
-      const response = await fetch(url);
+      const response = await fetch(await resolveStorageUrl(url));
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');

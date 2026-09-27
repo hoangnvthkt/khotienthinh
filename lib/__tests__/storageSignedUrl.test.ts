@@ -11,6 +11,14 @@ describe('parsePrivateStorageUrl', () => {
       .toEqual({ bucket: 'checkin-photos', path: 'emp 1/a.jpg' });
   });
 
+  it('covers the project buckets and never re-signs signed URLs', () => {
+    expect(parsePrivateStorageUrl(`${base}/public/project-attachments/tx/1.xlsx`))
+      .toEqual({ bucket: 'project-attachments', path: 'tx/1.xlsx' });
+    expect(parsePrivateStorageUrl(`${base}/public/project-files/p1/a.pdf`))
+      .toEqual({ bucket: 'project-files', path: 'p1/a.pdf' });
+    expect(parsePrivateStorageUrl(`${base}/sign/project-files/p1/a.pdf?token=abc`)).toBeNull();
+  });
+
   it('leaves other URLs alone', () => {
     expect(parsePrivateStorageUrl(`${base}/public/avatars/u1.png`)).toBeNull();
     expect(parsePrivateStorageUrl('https://example.com/photo.jpg')).toBeNull();
