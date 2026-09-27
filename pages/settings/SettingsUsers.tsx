@@ -14,6 +14,7 @@ import { isChatEnabled } from '../../lib/featureFlags';
 import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settingsPermissions';
 import { useToast } from '../../context/ToastContext';
 import HrmAuthorizationPanel from '../../components/permissions/HrmAuthorizationPanel';
+import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 
 interface SettingsUsersProps {
   users: User[];
@@ -335,7 +336,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                           {/* Avatar with Online dot */}
                           <div className="relative shrink-0 mt-0.5">
                             <img
-                              src={u.avatar || `https://i.pravatar.cc/150?u=${u.email}`}
+                              src={u.avatar || DEFAULT_AVATAR_URL}
                               alt={u.name}
                               className="w-11 h-11 rounded-full object-cover border-2 border-slate-100 group-hover:border-teal-400 transition"
                             />
@@ -431,7 +432,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                         {manager ? (
                           <div className="flex items-center gap-2.5">
                             <img
-                              src={manager.avatar || `https://i.pravatar.cc/150?u=${manager.email}`}
+                              src={manager.avatar || DEFAULT_AVATAR_URL}
                               alt={manager.name}
                               className="w-8 h-8 rounded-full border border-slate-200 object-cover"
                             />
@@ -474,7 +475,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
           {/* Popover Header */}
           <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-100">
             <img
-              src={selectedUserForPopover.avatar || `https://i.pravatar.cc/150?u=${selectedUserForPopover.email}`}
+              src={selectedUserForPopover.avatar || DEFAULT_AVATAR_URL}
               alt={selectedUserForPopover.name}
               className="w-10 h-10 rounded-full border border-slate-200 object-cover"
             />
@@ -580,7 +581,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
               <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <img
-                    src={drawerUser.avatar || `https://i.pravatar.cc/150?u=${drawerUser.email}`}
+                    src={drawerUser.avatar || DEFAULT_AVATAR_URL}
                     alt={drawerUser.name}
                     className="w-12 h-12 rounded-full border-2 border-white/20 object-cover"
                   />

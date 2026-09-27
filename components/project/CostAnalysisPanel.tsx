@@ -3,11 +3,12 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, BarChart3, ChevronDown, ChevronRight,
   RefreshCw, Edit2, Check, X, Save,
 } from 'lucide-react';
-import { ProjectFinancialSummary } from '../../types';
+import { ProjectFinancialSummary, Role } from '../../types';
 import { projectCostItemService, ProjectContractCostAnalysisNode } from '../../lib/projectCostItemService';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { buildFinancialSummary } from '../../lib/projectFinancialService';
 import { useToast } from '../../context/ToastContext';
+import { useApp } from '../../context/AppContext';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
@@ -29,7 +30,7 @@ const TreeRow: React.FC<{
   node: ProjectContractCostAnalysisNode;
   expanded: Set<string>;
   toggleExpand: (id: string) => void;
-  onEditBudget: (node: ProjectContractCostAnalysisNode) => void;
+  onEditBudget?: (node: ProjectContractCostAnalysisNode) => void;
   onSelectCostItem?: (costItemId: string, symbol: string) => void;
 }> = ({ node, expanded, toggleExpand, onEditBudget, onSelectCostItem }) => {
   const hasChildren = node.children && node.children.length > 0;
@@ -95,14 +96,16 @@ const TreeRow: React.FC<{
         <td className="px-3 py-2 text-right">
           <div className="flex items-center justify-end gap-1 group">
             <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{fmt(node.totalBudgetAmount)}</span>
-            <button
-              type="button"
-              onClick={() => onEditBudget(node)}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 transition-opacity"
-              title="Sửa dự toán"
-            >
-              <Edit2 size={11} />
-            </button>
+            {onEditBudget && (
+              <button
+                type="button"
+                onClick={() => onEditBudget(node)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600 transition-opacity"
+                title="Sửa dự toán"
+              >
+                <Edit2 size={11} />
+              </button>
+            )}
           </div>
         </td>
 
@@ -151,6 +154,9 @@ const TreeRow: React.FC<{
 
 const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId, projectId, onSelectCostItem }) => {
   const toast = useToast();
+  const { user } = useApp();
+  // Owner decision 2026-09-27: only System Admin edits project cost budgets.
+  const canEditBudget = user?.role === Role.ADMIN;
   const [treeNodes, setTreeNodes] = useState<ProjectContractCostAnalysisNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [paymentSummary, setPaymentSummary] = useState<{ totalPaid: number; totalApproved: number } | null>(null);
@@ -299,7 +305,7 @@ const CostAnalysisPanel: React.FC<Props> = ({ constructionSiteId, projectId, onS
                     node={node}
                     expanded={expanded}
                     toggleExpand={toggleExpand}
-                    onEditBudget={handleOpenEditBudget}
+                    onEditBudget={canEditBudget ? handleOpenEditBudget : undefined}
                     onSelectCostItem={onSelectCostItem}
                   />
                 ))}

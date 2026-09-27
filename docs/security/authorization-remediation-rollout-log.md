@@ -97,3 +97,76 @@ Chủ sản phẩm xác nhận apply. `apply_migration` thành công, ledger ghi
 - **A1 (chủ sản phẩm):** Supabase Dashboard → Authentication → Sign In / Providers → tắt "Allow new users to sign up". Lúc postflight, `GET /auth/v1/settings` vẫn trả `disable_signup=false`.
 - **Khi merge:** `supabase/baseline/current.json` cũng đang được một luồng khác sửa trong checkout chính (cùng thêm dòng cuối allowlist). Khi merge sẽ phải giữ cả hai dòng.
 - Baseline checker trên `main` còn đỏ vì 2 migration Workflow (`20260925090000`, `20260926090000`) chưa được allowlist. Việc này thuộc luồng Workflow, P0-A không sửa.
+
+## P0-B · Chặn nhân viên sửa dữ liệu không thuộc quyền
+
+Quyết định của chủ sản phẩm ngày 27/09/2026:
+
+- Tạm ứng, hạng mục chi phí và snapshot dashboard dự án: chỉ Admin ghi.
+- Làm phần chống giả mạo thông báo và thay avatar.
+- **Giữ nguyên các tài khoản test `@example.invalid`** (chủ sản phẩm đang dùng cho việc khác). B4 không thực hiện.
+
+### Thứ tự triển khai (frontend đi trước server)
+
+1. **B-1** `authorization_p0b_restrict_client_writes`: tương thích với frontend đang chạy.
+2. **Frontend:**
+   - Thông báo chuyển sang RPC `mark_my_notifications` và bảng biên nhận riêng từng người.
+   - Avatar mặc định `/default-avatar.svg`; bỏ fallback pravatar.cc/ui-avatars.com.
+   - Ẩn nút ghi tạm ứng và dự toán chi phí với người không phải Admin, kèm ghi chú.
+3. **B-2** `authorization_p0b_broadcast_state_and_avatars`: chỉ áp sau khi frontend ở bước 2 đã lên Production.
+   - Khóa cập nhật dùng chung trên thông báo broadcast.
+   - Sửa trigger hồ sơ Auth để không ghi đè avatar và dùng avatar nội bộ.
+   - Dọn 42 `users`, 30 `employees` và 412 `activities` đang chứa URL bên thứ ba.
+
+### Consumer đã rà (code)
+
+**Không có client ghi trực tiếp:**
+
+- `activities`: không ai ghi.
+- `request_logs`: chỉ `process_request_step` (DEFINER) ghi.
+- `user_xp`/`xp_events`: chỉ đọc; XP cộng qua RPC.
+- `salary_3p_settings`/`kpi_*`: không có consumer.
+
+**Client ghi hợp lệ, được giữ:**
+
+- `audit_trail`: 34 lời gọi, một số truyền `'system'` hoặc id người khác. Trigger đóng dấu người thật thay cho việc chặn.
+- Chữ ký, bố cục dashboard: của chính người dùng.
+- `ranking_criteria`: màn yêu cầu template HR `hrm.employee.view_sensitive`.
+- Checklist bước quy trình: người xem được hồ sơ.
+- Mẫu in: người sửa được mẫu.
+- Hợp đồng/danh mục: Admin, legacy HD, `contract.*.manage`, `system.tender_ai.manage`, hoặc `project.contract*` theo dự án.
+
+**Side effect của luồng đã duyệt:**
+
+- Khi chứng từ chuyển "Đã thanh toán", trình duyệt người xác nhận (Room Thanh toán) cập nhật thu hồi tạm ứng và khóa hạng mục hợp đồng.
+- Nghiệm thu khối lượng cập nhật khối lượng hoàn thành và khóa/mở khóa hạng mục.
+- Các luồng này vẫn được ghi, nhưng trigger chỉ cho đổi các cột hệ quả.
+
+**Thông báo:** 0 thông báo hiện có dùng link tuyệt đối; broadcast chỉ do luồng cảnh báo của Admin tạo.
+
+### Rollback dry-run trên Cloud
+
+**B-1:**
+
+- **Lần 1:** dừng ở một lệnh `INSERT … RETURNING` vào thông báo của người khác. Postgres yêu cầu đọc lại được dòng vừa chèn. Frontend chèn không dùng `RETURNING`, nên đã sửa smoke.
+- **Lần 2: PASS**, gồm các nhánh:
+  - Nhân viên thường: bị chặn giả mạo audit, ghi `request_logs`, sửa chữ ký/bố cục/XP/HR/hợp đồng/tài chính người khác, và gửi thông báo link ngoài hoặc broadcast.
+  - Người gửi được đóng dấu; biên nhận broadcast tạo đúng.
+  - Người xác nhận thanh toán ghi được số thu hồi nhưng bị chặn sửa số tiền tạm ứng (12 thành viên Room Thanh toán ở dự án có tạm ứng).
+  - Admin ghi được.
+- Hậu kiểm: không còn object nào.
+
+**B-2:**
+
+- **Lần 1:** trigger `prevent_users_privilege_self_update` chặn việc dọn avatar vì migration không có actor. Migration đã được sửa để tắt đúng trigger này trong transaction, chỉ cho lệnh cập nhật cột `avatar` (cột không được trigger bảo vệ), rồi bật lại.
+- **Lần 2: PASS.** Không còn URL bên thứ ba; trigger hồ sơ không còn pravatar; nhân viên không sửa được dòng broadcast. Hậu kiểm: trigger bảo vệ vẫn bật, dữ liệu thật chưa đổi.
+
+### Kiểm thử local
+
+Vitest 485 file, 2.290 test pass; `tsc` pass; build pass; `check:supabase-queries` có 0 truy vấn thiếu policy và 0 truy vấn chưa phân loại.
+
+### Trạng thái
+
+- **B-1:** lần apply lên Cloud bị bộ phân loại an toàn của phiên chặn; **chờ chủ sản phẩm xác nhận trực tiếp**.
+- **Frontend:** cần merge vào `main` và deploy Vercel; chờ xác nhận.
+- **B-2:** chờ frontend lên Production.

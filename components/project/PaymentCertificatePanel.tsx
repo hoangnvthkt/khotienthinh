@@ -3,7 +3,7 @@ import {
   Plus, FileText, CheckCircle2, Clock, DollarSign, AlertTriangle,
   ChevronDown, ChevronRight, X, Send, Check, CreditCard, XCircle,
 } from 'lucide-react';
-import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, AdvancePayment, ProjectSubmissionTarget } from '../../types';
+import { PaymentCertificate, PaymentCertificateStatus, ContractItemType, AdvancePayment, ProjectSubmissionTarget, Role } from '../../types';
 import { paymentCertificateService } from '../../lib/paymentCertificateService';
 import { advancePaymentService } from '../../lib/advancePaymentService';
 import { ProjectPermissionCode, projectStaffService } from '../../lib/projectStaffService';
@@ -59,6 +59,8 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   const confirm = useConfirm();
   const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
+  // Owner decision 2026-09-27: only System Admin records project advances.
+  const canRecordAdvance = user?.role === Role.ADMIN;
   const [certs, setCerts] = useState<PaymentCertificate[]>([]);
   const [advances, setAdvances] = useState<AdvancePayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -424,12 +426,16 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
           <h4 className="text-xs font-black text-slate-700 dark:text-white flex items-center gap-1.5">
             <DollarSign size={13} className="text-amber-500" /> Tạm ứng
           </h4>
-          <button onClick={() => setShowAddAdvance(!showAddAdvance)}
-            className="text-[10px] font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1">
-            <Plus size={10} /> Thêm TU
-          </button>
+          {canRecordAdvance ? (
+            <button onClick={() => setShowAddAdvance(!showAddAdvance)}
+              className="text-[10px] font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1">
+              <Plus size={10} /> Thêm TU
+            </button>
+          ) : (
+            <span className="text-[10px] font-semibold text-slate-400">Chỉ Admin được ghi tạm ứng</span>
+          )}
         </div>
-        {showAddAdvance && (
+        {showAddAdvance && canRecordAdvance && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
 	            <input type="text" inputMode="decimal" placeholder="Số tiền" value={advForm.amount || ''} onChange={e => setAdvForm({ ...advForm, amount: e.target.value })}
 	              className="px-2 py-1.5 rounded-lg border border-amber-300 text-xs outline-none" />

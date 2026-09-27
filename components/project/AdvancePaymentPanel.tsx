@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, X, DollarSign } from 'lucide-react';
-import { AdvancePayment, ContractItemType } from '../../types';
+import { AdvancePayment, ContractItemType, Role } from '../../types';
 import { advancePaymentService } from '../../lib/advancePaymentService';
 import { useToast } from '../../context/ToastContext';
+import { useApp } from '../../context/AppContext';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 
 interface Props {
@@ -15,6 +16,9 @@ const fmt = (n: number) => n.toLocaleString('vi-VN') + ' đ';
 
 const AdvancePaymentPanel: React.FC<Props> = ({ contractId, contractType, constructionSiteId }) => {
   const toast = useToast();
+  const { user } = useApp();
+  // Owner decision 2026-09-27: only System Admin records project advances.
+  const canRecordAdvance = user?.role === Role.ADMIN;
   const [items, setItems] = useState<AdvancePayment[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [amount, setAmount] = useState('');
@@ -37,16 +41,22 @@ const AdvancePaymentPanel: React.FC<Props> = ({ contractId, contractType, constr
   const handleCreate = async () => {
     const parsedAmount = parseNonNegativeLocaleNumber(amount);
     const parsedRecoveryPercent = parseNonNegativeLocaleNumber(recoveryPercent);
-    if (!parsedAmount) return;
-    await advancePaymentService.create({
-      contractId,
-      contractType,
-      constructionSiteId,
-      amount: parsedAmount,
-      date,
-      recoveryPercent: parsedRecoveryPercent,
-      note,
-    });
+    if (!parsedAmount || !canRecordAdvance) return;
+    try {
+      await advancePaymentService.create({
+        contractId,
+        contractType,
+        constructionSiteId,
+        amount: parsedAmount,
+        date,
+        recoveryPercent: parsedRecoveryPercent,
+        note,
+      });
+    } catch (error) {
+      console.error(error);
+      toast.error('Chưa lưu được tạm ứng', 'Máy chủ từ chối thao tác. Chỉ Admin được ghi tạm ứng dự án.');
+      return;
+    }
     setAmount('');
     setRecoveryPercent('30');
     setNote('');
@@ -75,9 +85,11 @@ const AdvancePaymentPanel: React.FC<Props> = ({ contractId, contractType, constr
       <div className="rounded-xl border border-slate-100 bg-white overflow-hidden">
         <div className="p-3 border-b border-slate-100 flex items-center justify-between">
           <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5"><DollarSign size={13} className="text-amber-500" /> Tạm ứng hợp đồng</h4>
-          <button onClick={() => setShowForm(!showForm)} className="text-[10px] font-bold text-amber-600 flex items-center gap-1"><Plus size={10} /> Thêm</button>
+          {canRecordAdvance
+            ? <button onClick={() => setShowForm(!showForm)} className="text-[10px] font-bold text-amber-600 flex items-center gap-1"><Plus size={10} /> Thêm</button>
+            : <span className="text-[10px] font-semibold text-slate-400">Chỉ Admin được ghi tạm ứng</span>}
         </div>
-        {showForm && (
+        {showForm && canRecordAdvance && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 p-3 bg-amber-50/60 border-b border-amber-100">
 	            <input type="text" inputMode="decimal" placeholder="Số tiền" value={amount} onChange={e => setAmount(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className="px-2 py-1.5 rounded-lg border border-amber-200 text-xs" />

@@ -437,7 +437,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
         {!collapsed ? (
           <div className="px-4 py-3 border-b border-white/20 dark:border-white/5 shrink-0">
             <div className="flex items-center space-x-3 mb-2 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => { navigate('/my-profile'); }} title="Xem hồ sơ cá nhân">
-              <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
+              <img src={user.avatar || DEFAULT_AVATAR_URL}
                 className="w-9 h-9 rounded-full border-2 border-accent shadow" alt={user.name} />
               <div className="min-w-0">
                 <p className="font-black text-sm truncate">{user.name}</p>
@@ -471,7 +471,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
           </div>
         ) : (
           <div className="flex flex-col items-center py-3 border-b border-white/20 dark:border-white/5 shrink-0 gap-2">
-            <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=2563eb&color=fff`}
+            <img src={user.avatar || DEFAULT_AVATAR_URL}
               className="w-9 h-9 rounded-full border-2 border-accent shadow cursor-pointer hover:opacity-80 transition-opacity" alt={user.name} title="Xem hồ sơ cá nhân" onClick={() => { navigate('/my-profile'); }} />
             <button onClick={toggleTheme}
               className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10 text-yellow-400' : 'bg-white/50 border-white/60 text-slate-600'}`}
@@ -976,3 +976,4 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
 export default Sidebar;
 import { canConfigureWork } from '../lib/work/workConfigurationAccess';
+import { DEFAULT_AVATAR_URL } from '../lib/defaultAvatar';

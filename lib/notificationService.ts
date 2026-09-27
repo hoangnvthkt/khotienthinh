@@ -194,6 +194,30 @@ const dedupeRowsById = <T extends { id: string }>(rows: T[]): T[] => {
   return result;
 };
 
+// Broadcast rows are shared, so each user's read/dismiss state lives in
+// notification_broadcast_receipts instead of the row itself.
+const applyBroadcastReceipts = async <T extends { id: string; is_read?: boolean }>(rows: T[]): Promise<T[]> => {
+  if (rows.length === 0) return rows;
+  const { data, error } = await supabase
+    .from('notification_broadcast_receipts')
+    .select('notification_id,read_at,dismissed_at')
+    .in('notification_id', rows.map(row => row.id))
+    .limit(rows.length);
+  if (error) throw error;
+  const receipts = new Map((data || []).map(receipt => [receipt.notification_id, receipt]));
+  return rows
+    .filter(row => !receipts.get(row.id)?.dismissed_at)
+    .map(row => (receipts.get(row.id)?.read_at ? { ...row, is_read: true } : row));
+};
+
+const markMyNotifications = async (action: 'read' | 'dismiss', ids: string[] | null): Promise<void> => {
+  const { error } = await supabase.rpc('mark_my_notifications', {
+    p_action: action,
+    p_notification_ids: ids,
+  });
+  if (error) throw error;
+};
+
 const buildNotificationQuery = (limit: number, cursor?: NotificationCursor) => {
   let query = supabase
     .from('notifications')
@@ -585,7 +609,7 @@ export const notificationService = {
     if (!userId) {
       const { data, error } = await buildNotificationQuery(limit, options.cursor).is('user_id', null);
       if (error) throw error;
-      const page = takeCursorPage(data || [], limit, row => ({ createdAt: row.created_at, id: row.id }));
+      const page = takeCursorPage(await applyBroadcastReceipts(data || []), limit, row => ({ createdAt: row.created_at, id: row.id }));
       return {
         items: page.items.map(toCamel),
         nextCursor: page.nextCursor,
@@ -599,7 +623,8 @@ export const notificationService = {
     if (userResult.error) throw userResult.error;
     if (globalResult.error) throw globalResult.error;
 
-    const mergedRows = dedupeRowsById([...(userResult.data || []), ...(globalResult.data || [])])
+    const globalRows = await applyBroadcastReceipts(globalResult.data || []);
+    const mergedRows = dedupeRowsById([...(userResult.data || []), ...globalRows])
       .sort(compareNotificationRows);
     const page = takeCursorPage(mergedRows, limit, row => ({ createdAt: row.created_at, id: row.id }));
 
@@ -619,7 +644,7 @@ export const notificationService = {
   async countUnread(userId?: string): Promise<number> {
     const baseQuery = () => supabase
       .from('notifications')
-      .select('id')
+      .select('id,is_read')
       .eq('is_read', false)
       .eq('is_dismissed', false)
       .neq('category', 'inventory')
@@ -628,7 +653,8 @@ export const notificationService = {
     if (!userId) {
       const { data, error } = await baseQuery().is('user_id', null);
       if (error) throw error;
-      return Math.min((data || []).length, UNREAD_QUERY_LIMIT);
+      const unreadGlobal = (await applyBroadcastReceipts(data || [])).filter(row => !row.is_read);
+      return Math.min(unreadGlobal.length, UNREAD_QUERY_LIMIT);
     }
 
     const [userResult, globalResult] = await Promise.all([
@@ -639,7 +665,8 @@ export const notificationService = {
     if (globalResult.error) throw globalResult.error;
 
     const unreadIds = new Set<string>();
-    for (const row of [...(userResult.data || []), ...(globalResult.data || [])]) {
+    const unreadGlobal = (await applyBroadcastReceipts(globalResult.data || [])).filter(row => !row.is_read);
+    for (const row of [...(userResult.data || []), ...unreadGlobal]) {
       unreadIds.add(row.id);
       if (unreadIds.size >= UNREAD_QUERY_LIMIT) return UNREAD_QUERY_LIMIT;
     }
@@ -648,26 +675,22 @@ export const notificationService = {
 
   /** Mark as read */
   async markRead(id: string): Promise<void> {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    await markMyNotifications('read', [id]);
   },
 
-  /** Mark all as read */
-  async markAllRead(userId?: string): Promise<void> {
-    let query = supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
-    if (userId) query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    await query;
+  /** Mark all as read for the signed-in user only */
+  async markAllRead(_userId?: string): Promise<void> {
+    await markMyNotifications('read', null);
   },
 
   /** Dismiss */
   async dismiss(id: string): Promise<void> {
-    await supabase.from('notifications').update({ is_dismissed: true }).eq('id', id);
+    await markMyNotifications('dismiss', [id]);
   },
 
-  /** Dismiss all */
-  async dismissAll(userId?: string): Promise<void> {
-    let query = supabase.from('notifications').update({ is_dismissed: true }).eq('is_dismissed', false);
-    if (userId) query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    await query;
+  /** Dismiss all for the signed-in user only */
+  async dismissAll(_userId?: string): Promise<void> {
+    await markMyNotifications('dismiss', null);
   },
 
   /** Create a notification */
