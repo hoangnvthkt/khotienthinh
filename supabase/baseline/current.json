@@ -141,7 +141,8 @@
     "20260927020541_daily_log_summary_pending_draft_v2.sql",
     "20260927022904_daily_log_summary_source_metadata_snapshot_v2.sql",
     "20260927031010_daily_log_summary_missing_unit_draft_guard_v2.sql",
-    "20260927032533_daily_log_summary_document_opt_in_v2.sql"
+    "20260927032533_daily_log_summary_document_opt_in_v2.sql",
+    "20260927075421_daily_log_summary_resubmit_route_v2.sql"
   ],
   "forbidIncludeAll": true
 }

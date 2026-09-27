@@ -131,10 +131,10 @@ describe('DailyLogSummaryWorkspace', () => {
 
   it('renders review actions only when approve and publish permissions are both present', () => {
     const reviewBundle = { ...bundle, rollout: { ...bundle.rollout, mode: 'enforced' as const }, summaryLog: { ...bundle.summaryLog!, status: 'submitted' as const } };
-    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={reviewBundle} mode="review" />);
+    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={reviewBundle} mode="review" onPublish={()=>{}} onReturnAll={()=>{}} />);
     expect(html).toContain('Duyệt &amp; công bố');
-    expect(html).toContain('Trả lại toàn bộ');
-    expect(html).toContain('Yêu cầu sửa khu vực');
+    expect(html).toContain('Trả bản tổng hợp');
+    expect(html).toContain('Trả phiếu sửa');
     const denied = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={{ ...reviewBundle, permissions: { ...reviewBundle.permissions, canPublishProgress: false } }} mode="review" />);
     expect(denied).not.toContain('Duyệt &amp; công bố');
   });
@@ -171,7 +171,7 @@ describe('DailyLogSummaryWorkspace', () => {
   it('labels pilot review as shadow comparison, not official publication', () => {
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={{ ...bundle,
       summaryLog: { ...bundle.summaryLog!, status: 'submitted' },
-    }} mode="review" />);
+    }} mode="review" onPublish={()=>{}} />);
     expect(html).toContain('Đối chiếu thử nghiệm');
     expect(html).not.toContain('Duyệt &amp; công bố');
   });

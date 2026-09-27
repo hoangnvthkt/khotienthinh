@@ -20,12 +20,13 @@ interface Props {
   groups: ConsolidatedTaskGroup[];
   decisions: Record<string, DailyLogWbsDecisionDraft>;
   readOnly?: boolean;
+  historical?: boolean;
   busy?: boolean;
   onDecisionChange(taskId: string, patch: Partial<DailyLogWbsDecisionDraft>): void;
 }
 
 const fieldClass = 'min-h-11 w-full rounded-md border border-border bg-background px-3 text-base sm:text-sm';
-export const DailyLogConsolidatedWbsTable: React.FC<Props> = ({ groups, decisions, readOnly, busy, onDecisionChange }) => <section className="rounded-md border border-border bg-card p-4 text-sm">
+export const DailyLogConsolidatedWbsTable: React.FC<Props> = ({ groups, decisions, readOnly, historical, busy, onDecisionChange }) => <section className="rounded-md border border-border bg-card p-4 text-sm">
   <h2 className="text-base font-semibold">Kết quả tổng hợp theo WBS</h2>
   <p className="mt-1 text-muted-foreground">{readOnly ? 'Một kết quả cho mỗi WBS; mở chi tiết để xem căn cứ.' : 'Chốt các mục còn vướng trước khi gửi CHT. Không cộng % giữa các phiếu.'}</p>
   {groups.length===0 && <p className="mt-4 text-muted-foreground">Chưa có công việc trong các phiếu được chọn.</p>}
@@ -38,15 +39,15 @@ export const DailyLogConsolidatedWbsTable: React.FC<Props> = ({ groups, decision
     const patch=(values:Partial<DailyLogWbsDecisionDraft>)=>onDecisionChange(aggregate.taskId,values);
     return <article key={aggregate.taskId} className={`rounded-md border p-4 ${unresolved?'border-amber-300 bg-amber-50 dark:bg-amber-950/20':'border-border bg-card'}`}>
       <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="font-semibold">{items[0]?.wbsCode} {items[0]?.taskName}</h3><p className="mt-1 text-xs text-muted-foreground">{items.length} khu vực nguồn</p></div>
-        <span className={`rounded px-2 py-1 text-xs ${unresolved?'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100':'bg-muted text-muted-foreground'}`}>{unresolved?'Cần quyết định':'Đã chốt quyết định'}</span></div>
+        <span className={`rounded px-2 py-1 text-xs ${unresolved && !historical?'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100':'bg-muted text-muted-foreground'}`}>{historical && unresolved?'Thiếu căn cứ đã lưu':unresolved?'Cần quyết định':'Đã chốt quyết định'}</span></div>
       <dl className="mt-4 grid grid-cols-2 gap-3 tabular-nums sm:grid-cols-3">
         <div><dt className="text-xs text-muted-foreground">% lũy kế chính thức</dt><dd className="mt-1 font-medium">{formatDailyLogQuantity(decision?.officialCumulativePercent,'%')}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Khối lượng hôm nay</dt><dd className="mt-1 font-medium">{formatDailyLogQuantity(decision?.officialDailyQuantity,unit)}</dd></div>
         <div><dt className="text-xs text-muted-foreground">Khối lượng lũy kế</dt><dd className="mt-1 font-medium">{formatDailyLogQuantity(decision?.officialCumulativeQuantity,unit)}</dd></div>
       </dl>
-      <details open={unresolved && !readOnly} className="mt-3"><summary className="min-h-11 cursor-pointer py-2 font-medium">{unresolved?'Cần xử lý trước khi gửi':'Xem cách chốt và lý do'}</summary>
+      <details open={unresolved && !readOnly} className="mt-3"><summary className="min-h-11 cursor-pointer py-2 font-medium">{historical?'Xem quyết định đã lưu':unresolved?'Cần xử lý trước khi gửi':'Xem cách chốt và lý do'}</summary>
         <div className="my-3 space-y-2">{items.map(item=><p key={item.id || item.sourceWorkItemId} className="flex flex-wrap justify-between gap-2"><span className="min-w-0 break-words text-muted-foreground">{item.workAreaName}</span><span className="tabular-nums">{formatDailyLogQuantity(item.cumulativeProgressPercent,'%')}</span></p>)}</div>
-        {readOnly ? <dl className="space-y-3"><div><dt className="text-muted-foreground">Cách chốt</dt><dd>{decision?.aggregationMethod==='manual_override'?'Nhập giá trị chính thức':decision?.aggregationMethod==='single_source'?'Một phiếu nguồn':'Theo phân bổ khu vực'}</dd></div>
+        {readOnly ? <dl className="space-y-3"><div><dt className="text-muted-foreground">Cách chốt</dt><dd>{!decision || decision.pending?'Chưa xác định căn cứ đã lưu':decision.aggregationMethod==='manual_override'?historical?'Chốt thủ công theo hồ sơ':'Nhập giá trị chính thức':decision.aggregationMethod==='single_source'?'Một phiếu nguồn':'Theo phân bổ khu vực'}</dd></div>
           <div><dt className="text-muted-foreground">Lý do quyết định</dt><dd className="whitespace-pre-wrap break-words">{decision?.resolutionReason || 'Không có quyết định ngoại lệ'}</dd></div>
           {decision?.forecastFinishDate && <div><dt className="text-muted-foreground">Dự kiến hoàn thành</dt><dd>{formatDailyLogDate(decision.forecastFinishDate)} · {decision.forecastResolutionReason || 'Theo phiếu nguồn'}</dd></div>}
         </dl> : <fieldset disabled={busy} className="min-w-0 space-y-3">

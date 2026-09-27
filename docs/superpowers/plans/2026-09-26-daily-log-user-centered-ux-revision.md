@@ -169,11 +169,11 @@ Evidence: `docs/superpowers/evidence/2026-09-27-daily-log-engineer-slip-checkpoi
 
 **Interfaces:** Readtable `{ items: DailyLogWorkItem[], resources: SummaryResourceLine[], mode: 'review'|'verified' }`, no mutation props. Consumes Tasks1/4/6. Viewer passes permissions/status/rollout; publishSummary/createSummaryRevision hiện có không đổi.
 
-- [ ] **Step 1 — RED:** Review không có quantity/percent input/select; verified không có submit/return/delete. Quyết định đã chốt là lịch sử, không cảnh báo cần làm. CHT trả đúng source và bắt buộc nhận xét. Pilot không dùng nhãn công bố chính thức; false publication receipt giữ review. Unit unknown không biến 30 thành m³; reader không có mutation; ngày khóa đi revision/reopen hiện có.
-- [ ] **Step 2:** Run readtable/workspace/revision tests RED. Pending review được có ô nhận xét nhưng không có trường sửa khối lượng; verified không có mutation form.
-- [ ] **Step 3 — GREEN:** Báo cáo tách editor, tổng quan trước. Header **Bản tổng hợp thi công ngày**; người duyệt/thời gian có thật hoặc unknown, không suy từ updatedAt. Trả summary và trả source là hai action khác nhau; trạng thái nguồn ở chi tiết. Fixture verified thiếu unit giữ unknown và thông báo chất lượng dữ liệu, không backfill. Pilot/publication/revision giữ đúng quyền/receipt.
-- [ ] **Step 4:** Tests GREEN và viewer ERP thật pending–verified bằng CHT/reader, unknown/revision/ngày khóa; legacy viewer và provider/sourceHref evidence không đổi; typecheck.
-- [ ] **Step 5:** Commit `feat(daily-log): separate commander review from editable forms`.
+- [x] **Step 1 — RED:** Review không có quantity/percent input/select; verified không có submit/return/delete. Quyết định đã chốt là lịch sử, không cảnh báo cần làm. CHT trả đúng source và bắt buộc nhận xét. Pilot không dùng nhãn công bố chính thức; false publication receipt giữ review. Unit unknown không biến 30 thành m³; reader không có mutation; ngày khóa đi revision/reopen hiện có.
+- [x] **Step 2:** Run readtable/workspace/revision tests RED. Pending review được có ô nhận xét nhưng không có trường sửa khối lượng; verified không có mutation form.
+- [x] **Step 3 — GREEN:** Báo cáo tách editor, tổng quan trước. Header **Bản tổng hợp thi công ngày**; người duyệt/thời gian có thật hoặc unknown, không suy từ updatedAt. Trả summary và trả source là hai action khác nhau; trạng thái nguồn ở chi tiết. Fixture verified thiếu unit giữ unknown và thông báo chất lượng dữ liệu, không backfill. Pilot/publication/revision giữ đúng quyền/receipt.
+- [x] **Step 4:** Tests GREEN và viewer ERP thật pending–verified bằng CHT/reader, unknown/revision/ngày khóa; legacy viewer và provider/sourceHref evidence không đổi; typecheck.
+- [x] **Step 5:** Commit `feat(daily-log): separate commander review from editable forms`. Bổ sung migration V2 gửi lại bản tổng hợp được anh cho phép riêng; [checkpoint](../evidence/2026-09-27-daily-log-commander-report-ux-checkpoint.md). Task 8/nghiệm thu và release vẫn riêng.
 
 ### Task 8: Nghiệm thu ERP thật, responsive walkthrough và hướng dẫn
 

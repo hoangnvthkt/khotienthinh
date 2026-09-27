@@ -27,6 +27,7 @@ import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 import { DailyLogEngineerWorkspace } from '../../components/project/daily-log/DailyLogEngineerWorkspace';
 import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
 import { DailyLogRevisionActions } from '../../components/project/daily-log/DailyLogRevisionActions';
+import { DailyLogDocumentHeader } from '../../components/project/daily-log/DailyLogDocumentHeader';
 import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
 import { buildDailyLogVolumesFromDailyProgress } from '../../lib/dailyLogProgressImport';
 import { getProjectScopeKey, projectWeeklyProgressService } from '../../lib/projectWeeklyProgressService';
@@ -367,6 +368,7 @@ interface DailyLogViewerProps {
     onReject: () => void | Promise<void>;
     onReturnSourceLog?: (log: DailyLog) => void | Promise<void>;
     wbsWorkspace?: React.ReactNode;
+    wbsReportReady?: boolean;
     revisionActions?: React.ReactNode;
 }
 
@@ -397,6 +399,7 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     onReject,
     onReturnSourceLog,
     wbsWorkspace,
+    wbsReportReady = true,
     revisionActions,
 }) => {
     const [showSourceLogs, setShowSourceLogs] = useState(false);
@@ -418,6 +421,17 @@ const DailyLogViewer: React.FC<DailyLogViewerProps> = ({
     const participatingStaff = (log.staffIds || [])
         .map(id => siteStaff.find(s => s.userId === id))
         .filter(Boolean) as ProjectStaff[];
+
+    // Only the WBS branch uses the new report shell. Preserve the legacy viewer.
+    if(wbsWorkspace) return <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={event=>event.target===event.currentTarget && !busy && onClose()}>
+        <div className="h-[92dvh] w-[96vw] max-w-[1180px] overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
+            {!wbsReportReady && <DailyLogDocumentHeader title="Bản tổng hợp thi công ngày" date={log.date}
+                authorName={log.summarizedByName || log.createdBy || ''} mode="review" statusLabel={STATUS_CFG[status].label}
+                onClose={onClose} closeDisabled={busy} />}
+            {wbsWorkspace}
+            {revisionActions && <div className="px-4 pb-40 sm:px-6 sm:pb-6">{revisionActions}</div>}
+        </div>
+    </div>;
 
     return (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -929,6 +943,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [reviewWbsLoading, setReviewWbsLoading] = useState(false);
     const [reviewWbsError, setReviewWbsError] = useState<string | null>(null);
     const [reviewWbsRetry, setReviewWbsRetry] = useState(0);
+    const [reviewWbsBusy, setReviewWbsBusy] = useState(false);
     const [reviewWbsLoadedId, setReviewWbsLoadedId] = useState<string | null>(null);
     const publishCommandIdsRef = useRef<Record<string, string>>({});
 
@@ -3350,34 +3365,43 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         onOpenRevision={setViewLogId}
                     />}
                     canReturnSourceLog={canReviewDailyLog}
+                    wbsReportReady={reviewSurface === 'wbs'}
                     wbsWorkspace={reviewSurface === 'loading' ? <p role="status" className="p-4 text-sm text-slate-500">Đang tải bản tổng hợp…</p>
                         : reviewSurface === 'error' ? <div role="alert" className="space-y-3 rounded-xl bg-red-50 p-4 text-sm text-red-800"><p>{reviewWbsError}</p><button type="button" className="rounded-lg border border-red-300 px-4 py-2 font-bold" onClick={() => setReviewWbsRetry(value => value + 1)}>Thử lại</button></div>
                         : reviewSurface === 'wbs' && reviewWbsBundle ? <DailyLogSummaryWorkspace
                         key={`${reviewWbsBundle.summaryLog?.id}:${reviewWbsBundle.summaryLog?.lastActionAt || ''}`}
                         bundle={reviewWbsBundle}
                         mode="review"
-                        onSaved={() => {
-                            dailyLogWbsService.getBundle({
+                        onClose={()=>{if(!reviewWbsBusy)setViewLogId(null);}}
+                        onBusyChange={setReviewWbsBusy}
+                        onSaved={async () => {
+                            const fresh=await dailyLogWbsService.getBundle({
                                 projectId: projectId || effectiveId,
                                 constructionSiteId: constructionSiteId || null,
                                 logDate: viewingLog.date,
                                 dailyLogId: viewingLog.id,
-                            }).then(setReviewWbsBundle).catch(console.error);
+                            });
+                            await reloadDailyLogRecords();
+                            setReviewWbsBundle(fresh);
                         }}
-                        onReturnAll={() => {
-                            reasonConfirm({
-                                title: 'Trả lại bản tổng hợp',
+                        onReturnAll={async () => {
+                            const reason=await reasonConfirm({
+                                title: 'Trả bản tổng hợp',
                                 targetName: viewingLog.description || viewingLog.date,
-                                warningText: 'Toàn bộ bản tổng hợp sẽ quay về Kỹ thuật trưởng để chỉnh sửa.',
+                                warningText: 'Chỉ trả bản tổng hợp cho người tổng hợp. Các phiếu kỹ sư không bị trả sửa.',
                                 reasonPlaceholder: 'Nhập lý do trả lại...',
-                                actionLabel: 'Trả lại',
-                                intent: 'danger',
-                            }).then(reason => { if (reason) handleStatusChange(viewingLog, 'rejected', undefined, reason); });
+                                actionLabel: 'Trả bản tổng hợp',
+                                intent: 'warning',
+                            });
+                            if(reason && await handleStatusChange(viewingLog,'rejected',undefined,reason)) {
+                                const fresh=await dailyLogWbsService.getBundle({projectId:projectId || effectiveId,constructionSiteId:constructionSiteId || null,logDate:viewingLog.date,dailyLogId:viewingLog.id});
+                                setReviewWbsBundle(fresh);
+                            }
                         }}
                         onPublish={publishWbsSummary}
                     /> : undefined}
-                    busy={busyLogIds.has(viewingLog.id)}
-                    onClose={() => setViewLogId(null)}
+                    busy={reviewWbsBusy || busyLogIds.has(viewingLog.id)}
+                    onClose={() => {if(!reviewWbsBusy)setViewLogId(null);}}
                     onPreviewImage={(list, idx) => {
                         setGalleryAttachments(list);
                         setGalleryIndex(idx);
