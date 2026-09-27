@@ -47,7 +47,7 @@ export const inheritedReason = (row: SensitiveViewAccessRow, domain: SensitiveVi
   if (row.isSystemAdmin) return 'Admin hệ thống';
   if (allProjects) return domain === 'contract' && row.contractManager ? 'Quản trị hợp đồng' : null;
   if (domain === 'finance' ? row.financeAll : row.contractAll) return 'Tất cả dự án';
-  if (row.financeRoom) return 'Room Thanh toán / Nghiệm thu';
+  if (row.financeRoom) return 'Xử lý thanh toán / nghiệm thu';
   if (domain === 'contract' && row.contractManager) return 'Quản trị hợp đồng';
   return null;
 };
@@ -232,7 +232,7 @@ const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId }) => {
         <h2 className="mt-1 text-lg font-black text-slate-900 dark:text-white">Ai được xem Tài chính & Hợp đồng</h2>
         <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500 dark:text-slate-300">
           Người chưa được bật sẽ không thấy dòng tiền, chi phí, tạm ứng và hợp đồng của dự án này.
-          Admin, thành viên Room Thanh toán / Nghiệm thu và người được mở "Tất cả dự án" luôn xem được.
+          Admin, người xử lý chứng từ trong Room Thanh toán / Nghiệm thu và người được mở "Tất cả dự án" luôn xem được. Người chỉ có quyền Xem trong Room vẫn cần bật ở đây.
         </p>
       </div>
       <button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">

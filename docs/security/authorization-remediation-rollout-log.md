@@ -224,3 +224,11 @@ Quyết định của chủ sản phẩm ngày 27/09/2026:
 ### C-3 — siết quyền đọc
 
 Chưa làm. Chỉ làm sau khi Admin đã bật đủ công tắc. Frontend sẽ hiển thị "Chưa được mở quyền xem" thay vì số 0, và bỏ `is_module_admin('DA')` trên các bảng tài chính.
+
+### C-1b — chỉ người xử lý chứng từ mới tự động được xem
+
+- **Phát hiện khi chủ sản phẩm xem thử** (dự án mẫu): 25/28 người bị khóa ở trạng thái "được xem", vì họ có quyền **Xem** trong Room Thanh toán / Nghiệm thu.
+  - Toàn hệ thống: Room Thanh toán có 44/67 thành viên chỉ có quyền Xem; Room Nghiệm thu có 47/64.
+- **Sửa:** chỉ thành viên có thao tác `edit`, `submit`, `verify`, `approve` hoặc `confirm` mới tự động được xem, đúng với lý do "cần xem để lập và duyệt chứng từ". Thành viên chỉ có quyền Xem do công tắc quyết định.
+- **Migration:** `20260927073423_authorization_p0c_room_workers_only`. Dry-run PASS, **ĐÃ APPLY**.
+- **Kiểm lại trên UI** (dev server nhánh P0, cổng 3200): 18/28 người chỉnh được; 8 người khóa vì đang xử lý chứng từ, 2 người khóa vì là Admin.

@@ -34,7 +34,7 @@ describe('project sensitive access switches', () => {
   it('locks switches that come from Admin, all projects, Rooms or contract managers', () => {
     expect(inheritedReason(row({ isSystemAdmin: true }), 'contract', false)).toBe('Admin hệ thống');
     expect(inheritedReason(row({ financeAll: true }), 'finance', false)).toBe('Tất cả dự án');
-    expect(inheritedReason(row({ financeRoom: true }), 'contract', false)).toBe('Room Thanh toán / Nghiệm thu');
+    expect(inheritedReason(row({ financeRoom: true }), 'contract', false)).toBe('Xử lý thanh toán / nghiệm thu');
     expect(inheritedReason(row({ contractManager: true }), 'contract', false)).toBe('Quản trị hợp đồng');
     expect(inheritedReason(row({ contractManager: true }), 'finance', false)).toBeNull();
   });
