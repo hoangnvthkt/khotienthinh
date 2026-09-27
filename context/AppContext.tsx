@@ -1,6 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, isSupabaseConfigured, isTransientSupabaseError } from '../lib/supabase';
+import { wmsRecipientService } from '../lib/wmsRecipientService';
 import {
   InventoryItem, Transaction, User, Warehouse, WarehouseTypeConfig, Supplier,
   Role, TransactionStatus, TransactionType, MaterialRequest,
@@ -2245,39 +2246,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     auditService.log({ tableName: 'warehouse_types', recordId: normalizedCode, action: 'DELETE', oldData: warehouseType as any, userId: user.id, userName: user.name || user.username });
   };
 
-  const getMaterialRequestApproverIds = (request: MaterialRequest) => {
-    if (request.submittedToUserId) return [request.submittedToUserId];
-    return users
-      .filter(u =>
-        u.role === Role.ADMIN ||
-        (u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId) ||
-        (u.role === Role.WAREHOUSE_KEEPER && !!request.sourceWarehouseId && u.assignedWarehouseId === request.sourceWarehouseId)
-      )
-      .map(u => u.id);
-  };
-
-  const getWarehouseKeeperIds = (...warehouseIds: Array<string | undefined>) => {
-    const whSet = new Set(warehouseIds.filter(Boolean) as string[]);
-    const globalKeeperIds = users
-      .filter(u => u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId)
-      .map(u => u.id);
-    if (whSet.size === 0) return globalKeeperIds;
-    return users
-      .filter(u =>
-        u.role === Role.ADMIN ||
-        (u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId) ||
-        (u.role === Role.WAREHOUSE_KEEPER && !!u.assignedWarehouseId && whSet.has(u.assignedWarehouseId))
-      )
-      .map(u => u.id);
-  };
-
-  const getDefaultWarehouseKeeper = (warehouseId?: string) => {
-    if (warehouseId) {
-      const assignedKeeper = users.find(u => u.role === Role.WAREHOUSE_KEEPER && u.assignedWarehouseId === warehouseId);
-      if (assignedKeeper) return assignedKeeper;
+  // WMS handlers come from the server (capability at the warehouse, keeper or
+  // Admin), so recipients match who can actually act. Best effort: a lookup
+  // failure only skips the notification.
+  const listWmsHandlerIds = async (permissionCode: string, ...warehouseIds: Array<string | undefined>) => {
+    try {
+      return (await wmsRecipientService.list(permissionCode, warehouseIds)).map(recipient => recipient.userId);
+    } catch (err) {
+      console.warn('Failed to resolve WMS recipients:', err);
+      return [];
     }
-    return users.find(u => u.role === Role.WAREHOUSE_KEEPER && !u.assignedWarehouseId)
-      || users.find(u => u.role === Role.ADMIN);
+  };
+
+  const getMaterialRequestApproverIds = async (request: MaterialRequest) => {
+    if (request.submittedToUserId) return [request.submittedToUserId];
+    return listWmsHandlerIds('wms.request.approve', request.sourceWarehouseId);
+  };
+
+  const getDefaultWarehouseKeeper = async (warehouseId?: string) => {
+    try {
+      const [first] = await wmsRecipientService.list('wms.request.receive', [warehouseId]);
+      return first ? users.find(u => u.id === first.userId) : undefined;
+    } catch (err) {
+      console.warn('Failed to resolve site warehouse handler:', err);
+      return undefined;
+    }
   };
 
   const notifyWmsUsers = async (
@@ -2362,13 +2355,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     logActivity('REQUEST', 'Yêu cầu vật tư', `Phiếu yêu cầu ${r.code} đã được ${requestToSave.status === RequestStatus.DRAFT ? 'tạo nháp' : 'gửi'}`, 'INFO', r.siteWarehouseId);
     if (requestToSave.status === RequestStatus.PENDING) {
-      void notifyWmsUsers(getMaterialRequestApproverIds(requestToSave), {
+      void getMaterialRequestApproverIds(requestToSave).then(approverIds => notifyWmsUsers(approverIds, {
         type: 'info',
         title: 'Phiếu vật tư chờ duyệt',
         message: `Phiếu ${requestToSave.code} đang chờ Thủ kho/Admin duyệt.`,
         severity: 'info',
         sourceId: requestToSave.id,
-      });
+      }));
     }
     return true;
   };
@@ -2594,7 +2587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ? getMaterialRequestWorkflowPatch(workflowStep, user.id)
       : {};
     const siteKeeperTarget = req.requestOrigin === 'project' && isFulfillmentSync && workflowStep === 'site_quality_check'
-      ? getDefaultWarehouseKeeper(req.siteWarehouseId)
+      ? await getDefaultWarehouseKeeper(req.siteWarehouseId)
       : undefined;
     const plannerTarget = req.requestOrigin === 'project' && isFulfillmentReceived && workflowStep === 'batch_planning' && req.workflowStepActorUserId
       ? users.find(u => u.id === req.workflowStepActorUserId)
@@ -2723,32 +2716,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       sourceId: req.id,
     });
 
-    const keeperRecipients =
+    const keeperActions: Array<[string, string | undefined]> =
       status === RequestStatus.APPROVED
-        ? getWarehouseKeeperIds(effectiveSourceWhId)
+        ? [['wms.request.export', effectiveSourceWhId]]
         : status === RequestStatus.IN_TRANSIT
-          ? getWarehouseKeeperIds(req.siteWarehouseId)
+          ? [['wms.request.receive', req.siteWarehouseId]]
           : status === RequestStatus.COMPLETED
-            ? getWarehouseKeeperIds(effectiveSourceWhId, req.siteWarehouseId)
+            ? [['wms.request.export', effectiveSourceWhId], ['wms.request.receive', req.siteWarehouseId]]
             : [];
-    if (keeperRecipients.length > 0) {
-      void notifyWmsUsers(keeperRecipients, {
-        type: status === RequestStatus.COMPLETED ? 'success' : 'info',
-        title: status === RequestStatus.IN_TRANSIT ? 'Đợt cấp chờ kiểm tra SL/CL' : 'Phiếu vật tư cần theo dõi',
-        message: status === RequestStatus.IN_TRANSIT
-          ? `Phiếu ${req.code} đã có đợt cấp tới kho công trường. Thủ kho cần duyệt số lượng/chất lượng rồi xác nhận nhận hàng.`
-          : `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
-        severity: 'info',
-        sourceId: `${req.id}_${status}_${Date.now()}`,
-        link: status === RequestStatus.IN_TRANSIT ? '/operations' : '/requests',
-        metadata: {
-          requestId: req.id,
-          projectId: req.projectId || undefined,
-          constructionSiteId: req.constructionSiteId || undefined,
-          siteWarehouseId: req.siteWarehouseId,
-          sourceWarehouseId: effectiveSourceWhId,
-        },
-      });
+    if (keeperActions.length > 0) {
+      void Promise.all(keeperActions.map(([code, warehouseId]) => listWmsHandlerIds(code, warehouseId)))
+        .then(groups => notifyWmsUsers(groups.flat(), {
+          type: status === RequestStatus.COMPLETED ? 'success' : 'info',
+          title: status === RequestStatus.IN_TRANSIT ? 'Đợt cấp chờ kiểm tra SL/CL' : 'Phiếu vật tư cần theo dõi',
+          message: status === RequestStatus.IN_TRANSIT
+            ? `Phiếu ${req.code} đã có đợt cấp tới kho công trường. Thủ kho cần duyệt số lượng/chất lượng rồi xác nhận nhận hàng.`
+            : `Phiếu ${req.code} chuyển sang ${status}; kho liên quan cần kiểm tra thao tác tiếp theo.`,
+          severity: 'info',
+          sourceId: `${req.id}_${status}_${Date.now()}`,
+          link: status === RequestStatus.IN_TRANSIT ? '/operations' : '/requests',
+          metadata: {
+            requestId: req.id,
+            projectId: req.projectId || undefined,
+            constructionSiteId: req.constructionSiteId || undefined,
+            siteWarehouseId: req.siteWarehouseId,
+            sourceWarehouseId: effectiveSourceWhId,
+          },
+        }));
     }
 
     // Generate Transaction when Request is fully received

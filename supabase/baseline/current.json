@@ -124,7 +124,9 @@
     "20260927073423_authorization_p0c_room_workers_only.sql",
     "20260927074935_authorization_p0c_enforce_sensitive_reads.sql",
     "20260927080700_authorization_p1_retire_legacy_da_admin.sql",
-    "20260927083431_authorization_p1_3_retire_room_managed_grants.sql"
+    "20260927083431_authorization_p1_3_retire_room_managed_grants.sql",
+    "20260927084905_authorization_p1_4_wms_action_recipients.sql",
+    "20260927085747_authorization_p1_4_restrict_audit_trail_reads.sql"
   ],
   "forbidIncludeAll": true
 }

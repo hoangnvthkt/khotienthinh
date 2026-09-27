@@ -567,7 +567,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     </NavLink>
                   )}
 
-                  {user.role === Role.ADMIN && (
+                  {canAccessRoute(user, '/admin/activity') && (
                     <NavLink to="/admin/activity" onClick={toggle}
                       className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
                         ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
@@ -639,7 +639,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                       )}
                     </NavLink>
                   )}
-                  {user.role === Role.ADMIN && (
+                  {canAccessRoute(user, '/admin/activity') && (
                     <NavLink to="/admin/activity" onClick={toggle}
                       className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
                         ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
@@ -707,7 +707,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               </NavLink>
 
               {/* Nhật ký thay đổi — chỉ Admin */}
-              {user.role === Role.ADMIN && (
+              {(user.role === Role.ADMIN || canAccessRoute(user, '/audit-trail')) && (
                 <NavLink to="/audit-trail" title={collapsed ? 'Nhật ký thay đổi' : undefined}
                   className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                     ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-500/20 border border-white/20'
@@ -717,7 +717,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 </NavLink>
               )}
 
-              {user.role === Role.ADMIN && (
+              {canAccessRoute(user, '/admin/activity') && (
                 <NavLink to="/admin/activity" title={collapsed ? 'Hoạt động hệ thống' : undefined}
                   className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'
@@ -728,7 +728,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
               )}
 
               {/* Predictive Analytics — Admin */}
-              {user.role === Role.ADMIN && (
+              {(user.role === Role.ADMIN || canAccessRoute(user, '/analytics')) && (
                 <NavLink to="/analytics" title={collapsed ? 'Dự báo & Phân tích' : undefined}
                   className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                     ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/20 border border-white/20'
@@ -929,7 +929,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                     )}
                   </NavLink>
                 )}
-                {user.role === Role.ADMIN && (
+                {canAccessRoute(user, '/admin/activity') && (
                   <NavLink to="/admin/activity" title={collapsed ? 'Hoạt động hệ thống' : undefined}
                     className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                       ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/20 border border-white/20'

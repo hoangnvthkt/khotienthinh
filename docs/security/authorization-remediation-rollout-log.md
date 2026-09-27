@@ -323,3 +323,26 @@ Chỉ sửa frontend, không có migration.
 - **Dry-run trên Cloud** (gồm cả rollback `supabase/operations/authorization_p1_3_rollback.sql`) **PASS**. Chủ sản phẩm đồng ý. **ĐÃ APPLY.** Smoke sau apply **PASS**.
 - Walkthrough Admin trên dự án mẫu: Nhật ký ("Ghi nhật ký"), Tiến độ, Chất lượng, Thanh toán và An toàn vẫn đủ thao tác.
 - Vitest toàn repo pass (thêm test "chỉ Room action mới mở quyền sửa"); `tsc` pass; build pass.
+
+### P1.4 — người nhận và người duyệt theo quyền thật, không theo vai trò
+
+- **WMS:**
+  - Trước đây frontend chọn người duyệt/người nhận thông báo phiếu vật tư theo vai trò `WAREHOUSE_KEEPER` + kho gán, cộng Admin. Server thì cho thao tác nếu có capability theo kho, là quản trị module WMS, hoặc là thủ kho.
+  - Migration `20260927084905_authorization_p1_4_wms_action_recipients`:
+    - `app_private.wms_user_has_action(user, code, kho…)` áp đúng luật của `wms_has_action` cho một người bất kỳ.
+    - RPC `list_wms_action_recipients(code, kho[])` trả người đang hoạt động (capability, thủ kho, Admin); người gắn đúng kho đứng trước, Admin đứng cuối.
+  - Smoke so khớp helper với `wms_has_action` (chạy dưới quyền từng người) trên **mọi người dùng × kho × 4 thao tác: 0 lệch**.
+  - Cờ legacy "quản trị module WMS" (17 nhân viên) vẫn cho thao tác như cũ nhưng **tạm không tính là người nhận thông báo**, để khỏi báo cho cả 17 người ở mọi kho. Chủ sản phẩm chốt nhóm này ở P1.5.
+  - So với cách cũ: không ai bị loại khỏi danh sách nhận; thêm người có capability xuất/nhận kho.
+  - Frontend `lib/wmsRecipientService.ts`: phiếu chờ duyệt → `wms.request.approve` (kho nguồn); đã duyệt → `wms.request.export`; đang giao → `wms.request.receive` (kho công trường); hoàn tất → cả hai. Người xử lý mặc định ở bước kiểm tra tại công trường lấy từ `wms.request.receive`. Tra cứu chạy nền, lỗi thì chỉ bỏ qua thông báo.
+- **Sidebar:**
+  - Hoạt động hệ thống theo `canAccessRoute`.
+  - Nhật ký thay đổi và Dự báo & Phân tích mở cho Admin hoặc người có capability. Chính Admin không có capability `system.audit_trail.view` / `analytics.view`, nên vai trò Admin vẫn được tính.
+  - "Đồng bộ MISA" giữ chỉ Admin: route này chưa có capability riêng; chuyển sang theo route sẽ hiện menu cho khoảng 40 người có quyền xem giao dịch kho. Để chủ sản phẩm quyết ở P1.5.
+- **Phát hiện và sửa: `audit_trail` cho mọi người đăng nhập đọc** (3.436 dòng, 30 bảng, 232 dòng về lương/tài chính/hợp đồng, gồm cả dữ liệu trước và sau khi sửa). Lỗ này vượt qua công tắc C-3.
+  - Migration `20260927085747_authorization_p1_4_restrict_audit_trail_reads`: chỉ Admin hoặc `system.audit_trail.view` được đọc; ghi không đổi. Chỉ trang Nhật ký thay đổi và một hàm SECURITY DEFINER của Đặt xe đọc bảng này.
+  - Trang Nhật ký thay đổi có màn "chưa có quyền" thay vì danh sách trống.
+- **Không sửa:** `MaterialTab` (luồng Procurement V2; vẫn kiểm `role === ADMIN` cho workflow phiếu), `DailyLogTab` (luồng Daily log), cảnh báo định kỳ gửi Admin (thuộc P2).
+- **Còn mở:** bảng `activities` vẫn `select true` (nội dung là mô tả thao tác, ít nhạy cảm hơn). Đề xuất đánh giá cùng P2.
+- Dry-run và smoke sau apply của cả hai migration **PASS**. Chủ sản phẩm đồng ý apply. Script rollback `supabase/operations/authorization_p1_4_rollback.sql` đã chạy thử (rollback) **PASS**.
+- Walkthrough Admin ở độ rộng desktop: đủ 4 mục hệ thống trong sidebar; trang Nhật ký thay đổi tải đủ dữ liệu.

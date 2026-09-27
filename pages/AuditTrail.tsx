@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { Role } from '../types';
+import { canAccessRoute } from '../lib/routeAccess';
 import {
   History, Search, Filter, ChevronDown, ChevronRight,
   Plus, Edit3, Trash2, Eye, Clock, User, Database,
@@ -60,6 +62,8 @@ const timeAgo = (date: string): string => {
 
 const AuditTrail: React.FC = () => {
   const { user } = useApp();
+  // Mirrors the audit_trail read policy: system Admin or system.audit_trail.view.
+  const canViewAuditTrail = user?.role === Role.ADMIN || canAccessRoute(user, '/audit-trail');
   const [searchParams] = useSearchParams();
   const filterUserId = searchParams.get('userId') || '';
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -77,6 +81,7 @@ const AuditTrail: React.FC = () => {
   const [showJsonId, setShowJsonId] = useState<string | null>(null);
 
   const loadData = async () => {
+    if (!canViewAuditTrail) { setLoading(false); return; }
     setLoading(true);
     const data = await auditService.list({
       module: filterModule || undefined,
@@ -148,6 +153,16 @@ const AuditTrail: React.FC = () => {
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  if (!canViewAuditTrail) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <ShieldAlert size={32} className="mx-auto text-slate-400" />
+        <h1 className="mt-3 text-base font-black text-slate-800 dark:text-white">Bạn chưa có quyền xem Nhật ký thay đổi</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Nhật ký chứa dữ liệu trước và sau khi sửa của nhiều phân hệ. Liên hệ Admin nếu công việc cần xem.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
