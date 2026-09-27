@@ -88,6 +88,9 @@ import {
 import PremiumMemberSelect, { MemberOption } from '../components/common/PremiumMemberSelect';
 import PremiumEntitySelect, { EntityOption } from '../components/common/PremiumEntitySelect';
 import { StatusBadge } from '../components/erp';
+import SensitiveDataGate from '../components/project/permissions/SensitiveDataGate';
+import { useProjectSensitiveAccess } from '../hooks/project/useProjectSensitiveAccess';
+import { canViewSensitive, projectSensitiveAccessService } from '../lib/projectSensitiveAccessService';
 
 const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
@@ -769,6 +772,7 @@ const ProjectDashboard: React.FC = () => {
 
     const effectiveSiteId = selectedProject?.constructionSiteId || selectedSiteId || null;
     const selectedSite = effectiveSiteId ? hrmConstructionSites.find(s => s.id === effectiveSiteId) || null : null;
+    const sensitiveAccess = useProjectSensitiveAccess(selectedProject?.id, effectiveSiteId);
     const selectedFinance = useMemo(() =>
         selectedProject
             ? projectFinances.find(pf => pf.projectId === selectedProject.id) ||
@@ -1624,9 +1628,13 @@ const ProjectDashboard: React.FC = () => {
     const handleExportProjectList = async () => {
         setProjectExporting(true);
         try {
-            const XLSX = await loadXlsx();
+            const [XLSX, sensitiveScope] = await Promise.all([loadXlsx(), projectSensitiveAccessService.getMyScope()]);
             const rows = filteredProjectRows.map(project => {
                 const metrics = getProjectListMetrics(project);
+                const siteId = metrics.site?.id || project.constructionSiteId;
+                // Blank, not 0: the user may not view this project's money.
+                const canViewFinance = canViewSensitive(sensitiveScope, 'finance', project.id, siteId);
+                const canViewContract = canViewSensitive(sensitiveScope, 'contract', project.id, siteId);
                 return {
                     'Mã dự án': project.code,
                     'Tên dự án': project.name,
@@ -1639,11 +1647,11 @@ const ProjectDashboard: React.FC = () => {
                     'Trạng thái': STATUS_CONFIG[project.status]?.label || project.status,
                     'Ngày bắt đầu': project.startDate || '',
                     'Ngày kết thúc': project.endDate || '',
-                    'Giá trị HĐ': metrics.contractValue,
-                    'Tổng chi thực tế': metrics.actualCost,
-                    'Lợi nhuận tạm tính': metrics.profit,
+                    'Giá trị HĐ': canViewContract || canViewFinance ? metrics.contractValue : '',
+                    'Tổng chi thực tế': canViewFinance ? metrics.actualCost : '',
+                    'Lợi nhuận tạm tính': canViewFinance ? metrics.profit : '',
                     'Tiến độ (%)': metrics.progress,
-                    'Số giao dịch': metrics.txCount,
+                    'Số giao dịch': canViewFinance ? metrics.txCount : '',
                     'Ghim ưu tiên': project.isPinned ? 'Đã ghim' : '',
                     'Trạng thái ẩn': project.isHidden ? 'Đã ẩn' : 'Đang hoạt động',
                     'Lý do ẩn': project.hiddenReason || '',
@@ -3229,7 +3237,9 @@ const ProjectDashboard: React.FC = () => {
                         </div>
                     ) : overviewTab === 'executive' ? (
                         hasSiteScope ? (
-                            <ExecutiveTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
+                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
+                                <ExecutiveTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
+                            </SensitiveDataGate>
                         ) : renderSiteRequired('Điều hành')
                     ) : overviewTab === 'org' ? (
                         <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
@@ -3237,6 +3247,7 @@ const ProjectDashboard: React.FC = () => {
                         <ProjectPermissionsTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
                     ) : overviewTab === 'finance' ? (
                         hasSiteScope ? (
+                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
                             <ProjectFinanceWorkspace
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
@@ -3246,18 +3257,23 @@ const ProjectDashboard: React.FC = () => {
                                 canManagePayment={canManageProjectTab('payment')}
                                 initialTab={financeInitialTab}
                             />
+                            </SensitiveDataGate>
                         ) : renderSiteRequired('Tài chính')
                     ) : overviewTab === 'cashflow' ? (
                         hasSiteScope ? (
+                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
                             <CashFlowTab
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
                                 transactions={projectTransactionsForScope}
                                 contractValue={contractValue}
                             />
+                            </SensitiveDataGate>
                         ) : renderSiteRequired('Dòng tiền')
                     ) : overviewTab === 'contract' ? (
-                        <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('contract')} />
+                        <SensitiveDataGate access={sensitiveAccess} domain="contract">
+                            <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('contract')} />
+                        </SensitiveDataGate>
                     ) : overviewTab === 'gantt' ? (
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
                     ) : overviewTab === 'weekly_progress' ? (
@@ -3286,17 +3302,19 @@ const ProjectDashboard: React.FC = () => {
                         />
                     ) : overviewTab === 'report' ? (
                         hasSiteScope ? (
+                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
                             <ReportTab
                                 constructionSiteId={effectiveSiteId!}
                                 projectId={selectedProject.id}
                                 contractValue={contractValue}
                                 totalSpent={aggForRender.totalExpense}
                             />
+                            </SensitiveDataGate>
                         ) : renderSiteRequired('Báo cáo')
                     ) : overviewTab === 'documents' ? (
                         <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} canManageTab={canManageProjectTab('documents')} />
                     ) : (
-                        <>
+                        <SensitiveDataGate access={sensitiveAccess} domain="finance">
                             {/* KPI Cards — AUTO-AGGREGATED */}
                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div onClick={() => goToProjectTab('contract')} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:scale-[1.02] transition-all cursor-pointer group">
@@ -3509,7 +3527,7 @@ const ProjectDashboard: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                        </>
+                        </SensitiveDataGate>
                     )}
                 </Suspense>
             </div>

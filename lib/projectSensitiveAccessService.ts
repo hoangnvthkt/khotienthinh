@@ -24,6 +24,32 @@ export interface MySensitiveAccess {
   contract: boolean;
 }
 
+export interface SensitiveDomainScope {
+  all: boolean;
+  projectIds: string[];
+  siteIds: string[];
+}
+
+export type MySensitiveScope = Record<SensitiveViewDomain, SensitiveDomainScope>;
+
+const mapScope = (value: any): SensitiveDomainScope => ({
+  all: Boolean(value?.all),
+  projectIds: Array.isArray(value?.projectIds) ? value.projectIds : [],
+  siteIds: Array.isArray(value?.siteIds) ? value.siteIds : [],
+});
+
+export const canViewSensitive = (
+  scope: MySensitiveScope,
+  domain: SensitiveViewDomain,
+  projectId?: string | null,
+  constructionSiteId?: string | null,
+): boolean => {
+  const domainScope = scope[domain];
+  return domainScope.all
+    || (!!projectId && domainScope.projectIds.includes(projectId))
+    || (!!constructionSiteId && domainScope.siteIds.includes(constructionSiteId));
+};
+
 const mapRow = (row: any): SensitiveViewAccessRow => ({
   userId: row.user_id,
   userName: row.user_name || '',
@@ -74,5 +100,12 @@ export const projectSensitiveAccessService = {
     });
     if (error) throw error;
     return { finance: Boolean(data?.finance), contract: Boolean(data?.contract) };
+  },
+
+  /** Every project the signed-in user may view, for lists and exports. */
+  async getMyScope(): Promise<MySensitiveScope> {
+    const { data, error } = await supabase.rpc('get_my_sensitive_view_scope');
+    if (error) throw error;
+    return { finance: mapScope(data?.finance), contract: mapScope(data?.contract) };
   },
 };
