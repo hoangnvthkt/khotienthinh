@@ -121,7 +121,8 @@
     "20260927035001_authorization_p0b_restrict_client_writes.sql",
     "20260927042947_authorization_p0b_broadcast_state_and_avatars.sql",
     "20260927071707_authorization_p0c_sensitive_view_grants.sql",
-    "20260927073423_authorization_p0c_room_workers_only.sql"
+    "20260927073423_authorization_p0c_room_workers_only.sql",
+    "20260927074935_authorization_p0c_enforce_sensitive_reads.sql"
   ],
   "forbidIncludeAll": true
 }

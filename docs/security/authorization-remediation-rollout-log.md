@@ -223,7 +223,29 @@ Quyết định của chủ sản phẩm ngày 27/09/2026:
 
 ### C-3 — siết quyền đọc
 
-Chưa làm. Chỉ làm sau khi Admin đã bật đủ công tắc. Frontend sẽ hiển thị "Chưa được mở quyền xem" thay vì số 0, và bỏ `is_module_admin('DA')` trên các bảng tài chính.
+- **Điều kiện:** chủ sản phẩm xác nhận đã bật đủ công tắc, rồi đồng ý apply (27/09).
+- **Migration:** `20260927074935_authorization_p0c_enforce_sensitive_reads`.
+  - Chỉ đọc được khi có công tắc (dự án hoặc tất cả dự án), là người xử lý chứng từ trong Room Thanh toán / Nghiệm thu, là Admin, hoặc (riêng hợp đồng) quản trị hợp đồng cấp công ty.
+  - Tài chính: `project_transactions`, `project_finances`, `project_cost_items`, `project_cost_actuals`, `advance_payments`, `project_dashboard_snapshots`.
+  - Hợp đồng: `customer_contracts`, `project_contracts`; `contract_items` và `contract_appendices` loại `customer`; `contract_guarantees` theo hợp đồng cha.
+  - `project_cost_actuals`: bỏ policy ALL cho mọi người; chỉ Admin được ghi.
+  - Ghi `project_transactions` / `project_finances`: bỏ `is_module_admin('DA')`. Còn lại Admin, quyền dự án `edit`/`delete`, và (giao dịch) người xử lý chứng từ thanh toán / nghiệm thu.
+  - RPC mới `get_my_sensitive_view_scope()` dùng cho danh sách và xuất Excel.
+- **Cố ý chưa khóa** (để không làm hỏng màn hình khác): `supplier_contracts` và `subcontractor_contracts` (An toàn, Vật tư, Chuỗi cung ứng, Thầu phụ đang dùng); `payment_schedules` và `acceptance_records` (do Room Thanh toán quản lý). Chuyển sang P1.
+- **Frontend** (đã push lên main trước khi apply):
+  - Tab Điều hành, Tài chính, Dòng tiền, Báo cáo và phần ngân sách dùng quyền Tài chính; tab Hợp đồng dùng quyền Hợp đồng.
+  - Khi chưa có quyền, tab hiện "Chưa được mở quyền xem…" thay vì số 0; có trạng thái đang kiểm tra và lỗi (kèm Thử lại).
+  - Xuất Excel danh sách dự án để trống cột tiền của dự án không được xem.
+- **Rollback dry-run trên Cloud:**
+  - Lần 1 lỗi so sánh `text = text[]`; đã sửa bằng ép kiểu mảng.
+  - Lần 2 **PASS**.
+  - Script `supabase/operations/authorization_p0c3_rollback.sql` cũng đã chạy thử (rollback) **PASS**.
+- **ĐÃ APPLY.** Smoke sau apply `supabase/tests/authorization_p0c_enforce_sensitive_reads_smoke.sql` **PASS**:
+  - Nhân viên không có công tắc: không thấy giao dịch, tài chính, chi phí, snapshot, hợp đồng chủ đầu tư; vẫn thấy hợp đồng NCC.
+  - Bật Tài chính: thấy đúng dự án đó, không thấy hợp đồng, không lộ dự án khác.
+  - Bật Hợp đồng: thấy hợp đồng của đúng dự án đó.
+  - Admin vẫn thấy toàn bộ. Nhân viên không có quyền sửa thì không ghi được giao dịch.
+- Vitest toàn repo 2.297 pass; `tsc` pass; build pass; kiểm tra truy vấn 0 lỗi.
 
 ### C-1b — chỉ người xử lý chứng từ mới tự động được xem
 
