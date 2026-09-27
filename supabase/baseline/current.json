@@ -119,7 +119,8 @@
     "20260922064202_fix_boq_material_planning_wrapper_security.sql",
     "20260927023600_authorization_p0a_block_anonymous_access.sql",
     "20260927035001_authorization_p0b_restrict_client_writes.sql",
-    "20260927042947_authorization_p0b_broadcast_state_and_avatars.sql"
+    "20260927042947_authorization_p0b_broadcast_state_and_avatars.sql",
+    "20260927071707_authorization_p0c_sensitive_view_grants.sql"
   ],
   "forbidIncludeAll": true
 }

@@ -200,7 +200,7 @@ Quyết định của chủ sản phẩm ngày 27/09/2026:
 
 ### C-1 — bảng công tắc và RPC (chưa đổi quyền đọc)
 
-- **Migration:** `20260927140000_authorization_p0c_sensitive_view_grants.sql`. Tên file sẽ đổi theo version trong ledger khi apply.
+- **Migration:** `20260927071707_authorization_p0c_sensitive_view_grants.sql`. **ĐÃ APPLY** ngày 27/09/2026 sau khi chủ sản phẩm xác nhận; smoke sau apply PASS.
 - **Thành phần chính:**
   - Bảng `project_sensitive_view_grants`: `project_id` NULL nghĩa là tất cả dự án; có lịch sử bật/tắt kèm lý do.
   - Helper tính quyền một lần cho mỗi truy vấn: `sensitive_view_all`, `sensitive_view_project_ids`, `sensitive_view_site_ids`, `sensitive_can_view`.
