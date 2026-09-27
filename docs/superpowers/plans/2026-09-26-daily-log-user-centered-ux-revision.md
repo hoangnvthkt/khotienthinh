@@ -143,11 +143,13 @@ Evidence: [Task4 checkpoint](../evidence/2026-09-27-daily-log-source-return-resu
 
 **Interfaces:** Consumes Tasks1–4. Editor chọn contributionId rõ; row mang entryMode/enteredValue/baselineQuantityState/workBoqItemId/baselineFingerprint. Save nguồn mới=createSource→saveSourceDocument; nguồn có sẵn luôn save whole metadata. Submit chỉ sau save receipt thành công, version lấy receipt, commandId giữ qua retry cho tới khi xác định kết quả.
 
-- [ ] **Step 1 — RED:** Test khối lượng hôm nay là đầu vào chính khi đủ căn cứ; đổi mode không tạo hai input mâu thuẫn; lý do trả sửa/nút gửi lại rõ; submitted chỉ đọc; note/photo cũ không mất. Nháp rỗng lưu được nhưng chưa gửi được; lỗi giữ dữ liệu; chi tiết nguồn lực đúng WBS; chuyển A/B không mang draft A sang B.
-- [ ] **Step 2:** Run editor tests và targeted browser interaction RED; không chỉ renderToStaticMarkup để kết luận click/save hoạt động.
-- [ ] **Step 3 — GREEN:** Header/metadata thẳng hàng, nhóm cột khối lượng, WBS sticky, dòng con nguồn lực, chi tiết forecast/note/ảnh. Picker tạo khu vực thứ hai, không fallback phiếu mới nhất. Busy/lỗi đúng field, focus tới lỗi. Mobile card từng hạng mục, không ép bảng desktop nhỏ. Nút lưu nguồn legacy chỉ trong nhánh legacy. Phiếu đã gửi/đã trả cho thấy đúng hành động tiếp theo.
-- [ ] **Step 4:** Tests GREEN và Cloud save/reload A/B; kiểm tra số thập phân, tên dài, lỗi provider và metadata. Walkthrough sơ bộ desktop 1440/tablet 768/mobile 390; baseline null không thành 0; typecheck.
-- [ ] **Step 5:** Commit `feat(daily-log): redesign engineer slips around daily work`.
+- [x] **Step 1 — RED:** Test khối lượng hôm nay là đầu vào chính khi đủ căn cứ; đổi mode không tạo hai input mâu thuẫn; lý do trả sửa/nút gửi lại rõ; submitted chỉ đọc; note/photo cũ không mất. Nháp rỗng lưu được nhưng chưa gửi được; lỗi giữ dữ liệu; chi tiết nguồn lực đúng WBS; chuyển A/B không mang draft A sang B.
+- [x] **Step 2:** Run editor tests và targeted browser interaction RED; không chỉ renderToStaticMarkup để kết luận click/save hoạt động.
+- [x] **Step 3 — GREEN:** Header/metadata thẳng hàng, nhóm cột khối lượng, WBS sticky, dòng con nguồn lực, chi tiết forecast/note/ảnh. Picker tạo khu vực thứ hai, không fallback phiếu mới nhất. Busy/lỗi đúng field, focus tới lỗi. Mobile card từng hạng mục, không ép bảng desktop nhỏ. Nút lưu nguồn legacy chỉ trong nhánh legacy. Phiếu đã gửi/đã trả cho thấy đúng hành động tiếp theo.
+- [x] **Step 4:** Tests GREEN và Cloud save/reload A/B; kiểm tra số thập phân, tên dài, lỗi provider và metadata. Walkthrough sơ bộ desktop 1440/tablet 768/mobile 390; baseline null không thành 0; typecheck.
+- [x] **Step 5:** Commit `feat(daily-log): redesign engineer slips around daily work`.
+
+Evidence: `docs/superpowers/evidence/2026-09-27-daily-log-engineer-slip-checkpoint.md`.
 
 ### Task 6: Tổng hợp theo phiếu; chốt tiến độ là xử lý ngoại lệ
 

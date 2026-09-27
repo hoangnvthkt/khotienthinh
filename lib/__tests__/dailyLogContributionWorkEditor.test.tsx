@@ -1,8 +1,6 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { DailyLogWbsBundle } from '../dailyLogWbsService';
 import { DailyLogWbsPicker } from '../../components/project/daily-log/DailyLogWbsPicker';
 import {
@@ -131,12 +129,10 @@ describe('DailyLogContributionWorkEditor', () => {
   });
 
   it('integrates the WBS editor behind rollout while preserving the legacy editor', () => {
-    const dailyLogTab = readFileSync(resolve(process.cwd(), 'pages/project/DailyLogTab.tsx'), 'utf8');
-    const detailTabs = readFileSync(resolve(process.cwd(), 'components/project/DailyLogDetailTabs.tsx'), 'utf8');
-    expect(dailyLogTab).toContain('wbsBundle?.rollout.enabled');
-    expect(dailyLogTab).toContain('fDate >= wbsBundle.rollout.cutoverDate');
-    expect(dailyLogTab).toContain('<DailyLogContributionWorkEditor');
-    expect(dailyLogTab).toContain(': <DailyLogDetailTabs');
-    expect(detailTabs).toContain('onImportDailyProgressVolumes && !hideDailyProgressImport');
+    // Real ERP v2 routing is exercised in daily-log-engineer-cloud.spec.ts.
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={bundle} />);
+    expect(html).toContain('aria-label="% lũy kế"');
+    expect(html).toContain('value="30"');
+    expect(html).not.toContain('Phiếu thi công ngày');
   });
 });

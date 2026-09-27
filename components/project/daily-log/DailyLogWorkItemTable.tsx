@@ -3,6 +3,9 @@ import { ChevronDown, ChevronUp, Trash2, Users, Wrench } from 'lucide-react';
 import type { DailyLogLaborInput, DailyLogMachineInput } from '../../../types';
 import { deriveWorkItemProgress } from '../../../lib/dailyLogWorkItemRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
+import type { DailyLogBaselineQuantityState, DailyLogEntryMode, DailyLogSourceItemV2 } from '../../../types';
+import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
+import { formatDailyLogQuantity } from '../../../lib/dailyLogPresentation';
 
 export interface DailyLogWorkItemEditorRow {
   clientKey: string;
@@ -51,6 +54,79 @@ const ProgressCell: React.FC<{ row: DailyLogWorkItemEditorRow; readOnly?: boolea
     ) : (
       <div className="text-xs font-bold text-amber-700 dark:text-amber-300">Chưa có cơ sở quy đổi</div>
     )}
+  </div>;
+};
+
+export interface DailyLogEngineerRow extends DailyLogSourceItemV2 {
+  taskName: string; wbsCode: string; unit: string | null; plannedQuantity: number | null;
+  previousCumulativeQuantity: number | null; baselineQuantityState: DailyLogBaselineQuantityState;
+  allowOver100: boolean; scheduleFinishDate: string | null;
+  snapshot: { dailyQuantity: number | null; cumulativeQuantity: number | null; cumulativePercent: number | null } | null;
+}
+
+interface DailyLogEngineerWorkTableProps {
+  rows: DailyLogEngineerRow[]; labor: DailyLogLaborInput[]; machines: DailyLogMachineInput[];
+  readOnly: boolean; disabled: boolean; invalidResourceWorkItemKeys: ReadonlySet<string>;
+  onChange(key: string, patch: Partial<DailyLogEngineerRow>): void;
+  onModeChange(row: DailyLogEngineerRow, mode: DailyLogEntryMode): void;
+  onRemove(key: string): void;
+  renderDetails(row: DailyLogEngineerRow): React.ReactNode;
+}
+const entryLabels = { daily_quantity: 'Khối lượng hôm nay', cumulative_quantity: 'Khối lượng lũy kế', percent: '% lũy kế' };
+const entryErrors: Record<string, string> = {
+  entry_required: 'Nhập khối lượng hoặc lưu nháp để bổ sung sau.', negative_entry: 'Khối lượng không được âm.',
+  unknown_baseline: 'Chưa xác định khối lượng trước ngày này. Chọn nhập lũy kế hoặc %.',
+  quantity_basis_required: 'Chưa có cơ sở quy đổi; chọn nhập %.', progress_below_baseline: 'Lũy kế không được thấp hơn số đã xác nhận.',
+  progress_above_allowed_maximum: 'Khối lượng vượt giới hạn của hạng mục.', invalid_baseline: 'Cần tải lại cơ sở khối lượng.',
+};
+export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps> = ({ rows, labor, machines, readOnly, disabled,
+  invalidResourceWorkItemKeys, onChange, onModeChange, onRemove, renderDetails }) => {
+  const [expanded, setExpanded] = useState(new Set(invalidResourceWorkItemKeys));
+  const toggle = (key: string) => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const derive = (row: DailyLogEngineerRow) => readOnly && row.snapshot ? { ...row.snapshot, valid: true, errorCode: null }
+    : deriveDailyLogEntry({ mode: row.entryMode, enteredValue: row.enteredValue, plannedQuantity: row.plannedQuantity,
+      unit: row.unit, previousCumulativeQuantity: row.previousCumulativeQuantity, baselineQuantityState: row.baselineQuantityState, allowOver100: row.allowOver100 });
+  const modePicker = (row: DailyLogEngineerRow) => !readOnly && <label className="dl-slip-mode">Cách nhập khối lượng<select aria-label="Cách nhập khối lượng" value={row.entryMode} disabled={disabled} onChange={event => onModeChange(row, event.target.value as DailyLogEntryMode)}>
+    <option value="daily_quantity" disabled={!row.unit || !row.plannedQuantity || row.baselineQuantityState === 'unknown'}>Khối lượng hôm nay</option>
+    <option value="cumulative_quantity" disabled={!row.unit || !row.plannedQuantity}>Khối lượng lũy kế</option><option value="percent">% lũy kế</option>
+  </select></label>;
+  const input = (row: DailyLogEngineerRow) => {
+    const result = derive(row);
+    return <label className="dl-slip-entry">{entryLabels[row.entryMode]}<input aria-label={entryLabels[row.entryMode]} type="text" inputMode="decimal" disabled={disabled} value={row.enteredValue ?? ''}
+      aria-invalid={!result.valid} onChange={event => onChange(row.clientKey, { enteredValue: event.target.value })} />
+      {!result.valid && <span className="dl-slip-field-error">{entryErrors[result.errorCode || ''] || 'Chưa có số liệu hợp lệ.'}</span>}</label>;
+  };
+  const qty = (row: DailyLogEngineerRow, mode: DailyLogEntryMode) => {
+    if (!readOnly && row.entryMode === mode) return input(row);
+    const result = derive(row);
+    return <span className="dl-slip-quantity">{formatDailyLogQuantity(mode === 'daily_quantity' ? result.dailyQuantity : mode === 'cumulative_quantity' ? result.cumulativeQuantity : result.cumulativePercent, mode === 'percent' ? '%' : row.unit)}</span>;
+  };
+  const resources = (row: DailyLogEngineerRow, kind: 'labor' | 'machine') => {
+    const lines = kind === 'labor' ? labor.filter(l => l.workItemClientKey === row.clientKey) : machines.filter(m => m.workItemClientKey === row.clientKey);
+    const count = lines.reduce((sum, line) => sum + Number('peopleCount' in line ? line.peopleCount : line.machineCount), 0);
+    const valid = lines.every(line => 'peopleCount' in line ? line.peopleCount > 0 && line.hoursPerPerson > 0 : line.machineCount > 0 && line.hoursPerMachine > 0);
+    const hours = lines.reduce((sum, line) => sum + ('peopleCount' in line ? line.peopleCount * line.hoursPerPerson : line.machineCount * line.hoursPerMachine), 0);
+    return <div><span>{lines.length ? `${formatQuantity(count)} ${kind === 'labor' ? 'lượt người' : 'lượt máy'}` : 'Chưa ghi nhận'}</span>
+      {lines.length > 0 && <small>{valid ? formatQuantity(hours) : 'Chưa xác định'} {kind === 'labor' ? 'giờ công' : 'giờ máy'}</small>}</div>;
+  };
+  const detailsButton = (row: DailyLogEngineerRow) => <button type="button" aria-expanded={expanded.has(row.clientKey)} onClick={() => toggle(row.clientKey)}>{expanded.has(row.clientKey) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}Chi tiết</button>;
+  const baseline = (row: DailyLogEngineerRow) => <small>{!row.unit || !row.plannedQuantity ? 'Chưa có cơ sở quy đổi' : row.baselineQuantityState === 'unknown' ? 'Chưa xác định khối lượng trước ngày này'
+    : `Trước ngày này: ${formatDailyLogQuantity(row.baselineQuantityState === 'none' ? 0 : row.previousCumulativeQuantity, row.unit)}`}</small>;
+  const title = (row: DailyLogEngineerRow) => <><strong>{row.wbsCode} {row.taskName}</strong><small>{row.unit && row.plannedQuantity ? `Kế hoạch ${formatDailyLogQuantity(row.plannedQuantity, row.unit)}` : 'Chưa có cơ sở quy đổi'}</small>{baseline(row)}</>;
+  return <div className="dl-slip-work">
+    <div className="dl-slip-table-scroll"><table><thead><tr><th rowSpan={2}>Hạng mục thi công</th><th rowSpan={2}>ĐVT</th><th colSpan={3}>Khối lượng thi công</th><th rowSpan={2}>Nhân công</th><th rowSpan={2}>Máy</th><th rowSpan={2}>Thao tác</th></tr><tr><th>Hôm nay</th><th>Lũy kế</th><th>% lũy kế</th></tr></thead>
+      <tbody>{rows.map(row => <React.Fragment key={row.clientKey}><tr>
+        <td className="dl-slip-task">{title(row)}{modePicker(row)}</td><td>{row.unit || 'Chưa có'}</td>
+        <td>{qty(row, 'daily_quantity')}</td><td>{qty(row, 'cumulative_quantity')}</td><td>{qty(row, 'percent')}</td>
+        <td>{resources(row, 'labor')}</td><td>{resources(row, 'machine')}</td><td>{detailsButton(row)}{!readOnly && <button type="button" disabled={disabled} aria-label={`Bỏ ${row.taskName}`} onClick={() => onRemove(row.clientKey)}><Trash2 size={16} /></button>}</td>
+      </tr>{expanded.has(row.clientKey) && <tr><td colSpan={8} className="dl-slip-details">{renderDetails(row)}</td></tr>}</React.Fragment>)}</tbody>
+    </table></div>
+    <div className="dl-slip-mobile-work">{rows.map(row => <article key={row.clientKey}>
+      <h3>{row.wbsCode} {row.taskName}</h3><div>{baseline(row)}</div>{modePicker(row)}{!readOnly && input(row)}
+      <dl><div><dt>Hôm nay</dt><dd>{formatDailyLogQuantity(derive(row).dailyQuantity, row.unit)}</dd></div><div><dt>Lũy kế</dt><dd>{formatDailyLogQuantity(derive(row).cumulativeQuantity, row.unit)}</dd></div><div><dt>% lũy kế</dt><dd>{formatDailyLogQuantity(derive(row).cumulativePercent, '%')}</dd></div></dl>
+      <div className="dl-slip-resource-summary">{resources(row, 'labor')}{resources(row, 'machine')}</div>
+      {detailsButton(row)}{expanded.has(row.clientKey) && <div className="dl-slip-details">{renderDetails(row)}{!readOnly && <button disabled={disabled} type="button" onClick={() => onRemove(row.clientKey)}>Bỏ công việc</button>}</div>}
+    </article>)}</div>
   </div>;
 };
 

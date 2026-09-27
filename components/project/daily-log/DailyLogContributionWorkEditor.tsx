@@ -7,6 +7,9 @@ import { dailyLogContributionService } from '../../../lib/projectService';
 import { DailyLogResourceEditor } from './DailyLogResourceEditor';
 import { DailyLogWbsPicker } from './DailyLogWbsPicker';
 import { DailyLogWorkItemTable, type DailyLogWorkItemEditorRow } from './DailyLogWorkItemTable';
+import { DailyLogEngineerSlip } from './DailyLogEngineerSlip';
+import type { DailyLogDocumentBundle } from '../../../lib/dailyLogWbsService';
+import type { DailyLogPhoto } from '../../../types';
 
 export interface ContributionEditorDraft {
   workAreaCode: string;
@@ -16,8 +19,8 @@ export interface ContributionEditorDraft {
   machines: DailyLogMachineInput[];
 }
 
-interface DailyLogContributionWorkEditorProps {
-  bundle: DailyLogWbsBundle | null;
+export interface DailyLogContributionWorkEditorProps {
+  bundle: DailyLogWbsBundle | DailyLogDocumentBundle | null;
   loading?: boolean;
   denied?: boolean;
   error?: string | null;
@@ -25,6 +28,9 @@ interface DailyLogContributionWorkEditorProps {
   ensureContribution?: () => Promise<DailyLogContribution>;
   onSaved?: (receipt: Awaited<ReturnType<typeof dailyLogWbsService.saveContribution>>) => void;
   onSubmitted?: () => void;
+  onClose?: () => void;
+  onUploadPhoto?: (file: File) => Promise<DailyLogPhoto>;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const blankProvider = (): DailyLogResourceProvider => ({ entryMode: 'catalog' });
@@ -71,7 +77,7 @@ export const buildContributionSaveInput = (
 
 const isProviderValid = (provider: DailyLogResourceProvider) => validateResourceProvider(provider).valid;
 
-export const DailyLogContributionWorkEditor: React.FC<DailyLogContributionWorkEditorProps> = ({
+const LegacyContributionWorkEditor: React.FC<DailyLogContributionWorkEditorProps> = ({
   bundle, loading, denied, error, onReload, ensureContribution, onSaved, onSubmitted,
 }) => {
   const contribution = bundle?.contribution || null;
@@ -211,3 +217,8 @@ export const DailyLogContributionWorkEditor: React.FC<DailyLogContributionWorkEd
     }} />}
   </section>;
 };
+
+export const DailyLogContributionWorkEditor: React.FC<DailyLogContributionWorkEditorProps> = props =>
+  props.bundle?.contribution?.sourceDocumentVersion === 2
+    ? <DailyLogEngineerSlip key={props.bundle.contribution.id} {...props} bundle={props.bundle as DailyLogDocumentBundle} />
+    : <LegacyContributionWorkEditor {...props} />;

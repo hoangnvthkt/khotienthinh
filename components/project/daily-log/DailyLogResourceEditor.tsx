@@ -9,6 +9,7 @@ interface DailyLogResourceEditorProps {
   labor: DailyLogLaborInput[];
   machines: DailyLogMachineInput[];
   readOnly?: boolean;
+  reportOnly?: boolean;
   onLaborChange(rows: DailyLogLaborInput[]): void;
   onMachinesChange(rows: DailyLogMachineInput[]): void;
 }
@@ -27,9 +28,17 @@ const MANUAL_MACHINE_TYPES = [
 ] as const;
 
 export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
-  workItemClientKey, resourceProviders, labor, machines, readOnly,
+  workItemClientKey, resourceProviders, labor, machines, readOnly, reportOnly,
   onLaborChange, onMachinesChange,
 }) => {
+  if (reportOnly) return <div className="space-y-4 text-sm">
+    <section><h4 className="font-semibold">Nhân công hôm nay</h4>{!labor.length && <p>Chưa ghi nhận nhân công.</p>}
+      {labor.map((row, index) => <p key={index}>{row.laborType} · {row.peopleCount} người × {row.hoursPerPerson} giờ = {calculateLaborHours(row).toLocaleString('vi-VN')} giờ công
+        <span className="block">{row.provider.entryMode === 'manual' ? row.provider.manualProviderName : row.provider.providerNameSnapshot}</span></p>)}</section>
+    <section><h4 className="font-semibold">Máy hôm nay</h4>{!machines.length && <p>Chưa ghi nhận máy.</p>}
+      {machines.map((row, index) => <p key={index}>{row.machineType} · {row.machineCount} máy × {row.hoursPerMachine} giờ = {calculateMachineHours(row).toLocaleString('vi-VN')} giờ máy
+        <span className="block">{row.provider.entryMode === 'manual' ? row.provider.manualProviderName : row.provider.providerNameSnapshot}</span></p>)}</section>
+  </div>;
   const updateProvider = <T extends DailyLogLaborInput | DailyLogMachineInput>(
     rows: T[], index: number, value: string, onChange: (next: T[]) => void, kind: 'labor' | 'machine',
   ) => {

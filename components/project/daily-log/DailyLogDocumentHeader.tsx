@@ -22,11 +22,12 @@ export interface DailyLogDocumentHeaderProps {
   primaryAction?: DailyLogDocumentAction;
   secondaryAction?: DailyLogDocumentAction;
   onClose: () => void;
+  closeDisabled?: boolean;
 }
 
 export const DailyLogDocumentHeader: React.FC<DailyLogDocumentHeaderProps> = ({
   title, date, authorName, areaName, statusLabel, statusTone = 'neutral', mode,
-  busyAction, primaryAction, secondaryAction, onClose,
+  busyAction, primaryAction, secondaryAction, onClose, closeDisabled,
 }) => {
   const id = useId();
   const busy = Boolean(busyAction);
@@ -58,7 +59,7 @@ export const DailyLogDocumentHeader: React.FC<DailyLogDocumentHeaderProps> = ({
             <span>{action.label}</span>
           </button>;
         })}
-        <button type="button" className="daily-log-document-button daily-log-document-button--close" disabled={busy} onClick={onClose}>
+        <button type="button" className="daily-log-document-button daily-log-document-button--close" disabled={busy || closeDisabled} onClick={onClose}>
           <X size={16} aria-hidden="true" /><span>Đóng</span>
         </button>
       </div>

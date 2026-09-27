@@ -5,7 +5,7 @@ import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Us
 import { DailyLog, DailyLogContribution, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogContributionService, dailyLogService, dailyLogWbsService, workBoqService } from '../../lib/projectService';
-import { getDailyLogPublicationOutcome, type DailyLogWbsBundle } from '../../lib/dailyLogWbsService';
+import { getDailyLogPublicationOutcome, type DailyLogDocumentBundle, type DailyLogWbsBundle } from '../../lib/dailyLogWbsService';
 import { loadDailyLogGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
@@ -24,7 +24,7 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
-import { DailyLogContributionWorkEditor } from '../../components/project/daily-log/DailyLogContributionWorkEditor';
+import { DailyLogEngineerWorkspace } from '../../components/project/daily-log/DailyLogEngineerWorkspace';
 import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
 import { DailyLogRevisionActions } from '../../components/project/daily-log/DailyLogRevisionActions';
 import SafetyImageGalleryModal from '../../components/project/safety/SafetyImageGalleryModal';
@@ -1153,12 +1153,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setWbsBundleError(null);
         setWbsBundleDenied(false);
         try {
-            const bundle = await dailyLogWbsService.getBundle({
+            const bundle = await dailyLogWbsService.getDocumentBundle({
                 projectId: projectId || effectiveId,
                 constructionSiteId: constructionSiteId || null,
                 logDate: fDate,
             });
-            setWbsBundle(bundle);
+            if(bundle.rollout.enabled && bundle.rollout.cutoverDate && fDate >= bundle.rollout.cutoverDate) setWbsBundle(bundle);
+            else setWbsBundle(await dailyLogWbsService.getBundle({projectId:projectId || effectiveId, constructionSiteId:constructionSiteId || null,logDate:fDate}));
         } catch (caught: any) {
             const message = caught?.message || 'Không thể tải dữ liệu WBS cho ngày đã chọn.';
             setWbsBundleDenied(caught?.code === '42501' || /quyền|ACCESS_DENIED/i.test(message));
@@ -1183,34 +1184,6 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         !editing && (wbsBundleLoading || wbsBundleDenied || wbsBundleError || isWbsContributionFlow),
     );
 
-    const ensureWbsContribution = useCallback(async (): Promise<DailyLogContribution> => {
-        if (!user?.id) throw new Error('Không xác định được người lập phiếu nguồn.');
-        const now = new Date().toISOString();
-        const existing = wbsBundle?.contribution;
-        const contribution: DailyLogContribution = existing ? {
-            ...existing,
-            content: fDesc.trim(),
-            issues: fIssues.trim() || null,
-            photos: fPhotos,
-            updatedAt: now,
-        } : {
-            id: crypto.randomUUID(),
-            projectId: projectId || effectiveId,
-            constructionSiteId: constructionSiteId || null,
-            date: fDate,
-            authorUserId: user.id,
-            authorName: user.name || user.username || user.id,
-            content: fDesc.trim(),
-            issues: fIssues.trim() || null,
-            photos: fPhotos,
-            status: 'draft',
-            rowVersion: 1,
-            createdAt: now,
-            updatedAt: now,
-        };
-        await dailyLogContributionService.upsert(contribution);
-        return contribution;
-    }, [constructionSiteId, effectiveId, fDate, fDesc, fIssues, fPhotos, projectId, user?.id, user?.name, user?.username, wbsBundle?.contribution]);
 
     const targetDailyLogId = useMemo(() => new URLSearchParams(location.search).get('dailyLogId'), [location.search]);
 
@@ -2632,7 +2605,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             </select>
                         )}
                         <button onClick={() => { if (!ensureDailyLogAction(DAILY_LOG_ACTION.create, 'ghi nhật ký')) return; resetForm(); setShowForm(true); }}
-                            disabled={pbacLoaded && !hasDailyLogAction(DAILY_LOG_ACTION.create)}
+                            disabled={!pbacLoaded || !hasDailyLogAction(DAILY_LOG_ACTION.create)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                             <Plus size={12} /> Ghi nhật ký chi tiết
                         </button>
@@ -3428,13 +3401,22 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {showForm && (
                 <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/45 backdrop-blur-sm">
                     <div className="bg-card border border-border rounded-3xl shadow-2xl w-[95vw] h-[90dvh] sm:w-[80vw] sm:h-[80dvh] max-w-[1280px] min-w-[320px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
+                        {!shouldRenderWbsEditor && <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-700/60 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-t-3xl flex items-center justify-between shrink-0">
                             <span className="font-bold text-lg text-white flex items-center gap-2">
                                 {editing ? <><Edit2 size={18} /> Sửa nhật ký</> : shouldRenderWbsEditor ? <><Layers size={18} /> Phiếu nguồn theo khu vực</> : <><Plus size={18} /> Ghi nhật ký</>}
                             </span>
                             <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
-                        </div>
-                        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 bg-card">
+                        </div>}
+                        <div className={shouldRenderWbsEditor ? 'min-w-0 overflow-y-auto flex-1 bg-card' : 'p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 bg-card'}>
+                            {shouldRenderWbsEditor ? <DailyLogEngineerWorkspace key={fDate} bundle={wbsBundle as DailyLogDocumentBundle | null}
+                                loading={wbsBundleLoading} error={wbsBundleError} projectId={projectId || effectiveId} constructionSiteId={constructionSiteId || null}
+                                date={fDate} onDateChange={setFDate} onClose={resetForm} onSubmitted={() => { reloadDailyLogRecords().catch(console.error); }}
+                                onUploadPhoto={async file => {
+                                    const path = `dailylogs/${effectiveId}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
+                                    const result = await supabase.storage.from('project-photos').upload(path,file);
+                                    if(result.error) throw result.error;
+                                    return {name:file.name,url:supabase.storage.from('project-photos').getPublicUrl(path).data.publicUrl};
+                                }} /> : <>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Ngày</label>
@@ -3783,26 +3765,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             )}
 
                             {/* FastCons Detail Tabs */}
-                            {shouldRenderWbsEditor ? (
-                                <DailyLogContributionWorkEditor
-                                    key={`${fDate}:${wbsBundle?.contribution?.id || 'new'}`}
-                                    bundle={wbsBundle}
-                                    loading={wbsBundleLoading}
-                                    denied={wbsBundleDenied}
-                                    error={wbsBundleError}
-                                    onReload={reloadWbsBundle}
-                                    ensureContribution={ensureWbsContribution}
-                                    onSaved={() => {
-                                        toast.success('Đã lưu nháp phiếu nguồn');
-                                        reloadWbsBundle().catch(console.error);
-                                    }}
-                                    onSubmitted={() => {
-                                        toast.success('Đã gửi phiếu nguồn để tổng hợp');
-                                        resetForm();
-                                        reloadDailyLogRecords().catch(console.error);
-                                    }}
-                                />
-                            ) : <DailyLogDetailTabs
+                            <DailyLogDetailTabs
                                 volumes={fVolumes} materials={fMaterials}
                                 laborDetails={fLabor} machines={fMachines}
                                 onVolumesChange={setFVolumes} onMaterialsChange={setFMaterials}
@@ -3819,7 +3782,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 importingDailyProgressVolumes={importingProgressVolumes}
                                 onImportDailyProgressVolumes={isWbsContributionFlow ? undefined : handleImportDailyProgressVolumes}
                                 hideDailyProgressImport={shouldRenderWbsEditor}
-                            />}
+                            />
+                            </>}
                         </div>
                         {!shouldRenderWbsEditor && <div className="px-4 sm:px-6 py-3 sm:py-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/45 flex justify-end gap-3 shrink-0">
                             <button onClick={resetForm} disabled={savingLog} className="px-5 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-700/60 disabled:opacity-50 transition-colors">Huỷ</button>
