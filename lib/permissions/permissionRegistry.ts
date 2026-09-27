@@ -96,6 +96,32 @@ const systemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
     actions: baseActions(moduleKey),
   }));
 
+// Server-enforced authorization administration. No routes: /settings stays
+// with the SETTINGS module; routeAccess gates the "Mẫu quyền" route directly.
+const authorizationAdminModule: PermissionModuleDefinition = {
+  code: 'system.authorization',
+  label: 'Quản trị phân quyền',
+  legacyModuleKey: 'SETTINGS',
+  sortOrder: 1000,
+  actions: ([
+    ['view', 'Xem quản trị phân quyền', 10, ['global']],
+    ['manage_roles', 'Quản lý Business Role', 20, ['global']],
+    ['manage_grants', 'Quản lý quyền trực tiếp', 30, ['global']],
+    ['manage_scopes', 'Quản lý phân công theo scope', 40, ['global', 'project', 'construction_site', 'warehouse', 'department']],
+    ['audit', 'Xem audit phân quyền', 50, ['global']],
+    ['override', 'Ghi nhận override được phép', 60, ['global']],
+  ] as const).map(([action, label, sortOrder, scopeTypes]) => ({
+    action,
+    label,
+    permissionCode: `system.authorization.${action}`,
+    legacyModuleKey: 'SETTINGS',
+    legacyRoute: '/settings',
+    legacyAdminOnly: true,
+    scopeTypes,
+    sortOrder,
+  })),
+};
+
 const deepFreeze = <T>(value: T): T => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -111,7 +137,7 @@ export const permissionRegistry = deepFreeze([
     code: 'system',
     label: 'Hệ thống ERP',
     sortOrder: 10,
-    modules: systemModules,
+    modules: [...systemModules, authorizationAdminModule],
   },
   {
     code: 'project',

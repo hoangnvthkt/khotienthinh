@@ -277,3 +277,23 @@ Quyết định của chủ sản phẩm ngày 27/09/2026:
   - `is_module_admin('DA')` chỉ còn đúng với Admin, kể cả khi cờ DA bị ghi lại sau này. Các module legacy khác (HD, WMS, WF, TS) không đổi.
 - **Dry-run trên Cloud** (gồm cả script rollback `supabase/operations/authorization_p1_retire_legacy_da_rollback.sql`) **PASS**: 38 người được sao lưu và gỡ; người từng có DA không còn qua kiểm tra; Admin và HD legacy giữ nguyên; rollback khôi phục đủ.
 - Chủ sản phẩm đồng ý. **ĐÃ APPLY.** Smoke sau apply **PASS**.
+
+### P1.2 — đồng bộ catalog capability và khôi phục tab "Mẫu quyền"
+
+Chỉ sửa frontend, không có migration.
+
+- **Lệch đo lại trên Cloud** (384 action đang active):
+  - 22 mã có ở DB nhưng frontend không biết: `asset.catalog.*` (6), `asset.maintenance.complete|import`, `asset.audit.export`, `request.instance.*` (7), `system.authorization.*` (6). Frontend từ chối các mã này với lý do `unknown_permission`.
+  - Chiều ngược lại chỉ còn `system.vehicle_booking.view|manage` (luồng Đặt xe, chưa lên Cloud). Các mã `project.v2_*` đã có trên Cloud.
+  - 4 action cho chọn phạm vi mà DB không nhận: `wms.inventory.edit`, `wms.master_data.manage`, `hrm.employee.edit_profile`, `hrm.attendance.approve`.
+- **Sửa:**
+  - Bổ sung 22 mã vào registry, đúng nhãn, phạm vi và thứ tự như DB. `system.authorization` là module riêng, không thêm route mới.
+  - Chỉnh phạm vi 4 action theo DB.
+  - Route `/settings/role-templates` mở cho người có `system.authorization.manage_roles`. Trước đây route này chưa được khai báo nên luôn bị đẩy về trang chủ.
+- **Contract test** `lib/permissions/__tests__/permissionCatalogContract.test.ts` so registry với snapshot DB `fixtures/dbPermissionCatalog.json` theo cả hai chiều và theo phạm vi.
+  - `FRONTEND_AHEAD_OF_DB` là allowlist cho mã chờ migration của luồng khác; test cũng fail nếu allowlist chứa mã đã có trên DB.
+  - Làm mới snapshot: `node scripts/authorization-v2/export-permission-catalog.mjs ftciqmqhmfvjtwoycswe`.
+- **Kiểm tra:**
+  - Admin mở được tab "Mẫu quyền" và thấy danh sách mẫu.
+  - Cả 22 mã đều `direct_grant_allowed`, nên tick trong màn Người dùng sẽ lưu được.
+  - Vitest toàn repo 2.302 pass; `tsc` pass; build pass; kiểm tra truy vấn 0 lỗi.

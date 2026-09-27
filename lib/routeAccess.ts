@@ -163,6 +163,9 @@ export const canAccessRoute = (
   if (isWorkflowInstanceRoute(pathname)) {
     return canViewWorkflowInstances(user);
   }
+  if (pathname === '/settings/role-templates') {
+    return canPerform(user, 'system.authorization.manage_roles', GLOBAL_SCOPE);
+  }
 
   const moduleKey = getRouteModuleKey(pathname);
   if (!moduleKey) return false;

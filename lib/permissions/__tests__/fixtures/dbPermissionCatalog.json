@@ -1,0 +1,2884 @@
+{
+  "projectRef": "ftciqmqhmfvjtwoycswe",
+  "actions": [
+    {
+      "permissionCode": "ai.assistant.use",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "ai.assistant.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "ai.executive.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "ai.report.generate",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "ai.report.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "analytics.export",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "analytics.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "asset.assignment.assign",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.assignment.return",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.assignment.transfer",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.assignment.view",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.audit.export",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.audit.perform",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.audit.view",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.create",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.delete",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.dispose",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.edit",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.import",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.manage",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.transfer_stock",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.catalog.view",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.maintenance.complete",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.maintenance.create",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.maintenance.import",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.maintenance.manage",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "asset.maintenance.view",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.admin",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.approve_direct_reports",
+      "scopeTypes": [
+        "department",
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.create",
+      "scopeTypes": [
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.dispatch",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.handover",
+      "scopeTypes": [
+        "assigned",
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.manage_authorizations",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.manage_fleet",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.resolve_sensitive_feedback",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.trip.execute",
+      "scopeTypes": [
+        "assigned",
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.view_audit",
+      "scopeTypes": [
+        "department",
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.view_own",
+      "scopeTypes": [
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.view_reports",
+      "scopeTypes": [
+        "department",
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "booking.vehicle.view_sensitive_feedback",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.cost_library.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.cost_library.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.customer.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.customer.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.partner.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.partner.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.supplier.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.supplier.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.template.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "contract.template.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "expense.budget.create",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.budget.edit_all",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.budget.view",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.expense_record.approve",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.expense_record.create",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.expense_record.edit_own",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.expense_record.view_all",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.expense_record.view_own",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "expense.master_data.manage",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.attendance.approve",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "hrm.attendance.edit",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.attendance.view",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.compensation.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.compensation.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.contract.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.contract.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.document.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.document.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.edit_profile",
+      "scopeTypes": [
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.edit_sensitive",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.export",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.import",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.view_directory",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.view_profile",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.employee.view_sensitive",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.leave.approve",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.leave.view",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.master_data.manage",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.master_data.view",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.organization.manage",
+      "scopeTypes": [
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "hrm.organization.view",
+      "scopeTypes": [
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "hrm.payroll.export",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "hrm.payroll.manage",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.payroll.view",
+      "scopeTypes": [
+        "assigned",
+        "direct_reports",
+        "global",
+        "org_unit",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "hrm.staffing.assign",
+      "scopeTypes": [
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "hrm.staffing.manage",
+      "scopeTypes": [
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "hrm.staffing.set_manager",
+      "scopeTypes": [
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "hrm.staffing.view",
+      "scopeTypes": [
+        "global",
+        "org_unit"
+      ]
+    },
+    {
+      "permissionCode": "kb.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "kb.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "project.budget.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.budget.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.budget.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.cashflow.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.cashflow.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_item.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_item.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_item.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_variation.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_variation.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_variation.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_variation.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_variation.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract_variation.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.contract.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.custom_material.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.confirm",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.delete_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.delete_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.edit_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.return",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.summarize",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.daily_log.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.dashboard.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.dashboard.view_financials",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.dashboard.view_progress",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.dashboard.view_risk",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.delete",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.delete_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.delete_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.edit_metadata",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.upload",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.documents.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.executive.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.executive.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.approve_completion",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.assign_task",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.create_task",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.edit_task",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.submit_completion",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.verify_completion",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.gantt.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.hide",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.manage_categories",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.restore",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.master.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_boq.delete",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_boq.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_boq.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_boq.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_plan.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_plan.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_plan.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_po.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_po.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_po.delete",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_po.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_po.receive",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_po.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.confirm",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.confirm_fulfillment",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.delete_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.delete_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.edit_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.return",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_request.view_available_stock",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.delete",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.reconcile",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.record",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.unrecord",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_supplier_delivery.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.material_waste.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.org.assign_staff",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.org.grant_permissions",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.org.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.org.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.overview.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.overview.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.confirm",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.delete_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.delete_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.edit_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.mark_paid",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.return",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.payment.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.checklist_create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.checklist_edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.checklist_edit_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.confirm",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.delete",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.delete_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.delete_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.edit_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.return",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.template_manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quality.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quantity_acceptance.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quantity_acceptance.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quantity_acceptance.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quantity_acceptance.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quantity_acceptance.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.quantity_acceptance.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.report.export",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.report.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.document_verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.issue_close",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.issue_create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.issue_edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.issue_edit_own",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.training_manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.safety.worker_manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.subcontract.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.create",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.edit_all",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.lock",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.manage",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.weekly_progress.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "request.category.manage",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.category.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.act_assigned",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.approve_assigned",
+      "scopeTypes": [
+        "assigned"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.cancel",
+      "scopeTypes": [
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.create",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.edit_own_content",
+      "scopeTypes": [
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.reassign",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.reject_assigned",
+      "scopeTypes": [
+        "assigned"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.resubmit_own",
+      "scopeTypes": [
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.return_assigned",
+      "scopeTypes": [
+        "assigned"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.view_all",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.instance.view_own",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.template.manage",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "request.template.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "settings.ai_learning.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.ai_learning.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.alerts.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.alerts.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.chibi_bot.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.chibi_bot.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.g8_cost_norms.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.g8_cost_norms.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.general.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.general.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.inspection_templates.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.inspection_templates.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.loss_norms.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.loss_norms.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.maintenance.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.maintenance.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.master_data.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.master_data.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.permission_health.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.permission_health.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.project_master_data.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.project_master_data.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.users.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.users.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.warehouses.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.warehouses.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.work_groups.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "settings.work_groups.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "storage.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "storage.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ai.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ai.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.analytics.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.analytics.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.audit_trail.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.audit_trail.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.authorization.audit",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.authorization.manage_grants",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.authorization.manage_roles",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.authorization.manage_scopes",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "project",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "system.authorization.override",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.authorization.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.chat.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.chat.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.custom_dashboard.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.custom_dashboard.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.da.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.da.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ep.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ep.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ex.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ex.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.hd.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.hd.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.kb.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.kb.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.procurement.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.procurement.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.rq.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.rq.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.settings.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.settings.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.storage.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.storage.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.tender_ai.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.tender_ai.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ts.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.ts.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.wf.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.wf.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.wms.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.wms.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "wms.inventory.edit",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.inventory.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.master_data.manage",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.material_issue.reverse_settlement",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.material_issue.settle",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.purchase_order.return_supplier",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.request.approve",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.request.create",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.request.delete",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.request.export",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.request.receive",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.request.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.approve",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.complete",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.create",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.reverse",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "work.module.access",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "work.task.assign_group",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.assign_user",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.audit_view",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "own",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.configure",
+      "scopeTypes": [
+        "department",
+        "global",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.create",
+      "scopeTypes": [
+        "department",
+        "global",
+        "own",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.manage_scope",
+      "scopeTypes": [
+        "department",
+        "global",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.review",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.view_related",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "own",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.view_restricted",
+      "scopeTypes": [
+        "assigned",
+        "department",
+        "global",
+        "own",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.task.view_scope",
+      "scopeTypes": [
+        "department",
+        "global",
+        "project",
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.workspace.archive",
+      "scopeTypes": [
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.workspace.create",
+      "scopeTypes": [
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "work.workspace.manage_members",
+      "scopeTypes": [
+        "work_workspace"
+      ]
+    },
+    {
+      "permissionCode": "work.workspace.recover",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.act_assigned",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.administer",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.cancel",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.create",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.delete_own_draft",
+      "scopeTypes": [
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.edit_own_draft",
+      "scopeTypes": [
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.reopen",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "workflow.instance.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.template.create",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.template.edit",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.template.publish",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "workflow.template.view",
+      "scopeTypes": [
+        "assigned",
+        "global",
+        "own"
+      ]
+    }
+  ]
+}
