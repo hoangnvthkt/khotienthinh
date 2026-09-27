@@ -951,6 +951,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     // resolves System Admin, Room membership and the temporary PBAC fallback.
     const [dailyLogPerms, setDailyLogPerms] = useState<Set<DailyLogActionCode>>(new Set());
     const [pbacLoaded, setPbacLoaded] = useState(false);
+    const [dailyLogPermissionError, setDailyLogPermissionError] = useState(false);
+    const [dailyLogPermissionRetry, setDailyLogPermissionRetry] = useState(0);
 
     useEffect(() => {
         loadModuleData('wms-core');
@@ -977,6 +979,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     useEffect(() => {
         setPbacLoaded(false);
+        setDailyLogPermissionError(false);
         setDailyLogPerms(new Set());
         if (!effectiveId) return;
         const loadPerms = async () => {
@@ -1013,12 +1016,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             } catch (err) {
                 console.warn('Effective Daily Log Room action load failed', err);
                 setDailyLogPerms(new Set());
+                setDailyLogPermissionError(true);
             } finally {
                 setPbacLoaded(true);
             }
         };
         loadPerms();
-    }, [effectiveId, user?.id, user?.role, constructionSiteId, projectId]);
+    }, [effectiveId, user?.id, user?.role, constructionSiteId, projectId, dailyLogPermissionRetry]);
 
     const hasDailyLogAction = useCallback((code: DailyLogActionCode) => (
         user?.role === 'ADMIN' || dailyLogPerms.has(code)
@@ -1159,8 +1163,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [wbsBundleLoading, setWbsBundleLoading] = useState(false);
     const [wbsBundleError, setWbsBundleError] = useState<string | null>(null);
     const [wbsBundleDenied, setWbsBundleDenied] = useState(false);
+    const wbsBundleRequestRef = useRef(0);
 
     const reloadWbsBundle = useCallback(async () => {
+        const request = ++wbsBundleRequestRef.current;
         if (!showForm || editing || !effectiveId || !fDate) {
             setWbsBundle(null);
             return;
@@ -1174,15 +1180,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 constructionSiteId: constructionSiteId || null,
                 logDate: fDate,
             });
-            if(bundle.rollout.enabled && bundle.rollout.cutoverDate && fDate >= bundle.rollout.cutoverDate) setWbsBundle(bundle);
-            else setWbsBundle(await dailyLogWbsService.getBundle({projectId:projectId || effectiveId, constructionSiteId:constructionSiteId || null,logDate:fDate}));
+            if (request !== wbsBundleRequestRef.current) return;
+            const next = bundle.rollout.enabled && bundle.rollout.cutoverDate && fDate >= bundle.rollout.cutoverDate
+                ? bundle
+                : await dailyLogWbsService.getBundle({projectId:projectId || effectiveId, constructionSiteId:constructionSiteId || null,logDate:fDate});
+            if (request === wbsBundleRequestRef.current) setWbsBundle(next);
         } catch (caught: any) {
+            if (request !== wbsBundleRequestRef.current) return;
             const message = caught?.message || 'Không thể tải dữ liệu WBS cho ngày đã chọn.';
             setWbsBundleDenied(caught?.code === '42501' || /quyền|ACCESS_DENIED/i.test(message));
             setWbsBundleError(message);
             setWbsBundle(null);
         } finally {
-            setWbsBundleLoading(false);
+            if (request === wbsBundleRequestRef.current) setWbsBundleLoading(false);
         }
     }, [constructionSiteId, editing, effectiveId, fDate, projectId, showForm]);
 
@@ -2533,6 +2543,31 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         if (!reason) return;
         await handleStatusChange(log, 'rejected', undefined, reason);
     };
+
+    // A direct report link must not turn unknown/denied access into empty data.
+    // This is presentation only; Room/RLS checks remain authoritative.
+    if (targetDailyLogId && !isAdminUser) {
+        if (!pbacLoaded) {
+            return <div role="status" className="p-6 text-slate-600 dark:text-slate-300">Đang tải quyền Nhật ký…</div>;
+        }
+        if (dailyLogPermissionError) {
+            return (
+                <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-6 text-slate-800 dark:border-amber-700 dark:bg-slate-900 dark:text-slate-100">
+                    <h3 className="font-semibold">Không thể xác định quyền Nhật ký</h3>
+                    <p className="mt-2">Chưa tải được quyền của anh. Đây chưa phải kết quả từ chối truy cập; vui lòng thử lại.</p>
+                    <button type="button" className="mt-4 min-h-11 rounded-lg bg-teal-700 px-4 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600" onClick={() => setDailyLogPermissionRetry(value => value + 1)}>Thử tải lại quyền</button>
+                </div>
+            );
+        }
+        if (dailyLogPerms.size === 0) {
+            return (
+                <div role="alert" className="rounded-xl border border-slate-300 bg-slate-50 p-6 text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+                    <h3 className="font-semibold">Bạn không có quyền truy cập Nhật ký của dự án này.</h3>
+                    <p className="mt-2">Liên hệ người quản lý dự án để kiểm tra quyền. Không có dữ liệu nhật ký nào được hiển thị.</p>
+                </div>
+            );
+        }
+    }
 
     return (
         <div className="space-y-6">

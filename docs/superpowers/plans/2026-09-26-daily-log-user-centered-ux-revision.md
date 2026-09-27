@@ -181,23 +181,25 @@ Evidence: `docs/superpowers/evidence/2026-09-27-daily-log-engineer-slip-checkpoi
 
 **Interfaces:** Route thật `/#/da?projectId=DL-WBS-PILOT-20260925&tab=dailylog`; config Cloud một worker, reuseExistingServer true cho dev 4197 đúng target. Dedicated sessions từ root `.env`, guard baseline exact; tạo non-admin author A/B, summarizer, CHT, reader, denied với scope tối thiểu. Không reset admin/password persona cũ; secrets chỉ trong memory; browser dùng anon+session, không service_role. Không tạo Cloud project mới. Nếu test enforced, dùng fixture scope cô lập trên baseline được phép test; không đổi scope admin preview pilot→enforced.
 
-- [ ] **Step 1 — RED:** E2E ERP thật: tác giả A có khu A+C, tác giả B có khu B; gửi→chọn→CHT trả A có lý do→A sửa khối lượng/metadata/nguồn lực và gửi lại→C/B không đổi→tổng hợp diff/refresh/gửi→CHT shadow hoặc enforced đúng scope→reader chỉ đọc/denied. Assert lineage/version/comments, evidence draft=0, receipt không duplicate. Raw RPC sai owner/scope bị deny dù UI ẩn. Layout tests tên/lý do dài, focus/lỗi, overflow và nút cuối.
-- [ ] **Step 2:** Chạy targeted E2E RED. Phân biệt lỗi workflow với bootstrap/preload ngoài scope; không skip hoặc cấp global grant để pass.
-- [ ] **Step 3 — GREEN:** Chỉ sửa điểm nối còn thiếu trong Tasks 1–7/config fixture. Chụp screenshots author/summary/review/verified/returned tại 1440×900, 1024×768, 768×1024, 390×844, 360×800, light/dark. Kiểm tra keyboard/tab/focus, target 44px, safe-area; bàn phím mobile thực tế hoặc ghi hạn chế giả lập. Không chỉnh global CSS.
-- [ ] **Step 4:** `npm run test`, `npm run lint`, `npm run build`, `npm run check:supabase-migrations`, `npm run check:supabase-queries`; nếu inventory đổi, review chỉ entries Daily Log. Cloud SQL smokes Tasks 2–4 và `npx playwright test --config tests/daily-log/ux-cloud-playwright.config.ts`. Không lỗi bất ngờ trong flow; shell issues ngoài scope ghi finding. Người dùng thật kiểm tra khoảng 5 giây có nhận ra phiếu/trạng thái/action, không tự đánh dấu đạt bằng test count. Evidence ghi commands/output/screenshots/versions/quyền/giới hạn.
-- [ ] **Step 5:** Commit `test(daily-log): verify user-centered Cloud workflow and responsive UI`.
+- [x] **Step 1 — RED:** E2E ERP thật: tác giả A có khu A+C, tác giả B có khu B; gửi→chọn→CHT trả A có lý do→A sửa khối lượng/metadata/nguồn lực và gửi lại→C/B không đổi→tổng hợp diff/refresh/gửi→CHT shadow hoặc enforced đúng scope→reader chỉ đọc/denied. Assert lineage/version/comments, evidence draft=0, receipt không duplicate. Raw RPC sai owner/scope bị deny dù UI ẩn. Layout tests tên/lý do dài, focus/lỗi, overflow và nút cuối.
+- [x] **Step 2:** Chạy targeted E2E RED. Phân biệt lỗi workflow với bootstrap/preload ngoài scope; không skip hoặc cấp global grant để pass.
+- [x] **Step 3 — GREEN:** Chỉ sửa điểm nối còn thiếu trong Tasks 1–7/config fixture. Chụp screenshots author/summary/review/verified/returned tại 1440×900, 1024×768, 768×1024, 390×844, 360×800, light/dark. Kiểm tra keyboard/tab/focus, target 44px, safe-area; bàn phím mobile thực tế hoặc ghi hạn chế giả lập. Không chỉnh global CSS.
+- [x] **Step 4:** `npm run test`, `npm run lint`, `npm run build`, `npm run check:supabase-migrations`, `npm run check:supabase-queries`; nếu inventory đổi, review chỉ entries Daily Log. Cloud SQL smokes Tasks 2–4 và `npx playwright test --config tests/daily-log/ux-cloud-playwright.config.ts`. Không lỗi bất ngờ trong flow; shell issues ngoài scope ghi finding. Người dùng thật kiểm tra khoảng 5 giây có nhận ra phiếu/trạng thái/action, không tự đánh dấu đạt bằng test count. Evidence ghi commands/output/screenshots/versions/quyền/giới hạn.
+- [x] **Step 5:** Commit `test(daily-log): verify user-centered Cloud workflow and responsive UI`.
+
+Checkpoint 27/09: [bằng chứng nghiệm thu](../evidence/2026-09-26-daily-log-user-centered-ux-acceptance.md), [hướng dẫn theo nút thật](../evidence/2026-09-27-daily-log-user-guide.md), [bổ sung màu/bóng nhẹ được duyệt](../evidence/2026-09-27-daily-log-visual-polish.md). Anh đã trải nghiệm và duyệt UX, rồi duyệt hướng màu trước triển khai. Sau polish: ERP 4/4 và hai regression history pass; full suite 2.497 pass/2 skips có sẵn; lint/build/migration/query/18 Cloud smokes pass. Scoped commit/task-done theo cùng BASE Task 8; whole-branch final review và merge/release vẫn là gate riêng, không tự coi nghiệm thu là cho phép tích hợp.
 
 ## Completion Gate
 
-- [ ] Tasks 1–8 qua tests và scoped commits; không skip để tránh thiếu workflow.
-- [ ] Vòng gửi→tổng hợp→trả đúng phiếu→sửa/gửi lại→refresh→CHT được thao tác ERP thật bằng non-admin.
-- [ ] Unknown≠0, A/B cùng author không nhầm, overlap percent không auto60%, counts không unique giả.
-- [ ] Confirmed summary là báo cáo; legacy/evidence Plan 2 và lineage không regress; không tiền.
-- [ ] Responsive/style/accessibility walkthrough có ảnh/nhận xét; không chỉ functional test pass.
-- [ ] Anh trải nghiệm/xác nhận hiểu action; nếu chưa thì “chờ nghiệm thu”, không gọi UX hoàn tất.
-- [ ] Diff/SQL guards chứng minh không chạm V2/Procurement/BOQ/HRM/global theme; production ledger/rollout không đổi.
-- [ ] Guide theo nút thật/giới hạn thật; không thông báo pilot đã công bố.
-- [ ] Release/merge/deploy gates trước đây vẫn riêng; plan không cho phép vượt qua.
+- [x] Tasks 1–8 qua tests và scoped commits; không skip để tránh thiếu workflow.
+- [x] Vòng gửi→tổng hợp→trả đúng phiếu→sửa/gửi lại→refresh→CHT được thao tác ERP thật bằng non-admin.
+- [x] Unknown≠0, A/B cùng author không nhầm, overlap percent không auto60%, counts không unique giả. Fixture nhiều khu vực cùng author dùng A+C, kỹ sư thứ hai dùng B.
+- [x] Confirmed summary là báo cáo; legacy/evidence Plan 2 và lineage không regress; không tiền.
+- [x] Responsive/style/accessibility walkthrough có ảnh/nhận xét; không chỉ functional test pass. Giới hạn keyboard/notch thiết bị thật được ghi rõ.
+- [x] Anh trải nghiệm/xác nhận hiểu action; nếu chưa thì “chờ nghiệm thu”, không gọi UX hoàn tất. Xác nhận rõ trong hội thoại “UX rất tốt đó em, anh duyệt UX này”.
+- [x] Diff/SQL guards chứng minh không chạm V2/Procurement/BOQ/HRM/global theme; production ledger/rollout không đổi. Chỉ tạo/dọn test fixtures trong baseline Cloud được phép; preview pilot/binding không đổi.
+- [x] Guide theo nút thật/giới hạn thật; không thông báo pilot đã công bố.
+- [x] Release/merge/deploy gates trước đây vẫn riêng; plan không cho phép vượt qua.
 
 ## Tự rà soát
 

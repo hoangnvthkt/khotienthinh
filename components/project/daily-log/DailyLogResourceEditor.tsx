@@ -32,10 +32,10 @@ export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
   onLaborChange, onMachinesChange,
 }) => {
   if (reportOnly) return <div className="space-y-4 text-sm">
-    <section><h4 className="font-semibold">Nhân công hôm nay</h4>{!labor.length && <p>Chưa ghi nhận nhân công.</p>}
+    <section data-resource-kind="labor"><h4 className="font-semibold">Nhân công hôm nay</h4>{!labor.length && <p>Chưa ghi nhận nhân công.</p>}
       {labor.map((row, index) => <p key={index}>{row.laborType} · {row.peopleCount} người × {row.hoursPerPerson} giờ = {calculateLaborHours(row).toLocaleString('vi-VN')} giờ công
         <span className="block">{row.provider.entryMode === 'manual' ? row.provider.manualProviderName : row.provider.providerNameSnapshot}</span></p>)}</section>
-    <section><h4 className="font-semibold">Máy hôm nay</h4>{!machines.length && <p>Chưa ghi nhận máy.</p>}
+    <section data-resource-kind="machine"><h4 className="font-semibold">Máy hôm nay</h4>{!machines.length && <p>Chưa ghi nhận máy.</p>}
       {machines.map((row, index) => <p key={index}>{row.machineType} · {row.machineCount} máy × {row.hoursPerMachine} giờ = {calculateMachineHours(row).toLocaleString('vi-VN')} giờ máy
         <span className="block">{row.provider.entryMode === 'manual' ? row.provider.manualProviderName : row.provider.providerNameSnapshot}</span></p>)}</section>
   </div>;
@@ -134,7 +134,7 @@ export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
 
   return (
     <div className="space-y-5 rounded-xl bg-slate-50 p-3 dark:bg-slate-900/70">
-      <section>
+      <section data-resource-kind="labor">
         <div className="mb-2 flex items-center justify-between">
           <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Nhân công hôm nay</h4>
           {!readOnly && <button type="button" onClick={() => onLaborChange([...labor, {
@@ -155,7 +155,7 @@ export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
           })}</div>
         )}
       </section>
-      <section>
+      <section data-resource-kind="machine">
         <div className="mb-2 flex items-center justify-between">
           <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Máy hôm nay</h4>
           {!readOnly && <button type="button" onClick={() => onMachinesChange([...machines, {

@@ -27,11 +27,21 @@ test('CHT returns an exact slip, publishes an isolated report; reader, locked pe
     await page.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{key:`sb-${ref}-auth-token`,session:persona.session});
     let release=()=>{},arrived=()=>{};
     const gate=new Promise<void>(resolve=>{release=resolve;}),requestSeen=new Promise<void>(resolve=>{arrived=resolve;});
-    let firstReportRequest=true;
+    // Observe the actual retry click before releasing intercepted requests.
+    // Releasing before Playwright clicks can hide/detach the retry button.
+    if(checkLoading) await page.addInitScript(()=>{
+      document.addEventListener('click',event=>{
+        if(event.target instanceof Element && event.target.closest('button')?.textContent?.trim()==='Thử lại')
+          (window as any).__ux7ReportRetryRequested=true;
+      },true);
+    });
+    let reportRetryCompleted=false;
     if(checkLoading) await page.route('**/rpc/get_daily_log_wbs_bundle_v1',async route=>{
       const input=route.request().postDataJSON();
-      if(input.p_daily_log_id===id && firstReportRequest) {
-        firstReportRequest=false;arrived();await gate;
+      // Once observed, keep the interception released across later reloads.
+      if(!reportRetryCompleted) reportRetryCompleted=await page.evaluate(()=>Boolean((window as any).__ux7ReportRetryRequested));
+      if(input.p_daily_log_id===id && !reportRetryCompleted) {
+        arrived();await gate;
         await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({code:'P0001',message:'UX7 controlled report-load failure'})});
         return;
       }

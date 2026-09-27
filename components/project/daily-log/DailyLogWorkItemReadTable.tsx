@@ -7,7 +7,7 @@ interface Props {items:DailyLogWorkItem[];resources:SummaryResourceLine[];mode:'
 // Read model deliberately has no mutation callbacks.
 export function DailyLogWorkItemReadTable({items,resources,mode}:Props) {
   const details=(item:DailyLogWorkItem)=><div className="space-y-3 py-2">
-    {resources.filter(line=>line.dailyLogWorkItemId===item.id || line.dailyLogWorkItemId===item.sourceWorkItemId).map((line,index)=><div key={line.id || index} className="rounded-md border border-border p-3">
+    {resources.filter(line=>line.dailyLogWorkItemId===item.id || line.dailyLogWorkItemId===item.sourceWorkItemId).map((line,index)=><div key={line.id || index} data-resource-kind={line.kind} className="rounded-md border border-border p-3">
       <p className="font-medium">{line.label} · {formatDailyLogQuantity(line.count,line.kind==='labor'?'người':'máy')} · {formatDailyLogQuantity(line.totalHours,'giờ')}</p>
       <p className="mt-1 break-words">{line.providerName}</p><p className="mt-1 text-xs text-muted-foreground">{line.providerType} · {line.providerEntryMode==='catalog'?'Danh mục':'Nhập tay'}</p>
     </div>)}

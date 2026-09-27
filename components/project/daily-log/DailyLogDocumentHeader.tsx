@@ -5,6 +5,7 @@ import './daily-log-document.css';
 
 export interface DailyLogDocumentAction {
   label: string;
+  tone?: 'approve' | 'return';
   disabled: boolean;
   disabledReason?: string;
   onClick: () => void | Promise<void>;
@@ -52,7 +53,7 @@ export const DailyLogDocumentHeader: React.FC<DailyLogDocumentHeaderProps> = ({
       <div className="daily-log-document-buttons">
         {actions.map(({ action, key }) => {
           const reasonId = `${id}-${key}-reason`;
-          return <button key={key} type="button" className={`daily-log-document-button daily-log-document-button--${key}`}
+          return <button key={key} type="button" className={`daily-log-document-button daily-log-document-button--${key}${action.tone ? ` daily-log-document-button--${action.tone}` : ''}`}
             disabled={busy || action.disabled} onClick={action.onClick}
             aria-describedby={action.disabled && action.disabledReason ? reasonId : undefined}>
             {busyAction === key && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}

@@ -1,7 +1,7 @@
 /* Daily Log only. Consumers reserve mobile action space with
    .daily-log-document-body; shared theme/font/mobile rules stay untouched. */
 .daily-log-document-header {
-  --daily-log-accent: #0f766e;
+  --daily-log-accent: #1d4ed8;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px 24px;
@@ -15,6 +15,47 @@
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* Approved visual polish, scoped to V2 slips/reports. Colors communicate
+   actions, never replace labels or alter the global Vioo/legacy theme. */
+.daily-log-engineer-slip, .daily-log-summary {
+  --dl-ink: #1e3a5f;
+  --dl-blue: #1d4ed8;
+  --dl-blue-soft: #eff6ff;
+  --dl-amber: #92400e;
+  --dl-amber-soft: #fffbeb;
+  --dl-elevation: 0 1px 2px rgb(30 58 95 / 5%), 0 4px 12px rgb(30 58 95 / 5%);
+}
+.dark .daily-log-engineer-slip, .dark .daily-log-summary {
+  --dl-ink: #dbeafe;
+  --dl-blue: #93c5fd;
+  --dl-blue-soft: #172554;
+  --dl-amber: #fcd34d;
+  --dl-amber-soft: #451a03;
+  --dl-elevation: 0 1px 0 rgb(148 163 184 / 10%), 0 4px 12px rgb(2 6 23 / 22%);
+}
+.daily-log-document-header { box-shadow: 0 2px 8px rgb(30 58 95 / 6%); }
+.dark .daily-log-document-header { box-shadow: 0 2px 8px rgb(2 6 23 / 22%); }
+.daily-log-engineer-slip .daily-log-document-header h2,
+.daily-log-summary .daily-log-document-header h2,
+.daily-log-summary .daily-log-document-body h2,
+.daily-log-summary [data-testid="daily-log-area-card"] h3 { color: var(--dl-ink); }
+.daily-log-summary [data-testid="daily-log-area-card"],
+.daily-log-engineer-slip .dl-slip-work { box-shadow: var(--dl-elevation); }
+.daily-log-summary .dl-summary-metrics { background: var(--card); box-shadow: var(--dl-elevation); }
+.daily-log-summary .dl-summary-metrics > div > dd:first-of-type { color: var(--dl-blue); }
+.daily-log-summary .dl-summary-metrics > div:nth-child(4) > dd:first-of-type,
+.daily-log-summary .dl-summary-metrics > div:nth-child(5) > dd:first-of-type { color: var(--dl-amber); }
+.daily-log-engineer-slip [data-resource-kind="labor"] h4,
+.daily-log-summary [data-resource-kind="labor"] > p:first-child { color: var(--dl-blue); }
+.daily-log-engineer-slip [data-resource-kind="machine"] h4,
+.daily-log-summary [data-resource-kind="machine"] > p:first-child { color: var(--dl-amber); }
+.daily-log-summary [data-resource-kind] { border-inline-start: 3px solid var(--dl-blue); }
+.daily-log-summary [data-resource-kind="machine"] { border-inline-start-color: var(--dl-amber); }
+.daily-log-engineer-slip .dl-slip-tabs button[aria-selected=true] { border-color: var(--dl-blue); color: var(--dl-blue); }
+.daily-log-engineer-slip .dl-slip-toolbar button { border-color: var(--dl-blue); color: var(--dl-blue); background: var(--dl-blue-soft); }
+.daily-log-engineer-slip .dl-slip-work th { background: var(--dl-blue-soft); }
+.daily-log-summary .dl-return-source { background: var(--dl-amber-soft); color: var(--dl-amber); }
 
 .daily-log-document-header .daily-log-document-heading {
   display: flex;
@@ -63,6 +104,11 @@
 }
 
 .daily-log-document-actionbar .daily-log-document-button--primary { background: var(--daily-log-accent); border-color: var(--daily-log-accent); color: white; }
+.daily-log-document-actionbar .daily-log-document-button--approve { background: #047857; border-color: #047857; color: white; }
+.daily-log-document-actionbar .daily-log-document-button--return { background: #fffbeb; border-color: #d97706; color: #92400e; }
+.dark .daily-log-document-actionbar .daily-log-document-button--return { background: #451a03; border-color: #b45309; color: #fcd34d; }
+.daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled) { box-shadow: 0 2px 4px rgb(30 58 95 / 16%); }
+.daily-log-document-actionbar .daily-log-document-button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
 .daily-log-document-actionbar .daily-log-document-button--close { background: var(--muted); }
 .daily-log-document-actionbar .daily-log-document-button:focus-visible { outline: 2px solid var(--daily-log-accent); outline-offset: 3px; }
 .daily-log-document-actionbar .daily-log-document-action-reason { margin: 8px 0 0; color: var(--foreground); font-size: 13px; overflow-wrap: anywhere; }
@@ -74,6 +120,22 @@
 .dark .daily-log-document-header .daily-log-document-status--pending { background: #134e4a; color: #ccfbf1; }
 .dark .daily-log-document-header .daily-log-document-status--returned { background: #451a03; color: #fef3c7; }
 .dark .daily-log-document-header .daily-log-document-status--verified { background: #14532d; color: #dcfce7; }
+
+@media (hover: hover) {
+  .daily-log-document-actionbar .daily-log-document-button:not(:disabled):hover { background: var(--muted); }
+  .daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled):hover { background: #1e40af; border-color: #1e40af; }
+  .daily-log-document-actionbar .daily-log-document-button--approve:not(:disabled):hover { background: #065f46; border-color: #065f46; }
+  .daily-log-document-actionbar .daily-log-document-button--return:not(:disabled):hover { background: #fef3c7; }
+  .dark .daily-log-document-actionbar .daily-log-document-button--return:not(:disabled):hover { background: #78350f; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The existing global button shorthand is !important; override it here
+     rather than changing shared styles or allowing transform animation. */
+  .daily-log-document-actionbar .daily-log-document-button { transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-log-document-actionbar .daily-log-document-button { transition: none !important; }
+}
 
 /* Physical-entry semantics must remain readable on small screens, overriding
    the app's global mobile card-label ellipsis rule only inside this workspace. */
@@ -97,6 +159,7 @@
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--border);
     background: var(--card);
+    box-shadow: 0 -2px 10px rgb(30 58 95 / 6%);
   }
   .daily-log-document-actionbar .daily-log-document-buttons { gap: 8px; }
   .daily-log-document-actionbar .daily-log-document-button { min-height: 44px; flex: 1 1 auto; }

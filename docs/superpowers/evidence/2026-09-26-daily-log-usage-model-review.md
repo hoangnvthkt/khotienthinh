@@ -2,6 +2,8 @@
 
 Ngày rà soát: 26/09/2026. Bản ứng dụng: `codex/daily-log-bootstrap-integration`, HEAD trước rà soát `03ff13b`.
 
+**Cập nhật 27/09/2026:** Giữ nguyên nội dung dưới đây làm bằng chứng rà soát trước triển khai. Với bản UX mới, dùng [bảng hướng dẫn theo nút hiện tại](2026-09-27-daily-log-user-guide.md); không dùng nhãn hoặc kết luận về chức năng cũ trong bản rà soát này thay cho trạng thái triển khai mới. Nghiệm thu người dùng và phát hành vẫn là gate riêng.
+
 ## 1. Kết luận
 
 Đã có cấu trúc phiếu nguồn → bản tổng hợp ngày → CHT duyệt. Tuy nhiên, chưa đủ điều kiện kết luận trải nghiệm đã đúng mô hình “tờ giấy của kỹ sư”: nhập liệu còn thiên về phần trăm tiến độ, xem phiếu còn giống màn hình chỉnh sửa, và luồng trả đúng phiếu cho kỹ sư sửa/gửi lại chưa nối đầy đủ trong giao diện WBS.
