@@ -118,7 +118,8 @@
     "20260921190000_g9_pilot_permission_command.sql",
     "20260922064202_fix_boq_material_planning_wrapper_security.sql",
     "20260927023600_authorization_p0a_block_anonymous_access.sql",
-    "20260927035001_authorization_p0b_restrict_client_writes.sql"
+    "20260927035001_authorization_p0b_restrict_client_writes.sql",
+    "20260927042947_authorization_p0b_broadcast_state_and_avatars.sql"
   ],
   "forbidIncludeAll": true
 }

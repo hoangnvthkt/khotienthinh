@@ -170,5 +170,13 @@ Vitest 485 file, 2.290 test pass; `tsc` pass; build pass; `check:supabase-querie
 - **B-1: ĐÃ APPLY** ngày 27/09/2026 sau khi chủ sản phẩm xác nhận trực tiếp. Ledger ghi `20260927035001_authorization_p0b_restrict_client_writes`; file đã đổi tên và đưa vào allowlist.
   - Smoke sau apply PASS.
   - App đang chạy (frontend cũ, phiên Admin, trang Thông báo): 49 request 200/201. Chỉ còn 404 `award_my_daily_xp`, lỗi có từ trước.
-- **Frontend:** cần merge vào `main` và deploy Vercel; chờ xác nhận.
-- **B-2:** chờ frontend lên Production.
+- **Frontend: ĐÃ DEPLOY.**
+  - `main` được fast-forward lên `62e27d8`; chủ sản phẩm tự push.
+  - Vercel Production `khotienthinh.vercel.app` đã phục vụ `/default-avatar.svg` (`200 image/svg+xml`).
+- **B-2: ĐÃ APPLY** ngày 27/09/2026 sau khi chủ sản phẩm xác nhận. Ledger ghi `20260927042947`.
+  - Postflight: smoke B-2 và smoke B-1 đều PASS; trigger `trg_users_prevent_privilege_self_update` đã bật lại.
+  - 42 `users` đã dùng avatar nội bộ; không còn URL pravatar hay ui-avatars.
+- **A1: ĐÃ XONG.** Chủ sản phẩm đã tắt đăng ký công khai; `/auth/v1/settings` trả `disable_signup=true`.
+- `award_my_daily_xp` (404): chủ sản phẩm xác nhận đây là chức năng phụ, bỏ qua trong các đợt sau.
+
+**P0-A và P0-B hoàn tất. Tiếp theo là P0-C (công tắc xem Tài chính và Hợp đồng dự án).**
