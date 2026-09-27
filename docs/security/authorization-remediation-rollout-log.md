@@ -377,3 +377,16 @@ Chỉ sửa frontend, không có migration.
   - RQ (15 người) vẫn giữ `system.rq.manage` như cũ, chưa rà theo từng người.
   - "Đồng bộ MISA" vẫn chỉ Admin.
   - `can_access_module` và phép chiếu legacy (`allowed_modules`) để lại cho P3 (Task 13).
+
+### P1.5b — quản trị Phiếu yêu cầu (RQ)
+
+- **Rà soát:**
+  - 15 nhân viên giữ `system.rq.manage` (grant chuyển từ cờ legacy RQ).
+  - Tác dụng thật duy nhất trên server: cho phép duyệt thay / nhân danh người khác trong `process_request_step` (luồng phiếu cũ). Giao diện không gọi hàm này. `workflow_has_action` không có nơi nào gọi với mã `request.*`. Việc xem phiếu theo `request.template.manage` và người tham gia. Menu `/rq` theo module `request.*`.
+  - 90 ngày: không ai duyệt thay. Việc tạo và duyệt phiếu hằng ngày không phụ thuộc quyền này; phần lớn nhân viên khác cũng không có capability `request.instance.*` mà vẫn dùng phiếu bình thường.
+  - Rủi ro còn lại nếu giữ: gọi thẳng API để duyệt phiếu cũ thay người khác.
+- **Quyết định của chủ sản phẩm:** thu hồi cả 15.
+- **Migration** `20260927160018_authorization_p1_5_retire_request_module_admin`:
+  - Thu hồi 15 grant `system.rq.manage`; xóa cờ legacy RQ; có sao lưu và audit.
+  - `request.template.manage` của 4 người không đổi.
+- Dry-run (gồm cả rollback, đã sửa để khôi phục đúng thứ tự hai bản sao lưu cờ) **PASS**. **ĐÃ APPLY.** Smoke sau apply **PASS**.
