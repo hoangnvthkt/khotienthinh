@@ -448,3 +448,26 @@ Chỉ sửa frontend, không có migration.
 - Kiểm lại URL công khai cũ: 25 ảnh chấm công, 25 tệp đính kèm và 13 tài liệu mẫu đều trả **400**, cả URL nguyên văn lẫn URL có tham số chống cache.
 - Trong ứng dụng, ảnh chấm công và ảnh chất lượng vẫn hiển thị qua signed URL.
 - **P1.6a và P1.6b hoàn tất.**
+
+## P2 — thông báo do server quyết định
+
+### P2.1 — bật lại thông báo Quy trình chung
+
+- **Hiện trạng trước khi làm:**
+  - Cổng `workflow_notification_settings.enabled = false` từ 18/09. Cron vẫn chạy mỗi phút nhưng không gửi.
+  - 78 sự kiện `PENDING`: giao bước 36, đã duyệt 22, đã gửi 13, từ chối 3, bình luận 2, mở lại 1, nhắc tên 1.
+  - 68/78 sự kiện thuộc phiếu có subject `material_request`. Theo thiết kế 18/09 §9, loại này do module vật tư tự báo. Hàm gửi chỉ bỏ qua subject `request`/`project`, nên với `material_request` nó ghi `DELIVERED` cho 0 người (người nhận bị lọc vì `workflow_instance_user_can_select` chỉ đúng với phiếu không có subject).
+  - Chạy thử gửi trước khi sửa: `DELIVERED`, 0 thông báo.
+- **Quyết định của chủ sản phẩm:** gửi bù bước còn chờ, bỏ phần lỗi thời; đóng 14 lỗi Phiếu yêu cầu, không gửi lại.
+- **Migration** `20260927170749_notification_p2_1_enable_workflow_notifications`:
+  - Hàm gửi bỏ qua thêm subject `material_request`, với nhãn `request_owned` như hai loại kia.
+  - Backlog: chỉ giữ sự kiện "giao bước" của quy trình chung mà phiếu còn dừng đúng bước đó. Còn lại `SUPPRESSED` với lý do `request_owned` hoặc `p2_stale_backlog`.
+  - 14 dòng `FAILED` của Phiếu yêu cầu (đã hết lượt thử, lịch dời tới 2126) được ghi chú `closed_p2_2026_09_27`.
+  - Bật cổng.
+- **Kiểm tra:**
+  - Dry-run một chu kỳ worker dưới `service_role`: 1 sự kiện được claim, 1 thông báo tới đúng người được giao, link `/wf/<id>?node=<id>&event=workflow.step_assigned`.
+  - **ĐÃ APPLY.** Chu kỳ cron thật: 1 `DELIVERED`, 1 thông báo WF mới, 0 dòng `PROCESSING` kẹt, 0 giao trùng, cron 5/5 thành công.
+  - Bỏ qua: `request_owned` 68, `p2_stale_backlog` 9, `pre_rollout_backlog` 13 (từ trước).
+  - Dừng khẩn cấp: `supabase/operations/notification_p2_1_rollback.sql` (tắt cổng).
+- **Ghi chú cho luồng Procurement V2:** 11 bước duyệt phiếu Đề xuất vật tư đang chờ không được worker Quy trình chung báo (đúng thiết kế). Cần luồng vật tư xác nhận module của họ có báo cho người được giao.
+- **Work** (cổng tắt từ 12/09, 31 sự kiện `dead`) chưa đụng tới: thuộc module Vioo Work.
