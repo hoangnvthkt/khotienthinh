@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react';
 import { Role } from '../../types';
 import { useApp } from '../../context/AppContext';
 import ProjectPermissionRoomsPanel from '../../components/project/permissions/ProjectPermissionRoomsPanel';
+import ProjectSensitiveAccessPanel from '../../components/project/permissions/ProjectSensitiveAccessPanel';
 
 interface Props {
   projectId: string;
@@ -21,6 +22,7 @@ const ProjectPermissionsTab: React.FC<Props> = ({ projectId, constructionSiteId 
     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
       Room-authoritative · mọi quyền nghiệp vụ tại đây được kiểm tra trực tiếp theo dự án/công trường; PBAC fallback đã tắt.
     </div>
+    <ProjectSensitiveAccessPanel projectId={projectId} />
     <ProjectPermissionRoomsPanel projectId={projectId} constructionSiteId={constructionSiteId} />
   </div>;
 };

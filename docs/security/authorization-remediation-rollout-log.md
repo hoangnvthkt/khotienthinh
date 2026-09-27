@@ -180,3 +180,47 @@ Vitest 485 file, 2.290 test pass; `tsc` pass; build pass; `check:supabase-querie
 - `award_my_daily_xp` (404): chủ sản phẩm xác nhận đây là chức năng phụ, bỏ qua trong các đợt sau.
 
 **P0-A và P0-B hoàn tất. Tiếp theo là P0-C (công tắc xem Tài chính và Hợp đồng dự án).**
+
+## P0-C · Tài chính và Hợp đồng dự án theo công tắc
+
+Quyết định của chủ sản phẩm ngày 27/09/2026:
+
+- Có 2 công tắc riêng: Tài chính và Hợp đồng.
+- Có lựa chọn "Tất cả dự án".
+- Thành viên Room Thanh toán / Nghiệm thu tự động được xem dự án của mình.
+- Người quản trị hợp đồng cấp công ty xem được mọi hợp đồng.
+- Chỉ Admin được bật/tắt công tắc.
+
+### Kiểm kê
+
+- **Mở cho mọi người, P0-C sẽ siết:**
+  - `project_transactions` (~1.083 dòng), `project_finances`, `project_cost_items`, `project_cost_actuals`, `advance_payments`, `payment_schedules`, `acceptance_records`, `project_dashboard_snapshots`.
+  - `customer_contracts`, `supplier_contracts`, `subcontractor_contracts`, `project_contracts`, `contract_items`, `contract_guarantees`, `contract_appendices`.
+- **Đã giới hạn theo dự án, giữ nguyên:** chứng từ thanh toán, nghiệm thu, phát sinh hợp đồng, công nợ NCC, ngân sách vật tư.
+
+### C-1 — bảng công tắc và RPC (chưa đổi quyền đọc)
+
+- **Migration:** `20260927140000_authorization_p0c_sensitive_view_grants.sql`. Tên file sẽ đổi theo version trong ledger khi apply.
+- **Thành phần chính:**
+  - Bảng `project_sensitive_view_grants`: `project_id` NULL nghĩa là tất cả dự án; có lịch sử bật/tắt kèm lý do.
+  - Helper tính quyền một lần cho mỗi truy vấn: `sensitive_view_all`, `sensitive_view_project_ids`, `sensitive_view_site_ids`, `sensitive_can_view`.
+  - RPC `get_my_project_sensitive_access` cho mọi người đã đăng nhập.
+  - RPC `list_project_sensitive_view_access` và `set_project_sensitive_view_grant` chỉ cho Admin; yêu cầu lý do từ 10 ký tự và ghi `audit_trail`.
+- **Rollback dry-run trên Cloud:**
+  - Lần 1 và 2 lỗi do tên cột trùng biến PL/pgSQL, và do smoke đọc bảng Room dưới quyền `authenticated`. Đã sửa.
+  - Lần 3 **PASS**: nhân viên không tự bật, không liệt kê, không ghi trực tiếp được công tắc; Admin bật được, có audit; công tắc có hiệu lực ngay; tắt thì mất quyền.
+
+### C-2 — giao diện
+
+- Dự án → tab Phân quyền → mục **"Ai được xem Tài chính & Hợp đồng"**:
+  - Bộ đếm số người đang xem.
+  - Lọc và tìm kiếm; thêm người ngoài dự án.
+  - 2 công tắc mỗi người. Công tắc tự khóa và ghi rõ nguồn khi quyền đến từ Admin, Room Thanh toán / Nghiệm thu, Tất cả dự án hoặc Quản trị hợp đồng.
+  - Mỗi lần đổi đều bắt nhập lý do.
+  - Có đủ trạng thái đang tải, lỗi (kèm thử lại) và trống.
+  - Mục thu gọn **"Xem tất cả dự án"**.
+- Test mới cho logic công tắc: 4/4 pass. Vitest toàn repo 2.290 pass; `tsc` pass; build pass; kiểm tra truy vấn 0 lỗi.
+
+### C-3 — siết quyền đọc
+
+Chưa làm. Chỉ làm sau khi Admin đã bật đủ công tắc. Frontend sẽ hiển thị "Chưa được mở quyền xem" thay vì số 0, và bỏ `is_module_admin('DA')` trên các bảng tài chính.
