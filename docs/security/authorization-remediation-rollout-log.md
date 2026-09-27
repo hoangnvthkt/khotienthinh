@@ -441,3 +441,10 @@ Chỉ sửa frontend, không có migration.
   - Chủ sản phẩm purge cache CDN cho `project-attachments` và `project-files` (và `checkin-photos`), vì tệp từng được mở có thể còn trong Smart CDN.
   - `project_documents` vẫn cho mọi người đọc metadata (`select true`); đề xuất xử lý cùng P2.
   - `project-photos` (luồng Daily log) để phối hợp sau. `avatars` và `asset-images` giữ public.
+
+### P1.6 — purge CDN (27/09)
+
+- Chủ sản phẩm đã purge cache CDN cho `checkin-photos`, `project-attachments`, `project-files`.
+- Kiểm lại URL công khai cũ: 25 ảnh chấm công, 25 tệp đính kèm và 13 tài liệu mẫu đều trả **400**, cả URL nguyên văn lẫn URL có tham số chống cache.
+- Trong ứng dụng, ảnh chấm công và ảnh chất lượng vẫn hiển thị qua signed URL.
+- **P1.6a và P1.6b hoàn tất.**
