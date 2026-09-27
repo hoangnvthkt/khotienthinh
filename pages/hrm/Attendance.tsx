@@ -22,6 +22,7 @@ import {
 import { loadXlsx } from '../../lib/loadXlsx';
 import { attendanceProposalService } from '../../lib/attendanceProposalService';
 import { getApiErrorMessage } from '../../lib/apiError';
+import AttendancePhoto from '../../components/hrm/AttendancePhoto';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
 
@@ -1526,26 +1527,20 @@ const Attendance: React.FC = () => {
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Ảnh chấm công</span>
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           {attendancePhotos.map((photo, index) => (
-                            <a
+                            <AttendancePhoto
                               key={`${photo.url}_${index}`}
-                              href={photo.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="group relative aspect-square overflow-hidden rounded-lg bg-muted"
+                              url={photo.url}
+                              linkClassName="group relative block aspect-square overflow-hidden rounded-lg bg-muted"
                               title={`${photo.action === 'check_out' ? 'Check-out' : 'Check-in'} ${photo.time || ''}`.trim()}
+                              alt={`${photo.action === 'check_out' ? 'Ảnh check-out' : 'Ảnh check-in'} ${photo.time || ''}`.trim()}
+                              className="h-full w-full aspect-square rounded-lg object-cover transition-transform group-hover:scale-105"
                             >
-                              <img
-                                src={photo.url}
-                                alt={`${photo.action === 'check_out' ? 'Ảnh check-out' : 'Ảnh check-in'} ${photo.time || ''}`.trim()}
-                                loading="lazy"
-                                className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                              />
                               {photo.time && (
                                 <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-bold text-white">
                                   {photo.action === 'check_out' ? 'Ra' : 'Vào'} {photo.time}
                                 </span>
                               )}
-                            </a>
+                            </AttendancePhoto>
                           ))}
                         </div>
                       </div>

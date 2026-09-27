@@ -18,6 +18,7 @@ import { AttendanceRecord } from '../../types';
 import { getApiErrorMessage } from '../../lib/apiError';
 import { checkInService, CameraCheckInLocation, MyCheckInContext } from '../../lib/checkInService';
 import { xpService } from '../../lib/xpService';
+import AttendancePhoto from '../../components/hrm/AttendancePhoto';
 
 type LocationOption = CameraCheckInLocation & {
   label: string;
@@ -572,13 +573,7 @@ const CheckIn: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            {effectiveTodayRecord.checkInPhoto ? (
-              <img src={effectiveTodayRecord.checkInPhoto} alt="Check-in" className="h-14 w-14 rounded-xl object-cover" />
-            ) : (
-              <div className="h-14 w-14 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                <Camera size={22} className="text-slate-400" />
-              </div>
-            )}
+            <AttendancePhoto url={effectiveTodayRecord.checkInPhoto} alt="Check-in" className="h-14 w-14 shrink-0 rounded-xl object-cover" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-4 text-sm">
                 <span className="font-black text-emerald-600">Vào {effectiveTodayRecord.checkIn || '-'}</span>
