@@ -1,0 +1,246 @@
+-- Rollback for authorization P0-A (block anonymous access).
+-- Restores the exact anon privileges, function ACLs and storage policies that
+-- existed on Cloud main before P0-A (captured 2026-09-27). Operator use only:
+-- running it re-opens the anonymous exposures described in the audit.
+begin;
+
+-- Storage policies.
+drop policy if exists storage_objects_no_anon on storage.objects;
+drop policy if exists project_photos_select on storage.objects;
+drop policy if exists project_photos_insert on storage.objects;
+drop policy if exists project_photos_update_own on storage.objects;
+drop policy if exists project_photos_delete_own on storage.objects;
+create policy "Public Access project-photos" on storage.objects as permissive for all to public
+  using ((bucket_id = 'project-photos'::text)) with check ((bucket_id = 'project-photos'::text));
+
+alter policy "Allow public read from avatars" on storage.objects to public;
+alter policy "Allow public upload to avatars" on storage.objects to public;
+alter policy "Public read access for project-attachments" on storage.objects to public;
+alter policy "Allow upload to project-attachments" on storage.objects to public;
+alter policy public_read on storage.objects to public;
+alter policy auth_insert on storage.objects to public;
+alter policy checkin_photos_select on storage.objects to public;
+alter policy auth_delete on storage.objects to public using ((bucket_id = 'project-files'::text));
+alter policy "Allow update in project-attachments" on storage.objects to public
+  using (((bucket_id = 'project-attachments'::text) and (split_part(name, '/'::text, 1) <> 'quality'::text)))
+  with check (((bucket_id = 'project-attachments'::text) and (split_part(name, '/'::text, 1) <> 'quality'::text)));
+alter policy "Allow delete from project-attachments" on storage.objects to public
+  using (((bucket_id = 'project-attachments'::text) and (split_part(name, '/'::text, 1) <> 'quality'::text)));
+alter policy checkin_photos_update on storage.objects
+  using ((bucket_id = 'checkin-photos'::text)) with check ((bucket_id = 'checkin-photos'::text));
+alter policy checkin_photos_delete on storage.objects using ((bucket_id = 'checkin-photos'::text));
+alter policy workflow_attachments_update on storage.objects
+  using ((bucket_id = 'workflow-attachments'::text)) with check ((bucket_id = 'workflow-attachments'::text));
+alter policy workflow_attachments_delete on storage.objects using ((bucket_id = 'workflow-attachments'::text));
+alter policy workflow_templates_read on storage.objects to anon, authenticated;
+alter policy workflow_templates_upload on storage.objects to anon, authenticated
+  with check ((bucket_id = 'workflow-templates'::text));
+alter policy workflow_templates_update on storage.objects to anon, authenticated
+  using ((bucket_id = 'workflow-templates'::text)) with check ((bucket_id = 'workflow-templates'::text));
+alter policy workflow_templates_delete on storage.objects to anon, authenticated
+  using ((bucket_id = 'workflow-templates'::text));
+drop function if exists app_private.workflow_templates_object_can_mutate(text);
+
+-- Function ACLs.
+grant execute on function public.get_material_request_workflow_board(text, text, jsonb, integer, text) to public, anon;
+grant execute on function public.get_project_material_request_board(text, text, jsonb, integer, text) to public, anon;
+grant execute on function public.get_project_material_request_detail(text) to public, anon;
+grant execute on function public.get_project_workflow_action_context(text, text) to public, anon;
+grant execute on function public.get_project_workflow_timeline(uuid) to public, anon;
+grant execute on function public.process_project_workflow_sla_escalations() to public, anon, authenticated;
+grant execute on function public.sync_auth_user_profile() to public, anon;
+grant execute on function public.sync_employee_status_from_metadata() to public, anon;
+grant execute on function public.timeout_stale_user_sessions(integer) to anon;
+grant execute on function public.enforce_active_app_actor() to anon;
+grant execute on function public.daily_log_user_has_project_permission(text, text, text, text) to anon, authenticated;
+
+-- Default privileges for objects created by postgres.
+alter default privileges for role postgres in schema public grant select, truncate, references, trigger, maintain on tables to anon;
+alter default privileges for role postgres in schema public grant select, update, usage on sequences to anon;
+alter default privileges for role postgres in schema public grant execute on functions to anon;
+
+-- Per-relation anon privileges.
+grant maintain, references, select, trigger, truncate on table public.acceptance_records to anon;
+grant maintain, references, select, trigger, truncate on table public.activities to anon;
+grant maintain, references, select, trigger, truncate on table public.advance_payments to anon;
+grant maintain, references, select, trigger, truncate on table public.app_releases to anon;
+grant maintain, references, select, trigger, truncate on table public.app_settings to anon;
+grant maintain, references, select, trigger, truncate on table public.asset_assignments to anon;
+grant maintain, references, select, trigger, truncate on table public.asset_categories to anon;
+grant maintain, references, select, trigger, truncate on table public.asset_location_stocks to anon;
+grant maintain, references, select, trigger, truncate on table public.asset_maintenances to anon;
+grant maintain, references, select, trigger, truncate on table public.asset_transfers to anon;
+grant maintain, references, select, trigger, truncate on table public.assets to anon;
+grant maintain, references, select, trigger, truncate on table public.audit_sessions to anon;
+grant maintain, references, trigger on table public.audit_trail to anon;
+grant maintain, references, select, trigger, truncate on table public.budget_categories to anon;
+grant maintain, references, select, trigger, truncate on table public.budget_entries to anon;
+grant maintain, references, select, trigger, truncate on table public.business_partners to anon;
+grant maintain, references, select, trigger, truncate on table public.cash_funds to anon;
+grant maintain, references, select, trigger, truncate on table public.cash_voucher_items to anon;
+grant maintain, references, select, trigger, truncate on table public.cash_vouchers to anon;
+grant maintain, references, select, trigger, truncate on table public.categories to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_call_logs to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_call_participants to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_call_sessions to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_conversations to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_members to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_messages to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_pins to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_server_channels to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_user_settings to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_attachments to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_checklist_items to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_conversations to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_direct_pairs to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_messages to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_participants to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_poll_votes to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_quick_confirm_responses to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_v2_reactions to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_workspace_members to anon;
+grant maintain, references, select, trigger, truncate on table public.chat_workspaces to anon;
+grant maintain, references, select, trigger, truncate on table public.chatbot_messages to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_appendices to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_cost_items to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_form_templates to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_guarantees to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_item_resources to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_items to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_machine_catalogs to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_material_norms to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_service_catalogs to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_template_fields to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_template_sections to anon;
+grant maintain, references, select, trigger, truncate on table public.contract_type_metadata to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_change_logs to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_import_batches to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_import_errors to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_import_jobs to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_import_raw_rows to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_import_rows to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_item_components to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_items to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_libraries to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_norm_resources to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_template_items to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_template_parameters to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_template_sections to anon;
+grant maintain, references, select, trigger, truncate on table public.cost_templates to anon;
+grant maintain, references, select, trigger, truncate on table public.customer_contracts to anon;
+grant maintain, references, select, trigger, truncate on table public.dashboard_layouts to anon;
+grant select, update, usage on sequence public.employee_code_seq to anon;
+grant maintain, references, select, trigger, truncate on table public.estimate_adjustments to anon;
+grant maintain, references, select, trigger, truncate on table public.estimate_conversion_batches to anon;
+grant maintain, references, select, trigger, truncate on table public.estimate_conversion_items to anon;
+grant maintain, references, select, trigger, truncate on table public.estimate_items to anon;
+grant maintain, references, select, trigger, truncate on table public.estimate_scenarios to anon;
+grant maintain, references, select, trigger, truncate on table public.estimate_versions to anon;
+grant maintain, references, select, trigger, truncate on table public.expense_records to anon;
+grant maintain, references, select, trigger on table public.fleet_locations to anon;
+grant maintain, references, select, trigger on table public.fleet_system_settings to anon;
+grant maintain, references, select, trigger on table public.fleet_vehicle_profiles to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_3p_bands to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_3p_grade_band_rates to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_areas to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_attendance to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_attendance_proposals to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_catalog_items to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_compensation_plans to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_competency_groups to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_competency_levels to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_construction_sites to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_doc_categories to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_employee_shifts to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_employee_types to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_holidays to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_leave_balances to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_leave_logs to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_leave_requests to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_offices to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_org_blocks to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_payroll_import_batches to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_payroll_import_rows to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_payroll_templates to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_position_groups to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_position_levels to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_position_salary_mappings to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_positions to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_salary_policies to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_shift_types to anon;
+grant maintain, references, select, trigger, truncate on table public.hrm_work_schedules to anon;
+grant maintain, references, select, trigger, truncate on table public.internal_norms to anon;
+grant maintain, references, select, trigger, truncate on table public.internal_price_book to anon;
+grant select, update, usage on sequence public.inventory_issue_code_seq to anon;
+grant select, update, usage on sequence public.inventory_receipt_code_seq to anon;
+grant maintain, references, select, trigger, truncate on table public.kpi_periods to anon;
+grant maintain, references, select, trigger, truncate on table public.kpi_rating_configs to anon;
+grant maintain, references, select, trigger, truncate on table public.kpi_scores to anon;
+grant maintain, references, select, trigger, truncate on table public.loss_norms to anon;
+grant maintain, references, select, trigger, truncate on table public.material_items to anon;
+grant maintain, references, select, trigger, truncate on table public.notifications to anon;
+grant maintain, references, select, trigger, truncate on table public.operator_unavailability_calendar_v to anon;
+grant maintain, references, select, trigger on table public.operator_unavailability_periods to anon;
+grant maintain, references, select, trigger, truncate on table public.org_units to anon;
+grant maintain, references, select, trigger, truncate on table public.payment_schedules to anon;
+grant maintain, references, select, trigger, truncate on table public.project_contracts to anon;
+grant maintain, references, select, trigger, truncate on table public.project_cost_actuals to anon;
+grant maintain, references, select, trigger, truncate on table public.project_cost_items to anon;
+grant maintain, references, select, trigger, truncate on table public.project_dashboard_snapshots to anon;
+grant maintain, references, select, trigger, truncate on table public.project_documents to anon;
+grant maintain, references, trigger, truncate on table public.project_permission_room_member_actions to anon;
+grant maintain, references, trigger, truncate on table public.project_permission_room_members to anon;
+grant maintain, references, select, trigger, truncate on table public.project_permission_rooms to anon;
+grant maintain, references, select, trigger, truncate on table public.project_vendors to anon;
+grant maintain, references, select, trigger, truncate on table public.ranking_criteria to anon;
+grant maintain, references, select, trigger, truncate on table public.request_categories to anon;
+grant maintain, references, select, trigger, truncate on table public.request_logs to anon;
+grant select, update, usage on sequence public.safety_card_code_seq to anon;
+grant maintain, references, select, trigger, truncate on table public.safety_worker_site_memberships to anon;
+grant maintain, references, select, trigger, truncate on table public.salary_3p_settings to anon;
+grant maintain, references, select, trigger, truncate on table public.salary_grades to anon;
+grant maintain, references, select, trigger, truncate on table public.stock_adjustments to anon;
+grant maintain, references, select, trigger, truncate on table public.stock_issues to anon;
+grant maintain, references, select, trigger, truncate on table public.stock_receipts to anon;
+grant maintain, references, select, trigger, truncate on table public.stock_transfers to anon;
+grant maintain, references, select, trigger, truncate on table public.subcontractor_contracts to anon;
+grant maintain, references, select, trigger, truncate on table public.supplier_contracts to anon;
+grant maintain, references, select, trigger, truncate on table public.suppliers to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_ai_logs to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_column_mappings to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_documents to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_exports to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_external_boq_lines to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_internal_mapping_links to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_internal_mappings to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_mapping_rules to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_packages to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_pricing_lines to anon;
+grant maintain, references, select, trigger, truncate on table public.tender_risks to anon;
+grant maintain, references, select, trigger, truncate on table public.units to anon;
+grant maintain, references, select, trigger, truncate on table public.user_release_reads to anon;
+grant maintain, references, select, trigger, truncate on table public.user_signatures to anon;
+grant maintain, references, select, trigger, truncate on table public.user_xp to anon;
+grant maintain, references, select, trigger, truncate on table public.users to anon;
+grant maintain, references, select, trigger on table public.vehicle_booking_assignments to anon;
+grant select, update, usage on sequence public.vehicle_booking_code_seq to anon;
+grant maintain, references, select, trigger on table public.vehicle_booking_feedback to anon;
+grant maintain, references, select, trigger on table public.vehicle_booking_issues to anon;
+grant maintain, references, select, trigger on table public.vehicle_booking_participants to anon;
+grant maintain, references, select, trigger on table public.vehicle_bookings to anon;
+grant maintain, references, select, trigger on table public.vehicle_driver_authorizations to anon;
+grant maintain, references, select, trigger on table public.vehicle_driver_authorizations_eligible_v to anon;
+grant maintain, references, select, trigger on table public.vehicle_handover_logs to anon;
+grant maintain, references, select, trigger on table public.vehicle_trip_logs to anon;
+grant maintain, references, select, trigger on table public.vehicle_unavailability_periods to anon;
+grant maintain, references, select, trigger, truncate on table public.web_push_subscriptions to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_edges to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_instance_logs to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_instances to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_nodes to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_print_templates to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_step_tasks to anon;
+grant maintain, references, select, trigger, truncate on table public.workflow_templates to anon;
+grant maintain, references, select, trigger, truncate on table public.xp_events to anon;
+
+commit;
