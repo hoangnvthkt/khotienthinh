@@ -119,7 +119,7 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
   contactName,
   contractValue = 0,
   currency = 'VND',
-  canManageTab = true,
+  canManageTab = false,
 }) => {
   const { user } = useApp();
   const toast = useToast();

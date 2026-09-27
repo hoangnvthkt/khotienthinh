@@ -31,7 +31,7 @@ const FILE_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
 
 const getFileIcon = (fileType: string) => FILE_ICONS[fileType] || { icon: <FileIcon size={18} />, color: 'text-slate-500 bg-slate-50' };
 
-const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy, canManageTab = true }) => {
+const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy, canManageTab = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';

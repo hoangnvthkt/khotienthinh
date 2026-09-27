@@ -111,9 +111,9 @@ const ActionRow: React.FC<{
         {action.riskLevel === 'sensitive' && (
           <span className="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700">Nhạy cảm</span>
         )}
-        {!action.directGrantAllowed && (
-          <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Template</span>
-        )}
+        {!action.directGrantAllowed && (action.permissionCode.startsWith('project.')
+          ? <span title="Quyền này được cấp trong tab Phân quyền của từng dự án, không cấp tại đây." className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700">Phân quyền trong Room dự án</span>
+          : <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Template</span>)}
         {action.directGrantRequiresExpiry && (
           <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Cần ngày hết hạn</span>
         )}

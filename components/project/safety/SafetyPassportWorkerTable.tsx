@@ -35,7 +35,7 @@ const eligibilityLabel = (status?: string): string => {
 const SafetyPassportWorkerTable: React.FC<Props> = ({
   items,
   loading = false,
-  canManage = true,
+  canManage = false,
   onCreateAssignment,
   onOpenDetail,
   onEnd,
