@@ -167,6 +167,8 @@ Vitest 485 file, 2.290 test pass; `tsc` pass; build pass; `check:supabase-querie
 
 ### Trạng thái
 
-- **B-1:** lần apply lên Cloud bị bộ phân loại an toàn của phiên chặn; **chờ chủ sản phẩm xác nhận trực tiếp**.
+- **B-1: ĐÃ APPLY** ngày 27/09/2026 sau khi chủ sản phẩm xác nhận trực tiếp. Ledger ghi `20260927035001_authorization_p0b_restrict_client_writes`; file đã đổi tên và đưa vào allowlist.
+  - Smoke sau apply PASS.
+  - App đang chạy (frontend cũ, phiên Admin, trang Thông báo): 49 request 200/201. Chỉ còn 404 `award_my_daily_xp`, lỗi có từ trước.
 - **Frontend:** cần merge vào `main` và deploy Vercel; chờ xác nhận.
 - **B-2:** chờ frontend lên Production.
