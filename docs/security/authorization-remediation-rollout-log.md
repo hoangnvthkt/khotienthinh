@@ -412,3 +412,32 @@ Chỉ sửa frontend, không có migration.
   - Sau khi apply, URL công khai cũ (đúng nguyên văn) vẫn trả về 200 cho các ảnh đã từng được mở, do Smart CDN giữ bản cache. Cùng URL thêm tham số thì trả 400, tức origin đã chặn.
   - Theo tài liệu Supabase, đổi bucket sang private không tự xóa cache. Cần gọi `DELETE /storage/v1/cdn/checkin-photos` bằng secret key.
   - `.env` không có secret key và agent không xử lý key này, nên **chủ sản phẩm chạy lệnh purge**. Sau khi purge, kiểm lại URL mẫu phải trả 400.
+
+### P1.6b — `project-attachments` và `project-files`
+
+- **Hiện trạng:**
+  - `project-attachments` có 102 tệp: `quality/` 91, `tx/` 5, `site-direct-purchases/` 3, `chat/` 2, `task-completions/` 1. `project-files` có 13 tài liệu dưới `<projectId>/`.
+  - Cả hai bucket public, đọc bằng policy `bucket_id = …`.
+  - Tham chiếu trong dữ liệu: `quality_checklists` (ảnh, đính kèm, bản vẽ), `chat_messages`, `project_documents.storage_path`. Tệp `tx/`, `site-direct-purchases/`, `task-completions/` không có bảng nào tham chiếu.
+- **Frontend** (đã push lên main trước khi khóa bucket):
+  - `components/storage/PrivateStorageLinkResolver.tsx`, gắn một lần trong `Layout`, đổi URL công khai cũ của các bucket đã private sang signed URL ở mọi `img`/`a`/`iframe`/`video`… khi chúng vào DOM.
+  - Resolver chặn click vào link chưa kịp ký và bọc `window.open`, nên mọi màn hình (kể cả `SupplyChainTab` của luồng V2) chạy tiếp mà không phải sửa từng nơi.
+  - Chỉ nhận URL dạng `/object/public/`, không ký lại URL đã ký. Lỗi quyền hiện toast "Không mở được tệp".
+  - `documentService.getSignedUrl` báo lỗi thay vì âm thầm quay về URL công khai; nút Xem / Tải của tab Tài liệu hiện toast khi lỗi.
+  - Tải tệp bằng `fetch` trong `QualityTab` và `MediaViewer` ký link trước khi tải.
+- **Migration** `20260927161923_authorization_p1_6_private_project_attachments_files`: hai bucket private. Người tải lên và Admin luôn đọc được. Quy tắc theo thư mục:
+  - `quality/`: Room Chất lượng quyền xem, cùng cách đọc đường dẫn với `quality_storage_can_mutate`.
+  - `chat/`: thành viên cuộc trò chuyện.
+  - `site-direct-purchases/`: nhân sự dự án hoặc quản lý mua hàng công ty.
+  - `task-completions/`: Room Tiến độ quyền xem.
+  - `tx/`: người được xem Tài chính tất cả dự án.
+  - `project-files/<projectId>/`: `project.documents.view` của dự án.
+- **Kiểm tra:**
+  - Dry-run: Admin đọc 102/102 và 13/13; 25/51 nhân viên đọc một phần tệp đính kèm (chủ yếu ảnh chất lượng theo Room); 45/51 đọc tài liệu (quyền "xem tài liệu" toàn công ty sẵn có); người không liên quan không đọc được gì.
+  - **ĐÃ APPLY.** Smoke sau apply **PASS**. URL công khai của ảnh chất lượng giờ trả 400.
+  - Trên dev server: ảnh chất lượng qua resolver tải được; xem trước PDF ở tab Tài liệu dùng signed URL.
+  - Rollback: `supabase/operations/authorization_p1_6b_rollback.sql`.
+- **Còn chờ:**
+  - Chủ sản phẩm purge cache CDN cho `project-attachments` và `project-files` (và `checkin-photos`), vì tệp từng được mở có thể còn trong Smart CDN.
+  - `project_documents` vẫn cho mọi người đọc metadata (`select true`); đề xuất xử lý cùng P2.
+  - `project-photos` (luồng Daily log) để phối hợp sau. `avatars` và `asset-images` giữ public.
