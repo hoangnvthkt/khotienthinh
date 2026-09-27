@@ -14,6 +14,9 @@ import type { User } from '../../../types';
 
 interface Props {
   projectId: string;
+  /** Embedded in a drawer: the drawer owns the title and frame. */
+  embedded?: boolean;
+  onChanged?: () => void;
 }
 
 const DOMAIN_LABEL: Record<SensitiveViewDomain, string> = { finance: 'Tài chính', contract: 'Hợp đồng' };
@@ -121,7 +124,7 @@ const AccessList: React.FC<{
   </ul>
 );
 
-const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId }) => {
+const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId, embedded = false, onChanged }) => {
   const { users } = useApp();
   const toast = useToast();
   const [projectRows, setProjectRows] = useState<SensitiveViewAccessRow[]>([]);
@@ -210,6 +213,7 @@ const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId }) => {
       );
       setPending(null);
       await load();
+      onChanged?.();
     } catch (saveError) {
       toast.error('Chưa lưu được thay đổi', getApiErrorMessage(saveError, 'Máy chủ từ chối thao tác.'));
     } finally {
@@ -225,8 +229,8 @@ const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId }) => {
     >{label}</button>
   );
 
-  return <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-5">
-    <div className="flex flex-wrap items-start justify-between gap-3">
+  return <section className={embedded ? 'space-y-4' : 'space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800 sm:p-5'}>
+    {!embedded && <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-indigo-600"><Wallet size={16} /><span className="text-[10px] font-black uppercase tracking-widest">Dữ liệu nhạy cảm</span></div>
         <h2 className="mt-1 text-lg font-black text-slate-900 dark:text-white">Ai được xem Tài chính & Hợp đồng</h2>
@@ -238,7 +242,7 @@ const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId }) => {
       <button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
         <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />Tải lại
       </button>
-    </div>
+    </div>}
 
     {loading ? (
       <div className="space-y-2">{Array.from({ length: 4 }, (_, index) => <div key={index} className="h-14 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-700" />)}</div>
@@ -261,14 +265,14 @@ const ProjectSensitiveAccessPanel: React.FC<Props> = ({ projectId }) => {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40 lg:flex-row lg:items-center lg:justify-between">
+        <div className={`flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/40 ${embedded ? '' : 'lg:flex-row lg:items-center lg:justify-between'}`}>
           <div className="flex flex-wrap gap-1.5">
             {filterButton('all', 'Tất cả')}
             {filterButton('viewing', 'Đang được xem')}
             {filterButton('not_viewing', 'Chưa được xem')}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative w-full sm:w-56">
+            <div className={`relative w-full ${embedded ? 'sm:flex-1' : 'sm:w-56'}`}>
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm người..." className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-slate-600 dark:bg-slate-900 dark:text-white" />
             </div>
