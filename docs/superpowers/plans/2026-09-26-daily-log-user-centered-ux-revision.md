@@ -157,11 +157,11 @@ Evidence: `docs/superpowers/evidence/2026-09-27-daily-log-engineer-slip-checkpoi
 
 **Interfaces:** Tổng vật lý Task 1, picker chọn nhiều Task 2, returnSource Task 4. Workspace thêm selected contribution IDs rõ ràng/onReturnSource cùng concurrency values Task 4; saveSummary/submitSummary entrypoints giữ nguyên. AreaCard render reviewComment/reviewStatus riêng sourceState; nhóm resource bằng dailyLogWorkItemId; mặc định thu gọn, blocker tự mở đúng card.
 
-- [ ] **Step 1 — RED:** Chọn 2/3 không sửa nguồn bị bỏ; tổng unique WBS/giờ đúng; nhận xét đã lưu hiển thị. Source gửi lại không tự ghi đè adjusted snapshot; nguồn lực/ảnh đúng item; hai 30% không thành 60%. Không thông báo đủ kỹ sư khi chưa biết danh sách phải báo cáo. Quyết định chưa chốt có thể lưu nháp an toàn nhưng không gửi.
-- [ ] **Step 2:** Run workspace/picker tests RED với fixture nhiều WBS/provider, không chỉ mỗi source một item.
-- [ ] **Step 3 — GREEN:** Tổng quan→chọn phiếu→source cards 2 cột desktop/1 cột mobile→ngoại lệ→kết quả tổng hợp dễ đọc. Sự cố/ảnh/ngày sau theo dữ liệu thật. Nút **Trả phiếu cho kỹ sư** có lý do; **Bỏ khỏi bản tổng hợp** không xóa nguồn. Source gửi lại mở diff/refresh có chủ đích. Chỉnh bản sao có lý do, quantity/forecast nhất quán, original không đổi. Quyết định đã chốt dùng nền trung tính; cách chốt/lý do mở rộng. Tổng người/máy ghi lượt theo hạng mục, không tạo unique headcount giả.
-- [ ] **Step 4:** Tests GREEN và Cloud chọn–bỏ–trả–refresh; summary chỉ selected IDs; giữ original fingerprints khi chỉnh bản sao; unresolved chặn gửi nhưng cho lưu nháp an toàn; typecheck.
-- [ ] **Step 5:** Commit `feat(daily-log): make daily consolidation source-slip driven`.
+- [x] **Step 1 — RED:** Chọn 2/3 không sửa nguồn bị bỏ; tổng unique WBS/giờ đúng; nhận xét đã lưu hiển thị. Source gửi lại không tự ghi đè adjusted snapshot; nguồn lực/ảnh đúng item; hai 30% không thành 60%. Không thông báo đủ kỹ sư khi chưa biết danh sách phải báo cáo. Quyết định chưa chốt có thể lưu nháp an toàn nhưng không gửi.
+- [x] **Step 2:** Run workspace/picker tests RED với fixture nhiều WBS/provider, không chỉ mỗi source một item.
+- [x] **Step 3 — GREEN:** Tổng quan→chọn phiếu→source cards 2 cột desktop/1 cột mobile→ngoại lệ→kết quả tổng hợp dễ đọc. Sự cố/ảnh/ngày sau theo dữ liệu thật. Nút **Trả phiếu cho kỹ sư** có lý do; **Bỏ khỏi bản tổng hợp** không xóa nguồn. Source gửi lại mở diff/refresh có chủ đích. Chỉnh bản sao có lý do, quantity/forecast nhất quán, original không đổi. Quyết định đã chốt dùng nền trung tính; cách chốt/lý do mở rộng. Tổng người/máy ghi lượt theo hạng mục, không tạo unique headcount giả.
+- [x] **Step 4:** Tests GREEN và Cloud chọn–bỏ–trả–refresh; summary chỉ selected IDs; giữ original fingerprints khi chỉnh bản sao; unresolved chặn gửi nhưng cho lưu nháp an toàn; typecheck.
+- [x] **Step 5:** Commit `feat(daily-log): make daily consolidation source-slip driven`. Phạm vi backend nháp được anh cho phép bổ sung; [checkpoint kiểm chứng](../evidence/2026-09-27-daily-log-summary-slip-ux-checkpoint.md). Task 7/8 và nghiệm thu người dùng vẫn chưa hoàn tất.
 
 ### Task 7: CHT xem báo cáo; phiếu đã duyệt không còn form
 

@@ -78,7 +78,7 @@ describe('DailyLogSummaryWorkspace', () => {
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={bundle} mode="summarize" />);
     expect((html.match(/data-testid="daily-log-area-card"/g) || [])).toHaveLength(4);
     expect(html).toContain('4 khu vực');
-    expect(html).toContain('68 người');
+    expect(html).toContain('Lượt người theo hạng mục: 68');
     expect(html).toContain('2 cảnh báo');
     expect(html).toContain('grid-cols-1');
     expect(html).toContain('lg:grid-cols-2');
@@ -91,7 +91,8 @@ describe('DailyLogSummaryWorkspace', () => {
       summarySources: [{ ...bundle.summarySources[0], hasAdjustments: true, adjustmentReason: 'Đã kiểm tra hiện trường' }, ...bundle.summarySources.slice(1)],
     };
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={adjusted} mode="summarize" />);
-    expect(html).toContain('value="35"');
+    expect(html).toContain('35 %');
+    expect(html).not.toContain('value="35"'); // Changed source is a report until explicit refresh.
     expect(html).toContain('Đã điều chỉnh');
     expect(html).toContain('Cập nhật từ phiếu');
   });

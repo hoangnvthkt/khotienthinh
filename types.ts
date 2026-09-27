@@ -1191,6 +1191,12 @@ export interface DailyLogWbsDecision {
   sourceFingerprint: string;
 }
 
+/** Pending V2 read-model only; never an official decision-table row. */
+export type DailyLogWbsDecisionDraft = Omit<DailyLogWbsDecision, 'officialCumulativePercent'> & {
+  officialCumulativePercent: number | null;
+  pending?: boolean;
+};
+
 export type DailyLogProviderEntryMode = 'catalog' | 'manual';
 export type DailyLogManualProviderType =
   | 'free_crew'

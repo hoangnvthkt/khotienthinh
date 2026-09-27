@@ -75,6 +75,15 @@
 .dark .daily-log-document-header .daily-log-document-status--returned { background: #451a03; color: #fef3c7; }
 .dark .daily-log-document-header .daily-log-document-status--verified { background: #14532d; color: #dcfce7; }
 
+/* Physical-entry semantics must remain readable on small screens, overriding
+   the app's global mobile card-label ellipsis rule only inside this workspace. */
+.daily-log-summary dl .text-xs {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 767px) {
   .daily-log-document-header { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
   .daily-log-document-header h2 { font-size: 20px; }

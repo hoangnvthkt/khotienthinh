@@ -1,6 +1,7 @@
 import React from 'react';
-import { AlertTriangle, Clock3, RefreshCw, Users, Wrench } from 'lucide-react';
-import type { DailyLogContribution, DailyLogSummarySource, DailyLogWorkItem } from '../../../types';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import type { DailyLogContribution, DailyLogSummarySource, DailyLogWorkItem, DailyLogPhoto } from '../../../types';
+import { formatDailyLogQuantity, formatDailyLogTime, formatDailyLogDate } from '../../../lib/dailyLogPresentation';
 import { DailyLogSourceDiff } from './DailyLogSourceDiff';
 
 export interface SummaryResourceLine {
@@ -10,8 +11,8 @@ export interface SummaryResourceLine {
   summarySourceId?: string;
   kind: 'labor' | 'machine';
   label: string;
-  count: number;
-  totalHours: number;
+  count: number | null;
+  totalHours: number | null;
   providerEntryMode: 'catalog' | 'manual';
   providerName: string;
   providerType: string;
@@ -30,56 +31,62 @@ export interface DailyLogAreaCardModel {
 interface DailyLogAreaCardProps {
   card: DailyLogAreaCardModel;
   mode: 'summarize' | 'review';
+  busy?: boolean;
   canRequestChange?: boolean;
-  onProgressChange?: (itemId: string, value: number) => void;
+  returnDisabledReason?: string;
+  onProgressChange?: (sourceId: string, itemId: string, value: number, reason: string) => void;
   onRefresh?: (sourceId: string) => void;
   onRemove?: (sourceId: string) => void;
-  onRequestChange?: (sourceId: string, comment: string) => void;
+  onRequestChange?: (sourceId: string, comment: string) => void | Promise<void>;
 }
 
-const STATE_LABELS: Record<string, string> = {
-  current: 'Hiện hành', changed: 'Nguồn đã thay đổi', returned: 'Đã trả lại', missing: 'Không còn nguồn',
-};
+const STATE_LABELS = { current: 'Nguồn khớp phiên bản', changed: 'Có phiếu gửi lại', returned: 'Đã trả lại', missing: 'Không còn nguồn' };
+const REVIEW_LABELS = { draft: 'Chưa rà soát', ready: 'Sẵn sàng tổng hợp', change_requested: 'Cần sửa theo nhận xét', accepted: 'Đã rà soát', superseded: 'Đã thay thế' };
+const fieldClass = 'min-h-11 w-full rounded-md border border-border bg-background px-3 text-base sm:text-sm disabled:opacity-50';
 
-export const DailyLogAreaCard: React.FC<DailyLogAreaCardProps> = ({
-  card, mode, canRequestChange = false, onProgressChange, onRefresh, onRemove, onRequestChange,
-}) => {
+export const DailyLogAreaCard: React.FC<DailyLogAreaCardProps> = ({ card, mode, busy, canRequestChange = false, returnDisabledReason, onProgressChange, onRefresh, onRemove, onRequestChange }) => {
   const [comment, setComment] = React.useState('');
-  const people = card.resources.filter(row => row.kind === 'labor').reduce((sum, row) => sum + row.count, 0);
-  const machineHours = card.resources.filter(row => row.kind === 'machine').reduce((sum, row) => sum + row.totalHours, 0);
-  const sourceState = card.source.sourceState || 'current';
-  return <article data-testid="daily-log-area-card" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-    <div className="border-b border-slate-200 p-4 dark:border-slate-700">
+  const [reason, setReason] = React.useState(card.source.adjustmentReason || '');
+  const state = card.source.sourceState || 'current';
+  const blocked = state !== 'current' || card.source.reviewStatus === 'change_requested';
+  const [open, setOpen] = React.useState(blocked);
+  React.useEffect(()=>{if(blocked)setOpen(true);},[blocked,state,card.source.reviewStatus]);
+  // Never display newer source metadata as if it belonged to the saved copy.
+  const snapshot = card.source.sourceSnapshot;
+  const metadata = snapshot && Object.hasOwn(snapshot, 'content') ? snapshot : state === 'current' ? card.contribution : null;
+  const photos = (metadata?.photos || []) as DailyLogPhoto[];
+  const sourceId = card.source.id || '';
+  return <article data-testid="daily-log-area-card" className="min-w-0 rounded-md border border-border bg-card text-sm text-foreground">
+    <div className="space-y-2 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="truncate text-base font-black text-slate-900 dark:text-slate-100">{card.source.workAreaName || card.contribution.workAreaName || 'Khu vực chưa đặt tên'}</h3>
-          <p className="mt-1 text-xs font-medium text-slate-500">{card.source.sourceUserName || card.contribution.authorName || 'Không rõ người lập'}</p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${sourceState === 'current' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{STATE_LABELS[sourceState]}</span>
-          {card.source.hasAdjustments && <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700">Đã điều chỉnh</span>}
-        </div>
+        <div className="min-w-0 break-words"><h3 className="text-base font-semibold">{card.source.workAreaName || card.contribution.workAreaName || 'Chưa xác định khu vực'}</h3><p className="mt-1 text-muted-foreground">{card.source.sourceUserName || card.contribution.authorName || 'Chưa xác định người lập'}</p></div>
+        <span className={`rounded px-2 py-1 text-xs ${blocked ? 'bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-100' : 'bg-muted text-muted-foreground'}`}>{REVIEW_LABELS[card.source.reviewStatus || 'ready']}</span>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-600 dark:text-slate-300">
-        <span>{card.editedItems.length} WBS</span><span className="flex items-center gap-1"><Users size={13} /> {people} người</span><span className="flex items-center gap-1"><Wrench size={13} /> {machineHours.toLocaleString('vi-VN')} giờ máy</span>
-      </div>
-      <p className="mt-2 flex items-center gap-1 text-[10px] text-slate-400"><Clock3 size={11} /> {card.source.updatedAt || card.contribution.updatedAt || card.contribution.createdAt}</p>
+      <p className="text-muted-foreground">{new Set(card.editedItems.map(item => item.taskId)).size} hạng mục · Phiếu nguồn v{card.source.sourceVersion ?? '—'} · {formatDailyLogTime(String(snapshot?.updatedAt || card.contribution.submittedAt || card.contribution.createdAt))}</p>
+      {card.source.hasAdjustments && <p className="text-teal-800 dark:text-teal-200">Đã điều chỉnh bản sao · {card.source.adjustmentReason || 'Chưa có lý do'}</p>}
+      {card.source.reviewComment && <div className={`rounded border p-3 ${card.source.reviewStatus === 'change_requested' ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100' : 'border-border bg-muted/30'}`}><p className="font-medium">{card.source.reviewStatus === 'change_requested' ? 'Nhận xét đã lưu' : 'Nhận xét trước đó'}</p><p className="mt-1 whitespace-pre-wrap break-words">{card.source.reviewComment}</p></div>}
     </div>
-    <details className="group" open>
-      <summary className="cursor-pointer list-none px-4 py-3 text-xs font-bold text-teal-700 lg:hidden">Xem nội dung khu vực</summary>
-      <div className="space-y-4 p-4 pt-2 lg:pt-4">
-        {(sourceState === 'missing' || sourceState === 'returned') && <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900"><AlertTriangle size={15} className="shrink-0" /> Snapshot vẫn được giữ để truy vết, nhưng phải bỏ card hoặc chờ nguồn hợp lệ trước khi gửi.</div>}
-        <div className="space-y-2">{card.editedItems.map(item => <div key={item.id || item.sourceWorkItemId} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1fr_8rem] dark:bg-slate-800/70">
-          <div><div className="text-sm font-bold text-slate-800 dark:text-slate-100">{item.wbsCode} {item.taskName}</div><div className="mt-1 text-xs text-slate-500">{item.unit || 'Chưa có đơn vị'} · {item.dailyQuantityDone == null ? 'Chưa xác định khối lượng ngày' : `${item.dailyQuantityDone.toLocaleString('vi-VN')} ${item.unit || ''} hôm nay`}</div></div>
-          <label className="grid gap-1 text-xs font-semibold text-slate-600">% lũy kế<input aria-label={`% lũy kế ${item.wbsCode || item.taskName}`} type="number" value={item.cumulativeProgressPercent} disabled={mode === 'review'} onChange={event => onProgressChange?.(item.id || item.sourceWorkItemId || '', Number(event.target.value))} className="h-9 rounded-lg border border-slate-300 bg-white px-2 font-bold disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950" /></label>
-        </div>)}</div>
-        {card.resources.length > 0 && <div className="space-y-2"><h4 className="text-xs font-black uppercase text-slate-500">Nguồn lực vật lý</h4>{card.resources.map((line, index) => <div key={line.id || `${line.kind}-${index}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs dark:border-slate-700"><span className="font-bold text-slate-800 dark:text-slate-100">{line.label}</span><span>{line.count.toLocaleString('vi-VN')} {line.kind === 'labor' ? 'người' : 'máy'}</span><span>{line.totalHours.toLocaleString('vi-VN')} giờ</span><span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 font-bold text-slate-600 dark:bg-slate-800">{line.providerEntryMode === 'catalog' ? 'Danh mục' : 'Nhập tay'}</span><span className="text-slate-500">{line.providerType}</span><span className="font-semibold text-teal-700 dark:text-teal-300">{line.providerName}</span></div>)}</div>}
-        {card.source.hasAdjustments && <DailyLogSourceDiff sourceItems={card.sourceItems} editedItems={card.editedItems} sourceResources={card.sourceResources} editedResources={card.resources} />}
-        <div className="flex flex-wrap justify-end gap-2">
-          {mode === 'summarize' && sourceState === 'changed' && <button type="button" onClick={() => onRefresh?.(card.source.id || '')} className="flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 px-3 text-xs font-bold text-amber-800"><RefreshCw size={13} /> Cập nhật từ phiếu</button>}
-          {mode === 'summarize' && <button type="button" onClick={() => onRemove?.(card.source.id || '')} className="h-9 rounded-lg px-3 text-xs font-bold text-red-600 hover:bg-red-50">Bỏ card</button>}
-        </div>
-        {mode === 'review' && canRequestChange && <div className="flex flex-col gap-2 sm:flex-row"><input aria-label={`Nhận xét ${card.source.workAreaName || ''}`} value={comment} onChange={event => setComment(event.target.value)} placeholder="Nhận xét bắt buộc khi yêu cầu sửa" className="h-10 flex-1 rounded-lg border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-950" /><button type="button" disabled={!comment.trim()} onClick={() => onRequestChange?.(card.source.id || '', comment.trim())} className="h-10 rounded-lg border border-amber-300 px-3 text-xs font-bold text-amber-800 disabled:opacity-50">Yêu cầu sửa khu vực</button></div>}
+    <details open={open} onToggle={event=>setOpen(event.currentTarget.open)} className="border-t border-border">
+      <summary className="min-h-11 cursor-pointer px-4 py-3 font-medium text-teal-800 dark:text-teal-200">Xem công việc, nguồn lực và ảnh</summary>
+      <div className="space-y-4 p-4 pt-0">
+        <p className="text-xs text-muted-foreground">{STATE_LABELS[state]} · {card.source.hasAdjustments ? 'Đang xem bản sao đã chỉnh' : 'Đang xem bản sao để tổng hợp'}</p>
+        {state !== 'current' && <p className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{state === 'changed' ? 'Giữ nguyên bản sao đã lưu. Xem thay đổi trước khi cập nhật; cập nhật sẽ thay chỉnh sửa bằng phiếu gửi lại.' : 'Bản sao được giữ để truy vết. Bỏ khỏi bản tổng hợp hoặc chờ kỹ sư sửa và gửi lại trước khi gửi CHT.'}</p>}
+        {card.editedItems.map(item => <section key={item.id || item.sourceWorkItemId} data-work-item-id={item.sourceWorkItemId || item.id} className="space-y-3 border-b border-border pb-4 last:border-0">
+          <h4 className="font-semibold">{item.wbsCode} {item.taskName}</h4>
+          <dl className="grid grid-cols-2 gap-3 tabular-nums sm:grid-cols-3"><div><dt className="text-xs text-muted-foreground">Khối lượng hôm nay</dt><dd className="mt-1">{formatDailyLogQuantity(item.dailyQuantityDone, item.unit)}</dd></div><div><dt className="text-xs text-muted-foreground">Lũy kế</dt><dd className="mt-1">{formatDailyLogQuantity(item.cumulativeQuantityDone, item.unit)}</dd></div><div><dt className="text-xs text-muted-foreground">% lũy kế</dt><dd className="mt-1">{formatDailyLogQuantity(item.cumulativeProgressPercent, '%')}</dd></div></dl>
+          {card.resources.filter(line => line.dailyLogWorkItemId === item.id || line.dailyLogWorkItemId === item.sourceWorkItemId).map((line, index) => <div key={line.id || index} className="rounded border border-border p-3">
+            <p className="font-medium">{line.label} · {formatDailyLogQuantity(line.count, line.kind === 'labor' ? 'người' : 'máy')} · {formatDailyLogQuantity(line.totalHours, 'giờ')}</p>
+            <p className="mt-1 break-words">{line.providerName}</p><p className="mt-1 text-xs text-muted-foreground">{line.providerType} · {line.providerEntryMode === 'catalog' ? 'Danh mục' : 'Nhập tay'}</p>
+          </div>)}
+          {item.forecastFinishDate && <p>Dự kiến hoàn thành: {formatDailyLogDate(item.forecastFinishDate)}{item.forecastChangeReason && ` · ${item.forecastChangeReason}`}</p>}
+          {item.note && <p className="whitespace-pre-wrap break-words">{item.note}</p>}
+          {item.attachments?.length ? <div className="flex flex-wrap gap-3">{item.attachments.map(photo => <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer" className="break-words text-teal-800 underline dark:text-teal-200">{photo.name || 'Ảnh hạng mục'}</a>)}</div> : null}
+        </section>)}
+        {metadata ? <section className="space-y-2"><h4 className="font-medium">Ghi nhận theo phiếu</h4><p className="whitespace-pre-wrap break-words">{String(metadata.content || 'Chưa ghi nội dung')}</p>{metadata.issues && <p className="whitespace-pre-wrap break-words">Sự cố / vướng mắc: {String(metadata.issues)}</p>}{photos.length > 0 && <div className="flex flex-wrap gap-3">{photos.map((photo,index) => <a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="text-teal-800 underline dark:text-teal-200">{photo.name || 'Ảnh phiếu'}</a>)}</div>}</section> : <p className="text-muted-foreground">Chưa có nội dung phiên bản đã lưu; không lấy nội dung mới thay cho bản sao cũ.</p>}
+        {(state === 'changed' || card.source.hasAdjustments) && <details><summary className="cursor-pointer py-2 font-medium">Xem thay đổi so với phiếu nguồn{state === 'changed' ? ' mới nhất' : ''}</summary><DailyLogSourceDiff sourceItems={card.sourceItems} editedItems={card.editedItems} sourceResources={card.sourceResources} editedResources={card.resources} />{state==='changed' && <section className="mt-3 space-y-2 rounded-md border border-border p-3"><h4 className="font-medium">Ghi nhận trong phiếu gửi lại · v{card.contribution.rowVersion ?? '—'}</h4><p className="whitespace-pre-wrap break-words">{card.contribution.content || 'Chưa ghi nội dung'}</p>{card.contribution.issues && <p className="whitespace-pre-wrap break-words">Sự cố / vướng mắc: {card.contribution.issues}</p>}<div className="flex flex-wrap gap-3">{card.contribution.photos?.map((photo,index)=><a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="break-words text-teal-800 underline dark:text-teal-200">{photo.name || 'Ảnh gửi lại'}</a>)}</div><p className="text-xs text-muted-foreground">Chỉ để so sánh. Bản sao phía trên chưa bị thay thế.</p></section>}</details>}
+        {mode === 'summarize' && state === 'current' && onProgressChange && <details><summary className="cursor-pointer py-2 font-medium text-teal-800 dark:text-teal-200">Chỉnh số liệu trên bản sao</summary><div className="space-y-3 pt-2"><p className="text-muted-foreground">Không sửa phiếu gốc. Nhập lý do trước khi điều chỉnh; khối lượng chỉ quy đổi khi đủ cơ sở.</p><label className="block">Lý do chỉnh bản sao<input aria-label={`Lý do chỉnh ${card.source.workAreaName}`} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} className={fieldClass} /></label>{card.editedItems.map(item => <label key={item.id} className="block">% lũy kế {item.wbsCode} {item.taskName}<input aria-label={`% lũy kế ${item.wbsCode || item.taskName}`} type="number" min={item.baselineProgressPercent} max="100" step="any" value={Number.isFinite(item.cumulativeProgressPercent) ? item.cumulativeProgressPercent : ''} disabled={busy || !reason.trim()} onChange={event => onProgressChange(sourceId, item.id || item.sourceWorkItemId || '', event.target.value === '' ? Number.NaN : Number(event.target.value), reason)} className={fieldClass} /></label>)}</div></details>}
+        {mode === 'summarize' && <div className="flex flex-wrap gap-2">{state === 'changed' && <button type="button" disabled={busy} onClick={() => onRefresh?.(sourceId)} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3"><RefreshCw size={16} />Cập nhật từ phiếu</button>}<button type="button" disabled={busy} onClick={() => onRemove?.(sourceId)} className="min-h-11 rounded-md border border-border px-3">Bỏ khỏi bản tổng hợp</button></div>}
+        {canRequestChange && onRequestChange && <details><summary className="cursor-pointer py-2 font-medium text-amber-900 dark:text-amber-100">{mode === 'summarize' ? 'Trả phiếu cho kỹ sư' : 'Yêu cầu sửa khu vực'}</summary><div className="space-y-2 pt-2">{returnDisabledReason && <p className="text-muted-foreground">{returnDisabledReason}</p>}<label className="block">Lý do trả phiếu<textarea aria-label={`Nhận xét ${card.source.workAreaName || ''}`} value={comment} disabled={busy} onChange={event => setComment(event.target.value)} className={`${fieldClass} py-2`} /></label><button type="button" disabled={busy || !comment.trim() || Boolean(returnDisabledReason)} onClick={() => onRequestChange(sourceId, comment.trim())} className="min-h-11 rounded-md border border-amber-300 px-3 text-amber-900 disabled:opacity-50 dark:text-amber-100">{mode === 'summarize' ? 'Trả phiếu cho kỹ sư' : 'Yêu cầu sửa khu vực'}</button></div></details>}
       </div>
     </details>
   </article>;

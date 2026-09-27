@@ -10,7 +10,7 @@ import type {
   DailyLogPhoto,
   DailyLogSourceItemV2,
   DailyLogSummarySource,
-  DailyLogWbsDecision,
+  DailyLogWbsDecisionDraft,
   DailyLogWorkConflictCode,
   DailyLogWorkItem,
   ProjectDailyTaskProgress,
@@ -50,7 +50,7 @@ export interface DailyLogWbsBundle {
   summaryLog: DailyLog | null;
   summarySources: DailyLogSummarySource[];
   workItems: DailyLogWorkItem[];
-  decisions: DailyLogWbsDecision[];
+  decisions: DailyLogWbsDecisionDraft[];
   labor: Array<DailyLogLabor & { contributionId?: string | null }>;
   machines: Array<DailyLogMachine & { contributionId?: string | null }>;
   periodState: ProjectProgressPeriodState | null;
@@ -249,6 +249,28 @@ const callRpc = async <T>(name: string, params: Record<string, unknown>): Promis
 };
 
 export const dailyLogWbsService = {
+  async updateSummaryMetadata(input: {
+    dailyLogId: string;
+    expectedUpdatedAt: string | null;
+    weather: DailyLog['weather'];
+    description: string;
+    issues: string;
+    nextDayPlan: string;
+    photos: DailyLogPhoto[];
+  }): Promise<{ updatedAt: string }> {
+    // Metadata only: never invoke the legacy replace-detail-tables path.
+    // Existing canonical daily_logs RLS remains the authorization boundary.
+    const updatedAt = new Date().toISOString();
+    let command = supabase.from('daily_logs').update({
+      weather: input.weather, description: input.description, issues: input.issues || null,
+      next_day_plan: input.nextDayPlan || null, photos: input.photos, last_action_at: updatedAt,
+    }).eq('id',input.dailyLogId).eq('summary_source_type','member_contributions').in('status',['draft','rejected']);
+    command = input.expectedUpdatedAt ? command.eq('last_action_at',input.expectedUpdatedAt) : command.is('last_action_at',null);
+    const { data,error } = await command.select('id,last_action_at').maybeSingle();
+    if (error) throw mapDailyLogWbsCommandError(error);
+    if (!data) throw new Error('Bản tổng hợp đã thay đổi hoặc bạn không còn quyền chỉnh sửa. Tải lại để kiểm tra trước khi lưu.');
+    return { updatedAt: data.last_action_at };
+  },
   returnSource(input: ReturnDailyLogSourceInput): Promise<DailyLogSourceTransitionReceipt> {
     return callRpc('return_daily_log_source_v2', { p_input: input });
   },

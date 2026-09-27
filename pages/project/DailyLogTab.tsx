@@ -912,6 +912,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [summaryDate, setSummaryDate] = useState<string | null>(null);
     const [summarySaving, setSummarySaving] = useState(false);
     const [summaryLogId, setSummaryLogId] = useState<string>('');
+    const summaryMetadataVersionRef = useRef<{id:string;updatedAt:string|null} | null>(null);
     const [summaryApprovers, setSummaryApprovers] = useState<ProjectStaff[]>([]);
     const [summaryApproverUserId, setSummaryApproverUserId] = useState('');
     const [summaryWeather, setSummaryWeather] = useState<WeatherType>('sunny');
@@ -1420,6 +1421,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
         setSummaryDate(date);
         setSummaryLogId(id);
+        summaryMetadataVersionRef.current = null;
         setSummaryWbsLoading(true);
         setSummaryWbsError(null);
         setSummaryApprovers(approvers);
@@ -1450,6 +1452,15 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 logDate: date,
                 dailyLogId: id,
             });
+            if (bundle.rollout.enabled && bundle.rollout.cutoverDate && date >= bundle.rollout.cutoverDate && bundle.summaryLog) {
+                // The list may be stale after a save or return; use the authorized
+                // summary read, not its old list snapshot, to reopen this draft.
+                setSummaryWeather(bundle.summaryLog.weather);
+                setSummaryDescription(bundle.summaryLog.description || '');
+                setSummaryIssues(bundle.summaryLog.issues || '');
+                setSummaryNextPlan(bundle.summaryLog.nextDayPlan || '');
+                setSummaryPhotos(bundle.summaryLog.photos || []);
+            }
             setSummaryWbsBundle(bundle);
         } catch (caught) {
             setSummaryWbsBundle(null);
@@ -2377,20 +2388,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     const prepareWbsSummaryLog = useCallback(async (): Promise<DailyLog> => {
         if (!summaryDate || !summaryLogId) throw new Error('Chưa xác định ngày tổng hợp.');
-        const existing = logs.find(log => log.id === summaryLogId);
+        const existing = summaryWbsBundle?.summaryLog || logs.find(log => log.id === summaryLogId);
+        if (existing) {
+            const expected = summaryMetadataVersionRef.current?.id === existing.id
+                ? summaryMetadataVersionRef.current.updatedAt : existing.lastActionAt || null;
+            const receipt = await dailyLogWbsService.updateSummaryMetadata({dailyLogId:existing.id,expectedUpdatedAt:expected,
+                weather:summaryWeather,description:summaryDescription.trim(),issues:summaryIssues.trim(),
+                nextDayPlan:summaryNextPlan.trim(),photos:summaryPhotos});
+            // Keep this token on a partial work-save failure; don't discard local edits.
+            summaryMetadataVersionRef.current = {id:existing.id,updatedAt:receipt.updatedAt};
+            return {...existing,lastActionAt:receipt.updatedAt};
+        }
         const now = new Date().toISOString();
-        const item: DailyLog = existing ? {
-            ...existing,
-            weather: summaryWeather,
-            description: summaryDescription.trim(),
-            issues: summaryIssues.trim() || undefined,
-            nextDayPlan: summaryNextPlan.trim() || undefined,
-            photos: summaryPhotos,
-            summarySourceType: DAILY_SUMMARY_SOURCE_TYPE,
-            summarizedById: user?.id || null,
-            summarizedByName: user?.name || user?.username || user?.id || null,
-            summarizedAt: now,
-        } : {
+        const item: DailyLog = {
             id: summaryLogId,
             projectId: projectId || effectiveId,
             constructionSiteId: constructionSiteId || null,
@@ -2420,10 +2430,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             logDate: summaryDate,
             dailyLogId: summaryLogId,
         });
-        setSummaryWbsBundle(fresh);
         if (!fresh.summaryLog) throw new Error('Không thể đọc lại bản tổng hợp vừa lưu.');
+        summaryMetadataVersionRef.current = {id:fresh.summaryLog.id,updatedAt:fresh.summaryLog.lastActionAt || null};
         return fresh.summaryLog;
-    }, [constructionSiteId, effectiveId, logs, projectId, summaryDate, summaryDescription, summaryIssues, summaryLogId, summaryNextPlan, summaryPhotos, summaryWeather, user?.id, user?.name, user?.username]);
+    }, [constructionSiteId, effectiveId, logs, projectId, summaryWbsBundle, summaryDate, summaryDescription, summaryIssues, summaryLogId, summaryNextPlan, summaryPhotos, summaryWeather, user?.id, user?.name, user?.username]);
 
     const submitWbsSummary = useCallback(async (expectedUpdatedAt: string) => {
         if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
@@ -2914,7 +2924,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             {summaryDate && (
                 <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/35 backdrop-blur-sm px-3" onClick={e => e.target === e.currentTarget && closeSummary()}>
                     <div className="flex h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-                        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+                        {!(isWbsSummaryFlow && summaryWbsBundle) && <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
                             <div>
                                 <div className="flex items-center gap-2 text-sm font-black text-foreground">
                                     <FileText size={16} className="text-teal-500" /> Tổng hợp nhật ký ngày
@@ -2927,24 +2937,45 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-muted disabled:opacity-50">
                                 <X size={16} />
                             </button>
-                        </div>
+                        </div>}
                         <div className={shouldRenderWbsSummary
                             ? 'block flex-1 overflow-y-auto'
                             : 'grid flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[0.9fr_1.1fr]'}>
-                            <div className="overflow-y-auto border-b border-border p-4 lg:border-b-0 lg:border-r">
+                            <div className={shouldRenderWbsSummary ? 'min-w-0' : 'overflow-y-auto border-b border-border p-4 lg:border-b-0 lg:border-r'}>
                                 {isWbsSummaryFlow && summaryWbsBundle ? (
                                     <DailyLogSummaryWorkspace
                                         key={`${summaryLogId}:${summaryWbsBundle.summaryLog?.lastActionAt || 'new'}`}
                                         bundle={summaryWbsBundle}
                                         mode="summarize"
                                         ensureSummaryLog={prepareWbsSummaryLog}
-                                        onSaved={() => {
-                                            dailyLogWbsService.getBundle({
+                                        onClose={() => closeSummary()}
+                                        onBusyChange={setSummarySaving}
+                                        canSendSummary={hasDailyLogAction(DAILY_LOG_ACTION.submit) && summaryApprovers.some(staff=>staff.userId===summaryApproverUserId) && Boolean(summaryDescription.trim() || summaryPhotos.length)}
+                                        sendDisabledReason={!hasDailyLogAction(DAILY_LOG_ACTION.submit) ? 'Bạn chưa có quyền gửi bản tổng hợp trong Room Nhật ký.' : 'Chọn CHT duyệt và ghi nội dung tổng hợp hoặc có ảnh trước khi gửi.'}
+                                        metadataDirty={Boolean(summaryWbsBundle.summaryLog && (summaryWeather!==summaryWbsBundle.summaryLog.weather || summaryDescription.trim()!==summaryWbsBundle.summaryLog.description || summaryIssues.trim()!==(summaryWbsBundle.summaryLog.issues || '') || summaryNextPlan.trim()!==(summaryWbsBundle.summaryLog.nextDayPlan || '') || JSON.stringify(summaryPhotos)!==JSON.stringify(summaryWbsBundle.summaryLog.photos || [])))}
+                                        metadataForm={<fieldset disabled={summarySaving} className="min-w-0 rounded-md border border-border p-4 text-sm">
+                                            <legend className="px-1 text-base font-semibold">Thông tin bản tổng hợp</legend>
+                                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                                <label className="grid gap-2">Thời tiết<select value={summaryWeather} onChange={event=>setSummaryWeather(event.target.value as WeatherType)} className="min-h-11 rounded-md border border-border bg-background px-3 text-base sm:text-sm">{(Object.entries(WEATHER) as [WeatherType,typeof WEATHER[WeatherType]][]).map(([key,value])=><option key={key} value={key}>{value.label}</option>)}</select></label>
+                                                <label className="grid gap-2">CHT duyệt<select value={summaryApproverUserId} onChange={event=>setSummaryApproverUserId(event.target.value)} className="min-h-11 rounded-md border border-border bg-background px-3 text-base sm:text-sm"><option value="">Chọn CHT từ Room Nhật ký</option>{summaryApprovers.map(staff=><option key={staff.userId} value={staff.userId}>{staff.userName}</option>)}</select></label>
+                                                <label className="grid gap-2 sm:col-span-2">Nội dung tổng hợp<textarea aria-label="Nội dung tổng hợp" value={summaryDescription} onChange={event=>setSummaryDescription(event.target.value)} rows={3} className="w-full rounded-md border border-border bg-background p-3 text-base sm:text-sm" /></label>
+                                                <label className="grid gap-2">Vấn đề / sự cố<textarea aria-label="Vấn đề / sự cố" value={summaryIssues} onChange={event=>setSummaryIssues(event.target.value)} rows={2} className="w-full rounded-md border border-border bg-background p-3 text-base sm:text-sm" /></label>
+                                                <label className="grid gap-2">Kế hoạch ngày sau<textarea aria-label="Kế hoạch ngày sau" value={summaryNextPlan} onChange={event=>setSummaryNextPlan(event.target.value)} rows={2} className="w-full rounded-md border border-border bg-background p-3 text-base sm:text-sm" /></label>
+                                            </div>
+                                            {summaryApprovers.length===0 && <p className="mt-3 text-amber-900 dark:text-amber-100">Chưa có người có quyền duyệt trong Room Nhật ký công trường.</p>}
+                                            {summaryPhotos.length>0 && <details className="mt-4"><summary className="min-h-11 cursor-pointer py-2 font-medium">Ảnh đưa vào nhật ký · {summaryPhotos.length}</summary><div className="flex flex-wrap gap-3">{summaryPhotos.map((photo,index)=><div key={`${photo.url}-${index}`} className="flex max-w-full items-center gap-2 rounded-md border border-border p-2"><a href={photo.url} target="_blank" rel="noreferrer" className="break-words text-teal-800 underline dark:text-teal-200">{photo.name || 'Ảnh nhật ký'}</a><button type="button" aria-label={`Bỏ ảnh ${photo.name}`} onClick={()=>setSummaryPhotos(current=>current.filter((_,i)=>i!==index))} className="min-h-11 shrink-0 rounded-md border border-border px-3">Bỏ ảnh</button></div>)}</div></details>}
+                                        </fieldset>}
+                                        onSaved={async receipt => {
+                                            const fresh = await dailyLogWbsService.getBundle({
                                                 projectId: projectId || effectiveId,
                                                 constructionSiteId: constructionSiteId || null,
                                                 logDate: summaryDate,
                                                 dailyLogId: summaryLogId,
-                                            }).then(setSummaryWbsBundle).catch(console.error);
+                                            });
+                                            summaryMetadataVersionRef.current = fresh.summaryLog ? {id:fresh.summaryLog.id,updatedAt:fresh.summaryLog.lastActionAt || null} : null;
+                                            await reloadDailyLogRecords();
+                                            setSummaryWbsBundle(fresh);
+                                            if (receipt) toast.success('Đã lưu bản tổng hợp');
                                         }}
                                         onSubmit={receipt => submitWbsSummary(receipt.updatedAt)}
                                     />
@@ -3058,7 +3089,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 </div>
                                 </>}
                             </div>
-                            <div className="overflow-y-auto p-4">
+                            {!shouldRenderWbsSummary && <div className="overflow-y-auto p-4">
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <div>
                                         <label className="mb-1 block text-[10px] font-black uppercase text-muted-foreground">Thời tiết</label>
@@ -3180,7 +3211,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         </div>
                                     )}
                                 </div>}
-                            </div>
+                            </div>}
                         </div>
                         {!shouldRenderWbsSummary && <div className="flex flex-wrap justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
                             <button onClick={() => closeSummary()} disabled={summarySaving}
