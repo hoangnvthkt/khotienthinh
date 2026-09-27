@@ -297,3 +297,29 @@ Chỉ sửa frontend, không có migration.
   - Admin mở được tab "Mẫu quyền" và thấy danh sách mẫu.
   - Cả 22 mã đều `direct_grant_allowed`, nên tick trong màn Người dùng sẽ lưu được.
   - Vitest toàn repo 2.302 pass; `tsc` pass; build pass; kiểm tra truy vấn 0 lỗi.
+
+### P1.3 — Room là nguồn quyền duy nhất cho nghiệp vụ dự án do Room quản lý
+
+- **Đối chiếu lại 904 grant trực tiếp** trên 11 phân hệ, theo đúng đường kiểm quyền hiện tại của server:
+  - **8 phân hệ server chỉ đọc Room** (binding `enforced`, `project_room_pbac_fallback_enabled = false`): Nhật ký 134, Thanh toán 94, Chất lượng 87, Chốt tiến độ 72, An toàn 66, PO 61, Tiến độ 49, Nghiệm thu 49. Tổng **612 grant không có tác dụng**.
+    - Thanh toán, Nghiệm thu và An toàn đi qua `authorization_v2_final_room_action`.
+    - Nhật ký qua `daily_log_has_action`; PO qua `material_has_action`.
+    - Tiến độ, Chất lượng, Chốt tiến độ có policy gọi thẳng Room.
+  - **3 phân hệ vật tư server vẫn dùng grant:** phiếu yêu cầu 138, kế hoạch 105, BOQ 49 (292 grant).
+    - Nhánh `else` của `material_has_action` gọi `project_has_permission_v2`, hàm này đọc `user_permission_grants`.
+    - Audit ngày 27/09 ghi "server bỏ qua cả 904" là chưa chính xác với nhóm này. **Giữ nguyên**, chuyển sang batch vật tư (phối hợp luồng Procurement V2).
+  - Snapshot của Admin có Room action cho 86/86 dự án (nguồn `admin`), nên Admin không bị ảnh hưởng.
+- **Frontend** (đã push lên main trước khi apply):
+  - Tab Tiến độ, Chốt tiến độ, Nhật ký, Chất lượng, An toàn, Thanh toán chỉ đọc Room action: có quyền xem Room thì thấy tab; có thao tác khác "xem" thì được sửa.
+  - Tab con PO: quyền sửa theo Room. Quyền xem giữ đường cũ, vì tab này còn chứa giao nhận NCC mà server vẫn nhận grant.
+  - `canManageTab` / `canManage` mặc định `false` ở 7 component. Trang hợp đồng HD truyền quyền tường minh `contract.customer|supplier.manage`.
+  - Không sửa `DailyLogTab`, `SupplyChainTab`, `MaterialTab` (thuộc hai luồng song song); mọi nơi gọi chúng đều đã truyền quyền tường minh.
+  - Ma trận quyền ở màn Người dùng gắn nhãn "Phân quyền trong Room dự án" cho mã `project.*` không cấp trực tiếp được.
+- **Migration** `20260927083431_authorization_p1_3_retire_room_managed_grants`:
+  - Sao lưu 612 grant vào `app_private.p1_3_room_managed_grant_backup_20260927`.
+  - Thu hồi mềm (`is_active = false`, có `revoked_at` và lý do; không xóa dòng).
+  - Đặt `direct_grant_allowed = false` cho mã `project.*` của 8 phân hệ.
+  - Không có mã `project.*` nào là "xem mặc định", nên catalog quản trị vẫn hợp lệ; smoke có kiểm điều này.
+- **Dry-run trên Cloud** (gồm cả rollback `supabase/operations/authorization_p1_3_rollback.sql`) **PASS**. Chủ sản phẩm đồng ý. **ĐÃ APPLY.** Smoke sau apply **PASS**.
+- Walkthrough Admin trên dự án mẫu: Nhật ký ("Ghi nhật ký"), Tiến độ, Chất lượng, Thanh toán và An toàn vẫn đủ thao tác.
+- Vitest toàn repo pass (thêm test "chỉ Room action mới mở quyền sửa"); `tsc` pass; build pass.
