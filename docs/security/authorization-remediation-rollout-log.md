@@ -390,3 +390,25 @@ Chỉ sửa frontend, không có migration.
   - Thu hồi 15 grant `system.rq.manage`; xóa cờ legacy RQ; có sao lưu và audit.
   - `request.template.manage` của 4 người không đổi.
 - Dry-run (gồm cả rollback, đã sửa để khôi phục đúng thứ tự hai bản sao lưu cờ) **PASS**. **ĐÃ APPLY.** Smoke sau apply **PASS**.
+
+## P1.6 — bucket chứa dữ liệu nhạy cảm sang private
+
+### P1.6a — ảnh chấm công (`checkin-photos`)
+
+- **Hiện trạng:**
+  - 819 ảnh khuôn mặt nằm trong bucket public; policy xem là `bucket_id = 'checkin-photos'`, nên ai có link đều mở được, kể cả chưa đăng nhập.
+  - Dữ liệu chấm công lưu URL công khai trong `hrm_attendance.events[].image_url`.
+  - Chỉ trang Chấm công và Check-in hiển thị ảnh; RPC chấm công không kiểm tra dạng URL.
+- **Frontend** (đã push lên main trước khi khóa bucket):
+  - `lib/storageSignedUrl.ts` nhận diện URL cũ của bucket đã private và đổi sang signed URL có hạn 1 giờ (có cache).
+  - Hook `useSignedStorageUrl` có đủ trạng thái trống / đang tải / lỗi. Component `components/hrm/AttendancePhoto.tsx` hiện ô chờ, và "Không xem được ảnh" khi không có quyền.
+  - Dữ liệu cũ không phải sửa.
+- **Migration** `20260927160626_authorization_p1_6_private_checkin_photos`: bucket private. Xem (và ký link) được nếu là người tải ảnh, Admin, hoặc người được xem chấm công của nhân viên đó (thư mục `<employeeId>/`, cùng quy tắc với `hrm_attendance`).
+- **Kiểm tra:**
+  - Dry-run và smoke sau apply **PASS**: chủ ảnh và Admin xem được; nhân viên không liên quan không xem được.
+  - Đã tải một ảnh thật qua signed URL trên dev server nhánh P0.
+  - Script rollback: `supabase/operations/authorization_p1_6_rollback.sql`.
+- **Còn chờ — purge CDN:**
+  - Sau khi apply, URL công khai cũ (đúng nguyên văn) vẫn trả về 200 cho các ảnh đã từng được mở, do Smart CDN giữ bản cache. Cùng URL thêm tham số thì trả 400, tức origin đã chặn.
+  - Theo tài liệu Supabase, đổi bucket sang private không tự xóa cache. Cần gọi `DELETE /storage/v1/cdn/checkin-photos` bằng secret key.
+  - `.env` không có secret key và agent không xử lý key này, nên **chủ sản phẩm chạy lệnh purge**. Sau khi purge, kiểm lại URL mẫu phải trả 400.
