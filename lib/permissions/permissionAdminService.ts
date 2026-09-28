@@ -174,3 +174,10 @@ export const changeUserAccountRoleV2 = async (
   if (!data) throw new Error('Lệnh chuyển loại tài khoản không trả về kết quả.');
   return data as AccountRoleTransitionReceipt;
 };
+
+/** Authorization snapshot of another person (Admin / grant managers only). */
+export const loadUserAuthorizationSnapshot = async (userId: string): Promise<unknown> => {
+  const { data, error } = await supabase.rpc('get_user_authorization_snapshot', { p_user_id: userId });
+  if (error) throw error;
+  return data;
+};

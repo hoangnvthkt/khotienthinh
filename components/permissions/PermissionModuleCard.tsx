@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ExternalLink, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react';
 import { EffectivePermissionSource, UserPermissionGrant } from '../../types';
 import {
   PermissionCatalogAction,
@@ -7,6 +7,11 @@ import {
   PermissionScopeType,
 } from '../../lib/permissions/permissionTypes';
 import { ApplicationGrantState } from '../../lib/permissions/moduleGrantSelection';
+import {
+  getScopeEntityLabel,
+  hasScopeEntityPicker,
+  usePermissionScopeEntities,
+} from '../../lib/permissions/permissionScopeEntities';
 
 interface PermissionModuleCardProps {
   application: PermissionCatalogApplication;
@@ -62,8 +67,16 @@ const activeGrantFor = (
   && (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())
 );
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  ROLE: 'vai trò',
+  TEMPLATE: 'mẫu quyền',
+  INHERITED: 'loại tài khoản',
+  LEGACY: 'quyền chuyển đổi cũ',
+  ADMIN: 'quyền Admin',
+};
+
 const sourceLabel = (source: EffectivePermissionSource): string =>
-  source.sourceLabel || source.sourceCode || source.sourceType;
+  source.sourceLabel || SOURCE_TYPE_LABELS[String(source.sourceType).toUpperCase()] || source.sourceCode || 'nguồn khác';
 
 const ActionRow: React.FC<{
   action: PermissionCatalogAction;
@@ -72,6 +85,7 @@ const ActionRow: React.FC<{
   disabled: boolean;
   onToggle: PermissionModuleCardProps['onToggleAction'];
 }> = ({ action, grants, inheritedSources, disabled, onToggle }) => {
+  const { entities, state: entityState, retry: retryEntities } = usePermissionScopeEntities();
   const directGrant = activeGrantFor(grants, action.permissionCode);
   const matchingSources = inheritedSources.filter(source => source.permissionCode === action.permissionCode
     && (!source.startsAt || Date.parse(source.startsAt) <= Date.now())
@@ -113,18 +127,20 @@ const ActionRow: React.FC<{
         )}
         {!action.directGrantAllowed && (action.permissionCode.startsWith('project.')
           ? <span title="Quyền này được cấp trong tab Phân quyền của từng dự án, không cấp tại đây." className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700">Phân quyền trong Room dự án</span>
-          : <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Template</span>)}
+          : <span title="Quyền này chỉ cấp được qua mẫu quyền, không cấp riêng cho từng người." className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Cấp qua mẫu quyền</span>)}
         {action.directGrantRequiresExpiry && (
           <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Cần ngày hết hạn</span>
         )}
       </div>
 
       {directGrant && <p className="mt-1 text-[11px] font-semibold text-blue-700">
-        Cấp trực tiếp · {SCOPE_LABELS[directGrant.scopeType || 'global']} · {directGrant.scopeId || '*'}
+        Cấp riêng · {SCOPE_LABELS[directGrant.scopeType || 'global']}
+        {directGrant.scopeId && directGrant.scopeId !== '*' && <> · {getScopeEntityLabel(entities, directGrant.scopeType, directGrant.scopeId)}</>}
       </p>}
       {matchingSources.map((source, index) => (
         <p key={`${source.sourceType}-${source.sourceCode}-${source.scopeType}-${source.scopeId}-${index}`} className="mt-1 text-[11px] font-semibold text-slate-500">
-          Kế thừa từ {sourceLabel(source)} · {SCOPE_LABELS[source.scopeType as PermissionScopeType] || source.scopeType} · {source.scopeId}
+          Kế thừa từ {sourceLabel(source)} · {SCOPE_LABELS[source.scopeType as PermissionScopeType] || source.scopeType}
+          {source.scopeId && source.scopeId !== '*' && <> · {getScopeEntityLabel(entities, source.scopeType, source.scopeId)}</>}
         </p>
       ))}
 
@@ -143,9 +159,35 @@ const ActionRow: React.FC<{
               ))}
             </select>
           </label>
-          {entityScope && (
+          {entityScope && hasScopeEntityPicker(scopeType) && (
             <label className="space-y-1">
-              <span className="block text-[10px] font-bold text-slate-500">Mã phạm vi cụ thể</span>
+              <span className="block text-[10px] font-bold text-slate-500">Chọn {SCOPE_LABELS[scopeType].toLocaleLowerCase('vi')}</span>
+              {entityState === 'error' ? (
+                <span className="flex min-h-10 items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-2 text-[11px] font-semibold text-rose-700">
+                  Không tải được danh sách.
+                  <button type="button" onClick={retryEntities} className="font-black underline">Thử lại</button>
+                </span>
+              ) : (
+                <select
+                  value={scopeId}
+                  disabled={disabled || Boolean(directGrant) || entityState === 'loading'}
+                  onChange={event => setScopeId(event.target.value)}
+                  className="min-h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-50"
+                >
+                  <option value="">{entityState === 'loading' ? 'Đang tải danh sách…' : `— Chọn ${SCOPE_LABELS[scopeType].toLocaleLowerCase('vi')} —`}</option>
+                  {scopeId && !entities?.[scopeType]?.some(entity => entity.id === scopeId) && (
+                    <option value={scopeId}>{scopeId}</option>
+                  )}
+                  {(entities?.[scopeType] || []).map(entity => (
+                    <option key={entity.id} value={entity.id}>{entity.label}</option>
+                  ))}
+                </select>
+              )}
+            </label>
+          )}
+          {entityScope && !hasScopeEntityPicker(scopeType) && (
+            <label className="space-y-1">
+              <span className="block text-[10px] font-bold text-slate-500">Mã {SCOPE_LABELS[scopeType].toLocaleLowerCase('vi')}</span>
               <input
                 value={scopeId}
                 disabled={disabled || Boolean(directGrant)}
@@ -238,9 +280,9 @@ const PermissionModuleCard: React.FC<PermissionModuleCardProps> = ({
           <div className="min-w-0 flex-1">
             <div className="text-sm font-black text-slate-800">{application.label}</div>
             {application.code === 'project' ? (
-              <a href="/da?tab=permissions" className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-blue-700">
-                Quản lý tại Room Dự án <ExternalLink size={12} />
-              </a>
+              <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                Quản lý tại Room Dự án: mở dự án → tab Phân quyền. Xem Room người này đang có ở mục bên dưới.
+              </p>
             ) : (
               <p className="mt-1 text-[11px] font-semibold text-slate-500">Chưa có gói quyền Xem mặc định</p>
             )}

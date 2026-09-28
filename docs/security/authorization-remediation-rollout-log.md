@@ -632,3 +632,35 @@ Chỉ sửa frontend, không có migration.
   - Rollback dry-run PASS.
   - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Chưa ai có tuỳ chọn riêng, nên không ai bị thay đổi cho tới khi tự chọn. Smoke sau apply PASS, không để lại dữ liệu test.
   - Rollback: `supabase/operations/notification_preferences_digest_rollback.sql`; phải rollback frontend trước.
+
+## P2 — màn Cài đặt → Người dùng
+
+- **Vấn đề** (audit P2, cộng hai lỗi phát hiện thêm khi làm):
+  - Màn sửa người dùng hiện "0 Room" vì chỉ tải được snapshot quyền của người đang đăng nhập.
+  - Phạm vi quyền phải gõ UUID và hiển thị UUID thô.
+  - Lộ thuật ngữ kỹ thuật (direct grants, Template, mã quyền).
+  - Khối "Dữ liệu legacy" luôn báo "Đang theo dõi fallback".
+  - Link Room tải lại toàn trang và không mở đúng dự án.
+  - Drawer có ngõ cụt ở tab Mật khẩu và tab Chỉnh sửa; "Kho phụ trách" hiện "toàn bộ kho" khi chưa gán.
+  - **Mới phát hiện:** tab "Lịch sử đăng nhập" hiện dữ liệu bịa (IP cố định, thời gian tự sinh); trạng thái "Online" mặc định online cho mọi người.
+- **Migration** `20260928080828_authorization_user_snapshot_for_admins`: RPC chỉ đọc `get_user_authorization_snapshot(p_user_id)`, cùng dạng với `get_my_authorization_snapshot`. Chỉ chính người đó, Admin hoặc người có `system.authorization.manage_grants` được gọi.
+- **Frontend:**
+  - `UserModal` tải snapshot của người đang sửa, có trạng thái đang tải và lỗi kèm Thử lại.
+  - `ProjectRoomSummary` liệt kê dự án → Room → thao tác. Bấm tên dự án mở `#/da?projectId=…&tab=permissions` ở thẻ mới nên không mất bản đang sửa. Admin hiện "toàn quyền mọi dự án".
+  - `permissionScopeEntities`: chọn dự án, công trường, kho, đơn vị từ danh sách. Tên thay UUID ở dòng quyền, phần xem trước thay đổi và phần gỡ theo phạm vi.
+  - Bỏ `LegacyPermissionReadOnly`. Thay thuật ngữ bằng tiếng Việt; đổi "Vai trò hệ thống" thành "Loại tài khoản".
+  - `SettingsUsers`:
+    - Online lấy từ `user_sessions` (phiên hoạt động, thấy trong 5 phút); chưa biết thì không hiện.
+    - "Lịch sử đăng nhập" mở `/admin/activity` (dữ liệu thật); bỏ modal dữ liệu giả.
+    - Drawer: nút "Chỉnh sửa & phân quyền" ở đầu, bỏ tab Chỉnh sửa và Mật khẩu. Nói rõ màn này chưa hỗ trợ Admin đặt lại mật khẩu.
+    - Kho phụ trách hiện đúng: chưa gán / toàn bộ kho / tên kho.
+- **Kiểm tra:**
+  - Dry-run và smoke persona PASS: Admin thấy đúng 22 thao tác Room trên 2 dự án của người được sửa, khớp với snapshot của chính người đó; nhân viên thường bị chặn.
+  - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý; smoke sau apply PASS.
+  - Vitest 2.333 pass, `tsc` và build pass, kiểm tra truy vấn 0 lỗi.
+  - Chưa walkthrough giao diện vì browser pane của agent chưa đăng nhập.
+- **Còn mở:**
+  - Lý do tối thiểu 10 ký tự vẫn bắt buộc cả khi chỉ sửa số điện thoại, vì RPC `update_user_authorization_v2` ép điều này.
+  - Chưa có cách Admin đặt lại mật khẩu cho người khác.
+  - Danh sách người dùng chưa có cột tóm tắt quyền; để P3 "Hồ sơ quyền".
+- Rollback: `supabase/operations/authorization_user_snapshot_for_admins_rollback.sql`, kèm rollback frontend.

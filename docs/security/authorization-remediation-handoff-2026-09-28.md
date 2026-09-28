@@ -89,6 +89,7 @@
 | Thông báo B2a | `20260928052528_notification_site_command_recipients` | BCH (CHT/CHP/KTT theo `notification_site_command_positions`), tuỳ chọn `includeSiteCommand`, RPC xem trước người nhận; cảnh báo An toàn = Room An toàn + BCH, Admin chỉ dự phòng |
 | Thông báo B2b | `20260928062658_notification_event_recipients_request_safety` | Phiếu yêu cầu: người theo dõi chỉ nhận kết quả + quá hạn, người duyệt nhận nhắc hạn + bình luận; sự cố An toàn gửi từ trigger (Cao/Nghiêm trọng → Room AT + BCH) |
 | Thông báo B3 | `20260928065520_notification_preferences_digest` | Tuỳ chọn cá nhân (Theo dõi: ngay/tổng hợp/không báo; Nghiệp vụ: ngay/tổng hợp) + tổng hợp cuối ngày qua cron `notification-digests` |
+| P2 Người dùng | `20260928080828_authorization_user_snapshot_for_admins` | Màn sửa người dùng tải quyền thật của người được sửa (Room theo dự án, link mở đúng dự án); chọn phạm vi theo tên; bỏ thuật ngữ kỹ thuật, dữ liệu online/đăng nhập giả và ngõ cụt drawer |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -130,13 +131,11 @@ Bước 1 đã xong (xem rollout log). Còn lại:
   - Nơi tạo thông báo mới nên truyền `delivery_reason`; trigger chỉ là dự phòng.
 - **Bước 3:** ĐÃ XONG (B3). Nghiệp vụ chỉ được chuyển sang tổng hợp, không tắt được (quyết định 28/09).
 
-### 7.2 Màn Cài đặt → Người dùng (P2, UX)
+### 7.2 Màn Cài đặt → Người dùng (P2, UX) — ĐÃ XONG (28/09)
 
-Theo audit mục P2:
-- Tải snapshot của **người đang được sửa**, để không còn hiện "0 Room".
-- Bộ chọn dự án/công trường/kho thay cho ô gõ UUID.
-- Bỏ thuật ngữ kỹ thuật ("direct grants", "PBAC fallback", "Room-authoritative", mã `system.da.view`).
-- Sửa ngõ cụt ở drawer (mật khẩu, kho phụ trách); link Room mở đúng dự án.
+Xem rollout log. Còn mở, cần chủ sản phẩm quyết:
+- Lý do tối thiểu 10 ký tự vẫn bắt buộc khi chỉ sửa thông tin hồ sơ (RPC `update_user_authorization_v2`).
+- Chưa có cách Admin đặt lại mật khẩu cho người khác.
 
 ### 7.3 Hai bảng còn `select true`
 
@@ -176,4 +175,4 @@ Theo audit mục P2:
 - `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
 - Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.328 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.333 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.

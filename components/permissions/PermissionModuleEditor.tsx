@@ -10,6 +10,7 @@ import {
   togglePermissionAction,
 } from '../../lib/permissions/moduleGrantSelection';
 import PermissionModuleCard, { SCOPE_LABELS } from './PermissionModuleCard';
+import { getScopeEntityLabel, usePermissionScopeEntities } from '../../lib/permissions/permissionScopeEntities';
 
 interface PermissionModuleEditorProps {
   catalog: PermissionAdminCatalog;
@@ -39,6 +40,7 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
   onChange,
 }) => {
   const [query, setQuery] = useState('');
+  const { entities } = usePermissionScopeEntities();
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(initialExpandedApplicationCodes),
   );
@@ -165,7 +167,7 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
               <option value="">Chọn một phạm vi…</option>
               {getApplicationDirectScopes({ catalog, applicationCode: scopeRemovalApplication, grants }).map(scope => (
                 <option key={JSON.stringify(scope)} value={JSON.stringify(scope)}>
-                  {SCOPE_LABELS[scope.scopeType]}{scope.scopeId === '*' ? '' : ` · ${scope.scopeId}`}
+                  {SCOPE_LABELS[scope.scopeType]}{scope.scopeId === '*' ? '' : ` · ${getScopeEntityLabel(entities, scope.scopeType, scope.scopeId)}`}
                 </option>
               ))}
             </select>

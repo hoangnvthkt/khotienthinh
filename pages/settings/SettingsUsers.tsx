@@ -15,6 +15,11 @@ import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settin
 import { useToast } from '../../context/ToastContext';
 import HrmAuthorizationPanel from '../../components/permissions/HrmAuthorizationPanel';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
+import { useNavigate } from 'react-router-dom';
+import { userActivityService } from '../../lib/userActivityService';
+
+// A person counts as online while an active session was seen recently.
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 interface SettingsUsersProps {
   users: User[];
@@ -85,9 +90,25 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   const [selectedUserForPopover, setSelectedUserForPopover] = useState<User | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<{ top: number; left: number } | null>(null);
   const [drawerUser, setDrawerUser] = useState<User | null>(null);
-  const [drawerActiveTab, setDrawerActiveTab] = useState<'account' | 'edit' | 'password' | 'security' | 'schedule'>('account');
+  const [drawerActiveTab, setDrawerActiveTab] = useState<'account' | 'security' | 'schedule'>('account');
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-  const [showLoginLogsModal, setShowLoginLogsModal] = useState(false);
+  const navigate = useNavigate();
+  // null while loading or when sessions cannot be read: online is then unknown, not assumed.
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    userActivityService.listSessions({ status: 'active', limit: 500 })
+      .then(sessions => {
+        if (cancelled) return;
+        const cutoff = Date.now() - ONLINE_WINDOW_MS;
+        setOnlineUserIds(new Set(sessions
+          .filter(session => Date.parse(session.lastSeenAt) >= cutoff)
+          .map(session => session.userId)));
+      })
+      .catch(() => { if (!cancelled) setOnlineUserIds(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -111,17 +132,17 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
     const total = users.length;
     const active = users.filter(u => u.isActive !== false && u.accountStatus !== 'DISABLED').length;
     const admin = users.filter(isSettingsUserAdmin).length;
-    const online = users.filter(u => u.isOnline !== false).length; // Default to online in demo/mock
+    const online = onlineUserIds ? users.filter(u => onlineUserIds.has(u.id)).length : null;
     const disabled = total - active;
     return { total, active, admin, online, disabled };
-  }, [users]);
+  }, [users, onlineUserIds]);
 
   // Filtered Users list
   const filteredUsers = useMemo(() => {
     return users.filter(u => {
       const isDisabled = u.accountStatus === 'DISABLED' || u.isActive === false;
       const isAdmin = isSettingsUserAdmin(u);
-      const isOnline = u.isOnline !== false;
+      const isOnline = Boolean(onlineUserIds?.has(u.id));
 
       // Tab filter
       if (accountFilter === 'disabled' && !isDisabled) return false;
@@ -148,7 +169,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
         position.includes(q)
       );
     });
-  }, [users, activeTab, accountFilter, searchQuery, matchMode]);
+  }, [users, activeTab, accountFilter, searchQuery, matchMode, onlineUserIds]);
 
   // Open Popover
   const handleOpenPopover = (e: React.MouseEvent, u: User) => {
@@ -266,15 +287,16 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
           {([
             ['all', `TẤT CẢ (${stats.active}/${stats.total})`],
             ['admin', `QUẢN TRỊ HỆ THỐNG (${stats.admin})`],
-            ['online', `ONLINE (${stats.online})`],
+            ['online', `ĐANG ONLINE (${stats.online ?? '…'})`],
             ['disabled', `VÔ HIỆU HOÁ (${stats.disabled})`],
-            ['logs', `LỊCH SỬ ĐĂNG NHẬP`],
+            ['logs', `LỊCH SỬ ĐĂNG NHẬP ↗`],
           ] as const).map(([tabKey, tabLabel]) => (
             <button
               key={tabKey}
+              title={tabKey === 'logs' ? 'Mở trang Hoạt động người dùng' : tabKey === 'online' ? 'Có phiên đăng nhập hoạt động trong 5 phút gần nhất' : undefined}
               onClick={() => {
                 if (tabKey === 'logs') {
-                  setShowLoginLogsModal(true);
+                  navigate('/admin/activity');
                 } else {
                   setActiveTab(tabKey);
                 }
@@ -316,7 +338,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                 filteredUsers.map(u => {
                   const disabled = u.accountStatus === 'DISABLED' || u.isActive === false;
                   const isAdmin = isSettingsUserAdmin(u);
-                  const isOnline = u.isOnline !== false;
+                  const isOnline = onlineUserIds ? onlineUserIds.has(u.id) : null;
                   const manager = users.find(m => m.id === u.managerId);
                   const username = u.username || u.email.split('@')[0];
                   const position = u.position || (u.role === Role.ADMIN ? 'Quản trị viên' : u.role === Role.WAREHOUSE_KEEPER ? 'Thủ kho' : 'Cán bộ');
@@ -340,12 +362,14 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                               alt={u.name}
                               className="w-11 h-11 rounded-full object-cover border-2 border-slate-100 group-hover:border-teal-400 transition"
                             />
-                            <span
-                              className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-                                isOnline ? 'bg-emerald-500' : 'bg-slate-300'
-                              }`}
-                              title={isOnline ? 'Đang online' : 'Ngoại tuyến'}
-                            />
+                            {isOnline !== null && (
+                              <span
+                                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+                                  isOnline ? 'bg-emerald-500' : 'bg-slate-300'
+                                }`}
+                                title={isOnline ? 'Đang online' : 'Không online'}
+                              />
+                            )}
                           </div>
 
                           <div className="space-y-1 min-w-0">
@@ -590,21 +614,31 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                     <p className="text-xs text-slate-300">@{drawerUser.username || drawerUser.email.split('@')[0]} · {drawerUser.position || drawerUser.role}</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setDrawerUser(null)}
-                  className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      handleEditUser(drawerUser);
+                      setDrawerUser(null);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/20 transition"
+                  >
+                    <Edit className="w-3.5 h-3.5" /> Chỉnh sửa & phân quyền
+                  </button>
+                  <button
+                    onClick={() => setDrawerUser(null)}
+                    aria-label="Đóng"
+                    className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Drawer Content Tabs */}
               <div className="flex border-b border-slate-200 bg-slate-50 px-6 gap-2 pt-2">
                 {([
                   ['account', 'Thông tin chung', Shield],
-                  ['security', 'Phân quyền', ShieldCheck],
-                  ['edit', 'Chỉnh sửa', Edit],
-                  ['password', 'Mật khẩu', Key],
+                  ['security', 'Vai trò nhân sự', ShieldCheck],
                   ['schedule', 'Kho phụ trách', MapPin],
                 ] as const).map(([tabKey, tabLabel, IconComp]) => (
                   <button
@@ -670,24 +704,23 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                         </span>
                       </div>
                     </div>
+
+                    <div className="rounded-2xl border border-slate-100 p-4 text-xs text-slate-500 flex items-start gap-2">
+                      <Key className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                      <p>
+                        <span className="font-bold text-slate-700">Mật khẩu: </span>
+                        người dùng tự đổi ở Cài đặt → Tài khoản. Màn này chưa hỗ trợ Admin đặt lại mật khẩu cho người khác.
+                      </p>
+                    </div>
                   </div>
                 )}
 
-                {drawerActiveTab === 'edit' && (
-                  <div className="space-y-4">
-                    <p className="text-xs text-slate-500">Mở cửa sổ chỉnh sửa đầy đủ để cập nhật thông tin người dùng này.</p>
-                    <button
-                      onClick={() => {
-                        handleEditUser(drawerUser);
-                        setDrawerUser(null);
-                      }}
-                      className="w-full py-2.5 bg-teal-600 text-white rounded-xl text-xs font-bold hover:bg-teal-700 transition"
-                    >
-                      Mở Form chỉnh sửa tài khoản
-                    </button>
-                  </div>
+                {drawerActiveTab === 'security' && (
+                  <p className="text-xs text-slate-500">
+                    Vai trò nhân sự quyết định người này thấy hồ sơ nhân sự nào. Quyền theo phân hệ và Room dự án xem ở nút{' '}
+                    <span className="font-bold text-slate-700">Chỉnh sửa & phân quyền</span>.
+                  </p>
                 )}
-
                 {drawerActiveTab === 'security' && (
                   <HrmAuthorizationPanel
                     currentUserId={currentUser.id}
@@ -695,73 +728,22 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                   />
                 )}
 
-                {drawerActiveTab === 'password' && (
-                  <div className="space-y-4">
-                    <p className="text-xs text-slate-500">Đổi mật khẩu trực tiếp cho tài khoản này (Cập nhật cả trên Supabase Auth).</p>
-                    <button
-                      onClick={() => {
-                        handleEditUser(drawerUser);
-                        setDrawerUser(null);
-                      }}
-                      className="w-full py-2.5 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-700 transition"
-                    >
-                      Đổi mật khẩu người dùng
-                    </button>
-                  </div>
-                )}
-
                 {drawerActiveTab === 'schedule' && (
                   <div className="space-y-3 text-xs">
                     <p className="text-slate-500 font-medium">Kho phụ trách được phân công:</p>
                     <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 font-bold text-slate-800">
-                      {warehouses.find(w => w.id === drawerUser.assignedWarehouseId)?.name || 'Phòng vật tư - toàn bộ kho'}
+                      {drawerUser.assignedWarehouseId === '*'
+                        ? 'Toàn bộ kho'
+                        : drawerUser.assignedWarehouseId
+                          ? warehouses.find(w => w.id === drawerUser.assignedWarehouseId)?.name || 'Kho không còn tồn tại'
+                          : <span className="font-medium text-slate-500">Chưa gán kho</span>}
                     </div>
+                    {drawerUser.role !== Role.WAREHOUSE_KEEPER && (
+                      <p className="text-slate-400">Chỉ tài khoản kho mới được gán kho phụ trách. Đổi loại tài khoản ở nút Chỉnh sửa & phân quyền.</p>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Login Logs Audit Modal */}
-      {showLoginLogsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <History className="w-5 h-5 text-teal-600" />
-                <h3 className="font-bold text-base text-slate-800">Lịch sử đăng nhập hệ thống</h3>
-              </div>
-              <button onClick={() => setShowLoginLogsModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {users.slice(0, 6).map((u, idx) => (
-                <div key={u.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <img src={u.avatar} alt="" className="w-8 h-8 rounded-full" />
-                    <div>
-                      <p className="font-bold text-slate-800">{u.name}</p>
-                      <p className="text-[10px] text-slate-400">IP: 14.232.210.18 · Chrome on MacOS</p>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-medium text-slate-500">
-                    {idx === 0 ? 'Vừa xong' : `${idx * 15} phút trước`}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="text-right">
-              <button
-                onClick={() => setShowLoginLogsModal(false)}
-                className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-700"
-              >
-                Đóng
-              </button>
             </div>
           </div>
         </div>

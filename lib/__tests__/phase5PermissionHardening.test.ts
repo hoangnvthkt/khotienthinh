@@ -44,7 +44,6 @@ describe('Phase 5 permission hardening guards', () => {
 
   it('keeps legacy field access decisions confined to the Phase 5 readiness allowlist', () => {
     const allowedLegacyConsumers = new Set([
-      'components/permissions/LegacyPermissionReadOnly.tsx',
       'lib/auditService.ts',
       'lib/supabaseProjections.ts',
       'context/authState.ts',
