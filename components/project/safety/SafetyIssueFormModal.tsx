@@ -135,8 +135,8 @@ const SafetyIssueFormModal: React.FC<Props> = ({
             </div>
           </div>
 
-          <SafetyAttachmentUploader projectId={projectId} recordType="issues" recordId={tempRecordId} attachments={beforePhotos} onChange={setBeforePhotos} uploadedBy={currentUser.name || currentUser.username} imageOnly label="Ảnh hiện trường" />
-          <SafetyAttachmentUploader projectId={projectId} recordType="issue-files" recordId={tempRecordId} attachments={attachments} onChange={setAttachments} uploadedBy={currentUser.name || currentUser.username} label="File đính kèm" />
+          <SafetyAttachmentUploader projectId={projectId} constructionSiteId={constructionSiteId} recordType="issues" recordId={tempRecordId} attachments={beforePhotos} onChange={setBeforePhotos} uploadedBy={currentUser.name || currentUser.username} imageOnly label="Ảnh hiện trường" />
+          <SafetyAttachmentUploader projectId={projectId} constructionSiteId={constructionSiteId} recordType="issue-files" recordId={tempRecordId} attachments={attachments} onChange={setAttachments} uploadedBy={currentUser.name || currentUser.username} label="File đính kèm" />
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
