@@ -1,5 +1,4 @@
 import type { ErpStatusTone } from '../components/erp/status';
-import type { AppNotification } from './notificationService';
 import { MaterialRequest, RequestStatus, Transaction, TransactionStatus, TransactionType, User } from '../types';
 import {
   canApproveMaterialRequest,
@@ -170,30 +169,3 @@ export const getTransactionNextAction = (transaction: Transaction, user: User): 
   return { ...view, nextAction: 'Kiểm tra thông tin phiếu.', actionLabel: 'Xem phiếu', isActionable: false };
 };
 
-export type NotificationWorkGroup = 'action' | 'tracking' | 'alert';
-
-export const getNotificationWorkGroup = (notification: AppNotification): NotificationWorkGroup => {
-  if (notification.severity === 'critical') return 'alert';
-  if (['inventory', 'budget', 'progress', 'payment', 'safety'].includes(notification.category) && notification.severity !== 'info') return 'alert';
-  if (!notification.isRead && [
-    'workflow',
-    'request',
-    'rq',
-    'material',
-    'material_request',
-    'quality_checklist',
-    'quantity_acceptance',
-    'payment_certificate',
-    'safety_issue',
-    'safety_inspection',
-  ].some(token => String(notification.sourceType || notification.category).includes(token))) {
-    return 'action';
-  }
-  return 'tracking';
-};
-
-export const getNotificationWorkGroupLabel = (group: NotificationWorkGroup): string => {
-  if (group === 'action') return 'Cần tôi xử lý';
-  if (group === 'alert') return 'Cảnh báo';
-  return 'Theo dõi';
-};

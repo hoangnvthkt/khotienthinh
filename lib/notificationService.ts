@@ -1,6 +1,10 @@
 import { supabase } from './supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { clampPageSize, takeCursorPage, type CursorPage } from './supabasePagination';
+import {
+  type NotificationDeliveryReason,
+  type NotificationInboxTab,
+} from './notificationReasons';
 
 export interface AppNotification {
   id: string;
@@ -23,6 +27,8 @@ export interface AppNotification {
   entityType?: string;
   entityId?: string;
   metadata: Record<string, any>;
+  /** Why this person received it; set by the server. */
+  deliveryReason?: NotificationDeliveryReason;
   createdAt: string;
   expiresAt?: string;
 }
@@ -36,7 +42,7 @@ export type NotificationListPage = CursorPage<AppNotification, NotificationCurso
 
 const UNREAD_DISPLAY_LIMIT = 99;
 const UNREAD_QUERY_LIMIT = UNREAD_DISPLAY_LIMIT + 1;
-const NOTIFICATION_LIST_SELECT = 'id,user_id,type,category,title,message,icon,link,is_read,is_dismissed,severity,source_type,source_id,construction_site_id,priority,push_enabled,action_url,entity_type,entity_id,metadata,created_at,expires_at';
+const NOTIFICATION_LIST_SELECT = 'id,user_id,type,category,title,message,icon,link,is_read,is_dismissed,severity,source_type,source_id,construction_site_id,priority,push_enabled,action_url,entity_type,entity_id,metadata,created_at,expires_at,delivery_reason';
 
 const toCamel = (row: any): AppNotification => ({
   id: row.id,
@@ -61,6 +67,7 @@ const toCamel = (row: any): AppNotification => ({
   metadata: row.metadata || {},
   createdAt: row.created_at,
   expiresAt: row.expires_at,
+  deliveryReason: row.delivery_reason || (row.user_id ? undefined : 'system'),
 });
 
 type NotificationRealtimeListener = (notification: AppNotification) => void;
@@ -326,8 +333,12 @@ export const notificationService = {
   async listPage(userId?: string, options: {
     limit?: number;
     cursor?: NotificationCursor;
+    /** Only these delivery reasons; omit for every notification. */
+    reasons?: NotificationDeliveryReason[] | null;
   } = {}): Promise<NotificationListPage> {
     const limit = clampPageSize(options.limit, 50, 120);
+    const reasons = options.reasons?.length ? options.reasons : null;
+    const includeGlobal = !reasons || reasons.includes('system');
 
     if (!userId) {
       const { data, error } = await buildNotificationQuery(limit, options.cursor).is('user_id', null);
@@ -339,9 +350,10 @@ export const notificationService = {
       };
     }
 
+    const userQuery = buildNotificationQuery(limit, options.cursor).eq('user_id', userId);
     const [userResult, globalResult] = await Promise.all([
-      buildNotificationQuery(limit, options.cursor).eq('user_id', userId),
-      buildNotificationQuery(limit, options.cursor).is('user_id', null),
+      reasons ? userQuery.in('delivery_reason', reasons) : userQuery,
+      includeGlobal ? buildNotificationQuery(limit, options.cursor).is('user_id', null) : Promise.resolve({ data: [], error: null }),
     ]);
     if (userResult.error) throw userResult.error;
     if (globalResult.error) throw globalResult.error;
@@ -355,6 +367,40 @@ export const notificationService = {
       items: page.items.map(toCamel),
       nextCursor: page.nextCursor,
     };
+  },
+
+  /** Unread count per inbox tab, each capped at 100 (shown as 99+). */
+  async countUnreadByTab(userId: string): Promise<Record<Exclude<NotificationInboxTab, 'all'>, number>> {
+    const countUserTab = async (reasons: NotificationDeliveryReason[]) => {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('is_read', false)
+        .eq('is_dismissed', false)
+        .neq('category', 'inventory')
+        .in('delivery_reason', reasons)
+        .limit(1);
+      if (error) throw error;
+      return Math.min(count || 0, UNREAD_QUERY_LIMIT);
+    };
+    const [mine, watching, responsible, userSystem, globalResult] = await Promise.all([
+      countUserTab(['assigned', 'mentioned']),
+      countUserTab(['watching']),
+      countUserTab(['responsible']),
+      countUserTab(['system']),
+      supabase
+        .from('notifications')
+        .select('id,is_read')
+        .is('user_id', null)
+        .eq('is_read', false)
+        .eq('is_dismissed', false)
+        .neq('category', 'inventory')
+        .limit(UNREAD_QUERY_LIMIT),
+    ]);
+    if (globalResult.error) throw globalResult.error;
+    const globalUnread = (await applyBroadcastReceipts(globalResult.data || [])).filter(row => !row.is_read).length;
+    return { mine, watching, responsible, system: Math.min(userSystem + globalUnread, UNREAD_QUERY_LIMIT) };
   },
 
   /** List notifications (recent first) */

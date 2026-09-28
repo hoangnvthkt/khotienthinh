@@ -4,19 +4,20 @@ import { AlertTriangle, Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, Ref
 import { useApp } from '../context/AppContext';
 import { AppNotification, NOTIFICATION_CATEGORIES, NotificationCursor, notificationService } from '../lib/notificationService';
 import { resolveNotificationPath } from '../lib/notificationRoutes';
-import { getNotificationWorkGroup, getNotificationWorkGroupLabel, NotificationWorkGroup } from '../lib/erpWorkflow';
+import {
+  getInboxTabReasons,
+  getNotificationInboxTab,
+  NOTIFICATION_INBOX_TABS,
+  NOTIFICATION_REASON_LABELS,
+  type NotificationInboxTab,
+} from '../lib/notificationReasons';
 import { EmptyState, FilterBar, MobileCardList, PageHeader, StatusBadge } from '../components/erp';
 import VehicleBookingNotificationContent from '../components/VehicleBookingNotificationContent';
 
-type NotificationFilter = 'all' | 'unread' | NotificationWorkGroup;
+type TabCounts = Record<Exclude<NotificationInboxTab, 'all'>, number>;
+type SectionTab = Exclude<NotificationInboxTab, 'all'>;
 
-const FILTERS: Array<{ id: NotificationFilter; label: string }> = [
-  { id: 'all', label: 'Tất cả' },
-  { id: 'action', label: 'Cần xử lý' },
-  { id: 'tracking', label: 'Theo dõi' },
-  { id: 'alert', label: 'Cảnh báo' },
-  { id: 'unread', label: 'Chưa đọc' },
-];
+const SECTION_ORDER: SectionTab[] = ['mine', 'responsible', 'watching', 'system'];
 
 const timeAgo = (dateStr: string) => {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -50,25 +51,36 @@ const Notifications: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<NotificationCursor | undefined>();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<NotificationFilter>('all');
+  const [tab, setTab] = useState<NotificationInboxTab>('all');
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [tabCounts, setTabCounts] = useState<TabCounts | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   const loadFirstPage = useCallback(async () => {
     setRefreshing(true);
+    setLoadError(false);
     try {
-      const page = await notificationService.listPage(user.id, { limit: 50 });
+      const [page, counts] = await Promise.all([
+        notificationService.listPage(user.id, { limit: 50, reasons: getInboxTabReasons(tab) }),
+        notificationService.countUnreadByTab(user.id).catch(() => null),
+      ]);
       setNotifications(page.items);
       setNextCursor(page.nextCursor);
+      setTabCounts(counts);
+    } catch (error) {
+      console.warn('Notification inbox failed:', error);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user.id]);
+  }, [user.id, tab]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await notificationService.listPage(user.id, { limit: 50, cursor: nextCursor });
+      const page = await notificationService.listPage(user.id, { limit: 50, cursor: nextCursor, reasons: getInboxTabReasons(tab) });
       setNotifications(prev => {
         const seen = new Set(prev.map(item => item.id));
         return [...prev, ...page.items.filter(item => !seen.has(item.id))];
@@ -77,29 +89,20 @@ const Notifications: React.FC = () => {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, nextCursor, user.id]);
+  }, [loadingMore, nextCursor, user.id, tab]);
 
   useEffect(() => {
     void loadFirstPage();
   }, [loadFirstPage]);
 
-  const counts = useMemo(() => {
-    return notifications.reduce<Record<string, number>>((acc, notification) => {
-      const group = getNotificationWorkGroup(notification);
-      acc[group] = (acc[group] || 0) + 1;
-      if (!notification.isRead) acc.unread = (acc.unread || 0) + 1;
-      return acc;
-    }, {});
-  }, [notifications]);
+  const totalUnread = tabCounts
+    ? tabCounts.mine + tabCounts.watching + tabCounts.responsible + tabCounts.system
+    : notifications.filter(notification => !notification.isRead).length;
 
   const filteredNotifications = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return notifications.filter(notification => {
-      const group = getNotificationWorkGroup(notification);
-      const matchFilter =
-        filter === 'all' ||
-        (filter === 'unread' && !notification.isRead) ||
-        group === filter;
+      const matchFilter = !unreadOnly || !notification.isRead;
       const matchSearch = !query || [
         notification.title,
         notification.message,
@@ -108,23 +111,26 @@ const Notifications: React.FC = () => {
       ].some(value => String(value || '').toLowerCase().includes(query));
       return matchFilter && matchSearch;
     });
-  }, [notifications, filter, searchTerm]);
+  }, [notifications, unreadOnly, searchTerm]);
 
   const groupedNotifications = useMemo(() => {
-    const groups: Record<NotificationWorkGroup, AppNotification[]> = {
-      action: [],
-      alert: [],
-      tracking: [],
-    };
+    const groups: Record<SectionTab, AppNotification[]> = { mine: [], responsible: [], watching: [], system: [] };
     filteredNotifications.forEach(notification => {
-      groups[getNotificationWorkGroup(notification)].push(notification);
+      groups[getNotificationInboxTab(notification.deliveryReason)].push(notification);
     });
     return groups;
   }, [filteredNotifications]);
 
+  const adjustTabCount = (notification: AppNotification) => {
+    if (notification.isRead) return;
+    const key = getNotificationInboxTab(notification.deliveryReason);
+    setTabCounts(prev => prev ? { ...prev, [key]: Math.max(prev[key] - 1, 0) } : prev);
+  };
+
   const handleOpen = async (notification: AppNotification) => {
     if (!notification.isRead) {
       await notificationService.markRead(notification.id);
+      adjustTabCount(notification);
       setNotifications(prev => prev.map(item => item.id === notification.id ? { ...item, isRead: true } : item));
     }
     const target = resolveNotificationPath(notification);
@@ -138,22 +144,25 @@ const Notifications: React.FC = () => {
 
   const handleMarkRead = async (notification: AppNotification) => {
     await notificationService.markRead(notification.id);
+    adjustTabCount(notification);
     setNotifications(prev => prev.map(item => item.id === notification.id ? { ...item, isRead: true } : item));
   };
 
   const handleDismiss = async (notification: AppNotification) => {
     await notificationService.dismiss(notification.id);
+    adjustTabCount(notification);
     setNotifications(prev => prev.filter(item => item.id !== notification.id));
   };
 
   const handleMarkAllRead = async () => {
     await notificationService.markAllRead(user.id);
     setNotifications(prev => prev.map(item => ({ ...item, isRead: true })));
+    setTabCounts(prev => prev ? { mine: 0, watching: 0, responsible: 0, system: 0 } : prev);
   };
 
   const renderNotification = (notification: AppNotification, framed = true) => {
     const category = NOTIFICATION_CATEGORIES[notification.category as keyof typeof NOTIFICATION_CATEGORIES];
-    const group = getNotificationWorkGroup(notification);
+    const reason = notification.deliveryReason;
     const target = resolveNotificationPath(notification);
 
     return (
@@ -176,7 +185,13 @@ const Notifications: React.FC = () => {
               <h3 className="line-clamp-1 text-sm font-black text-slate-900 dark:text-white">{notification.title}</h3>
               {!notification.isRead && <span className="h-2 w-2 rounded-full bg-blue-500" />}
               <StatusBadge status={notification.severity} label={getSeverityLabel(notification.severity)} tone={getSeverityTone(notification.severity)} />
-              <StatusBadge status={group} label={getNotificationWorkGroupLabel(group)} tone={group === 'alert' ? 'attention' : group === 'action' ? 'info' : 'neutral'} />
+              {reason && (
+                <StatusBadge
+                  status={reason}
+                  label={NOTIFICATION_REASON_LABELS[reason]}
+                  tone={reason === 'assigned' || reason === 'mentioned' ? 'info' : reason === 'responsible' ? 'attention' : 'neutral'}
+                />
+              )}
             </div>
             <div className="mt-1">
               <VehicleBookingNotificationContent notification={notification} />
@@ -212,20 +227,23 @@ const Notifications: React.FC = () => {
     );
   };
 
-  const orderedGroups: NotificationWorkGroup[] = ['action', 'alert', 'tracking'];
+  const sectionLabel = (key: SectionTab) => NOTIFICATION_INBOX_TABS.find(item => item.id === key)?.label || key;
+  const activeTab = NOTIFICATION_INBOX_TABS.find(item => item.id === tab) || NOTIFICATION_INBOX_TABS[0];
+  const countLabel = (value: number) => (value > 99 ? '99+' : String(value));
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="ERP Inbox"
         title="Thông báo"
-        description="Một nơi để xem việc cần xử lý, cảnh báo hệ thống và các cập nhật theo dõi."
+        description="Việc cần bạn xử lý hiện trước; cập nhật theo dõi và cảnh báo nghiệp vụ được tách riêng."
         meta={
-          <>
-            <StatusBadge status="action" label={`${counts.action || 0} cần xử lý`} tone="info" size="md" />
-            <StatusBadge status="alert" label={`${counts.alert || 0} cảnh báo`} tone="attention" size="md" />
-            <StatusBadge status="unread" label={`${counts.unread || 0} chưa đọc`} tone={(counts.unread || 0) > 0 ? 'warning' : 'success'} size="md" />
-          </>
+          tabCounts ? (
+            <>
+              <StatusBadge status="mine" label={`${countLabel(tabCounts.mine)} việc của tôi chưa đọc`} tone={tabCounts.mine > 0 ? 'info' : 'success'} size="md" />
+              <StatusBadge status="responsible" label={`${countLabel(tabCounts.responsible)} cảnh báo nghiệp vụ chưa đọc`} tone="attention" size="md" />
+            </>
+          ) : undefined
         }
         secondaryActions={[
           {
@@ -234,7 +252,7 @@ const Notifications: React.FC = () => {
             onClick: loadFirstPage,
             disabled: refreshing,
           },
-          ...(counts.unread ? [{
+          ...(totalUnread ? [{
             label: 'Đánh dấu đã đọc',
             icon: <CheckCheck size={15} />,
             onClick: handleMarkAllRead,
@@ -246,24 +264,46 @@ const Notifications: React.FC = () => {
         searchValue={searchTerm}
         onSearchChange={setSearchTerm}
         searchPlaceholder="Tìm tiêu đề, nội dung, module..."
-        canClear={!!searchTerm || filter !== 'all'}
-        onClear={() => { setSearchTerm(''); setFilter('all'); }}
+        canClear={!!searchTerm || tab !== 'all' || unreadOnly}
+        onClear={() => { setSearchTerm(''); setTab('all'); setUnreadOnly(false); }}
         filters={
           <>
-            {FILTERS.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setFilter(item.id)}
-                className={`min-h-9 rounded-lg px-3 text-xs font-black transition ${
-                  filter === item.id
-                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+            {NOTIFICATION_INBOX_TABS.map(item => {
+              const count = item.id === 'all' ? 0 : tabCounts?.[item.id] || 0;
+              const selected = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setTab(item.id)}
+                  className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-black transition ${
+                    selected
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                      : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
+                  }`}
+                >
+                  {item.label}
+                  {count > 0 && (
+                    <span className={`rounded-full px-1.5 text-[10px] ${selected ? 'bg-white/25' : item.id === 'mine' ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                      {countLabel(count)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-pressed={unreadOnly}
+              onClick={() => setUnreadOnly(value => !value)}
+              className={`min-h-9 rounded-lg px-3 text-xs font-black transition ${
+                unreadOnly
+                  ? 'bg-blue-600 text-white'
+                  : 'border border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
+              }`}
+            >
+              Chỉ chưa đọc
+            </button>
           </>
         }
       />
@@ -272,21 +312,36 @@ const Notifications: React.FC = () => {
         <div className="grid gap-3">
           {[0, 1, 2].map(index => <div key={index} className="h-24 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />)}
         </div>
+      ) : loadError ? (
+        <EmptyState
+          icon={<AlertTriangle size={18} />}
+          title="Không tải được thông báo"
+          message="Kiểm tra kết nối rồi thử lại."
+          action={(
+            <button
+              type="button"
+              onClick={loadFirstPage}
+              className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-black text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900"
+            >
+              <RefreshCw size={14} /> Thử lại
+            </button>
+          )}
+        />
       ) : filteredNotifications.length === 0 ? (
         <EmptyState
-          icon={filter === 'alert' ? <AlertTriangle size={18} /> : filter === 'action' ? <Inbox size={18} /> : <Bell size={18} />}
-          title="Không có thông báo phù hợp"
-          message="Khi có việc cần xử lý hoặc cảnh báo mới, hệ thống sẽ đưa vào đây."
+          icon={tab === 'mine' ? <Inbox size={18} /> : <Bell size={18} />}
+          title={searchTerm.trim() || unreadOnly ? 'Không có thông báo phù hợp' : 'Không có thông báo'}
+          message={searchTerm.trim() || unreadOnly ? 'Thử bỏ bớt điều kiện lọc.' : activeTab.emptyMessage}
         />
       ) : (
         <div className="space-y-6">
-          {orderedGroups.map(group => {
+          {SECTION_ORDER.map(group => {
             const items = groupedNotifications[group];
             if (items.length === 0) return null;
             return (
               <section key={group} className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-black text-slate-800 dark:text-white">{getNotificationWorkGroupLabel(group)}</h2>
+                  <h2 className="text-sm font-black text-slate-800 dark:text-white">{sectionLabel(group)}</h2>
                   <span className="text-[11px] font-bold text-slate-400">{items.length} thông báo</span>
                 </div>
                 <div className="hidden gap-3 md:grid">
@@ -301,7 +356,7 @@ const Notifications: React.FC = () => {
               </section>
             );
           })}
-          {nextCursor && filter === 'all' && !searchTerm.trim() && (
+          {nextCursor && !unreadOnly && !searchTerm.trim() && (
             <div className="flex justify-center pt-2">
               <button
                 type="button"
