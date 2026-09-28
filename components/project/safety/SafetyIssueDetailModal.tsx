@@ -183,7 +183,7 @@ const SafetyIssueDetailModal: React.FC<Props> = ({ issue, currentUser, canManage
               </div>
               <div className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-white p-3">
                 <textarea value={commentBody} onChange={event => setCommentBody(event.target.value)} rows={3} placeholder="Nhập cập nhật xử lý..." className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-orange-300" />
-                <SafetyAttachmentUploader projectId={issue.projectId || ''} recordType="issue-comments" recordId={issue.id} attachments={commentAttachments} onChange={setCommentAttachments} uploadedBy={currentUser.name || currentUser.username} label="Bằng chứng" />
+                <SafetyAttachmentUploader projectId={issue.projectId || ''} constructionSiteId={issue.constructionSiteId} recordType="issue-comments" recordId={issue.id} attachments={commentAttachments} onChange={setCommentAttachments} uploadedBy={currentUser.name || currentUser.username} label="Bằng chứng" />
                 <button type="button" onClick={submitComment} disabled={savingComment} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black text-white hover:bg-slate-800 disabled:opacity-50">
                   {savingComment ? <MessageSquare size={14} /> : <Send size={14} />} {savingComment ? 'Đang gửi...' : 'Gửi cập nhật'}
                 </button>

@@ -632,3 +632,163 @@ Chỉ sửa frontend, không có migration.
   - Rollback dry-run PASS.
   - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Chưa ai có tuỳ chọn riêng, nên không ai bị thay đổi cho tới khi tự chọn. Smoke sau apply PASS, không để lại dữ liệu test.
   - Rollback: `supabase/operations/notification_preferences_digest_rollback.sql`; phải rollback frontend trước.
+
+## P2 — màn Cài đặt → Người dùng
+
+- **Vấn đề** (audit P2, cộng hai lỗi phát hiện thêm khi làm):
+  - Màn sửa người dùng hiện "0 Room" vì chỉ tải được snapshot quyền của người đang đăng nhập.
+  - Phạm vi quyền phải gõ UUID và hiển thị UUID thô.
+  - Lộ thuật ngữ kỹ thuật (direct grants, Template, mã quyền).
+  - Khối "Dữ liệu legacy" luôn báo "Đang theo dõi fallback".
+  - Link Room tải lại toàn trang và không mở đúng dự án.
+  - Drawer có ngõ cụt ở tab Mật khẩu và tab Chỉnh sửa; "Kho phụ trách" hiện "toàn bộ kho" khi chưa gán.
+  - **Mới phát hiện:** tab "Lịch sử đăng nhập" hiện dữ liệu bịa (IP cố định, thời gian tự sinh); trạng thái "Online" mặc định online cho mọi người.
+- **Migration** `20260928080828_authorization_user_snapshot_for_admins`: RPC chỉ đọc `get_user_authorization_snapshot(p_user_id)`, cùng dạng với `get_my_authorization_snapshot`. Chỉ chính người đó, Admin hoặc người có `system.authorization.manage_grants` được gọi.
+- **Frontend:**
+  - `UserModal` tải snapshot của người đang sửa, có trạng thái đang tải và lỗi kèm Thử lại.
+  - `ProjectRoomSummary` liệt kê dự án → Room → thao tác. Bấm tên dự án mở `#/da?projectId=…&tab=permissions` ở thẻ mới nên không mất bản đang sửa. Admin hiện "toàn quyền mọi dự án".
+  - `permissionScopeEntities`: chọn dự án, công trường, kho, đơn vị từ danh sách. Tên thay UUID ở dòng quyền, phần xem trước thay đổi và phần gỡ theo phạm vi.
+  - Bỏ `LegacyPermissionReadOnly`. Thay thuật ngữ bằng tiếng Việt; đổi "Vai trò hệ thống" thành "Loại tài khoản".
+  - `SettingsUsers`:
+    - Online lấy từ `user_sessions` (phiên hoạt động, thấy trong 5 phút); chưa biết thì không hiện.
+    - "Lịch sử đăng nhập" mở `/admin/activity` (dữ liệu thật); bỏ modal dữ liệu giả.
+    - Drawer: nút "Chỉnh sửa & phân quyền" ở đầu, bỏ tab Chỉnh sửa và Mật khẩu. Nói rõ màn này chưa hỗ trợ Admin đặt lại mật khẩu.
+    - Kho phụ trách hiện đúng: chưa gán / toàn bộ kho / tên kho.
+- **Kiểm tra:**
+  - Dry-run và smoke persona PASS: Admin thấy đúng 22 thao tác Room trên 2 dự án của người được sửa, khớp với snapshot của chính người đó; nhân viên thường bị chặn.
+  - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý; smoke sau apply PASS.
+  - Vitest 2.333 pass, `tsc` và build pass, kiểm tra truy vấn 0 lỗi.
+  - Chưa walkthrough giao diện vì browser pane của agent chưa đăng nhập.
+- **Còn mở:**
+  - Lý do tối thiểu 10 ký tự vẫn bắt buộc cả khi chỉ sửa số điện thoại, vì RPC `update_user_authorization_v2` ép điều này.
+  - Chưa có cách Admin đặt lại mật khẩu cho người khác.
+  - Danh sách người dùng chưa có cột tóm tắt quyền; để P3 "Hồ sơ quyền".
+- Rollback: `supabase/operations/authorization_user_snapshot_for_admins_rollback.sql`, kèm rollback frontend.
+
+## P2 — `project_documents` và `activities` hết `select true`; Admin đặt mật khẩu cho người khác
+
+### Tài liệu dự án và nhật ký hoạt động
+
+- **Trước khi sửa:**
+  - `project_documents` (13 tài liệu): mọi người đọc được. Ai cũng thêm được tài liệu vào bất kỳ dự án nào. Chỉ Admin sửa/xoá được; người khác bấm xoá thì không có gì xảy ra mà cũng không báo lỗi.
+  - `uploaded_by` lưu **tên hiển thị**, không phải mã tài khoản.
+  - `activities` (3.217 dòng, gồm 693 dòng thao tác quản trị về người dùng, nhân sự, tài sản): mọi người đọc được. Việc ghi dưới tên người khác đã bị trigger `activities_stamp_actor` (P0-B) chặn.
+- **Migration** `20260928083215_authorization_p2_documents_activities_rls`:
+  - Tài liệu:
+    - Đọc: Admin hoặc quyền `project.documents` xem/quản trị của đúng dự án (cùng quy tắc với tệp ở P1.6).
+    - Thêm: quyền tải lên hoặc quản trị.
+    - Sửa: quyền sửa thông tin hoặc quản trị.
+    - Xoá: quyền xoá/xoá tất cả/quản trị, hoặc người tải lên có quyền xoá của mình.
+    - Thêm cột `created_by`, tự điền mã tài khoản người tải lên.
+  - Nhật ký:
+    - Dòng Kho (vật tư, phiếu, yêu cầu): người được xem kho đó.
+    - Dòng quản trị: chỉ Admin và chính người làm.
+    - Quyền kho tính **một lần cho mỗi truy vấn** qua `activity_wms_scope()`. Kiểm từng dòng mất hơn 2 phút trên 3.200 dòng; tải 50 dòng nhật ký giờ khoảng 0,16 giây.
+- **Tác động đo trên dữ liệu thật:**
+  - Tài liệu: 50 người vẫn xem đủ, 7 người không còn thấy.
+  - Nhật ký: 41 người có quyền Kho vẫn thấy toàn bộ khoảng 2.524 dòng Kho nhưng không còn thấy thao tác quản trị của người khác; 12 người không có quyền Kho không còn thấy nhật ký.
+- **Frontend:** `documentService`
+  - Tải lên, sửa và xoá báo lỗi rõ, không còn im lặng khi thất bại. Trước đây ghi thông tin thất bại mà tab vẫn báo "Tải lên thành công".
+  - Khi xoá, xoá thông tin trước rồi mới xoá tệp, để không mất tệp khi bị chặn.
+- **Kiểm tra:** dry-run, smoke persona và rollback dry-run PASS. **ĐÃ APPLY** 28/09; smoke sau apply PASS, không để lại dữ liệu test.
+- **Rollback:** `supabase/operations/authorization_p2_documents_activities_rls_rollback.sql`.
+
+### Admin đặt mật khẩu mới cho người khác
+
+- **Trước khi sửa:** Edge Function `reset-password` (v16) đã cho Admin đặt mật khẩu hoặc email của người khác qua API, nhưng:
+  - không ghi nhật ký;
+  - mật khẩu chỉ cần 6 ký tự;
+  - đặt được cho cả tài khoản đã vô hiệu hoá, đi vòng qua luồng Khôi phục.
+- **Đã deploy v17** (chủ sản phẩm đồng ý 28/09):
+  - Mật khẩu ≥ 8 ký tự.
+  - Khi đổi cho người khác: bắt buộc là Admin, tài khoản đang hoạt động, có lý do ≥ 10 ký tự, và ghi `audit_trail` (không lưu mật khẩu).
+  - Tự đổi của chính mình giữ nguyên hành vi.
+  - Kiểm tra sau deploy: lời gọi không có tài khoản bị từ chối 401. Chưa thử luồng Admin thật, vì agent không dùng mật khẩu thật.
+- **Frontend:** drawer người dùng có nút "Đặt mật khẩu mới" (nhập hai lần, có nút hiện/ẩn, kèm lý do). Chỉ Admin thấy, không áp cho chính mình; tài khoản vô hiệu hoá được hướng sang "Khôi phục tài khoản".
+- **Rollback:** deploy lại bản v16 từ git (commit trước `supabase/functions/reset-password/index.ts`).
+
+## P1.6c — bucket `project-photos` (ảnh nhật ký) sang private
+
+- **Trước khi sửa:**
+  - Bucket công khai: 1.654 ảnh, khoảng 1,5 GB, tất cả dưới `dailylogs/<projectId>/`.
+  - Ai có link đều mở được, kể cả không đăng nhập.
+  - Ai đăng nhập cũng tải ảnh vào bất kỳ thư mục nào.
+- **Migration** `20260928084924_authorization_p1_6_private_project_photos`:
+  - Bucket private.
+  - Đọc: người tải ảnh, Admin, hoặc người xem được nhật ký của dự án đó. Hàm `project_photo_folder_visible` tra công trường của dự án rồi gọi `daily_log_can_select`, vì hàm này cần đúng công trường; truyền `null` thì không ai qua được.
+  - Tải lên: chỉ vào thư mục của dự án mình xem được nhật ký.
+- **Tác động:** 21 / 7 / 12 người đọc được ảnh ở 3 dự án có ảnh, khớp với số người đọc được `daily_logs`.
+- **Frontend:** thêm `project-photos` vào `PRIVATE_LEGACY_PUBLIC_BUCKETS`, push trước khi đổi bucket (`64927cc`).
+  - `PrivateStorageLinkResolver` tự ký link công khai cũ khi hiển thị, nên `DailyLogTab` và `GanttTab` **không phải sửa**.
+- **Ghi cho luồng Daily log:** `DailyLogTab.handleUploadPhoto` vẫn lưu `getPublicUrl(...)`. Link này vẫn hiển thị được nhờ resolver, nhưng nên chuyển sang lưu đường dẫn và ký bằng `useSignedStorageUrl` / `resolveStorageUrl`. Việc tải ảnh giờ cần quyền xem nhật ký của dự án.
+- **Kiểm tra:** dry-run, smoke persona và rollback dry-run PASS.
+- **Rollback:** `supabase/operations/authorization_p1_6_private_project_photos_rollback.sql`.
+- **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Giao diện được push trước (chờ 2 phút cho bản deploy), rồi mới đổi bucket. Smoke sau apply PASS; URL công khai mẫu trả 400.
+- **Còn chờ:** chủ sản phẩm purge CDN `DELETE /storage/v1/cdn/project-photos` bằng secret key, vì ảnh từng được mở có thể vẫn nằm trong cache Smart CDN.
+
+## P3 — mẫu quyền dự án theo vai trò và phân quyền theo người
+
+- **Vấn đề:**
+  - Phân quyền dự án đi theo từng Room: muốn cấp cho một Chỉ huy trưởng phải mở khoảng 10 Room để tick. Hiện chỉ 6/86 dự án có Room (591 quyền, 74 người).
+  - Bộ mẫu cũ trong code (`PROJECT_PERMISSION_TEMPLATES`) cấp mã `project.*`, không còn tác dụng với các phân hệ đã chuyển sang Room.
+- **Chủ sản phẩm (28/09):** đồng ý phân nhanh theo vị trí, nhưng **phải chỉnh riêng được cho từng nhân viên khi áp**, ví dụ QS được thêm quyền xem nghiệp vụ khác hoặc bỏ một quyền trong mẫu.
+- **Migration** `20260928092719_authorization_p3_project_room_templates`:
+  - Bảng `project_room_templates`: mẫu gồm Room và thao tác, cùng chức vụ gợi ý. Mọi người đăng nhập được đọc; chỉ Admin sửa qua `save_project_room_template` (có kiểm tra thao tác hợp lệ, tự thêm "Xem" làm tiên quyết, ghi nhật ký).
+  - `get_project_staff_room_actions`: quyền Room hiện có của một người.
+  - `apply_project_room_template`, chỉ Admin:
+    - chế độ `merge`, `replace`, hoặc `exact` (lưu đúng bộ quyền đã chỉnh riêng);
+    - có chế độ chỉ xem trước (`p_dry_run`);
+    - gọi lại `replace_project_permission_room_members` cho từng Room, nên giữ mọi ràng buộc Room;
+    - ghi nhật ký "Áp mẫu … (có tùy chỉnh)".
+  - Sáu mẫu mặc định: Chỉ huy trưởng/phó, Kỹ thuật hiện trường, QS, Thủ kho công trường, Kế toán dự án, Chỉ xem. Chức vụ gợi ý được gắn theo tên. **Migration không gán quyền cho ai.**
+- **Frontend:**
+  - Dự án → tab Phân quyền → "Phân quyền theo người":
+    - chọn người → hiện quyền đang có → (tuỳ chọn) điền theo mẫu gợi ý theo chức vụ, kiểu thêm vào hoặc thay bằng mẫu;
+    - bảng 10 Room để thêm hoặc bỏ từng quyền (xanh = sẽ thêm, gạch đỏ = sẽ gỡ) → Lưu.
+  - Cài đặt → "Mẫu quyền dự án" để sửa mẫu.
+  - Thay câu "Room-authoritative · PBAC fallback" bằng tiếng Việt.
+- **Kiểm tra:**
+  - Dry-run, smoke persona và rollback dry-run PASS. Smoke kiểm: xem trước khớp với khi áp; chế độ thay và chế độ lưu đúng bộ đã chỉnh; quyền của người khác không đổi; nhân viên thường bị chặn; có nhật ký.
+  - **ĐÃ APPLY** 28/09; smoke sau apply PASS.
+- **Còn mở:** form tạo dự án vẫn gán người bằng bộ mẫu cũ (`buildSeedProjectRoleGrants` trong `ProjectDashboard`), những người này không có quyền Room. Nên chuyển sang mẫu Room.
+- **Rollback:** `supabase/operations/authorization_p3_project_room_templates_rollback.sql`.
+
+### P3 — form tạo dự án áp mẫu Room (28/09)
+
+- **Vấn đề:** người được thêm khi tạo dự án (Quản trị / Thực hiện / Người theo dõi, cả khi nhập Excel) chỉ nhận mã `project.*` từ bộ mẫu cũ, nên **không có quyền trong các Room**.
+- **Sửa (frontend, không đổi máy chủ):**
+  - Sau khi thêm người, áp mẫu Room qua `apply_project_room_template` (chế độ merge).
+  - Mẫu chọn theo chức vụ gợi ý; nếu chức vụ không gợi ý mẫu nào thì: Quản trị → Chỉ huy trưởng, Thực hiện → Kỹ thuật hiện trường, Người theo dõi → Chỉ xem.
+  - Vẫn giữ mã `project.*` cho các phân hệ chưa chuyển sang Room, ví dụ Tài liệu.
+  - Người tạo không phải Admin: dự án vẫn được tạo, kèm thông báo nhờ Admin phân quyền Room.
+  - Người nào áp mẫu lỗi thì có thông báo, kèm số người.
+  - Nhập Excel chỉ báo khi có lỗi.
+  - Form có dòng giải thích.
+
+### P3 — chuyển vai trò thường sang quyền riêng từng người (28/09)
+
+- Migration `20260928101825_authorization_p3_roles_to_personal_grants` (8aba991), **ĐÃ APPLY**:
+  - chuyển BUSINESS_USER, WORKFLOW_USER, WORKFLOW_ADMIN, LEGACY_HR_*: 131 gán vai trò của 56 người thành 710 quyền riêng; thu hồi các gán vai trò đó;
+  - kiểm tra trong migration: quyền hiệu lực của từng người không đổi;
+  - bản sao lưu nằm ở `app_private.p3_roles_conversion_backup`.
+- Giữ lại: AUDITOR 1, HR 2, HR_MANAGE 1, PERMISSION_ADMIN 1, SYSTEM_ADMIN 2. Mã HR nhạy cảm chỉ hiệu lực qua vai trò HR / HR_MANAGE.
+- Rollback: `supabase/operations/authorization_p3_roles_to_personal_grants_rollback.sql`. Đã dry-run; khôi phục đúng từng dòng.
+- **Lỗi hồi quy phát hiện sau apply (chưa sửa, chờ chủ sản phẩm):**
+  - Có quyền cần ngày hết hạn nhưng được tạo không có hạn: `hrm.employee.edit_profile@own` ×54, global ×6, `hrm.attendance.approve` / `hrm.leave.approve` global ×6 mỗi loại.
+  - `evaluate_direct_grant_replacement_impl` kiểm tra hạn cho mọi quyền trong lần lưu, nên lần lưu Người dùng tiếp theo của những người này bị từ chối (`expiry_required`).
+  - Bản sửa đề xuất (miễn hạn cho quyền giữ nguyên, và quyền tự phục vụ phạm vi own, không nhạy cảm) bị bộ kiểm tra an toàn tự động chặn vì nới lỏng một kiểm tra.
+
+### P3 — mẫu quyền theo vị trí cho toàn hệ thống (28/09)
+
+- Migration `20260928113000_authorization_p3_user_permission_templates` (5aace83), **ĐÃ APPLY** (bản migration quá lớn cho MCP nên chạy bằng CLI trong một giao dịch và ghi `schema_migrations` trong cùng giao dịch đó):
+  - bảng `user_permission_templates` (items: permissionCode, scopeType global/own/assigned, expiresInDays);
+  - `save_user_permission_template`, chỉ Admin, có nhật ký;
+  - chuẩn hóa mẫu: chỉ nhận mã cấp riêng được, không nhận mã dự án, không nhận phạm vi cần chọn đối tượng cụ thể; quyền cần hạn mặc định 365 ngày.
+  - 14 mẫu theo bảng đã duyệt: Nhân viên cơ bản, Cán bộ vật tư/kho, Quản lý kho, Cán bộ công trường, Kế toán, Kế toán trưởng/TC, Nhân sự, Trưởng phòng NS, HC–Tài sản–Đội xe, Ban giám đốc, cùng 4 mẫu bổ sung Quản trị Quy trình / Phiếu yêu cầu / Tài sản / Công việc (651 dòng quyền). Chức vụ gợi ý gắn theo tên. **Không gán quyền cho ai.**
+- Frontend:
+  - Người dùng → Sửa → "Điền nhanh theo mẫu vị trí": mẫu gợi ý theo chức vụ (★), thêm vào quyền đang có hoặc thay bằng mẫu; bỏ qua quyền đã có từ vai trò; tự điền lý do; có nút Hoàn tác; lưu qua `update_user_authorization_v2`.
+  - Cài đặt → "Mẫu quyền theo vị trí" để sửa mẫu.
+- Kiểm tra:
+  - dry-run và smoke persona PASS: nhân viên thường bị chặn sửa mẫu; mã không cấp riêng được và phạm vi kho bị từ chối; có nhật ký;
+  - e2e fixture `tests/e2e/authorization-template-fill.spec.ts` PASS; Vitest 2.348 PASS.
+- Rollback: `drop function public.save_user_permission_template(text,text,text,jsonb,uuid[],boolean); drop function app_private.normalize_user_permission_template_items(jsonb); drop table public.user_permission_templates;`

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Building, Briefcase, Loader2, Mail, Phone, Save, Shield, User as UserIcon, Users, X } from 'lucide-react';
-import { Role, User, UserPermissionGrant, Warehouse } from '../types';
+import { AuthorizationSnapshot, Role, User, UserPermissionGrant, Warehouse } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import AuthorizationEditor from './permissions/AuthorizationEditor';
-import { changeUserAccountRoleV2, listUserPermissionGrants, updateUserAuthorizationV2 } from '../lib/permissions/permissionAdminService';
+import { changeUserAccountRoleV2, listUserPermissionGrants, loadUserAuthorizationSnapshot, updateUserAuthorizationV2 } from '../lib/permissions/permissionAdminService';
+import { mapAuthorizationSnapshot } from '../context/authState';
 import { getInheritedPermissionCodes } from '../lib/permissions/permissionService';
 import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '../lib/userAccountCreation';
 import { PermissionAdminCatalog } from '../lib/permissions/permissionTypes';
@@ -33,6 +34,32 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
   const [originalPermissionGrants, setOriginalPermissionGrants] = useState<UserPermissionGrant[]>([]);
   const [authorizationReason, setAuthorizationReason] = useState('');
   const [authorizationCatalog, setAuthorizationCatalog] = useState<PermissionAdminCatalog | null>(null);
+  // Permission snapshot of the person being edited (not the signed-in admin).
+  const [targetSnapshot, setTargetSnapshot] = useState<AuthorizationSnapshot | null>(null);
+  const [snapshotState, setSnapshotState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [snapshotReload, setSnapshotReload] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTargetSnapshot(null);
+    if (!isOpen || !userToEdit?.id || !isSupabaseConfigured) {
+      setSnapshotState(userToEdit?.authorizationSnapshot ? 'ready' : 'loading');
+      return;
+    }
+    setSnapshotState('loading');
+    loadUserAuthorizationSnapshot(userToEdit.id)
+      .then(value => {
+        if (cancelled) return;
+        setTargetSnapshot(mapAuthorizationSnapshot(value));
+        setSnapshotState('ready');
+      })
+      .catch(error => {
+        if (cancelled) return;
+        logApiError('userModal.loadAuthorizationSnapshot', error);
+        setSnapshotState('error');
+      });
+    return () => { cancelled = true; };
+  }, [isOpen, userToEdit?.id, snapshotReload]);
 
   useEffect(() => {
     setSavedUserId(null);
@@ -227,7 +254,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             return;
           }
         }
-        toast.success('Đã cập nhật tài khoản', 'Hồ sơ và direct grants đã được lưu trong một giao dịch.');
+        toast.success('Đã cập nhật tài khoản', 'Hồ sơ và quyền đã được lưu.');
       } else {
         let createdAuthUserId: string | undefined;
         if (isSupabaseConfigured) {
@@ -272,7 +299,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
           assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || undefined : undefined,
           permissionGrants: [],
         });
-        toast.success('Đã thêm tài khoản hệ thống', 'Mở lại tài khoản để cấp direct grants theo phạm vi.');
+        toast.success('Đã thêm tài khoản', 'Mở lại tài khoản để cấp quyền cho người này.');
       }
       onClose();
     } catch (error: any) {
@@ -291,7 +318,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
         <header className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div>
             <h2 className="text-lg font-black text-slate-800">{userToEdit ? 'Cập nhật người dùng & phân quyền' : 'Thêm tài khoản hệ thống'}</h2>
-            <p className="text-xs text-slate-500">{userToEdit ? 'Một lần lưu cho hồ sơ và direct grants.' : 'Tạo danh tính trước, sau đó cấp quyền theo phạm vi.'}</p>
+            <p className="text-xs text-slate-500">{userToEdit ? 'Hồ sơ và quyền được lưu cùng lúc.' : 'Tạo tài khoản trước, sau đó mở lại để cấp quyền.'}</p>
           </div>
           <button type="button" onClick={onClose} disabled={saving} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={20} /></button>
         </header>
@@ -323,7 +350,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
               {errors.password && <span className="text-[10px] font-bold text-red-500">{errors.password}</span>}
             </label>}
             <label className="space-y-1">
-              <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Briefcase size={12} className="mr-1" /> Vai trò hệ thống</span>
+              <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Briefcase size={12} className="mr-1" /> Loại tài khoản</span>
               <select value={formData.role || Role.EMPLOYEE} onChange={e => setFormData({ ...formData, role: e.target.value as Role })} className={fieldClass}>
                 <option value={Role.ADMIN}>Quản trị viên</option><option value={Role.WAREHOUSE_KEEPER}>Tài khoản kho</option><option value={Role.EMPLOYEE}>Tài khoản thường</option>
               </select>
@@ -348,15 +375,17 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             directGrants={permissionGrants}
             originalDirectGrants={originalPermissionGrants}
             inheritedPermissionCodes={inheritedPermissionCodes}
-            effectivePermissionSources={userToEdit.authorizationSnapshot?.sources || userToEdit.effectivePermissionSources}
-            roomActions={userToEdit.authorizationSnapshot?.roomActions}
+            effectivePermissionSources={(targetSnapshot || userToEdit.authorizationSnapshot)?.sources || userToEdit.effectivePermissionSources}
+            roomActions={(targetSnapshot || userToEdit.authorizationSnapshot)?.roomActions}
+            snapshotState={snapshotState}
+            onRetrySnapshot={() => setSnapshotReload(value => value + 1)}
             reason={authorizationReason}
             validationIssues={authorizationIssues}
             disabled={saving}
             onCatalogChange={setAuthorizationCatalog}
             onDirectGrantsChange={setPermissionGrants}
             onReasonChange={setAuthorizationReason}
-          /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> Direct grants được cấp sau khi tài khoản và hồ sơ Auth đã tạo thành công.</div>}
+          /> : <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-700"><Shield size={14} className="mr-1 inline" /> Quyền được cấp sau khi tạo xong tài khoản: lưu, rồi mở lại người này để cấp quyền.</div>}
           {errors.authorizationReason && <p className="text-[10px] font-bold text-red-500">{errors.authorizationReason}</p>}
           {errors.authorizationCatalog && <p className="text-[10px] font-bold text-red-500">{errors.authorizationCatalog}</p>}
 

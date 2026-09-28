@@ -93,13 +93,10 @@ export const documentService = {
       linkedRecordId?: string;
       tags?: string[];
     }
-  ): Promise<ProjectDocument | null> {
+  ): Promise<ProjectDocument> {
     // Validate file
     const validation = this.validateFile(file);
-    if (!validation.valid) {
-      console.error('Validation error:', validation.error);
-      return null;
-    }
+    if (!validation.valid) throw new Error(validation.error || 'File không hợp lệ.');
 
     const ext = file.name.split('.').pop() || '';
     // Use UUID in path to prevent collisions
@@ -110,10 +107,7 @@ export const documentService = {
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
       .upload(storagePath, file, { upsert: false });
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      return null;
-    }
+    if (uploadError) throw new Error(`Không tải được "${file.name}" lên: ${uploadError.message}`);
 
     // Create metadata record
     const doc = {
@@ -136,10 +130,11 @@ export const documentService = {
 
     const { data, error } = await supabase.from('project_documents').insert(doc).select().single();
     if (error) {
-      console.error('Insert error:', error);
       // Cleanup uploaded file
       await supabase.storage.from(BUCKET).remove([storagePath]);
-      return null;
+      throw new Error(error.code === '42501'
+        ? 'Bạn chưa có quyền tải tài liệu lên dự án này.'
+        : `Không lưu được thông tin "${file.name}": ${error.message}`);
     }
     return toCamel(data);
   },
@@ -176,8 +171,12 @@ export const documentService = {
 
   /** Delete a document (storage + metadata) */
   async remove(doc: ProjectDocument): Promise<void> {
-    await supabase.storage.from(BUCKET).remove([doc.storagePath]);
-    await supabase.from('project_documents').delete().eq('id', doc.id);
+    // Metadata first: if the database refuses, the file must stay.
+    const { data, error } = await supabase.from('project_documents').delete().eq('id', doc.id).select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('Bạn chưa có quyền xoá tài liệu này.');
+    const { error: storageError } = await supabase.storage.from(BUCKET).remove([doc.storagePath]);
+    if (storageError) console.warn('Document file left in storage after its record was deleted:', storageError);
   },
 
   /** Update metadata only */
@@ -195,7 +194,9 @@ export const documentService = {
       snake[map[k] || k] = v;
     }
     snake.updated_at = new Date().toISOString();
-    await supabase.from('project_documents').update(snake).eq('id', id);
+    const { data, error } = await supabase.from('project_documents').update(snake).eq('id', id).select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error('Bạn chưa có quyền sửa tài liệu này.');
   },
 
   /** Format file size */

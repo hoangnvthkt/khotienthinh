@@ -89,6 +89,10 @@
 | Thông báo B2a | `20260928052528_notification_site_command_recipients` | BCH (CHT/CHP/KTT theo `notification_site_command_positions`), tuỳ chọn `includeSiteCommand`, RPC xem trước người nhận; cảnh báo An toàn = Room An toàn + BCH, Admin chỉ dự phòng |
 | Thông báo B2b | `20260928062658_notification_event_recipients_request_safety` | Phiếu yêu cầu: người theo dõi chỉ nhận kết quả + quá hạn, người duyệt nhận nhắc hạn + bình luận; sự cố An toàn gửi từ trigger (Cao/Nghiêm trọng → Room AT + BCH) |
 | Thông báo B3 | `20260928065520_notification_preferences_digest` | Tuỳ chọn cá nhân (Theo dõi: ngay/tổng hợp/không báo; Nghiệp vụ: ngay/tổng hợp) + tổng hợp cuối ngày qua cron `notification-digests` |
+| P2 Người dùng | `20260928080828_authorization_user_snapshot_for_admins` | Màn sửa người dùng tải quyền thật của người được sửa (Room theo dự án, link mở đúng dự án); chọn phạm vi theo tên; bỏ thuật ngữ kỹ thuật, dữ liệu online/đăng nhập giả và ngõ cụt drawer |
+| P2 Tài liệu + Nhật ký | `20260928083215_authorization_p2_documents_activities_rls` | `project_documents` theo quyền Tài liệu của dự án (có `created_by`); `activities`: nhật ký Kho theo kho được xem, thao tác quản trị chỉ Admin và người làm. Edge Function `reset-password` v17: Admin đặt mật khẩu cho người khác có lý do + nhật ký |
+| P1.6c | `20260928084924_authorization_p1_6_private_project_photos` | Bucket `project-photos` (ảnh nhật ký) private; đọc = người tải, Admin, người xem được nhật ký dự án; resolver tự ký link cũ. **Chờ chủ sản phẩm purge CDN** |
+| P3 Mẫu quyền dự án | `20260928092719_authorization_p3_project_room_templates` | 6 mẫu Room theo vai trò (Admin sửa ở Cài đặt → Mẫu quyền dự án); tab Phân quyền dự án có "Phân quyền theo người": điền theo mẫu gợi ý theo chức vụ rồi chỉnh riêng từng quyền |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -130,28 +134,32 @@ Bước 1 đã xong (xem rollout log). Còn lại:
   - Nơi tạo thông báo mới nên truyền `delivery_reason`; trigger chỉ là dự phòng.
 - **Bước 3:** ĐÃ XONG (B3). Nghiệp vụ chỉ được chuyển sang tổng hợp, không tắt được (quyết định 28/09).
 
-### 7.2 Màn Cài đặt → Người dùng (P2, UX)
+### 7.2 Màn Cài đặt → Người dùng (P2, UX) — ĐÃ XONG (28/09)
 
-Theo audit mục P2:
-- Tải snapshot của **người đang được sửa**, để không còn hiện "0 Room".
-- Bộ chọn dự án/công trường/kho thay cho ô gõ UUID.
-- Bỏ thuật ngữ kỹ thuật ("direct grants", "PBAC fallback", "Room-authoritative", mã `system.da.view`).
-- Sửa ngõ cụt ở drawer (mật khẩu, kho phụ trách); link Room mở đúng dự án.
+Xem rollout log. Còn mở, cần chủ sản phẩm quyết:
+- Lý do tối thiểu 10 ký tự vẫn bắt buộc khi chỉ sửa thông tin hồ sơ (RPC `update_user_authorization_v2`).
+- ĐÃ XONG: Admin đặt mật khẩu mới cho người khác (drawer người dùng, `reset-password` v17).
 
-### 7.3 Hai bảng còn `select true`
+### 7.3 Hai bảng còn `select true` — ĐÃ XONG (28/09)
 
-- `project_documents`: tệp đã khóa nhưng metadata vẫn mở. Đề xuất quy tắc: Admin, `project.documents.view` của dự án, hoặc người tải lên.
-- `activities`: mô tả thao tác, dùng ở màn Hoạt động hệ thống. Cần kiểm consumer trước khi siết.
+Xem rollout log. Không còn bảng nào mở `select true` cho mọi người trong phạm vi audit.
 
-### 7.4 Bucket `project-photos` (1.654 ảnh, 1,5 GB)
+### 7.4 Bucket `project-photos` — ĐÃ XONG (28/09)
 
-- Ảnh nhật ký, gần như trọn trong luồng Daily log (`DailyLogTab`), thêm GanttTab.
-- Cần phối hợp với luồng đó. Làm theo mẫu P1.6: thêm bucket vào resolver, viết policy đọc theo Room Nhật ký/Tiến độ, dry-run, chủ sản phẩm purge CDN.
+Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; luồng Daily log nên chuyển `DailyLogTab` sang lưu đường dẫn và ký link (không bắt buộc).
 
 ### 7.5 P3 (theo phương án)
 
 - Màn "Hồ sơ quyền" hợp nhất theo từng người.
-- Template quyền theo vai trò.
+- ĐÃ XONG (28/09): mẫu quyền Room theo vai trò + phân quyền theo người. Form tạo dự án cũng áp mẫu Room (7d6a2d5). 
+- ĐÃ XONG (28/09): chuyển vai trò thường sang quyền riêng từng người (8aba991). Chỉ còn AUDITOR, HR, HR_MANAGE, PERMISSION_ADMIN, SYSTEM_ADMIN.
+- ĐÃ XONG (28/09): mẫu quyền theo vị trí cho toàn hệ thống (5aace83). Gồm 14 mẫu, sửa ở Cài đặt → Mẫu quyền theo vị trí; "Điền nhanh theo mẫu vị trí" nằm trong Người dùng → Sửa.
+- **CHỜ CHỦ SẢN PHẨM — lỗi hồi quy của bước chuyển vai trò:**
+  - 55 người có `hrm.employee.edit_profile@own` không có ngày hết hạn, kèm 6 bản global và một số quyền duyệt chấm công / nghỉ phép.
+  - `app_private.evaluate_direct_grant_replacement_impl` bắt buộc hạn cho mọi quyền cần hạn trong lần lưu, nên Admin **không lưu được hồ sơ / quyền của những người này** ở Người dùng.
+  - Đề xuất: miễn hạn cho quyền đang có sẵn, không đổi; và (tùy chọn) miễn hạn cho quyền tự phục vụ phạm vi "Chính mình", không nhạy cảm.
+  - Bộ kiểm tra an toàn tự động đã chặn thay đổi này vì nó nới lỏng một kiểm tra, nên cần chủ sản phẩm quyết.
+- Tiếp: ô bị khóa do vai trò đặc biệt (HR, quản trị) phải giải thích lý do và chỉ chỗ đổi (tab Vai trò nhân sự).
 - Mở Room cho PM/CHT khi chủ sản phẩm quyết định.
 - Task 13: drop cột legacy (`allowed_modules`, `admin_modules`, …) sau khi hết phụ thuộc. `can_access_module` và `resolve_effective_permission_sources` vẫn đọc cột legacy.
 
@@ -173,7 +181,7 @@ Theo audit mục P2:
 
 ## 9. Trạng thái tại thời điểm handoff
 
-- `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
+- `origin/main` trùng với `feature/authorization-p0-hardening` (5aace83, mẫu quyền theo vị trí).
 - Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.328 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.348 pass; e2e phân quyền `npx playwright test -c tests/authorization/playwright.config.ts` 5 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.

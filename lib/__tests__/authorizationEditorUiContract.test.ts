@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 const userModal = read('components/UserModal.tsx');
 const editor = read('components/permissions/AuthorizationEditor.tsx');
-const legacy = read('components/permissions/LegacyPermissionReadOnly.tsx');
+const roomSummary = read('components/permissions/ProjectRoomSummary.tsx');
 const moduleEditor = read('components/permissions/PermissionModuleEditor.tsx');
 const moduleCard = read('components/permissions/PermissionModuleCard.tsx');
 
@@ -21,18 +21,19 @@ describe('unified authorization editor UI contract', () => {
 
   it('presents module-first capabilities and Project Room status in one editor', () => {
     expect(editor).toContain('Quyền truy cập module');
-    expect(editor).toContain('Phân quyền Room dự án');
+    expect(editor).toContain('<ProjectRoomSummary');
+    expect(roomSummary).toContain('Quyền trong Room dự án');
     expect(editor).toContain('PermissionModuleEditor');
     expect(editor).not.toContain('PermissionMatrix');
     expect(editor).toContain('PermissionDiffPreview');
   });
 
-  it('keeps legacy state read-only with provenance, collision and migration status', () => {
-    expect(legacy).toContain('Dữ liệu legacy — chỉ đọc');
-    expect(legacy).toContain('Nguồn');
-    expect(legacy).toContain('Xung đột');
-    expect(legacy).toContain('Trạng thái chuyển đổi');
-    expect(legacy).not.toContain('type="checkbox"');
+  it('no longer shows the retired legacy block and loads the edited person\'s own snapshot', () => {
+    expect(editor).not.toContain('LegacyPermissionReadOnly');
+    expect(userModal).toContain('loadUserAuthorizationSnapshot(userToEdit.id)');
+    expect(roomSummary).toContain('#/da?projectId=');
+    expect(roomSummary).toContain('target="_blank"');
+    expect(roomSummary).toContain('Không tải được quyền Room');
   });
 
   it('copies direct grants with scopes and does not copy identity or legacy fields', () => {

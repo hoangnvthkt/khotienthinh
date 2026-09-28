@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardPaste, Copy, ExternalLink, Layers, ShieldCheck } from 'lucide-react';
+import { ClipboardPaste, Copy, Layers, ShieldCheck } from 'lucide-react';
 import {
   AuthorizationRoomAction,
   EffectivePermissionSource,
@@ -15,7 +15,8 @@ import {
 } from '../../lib/permissions/authorizationUpdateValidation';
 import PermissionDiffPreview from './PermissionDiffPreview';
 import PermissionModuleEditor from './PermissionModuleEditor';
-import LegacyPermissionReadOnly from './LegacyPermissionReadOnly';
+import PermissionTemplateFill from './PermissionTemplateFill';
+import ProjectRoomSummary from './ProjectRoomSummary';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
 interface AuthorizationEditorProps {
@@ -25,6 +26,9 @@ interface AuthorizationEditorProps {
   inheritedPermissionCodes: readonly string[];
   effectivePermissionSources?: readonly EffectivePermissionSource[];
   roomActions?: readonly AuthorizationRoomAction[];
+  /** Loading state of the edited person's permission snapshot. */
+  snapshotState?: 'loading' | 'ready' | 'error';
+  onRetrySnapshot?: () => void;
   reason: string;
   validationIssues?: readonly AuthorizationValidationIssue[];
   disabled?: boolean;
@@ -65,6 +69,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   inheritedPermissionCodes,
   effectivePermissionSources = [],
   roomActions = [],
+  snapshotState = 'ready',
+  onRetrySnapshot = () => undefined,
   reason,
   validationIssues = [],
   disabled = false,
@@ -83,21 +89,13 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
     return inheritedPermissionCodes.map(permissionCode => ({
       permissionCode,
       sourceType: 'INHERITED',
-      sourceLabel: 'nguồn hiện có',
+      sourceLabel: 'loại tài khoản',
       scopeType: 'global',
       scopeId: '*',
       isBusinessApproval: false,
       metadata: {},
     }));
   }, [effectivePermissionSources, inheritedPermissionCodes]);
-  const projectRooms = useMemo(() => {
-    const keys = new Set(roomActions.map(action => [
-      action.projectId,
-      action.constructionSiteId || '*',
-      action.roomCode,
-    ].join('::')));
-    return { roomCount: keys.size, actionCount: roomActions.length };
-  }, [roomActions]);
   const retainedHiddenGrants = useMemo(() => catalog
     ? getRetainedHiddenGrants({
       grants: directGrants,
@@ -178,16 +176,16 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-blue-700">
-              <ShieldCheck size={14} /> Năng lực theo phạm vi
+              <ShieldCheck size={14} /> Quyền theo phạm vi
             </div>
-            <p className="mt-1 text-[10px] text-slate-500">Chỉ direct grant được sửa; quyền kế thừa luôn hiển thị ở trạng thái khóa.</p>
+            <p className="mt-1 text-[10px] text-slate-500">Chỉ sửa được quyền cấp riêng cho người này; quyền có sẵn từ vai trò hay mẫu quyền hiển thị ở trạng thái khóa.</p>
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={copyDirectGrants} disabled={disabled || !catalog} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 disabled:opacity-50">
-              <Copy size={12} /> Sao chép direct grants
+              <Copy size={12} /> Sao chép quyền
             </button>
             <button type="button" onClick={pasteDirectGrants} disabled={disabled || !catalog || !clipboard} className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] font-black text-amber-700 disabled:opacity-50">
-              <ClipboardPaste size={12} /> Dán grants + scope
+              <ClipboardPaste size={12} /> Dán quyền đã sao chép
             </button>
           </div>
         </div>
@@ -211,6 +209,16 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         )}
         {catalog && (
           <>
+            <PermissionTemplateFill
+              userId={targetUser.id}
+              catalog={catalog}
+              grants={directGrants}
+              inheritedCodes={inheritedSources.map(source => source.permissionCode)}
+              reason={reason}
+              disabled={disabled}
+              onGrantsChange={onDirectGrantsChange}
+              onReasonChange={onReasonChange}
+            />
             <RetainedPermissionGrantNotice grants={retainedHiddenGrants} />
             <PermissionModuleEditor
               catalog={catalog}
@@ -235,21 +243,12 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>
 
-      <section className="rounded-xl border border-indigo-100 bg-white p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-black uppercase tracking-wide text-indigo-700">Phân quyền Room dự án</div>
-            <p className="mt-1 text-[10px] text-slate-500">
-              {projectRooms.roomCount} Room / {projectRooms.actionCount} action hiệu lực. Thành viên và action Room được quản lý tại từng dự án.
-            </p>
-          </div>
-          <a href="/da?tab=permissions" className="inline-flex shrink-0 items-center gap-1 text-[10px] font-black text-indigo-600 hover:text-indigo-800">
-            Mở quản trị Room <ExternalLink size={11} />
-          </a>
-        </div>
-      </section>
-
-      <LegacyPermissionReadOnly user={targetUser} directGrants={directGrants} />
+      <ProjectRoomSummary
+        state={snapshotState}
+        roomActions={roomActions}
+        isAdmin={targetUser.role === 'ADMIN'}
+        onRetry={onRetrySnapshot}
+      />
 
       <label className="block space-y-1">
         <span className="text-xs font-black uppercase tracking-wide text-slate-600">Lý do thay đổi</span>

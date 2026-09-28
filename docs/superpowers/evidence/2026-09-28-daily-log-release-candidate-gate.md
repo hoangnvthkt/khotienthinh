@@ -61,3 +61,41 @@ After the owner requested removal of completed Cloud rehearsal branches, the liv
 The owner asked to continue toward the release gate. `origin/main` had advanced by three committed notification changes through `9a7cc0d`, including `20260928065520_notification_preferences_digest.sql`. Its SHA-256 is `2d7f68b0d5dd80bdcce3b1fc3bf4539fe9433e7be226c7fc0b6fb9fce32941c1`; after comment/whitespace normalization, its SQL matched the single statement recorded in the read-only production ledger. A source-integrity test was extended from five to six applied sources and observed RED for the absent file/allowlist, then GREEN after merging `origin/main` into the isolated candidate (`e874cf0`) and resolving only the migration-baseline list. No notification application file differs from `main` in the PR diff. Local verification: 2,593 tests passed, two skipped; typecheck, build, migration baseline (166 active / 402 archived), and query inventory (zero findings/errors) passed.
 
 The PR Cloud preview applied the new mainline migration and reached **166** versions, latest `20260928065520`; all three GitHub checks for `e874cf0` completed successfully. Production remained at **140**, with **26** candidate versions pending and **zero** production-applied versions missing from the candidate. The preserved `baseline-vioo-git` branch has only 44 ledger versions, seven Auth users, and one test project, so it cannot stand in for the 140-version production parent without changing that separately used test environment. No SQL was pushed to it. This source/preview reconciliation does **not** satisfy the exact populated upgrade gate; PR #13 remains draft and production remains untouched by this candidate.
+
+## Fresh 147-version mainline reconciliation (20:20 ICT)
+
+Read-only Git/Cloud inventory started at candidate `91142e9` and fetched main
+`4fcca71`. Production has 147 versions through `20260928113000`; preview has
+166, and baseline-vioo-git has 44. Production's live operational counts are now
+323 Daily Logs, 827 labor rows, 408 machine rows, 62 Auth users, 86 projects and
+10 active cron jobs. Earlier counts above are historical.
+
+All seven newly applied mainline SQL files match the production ledger after
+comment/whitespace/terminator normalization (textual, not semantic comparison).
+Their exact source SHA-256 values are pinned in
+`lib/__tests__/dailyLogReleaseMigrationSources.test.ts`. The extended test was
+observed RED with the seven files and allowlist entries missing. Merging main
+into the isolated PR candidate preserved owner implementations and conflicted
+only in `supabase/baseline/current.json`. The union of the two allowlists exposed
+one existing mainline omission: `20260928113000` was not allowlisted on main.
+Adding that exact filename clears the contract and migration gate; SQL bytes
+were not changed. The only ProjectDashboard difference from main remains the
+existing evidence tab registration.
+
+Fresh local validation of this merge: 539 test files passed, 2 skipped;
+**2,613 tests passed, 2 existing skips**; typecheck, migration baseline
+**173 active / 402 archived**, query audit (zero findings/errors), and build all
+exited 0. Existing SSR useLayoutEffect and large-bundle warnings remain. Full
+staged whitespace check identifies one inherited trailing space in main's
+security handoff line 154; the candidate-specific changed files pass. The
+pre-existing `supabase/.temp/cli-latest` modification is unstaged and preserved.
+
+Staging access is newly present in root `.env`. Its project-ref variable is a
+Dashboard URL, safely parsed in memory as `kkthixjcficmufpfynqx`, distinct from
+production, preview and baseline. Direct database read-only connection succeeds:
+PostgreSQL 17.6, zero Auth users, zero public tables, no cron table and no migration
+ledger. The existing PAT returns HTTP 403 for this staging project's metadata
+and SQL API; separate staging-token access was requested. No release conclusion
+follows from successful direct connectivity. Exact sanitized parent restore,
+forward upgrade and final gate remain pending. PR #13 remains draft; no production
+SQL push, main merge, root-checkout edit or pilot activation occurred.

@@ -6,7 +6,7 @@ import { supabase } from './supabase';
  * turn it into a short-lived signed URL at display time, so stored data does
  * not have to change. The bucket's storage RLS decides who may sign.
  */
-export const PRIVATE_LEGACY_PUBLIC_BUCKETS = new Set(['checkin-photos', 'project-attachments', 'project-files']);
+export const PRIVATE_LEGACY_PUBLIC_BUCKETS = new Set(['checkin-photos', 'project-attachments', 'project-files', 'project-photos']);
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;

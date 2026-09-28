@@ -36,6 +36,7 @@ import { calculateProjectProgress } from '../lib/projectScheduleRules';
 import { projectMasterService, type ProjectListSortKey } from '../lib/projectMasterService';
 import { projectMasterDataService } from '../lib/projectMasterDataService';
 import { projectStaffService } from '../lib/projectStaffService';
+import { orderTemplatesForPosition, projectRoomTemplateService, type ProjectRoomTemplate } from '../lib/projectRoomTemplateService';
 import { workGroupService } from '../lib/workGroupService';
 import { customerContractService } from '../lib/hdService';
 import { contractCostItemService } from '../lib/contractMetadataService';
@@ -129,6 +130,27 @@ const getSeedProjectRoleGrantCodes = (role: SeedProjectRole): string[] =>
     [...new Set(seedProjectRoleTemplates[role]
         .flatMap(templateKey => getProjectPermissionTemplateCodes(templateKey))
         .filter(code => !ROOM_MANAGED_MATERIAL_PO_PERMISSION_CODES.has(code)))];
+
+// Room template a seeded member starts with: the one suggested by their
+// position, otherwise a default per form role. Admins adjust it later in the
+// project's Permissions tab.
+const SEED_ROLE_ROOM_TEMPLATE: Record<SeedProjectRole, string> = {
+    admin: 'site_commander',
+    executor: 'field_engineer',
+    watcher: 'viewer',
+};
+
+const pickSeedRoomTemplate = (
+    templates: readonly ProjectRoomTemplate[],
+    role: SeedProjectRole,
+    positionId?: string | null,
+): string | null => {
+    if (role === 'watcher') return templates.some(t => t.code === 'viewer' && t.isActive) ? 'viewer' : null;
+    const ordered = orderTemplatesForPosition(templates, positionId);
+    return ordered.find(t => t.suggested)?.code
+        || ordered.find(t => t.code === SEED_ROLE_ROOM_TEMPLATE[role])?.code
+        || null;
+};
 
 const buildSeedProjectRoleGrants = (
     targetUserId: string,
@@ -436,6 +458,53 @@ const ProjectDashboard: React.FC = () => {
         user, users, employees, hrmPositions, moduleLoadState, moduleLoadErrors, loadModuleData
     } = useApp();
     const toast = useToast();
+
+    // Gives seeded project members their Room actions from role templates.
+    // Only Admins may assign Rooms; otherwise the project is still created and
+    // the Room step is left to an Admin.
+    const applySeedRoomTemplates = async (
+        project: Project,
+        members: Array<{ staffId: string; role: SeedProjectRole; positionId?: string | null }>,
+        quiet = false,
+    ) => {
+        if (members.length === 0) return;
+        if (user.role !== Role.ADMIN) {
+            if (quiet) return;
+            toast.warning('Chưa phân quyền Room', 'Dự án đã tạo. Nhờ Admin phân quyền Room ở tab Phân quyền của dự án.');
+            return;
+        }
+        let failed = 0;
+        let applied = 0;
+        try {
+            const templates = await projectRoomTemplateService.list();
+            for (const member of members) {
+                const templateCode = pickSeedRoomTemplate(templates, member.role, member.positionId);
+                if (!templateCode) continue;
+                try {
+                    await projectRoomTemplateService.apply({
+                        projectId: project.id,
+                        constructionSiteId: project.constructionSiteId || null,
+                        staffId: member.staffId,
+                        templateCode,
+                        mode: 'merge',
+                        dryRun: false,
+                    });
+                    applied += 1;
+                } catch (applyError) {
+                    failed += 1;
+                    logApiError('ProjectDashboard.seedRoomTemplate', applyError);
+                }
+            }
+        } catch (loadError) {
+            failed = members.length;
+            logApiError('ProjectDashboard.seedRoomTemplates', loadError);
+        }
+        if (failed > 0) {
+            toast.warning('Phân quyền Room chưa xong', `${failed} người chưa được áp mẫu Room. Kiểm tra ở tab Phân quyền của dự án.`);
+        } else if (applied > 0 && !quiet) {
+            toast.info('Đã phân quyền Room theo mẫu', `${applied} người. Chỉnh riêng từng người ở tab Phân quyền của dự án.`);
+        }
+    };
     const { canManage, isAdmin } = usePermission();
     const canManageProjects = canManage('/da');
     const { templates: workflowTemplates, refreshData: refreshWorkflowData } = useWorkflow();
@@ -1189,12 +1258,14 @@ const ProjectDashboard: React.FC = () => {
             throw new Error(`Các thành viên chưa có chức danh HRM: ${names}. Vui lòng chọn vị trí mặc định trong "Thông tin khác".`);
         }
 
+        const seededMembers: Array<{ staffId: string; role: SeedProjectRole; positionId?: string | null }> = [];
         for (const [userId, role] of userRoles.entries()) {
+            const positionId = employeeByUserId.get(userId)?.positionId || projectForm.defaultPositionId;
             const staffId = await projectStaffService.add({
                 projectId: project.id,
                 constructionSiteId: project.constructionSiteId || null,
                 userId,
-                positionId: employeeByUserId.get(userId)?.positionId || projectForm.defaultPositionId,
+                positionId,
                 permissionTypeIds: [],
                 startDate: project.startDate || new Date().toISOString().slice(0, 10),
                 note: role === 'admin' ? 'Seed từ form tạo dự án: Quản trị dự án' : role === 'executor' ? 'Seed từ form tạo dự án: Thực hiện dự án' : 'Seed từ form tạo dự án: Người theo dõi',
@@ -1207,7 +1278,9 @@ const ProjectDashboard: React.FC = () => {
                 user.id,
                 user.name || user.username,
             );
+            seededMembers.push({ staffId, role, positionId });
         }
+        await applySeedRoomTemplates(project, seededMembers);
     };
 
     const findImportUser = (value: string) => {
@@ -1233,6 +1306,7 @@ const ProjectDashboard: React.FC = () => {
         splitImportValues(record.adminImportUsers).forEach(value => mergeRole(value, 'admin'));
         if (userRoles.size === 0) return;
 
+        const seededMembers: Array<{ staffId: string; role: SeedProjectRole; positionId?: string | null }> = [];
         for (const [userId, role] of userRoles.entries()) {
             const positionId = employeeByUserId.get(userId)?.positionId || record.defaultPositionImportId;
             if (!positionId) {
@@ -1256,7 +1330,9 @@ const ProjectDashboard: React.FC = () => {
                 user.id,
                 user.name || user.username,
             );
+            seededMembers.push({ staffId, role, positionId });
         }
+        await applySeedRoomTemplates(project, seededMembers, true);
     };
 
     const buildProjectImportPreview = (mode: ExcelImportMode, rows: Record<string, unknown>[]) => buildImportPreview<ProjectImportRecord>({
@@ -2466,12 +2542,16 @@ const ProjectDashboard: React.FC = () => {
 
                                         <label className="text-sm font-black text-slate-700 md:text-right pt-3">Người theo dõi</label>
                                         {renderUserMultiSelect('Người theo dõi', projectForm.watcherUserIds, ids => setProjectForm({ ...projectForm, watcherUserIds: ids }), <Eye size={13} />, projectForm.watcherGroupIds, ids => setProjectForm({ ...projectForm, watcherGroupIds: ids }))}
+                                        <span className="hidden md:block" />
+                                        <p className="rounded-xl bg-indigo-50 px-4 py-2.5 text-xs font-bold text-indigo-700">
+                                            Mỗi người được phân quyền Room theo mẫu vai trò hợp với chức vụ (Quản trị → Chỉ huy trưởng, Thực hiện → Kỹ thuật hiện trường, Người theo dõi → Chỉ xem nếu chức vụ không gợi ý mẫu khác). Chỉnh riêng từng người sau ở tab Phân quyền của dự án.
+                                        </p>
                                     </>
                                 ) : (
                                     <>
                                         <label className="text-sm font-black text-slate-700 md:text-right pt-3">Tổ chức dự án</label>
                                         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-700">
-                                            Nhân sự, quyền PBAC và người theo dõi của dự án hiện hữu được chỉnh trong tab Tổ chức.
+                                            Nhân sự và người theo dõi của dự án hiện hữu được chỉnh trong tab Tổ chức; quyền Room ở tab Phân quyền.
                                         </div>
                                     </>
                                 )}

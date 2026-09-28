@@ -207,6 +207,7 @@ const TeamForm: React.FC<{
           <div className="border-t border-slate-100 pt-4">
             <SafetyAttachmentUploader
               projectId={projectId}
+              constructionSiteId={constructionSiteId}
               recordType="team"
               recordId={tempId}
               attachments={attachments}

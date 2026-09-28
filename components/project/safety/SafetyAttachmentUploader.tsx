@@ -5,6 +5,7 @@ import { safetyService } from '../../../lib/safetyService';
 
 interface Props {
   projectId: string;
+  constructionSiteId?: string | null;
   recordType: string;
   recordId: string;
   attachments: SafetyAttachment[];
@@ -20,6 +21,7 @@ const isImage = (item: SafetyAttachment) =>
 
 const SafetyAttachmentUploader: React.FC<Props> = ({
   projectId,
+  constructionSiteId,
   recordType,
   recordId,
   attachments,
@@ -31,15 +33,18 @@ const SafetyAttachmentUploader: React.FC<Props> = ({
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
+    setError(null);
     setUploading(true);
+    const uploaded: SafetyAttachment[] = [];
     try {
-      const uploaded: SafetyAttachment[] = [];
       for (const file of Array.from(files)) {
         uploaded.push(await safetyService.uploadAttachment({
           projectId,
+          constructionSiteId,
           recordType,
           recordId,
           file,
@@ -47,8 +52,10 @@ const SafetyAttachmentUploader: React.FC<Props> = ({
           category: imageOnly ? 'photo' : 'attachment',
         }));
       }
-      onChange([...attachments, ...uploaded]);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Không thể tải file. Vui lòng thử lại.');
     } finally {
+      if (uploaded.length) onChange([...attachments, ...uploaded]);
       setUploading(false);
       if (inputRef.current) inputRef.current.value = '';
     }
@@ -77,12 +84,14 @@ const SafetyAttachmentUploader: React.FC<Props> = ({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          disabled={uploading}
+          disabled={uploading || !constructionSiteId}
           className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50"
         >
           <Upload size={14} /> {uploading ? 'Đang tải...' : imageOnly ? 'Thêm ảnh' : 'Thêm file'}
         </button>
       </div>
+      {!constructionSiteId && <p className="text-xs text-amber-700">Chọn công trường để tải file.</p>}
+      {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
       <input
         ref={inputRef}
         type="file"

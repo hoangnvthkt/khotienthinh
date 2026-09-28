@@ -1,6 +1,7 @@
 import React from 'react';
 import { LockKeyhole } from 'lucide-react';
 import { UserPermissionGrant } from '../../types';
+import { getPermissionActionByCode } from '../../lib/permissions/permissionRegistry';
 
 interface RetainedPermissionGrantNoticeProps {
   grants: readonly UserPermissionGrant[];
@@ -26,12 +27,13 @@ const RetainedPermissionGrantNotice: React.FC<RetainedPermissionGrantNoticeProps
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {grants.map(grant => (
-              <code
+              <span
                 key={`${grant.permissionCode}-${grant.scopeType}-${grant.scopeId}-${grant.expiresAt || ''}`}
+                title={grant.permissionCode}
                 className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600"
               >
-                {grant.permissionCode}
-              </code>
+                {getPermissionActionByCode(grant.permissionCode)?.label || grant.permissionCode}
+              </span>
             ))}
           </div>
         </div>
