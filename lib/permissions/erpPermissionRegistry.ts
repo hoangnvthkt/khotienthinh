@@ -141,7 +141,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     modules: [
       module('wms.inventory', 'Tồn kho', 'WMS', ['/dashboard', '/inventory'], 10, actions('wms.inventory', 'WMS', '/inventory', WMS_SCOPE, [
         ['view', 'Xem', 10],
-        ['edit', 'Sửa', 20],
+        ['edit', 'Sửa', 20, ['global', 'warehouse']],
       ])),
       module('wms.request', 'Đề xuất vật tư', 'WMS', ['/requests', '/material-code-requests'], 20, actions('wms.request', 'WMS', '/requests', WMS_SCOPE, [
         ['view', 'Xem', 10],
@@ -166,7 +166,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['return_supplier', 'Trả hàng nhà cung cấp', 10],
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
-        ['manage', 'Quản trị danh mục', 10],
+        ['manage', 'Quản trị danh mục', 10, ['global', 'warehouse']],
       ])),
     ],
   },
@@ -178,7 +178,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('hrm.employee', 'Nhân viên', 'HRM', ['/hrm/dashboard', '/hrm/employees', '/hrm/reports', '/hrm/ranking', '/org-map'], 10, actions('hrm.employee', 'HRM', '/hrm/employees', HRM_SCOPE, [
         ['view_directory', 'Xem danh bạ', 10, ['global']],
         ['view_profile', 'Xem hồ sơ cá nhân', 20],
-        ['edit_profile', 'Sửa hồ sơ cá nhân', 30],
+        ['edit_profile', 'Sửa hồ sơ cá nhân', 30, ['global', 'org_unit', 'own']],
         ['view_sensitive', 'Xem hồ sơ hạn chế', 40, ['global']],
         ['edit_sensitive', 'Sửa hồ sơ hạn chế', 50, ['global']],
         ['import', 'Nhập hồ sơ', 60, ['global']],
@@ -197,7 +197,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('hrm.attendance', 'Chấm công', 'HRM', ['/hrm/checkin', '/hrm/attendance'], 20, actions('hrm.attendance', 'HRM', '/hrm/attendance', HRM_SCOPE, [
         ['view', 'Xem', 10],
         ['edit', 'Sửa', 20],
-        ['approve', 'Duyệt/chốt công', 30],
+        ['approve', 'Duyệt/chốt công', 30, ['global', 'org_unit', 'direct_reports', 'assigned']],
       ])),
       module('hrm.leave', 'Nghỉ phép', 'HRM', ['/hrm/leave'], 30, actions('hrm.leave', 'HRM', '/hrm/leave', HRM_SCOPE, [
         ['view', 'Xem', 10],
@@ -331,6 +331,13 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view_own', 'Xem của mình', 10],
         ['create', 'Tạo', 20],
         ['act_assigned', 'Xử lý được giao', 30],
+        ['approve_assigned', 'Duyệt yêu cầu được giao', 31, ['assigned']],
+        ['reject_assigned', 'Từ chối yêu cầu được giao', 32, ['assigned']],
+        ['return_assigned', 'Trả lại yêu cầu được giao', 33, ['assigned']],
+        ['resubmit_own', 'Gửi lại yêu cầu của mình', 34, ['own']],
+        ['cancel', 'Hủy yêu cầu', 35, ['own', 'global']],
+        ['reassign', 'Chuyển người xử lý yêu cầu', 36, ['global']],
+        ['edit_own_content', 'Sửa nội dung yêu cầu của mình', 37, ['own']],
         ['view_all', 'Xem tất cả', 40],
       ])),
       module('request.category', 'Danh mục yêu cầu', 'RQ', ['/rq/categories'], 20, actions('request.category', 'RQ', '/rq/categories', WORKFLOW_SCOPE, [
@@ -351,6 +358,12 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('asset.catalog', 'Danh mục tài sản', 'TS', ['/ts/dashboard', '/ts/catalog', '/ts/asset/:id'], 10, actions('asset.catalog', 'TS', '/ts/catalog', ASSET_SCOPE, [
         ['view', 'Xem', 10],
         ['manage', 'Quản trị', 20],
+        ['create', 'Tạo', 20],
+        ['edit', 'Sửa', 30],
+        ['delete', 'Xóa', 40],
+        ['dispose', 'Xuất hủy', 50],
+        ['import', 'Import', 60],
+        ['transfer_stock', 'Điều chuyển tồn', 70],
       ])),
       module('asset.assignment', 'Cấp phát tài sản', 'TS', ['/ts/assignment'], 20, actions('asset.assignment', 'TS', '/ts/assignment', ASSET_SCOPE, [
         ['view', 'Xem', 10],
@@ -362,10 +375,13 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['view', 'Xem', 10],
         ['create', 'Tạo', 20],
         ['manage', 'Quản trị', 30],
+        ['complete', 'Hoàn tất', 30],
+        ['import', 'Import', 40],
       ])),
       module('asset.audit', 'Kiểm kê tài sản', 'TS', ['/ts/audit', '/ts/reports'], 40, actions('asset.audit', 'TS', '/ts/audit', ASSET_SCOPE, [
         ['view', 'Xem', 10],
         ['perform', 'Thực hiện kiểm kê', 20],
+        ['export', 'Xuất báo cáo', 30],
       ])),
     ],
   },

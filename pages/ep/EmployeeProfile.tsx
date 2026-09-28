@@ -10,6 +10,7 @@ import {
   BarChart3, History, Repeat, Wrench, Eye, CalendarOff,
   Building, ChevronRight, Activity
 } from 'lucide-react';
+import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 
 // ======================== TAB DEFINITIONS ========================
 const TABS = [
@@ -116,7 +117,7 @@ const EmployeeProfile: React.FC = () => {
   }
 
   const isActive = employee.status === 'Đang làm việc';
-  const avatarUrl = employee.avatarUrl || linkedUser?.avatar || `https://i.pravatar.cc/150?u=${employee.email || employee.id}`;
+  const avatarUrl = employee.avatarUrl || linkedUser?.avatar || DEFAULT_AVATAR_URL;
 
   // ======================== RENDER HELPERS ========================
   const StatusBadge: React.FC<{ status: string; colorMap: Record<string, string> }> = ({ status, colorMap }) => (

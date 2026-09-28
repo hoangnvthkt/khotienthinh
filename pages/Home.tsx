@@ -51,7 +51,7 @@ import { resolveNotificationPath } from '../lib/notificationRoutes';
 import { buildRequestRoute } from '../lib/requestRoutes';
 import { buildWorkflowRoute } from '../lib/workflowRoutes';
 import { canUseModule, resolveHomeCapabilities } from '../lib/homeCapabilities';
-import { isRequestModuleWorkflowTemplate } from '../lib/workflowVisibility';
+import { isProjectOwnedWorkflowTemplate, isRequestModuleWorkflowTemplate } from '../lib/workflowVisibility';
 import { canViewModule } from '../lib/permissions/permissionService';
 import { canAccessRoute } from '../lib/routeAccess';
 import {
@@ -616,7 +616,7 @@ const Home: React.FC = () => {
       const { currentNode, assignedToCurrentUser, label } = getWorkflowAssignees(instance, workflowNodes, users, user);
       if (!assignedToCurrentUser) return null;
       const template = workflowTemplates.find(item => item.id === instance.templateId);
-      if (isRequestModuleWorkflowTemplate(template)) return null;
+      if (isRequestModuleWorkflowTemplate(template) || isProjectOwnedWorkflowTemplate(template)) return null;
       return {
         id: `wf-${instance.id}`,
         category: 'workflow',

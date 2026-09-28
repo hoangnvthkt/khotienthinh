@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react';
 import { Role } from '../../types';
 import { useApp } from '../../context/AppContext';
 import ProjectPermissionRoomsPanel from '../../components/project/permissions/ProjectPermissionRoomsPanel';
+import ProjectSensitiveAccessRoomCard from '../../components/project/permissions/ProjectSensitiveAccessRoomCard';
 
 interface Props {
   projectId: string;
@@ -21,7 +22,15 @@ const ProjectPermissionsTab: React.FC<Props> = ({ projectId, constructionSiteId 
     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
       Room-authoritative · mọi quyền nghiệp vụ tại đây được kiểm tra trực tiếp theo dự án/công trường; PBAC fallback đã tắt.
     </div>
-    <ProjectPermissionRoomsPanel projectId={projectId} constructionSiteId={constructionSiteId} />
+    <ProjectPermissionRoomsPanel
+      projectId={projectId}
+      constructionSiteId={constructionSiteId}
+      leadingCard={{
+        groupCode: 'finance',
+        searchText: 'Ai được xem Tài chính & Hợp đồng dữ liệu nhạy cảm công tắc',
+        node: <ProjectSensitiveAccessRoomCard key="sensitive-access" projectId={projectId} />,
+      }}
+    />
   </div>;
 };
 

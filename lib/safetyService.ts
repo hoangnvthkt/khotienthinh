@@ -167,6 +167,10 @@ async function notifySafety(params: {
   actorId?: string | null;
   metadata?: Record<string, any>;
 }) {
+  // Without a named recipient nothing is sent here: open critical or overdue
+  // issues and expired equipment reach the Safety Room from the server
+  // (safety_critical in app_private.run_scheduled_alerts).
+  if (!params.recipientIds?.length) return;
   const metadata = {
     projectId: params.projectId,
     constructionSiteId: params.constructionSiteId,
@@ -175,40 +179,20 @@ async function notifySafety(params: {
     ...(params.metadata || {}),
   };
 
-  if (params.recipientIds?.length) {
-    await notificationService.notifyProjectUsers({
-      recipientIds: params.recipientIds,
-      actorId: params.actorId,
-      type: params.severity === 'critical' ? 'error' : params.severity === 'warning' ? 'warning' : 'info',
-      category: 'safety',
-      title: params.title,
-      message: params.message,
-      severity: params.severity || 'info',
-      sourceType: params.sourceType,
-      sourceId: params.sourceId,
-      constructionSiteId: params.constructionSiteId || undefined,
-      link: '/da',
-      metadata,
-    });
-    return;
-  }
-
-  if (params.severity === 'critical') {
-    await notificationService.notifyAlert({
-      alertKey: 'safety_critical',
-      type: 'error',
-      category: 'safety',
-      title: params.title,
-      message: params.message,
-      severity: 'critical',
-      sourceType: params.sourceType,
-      sourceId: params.sourceId,
-      projectId: params.projectId || undefined,
-      constructionSiteId: params.constructionSiteId || undefined,
-      link: '/da',
-      metadata,
-    });
-  }
+  await notificationService.notifyProjectUsers({
+    recipientIds: params.recipientIds,
+    actorId: params.actorId,
+    type: params.severity === 'critical' ? 'error' : params.severity === 'warning' ? 'warning' : 'info',
+    category: 'safety',
+    title: params.title,
+    message: params.message,
+    severity: params.severity || 'info',
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    constructionSiteId: params.constructionSiteId || undefined,
+    link: '/da',
+    metadata,
+  });
 }
 
 export interface SafetyIssueFilters {

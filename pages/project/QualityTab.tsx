@@ -53,6 +53,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import ProjectRoomSubmissionDialog from '../../components/project/ProjectRoomSubmissionDialog';
 import MediaViewer, { MediaItem } from '../../components/project/MediaViewer';
 import { EmptyState, StatusBadge as ErpStatusBadge } from '../../components/erp';
+import { resolveStorageUrl } from '../../lib/storageSignedUrl';
 
 interface QualityTabProps {
   constructionSiteId?: string;
@@ -272,7 +273,7 @@ const QualityTab: React.FC<QualityTabProps> = ({ constructionSiteId, projectId }
 
   const handleDownloadDirect = useCallback(async (url: string, name: string) => {
     try {
-      const response = await fetch(url);
+      const response = await fetch(await resolveStorageUrl(url));
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');

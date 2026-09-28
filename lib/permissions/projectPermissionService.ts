@@ -172,6 +172,29 @@ const PROJECT_MATERIAL_TAB_ROOM_CODE_BY_KEY: Partial<Record<ProjectMaterialTabKe
   po: 'material_po',
 };
 
+// Tabs whose server checks read only Room actions (bindings enforced, PBAC
+// fallback off). Direct project.* grants have no effect there, so the UI must
+// not use them either. Admins get their Room actions from the server snapshot.
+// Material request / plan / BOQ still honor grants on the server and stay on
+// the capability path.
+const ROOM_AUTHORITATIVE_TAB_KEYS: readonly ProjectOverviewTabKey[] = [
+  'gantt', 'weekly_progress', 'dailylog', 'quality', 'safety', 'payment',
+];
+const ROOM_AUTHORITATIVE_MATERIAL_TAB_KEYS: readonly ProjectMaterialTabKey[] = ['po'];
+
+const hasProjectRoomWorkAction = (
+  user: ProjectPermissionUser,
+  roomCodes: readonly ProjectPermissionRoomCode[] | undefined,
+  scopeInput: { projectId?: string; constructionSiteId?: string | null },
+): boolean => {
+  const snapshot = getUserAuthorizationSnapshot(user);
+  if (!scopeInput.projectId || !roomCodes || !snapshot) return false;
+  return snapshot.roomActions.some(action =>
+    roomCodes.includes(action.roomCode as ProjectPermissionRoomCode)
+    && action.actionCode !== 'view'
+    && hasRoomAction(snapshot, scopeInput.projectId!, scopeInput.constructionSiteId, action.roomCode, action.actionCode));
+};
+
 const hasProjectRoomView = (
   user: ProjectPermissionUser,
   roomCodes: readonly ProjectPermissionRoomCode[] | undefined,
@@ -198,6 +221,9 @@ export const canViewProjectTab = (
   tabKey: ProjectOverviewTabKey,
   scopeInput: { projectId?: string; constructionSiteId?: string | null },
 ): boolean => {
+  if (ROOM_AUTHORITATIVE_TAB_KEYS.includes(tabKey)) {
+    return hasProjectRoomView(user, PROJECT_TAB_ROOM_CODES_BY_KEY[tabKey], scopeInput);
+  }
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
@@ -223,6 +249,8 @@ export const canViewProjectMaterialTab = (
   tabKey: ProjectMaterialTabKey,
   scopeInput: { projectId?: string; constructionSiteId?: string | null },
 ): boolean => {
+  // PO view stays on this path: the PO tab also hosts supplier delivery, whose
+  // grants the server still honors. Only PO management is Room-only.
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const viewPermissionCode = getProjectViewPermissionCode(moduleCode);
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
@@ -238,6 +266,9 @@ export const canManageProjectTab = (
   tabKey: ProjectOverviewTabKey,
   scopeInput: { projectId?: string; constructionSiteId?: string | null },
 ): boolean => {
+  if (ROOM_AUTHORITATIVE_TAB_KEYS.includes(tabKey)) {
+    return hasProjectRoomWorkAction(user, PROJECT_TAB_ROOM_CODES_BY_KEY[tabKey], scopeInput);
+  }
   const moduleCode = PROJECT_TAB_MODULE_CODE_BY_KEY[tabKey];
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
   if (getProjectManagePermissionCodes(moduleCode).some(code => hasProjectNavigationCapability(user, code, scope))) return true;
@@ -264,6 +295,10 @@ export const canManageProjectMaterialTab = (
   tabKey: ProjectMaterialTabKey,
   scopeInput: { projectId?: string; constructionSiteId?: string | null },
 ): boolean => {
+  if (ROOM_AUTHORITATIVE_MATERIAL_TAB_KEYS.includes(tabKey)) {
+    const roomCode = PROJECT_MATERIAL_TAB_ROOM_CODE_BY_KEY[tabKey];
+    return !!roomCode && hasProjectRoomWorkAction(user, [roomCode], scopeInput);
+  }
   const moduleCode = PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY[tabKey];
   const scope = getProjectScope(scopeInput.projectId, scopeInput.constructionSiteId);
   if (getProjectManagePermissionCodes(moduleCode).some(code => hasProjectNavigationCapability(user, code, scope))) return true;

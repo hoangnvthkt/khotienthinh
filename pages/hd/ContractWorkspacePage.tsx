@@ -6,6 +6,8 @@ import { customerContractService, subcontractorContractService } from '../../lib
 import ContractWorkspace from '../../components/project/ContractWorkspace';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { useApp } from '../../context/AppContext';
+import { canPerform } from '../../lib/permissions/permissionService';
 
 type LoadedContract = CustomerContract | SubcontractorContract;
 
@@ -13,6 +15,12 @@ const ContractWorkspacePage: React.FC<{ contractType: ContractItemType }> = ({ c
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useApp();
+  const canManageContract = canPerform(
+    user,
+    contractType === 'customer' ? 'contract.customer.manage' : 'contract.supplier.manage',
+    { scopeType: 'global', scopeId: '*' },
+  );
   const [contract, setContract] = useState<LoadedContract | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -57,6 +65,7 @@ const ContractWorkspacePage: React.FC<{ contractType: ContractItemType }> = ({ c
     <ContractWorkspace
       contract={contract}
       contractType={contractType}
+      canManageTab={canManageContract}
       onBack={() => navigate(contractType === 'customer' ? '/hd/customer' : '/hd/subcontractor')}
     />
   );

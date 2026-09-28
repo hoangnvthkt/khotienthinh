@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, ChevronUp, Clock, FileText, GripVertical, MessageSquare, Package, UserRound } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowRight, ChevronDown, ChevronUp, Clock, FileText, GripVertical, MessageSquare, Package, UserRound } from 'lucide-react';
 import {
   InventoryItem,
   MaterialRequest,
@@ -19,6 +19,7 @@ import {
 } from '../../types';
 import {
   getMaterialRequestSlaState,
+  getMaterialRequestWorkflowLaneId,
   MATERIAL_REQUEST_KANBAN_COLUMNS,
   resolveRequestKanbanStage,
 } from '../../lib/materialRequestService';
@@ -158,6 +159,15 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 }) => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [draggedRequestId, setDraggedRequestId] = useState<string | null>(null);
+  // A refused drop used to be a bare `return`, so a blocked board looked
+  // identical to a broken one. Surface the reason instead.
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const rejectDrop = useCallback((reason: string) => setDropNotice(reason), []);
+  useEffect(() => {
+    if (!dropNotice) return;
+    const timer = window.setTimeout(() => setDropNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [dropNotice]);
   const [dragOverStage, setDragOverStage] = useState<MaterialRequestKanbanLaneId | null>(null);
   const [hoverCandidateId, setHoverCandidateId] = useState<string | null>(null);
   const [hoveredRequestId, setHoveredRequestId] = useState<string | null>(null);
@@ -189,26 +199,30 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 
   const columns = useMemo(() => {
     const dynamicById = new Map<string, { id: MaterialRequestKanbanLaneId; label: string; hint: string; order: number }>();
-    workflowRuntimeNodes
-      .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END)
-      .forEach(node => {
-        const laneNodeId = node.templateNodeId || node.id;
-        if (dynamicById.has(laneNodeId)) return;
-        dynamicById.set(laneNodeId, {
-          id: `workflow:${laneNodeId}`,
-          label: node.label,
-          hint: 'Bước phê duyệt theo phiên bản workflow đang chạy',
-          order: node.positionY,
-        });
-      });
+    // The configured template decides column order. Older request snapshots can carry
+    // different positions for the same step (e.g. BCH CT Duyệt at 200 when "Tạo đề xuất"
+    // still sat at 100), so they must not win just because they were read first.
     workflowNodes
       .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END)
       .forEach(node => {
-        if (dynamicById.has(node.id)) return;
-        dynamicById.set(node.id, {
-          id: `workflow:${node.id}`,
+        const laneId = getMaterialRequestWorkflowLaneId(node.label);
+        if (dynamicById.has(laneId)) return;
+        dynamicById.set(laneId, {
+          id: laneId,
           label: node.label,
           hint: 'Bước phê duyệt theo mẫu workflow',
+          order: node.positionY,
+        });
+      });
+    workflowRuntimeNodes
+      .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END)
+      .forEach(node => {
+        const laneId = getMaterialRequestWorkflowLaneId(node.label);
+        if (dynamicById.has(laneId)) return;
+        dynamicById.set(laneId, {
+          id: laneId,
+          label: node.label,
+          hint: 'Bước phê duyệt theo phiên bản workflow đang chạy',
           order: node.positionY,
         });
       });
@@ -217,12 +231,13 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
       const compatibilityNode = subject.currentNode;
       const nodeType = runtimeNode?.type || compatibilityNode?.type;
       if (nodeType === WorkflowNodeType.START || nodeType === WorkflowNodeType.END) return;
-      const laneNodeId = runtimeNode?.templateNodeId || runtimeNode?.id || subject.currentNodeId;
-      if (!laneNodeId) return;
-      if (!dynamicById.has(laneNodeId)) {
-        dynamicById.set(laneNodeId, {
-          id: `workflow:${laneNodeId}`,
-          label: runtimeNode?.label || compatibilityNode?.label || 'Bước workflow đang tải',
+      const label = runtimeNode?.label || compatibilityNode?.label;
+      if (!label) return;
+      const laneId = getMaterialRequestWorkflowLaneId(label);
+      if (!dynamicById.has(laneId)) {
+        dynamicById.set(laneId, {
+          id: laneId,
+          label,
           hint: runtimeNode?.templateNodeId ? 'Bước phê duyệt đang chạy' : 'Bước thuộc phiên bản workflow cũ',
           order: runtimeNode?.positionY ?? compatibilityNode?.positionY ?? Number.MAX_SAFE_INTEGER,
         });
@@ -285,9 +300,9 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
     return visibleRequests.reduce<Record<string, MaterialRequestKanbanLaneId>>((acc, request) => {
       const subject = workflowSubjectsByRequestId[request.id];
       if (subject?.status === 'RUNNING' && subject.currentRuntimeNode?.type !== WorkflowNodeType.END) {
-        const laneNodeId = subject.currentRuntimeNode?.templateNodeId || subject.currentRuntimeNode?.id || subject.currentNodeId;
-        if (laneNodeId) {
-          acc[request.id] = `workflow:${laneNodeId}`;
+        const laneLabel = subject.currentRuntimeNode?.label || subject.currentNode?.label;
+        if (laneLabel) {
+          acc[request.id] = getMaterialRequestWorkflowLaneId(laneLabel);
           return acc;
         }
       }
@@ -343,11 +358,46 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
     setDraggedRequestId(null);
     if (!request) return;
     const fromStage = stageByRequestId[request.id] || 'draft';
-    if (fromStage === stage || !canMoveRequest(request, stage, fromStage)) return;
+    if (fromStage === stage) return;
+    if (!canMoveRequest(request, stage, fromStage)) {
+      rejectDrop(describeRefusedDrop(request, stage, fromStage));
+      return;
+    }
     onMoveRequest(request, stage, fromStage);
   };
 
+  const describeRefusedDrop = (
+    request: MaterialRequest,
+    stage: MaterialRequestKanbanLaneId,
+    fromStage: MaterialRequestKanbanLaneId,
+  ) => {
+    const target = columns.find(column => column.id === stage)?.label || 'cột này';
+    const prefix = `Không thể chuyển "${request.code || request.title || 'phiếu'}" sang "${target}".`;
+    if (fromStage === 'draft') {
+      return stage.startsWith('workflow:')
+        ? `${prefix} Chỉ người tạo phiếu có quyền Gửi mới gửi được vào luồng duyệt, và quy trình duyệt phải hợp lệ.`
+        : `${prefix} Phiếu nháp chỉ gửi được vào bước duyệt đầu tiên.`;
+    }
+    const subject = workflowSubjectsByRequestId[request.id];
+    if (subject && subject.status !== 'RUNNING') {
+      return `${prefix} Phiếu không còn ở trạng thái đang duyệt.`;
+    }
+    const assigneeIds = subject?.currentAssigneeUserIds?.length
+      ? subject.currentAssigneeUserIds
+      : subject?.currentAssigneeUserId
+        ? [subject.currentAssigneeUserId]
+        : request.submittedToUserId ? [request.submittedToUserId] : [];
+    if (currentUserId && !assigneeIds.includes(currentUserId)) {
+      return `${prefix} Chỉ người đang xử lý bước hiện tại mới chuyển được phiếu.`;
+    }
+    if (stage === 'batch_planning') {
+      return `${prefix} Phiếu phải qua hết các bước duyệt trước khi sang tạo đợt cấp.`;
+    }
+    return `${prefix} Chỉ chuyển được sang đúng bước kế tiếp, và cần quyền Duyệt trong room Đề xuất vật tư.`;
+  };
+
   return (
+    <>
     <div className="overflow-x-auto">
       <div
         className="flex gap-4 pb-4 px-1"
@@ -748,6 +798,25 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
         })}
       </div>
     </div>
+    {/* Refused-drop feedback. Fixed so it stays visible while the board scrolls sideways. */}
+    {dropNotice && (
+      <div
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-4 left-1/2 z-[1050] flex w-[calc(100%-2rem)] max-w-[480px] -translate-x-1/2 items-start gap-2 rounded-lg border border-red-200 bg-white px-4 py-3 text-slate-700 shadow-lg dark:border-red-900 dark:bg-slate-900 dark:text-slate-200"
+      >
+        <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-500" />
+        <span className="flex-1 text-[12px] font-medium leading-relaxed">{dropNotice}</span>
+        <button
+          type="button"
+          onClick={() => setDropNotice(null)}
+          className="ml-1 shrink-0 text-[12px] font-semibold text-slate-400 transition hover:underline"
+        >
+          Đóng
+        </button>
+      </div>
+    )}
+    </>
   );
 };
 

@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import {
   isMaterialRequestWorkflowTemplate,
+  isProjectOwnedWorkflowTemplate,
   isRequestModuleWorkflowTemplate,
 } from '../../lib/workflowVisibility';
 
@@ -101,7 +102,7 @@ const WorkflowDashboard: React.FC = () => {
   // Filter instances by date range
   const visibleTemplates = useMemo(
     () => templates
-      .filter(t => !isRequestModuleWorkflowTemplate(t))
+      .filter(t => !isRequestModuleWorkflowTemplate(t) && !isProjectOwnedWorkflowTemplate(t))
       .filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t)),
     [templates, user.role],
   );

@@ -240,7 +240,7 @@ const PaymentScheduleEditor: React.FC<{
   </div>
 );
 
-const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
+const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionSiteId, projectId, canManageTab = false }) => {
   const { user } = useApp();
   const toast = useToast();
   const confirm = useConfirm();

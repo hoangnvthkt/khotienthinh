@@ -31,7 +31,7 @@ const FILE_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
 
 const getFileIcon = (fileType: string) => FILE_ICONS[fileType] || { icon: <FileIcon size={18} />, color: 'text-slate-500 bg-slate-50' };
 
-const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy, canManageTab = true }) => {
+const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, projectId, uploadedBy, canManageTab = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
@@ -165,14 +165,22 @@ const DocumentsTab: React.FC<DocumentsTabProps> = ({ constructionSiteId, project
     };
 
     const handleDownload = async (doc: ProjectDocument) => {
-        const url = await documentService.getSignedUrl(doc.storagePath);
-        window.open(url, '_blank');
+        try {
+            const url = await documentService.getSignedUrl(doc.storagePath);
+            window.open(url, '_blank');
+        } catch (e: any) {
+            toast.error('Không mở được tài liệu', e?.message || 'Bạn không có quyền xem tệp này hoặc tệp không còn.');
+        }
     };
 
     const handlePreview = async (doc: ProjectDocument) => {
-        const url = await documentService.getSignedUrl(doc.storagePath);
-        setPreviewUrl(url);
-        setPreviewDoc(doc);
+        try {
+            const url = await documentService.getSignedUrl(doc.storagePath);
+            setPreviewUrl(url);
+            setPreviewDoc(doc);
+        } catch (e: any) {
+            toast.error('Không mở được tài liệu', e?.message || 'Bạn không có quyền xem tệp này hoặc tệp không còn.');
+        }
     };
 
     // Stats

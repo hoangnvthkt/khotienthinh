@@ -100,7 +100,7 @@ export const DEFAULT_ALERT_RULES: NotificationAlertRule[] = [
     isEnabled: true,
     thresholds: {},
     cooldownMinutes: 1440,
-    recipientConfig: { mode: 'project_permission', projectPermissionCodes: ['confirm', 'approve'], includeAdmins: true, fallbackToAdmin: true },
+    recipientConfig: { mode: 'project_permission', projectPermissionCodes: ['edit'], includeAdmins: true, fallbackToAdmin: true },
     channels: { inApp: true, webPush: true },
   },
   {

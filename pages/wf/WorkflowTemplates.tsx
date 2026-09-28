@@ -11,6 +11,7 @@ import {
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
     isMaterialRequestWorkflowTemplate,
+    isProjectOwnedWorkflowTemplate,
     isRequestModuleWorkflowTemplate,
 } from '../../lib/workflowVisibility';
 import { useToast } from '../../context/ToastContext';
@@ -104,7 +105,7 @@ const WorkflowTemplates: React.FC = () => {
     }
 
     const visibleTemplates = templates
-        .filter(t => !isRequestModuleWorkflowTemplate(t))
+        .filter(t => !isRequestModuleWorkflowTemplate(t) && !isProjectOwnedWorkflowTemplate(t))
         .filter(t => user.role === Role.ADMIN || !isMaterialRequestWorkflowTemplate(t));
 
     const filtered = visibleTemplates.filter(t =>

@@ -13,6 +13,7 @@ import type {
   HrmPersonnelSectionPayload,
 } from '../../types/hrmPersonnelProfile';
 import { HRM_PERSONNEL_SECTION_KEYS } from '../../types/hrmPersonnelProfile';
+import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 
 const SECTION_META: Array<{
   key: HrmPersonnelSectionKey;
@@ -458,7 +459,7 @@ const HrmPersonnelProfile: React.FC = () => {
         <div className="h-1.5 bg-sky-600" />
         <div className="grid gap-5 p-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
           <img
-            src={overview.avatarUrl || `https://i.pravatar.cc/160?u=${overview.employeeId}`}
+            src={overview.avatarUrl || DEFAULT_AVATAR_URL}
             alt={overview.fullName}
             className="h-20 w-20 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-700"
           />

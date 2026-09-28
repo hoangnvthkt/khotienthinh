@@ -73,7 +73,7 @@ const getEndDate = (contract: CustomerContract | SubcontractorContract, contract
 const isOriginalBoqReadOnly = (status: HdContractStatus) =>
   ['signed', 'active', 'completed', 'expired', 'cancelled'].includes(status);
 
-const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, onBack, canManageTab = true, initialTab }) => {
+const ContractWorkspace: React.FC<Props> = ({ contract, contractType, embedded, onBack, canManageTab = false, initialTab }) => {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab || 'info');
   const projectId = contract.projectId || null;
   const constructionSiteId = contract.constructionSiteId || null;

@@ -163,14 +163,12 @@ export const documentService = {
     const { data, error } = await supabase.storage
       .from(BUCKET)
       .createSignedUrl(storagePath, 3600); // 1 hour
-    if (error || !data?.signedUrl) {
-      // Fallback to public URL if signed URL fails
-      return this.getPublicUrl(storagePath);
-    }
+    // The bucket is private: a public URL would not open, so surface the error.
+    if (error || !data?.signedUrl) throw error || new Error('Không tạo được đường dẫn xem tài liệu.');
     return data.signedUrl;
   },
 
-  /** Get public URL for a file (fallback) */
+  /** Legacy public-form URL; PrivateStorageLinkResolver signs it when rendered. */
   getPublicUrl(storagePath: string): string {
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
     return data.publicUrl;

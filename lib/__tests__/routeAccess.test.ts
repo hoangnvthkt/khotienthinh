@@ -314,3 +314,11 @@ describe('HRM employee self-service route access', () => {
     expect(canAccessRoute(ownSensitive, '/hrm/dashboard')).toBe(false);
   });
 });
+
+describe('role-template route', () => {
+  it('opens "Mẫu quyền" only for business-role managers', () => {
+    expect(canAccessRoute(user(['system.authorization.manage_roles']), '/settings/role-templates')).toBe(true);
+    expect(canAccessRoute(user(['system.settings.view']), '/settings/role-templates')).toBe(false);
+    expect(canAccessRoute(user(), '/settings/role-templates')).toBe(false);
+  });
+});

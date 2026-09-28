@@ -7,6 +7,7 @@ import {
   Search, Users, MapPin, Building, Filter, ChevronDown,
   Phone, Mail, Briefcase, Calendar, IdCard, X
 } from 'lucide-react';
+import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 
 const EmployeeDirectory: React.FC = () => {
   const { employees, users } = useApp();
@@ -110,7 +111,7 @@ const EmployeeDirectory: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filtered.map(emp => {
           const linkedUser = users.find(u => u.id === emp.userId);
-          const avatarUrl = emp.avatarUrl || linkedUser?.avatar || `https://i.pravatar.cc/150?u=${emp.email || emp.id}`;
+          const avatarUrl = emp.avatarUrl || linkedUser?.avatar || DEFAULT_AVATAR_URL;
           const isActive = emp.status === 'Đang làm việc';
           return (
             <div

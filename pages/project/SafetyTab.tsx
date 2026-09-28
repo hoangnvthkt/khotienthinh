@@ -67,7 +67,7 @@ const defaultIssueFilters: SafetyIssueFilters & { search: string; status: any; s
   type: 'all',
 };
 
-const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, canManageTab = true }) => {
+const SafetyTab: React.FC<SafetyTabProps> = ({ projectId, constructionSiteId, canManageTab = false }) => {
   const { user, users } = useApp();
   const toast = useToast();
   const confirm = useConfirm();

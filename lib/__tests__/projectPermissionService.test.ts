@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Role, User } from '../../types';
 import {
+  canManageProjectMaterialTab,
   canManageProjectTab,
   canPerformProjectAction,
   canViewProjectMaterialTab,
@@ -178,15 +179,17 @@ describe('projectPermissionService', () => {
       ],
     });
 
-    expect(canViewProjectTab(scopedUser, 'quality', { projectId: 'project-1' })).toBe(true);
+    // Quality and Daily log are Room-authoritative on the server: a direct
+    // grant has no effect there, so it must not open the tab either.
+    expect(canViewProjectTab(scopedUser, 'quality', { projectId: 'project-1' })).toBe(false);
     expect(canViewProjectTab(scopedUser, 'quality', { projectId: 'project-2' })).toBe(false);
-    expect(canViewProjectTab(canonicalUser, 'dailylog', { projectId: 'project-1' })).toBe(true);
+    expect(canViewProjectTab(canonicalUser, 'dailylog', { projectId: 'project-1' })).toBe(false);
     expect(canManageProjectTab(canonicalUser, 'org', { projectId: 'project-1' })).toBe(true);
   });
 
   it('uses authoritative Room view actions for Project tab navigation with strict scope isolation', () => {
     const roomUser = user({
-      role: Role.ADMIN,
+      role: Role.EMPLOYEE,
       authorizationSnapshot: {
         generatedAt: '2026-09-11T00:00:00.000Z',
         flags: { legacy_fallback_disabled: true },
@@ -276,5 +279,34 @@ describe('projectPermissionService', () => {
     expect(canViewProjectMaterialTab(roomUser, 'custom', { projectId: 'project-1' })).toBe(false);
     expect(canViewProjectMaterialTab(roomUser, 'waste', { projectId: 'project-1' })).toBe(false);
     expect(canViewProjectTab(roomUser, 'subcontract', { projectId: 'project-1' })).toBe(false);
+  });
+
+  it('lets only Room work actions manage Room-managed tabs', () => {
+    const roomAction = (roomCode: string, actionCode: string) => ({
+      projectId: 'project-1', constructionSiteId: null, roomCode, actionCode,
+      source: 'room', enforcement: 'enforced', fallback: false,
+    });
+    const snapshotUser = (roomActions: ReturnType<typeof roomAction>[], grants: string[] = []) => user({
+      authorizationSnapshot: {
+        generatedAt: '2026-09-27T00:00:00.000Z',
+        flags: { legacy_fallback_disabled: true },
+        sources: grants.map(permissionCode => ({
+          permissionCode, sourceType: 'direct_grant', sourceId: permissionCode,
+          scopeType: 'project', scopeId: 'project-1', isBusinessApproval: false, metadata: {},
+        })),
+        roomActions,
+      },
+    } as Partial<User>);
+
+    const editor = snapshotUser([roomAction('daily_log', 'view'), roomAction('daily_log', 'edit')]);
+    const viewer = snapshotUser([roomAction('daily_log', 'view')]);
+    const grantOnly = snapshotUser([], ['project.daily_log.view', 'project.material_po.manage']);
+
+    expect(canManageProjectTab(editor, 'dailylog', { projectId: 'project-1' })).toBe(true);
+    expect(canManageProjectTab(editor, 'dailylog', { projectId: 'project-2' })).toBe(false);
+    expect(canManageProjectTab(viewer, 'dailylog', { projectId: 'project-1' })).toBe(false);
+    expect(canViewProjectTab(grantOnly, 'dailylog', { projectId: 'project-1' })).toBe(false);
+    expect(canManageProjectMaterialTab(grantOnly, 'po', { projectId: 'project-1' })).toBe(false);
+    expect(canManageProjectMaterialTab(snapshotUser([roomAction('material_po', 'approve')]), 'po', { projectId: 'project-1' })).toBe(true);
   });
 });

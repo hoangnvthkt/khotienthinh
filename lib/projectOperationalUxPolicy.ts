@@ -1,4 +1,5 @@
 import type { ModuleLoadStatus } from '../context/AppContext';
+import { getApiErrorMessage } from './apiError';
 import type {
   ProjectWorkflowAction,
   ProjectWorkflowRollbackDependencyResult,
@@ -68,11 +69,14 @@ export const buildWorkflowDependencyUrl = (input: {
 };
 
 export const getWorkflowActionErrorMessage = (error: unknown): string => {
-  const message = error instanceof Error ? error.message : String(error || '');
+  // Supabase errors are plain objects, not Error instances; String() would render "[object Object]".
+  const message = typeof (error as { message?: unknown })?.message === 'string'
+    ? (error as { message: string }).message
+    : typeof error === 'string' ? error : '';
   if (message.includes('active downstream dependencies')) {
     return 'Chứng từ liên quan vừa thay đổi. Hãy mở PO/đợt cấp đang hoạt động để xử lý, sau đó thử lại.';
   }
-  return message || 'Không xử lý được workflow.';
+  return getApiErrorMessage(error, 'Không xử lý được workflow.');
 };
 
 export type ProjectProgressLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';

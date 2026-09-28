@@ -1,0 +1,50 @@
+{
+  "history": [
+    {
+      "name": "workflow_step_watcher_autotag",
+      "version": "20260925090000",
+      "sha256": "0c8c5dfe1528ad57d053b193688ca482bccf76aea2a163667be0a12faf4e6fad"
+    },
+    {
+      "name": "project_owned_material_request_workflow",
+      "version": "20260926090000",
+      "sha256": "41fded918e7d894d041e1225a56e9e19b240bac2f7f4b558136491ca144a1681"
+    }
+  ],
+  "owned_templates": 0,
+  "private_helper_acl": [
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "project_owned_workflow_actor_has_room_action"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "workflow_instance_autotag_step_watchers"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "workflow_resolve_step_watchers"
+    }
+  ],
+  "rls": [
+    {
+      "enabled": true,
+      "table": "workflow_templates"
+    },
+    {
+      "enabled": true,
+      "table": "workflow_nodes"
+    },
+    {
+      "enabled": true,
+      "table": "workflow_edges"
+    }
+  ],
+  "trigger": "CREATE TRIGGER trg_workflow_instance_autotag_step_watchers BEFORE INSERT OR UPDATE OF current_node_id ON public.workflow_instances FOR EACH ROW EXECUTE FUNCTION app_private.workflow_instance_autotag_step_watchers()"
+}

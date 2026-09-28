@@ -55,7 +55,7 @@ const TYPE_CFG = {
     subcontractor: { label: 'Thầu phụ',       icon: '🏗️', color: 'text-orange-600 bg-orange-50 border-orange-200' },
 } satisfies Record<ProjectContractType, { label: string; icon: string; color: string }>;
 
-const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId, canManageTab = true }) => {
+const ContractTab: React.FC<ContractTabProps> = ({ constructionSiteId, projectId, canManageTab = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const location = useLocation();

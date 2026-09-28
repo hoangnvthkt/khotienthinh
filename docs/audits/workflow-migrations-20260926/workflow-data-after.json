@@ -1,0 +1,27 @@
+[
+  {
+    "data": {
+      "bindings": {
+        "count": 23,
+        "digest": "5b4cc08dc7ff694eb6b5f293376b0784"
+      },
+      "instanceNodes": {
+        "count": 644,
+        "digest": "6cd4fb9cb2cc29ccf3b71429c379209b"
+      },
+      "instances": {
+        "count": 165,
+        "digest": "64e433be951c240494bbda18b6fee45b"
+      },
+      "subjects": {
+        "count": 116,
+        "digest": "12edbd9fef9c4e25a148e15aee6ad5b7"
+      },
+      "templates": {
+        "count": 41,
+        "digest": "f3aa0589f6abbc7055e81a90a5b77c44"
+      }
+    }
+  }
+]
+

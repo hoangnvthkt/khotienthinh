@@ -3,16 +3,33 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
-import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, Role } from '../../types';
+import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, WorkflowInstanceStatus, ProjectWorkflowNodeConfig, Role } from '../../types';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
+import {
+    appendStep,
+    buildAssignmentTargets,
+    buildLinearTemplateStructure,
+    createStep,
+    moveStep as moveStepInDraft,
+    moveStepTo,
+    orderSteps,
+    removeStep as removeStepFromDraft,
+} from '../../lib/workflowStepDraft';
 import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
     Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye,
-    Search, Check, Table2, Edit
+    Check, Table2, Edit
 } from 'lucide-react';
-import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import SearchableCheckboxSelect from '../../components/workflow/SearchableCheckboxSelect';
 import { canPerform } from '../../lib/permissions/permissionService';
+import {
+    buildUserNameById,
+    describeAssignmentTargets,
+    describeStepAssignment as describeStepAssignmentShared,
+    getTargetDepartmentIds,
+    getTargetUserIds,
+} from '../../lib/workflowStepSummary';
 
 const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; color: string }> = {
     text: { label: 'Văn bản ngắn', icon: Type, color: 'bg-blue-500' },
@@ -23,14 +40,6 @@ const FIELD_TYPE_CONFIG: Record<CustomFieldType, { label: string; icon: any; col
     file: { label: 'Tệp đính kèm', icon: Paperclip, color: 'bg-rose-500' },
     table: { label: 'Bảng dữ liệu', icon: Table2, color: 'bg-teal-500' },
 };
-
-interface SearchableCheckboxSelectProps {
-    options: { id: string; label: string; sublabel?: string }[];
-    selectedValues: string[];
-    onChange: (values: string[]) => void;
-    placeholder?: string;
-    maxHeightClass?: string;
-}
 
 const WORKFLOW_BUILDER_DRAFT_VERSION = 1;
 
@@ -88,115 +97,75 @@ const clearWorkflowBuilderDraft = (templateId?: string) => {
     if (key) localStorage.removeItem(key);
 };
 
-const SearchableCheckboxSelect: React.FC<SearchableCheckboxSelectProps> = ({
-    options,
-    selectedValues,
-    onChange,
-    placeholder = 'Tìm kiếm...',
-    maxHeightClass = 'h-36',
+interface WorkflowRoleRowProps {
+    label: string;
+    hint: string;
+    userIds: string[];
+    users: { id: string; name: string; role?: Role; avatar?: string }[];
+    editing: boolean;
+    onChange: (values: string[]) => void;
+    emptyLabel: string;
+}
+
+/**
+ * One "vai trò" row of Base's roles panel: label + hint on the left, an avatar
+ * cluster on the right, expanding into a picker while the section is in edit mode.
+ */
+const WorkflowRoleRow: React.FC<WorkflowRoleRowProps> = ({
+    label, hint, userIds, users, editing, onChange, emptyLabel,
 }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-
-    const filteredOptions = options.filter(opt => {
-        return matchesSearchQueryMultiple([opt.label, opt.sublabel], searchTerm);
-    });
-
-    const handleToggle = (id: string) => {
-        if (selectedValues.includes(id)) {
-            onChange(selectedValues.filter(val => val !== id));
-        } else {
-            onChange([...selectedValues, id]);
-        }
-    };
-
-    const handleSelectAll = () => {
-        const filteredIds = filteredOptions.map(opt => opt.id);
-        const allFilteredSelected = filteredIds.every(id => selectedValues.includes(id));
-        if (allFilteredSelected) {
-            onChange(selectedValues.filter(id => !filteredIds.includes(id)));
-        } else {
-            onChange(Array.from(new Set([...selectedValues, ...filteredIds])));
-        }
-    };
-
-    const isAllFilteredSelected = filteredOptions.length > 0 && filteredOptions.every(opt => selectedValues.includes(opt.id));
+    const selected = userIds
+        .map(id => users.find(item => item.id === id))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
     return (
-        <div className="flex flex-col border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-white/80 dark:bg-slate-800/50 focus-within:ring-2 focus-within:ring-indigo-200 transition">
-            {/* Search Bar */}
-            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-700/50 px-3 py-2 bg-slate-50/50 dark:bg-slate-800/30">
-                <Search size={14} className="text-slate-400 shrink-0" />
-                <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                    placeholder={placeholder}
-                    className="w-full bg-transparent border-none outline-none text-xs text-slate-700 dark:text-slate-300 placeholder-slate-400 font-medium"
-                />
-                {searchTerm && (
-                    <button
-                        type="button"
-                        onClick={() => setSearchTerm('')}
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition p-0.5 rounded"
-                    >
-                        <X size={12} />
-                    </button>
-                )}
-            </div>
-
-            {/* Quick Actions */}
-            {filteredOptions.length > 0 && (
-                <div className="flex justify-between items-center px-3 py-1 bg-slate-50/20 dark:bg-slate-800/10 border-b border-slate-100 dark:border-slate-700/30 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                    <span>Kết quả: {filteredOptions.length}</span>
-                    <button
-                        type="button"
-                        onClick={handleSelectAll}
-                        className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 transition"
-                    >
-                        {isAllFilteredSelected ? 'Bỏ chọn hết' : 'Chọn tất cả'}
-                    </button>
+        <div className="px-5 py-3.5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>{label}</p>
+                    <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>{hint}</p>
                 </div>
-            )}
-
-            {/* Options List */}
-            <div className={`overflow-y-auto divide-y divide-slate-100/50 dark:divide-slate-700/30 ${maxHeightClass} custom-scrollbar`}>
-                {filteredOptions.length > 0 ? (
-                    filteredOptions.map(opt => {
-                        const isSelected = selectedValues.includes(opt.id);
-                        return (
-                            <div
-                                key={opt.id}
-                                onClick={() => handleToggle(opt.id)}
-                                className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer transition text-xs select-none ${
-                                    isSelected 
-                                        ? 'bg-indigo-50/40 dark:bg-indigo-950/20 text-indigo-700 dark:text-indigo-300 font-bold' 
-                                        : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-slate-600 dark:text-slate-300 font-medium'
-                                }`}
-                            >
-                                <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all ${
-                                    isSelected 
-                                        ? 'border-indigo-500 bg-indigo-500 text-white shadow-sm shadow-indigo-500/20' 
-                                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-transparent'
-                                }`}>
-                                    <Check size={11} className="stroke-[3]" />
-                                </div>
-                                <div className="flex flex-col min-w-0">
-                                    <span className="truncate">{opt.label}</span>
-                                    {opt.sublabel && (
-                                        <span className={`text-[10px] truncate ${isSelected ? 'text-indigo-400 dark:text-indigo-500' : 'text-slate-400'}`}>
-                                            {opt.sublabel}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })
+                {selected.length === 0 ? (
+                    <span className="shrink-0 text-[13px]" style={{ color: 'var(--wf-text-faint)' }}>
+                        {emptyLabel}
+                    </span>
                 ) : (
-                    <div className="px-3 py-4 text-center text-xs text-slate-400 font-semibold">
-                        Không tìm thấy kết quả phù hợp
+                    <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex -space-x-1.5">
+                            {selected.slice(0, 5).map(item => (
+                                <span
+                                    key={item.id}
+                                    title={item.name}
+                                    className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 text-[9px] font-bold uppercase text-white"
+                                    style={{
+                                        borderColor: 'var(--wf-surface)',
+                                        backgroundColor: 'var(--wf-green-dark)',
+                                    }}
+                                >
+                                    {item.avatar
+                                        ? <img src={item.avatar} alt={item.name} className="h-full w-full object-cover" />
+                                        : item.name.slice(0, 2)}
+                                </span>
+                            ))}
+                        </div>
+                        <span className="text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                            {selected.length} người
+                        </span>
                     </div>
                 )}
             </div>
+
+            {editing && (
+                <div className="mt-3">
+                    <SearchableCheckboxSelect
+                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
+                        selectedValues={userIds}
+                        onChange={onChange}
+                        placeholder={`Tìm kiếm cho "${label}"...`}
+                        maxHeightClass="h-32"
+                    />
+                </div>
+            )}
         </div>
     );
 };
@@ -204,7 +173,7 @@ const SearchableCheckboxSelect: React.FC<SearchableCheckboxSelectProps> = ({
 const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { templates, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
+    const { templates, instances, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
     const { users, orgUnits, user, loadModuleData, moduleLoadState, moduleLoadErrors } = useApp();
 
     const template = templates.find(t => t.id === templateId);
@@ -212,6 +181,8 @@ const WorkflowBuilder: React.FC = () => {
         || canPerform(user, 'workflow.template.edit', { scopeType: 'global', scopeId: '*' });
 
     const [activeTab, setActiveTab] = useState<'steps' | 'fields' | 'print'>('steps');
+    // Base keeps the roles block read-only until you hit "Chỉnh sửa".
+    const [rolesEditing, setRolesEditing] = useState(false);
     const [localNodes, setLocalNodes] = useState<WorkflowNode[]>([]);
     const [localEdges, setLocalEdges] = useState<WorkflowEdge[]>([]);
     const [customFields, setCustomFields] = useState<WorkflowCustomField[]>([]);
@@ -431,32 +402,19 @@ const WorkflowBuilder: React.FC = () => {
     // ========== STEPS (NODES) MANAGEMENT ==========
 
     // Get ordered steps (excluding START and END, which are auto-managed)
-    const getOrderedSteps = (): WorkflowNode[] => {
-        const steps = localNodes.filter(n => n.type !== WorkflowNodeType.START && n.type !== WorkflowNodeType.END);
-        // Sort by positionY as ordering proxy
-        return steps.sort((a, b) => a.positionY - b.positionY);
-    };
+    const getOrderedSteps = (): WorkflowNode[] => orderSteps(localNodes);
 
     const addStep = () => {
         if (!canConfigureTemplate) return;
-        const orderedSteps = getOrderedSteps();
-        const newNode: WorkflowNode = {
-            id: generateId(),
-            templateId: templateId!,
-            type: WorkflowNodeType.APPROVAL,
-            label: `Giai đoạn ${orderedSteps.length + 1}`,
-            config: {},
-            positionX: 0,
-            positionY: (orderedSteps.length + 1) * 100,
-        };
-        setLocalNodes(prev => [...prev, newNode]);
+        const newNode = createStep({ id: generateId(), templateId: templateId!, existingSteps: getOrderedSteps().length });
+        setLocalNodes(prev => appendStep(prev, newNode));
         setHasChanges(true);
         setEditingStepId(newNode.id);
     };
 
     const removeStep = (nodeId: string) => {
         if (!canConfigureTemplate) return;
-        setLocalNodes(prev => prev.filter(n => n.id !== nodeId));
+        setLocalNodes(prev => removeStepFromDraft(prev, nodeId));
         setLocalEdges(prev => prev.filter(e => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId));
         if (editingStepId === nodeId) setEditingStepId(null);
         setHasChanges(true);
@@ -480,23 +438,13 @@ const WorkflowBuilder: React.FC = () => {
     const selectedOptions = (event: React.ChangeEvent<HTMLSelectElement>) =>
         Array.from(event.target.selectedOptions).map(option => option.value).filter(Boolean);
 
-    const getTargetUserIds = (targets?: WorkflowAssignmentTarget[]) =>
-        (targets || []).filter(target => target.type === 'user' && target.userId).map(target => target.userId!);
-
-    const getTargetDepartmentIds = (targets?: WorkflowAssignmentTarget[]) =>
-        (targets || []).filter(target => target.type === 'department' && target.orgUnitId).map(target => target.orgUnitId!);
-
     const updateStepTargets = (
         nodeId: string,
         key: 'assignmentTargets' | 'stepWatcherTargets',
         userIds: string[],
         departmentIds: string[],
     ) => {
-        const targets: WorkflowAssignmentTarget[] = [
-            ...userIds.map(userId => ({ type: 'user' as const, userId })),
-            ...departmentIds.map(orgUnitId => ({ type: 'department' as const, orgUnitId })),
-        ];
-        updateStepConfig(nodeId, key, targets);
+        updateStepConfig(nodeId, key, buildAssignmentTargets(userIds, departmentIds));
     };
 
     const updateTemplateUserList = async (key: 'managers' | 'defaultWatchers', userIds: string[]) => {
@@ -515,14 +463,7 @@ const WorkflowBuilder: React.FC = () => {
         const steps = getOrderedSteps();
         const idx = steps.findIndex(s => s.id === nodeId);
         if ((direction === 'up' && idx <= 0) || (direction === 'down' && idx >= steps.length - 1)) return;
-
-        const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-        const tempY = steps[idx].positionY;
-        setLocalNodes(prev => prev.map(n => {
-            if (n.id === steps[idx].id) return { ...n, positionY: steps[swapIdx].positionY };
-            if (n.id === steps[swapIdx].id) return { ...n, positionY: tempY };
-            return n;
-        }));
+        setLocalNodes(prev => moveStepInDraft(prev, nodeId, direction));
         setHasChanges(true);
     };
 
@@ -552,17 +493,7 @@ const WorkflowBuilder: React.FC = () => {
         const fromIdx = steps.findIndex(s => s.id === dragStepId);
         const toIdx = steps.findIndex(s => s.id === targetStepId);
         if (fromIdx === -1 || toIdx === -1) return;
-
-        // Reorder by reassigning positionY values
-        const reordered = [...steps];
-        const [moved] = reordered.splice(fromIdx, 1);
-        reordered.splice(toIdx, 0, moved);
-
-        setLocalNodes(prev => prev.map(n => {
-            const newIdx = reordered.findIndex(s => s.id === n.id);
-            if (newIdx !== -1) return { ...n, positionY: (newIdx + 1) * 100 };
-            return n;
-        }));
+        setLocalNodes(prev => moveStepTo(prev, dragStepId, toIdx));
         setHasChanges(true);
         setDragStepId(null);
         setDragOverStepId(null);
@@ -699,32 +630,134 @@ const WorkflowBuilder: React.FC = () => {
         setHasChanges(true);
     };
 
+    // ========== BASE-STYLE CONFIG OVERVIEW ==========
+
+    // Live task count per stage, so the stage list reads like Base's
+    // "<SLA> Giờ · N Công việc" instead of a static outline.
+    const stageTaskCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        instances
+            .filter(instance => instance.templateId === templateId
+                && instance.status === WorkflowInstanceStatus.RUNNING)
+            .forEach(instance => {
+                if (!instance.currentNodeId) return;
+                counts.set(instance.currentNodeId, (counts.get(instance.currentNodeId) || 0) + 1);
+            });
+        return counts;
+    }, [instances, templateId]);
+
+    const terminalStageCounts = useMemo(() => {
+        let done = 0;
+        let failed = 0;
+        instances
+            .filter(instance => instance.templateId === templateId)
+            .forEach(instance => {
+                if (instance.status === WorkflowInstanceStatus.COMPLETED) done += 1;
+                if (instance.status === WorkflowInstanceStatus.REJECTED) failed += 1;
+            });
+        return { done, failed };
+    }, [instances, templateId]);
+
+    const userNameById = useMemo(() => buildUserNameById(users), [users]);
+
+    const stepSummaryLookups = useMemo(
+        () => ({ userNameById, orgUnits }),
+        [orgUnits, userNameById],
+    );
+
+    const describeTargets = (targets?: WorkflowAssignmentTarget[]) =>
+        describeAssignmentTargets(targets, stepSummaryLookups);
+
+    const describeStepAssignment = (config: ProjectWorkflowNodeConfig): string =>
+        describeStepAssignmentShared(config, stepSummaryLookups);
+
+    // Base's "Tùy chỉnh quy trình" grid. Every row reports what this workflow
+    // actually does today — derived from step config, never a decorative toggle
+    // that has nothing behind it.
+    const workflowSettingSummary = useMemo(() => {
+        const steps = localNodes
+            .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END)
+            .sort((a, b) => a.positionY - b.positionY);
+        const stepCount = steps.length || 1;
+
+        const withSla = steps.filter(step => step.config.slaHours).length;
+        const poolSteps = steps.filter(step =>
+            (step.config.assignmentTargets || []).length > 0
+            || step.config.assignmentMode === 'permission_pool'
+        ).length;
+        const multiSteps = steps.filter(step => step.config.assigneeSelectionMode === 'multiple').length;
+        const rejectSteps = steps.filter(step => step.config.allowReject !== false).length;
+        const reassignSteps = steps.filter(step => step.config.allowReassign !== false).length;
+        const stepWatcherSteps = steps.filter(step => (step.config.stepWatcherTargets || []).length > 0).length;
+        const requiredFieldCount = customFields.filter(field => field.required).length;
+
+        return [
+            {
+                label: 'Ghi chú những việc đã hoàn thành',
+                value: 'Không bắt buộc',
+                hint: 'Ô ghi chú luôn hiện khi chuyển giai đoạn nhưng có thể để trống.',
+            },
+            {
+                label: 'Chữ ký điện tử',
+                value: 'Không cho phép',
+                hint: 'Chưa hỗ trợ trong module Quy trình.',
+            },
+            {
+                label: 'Cách gán người xử lý từng giai đoạn',
+                value: poolSteps > 0
+                    ? `${poolSteps}/${stepCount} giai đoạn dùng pool`
+                    : 'Chỉ định trực tiếp từng người',
+                hint: poolSteps > 0
+                    ? 'Với pool (nhóm/phòng ban), chỉ cần một người trong pool chuyển giai đoạn là đủ.'
+                    : 'Mở tab "Người xử lý" của từng giai đoạn để thêm pool nhóm hoặc phòng ban.',
+            },
+            {
+                label: 'Cho phép chọn nhiều người cho một giai đoạn',
+                value: multiSteps > 0 ? `${multiSteps}/${stepCount} giai đoạn` : 'Không',
+                hint: 'Duyệt đồng thời: một người trong danh sách duyệt là giai đoạn đi tiếp.',
+            },
+            {
+                label: 'Người theo dõi riêng theo giai đoạn',
+                value: stepWatcherSteps > 0 ? `${stepWatcherSteps}/${stepCount} giai đoạn` : 'Không',
+                hint: 'Ngoài người giám sát toàn quy trình, mỗi giai đoạn có thể có người theo dõi riêng.',
+            },
+            {
+                label: 'Cho phép người xử lý trả nhiệm vụ về giai đoạn trước',
+                value: rejectSteps > 0 ? `${rejectSteps}/${stepCount} giai đoạn` : 'Không',
+                hint: 'Kéo card sang cột liền trước, hoặc dùng nút Trả lại trong chi tiết nhiệm vụ.',
+            },
+            {
+                label: 'Cho phép gán lại người xử lý',
+                value: reassignSteps > 0 ? `${reassignSteps}/${stepCount} giai đoạn` : 'Không',
+                hint: 'Khi chuyển giai đoạn, người xử lý chọn lại người nhận ở giai đoạn kế tiếp.',
+            },
+            {
+                label: 'Thời hạn xử lý (SLA)',
+                value: withSla > 0 ? `${withSla}/${stepCount} giai đoạn có SLA` : 'Chưa đặt',
+                hint: 'Quá hạn được đánh dấu bằng viền đỏ và badge trên bảng Kanban.',
+            },
+            {
+                label: 'Trường dữ liệu bắt buộc khi tạo nhiệm vụ',
+                value: requiredFieldCount > 0
+                    ? `${requiredFieldCount}/${customFields.length} trường`
+                    : 'Không có',
+                hint: 'Cấu hình ở tab "Trường tùy chỉnh".',
+            },
+            {
+                label: 'Chặn cập nhật khi nhiệm vụ đã Hoàn thành hoặc Thất bại',
+                value: 'Có',
+                hint: 'Chỉ người có quyền mở lại nhiệm vụ mới đưa được card về một giai đoạn xử lý.',
+            },
+        ];
+    }, [customFields, localNodes]);
+
     // ========== SAVE ==========
 
     const handleSave = async () => {
         if (!templateId || !template || !canConfigureTemplate) return;
         setIsSaving(true);
         try {
-            let nodesToSave = [...localNodes];
-            let startNode = nodesToSave.find(n => n.type === WorkflowNodeType.START);
-            if (!startNode) {
-                startNode = { id: generateId(), templateId, type: WorkflowNodeType.START, label: 'Bắt đầu', config: {}, positionX: 0, positionY: 0 };
-                nodesToSave.push(startNode);
-            }
-            let endNode = nodesToSave.find(n => n.type === WorkflowNodeType.END);
-            if (!endNode) {
-                endNode = { id: generateId(), templateId, type: WorkflowNodeType.END, label: 'Kết thúc', config: {}, positionX: 0, positionY: 9999 };
-                nodesToSave.push(endNode);
-            }
-            const orderedSteps = getOrderedSteps();
-            const allInOrder = [startNode, ...orderedSteps, endNode];
-            const edgesToSave: WorkflowEdge[] = allInOrder.slice(0, -1).map((node, index) => ({
-                id: generateId(),
-                templateId,
-                sourceNodeId: node.id,
-                targetNodeId: allInOrder[index + 1].id,
-                label: '',
-            }));
+            const { nodes: nodesToSave, edges: edgesToSave } = buildLinearTemplateStructure(templateId, localNodes, generateId);
             await projectWorkflowService.saveTemplateStructure({
                 template: { ...template, customFields },
                 nodes: nodesToSave,
@@ -756,19 +789,148 @@ const WorkflowBuilder: React.FC = () => {
     const orderedSteps = getOrderedSteps();
 
     return (
-        <div className="space-y-4">
-            {/* Top Bar */}
-            <div className="flex items-center justify-between px-4 py-3 glass-card rounded-xl">
-                <div className="flex items-center gap-3">
-                    <button onClick={goBackToTemplates} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
-                        <ArrowLeft size={18} />
-                    </button>
-                    <div>
-                        <h1 className="font-bold text-lg text-slate-800 dark:text-white">{template.name}</h1>
-                        <p className="text-xs text-slate-400">{template.description || 'Chưa có mô tả'} • Thay đổi chỉ áp dụng cho instance tạo mới</p>
+        <div className="wf-base flex w-full items-start gap-4">
+            {/* ===== Stage sidebar (Base: numbered stages + terminal outcomes) ===== */}
+            <aside
+                className="wf-surface sticky top-0 hidden w-[264px] shrink-0 flex-col self-start rounded-lg border lg:flex"
+                style={{ borderColor: 'var(--wf-border)' }}
+            >
+                <button
+                    onClick={goBackToTemplates}
+                    className="flex items-center gap-2 border-b px-4 py-3 text-[13px] font-medium transition hover:underline"
+                    style={{ borderColor: 'var(--wf-border)', color: 'var(--wf-text-muted)' }}
+                >
+                    <ArrowLeft size={15} /> Quay lại
+                </button>
+
+                <div className="border-b px-4 py-3" style={{ borderColor: 'var(--wf-border)' }}>
+                    <p
+                        className="text-[14px] font-semibold leading-snug"
+                        style={{ color: 'var(--wf-text)' }}
+                        title={template.name}
+                    >
+                        {template.name}
+                    </p>
+                    <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                        {orderedSteps.length} giai đoạn
+                    </p>
+                </div>
+
+                <div className="wf-scroll max-h-[calc(100vh-280px)] overflow-y-auto py-2">
+                    <p
+                        className="px-4 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wide"
+                        style={{ color: 'var(--wf-text-faint)' }}
+                    >
+                        Giai đoạn
+                    </p>
+                    {orderedSteps.length === 0 && (
+                        <p className="px-4 py-3 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                            Chưa có giai đoạn nào.
+                        </p>
+                    )}
+                    {orderedSteps.map((step, idx) => {
+                        const isActive = editingStepId === step.id;
+                        const taskCount = stageTaskCounts.get(step.id) || 0;
+                        return (
+                            <button
+                                key={step.id}
+                                onClick={() => {
+                                    setActiveTab('steps');
+                                    setEditingStepId(isActive ? null : step.id);
+                                }}
+                                className="flex w-full items-start gap-2.5 px-4 py-2 text-left transition"
+                                style={{
+                                    backgroundColor: isActive ? 'var(--wf-green-soft)' : 'transparent',
+                                }}
+                            >
+                                <span
+                                    className="mt-0.5 shrink-0 text-[12px] font-semibold tabular-nums"
+                                    style={{ color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-faint)' }}
+                                >
+                                    {String(idx + 1).padStart(2, '0')}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span
+                                        className="block truncate text-[13px] font-medium"
+                                        style={{ color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text)' }}
+                                        title={step.label}
+                                    >
+                                        {step.label}
+                                    </span>
+                                    <span className="block text-[11px]" style={{ color: 'var(--wf-text-faint)' }}>
+                                        {step.config.slaHours ? `${step.config.slaHours.toFixed(2)} Giờ` : 'Không đặt SLA'}
+                                        {' · '}
+                                        {taskCount > 0 ? `${taskCount} Công việc` : 'Không có công việc'}
+                                    </span>
+                                </span>
+                            </button>
+                        );
+                    })}
+
+                    {/* Terminal outcomes — Base pins these below the stage list */}
+                    <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--wf-border)' }}>
+                        <div className="flex items-start gap-2.5 px-4 py-2">
+                            <span
+                                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white"
+                                style={{ backgroundColor: 'var(--wf-green)' }}
+                            >
+                                <Check size={10} className="stroke-[3]" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>
+                                    Done
+                                </span>
+                                <span className="block text-[11px]" style={{ color: 'var(--wf-text-faint)' }}>
+                                    Hoàn thành tất cả các giai đoạn
+                                    {terminalStageCounts.done > 0 && ` · ${terminalStageCounts.done} Công việc`}
+                                </span>
+                            </span>
+                        </div>
+                        <div className="flex items-start gap-2.5 px-4 py-2">
+                            <span
+                                className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white"
+                                style={{ backgroundColor: 'var(--wf-overdue)' }}
+                            >
+                                <X size={10} className="stroke-[3]" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>
+                                    Failed
+                                </span>
+                                <span className="block text-[11px]" style={{ color: 'var(--wf-text-faint)' }}>
+                                    Thất bại ở một giai đoạn bất kì
+                                    {terminalStageCounts.failed > 0 && ` · ${terminalStageCounts.failed} Công việc`}
+                                </span>
+                            </span>
+                        </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+            </aside>
+
+            {/* ===== Main panel ===== */}
+            <div className="min-w-0 flex-1 space-y-4">
+            {/* Top Bar */}
+            <div
+                className="wf-surface flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
+                style={{ borderColor: 'var(--wf-border)' }}
+            >
+                <div className="flex min-w-0 items-center gap-3">
+                    <button
+                        onClick={goBackToTemplates}
+                        className="rounded-lg p-2 transition hover:bg-slate-100 dark:hover:bg-slate-700 lg:hidden"
+                    >
+                        <ArrowLeft size={18} />
+                    </button>
+                    <div className="min-w-0">
+                        <h1 className="truncate text-[17px] font-semibold" style={{ color: 'var(--wf-text)' }}>
+                            {template.name}
+                        </h1>
+                        <p className="truncate text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                            {template.description || 'Chưa có mô tả'} • Thay đổi chỉ áp dụng cho nhiệm vụ tạo mới
+                        </p>
+                    </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
                     {canConfigureTemplate && <button
                         onClick={toggleMaterialRequestDefaultBinding}
                         disabled={bindingSaving}
@@ -849,40 +1011,122 @@ const WorkflowBuilder: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="glass-card rounded-xl p-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                        <div>
-                            <div className="text-[10px] font-black uppercase text-slate-400">Quản trị quy trình</div>
-                            <p className="text-[11px] font-medium text-slate-500">Có quyền cấu hình/gán lại workflow, trừ xoá template.</p>
-                        </div>
-                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-600">{template.managers?.length || 0} người</span>
+            {/* ===== Section 1 — Các vai trò trong quy trình ===== */}
+            <section
+                className="wf-surface rounded-lg border"
+                style={{ borderColor: 'var(--wf-border)' }}
+            >
+                <div
+                    className="flex items-start justify-between gap-3 border-b px-5 py-3.5"
+                    style={{ borderColor: 'var(--wf-border)' }}
+                >
+                    <div>
+                        <h2 className="text-[15px] font-semibold" style={{ color: 'var(--wf-text)' }}>
+                            Các vai trò trong quy trình
+                        </h2>
+                        <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                            Những người liên quan tới quy trình
+                        </p>
                     </div>
-                    <SearchableCheckboxSelect
-                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
-                        selectedValues={template.managers || []}
+                    {canConfigureTemplate && (
+                        <button
+                            type="button"
+                            onClick={() => setRolesEditing(prev => !prev)}
+                            className="shrink-0 text-[13px] font-medium transition hover:underline"
+                            style={{ color: 'var(--wf-green-text)' }}
+                        >
+                            {rolesEditing ? 'Xong' : 'Chỉnh sửa'}
+                        </button>
+                    )}
+                </div>
+
+                <div className="divide-y" style={{ borderColor: 'var(--wf-border)' }}>
+                    <WorkflowRoleRow
+                        label="Người quản trị quy trình"
+                        hint="Toàn quyền với quy trình: cấu hình, duyệt, trả lại và gán lại mọi giai đoạn."
+                        userIds={template.managers || []}
+                        users={users}
+                        editing={rolesEditing}
                         onChange={values => void updateTemplateUserList('managers', values)}
-                        placeholder="Tìm kiếm quản trị..."
-                        maxHeightClass="h-32"
+                        emptyLabel="Chưa chỉ định"
                     />
-                </div>
-                <div className="glass-card rounded-xl p-4">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                        <div>
-                            <div className="text-[10px] font-black uppercase text-slate-400">Người theo dõi mặc định</div>
-                            <p className="text-[11px] font-medium text-slate-500">Chỉ xem workflow, không có quyền duyệt hoặc chỉnh sửa.</p>
-                        </div>
-                        <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500">{template.defaultWatchers?.length || 0} người</span>
-                    </div>
-                    <SearchableCheckboxSelect
-                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
-                        selectedValues={template.defaultWatchers || []}
+                    <WorkflowRoleRow
+                        label="Người giám sát workflow"
+                        hint="Được tag mặc định vào mọi nhiệm vụ mới và theo dõi toàn bộ quy trình."
+                        userIds={template.defaultWatchers || []}
+                        users={users}
+                        editing={rolesEditing}
                         onChange={values => void updateTemplateUserList('defaultWatchers', values)}
-                        placeholder="Tìm kiếm người theo dõi..."
-                        maxHeightClass="h-32"
+                        emptyLabel="Chưa có người theo dõi"
                     />
+                    <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-3.5">
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>
+                                Tùy chọn quyền xem các nhiệm vụ
+                            </p>
+                            <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                                Quản trị viên module, người quản trị quy trình, người theo dõi, người tạo và người được giao
+                                giai đoạn đều nhìn thấy nhiệm vụ.
+                            </p>
+                        </div>
+                        <span className="shrink-0 text-[13px]" style={{ color: 'var(--wf-text-muted)' }}>
+                            Theo phân quyền hệ thống
+                        </span>
+                    </div>
+                    <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-3.5">
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>
+                                Nhóm thành viên có thể tạo các nhiệm vụ mới
+                            </p>
+                            <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                                Do quyền <code className="text-[11px]">workflow.instance.create</code> quyết định, không đặt riêng ở đây.
+                            </p>
+                        </div>
+                        <span className="shrink-0 text-[13px]" style={{ color: 'var(--wf-text-muted)' }}>
+                            Theo phân quyền hệ thống
+                        </span>
+                    </div>
                 </div>
-            </div>
+            </section>
+
+            {/* ===== Section 2 — Tùy chỉnh quy trình ===== */}
+            <section
+                className="wf-surface rounded-lg border"
+                style={{ borderColor: 'var(--wf-border)' }}
+            >
+                <div
+                    className="border-b px-5 py-3.5"
+                    style={{ borderColor: 'var(--wf-border)' }}
+                >
+                    <h2 className="text-[15px] font-semibold" style={{ color: 'var(--wf-text)' }}>
+                        Tùy chỉnh quy trình
+                    </h2>
+                    <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                        Quy trình nên hoạt động như thế nào
+                    </p>
+                </div>
+
+                <dl className="divide-y" style={{ borderColor: 'var(--wf-border)' }}>
+                    {workflowSettingSummary.map(row => (
+                        <div
+                            key={row.label}
+                            className="grid gap-1 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:gap-4"
+                        >
+                            <dt className="text-[13px]" style={{ color: 'var(--wf-text-muted)' }}>
+                                {row.label}
+                            </dt>
+                            <dd className="text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>
+                                {row.value}
+                                {row.hint && (
+                                    <span className="mt-0.5 block text-[11px] font-normal" style={{ color: 'var(--wf-text-faint)' }}>
+                                        {row.hint}
+                                    </span>
+                                )}
+                            </dd>
+                        </div>
+                    ))}
+                </dl>
+            </section>
 
             {/* Tabs */}
             <div className="flex gap-2">
@@ -994,9 +1238,15 @@ const WorkflowBuilder: React.FC = () => {
                                                         <StepIcon size={9} className="inline mr-0.5" />
                                                         {step.type === WorkflowNodeType.APPROVAL ? 'Duyệt' : 'Hành động'}
                                                     </span>
-                                                    {step.config.assigneeRole && (
-                                                        <span className="text-[10px] text-slate-400 font-medium">
-                                                            👤 {step.config.assigneeRole}
+                                                    <span
+                                                        className="max-w-[240px] truncate text-[10px] font-medium text-slate-400"
+                                                        title={describeStepAssignment(step.config)}
+                                                    >
+                                                        👤 {describeStepAssignment(step.config)}
+                                                    </span>
+                                                    {step.config.assigneeSelectionMode === 'multiple' && (
+                                                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                                            Duyệt đồng thời
                                                         </span>
                                                     )}
                                                     {step.config.slaHours && (
@@ -1485,10 +1735,11 @@ const WorkflowBuilder: React.FC = () => {
                 </div>
             )}
 
-            {/* ==================== TAB: PRINT TEMPLATES ==================== */}
-            {activeTab === 'print' && templateId && (
-                <PrintTemplateTab templateId={templateId} customFields={customFields} />
-            )}
+                {/* ==================== TAB: PRINT TEMPLATES ==================== */}
+                {activeTab === 'print' && templateId && (
+                    <PrintTemplateTab templateId={templateId} customFields={customFields} />
+                )}
+            </div>
         </div>
     );
 };

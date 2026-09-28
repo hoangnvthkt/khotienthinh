@@ -1,17 +1,6 @@
 import { supabase } from './supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { Role } from '../types';
-import { projectStaffService } from './projectStaffService';
-import { hrmSensitiveProjectionService } from './hrmSensitiveProjectionService';
 import { clampPageSize, takeCursorPage, type CursorPage } from './supabasePagination';
-import {
-  DEFAULT_ALERT_RULES,
-  getDefaultAlertRule,
-  mergeAlertRules,
-  type AlertRecipientConfig,
-  type AlertRuleKey,
-  type NotificationAlertRule,
-} from './notificationAlertRules';
 
 export interface AppNotification {
   id: string;
@@ -48,8 +37,6 @@ export type NotificationListPage = CursorPage<AppNotification, NotificationCurso
 const UNREAD_DISPLAY_LIMIT = 99;
 const UNREAD_QUERY_LIMIT = UNREAD_DISPLAY_LIMIT + 1;
 const NOTIFICATION_LIST_SELECT = 'id,user_id,type,category,title,message,icon,link,is_read,is_dismissed,severity,source_type,source_id,construction_site_id,priority,push_enabled,action_url,entity_type,entity_id,metadata,created_at,expires_at';
-const NOTIFICATION_ALERT_RULE_SELECT = 'id,alert_key,label,description,category,is_enabled,thresholds,cooldown_minutes,recipient_config,channels,updated_by,created_at,updated_at';
-const ALERT_SCAN_LIMIT = 5000;
 
 const toCamel = (row: any): AppNotification => ({
   id: row.id,
@@ -194,6 +181,30 @@ const dedupeRowsById = <T extends { id: string }>(rows: T[]): T[] => {
   return result;
 };
 
+// Broadcast rows are shared, so each user's read/dismiss state lives in
+// notification_broadcast_receipts instead of the row itself.
+const applyBroadcastReceipts = async <T extends { id: string; is_read?: boolean }>(rows: T[]): Promise<T[]> => {
+  if (rows.length === 0) return rows;
+  const { data, error } = await supabase
+    .from('notification_broadcast_receipts')
+    .select('notification_id,read_at,dismissed_at')
+    .in('notification_id', rows.map(row => row.id))
+    .limit(rows.length);
+  if (error) throw error;
+  const receipts = new Map((data || []).map(receipt => [receipt.notification_id, receipt]));
+  return rows
+    .filter(row => !receipts.get(row.id)?.dismissed_at)
+    .map(row => (receipts.get(row.id)?.read_at ? { ...row, is_read: true } : row));
+};
+
+const markMyNotifications = async (action: 'read' | 'dismiss', ids: string[] | null): Promise<void> => {
+  const { error } = await supabase.rpc('mark_my_notifications', {
+    p_action: action,
+    p_notification_ids: ids,
+  });
+  if (error) throw error;
+};
+
 const buildNotificationQuery = (limit: number, cursor?: NotificationCursor) => {
   let query = supabase
     .from('notifications')
@@ -225,20 +236,6 @@ export const NOTIFICATION_CATEGORIES = {
   workflow: { label: 'Quy trình', icon: '🔀', color: 'text-sky-600 bg-sky-50' },
   system: { label: 'Hệ thống', icon: '⚙️', color: 'text-slate-600 bg-slate-50' },
 } as const;
-
-// ── Throttle: only allow alert checks once per 15min across all tabs ──
-const ALERT_CHECK_KEY = 'vioo_last_alert_check';
-const ALERT_CHECK_INTERVAL = 15 * 60 * 1000;
-
-function shouldRunAlertCheck(): boolean {
-  const last = localStorage.getItem(ALERT_CHECK_KEY);
-  if (!last) return true;
-  return Date.now() - parseInt(last) > ALERT_CHECK_INTERVAL;
-}
-
-function markAlertCheckDone(): void {
-  localStorage.setItem(ALERT_CHECK_KEY, Date.now().toString());
-}
 
 const getDefaultPriority = (severity?: AppNotification['severity']): AppNotification['priority'] => {
   if (severity === 'critical') return 'urgent';
@@ -324,256 +321,6 @@ async function notifyProjectUsers(input: NotifyProjectUsersInput): Promise<strin
   return recipientIds;
 }
 
-interface AlertResolveContext {
-  projectId?: string | null;
-  constructionSiteId?: string | null;
-  employeeUserId?: string | null;
-}
-
-interface AlertResolveCache {
-  activeUsers?: Promise<any[]>;
-  adminIds?: Promise<string[]>;
-}
-
-interface NotifyAlertInput extends Omit<NotifyProjectUsersInput, 'recipientIds' | 'category' | 'pushEnabled'> {
-  alertKey: AlertRuleKey;
-  category?: string;
-  projectId?: string | null;
-  employeeUserId?: string | null;
-}
-
-interface RunAlertChecksOptions {
-  force?: boolean;
-}
-
-const listActiveUsers = async (cache?: AlertResolveCache): Promise<any[]> => {
-  if (!cache) {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, role, is_active')
-      .limit(ALERT_SCAN_LIMIT);
-    if (error) {
-      console.warn('Alert active user lookup failed:', error);
-      return [];
-    }
-    return (data || []).filter(row => row.is_active !== false);
-  }
-  if (!cache.activeUsers) {
-    cache.activeUsers = (async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, role, is_active')
-        .limit(ALERT_SCAN_LIMIT);
-        if (error) {
-          console.warn('Alert active user lookup failed:', error);
-          return [];
-        }
-        return (data || []).filter(row => row.is_active !== false);
-    })();
-  }
-  return cache.activeUsers;
-};
-
-const listAdminUserIds = async (cache?: AlertResolveCache): Promise<string[]> => {
-  if (!cache) {
-    const users = await listActiveUsers();
-    return users.filter(row => row.role === Role.ADMIN).map(row => row.id).filter(Boolean);
-  }
-  if (!cache.adminIds) {
-    cache.adminIds = listActiveUsers(cache).then(users =>
-      users.filter(row => row.role === Role.ADMIN).map(row => row.id).filter(Boolean)
-    );
-  }
-  return cache.adminIds;
-};
-
-const uniqueIds = (ids: Array<string | null | undefined>) => [...new Set(ids.filter(Boolean) as string[])];
-
-const listCanonicalModuleManagerIds = async (moduleKeys: string[]): Promise<string[]> => {
-  if (moduleKeys.length === 0) return [];
-  const { data, error } = await supabase.rpc('list_canonical_module_manager_ids', {
-    p_module_keys: moduleKeys,
-  });
-  if (error) {
-    console.warn('Canonical module manager lookup failed:', error);
-    return [];
-  }
-  return Array.isArray(data) ? data.filter(Boolean).map(String) : [];
-};
-
-const isCurrentUserAdmin = async (): Promise<boolean> => {
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) return false;
-
-  const { data: profileByAuth } = await supabase
-    .from('users')
-    .select('id, role')
-    .eq('auth_id', authData.user.id)
-    .maybeSingle();
-  if (profileByAuth?.role === Role.ADMIN) return true;
-
-  if (!authData.user.email) return false;
-  const { data: profileByEmail } = await supabase
-    .from('users')
-    .select('id, role')
-    .eq('email', authData.user.email)
-    .maybeSingle();
-  return profileByEmail?.role === Role.ADMIN;
-};
-
-const loadAlertRules = async (): Promise<Map<AlertRuleKey, NotificationAlertRule>> => {
-  const { data, error } = await supabase
-    .from('notification_alert_rules')
-    .select(NOTIFICATION_ALERT_RULE_SELECT)
-    .limit(100);
-  if (error) {
-    console.warn('Alert rules unavailable, using defaults:', error);
-    return new Map(DEFAULT_ALERT_RULES.map(rule => [rule.alertKey, rule]));
-  }
-  return new Map(mergeAlertRules(data || []).map(rule => [rule.alertKey, rule]));
-};
-
-const resolveAlertRecipients = async (
-  rule: NotificationAlertRule,
-  context: AlertResolveContext = {},
-  cache?: AlertResolveCache,
-): Promise<{ recipientIds: string[]; broadcast: boolean; reason: string }> => {
-  const config: AlertRecipientConfig = rule.recipientConfig || { mode: 'admin', fallbackToAdmin: true };
-  let recipientIds: string[] = [];
-  let reason: string = config.mode;
-
-  if (config.mode === 'broadcast') {
-    return { recipientIds: [], broadcast: true, reason: 'broadcast' };
-  }
-
-  if (config.mode === 'admin') {
-    recipientIds = await listAdminUserIds(cache);
-  } else if (config.mode === 'roles') {
-    const roles = config.roles || [];
-    const users = await listActiveUsers(cache);
-    recipientIds = users.filter(row => roles.includes(row.role)).map(row => row.id);
-  } else if (config.mode === 'module_admins') {
-    const moduleKeys = config.moduleKeys || [];
-    recipientIds = await listCanonicalModuleManagerIds(moduleKeys);
-    if (config.includeAdmins) recipientIds.push(...await listAdminUserIds(cache));
-  } else if (config.mode === 'users') {
-    recipientIds = config.userIds || [];
-  } else if (config.mode === 'employee_owner') {
-    recipientIds = context.employeeUserId ? [context.employeeUserId] : [];
-  } else if (config.mode === 'project_permission') {
-    const permissionCodes = config.projectPermissionCodes || [];
-    if (permissionCodes.length > 0 && (context.projectId || context.constructionSiteId)) {
-      try {
-        const staff = await projectStaffService.listProjectStaffWithPermissions(
-          context.projectId || undefined,
-          context.constructionSiteId || undefined,
-          permissionCodes,
-        );
-        recipientIds = staff.map(row => row.userId).filter(Boolean);
-      } catch (error) {
-        console.warn('Alert project permission recipient lookup failed:', error);
-      }
-    }
-  }
-
-  if (config.includeAdmins && config.mode !== 'admin' && config.mode !== 'module_admins') {
-    recipientIds.push(...await listAdminUserIds(cache));
-  }
-
-  recipientIds = uniqueIds(recipientIds);
-  if (recipientIds.length === 0 && config.fallbackToAdmin !== false) {
-    recipientIds = await listAdminUserIds(cache);
-    reason = `${reason}:fallback_admin`;
-  }
-
-  return { recipientIds, broadcast: false, reason };
-};
-
-const getRule = (rules: Map<AlertRuleKey, NotificationAlertRule>, alertKey: AlertRuleKey) =>
-  rules.get(alertKey) || getDefaultAlertRule(alertKey);
-
-const getRuleNumber = (rule: NotificationAlertRule, key: string, fallback: number) => {
-  const value = Number(rule.thresholds?.[key]);
-  return Number.isFinite(value) ? value : fallback;
-};
-
-const getRuleSnapshot = (rule: NotificationAlertRule) => ({
-  alertKey: rule.alertKey,
-  isEnabled: rule.isEnabled,
-  thresholds: rule.thresholds,
-  cooldownMinutes: rule.cooldownMinutes,
-  recipientConfig: rule.recipientConfig,
-  channels: rule.channels,
-});
-
-const notifyAlertWithRule = async (
-  rule: NotificationAlertRule,
-  input: Omit<NotifyAlertInput, 'alertKey'>,
-  cache?: AlertResolveCache,
-): Promise<string[]> => {
-  if (!rule.isEnabled || rule.channels?.inApp === false) return [];
-  const resolved = await resolveAlertRecipients(rule, {
-    projectId: input.projectId,
-    constructionSiteId: input.constructionSiteId,
-    employeeUserId: input.employeeUserId,
-  }, cache);
-
-  const metadata = {
-    ...(input.metadata || {}),
-    alertKey: rule.alertKey,
-    recipientReason: resolved.reason,
-    ruleSnapshot: getRuleSnapshot(rule),
-    resolvedAt: new Date().toISOString(),
-  };
-
-  if (resolved.broadcast) {
-    await createNotification({
-      userId: undefined,
-      type: input.type,
-      category: input.category || rule.category,
-      title: input.title,
-      message: input.message,
-      severity: input.severity,
-      icon: input.icon,
-      link: input.link,
-      sourceType: input.sourceType,
-      sourceId: input.sourceId,
-      constructionSiteId: input.constructionSiteId || undefined,
-      priority: input.priority,
-      pushEnabled: false,
-      actionUrl: input.actionUrl,
-      entityType: input.entityType,
-      entityId: input.entityId,
-      metadata,
-      expiresAt: input.expiresAt,
-    });
-    return ['broadcast'];
-  }
-
-  if (resolved.recipientIds.length === 0) return [];
-  return notifyProjectUsers({
-    recipientIds: resolved.recipientIds,
-    actorId: input.actorId,
-    type: input.type,
-    category: input.category || rule.category,
-    title: input.title,
-    message: input.message,
-    severity: input.severity,
-    icon: input.icon,
-    link: input.link,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    constructionSiteId: input.constructionSiteId || undefined,
-    priority: input.priority,
-    pushEnabled: rule.channels?.webPush !== false,
-    actionUrl: input.actionUrl,
-    entityType: input.entityType,
-    entityId: input.entityId,
-    metadata,
-    expiresAt: input.expiresAt,
-  });
-};
-
 export const notificationService = {
   /** List notifications with keyset pagination (recent first) */
   async listPage(userId?: string, options: {
@@ -585,7 +332,7 @@ export const notificationService = {
     if (!userId) {
       const { data, error } = await buildNotificationQuery(limit, options.cursor).is('user_id', null);
       if (error) throw error;
-      const page = takeCursorPage(data || [], limit, row => ({ createdAt: row.created_at, id: row.id }));
+      const page = takeCursorPage(await applyBroadcastReceipts(data || []), limit, row => ({ createdAt: row.created_at, id: row.id }));
       return {
         items: page.items.map(toCamel),
         nextCursor: page.nextCursor,
@@ -599,7 +346,8 @@ export const notificationService = {
     if (userResult.error) throw userResult.error;
     if (globalResult.error) throw globalResult.error;
 
-    const mergedRows = dedupeRowsById([...(userResult.data || []), ...(globalResult.data || [])])
+    const globalRows = await applyBroadcastReceipts(globalResult.data || []);
+    const mergedRows = dedupeRowsById([...(userResult.data || []), ...globalRows])
       .sort(compareNotificationRows);
     const page = takeCursorPage(mergedRows, limit, row => ({ createdAt: row.created_at, id: row.id }));
 
@@ -619,7 +367,7 @@ export const notificationService = {
   async countUnread(userId?: string): Promise<number> {
     const baseQuery = () => supabase
       .from('notifications')
-      .select('id')
+      .select('id,is_read')
       .eq('is_read', false)
       .eq('is_dismissed', false)
       .neq('category', 'inventory')
@@ -628,7 +376,8 @@ export const notificationService = {
     if (!userId) {
       const { data, error } = await baseQuery().is('user_id', null);
       if (error) throw error;
-      return Math.min((data || []).length, UNREAD_QUERY_LIMIT);
+      const unreadGlobal = (await applyBroadcastReceipts(data || [])).filter(row => !row.is_read);
+      return Math.min(unreadGlobal.length, UNREAD_QUERY_LIMIT);
     }
 
     const [userResult, globalResult] = await Promise.all([
@@ -639,7 +388,8 @@ export const notificationService = {
     if (globalResult.error) throw globalResult.error;
 
     const unreadIds = new Set<string>();
-    for (const row of [...(userResult.data || []), ...(globalResult.data || [])]) {
+    const unreadGlobal = (await applyBroadcastReceipts(globalResult.data || [])).filter(row => !row.is_read);
+    for (const row of [...(userResult.data || []), ...unreadGlobal]) {
       unreadIds.add(row.id);
       if (unreadIds.size >= UNREAD_QUERY_LIMIT) return UNREAD_QUERY_LIMIT;
     }
@@ -648,26 +398,22 @@ export const notificationService = {
 
   /** Mark as read */
   async markRead(id: string): Promise<void> {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    await markMyNotifications('read', [id]);
   },
 
-  /** Mark all as read */
-  async markAllRead(userId?: string): Promise<void> {
-    let query = supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
-    if (userId) query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    await query;
+  /** Mark all as read for the signed-in user only */
+  async markAllRead(_userId?: string): Promise<void> {
+    await markMyNotifications('read', null);
   },
 
   /** Dismiss */
   async dismiss(id: string): Promise<void> {
-    await supabase.from('notifications').update({ is_dismissed: true }).eq('id', id);
+    await markMyNotifications('dismiss', [id]);
   },
 
-  /** Dismiss all */
-  async dismissAll(userId?: string): Promise<void> {
-    let query = supabase.from('notifications').update({ is_dismissed: true }).eq('is_dismissed', false);
-    if (userId) query = query.or(`user_id.eq.${userId},user_id.is.null`);
-    await query;
+  /** Dismiss all for the signed-in user only */
+  async dismissAll(_userId?: string): Promise<void> {
+    await markMyNotifications('dismiss', null);
   },
 
   /** Create a notification */
@@ -676,420 +422,11 @@ export const notificationService = {
   /** Create the same project notification for many users, excluding actor and duplicates in this call */
   notifyProjectUsers,
 
-  /** Run all configurable alert checks. Admin-owned so settings are respected. */
-  async runAlertChecks(options: RunAlertChecksOptions = {}): Promise<number> {
-    if (!(await isCurrentUserAdmin())) return 0;
-
-    if (!options.force) {
-      if (!shouldRunAlertCheck()) return 0;
-      markAlertCheckDone();
-    }
-
-    const rules = await loadAlertRules();
-    const resolveCache: AlertResolveCache = {};
-    const enabledRules = [...rules.values()].filter(rule => rule.isEnabled && rule.channels?.inApp !== false);
-    if (enabledRules.length === 0) return 0;
-
-    let alertCount = 0;
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-    const maxCooldownMinutes = Math.max(1440, ...enabledRules.map(rule => Number(rule.cooldownMinutes || 0)));
-    const since = new Date(Date.now() - maxCooldownMinutes * 60 * 1000).toISOString();
-    const { data: recentAlerts } = await supabase
-      .from('notifications')
-      .select('source_type, source_id, created_at')
-      .gte('created_at', since)
-      .limit(ALERT_SCAN_LIMIT);
-    const emittedKeys = new Set<string>();
-
-    const isNew = (rule: NotificationAlertRule, sourceType: string, sourceId: string) => {
-      const key = `${sourceType}:${sourceId}`;
-      if (emittedKeys.has(key)) return false;
-      const cooldownMinutes = Number(rule.cooldownMinutes || 0);
-      if (cooldownMinutes <= 0) return true;
-      const cutoff = Date.now() - cooldownMinutes * 60 * 1000;
-      return !(recentAlerts || []).some((row: any) =>
-        row.source_type === sourceType &&
-        row.source_id === sourceId &&
-        new Date(row.created_at).getTime() >= cutoff
-      );
-    };
-
-    const notifyRule = async (
-      alertKey: AlertRuleKey,
-      input: Omit<NotifyAlertInput, 'alertKey'>,
-    ) => {
-      const rule = getRule(rules, alertKey);
-      if (!rule.isEnabled || rule.channels?.inApp === false) return 0;
-      const sourceType = input.sourceType || alertKey;
-      const sourceId = input.sourceId || alertKey;
-      if (!isNew(rule, sourceType, sourceId)) return 0;
-      const notifiedIds = await notifyAlertWithRule(rule, input, resolveCache);
-      if (notifiedIds.length > 0) emittedKeys.add(`${sourceType}:${sourceId}`);
-      return notifiedIds.length;
-    };
-
-    const { data: sites } = await supabase
-      .from('hrm_construction_sites')
-      .select('id, name, "checkInTime"')
-      .limit(1000);
-    const getSiteName = (id?: string | null) => sites?.find((s: any) => s.id === id)?.name || 'N/A';
-
-    try {
-      const budgetRule = getRule(rules, 'budget_overrun');
-      const slowProgressRule = getRule(rules, 'slow_progress');
-      if (budgetRule.isEnabled || slowProgressRule.isEnabled) {
-        const { data: finances } = await supabase
-          .from('project_finances')
-          .select('project_id, "constructionSiteId", "contractValue", "actualMaterials", "actualLabor", "actualSubcontract", "actualMachinery", "actualOverhead", "progressPercent", status')
-          .limit(ALERT_SCAN_LIMIT);
-
-        for (const f of (finances || [])) {
-          const projectId = f.project_id || null;
-          const constructionSiteId = f.constructionSiteId || null;
-          const totalExpense = (f.actualMaterials || 0) + (f.actualLabor || 0) +
-            (f.actualSubcontract || 0) + (f.actualMachinery || 0) + (f.actualOverhead || 0);
-          const contractValue = f.contractValue || 0;
-          const warningPercent = getRuleNumber(budgetRule, 'warningPercent', 90);
-          const criticalPercent = getRuleNumber(budgetRule, 'criticalPercent', 100);
-          const pct = contractValue > 0 ? Math.round((totalExpense / contractValue) * 100) : 0;
-
-          if (contractValue > 0 && pct >= warningPercent) {
-            const isCritical = pct >= criticalPercent;
-            alertCount += await notifyRule('budget_overrun', {
-              projectId,
-              constructionSiteId,
-              type: isCritical ? 'error' : 'warning',
-              category: 'budget',
-              title: isCritical ? '🚨 Vượt ngân sách!' : '⚠️ Sắp vượt ngân sách',
-              message: `${getSiteName(constructionSiteId)}: Chi phí đạt ${pct}% giá trị HĐ`,
-              severity: isCritical ? 'critical' : 'warning',
-              icon: '💰',
-              link: '/da',
-              sourceType: 'budget',
-              sourceId: `budget_${constructionSiteId}`,
-              metadata: { projectId, constructionSiteId, percent: pct, expense: totalExpense, contract: contractValue },
-            });
-          }
-
-          if (f.status === 'active' && Number(f.progressPercent || 0) < getRuleNumber(slowProgressRule, 'minProgressPercent', 30)) {
-            alertCount += await notifyRule('slow_progress', {
-              projectId,
-              constructionSiteId,
-              type: 'info',
-              category: 'progress',
-              title: '📐 Tiến độ chậm',
-              message: `${getSiteName(constructionSiteId)}: mới đạt ${f.progressPercent}% (đang thi công)`,
-              severity: 'info',
-              icon: '📐',
-              link: '/da',
-              sourceType: 'progress',
-              sourceId: `progress_${constructionSiteId}`,
-              metadata: { projectId, constructionSiteId, progress: f.progressPercent },
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Budget/progress alert check error:', err);
-    }
-
-    try {
-      const paymentRule = getRule(rules, 'overdue_payment');
-      if (paymentRule.isEnabled) {
-        const { data: payments } = await supabase
-          .from('payment_schedules')
-          .select('id, project_id, construction_site_id, description, status, due_date, amount')
-          .limit(ALERT_SCAN_LIMIT);
-        for (const p of (payments || [])) {
-          const isUnpaid = p.status === 'pending' || p.status === 'overdue' || p.status === 'partial';
-          if (!isUnpaid || !p.due_date || p.due_date >= today) continue;
-          alertCount += await notifyRule('overdue_payment', {
-            projectId: p.project_id,
-            constructionSiteId: p.construction_site_id,
-            type: 'error',
-            category: 'payment',
-            title: '🧾 Thanh toán quá hạn',
-            message: `${p.description || 'Phiếu thanh toán'} — ${getSiteName(p.construction_site_id)}: quá hạn ${p.due_date}`,
-            severity: 'critical',
-            icon: '🧾',
-            link: '/da',
-            sourceType: 'payment',
-            sourceId: `payment_${p.id}`,
-            metadata: { paymentId: p.id, dueDate: p.due_date, amount: p.amount, projectId: p.project_id, constructionSiteId: p.construction_site_id },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Overdue payment alert check error:', err);
-    }
-
-    try {
-      const materialRule = getRule(rules, 'material_waste');
-      if (materialRule.isEnabled) {
-        const { data: boqItems } = await supabase
-          .from('material_budget_items')
-          .select('id, project_id, construction_site_id, item_name, waste_percent, waste_threshold')
-          .limit(ALERT_SCAN_LIMIT);
-        for (const b of (boqItems || [])) {
-          const wp = Number(b.waste_percent || 0);
-          const wt = Number(b.waste_threshold || 5);
-          if (wp <= wt) continue;
-          alertCount += await notifyRule('material_waste', {
-            projectId: b.project_id,
-            constructionSiteId: b.construction_site_id,
-            type: 'warning',
-            category: 'material',
-            title: '📦 Hao hụt vượt định mức',
-            message: `${b.item_name || 'Vật tư'} — ${getSiteName(b.construction_site_id)}: hao hụt ${wp.toFixed(1)}% (định mức ${wt}%)`,
-            severity: 'warning',
-            icon: '📦',
-            link: '/da',
-            sourceType: 'material',
-            sourceId: `waste_${b.id}`,
-            metadata: { itemId: b.id, wastePercent: wp, threshold: wt, projectId: b.project_id, constructionSiteId: b.construction_site_id },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Material waste alert check error:', err);
-    }
-
-    try {
-      const attendanceRule = getRule(rules, 'attendance_reminder');
-      if (attendanceRule.isEnabled) {
-        const currentTimeMin = now.getHours() * 60 + now.getMinutes();
-        const reminderLeadMin = getRuleNumber(attendanceRule, 'minutesBefore', 5);
-        const { data: offices } = await supabase
-          .from('hrm_offices')
-          .select('id, name, "checkInTime"')
-          .limit(1000);
-        const locations = [
-          ...(offices || []).map((o: any) => ({ id: o.id, name: o.name, checkInTime: o.checkInTime || '08:00', type: 'office' })),
-          ...(sites || []).map((s: any) => ({ id: s.id, name: s.name, checkInTime: s.checkInTime || '07:30', type: 'site' })),
-        ];
-
-        for (const loc of locations) {
-          const [h, m] = loc.checkInTime.split(':').map(Number);
-          const checkInMin = h * 60 + m;
-          const reminderMin = checkInMin - reminderLeadMin;
-          if (currentTimeMin < reminderMin || currentTimeMin > checkInMin) continue;
-
-          const employees = (await hrmSensitiveProjectionService.listEmployees()).filter(employee =>
-            employee.status === 'Đang làm việc'
-            && (loc.type === 'office' ? employee.officeId === loc.id : employee.constructionSiteId === loc.id));
-          if (!employees.length) continue;
-
-          const empIds = employees.map((e: any) => e.id);
-          const { data: checkedIn } = await supabase
-            .from('hrm_attendance')
-            .select('"employeeId"')
-            .eq('date', today)
-            .in('"employeeId"', empIds)
-            .limit(ALERT_SCAN_LIMIT);
-          const checkedInIds = new Set((checkedIn || []).map((a: any) => a.employeeId));
-
-          const { data: onLeave } = await supabase
-            .from('hrm_leave_requests')
-            .select('"employeeId"')
-            .eq('status', 'approved')
-            .lte('"startDate"', today)
-            .gte('"endDate"', today)
-            .limit(ALERT_SCAN_LIMIT);
-          const leaveIds = new Set((onLeave || []).map((l: any) => l.employeeId));
-
-          for (const emp of employees) {
-            if (checkedInIds.has(emp.id) || leaveIds.has(emp.id) || !emp.userId) continue;
-            alertCount += await notifyRule('attendance_reminder', {
-              employeeUserId: emp.userId,
-              type: 'warning',
-              category: 'attendance',
-              title: '⏰ Nhắc nhở chấm công',
-              message: `Còn ${checkInMin - currentTimeMin} phút nữa là đến giờ chấm công (${loc.checkInTime}) tại ${loc.name}. Hãy chấm công đúng giờ nhé!`,
-              severity: 'warning',
-              icon: '⏰',
-              link: '/hrm/checkin',
-              sourceType: 'attendance',
-              sourceId: `attendance_${emp.id}_${today}`,
-              metadata: { employeeId: emp.id, location: loc.name, checkInTime: loc.checkInTime },
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Attendance reminder check error:', err);
-    }
-
-    try {
-      const contractRule = getRule(rules, 'contract_expiry');
-      if (contractRule.isEnabled) {
-        const daysBeforeWarning = getRuleNumber(contractRule, 'daysBeforeWarning', 30);
-        const criticalDays = getRuleNumber(contractRule, 'criticalDays', 7);
-        const warningDate = new Date(Date.now() + daysBeforeWarning * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        const contracts = (await hrmSensitiveProjectionService.listLaborContracts())
-          .filter(contract => contract.status === 'active'
-            && Boolean(contract.endDate)
-            && contract.endDate! <= warningDate
-            && contract.endDate! >= today);
-
-        const empIds = contracts.map(contract => contract.employeeId);
-        const employees = empIds.length
-          ? await hrmSensitiveProjectionService.lookupEmployees({ employeeIds: empIds })
-          : [];
-        const empMap = new Map(employees.map(employee => [employee.id, employee.fullName]));
-
-        for (const contract of contracts) {
-          const daysLeft = Math.ceil((new Date(contract.endDate!).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-          const empName = empMap.get(contract.employeeId) || 'N/A';
-          alertCount += await notifyRule('contract_expiry', {
-            type: daysLeft <= criticalDays ? 'error' : 'warning',
-            category: 'hrm',
-            title: daysLeft <= criticalDays ? '🚨 Hợp đồng LĐ sắp hết hạn!' : '📝 Hợp đồng LĐ cần gia hạn',
-            message: `${empName} — HĐ ${contract.contractNumber || contract.type}: còn ${daysLeft} ngày (hết hạn ${contract.endDate})`,
-            severity: daysLeft <= criticalDays ? 'critical' : 'warning',
-            icon: '📝',
-            link: '/hrm/contracts',
-            sourceType: 'hrm',
-            sourceId: `contract_expiry_${contract.id}`,
-            metadata: { contractId: contract.id, employeeId: contract.employeeId, daysLeft, endDate: contract.endDate },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Contract expiry check error:', err);
-    }
-
-    try {
-      const overdueRequestRule = getRule(rules, 'overdue_request');
-      if (overdueRequestRule.isEnabled) {
-        const { data: overdueReqs } = await supabase
-          .from('request_instances')
-          .select('id, code, title, due_date, status')
-          .in('status', ['pending', 'in_progress', 'draft'])
-          .not('due_date', 'is', null)
-          .lt('due_date', today)
-          .limit(ALERT_SCAN_LIMIT);
-        for (const req of (overdueReqs || [])) {
-          const daysOverdue = Math.ceil((Date.now() - new Date(req.due_date).getTime()) / (24 * 60 * 60 * 1000));
-          alertCount += await notifyRule('overdue_request', {
-            type: daysOverdue > 7 ? 'error' : 'warning',
-            category: 'system',
-            title: '⚠️ Yêu cầu quá hạn',
-            message: `${req.code || 'YC'} — ${req.title || 'Không tiêu đề'}: quá hạn ${daysOverdue} ngày`,
-            severity: daysOverdue > 7 ? 'critical' : 'warning',
-            icon: '⚠️',
-            link: '/rq',
-            sourceType: 'system',
-            sourceId: `request_overdue_${req.id}`,
-            metadata: { requestId: req.id, daysOverdue, dueDate: req.due_date },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Overdue request alert error:', err);
-    }
-
-    try {
-      const birthdayRule = getRule(rules, 'employee_birthday');
-      if (birthdayRule.isEnabled) {
-        const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const allEmployees = (await hrmSensitiveProjectionService.listEmployees())
-          .filter(employee => employee.status === 'Đang làm việc' && employee.dateOfBirth);
-        for (const employee of allEmployees) {
-          if (!employee.dateOfBirth || employee.dateOfBirth.slice(5) !== monthDay) continue;
-          alertCount += await notifyRule('employee_birthday', {
-            type: 'info',
-            category: 'hrm',
-            title: '🎂 Sinh nhật nhân viên',
-            message: `Hôm nay là sinh nhật ${employee.fullName}! Hãy gửi lời chúc mừng nhé 🎉`,
-            severity: 'info',
-            icon: '🎂',
-            link: '/hrm/employees',
-            sourceType: 'hrm',
-            sourceId: `birthday_${employee.id}_${today}`,
-            metadata: { employeeId: employee.id, birthday: employee.dateOfBirth },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Birthday alert error:', err);
-    }
-
-    try {
-      const payrollRule = getRule(rules, 'missing_payroll');
-      if (payrollRule.isEnabled && now.getDate() >= getRuleNumber(payrollRule, 'startDay', 25)) {
-        const currentMonth = now.getMonth() + 1;
-        const currentYear = now.getFullYear();
-        const [activeEmployees, payrolls] = await Promise.all([
-          hrmSensitiveProjectionService.listEmployees(),
-          hrmSensitiveProjectionService.listPayrolls(),
-        ]);
-        const paidEmpIds = new Set(payrolls
-          .filter(payroll => payroll.month === currentMonth && payroll.year === currentYear)
-          .map(payroll => payroll.employeeId));
-        const missingPayroll = activeEmployees
-          .filter(employee => employee.status === 'Đang làm việc' && !paidEmpIds.has(employee.id));
-        if (missingPayroll.length > 0) {
-          const names = missingPayroll.slice(0, 3).map(employee => employee.fullName).join(', ');
-          const extra = missingPayroll.length > 3 ? ` và ${missingPayroll.length - 3} NV khác` : '';
-          alertCount += await notifyRule('missing_payroll', {
-            type: 'warning',
-            category: 'hrm',
-            title: '💰 Chưa tính lương tháng này',
-            message: `${missingPayroll.length} nhân viên chưa có bảng lương T${currentMonth}/${currentYear}: ${names}${extra}`,
-            severity: 'warning',
-            icon: '💰',
-            link: '/hrm/payroll',
-            sourceType: 'hrm',
-            sourceId: `payroll_missing_${currentYear}_${currentMonth}`,
-            metadata: { month: currentMonth, year: currentYear, count: missingPayroll.length },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Payroll alert error:', err);
-    }
-
-    try {
-      const dailyLogRule = getRule(rules, 'stale_daily_log');
-      if (dailyLogRule.isEnabled) {
-        const daysPending = getRuleNumber(dailyLogRule, 'daysPending', 2);
-        const staleBefore = new Date(Date.now() - daysPending * 24 * 60 * 60 * 1000).toISOString();
-        const { data: staleLogs } = await supabase
-          .from('daily_logs')
-          .select('id, date, project_id, construction_site_id')
-          .eq('status', 'submitted')
-          .lt('submitted_at', staleBefore)
-          .limit(20);
-        for (const log of (staleLogs || [])) {
-          alertCount += await notifyRule('stale_daily_log', {
-            projectId: log.project_id,
-            constructionSiteId: log.construction_site_id,
-            type: 'warning',
-            category: 'progress',
-            title: '📝 Nhật ký chờ xác nhận > 2 ngày',
-            message: `Nhật ký ${log.date} tại ${getSiteName(log.construction_site_id)} chưa được xác nhận`,
-            severity: 'warning',
-            icon: '📝',
-            link: '/da',
-            sourceType: 'progress',
-            sourceId: `dailylog_stale_${log.id}`,
-            metadata: { logId: log.id, date: log.date, projectId: log.project_id, constructionSiteId: log.construction_site_id },
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Stale dailylog check error:', err);
-    }
-
-    return alertCount;
-  },
-
-  /** Send one configured alert from a domain service such as Safety. */
-  async notifyAlert(input: NotifyAlertInput): Promise<string[]> {
-    const rules = await loadAlertRules();
-    const rule = getRule(rules, input.alertKey);
-    return notifyAlertWithRule(rule, input);
+  /** Admin "run now": the server evaluates every alert rule immediately. Returns notifications created. */
+  async runScheduledAlertsNow(): Promise<number> {
+    const { data, error } = await supabase.rpc('run_scheduled_alerts_now');
+    if (error) throw error;
+    return Object.values((data || {}) as Record<string, number>).reduce((sum, value) => sum + (Number(value) || 0), 0);
   },
 
   /** Subscribe to realtime notifications without duplicating a topic across responsive views. */

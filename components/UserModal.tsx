@@ -11,6 +11,7 @@ import { buildCreateUserFunctionPayload, readFunctionInvokeErrorMessage } from '
 import { PermissionAdminCatalog } from '../lib/permissions/permissionTypes';
 import { validateAuthorizationUpdate } from '../lib/permissions/authorizationUpdateValidation';
 import { saveAuthorizationAndRefresh } from '../lib/permissions/authorizationSaveOutcome';
+import { DEFAULT_AVATAR_URL } from '../lib/defaultAvatar';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -241,7 +242,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
                 username: formData.username || '',
                 phone: formData.phone || '',
                 role: (formData.role || Role.EMPLOYEE) as Role,
-                avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
+                avatar: formData.avatar || DEFAULT_AVATAR_URL,
                 assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || undefined : undefined,
                 isActive: true,
               },
@@ -267,7 +268,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
           managerId: formData.managerId || undefined,
           birthDate: formData.birthDate || undefined,
           role: (formData.role || Role.EMPLOYEE) as Role,
-          avatar: formData.avatar || `https://i.pravatar.cc/150?u=${formData.email}`,
+          avatar: formData.avatar || DEFAULT_AVATAR_URL,
           assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || undefined : undefined,
           permissionGrants: [],
         });
