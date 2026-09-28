@@ -99,3 +99,28 @@ and SQL API; separate staging-token access was requested. No release conclusion
 follows from successful direct connectivity. Exact sanitized parent restore,
 forward upgrade and final gate remain pending. PR #13 remains draft; no production
 SQL push, main merge, root-checkout edit or pilot activation occurred.
+
+## Exact current-parent staging rehearsal completed (20:54 ICT)
+
+At candidate `d1f084a` / main `4fcca71`, independent Cloud staging
+`kkthixjcficmufpfynqx` matched 16,024 logical application-schema entries with zero
+differences, restored the actual 147-row production ledger, then received only
+synthetic legacy rows. Guarded CLI dry-run and application selected exactly the
+26 pending versions and reached 173; all 147 original ledger rows and all original
+legacy fixture fields remained identical. Seventeen rollback SQL smokes passed,
+including non-admin Room actors and resource-evidence permission/no-money/revision
+checks. Fresh local revision Playwright passed 4/4; code-head CI passed.
+
+[Full method, limitations, retained hashes/output and rollout/rollback checklist](2026-09-28-daily-log-exact-staging-upgrade.md).
+The final read-only production inventory still has 147 versions and an unchanged
+compared catalog; preview has 173 and baseline remains 44. Staging has no Auth
+users, transactions, publications, rollout scopes, cron jobs, Vault secrets or
+pending HTTP requests after rollback; only the synthetic legacy fixture remains.
+
+The exact populated logical database upgrade subgate is now satisfied for this
+frozen parent. **Overall production release is still held.** Staging metadata and
+cleanup return Management API 403; fresh live staging Auth/browser acceptance was
+not performed. The production GitHub runner's treatment of retroactive pending
+migrations is not proved by this CLI `--include-all` rehearsal. Staging remains
+provisioned pending owner deletion/scoped access and may incur compute charges.
+PR #13 stays draft; no production SQL push, main merge or pilot activation occurred.

@@ -1,5 +1,18 @@
 # Handoff — Daily Log release candidate, staging rehearsal, production hold
 
+**Continuation checkpoint — 28/09/2026, 20:54 ICT:** the historical snapshot below
+is superseded by the [exact 147→173 staging rehearsal](evidence/2026-09-28-daily-log-exact-staging-upgrade.md).
+Main `4fcca71` was reconciled into candidate `d1f084a`; 16,024 schema entries matched,
+26 pending migrations applied on independent staging `kkthixjcficmufpfynqx`, legacy
+fingerprints stayed identical, 17 SQL smokes and 4 local browser checks passed.
+Production remains 147, preview 173, baseline 44. PR #13 remains draft. Overall
+release still awaits staging management/Auth verification and cleanup (API 403),
+confirmation of the production migration execution mechanism, and separate owner
+release approval. No production SQL/main merge/pilot activation occurred. The
+staging project remains provisioned; preserve evidence before authorized cleanup.
+Do not repeat already completed parent reconstruction unless a fresh drift check
+invalidates it. Read the new evidence and its decision checklist first.
+
 **Snapshot:** 28/09/2026, 20:06 ICT (13:06 UTC). This is a point-in-time record; re-read GitHub and Supabase Cloud before acting.
 
 **Immediate state:** Daily Log Plan 1 and Plan 2 implementation/pilots are complete. The approved user-centered engineer-slip and CHT-report UX is in draft PR [#13](https://github.com/hoangnvthkt/khotienthinh/pull/13). The remaining task is **release integration and an exact-history, populated but sanitized Cloud staging rehearsal**, not re-planning or rebuilding the feature. PR #13 must remain draft; no production merge or SQL push is authorized.
