@@ -44,7 +44,8 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     const denied=await f.actors.denied.client.rpc('get_daily_log_document_bundle_v2',{p_project_id:f.project,p_construction_site_id:null,p_log_date:f.date,p_daily_log_id:null,p_contribution_id:sourceIds.A});
     expect(denied.error?.code).toBe('42501');
     const deniedPage=await openUxPage(browser,f,'denied',true);pages.push(deniedPage);
-    await expect(deniedPage.getByText(/DENIED|chưa có quyền|không có quyền|Không có quyền|chưa được cấp quyền xem tab nào/).first()).toBeVisible({timeout:45000});
+    await expect(deniedPage.getByRole('alert').filter({hasText:'Bạn không có quyền truy cập Nhật ký của dự án này.'})).toBeVisible({timeout:45000});
+    await expect(deniedPage.getByText('Điều hành cần liên kết công trường HRM',{exact:true})).toHaveCount(0);
     await expect(deniedPage.getByRole('button',{name:/Gửi CHT|Duyệt & công bố|Trả phiếu sửa/})).toHaveCount(0);
     const wrongScope=await f.actors.authorA.client.rpc('get_daily_log_document_bundle_v2',{p_project_id:'DL-WBS-PILOT-20260925',p_construction_site_id:null,p_log_date:f.date,p_daily_log_id:null,p_contribution_id:sourceIds.A});expect(wrongScope.error?.code).toBe('42501');
     const evidence=()=>rpc(f.actors.reader.client,'get_verified_resource_usage_evidence_v1',{p_project_id:f.project,p_construction_site_id:null,p_from_date:f.date,p_to_date:f.date});
