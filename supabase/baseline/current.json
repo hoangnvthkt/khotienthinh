@@ -145,7 +145,8 @@
     "20260928083215_authorization_p2_documents_activities_rls.sql",
     "20260928083534_safety_storage_site_scoped_access.sql",
     "20260928084924_authorization_p1_6_private_project_photos.sql",
-    "20260928092719_authorization_p3_project_room_templates.sql"
+    "20260928092719_authorization_p3_project_room_templates.sql",
+    "20260928101825_authorization_p3_roles_to_personal_grants.sql"
   ],
   "forbidIncludeAll": true
 }
