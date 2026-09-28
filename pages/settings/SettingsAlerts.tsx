@@ -23,7 +23,7 @@ import {
   PROJECT_PERMISSION_LABELS,
   type ProjectPermissionCode,
 } from '../../lib/projectStaffService';
-import { notificationService, SERVER_SCHEDULED_ALERT_KEYS } from '../../lib/notificationService';
+import { notificationService } from '../../lib/notificationService';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
@@ -56,6 +56,16 @@ const PROJECT_PERMISSION_CODES: ProjectPermissionCode[] = [
   'confirm',
   'approve',
 ];
+
+// Which project Room (or switch) each alert reads the ticked actions from.
+const PROJECT_PERMISSION_SCOPE: Partial<Record<AlertRuleKey, string>> = {
+  budget_overrun: 'Người được mở xem Tài chính của dự án, và thành viên Room Thanh toán / Nghiệm thu có quyền',
+  overdue_payment: 'Thành viên Room Thanh toán có quyền',
+  slow_progress: 'Thành viên Room Tiến độ có quyền',
+  material_waste: 'Thành viên Room Kế hoạch vật tư có quyền',
+  stale_daily_log: 'Thành viên Room Nhật ký có quyền',
+  safety_critical: 'Thành viên Room An toàn có quyền',
+};
 
 const getRuleTone = (category: string) => {
   if (category === 'safety') return 'border-red-100 bg-red-50 text-red-700';
@@ -183,7 +193,7 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
   const runChecksNow = async () => {
     setRunning(true);
     try {
-      const count = await notificationService.runAlertChecks({ force: true });
+      const count = await notificationService.runScheduledAlertsNow();
       toast.success('Đã chạy kiểm tra cảnh báo', `Đã tạo ${count} thông báo theo các rule đang bật.`);
       const historyRows = await notificationAlertRuleService.listHistory(50);
       setHistory(historyRows);
@@ -265,20 +275,25 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
         )}
 
         {config.mode === 'project_permission' && (
-          <div className="flex flex-wrap gap-2">
-            {PROJECT_PERMISSION_CODES.map(code => (
-              <label key={code} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={(config.projectPermissionCodes || []).includes(code)}
-                  onChange={() => patchRecipient(rule.alertKey, {
-                    projectPermissionCodes: toggleValue(config.projectPermissionCodes, code),
-                  })}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
-                />
-                {PROJECT_PERMISSION_LABELS[code]}
-              </label>
-            ))}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-slate-500">
+              {PROJECT_PERMISSION_SCOPE[rule.alertKey] || 'Người có quyền sau trong dự án phát sinh cảnh báo'}:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {PROJECT_PERMISSION_CODES.map(code => (
+                <label key={code} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={(config.projectPermissionCodes || []).includes(code)}
+                    onChange={() => patchRecipient(rule.alertKey, {
+                      projectPermissionCodes: toggleValue(config.projectPermissionCodes, code),
+                    })}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                  />
+                  {PROJECT_PERMISSION_LABELS[code]}
+                </label>
+              ))}
+            </div>
           </div>
         )}
 
@@ -335,7 +350,7 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
             <div>
               <h2 className="text-lg font-black text-slate-800">Cảnh báo global</h2>
               <p className="text-xs font-bold text-slate-500">
-                {rules.filter(rule => rule.isEnabled).length}/{rules.length} rule đang bật
+                {rules.filter(rule => rule.isEnabled).length}/{rules.length} rule đang bật · máy chủ tự kiểm tra mỗi 5 phút
               </p>
             </div>
           </div>
@@ -375,9 +390,6 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
                       {rule.alertKey}
                     </span>
-                    {SERVER_SCHEDULED_ALERT_KEYS.has(rule.alertKey)
-                      ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">Server tự chạy mỗi 5 phút</span>
-                      : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700" title="Sẽ chuyển sang server ở đợt sau">Chỉ chạy khi Admin mở ứng dụng</span>}
                   </div>
                   <h3 className="mt-3 text-base font-black text-slate-800">{rule.label}</h3>
                   {rule.description && <p className="mt-1 text-sm font-medium text-slate-500">{rule.description}</p>}

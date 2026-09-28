@@ -499,3 +499,40 @@ Chỉ sửa frontend, không có migration.
   - Smoke dữ liệu giả: thanh toán quá hạn tới đúng người duyệt Room Thanh toán cộng Admin (7); nhắc chấm công chỉ tới nhân viên chưa chấm; lần chạy thứ hai trong cooldown không gửi lặp.
   - **ĐÃ APPLY** (server apply trước, sau đó mới push frontend). Smoke sau apply **PASS**; cron `*/5` đang active.
   - Dừng khẩn cấp: `supabase/operations/notification_p2_2_rollback.sql`.
+
+### P2.2 — đợt 2: 5 cảnh báo còn lại lên server, bỏ quét trong trình duyệt
+
+- **Hiện trạng trước khi làm:**
+  - 5 loại còn chạy trong trình duyệt Admin: vượt ngân sách, tiến độ chậm (đang tắt), hao hụt vật tư, yêu cầu quá hạn, sự cố an toàn nghiêm trọng.
+  - Yêu cầu quá hạn không bao giờ khớp: trình duyệt so trạng thái chữ thường, còn `request_instances` lưu chữ hoa. Ngoài ra chưa phiếu nào có `due_date` (0/24).
+  - An toàn nghiêm trọng chỉ gửi một lần lúc thao tác, và chỉ khi sự cố hoặc thiết bị chưa giao người xử lý.
+  - 18/20 dòng `project_finances` chỉ có công trường, không có `project_id`; cả 18 dòng đều tra ra dự án qua `projects.construction_site_id`.
+  - Room Kế hoạch vật tư chỉ có quyền xem/sửa/xoá, nên mã `confirm`/`approve` của quy tắc hao hụt không khớp ai.
+- **Migration** `20260928035750_notification_p2_2_server_scheduled_alerts_group2`:
+  - `run_scheduled_alerts()` có đủ 11 loại. Người nhận theo Room:
+    - vượt ngân sách: người được mở xem Tài chính (công tắc theo dự án hoặc tất cả dự án), cộng thành viên Room Thanh toán / Nghiệm thu có quyền xử lý khớp quy tắc; quyền chỉ xem không được tính;
+    - tiến độ chậm: Room `gantt`;
+    - hao hụt: Room `material_planning`, quy tắc đổi sang quyền `edit`; bảng vật tư của luồng V2 chỉ được đọc;
+    - an toàn: Room `safety`; nhắc mỗi ngày (theo cooldown) khi sự cố nghiêm trọng hoặc quá hạn chưa đóng, và khi thiết bị hết hạn kiểm định;
+    - yêu cầu quá hạn: quản trị module RQ.
+  - Bộ giải người nhận hỗ trợ thêm chế độ "Theo vai trò" và "Broadcast" có trong Cài đặt; chế độ "Người nhận cụ thể" chỉ giữ tài khoản đang hoạt động.
+- **Frontend:**
+  - Bỏ hẳn phần quét trong trình duyệt, mốc `localStorage`, bộ giải người nhận phía client và `notifyAlert`. Tổng cộng xoá khoảng 700 dòng.
+  - `safetyService` chỉ còn báo cho người được giao; cảnh báo không có người nhận cụ thể do server gửi.
+  - Chuông thông báo: không tự quét mỗi 15 phút nữa; nút ↻ chỉ làm mới danh sách (nhãn "Làm mới thông báo").
+  - Cài đặt → Cảnh báo:
+    - bỏ nhãn từng quy tắc; tiêu đề ghi "máy chủ tự kiểm tra mỗi 5 phút";
+    - quy tắc theo quyền dự án ghi rõ Room áp dụng;
+    - "Chạy kiểm tra ngay" gọi `run_scheduled_alerts_now()`.
+  - Contract test mới: `lib/__tests__/serverScheduledAlertsContract.test.ts`.
+- **Kiểm tra:**
+  - Dry-run với dữ liệu giả (ngân sách 120%, tiến độ 5%, hao hụt 12%, một phiếu quá hạn):
+    - cả 5 loại đều gửi, lần chạy thứ hai trong cooldown không gửi lặp;
+    - người nhận ngân sách = người xem Tài chính cộng Admin, nhiều hơn chỉ Admin;
+    - người nhận hao hụt = người sửa Room Kế hoạch vật tư cộng Admin;
+    - người nhận an toàn = người xác nhận/duyệt Room An toàn cộng Admin;
+    - chế độ vai trò và người nhận cụ thể đúng.
+  - Tác động trên dữ liệu thật hôm nay: chỉ An toàn gửi, 48 thông báo tới 12 người từ 4 nguồn (1 sự cố, 3 thiết bị). 4 loại còn lại gửi 0.
+  - Dry-run script rollback: khôi phục hàm đợt 1, xoá helper tài chính, trả mã quyền hao hụt.
+  - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm chọn "Apply như trên", gồm cả nhắc thiết bị hết hạn kiểm định. Server apply trước, frontend push sau. Smoke sau apply **PASS**; đã kiểm không còn dữ liệu giả.
+  - Rollback: `supabase/operations/notification_p2_2_group2_rollback.sql`. Script này cần đi kèm rollback frontend, vì trình duyệt không còn quét.

@@ -84,6 +84,7 @@
 | P1.6 | `20260927160626_…private_checkin_photos`, `20260927161923_…private_project_attachments_files` | Ba bucket private; `PrivateStorageLinkResolver` ký lại link cũ ở mọi màn; CDN đã purge; link công khai trả 400 |
 | P2.1 | `20260927170749_notification_p2_1_enable_workflow_notifications` | Bật lại worker thông báo Quy trình; subject `material_request` được bỏ qua rõ ràng |
 | P2.2 đợt 1 | `20260928031025_notification_p2_2_server_scheduled_alerts` | `app_private.run_scheduled_alerts()` chạy qua cron `server-scheduled-alerts` (`*/5`), 6 loại; RPC `run_scheduled_alerts_now()` |
+| P2.2 đợt 2 | `20260928035750_notification_p2_2_server_scheduled_alerts_group2` | Đủ 11 loại trên server; ngân sách → người xem Tài chính, tiến độ → Room `gantt`, hao hụt → Room `material_planning` (`edit`), an toàn → Room `safety` (nhắc hằng ngày, kể cả thiết bị hết hạn kiểm định); trình duyệt không còn quét |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -108,14 +109,11 @@ Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `su
 
 ## 7. Việc tiếp theo (theo thứ tự đề xuất)
 
-### 7.1 P2.2 đợt 2 — 5 cảnh báo còn chạy trong trình duyệt Admin
+### 7.1 P2.2 đợt 2 — ĐÃ XONG (28/09)
 
-`budget_overrun`, `slow_progress` (đang tắt), `material_waste`, `overdue_request`, `safety_critical`.
-- Logic cũ nằm trong `lib/notificationService.ts` → `runAlertChecks`.
-- Thêm từng loại vào `app_private.run_scheduled_alerts()` theo đúng mẫu đợt 1 (`alert_resolve_recipients`, `alert_emit`), rồi thêm key vào `SERVER_SCHEDULED_ALERT_KEYS`.
-- Người nhận `project_permission` phải map sang Room: vượt ngân sách dùng quyền tài chính (xem công tắc C-3), an toàn dùng Room `safety`.
-- Hao hụt vật tư đụng phân hệ của luồng V2: chỉ đọc bảng, không sửa code của họ.
-- Khi xong, bỏ hẳn phần quét trong trình duyệt và `localStorage` của `runAlertChecks`.
+Xem rollout log. Còn mở:
+- `request_instances.due_date` chưa được màn Phiếu yêu cầu ghi, nên cảnh báo "Yêu cầu quá hạn" chưa có dữ liệu để chạy. Muốn dùng cần định nghĩa hạn (ví dụ `slaHours` của khối duyệt).
+- Quy tắc "Tiến độ chậm" đang tắt và cấu hình `module_admins` với danh sách module rỗng. Nếu bật lại, nên chuyển sang "Nhân sự dự án theo quyền" (Room `gantt`, quyền `edit`).
 
 ### 7.2 Màn Cài đặt → Người dùng (P2, UX)
 
@@ -160,7 +158,7 @@ Theo audit mục P2:
 
 ## 9. Trạng thái tại thời điểm handoff
 
-- `origin/main` trùng với `feature/authorization-p0-hardening` (commit cuối `165548d` + handoff này).
-- Cron `server-scheduled-alerts` đã chạy thành công lượt đầu (03:15 UTC 28/09), 0 cảnh báo vì cooldown hoặc không có dữ liệu. Cảnh báo thiếu bảng lương sẽ gửi lại khoảng 14:35 UTC 28/09.
+- `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
+- Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.306 pass, `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.310 pass, `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.

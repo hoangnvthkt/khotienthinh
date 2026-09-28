@@ -181,26 +181,6 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         };
     }, [isActive, loadCount]);
 
-    // Auto-check alerts on mount + every 15 minutes
-    useEffect(() => {
-        if (!isActive) return;
-        notificationService.runAlertChecks().then((count) => {
-            if (count > 0) {
-                loadCount();
-                if (isOpen) loadList();
-            }
-        });
-        const interval = setInterval(() => {
-            notificationService.runAlertChecks().then((count) => {
-                if (count > 0) {
-                    loadCount();
-                    if (isOpen) loadList();
-                }
-            });
-        }, 15 * 60 * 1000);
-        return () => clearInterval(interval);
-    }, [isActive, isOpen, loadCount, loadList]);
-
     // Click outside to close
     useEffect(() => {
         const handler = (e: MouseEvent) => {
@@ -315,11 +295,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         }
     };
 
-    const handleRunChecks = async () => {
+    // Alerts are evaluated on the server every 5 minutes; this only refreshes the list.
+    const handleRefresh = async () => {
         setChecking(true);
-        await notificationService.runAlertChecks();
-        await Promise.all([loadCount(), loadList()]);
-        setChecking(false);
+        try {
+            await Promise.all([loadCount(), loadList()]);
+        } finally {
+            setChecking(false);
+        }
     };
 
     const handleRequestBrowserPermission = async () => {
@@ -390,8 +373,8 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                         <Bell size={12} />
                                     </button>
                                 )}
-                                <button onClick={handleRunChecks} disabled={checking}
-                                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-indigo-500" title="Kiểm tra cảnh báo">
+                                <button onClick={handleRefresh} disabled={checking}
+                                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-indigo-500" title="Làm mới thông báo" aria-label="Làm mới thông báo">
                                     <RefreshCw size={12} className={checking ? 'animate-spin' : ''} />
                                 </button>
                                 {unreadCount > 0 && (
