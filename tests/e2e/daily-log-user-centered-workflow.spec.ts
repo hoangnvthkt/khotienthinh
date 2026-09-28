@@ -82,7 +82,17 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     };
     await sendSummary();
     const cht=await openUxPage(browser,f,'cht',true);pages.push(cht);const report=cht.locator('.daily-log-summary');
-    await expect(report.locator('input,select')).toHaveCount(0);await captureUxLayouts(cht,'review','.daily-log-summary');
+    await expect(report.locator('input,select')).toHaveCount(0);
+    const briefingHeadings=await report.locator('h2').allTextContents();
+    const positions=['Tổng quan ngày','Kết quả tổng hợp theo WBS','Cảnh báo và vướng mắc','Các mũi thi công','Ảnh hiện trường']
+      .map(heading=>briefingHeadings.indexOf(heading));
+    expect(positions.every((position,index)=>position>=0 && (!index || position>positions[index-1]))).toBe(true);
+    await expect(report.getByText('Mũi thi công',{exact:true})).toBeVisible();
+    await expect(report.getByText(/Chưa đủ căn cứ đánh giá tiến độ mũi|Chưa thấy trễ theo ngày kế hoạch/).first()).toBeVisible();
+    await expect(report.locator('.dl-report-audit')).not.toHaveAttribute('open');
+    const calmColor=await report.locator('.dl-metric-calm dd').first().evaluate(element=>getComputedStyle(element).color.match(/\d+/g)!.slice(0,3).map(Number));
+    expect(calmColor[1]).toBeGreaterThan(calmColor[0]);expect(calmColor[1]).toBeGreaterThan(calmColor[2]);
+    await captureUxLayouts(cht,'review','.daily-log-summary');
     await cht.setViewportSize({width:1440,height:900});
     const card=report.locator('[data-testid="daily-log-area-card"]').filter({has:cht.getByRole('heading',{name:'Khu A nghiệm thu UX',exact:true})});
     await card.locator(':scope > details > summary').click();await card.locator('summary').filter({hasText:'Trả phiếu sửa'}).click();
@@ -107,13 +117,15 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     await savedCard.locator('summary').filter({hasText:'Xem thay đổi so với phiếu nguồn mới nhất'}).click();
     await expect(savedCard.getByText('Đã đo lại A và bổ sung nguồn lực theo yêu cầu CHT',{exact:true})).toBeVisible();
     await savedCard.getByRole('button',{name:'Cập nhật từ phiếu',exact:true}).click();await resolve('31');await saveSummary();await sendSummary();
-    await cht.reload();await expect(report.getByRole('button',{name:'Đối chiếu thử nghiệm',exact:true})).toBeEnabled();
+    await cht.reload();await expect(report.getByRole('heading',{name:'Bản tổng hợp thi công ngày',exact:true})).toBeVisible({timeout:45000});
+    await expect(report.getByRole('button',{name:'Đối chiếu thử nghiệm',exact:true})).toBeEnabled();
     let response=cht.waitForResponse(r=>r.url().endsWith('/rpc/publish_daily_log_summary_v1'));
     await report.getByRole('button',{name:'Đối chiếu thử nghiệm',exact:true}).click();const pilot=await (await response).json();expect(pilot.publishedProgress).toBe(false);
     expect((await evidence()).rows).toEqual([]);
     await expect(report).toBeVisible();
     // Only the disposable test project is enforced, never the preview pilot.
     await query(`update app_private.daily_log_wbs_rollout_scopes set mode='enforced' where project_id='${f.project}'`,false);await cht.reload();
+    await expect(report.getByRole('heading',{name:'Bản tổng hợp thi công ngày',exact:true})).toBeVisible({timeout:45000});
     await expect(report.getByRole('button',{name:'Duyệt & công bố',exact:true})).toBeEnabled();
     await captureUxLayouts(cht,'approval','.daily-log-summary');
     response=cht.waitForResponse(r=>r.url().endsWith('/rpc/publish_daily_log_summary_v1'));

@@ -44,6 +44,8 @@ interface DailyLogAreaCardProps {
 const STATE_LABELS = { current: 'Nguồn khớp phiên bản', changed: 'Có phiếu gửi lại', returned: 'Đã trả lại', missing: 'Không còn nguồn' };
 const REVIEW_LABELS = { draft: 'Chưa rà soát', ready: 'Sẵn sàng tổng hợp', change_requested: 'Cần sửa theo nhận xét', accepted: 'Đã rà soát', superseded: 'Đã thay thế' };
 const fieldClass = 'min-h-11 w-full rounded-md border border-border bg-background px-3 text-base sm:text-sm disabled:opacity-50';
+const hasComparableDates = (item: DailyLogWorkItem) => [item.scheduleFinishDate,item.forecastFinishDate].every(value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && formatDailyLogDate(value) !== 'Chưa xác định');
+export const hasAreaForecastDelay = (items: DailyLogWorkItem[]) => items.some(item => hasComparableDates(item) && item.forecastFinishDate! > item.scheduleFinishDate!);
 
 export const DailyLogAreaCard: React.FC<DailyLogAreaCardProps> = ({ card, mode, busy, canRequestChange = false, returnDisabledReason, onProgressChange, onRefresh, onRemove, onRequestChange }) => {
   const [comment, setComment] = React.useState('');
@@ -58,13 +60,34 @@ export const DailyLogAreaCard: React.FC<DailyLogAreaCardProps> = ({ card, mode, 
   const metadata = snapshot && Object.hasOwn(snapshot, 'content') ? snapshot : mode !== 'verified' && state === 'current' ? card.contribution : null;
   const photos = (metadata?.photos || []) as DailyLogPhoto[];
   const sourceId = card.source.id || '';
+  const report = mode !== 'summarize';
+  const labor = card.resources.filter(line => line.kind === 'labor');
+  const machines = card.resources.filter(line => line.kind === 'machine');
+  const laborHours = labor.length && labor.every(line => line.totalHours != null) ? labor.reduce((sum, line) => sum + line.totalHours!, 0) : null;
+  const machineHours = machines.length && machines.every(line => line.totalHours != null) ? machines.reduce((sum, line) => sum + line.totalHours!, 0) : null;
+  const laborEntries = labor.length && labor.every(line => line.count != null) ? labor.reduce((sum, line) => sum + line.count!, 0) : null;
+  const datedItems = card.editedItems.filter(hasComparableDates);
+  const delayLabel = hasAreaForecastDelay(card.editedItems)
+    ? 'Có hạng mục dự kiến trễ theo ngày kế hoạch'
+    : card.editedItems.length > 0 && datedItems.length === card.editedItems.length
+      ? 'Chưa thấy trễ theo ngày kế hoạch' : 'Chưa đủ căn cứ đánh giá tiến độ mũi';
   return <article data-testid="daily-log-area-card" className="min-w-0 rounded-md border border-border bg-card text-sm text-foreground">
     <div className="space-y-2 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 break-words"><h3 className="text-base font-semibold">{card.source.workAreaName || card.contribution.workAreaName || 'Chưa xác định khu vực'}</h3><p className="mt-1 text-muted-foreground">{card.source.sourceUserName || card.contribution.authorName || 'Chưa xác định người lập'}</p></div>
         <span className={`rounded px-2 py-1 text-xs ${blocked ? 'bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-100' : 'bg-muted text-muted-foreground'}`}>{REVIEW_LABELS[card.source.reviewStatus || 'ready']}</span>
       </div>
-      <p className="text-muted-foreground">{new Set(card.editedItems.map(item => item.taskId)).size} hạng mục · Phiếu nguồn v{card.source.sourceVersion ?? '—'} · {formatDailyLogTime(sourceTime ? String(sourceTime) : '')}</p>
+      {report ? <>
+        <p className="dl-area-delay text-xs">{delayLabel}</p>
+        <dl className="dl-area-resource-strip grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div><dt>Nhân công theo hạng mục</dt><dd>{formatDailyLogQuantity(laborEntries, 'lượt người')}</dd></div>
+          <div><dt>Giờ công</dt><dd>{formatDailyLogQuantity(laborHours, 'giờ công')}</dd></div>
+          <div><dt>Giờ máy</dt><dd>{formatDailyLogQuantity(machineHours, 'giờ máy')}</dd></div>
+        </dl>
+        <div className="dl-area-work-highlights space-y-2"><p className="text-xs font-semibold">Khối lượng theo hạng mục</p>
+          {card.editedItems.length ? card.editedItems.map(item => <div key={item.id || item.sourceWorkItemId} className="flex flex-wrap items-baseline justify-between gap-1 border-b border-border/60 pb-2 last:border-0 last:pb-0"><span>{item.wbsCode} {item.taskName}</span><strong className="tabular-nums">{formatDailyLogQuantity(item.dailyQuantityDone, item.unit)} hôm nay · {formatDailyLogQuantity(item.cumulativeProgressPercent, '%')} lũy kế</strong></div>) : <p className="text-muted-foreground">Chưa có hạng mục được lưu.</p>}
+        </div>
+      </> : <p className="text-muted-foreground">{new Set(card.editedItems.map(item => item.taskId)).size} hạng mục · Phiếu nguồn v{card.source.sourceVersion ?? '—'} · {formatDailyLogTime(sourceTime ? String(sourceTime) : '')}</p>}
       {card.source.hasAdjustments && <p className="text-teal-800 dark:text-teal-200">Đã điều chỉnh bản sao · {card.source.adjustmentReason || 'Chưa có lý do'}</p>}
       {card.source.reviewComment && <div className={`rounded border p-3 ${card.source.reviewStatus === 'change_requested' ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100' : 'border-border bg-muted/30'}`}><p className="font-medium">{card.source.reviewStatus === 'change_requested' ? 'Nhận xét đã lưu' : 'Nhận xét trước đó'}</p><p className="mt-1 whitespace-pre-wrap break-words">{card.source.reviewComment}</p></div>}
     </div>

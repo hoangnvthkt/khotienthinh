@@ -57,6 +57,68 @@
 .daily-log-engineer-slip .dl-slip-work th { background: var(--dl-blue-soft); }
 .daily-log-summary .dl-return-source { background: var(--dl-amber-soft); color: var(--dl-amber); }
 
+/* CHT briefing: official output first, supporting records last. All styles stay
+   inside the report mode; the summarizer form and engineer slip are untouched. */
+.daily-log-summary--report { --dl-report-navy: #183153; --dl-report-green: #047857; --dl-report-red: #b42318; }
+.dark .daily-log-summary--report { --dl-report-navy: #dbeafe; --dl-report-green: #6ee7b7; --dl-report-red: #fca5a5; }
+.daily-log-summary--report .daily-log-document-body { max-width: 1500px; margin-inline: auto; }
+.daily-log-summary--report .dl-report-section-title { margin: 0; color: var(--dl-report-navy); font-size: 1.15rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.35; }
+.daily-log-summary--report .dl-report-intro { margin-top: -12px; padding: 0 2px; color: var(--foreground); font-size: 1rem; line-height: 1.6; }
+.daily-log-summary--report .dl-summary-metrics { gap: 0; border: 1px solid var(--border); padding: 0; overflow: hidden; }
+.daily-log-summary--report .dl-summary-metrics > div { min-width: 0; padding: 16px 18px; border-inline-end: 1px solid var(--border); }
+.daily-log-summary--report .dl-summary-metrics > div:last-child { border-inline-end: 0; }
+.daily-log-summary--report .dl-summary-metrics > div:first-child { background: #183153; color: #fff; }
+.daily-log-summary--report .dl-summary-metrics > div:first-child dt,
+.daily-log-summary--report .dl-summary-metrics > div:first-child dd { color: #fff; }
+.daily-log-summary--report .dl-summary-metrics > div > dd:first-of-type { font-size: 1.55rem; line-height: 1.2; margin-top: 7px; font-weight: 700; }
+.daily-log-summary--report .dl-summary-metrics > div:nth-child(5) > dd:first-of-type { color: var(--dl-amber); }
+.daily-log-summary--report .dl-summary-metrics > div.dl-metric-calm > dd:first-of-type { color: var(--dl-report-green); }
+.daily-log-summary--report .dl-report-wbs > section { border-color: #bfd1e8; box-shadow: var(--dl-elevation); padding: 20px; }
+.dark .daily-log-summary--report .dl-report-wbs > section { border-color: #315275; }
+.daily-log-summary--report .dl-report-wbs h2 { font-size: 1.15rem; font-weight: 700; }
+.daily-log-summary--report .dl-report-wbs article { border-inline-start: 4px solid var(--dl-blue); box-shadow: 0 1px 4px rgb(30 58 95 / 5%); }
+.daily-log-summary--report .dl-report-wbs article:has(.bg-amber-100) { border-inline-start-color: #d97706; }
+.daily-log-summary--report .dl-report-wbs article dl dd { font-size: 1.15rem; font-weight: 700; color: var(--dl-report-navy); }
+.daily-log-summary--report .dl-report-wbs article dl > div:nth-child(2) dd { color: var(--dl-blue); }
+.daily-log-summary--report .dl-report-alerts { border-radius: 8px; border: 1px solid var(--border); background: var(--card); padding: 20px; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-incident,
+.daily-log-summary--report .dl-report-forecast-warning,
+.daily-log-summary--report .dl-report-next,
+.daily-log-summary--report .dl-report-calm { border-radius: 6px; padding: 12px 14px; font-size: .9rem; line-height: 1.55; }
+.daily-log-summary--report .dl-report-incident,
+.daily-log-summary--report .dl-report-forecast-warning { border-inline-start: 4px solid #d97706; background: #fffbeb; color: #78350f; }
+.dark .daily-log-summary--report .dl-report-incident,
+.dark .daily-log-summary--report .dl-report-forecast-warning { background: #451a03; color: #fef3c7; }
+.daily-log-summary--report .dl-report-calm { border-inline-start: 4px solid #059669; background: #ecfdf5; color: #065f46; }
+.dark .daily-log-summary--report .dl-report-calm { background: #064e3b; color: #d1fae5; }
+.daily-log-summary--report .dl-report-next { border-inline-start: 4px solid var(--dl-blue); background: var(--dl-blue-soft); color: var(--dl-report-navy); }
+.daily-log-summary--report [data-testid="daily-log-area-card"] { overflow: hidden; border-radius: 8px; }
+.daily-log-summary--report [data-testid="daily-log-area-card"] > div:first-child { border-top: 4px solid var(--dl-blue); padding: 18px; }
+.daily-log-summary--report .dl-area-delay { display: inline-block; border-radius: 4px; padding: 5px 8px; background: var(--dl-blue-soft); color: var(--dl-report-navy); }
+.daily-log-summary--report .dl-area-resource-strip { margin-top: 12px; }
+.daily-log-summary--report .dl-area-resource-strip > div { border-radius: 6px; background: var(--muted); padding: 10px; }
+.daily-log-summary--report .dl-area-resource-strip dt { color: var(--muted-foreground); font-size: .72rem; line-height: 1.35; }
+.daily-log-summary--report .dl-area-resource-strip dd { color: var(--dl-report-navy); font-weight: 700; font-size: .98rem; line-height: 1.35; margin-top: 5px; }
+.daily-log-summary--report .dl-area-work-highlights { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.daily-log-summary--report .dl-area-work-highlights strong { color: var(--dl-blue); font-weight: 700; }
+.daily-log-summary--report .dl-report-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.daily-log-summary--report .dl-report-photo { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); text-decoration: none; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--muted); }
+.daily-log-summary--report .dl-report-photo span { display: block; padding: 9px 12px; font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
+.daily-log-summary--report .dl-report-photo small { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: .75rem; font-weight: 400; }
+.daily-log-summary--report .dl-report-audit { border: 1px solid var(--border); border-radius: 7px; background: var(--muted); padding: 4px 16px 14px; }
+.daily-log-summary--report .dl-report-audit > summary { min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--muted-foreground); font-size: .85rem; font-weight: 600; }
+.daily-log-summary--report .dl-report-audit dd { margin-top: 4px; color: var(--foreground); }
+@media (max-width: 1023px) {
+  .daily-log-summary--report .dl-summary-metrics > div { border-bottom: 1px solid var(--border); }
+}
+@media (max-width: 639px) {
+  .daily-log-summary--report .dl-summary-metrics > div { padding: 13px 14px; }
+  .daily-log-summary--report .dl-report-wbs > section,
+  .daily-log-summary--report .dl-report-alerts { padding: 15px; }
+  .daily-log-summary--report .dl-area-work-highlights strong { display: block; width: 100%; }
+}
+
 .daily-log-document-header .daily-log-document-heading {
   display: flex;
   align-items: center;
