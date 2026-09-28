@@ -135,7 +135,8 @@
     "20260927170749_notification_p2_1_enable_workflow_notifications.sql",
     "20260928031025_notification_p2_2_server_scheduled_alerts.sql",
     "20260928035750_notification_p2_2_server_scheduled_alerts_group2.sql",
-    "20260928044404_notification_delivery_reason.sql"
+    "20260928044404_notification_delivery_reason.sql",
+    "20260928052528_notification_site_command_recipients.sql"
   ],
   "forbidIncludeAll": true
 }

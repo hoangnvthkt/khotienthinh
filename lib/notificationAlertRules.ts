@@ -33,7 +33,28 @@ export interface AlertRecipientConfig {
   userIds?: string[];
   projectPermissionCodes?: ProjectPermissionCode[];
   includeAdmins?: boolean;
+  /** Add the project's site command (Ban chỉ huy công trường) to project alerts. */
+  includeSiteCommand?: boolean;
   fallbackToAdmin?: boolean;
+}
+
+export type AlertRecipientSource = AlertRecipientMode | 'site_command' | 'fallback';
+
+export interface AlertRecipientPreview {
+  userId: string;
+  name: string;
+  sources: AlertRecipientSource[];
+}
+
+export interface SiteCommandPosition {
+  id: string;
+  name: string;
+  code?: string | null;
+  groupCode?: string | null;
+  isActive: boolean;
+  isSiteCommand: boolean;
+  /** People holding this position in a project right now. */
+  projectStaffCount: number;
 }
 
 export interface AlertRuleChannels {
@@ -188,7 +209,7 @@ export const DEFAULT_ALERT_RULES: NotificationAlertRule[] = [
     isEnabled: true,
     thresholds: {},
     cooldownMinutes: 1440,
-    recipientConfig: { mode: 'project_permission', projectPermissionCodes: ['confirm', 'approve'], includeAdmins: true, fallbackToAdmin: true },
+    recipientConfig: { mode: 'project_permission', projectPermissionCodes: ['confirm', 'approve'], includeAdmins: false, includeSiteCommand: true, fallbackToAdmin: true },
     channels: { inApp: true, webPush: true },
   },
 ];
@@ -276,6 +297,55 @@ export const notificationAlertRuleService = {
         updated_by: updatedBy || null,
       }, { onConflict: 'alert_key' });
     if (error) throw error;
+  },
+
+  /** Positions and which of them form the site command (BCH). */
+  async listSiteCommandPositions(): Promise<SiteCommandPosition[]> {
+    const [positions, command, staff] = await Promise.all([
+      supabase.from('hrm_positions').select('id,name,code,group_code,is_active').order('name').limit(1000),
+      supabase.from('notification_site_command_positions').select('position_id').limit(1000),
+      supabase.from('project_staff').select('position_id').is('end_date', null).not('position_id', 'is', null).limit(5000),
+    ]);
+    if (positions.error) throw positions.error;
+    if (command.error) throw command.error;
+    if (staff.error) throw staff.error;
+    const commandIds = new Set((command.data || []).map(row => row.position_id));
+    const staffCounts = new Map<string, number>();
+    for (const row of staff.data || []) staffCounts.set(row.position_id, (staffCounts.get(row.position_id) || 0) + 1);
+    return (positions.data || []).map(row => ({
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      groupCode: row.group_code,
+      isActive: row.is_active !== false,
+      isSiteCommand: commandIds.has(row.id),
+      projectStaffCount: staffCounts.get(row.id) || 0,
+    }));
+  },
+
+  async setSiteCommandPositions(positionIds: string[]): Promise<number> {
+    const { data, error } = await supabase.rpc('set_site_command_positions', { p_position_ids: positionIds });
+    if (error) throw error;
+    return Number(data || 0);
+  },
+
+  /** Who the rule (as currently edited) would reach for one project, and why. */
+  async previewRecipients(
+    alertKey: AlertRuleKey,
+    projectId: string | null,
+    recipientConfig: AlertRecipientConfig,
+  ): Promise<AlertRecipientPreview[]> {
+    const { data, error } = await supabase.rpc('preview_alert_recipients', {
+      p_alert_key: alertKey,
+      p_project_id: projectId,
+      p_recipient_config: recipientConfig,
+    });
+    if (error) throw error;
+    return ((data || []) as any[]).map(row => ({
+      userId: row.user_id,
+      name: row.user_name || 'Không rõ tên',
+      sources: (row.sources || []) as AlertRecipientSource[],
+    }));
   },
 
   async listHistory(limit = 50): Promise<AlertHistoryItem[]> {
