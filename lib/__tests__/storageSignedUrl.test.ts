@@ -16,6 +16,8 @@ describe('parsePrivateStorageUrl', () => {
       .toEqual({ bucket: 'project-attachments', path: 'tx/1.xlsx' });
     expect(parsePrivateStorageUrl(`${base}/public/project-files/p1/a.pdf`))
       .toEqual({ bucket: 'project-files', path: 'p1/a.pdf' });
+    expect(parsePrivateStorageUrl(`${base}/public/project-photos/dailylogs/p1/1.jpg`))
+      .toEqual({ bucket: 'project-photos', path: 'dailylogs/p1/1.jpg' });
     expect(parsePrivateStorageUrl(`${base}/sign/project-files/p1/a.pdf?token=abc`)).toBeNull();
   });
 
