@@ -151,7 +151,15 @@ Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; lu�
 ### 7.5 P3 (theo phương án)
 
 - Màn "Hồ sơ quyền" hợp nhất theo từng người.
-- ĐÃ XONG (28/09): mẫu quyền Room theo vai trò + phân quyền theo người. Form tạo dự án cũng áp mẫu Room (7d6a2d5). Tiếp: mẫu quyền theo người cho toàn bộ ứng dụng (xem memory permission-ux-person-first-templates).
+- ĐÃ XONG (28/09): mẫu quyền Room theo vai trò + phân quyền theo người. Form tạo dự án cũng áp mẫu Room (7d6a2d5). 
+- ĐÃ XONG (28/09): chuyển vai trò thường sang quyền riêng từng người (8aba991). Chỉ còn AUDITOR, HR, HR_MANAGE, PERMISSION_ADMIN, SYSTEM_ADMIN.
+- ĐÃ XONG (28/09): mẫu quyền theo vị trí cho toàn hệ thống (5aace83). Gồm 14 mẫu, sửa ở Cài đặt → Mẫu quyền theo vị trí; "Điền nhanh theo mẫu vị trí" nằm trong Người dùng → Sửa.
+- **CHỜ CHỦ SẢN PHẨM — lỗi hồi quy của bước chuyển vai trò:**
+  - 55 người có `hrm.employee.edit_profile@own` không có ngày hết hạn, kèm 6 bản global và một số quyền duyệt chấm công / nghỉ phép.
+  - `app_private.evaluate_direct_grant_replacement_impl` bắt buộc hạn cho mọi quyền cần hạn trong lần lưu, nên Admin **không lưu được hồ sơ / quyền của những người này** ở Người dùng.
+  - Đề xuất: miễn hạn cho quyền đang có sẵn, không đổi; và (tùy chọn) miễn hạn cho quyền tự phục vụ phạm vi "Chính mình", không nhạy cảm.
+  - Bộ kiểm tra an toàn tự động đã chặn thay đổi này vì nó nới lỏng một kiểm tra, nên cần chủ sản phẩm quyết.
+- Tiếp: ô bị khóa do vai trò đặc biệt (HR, quản trị) phải giải thích lý do và chỉ chỗ đổi (tab Vai trò nhân sự).
 - Mở Room cho PM/CHT khi chủ sản phẩm quyết định.
 - Task 13: drop cột legacy (`allowed_modules`, `admin_modules`, …) sau khi hết phụ thuộc. `can_access_module` và `resolve_effective_permission_sources` vẫn đọc cột legacy.
 
@@ -173,7 +181,7 @@ Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; lu�
 
 ## 9. Trạng thái tại thời điểm handoff
 
-- `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
+- `origin/main` trùng với `feature/authorization-p0-hardening` (5aace83, mẫu quyền theo vị trí).
 - Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.341 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.348 pass; e2e phân quyền `npx playwright test -c tests/authorization/playwright.config.ts` 5 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.

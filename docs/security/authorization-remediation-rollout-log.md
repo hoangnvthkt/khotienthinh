@@ -764,3 +764,31 @@ Chỉ sửa frontend, không có migration.
   - Người nào áp mẫu lỗi thì có thông báo, kèm số người.
   - Nhập Excel chỉ báo khi có lỗi.
   - Form có dòng giải thích.
+
+### P3 — chuyển vai trò thường sang quyền riêng từng người (28/09)
+
+- Migration `20260928101825_authorization_p3_roles_to_personal_grants` (8aba991), **ĐÃ APPLY**:
+  - chuyển BUSINESS_USER, WORKFLOW_USER, WORKFLOW_ADMIN, LEGACY_HR_*: 131 gán vai trò của 56 người thành 710 quyền riêng; thu hồi các gán vai trò đó;
+  - kiểm tra trong migration: quyền hiệu lực của từng người không đổi;
+  - bản sao lưu nằm ở `app_private.p3_roles_conversion_backup`.
+- Giữ lại: AUDITOR 1, HR 2, HR_MANAGE 1, PERMISSION_ADMIN 1, SYSTEM_ADMIN 2. Mã HR nhạy cảm chỉ hiệu lực qua vai trò HR / HR_MANAGE.
+- Rollback: `supabase/operations/authorization_p3_roles_to_personal_grants_rollback.sql`. Đã dry-run; khôi phục đúng từng dòng.
+- **Lỗi hồi quy phát hiện sau apply (chưa sửa, chờ chủ sản phẩm):**
+  - Có quyền cần ngày hết hạn nhưng được tạo không có hạn: `hrm.employee.edit_profile@own` ×54, global ×6, `hrm.attendance.approve` / `hrm.leave.approve` global ×6 mỗi loại.
+  - `evaluate_direct_grant_replacement_impl` kiểm tra hạn cho mọi quyền trong lần lưu, nên lần lưu Người dùng tiếp theo của những người này bị từ chối (`expiry_required`).
+  - Bản sửa đề xuất (miễn hạn cho quyền giữ nguyên, và quyền tự phục vụ phạm vi own, không nhạy cảm) bị bộ kiểm tra an toàn tự động chặn vì nới lỏng một kiểm tra.
+
+### P3 — mẫu quyền theo vị trí cho toàn hệ thống (28/09)
+
+- Migration `20260928113000_authorization_p3_user_permission_templates` (5aace83), **ĐÃ APPLY** (bản migration quá lớn cho MCP nên chạy bằng CLI trong một giao dịch và ghi `schema_migrations` trong cùng giao dịch đó):
+  - bảng `user_permission_templates` (items: permissionCode, scopeType global/own/assigned, expiresInDays);
+  - `save_user_permission_template`, chỉ Admin, có nhật ký;
+  - chuẩn hóa mẫu: chỉ nhận mã cấp riêng được, không nhận mã dự án, không nhận phạm vi cần chọn đối tượng cụ thể; quyền cần hạn mặc định 365 ngày.
+  - 14 mẫu theo bảng đã duyệt: Nhân viên cơ bản, Cán bộ vật tư/kho, Quản lý kho, Cán bộ công trường, Kế toán, Kế toán trưởng/TC, Nhân sự, Trưởng phòng NS, HC–Tài sản–Đội xe, Ban giám đốc, cùng 4 mẫu bổ sung Quản trị Quy trình / Phiếu yêu cầu / Tài sản / Công việc (651 dòng quyền). Chức vụ gợi ý gắn theo tên. **Không gán quyền cho ai.**
+- Frontend:
+  - Người dùng → Sửa → "Điền nhanh theo mẫu vị trí": mẫu gợi ý theo chức vụ (★), thêm vào quyền đang có hoặc thay bằng mẫu; bỏ qua quyền đã có từ vai trò; tự điền lý do; có nút Hoàn tác; lưu qua `update_user_authorization_v2`.
+  - Cài đặt → "Mẫu quyền theo vị trí" để sửa mẫu.
+- Kiểm tra:
+  - dry-run và smoke persona PASS: nhân viên thường bị chặn sửa mẫu; mã không cấp riêng được và phạm vi kho bị từ chối; có nhật ký;
+  - e2e fixture `tests/e2e/authorization-template-fill.spec.ts` PASS; Vitest 2.348 PASS.
+- Rollback: `drop function public.save_user_permission_template(text,text,text,jsonb,uuid[],boolean); drop function app_private.normalize_user_permission_template_items(jsonb); drop table public.user_permission_templates;`
