@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, RefreshCw, Trash2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { AppNotification, NOTIFICATION_CATEGORIES, NotificationCursor, notificationService } from '../lib/notificationService';
 import { resolveNotificationPath } from '../lib/notificationRoutes';
@@ -13,6 +13,7 @@ import {
 } from '../lib/notificationReasons';
 import { EmptyState, FilterBar, MobileCardList, PageHeader, StatusBadge } from '../components/erp';
 import VehicleBookingNotificationContent from '../components/VehicleBookingNotificationContent';
+import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 
 type TabCounts = Record<Exclude<NotificationInboxTab, 'all'>, number>;
 type SectionTab = Exclude<NotificationInboxTab, 'all'>;
@@ -55,6 +56,8 @@ const Notifications: React.FC = () => {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [tabCounts, setTabCounts] = useState<TabCounts | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [showPreferences, setShowPreferences] = useState(searchParams.get('preferences') === '1');
 
   const loadFirstPage = useCallback(async () => {
     setRefreshing(true);
@@ -247,6 +250,11 @@ const Notifications: React.FC = () => {
         }
         secondaryActions={[
           {
+            label: showPreferences ? 'Ẩn cách nhận' : 'Cách nhận thông báo',
+            icon: <Settings2 size={15} />,
+            onClick: () => setShowPreferences(value => !value),
+          },
+          {
             label: refreshing ? 'Đang tải' : 'Làm mới',
             icon: <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />,
             onClick: loadFirstPage,
@@ -259,6 +267,8 @@ const Notifications: React.FC = () => {
           }] : []),
         ]}
       />
+
+      {showPreferences && <NotificationPreferencesCard userId={user.id} />}
 
       <FilterBar
         searchValue={searchTerm}

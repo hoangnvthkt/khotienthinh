@@ -605,3 +605,30 @@ Chỉ sửa frontend, không có migration.
   - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Frontend push sau khoảng vài chục phút vì công cụ agent bị gián đoạn; trong khoảng đó người được giao sự cố có thể nhận trùng. Smoke sau apply PASS, không để lại dữ liệu test.
   - Rollback: `supabase/operations/notification_event_recipients_request_safety_rollback.sql`, kèm rollback `safetyService`.
 - **Đề xuất cho luồng khác (chưa sửa):** Nhật ký "đã xác nhận" gửi người lập (đọc 12%), "chờ CHT duyệt" (đọc 24%); SLA phiếu vật tư (đọc 33%).
+
+## Thông báo đúng người — bước 3: tuỳ chọn cá nhân và tổng hợp cuối ngày
+
+- **Quyết định chủ sản phẩm (28/09):** loại "Nghiệp vụ" chỉ được chuyển sang tổng hợp cuối ngày, không được tắt.
+- **Migration** `20260928065520_notification_preferences_digest`:
+  - Cột `notifications.delivery_mode` (`instant` / `digest` / `muted`, mặc định `instant`). Toàn bộ thông báo cũ giữ `instant`.
+  - Bảng `notification_preferences`:
+    - Theo dõi: báo ngay / tổng hợp / không báo.
+    - Nghiệp vụ: báo ngay / tổng hợp; ràng buộc chặn việc tắt.
+    - Giờ nhận tổng hợp: 06:00–22:00.
+    - Mỗi người chỉ đọc dòng của mình (Admin đọc được tất cả). Chỉ ghi được qua RPC `set_my_notification_preferences`.
+  - Trigger `notifications_set_delivery_reason` áp tuỳ chọn khi tạo thông báo, chỉ cho loại theo dõi và nghiệp vụ không nghiêm trọng:
+    - tổng hợp → `digest`, không đẩy lên điện thoại;
+    - không báo → `muted`, tự đánh dấu đã đọc, vẫn lưu trong hộp thư.
+  - Cron `notification-digests` (`*/15`): đến giờ đã chọn, gửi một tin "📬 Tổng hợp thông báo hôm nay" kèm số lượng từng loại; mỗi ngày tối đa một lần và chỉ gửi khi có nội dung.
+- **Frontend:**
+  - Trang Thông báo có thẻ "Cách nhận thông báo", mở bằng nút ở đầu trang hoặc biểu tượng bánh răng ở chuông. Mục "Việc của tôi" hiện là "Luôn báo ngay".
+  - Số đỏ trên chuông chỉ tính thông báo `instant`. Thông báo thuộc diện tổng hợp đến mà không kêu, không bật thông báo trình duyệt, nhưng vẫn tính vào số chưa đọc của từng tab.
+- **Kiểm tra:**
+  - Dry-run và smoke persona đều PASS:
+    - thông báo cũ giữ nguyên;
+    - tổng hợp và không báo áp đúng; cảnh báo nghiêm trọng và việc được giao vẫn báo ngay;
+    - bản tổng hợp gửi đúng một lần, đúng số lượng, và không gửi trước giờ đã chọn;
+    - người dùng lưu được tuỳ chọn của mình, không tắt được "Nghiệp vụ", không đọc hay ghi được tuỳ chọn của người khác.
+  - Rollback dry-run PASS.
+  - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Chưa ai có tuỳ chọn riêng, nên không ai bị thay đổi cho tới khi tự chọn. Smoke sau apply PASS, không để lại dữ liệu test.
+  - Rollback: `supabase/operations/notification_preferences_digest_rollback.sql`; phải rollback frontend trước.
