@@ -15,6 +15,7 @@ import {
 } from '../../lib/permissions/authorizationUpdateValidation';
 import PermissionDiffPreview from './PermissionDiffPreview';
 import PermissionModuleEditor from './PermissionModuleEditor';
+import PermissionTemplateFill from './PermissionTemplateFill';
 import ProjectRoomSummary from './ProjectRoomSummary';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
@@ -208,6 +209,16 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         )}
         {catalog && (
           <>
+            <PermissionTemplateFill
+              userId={targetUser.id}
+              catalog={catalog}
+              grants={directGrants}
+              inheritedCodes={inheritedSources.map(source => source.permissionCode)}
+              reason={reason}
+              disabled={disabled}
+              onGrantsChange={onDirectGrantsChange}
+              onReasonChange={onReasonChange}
+            />
             <RetainedPermissionGrantNotice grants={retainedHiddenGrants} />
             <PermissionModuleEditor
               catalog={catalog}

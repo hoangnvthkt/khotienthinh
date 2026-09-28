@@ -30,6 +30,7 @@ import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
 import SettingsRoleTemplates from './settings/SettingsRoleTemplates';
 import SettingsProjectRoomTemplates from './settings/SettingsProjectRoomTemplates';
+import SettingsUserPermissionTemplates from './settings/SettingsUserPermissionTemplates';
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
@@ -1114,6 +1115,7 @@ const Settings: React.FC = () => {
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
     { id: 'role-templates', label: 'Mẫu quyền', icon: ShieldCheck, rolesOnly: true },
+    { id: 'user-permission-templates', label: 'Mẫu quyền theo vị trí', icon: ShieldCheck, adminOnly: true },
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
@@ -2137,6 +2139,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'role-templates' && canManageBusinessRoles && (
             <SettingsRoleTemplates />
+          )}
+
+          {activeSettingsTab === 'user-permission-templates' && isSettingsAdmin && (
+            <SettingsUserPermissionTemplates />
           )}
 
           {activeSettingsTab === 'project-room-templates' && isSettingsAdmin && (

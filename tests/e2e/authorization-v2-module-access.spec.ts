@@ -12,14 +12,14 @@ test('removing warehouse A preserves global, B and inherited C', async ({ page }
   await scope.selectOption({ label: 'Kho · A' });
   await page.getByRole('button', { name: 'Xác nhận gỡ', exact: true }).click();
   await expect(page.getByLabel('Stored draft')).toHaveText('["global","B"]');
-  await expect(page.getByText(/Warehouse-C-role/).first()).toBeVisible();
+  await expect(page.getByText(/Kế thừa từ vai trò · Kho · C/).first()).toBeVisible();
 });
 
 test('individual row uncheck removes the correct tuple after a previous removal', async ({ page }) => {
-  const rows = page.locator('div.rounded-xl').filter({ has: page.getByText('Cấp trực tiếp · Kho · A', { exact: true }) });
+  const rows = page.locator('div.rounded-xl').filter({ has: page.getByText('Cấp riêng · Kho · A', { exact: true }) });
   await rows.last().getByRole('checkbox').click();
   await expect(page.getByLabel('Stored draft')).toHaveText('["global","B"]');
-  const b = page.locator('div.rounded-xl').filter({ has: page.getByText('Cấp trực tiếp · Kho · B', { exact: true }) });
+  const b = page.locator('div.rounded-xl').filter({ has: page.getByText('Cấp riêng · Kho · B', { exact: true }) });
   await b.last().getByRole('checkbox').click();
   await expect(page.getByLabel('Stored draft')).toHaveText('["global"]');
 });
