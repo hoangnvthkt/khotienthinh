@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-09-28T14:21:37.767Z",
+  "target": {
+    "ref": "kkthixjcficmufpfynqx",
+    "name": "daily-log-upgrade-staging",
+    "region": "ap-southeast-1"
+  },
+  "beforeDeletion": {
+    "ledger": 173,
+    "projects": [
+      "DL-UPGRADE-SYNTHETIC",
+      "DL-WBS-PILOT-20260925"
+    ],
+    "syntheticAuthUsers": 6,
+    "cron_jobs": 0,
+    "vault_secrets": 0,
+    "http_queue": 0,
+    "transactions": 0,
+    "publications": 0,
+    "rollout_scopes": 0,
+    "admins": 0
+  },
+  "uiExpected": 4,
+  "uiUnexpected": 0,
+  "deleteHttpStatus": 200,
+  "deleteResponse": {
+    "ref": "kkthixjcficmufpfynqx",
+    "name": "daily-log-upgrade-staging"
+  },
+  "verification": {
+    "checkedAt": "2026-09-28T14:21:56.157Z",
+    "metadataHttpStatus": 404,
+    "projectListHttpStatus": 200,
+    "listed": false
+  }
+}

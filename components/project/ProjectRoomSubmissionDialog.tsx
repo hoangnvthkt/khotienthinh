@@ -24,7 +24,7 @@ interface Props {
 }
 
 const ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
-  view: 'xem', edit: 'sửa', delete: 'xóa', submit: 'gửi', verify: 'kiểm tra', confirm: 'xác nhận', approve: 'duyệt', view_available_stock: 'xem tồn khả dụng',
+  view: 'xem', edit: 'sửa', delete: 'xóa', submit: 'gửi', verify: 'kiểm tra', confirm: 'xác nhận', approve: 'duyệt', publish_progress: 'công bố tiến độ ngày', view_available_stock: 'xem tồn khả dụng', view_resource_evidence: 'xem bằng chứng nguồn lực',
 };
 
 const ProjectRoomSubmissionDialog: React.FC<Props> = ({ title, actionLabel = 'Gửi', documentLabel, documentName, documentSubtitle, details = [], projectId, constructionSiteId, recipientRoomCode, recipientAction, recipientHint, extraContent, onCancel, onConfirm }) => {

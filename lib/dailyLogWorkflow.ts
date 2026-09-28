@@ -1,11 +1,85 @@
 import type {
   DailyLog,
+  DailyLogContribution,
   DailyLogLabor,
   DailyLogMachine,
   DailyLogVolume,
 } from '../types';
 
 export const DAILY_SUMMARY_SOURCE_TYPE = 'member_contributions';
+
+const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
+  ROW_VERSION_CONFLICT: 'Phiếu đã được người khác vừa cập nhật. Hãy tải lại dữ liệu rồi thử lại.',
+  SOURCE_CHANGED: 'Phiếu nguồn đã thay đổi. Hãy rà soát lại card nguồn trước khi lưu.',
+  SOURCE_RETURNED: 'Phiếu nguồn đã bị trả lại. Hãy loại nguồn này hoặc chờ thành viên gửi lại.',
+  PERIOD_LOCKED: 'Kỳ tiến độ đã khóa. Hãy liên hệ người có quyền mở kỳ trước khi chỉnh sửa.',
+  PERIOD_LOCKED_WITH_REOPEN_REQUIRED: 'Kỳ tiến độ đang khóa. Hãy mở chốt kỳ trước khi tạo bản điều chỉnh.',
+  REVISION_REASON_REQUIRED: 'Vui lòng nhập lý do tạo bản điều chỉnh.',
+  SUMMARY_REVISION_ALREADY_EXISTS: 'Bản tổng hợp này đã có bản điều chỉnh mới hơn.',
+  STALE_PROGRESS_BASELINE: 'Mốc tiến độ nền đã thay đổi. Hãy tải lại bản tổng hợp và rà soát trước khi công bố.',
+  BACKDATED_PROGRESS_CONFLICT: 'Tiến độ ngày này xung đột với mốc đã ghi ở ngày sau. Hãy rà soát lại chuỗi tiến độ.',
+  FORECAST_CHANGE_REASON_REQUIRED: 'Ngày dự báo đã thay đổi nhưng chưa có lý do. Hãy bổ sung lý do trước khi gửi.',
+  SUMMARY_SOURCE_REVIEW_BLOCKED: 'Có phiếu nguồn đã thay đổi hoặc đang chờ sửa. Hãy xử lý card nguồn trước khi tiếp tục.',
+  CATALOG_PROVIDER_NOT_ACTIVE: 'Nhà cung cấp hoặc tổ đội trong danh mục không còn hoạt động. Hãy chọn nguồn đang hoạt động hoặc nhập tay.',
+  MANUAL_PROVIDER_TYPE_REQUIRED: 'Hãy chọn loại nguồn cung cấp nhập tay.',
+  MANUAL_PROVIDER_NAME_REQUIRED: 'Hãy nhập tên nguồn cung cấp.',
+  DAILY_LOG_SOURCE_AREA_EXISTS: 'Khu vực này đã có phiếu trong ngày. Mở phiếu hiện có để tiếp tục.',
+  DAILY_LOG_SOURCE_COMMAND_REUSE_MISMATCH: 'Yêu cầu này đã được dùng cho thao tác khác. Hãy tải lại danh sách phiếu trước khi thử lại.',
+  DAILY_LOG_SOURCE_SELECTION_DENIED: 'Không thể mở phiếu này: sai người lập, ngày hoặc phạm vi. Hãy chọn lại phiếu của bạn.',
+  DAILY_LOG_SOURCE_CREATE_DENIED: 'Bạn chưa có quyền lập phiếu tại khu vực này.',
+  DAILY_LOG_SOURCE_AREA_REQUIRED: 'Hãy nhập mã và tên khu vực / mũi thi công.',
+  DAILY_LOG_SOURCE_ROLLOUT_DISABLED: 'Nhật ký WBS chưa được mở cho ngày và phạm vi này.',
+  DAILY_LOG_SOURCE_SCOPE_DENIED: 'Dự án hoặc công trường không khớp. Hãy tải lại và chọn đúng phạm vi.',
+  DAILY_LOG_ENTRY_UNKNOWN_BASELINE: 'Chưa có mốc khối lượng của khu vực. Hãy nhập lũy kế hoặc %; không thể suy ra khối lượng hôm nay.',
+  DAILY_LOG_ENTRY_QUANTITY_BASIS_REQUIRED: 'Chưa có đơn vị hoặc khối lượng kế hoạch để quy đổi. Hãy dùng chế độ nhập %.',
+  DAILY_LOG_ENTRY_NUMBER_REQUIRED: 'Hãy nhập một số hợp lệ; có thể dùng dấu phẩy cho phần thập phân.',
+  DAILY_LOG_ENTRY_NEGATIVE: 'Khối lượng hoặc phần trăm không được âm.',
+  PROGRESS_BELOW_BASELINE: 'Lũy kế không được nhỏ hơn mốc lũy kế đã xác nhận của khu vực.',
+  PROGRESS_ABOVE_NEXT_ENTRY: 'Lũy kế vượt mốc đã xác nhận ở ngày sau. Hãy kiểm tra lại ngày và khối lượng.',
+  PROGRESS_ABOVE_ALLOWED_MAXIMUM: 'Khối lượng vượt kế hoạch hoặc tiến độ vượt 100%. Hãy kiểm tra lại số nhập.',
+  RESOURCE_PRICE_FIELDS_NOT_ALLOWED: 'Phiếu chỉ ghi khối lượng, nhân công, giờ máy và nguồn cung cấp; không ghi giá hoặc tiền.',
+  LABOR_PHYSICAL_USAGE_INVALID: 'Số người và giờ mỗi người phải là số lớn hơn 0.',
+  MACHINE_PHYSICAL_USAGE_INVALID: 'Số máy và giờ mỗi máy phải là số lớn hơn 0.',
+  DAILY_LOG_SOURCE_SAVE_DENIED: 'Bạn chưa có quyền sửa phiếu này hoặc phiếu không thuộc bạn.',
+  DAILY_LOG_SOURCE_RETURN_REASON_REQUIRED: 'Hãy nhập lý do trả phiếu để kỹ sư biết nội dung cần sửa.',
+  DAILY_LOG_SOURCE_RETURN_DENIED: 'Bạn chưa có quyền trả phiếu trong phạm vi này.',
+  DAILY_LOG_SOURCE_SUBMIT_DENIED: 'Bạn chưa có quyền gửi phiếu này hoặc phiếu không thuộc bạn.',
+  DAILY_LOG_SOURCE_RELATION_MISMATCH: 'Phiếu không khớp bản tổng hợp đang xem. Hãy tải lại dữ liệu.',
+  DAILY_LOG_SOURCE_NOT_COMPLETE: 'Hãy hoàn thiện hạng mục, khối lượng và nguồn lực trước khi gửi phiếu.',
+  SUMMARY_UPDATED_AT_CONFLICT: 'Bản tổng hợp vừa thay đổi. Hãy tải lại dữ liệu rồi thử lại.',
+  VERIFIED_SOURCE_IMMUTABLE: 'Phiếu đã tham gia hồ sơ được xác nhận. Hãy tạo bản điều chỉnh, không sửa nguồn đã duyệt.',
+  DAILY_LOG_SOURCE_AREA_IMMUTABLE: 'Không đổi khu vực của phiếu đã lập. Hãy tạo phiếu riêng cho khu vực khác.',
+};
+
+export const mapDailyLogWbsCommandError = (error: unknown): Error => {
+  const candidate = error as { message?: string; code?: string; details?: string } | null;
+  const raw = [candidate?.message, candidate?.code, candidate?.details].filter(Boolean).join(' ');
+  const code = Object.keys(DAILY_LOG_WBS_ERROR_MESSAGES)
+    .sort((a, b) => b.length - a.length).find(key => raw.includes(key));
+  if (!code) return error instanceof Error ? error : new Error(candidate?.message || 'Không thể lưu dữ liệu nhật ký.');
+  const mapped = Object.assign(new Error(DAILY_LOG_WBS_ERROR_MESSAGES[code], { cause: error }), { code });
+  if (code === 'DAILY_LOG_SOURCE_AREA_EXISTS') {
+    try {
+      const details = JSON.parse(candidate?.details || '{}');
+      if (typeof details.contributionId === 'string') Object.assign(mapped, { existingContributionId: details.contributionId });
+    } catch { /* Unparseable server details must not hide the actionable message. */ }
+  }
+  return mapped;
+};
+
+export const toggleDailyLogSourceSelection = (input: {
+  sources: ReadonlyArray<DailyLogContribution>;
+  selectedIds: ReadonlyArray<string>;
+  sourceId: string;
+  selectionMode: 'single' | 'multiple';
+}): string[] => {
+  const source = input.sources.find(row => row.id === input.sourceId);
+  if (!source) return [...input.selectedIds];
+  if (input.selectionMode === 'single') return [source.id];
+  if (input.selectedIds.includes(source.id)) return input.selectedIds.filter(id => id !== source.id);
+  if (source.status !== 'submitted' && source.status !== 'included') return [...input.selectedIds];
+  return [...new Set([...input.selectedIds, source.id])];
+};
 
 export const getDailyLogWorkflowStatus = (log: DailyLog) => (
   log.status || (log.verified ? 'verified' : 'draft')
@@ -19,6 +93,33 @@ export const getDailyLogTargetPermission = (log: DailyLog): 'verify' | 'approve'
 
 export const isDailyLogSummaryEditable = (log?: DailyLog | null): boolean =>
   !!log && isDailyLogSummaryRow(log) && ['draft', 'rejected'].includes(getDailyLogWorkflowStatus(log));
+
+export const canPublishDailyLogSummary = (input: {
+  log?: DailyLog | null;
+  canApprove: boolean;
+  canPublishProgress: boolean;
+}): boolean => Boolean(
+  input.log
+  && isDailyLogSummaryRow(input.log)
+  && getDailyLogWorkflowStatus(input.log) === 'submitted'
+  && input.canApprove
+  && input.canPublishProgress,
+);
+
+export const canCreateDailyLogSummaryRevision = (input: {
+  log?: DailyLog | null;
+  canApprove: boolean;
+  canPublishProgress: boolean;
+  periodLocked: boolean;
+}): boolean => Boolean(
+  input.log
+  && isDailyLogSummaryRow(input.log)
+  && getDailyLogWorkflowStatus(input.log) === 'verified'
+  && !input.log.supersededByDailyLogId
+  && input.canApprove
+  && input.canPublishProgress
+  && !input.periodLocked,
+);
 
 export type DailyLogSourceReviewState = 'waiting_review' | 'included' | 'needs_rereview' | 'returned';
 
@@ -169,6 +270,18 @@ interface CanReturnDailyLogSourceInput {
   isAdmin: boolean;
   permissions: Iterable<string>;
 }
+
+export const getDailyLogReviewSurface = (input: {
+  isSummary: boolean; loading?: boolean; error?: string | null; loaded?: boolean;
+  normalized?: boolean; rolloutEnabled?: boolean;
+  logDate?: string; cutoverDate?: string | null;
+}): 'loading' | 'error' | 'wbs' | 'legacy' => {
+  if (!input.isSummary) return 'legacy';
+  if (input.error) return 'error';
+  if (input.loading || !input.loaded) return 'loading';
+  const afterCutover = input.rolloutEnabled && input.logDate && input.cutoverDate && input.logDate >= input.cutoverDate;
+  return input.normalized || afterCutover ? 'wbs' : 'legacy';
+};
 
 const hasPermission = (permissions: Iterable<string>, code: string): boolean =>
   new Set(permissions).has(code);
@@ -452,7 +565,7 @@ export const resolveDailyLogSummaryDetails = (
   if (!isDailyLogSummaryRow(summaryLog)) return { details: persisted, source: 'persisted' };
 
   const metadata = summaryLog.summarySourceMetadata || {};
-  if (Number(metadata.aggregationVersion || 0) >= 2) {
+  if (summaryLog.normalizedWbs || Number(metadata.aggregationVersion || 0) >= 2) {
     return { details: persisted, source: 'persisted' };
   }
 

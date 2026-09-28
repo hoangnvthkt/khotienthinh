@@ -1,0 +1,238 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
+vi.mock('../supabase', () => ({ supabase: { rpc: mocks.rpc } }));
+
+import { dailyLogWbsService, getDailyLogPublicationOutcome } from '../dailyLogWbsService';
+
+describe('dailyLogWbsService', () => {
+  beforeEach(() => mocks.rpc.mockReset());
+
+  it('preserves task IDs in server-issued quantity dictionaries while mapping snapshot fields', async () => {
+    mocks.rpc.mockResolvedValue({data:{contribution:null,myContributions:[],workItems:[],
+      baselineQuantityFingerprints:{'task_wbs_1':'server-token'},quantityBaselines:{'task_wbs_1':{
+        state:'known',fingerprint:'server-token',previousItem:{cumulative_quantity_done:40,area_planned_quantity_snapshot:100,unit_snapshot:'m³'},nextItem:null,priorRowId:'prior-row'}}},error:null});
+    const bundle=await dailyLogWbsService.getDocumentBundle({projectId:'p1',logDate:'2026-09-26'});
+    expect(bundle.baselineQuantityFingerprints['task_wbs_1']).toBe('server-token');
+    expect(bundle.quantityBaselines['task_wbs_1']).toMatchObject({state:'known',previousItem:{cumulativeQuantityDone:40,areaPlannedQuantitySnapshot:100,unitSnapshot:'m³'}});
+  });
+
+  it.each([
+    ['DAILY_LOG_ENTRY_UNKNOWN_BASELINE','mốc'],
+    ['DAILY_LOG_ENTRY_QUANTITY_BASIS_REQUIRED','đơn vị'],
+    ['PROGRESS_BELOW_BASELINE','lũy kế'],
+    ['PROGRESS_ABOVE_NEXT_ENTRY','ngày sau'],
+    ['RESOURCE_PRICE_FIELDS_NOT_ALLOWED','tiền'],
+  ])('makes %s actionable without discarding the selected source', async (code, hint) => {
+    mocks.rpc.mockResolvedValue({data:null,error:{message:code}});
+    await expect(dailyLogWbsService.saveSourceDocument({contributionId:'area-a',expectedRowVersion:1,
+      workAreaCode:'A',workAreaName:'A',content:'',issues:'',photos:[],items:[],labor:[],machines:[]}))
+      .rejects.toMatchObject({code,message:expect.stringContaining(hint)});
+  });
+
+  it('saves the entire selected source document in one command, including old metadata and physical rows', async () => {
+    const input={contributionId:'area-a',expectedRowVersion:3,workAreaCode:'A',workAreaName:'Khu A',
+      content:'Nội dung đã sửa',issues:'Vướng mắc',photos:[],
+      items:[{clientKey:'work-a',taskId:'t1',entryMode:'daily_quantity' as const,enteredValue:'12,5',baselineFingerprint:'baseline-40'}],labor:[],machines:[]};
+    mocks.rpc.mockResolvedValue({data:{row_version:4,source_fingerprint:'fp-4',updated_at:'2026-09-26T00:00:00Z',conflicts:[]},error:null});
+    expect(await dailyLogWbsService.saveSourceDocument(input)).toMatchObject({rowVersion:4,sourceFingerprint:'fp-4'});
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('save_daily_log_source_document_v2',{p_input:input});
+  });
+
+  it('opens the explicitly selected older slip without replacing it with the latest area', async () => {
+    mocks.rpc.mockResolvedValue({ data: { contribution: { id: 'area-a' }, my_contributions: [{ id: 'area-a' }, { id: 'area-b' }], baseline_quantity_states: { 'task_wbs_1': 'unknown' }, work_items: [] }, error: null });
+    const bundle = await dailyLogWbsService.getDocumentBundle({ projectId: 'p1', constructionSiteId: null, logDate: '2026-09-26', contributionId: 'area-a' });
+    expect(mocks.rpc).toHaveBeenCalledWith('get_daily_log_document_bundle_v2', { p_project_id: 'p1', p_construction_site_id: null, p_log_date: '2026-09-26', p_daily_log_id: null, p_contribution_id: 'area-a' });
+    expect(bundle.contribution?.id).toBe('area-a');
+    expect(bundle.myContributions.map(source => source.id)).toEqual(['area-a', 'area-b']);
+    expect(bundle.baselineQuantityStates['task_wbs_1']).toBe('unknown');
+  });
+
+  it('starts with no selected source instead of choosing the newest slip', async () => {
+    mocks.rpc.mockResolvedValue({ data: { contribution: null, my_contributions: [{ id: 'area-b' }], work_items: [] }, error: null });
+    const bundle = await dailyLogWbsService.getDocumentBundle({ projectId: 'p1', logDate: '2026-09-26' });
+    expect(mocks.rpc.mock.calls[0][1]).toMatchObject({ p_contribution_id: null, p_construction_site_id: null });
+    expect(bundle.contribution).toBeNull();
+  });
+
+  it('creates an area slip using a stable command ID and no client supplied author', async () => {
+    mocks.rpc.mockResolvedValue({ data: { contribution_id: 'area-b', row_version: 1, updated_at: '2026-09-26T00:00:00Z' }, error: null });
+    const receipt = await dailyLogWbsService.createSource({ commandId: 'command-b', projectId: 'p1', constructionSiteId: null, date: '2026-09-26', workAreaCode: 'B', workAreaName: 'Khu B' });
+    expect(mocks.rpc).toHaveBeenCalledWith('create_daily_log_source_v2', { p_command_id: 'command-b', p_project_id: 'p1', p_construction_site_id: null, p_log_date: '2026-09-26', p_work_area_code: 'B', p_work_area_name: 'Khu B' });
+    expect(receipt).toEqual({ contributionId: 'area-b', rowVersion: 1, updatedAt: '2026-09-26T00:00:00Z' });
+  });
+
+  it('preserves the existing area ID when a second tab attempts a duplicate create', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'DAILY_LOG_SOURCE_AREA_EXISTS', details: '{"contributionId":"area-a"}' } });
+    await expect(dailyLogWbsService.createSource({ commandId: 'command-b', projectId: 'p1', date: '2026-09-26', workAreaCode: 'A', workAreaName: 'Khu A' }))
+      .rejects.toMatchObject({ code: 'DAILY_LOG_SOURCE_AREA_EXISTS', existingContributionId: 'area-a', message: expect.stringContaining('Mở phiếu') });
+  });
+
+  it('keeps a shadow receipt in review without claiming official publication', () => {
+    expect(getDailyLogPublicationOutcome({ publishedProgress: false, mismatchCount: 2 })).toEqual({
+      closeReview: false, message: 'Đã đối chiếu thử nghiệm: 2 WBS còn sai khác. Chưa công bố tiến độ.',
+    });
+    expect(getDailyLogPublicationOutcome({ publishedProgress: false, mismatchCount: 0 })).toEqual({
+      closeReview: false, message: 'Đối chiếu thử nghiệm khớp. Chưa công bố tiến độ; cần bật chế độ chính thức.',
+    });
+    expect(getDailyLogPublicationOutcome({ publishedProgress: true })).toEqual({
+      closeReview: true, message: 'Đã duyệt và công bố tiến độ',
+    });
+  });
+
+  it('maps stored WBS snapshots to editor fields without replacing unknown quantities with zero', async () => {
+    mocks.rpc.mockResolvedValue({ data: { work_items: [{ id: 'w1', daily_log_id: 's1',
+      task_id: 't1', work_area_name_snapshot: 'Khu A', task_name_snapshot: 'Tên đã chốt',
+      wbs_code_snapshot: '1.1', unit_snapshot: 'm3', planned_quantity_snapshot: null,
+      area_planned_quantity_snapshot: 40, schedule_finish_date_snapshot: '2026-10-01',
+    }] }, error: null });
+    const bundle = await dailyLogWbsService.getBundle({ projectId: 'p1', constructionSiteId: null, logDate: '2026-09-23' });
+    expect(bundle.workItems[0]).toMatchObject({ ownerType: 'summary_source', taskName: 'Tên đã chốt',
+      workAreaName: 'Khu A', wbsCode: '1.1', unit: 'm3', plannedQuantity: null,
+      areaPlannedQuantity: 40, scheduleFinishDate: '2026-10-01' });
+  });
+
+  it('saves contribution work with server-owned physical resource totals', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        row_version: 4,
+        updated_at: '2026-09-23T02:30:00Z',
+        source_fingerprint: 'fingerprint-4',
+        conflicts: [],
+      },
+      error: null,
+    });
+
+    const receipt = await dailyLogWbsService.saveContribution({
+      contributionId: 'contribution-1',
+      expectedRowVersion: 3,
+      workAreaCode: 'A',
+      workAreaName: 'Khu A',
+      items: [{ clientKey: 'work-1', taskId: 'task-1', cumulativeProgressPercent: 35 }],
+      labor: [{
+        workItemClientKey: 'work-1',
+        laborType: 'Tổ xây dựng',
+        peopleCount: 5,
+        hoursPerPerson: 8,
+        provider: {
+          entryMode: 'manual',
+          manualProviderType: 'free_crew',
+          manualProviderName: 'Tổ anh Minh',
+        },
+      }],
+      machines: [],
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('save_daily_log_contribution_work_v1', {
+      p_contribution_id: 'contribution-1',
+      p_expected_row_version: 3,
+      p_work_area_code: 'A',
+      p_work_area_name: 'Khu A',
+      p_items: [{ clientKey: 'work-1', taskId: 'task-1', cumulativeProgressPercent: 35 }],
+      p_labor: [{
+        workItemClientKey: 'work-1',
+        laborType: 'Tổ xây dựng',
+        peopleCount: 5,
+        hoursPerPerson: 8,
+        provider: {
+          entryMode: 'manual',
+          manualProviderType: 'free_crew',
+          manualProviderName: 'Tổ anh Minh',
+        },
+      }],
+      p_machines: [],
+    });
+    expect(receipt).toEqual({
+      rowVersion: 4,
+      updatedAt: '2026-09-23T02:30:00Z',
+      sourceFingerprint: 'fingerprint-4',
+      conflicts: [],
+    });
+    expect(JSON.stringify(mocks.rpc.mock.calls[0][1])).not.toMatch(/cost|price|amount/i);
+  });
+
+  it('maps the bundle deeply from database keys to application keys', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        rollout: { mode: 'pilot', cutover_date: '2026-09-23', enabled: true },
+        leaf_tasks: [{ id: 'task-1', wbs_code: '1.1' }],
+        work_boq_items: [],
+        resource_providers: [],
+        previous_progress_rows: [],
+        next_progress_rows: [],
+        contribution: null,
+        contributions_for_summary: [],
+        summary_log: null,
+        summary_sources: [],
+        work_items: [{ task_id: 'task-1', work_area_code: 'A' }],
+        decisions: [],
+        labor: [],
+        machines: [],
+        period_state: null,
+        permissions: { can_edit_source: true, can_summarize: false, can_approve: false, can_publish_progress: false },
+      },
+      error: null,
+    });
+
+    const bundle = await dailyLogWbsService.getBundle({
+      projectId: 'project-1', constructionSiteId: 'site-1', logDate: '2026-09-23',
+    });
+
+    expect(mocks.rpc).toHaveBeenCalledWith('get_daily_log_wbs_bundle_v1', {
+      p_project_id: 'project-1',
+      p_construction_site_id: 'site-1',
+      p_log_date: '2026-09-23',
+      p_daily_log_id: null,
+    });
+    expect(bundle.rollout.cutoverDate).toBe('2026-09-23');
+    expect(bundle.tasks[0]).toMatchObject({ id: 'task-1', wbsCode: '1.1' });
+    expect(bundle.workItems[0]).toMatchObject({ taskId: 'task-1', workAreaCode: 'A' });
+    expect(bundle.permissions.canEditSource).toBe(true);
+  });
+
+  it('submits the summary and publishes progress through dedicated commands', async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { daily_log_id: 'summary-1', status: 'submitted', updated_at: '2026-09-23T03:00:00Z' }, error: null })
+      .mockResolvedValueOnce({ data: { command_id: 'command-1', daily_log_id: 'summary-1', progress_date: '2026-09-23', published_task_ids: ['task-1'], verified_resource_line_ids: ['labor-1'], progress_fingerprint: 'progress-fp', resource_evidence_fingerprint: 'resource-fp', published_at: '2026-09-23T03:05:00Z' }, error: null });
+
+    const submitted = await dailyLogWbsService.submitSummary({
+      dailyLogId: 'summary-1',
+      expectedUpdatedAt: '2026-09-23T02:59:00Z',
+      approverUserId: 'approver-1',
+    });
+    const published = await dailyLogWbsService.publishSummary({
+      commandId: 'command-1',
+      dailyLogId: 'summary-1',
+      expectedUpdatedAt: '2026-09-23T03:00:00Z',
+    });
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'submit_daily_log_summary_v1', {
+      p_daily_log_id: 'summary-1',
+      p_expected_updated_at: '2026-09-23T02:59:00Z',
+      p_approver_user_id: 'approver-1',
+    });
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'publish_daily_log_summary_v1', {
+      p_command_id: 'command-1',
+      p_daily_log_id: 'summary-1',
+      p_expected_updated_at: '2026-09-23T03:00:00Z',
+    });
+    expect(submitted).toEqual({ dailyLogId: 'summary-1', status: 'submitted', updatedAt: '2026-09-23T03:00:00Z' });
+    expect(published).toEqual({ commandId: 'command-1', dailyLogId: 'summary-1', progressDate: '2026-09-23', publishedTaskIds: ['task-1'], verifiedResourceLineIds: ['labor-1'], progressFingerprint: 'progress-fp', resourceEvidenceFingerprint: 'resource-fp', publishedAt: '2026-09-23T03:05:00Z' });
+  });
+
+  it.each([
+    ['ROW_VERSION_CONFLICT', 'người khác vừa cập nhật'],
+    ['SOURCE_CHANGED', 'nguồn đã thay đổi'],
+    ['SOURCE_RETURNED', 'đã bị trả lại'],
+    ['PERIOD_LOCKED', 'đã khóa'],
+    ['STALE_PROGRESS_BASELINE', 'tải lại bản tổng hợp'],
+    ['FORECAST_CHANGE_REASON_REQUIRED', 'bổ sung lý do'],
+    ['CATALOG_PROVIDER_NOT_ACTIVE', 'không còn hoạt động'],
+  ])('maps %s to an actionable Vietnamese error', async (code, message) => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: code } });
+    await expect(dailyLogWbsService.saveContribution({
+      contributionId: 'contribution-1', expectedRowVersion: 1,
+      workAreaCode: 'A', workAreaName: 'Khu A', items: [], labor: [], machines: [],
+    })).rejects.toThrow(message);
+  });
+});

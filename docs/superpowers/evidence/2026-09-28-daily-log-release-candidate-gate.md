@@ -1,0 +1,148 @@
+# Daily Log release-candidate gate — 2026-09-28
+
+## Candidate and scope
+
+Draft [PR #13](https://github.com/hoangnvthkt/khotienthinh/pull/13) remains the single Daily Log integration candidate. This pass merged the then-current `origin/main` (`3bf32fa`) into the isolated `codex/daily-log-bootstrap-integration` worktree, retained the approved CHT report UX, and resolved only the migration allowlist conflict. The previously applied Auth and Project/Procurement SQL sources at versions `20260923042822`, `20260924094500`, `20260924164000`, and `20260924165000` were copied byte-for-byte from the authoritative sources reconciled in the [forward-upgrade rehearsal](2026-09-26-daily-log-forward-upgrade-rehearsal.md). The new contract test locks their SHA-256 values. No Project V2/Procurement application behavior was edited; those three SQL files are migration-history dependencies, not feature work. The dirty parallel root checkout was read only.
+
+`main`'s permission-catalog test needed to recognize the two candidate-only capabilities (`project.daily_log.publish_progress`, `project.payment.view_resource_evidence`) until their production migrations land. Its existing honesty check still fails if the production catalog fixture later contains a capability left on that temporary list. The ERP browser test was adjusted only for `main`'s new denied-user wording and to wait for the report sections before checking their order.
+
+## Verification on the integrated candidate
+
+- `npm test -- --maxWorkers=1`: 2,579 passed, two existing skips. The default parallel baseline had four 5–15-second timeouts; all four passed isolated and the serial full baseline passed. After the merge, the only actual contract failure was the two pending capabilities above; the serial full suite then passed.
+- `npm run lint`, `npm run check:supabase-queries` (zero findings/errors), `npm run check:supabase-migrations` (163 active / 402 archived), and `npm run build`: exit 0. The build retains its existing large-chunk warning.
+- At PR head `eb576b8`, GitHub Typecheck/test/build and Supabase Preview checks completed successfully. The new preview `fbfmonuiizfeiekxxwph` has 163 applied versions, zero missing/extra relative to this candidate. Its two self-contained Daily Log foundation and publication SQL smokes passed with transaction rollback. The other Plan 1/2 SQL smokes require the dedicated persona/project fixture; the attempted Room-insert smoke on empty preview correctly failed `PILOT_ACTIVE_OWNER_REQUIRED` and was not counted as passed there.
+- On the authorized `baseline-vioo-git` Cloud branch, six Plan 1 smokes plus the operator guard and the Plan 2 resource-evidence smoke passed with rollback. The full authenticated ERP workflow suite passed 4/4 on that fixture: author slips, summary, return/resubmit, CHT publication, read-only evidence, denied user, responsive/light-dark checks. The first browser attempt could not start without Playwright Chromium; after installation, one run exposed the stale denied wording, a later run reached verified publication but hit a transient test-host DNS lookup at the final evidence call, and the final complete 4/4 run passed. Disposable `__DL_UX8_%` project count after cleanup: zero.
+- Review of `origin/main...HEAD` found no Project V2/Procurement/BOQ application-file changes. The only Project/Procurement-named paths are the three exact applied SQL history sources. No production SQL push, pilot activation, manual migration-ledger repair, local Supabase, or Docker was used. This is a main-agent self-review only; no independent reviewer or sub-agent was used.
+
+## Production release hold
+
+The owner confirmed the Supabase GitHub integration's **Deploy to production** option is enabled for `main`. Thus merging this PR is a production database deployment action, not a code-only merge; it requires separate explicit release approval. The Management API GitHub-connection inspection still returns 403, so the confirmation is owner-provided, not an independently read setting.
+
+Read-only production inventory changed during this pass: at the last check it had **138** applied versions, including a newly applied remote-only `20260928052528` that is not in `origin/main` (`3bf32fa`) or this candidate. The four earlier remote-only versions are now present as exact SQL sources in the candidate, but that new version must also be integrated from its owner-authoritative source. The candidate has **26 pending** Room/Daily Log/resource-evidence migrations on production, several older than the latest applied version. The prior populated synthetic rehearsal covered the first 13 Daily Log versions against an earlier 117-version state, not this exact 138-version parent plus all 26 pending versions. Empty-preview bootstrap and baseline-vioo-git behavior do not prove this forward upgrade. No `--include-all` production push or ledger repair should be inferred from these checks.
+
+Next release gate: wait for the parallel owner to commit the exact source of `20260928052528` and stabilize `main`; refresh the candidate, recheck remote/local history and the PR preview; rehearse the exact populated forward-upgrade path on an authorized isolated Cloud branch with legacy/no-money/permission assertions; then present a production rollout/rollback checklist and seek explicit merge/deploy approval. PR #13 remains draft; no production rollout or Payment cost integration is authorized by this record.
+
+## Same-day mainline update
+
+The parallel owner subsequently committed the exact `20260928052528_notification_site_command_recipients.sql` source on `main` at `5e91301`. It was merged into this isolated candidate as `4076639`, with no conflict. Fresh local results after that merge: **2,584 unit tests passed / two existing skips**, TypeScript typecheck, migration baseline (**164 active / 402 archived**), query audit (zero findings/errors), and production build all passed. Read-only production history at this checkpoint contained 138 applied versions and no version missing from the candidate source tree; **26 candidate migrations remain pending** on production. The prior 137-version/163-file snapshot above is retained as chronological evidence, not the current inventory. The production rollout hold remains because the exact populated 138→164 forward upgrade has not been rehearsed and merging to `main` is an enabled production-deployment action. Refresh PR preview and CI against this latest head before any release decision.
+
+## Final preview and expanded synthetic rehearsal
+
+At PR head `d9cfc43`, the GitHub Typecheck/test/build, Supabase Preview, and Vercel Preview Comments checks all completed successfully. The PR preview `fbfmonuiizfeiekxxwph` had all 164 candidate migrations applied; the self-contained WBS foundation and summary/progress publication SQL smokes passed there with rollback.
+
+The earlier dedicated, data-less Cloud rehearsal branch `jtgtubyvwvohxfipygvy` had 130 versions and retained only the named synthetic legacy fixture. A guarded `--include-all --dry-run` against this exact test ref listed 34 pending files (later Daily Log plus already-mainline workflow, authorization, and notification migrations). Applying those 34 files completed successfully: **164 versions**, latest `20260928052528`; a subsequent dry-run reported the remote up to date. Before/after MD5 fingerprints over the original columns of the synthetic project, WBS task, three logs, labor, machine, contribution, and manual-progress rows were identical. The historical resource rows still have `resource_semantics_version = 1` and null provider-entry modes. Inventory after the upgrade and rollback tests: zero Auth users, V2 work items, publications, and project transactions. WBS foundation, summary/progress publication, and legacy resource-evidence SQL smokes each passed with rollback. This is a useful combined-schema/legacy regression test, but its 130→164 order is **not** the production 138→164 order.
+
+To attempt the exact parent history without production data, a new ephemeral Cloud branch `daily-log-prod-138-upgrade-rehearsal` (`lvwiytampwczzcagniev`, `with_data=false`) was created from the production parent while the parent inventory read 138 applied versions. The automatic branch bootstrap stopped at `MIGRATIONS_FAILED`; the branch database had only its initial `20260903063714` ledger entry, zero projects and zero Auth users. A disposable local checkout at `origin/main` plus the four byte-identical authoritative historical SQL sources produced **exactly the same 138 migration version filenames** as the parent (no missing or extra version). Its guarded dry-run listed 137 remaining files. A test-only CLI push stopped on the first file, `20260903063821_perf02_query_indexes.sql`: `CREATE INDEX CONCURRENTLY cannot be executed within a pipeline (SQLSTATE 25001)`. The file contains three concurrent index statements; two matching indexes already existed in the cloned schema. The ledger remained at one entry, with no project or Auth user data. No migration repair, SQL rewrite, production push, or retry workaround was attempted. The failed ephemeral Cloud branch and its disposable checkout were removed after exact-target and empty-data checks; the established synthetic branch remains available.
+
+The exact populated 138→164 rehearsal therefore **did not pass**. At that point, the PERF02 runner/branch-bootstrap limitation required a safe correction or rehearsal method; it was not a reason to infer production deploy safety. PR #13 remained draft, and production remained untouched. The owner confirmed automatic production deployment from `main`, so a merge still requires separate explicit release authorization.
+
+## Production-preservation follow-up
+
+The owner approved continued rehearsal with production preservation as the priority. Read-only production inventory advanced to **139** applied migrations, latest `20260928062658_notification_event_recipients_request_safety`; `main` had not yet incorporated that source. Its committed owner source (`312214a`) has SHA-256 `cd8347d677f3c29d040fae5c61157f2660062120f3a961f1db6810a696c27681` and normalized SQL identical to the single statement recorded in the production migration ledger. The candidate copied those bytes and locked the hash/allowlist with a watched RED→GREEN contract test (`affb817`). The candidate now has 165 local migration files: **zero production-applied versions missing**, with the same 26 Daily Log/Room/resource-evidence versions still pending on production. No notification application code was copied.
+
+Production contains nine active `pg_cron` jobs, including notification processors, plus 62 Auth users. A full-data branch or binary backup clone could start those jobs against copied real users before isolation controls can be applied; Supabase documents that risk for binary restores. Therefore **no full production-data clone was made**. Instead, a guarded `with_data=false` Cloud branch `jmekkqzbnxuokinihoff` was used for a test-only attempt to build the older parent state. A disposable `origin/main` checkout included the approved transaction-safe PERF02 source and four exact historical migration sources. The transaction-safe PERF02 correction in the candidate cleared the earlier first-file failure. The first 31 follow-on migrations applied, then Authorization V2 Phase 4 required Room configuration absent from a data-less branch. Fourteen Room definitions and 72 bindings were copied byte-for-byte as non-user configuration rows from production to this test branch; their full-row hashes matched. The migration then required four historical Room-retirement dispositions, also copied exactly. After ten further migrations, Task 12.3 required a legacy HRM role template absent from the branch. At that third missing-data prerequisite, the reconstruction was stopped instead of inventing further production state. The test branch ended at 40 ledger versions, with zero projects and Auth users; it and its disposable checkout were deleted. No production SQL push, project/Auth/operational-data copy, production-ledger repair, or merge occurred.
+
+Read-only production preflight at 139 versions found 321 legacy Daily Logs, 821 labor rows, 404 machine rows, 13,334 progress rows, and 1,100 project transactions. The pending permission-constraint action sets had **zero** existing Room or member-action violations; all legacy labor and machine rows retained a Daily Log owner. There were no existing V2 contribution or summary-source rows. The pending foundation SQL adds `resource_semantics_version = 1` for legacy resource rows and guards V2 rows against money fields; the two permission migrations add actions/catalog bindings, not direct user grants. This is a static/read-only compatibility check, **not** a populated 139→165 upgrade rehearsal or a claim that locks and runtime effects are zero. The production release hold remains until a safe, exact-history staging method is available and separately approved release steps are verified.
+
+## Disposable Cloud staging attempt after owner approval
+
+The owner approved creating and removing staging for a production-preserving rehearsal. A separate Supabase Cloud project was the preferred boundary for a controlled logical restore, but the configured Management API token received `403 Forbidden` on project creation (and organization metadata reads). No organization project was created. The token could create a temporary data-less branch, so `daily-log-schema139-sanitized-rehearsal` (`fabswnlhrwyynynhboif`, `with_data=false`, non-persistent) was created solely to test whether its schema could serve as the exact 139-version parent. It had zero projects, zero Auth users, zero active cron jobs, and one migration-ledger entry. Schema-only catalog exports showed 7,464 production objects versus 5,981 branch objects in the selected custom schemas: 1,527 production objects missing and 44 extra on the branch. Accordingly, the branch ledger was **not** marked as production-equivalent.
+
+Two test-only, single-transaction schema restore methods were attempted on that disposable branch. The first stopped while cleaning a policy whose relation was absent; the second stopped on PostgreSQL `max_locks_per_transaction` while dropping the large custom schema set. Both transactions rolled back. A fresh branch query still showed 400 public tables, one ledger entry, zero projects/Auth users/active cron jobs. No production row data was exported or copied; only schema definitions were exported read-only. The branch was deleted by its exact ref and verified absent from the branch list. Its three temporary schema-only export files were deleted. The established preview and synthetic rehearsal branches were left untouched.
+
+During this attempt, read-only production inventory advanced to **140** applied versions and **10** active cron jobs. At that point, the new production-applied version `20260928065520_notification_preferences_digest` had no source in this candidate; the candidate still had 26 pending versions. This concurrent change invalidated the previous zero-missing-source observation. A production merge remained on hold. The next exact-history rehearsal needs an independently provisioned Cloud staging project with suitable database resources and an isolated, sanitized logical restore; the current token requires organization-level project-create access (or an owner-created staging project). It must not be replaced with a full-data binary clone whose jobs could run before isolation.
+
+## Completed Cloud branch cleanup
+
+After the owner requested removal of completed Cloud rehearsal branches, the live Management API list confirmed that `daily-log-schema139-sanitized-rehearsal` was already absent (the dashboard screenshot was stale). The completed `daily-log-forward-upgrade-rehearsal` branch (`jtgtubyvwvohxfipygvy`) still held only its named synthetic fixture: one project, zero Auth users, 164 migration versions, and four active cron jobs. Its SQL/rollback evidence is retained in this repository. The branch was deleted by exact ref and verified absent from a fresh list. This deletion did not delete the associated Git branch or draft PR #12. The `codex/daily-log-bootstrap-integration` Cloud preview was retained because draft PR #13 is active; `main` and `baseline-vioo-git` were not changed. The final list contained only those three Cloud branches.
+
+## Mainline migration drift reconciled
+
+The owner asked to continue toward the release gate. `origin/main` had advanced by three committed notification changes through `9a7cc0d`, including `20260928065520_notification_preferences_digest.sql`. Its SHA-256 is `2d7f68b0d5dd80bdcce3b1fc3bf4539fe9433e7be226c7fc0b6fb9fce32941c1`; after comment/whitespace normalization, its SQL matched the single statement recorded in the read-only production ledger. A source-integrity test was extended from five to six applied sources and observed RED for the absent file/allowlist, then GREEN after merging `origin/main` into the isolated candidate (`e874cf0`) and resolving only the migration-baseline list. No notification application file differs from `main` in the PR diff. Local verification: 2,593 tests passed, two skipped; typecheck, build, migration baseline (166 active / 402 archived), and query inventory (zero findings/errors) passed.
+
+The PR Cloud preview applied the new mainline migration and reached **166** versions, latest `20260928065520`; all three GitHub checks for `e874cf0` completed successfully. Production remained at **140**, with **26** candidate versions pending and **zero** production-applied versions missing from the candidate. The preserved `baseline-vioo-git` branch has only 44 ledger versions, seven Auth users, and one test project, so it cannot stand in for the 140-version production parent without changing that separately used test environment. No SQL was pushed to it. This source/preview reconciliation does **not** satisfy the exact populated upgrade gate; PR #13 remains draft and production remains untouched by this candidate.
+
+## Fresh 147-version mainline reconciliation (20:20 ICT)
+
+Read-only Git/Cloud inventory started at candidate `91142e9` and fetched main
+`4fcca71`. Production has 147 versions through `20260928113000`; preview has
+166, and baseline-vioo-git has 44. Production's live operational counts are now
+323 Daily Logs, 827 labor rows, 408 machine rows, 62 Auth users, 86 projects and
+10 active cron jobs. Earlier counts above are historical.
+
+All seven newly applied mainline SQL files match the production ledger after
+comment/whitespace/terminator normalization (textual, not semantic comparison).
+Their exact source SHA-256 values are pinned in
+`lib/__tests__/dailyLogReleaseMigrationSources.test.ts`. The extended test was
+observed RED with the seven files and allowlist entries missing. Merging main
+into the isolated PR candidate preserved owner implementations and conflicted
+only in `supabase/baseline/current.json`. The union of the two allowlists exposed
+one existing mainline omission: `20260928113000` was not allowlisted on main.
+Adding that exact filename clears the contract and migration gate; SQL bytes
+were not changed. The only ProjectDashboard difference from main remains the
+existing evidence tab registration.
+
+Fresh local validation of this merge: 539 test files passed, 2 skipped;
+**2,613 tests passed, 2 existing skips**; typecheck, migration baseline
+**173 active / 402 archived**, query audit (zero findings/errors), and build all
+exited 0. Existing SSR useLayoutEffect and large-bundle warnings remain. Full
+staged whitespace check identifies one inherited trailing space in main's
+security handoff line 154; the candidate-specific changed files pass. The
+pre-existing `supabase/.temp/cli-latest` modification is unstaged and preserved.
+
+Staging access is newly present in root `.env`. Its project-ref variable is a
+Dashboard URL, safely parsed in memory as `kkthixjcficmufpfynqx`, distinct from
+production, preview and baseline. Direct database read-only connection succeeds:
+PostgreSQL 17.6, zero Auth users, zero public tables, no cron table and no migration
+ledger. The existing PAT returns HTTP 403 for this staging project's metadata
+and SQL API; separate staging-token access was requested. No release conclusion
+follows from successful direct connectivity. Exact sanitized parent restore,
+forward upgrade and final gate remain pending. PR #13 remains draft; no production
+SQL push, main merge, root-checkout edit or pilot activation occurred.
+
+## Exact current-parent staging rehearsal completed (20:54 ICT)
+
+At candidate `d1f084a` / main `4fcca71`, independent Cloud staging
+`kkthixjcficmufpfynqx` matched 16,024 logical application-schema entries with zero
+differences, restored the actual 147-row production ledger, then received only
+synthetic legacy rows. Guarded CLI dry-run and application selected exactly the
+26 pending versions and reached 173; all 147 original ledger rows and all original
+legacy fixture fields remained identical. Seventeen rollback SQL smokes passed,
+including non-admin Room actors and resource-evidence permission/no-money/revision
+checks. Fresh local revision Playwright passed 4/4; code-head CI passed.
+
+[Full method, limitations, retained hashes/output and rollout/rollback checklist](2026-09-28-daily-log-exact-staging-upgrade.md).
+The final read-only production inventory still has 147 versions and an unchanged
+compared catalog; preview has 173 and baseline remains 44. Staging has no Auth
+users, transactions, publications, rollout scopes, cron jobs, Vault secrets or
+pending HTTP requests after rollback; only the synthetic legacy fixture remains.
+
+The exact populated logical database upgrade subgate is now satisfied for this
+frozen parent. **Overall production release is still held.** Staging metadata and
+cleanup return Management API 403; fresh live staging Auth/browser acceptance was
+not performed. The production GitHub runner's treatment of retroactive pending
+migrations is not proved by this CLI `--include-all` rehearsal. Staging remains
+provisioned pending owner deletion/scoped access and may incur compute charges.
+PR #13 stays draft; no production SQL push, main merge or pilot activation occurred.
+
+## Staging access, live Auth/UI and cleanup completed (21:22 ICT)
+
+The new staging PAT unlocked project metadata, Auth/API and SQL. Real Auth/ERP
+acceptance exposed a report deep-link integration bug: denied actors fell back to
+the unrelated Executive tab. `f300bab` preserves the explicit report route so the
+existing Room permission gate displays the correct unknown/denied state; no
+authorization guard or grant changed. A strengthened denial regression and the
+full live staging suite passed **4/4**; fresh unit suite **2,613 passed / 2 skips**,
+typecheck and build passed. Responsive/light-dark screenshots were inspected.
+
+Exact-target staging deletion returned 200, followed by metadata 404 and absence
+from the fresh project list. Auth/browser hashes, screenshots and cleanup receipt
+are retained in the [detailed evidence](2026-09-28-daily-log-exact-staging-upgrade.md).
+The earlier staging-access/UI/cleanup blockers are closed. Organization GitHub
+metadata still returns 403; no setting was changed. Production's 147-row history
+and compared catalog remained unchanged. Read-only recovery inventory found
+completed physical backups but PITR disabled; owner must resolve the acceptable
+recovery point before deploy. The proposed separately approved release uses the
+rehearsed explicit CLI `--include-all` path, verifies history/no pending files,
+then seeks main-merge approval. No production SQL, main merge or pilot activation
+has occurred. PR #13 remains draft.

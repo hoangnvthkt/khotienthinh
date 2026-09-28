@@ -298,7 +298,11 @@ export const dailyLogSummaryService = {
       }
       return ids;
     }, new Set<string>());
-    const reportLogs = effectiveLogs.filter(log => !summarizedSourceIds.has(log.id));
+    const publishedRevisionParents = new Set(effectiveLogs
+      .filter(log => isDailyLogSummaryRow(log) && getDailyLogStatus(log) === 'verified')
+      .map(log => log.supersedesDailyLogId).filter(Boolean));
+    const reportLogs = effectiveLogs.filter(log => !summarizedSourceIds.has(log.id)
+      && !publishedRevisionParents.has(log.id));
 
     const allLogsInRange = reportLogs.filter(log => {
       if (!log.date || log.date < normalizedFrom || log.date > normalizedTo) return false;

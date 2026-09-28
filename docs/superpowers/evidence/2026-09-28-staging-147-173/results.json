@@ -1,0 +1,348 @@
+{
+  "candidateCommit": "d1f084a19facc1e9bf34b9c8704cd50d6884fdc7",
+  "parentCommit": "4fcca71a1566421d0b5b4922b7618fe0eba911b0",
+  "parentSchemaComparison": {
+    "parent": 16024,
+    "actual": 16024,
+    "missing": [],
+    "changed": [],
+    "extra": []
+  },
+  "sourceSchemaDumpSha256": "c3de5a77775ace51fe6b1977ef558161da717f20c33cb42926f4112d3bec5efe",
+  "parentCatalogSha256": "1dc9cc4e8c6aa205eb415eaf625662269d81576965dee174d9035656b0d23dd5",
+  "parentLedger": {
+    "count": 147,
+    "sha256": "0b84e348a5dbbc851b52f6e70b9a3f12aef7fa857383f6817ae2c4c4550eca37",
+    "originalRowsAfterUpgradeSha256": "0b84e348a5dbbc851b52f6e70b9a3f12aef7fa857383f6817ae2c4c4550eca37"
+  },
+  "nonUserConfig": {
+    "public.permission_applications": {
+      "count": 18,
+      "sha256": "903e69fecfa0aa4d89ab5586c911024526e6e915cd0ab48c04f40d8d34c6cd1e"
+    },
+    "public.permission_modules": {
+      "count": 105,
+      "sha256": "b8e5a646bc9b462c5ea12253c42b57d0829996b80c3946d9442b8be6ebd48db9"
+    },
+    "public.permission_actions": {
+      "count": 407,
+      "sha256": "04f0e2024e0278df861817d327ce6563e9da9a21ff64b81e3b115f9774a08993"
+    },
+    "public.project_permission_rooms": {
+      "count": 14,
+      "sha256": "c310b31ae30f514abe3edc02d33ef76c5fb6050da9ff19a3eba0c8a1c546fd2f"
+    },
+    "app_private.project_permission_room_action_bindings": {
+      "count": 72,
+      "sha256": "3974c525ff7b50cea63029af461fa33cd5bf1c2cdd129a414d8d6c3c843ee2a2"
+    }
+  },
+  "pendingMigrations": [
+    {
+      "file": "20260903063822_authorization_room_catalog_bootstrap.sql",
+      "sha256": "a131bc1a5f64090cdd2886d03f84b9eba1ac6e4a8a1c97ed22b1fde90996ee0e"
+    },
+    {
+      "file": "20260923090000_daily_log_wbs_area_foundation.sql",
+      "sha256": "021ee19a5a33e33c64c569a985df22e25c297199a122f8fb41809b5b88203f60"
+    },
+    {
+      "file": "20260923091500_daily_log_publish_progress_permission.sql",
+      "sha256": "9c12de85c1b90e231718432473a905c36aadf73ce5cb634c3fe8b2a2919c5cf3"
+    },
+    {
+      "file": "20260923093000_daily_log_wbs_area_commands.sql",
+      "sha256": "6fbf71778aab21dd629269e7b3fb8f8997d48d84f4ca399dc68438e07dcb98d5"
+    },
+    {
+      "file": "20260923100000_daily_log_summary_progress_publication.sql",
+      "sha256": "0c4ed5db4cb87b5d06e60bb69a563fa82ea76997050c1d37516d02297dac5619"
+    },
+    {
+      "file": "20260923101500_daily_progress_exception_command.sql",
+      "sha256": "cc40e2aadf898878e5c79550ca640cad2273d010a45f2dbe248ddb7e5d891c85"
+    },
+    {
+      "file": "20260923103000_daily_log_summary_revisions.sql",
+      "sha256": "855ddc1d423153371c78b56f7c8166b49ad96e29d9bd235fccfdbc2e03b1202a"
+    },
+    {
+      "file": "20260925062233_daily_log_shadow_pilot_gate.sql",
+      "sha256": "d3a2c2298b66f359a9f8d695833699336a97a28697b929b48bfde4847bf66be1"
+    },
+    {
+      "file": "20260925063126_daily_log_contribution_room_insert.sql",
+      "sha256": "0c2ab0a9565dab15a02fe299dee79eec9e0daa778da58f5a2afca45985f06e5c"
+    },
+    {
+      "file": "20260925065524_daily_log_enforced_write_boundary.sql",
+      "sha256": "49db8a3dde8a06d1c90dd6abee5aef79babe2603e2ec6e321c66b2f0deb41e1b"
+    },
+    {
+      "file": "20260925153000_daily_log_shadow_all_submitted_gate.sql",
+      "sha256": "c4785d32957f6de9118dad3006ebbc613163f6e0efb05faa72789032f0a6b031"
+    },
+    {
+      "file": "20260925160000_resource_evidence_permission.sql",
+      "sha256": "7c167dd80cdd9352ca33a5709d6d6eafd1832d61b5728f26cda1b8917aba2871"
+    },
+    {
+      "file": "20260925161000_verified_resource_usage_evidence.sql",
+      "sha256": "b8836d2a6415a2e92ce6ad1f51b203511558ecbfffb815098c69d961d40728e0"
+    },
+    {
+      "file": "20260926022433_secure_daily_log_physical_resources.sql",
+      "sha256": "113b855e3293dceebcb3276dbd6153989823eb4c500df6e0c0cba352b1eb8412"
+    },
+    {
+      "file": "20260926102824_daily_log_source_selection_v2.sql",
+      "sha256": "843281af685f78efcec7cb5b7e5a8ed5d3fda035ad6fcea61cde5518dd00ce3b"
+    },
+    {
+      "file": "20260926113919_daily_log_source_quantity_entry_v2.sql",
+      "sha256": "304937a99dbc04f9bef3e6c238765bef9371ce36991e54df244a8190d4b22d51"
+    },
+    {
+      "file": "20260926163158_daily_log_source_save_conflict_http_v2.sql",
+      "sha256": "3ba281d84aeed75a42ccd4733e746fc2db8130b3957c0800bfb5010daafeb605"
+    },
+    {
+      "file": "20260926163810_daily_log_source_entry_bounds_v2.sql",
+      "sha256": "4f95913eb6bfb2cfd13063ee9d0cd70534c49aaa739736903d886856071eca38"
+    },
+    {
+      "file": "20260926164443_daily_log_source_missing_basis_null_v2.sql",
+      "sha256": "32c24584f740c850ee03eccab66d0e91532e824b8c7844ec1ffd5bbd07a59bcd"
+    },
+    {
+      "file": "20260926165732_daily_log_source_return_resubmit_v2.sql",
+      "sha256": "f9ba72249313e077d8e65de9daf25dd6fa295d46e02d42bd35b35bf7a05fedbb"
+    },
+    {
+      "file": "20260926174010_daily_log_source_readiness_scope_v2.sql",
+      "sha256": "6068887af6759e405353420a642564822e2822656c8b7f2921284eee264b47cc"
+    },
+    {
+      "file": "20260927020541_daily_log_summary_pending_draft_v2.sql",
+      "sha256": "ef962f169e485bfe3bf863bac052da481fca5bea72a09cf8e05e0fe65f9714a8"
+    },
+    {
+      "file": "20260927022904_daily_log_summary_source_metadata_snapshot_v2.sql",
+      "sha256": "cce800f56e0cb47b5821e5baa8fc0706991aeaf050ca34da44f5e2c2bddd60ef"
+    },
+    {
+      "file": "20260927031010_daily_log_summary_missing_unit_draft_guard_v2.sql",
+      "sha256": "eca2f9e3d54d3a70ec923231806b772a34eb0c4f18f8e45275e2b846ad01f39d"
+    },
+    {
+      "file": "20260927032533_daily_log_summary_document_opt_in_v2.sql",
+      "sha256": "b5a56480cd88d699a93d5c04630f2a6484872be9528964bc86cfd66cb1b7c02b"
+    },
+    {
+      "file": "20260927075421_daily_log_summary_resubmit_route_v2.sql",
+      "sha256": "b9b5199a1698457a4ddee4afd25618d50bb82ca002c4573d7a5661eff3a1e1d4"
+    }
+  ],
+  "legacyRows": {
+    "projects": {
+      "count": 1,
+      "before": "22e31f474620eb2062971134a2ebb0a013d15fd23a99c9c03648645c3b468bbb",
+      "after": "22e31f474620eb2062971134a2ebb0a013d15fd23a99c9c03648645c3b468bbb"
+    },
+    "project_tasks": {
+      "count": 1,
+      "before": "43c2e0aaf190e25dc4e852eab2aa2e941427e5f236df9e36e163d5252f797452",
+      "after": "43c2e0aaf190e25dc4e852eab2aa2e941427e5f236df9e36e163d5252f797452"
+    },
+    "daily_logs": {
+      "count": 3,
+      "before": "d4277d5e95d1f8980be4ab8def8c70150c85fc5a4b8c002c1f237c96be20effe",
+      "after": "d4277d5e95d1f8980be4ab8def8c70150c85fc5a4b8c002c1f237c96be20effe"
+    },
+    "daily_log_labor": {
+      "count": 1,
+      "before": "c0a0d4566ca445d192f2ac003d36b4658d5f9b13d83a0f45793a1f6ae3caf8e9",
+      "after": "c0a0d4566ca445d192f2ac003d36b4658d5f9b13d83a0f45793a1f6ae3caf8e9"
+    },
+    "daily_log_machines": {
+      "count": 1,
+      "before": "33fcb84fed835caedb08befaee552906e01e2d6e4eaddc5e350ec517cee70b7b",
+      "after": "33fcb84fed835caedb08befaee552906e01e2d6e4eaddc5e350ec517cee70b7b"
+    },
+    "daily_log_contributions": {
+      "count": 1,
+      "before": "1d318fb2c647bd5ebc8d2747616c059fe6e8e59ce27a874d5e3bce89cd03f406",
+      "after": "1d318fb2c647bd5ebc8d2747616c059fe6e8e59ce27a874d5e3bce89cd03f406"
+    },
+    "project_daily_task_progress": {
+      "count": 1,
+      "before": "973b81008850e3f470a1f99d61505d0640d70b2a14162ae6b4f9e82afbff442b",
+      "after": "973b81008850e3f470a1f99d61505d0640d70b2a14162ae6b4f9e82afbff442b"
+    }
+  },
+  "smokes": [
+    {
+      "file": "daily_log_source_selection_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_source_quantity_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_source_save_boundary_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_source_submit_readiness_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_source_return_resubmit_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_summary_pending_draft_v2_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_summary_legacy_source_draft_opt_in_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_summary_resubmit_route_v2_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_source_v2_publication_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_source_area_quantity_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_shadow_pilot_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_contribution_room_insert_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_returned_summary_source_guard_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "resource_usage_evidence_smoke.sql",
+      "result": "PASS",
+      "personas": "synthetic non-admin SQL JWT context",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_wbs_area_foundation_smoke.sql",
+      "result": "PASS",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_summary_progress_publication_smoke.sql",
+      "result": "PASS",
+      "writes": "rolled back"
+    },
+    {
+      "file": "daily_log_forward_upgrade_evidence_smoke.sql",
+      "result": "PASS",
+      "writes": "rolled back"
+    }
+  ],
+  "finalInventory": {
+    "checkedAt": "2026-09-28T13:53:54.262Z",
+    "environments": {
+      "production": {
+        "ledgerCount": 147,
+        "latest": "20260928113000",
+        "ledgerUnchanged": true,
+        "auth_users": 62,
+        "projects": 86,
+        "daily_logs": 323,
+        "labor": 827,
+        "machines": 408,
+        "transactions": 1100,
+        "cron_jobs": 10,
+        "active_cron": 10,
+        "catalogUnchanged": true
+      },
+      "staging": {
+        "ledgerCount": 173,
+        "latest": "20260928113000",
+        "ledgerUnchanged": true,
+        "auth_users": 0,
+        "projects": 1,
+        "daily_logs": 3,
+        "labor": 1,
+        "machines": 1,
+        "transactions": 0,
+        "cron_jobs": 0,
+        "active_cron": 0,
+        "vault_secrets": 0,
+        "http_queue": 0,
+        "work_items": 0,
+        "publish_commands": 0,
+        "rollout_scopes": 0
+      },
+      "preview": {
+        "status": 201,
+        "ledger": [
+          {
+            "count": 173,
+            "latest": "20260928113000"
+          }
+        ]
+      },
+      "baseline": {
+        "status": 201,
+        "ledger": [
+          {
+            "count": 44,
+            "latest": "20260927075421"
+          }
+        ]
+      }
+    },
+    "stagingTokenPresent": false,
+    "stagingManagementStatus": 403
+  },
+  "limitations": [
+    "Logical application-schema parity, not byte-identical physical database or full platform configuration.",
+    "Synthetic data volumes do not prove production lock time or concurrent traffic behavior.",
+    "JWT-context SQL personas are not fresh Auth/browser sessions.",
+    "Management API staging metadata/cleanup is denied (403).",
+    "CLI include-all rehearsal does not verify GitHub production-deploy runner configuration."
+  ]
+}

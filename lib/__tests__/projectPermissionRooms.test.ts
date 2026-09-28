@@ -35,7 +35,8 @@ describe('projectPermissionRooms', () => {
   it('requires view before every mutation in the final three Rooms', () => {
     for (const roomCode of ['quantity_acceptance', 'payment', 'safety'] as const) {
       const room = getProjectPermissionRoom(roomCode);
-      const mutations = room?.actions.filter(action => action !== 'view') || [];
+      const mutations = room?.actions.filter(action =>
+        action !== 'view' && action !== 'view_resource_evidence') || [];
 
       expect(mutations.length).toBeGreaterThan(0);
       for (const action of mutations) {
