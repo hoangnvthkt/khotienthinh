@@ -471,3 +471,31 @@ Chỉ sửa frontend, không có migration.
   - Dừng khẩn cấp: `supabase/operations/notification_p2_1_rollback.sql` (tắt cổng).
 - **Ghi chú cho luồng Procurement V2:** 11 bước duyệt phiếu Đề xuất vật tư đang chờ không được worker Quy trình chung báo (đúng thiết kế). Cần luồng vật tư xác nhận module của họ có báo cho người được giao.
 - **Work** (cổng tắt từ 12/09, 31 sự kiện `dead`) chưa đụng tới: thuộc module Vioo Work.
+
+### P2.2 — cảnh báo định kỳ chạy trên server (đợt 1: 6 loại)
+
+- **Hiện trạng:**
+  - 11 loại cảnh báo chỉ chạy trong trình duyệt khi có Admin mở app (15 phút/lần, mốc lưu `localStorage`).
+  - 30 ngày gần nhất chỉ 4 loại từng gửi: thiếu bảng lương 48, sinh nhật 14, nhật ký trễ 3, nhắc chấm công 1.
+  - Quy tắc Thanh toán quá hạn và Nhật ký trễ dùng mã quyền ngắn (`confirm`, `approve`, `verify`), không khớp grant nào, nên luôn rơi về chỉ gửi Admin.
+- **Chủ sản phẩm chọn** làm trước 6 loại: thiếu bảng lương, sinh nhật, nhật ký trễ, nhắc chấm công, thanh toán quá hạn, HĐLĐ sắp hết hạn.
+- **Migration** `20260928031025_notification_p2_2_server_scheduled_alerts`:
+  - `app_private.run_scheduled_alerts()` theo giờ Việt Nam, pg_cron `server-scheduled-alerts` mỗi 5 phút.
+  - Vẫn đọc ngưỡng, cooldown, kênh và cấu hình người nhận từ `notification_alert_rules`.
+  - Người nhận:
+    - quản trị module: capability `manage`, như `list_canonical_module_manager_ids`;
+    - dự án: thành viên Room Thanh toán (xác nhận/duyệt) hoặc Room Nhật ký (kiểm tra);
+    - chủ hồ sơ;
+    - cộng Admin nếu cấu hình yêu cầu, hoặc Admin làm dự phòng khi không ai khớp. Chỉ tính Admin có tài khoản đăng nhập, bỏ fixture.
+  - Cooldown theo `source_type`/`source_id` như bản cũ.
+  - RPC `run_scheduled_alerts_now()` chỉ cho Admin, dùng cho nút "Chạy kiểm tra ngay".
+  - **Nhắc chấm công tắt** theo quyết định chủ sản phẩm: chạy trên server sẽ nhắc mọi nhân viên chưa chấm công mỗi sáng (thử một văn phòng: 43 người). Bật lại ở Cài đặt → Cảnh báo sau khi đã báo trước cho nhân viên.
+- **Frontend:**
+  - Trình duyệt bỏ qua 6 loại này (`SERVER_SCHEDULED_ALERT_KEYS`), nên không gửi trùng; 5 loại còn lại vẫn chạy trong trình duyệt tới đợt 2.
+  - Nút "Chạy kiểm tra ngay" gọi server.
+  - Mỗi quy tắc có nhãn "Server tự chạy mỗi 5 phút" hoặc "Chỉ chạy khi Admin mở ứng dụng".
+- **Kiểm tra:**
+  - Dry-run với cooldown tạm đặt 0: thiếu bảng lương → 10 người (9 quản trị HRM và Admin).
+  - Smoke dữ liệu giả: thanh toán quá hạn tới đúng người duyệt Room Thanh toán cộng Admin (7); nhắc chấm công chỉ tới nhân viên chưa chấm; lần chạy thứ hai trong cooldown không gửi lặp.
+  - **ĐÃ APPLY** (server apply trước, sau đó mới push frontend). Smoke sau apply **PASS**; cron `*/5` đang active.
+  - Dừng khẩn cấp: `supabase/operations/notification_p2_2_rollback.sql`.

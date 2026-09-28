@@ -251,6 +251,13 @@ export const NOTIFICATION_CATEGORIES = {
 } as const;
 
 // ── Throttle: only allow alert checks once per 15min across all tabs ──
+// Alerts evaluated by the server every 5 minutes (app_private.run_scheduled_alerts);
+// the browser scan skips them so nothing is sent twice.
+export const SERVER_SCHEDULED_ALERT_KEYS: ReadonlySet<AlertRuleKey> = new Set<AlertRuleKey>([
+  'missing_payroll', 'employee_birthday', 'stale_daily_log',
+  'attendance_reminder', 'overdue_payment', 'contract_expiry',
+]);
+
 const ALERT_CHECK_KEY = 'vioo_last_alert_check';
 const ALERT_CHECK_INTERVAL = 15 * 60 * 1000;
 
@@ -703,15 +710,21 @@ export const notificationService = {
   async runAlertChecks(options: RunAlertChecksOptions = {}): Promise<number> {
     if (!(await isCurrentUserAdmin())) return 0;
 
+    let serverCount = 0;
     if (!options.force) {
       if (!shouldRunAlertCheck()) return 0;
       markAlertCheckDone();
+    } else {
+      // "Run now" also runs the server-owned alerts immediately.
+      const { data, error } = await supabase.rpc('run_scheduled_alerts_now');
+      if (error) throw error;
+      serverCount = Object.values((data || {}) as Record<string, number>).reduce((sum, value) => sum + (Number(value) || 0), 0);
     }
 
     const rules = await loadAlertRules();
     const resolveCache: AlertResolveCache = {};
     const enabledRules = [...rules.values()].filter(rule => rule.isEnabled && rule.channels?.inApp !== false);
-    if (enabledRules.length === 0) return 0;
+    if (enabledRules.length === 0) return serverCount;
 
     let alertCount = 0;
     const now = new Date();
@@ -742,6 +755,7 @@ export const notificationService = {
       alertKey: AlertRuleKey,
       input: Omit<NotifyAlertInput, 'alertKey'>,
     ) => {
+      if (SERVER_SCHEDULED_ALERT_KEYS.has(alertKey)) return 0;
       const rule = getRule(rules, alertKey);
       if (!rule.isEnabled || rule.channels?.inApp === false) return 0;
       const sourceType = input.sourceType || alertKey;
@@ -1105,7 +1119,7 @@ export const notificationService = {
       console.error('Stale dailylog check error:', err);
     }
 
-    return alertCount;
+    return alertCount + serverCount;
   },
 
   /** Send one configured alert from a domain service such as Safety. */

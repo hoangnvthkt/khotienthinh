@@ -23,7 +23,7 @@ import {
   PROJECT_PERMISSION_LABELS,
   type ProjectPermissionCode,
 } from '../../lib/projectStaffService';
-import { notificationService } from '../../lib/notificationService';
+import { notificationService, SERVER_SCHEDULED_ALERT_KEYS } from '../../lib/notificationService';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
@@ -375,6 +375,9 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
                       {rule.alertKey}
                     </span>
+                    {SERVER_SCHEDULED_ALERT_KEYS.has(rule.alertKey)
+                      ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">Server tự chạy mỗi 5 phút</span>
+                      : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700" title="Sẽ chuyển sang server ở đợt sau">Chỉ chạy khi Admin mở ứng dụng</span>}
                   </div>
                   <h3 className="mt-3 text-base font-black text-slate-800">{rule.label}</h3>
                   {rule.description && <p className="mt-1 text-sm font-medium text-slate-500">{rule.description}</p>}
