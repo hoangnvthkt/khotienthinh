@@ -151,7 +151,7 @@ Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; lu�
 ### 7.5 P3 (theo phương án)
 
 - Màn "Hồ sơ quyền" hợp nhất theo từng người.
-- ĐÃ XONG (28/09): mẫu quyền Room theo vai trò + phân quyền theo người. Còn: chuyển form tạo dự án (`buildSeedProjectRoleGrants`) sang mẫu Room.
+- ĐÃ XONG (28/09): mẫu quyền Room theo vai trò + phân quyền theo người. Form tạo dự án cũng áp mẫu Room (7d6a2d5). Tiếp: mẫu quyền theo người cho toàn bộ ứng dụng (xem memory permission-ux-person-first-templates).
 - Mở Room cho PM/CHT khi chủ sản phẩm quyết định.
 - Task 13: drop cột legacy (`allowed_modules`, `admin_modules`, …) sau khi hết phụ thuộc. `can_access_module` và `resolve_effective_permission_sources` vẫn đọc cột legacy.
 
