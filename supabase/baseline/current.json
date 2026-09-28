@@ -117,6 +117,8 @@
     "20260921183000_g9_erp_completion_rollout_control.sql",
     "20260921190000_g9_pilot_permission_command.sql",
     "20260922064202_fix_boq_material_planning_wrapper_security.sql",
+    "20260925090000_workflow_step_watcher_autotag.sql",
+    "20260926090000_project_owned_material_request_workflow.sql",
     "20260927023600_authorization_p0a_block_anonymous_access.sql",
     "20260927035001_authorization_p0b_restrict_client_writes.sql",
     "20260927042947_authorization_p0b_broadcast_state_and_avatars.sql",
@@ -141,6 +143,7 @@
     "20260928065520_notification_preferences_digest.sql",
     "20260928080828_authorization_user_snapshot_for_admins.sql",
     "20260928083215_authorization_p2_documents_activities_rls.sql",
+    "20260928083534_safety_storage_site_scoped_access.sql",
     "20260928084924_authorization_p1_6_private_project_photos.sql"
   ],
   "forbidIncludeAll": true

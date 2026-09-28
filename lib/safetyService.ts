@@ -752,14 +752,19 @@ export const safetyService = {
 
   async uploadAttachment(params: {
     projectId: string;
+    constructionSiteId: string | null | undefined;
     recordType: string;
     recordId: string;
     file: File;
     uploadedBy?: string;
     category?: string;
   }): Promise<SafetyAttachment> {
+    if (!params.constructionSiteId) {
+      throw new Error('Vui lòng chọn công trường trước khi tải file An toàn.');
+    }
     const storagePath = [
       params.projectId,
+      params.constructionSiteId,
       params.recordType,
       params.recordId,
       `${Date.now()}-${safeStorageFileName(params.file.name)}`,

@@ -223,6 +223,7 @@ const EquipmentForm: React.FC<{
           <div className="border-t border-slate-100 pt-4">
             <SafetyAttachmentUploader
               projectId={projectId}
+              constructionSiteId={constructionSiteId}
               recordType="equipment"
               recordId={tempId}
               attachments={attachments}

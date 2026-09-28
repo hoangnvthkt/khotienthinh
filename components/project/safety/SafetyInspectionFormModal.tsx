@@ -145,6 +145,7 @@ const SafetyInspectionFormModal: React.FC<Props> = ({ projectId, constructionSit
 
           <SafetyAttachmentUploader
             projectId={projectId}
+            constructionSiteId={constructionSiteId}
             recordType="inspections"
             recordId={tempId}
             attachments={attachments}
