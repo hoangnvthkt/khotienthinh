@@ -30,6 +30,7 @@ export async function createUxFixture() {
   const cleanup=async()=>{
     // Exact UUID disposable project only; no persisted operator scope/history.
     await query(`delete from public.notifications where metadata->>'projectId'='${project}' and metadata->>'logId'='${log}' and source_id like 'dailylog_rejected_%';
+      delete from public.notifications where metadata->>'projectId'='${project}' and metadata->>'deliveredBy'='daily_log_trigger';
       delete from public.app_assignment_events where assignment_id in(select id from public.app_assignments where scope_id='${project}' and subject_type='daily_log');
       delete from public.app_assignments where scope_id='${project}' and subject_type='daily_log';
       delete from public.daily_log_publish_commands where daily_log_id in(select id from public.daily_logs where project_id='${project}');

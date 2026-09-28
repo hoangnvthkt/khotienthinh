@@ -491,6 +491,26 @@ export const dailyLogContributionService = {
         return (data || []).map(fromDb) as DailyLogContribution[];
     },
 
+    /** Dates of sent slips that report an incident, for the landing cards. */
+    async listIssueDates(
+        projectIdOrSiteId: string,
+        constructionSiteId: string | null | undefined,
+        fromDate: string,
+        toDate: string,
+    ): Promise<string[]> {
+        const { data, error } = await fetchAllSupabaseRows(supabase
+            .from('daily_log_contributions')
+            .select('id,date')
+            .or(buildProjectScopeFilter(projectIdOrSiteId, constructionSiteId))
+            .gte('date', fromDate)
+            .lte('date', toDate)
+            .neq('status', 'draft')
+            .not('issues', 'is', null)
+            .neq('issues', ''), { label: "lib/projectService.ts:dailyLogContributionIssueDates", maxRows: 5_000, orderBy: getSupabaseOrderColumns('daily_log_contributions') });
+        if (error) throw error;
+        return (data || []).map((row: { date: string }) => String(row.date));
+    },
+
     async findMine(input: {
         projectIdOrSiteId: string;
         constructionSiteId?: string | null;

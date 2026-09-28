@@ -20,14 +20,14 @@ export function DailyLogWorkItemReadTable({items,resources,mode}:Props) {
     {unknown && <p className="rounded-md border border-border bg-muted/30 p-3">Chất lượng dữ liệu: có hạng mục chưa xác định đơn vị. {mode==='verified'?'Giữ nguyên số liệu đã lưu; không suy đoán hoặc quy đổi lại hồ sơ đã duyệt.':'Không quy đổi khối lượng khi chưa đủ cơ sở.'}</p>}
     {items.length===0 && <p className="text-muted-foreground">Chưa có hạng mục được lưu trong phiếu này.</p>}
     <div className="hidden overflow-x-auto rounded-md border border-border md:block">
-      <table className="w-full min-w-[560px] border-collapse text-sm"><thead className="bg-muted/40"><tr>
+      <table className="w-full table-fixed border-collapse text-sm"><colgroup><col className="w-[40%]"/><col/><col/><col/></colgroup><thead className="bg-muted/40"><tr>
         <th scope="col" className="p-3 text-left font-medium">Hạng mục / ĐVT</th>
-        {['Khối lượng hôm nay','Lũy kế','% lũy kế'].map(label=><th key={label} scope="col" className="p-3 text-right font-medium">{label}</th>)}
+        {['Khối lượng hôm nay','Lũy kế','% lũy kế'].map(label=><th key={label} scope="col" className="p-3 text-right font-medium break-words">{label}</th>)}
       </tr></thead>{items.map(item=><tbody key={item.id || item.sourceWorkItemId} data-work-item-id={item.sourceWorkItemId || item.id} className="border-t border-border">
-        <tr><th scope="row" className="p-3 text-left font-medium"><span>{item.wbsCode} {item.taskName}</span><p className="mt-1 font-normal text-muted-foreground">{item.unit?.trim() || 'Chưa xác định đơn vị'}</p></th>
-          <td className="p-3 text-right tabular-nums">{formatDailyLogQuantity(item.dailyQuantityDone,item.unit)}</td>
-          <td className="p-3 text-right tabular-nums">{formatDailyLogQuantity(item.cumulativeQuantityDone,item.unit)}</td>
-          <td className="p-3 text-right tabular-nums">{formatDailyLogQuantity(item.cumulativeProgressPercent,'%')}</td></tr>
+        <tr><th scope="row" className="p-3 text-left font-medium break-words"><span>{item.wbsCode} {item.taskName}</span><p className="mt-1 font-normal text-muted-foreground">{item.unit?.trim() || 'Chưa xác định đơn vị'}</p></th>
+          <td className="p-3 text-right tabular-nums break-words">{formatDailyLogQuantity(item.dailyQuantityDone,item.unit)}</td>
+          <td className="p-3 text-right tabular-nums break-words">{formatDailyLogQuantity(item.cumulativeQuantityDone,item.unit)}</td>
+          <td className="p-3 text-right tabular-nums break-words">{formatDailyLogQuantity(item.cumulativeProgressPercent,'%')}</td></tr>
         <tr><td colSpan={4} className="px-3 pb-3"><details><summary className="min-h-11 cursor-pointer py-2 font-medium text-teal-800 dark:text-teal-200">Nguồn lực, ghi chú và ảnh</summary>{details(item)}</details></td></tr>
       </tbody>)}</table>
     </div>

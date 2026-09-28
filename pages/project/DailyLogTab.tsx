@@ -48,6 +48,7 @@ import {
     type DailyLogSourceReviewState,
     type DailyLogSummarySourceSnapshot,
 } from '../../lib/dailyLogWorkflow';
+import { computeDailyLogMonthStats } from '../../lib/dailyLogMonthStats';
 
 interface DailyLogTabProps {
     constructionSiteId?: string;
@@ -132,6 +133,21 @@ const DAILY_LOG_STATUS_PERMISSION: Partial<Record<DailyLogStatus, DailyLogAction
 };
 
 const ALL_DAILY_LOG_PERMISSION_CODES: DailyLogActionCode[] = Object.values(DAILY_LOG_ACTION);
+
+const DAILY_LOG_ACTION_LABELS: Record<DailyLogActionCode, string> = {
+    [DAILY_LOG_ACTION.view]: 'Xem nhật ký',
+    [DAILY_LOG_ACTION.create]: 'Lập phiếu',
+    [DAILY_LOG_ACTION.editOwn]: 'Sửa phiếu của mình',
+    [DAILY_LOG_ACTION.editAll]: 'Sửa phiếu của người khác',
+    [DAILY_LOG_ACTION.deleteOwn]: 'Xóa phiếu của mình',
+    [DAILY_LOG_ACTION.deleteAll]: 'Xóa phiếu của người khác',
+    [DAILY_LOG_ACTION.submit]: 'Gửi',
+    [DAILY_LOG_ACTION.return]: 'Trả phiếu',
+    [DAILY_LOG_ACTION.verify]: 'Kiểm tra',
+    [DAILY_LOG_ACTION.approve]: 'Duyệt',
+    [DAILY_LOG_ACTION.summarize]: 'Tổng hợp',
+    [DAILY_LOG_ACTION.publishProgress]: 'Công bố tiến độ',
+};
 
 const toDateKey = (date: Date): string => {
     const y = date.getFullYear();
@@ -1035,7 +1051,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             return false;
         }
         if (!dailyLogPerms.has(code)) {
-            toast.error('Không có quyền', `Bạn cần quyền "${code}" để ${actionLabel}.`);
+            toast.error('Chưa có quyền', `Để ${actionLabel}, bạn cần quyền "${DAILY_LOG_ACTION_LABELS[code]}" trong Room Nhật ký của dự án. Liên hệ CHT hoặc quản trị để được cấp.`);
             return false;
         }
         return true;
@@ -1660,28 +1676,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     requestedVerifierName: summaryApprover?.userName || null,
                     actorUserId: user?.id,
                 });
-                await notificationService.notifyProjectUsers({
-                    recipientIds: [summaryApproverUserId],
-                    actorId: user?.id,
-                    type: 'info',
-                    category: 'progress',
-                    title: 'Nhật ký ngày chờ CHT duyệt',
-                    message: `Nhật ký tổng hợp ngày ${new Date(`${summaryDate}T00:00:00`).toLocaleDateString('vi-VN')} đang chờ duyệt`,
-                    severity: 'info',
-                    icon: '✅',
-                    link: buildDailyLogLink(summaryLogId),
-                    sourceType: 'dailylog_summary_submitted',
-                    sourceId: `dailylog_summary_${summaryLogId}_${summaryApproverUserId}_${Date.now()}`,
-                    constructionSiteId: constructionSiteId || undefined,
-                    metadata: {
-                        logId: summaryLogId,
-                        date: summaryDate,
-                        projectId,
-                        constructionSiteId,
-                        assignmentResponsibility: 'current_approver',
-                        assignmentUserId: summaryApproverUserId,
-                    },
-                }).catch(err => console.warn('Cannot notify responsibility assignee', err?.message || err));
+                // The approver is notified by the database (trg_daily_log_summary_notify).
             }
             await reloadDailyLogRecords();
             toast.success(submitNow ? 'Đã gửi CHT duyệt' : 'Đã lưu bản tổng hợp');
@@ -1989,8 +1984,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 });
             }
 
-            // Notify if submitted
-            if (status === 'submitted') {
+            // Summaries are notified by the database (trg_daily_log_summary_notify).
+            const notifyFromBrowser = !isSummaryDailyLog(log);
+            if (notifyFromBrowser && status === 'submitted') {
                 try {
                     const recipientId = responsibilityTarget?.userId;
                     const notifiedIds = await notificationService.notifyProjectUsers({
@@ -2024,7 +2020,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 }
             }
 
-            if (status === 'verified' || status === 'rejected') {
+            if (notifyFromBrowser && (status === 'verified' || status === 'rejected')) {
                 const ownerId = log.submittedById || log.submittedBy || log.createdById ||
                     (users.some(u => u.id === log.createdBy) ? log.createdBy : users.find(u => u.name === log.createdBy)?.id);
                 if (ownerId) {
@@ -2213,15 +2209,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         return list.sort((a, b) => b.date.localeCompare(a.date));
     }, [logs, filterMonth, filterStatus, filterWeather, searchQuery, siteStaff]);
 
-    // Stats
-    const stats = useMemo(() => {
-        const thisMonth = new Date().toISOString().slice(0, 7);
-        const monthLogs = logs.filter(l => l.date.startsWith(thisMonth));
-        const avgWorkers = monthLogs.length > 0 ? Math.round(monthLogs.reduce((s, l) => s + l.workerCount, 0) / monthLogs.length) : 0;
-        const rainyDays = monthLogs.filter(l => l.weather === 'rainy' || l.weather === 'storm').length;
-        const issueCount = monthLogs.filter(l => l.issues).length;
-        return { total: logs.length, monthCount: monthLogs.length, avgWorkers, rainyDays, issueCount };
-    }, [logs]);
+    // Stats (local calendar month; see computeDailyLogMonthStats for counting rules)
+    const statsMonth = monthKeyFromDate(new Date());
+    const [slipIssueDates, setSlipIssueDates] = useState<string[]>([]);
+    useEffect(() => {
+        if (!effectiveId) return;
+        let cancelled = false;
+        const [year, month] = statsMonth.split('-').map(Number);
+        dailyLogContributionService.listIssueDates(effectiveId, constructionSiteId || null, `${statsMonth}-01`, toDateKey(new Date(year, month, 0)))
+            .then(dates => { if (!cancelled) setSlipIssueDates(dates); })
+            .catch(err => console.warn('Cannot load slip incidents for the month', err?.message || err));
+        return () => { cancelled = true; };
+    }, [effectiveId, constructionSiteId, statsMonth, logs]);
+    const stats = useMemo(() => computeDailyLogMonthStats(logs, statsMonth, slipIssueDates), [logs, statsMonth, slipIssueDates]);
 
     // Available months for filter
     const availableMonths = useMemo(() => {
@@ -2588,32 +2588,32 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                 {/* Tổng nhật ký */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><FileSpreadsheet size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Tổng nhật ký</div>
-                    <div className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">{stats.total}</div>
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><FileSpreadsheet size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Ngày có nhật ký</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">{stats.daysWithLogs}</div>
                     <div className="text-[10px] text-teal-700 dark:text-teal-400 font-medium mt-2 flex items-center gap-1 truncate">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse shrink-0" /> Tháng này: {stats.monthCount}
+                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" /> Tháng này: {stats.monthDays} ngày
                     </div>
                 </div>
 
                 {/* Nhân công trung bình */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><Users size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> CN TB/ngày</div>
-                    <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.avgWorkers}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Nhân công bình quân</div>
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><Users size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Nhân công TB/ngày</div>
+                    <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.avgWorkers ?? '—'}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">{stats.avgWorkers === null ? 'Tháng này chưa ghi nhân công' : `Tháng này · ${stats.workerDays} ngày có số liệu`}</div>
                 </div>
 
                 {/* Ngày mưa */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
                     <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><CloudRain size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Ngày mưa</div>
                     <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.rainyDays}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Ảnh hưởng tiến độ</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Tháng này</div>
                 </div>
 
                 {/* Vấn đề sự cố */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><AlertTriangle size={11} className="text-red-500 shrink-0" /> Vấn đề ghi nhận</div>
-                    <div className="text-2xl sm:text-3xl font-bold text-red-600 dark:text-red-400 leading-none tracking-tight">{stats.issueCount}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Sự cố, vướng mắc</div>
+                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><AlertTriangle size={11} className="text-red-500 shrink-0" /> Ngày có sự cố</div>
+                    <div className={`text-2xl sm:text-3xl font-bold leading-none tracking-tight ${stats.issueDays > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100'}`}>{stats.issueDays}</div>
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Tháng này · cả trong phiếu</div>
                 </div>
             </div>
 
