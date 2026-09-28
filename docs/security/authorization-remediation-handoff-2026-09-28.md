@@ -91,6 +91,7 @@
 | Thông báo B3 | `20260928065520_notification_preferences_digest` | Tuỳ chọn cá nhân (Theo dõi: ngay/tổng hợp/không báo; Nghiệp vụ: ngay/tổng hợp) + tổng hợp cuối ngày qua cron `notification-digests` |
 | P2 Người dùng | `20260928080828_authorization_user_snapshot_for_admins` | Màn sửa người dùng tải quyền thật của người được sửa (Room theo dự án, link mở đúng dự án); chọn phạm vi theo tên; bỏ thuật ngữ kỹ thuật, dữ liệu online/đăng nhập giả và ngõ cụt drawer |
 | P2 Tài liệu + Nhật ký | `20260928083215_authorization_p2_documents_activities_rls` | `project_documents` theo quyền Tài liệu của dự án (có `created_by`); `activities`: nhật ký Kho theo kho được xem, thao tác quản trị chỉ Admin và người làm. Edge Function `reset-password` v17: Admin đặt mật khẩu cho người khác có lý do + nhật ký |
+| P1.6c | `20260928084924_authorization_p1_6_private_project_photos` | Bucket `project-photos` (ảnh nhật ký) private; đọc = người tải, Admin, người xem được nhật ký dự án; resolver tự ký link cũ. **Chờ chủ sản phẩm purge CDN** |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -142,10 +143,9 @@ Xem rollout log. Còn mở, cần chủ sản phẩm quyết:
 
 Xem rollout log. Không còn bảng nào mở `select true` cho mọi người trong phạm vi audit.
 
-### 7.4 Bucket `project-photos` (1.654 ảnh, 1,5 GB)
+### 7.4 Bucket `project-photos` — ĐÃ XONG (28/09)
 
-- Ảnh nhật ký, gần như trọn trong luồng Daily log (`DailyLogTab`), thêm GanttTab.
-- Cần phối hợp với luồng đó. Làm theo mẫu P1.6: thêm bucket vào resolver, viết policy đọc theo Room Nhật ký/Tiến độ, dry-run, chủ sản phẩm purge CDN.
+Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; luồng Daily log nên chuyển `DailyLogTab` sang lưu đường dẫn và ký link (không bắt buộc).
 
 ### 7.5 P3 (theo phương án)
 

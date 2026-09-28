@@ -706,3 +706,22 @@ Chỉ sửa frontend, không có migration.
   - Kiểm tra sau deploy: lời gọi không có tài khoản bị từ chối 401. Chưa thử luồng Admin thật, vì agent không dùng mật khẩu thật.
 - **Frontend:** drawer người dùng có nút "Đặt mật khẩu mới" (nhập hai lần, có nút hiện/ẩn, kèm lý do). Chỉ Admin thấy, không áp cho chính mình; tài khoản vô hiệu hoá được hướng sang "Khôi phục tài khoản".
 - **Rollback:** deploy lại bản v16 từ git (commit trước `supabase/functions/reset-password/index.ts`).
+
+## P1.6c — bucket `project-photos` (ảnh nhật ký) sang private
+
+- **Trước khi sửa:**
+  - Bucket công khai: 1.654 ảnh, khoảng 1,5 GB, tất cả dưới `dailylogs/<projectId>/`.
+  - Ai có link đều mở được, kể cả không đăng nhập.
+  - Ai đăng nhập cũng tải ảnh vào bất kỳ thư mục nào.
+- **Migration** `20260928084924_authorization_p1_6_private_project_photos`:
+  - Bucket private.
+  - Đọc: người tải ảnh, Admin, hoặc người xem được nhật ký của dự án đó. Hàm `project_photo_folder_visible` tra công trường của dự án rồi gọi `daily_log_can_select`, vì hàm này cần đúng công trường; truyền `null` thì không ai qua được.
+  - Tải lên: chỉ vào thư mục của dự án mình xem được nhật ký.
+- **Tác động:** 21 / 7 / 12 người đọc được ảnh ở 3 dự án có ảnh, khớp với số người đọc được `daily_logs`.
+- **Frontend:** thêm `project-photos` vào `PRIVATE_LEGACY_PUBLIC_BUCKETS`, push trước khi đổi bucket (`64927cc`).
+  - `PrivateStorageLinkResolver` tự ký link công khai cũ khi hiển thị, nên `DailyLogTab` và `GanttTab` **không phải sửa**.
+- **Ghi cho luồng Daily log:** `DailyLogTab.handleUploadPhoto` vẫn lưu `getPublicUrl(...)`. Link này vẫn hiển thị được nhờ resolver, nhưng nên chuyển sang lưu đường dẫn và ký bằng `useSignedStorageUrl` / `resolveStorageUrl`. Việc tải ảnh giờ cần quyền xem nhật ký của dự án.
+- **Kiểm tra:** dry-run, smoke persona và rollback dry-run PASS.
+- **Rollback:** `supabase/operations/authorization_p1_6_private_project_photos_rollback.sql`.
+- **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Giao diện được push trước (chờ 2 phút cho bản deploy), rồi mới đổi bucket. Smoke sau apply PASS; URL công khai mẫu trả 400.
+- **Còn chờ:** chủ sản phẩm purge CDN `DELETE /storage/v1/cdn/project-photos` bằng secret key, vì ảnh từng được mở có thể vẫn nằm trong cache Smart CDN.
