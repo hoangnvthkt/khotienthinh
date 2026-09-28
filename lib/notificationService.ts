@@ -29,6 +29,8 @@ export interface AppNotification {
   metadata: Record<string, any>;
   /** Why this person received it; set by the server. */
   deliveryReason?: NotificationDeliveryReason;
+  /** instant, or held for the person's end-of-day digest, or muted by them. */
+  deliveryMode?: 'instant' | 'digest' | 'muted';
   createdAt: string;
   expiresAt?: string;
 }
@@ -40,9 +42,23 @@ export interface NotificationCursor {
 
 export type NotificationListPage = CursorPage<AppNotification, NotificationCursor>;
 
+export interface NotificationPreferences {
+  watchingMode: 'instant' | 'digest' | 'muted';
+  /** Business-area notices cannot be muted (owner decision 28/09/2026). */
+  responsibleMode: 'instant' | 'digest';
+  /** HH:MM, Vietnam time. */
+  digestTime: string;
+}
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  watchingMode: 'instant',
+  responsibleMode: 'instant',
+  digestTime: '17:30',
+};
+
 const UNREAD_DISPLAY_LIMIT = 99;
 const UNREAD_QUERY_LIMIT = UNREAD_DISPLAY_LIMIT + 1;
-const NOTIFICATION_LIST_SELECT = 'id,user_id,type,category,title,message,icon,link,is_read,is_dismissed,severity,source_type,source_id,construction_site_id,priority,push_enabled,action_url,entity_type,entity_id,metadata,created_at,expires_at,delivery_reason';
+const NOTIFICATION_LIST_SELECT = 'id,user_id,type,category,title,message,icon,link,is_read,is_dismissed,severity,source_type,source_id,construction_site_id,priority,push_enabled,action_url,entity_type,entity_id,metadata,created_at,expires_at,delivery_reason,delivery_mode';
 
 const toCamel = (row: any): AppNotification => ({
   id: row.id,
@@ -68,6 +84,7 @@ const toCamel = (row: any): AppNotification => ({
   createdAt: row.created_at,
   expiresAt: row.expires_at,
   deliveryReason: row.delivery_reason || (row.user_id ? undefined : 'system'),
+  deliveryMode: row.delivery_mode || 'instant',
 });
 
 type NotificationRealtimeListener = (notification: AppNotification) => void;
@@ -409,13 +426,14 @@ export const notificationService = {
     return page.items;
   },
 
-  /** Capped unread count. Returns 100 when there are more than 99 unread notifications. */
+  /** Capped unread count for the bell (digest notices wait for the daily summary). Returns 100 above 99. */
   async countUnread(userId?: string): Promise<number> {
     const baseQuery = () => supabase
       .from('notifications')
       .select('id,is_read')
       .eq('is_read', false)
       .eq('is_dismissed', false)
+      .eq('delivery_mode', 'instant')
       .neq('category', 'inventory')
       .limit(UNREAD_QUERY_LIMIT);
 
@@ -440,6 +458,32 @@ export const notificationService = {
       if (unreadIds.size >= UNREAD_QUERY_LIMIT) return UNREAD_QUERY_LIMIT;
     }
     return unreadIds.size;
+  },
+
+  /** The signed-in person's delivery preferences (defaults when never saved). */
+  async getMyPreferences(userId: string): Promise<NotificationPreferences> {
+    const { data, error } = await supabase
+      .from('notification_preferences')
+      .select('watching_mode,responsible_mode,digest_time')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return DEFAULT_NOTIFICATION_PREFERENCES;
+    return {
+      watchingMode: data.watching_mode,
+      responsibleMode: data.responsible_mode,
+      digestTime: String(data.digest_time || DEFAULT_NOTIFICATION_PREFERENCES.digestTime).slice(0, 5),
+    };
+  },
+
+  async saveMyPreferences(preferences: NotificationPreferences): Promise<void> {
+    const { error } = await supabase.rpc('set_my_notification_preferences', {
+      p_watching_mode: preferences.watchingMode,
+      p_responsible_mode: preferences.responsibleMode,
+      p_digest_time: preferences.digestTime,
+    });
+    if (error) throw error;
   },
 
   /** Mark as read */

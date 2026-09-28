@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Bell, X, Check, CheckCheck, Trash2, AlertTriangle, Info, CheckCircle2, XCircle,
-    RefreshCw, ChevronDown, ExternalLink, Clock
+    RefreshCw, ChevronDown, ExternalLink, Clock, Settings2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationService, AppNotification, NOTIFICATION_CATEGORIES } from '../lib/notificationService';
@@ -158,9 +158,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
             }
             if (!n.isRead) {
                 setTabCounts(prev => prev ? { ...prev, [tab]: Math.min(prev[tab] + 1, 100) } : prev);
-                applyUnreadCount(unreadCountRef.current + 1);
-                void notificationSoundService.play(n.severity === 'critical' ? 'urgent' : 'normal');
             }
+            // Digest notices arrive quietly; the daily summary announces them.
+            if (n.isRead || n.deliveryMode !== 'instant') return;
+            applyUnreadCount(unreadCountRef.current + 1);
+            void notificationSoundService.play(n.severity === 'critical' ? 'urgent' : 'normal');
 
             // Fallback browser notification when Web Push is not enabled on this device.
             if ('Notification' in window && !document.hasFocus() && Notification.permission === 'granted' && !webPushEnabledRef.current) {
@@ -309,11 +311,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         setTabCounts(prev => prev ? { ...prev, [tab]: Math.max(prev[tab] - 1, 0) } : prev);
     };
 
+    const countsOnBell = (n?: AppNotification) => Boolean(n && !n.isRead && (n.deliveryMode || 'instant') === 'instant');
+
     const handleMarkRead = async (id: string) => {
         await notificationService.markRead(id);
-        decrementTabCount(notifications.find(n => n.id === id));
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-        applyUnreadCount(unreadCountRef.current - 1);
+        const n = notifications.find(item => item.id === id);
+        decrementTabCount(n);
+        setNotifications(prev => prev.map(item => item.id === id ? { ...item, isRead: true } : item));
+        if (countsOnBell(n)) applyUnreadCount(unreadCountRef.current - 1);
     };
 
     const handleMarkAllRead = async () => {
@@ -328,7 +333,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         setNotifications(prev => prev.filter(n => n.id !== id));
         const n = notifications.find(n => n.id === id);
         decrementTabCount(n);
-        if (n && !n.isRead) applyUnreadCount(unreadCountRef.current - 1);
+        if (countsOnBell(n)) applyUnreadCount(unreadCountRef.current - 1);
     };
 
     const handleDismissAll = async () => {
@@ -443,6 +448,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                         <Trash2 size={12} />
                                     </button>
                                 )}
+                                <button onClick={() => { setIsOpen(false); navigate('/notifications?preferences=1'); }}
+                                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-indigo-500" title="Cách nhận thông báo" aria-label="Cách nhận thông báo">
+                                    <Settings2 size={12} />
+                                </button>
                                 <button onClick={() => setIsOpen(false)}
                                     className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-slate-600" title="Đóng">
                                     <X size={12} />
