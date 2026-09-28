@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { fromDb, toDb } from './dbMapping';
-import { notificationService } from './notificationService';
 import {
   SafetyAttachment,
   SafetyComment,
@@ -19,7 +18,6 @@ import {
   SafetySubcontractor,
   SafetyTeam,
 } from '../types';
-import { SAFETY_ISSUE_STATUS_LABELS, SAFETY_SEVERITY_LABELS } from './safetyWorkflow';
 
 const BUCKET = 'project-safety-attachments';
 const ISSUE_TABLE = 'safety_issues';
@@ -153,46 +151,6 @@ async function nextCode(table: string, prefix: string, projectId: string): Promi
     .eq('project_id', projectId);
   if (error) throw error;
   return `${prefix}-${String((count || 0) + 1).padStart(4, '0')}`;
-}
-
-async function notifySafety(params: {
-  projectId?: string | null;
-  constructionSiteId?: string | null;
-  sourceType: string;
-  sourceId: string;
-  title: string;
-  message: string;
-  severity?: 'info' | 'warning' | 'critical';
-  recipientIds?: string[];
-  actorId?: string | null;
-  metadata?: Record<string, any>;
-}) {
-  // Without a named recipient nothing is sent here: open critical or overdue
-  // issues and expired equipment reach the Safety Room from the server
-  // (safety_critical in app_private.run_scheduled_alerts).
-  if (!params.recipientIds?.length) return;
-  const metadata = {
-    projectId: params.projectId,
-    constructionSiteId: params.constructionSiteId,
-    safetyId: params.sourceId,
-    safetyView: params.sourceType.replace('safety_', ''),
-    ...(params.metadata || {}),
-  };
-
-  await notificationService.notifyProjectUsers({
-    recipientIds: params.recipientIds,
-    actorId: params.actorId,
-    type: params.severity === 'critical' ? 'error' : params.severity === 'warning' ? 'warning' : 'info',
-    category: 'safety',
-    title: params.title,
-    message: params.message,
-    severity: params.severity || 'info',
-    sourceType: params.sourceType,
-    sourceId: params.sourceId,
-    constructionSiteId: params.constructionSiteId || undefined,
-    link: '/da',
-    metadata,
-  });
 }
 
 export interface SafetyIssueFilters {
@@ -392,27 +350,8 @@ export const safetyService = {
     delete payload.actor_name;
     const { data, error } = await supabase.from(ISSUE_TABLE).insert(payload).select().single();
     if (error) throw error;
-    const issue = await hydrateIssue(data);
-
-    const severity = issue.severity === 'critical' || issue.severity === 'high'
-      ? (issue.severity === 'critical' ? 'critical' : 'warning')
-      : 'info';
-    await notifySafety({
-      projectId: issue.projectId,
-      constructionSiteId: issue.constructionSiteId,
-      sourceType: 'safety_issue',
-      sourceId: issue.id,
-      title: `${SAFETY_SEVERITY_LABELS[issue.severity]}: ${issue.title}`,
-      message: issue.assignedToName
-        ? `${issue.code} đã giao cho ${issue.assignedToName}.`
-        : `${issue.code} vừa được ghi nhận tại ${issue.area || 'công trường'}.`,
-      severity,
-      recipientIds: issue.assignedToUserId ? [issue.assignedToUserId] : undefined,
-      actorId: input.createdBy,
-      metadata: { safetyView: 'issues' },
-    }).catch(error => console.warn('Cannot create safety notification', error));
-
-    return issue;
+    // Notifications are sent by the database (trg_safety_issue_notify).
+    return hydrateIssue(data);
   },
 
   async updateIssue(id: string, updates: Partial<SafetyIssue>): Promise<SafetyIssue> {
@@ -441,18 +380,6 @@ export const safetyService = {
         created_by: actorId || null,
       });
     }
-    await notifySafety({
-      projectId: issue.projectId,
-      constructionSiteId: issue.constructionSiteId,
-      sourceType: 'safety_issue',
-      sourceId: issue.id,
-      title: `Cập nhật an toàn ${issue.code}`,
-      message: `${issue.title} chuyển sang ${SAFETY_ISSUE_STATUS_LABELS[status]}.`,
-      severity: status === 'overdue' ? 'critical' : 'info',
-      recipientIds: issue.assignedToUserId ? [issue.assignedToUserId] : undefined,
-      actorId,
-      metadata: { safetyView: 'issues' },
-    }).catch(error => console.warn('Cannot notify safety status', error));
     return issue;
   },
 
@@ -639,18 +566,6 @@ export const safetyService = {
     }
     if (result.error) throw result.error;
     const contractor = await hydrateContractor(result.data);
-    if (contractor.documentsStatus !== 'complete') {
-      await notifySafety({
-        projectId: contractor.projectId,
-        constructionSiteId: contractor.constructionSiteId,
-        sourceType: 'safety_subcontractor',
-        sourceId: contractor.id,
-        title: 'Nhà thầu phụ thiếu hồ sơ an toàn',
-        message: `${contractor.name} cần bổ sung hồ sơ trước khi thi công.`,
-        severity: 'warning',
-        metadata: { safetyView: 'contractors' },
-      }).catch(error => console.warn('Cannot notify contractor safety', error));
-    }
     return contractor;
   },
 
@@ -769,20 +684,6 @@ export const safetyService = {
       freshRow,
       await Promise.all((documentRows || []).map(hydrateEquipmentDocument)),
     );
-    const expiry = equipment.inspectionExpiryDate;
-    const in30Days = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-    if (expiry && (expiry <= in30Days || equipment.status === 'expired')) {
-      await notifySafety({
-        projectId: equipment.projectId,
-        constructionSiteId: equipment.constructionSiteId,
-        sourceType: 'safety_equipment',
-        sourceId: equipment.id,
-        title: 'Thiết bị cần kiểm tra hồ sơ an toàn',
-        message: `${equipment.name} ${expiry < todayIso() ? 'đã hết hạn' : 'sắp hết hạn'} kiểm định.`,
-        severity: expiry < todayIso() ? 'critical' : 'warning',
-        metadata: { safetyView: 'equipment' },
-      }).catch(error => console.warn('Cannot notify equipment safety', error));
-    }
     return equipment;
   },
 
