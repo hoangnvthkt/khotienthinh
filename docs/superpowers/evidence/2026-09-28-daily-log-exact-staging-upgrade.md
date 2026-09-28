@@ -1,5 +1,10 @@
 # Daily Log: exact 147 → 173 populated, sanitized Cloud rehearsal
 
+**Latest continuation (21:22 ICT):** staging Auth/ERP passed 4/4 after route fix
+`f300bab`; full unit/typecheck/build passed; temporary staging was deleted and
+verified absent. Read the follow-up and concrete production proposal at the end.
+Production remains unmodified and PR #13 stays draft pending separate approval.
+
 **Checkpoint:** 28 September 2026, 20:54 ICT / 13:54 UTC. Candidate code
 `d1f084a19facc1e9bf34b9c8704cd50d6884fdc7`, containing main
 `4fcca71a1566421d0b5b4922b7618fe0eba911b0`. All numbers are observations at this
@@ -221,3 +226,120 @@ agent self-review; no independent reviewer was used, per the owner's instruction
    freeze all writes. Never drop the new schema, delete evidence, repair history
    or overwrite real data as an automatic rollback. Database recovery/forward fix
    requires its own reviewed decision and approval.
+
+## Auth/browser follow-up and completed cleanup (21:22 ICT)
+
+The owner supplied `SUPABASE_STAGING_ACCESS_TOKEN` in the existing `.env`. Project
+metadata, Auth settings, API keys and SQL access now returned 200 for the exact
+independent project. It was `ACTIVE_HEALTHY`, named `daily-log-upgrade-staging`,
+in `ap-southeast-1`. The token was never printed or substituted for the production
+token. Auth email login was enabled, anonymous login and custom token hooks were
+disabled. The organization GitHub-connection endpoint still returned 403 on both
+project contexts; that permission is distinct from project metadata/Auth access.
+
+A scratch-only copy of the existing live UX harness was hard-locked to staging.
+Six synthetic Auth users were created through the admin API and their canonical
+profiles asserted `EMPLOYEE`. Real magic-link verification produced sessions used
+by the unchanged ERP application against staging's Auth/Data APIs. No email was
+sent. This exercises real authentication and ERP behavior, not the login-form UI.
+The baseline branch and its users were never used or modified. Staging-only base
+Room memberships and publish/evidence bindings supplied the same test roles; each
+browser case created and removed its own disposable project.
+
+The first live run exposed a real integration issue: an actor without Daily Log
+Room access opened a report link, but ProjectDashboard selected the first other
+visible tab and displayed an unrelated HRM-link instruction. The API correctly
+returned `42501`; the UI denial assertion failed. Commit **`f300bab`** keeps an
+explicit `tab=dailylog&dailyLogId=...` route at the existing DailyLogTab permission
+gate, including when no navigation tabs are visible. It does not add grants,
+expose the tab in navigation or change Room/RLS checks. The tracked workflow test
+now requires the exact denial alert and rejects the unrelated HRM message.
+
+After the fix, the targeted workflow passed, then a complete fresh **4/4 live
+staging browser suite passed** with the strengthened denial assertion:
+
+- Changing dates cannot let a stale response hide existing slips.
+- Unknown permission loading remains distinct from denied access and zero data;
+  retry recovers the report.
+- Failed draft saves retain input/focus; mobile controls remain reachable.
+- Two authors/three areas complete source → summary → return/edit/resubmit →
+  refresh snapshot → shadow → CHT publication → read-only evidence. Other sources
+  stay unchanged, denied/cross-scope access fails, double-click produces one
+  publication, and current evidence totals are 48 labor hours / 12 machine hours.
+
+The suite captured light/dark layouts at 1440, 1024, 768, 390 and 360 pixels,
+checking overflow, contrast, touch targets and reduced motion. Desktop CHT,
+tablet verified and mobile author screenshots were also inspected visually:
+[desktop](2026-09-28-staging-147-173/ux8-review-light-1440.png),
+[tablet](2026-09-28-staging-147-173/ux8-verified-dark-768.png),
+[mobile](2026-09-28-staging-147-173/ux8-author-light-390.png).
+The [Auth/browser result record](2026-09-28-staging-147-173/auth-browser-results.json)
+includes exact code/test hashes and durations.
+
+Fresh verification of the route fix: **2,613 unit tests passed, two existing
+skips; typecheck and production build exited 0**. The first unit command also
+picked up the ignored scratch Playwright copies and failed those two suites on
+missing staging-only environment; all 539 actual unit suites passed. Re-running
+with `--exclude '.superpowers/**'` passed the complete intended unit suite. No
+tracked test was skipped to clear the failure. No migration file changed in this
+follow-up, so the earlier exact-upgrade and 17 SQL-smoke evidence remains valid.
+
+At 14:19:16 UTC a fresh read-only check confirmed production's full 147-row ledger
+and compared application catalog unchanged. `main` remains `4fcca71`. Backup
+metadata (read only) shows seven completed physical backups; the latest listed
+is **2026-09-27 18:44:35 UTC / 28 September 01:44:35 ICT**, and **PITR is disabled**.
+Backup existence is not a tested restore or proof that its data-loss window is
+acceptable. No backup was downloaded, restored or cloned.
+
+Before cleanup, staging had exactly the two named synthetic projects, six
+synthetic Auth users, 173 history rows and zero admins, cron jobs, Vault secrets,
+pending HTTP queue entries, transactions, publication commands or rollout scopes.
+All disposable browser projects were absent. Evidence was retained before the
+authorized exact-ref deletion. `DELETE /v1/projects/kkthixjcficmufpfynqx` returned
+**200**; subsequent metadata read returned **404** and the fresh project list
+returned **200** without that ref. [Cleanup receipt](2026-09-28-staging-147-173/cleanup.json).
+The earlier statements that staging remained provisioned or Auth/UI acceptance
+was unavailable are historical and superseded by this section.
+
+## Concrete production proposal for separate owner approval
+
+The exact database and live Auth/ERP rehearsal gates have passed for the recorded
+parent. **No production deployment or pilot activation has been approved or
+executed; PR #13 remains draft.** To avoid depending on unverified handling of old
+timestamps by the GitHub deployment runner, the proposed release procedure is:
+
+1. Agree on release owner/window and coordinate concurrent mainline changes.
+   Review backup/recovery availability immediately before deployment and explicitly
+   resolve the recovery point/data-loss window given PITR is currently disabled.
+   Do not describe `paused` mode or an app rollback as a database restore.
+2. Pin the approved candidate commit. Refresh production history/catalog and
+   `origin/main`; require the same parent and exact 26-file SHA-256 manifest in
+   `results.json`. Any drift stops the procedure for reconciliation/rehearsal.
+3. **Only after explicit production SQL approval**, use the same CLI 2.95.6 path
+   rehearsed here, with an explicit production ref and password supplied through
+   the environment: first `db push --include-all --dry-run`; compare the full
+   ordered filenames to the approved manifest; then apply only if identical.
+   Keep the PR draft/unmerged during this database step. No seed/roles import,
+   old migration rename, repair or repeated SQL is included in this proposal.
+4. Verify that the original 147 full history rows remain unchanged, exactly the
+   approved 26 rows were added, a new dry-run has no pending files, and scoped
+   non-destructive permission/legacy/evidence checks pass. On partial failure,
+   stop and inspect committed history; do not repair or blindly retry.
+5. **Only with separate main-merge approval**, merge the reviewed PR after checks
+   pass and no new drift exists. Since the SQL history is already up to date, this
+   proposal does not rely on auto-deploy discovering retroactive pending files.
+   The PR has no differences from main in `supabase/config.toml`,
+   `supabase/functions` or `.github/workflows`; still monitor the configured
+   deployment, do not assume it has no other effects.
+6. Validate the app, then use the existing audited Daily Log operation for any
+   separately approved scoped pilot/shadow/enforced rollout. Retain the pause,
+   previous-app-artifact and database recovery decisions in the checklist above.
+
+Supabase documents automatic production deployment on merge when enabled, and
+that production deploy can include migrations, declared Edge Functions and
+Storage buckets. Its current integration guide does not establish this project's
+retroactive-history behavior; the proposal above deliberately makes the database
+execution explicit. [Official integration documentation](https://supabase.com/docs/guides/deployment/branching/github-integration).
+No integration setting was changed. Additional organization-level permission is
+not needed to finish this rehearsal or its now-completed cleanup; independently
+reading that setting remains unavailable.

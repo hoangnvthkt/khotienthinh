@@ -1,0 +1,151 @@
+{
+  "checkedAt": "2026-09-28T14:21:35.301Z",
+  "ref": "kkthixjcficmufpfynqx",
+  "baseCommit": "7d9eee3e05bb053c418288a557cdc761879d33e0",
+  "fileHashes": {
+    "pages/ProjectDashboard.tsx": "00bc25d1285b753b678f6b41ceff238ee129675c8726253cdcb7ca289710c0b0",
+    "tests/e2e/daily-log-user-centered-workflow.spec.ts": "f53259de11c32172752f6578cedc7d862afd9133c9401083b466b57e9bb52867",
+    "tests/e2e/daily-log-user-centered-layout.spec.ts": "3b07418bd4abbd730fce58dac7915b5f6d664717b0d6988345d3e94f76c5944c"
+  },
+  "stats": {
+    "startTime": "2026-09-28T14:18:22.097Z",
+    "duration": 152134.473,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "tests": [
+    {
+      "title": "changing the slip date ignores an older day response instead of hiding existing slips",
+      "ok": true,
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 17421
+        }
+      ]
+    },
+    {
+      "title": "direct report links distinguish an unknown permission result from denied or zero totals",
+      "ok": true,
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 13378
+        }
+      ]
+    },
+    {
+      "title": "live ERP draft retains inputs on error, focuses feedback and has reachable mobile actions",
+      "ok": true,
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 19006
+        }
+      ]
+    },
+    {
+      "title": "two authors complete the real ERP return/edit/resend/refresh/CHT cycle without changing B or C",
+      "ok": true,
+      "results": [
+        {
+          "status": "passed",
+          "durationMs": 101472
+        }
+      ]
+    }
+  ],
+  "authentication": "Real staging Auth admin-created synthetic users, generated magic-link token verification, resulting sessions used in real ERP browser; all six profiles EMPLOYEE. Login-form UX was not exercised.",
+  "adaptations": [
+    "Separate scratch transport hard-locked to staging ref; baseline harness never invoked.",
+    "Existing six actor IDs mapped to canonical staging profiles; original behavior assertions retained and denied assertion strengthened in tracked spec.",
+    "Synthetic base Room memberships, exact-project navigation grant and temporary staging publish/evidence bindings.",
+    "All disposable UX projects removed in test finally blocks."
+  ],
+  "access": {
+    "at": "2026-09-28T14:10:24.215Z",
+    "stagingRef": "kkthixjcficmufpfynqx",
+    "staging": {
+      "metadataStatus": 200,
+      "id": "kkthixjcficmufpfynqx",
+      "name": "daily-log-upgrade-staging",
+      "region": "ap-southeast-1",
+      "health": "ACTIVE_HEALTHY",
+      "github": {
+        "httpStatus": 403
+      }
+    },
+    "production": {
+      "metadataStatus": 200,
+      "id": "ftciqmqhmfvjtwoycswe",
+      "name": "KhoTienThinh",
+      "region": "ap-southeast-1",
+      "health": "ACTIVE_HEALTHY",
+      "github": {
+        "httpStatus": 403
+      }
+    }
+  },
+  "authSettings": {
+    "httpStatus": 200,
+    "siteUrl": "http://localhost:3000",
+    "signupDisabled": false,
+    "emailEnabled": true,
+    "anonymousEnabled": false,
+    "customAccessTokenHook": false
+  },
+  "productionDrift": {
+    "checkedAt": "2026-09-28T14:19:16.202Z",
+    "ledgerCount": 147,
+    "latest": "20260928113000",
+    "ledgerUnchanged": true,
+    "catalogUnchanged": true
+  },
+  "recovery": {
+    "checkedAt": "2026-09-28T14:14:38.187Z",
+    "httpStatus": 200,
+    "pitrEnabled": false,
+    "walgEnabled": true,
+    "backups": [
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-27T18:44:35.014Z",
+        "physical": true
+      },
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-26T18:44:21.160Z",
+        "physical": true
+      },
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-25T18:43:52.726Z",
+        "physical": true
+      },
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-24T18:44:49.248Z",
+        "physical": true
+      },
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-23T18:43:24.601Z",
+        "physical": true
+      },
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-22T18:44:25.469Z",
+        "physical": true
+      },
+      {
+        "status": "COMPLETED",
+        "insertedAt": "2026-09-21T18:44:04.984Z",
+        "physical": true
+      }
+    ],
+    "physicalBackupWindow": {}
+  },
+  "codeCommit": "f300bab"
+}

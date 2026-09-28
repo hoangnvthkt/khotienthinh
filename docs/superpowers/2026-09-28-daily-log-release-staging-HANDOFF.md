@@ -1,5 +1,18 @@
 # Handoff — Daily Log release candidate, staging rehearsal, production hold
 
+**Latest continuation — 28/09/2026, 21:22 ICT:** the staging PAT worked. Live
+Auth/ERP acceptance passed **4/4** after narrow report-route fix `f300bab`; unit,
+typecheck and build passed. Staging `kkthixjcficmufpfynqx` was deleted (200),
+metadata is now 404 and it is absent from the project list. Do not recreate it
+unless a new rehearsal is needed. The [new evidence and concrete production
+proposal](evidence/2026-09-28-daily-log-exact-staging-upgrade.md) supersede the old
+Auth/access/cleanup blockers below. Production remains at the verified 147-version
+parent; PR stays draft. Organization GitHub metadata remains unavailable (403).
+Proposed deployment is explicit, separately approved CLI upgrade before a
+separately approved main merge. PITR is off; resolve the backup recovery window
+with the owner before production approval. No production mutation is authorized
+by this continuation.
+
 **Continuation checkpoint — 28/09/2026, 20:54 ICT:** the historical snapshot below
 is superseded by the [exact 147→173 staging rehearsal](evidence/2026-09-28-daily-log-exact-staging-upgrade.md).
 Main `4fcca71` was reconciled into candidate `d1f084a`; 16,024 schema entries matched,

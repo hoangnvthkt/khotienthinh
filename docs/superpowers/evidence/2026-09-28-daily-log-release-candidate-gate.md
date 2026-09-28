@@ -124,3 +124,25 @@ not performed. The production GitHub runner's treatment of retroactive pending
 migrations is not proved by this CLI `--include-all` rehearsal. Staging remains
 provisioned pending owner deletion/scoped access and may incur compute charges.
 PR #13 stays draft; no production SQL push, main merge or pilot activation occurred.
+
+## Staging access, live Auth/UI and cleanup completed (21:22 ICT)
+
+The new staging PAT unlocked project metadata, Auth/API and SQL. Real Auth/ERP
+acceptance exposed a report deep-link integration bug: denied actors fell back to
+the unrelated Executive tab. `f300bab` preserves the explicit report route so the
+existing Room permission gate displays the correct unknown/denied state; no
+authorization guard or grant changed. A strengthened denial regression and the
+full live staging suite passed **4/4**; fresh unit suite **2,613 passed / 2 skips**,
+typecheck and build passed. Responsive/light-dark screenshots were inspected.
+
+Exact-target staging deletion returned 200, followed by metadata 404 and absence
+from the fresh project list. Auth/browser hashes, screenshots and cleanup receipt
+are retained in the [detailed evidence](2026-09-28-daily-log-exact-staging-upgrade.md).
+The earlier staging-access/UI/cleanup blockers are closed. Organization GitHub
+metadata still returns 403; no setting was changed. Production's 147-row history
+and compared catalog remained unchanged. Read-only recovery inventory found
+completed physical backups but PITR disabled; owner must resolve the acceptable
+recovery point before deploy. The proposed separately approved release uses the
+rehearsed explicit CLI `--include-all` path, verifies history/no pending files,
+then seeks main-merge approval. No production SQL, main merge or pilot activation
+has occurred. PR #13 remains draft.
