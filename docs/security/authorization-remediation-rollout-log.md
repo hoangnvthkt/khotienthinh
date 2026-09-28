@@ -579,3 +579,29 @@ Chỉ sửa frontend, không có migration.
   - Dry-run, smoke persona và dry-run rollback đều PASS. Smoke kiểm: chỉ gồm người giữ CHT/CHP/KTT của đúng dự án; bật hoặc tắt tuỳ chọn chỉ thêm hoặc bớt đúng BCH; nhân viên không sửa được BCH và không xem trước được; Admin sửa được, có ghi nhật ký; chức vụ không tồn tại bị chặn; danh sách xem trước khớp người nhận thật.
   - **ĐÃ APPLY** 28/09. Smoke sau apply PASS, không để lại dữ liệu hay dòng nhật ký test.
   - Rollback: `supabase/operations/notification_site_command_recipients_rollback.sql`, kèm rollback màn Cài đặt.
+
+## Thông báo đúng người — bước 2 (phần 2): thông báo theo sự kiện của Phiếu yêu cầu và An toàn
+
+- **Số liệu 60 ngày trước khi sửa:**
+  - Phiếu yêu cầu: người theo dõi (56 người do mẫu phiếu tự thêm) nhận mọi sự kiện, chỉ đọc 12%. Riêng bình luận: 123 thông báo, đọc 5%.
+  - **Lỗi:** nhắc sắp đến hạn/quá hạn không tới người duyệt đang chậm (0 thông báo), chỉ tới người tạo và người theo dõi.
+  - Sự cố An toàn: chỉ báo người được giao. Sự cố chưa giao thì không ai nhận, trừ nhắc định kỳ cho mức Nghiêm trọng.
+- **Quyết định chủ sản phẩm (28/09):**
+  - Người theo dõi chỉ nhận kết quả cuối và quá hạn.
+  - Người duyệt đang chờ nhận nhắc hạn của bước mình và bình luận mới.
+  - Sự cố mức Cao/Nghiêm trọng báo ngay Room An toàn + BCH.
+- **Migration** `20260928062658_notification_event_recipients_request_safety`:
+  - `enqueue_request_notification_event`: chỉ đổi phần chia thêm cho người liên quan; người nhận chính do module ghi giữ nguyên. Nhắc hạn chỉ tới người duyệt của đúng bước (`nodeId`).
+  - Trigger `trg_safety_issue_notify` trên `safety_issues` (tạo mới, đổi người xử lý, đổi trạng thái):
+    - người được giao → `assigned`;
+    - Room An toàn (xác nhận/duyệt) + BCH khi mức Cao/Nghiêm trọng → `responsible`;
+    - người ghi nhận khi đã khắc phục/đóng → `watching`;
+    - không gửi cho người vừa thao tác.
+  - `lib/safetyService.ts` bỏ toàn bộ việc gửi thông báo từ trình duyệt.
+- **Ước tính tác động** (áp cho 60 ngày qua): người theo dõi phiếu yêu cầu bớt khoảng 228/305 thông báo (~75%).
+- **Kiểm tra:**
+  - Dry-run và smoke đều PASS. Smoke kiểm từng sự kiện phiếu với người tạo, người theo dõi và người duyệt; sự cố Cao tới đúng người được giao + Room + BCH, không tới người ghi nhận; sự cố Thấp chỉ tới người được giao; khi khắc phục xong báo người được giao và người ghi nhận.
+  - Rollback dry-run PASS.
+  - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Frontend push sau khoảng vài chục phút vì công cụ agent bị gián đoạn; trong khoảng đó người được giao sự cố có thể nhận trùng. Smoke sau apply PASS, không để lại dữ liệu test.
+  - Rollback: `supabase/operations/notification_event_recipients_request_safety_rollback.sql`, kèm rollback `safetyService`.
+- **Đề xuất cho luồng khác (chưa sửa):** Nhật ký "đã xác nhận" gửi người lập (đọc 12%), "chờ CHT duyệt" (đọc 24%); SLA phiếu vật tư (đọc 33%).

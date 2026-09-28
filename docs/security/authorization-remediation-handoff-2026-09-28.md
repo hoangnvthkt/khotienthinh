@@ -87,6 +87,7 @@
 | P2.2 đợt 2 | `20260928035750_notification_p2_2_server_scheduled_alerts_group2` | Đủ 11 loại trên server; ngân sách → người xem Tài chính, tiến độ → Room `gantt`, hao hụt → Room `material_planning` (`edit`), an toàn → Room `safety` (nhắc hằng ngày, kể cả thiết bị hết hạn kiểm định); trình duyệt không còn quét |
 | Thông báo B1 | `20260928044404_notification_delivery_reason` | Mỗi thông báo có `delivery_reason` (assigned/mentioned/watching/responsible/system), gán bằng trigger; chuông và trang Thông báo có tab Việc của tôi · Theo dõi · Nghiệp vụ · Hệ thống |
 | Thông báo B2a | `20260928052528_notification_site_command_recipients` | BCH (CHT/CHP/KTT theo `notification_site_command_positions`), tuỳ chọn `includeSiteCommand`, RPC xem trước người nhận; cảnh báo An toàn = Room An toàn + BCH, Admin chỉ dự phòng |
+| Thông báo B2b | `20260928062658_notification_event_recipients_request_safety` | Phiếu yêu cầu: người theo dõi chỉ nhận kết quả + quá hạn, người duyệt nhận nhắc hạn + bình luận; sự cố An toàn gửi từ trigger (Cao/Nghiêm trọng → Room AT + BCH) |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -122,7 +123,8 @@ Xem rollout log. Còn mở:
 Bước 1 đã xong (xem rollout log). Còn lại:
 - **Bước 2:** quy tắc người nhận cấu hình được cho từng loại sự kiện, gồm Room + quyền, chức vụ trong dự án (`project_staff.position_id`) và người liên quan, giới hạn trong đúng dự án hoặc công trường. Thêm nút "Xem trước người nhận" trong Cài đặt → Thông báo. Làm trước với Phiếu yêu cầu và Tiến độ, sau đó An toàn và Vật tư.
   - ĐÃ XONG phần BCH và xem trước người nhận cho cảnh báo định kỳ (B2a). **Dữ liệu cần bổ sung:** chưa ai được gán chức vụ Chỉ huy trưởng trong nhân sự dự án, và chỉ 6/86 dự án có nhân sự dự án.
-  - Còn lại của bước 2: áp quy tắc người nhận cho thông báo theo sự kiện (Phiếu yêu cầu, Tiến độ, An toàn khi tạo hoặc cập nhật sự cố, Vật tư), không chỉ cảnh báo định kỳ.
+  - ĐÃ XONG thông báo theo sự kiện cho Phiếu yêu cầu và An toàn (B2b, `20260928062658_notification_event_recipients_request_safety`): người theo dõi phiếu chỉ nhận kết quả cuối + quá hạn; người duyệt đang chờ nhận nhắc hạn + bình luận; sự cố Cao/Nghiêm trọng gửi từ trigger tới người được giao + Room An toàn + BCH.
+  - Tiến độ (Work), Nhật ký, Vật tư/PO thuộc luồng khác: chỉ đề xuất (xem rollout log), không sửa.
   - Room An toàn (quyền xác nhận/duyệt) đang có 11 người; nên rà lại cho đúng "người quản lý an toàn".
   - Nơi tạo thông báo mới nên truyền `delivery_reason`; trigger chỉ là dự phòng.
 - **Bước 3:** tuỳ chọn cá nhân (tắt, hoặc chuyển sang tổng hợp cuối ngày, cho loại theo dõi và nghiệp vụ mức thông tin; không được tắt loại giao việc, nhắc tên và cảnh báo nghiêm trọng) và bản tổng hợp cuối ngày. Chủ sản phẩm chưa quyết người dùng có được tắt hẳn loại "Nghiệp vụ" hay không.
