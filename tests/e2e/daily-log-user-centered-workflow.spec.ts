@@ -44,7 +44,7 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     const denied=await f.actors.denied.client.rpc('get_daily_log_document_bundle_v2',{p_project_id:f.project,p_construction_site_id:null,p_log_date:f.date,p_daily_log_id:null,p_contribution_id:sourceIds.A});
     expect(denied.error?.code).toBe('42501');
     const deniedPage=await openUxPage(browser,f,'denied',true);pages.push(deniedPage);
-    await expect(deniedPage.getByText(/DENIED|chưa có quyền|không có quyền|Không có quyền/).first()).toBeVisible({timeout:45000});
+    await expect(deniedPage.getByText(/DENIED|chưa có quyền|không có quyền|Không có quyền|chưa được cấp quyền xem tab nào/).first()).toBeVisible({timeout:45000});
     await expect(deniedPage.getByRole('button',{name:/Gửi CHT|Duyệt & công bố|Trả phiếu sửa/})).toHaveCount(0);
     const wrongScope=await f.actors.authorA.client.rpc('get_daily_log_document_bundle_v2',{p_project_id:'DL-WBS-PILOT-20260925',p_construction_site_id:null,p_log_date:f.date,p_daily_log_id:null,p_contribution_id:sourceIds.A});expect(wrongScope.error?.code).toBe('42501');
     const evidence=()=>rpc(f.actors.reader.client,'get_verified_resource_usage_evidence_v1',{p_project_id:f.project,p_construction_site_id:null,p_from_date:f.date,p_to_date:f.date});
@@ -83,6 +83,7 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     await sendSummary();
     const cht=await openUxPage(browser,f,'cht',true);pages.push(cht);const report=cht.locator('.daily-log-summary');
     await expect(report.locator('input,select')).toHaveCount(0);
+    await expect(report.getByRole('heading',{name:'Ảnh hiện trường',exact:true})).toBeVisible();
     const briefingHeadings=await report.locator('h2').allTextContents();
     const positions=['Tổng quan ngày','Kết quả tổng hợp theo WBS','Cảnh báo và vướng mắc','Các mũi thi công','Ảnh hiện trường']
       .map(heading=>briefingHeadings.indexOf(heading));
