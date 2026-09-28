@@ -146,6 +146,17 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     expect(receipts[0]).toMatchObject({command_id:published.commandId,daily_log_id:f.log,result:{publishedTaskIds:[f.task]}});
     expect(receipts[0].result.verifiedResourceLineIds).toHaveLength(2);
     expect(await query(`select to_jsonb(c) snapshot from public.daily_log_contributions c where id='${sourceIds.C}'`)).toEqual([{snapshot:beforeOthers.find(row=>row.id===sourceIds.C)!.snapshot}]);
+    // Every hand-off tells the next person, from the database; nobody hears about their own action.
+    const notices=await query(`select user_id,source_type,delivery_reason,message from public.notifications where metadata->>'projectId'='${f.project}' and metadata->>'deliveredBy'='daily_log_trigger'`);
+    const got=(who:string,type:string)=>notices.filter((n:any)=>n.user_id===f.actors[who].profile && n.source_type===type);
+    expect(got('summarizer','dailylog_source_submitted')).toHaveLength(4);
+    expect(got('authorA','dailylog_source_returned')).toHaveLength(1);
+    expect(got('authorA','dailylog_source_returned')[0]).toMatchObject({delivery_reason:'assigned'});
+    expect(got('authorA','dailylog_source_returned')[0].message).toContain(f.longReason.slice(0,60));
+    expect(got('cht','dailylog_summary_submitted')).toHaveLength(2);
+    for(const who of ['summarizer','authorA','authorB']) expect(got(who,'dailylog_verified')).toHaveLength(1);
+    expect(got('cht','dailylog_verified')).toHaveLength(0);
+    expect(notices.filter((n:any)=>n.user_id===f.actors.denied.profile)).toHaveLength(0);
   } catch(error) {
     for(const [index,page] of pages.entries()) {
       if(!page.isClosed()) {

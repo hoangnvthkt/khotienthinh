@@ -177,7 +177,8 @@
     "20260928084924_authorization_p1_6_private_project_photos.sql",
     "20260928092719_authorization_p3_project_room_templates.sql",
     "20260928101825_authorization_p3_roles_to_personal_grants.sql",
-    "20260928113000_authorization_p3_user_permission_templates.sql"
+    "20260928113000_authorization_p3_user_permission_templates.sql",
+    "20260928170000_daily_log_pilot_readiness.sql"
   ],
   "forbidIncludeAll": true
 }
