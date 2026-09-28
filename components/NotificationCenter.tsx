@@ -11,6 +11,16 @@ import { webPushService } from '../lib/webPushService';
 import { appBadgeService } from '../lib/appBadgeService';
 import { notificationSoundService } from '../lib/notificationSoundService';
 import VehicleBookingNotificationContent from './VehicleBookingNotificationContent';
+import {
+    getInboxTabReasons,
+    getNotificationInboxTab,
+    NOTIFICATION_INBOX_TABS,
+    NOTIFICATION_REASON_LABELS,
+    NOTIFICATION_REASON_TONES,
+    type NotificationInboxTab,
+} from '../lib/notificationReasons';
+
+type TabCounts = Record<Exclude<NotificationInboxTab, 'all'>, number>;
 
 interface NotificationCenterProps {
     userId?: string;
@@ -46,7 +56,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     const [isOpen, setIsOpen] = useState(false);
     const [checking, setChecking] = useState(false);
     const [isMobileViewport, setIsMobileViewport] = useState(getIsMobileViewport);
-    const [filterCategory, setFilterCategory] = useState<string>('all');
+    const [activeTab, setActiveTab] = useState<NotificationInboxTab>('all');
+    const [tabCounts, setTabCounts] = useState<TabCounts | null>(null);
+    const [listState, setListState] = useState<'loading' | 'ready' | 'error'>('loading');
+    const activeTabRef = useRef<NotificationInboxTab>('all');
     const [browserPermission, setBrowserPermission] = useState<NotificationPermission>(
         typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'denied'
     );
@@ -77,9 +90,33 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     }, [isActive, isOpen]);
 
     const loadList = useCallback(async () => {
-        const list = await notificationService.list(userId);
-        setNotifications(list);
+        const tab = activeTab;
+        setListState('loading');
+        try {
+            const page = await notificationService.listPage(userId, { limit: 50, reasons: getInboxTabReasons(tab) });
+            if (activeTabRef.current !== tab) return;
+            setNotifications(page.items);
+            setListState('ready');
+        } catch (error) {
+            console.warn('Notification list failed:', error);
+            if (activeTabRef.current === tab) setListState('error');
+        }
+    }, [userId, activeTab]);
+
+    const loadTabCounts = useCallback(async () => {
+        if (!userId) return;
+        try {
+            setTabCounts(await notificationService.countUnreadByTab(userId));
+        } catch (error) {
+            console.warn('Notification tab counts failed:', error);
+            setTabCounts(null);
+        }
     }, [userId]);
+
+    const selectTab = (tab: NotificationInboxTab) => {
+        activeTabRef.current = tab;
+        setActiveTab(tab);
+    };
 
     const applyUnreadCount = useCallback((count: number) => {
         const nextCount = Math.max(0, Math.min(100, Math.floor(Number.isFinite(count) ? count : 0)));
@@ -103,15 +140,24 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         loadList();
     }, [isActive, isOpen, loadList]);
 
+    useEffect(() => {
+        if (!isActive || !isOpen) return;
+        loadTabCounts();
+    }, [isActive, isOpen, loadTabCounts]);
+
     // Realtime subscription
     useEffect(() => {
         if (!isActive) return;
         const stop = notificationService.subscribe((n) => {
-            setNotifications(prev => {
-                if (prev.some(item => item.id === n.id)) return prev;
-                return [n, ...prev].slice(0, 50);
-            });
+            const tab = getNotificationInboxTab(n.deliveryReason);
+            if (activeTabRef.current === 'all' || activeTabRef.current === tab) {
+                setNotifications(prev => {
+                    if (prev.some(item => item.id === n.id)) return prev;
+                    return [n, ...prev].slice(0, 50);
+                });
+            }
             if (!n.isRead) {
+                setTabCounts(prev => prev ? { ...prev, [tab]: Math.min(prev[tab] + 1, 100) } : prev);
                 applyUnreadCount(unreadCountRef.current + 1);
                 void notificationSoundService.play(n.severity === 'critical' ? 'urgent' : 'normal');
             }
@@ -257,8 +303,15 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         setIsOpen(!isOpen);
     };
 
+    const decrementTabCount = (n?: AppNotification) => {
+        if (!n || n.isRead) return;
+        const tab = getNotificationInboxTab(n.deliveryReason);
+        setTabCounts(prev => prev ? { ...prev, [tab]: Math.max(prev[tab] - 1, 0) } : prev);
+    };
+
     const handleMarkRead = async (id: string) => {
         await notificationService.markRead(id);
+        decrementTabCount(notifications.find(n => n.id === id));
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
         applyUnreadCount(unreadCountRef.current - 1);
     };
@@ -266,6 +319,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     const handleMarkAllRead = async () => {
         await notificationService.markAllRead(userId);
         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+        setTabCounts(prev => prev ? { mine: 0, watching: 0, responsible: 0, system: 0 } : prev);
         applyUnreadCount(0);
     };
 
@@ -273,12 +327,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         await notificationService.dismiss(id);
         setNotifications(prev => prev.filter(n => n.id !== id));
         const n = notifications.find(n => n.id === id);
+        decrementTabCount(n);
         if (n && !n.isRead) applyUnreadCount(unreadCountRef.current - 1);
     };
 
     const handleDismissAll = async () => {
         await notificationService.dismissAll(userId);
         setNotifications([]);
+        setTabCounts(prev => prev ? { mine: 0, watching: 0, responsible: 0, system: 0 } : prev);
         applyUnreadCount(0);
     };
 
@@ -299,7 +355,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
     const handleRefresh = async () => {
         setChecking(true);
         try {
-            await Promise.all([loadCount(), loadList()]);
+            await Promise.all([loadCount(), loadList(), loadTabCounts()]);
         } finally {
             setChecking(false);
         }
@@ -319,9 +375,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         }
     };
 
-    const filtered = filterCategory === 'all'
-        ? notifications
-        : notifications.filter(n => n.category === filterCategory);
+    const activeTabConfig = NOTIFICATION_INBOX_TABS.find(tab => tab.id === activeTab) || NOTIFICATION_INBOX_TABS[0];
 
     const timeAgo = (dateStr: string) => {
         const diff = Date.now() - new Date(dateStr).getTime();
@@ -379,13 +433,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                 </button>
                                 {unreadCount > 0 && (
                                     <button onClick={handleMarkAllRead}
-                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-emerald-500" title="Đánh dấu tất cả đã đọc">
+                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-emerald-500" title="Đánh dấu tất cả đã đọc (mọi tab)" aria-label="Đánh dấu tất cả đã đọc">
                                         <CheckCheck size={12} />
                                     </button>
                                 )}
                                 {notifications.length > 0 && (
                                     <button onClick={handleDismissAll}
-                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-red-500" title="Xoá tất cả">
+                                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-slate-400 hover:text-red-500" title="Xoá tất cả thông báo ở mọi tab" aria-label="Xoá tất cả thông báo ở mọi tab">
                                         <Trash2 size={12} />
                                     </button>
                                 )}
@@ -395,19 +449,21 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                 </button>
                             </div>
                         </div>
-                        {/* Category filter chips */}
-                        <div className="flex gap-1 overflow-x-auto pb-1">
-                            <button onClick={() => setFilterCategory('all')}
-                                className={`px-2 py-1 rounded-lg text-[9px] font-bold shrink-0 transition-all ${filterCategory === 'all' ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
-                                Tất cả
-                            </button>
-                            {Object.entries(NOTIFICATION_CATEGORIES).map(([key, cat]) => {
-                                const count = notifications.filter(n => n.category === key).length;
-                                if (count === 0) return null;
+                        {/* Inbox tabs: why the notification reached me */}
+                        <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Lọc thông báo">
+                            {NOTIFICATION_INBOX_TABS.map(tab => {
+                                const count = tab.id === 'all' ? 0 : tabCounts?.[tab.id] || 0;
+                                const selected = activeTab === tab.id;
                                 return (
-                                    <button key={key} onClick={() => setFilterCategory(key)}
-                                        className={`px-2 py-1 rounded-lg text-[9px] font-bold shrink-0 transition-all flex items-center gap-1 ${filterCategory === key ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'}`}>
-                                        {cat.icon} {cat.label} <span className="opacity-60">({count})</span>
+                                    <button key={tab.id} type="button" role="tab" aria-selected={selected}
+                                        onClick={() => selectTab(tab.id)}
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 transition-all flex items-center gap-1 ${selected ? 'bg-indigo-500 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+                                        {tab.label}
+                                        {count > 0 && (
+                                            <span className={`min-w-[16px] rounded-full px-1 text-[9px] font-black ${selected ? 'bg-white/25 text-white' : tab.id === 'mine' ? 'bg-red-500 text-white' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-200'}`}>
+                                                {count > 99 ? '99+' : count}
+                                            </span>
+                                        )}
                                     </button>
                                 );
                             })}
@@ -416,15 +472,28 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
 
                     {/* Notification List */}
                     <div className="flex-1 overflow-y-auto">
-                        {filtered.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                        {listState === 'loading' && notifications.length === 0 ? (
+                            <div className="space-y-2 p-4" aria-label="Đang tải thông báo">
+                                {[0, 1, 2].map(index => <div key={index} className="h-12 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-700/50" />)}
+                            </div>
+                        ) : listState === 'error' ? (
+                            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                                <AlertTriangle size={28} className="text-amber-400 mb-2" />
+                                <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Không tải được thông báo</p>
+                                <button type="button" onClick={loadList}
+                                    className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-black text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900">
+                                    Thử lại
+                                </button>
+                            </div>
+                        ) : notifications.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
                                 <Bell size={32} className="text-slate-200 mb-2" />
-                                <p className="text-xs font-bold text-slate-300">Không có thông báo</p>
-                                <p className="text-[10px] text-slate-300 mt-1">Hệ thống sẽ tự động kiểm tra cảnh báo</p>
+                                <p className="text-xs font-bold text-slate-400">Không có thông báo</p>
+                                <p className="text-[11px] text-slate-400 mt-1">{activeTabConfig.emptyMessage}</p>
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-50 dark:divide-slate-700/50">
-                                {filtered.map(n => {
+                                {notifications.map(n => {
                                     const severity = SEVERITY_STYLES[n.severity] || SEVERITY_STYLES.info;
                                     const catCfg = NOTIFICATION_CATEGORIES[n.category as keyof typeof NOTIFICATION_CATEGORIES];
                                     return (
@@ -448,6 +517,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
                                                     </div>
                                                     <VehicleBookingNotificationContent notification={n} />
                                                     <div className="flex items-center gap-2 mt-1">
+                                                        {n.deliveryReason && (
+                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${NOTIFICATION_REASON_TONES[n.deliveryReason]}`}>
+                                                                {NOTIFICATION_REASON_LABELS[n.deliveryReason]}
+                                                            </span>
+                                                        )}
                                                         {catCfg && (
                                                             <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${catCfg.color}`}>
                                                                 {catCfg.label}

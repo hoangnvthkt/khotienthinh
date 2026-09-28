@@ -536,3 +536,22 @@ Chỉ sửa frontend, không có migration.
   - Dry-run script rollback: khôi phục hàm đợt 1, xoá helper tài chính, trả mã quyền hao hụt.
   - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm chọn "Apply như trên", gồm cả nhắc thiết bị hết hạn kiểm định. Server apply trước, frontend push sau. Smoke sau apply **PASS**; đã kiểm không còn dữ liệu giả.
   - Rollback: `supabase/operations/notification_p2_2_group2_rollback.sql`. Script này cần đi kèm rollback frontend, vì trình duyệt không còn quét.
+
+## Thông báo đúng người — bước 1: ghi lý do nhận
+
+- **Bối cảnh:** chủ sản phẩm muốn thông báo tới đúng người, tách thông báo hệ thống, được giao việc, được @nhắc, đang theo dõi và thuộc nghiệp vụ mình phụ trách. Bước 1 chỉ ghi lý do nhận và thêm tab lọc; **ai nhận thông báo nào không đổi**. Chưa có danh mục chức vụ BCH, nên việc chỉ định người nhận theo chức vụ để sang bước 2.
+- **Migration** `20260928044404_notification_delivery_reason`:
+  - Cột `notifications.delivery_reason` (bắt buộc), gồm 5 giá trị: `assigned`, `mentioned`, `watching`, `responsible`, `system`.
+  - Hàm `app_private.notification_delivery_reason(...)` và trigger BEFORE INSERT tự gán lý do nếu nơi tạo thông báo không truyền. Phiếu yêu cầu và quy trình được tính là "cần xử lý" khi người nhận đang giữ bước duyệt `PENDING`.
+  - Backfill 5.684 thông báo cũ theo cùng quy tắc. Với phiếu cũ, trạng thái bước duyệt lấy theo ngày 28/09.
+  - Không sửa hàm gửi thông báo của luồng khác (Daily log, V2, Work, Chat); trigger tự phân loại cho họ.
+- **Phân bố sau backfill:** cần xử lý 1.141, nhắc đến 287, theo dõi 883, phụ trách nghiệp vụ 2.602, thông báo chung 771. Ví dụ Phiếu yêu cầu 60 ngày qua: 68 cần xử lý, 5 nhắc đến, 341 theo dõi (trước đây trộn chung).
+- **Frontend:**
+  - Chuông và trang Thông báo có tab: Tất cả · Việc của tôi (giao việc + nhắc tên) · Theo dõi · Nghiệp vụ · Hệ thống. Mỗi tab có số chưa đọc, đếm chính xác trên máy chủ.
+  - Mỗi thông báo có nhãn lý do. Có đủ trạng thái đang tải, lỗi (kèm Thử lại) và trống theo từng tab.
+  - Trang Thông báo bỏ cách đoán nhóm cũ (`getNotificationWorkGroup`: cứ chưa đọc và thuộc quy trình là tính "cần xử lý").
+- **Kiểm tra:**
+  - Dry-run và smoke persona đều PASS: người duyệt đang chờ → cần xử lý, người tạo phiếu → theo dõi, được nhắc → nhắc đến, cảnh báo → phụ trách, broadcast → chung. Lý do truyền sẵn được giữ nguyên, giá trị sai bị chặn, người nhận đọc được lý do của mình.
+  - Dry-run script rollback PASS.
+  - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý; server apply trước, frontend push sau. Smoke sau apply PASS, không còn dữ liệu giả.
+  - Rollback: `supabase/operations/notification_delivery_reason_rollback.sql`; phải rollback frontend trước.
