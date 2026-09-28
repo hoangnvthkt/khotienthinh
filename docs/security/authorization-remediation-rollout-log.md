@@ -664,3 +664,45 @@ Chỉ sửa frontend, không có migration.
   - Chưa có cách Admin đặt lại mật khẩu cho người khác.
   - Danh sách người dùng chưa có cột tóm tắt quyền; để P3 "Hồ sơ quyền".
 - Rollback: `supabase/operations/authorization_user_snapshot_for_admins_rollback.sql`, kèm rollback frontend.
+
+## P2 — `project_documents` và `activities` hết `select true`; Admin đặt mật khẩu cho người khác
+
+### Tài liệu dự án và nhật ký hoạt động
+
+- **Trước khi sửa:**
+  - `project_documents` (13 tài liệu): mọi người đọc được. Ai cũng thêm được tài liệu vào bất kỳ dự án nào. Chỉ Admin sửa/xoá được; người khác bấm xoá thì không có gì xảy ra mà cũng không báo lỗi.
+  - `uploaded_by` lưu **tên hiển thị**, không phải mã tài khoản.
+  - `activities` (3.217 dòng, gồm 693 dòng thao tác quản trị về người dùng, nhân sự, tài sản): mọi người đọc được. Việc ghi dưới tên người khác đã bị trigger `activities_stamp_actor` (P0-B) chặn.
+- **Migration** `20260928083215_authorization_p2_documents_activities_rls`:
+  - Tài liệu:
+    - Đọc: Admin hoặc quyền `project.documents` xem/quản trị của đúng dự án (cùng quy tắc với tệp ở P1.6).
+    - Thêm: quyền tải lên hoặc quản trị.
+    - Sửa: quyền sửa thông tin hoặc quản trị.
+    - Xoá: quyền xoá/xoá tất cả/quản trị, hoặc người tải lên có quyền xoá của mình.
+    - Thêm cột `created_by`, tự điền mã tài khoản người tải lên.
+  - Nhật ký:
+    - Dòng Kho (vật tư, phiếu, yêu cầu): người được xem kho đó.
+    - Dòng quản trị: chỉ Admin và chính người làm.
+    - Quyền kho tính **một lần cho mỗi truy vấn** qua `activity_wms_scope()`. Kiểm từng dòng mất hơn 2 phút trên 3.200 dòng; tải 50 dòng nhật ký giờ khoảng 0,16 giây.
+- **Tác động đo trên dữ liệu thật:**
+  - Tài liệu: 50 người vẫn xem đủ, 7 người không còn thấy.
+  - Nhật ký: 41 người có quyền Kho vẫn thấy toàn bộ khoảng 2.524 dòng Kho nhưng không còn thấy thao tác quản trị của người khác; 12 người không có quyền Kho không còn thấy nhật ký.
+- **Frontend:** `documentService`
+  - Tải lên, sửa và xoá báo lỗi rõ, không còn im lặng khi thất bại. Trước đây ghi thông tin thất bại mà tab vẫn báo "Tải lên thành công".
+  - Khi xoá, xoá thông tin trước rồi mới xoá tệp, để không mất tệp khi bị chặn.
+- **Kiểm tra:** dry-run, smoke persona và rollback dry-run PASS. **ĐÃ APPLY** 28/09; smoke sau apply PASS, không để lại dữ liệu test.
+- **Rollback:** `supabase/operations/authorization_p2_documents_activities_rls_rollback.sql`.
+
+### Admin đặt mật khẩu mới cho người khác
+
+- **Trước khi sửa:** Edge Function `reset-password` (v16) đã cho Admin đặt mật khẩu hoặc email của người khác qua API, nhưng:
+  - không ghi nhật ký;
+  - mật khẩu chỉ cần 6 ký tự;
+  - đặt được cho cả tài khoản đã vô hiệu hoá, đi vòng qua luồng Khôi phục.
+- **Đã deploy v17** (chủ sản phẩm đồng ý 28/09):
+  - Mật khẩu ≥ 8 ký tự.
+  - Khi đổi cho người khác: bắt buộc là Admin, tài khoản đang hoạt động, có lý do ≥ 10 ký tự, và ghi `audit_trail` (không lưu mật khẩu).
+  - Tự đổi của chính mình giữ nguyên hành vi.
+  - Kiểm tra sau deploy: lời gọi không có tài khoản bị từ chối 401. Chưa thử luồng Admin thật, vì agent không dùng mật khẩu thật.
+- **Frontend:** drawer người dùng có nút "Đặt mật khẩu mới" (nhập hai lần, có nút hiện/ẩn, kèm lý do). Chỉ Admin thấy, không áp cho chính mình; tài khoản vô hiệu hoá được hướng sang "Khôi phục tài khoản".
+- **Rollback:** deploy lại bản v16 từ git (commit trước `supabase/functions/reset-password/index.ts`).

@@ -90,6 +90,7 @@
 | Thông báo B2b | `20260928062658_notification_event_recipients_request_safety` | Phiếu yêu cầu: người theo dõi chỉ nhận kết quả + quá hạn, người duyệt nhận nhắc hạn + bình luận; sự cố An toàn gửi từ trigger (Cao/Nghiêm trọng → Room AT + BCH) |
 | Thông báo B3 | `20260928065520_notification_preferences_digest` | Tuỳ chọn cá nhân (Theo dõi: ngay/tổng hợp/không báo; Nghiệp vụ: ngay/tổng hợp) + tổng hợp cuối ngày qua cron `notification-digests` |
 | P2 Người dùng | `20260928080828_authorization_user_snapshot_for_admins` | Màn sửa người dùng tải quyền thật của người được sửa (Room theo dự án, link mở đúng dự án); chọn phạm vi theo tên; bỏ thuật ngữ kỹ thuật, dữ liệu online/đăng nhập giả và ngõ cụt drawer |
+| P2 Tài liệu + Nhật ký | `20260928083215_authorization_p2_documents_activities_rls` | `project_documents` theo quyền Tài liệu của dự án (có `created_by`); `activities`: nhật ký Kho theo kho được xem, thao tác quản trị chỉ Admin và người làm. Edge Function `reset-password` v17: Admin đặt mật khẩu cho người khác có lý do + nhật ký |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -135,12 +136,11 @@ Bước 1 đã xong (xem rollout log). Còn lại:
 
 Xem rollout log. Còn mở, cần chủ sản phẩm quyết:
 - Lý do tối thiểu 10 ký tự vẫn bắt buộc khi chỉ sửa thông tin hồ sơ (RPC `update_user_authorization_v2`).
-- Chưa có cách Admin đặt lại mật khẩu cho người khác.
+- ĐÃ XONG: Admin đặt mật khẩu mới cho người khác (drawer người dùng, `reset-password` v17).
 
-### 7.3 Hai bảng còn `select true`
+### 7.3 Hai bảng còn `select true` — ĐÃ XONG (28/09)
 
-- `project_documents`: tệp đã khóa nhưng metadata vẫn mở. Đề xuất quy tắc: Admin, `project.documents.view` của dự án, hoặc người tải lên.
-- `activities`: mô tả thao tác, dùng ở màn Hoạt động hệ thống. Cần kiểm consumer trước khi siết.
+Xem rollout log. Không còn bảng nào mở `select true` cho mọi người trong phạm vi audit.
 
 ### 7.4 Bucket `project-photos` (1.654 ảnh, 1,5 GB)
 
@@ -175,4 +175,4 @@ Xem rollout log. Còn mở, cần chủ sản phẩm quyết:
 - `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
 - Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.333 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.334 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.

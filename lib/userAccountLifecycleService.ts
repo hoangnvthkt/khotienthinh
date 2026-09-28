@@ -106,3 +106,28 @@ export const executeUserAccountLifecycle = async (
   }
   return data as UserAccountOperationResult;
 };
+
+export const ADMIN_PASSWORD_MIN_LENGTH = 8;
+export const ADMIN_PASSWORD_REASON_MIN_LENGTH = 10;
+
+/** Admin sets a new password for another active account (reset-password Edge Function, audited). */
+export const setUserPasswordByAdmin = async (input: {
+  targetUserId: string;
+  newPassword: string;
+  reason: string;
+}): Promise<void> => {
+  if (input.newPassword.length < ADMIN_PASSWORD_MIN_LENGTH) {
+    throw new Error(`Mật khẩu phải có ít nhất ${ADMIN_PASSWORD_MIN_LENGTH} ký tự.`);
+  }
+  if (input.reason.trim().length < ADMIN_PASSWORD_REASON_MIN_LENGTH) {
+    throw new Error(`Lý do phải có ít nhất ${ADMIN_PASSWORD_REASON_MIN_LENGTH} ký tự.`);
+  }
+  const { data, error } = await supabase.functions.invoke('reset-password', {
+    body: { userId: input.targetUserId, newPassword: input.newPassword, reason: input.reason.trim() },
+  });
+  if (error) {
+    const message = await readFunctionInvokeErrorMessage(error);
+    throw new Error(message || error.message || 'Không đặt được mật khẩu mới.');
+  }
+  if (!data?.success) throw new Error(data?.error || 'Không đặt được mật khẩu mới.');
+};

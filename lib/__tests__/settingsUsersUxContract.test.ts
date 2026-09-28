@@ -42,4 +42,16 @@ describe('Settings → Users (audit P2)', () => {
     expect(userModal).toContain('loadUserAuthorizationSnapshot(userToEdit.id)');
     expect(editor).toContain('snapshotState');
   });
+
+  it('lets an Admin set a new password for someone else, audited on the server', () => {
+    const form = read('components/AdminSetPasswordForm.tsx');
+    const fn = read('supabase/functions/reset-password/index.ts');
+    expect(settingsUsers).toContain('<AdminSetPasswordForm targetUser={drawerUser} />');
+    expect(settingsUsers).toContain('drawerUser.id !== currentUser.id');
+    expect(form).toContain('setUserPasswordByAdmin');
+    expect(fn).toContain("from('audit_trail').insert");
+    expect(fn).toContain('MIN_PASSWORD_LENGTH = 8');
+    expect(fn).toContain("target.account_status === 'DISABLED'");
+    expect(fn).toContain('Chỉ Admin được đặt mật khẩu cho người khác.');
+  });
 });

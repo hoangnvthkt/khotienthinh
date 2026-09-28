@@ -14,6 +14,7 @@ import { isChatEnabled } from '../../lib/featureFlags';
 import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settingsPermissions';
 import { useToast } from '../../context/ToastContext';
 import HrmAuthorizationPanel from '../../components/permissions/HrmAuthorizationPanel';
+import AdminSetPasswordForm from '../../components/AdminSetPasswordForm';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { useNavigate } from 'react-router-dom';
 import { userActivityService } from '../../lib/userActivityService';
@@ -705,13 +706,19 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-100 p-4 text-xs text-slate-500 flex items-start gap-2">
-                      <Key className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                      <p>
-                        <span className="font-bold text-slate-700">Mật khẩu: </span>
-                        người dùng tự đổi ở Cài đặt → Tài khoản. Màn này chưa hỗ trợ Admin đặt lại mật khẩu cho người khác.
-                      </p>
-                    </div>
+                    {isSettingsUserAdmin(currentUser) && drawerUser.id !== currentUser.id ? (
+                      <AdminSetPasswordForm targetUser={drawerUser} />
+                    ) : (
+                      <div className="rounded-2xl border border-slate-100 p-4 text-xs text-slate-500 flex items-start gap-2">
+                        <Key className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                        <p>
+                          <span className="font-bold text-slate-700">Mật khẩu: </span>
+                          {drawerUser.id === currentUser.id
+                            ? 'đổi mật khẩu của bạn ở Cài đặt → Tài khoản.'
+                            : 'người dùng tự đổi ở Cài đặt → Tài khoản; khi quên, nhờ Admin đặt mật khẩu mới.'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

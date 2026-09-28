@@ -139,7 +139,8 @@
     "20260928052528_notification_site_command_recipients.sql",
     "20260928062658_notification_event_recipients_request_safety.sql",
     "20260928065520_notification_preferences_digest.sql",
-    "20260928080828_authorization_user_snapshot_for_admins.sql"
+    "20260928080828_authorization_user_snapshot_for_admins.sql",
+    "20260928083215_authorization_p2_documents_activities_rls.sql"
   ],
   "forbidIncludeAll": true
 }
