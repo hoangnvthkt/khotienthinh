@@ -24,6 +24,9 @@ import {
   type ProjectPermissionCode,
 } from '../../lib/projectStaffService';
 import { notificationService } from '../../lib/notificationService';
+import { supabase } from '../../lib/supabase';
+import SettingsAlertsSiteCommand from './SettingsAlertsSiteCommand';
+import SettingsAlertsRecipientPreview, { type AlertPreviewProject } from './SettingsAlertsRecipientPreview';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 
@@ -111,6 +114,15 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<AlertRuleKey | null>(null);
   const [running, setRunning] = useState(false);
+  const [projects, setProjects] = useState<AlertPreviewProject[]>([]);
+
+  useEffect(() => {
+    supabase.from('projects').select('id,code,name').order('name').limit(1000)
+      .then(({ data, error }) => {
+        if (error) logApiError('settings.alerts.projects', error);
+        else setProjects((data || []).map(row => ({ id: row.id, code: row.code, name: row.name || row.code || row.id })));
+      });
+  }, []);
 
   const activeUsers = useMemo(
     () => [...users]
@@ -275,6 +287,21 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
         )}
 
         {config.mode === 'project_permission' && (
+          <label className="flex items-start gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={config.includeSiteCommand === true}
+              onChange={event => patchRecipient(rule.alertKey, { includeSiteCommand: event.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-600"
+            />
+            <span>
+              <span className="block text-xs font-black text-slate-700">Kèm Ban chỉ huy công trường</span>
+              <span className="block text-[11px] font-bold text-slate-500">Chỉ huy trưởng, chỉ huy phó, kỹ thuật trưởng của đúng dự án (chỉnh ở mục Ban chỉ huy phía trên).</span>
+            </span>
+          </label>
+        )}
+
+        {config.mode === 'project_permission' && (
           <div className="space-y-2">
             <p className="text-xs font-bold text-slate-500">
               {PROJECT_PERMISSION_SCOPE[rule.alertKey] || 'Người có quyền sau trong dự án phát sinh cảnh báo'}:
@@ -379,6 +406,7 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6">
         <div className="space-y-4">
+          <SettingsAlertsSiteCommand />
           {rules.map(rule => (
             <div key={rule.alertKey} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -471,6 +499,7 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
                   <Users size={14} /> Người nhận
                 </div>
                 {renderRecipientControls(rule)}
+                <SettingsAlertsRecipientPreview rule={rule} projects={projects} />
               </div>
             </div>
           ))}

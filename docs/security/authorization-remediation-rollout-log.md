@@ -555,3 +555,27 @@ Chỉ sửa frontend, không có migration.
   - Dry-run script rollback PASS.
   - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý; server apply trước, frontend push sau. Smoke sau apply PASS, không còn dữ liệu giả.
   - Rollback: `supabase/operations/notification_delivery_reason_rollback.sql`; phải rollback frontend trước.
+
+## Thông báo đúng người — bước 2 (phần 1): Ban chỉ huy công trường và xem trước người nhận
+
+- **Quyết định chủ sản phẩm (28/09):**
+  - BCH gồm Chỉ huy trưởng, Chỉ huy phó và Kỹ thuật trưởng.
+  - Cảnh báo An toàn chỉ gửi Room An toàn và BCH; Admin chỉ nhận khi dự án không có ai phụ trách.
+- **Dữ liệu:**
+  - Chức vụ nằm ở `hrm_positions`, mỗi BCH một chức vụ: VT015/VT016 Chỉ huy trưởng BCH RICO/SMB, VT024/VT025 Chỉ huy phó, VT076 Kĩ thuật trưởng.
+  - Chỉ 6/86 dự án có nhân sự dự án, và **chưa ai được gán chức vụ Chỉ huy trưởng**; hiện có 2 Chỉ huy phó và 2 Kĩ thuật trưởng.
+- **Migration** `20260928052528_notification_site_command_recipients`:
+  - Bảng `notification_site_command_positions` lưu chức vụ nào thuộc BCH. Không lưu thành cột trên `hrm_positions`, vì người quản lý danh mục nhân sự có quyền ghi mọi cột của bảng đó. Chỉ Admin sửa qua RPC `set_site_command_positions`, có ghi `audit_trail`.
+  - `alert_site_command_ids(project, site)`: người đang giữ chức vụ BCH trong nhân sự của đúng dự án và công trường.
+  - Cấu hình người nhận có thêm `includeSiteCommand`.
+  - RPC `preview_alert_recipients(alertKey, project, config)` chỉ cho Admin: trả danh sách người nhận thật kèm lý do (Room/quyền, BCH, Admin, Admin dự phòng), tính theo cấu hình đang sửa kể cả khi chưa lưu.
+  - Quy tắc `safety_critical`: `includeSiteCommand = true`, `includeAdmins = false`.
+- **Tác động trên dữ liệu thật:** mỗi nguồn cảnh báo An toàn trước đây tới 12 người (Room 11, gồm 1 Admin, cộng 1 Admin khác); giờ vẫn 12 người nhưng đổi thành Room 11 + 1 người BCH chưa có trong Room, Admin không có trong Room không nhận nữa.
+- **Frontend (Cài đặt → Cảnh báo):**
+  - Thẻ "Ban chỉ huy công trường": chức vụ đang chọn kèm số người giữ, sửa bằng danh sách có tìm kiếm. Hiện cảnh báo khi chưa ai giữ chức vụ Chỉ huy trưởng.
+  - Ô "Kèm Ban chỉ huy công trường" cho các quy tắc theo quyền dự án.
+  - Phần "Xem trước người nhận" ở mỗi quy tắc: chọn dự án rồi xem danh sách tên kèm lý do. Có đủ trạng thái đang tải, lỗi và không ai nhận.
+- **Kiểm tra:**
+  - Dry-run, smoke persona và dry-run rollback đều PASS. Smoke kiểm: chỉ gồm người giữ CHT/CHP/KTT của đúng dự án; bật hoặc tắt tuỳ chọn chỉ thêm hoặc bớt đúng BCH; nhân viên không sửa được BCH và không xem trước được; Admin sửa được, có ghi nhật ký; chức vụ không tồn tại bị chặn; danh sách xem trước khớp người nhận thật.
+  - **ĐÃ APPLY** 28/09. Smoke sau apply PASS, không để lại dữ liệu hay dòng nhật ký test.
+  - Rollback: `supabase/operations/notification_site_command_recipients_rollback.sql`, kèm rollback màn Cài đặt.

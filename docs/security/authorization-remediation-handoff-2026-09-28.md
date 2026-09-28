@@ -86,6 +86,7 @@
 | P2.2 đợt 1 | `20260928031025_notification_p2_2_server_scheduled_alerts` | `app_private.run_scheduled_alerts()` chạy qua cron `server-scheduled-alerts` (`*/5`), 6 loại; RPC `run_scheduled_alerts_now()` |
 | P2.2 đợt 2 | `20260928035750_notification_p2_2_server_scheduled_alerts_group2` | Đủ 11 loại trên server; ngân sách → người xem Tài chính, tiến độ → Room `gantt`, hao hụt → Room `material_planning` (`edit`), an toàn → Room `safety` (nhắc hằng ngày, kể cả thiết bị hết hạn kiểm định); trình duyệt không còn quét |
 | Thông báo B1 | `20260928044404_notification_delivery_reason` | Mỗi thông báo có `delivery_reason` (assigned/mentioned/watching/responsible/system), gán bằng trigger; chuông và trang Thông báo có tab Việc của tôi · Theo dõi · Nghiệp vụ · Hệ thống |
+| Thông báo B2a | `20260928052528_notification_site_command_recipients` | BCH (CHT/CHP/KTT theo `notification_site_command_positions`), tuỳ chọn `includeSiteCommand`, RPC xem trước người nhận; cảnh báo An toàn = Room An toàn + BCH, Admin chỉ dự phòng |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -120,7 +121,9 @@ Xem rollout log. Còn mở:
 
 Bước 1 đã xong (xem rollout log). Còn lại:
 - **Bước 2:** quy tắc người nhận cấu hình được cho từng loại sự kiện, gồm Room + quyền, chức vụ trong dự án (`project_staff.position_id`) và người liên quan, giới hạn trong đúng dự án hoặc công trường. Thêm nút "Xem trước người nhận" trong Cài đặt → Thông báo. Làm trước với Phiếu yêu cầu và Tiến độ, sau đó An toàn và Vật tư.
-  - **Chờ chủ sản phẩm:** chưa có danh mục chức vụ BCH, cần chốt chức vụ nào tính là BCH.
+  - ĐÃ XONG phần BCH và xem trước người nhận cho cảnh báo định kỳ (B2a). **Dữ liệu cần bổ sung:** chưa ai được gán chức vụ Chỉ huy trưởng trong nhân sự dự án, và chỉ 6/86 dự án có nhân sự dự án.
+  - Còn lại của bước 2: áp quy tắc người nhận cho thông báo theo sự kiện (Phiếu yêu cầu, Tiến độ, An toàn khi tạo hoặc cập nhật sự cố, Vật tư), không chỉ cảnh báo định kỳ.
+  - Room An toàn (quyền xác nhận/duyệt) đang có 11 người; nên rà lại cho đúng "người quản lý an toàn".
   - Nơi tạo thông báo mới nên truyền `delivery_reason`; trigger chỉ là dự phòng.
 - **Bước 3:** tuỳ chọn cá nhân (tắt, hoặc chuyển sang tổng hợp cuối ngày, cho loại theo dõi và nghiệp vụ mức thông tin; không được tắt loại giao việc, nhắc tên và cảnh báo nghiêm trọng) và bản tổng hợp cuối ngày. Chủ sản phẩm chưa quyết người dùng có được tắt hẳn loại "Nghiệp vụ" hay không.
 
@@ -170,4 +173,4 @@ Theo audit mục P2:
 - `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
 - Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.314 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.319 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
