@@ -92,6 +92,7 @@
 | P2 Người dùng | `20260928080828_authorization_user_snapshot_for_admins` | Màn sửa người dùng tải quyền thật của người được sửa (Room theo dự án, link mở đúng dự án); chọn phạm vi theo tên; bỏ thuật ngữ kỹ thuật, dữ liệu online/đăng nhập giả và ngõ cụt drawer |
 | P2 Tài liệu + Nhật ký | `20260928083215_authorization_p2_documents_activities_rls` | `project_documents` theo quyền Tài liệu của dự án (có `created_by`); `activities`: nhật ký Kho theo kho được xem, thao tác quản trị chỉ Admin và người làm. Edge Function `reset-password` v17: Admin đặt mật khẩu cho người khác có lý do + nhật ký |
 | P1.6c | `20260928084924_authorization_p1_6_private_project_photos` | Bucket `project-photos` (ảnh nhật ký) private; đọc = người tải, Admin, người xem được nhật ký dự án; resolver tự ký link cũ. **Chờ chủ sản phẩm purge CDN** |
+| P3 Mẫu quyền dự án | `20260928092719_authorization_p3_project_room_templates` | 6 mẫu Room theo vai trò (Admin sửa ở Cài đặt → Mẫu quyền dự án); tab Phân quyền dự án có "Phân quyền theo người": điền theo mẫu gợi ý theo chức vụ rồi chỉnh riêng từng quyền |
 
 Mỗi bước có smoke `supabase/tests/<tên>_smoke.sql` và rollback trong `supabase/operations/`.
 
@@ -150,7 +151,7 @@ Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; lu�
 ### 7.5 P3 (theo phương án)
 
 - Màn "Hồ sơ quyền" hợp nhất theo từng người.
-- Template quyền theo vai trò.
+- ĐÃ XONG (28/09): mẫu quyền Room theo vai trò + phân quyền theo người. Còn: chuyển form tạo dự án (`buildSeedProjectRoleGrants`) sang mẫu Room.
 - Mở Room cho PM/CHT khi chủ sản phẩm quyết định.
 - Task 13: drop cột legacy (`allowed_modules`, `admin_modules`, …) sau khi hết phụ thuộc. `can_access_module` và `resolve_effective_permission_sources` vẫn đọc cột legacy.
 
@@ -175,4 +176,4 @@ Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; lu�
 - `origin/main` trùng với `feature/authorization-p0-hardening`, gồm cả P2.2 đợt 2 (28/09).
 - Cron `server-scheduled-alerts` chạy đủ 11 loại. Sau đợt 2, lượt cron đầu dự kiến gửi 48 cảnh báo An toàn tới 12 người, rồi lặp lại mỗi ngày tới khi sự cố hoặc thiết bị được xử lý.
 - Worker thông báo Quy trình đang bật; không có sự kiện kẹt.
-- Toàn repo: Vitest 2.334 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.
+- Toàn repo: Vitest 2.341 pass (máy tải nặng thì chạy `--maxWorkers=4`; test quét truy vấn dễ quá 15 giây), `tsc` pass, build pass, kiểm tra truy vấn 0 lỗi.

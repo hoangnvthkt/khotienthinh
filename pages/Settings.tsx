@@ -29,6 +29,7 @@ import SettingsReleaseNotes from './settings/SettingsReleaseNotes';
 import SettingsAlerts from './settings/SettingsAlerts';
 import SettingsPermissionHealth from './settings/SettingsPermissionHealth';
 import SettingsRoleTemplates from './settings/SettingsRoleTemplates';
+import SettingsProjectRoomTemplates from './settings/SettingsProjectRoomTemplates';
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
@@ -1113,6 +1114,7 @@ const Settings: React.FC = () => {
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
     { id: 'role-templates', label: 'Mẫu quyền', icon: ShieldCheck, rolesOnly: true },
+    { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
@@ -1130,6 +1132,7 @@ const Settings: React.FC = () => {
   const activeFeatureReadOnly = activeSettingsTab !== 'account'
     && activeSettingsTab !== 'release-notes'
     && activeSettingsTab !== 'role-templates'
+    && activeSettingsTab !== 'project-room-templates'
     && !canManageSettingsFeature(currentUser, activeSettingsTab as Exclude<SettingsFeatureId, 'account'>);
   const handleSelectTab = (tabId: string) => {
     setActiveTab(tabId);
@@ -2134,6 +2137,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'role-templates' && canManageBusinessRoles && (
             <SettingsRoleTemplates />
+          )}
+
+          {activeSettingsTab === 'project-room-templates' && isSettingsAdmin && (
+            <SettingsProjectRoomTemplates />
           )}
 
           {activeSettingsTab === 'account' && (

@@ -725,3 +725,30 @@ Chỉ sửa frontend, không có migration.
 - **Rollback:** `supabase/operations/authorization_p1_6_private_project_photos_rollback.sql`.
 - **ĐÃ APPLY** 28/09 sau khi chủ sản phẩm đồng ý. Giao diện được push trước (chờ 2 phút cho bản deploy), rồi mới đổi bucket. Smoke sau apply PASS; URL công khai mẫu trả 400.
 - **Còn chờ:** chủ sản phẩm purge CDN `DELETE /storage/v1/cdn/project-photos` bằng secret key, vì ảnh từng được mở có thể vẫn nằm trong cache Smart CDN.
+
+## P3 — mẫu quyền dự án theo vai trò và phân quyền theo người
+
+- **Vấn đề:**
+  - Phân quyền dự án đi theo từng Room: muốn cấp cho một Chỉ huy trưởng phải mở khoảng 10 Room để tick. Hiện chỉ 6/86 dự án có Room (591 quyền, 74 người).
+  - Bộ mẫu cũ trong code (`PROJECT_PERMISSION_TEMPLATES`) cấp mã `project.*`, không còn tác dụng với các phân hệ đã chuyển sang Room.
+- **Chủ sản phẩm (28/09):** đồng ý phân nhanh theo vị trí, nhưng **phải chỉnh riêng được cho từng nhân viên khi áp**, ví dụ QS được thêm quyền xem nghiệp vụ khác hoặc bỏ một quyền trong mẫu.
+- **Migration** `20260928092719_authorization_p3_project_room_templates`:
+  - Bảng `project_room_templates`: mẫu gồm Room và thao tác, cùng chức vụ gợi ý. Mọi người đăng nhập được đọc; chỉ Admin sửa qua `save_project_room_template` (có kiểm tra thao tác hợp lệ, tự thêm "Xem" làm tiên quyết, ghi nhật ký).
+  - `get_project_staff_room_actions`: quyền Room hiện có của một người.
+  - `apply_project_room_template`, chỉ Admin:
+    - chế độ `merge`, `replace`, hoặc `exact` (lưu đúng bộ quyền đã chỉnh riêng);
+    - có chế độ chỉ xem trước (`p_dry_run`);
+    - gọi lại `replace_project_permission_room_members` cho từng Room, nên giữ mọi ràng buộc Room;
+    - ghi nhật ký "Áp mẫu … (có tùy chỉnh)".
+  - Sáu mẫu mặc định: Chỉ huy trưởng/phó, Kỹ thuật hiện trường, QS, Thủ kho công trường, Kế toán dự án, Chỉ xem. Chức vụ gợi ý được gắn theo tên. **Migration không gán quyền cho ai.**
+- **Frontend:**
+  - Dự án → tab Phân quyền → "Phân quyền theo người":
+    - chọn người → hiện quyền đang có → (tuỳ chọn) điền theo mẫu gợi ý theo chức vụ, kiểu thêm vào hoặc thay bằng mẫu;
+    - bảng 10 Room để thêm hoặc bỏ từng quyền (xanh = sẽ thêm, gạch đỏ = sẽ gỡ) → Lưu.
+  - Cài đặt → "Mẫu quyền dự án" để sửa mẫu.
+  - Thay câu "Room-authoritative · PBAC fallback" bằng tiếng Việt.
+- **Kiểm tra:**
+  - Dry-run, smoke persona và rollback dry-run PASS. Smoke kiểm: xem trước khớp với khi áp; chế độ thay và chế độ lưu đúng bộ đã chỉnh; quyền của người khác không đổi; nhân viên thường bị chặn; có nhật ký.
+  - **ĐÃ APPLY** 28/09; smoke sau apply PASS.
+- **Còn mở:** form tạo dự án vẫn gán người bằng bộ mẫu cũ (`buildSeedProjectRoleGrants` trong `ProjectDashboard`), những người này không có quyền Room. Nên chuyển sang mẫu Room.
+- **Rollback:** `supabase/operations/authorization_p3_project_room_templates_rollback.sql`.

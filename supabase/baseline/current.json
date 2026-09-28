@@ -144,7 +144,8 @@
     "20260928080828_authorization_user_snapshot_for_admins.sql",
     "20260928083215_authorization_p2_documents_activities_rls.sql",
     "20260928083534_safety_storage_site_scoped_access.sql",
-    "20260928084924_authorization_p1_6_private_project_photos.sql"
+    "20260928084924_authorization_p1_6_private_project_photos.sql",
+    "20260928092719_authorization_p3_project_room_templates.sql"
   ],
   "forbidIncludeAll": true
 }
