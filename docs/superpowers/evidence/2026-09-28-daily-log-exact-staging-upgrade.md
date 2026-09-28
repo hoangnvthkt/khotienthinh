@@ -343,3 +343,28 @@ execution explicit. [Official integration documentation](https://supabase.com/do
 No integration setting was changed. Additional organization-level permission is
 not needed to finish this rehearsal or its now-completed cleanup; independently
 reading that setting remains unavailable.
+
+## Production database deployment (owner-approved, 28/09/2026 evening ICT)
+
+Owner approved in chat: accept the current daily physical backup (PITR off), run
+now. Executed by Claude Code (single agent) from this worktree at `2dcf0c4`.
+
+1. Drift check: main `4fcca71` contained in head; 26 manifest SHA-256 matched;
+   production ledger identical to the frozen 147-row parent; 16,024 catalog
+   entries unchanged.
+2. `supabase db push --include-all --dry-run` (CLI 2.95.6) listed exactly the 26
+   manifest files in order.
+3. Apply exited 0. Ledger 147 → 173; all original rows unchanged; exactly the 26
+   manifest versions added. Follow-up dry-run: "Remote database is up to date".
+4. Original-column fingerprints unchanged for daily logs, labor, machines,
+   contributions, daily task progress, project tasks, project transactions, Room
+   members and Room member actions. Expected catalog changes only: two new
+   expiry-required actions (`publish_progress`, `view_resource_evidence`) and Room
+   allowed_actions extended for daily_log/payment. Nobody holds the new actions;
+   zero rollout scopes, publications and V2 work items; legacy resources remain
+   semantics v1; every Daily Log table has RLS; no invalid index.
+
+Evidence: [production-apply.txt](2026-09-28-staging-147-173/production-apply.txt),
+[production-data-compare.json](2026-09-28-staging-147-173/production-data-compare.json).
+Main merge approved by the owner in the same conversation; pilot activation still
+needs separate approval.
