@@ -62,4 +62,13 @@ describe('project Room role templates', () => {
     expect(migration).toContain("'customized', v_customized");
     expect(read('components/project/permissions/ProjectRoomTemplateAssign.tsx')).toContain("mode: 'exact'");
   });
+
+  it('gives members added by the project form their Rooms from templates', () => {
+    const dashboard = read('pages/ProjectDashboard.tsx');
+    expect(dashboard).toContain("admin: 'site_commander'");
+    expect(dashboard).toContain("executor: 'field_engineer'");
+    expect(dashboard).toContain("watcher: 'viewer'");
+    expect(dashboard.match(/await applySeedRoomTemplates\(project, seededMembers/g)?.length).toBe(2);
+    expect(dashboard).toContain('if (user.role !== Role.ADMIN)');
+  });
 });

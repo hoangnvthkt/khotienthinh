@@ -752,3 +752,15 @@ Chỉ sửa frontend, không có migration.
   - **ĐÃ APPLY** 28/09; smoke sau apply PASS.
 - **Còn mở:** form tạo dự án vẫn gán người bằng bộ mẫu cũ (`buildSeedProjectRoleGrants` trong `ProjectDashboard`), những người này không có quyền Room. Nên chuyển sang mẫu Room.
 - **Rollback:** `supabase/operations/authorization_p3_project_room_templates_rollback.sql`.
+
+### P3 — form tạo dự án áp mẫu Room (28/09)
+
+- **Vấn đề:** người được thêm khi tạo dự án (Quản trị / Thực hiện / Người theo dõi, cả khi nhập Excel) chỉ nhận mã `project.*` từ bộ mẫu cũ, nên **không có quyền trong các Room**.
+- **Sửa (frontend, không đổi máy chủ):**
+  - Sau khi thêm người, áp mẫu Room qua `apply_project_room_template` (chế độ merge).
+  - Mẫu chọn theo chức vụ gợi ý; nếu chức vụ không gợi ý mẫu nào thì: Quản trị → Chỉ huy trưởng, Thực hiện → Kỹ thuật hiện trường, Người theo dõi → Chỉ xem.
+  - Vẫn giữ mã `project.*` cho các phân hệ chưa chuyển sang Room, ví dụ Tài liệu.
+  - Người tạo không phải Admin: dự án vẫn được tạo, kèm thông báo nhờ Admin phân quyền Room.
+  - Người nào áp mẫu lỗi thì có thông báo, kèm số người.
+  - Nhập Excel chỉ báo khi có lỗi.
+  - Form có dòng giải thích.
