@@ -8,10 +8,11 @@ const authoritativeCloudSources = [
   ['20260924094500_project_material_request_site_stock_context.sql', '173db3df98e92faa696ea0ef21950f0d15cddd4cf9e8865829a01e59d1b116ae'],
   ['20260924164000_project_material_purchase_boq_warning_stock.sql', 'b9a30de2b7ace1890148f27f8e8611d99c2e39171f22c436c3dc20e35d9e36c5'],
   ['20260924165000_project_purchase_warning_verified_on_hand.sql', '6fd64d5a873b1ff34ee861344ae0bb40ccae139023e8dde0c7a2d60085aab893'],
+  ['20260928062658_notification_event_recipients_request_safety.sql', 'cd8347d677f3c29d040fae5c61157f2660062120f3a961f1db6810a696c27681'],
 ] as const;
 
 describe('Daily Log release migration history', () => {
-  it('keeps the four already-applied Cloud sources byte-identical to the reconciled originals', () => {
+  it('keeps the five already-applied Cloud sources byte-identical to the reconciled originals', () => {
     const missing = authoritativeCloudSources
       .map(([filename]) => filename)
       .filter(filename => !existsSync(join(process.cwd(), 'supabase/migrations', filename)));
