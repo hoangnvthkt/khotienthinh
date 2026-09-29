@@ -1555,6 +1555,8 @@ export interface ContractItem {
   order: number;
   note?: string;
   createdAt?: string;
+  /** Man-day line of a labor subcontract: 8 hours = 1 công, or 1 person/day = 1 công. */
+  laborDayBasis?: 'hours_8' | 'person_day' | null;
 }
 
 export type ContractItemResourceType = 'material' | 'labor' | 'machine';
@@ -1817,6 +1819,8 @@ export interface QuantityAcceptanceItem {
   suggestedAmount?: number;     // GT gợi ý từ KL quy đổi × đơn giá
   acceptedAmount: number;       // GT nghiệm thu kỳ này, nhập tay
   sourceDailyLogVolumeIds?: string[];
+  /** Linked labor lines (man-day acceptance of a labor subcontract line). */
+  sourceDailyLogLaborIds?: string[];
   amountNote?: string;
   note?: string;
 }
