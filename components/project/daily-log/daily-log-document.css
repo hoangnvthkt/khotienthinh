@@ -1,7 +1,7 @@
 /* Daily Log only. Consumers reserve mobile action space with
    .daily-log-document-body; shared theme/font/mobile rules stay untouched. */
 .daily-log-document-header {
-  --daily-log-accent: #1d4ed8;
+  --daily-log-accent: #0f9d8f;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px 24px;
@@ -25,6 +25,13 @@
   --dl-amber: #92400e;
   --dl-amber-soft: #fffbeb;
   --dl-teal: #0f766e;
+  /* Owner reference 29/09: teal primary, grey grid, like the ERP material-plan screens. */
+  --dl-primary: #0f9d8f;
+  --dl-primary-hover: #0b8277;
+  --dl-primary-soft: #d9f2ef;
+  --dl-primary-ink: #0b6f66;
+  --dl-grid: #dcdfe4;
+  --dl-grid-head: #eef1f4;
   --dl-elevation: 0 1px 2px rgb(30 58 95 / 5%), 0 4px 12px rgb(30 58 95 / 5%);
 }
 .dark .daily-log-engineer-slip, .dark .daily-log-summary {
@@ -34,6 +41,12 @@
   --dl-amber: #fcd34d;
   --dl-amber-soft: #451a03;
   --dl-teal: #5eead4;
+  --dl-primary: #14b8a6;
+  --dl-primary-hover: #2dd4bf;
+  --dl-primary-soft: #0f2f2c;
+  --dl-primary-ink: #5eead4;
+  --dl-grid: #343a40;
+  --dl-grid-head: #1f2428;
   --dl-elevation: 0 1px 0 rgb(148 163 184 / 10%), 0 4px 12px rgb(2 6 23 / 22%);
 }
 .daily-log-document-header { box-shadow: 0 2px 8px rgb(30 58 95 / 6%); }
@@ -53,9 +66,7 @@
 .daily-log-summary [data-resource-kind="machine"] > p:first-child { color: var(--dl-teal); }
 .daily-log-summary [data-resource-kind] { border-inline-start: 3px solid var(--dl-blue); }
 .daily-log-summary [data-resource-kind="machine"] { border-inline-start-color: var(--dl-teal); }
-.daily-log-engineer-slip .dl-slip-tabs button[aria-selected=true] { border-color: var(--dl-blue); color: var(--dl-blue); }
-.daily-log-engineer-slip .dl-slip-toolbar button { border-color: var(--dl-blue); color: var(--dl-blue); background: var(--dl-blue-soft); }
-.daily-log-engineer-slip .dl-slip-work th { background: var(--dl-blue-soft); }
+.daily-log-engineer-slip .dl-slip-tabs button[aria-selected=true] { border-color: var(--dl-primary); color: var(--dl-primary-ink); }
 .daily-log-summary .dl-return-source { background: var(--dl-amber-soft); color: var(--dl-amber); }
 
 /* CHT briefing: official output first, supporting records last. All styles stay
@@ -166,6 +177,9 @@
 }
 
 .daily-log-document-actionbar .daily-log-document-button--primary { background: var(--daily-log-accent); border-color: var(--daily-log-accent); color: white; }
+.daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled):hover { background: #0b8277; border-color: #0b8277; }
+.daily-log-document-actionbar .daily-log-document-button--secondary { border-color: #b7e3de; background: #e6f6f4; color: #0b6f66; }
+.dark .daily-log-document-actionbar .daily-log-document-button--secondary { border-color: #115e59; background: #0f2f2c; color: #5eead4; }
 .daily-log-document-actionbar .daily-log-document-button--approve { background: #047857; border-color: #047857; color: white; }
 .daily-log-document-actionbar .daily-log-document-button--return { background: #fffbeb; border-color: #d97706; color: #92400e; }
 .dark .daily-log-document-actionbar .daily-log-document-button--return { background: #451a03; border-color: #b45309; color: #fcd34d; }

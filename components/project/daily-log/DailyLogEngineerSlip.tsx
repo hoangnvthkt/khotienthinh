@@ -183,15 +183,15 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
         {!rows.length ? <p className="dl-slip-empty">Chưa có công việc. Chọn hạng mục thi công để ghi khối lượng, nhân công và máy.</p> : <DailyLogEngineerWorkTable
           rows={rows.filter(row => `${row.wbsCode} ${row.taskName}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')))} labor={labor} machines={machines}
           readOnly={readonly} disabled={frozen || permissionDenied} invalidResourceWorkItemKeys={invalidResources}
-          onChange={patchRow} onModeChange={changeMode} onRemove={key => { setRows(current => current.filter(row => row.clientKey !== key)); setLabor(current => current.filter(line => line.workItemClientKey !== key)); setMachines(current => current.filter(line => line.workItemClientKey !== key)); }}
+          onChange={patchRow} onModeChange={changeMode}
+          onAddResource={(row, kind) => kind === 'labor'
+            ? setLabor(current => [...current, { workItemClientKey: row.clientKey, laborType: '', peopleCount: 1, hoursPerPerson: 8, provider: { entryMode: 'catalog' } }])
+            : setMachines(current => [...current, { workItemClientKey: row.clientKey, machineType: '', machineCount: 1, hoursPerMachine: 8, provider: { entryMode: 'catalog' } }])} onRemove={key => { setRows(current => current.filter(row => row.clientKey !== key)); setLabor(current => current.filter(line => line.workItemClientKey !== key)); setMachines(current => current.filter(line => line.workItemClientKey !== key)); }}
           renderDetails={row => <>
             <DailyLogResourceEditor workItemClientKey={row.clientKey} resourceProviders={bundle.resourceProviders} crewContracts={crewContracts} labor={labor.filter(l => l.workItemClientKey === row.clientKey)} machines={machines.filter(m => m.workItemClientKey === row.clientKey)} readOnly={frozen || permissionDenied} reportOnly={readonly}
               onLaborChange={next => setLabor(current => [...current.filter(l => l.workItemClientKey !== row.clientKey), ...next])}
               onMachinesChange={next => setMachines(current => [...current.filter(m => m.workItemClientKey !== row.clientKey), ...next])} />
-            <div className="dl-slip-detail-fields">{readonly ? <><p>Dự kiến hoàn thành: {row.forecastFinishDate ? formatDailyLogDate(row.forecastFinishDate) : 'Chưa ghi nhận'}</p><p>{row.forecastChangeReason}</p></> : <>
-              <label>Dự kiến hoàn thành<input type="date" disabled={frozen} value={row.forecastFinishDate || ''} onChange={event => patchRow(row.clientKey, { forecastFinishDate: event.target.value })} /></label>
-              <label>Lý do thay đổi ngày hoàn thành<input disabled={frozen} aria-invalid={Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate && !row.forecastChangeReason?.trim())} value={row.forecastChangeReason || ''} onChange={event => patchRow(row.clientKey, { forecastChangeReason: event.target.value })} /></label></>}
-            </div>{photoList(row.attachments || [], index => patchRow(row.clientKey, { attachments: row.attachments?.filter((_, i) => i !== index) }), row)}
+            {photoList(row.attachments || [], index => patchRow(row.clientKey, { attachments: row.attachments?.filter((_, i) => i !== index) }), row)}
           </>} />}
         {invalidResources.size > 0 && <p role="alert" className="dl-slip-error">Mỗi dòng nguồn lực cần tên, số lượng, thời gian và bên cung cấp hợp lệ.</p>}
         <section className="dl-slip-notes"><h3>Ảnh chung trong ngày</h3><p className="dl-slip-notes-hint">Công tác và sự cố ghi ở từng hạng mục phía trên. Ảnh riêng của hạng mục thêm trong Chi tiết.</p>

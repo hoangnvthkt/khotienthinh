@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Trash2, Users, Wrench } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Users, Wrench } from 'lucide-react';
 import type { DailyLogLaborInput, DailyLogMachineInput } from '../../../types';
 import { deriveWorkItemProgress } from '../../../lib/dailyLogWorkItemRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 import type { DailyLogBaselineQuantityState, DailyLogEntryMode, DailyLogSourceItemV2 } from '../../../types';
 import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
-import { formatDailyLogQuantity } from '../../../lib/dailyLogPresentation';
+import { formatDailyLogDate, formatDailyLogQuantity } from '../../../lib/dailyLogPresentation';
 import { bulletLines } from '../../../lib/dailyLogItemNotes';
 import { DailyLogBulletTextarea } from './DailyLogBulletTextarea';
 
@@ -73,6 +73,8 @@ interface DailyLogEngineerWorkTableProps {
   onModeChange(row: DailyLogEngineerRow, mode: DailyLogEntryMode): void;
   onRemove(key: string): void;
   renderDetails(row: DailyLogEngineerRow): React.ReactNode;
+  /** Adds a blank labor/machine line for the item; its fields open in Chi tiết. */
+  onAddResource?(row: DailyLogEngineerRow, kind: 'labor' | 'machine'): void;
 }
 const entryLabels = { daily_quantity: 'Khối lượng hôm nay', cumulative_quantity: 'Khối lượng lũy kế', percent: '% lũy kế' };
 const entryErrors: Record<string, string> = {
@@ -82,7 +84,7 @@ const entryErrors: Record<string, string> = {
   progress_above_allowed_maximum: 'Khối lượng vượt giới hạn của hạng mục.', invalid_baseline: 'Cần tải lại cơ sở khối lượng.',
 };
 export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps> = ({ rows, labor, machines, readOnly, disabled,
-  invalidResourceWorkItemKeys, onChange, onModeChange, onRemove, renderDetails }) => {
+  invalidResourceWorkItemKeys, onChange, onModeChange, onRemove, renderDetails, onAddResource }) => {
   const [expanded, setExpanded] = useState(new Set(invalidResourceWorkItemKeys));
   const [notesOpen, setNotesOpen] = useState(new Set<string>());
   const flip = (key: string) => (current: Set<string>) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; };
@@ -96,7 +98,7 @@ export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps>
   </select></label>;
   const input = (row: DailyLogEngineerRow) => {
     const result = derive(row);
-    return <label className="dl-slip-entry">{entryLabels[row.entryMode]}<input aria-label={entryLabels[row.entryMode]} type="text" inputMode="decimal" disabled={disabled} value={row.enteredValue ?? ''}
+    return <label className="dl-slip-entry"><span className="dl-slip-entry-label">{entryLabels[row.entryMode]}</span><input aria-label={entryLabels[row.entryMode]} type="text" inputMode="decimal" disabled={disabled} value={row.enteredValue ?? ''}
       aria-invalid={!result.valid} onChange={event => onChange(row.clientKey, { enteredValue: event.target.value })} />
       {!result.valid && <span className="dl-slip-field-error">{entryErrors[result.errorCode || ''] || 'Chưa có số liệu hợp lệ.'}</span>}</label>;
   };
@@ -110,10 +112,25 @@ export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps>
     const count = lines.reduce((sum, line) => sum + Number('peopleCount' in line ? line.peopleCount : line.machineCount), 0);
     const valid = lines.every(line => 'peopleCount' in line ? line.peopleCount > 0 && line.hoursPerPerson > 0 : line.machineCount > 0 && line.hoursPerMachine > 0);
     const hours = lines.reduce((sum, line) => sum + ('peopleCount' in line ? line.peopleCount * line.hoursPerPerson : line.machineCount * line.hoursPerMachine), 0);
-    return <div><span>{lines.length ? `${formatQuantity(count)} ${kind === 'labor' ? 'lượt người' : 'lượt máy'}` : 'Chưa ghi nhận'}</span>
-      {lines.length > 0 && <small>{valid ? formatQuantity(hours) : 'Chưa xác định'} {kind === 'labor' ? 'giờ công' : 'giờ máy'}</small>}</div>;
+    const noun = kind === 'labor' ? 'nhân công' : 'máy';
+    return <div className="dl-slip-resource-cell"><div className={lines.length ? '' : 'dl-slip-muted'}>
+      <span>{lines.length ? `${formatQuantity(count)} ${kind === 'labor' ? 'người' : 'máy'}` : 'Chưa ghi'}</span>
+      {lines.length > 0 && <small>{valid ? formatQuantity(hours) : 'Chưa xác định'} {kind === 'labor' ? 'giờ công' : 'giờ máy'}</small>}</div>
+      {!readOnly && onAddResource && <button type="button" className="dl-slip-add" disabled={disabled} aria-label={`Thêm ${noun} cho ${row.taskName}`} title={`Thêm ${noun}`}
+        onClick={() => { onAddResource(row, kind); setExpanded(current => new Set(current).add(row.clientKey)); }}><Plus size={16} aria-hidden="true" /></button>}</div>;
   };
-  const detailsButton = (row: DailyLogEngineerRow) => <button type="button" aria-expanded={expanded.has(row.clientKey)} onClick={() => toggle(row.clientKey)}>{expanded.has(row.clientKey) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}Chi tiết</button>;
+  const forecastInvalid = (row: DailyLogEngineerRow) => Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate && !row.forecastChangeReason?.trim());
+  const forecast = (row: DailyLogEngineerRow) => {
+    const changed = Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate);
+    if (readOnly) return <div className="dl-slip-forecast"><span>{row.forecastFinishDate ? formatDailyLogDate(row.forecastFinishDate) : 'Chưa ghi'}</span>{changed && row.forecastChangeReason && <small>{row.forecastChangeReason}</small>}</div>;
+    return <div className="dl-slip-forecast">
+      <input type="date" aria-label={`Dự kiến hoàn thành ${row.taskName}`} disabled={disabled} value={row.forecastFinishDate || ''} onChange={event => onChange(row.clientKey, { forecastFinishDate: event.target.value })} />
+      <small>{row.scheduleFinishDate ? `Tiến độ: ${formatDailyLogDate(row.scheduleFinishDate)}` : 'Chưa có ngày theo tiến độ'}</small>
+      {changed && <input aria-label="Lý do thay đổi ngày hoàn thành" placeholder="Lý do đổi ngày (bắt buộc)" disabled={disabled} aria-invalid={forecastInvalid(row)}
+        value={row.forecastChangeReason || ''} onChange={event => onChange(row.clientKey, { forecastChangeReason: event.target.value })} />}
+    </div>;
+  };
+  const detailsButton = (row: DailyLogEngineerRow) => <button type="button" className="dl-slip-details-toggle" aria-expanded={expanded.has(row.clientKey)} onClick={() => toggle(row.clientKey)}>{expanded.has(row.clientKey) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}Chi tiết</button>;
   const baseline = (row: DailyLogEngineerRow) => <small>{!row.unit || !row.plannedQuantity ? 'Chưa có cơ sở quy đổi' : row.baselineQuantityState === 'unknown' ? 'Chưa xác định khối lượng trước ngày này'
     : `Trước ngày này: ${formatDailyLogQuantity(row.baselineQuantityState === 'none' ? 0 : row.previousCumulativeQuantity, row.unit)}`}</small>;
   const notesButton = (row: DailyLogEngineerRow) => {
@@ -133,18 +150,20 @@ export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps>
   </div>;
   const title = (row: DailyLogEngineerRow) => <><strong>{row.wbsCode} {row.taskName}</strong><small>{row.unit && row.plannedQuantity ? `Kế hoạch ${formatDailyLogQuantity(row.plannedQuantity, row.unit)}` : 'Chưa có cơ sở quy đổi'}</small>{baseline(row)}</>;
   return <div className="dl-slip-work">
-    <div className="dl-slip-table-scroll"><table><thead><tr><th rowSpan={2}>Hạng mục thi công</th><th rowSpan={2}>ĐVT</th><th colSpan={3}>Khối lượng thi công</th><th rowSpan={2}>Nhân công</th><th rowSpan={2}>Máy</th><th rowSpan={2}>Thao tác</th></tr><tr><th>Hôm nay</th><th>Lũy kế</th><th>% lũy kế</th></tr></thead>
+    <div className="dl-slip-table-scroll"><table><colgroup>{[272, 56, 112, 112, 112, 132, 132, 160, 112].map((width, index) => <col key={index} style={{ width }} />)}</colgroup><thead><tr><th rowSpan={2}>Hạng mục thi công</th><th rowSpan={2}>ĐVT</th><th colSpan={3}>Khối lượng thi công</th><th rowSpan={2}>Nhân công</th><th rowSpan={2}>Máy</th><th rowSpan={2}>Dự kiến hoàn thành</th><th rowSpan={2}>Thao tác</th></tr><tr><th>Hôm nay</th><th>Lũy kế</th><th>% lũy kế</th></tr></thead>
       <tbody>{rows.map(row => <React.Fragment key={row.clientKey}><tr>
-        <td className="dl-slip-task">{title(row)}{modePicker(row)}{notesButton(row)}</td><td>{row.unit || 'Chưa có'}</td>
-        <td>{qty(row, 'daily_quantity')}</td><td>{qty(row, 'cumulative_quantity')}</td><td>{qty(row, 'percent')}</td>
-        <td>{resources(row, 'labor')}</td><td>{resources(row, 'machine')}</td><td>{detailsButton(row)}{!readOnly && <button type="button" disabled={disabled} aria-label={`Bỏ ${row.taskName}`} onClick={() => onRemove(row.clientKey)}><Trash2 size={16} /></button>}</td>
-      </tr>{notesOpen.has(row.clientKey) && <tr className="dl-slip-notes-row"><td colSpan={8}>{notesPanel(row)}</td></tr>}
-      {expanded.has(row.clientKey) && <tr><td colSpan={8} className="dl-slip-details">{renderDetails(row)}</td></tr>}</React.Fragment>)}</tbody>
+        <td className="dl-slip-task">{title(row)}{modePicker(row)}{notesButton(row)}</td><td className="dl-slip-unit">{row.unit || 'Chưa có'}</td>
+        <td className="dl-slip-num">{qty(row, 'daily_quantity')}</td><td className="dl-slip-num">{qty(row, 'cumulative_quantity')}</td><td className="dl-slip-num">{qty(row, 'percent')}</td>
+        <td>{resources(row, 'labor')}</td><td>{resources(row, 'machine')}</td><td>{forecast(row)}</td>
+        <td className="dl-slip-actions"><div>{detailsButton(row)}{!readOnly && <button type="button" className="dl-slip-remove" disabled={disabled} aria-label={`Bỏ ${row.taskName}`} title="Bỏ hạng mục" onClick={() => onRemove(row.clientKey)}><Trash2 size={16} /></button>}</div></td>
+      </tr>{notesOpen.has(row.clientKey) && <tr className="dl-slip-notes-row"><td colSpan={9}>{notesPanel(row)}</td></tr>}
+      {expanded.has(row.clientKey) && <tr className="dl-slip-details-row"><td colSpan={9} className="dl-slip-details">{renderDetails(row)}</td></tr>}</React.Fragment>)}</tbody>
     </table></div>
     <div className="dl-slip-mobile-work">{rows.map(row => <article key={row.clientKey}>
       <h3>{row.wbsCode} {row.taskName}</h3><div>{baseline(row)}</div>{modePicker(row)}{!readOnly && input(row)}
       <dl><div><dt>Hôm nay</dt><dd>{formatDailyLogQuantity(derive(row).dailyQuantity, row.unit)}</dd></div><div><dt>Lũy kế</dt><dd>{formatDailyLogQuantity(derive(row).cumulativeQuantity, row.unit)}</dd></div><div><dt>% lũy kế</dt><dd>{formatDailyLogQuantity(derive(row).cumulativePercent, '%')}</dd></div></dl>
-      <div className="dl-slip-resource-summary">{resources(row, 'labor')}{resources(row, 'machine')}</div>
+      <div className="dl-slip-resource-summary"><div><span className="dl-slip-mobile-label">Nhân công</span>{resources(row, 'labor')}</div><div><span className="dl-slip-mobile-label">Máy</span>{resources(row, 'machine')}</div></div>
+      <div className="dl-slip-mobile-forecast"><span>Dự kiến hoàn thành</span>{forecast(row)}</div>
       {notesButton(row)}{notesOpen.has(row.clientKey) && notesPanel(row)}
       {detailsButton(row)}{expanded.has(row.clientKey) && <div className="dl-slip-details">{renderDetails(row)}{!readOnly && <button disabled={disabled} type="button" onClick={() => onRemove(row.clientKey)}>Bỏ công việc</button>}</div>}
     </article>)}</div>

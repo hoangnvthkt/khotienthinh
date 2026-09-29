@@ -92,3 +92,17 @@ test('empty draft saves but cannot send; submitted slip is a report', async ({pa
   await expect(page.getByText('Đã gửi để tổng hợp').first()).toBeVisible();
   await expect(page.locator('input, textarea, select')).toHaveCount(0);
 });
+test('labor/machine + adds a line in place and the forecast date lives on the main table', async ({ page }) => {
+  await page.goto('/tests/daily-log/engineer-fixture.html');
+  await page.getByRole('button', { name: 'Thêm nhân công cho Bê tông móng' }).filter({ visible: true }).click();
+  await expect(page.getByLabel('Nguồn cung cấp nhân công 1').filter({ visible: true })).toBeVisible();
+  await expect(page.getByText('1 người', { exact: true }).filter({ visible: true })).toBeVisible();
+  const date = page.getByLabel('Dự kiến hoàn thành Bê tông móng').filter({ visible: true });
+  await expect(date).toHaveValue('2026-09-30');
+  await expect(page.getByLabel('Lý do thay đổi ngày hoàn thành')).toHaveCount(0);
+  await date.fill('2026-10-05');
+  const reason = page.getByLabel('Lý do thay đổi ngày hoàn thành').filter({ visible: true });
+  await expect(reason).toHaveAttribute('aria-invalid', 'true');
+  await reason.fill('Chờ máy ép');
+  await expect(reason).toHaveAttribute('aria-invalid', 'false');
+});
