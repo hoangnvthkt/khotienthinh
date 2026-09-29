@@ -54,6 +54,10 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   DAILY_LOG_SUMMARIZE_AND_SUBMIT_REQUIRED: 'Bạn cần quyền "Kiểm tra" và "Gửi" trong Room Nhật ký để gửi bản tổng hợp.',
   DAILY_LOG_APPROVER_REQUIRED: 'Người được chọn chưa có quyền "Duyệt" trong Room Nhật ký. Hãy chọn CHT khác hoặc nhờ quản trị cấp quyền.',
   SUBMITTED_SUMMARY_REQUIRED: 'Bản tổng hợp chưa ở trạng thái chờ duyệt. Hãy tải lại dữ liệu.',
+  DAILY_LOG_CONTRACT_LINK_DENIED: 'Bạn cần quyền "Sửa" trong Room Nghiệm thu khối lượng của dự án để ghép nhân công vào hợp đồng.',
+  DAILY_LOG_LABOR_CONTRACT_INVALID: 'Dòng hợp đồng không hợp lệ: phải thuộc hợp đồng giao khoán đã ký hoặc đang hiệu lực của dự án này, và đúng tổ đội đã chọn trong phiếu.',
+  DAILY_LOG_LABOR_LINES_OUT_OF_SCOPE: 'Có dòng nhân công không thuộc dự án này. Hãy tải lại danh sách.',
+  DAILY_LOG_CONTRACT_UNLINK_REASON_REQUIRED: 'Hãy nhập lý do bỏ ghép.',
   DAILY_LOG_VIEW_REQUIRED: 'Bạn chưa có quyền "Xem nhật ký" trong Room Nhật ký của dự án này.',
   SUMMARY_NOT_SUBMITTABLE: 'Bản tổng hợp không còn ở trạng thái nháp hoặc bị trả, nên không gửi lại được. Hãy tải lại dữ liệu.',
 };

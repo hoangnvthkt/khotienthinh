@@ -36,6 +36,7 @@ import { ProjectPermissionCode, projectStaffService } from '../../lib/projectSta
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { DailyLogCrewLinkingPanel } from '../../components/project/daily-log/DailyLogCrewLinkingPanel';
 
 interface PaymentWorkbenchTabProps {
   constructionSiteId: string;
@@ -584,6 +585,7 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
 
   return (
     <div className="space-y-4">
+      {projectId && <DailyLogCrewLinkingPanel projectId={projectId} constructionSiteId={constructionSiteId || null} />}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Nghiệm thu & Thanh toán</h3>

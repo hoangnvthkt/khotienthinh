@@ -1305,6 +1305,13 @@ export interface DailyLogCrewContract {
   }>;
 }
 
+/** QS view of labor lines to link to labor subcontract lines (2C-2). */
+export interface DailyLogCrewLaborLinks {
+  pending: Array<{ key: string; names: string[]; lineIds: string[]; lines: number; people: number; laborHours: number; firstDate?: string | null; lastDate?: string | null; legacyLines: number }>;
+  linked: Array<{ contractItemId: string; contractCode?: string | null; crewName?: string | null; lineCode?: string | null; lineName?: string | null; unit?: string | null; names: string[]; lineIds: string[]; lines: number; people: number; laborHours: number }>;
+  contractLines: Array<{ id: string; code?: string | null; name?: string | null; unit?: string | null; laborDayBasis?: string | null; contractId: string; contractCode?: string | null; crewName?: string | null }>;
+}
+
 export interface DailyLogMachineInput {
   workItemClientKey: string;
   workItemId?: string | null;
