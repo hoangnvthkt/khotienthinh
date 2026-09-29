@@ -180,7 +180,8 @@
     "20260928113000_authorization_p3_user_permission_templates.sql",
     "20260928170000_daily_log_pilot_readiness.sql",
     "20260929090000_daily_log_today_board.sql",
-    "20260929120000_daily_log_crew_contracts.sql"
+    "20260929120000_daily_log_crew_contracts.sql",
+    "20260929150000_daily_log_labor_contract_linking.sql"
   ],
   "forbidIncludeAll": true
 }

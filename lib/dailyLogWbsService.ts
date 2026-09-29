@@ -20,7 +20,7 @@ import type {
 import type { ProjectProgressPeriodState } from './projectWeeklyProgressService';
 import { mapDailyLogWbsCommandError } from './dailyLogWorkflow';
 import type { DailyLogTodayBoard } from './dailyLogTodayBoard';
-import type { DailyLogCrewContract } from '../types';
+import type { DailyLogCrewContract, DailyLogCrewLaborLinks } from '../types';
 import { supabase } from './supabase';
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
@@ -412,6 +412,32 @@ export const dailyLogWbsService = {
     return callRpc('get_daily_log_crew_contracts_v1', {
       p_project_id: input.projectId,
       p_construction_site_id: input.constructionSiteId || null,
+    });
+  },
+
+  listCrewLaborLinks(input: { projectId: string; constructionSiteId?: string | null }): Promise<DailyLogCrewLaborLinks> {
+    return callRpc('list_daily_log_crew_labor_links_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+    });
+  },
+
+  linkLaborToContract(input: { projectId: string; constructionSiteId?: string | null; lineIds: string[]; contractItemId: string; reason?: string }): Promise<{ linked: number }> {
+    return callRpc('link_daily_log_labor_to_contract_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_line_ids: input.lineIds,
+      p_contract_item_id: input.contractItemId,
+      p_reason: input.reason || null,
+    });
+  },
+
+  unlinkLaborContract(input: { projectId: string; constructionSiteId?: string | null; lineIds: string[]; reason: string }): Promise<{ unlinked: number }> {
+    return callRpc('unlink_daily_log_labor_contract_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_line_ids: input.lineIds,
+      p_reason: input.reason,
     });
   },
 
