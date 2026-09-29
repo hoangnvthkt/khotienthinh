@@ -19,6 +19,6 @@ describe('read-only construction report',()=>{
   it('does not invent units or convert unknown historical quantities to zero',()=>{
     const html=renderToStaticMarkup(<DailyLogWorkItemReadTable items={[{...card.editedItems[0],unit:null,cumulativeQuantityDone:30,dailyQuantityDone:null}]} resources={[]} mode="verified"/>);
     expect(html).toContain('Chưa xác định đơn vị');expect(html).toContain('Chưa xác định');expect(html).not.toContain('30 m³');
-    expect(html).toContain('Giữ nguyên số liệu đã lưu');
+    expect(html).toContain('hệ thống không tự quy đổi khối lượng');
   });
 });

@@ -78,8 +78,8 @@ describe('DailyLogSummaryWorkspace', () => {
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={bundle} mode="summarize" />);
     expect((html.match(/data-testid="daily-log-area-card"/g) || [])).toHaveLength(4);
     expect(html).toContain('4 khu vực');
-    expect(html).toContain('Lượt người theo hạng mục: 68');
-    expect(html).toContain('2 cảnh báo');
+    expect(html).toContain('68 lượt người');
+    expect(html).toContain('2 mục');
     expect(html).toContain('grid-cols-1');
     expect(html).toContain('lg:grid-cols-2');
   });
@@ -93,7 +93,7 @@ describe('DailyLogSummaryWorkspace', () => {
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={adjusted} mode="summarize" />);
     expect(html).toContain('35 %');
     expect(html).not.toContain('value="35"'); // Changed source is a report until explicit refresh.
-    expect(html).toContain('Đã điều chỉnh');
+    expect(html).toContain('đã chỉnh số liệu');
     expect(html).toContain('Cập nhật từ phiếu');
   });
 
@@ -112,7 +112,7 @@ describe('DailyLogSummaryWorkspace', () => {
       summarySources: bundle.summarySources.map((source, index) => index === 1 ? { ...source, sourceState: 'missing' as const } : index === 2 ? { ...source, sourceState: 'returned' as const } : source),
     };
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={blocked} mode="summarize" />);
-    expect(html).toContain('Không còn nguồn');
+    expect(html).toContain('Không còn phiếu gốc');
     expect(html).toContain('Đã trả lại');
     expect(html).toContain('Người 2');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Gửi CHT/);
@@ -165,7 +165,7 @@ describe('DailyLogSummaryWorkspace', () => {
     }] };
     const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={resolved} mode="review" />);
     expect(html).not.toContain('Cần quyết định');
-    expect(html).toContain('Đã chốt quyết định');
+    expect(html).toContain('Đã chốt số liệu');
   });
 
   it('labels pilot review as shadow comparison, not official publication', () => {

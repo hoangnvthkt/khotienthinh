@@ -49,6 +49,7 @@ test('live ERP draft retains inputs on error, focuses feedback and has reachable
     page=await openUxPage(browser,f,'authorA');await page.getByRole('button',{name:/Ghi nhật ký|Thêm nhật ký/}).first().click();
     await page.getByLabel('Ngày lập phiếu').fill(f.date);await page.getByRole('radio',{name:/Khu vực thi công phía Đông/}).click();
     await page.getByRole('button',{name:'Chọn công việc',exact:true}).click();await page.getByRole('checkbox',{name:`Chọn UX8 ${f.taskName}`}).check();await page.getByRole('button',{name:'Đưa vào phiếu',exact:true}).click();
+    await page.getByLabel('Cách nhập khối lượng',{exact:true}).filter({visible:true}).selectOption('daily_quantity');
     const qty=page.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true});
     await qty.fill('-1');await expect(qty).toHaveAttribute('aria-invalid','true');await expect(page.getByRole('button',{name:'Gửi tổng hợp',exact:true})).toBeDisabled();
     await qty.fill('12,5');await qty.focus();expect(await qty.evaluate(node=>getComputedStyle(node).outlineWidth)).toBe('2px');

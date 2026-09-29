@@ -18,6 +18,8 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
       await expect(page.getByRole('heading',{name:'Phiếu thi công ngày',exact:true})).toBeVisible();
       await page.getByRole('button',{name:'Chọn công việc',exact:true}).click();
       await page.getByRole('checkbox',{name:`Chọn UX8 ${f.taskName}`}).check();await page.getByRole('button',{name:'Đưa vào phiếu',exact:true}).click();
+      // % complete is the default entry; this acceptance flow records daily quantities.
+      await page.getByLabel('Cách nhập khối lượng',{exact:true}).filter({visible:true}).selectOption('daily_quantity');
       await page.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true}).fill(area==='C'?'5':'30');
       await page.getByLabel('Nội dung trong ngày').fill(`Thi công khu ${area}, số liệu hiện trường`);
       if(area!=='C') {
@@ -86,11 +88,11 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     await expect(report.locator('input,select')).toHaveCount(0);
     await expect(report.getByRole('heading',{name:'Ảnh hiện trường',exact:true})).toBeVisible();
     const briefingHeadings=await report.locator('h2').allTextContents();
-    const positions=['Tổng quan ngày','Kết quả tổng hợp theo WBS','Cảnh báo và vướng mắc','Các mũi thi công','Ảnh hiện trường']
+    const positions=['Tổng quan ngày','Tiến độ theo hạng mục','Cảnh báo và vướng mắc','Các mũi thi công','Ảnh hiện trường']
       .map(heading=>briefingHeadings.indexOf(heading));
     expect(positions.every((position,index)=>position>=0 && (!index || position>positions[index-1]))).toBe(true);
     await expect(report.getByText('Mũi thi công',{exact:true})).toBeVisible();
-    await expect(report.getByText(/Chưa đủ căn cứ đánh giá tiến độ mũi|Chưa thấy trễ theo ngày kế hoạch/).first()).toBeVisible();
+    await expect(report.getByText(/Chưa có ngày kế hoạch để so|Đúng kế hoạch/).first()).toBeVisible();
     await expect(report.locator('.dl-report-audit')).not.toHaveAttribute('open');
     const calmColor=await report.locator('.dl-metric-calm dd').first().evaluate(element=>getComputedStyle(element).color.match(/\d+/g)!.slice(0,3).map(Number));
     expect(calmColor[1]).toBeGreaterThan(calmColor[0]);expect(calmColor[1]).toBeGreaterThan(calmColor[2]);

@@ -134,7 +134,7 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
   const disabledReason = !rows.length ? 'Chọn ít nhất một công việc trước khi gửi.' : invalidRows.length ? 'Hoàn thiện khối lượng và lý do thay đổi ngày hoàn thành ở các hạng mục.'
     : invalidResources.size ? 'Điền đủ số lượng, giờ và bên cung cấp ở dòng nguồn lực.' : !bundle.permissions.canSubmitSource ? 'Bạn chưa có quyền gửi phiếu.' : undefined;
   return <section ref={root} className="daily-log-engineer-slip" aria-label="Phiếu thi công ngày">
-    <DailyLogDocumentHeader title="Phiếu thi công ngày" date={source.date} authorName={source.authorName || ''} areaName={areaName} mode="author"
+    <DailyLogDocumentHeader title="Phiếu thi công ngày" date={source.date} authorName={source.authorName || ''} areaName={readonly ? areaName : undefined} mode="author"
       statusLabel={readonly ? 'Đã gửi để tổng hợp' : source.status === 'returned' ? 'Cần sửa' : 'Nháp'}
       statusTone={readonly ? 'pending' : source.status === 'returned' ? 'returned' : 'neutral'}
       busyAction={busy === 'submit' ? 'primary' : busy ? 'secondary' : null} closeDisabled={Boolean(pendingSubmit)} onClose={() => { if (!busyRef.current && !pendingSubmit) onClose?.(); }}
@@ -189,7 +189,8 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
         const context = bundle.quantityBaselines?.[taskId];
         const base = hydrateRow(bundle, { clientKey: crypto.randomUUID(), taskId, workBoqItemId: work?.id,
           baselineFingerprint: context?.fingerprint || '', entryMode: 'percent', enteredValue: '', forecastFinishDate: bundle.tasks.find(t => t.id === taskId)?.endDate || null });
-        return { ...base, entryMode: base.unit && base.plannedQuantity ? base.baselineQuantityState === 'unknown' ? 'cumulative_quantity' : 'daily_quantity' : 'percent' };
+        // Engineers report % complete by default (owner decision 29/09); quantity entry stays one click away.
+        return base;
       })()));
       const keys = new Set(rows.filter(r => ids.includes(r.taskId)).map(r => r.clientKey));
       setLabor(current => current.filter(l => keys.has(l.workItemClientKey))); setMachines(current => current.filter(m => keys.has(m.workItemClientKey))); setPicker(false);

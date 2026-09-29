@@ -46,7 +46,8 @@ export const DailyLogDocumentHeader: React.FC<DailyLogDocumentHeaderProps> = ({
     </div>
     <dl className="daily-log-document-metadata">
       <div><dt>Ngày báo cáo</dt><dd>{formatDailyLogDate(date)}</dd></div>
-      <div><dt>{authorLabel}</dt><dd>{authorName.trim() || unknownAuthor}</dd></div>
+      {/* The author is the reader of their own slip; keep phones to the date. */}
+      <div className={mode === 'author' ? 'hidden sm:block' : undefined}><dt>{authorLabel}</dt><dd>{authorName.trim() || unknownAuthor}</dd></div>
       {areaName !== undefined && <div><dt>Khu vực / mũi thi công</dt><dd>{areaName.trim() || 'Chưa xác định khu vực'}</dd></div>}
     </dl>
     <div className="daily-log-document-actionbar" aria-label="Thao tác phiếu">
