@@ -20,6 +20,7 @@ import type {
 import type { ProjectProgressPeriodState } from './projectWeeklyProgressService';
 import { mapDailyLogWbsCommandError } from './dailyLogWorkflow';
 import type { DailyLogTodayBoard } from './dailyLogTodayBoard';
+import type { DailyLogCrewContract } from '../types';
 import { supabase } from './supabase';
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
@@ -404,6 +405,13 @@ export const dailyLogWbsService = {
       p_project_id: input.projectId,
       p_construction_site_id: input.constructionSiteId || null,
       p_date: input.date,
+    });
+  },
+
+  getCrewContracts(input: { projectId: string; constructionSiteId?: string | null }): Promise<DailyLogCrewContract[]> {
+    return callRpc('get_daily_log_crew_contracts_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
     });
   },
 

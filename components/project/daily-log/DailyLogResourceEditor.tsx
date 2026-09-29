@@ -1,11 +1,13 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import type { BusinessPartner, DailyLogLaborInput, DailyLogMachineInput, DailyLogResourceProvider } from '../../../types';
+import type { BusinessPartner, DailyLogCrewContract, DailyLogLaborInput, DailyLogMachineInput, DailyLogResourceProvider } from '../../../types';
 import { calculateLaborHours, calculateMachineHours, validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 
 interface DailyLogResourceEditorProps {
   workItemClientKey: string;
   resourceProviders: BusinessPartner[];
+  /** Crews with a labor subcontract here; listed first and unlock contract lines. */
+  crewContracts?: DailyLogCrewContract[];
   labor: DailyLogLaborInput[];
   machines: DailyLogMachineInput[];
   readOnly?: boolean;
@@ -28,9 +30,10 @@ const MANUAL_MACHINE_TYPES = [
 ] as const;
 
 export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
-  workItemClientKey, resourceProviders, labor, machines, readOnly, reportOnly,
+  workItemClientKey, resourceProviders, crewContracts = [], labor, machines, readOnly, reportOnly,
   onLaborChange, onMachinesChange,
 }) => {
+  const crewIds = new Set(crewContracts.map(crew => crew.partnerId));
   if (reportOnly) return <div className="space-y-4 text-sm">
     <section data-resource-kind="labor"><h4 className="font-semibold">Nhân công hôm nay</h4>{!labor.length && <p>Chưa ghi nhận nhân công.</p>}
       {labor.map((row, index) => <p key={index}>{row.laborType} · {row.peopleCount} người × {row.hoursPerPerson} giờ = {calculateLaborHours(row).toLocaleString('vi-VN')} giờ công
@@ -43,20 +46,24 @@ export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
     rows: T[], index: number, value: string, onChange: (next: T[]) => void, kind: 'labor' | 'machine',
   ) => {
     const next = [...rows];
+    const resetLine = kind === 'labor' ? { contractItemId: null } : {};
     if (value === 'manual') {
-      next[index] = { ...next[index], provider: {
+      next[index] = { ...next[index], ...resetLine, provider: {
         entryMode: 'manual',
         manualProviderType: kind === 'labor' ? 'free_crew' : 'machine_owner',
         manualProviderName: '',
       } };
     } else if (value.startsWith('catalog:')) {
-      const partner = resourceProviders.find(item => item.id === value.slice('catalog:'.length));
-      next[index] = { ...next[index], provider: {
+      const partnerId = value.slice('catalog:'.length);
+      const crew = crewContracts.find(item => item.partnerId === partnerId);
+      const partner = resourceProviders.find(item => item.id === partnerId)
+        || (crew ? { id: crew.partnerId, code: crew.partnerCode || '', name: crew.partnerName } as BusinessPartner : undefined);
+      next[index] = { ...next[index], ...resetLine, provider: {
         entryMode: 'catalog', partnerId: partner?.id || null,
         providerCodeSnapshot: partner?.code || null, providerNameSnapshot: partner?.name || null,
       } };
     } else {
-      next[index] = { ...next[index], provider: { entryMode: 'catalog' } };
+      next[index] = { ...next[index], ...resetLine, provider: { entryMode: 'catalog' } };
     }
     onChange(next);
   };
@@ -79,18 +86,45 @@ export const DailyLogResourceEditor: React.FC<DailyLogResourceEditorProps> = ({
           <select aria-label={`Nguồn cung cấp ${kind === 'labor' ? 'nhân công' : 'máy'} ${index + 1}`}
             value={providerValue(row.provider)} disabled={readOnly}
             onChange={event => updateProvider(rows, index, event.target.value, onChange, kind)} className={fieldClass}>
-            <option value="">Chọn NCC/đội hoặc nhập tay</option>
-            {resourceProviders.filter(partner => partner.isActive !== false).map(partner => (
+            <option value="">{kind === 'labor' ? 'Chọn tổ đội hoặc nhập tay' : 'Chọn NCC hoặc nhập tay'}</option>
+            {kind === 'labor' && crewContracts.length > 0 && <optgroup label="Tổ đội có hợp đồng tại dự án">
+              {crewContracts.map(crew => <option key={crew.partnerId} value={`catalog:${crew.partnerId}`}>{crew.partnerCode ? `${crew.partnerCode} - ` : ''}{crew.partnerName}</option>)}
+            </optgroup>}
+            <optgroup label={kind === 'labor' && crewContracts.length > 0 ? 'Đối tác khác' : 'Danh mục đối tác'}>
+            {resourceProviders.filter(partner => partner.isActive !== false && !(kind === 'labor' && crewIds.has(partner.id))).map(partner => (
               <option key={partner.id} value={`catalog:${partner.id}`}>{partner.code ? `${partner.code} - ` : ''}{partner.name}</option>
             ))}
+            </optgroup>
             {catalogProviderInactive && selectedCatalogProvider && (
               <option value={`catalog:${selectedCatalogProvider.id}`} disabled>
                 {selectedCatalogProvider.code ? `${selectedCatalogProvider.code} - ` : ''}{selectedCatalogProvider.name} (đã ngừng hoạt động)
               </option>
             )}
-            <option value="manual">Nhập tay</option>
+            <option value="manual">{kind === 'labor' ? 'Tổ chưa có hợp đồng (gõ tay)' : 'Nhập tay'}</option>
           </select>
         </label>
+        {kind === 'labor' && row.provider.entryMode === 'catalog' && (() => {
+          const crew = crewContracts.find(item => item.partnerId === row.provider.partnerId);
+          const lines = crew?.contracts.flatMap(contract => contract.lines.map(line => ({ ...line, contractCode: contract.code }))) || [];
+          if (!crew) return null;
+          const laborRow = row as DailyLogLaborInput;
+          return <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            Dòng công việc theo hợp đồng
+            <select aria-label={`Dòng hợp đồng nhân công ${index + 1}`} value={laborRow.contractItemId || ''} disabled={readOnly} className={fieldClass}
+              onChange={event => {
+                const next = [...rows] as DailyLogLaborInput[];
+                const line = lines.find(item => item.id === event.target.value);
+                next[index] = { ...laborRow, contractItemId: event.target.value || null,
+                  laborType: laborRow.laborType.trim() || !line ? laborRow.laborType : (line.name || '') };
+                (onChange as (next: DailyLogLaborInput[]) => void)(next);
+              }}>
+              <option value="">Không tính công nhật</option>
+              {lines.map(line => <option key={line.id} value={line.id}>{[line.contractCode, line.code, line.name].filter(Boolean).join(' · ')}{line.unit ? ` (${line.unit})` : ''}</option>)}
+            </select>
+            {lines.length === 0 && <span className="font-normal text-slate-500">Hợp đồng của tổ này chưa có dòng công việc. Nhờ bộ phận hợp đồng bổ sung.</span>}
+          </label>;
+        })()}
+        {kind === 'labor' && row.provider.entryMode === 'manual' && <p className="col-span-full text-xs text-amber-700 dark:text-amber-300">Chờ gắn hợp đồng: QS sẽ ghép dòng này vào hợp đồng khi tổ có hợp đồng.</p>}
         {row.provider.entryMode === 'manual' && (
           <>
             <label className="grid gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
