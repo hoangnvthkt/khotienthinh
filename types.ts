@@ -1344,7 +1344,10 @@ export interface DailyLogSourceItemV2 {
   baselineFingerprint: string;
   forecastFinishDate?: string | null;
   forecastChangeReason?: string | null;
+  /** "Công tác thực hiện": dash-bullet lines. */
   note?: string | null;
+  /** "Sự cố / vướng mắc" of this item: dash-bullet lines, kept in the slip draft. */
+  issues?: string | null;
   attachments?: Attachment[];
 }
 

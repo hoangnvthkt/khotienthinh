@@ -5,6 +5,7 @@ import { dailyLogWbsService, type DailyLogDocumentBundle, type SubmitDailyLogSou
 import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 import { formatDailyLogDate, formatDailyLogTime } from '../../../lib/dailyLogPresentation';
+import { composeSlipNotes, normalizeBulletText } from '../../../lib/dailyLogItemNotes';
 import { DailyLogDocumentHeader } from './DailyLogDocumentHeader';
 import { DailyLogResourceEditor } from './DailyLogResourceEditor';
 import { DailyLogWbsPicker } from './DailyLogWbsPicker';
@@ -47,10 +48,14 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
     forecastFinishDate: w.forecastFinishDate, forecastChangeReason: w.forecastChangeReason, note: w.note, attachments: w.attachments,
   }));
   const [rows, setRows] = useState(() => rawItems.map(item => hydrateRow(bundle, item)));
+  // Slips written before per-item notes kept one free text; keep it until the author removes it.
+  const [legacyNotes, setLegacyNotes] = useState(() => {
+    const derived = composeSlipNotes(rows);
+    const pick = (text: string | null | undefined, own: string) => (text || '').trim() && (text || '').trim() !== own ? (text || '').trim() : '';
+    return { content: pick(raw?.content ?? source.content, derived.content), issues: pick(raw?.issues ?? source.issues, derived.issues) };
+  });
   const [labor, setLabor] = useState(raw?.labor || []);
   const [machines, setMachines] = useState(raw?.machines || []);
-  const [content, setContent] = useState(raw?.content ?? source.content);
-  const [issues, setIssues] = useState(raw?.issues ?? source.issues ?? '');
   const [photos, setPhotos] = useState<DailyLogPhoto[]>(raw?.photos ?? source.photos ?? []);
   const [areaName, setAreaName] = useState(raw?.workAreaName ?? source.workAreaName ?? '');
   const [picker, setPicker] = useState(false);
@@ -98,11 +103,16 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
     if (busyRef.current || !(send ? canSubmit : canSave)) return;
     busyRef.current = true; setBusy(send ? 'submit' : 'save'); setLocalError(null);
     try {
+      const cleanRows = rows.map(row => ({ ...row, note: normalizeBulletText(row.note), issues: normalizeBulletText(row.issues) }));
+      // Slip-level content/issues are derived from the items so the summary keeps one text per area.
+      const derived = composeSlipNotes(cleanRows);
+      const content = [derived.content, legacyNotes.content].filter(Boolean).join('\n');
+      const issues = [derived.issues, legacyNotes.issues].filter(Boolean).join('\n');
       const receipt = await dailyLogWbsService.saveSourceDocument({ contributionId: source.id, expectedRowVersion: version.current,
         workAreaCode: source.workAreaCode!, workAreaName: areaName.trim(), content, issues, photos,
-        items: rows.map(({ clientKey, taskId, workBoqItemId, areaPlannedQuantity, entryMode, enteredValue, baselineFingerprint,
-          forecastFinishDate, forecastChangeReason, note, attachments }) => ({ clientKey, taskId, workBoqItemId, areaPlannedQuantity,
-          entryMode, enteredValue, baselineFingerprint, forecastFinishDate, forecastChangeReason, note, attachments })), labor, machines });
+        items: cleanRows.map(({ clientKey, taskId, workBoqItemId, areaPlannedQuantity, entryMode, enteredValue, baselineFingerprint,
+          forecastFinishDate, forecastChangeReason, note, issues, attachments }) => ({ clientKey, taskId, workBoqItemId, areaPlannedQuantity,
+          entryMode, enteredValue, baselineFingerprint, forecastFinishDate, forecastChangeReason, note, issues, attachments })), labor, machines });
       version.current = receipt.rowVersion; setSaved(true);
       if (send) {
         const input = { commandId: crypto.randomUUID(), contributionId: source.id, expectedRowVersion: receipt.rowVersion };
@@ -178,16 +188,16 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
             <DailyLogResourceEditor workItemClientKey={row.clientKey} resourceProviders={bundle.resourceProviders} crewContracts={crewContracts} labor={labor.filter(l => l.workItemClientKey === row.clientKey)} machines={machines.filter(m => m.workItemClientKey === row.clientKey)} readOnly={frozen || permissionDenied} reportOnly={readonly}
               onLaborChange={next => setLabor(current => [...current.filter(l => l.workItemClientKey !== row.clientKey), ...next])}
               onMachinesChange={next => setMachines(current => [...current.filter(m => m.workItemClientKey !== row.clientKey), ...next])} />
-            <div className="dl-slip-detail-fields">{readonly ? <><p>Dự kiến hoàn thành: {row.forecastFinishDate ? formatDailyLogDate(row.forecastFinishDate) : 'Chưa ghi nhận'}</p><p>{row.forecastChangeReason}</p><p>{row.note}</p></> : <>
+            <div className="dl-slip-detail-fields">{readonly ? <><p>Dự kiến hoàn thành: {row.forecastFinishDate ? formatDailyLogDate(row.forecastFinishDate) : 'Chưa ghi nhận'}</p><p>{row.forecastChangeReason}</p></> : <>
               <label>Dự kiến hoàn thành<input type="date" disabled={frozen} value={row.forecastFinishDate || ''} onChange={event => patchRow(row.clientKey, { forecastFinishDate: event.target.value })} /></label>
-              <label>Lý do thay đổi ngày hoàn thành<input disabled={frozen} aria-invalid={Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate && !row.forecastChangeReason?.trim())} value={row.forecastChangeReason || ''} onChange={event => patchRow(row.clientKey, { forecastChangeReason: event.target.value })} /></label>
-              <label>Ghi chú hạng mục<textarea disabled={frozen} value={row.note || ''} onChange={event => patchRow(row.clientKey, { note: event.target.value })} /></label></>}
+              <label>Lý do thay đổi ngày hoàn thành<input disabled={frozen} aria-invalid={Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate && !row.forecastChangeReason?.trim())} value={row.forecastChangeReason || ''} onChange={event => patchRow(row.clientKey, { forecastChangeReason: event.target.value })} /></label></>}
             </div>{photoList(row.attachments || [], index => patchRow(row.clientKey, { attachments: row.attachments?.filter((_, i) => i !== index) }), row)}
           </>} />}
         {invalidResources.size > 0 && <p role="alert" className="dl-slip-error">Mỗi dòng nguồn lực cần tên, số lượng, thời gian và bên cung cấp hợp lệ.</p>}
-        <section className="dl-slip-notes"><h3>Ghi chú và ảnh trong ngày</h3>{readonly ? <><p>{content || 'Chưa ghi nội dung bổ sung.'}</p><p>{issues || 'Chưa ghi sự cố.'}</p></> : <div className="dl-slip-detail-fields">
-          <label>Nội dung trong ngày<textarea disabled={frozen || permissionDenied} value={content} onChange={event => setContent(event.target.value)} /></label>
-          <label>Sự cố / vướng mắc<textarea disabled={frozen || permissionDenied} value={issues} onChange={event => setIssues(event.target.value)} /></label></div>}
+        <section className="dl-slip-notes"><h3>Ảnh chung trong ngày</h3><p className="dl-slip-notes-hint">Công tác và sự cố ghi ở từng hạng mục phía trên. Ảnh riêng của hạng mục thêm trong Chi tiết.</p>
+          {(legacyNotes.content || legacyNotes.issues) && <aside className="dl-slip-legacy-notes"><strong>Ghi chú chung đã nhập trước đây</strong>
+            {legacyNotes.content && <p>{legacyNotes.content}</p>}{legacyNotes.issues && <p>Sự cố: {legacyNotes.issues}</p>}
+            {!readonly && <button type="button" disabled={frozen || permissionDenied} onClick={() => { if (window.confirm('Bỏ ghi chú chung này khỏi phiếu?')) setLegacyNotes({ content: '', issues: '' }); }}>Bỏ ghi chú chung</button>}</aside>}
           {photoList(photos, index => setPhotos(current => current.filter((_, i) => i !== index)))}
         </section>
       </>}

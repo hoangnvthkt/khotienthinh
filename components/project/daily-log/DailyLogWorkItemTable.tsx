@@ -6,6 +6,8 @@ import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 import type { DailyLogBaselineQuantityState, DailyLogEntryMode, DailyLogSourceItemV2 } from '../../../types';
 import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
 import { formatDailyLogQuantity } from '../../../lib/dailyLogPresentation';
+import { bulletLines } from '../../../lib/dailyLogItemNotes';
+import { DailyLogBulletTextarea } from './DailyLogBulletTextarea';
 
 export interface DailyLogWorkItemEditorRow {
   clientKey: string;
@@ -82,7 +84,9 @@ const entryErrors: Record<string, string> = {
 export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps> = ({ rows, labor, machines, readOnly, disabled,
   invalidResourceWorkItemKeys, onChange, onModeChange, onRemove, renderDetails }) => {
   const [expanded, setExpanded] = useState(new Set(invalidResourceWorkItemKeys));
-  const toggle = (key: string) => setExpanded(current => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const [notesOpen, setNotesOpen] = useState(new Set<string>());
+  const flip = (key: string) => (current: Set<string>) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; };
+  const toggle = (key: string) => setExpanded(flip(key));
   const derive = (row: DailyLogEngineerRow) => readOnly && row.snapshot ? { ...row.snapshot, valid: true, errorCode: null }
     : deriveDailyLogEntry({ mode: row.entryMode, enteredValue: row.enteredValue, plannedQuantity: row.plannedQuantity,
       unit: row.unit, previousCumulativeQuantity: row.previousCumulativeQuantity, baselineQuantityState: row.baselineQuantityState, allowOver100: row.allowOver100 });
@@ -112,19 +116,36 @@ export const DailyLogEngineerWorkTable: React.FC<DailyLogEngineerWorkTableProps>
   const detailsButton = (row: DailyLogEngineerRow) => <button type="button" aria-expanded={expanded.has(row.clientKey)} onClick={() => toggle(row.clientKey)}>{expanded.has(row.clientKey) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}Chi tiết</button>;
   const baseline = (row: DailyLogEngineerRow) => <small>{!row.unit || !row.plannedQuantity ? 'Chưa có cơ sở quy đổi' : row.baselineQuantityState === 'unknown' ? 'Chưa xác định khối lượng trước ngày này'
     : `Trước ngày này: ${formatDailyLogQuantity(row.baselineQuantityState === 'none' ? 0 : row.previousCumulativeQuantity, row.unit)}`}</small>;
+  const notesButton = (row: DailyLogEngineerRow) => {
+    const work = bulletLines(row.note).length, issues = bulletLines(row.issues).length, open = notesOpen.has(row.clientKey);
+    return <button type="button" className="dl-slip-notes-toggle" aria-expanded={open} onClick={() => setNotesOpen(flip(row.clientKey))}>
+      {open ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+      <span>Công tác thực hiện</span>
+      {work > 0 && <em>{work} công tác</em>}{issues > 0 && <em className="dl-slip-notes-issue">{issues} sự cố</em>}
+      {!work && !issues && !readOnly && <em className="dl-slip-notes-empty">Chưa ghi</em>}
+    </button>;
+  };
+  const notesPanel = (row: DailyLogEngineerRow) => <div className="dl-slip-item-notes">
+    <DailyLogBulletTextarea label="Công tác thực hiện" value={row.note} readOnly={readOnly} disabled={disabled} emptyText="Chưa ghi công tác."
+      placeholder="- Ép 3 cọc thí nghiệm trục A" onChange={note => onChange(row.clientKey, { note })} />
+    <DailyLogBulletTextarea label="Sự cố / vướng mắc" tone="warning" value={row.issues} readOnly={readOnly} disabled={disabled} emptyText="Không có sự cố."
+      placeholder="- Máy ép hỏng thủy lực, dừng 2 giờ" onChange={issues => onChange(row.clientKey, { issues })} />
+  </div>;
   const title = (row: DailyLogEngineerRow) => <><strong>{row.wbsCode} {row.taskName}</strong><small>{row.unit && row.plannedQuantity ? `Kế hoạch ${formatDailyLogQuantity(row.plannedQuantity, row.unit)}` : 'Chưa có cơ sở quy đổi'}</small>{baseline(row)}</>;
   return <div className="dl-slip-work">
     <div className="dl-slip-table-scroll"><table><thead><tr><th rowSpan={2}>Hạng mục thi công</th><th rowSpan={2}>ĐVT</th><th colSpan={3}>Khối lượng thi công</th><th rowSpan={2}>Nhân công</th><th rowSpan={2}>Máy</th><th rowSpan={2}>Thao tác</th></tr><tr><th>Hôm nay</th><th>Lũy kế</th><th>% lũy kế</th></tr></thead>
       <tbody>{rows.map(row => <React.Fragment key={row.clientKey}><tr>
-        <td className="dl-slip-task">{title(row)}{modePicker(row)}</td><td>{row.unit || 'Chưa có'}</td>
+        <td className="dl-slip-task">{title(row)}{modePicker(row)}{notesButton(row)}</td><td>{row.unit || 'Chưa có'}</td>
         <td>{qty(row, 'daily_quantity')}</td><td>{qty(row, 'cumulative_quantity')}</td><td>{qty(row, 'percent')}</td>
         <td>{resources(row, 'labor')}</td><td>{resources(row, 'machine')}</td><td>{detailsButton(row)}{!readOnly && <button type="button" disabled={disabled} aria-label={`Bỏ ${row.taskName}`} onClick={() => onRemove(row.clientKey)}><Trash2 size={16} /></button>}</td>
-      </tr>{expanded.has(row.clientKey) && <tr><td colSpan={8} className="dl-slip-details">{renderDetails(row)}</td></tr>}</React.Fragment>)}</tbody>
+      </tr>{notesOpen.has(row.clientKey) && <tr className="dl-slip-notes-row"><td colSpan={8}>{notesPanel(row)}</td></tr>}
+      {expanded.has(row.clientKey) && <tr><td colSpan={8} className="dl-slip-details">{renderDetails(row)}</td></tr>}</React.Fragment>)}</tbody>
     </table></div>
     <div className="dl-slip-mobile-work">{rows.map(row => <article key={row.clientKey}>
       <h3>{row.wbsCode} {row.taskName}</h3><div>{baseline(row)}</div>{modePicker(row)}{!readOnly && input(row)}
       <dl><div><dt>Hôm nay</dt><dd>{formatDailyLogQuantity(derive(row).dailyQuantity, row.unit)}</dd></div><div><dt>Lũy kế</dt><dd>{formatDailyLogQuantity(derive(row).cumulativeQuantity, row.unit)}</dd></div><div><dt>% lũy kế</dt><dd>{formatDailyLogQuantity(derive(row).cumulativePercent, '%')}</dd></div></dl>
       <div className="dl-slip-resource-summary">{resources(row, 'labor')}{resources(row, 'machine')}</div>
+      {notesButton(row)}{notesOpen.has(row.clientKey) && notesPanel(row)}
       {detailsButton(row)}{expanded.has(row.clientKey) && <div className="dl-slip-details">{renderDetails(row)}{!readOnly && <button disabled={disabled} type="button" onClick={() => onRemove(row.clientKey)}>Bỏ công việc</button>}</div>}
     </article>)}</div>
   </div>;
