@@ -1218,6 +1218,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         reloadWbsBundle().catch(console.error);
     }, [reloadWbsBundle]);
 
+    // Switching from a pre-cutover date keeps the legacy bundle until the new one arrives;
+    // only a V2 document bundle (with the author's slips) may reach the engineer workspace.
+    const isDailyLogDocumentBundle = (value: unknown): value is DailyLogDocumentBundle =>
+        Boolean(value && Array.isArray((value as DailyLogDocumentBundle).myContributions));
     const isWbsContributionFlow = Boolean(
         !editing
         && wbsBundle?.rollout.enabled
@@ -3534,7 +3538,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
                         </div>}
                         <div className={shouldRenderWbsEditor ? 'min-w-0 overflow-y-auto flex-1 bg-card' : 'p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 bg-card'}>
-                            {shouldRenderWbsEditor ? <DailyLogEngineerWorkspace key={fDate} bundle={wbsBundle as DailyLogDocumentBundle | null}
+                            {shouldRenderWbsEditor ? <DailyLogEngineerWorkspace key={fDate} bundle={isDailyLogDocumentBundle(wbsBundle) ? wbsBundle : null}
                                 loading={wbsBundleLoading} error={wbsBundleError} projectId={projectId || effectiveId} constructionSiteId={constructionSiteId || null}
                                 date={fDate} onDateChange={setFDate} onClose={resetForm} onSubmitted={() => { reloadDailyLogRecords().catch(console.error); }}
                                 onUploadPhoto={async file => {
