@@ -57,7 +57,7 @@ export const DailyLogEngineerWorkspace: React.FC<{
         if(!document || window.confirm('Đổi ngày sẽ bỏ thay đổi chưa lưu. Tiếp tục?')) onDateChange(event.target.value);
       }} /></label>
       {active && <fieldset disabled={busy || editorBusy || loading || Boolean(pendingCreate)} className="m-0 min-w-0 border-0 p-0">
-        <DailyLogSourcePicker sources={active.myContributions.filter(source => source.sourceDocumentVersion === 2)} selectedIds={selected} selectionMode="single"
+        <DailyLogSourcePicker sources={(active.myContributions ?? []).filter(source => source.sourceDocumentVersion === 2)} selectedIds={selected} selectionMode="single"
           onChange={ids => { void choose(ids); }} onCreateArea={active.permissions.canCreateSource ? () => {
             if(!document || !['draft','returned'].includes(document.contribution!.status) || window.confirm('Tạo phiếu khác sẽ bỏ thay đổi chưa lưu. Tiếp tục?')) { setCreate(true); setDocument(null); setSelected([]); }
           } : undefined} />
