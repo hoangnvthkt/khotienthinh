@@ -1288,6 +1288,21 @@ export interface DailyLogLaborInput {
   peopleCount: number;
   hoursPerPerson: number;
   note?: string | null;
+  /** Man-day line of the crew's labor subcontract; drives payment by công. */
+  contractItemId?: string | null;
+}
+
+/** A crew with a signed/active labor subcontract on the project (no prices). */
+export interface DailyLogCrewContract {
+  partnerId: string;
+  partnerCode?: string | null;
+  partnerName: string;
+  contracts: Array<{
+    id: string;
+    code?: string | null;
+    name?: string | null;
+    lines: Array<{ id: string; code?: string | null; name?: string | null; unit?: string | null; laborDayBasis?: 'hours_8' | 'person_day' | null }>;
+  }>;
 }
 
 export interface DailyLogMachineInput {
@@ -5935,7 +5950,7 @@ export interface ExpenseRecord {
 
 // ==================== HD: HỢP ĐỒNG ====================
 
-export type PartnerClassification = 'owner' | 'contractor' | 'supplier';
+export type PartnerClassification = 'owner' | 'contractor' | 'supplier' | 'crew';
 
 export interface BusinessPartner {
   id: string;
@@ -6491,6 +6506,8 @@ export interface SubcontractorContract {
   code: string;                   // HD-TP-2025-001
   name: string;
   subcontractorName: string;
+  /** Crew or contractor partner this subcontract is with. */
+  partnerId?: string;
   subcontractorTaxCode?: string;
   scopeOfWork?: string;
   projectId?: string;

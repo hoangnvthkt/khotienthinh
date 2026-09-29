@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
-import type { DailyLogEntryMode, DailyLogPhoto, DailyLogSourceItemV2 } from '../../../types';
+import type { DailyLogCrewContract, DailyLogEntryMode, DailyLogPhoto, DailyLogSourceItemV2 } from '../../../types';
 import { dailyLogWbsService, type DailyLogDocumentBundle, type SubmitDailyLogSourceInput } from '../../../lib/dailyLogWbsService';
 import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
@@ -60,6 +60,15 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
   const [localError, setLocalError] = useState<string | null>(null);
   const [pendingSubmit, setPendingSubmit] = useState<SubmitDailyLogSourceInput | null>(null);
   const [sent, setSent] = useState(false);
+  const [crewContracts, setCrewContracts] = useState<DailyLogCrewContract[]>([]);
+  useEffect(() => {
+    if (!source.projectId) return;
+    let active = true;
+    dailyLogWbsService.getCrewContracts({ projectId: source.projectId, constructionSiteId: source.constructionSiteId })
+      .then(rows => { if (active) setCrewContracts(rows || []); })
+      .catch(() => { if (active) setCrewContracts([]); });
+    return () => { active = false; };
+  }, [source.projectId, source.constructionSiteId]);
   useEffect(() => { onBusyChange?.(Boolean(busy || pendingSubmit)); }, [busy, pendingSubmit, onBusyChange]);
   const [saved, setSaved] = useState(false);
   const version = useRef(source.rowVersion ?? 1);
@@ -166,7 +175,7 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
           readOnly={readonly} disabled={frozen || permissionDenied} invalidResourceWorkItemKeys={invalidResources}
           onChange={patchRow} onModeChange={changeMode} onRemove={key => { setRows(current => current.filter(row => row.clientKey !== key)); setLabor(current => current.filter(line => line.workItemClientKey !== key)); setMachines(current => current.filter(line => line.workItemClientKey !== key)); }}
           renderDetails={row => <>
-            <DailyLogResourceEditor workItemClientKey={row.clientKey} resourceProviders={bundle.resourceProviders} labor={labor.filter(l => l.workItemClientKey === row.clientKey)} machines={machines.filter(m => m.workItemClientKey === row.clientKey)} readOnly={frozen || permissionDenied} reportOnly={readonly}
+            <DailyLogResourceEditor workItemClientKey={row.clientKey} resourceProviders={bundle.resourceProviders} crewContracts={crewContracts} labor={labor.filter(l => l.workItemClientKey === row.clientKey)} machines={machines.filter(m => m.workItemClientKey === row.clientKey)} readOnly={frozen || permissionDenied} reportOnly={readonly}
               onLaborChange={next => setLabor(current => [...current.filter(l => l.workItemClientKey !== row.clientKey), ...next])}
               onMachinesChange={next => setMachines(current => [...current.filter(m => m.workItemClientKey !== row.clientKey), ...next])} />
             <div className="dl-slip-detail-fields">{readonly ? <><p>Dự kiến hoàn thành: {row.forecastFinishDate ? formatDailyLogDate(row.forecastFinishDate) : 'Chưa ghi nhận'}</p><p>{row.forecastChangeReason}</p><p>{row.note}</p></> : <>

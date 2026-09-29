@@ -50,7 +50,7 @@ const PAYMENT_METHODS = [
 ];
 
 const EMPTY_FORM: Omit<SubcontractorContract, 'id' | 'attachments' | 'createdAt' | 'updatedAt'> = {
-  code: '', name: '', subcontractorName: '', subcontractorTaxCode: '',
+  code: '', name: '', subcontractorName: '', partnerId: '', subcontractorTaxCode: '',
   scopeOfWork: '', projectId: '', parentContractId: '',
   value: 0, currency: 'VND', paymentMethod: 'bank_transfer',
   paymentSchedule: '', retentionPercent: 0, workLocation: '',
@@ -89,7 +89,7 @@ const SubcontractorContracts: React.FC = () => {
     if (!error && data) {
       setContracts(data.map((r: any) => ({
         id: r.id, code: r.code, name: r.name,
-        subcontractorName: r.subcontractor_name, subcontractorTaxCode: r.subcontractor_tax_code,
+        subcontractorName: r.subcontractor_name, partnerId: r.partner_id || undefined, subcontractorTaxCode: r.subcontractor_tax_code,
         scopeOfWork: r.scope_of_work, projectId: r.project_id, parentContractId: r.parent_contract_id,
         value: readLocaleNumber(r.value), currency: r.currency, paymentMethod: r.payment_method,
         paymentSchedule: r.payment_schedule, retentionPercent: readLocaleNumber(r.retention_percent),
@@ -129,6 +129,7 @@ const SubcontractorContracts: React.FC = () => {
         id: contractId,
         code: form.code, name: form.name,
         subcontractor_name: form.subcontractorName, subcontractor_tax_code: form.subcontractorTaxCode || null,
+        partner_id: form.partnerId || subcontractors.find(s => s.name === form.subcontractorName)?.id || null,
         scope_of_work: form.scopeOfWork || null, project_id: form.projectId || null,
         parent_contract_id: form.parentContractId || null,
         value: readLocaleNumber(form.value), currency: form.currency, payment_method: form.paymentMethod || null,
@@ -165,7 +166,7 @@ const SubcontractorContracts: React.FC = () => {
   const handleEdit = (c: SubcontractorContract) => {
     setDraftAttachments([]);
     setForm({
-      code: c.code, name: c.name, subcontractorName: c.subcontractorName,
+      code: c.code, name: c.name, subcontractorName: c.subcontractorName, partnerId: c.partnerId || '',
       subcontractorTaxCode: c.subcontractorTaxCode || '', scopeOfWork: c.scopeOfWork || '',
       projectId: c.projectId || '', parentContractId: c.parentContractId || '',
       value: c.value, currency: c.currency, paymentMethod: c.paymentMethod || 'bank_transfer',
@@ -382,11 +383,12 @@ const SubcontractorContracts: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Đơn vị thầu phụ *</label>
                   <SearchableSelect
-                    value={subcontractors.find(s => s.name === form.subcontractorName)?.id || ''}
+                    value={form.partnerId || subcontractors.find(s => s.name === form.subcontractorName)?.id || ''}
                     options={subcontractors}
                     onChange={val => setForm({
                       ...form,
                       subcontractorName: val ? val.name : '',
+                      partnerId: val ? val.id : '',
                       subcontractorTaxCode: val ? (val.taxCode || '') : ''
                     })}
                     getOptionValue={s => s.id}

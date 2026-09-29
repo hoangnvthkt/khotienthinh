@@ -13,6 +13,7 @@ const CLASSIFICATION_OPTIONS: Array<{ value: PartnerClassification; label: strin
   { value: 'owner', label: 'Chủ đầu tư' },
   { value: 'contractor', label: 'Nhà thầu' },
   { value: 'supplier', label: 'Nhà cung cấp' },
+  { value: 'crew', label: 'Tổ đội' },
 ];
 
 const EMPTY_FORM: Omit<BusinessPartner, 'id' | 'createdAt' | 'updatedAt'> = {
