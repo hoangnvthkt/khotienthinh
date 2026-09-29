@@ -10,7 +10,7 @@
   z-index: 30;
   padding: 20px 24px;
   border-bottom: 1px solid var(--border);
-  background: var(--card);
+  background: var(--card, #ffffff);
   color: var(--foreground);
   font-size: 14px;
   line-height: 1.5;
@@ -44,7 +44,7 @@
 .daily-log-summary [data-testid="daily-log-area-card"] h3 { color: var(--dl-ink); }
 .daily-log-summary [data-testid="daily-log-area-card"],
 .daily-log-engineer-slip .dl-slip-work { box-shadow: var(--dl-elevation); }
-.daily-log-summary .dl-summary-metrics { background: var(--card); box-shadow: var(--dl-elevation); }
+.daily-log-summary .dl-summary-metrics { background: var(--card, #ffffff); box-shadow: var(--dl-elevation); }
 .daily-log-summary .dl-summary-metrics > div > dd:first-of-type { color: var(--dl-ink); }
 .daily-log-summary .dl-summary-metrics > div.dl-metric-attention > dd:first-of-type { color: var(--dl-amber); }
 .daily-log-engineer-slip [data-resource-kind="labor"] h4,
@@ -76,7 +76,7 @@
 .daily-log-summary--report .dl-report-wbs article { border-inline-start: 4px solid var(--dl-blue); box-shadow: 0 1px 4px rgb(30 58 95 / 5%); }
 .daily-log-summary--report .dl-report-wbs article:has(.bg-amber-100) { border-inline-start-color: #d97706; }
 .daily-log-summary--report .dl-report-wbs article dl dd { font-size: 1.15rem; font-weight: 700; color: var(--dl-report-navy); }
-.daily-log-summary--report .dl-report-alerts { border-radius: 8px; border: 1px solid var(--border); background: var(--card); padding: 20px; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-alerts { border-radius: 8px; border: 1px solid var(--border); background: var(--card, #ffffff); padding: 20px; box-shadow: var(--dl-elevation); }
 .daily-log-summary--report .dl-report-incident,
 .daily-log-summary--report .dl-report-forecast-warning,
 .daily-log-summary--report .dl-report-next,
@@ -102,7 +102,7 @@
 .daily-log-summary--report .dl-area-work-highlights { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
 .daily-log-summary--report .dl-area-work-highlights strong { color: var(--dl-report-navy); font-weight: 700; }
 .daily-log-summary--report .dl-report-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.daily-log-summary--report .dl-report-photo { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); text-decoration: none; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-photo { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card, #ffffff); color: var(--foreground); text-decoration: none; box-shadow: var(--dl-elevation); }
 .daily-log-summary--report .dl-report-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--muted); }
 .daily-log-summary--report .dl-report-photo span { display: block; padding: 9px 12px; font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
 .daily-log-summary--report .dl-report-photo small { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: .75rem; font-weight: 400; }
@@ -158,7 +158,7 @@
   padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card);
+  background: var(--card, #ffffff);
   color: var(--foreground);
   font-size: 14px;
   font-weight: 500;
@@ -220,7 +220,7 @@
     max-width: none;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--border);
-    background: var(--card);
+    background: var(--card, #ffffff);
     box-shadow: 0 -2px 10px rgb(30 58 95 / 6%);
   }
   .daily-log-document-actionbar .daily-log-document-buttons { gap: 8px; }

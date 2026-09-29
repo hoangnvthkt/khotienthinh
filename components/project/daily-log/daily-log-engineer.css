@@ -1,6 +1,6 @@
 /* Daily Log v2 only. Preserve global fonts/theme and the legacy editor. */
-.daily-log-engineer-slip { min-width:0; color:var(--foreground); background:var(--card); font-size:14px; line-height:1.5; }
-.daily-log-engineer-slip input, .daily-log-engineer-slip select, .daily-log-engineer-slip textarea { box-sizing:border-box; min-width:0; max-width:100%; min-height:40px; border:1px solid var(--border); border-radius:6px; padding:8px 10px; background:var(--card); color:var(--foreground); font-size:14px; }
+.daily-log-engineer-slip { min-width:0; color:var(--foreground); background:var(--card, #ffffff); font-size:14px; line-height:1.5; }
+.daily-log-engineer-slip input, .daily-log-engineer-slip select, .daily-log-engineer-slip textarea { box-sizing:border-box; min-width:0; max-width:100%; min-height:40px; border:1px solid var(--border); border-radius:6px; padding:8px 10px; background:var(--card, #ffffff); color:var(--foreground); font-size:14px; }
 .daily-log-engineer-slip input:focus-visible, .daily-log-engineer-slip select:focus-visible, .daily-log-engineer-slip textarea:focus-visible, .daily-log-engineer-slip button:focus-visible { outline:2px solid #0f766e; outline-offset:2px; }
 .daily-log-engineer-slip button { min-height:40px; }
 .daily-log-engineer-slip button:disabled { opacity:.55; cursor:not-allowed; }
@@ -20,7 +20,7 @@
 .dl-slip-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .dl-slip-toolbar label { display:flex; align-items:center; gap:8px; flex:1; max-width:32rem; }
 .dl-slip-toolbar input { width:100%; }
-.dl-slip-toolbar button, .dl-slip-work button { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:6px; padding:8px 10px; white-space:nowrap; background:var(--card); color:var(--foreground); }
+.dl-slip-toolbar button, .dl-slip-work button { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:6px; padding:8px 10px; white-space:nowrap; background:var(--card, #ffffff); color:var(--foreground); }
 .dl-slip-toolbar button { border-color:#0f766e; color:#0f766e; }
 .dark .dl-slip-toolbar button { color:#5eead4; }
 .dl-slip-return { padding:12px 16px; border:1px solid #d97706; border-radius:6px; background:#fffbeb; color:#78350f; display:grid; gap:8px; }
@@ -39,7 +39,7 @@
 .dl-slip-work tbody tr:nth-child(even) { background:var(--muted); }
 .dl-slip-work small { display:block; font-size:13px; color:var(--muted-foreground); margin-top:4px; }
 .dl-slip-work strong { font-weight:600; display:block; overflow-wrap:anywhere; }
-.dl-slip-task { position:sticky; left:0; background:var(--card); min-width:240px; max-width:340px; z-index:1; }
+.dl-slip-task { position:sticky; left:0; background:var(--card, #ffffff); min-width:240px; max-width:340px; z-index:1; }
 .dl-slip-work thead { position:sticky; top:0; z-index:2; }
 .dl-slip-mode { font-size:13px; margin-top:8px; }
 .dl-slip-mode select { width:100%; }
@@ -56,7 +56,7 @@
 .dl-slip-notes { border-top:1px solid var(--border); padding-top:20px; }
 .dl-slip-notes h3 { font-size:16px; font-weight:600; margin:0; }
 .dl-slip-legacy-notes { margin-top:12px; padding:12px 16px; border:1px solid var(--border); border-radius:6px; display:grid; gap:6px; justify-items:start; }
-.dl-slip-legacy-notes button { border:1px solid var(--border); border-radius:6px; padding:6px 10px; background:var(--card); color:var(--foreground); }
+.dl-slip-legacy-notes button { border:1px solid var(--border); border-radius:6px; padding:6px 10px; background:var(--card, #ffffff); color:var(--foreground); }
 .dl-slip-notes-hint { font-size:13px; color:var(--muted-foreground); margin-top:4px !important; }
 .dl-slip-work .dl-slip-notes-toggle { margin-top:10px; width:100%; flex-wrap:wrap; justify-content:flex-start; border-style:dashed; color:#0f766e; font-weight:500; white-space:normal; text-align:left; }
 .dark .dl-slip-work .dl-slip-notes-toggle { color:#5eead4; }
