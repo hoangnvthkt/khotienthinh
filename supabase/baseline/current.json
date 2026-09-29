@@ -178,7 +178,8 @@
     "20260928092719_authorization_p3_project_room_templates.sql",
     "20260928101825_authorization_p3_roles_to_personal_grants.sql",
     "20260928113000_authorization_p3_user_permission_templates.sql",
-    "20260928170000_daily_log_pilot_readiness.sql"
+    "20260928170000_daily_log_pilot_readiness.sql",
+    "20260929090000_daily_log_today_board.sql"
   ],
   "forbidIncludeAll": true
 }

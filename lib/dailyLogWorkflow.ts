@@ -54,6 +54,7 @@ const DAILY_LOG_WBS_ERROR_MESSAGES: Record<string, string> = {
   DAILY_LOG_SUMMARIZE_AND_SUBMIT_REQUIRED: 'Bạn cần quyền "Kiểm tra" và "Gửi" trong Room Nhật ký để gửi bản tổng hợp.',
   DAILY_LOG_APPROVER_REQUIRED: 'Người được chọn chưa có quyền "Duyệt" trong Room Nhật ký. Hãy chọn CHT khác hoặc nhờ quản trị cấp quyền.',
   SUBMITTED_SUMMARY_REQUIRED: 'Bản tổng hợp chưa ở trạng thái chờ duyệt. Hãy tải lại dữ liệu.',
+  DAILY_LOG_VIEW_REQUIRED: 'Bạn chưa có quyền "Xem nhật ký" trong Room Nhật ký của dự án này.',
   SUMMARY_NOT_SUBMITTABLE: 'Bản tổng hợp không còn ở trạng thái nháp hoặc bị trả, nên không gửi lại được. Hãy tải lại dữ liệu.',
 };
 

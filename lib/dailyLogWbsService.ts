@@ -19,6 +19,7 @@ import type {
 } from '../types';
 import type { ProjectProgressPeriodState } from './projectWeeklyProgressService';
 import { mapDailyLogWbsCommandError } from './dailyLogWorkflow';
+import type { DailyLogTodayBoard } from './dailyLogTodayBoard';
 import { supabase } from './supabase';
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
@@ -395,6 +396,22 @@ export const dailyLogWbsService = {
     return callRpc('create_daily_log_summary_revision_v1', {
       p_daily_log_id: input.dailyLogId,
       p_reason: reason,
+    });
+  },
+
+  getTodayBoard(input: { projectId: string; constructionSiteId?: string | null; date: string }): Promise<DailyLogTodayBoard> {
+    return callRpc('get_daily_log_today_board_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_date: input.date,
+    });
+  },
+
+  getRolloutAccess(input: { projectId: string; constructionSiteId?: string | null; date: string }): Promise<{ mode: string; cutoverDate: string | null; enabled: boolean }> {
+    return callRpc('get_daily_log_wbs_rollout_access_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_log_date: input.date,
     });
   },
 };

@@ -49,6 +49,7 @@ import {
     type DailyLogSummarySourceSnapshot,
 } from '../../lib/dailyLogWorkflow';
 import { computeDailyLogMonthStats } from '../../lib/dailyLogMonthStats';
+import { DailyLogTodayBoard } from '../../components/project/daily-log/DailyLogTodayBoard';
 
 interface DailyLogTabProps {
     constructionSiteId?: string;
@@ -2223,6 +2224,18 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [effectiveId, constructionSiteId, statsMonth, logs]);
     const stats = useMemo(() => computeDailyLogMonthStats(logs, statsMonth, slipIssueDates), [logs, statsMonth, slipIssueDates]);
 
+    // Projects on the source-slip workflow get the "Hôm nay" board instead of month cards.
+    const [todayBoardEnabled, setTodayBoardEnabled] = useState(false);
+    useEffect(() => {
+        const scopeProjectId = projectId || effectiveId;
+        if (!scopeProjectId) return;
+        let active = true;
+        dailyLogWbsService.getRolloutAccess({ projectId: scopeProjectId, constructionSiteId: constructionSiteId || null, date: toDateKey(new Date()) })
+            .then(access => { if (active) setTodayBoardEnabled(access.mode === 'pilot' || access.mode === 'enforced'); })
+            .catch(() => { if (active) setTodayBoardEnabled(false); });
+        return () => { active = false; };
+    }, [projectId, effectiveId, constructionSiteId]);
+
     // Available months for filter
     const availableMonths = useMemo(() => {
         const ms = new Set(logs.map(l => l.date.slice(0, 7)));
@@ -2584,7 +2597,21 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
                 </div>
             </div>
-            {/* Summary */}
+            {todayBoardEnabled && (projectId || effectiveId) ? (
+                <DailyLogTodayBoard
+                    projectId={(projectId || effectiveId) as string}
+                    constructionSiteId={constructionSiteId || null}
+                    userId={user?.id}
+                    canSubmit={hasDailyLogAction(DAILY_LOG_ACTION.submit)}
+                    canSummarize={hasDailyLogAction(DAILY_LOG_ACTION.summarize)}
+                    canApprove={hasDailyLogAction(DAILY_LOG_ACTION.approve)}
+                    refreshKey={logs}
+                    onCreate={openCreateForDate}
+                    onSummarize={date => { openSummaryForDate(date).catch(console.error); }}
+                    onReview={id => setViewLogId(id)}
+                    onOpenPhotos={(photos, index) => { setGalleryAttachments(photos); setGalleryIndex(index); }}
+                />
+            ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
                 {/* Tổng nhật ký */}
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
@@ -2616,12 +2643,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Tháng này · cả trong phiếu</div>
                 </div>
             </div>
+            )}
 
             {/* Log List */}
             <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
-                        <Calendar size={16} className="text-teal-500" /> Nhật ký công trường
+                        <Calendar size={16} className="text-teal-500" /> {todayBoardEnabled ? 'Lịch sử nhật ký' : 'Nhật ký công trường'}
                     </h3>
                     <div className="flex items-center gap-2 flex-wrap justify-end">
                         <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
