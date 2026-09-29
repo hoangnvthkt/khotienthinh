@@ -48,8 +48,9 @@ test('real ERP engineer chooses A/B, saves physical quantities and metadata then
       await page.getByRole('button',{name:'Đưa vào phiếu'}).click();
       await page.getByLabel('Cách nhập khối lượng',{exact:true}).filter({visible:true}).selectOption('daily_quantity');
       await page.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true}).fill('12,5');
-      await page.getByLabel('Nội dung trong ngày').fill('Nội dung A lưu cùng khối lượng');
-      await page.getByLabel('Sự cố / vướng mắc').fill('Lối vào hẹp');
+      await page.getByRole('button',{name:/Công tác thực hiện/}).filter({visible:true}).first().click();
+      await page.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({visible:true}).fill('Nội dung A lưu cùng khối lượng');
+      await page.getByRole('textbox',{name:'Sự cố / vướng mắc',exact:true}).filter({visible:true}).fill('Lối vào hẹp');
       await page.getByRole('button',{name:'Chi tiết',exact:true}).filter({visible:true}).click();
       const labor = page.locator('section').filter({has:page.getByRole('heading',{name:'Nhân công hôm nay',exact:true})}).last();
       await labor.getByRole('button',{name:'Thêm dòng'}).click();
@@ -60,13 +61,14 @@ test('real ERP engineer chooses A/B, saves physical quantities and metadata then
       await page.getByRole('button',{name:'Lưu nháp',exact:true}).click();
       await expect(page.getByText('Đã lưu phiếu. Có thể tiếp tục ghi hoặc gửi tổng hợp.')).toBeVisible();
     }
-    await expect(page.getByLabel('Nội dung trong ngày')).toHaveValue('');
+    await expect(page.getByText('Chưa có công việc. Chọn hạng mục thi công để ghi khối lượng, nhân công và máy.')).toBeVisible();
     await page.locator('summary').filter({hasText:'Đổi ngày hoặc phiếu'}).click();
     const sourceA = page.getByRole('radio',{name:/Khu kiểm thử A/});
     await sourceA.click();
     await expect(page.getByRole('radio',{name:/Khu kiểm thử A/,includeHidden:true})).toBeChecked();
     await expect(page.locator('details.dl-slip-selection')).not.toHaveAttribute('open','');
-    await expect(page.getByLabel('Nội dung trong ngày')).toHaveValue('Nội dung A lưu cùng khối lượng');
+    await page.getByRole('button',{name:/Công tác thực hiện/}).filter({visible:true}).first().click();
+    await expect(page.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({visible:true})).toHaveValue('- Nội dung A lưu cùng khối lượng');
     await expect(page.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true})).toHaveValue('12,5');
     for (const [width,height] of [[1440,900],[768,1024],[390,844]]) {
       await page.setViewportSize({width,height});
@@ -74,11 +76,14 @@ test('real ERP engineer chooses A/B, saves physical quantities and metadata then
       await page.screenshot({path:`.superpowers/sdd/2026-09-26-daily-log-user-centered-ux-revision/engineer-erp-${width}.png`,fullPage:true});
     }
     await page.getByRole('button',{name:'Gửi tổng hợp',exact:true}).click();
+    await expect.poll(async()=>(await query(`select status from public.daily_log_contributions where project_id='${project}' and date='${date}' and work_area_code='UX5-A'`))[0]?.status).toBe('submitted');
     const sources = await query(`select id,work_area_code,status,row_version,source_draft_payload from public.daily_log_contributions where project_id='${project}' and date='${date}' order by work_area_code`);
     expect(sources).toHaveLength(2);
     expect(sources[0]).toMatchObject({work_area_code:'UX5-A',status:'submitted',row_version:4});
     expect(sources[1]).toMatchObject({work_area_code:'UX5-B',status:'draft',row_version:1});
-    expect(sources[0].source_draft_payload).toMatchObject({content:'Nội dung A lưu cùng khối lượng',issues:'Lối vào hẹp'});
+    expect(sources[0].source_draft_payload.content).toContain('  - Nội dung A lưu cùng khối lượng');
+    expect(sources[0].source_draft_payload.issues).toContain('  - Lối vào hẹp');
+    expect(sources[0].source_draft_payload.items[0]).toMatchObject({note:'- Nội dung A lưu cùng khối lượng',issues:'- Lối vào hẹp'});
     const work = (await query(`select cumulative_quantity_done,daily_quantity_done from public.daily_log_work_items where contribution_id='${sources[0].id}'`))[0];
     expect(Number(work.cumulative_quantity_done)).toBe(12.5); expect(Number(work.daily_quantity_done)).toBe(12.5);
     expect((await query(`select count(*)::int n from public.project_daily_task_progress where project_id='${project}' and progress_date='${date}'`))[0].n).toBe(0);

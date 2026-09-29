@@ -1,7 +1,7 @@
 /* Daily Log only. Consumers reserve mobile action space with
    .daily-log-document-body; shared theme/font/mobile rules stay untouched. */
 .daily-log-document-header {
-  --daily-log-accent: #1d4ed8;
+  --daily-log-accent: #0a7f87;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px 24px;
@@ -10,7 +10,7 @@
   z-index: 30;
   padding: 20px 24px;
   border-bottom: 1px solid var(--border);
-  background: var(--card);
+  background: var(--card, #ffffff);
   color: var(--foreground);
   font-size: 14px;
   line-height: 1.5;
@@ -25,6 +25,13 @@
   --dl-amber: #92400e;
   --dl-amber-soft: #fffbeb;
   --dl-teal: #0f766e;
+  /* Owner reference 29/09: teal primary, grey grid, like the ERP material-plan screens. */
+  --dl-primary: #0a7f87;
+  --dl-primary-hover: #09737b;
+  --dl-primary-soft: #dcf3f4;
+  --dl-primary-ink: #0a6b72;
+  --dl-grid: #dcdfe4;
+  --dl-grid-head: #eef1f4;
   --dl-elevation: 0 1px 2px rgb(30 58 95 / 5%), 0 4px 12px rgb(30 58 95 / 5%);
 }
 .dark .daily-log-engineer-slip, .dark .daily-log-summary {
@@ -34,6 +41,12 @@
   --dl-amber: #fcd34d;
   --dl-amber-soft: #451a03;
   --dl-teal: #5eead4;
+  --dl-primary: #14b8a6;
+  --dl-primary-hover: #2dd4bf;
+  --dl-primary-soft: #0f2f2c;
+  --dl-primary-ink: #5eead4;
+  --dl-grid: #343a40;
+  --dl-grid-head: #1f2428;
   --dl-elevation: 0 1px 0 rgb(148 163 184 / 10%), 0 4px 12px rgb(2 6 23 / 22%);
 }
 .daily-log-document-header { box-shadow: 0 2px 8px rgb(30 58 95 / 6%); }
@@ -44,7 +57,7 @@
 .daily-log-summary [data-testid="daily-log-area-card"] h3 { color: var(--dl-ink); }
 .daily-log-summary [data-testid="daily-log-area-card"],
 .daily-log-engineer-slip .dl-slip-work { box-shadow: var(--dl-elevation); }
-.daily-log-summary .dl-summary-metrics { background: var(--card); box-shadow: var(--dl-elevation); }
+.daily-log-summary .dl-summary-metrics { background: var(--card, #ffffff); box-shadow: var(--dl-elevation); }
 .daily-log-summary .dl-summary-metrics > div > dd:first-of-type { color: var(--dl-ink); }
 .daily-log-summary .dl-summary-metrics > div.dl-metric-attention > dd:first-of-type { color: var(--dl-amber); }
 .daily-log-engineer-slip [data-resource-kind="labor"] h4,
@@ -53,9 +66,7 @@
 .daily-log-summary [data-resource-kind="machine"] > p:first-child { color: var(--dl-teal); }
 .daily-log-summary [data-resource-kind] { border-inline-start: 3px solid var(--dl-blue); }
 .daily-log-summary [data-resource-kind="machine"] { border-inline-start-color: var(--dl-teal); }
-.daily-log-engineer-slip .dl-slip-tabs button[aria-selected=true] { border-color: var(--dl-blue); color: var(--dl-blue); }
-.daily-log-engineer-slip .dl-slip-toolbar button { border-color: var(--dl-blue); color: var(--dl-blue); background: var(--dl-blue-soft); }
-.daily-log-engineer-slip .dl-slip-work th { background: var(--dl-blue-soft); }
+.daily-log-engineer-slip .dl-slip-tabs button[aria-selected=true] { border-color: var(--dl-primary); color: var(--dl-primary-ink); }
 .daily-log-summary .dl-return-source { background: var(--dl-amber-soft); color: var(--dl-amber); }
 
 /* CHT briefing: official output first, supporting records last. All styles stay
@@ -76,7 +87,7 @@
 .daily-log-summary--report .dl-report-wbs article { border-inline-start: 4px solid var(--dl-blue); box-shadow: 0 1px 4px rgb(30 58 95 / 5%); }
 .daily-log-summary--report .dl-report-wbs article:has(.bg-amber-100) { border-inline-start-color: #d97706; }
 .daily-log-summary--report .dl-report-wbs article dl dd { font-size: 1.15rem; font-weight: 700; color: var(--dl-report-navy); }
-.daily-log-summary--report .dl-report-alerts { border-radius: 8px; border: 1px solid var(--border); background: var(--card); padding: 20px; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-alerts { border-radius: 8px; border: 1px solid var(--border); background: var(--card, #ffffff); padding: 20px; box-shadow: var(--dl-elevation); }
 .daily-log-summary--report .dl-report-incident,
 .daily-log-summary--report .dl-report-forecast-warning,
 .daily-log-summary--report .dl-report-next,
@@ -102,7 +113,7 @@
 .daily-log-summary--report .dl-area-work-highlights { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
 .daily-log-summary--report .dl-area-work-highlights strong { color: var(--dl-report-navy); font-weight: 700; }
 .daily-log-summary--report .dl-report-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
-.daily-log-summary--report .dl-report-photo { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); text-decoration: none; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-photo { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card, #ffffff); color: var(--foreground); text-decoration: none; box-shadow: var(--dl-elevation); }
 .daily-log-summary--report .dl-report-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--muted); }
 .daily-log-summary--report .dl-report-photo span { display: block; padding: 9px 12px; font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
 .daily-log-summary--report .dl-report-photo small { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: .75rem; font-weight: 400; }
@@ -158,7 +169,7 @@
   padding: 8px 14px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--card);
+  background: var(--card, #ffffff);
   color: var(--foreground);
   font-size: 14px;
   font-weight: 500;
@@ -166,6 +177,9 @@
 }
 
 .daily-log-document-actionbar .daily-log-document-button--primary { background: var(--daily-log-accent); border-color: var(--daily-log-accent); color: white; }
+.daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled):hover { background: #09737b; border-color: #09737b; }
+.daily-log-document-actionbar .daily-log-document-button--secondary { border-color: #b6e2e6; background: #e7f6f7; color: #0a6b72; }
+.dark .daily-log-document-actionbar .daily-log-document-button--secondary { border-color: #115e59; background: #0f2f2c; color: #5eead4; }
 .daily-log-document-actionbar .daily-log-document-button--approve { background: #047857; border-color: #047857; color: white; }
 .daily-log-document-actionbar .daily-log-document-button--return { background: #fffbeb; border-color: #d97706; color: #92400e; }
 .dark .daily-log-document-actionbar .daily-log-document-button--return { background: #451a03; border-color: #b45309; color: #fcd34d; }
@@ -220,7 +234,7 @@
     max-width: none;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--border);
-    background: var(--card);
+    background: var(--card, #ffffff);
     box-shadow: 0 -2px 10px rgb(30 58 95 / 6%);
   }
   .daily-log-document-actionbar .daily-log-document-buttons { gap: 8px; }
