@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, ShieldAlert } from 'lucide-react';
+import { inheritedLockHint, notDirectGrantReason } from '../../lib/permissions/permissionLockReason';
 import { EffectivePermissionSource, UserPermissionGrant } from '../../types';
 import {
   PermissionCatalogAction,
@@ -91,6 +92,7 @@ const ActionRow: React.FC<{
     && (!source.startsAt || Date.parse(source.startsAt) <= Date.now())
     && (!source.expiresAt || Date.parse(source.expiresAt) > Date.now()));
   const inherited = matchingSources[0];
+  const notDirect = action.directGrantAllowed ? null : notDirectGrantReason(action);
   const initialScope = directGrant?.scopeType || action.defaultScopeType || action.scopeTypes[0] || 'global';
   const [scopeType, setScopeType] = useState<PermissionScopeType>(initialScope);
   const [scopeId, setScopeId] = useState(directGrant?.scopeId === '*' ? '' : directGrant?.scopeId || '');
@@ -125,9 +127,9 @@ const ActionRow: React.FC<{
         {action.riskLevel === 'sensitive' && (
           <span className="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-black text-rose-700">Nhạy cảm</span>
         )}
-        {!action.directGrantAllowed && (action.permissionCode.startsWith('project.')
-          ? <span title="Quyền này được cấp trong tab Phân quyền của từng dự án, không cấp tại đây." className="rounded-full bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700">Phân quyền trong Room dự án</span>
-          : <span title="Quyền này chỉ cấp được qua mẫu quyền, không cấp riêng cho từng người." className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Cấp qua mẫu quyền</span>)}
+        {notDirect && (
+          <span className={`rounded-full px-2 py-1 text-[10px] font-black ${action.permissionCode.startsWith('project.') ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>{notDirect.badge}</span>
+        )}
         {action.directGrantRequiresExpiry && (
           <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Cần ngày hết hạn</span>
         )}
@@ -143,6 +145,13 @@ const ActionRow: React.FC<{
           {source.scopeId && source.scopeId !== '*' && <> · {getScopeEntityLabel(entities, source.scopeType, source.scopeId)}</>}
         </p>
       ))}
+
+      {!directGrant && (notDirect || inherited) && (
+        <p className="mt-1 flex items-start gap-1 text-[11px] text-slate-500">
+          <Lock size={11} className="mt-0.5 shrink-0" />
+          <span>{notDirect ? notDirect.hint : inheritedLockHint(inherited!)}</span>
+        </p>
+      )}
 
       {action.directGrantAllowed && !inherited && (
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">

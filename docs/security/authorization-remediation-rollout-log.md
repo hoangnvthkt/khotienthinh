@@ -792,3 +792,8 @@ Chỉ sửa frontend, không có migration.
   - dry-run và smoke persona PASS: nhân viên thường bị chặn sửa mẫu; mã không cấp riêng được và phạm vi kho bị từ chối; có nhật ký;
   - e2e fixture `tests/e2e/authorization-template-fill.spec.ts` PASS; Vitest 2.348 PASS.
 - Rollback: `drop function public.save_user_permission_template(text,text,text,jsonb,uuid[],boolean); drop function app_private.normalize_user_permission_template_items(jsonb); drop table public.user_permission_templates;`
+
+### P3 — giải thích ô quyền bị khóa (28/09, chỉ frontend)
+
+- Người dùng → Sửa: ô không tick được có dòng 🔒 nói lý do và chỗ đổi. Mã HR nhạy cảm → tab Vai trò nhân sự (HR / HR Manage); vai trò quản trị → Cài đặt → Mẫu quyền (thu hồi); loại tài khoản → ô Loại tài khoản; mã dự án → Room dự án. Nhãn cũ "Cấp qua mẫu quyền" đổi thành "Qua vai trò HR" / "Chỉ vai trò quản trị", vì mẫu quyền theo vị trí không chứa các mã này.
+- Test: `permissionLockReason.test.ts`, e2e phân quyền 5 PASS.

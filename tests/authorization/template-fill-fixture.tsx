@@ -21,6 +21,7 @@ const catalog = { generatedAt: '2026-09-28T00:00:00Z', applications: [
   ] },
   { code: 'kb', label: 'Kho tri thức', sortOrder: 2, hasDefaultViewBundle: false, modules: [
     { code: 'kb.articles', label: 'Bài viết', sortOrder: 1, actions: [act('kb.view', 'Xem'), act('kb.manage', 'Quản lý')] },
+    { code: 'hrm.payroll', label: 'Bảng lương', sortOrder: 2, actions: [act('hrm.payroll.view', 'Xem bảng lương', { directGrantAllowed: false })] },
   ] },
 ] } as unknown as PermissionAdminCatalog;
 
@@ -44,7 +45,8 @@ const Fixture = () => {
     <PermissionTemplateFill userId="fixture" catalog={catalog} grants={grants} inheritedCodes={[]} reason={reason}
       disabled={false} onGrantsChange={setGrants} onReasonChange={setReason} />
     <PermissionModuleEditor catalog={catalog} grants={grants} targetUserId="fixture" onChange={setGrants}
-      initialExpandedApplicationCodes={['wms', 'kb']} inheritedSources={[]} />
+      initialExpandedApplicationCodes={['wms', 'kb']} initialExpandedAdvancedModuleCodes={['kb.articles', 'hrm.payroll']}
+      inheritedSources={[{ permissionCode: 'kb.view', sourceType: 'ROLE', sourceCode: 'HR', scopeType: 'global', scopeId: '*', isBusinessApproval: false, metadata: {} }]} />
     <PermissionDiffPreview before={initial} after={grants} />
     <output aria-label="Reason">{reason}</output>
   </div>;

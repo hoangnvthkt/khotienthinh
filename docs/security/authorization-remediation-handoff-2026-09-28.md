@@ -159,7 +159,7 @@ Xem rollout log P1.6c. Còn: chủ sản phẩm purge CDN `project-photos`; lu�
   - `app_private.evaluate_direct_grant_replacement_impl` bắt buộc hạn cho mọi quyền cần hạn trong lần lưu, nên Admin **không lưu được hồ sơ / quyền của những người này** ở Người dùng.
   - Đề xuất: miễn hạn cho quyền đang có sẵn, không đổi; và (tùy chọn) miễn hạn cho quyền tự phục vụ phạm vi "Chính mình", không nhạy cảm.
   - Bộ kiểm tra an toàn tự động đã chặn thay đổi này vì nó nới lỏng một kiểm tra, nên cần chủ sản phẩm quyết.
-- Tiếp: ô bị khóa do vai trò đặc biệt (HR, quản trị) phải giải thích lý do và chỉ chỗ đổi (tab Vai trò nhân sự).
+- ĐÃ XONG (28/09): ô bị khóa ở Người dùng có dòng giải thích lý do và chỗ đổi (`lib/permissions/permissionLockReason.ts`). Mã HR nhạy cảm dẫn tới tab Vai trò nhân sự; vai trò quản trị dẫn tới Cài đặt → Mẫu quyền; loại tài khoản dẫn tới ô Loại tài khoản; mã dự án dẫn tới Room.
 - Mở Room cho PM/CHT khi chủ sản phẩm quyết định.
 - Task 13: drop cột legacy (`allowed_modules`, `admin_modules`, …) sau khi hết phụ thuộc. `can_access_module` và `resolve_effective_permission_sources` vẫn đọc cột legacy.
 
