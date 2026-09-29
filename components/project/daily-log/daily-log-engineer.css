@@ -6,7 +6,7 @@
 .daily-log-engineer-slip button:disabled { opacity:.55; cursor:not-allowed; }
 .dl-slip-tabs { display:flex; gap:24px; padding:0 24px; border-bottom:1px solid var(--border); }
 .dl-slip-tabs button { background:none; border:0; border-bottom:2px solid transparent; padding:12px 0; color:var(--foreground); }
-.dl-slip-tabs button[aria-selected=true] { border-color:#0e97a0; color:#0a6b72; font-weight:600; }
+.dl-slip-tabs button[aria-selected=true] { border-color:#0a7f87; color:#0a6b72; font-weight:600; }
 .dark .dl-slip-tabs button[aria-selected=true] { color:#5eead4; }
 .dl-slip-body { padding:20px 24px; display:grid; gap:20px; }
 .dl-slip-body p { margin:0; overflow-wrap:anywhere; white-space:pre-wrap; }

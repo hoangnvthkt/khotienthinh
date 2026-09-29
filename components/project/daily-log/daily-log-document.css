@@ -1,7 +1,7 @@
 /* Daily Log only. Consumers reserve mobile action space with
    .daily-log-document-body; shared theme/font/mobile rules stay untouched. */
 .daily-log-document-header {
-  --daily-log-accent: #0e97a0;
+  --daily-log-accent: #0a7f87;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px 24px;
@@ -26,8 +26,8 @@
   --dl-amber-soft: #fffbeb;
   --dl-teal: #0f766e;
   /* Owner reference 29/09: teal primary, grey grid, like the ERP material-plan screens. */
-  --dl-primary: #0e97a0;
-  --dl-primary-hover: #0b7c84;
+  --dl-primary: #0a7f87;
+  --dl-primary-hover: #09737b;
   --dl-primary-soft: #dcf3f4;
   --dl-primary-ink: #0a6b72;
   --dl-grid: #dcdfe4;
@@ -177,7 +177,7 @@
 }
 
 .daily-log-document-actionbar .daily-log-document-button--primary { background: var(--daily-log-accent); border-color: var(--daily-log-accent); color: white; }
-.daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled):hover { background: #0b7c84; border-color: #0b7c84; }
+.daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled):hover { background: #09737b; border-color: #09737b; }
 .daily-log-document-actionbar .daily-log-document-button--secondary { border-color: #b6e2e6; background: #e7f6f7; color: #0a6b72; }
 .dark .daily-log-document-actionbar .daily-log-document-button--secondary { border-color: #115e59; background: #0f2f2c; color: #5eead4; }
 .daily-log-document-actionbar .daily-log-document-button--approve { background: #047857; border-color: #047857; color: white; }
