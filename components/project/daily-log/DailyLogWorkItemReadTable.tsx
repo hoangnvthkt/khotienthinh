@@ -2,6 +2,7 @@ import React from 'react';
 import type {DailyLogWorkItem} from '../../../types';
 import type {SummaryResourceLine} from './DailyLogAreaCard';
 import {formatDailyLogDate,formatDailyLogQuantity} from '../../../lib/dailyLogPresentation';
+import {DailyLogPhotoStrip} from './DailyLogPhotoStrip';
 
 interface Props {items:DailyLogWorkItem[];resources:SummaryResourceLine[];mode:'review'|'verified'}
 // Read model deliberately has no mutation callbacks.
@@ -13,11 +14,11 @@ export function DailyLogWorkItemReadTable({items,resources,mode}:Props) {
     </div>)}
     {item.forecastFinishDate && <p>Dự kiến hoàn thành: {formatDailyLogDate(item.forecastFinishDate)}{item.forecastChangeReason && ` · ${item.forecastChangeReason}`}</p>}
     {item.note && <p className="whitespace-pre-wrap break-words">{item.note}</p>}
-    {item.attachments?.length ? <div className="flex flex-wrap gap-3">{item.attachments.map((photo,index)=><a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="break-words text-teal-800 underline dark:text-teal-200">{photo.name || 'Ảnh hạng mục'}</a>)}</div>:null}
+    {item.attachments?.length ? <DailyLogPhotoStrip photos={item.attachments} label="Ảnh hạng mục" />:null}
   </div>;
   const unknown=items.some(item=>!item.unit?.trim());
   return <div className="daily-log-work-report space-y-3 text-sm">
-    {unknown && <p className="rounded-md border border-border bg-muted/30 p-3">Chất lượng dữ liệu: có hạng mục chưa xác định đơn vị. {mode==='verified'?'Giữ nguyên số liệu đã lưu; không suy đoán hoặc quy đổi lại hồ sơ đã duyệt.':'Không quy đổi khối lượng khi chưa đủ cơ sở.'}</p>}
+    {unknown && <p className="rounded-md border border-border bg-muted/30 p-3">Có hạng mục chưa có đơn vị tính, nên chỉ hiển thị % hoàn thành; hệ thống không tự quy đổi khối lượng.</p>}
     {items.length===0 && <p className="text-muted-foreground">Chưa có hạng mục được lưu trong phiếu này.</p>}
     <div className="hidden overflow-x-auto rounded-md border border-border md:block">
       <table className="w-full table-fixed border-collapse text-sm"><colgroup><col className="w-[40%]"/><col/><col/><col/></colgroup><thead className="bg-muted/40"><tr>

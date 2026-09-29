@@ -46,6 +46,7 @@ test('real ERP engineer chooses A/B, saves physical quantities and metadata then
       await page.getByRole('button',{name:'Chọn công việc',exact:true}).click();
       await page.getByRole('checkbox',{name:'Chọn UX5 Bê tông kiểm thử UX5'}).check();
       await page.getByRole('button',{name:'Đưa vào phiếu'}).click();
+      await page.getByLabel('Cách nhập khối lượng',{exact:true}).filter({visible:true}).selectOption('daily_quantity');
       await page.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true}).fill('12,5');
       await page.getByLabel('Nội dung trong ngày').fill('Nội dung A lưu cùng khối lượng');
       await page.getByLabel('Sự cố / vướng mắc').fill('Lối vào hẹp');

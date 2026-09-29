@@ -18,8 +18,8 @@ describe('source-slip-driven consolidation',()=>{
   });
   it('totals unique WBS and physical hours without claiming unique headcount or report completeness',()=>{
     const html=renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={summaryBundle} mode="summarize" />);
-    expect(html).toContain('WBS duy nhất'); expect(html).toContain('Giờ công'); expect(html).toContain('56'); expect(html).toContain('Giờ máy');expect(html).toContain('12');
-    expect(html).toContain('Lượt người theo hạng mục');expect(html).not.toContain('106 người');expect(html).not.toMatch(/đủ kỹ sư|đủ phiếu/i);
+    expect(html).toContain('Hạng mục</dt>'); expect(html).toContain('Giờ công'); expect(html).toContain('56'); expect(html).toContain('Giờ máy');expect(html).toContain('12');
+    expect(html).toContain('lượt người');expect(html).not.toContain('106 người');expect(html).not.toMatch(/đủ kỹ sư|đủ phiếu/i);
   });
   it('allows an unresolved safe draft to save, but never submit or silently add two 30 percents',()=>{
     const draft=buildDailyLogSummaryDraft(summaryBundle);
@@ -32,7 +32,7 @@ describe('source-slip-driven consolidation',()=>{
   it('keeps saved review comments distinct from source matching and opens the blocked card',()=>{
     const draft=buildDailyLogSummaryDraft({...summaryBundle,summarySources:summaryBundle.summarySources.map((s,i)=>i===0?{...s,reviewStatus:'change_requested',reviewComment:'Bổ sung ảnh móng đã yêu cầu'}:s)});
     const html=renderToStaticMarkup(<DailyLogAreaCard card={draft.cards[0]} mode="summarize" />);
-    expect(html).toContain('Bổ sung ảnh móng đã yêu cầu');expect(html).toContain('Nguồn khớp phiên bản');expect(html).toMatch(/<details[^>]*open=""/);
+    expect(html).toContain('Bổ sung ảnh móng đã yêu cầu');expect(html).not.toContain('Khớp phiếu kỹ sư đã gửi');expect(html).toMatch(/<details[^>]*open=""/);
   });
   it('collapses a current card and keeps resources and photographs under the matching work item',()=>{
     const card=buildDailyLogSummaryDraft(summaryBundle).cards[0];
@@ -78,7 +78,7 @@ describe('source-slip-driven consolidation',()=>{
     const resolved={...summaryBundle,decisions:[{dailyLogId:'summary-1',taskId:'task-1',officialCumulativePercent:30,aggregationMethod:'manual_override' as const,dailyQuantityMethod:'manual_override' as const,resolutionReason:'Chốt phạm vi móng',includedSourceWorkItemIds:['work-A-1','work-B-1'],sourceFingerprint:''}]};
     const html=renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={resolved} mode="review" />);
     expect(html).not.toMatch(/<(input|select|textarea)\b/);
-    expect(html).toContain('30 %');expect(html).toContain('Chốt phạm vi móng');expect(html).toContain('Đã chốt quyết định');
+    expect(html).toContain('30 %');expect(html).toContain('Chốt phạm vi móng');expect(html).toContain('Đã chốt số liệu');
     expect(html).not.toMatch(/<details[^>]*open=""/);
   });
   it('explains why a slip cannot be returned while local edits are unsaved',()=>{

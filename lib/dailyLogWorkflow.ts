@@ -596,3 +596,17 @@ export const resolveDailyLogSummaryDetails = (
 export const buildDailyLogSummaryVolumes = (sourceLogs: DailyLog[]): DailyLogVolume[] => {
   return buildSummaryVolumes(sourceLogs);
 };
+
+/** Starting text for a new summary, from the engineers' sent slips. Never overwrites saved text. */
+export const buildDailyLogSummaryPrefill = (sources: ReadonlyArray<Pick<DailyLogContribution,
+  'status' | 'workAreaName' | 'workAreaCode' | 'authorName' | 'content' | 'issues'>>) => {
+  const sent = sources.filter(source => source.status === 'submitted' || source.status === 'included');
+  const line = (source: typeof sent[number], text?: string | null) => {
+    const area = source.workAreaName?.trim() || source.workAreaCode?.trim() || 'Mũi chưa đặt tên';
+    return `- ${area}${source.authorName ? ` (${source.authorName})` : ''}: ${text!.trim()}`;
+  };
+  return {
+    description: sent.filter(source => source.content?.trim()).map(source => line(source, source.content)).join('\n'),
+    issues: sent.filter(source => source.issues?.trim()).map(source => line(source, source.issues)).join('\n'),
+  };
+};

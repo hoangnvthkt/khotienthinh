@@ -45,6 +45,7 @@ import {
     isDailyLogSummaryEditable,
     resolveDailyLogSummaryDetails,
     withDailyLogSummaryDetails,
+    buildDailyLogSummaryPrefill,
     type DailyLogSourceReviewState,
     type DailyLogSummarySourceSnapshot,
 } from '../../lib/dailyLogWorkflow';
@@ -1502,6 +1503,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 setSummaryIssues(bundle.summaryLog.issues || '');
                 setSummaryNextPlan(bundle.summaryLog.nextDayPlan || '');
                 setSummaryPhotos(bundle.summaryLog.photos || []);
+            }
+            if (bundle.rollout.enabled && bundle.rollout.cutoverDate && date >= bundle.rollout.cutoverDate
+                && !bundle.summaryLog?.description?.trim() && !bundle.summaryLog?.issues?.trim()
+                && !existingSummary?.description?.trim() && !existingSummary?.issues?.trim()) {
+                const prefill = buildDailyLogSummaryPrefill(bundle.contributionsForSummary || []);
+                setSummaryDescription(prefill.description);
+                setSummaryIssues(prefill.issues);
             }
             setSummaryWbsBundle(bundle);
         } catch (caught) {
