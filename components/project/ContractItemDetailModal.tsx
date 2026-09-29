@@ -257,6 +257,13 @@ const ContractItemDetailModal: React.FC<Props> = ({
 	            <input type="text" inputMode="decimal" value={form.height || ''} onChange={e => setField('height', asDraftNumber(e.target.value))} placeholder="Cao" className={inputCls} />
 	            <input type="text" inputMode="decimal" value={form.quantity || ''} onChange={e => setField('quantity', asDraftNumber(e.target.value))} placeholder="Khối lượng" className={inputCls} />
             <input value={form.unit || ''} onChange={e => setField('unit', e.target.value)} placeholder="Đơn vị" className={inputCls} />
+            {contractType === 'subcontractor' && (
+              <select aria-label="Quy đổi công nhật" value={form.laborDayBasis || ''} onChange={e => setField('laborDayBasis', (e.target.value || null) as ContractItem['laborDayBasis'])} className={inputCls} title="Dùng khi nghiệm thu theo công từ nhật ký">
+                <option value="">Quy đổi công: 8 giờ = 1 công (mặc định)</option>
+                <option value="hours_8">8 giờ = 1 công</option>
+                <option value="person_day">1 người/ngày = 1 công</option>
+              </select>
+            )}
             <input value={form.workCode || ''} onChange={e => setField('workCode', e.target.value)} placeholder="Mã công tác" className={inputCls} />
           </div>
 

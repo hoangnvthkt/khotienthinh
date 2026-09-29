@@ -68,6 +68,21 @@ async function fetchItems(acceptanceIds: string[]): Promise<Record<string, Quant
   }, {});
 }
 
+interface ContractManDays { contractItemId: string; basis: 'hours_8' | 'person_day'; manDays: number; people: number; laborHours: number; days: number; lineIds: string[] }
+
+/** Man-days per labor subcontract line from linked labor in CHT-approved logs (get_daily_log_contract_man_days_v1). */
+async function loadContractManDays(contractId: string, constructionSiteId: string, from: string, to: string): Promise<ContractManDays[]> {
+  const { data, error } = await supabase.rpc('get_daily_log_contract_man_days_v1', {
+    p_contract_id: contractId, p_construction_site_id: constructionSiteId || null, p_from: from, p_to: to,
+  });
+  if (error) {
+    // Without Room acceptance rights the draft is still built from quantities, as before.
+    if (error.code === '42501') { console.warn('Man-day acceptance skipped: no quantity_acceptance view right'); return []; }
+    throw error;
+  }
+  return ((data || []) as ContractManDays[]).map(row => ({ ...row, manDays: Number(row.manDays), people: Number(row.people), laborHours: Number(row.laborHours) }));
+}
+
 async function replaceItems(acceptanceId: string, items: QuantityAcceptanceItem[]): Promise<void> {
   const { error: deleteError } = await supabase.from(ITEM_TABLE).delete().eq('acceptance_id', acceptanceId);
   if (deleteError) {
@@ -608,9 +623,23 @@ export const quantityAcceptanceService = {
           return buildInternalAcceptanceItem(value.source, value.quantity, previousAcceptedQuantity, value.volumeIds);
         }).filter(item => item.proposedQuantity > 0));
     } else {
+      // Labor subcontract lines with crew labor linked from CHT-approved logs are accepted by man-days.
+      const manDays = params.contractType === 'subcontractor'
+        ? await loadContractManDays(params.contractId, params.constructionSiteId, params.periodStart, params.periodEnd)
+        : [];
+      const manDayItemIds = new Set(manDays.filter(row => contractItemMap.has(row.contractItemId)).map(row => row.contractItemId));
+      for (const row of manDays) {
+        const contractItem = contractItemMap.get(row.contractItemId);
+        if (!contractItem || !(row.manDays > 0)) continue;
+        items.push({
+          ...buildAcceptanceItem(contractItem, row.manDays, getPreviousAcceptedQty(previousAcceptances, row.contractItemId), []),
+          sourceDailyLogLaborIds: row.lineIds,
+          note: `Công nhật từ nhật ký đã duyệt: ${row.laborHours} giờ công, ${row.people} lượt người, ${row.days} ngày (${row.basis === 'person_day' ? '1 người/ngày = 1 công' : '8 giờ = 1 công'})`,
+        });
+      }
       const source = await collectVerifiedVolumeMapping(params, contractItems);
       positiveVolumeCount = source.positiveVolumeCount;
-      items.push(...Array.from(source.grouped.entries()).map(([contractItemId, value]) => {
+      items.push(...Array.from(source.grouped.entries()).filter(([contractItemId]) => !manDayItemIds.has(contractItemId)).map(([contractItemId, value]) => {
           const contractItem = contractItemMap.get(contractItemId)!;
           const previousAcceptedQuantity = getPreviousAcceptedQty(previousAcceptances, contractItemId);
           return buildAcceptanceItem(contractItem, value.quantity, previousAcceptedQuantity, value.volumeIds);
