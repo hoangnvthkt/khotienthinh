@@ -13,6 +13,7 @@ import {
   Edit2,
   ExternalLink,
   FileText,
+  HardHat,
   Filter,
   Landmark,
   Loader2,
@@ -105,6 +106,7 @@ import CashFlowTab from './CashFlowTab';
 import PaymentWorkbenchTab from './PaymentWorkbenchTab';
 import SupplierFinanceFlowPanel from '../../components/project/SupplierFinanceFlowPanel';
 import SupplierInvoiceMatchingModal, { type SupplierInvoiceMatchingSubmit } from '../../components/project/SupplierInvoiceMatchingModal';
+import { ResourceUsageEvidencePanel } from '../../components/project/finance/ResourceUsageEvidencePanel';
 
 interface ProjectFinanceWorkspaceProps {
   projectId?: string | null;
@@ -180,6 +182,7 @@ const tabs: Array<{ key: ProjectFinanceWorkspaceTab; label: string; icon: React.
   { key: 'payables', label: 'Phải trả', icon: ArrowDownRight },
   { key: 'receivables', label: 'Phải thu', icon: ArrowUpRight },
   { key: 'payments', label: 'Thanh toán', icon: CreditCard },
+  { key: 'evidence', label: 'Bằng chứng nguồn lực', icon: HardHat },
   { key: 'cashflow', label: 'Dòng tiền', icon: Banknote },
   { key: 'ledger', label: 'Sổ giao dịch', icon: ReceiptText },
 ];
@@ -2506,7 +2509,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   }, [constructionSiteId, projectId, transactions]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (activeTab !== 'evidence') void load(); }, [activeTab, load]);
 
   const loadSupplierFinanceControl = useCallback(async () => {
     const requestId = ++supplierFinanceRequestRef.current;
@@ -2526,9 +2529,9 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
   }, [constructionSiteId, projectId]);
 
   useEffect(() => {
-    void loadSupplierFinanceControl();
+    if (activeTab !== 'evidence') void loadSupplierFinanceControl();
     return () => { supplierFinanceRequestRef.current += 1; };
-  }, [loadSupplierFinanceControl]);
+  }, [activeTab, loadSupplierFinanceControl]);
 
   const loadContractCostItems = useCallback(async () => {
     try {
@@ -2538,7 +2541,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   }, [toast]);
 
-  useEffect(() => { loadContractCostItems(); }, [loadContractCostItems]);
+  useEffect(() => { if (activeTab !== 'evidence') void loadContractCostItems(); }, [activeTab, loadContractCostItems]);
 
   const loadPartners = useCallback(async () => {
     try {
@@ -2548,7 +2551,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   }, [toast]);
 
-  useEffect(() => { loadPartners(); }, [loadPartners]);
+  useEffect(() => { if (activeTab !== 'evidence') void loadPartners(); }, [activeTab, loadPartners]);
 
   const loadSupplierPaymentBatches = useCallback(async () => {
     setLoadingSupplierPaymentBatches(true);
@@ -3657,9 +3660,9 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
           <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Tài chính công trình</h3>
           <p className="mt-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">Tổng hợp ngân sách, công nợ, thanh toán và dòng tiền từ chứng từ hiện có.</p>
         </div>
-        <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:border-teal-500 hover:text-teal-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-teal-400">
+        {activeTab !== 'evidence' && <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:border-teal-500 hover:text-teal-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-teal-400">
           <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} /> Tải lại
-        </button>
+        </button>}
       </div>
 
       <div className="flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1 shadow-sm [&::-webkit-scrollbar]:hidden">
@@ -3680,20 +3683,24 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         })}
       </div>
 
-      {loading && (
+      {activeTab !== 'evidence' && loading && (
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-10 text-center text-sm font-medium text-zinc-400">
           <Loader2 size={22} className="mx-auto mb-2 animate-spin text-teal-600" />
           Đang tổng hợp tài chính...
         </div>
       )}
 
-      {!loading && error && (
+      {activeTab !== 'evidence' && !loading && error && (
         <div className="rounded-xl border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/40 p-4 text-sm font-medium text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
 
-      {!loading && !error && data && summary && (
+      {activeTab === 'evidence' && (projectId
+        ? <ResourceUsageEvidencePanel projectId={projectId} constructionSiteId={constructionSiteId} />
+        : <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Chọn dự án để tra cứu bằng chứng nguồn lực.</div>)}
+
+      {activeTab !== 'evidence' && !loading && !error && data && summary && (
         <>
           {activeTab === 'overview' && (
             <div className="space-y-5">

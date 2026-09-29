@@ -1,0 +1,57 @@
+{
+  "daily_logs": {
+    "before": 323,
+    "after": 323,
+    "sameOriginalColumns": true
+  },
+  "daily_log_labor": {
+    "before": 827,
+    "after": 827,
+    "sameOriginalColumns": true
+  },
+  "daily_log_machines": {
+    "before": 408,
+    "after": 408,
+    "sameOriginalColumns": true
+  },
+  "daily_log_contributions": {
+    "before": 0,
+    "after": 0,
+    "sameOriginalColumns": true
+  },
+  "project_daily_task_progress": {
+    "before": 13334,
+    "after": 13334,
+    "sameOriginalColumns": true
+  },
+  "project_tasks": {
+    "before": 863,
+    "after": 863,
+    "sameOriginalColumns": true
+  },
+  "project_transactions": {
+    "before": 1100,
+    "after": 1100,
+    "sameOriginalColumns": true
+  },
+  "project_permission_room_member_actions": {
+    "before": 1823,
+    "after": 1823,
+    "sameOriginalColumns": true
+  },
+  "project_permission_room_members": {
+    "before": 656,
+    "after": 656,
+    "sameOriginalColumns": true
+  },
+  "permission_actions": {
+    "before": 407,
+    "after": 409,
+    "sameOriginalColumns": false
+  },
+  "project_permission_rooms": {
+    "before": 14,
+    "after": 14,
+    "sameOriginalColumns": false
+  }
+}

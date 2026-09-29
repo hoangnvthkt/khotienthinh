@@ -1,0 +1,229 @@
+/* Daily Log only. Consumers reserve mobile action space with
+   .daily-log-document-body; shared theme/font/mobile rules stay untouched. */
+.daily-log-document-header {
+  --daily-log-accent: #1d4ed8;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Approved visual polish, scoped to V2 slips/reports. Colors communicate
+   actions, never replace labels or alter the global Vioo/legacy theme. */
+.daily-log-engineer-slip, .daily-log-summary {
+  --dl-ink: #1e3a5f;
+  --dl-blue: #1d4ed8;
+  --dl-blue-soft: #eff6ff;
+  --dl-amber: #92400e;
+  --dl-amber-soft: #fffbeb;
+  --dl-teal: #0f766e;
+  --dl-elevation: 0 1px 2px rgb(30 58 95 / 5%), 0 4px 12px rgb(30 58 95 / 5%);
+}
+.dark .daily-log-engineer-slip, .dark .daily-log-summary {
+  --dl-ink: #dbeafe;
+  --dl-blue: #93c5fd;
+  --dl-blue-soft: #172554;
+  --dl-amber: #fcd34d;
+  --dl-amber-soft: #451a03;
+  --dl-teal: #5eead4;
+  --dl-elevation: 0 1px 0 rgb(148 163 184 / 10%), 0 4px 12px rgb(2 6 23 / 22%);
+}
+.daily-log-document-header { box-shadow: 0 2px 8px rgb(30 58 95 / 6%); }
+.dark .daily-log-document-header { box-shadow: 0 2px 8px rgb(2 6 23 / 22%); }
+.daily-log-engineer-slip .daily-log-document-header h2,
+.daily-log-summary .daily-log-document-header h2,
+.daily-log-summary .daily-log-document-body h2,
+.daily-log-summary [data-testid="daily-log-area-card"] h3 { color: var(--dl-ink); }
+.daily-log-summary [data-testid="daily-log-area-card"],
+.daily-log-engineer-slip .dl-slip-work { box-shadow: var(--dl-elevation); }
+.daily-log-summary .dl-summary-metrics { background: var(--card); box-shadow: var(--dl-elevation); }
+.daily-log-summary .dl-summary-metrics > div > dd:first-of-type { color: var(--dl-ink); }
+.daily-log-summary .dl-summary-metrics > div.dl-metric-attention > dd:first-of-type { color: var(--dl-amber); }
+.daily-log-engineer-slip [data-resource-kind="labor"] h4,
+.daily-log-summary [data-resource-kind="labor"] > p:first-child { color: var(--dl-blue); }
+.daily-log-engineer-slip [data-resource-kind="machine"] h4,
+.daily-log-summary [data-resource-kind="machine"] > p:first-child { color: var(--dl-teal); }
+.daily-log-summary [data-resource-kind] { border-inline-start: 3px solid var(--dl-blue); }
+.daily-log-summary [data-resource-kind="machine"] { border-inline-start-color: var(--dl-teal); }
+.daily-log-engineer-slip .dl-slip-tabs button[aria-selected=true] { border-color: var(--dl-blue); color: var(--dl-blue); }
+.daily-log-engineer-slip .dl-slip-toolbar button { border-color: var(--dl-blue); color: var(--dl-blue); background: var(--dl-blue-soft); }
+.daily-log-engineer-slip .dl-slip-work th { background: var(--dl-blue-soft); }
+.daily-log-summary .dl-return-source { background: var(--dl-amber-soft); color: var(--dl-amber); }
+
+/* CHT briefing: official output first, supporting records last. All styles stay
+   inside the report mode; the summarizer form and engineer slip are untouched. */
+.daily-log-summary--report { --dl-report-navy: #183153; --dl-report-green: #047857; --dl-report-red: #b42318; }
+.dark .daily-log-summary--report { --dl-report-navy: #dbeafe; --dl-report-green: #6ee7b7; --dl-report-red: #fca5a5; }
+.daily-log-summary--report .daily-log-document-body { max-width: 1500px; margin-inline: auto; }
+.daily-log-summary--report .dl-report-section-title { margin: 0; color: var(--dl-report-navy); font-size: 1.15rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.35; }
+.daily-log-summary--report .dl-report-intro { margin-top: -12px; padding: 0 2px; color: var(--foreground); font-size: 1rem; line-height: 1.6; }
+.daily-log-summary--report .dl-summary-metrics { gap: 0; border: 1px solid var(--border); padding: 0; overflow: hidden; }
+.daily-log-summary--report .dl-summary-metrics > div { min-width: 0; padding: 16px 18px; border-inline-end: 1px solid var(--border); }
+.daily-log-summary--report .dl-summary-metrics > div:last-child { border-inline-end: 0; }
+.daily-log-summary--report .dl-summary-metrics > div > dd:first-of-type { font-size: 1.55rem; line-height: 1.2; margin-top: 7px; font-weight: 700; }
+.daily-log-summary--report .dl-summary-metrics > div.dl-metric-calm > dd:first-of-type { color: var(--dl-report-green); }
+.daily-log-summary--report .dl-report-wbs > section { border-color: #bfd1e8; box-shadow: var(--dl-elevation); padding: 20px; }
+.dark .daily-log-summary--report .dl-report-wbs > section { border-color: #315275; }
+.daily-log-summary--report .dl-report-wbs h2 { font-size: 1.15rem; font-weight: 700; }
+.daily-log-summary--report .dl-report-wbs article { border-inline-start: 4px solid var(--dl-blue); box-shadow: 0 1px 4px rgb(30 58 95 / 5%); }
+.daily-log-summary--report .dl-report-wbs article:has(.bg-amber-100) { border-inline-start-color: #d97706; }
+.daily-log-summary--report .dl-report-wbs article dl dd { font-size: 1.15rem; font-weight: 700; color: var(--dl-report-navy); }
+.daily-log-summary--report .dl-report-alerts { border-radius: 8px; border: 1px solid var(--border); background: var(--card); padding: 20px; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-incident,
+.daily-log-summary--report .dl-report-forecast-warning,
+.daily-log-summary--report .dl-report-next,
+.daily-log-summary--report .dl-report-calm { border-radius: 6px; padding: 12px 14px; font-size: .9rem; line-height: 1.55; }
+.daily-log-summary--report .dl-report-incident,
+.daily-log-summary--report .dl-report-forecast-warning { border-inline-start: 4px solid #d97706; background: #fffbeb; color: #78350f; }
+.dark .daily-log-summary--report .dl-report-incident,
+.dark .daily-log-summary--report .dl-report-forecast-warning { background: #451a03; color: #fef3c7; }
+.daily-log-summary--report .dl-report-calm { border-inline-start: 4px solid #059669; background: #ecfdf5; color: #065f46; }
+.dark .daily-log-summary--report .dl-report-calm { background: #064e3b; color: #d1fae5; }
+.daily-log-summary--report .dl-report-next { border-inline-start: 4px solid var(--dl-blue); background: var(--dl-blue-soft); color: var(--dl-report-navy); }
+.daily-log-summary--report [data-testid="daily-log-area-card"] { overflow: hidden; border-radius: 8px; }
+.daily-log-summary--report [data-testid="daily-log-area-card"] > div:first-child { border-top: 4px solid var(--dl-blue); padding: 18px; }
+.daily-log-summary--report .dl-area-delay { display: inline-block; border-radius: 4px; padding: 5px 8px; background: var(--muted); color: var(--muted-foreground); }
+.daily-log-summary--report .dl-area-delay--ok { background: #ecfdf5; color: #065f46; }
+.daily-log-summary--report .dl-area-delay--late { background: #fef2f2; color: #991b1b; }
+.dark .daily-log-summary--report .dl-area-delay--ok { background: #064e3b; color: #d1fae5; }
+.dark .daily-log-summary--report .dl-area-delay--late { background: #450a0a; color: #fecaca; }
+.daily-log-summary--report .dl-area-resource-strip { margin-top: 12px; }
+.daily-log-summary--report .dl-area-resource-strip > div { border-radius: 6px; background: var(--muted); padding: 10px; }
+.daily-log-summary--report .dl-area-resource-strip dt { color: var(--muted-foreground); font-size: .72rem; line-height: 1.35; }
+.daily-log-summary--report .dl-area-resource-strip dd { color: var(--dl-report-navy); font-weight: 700; font-size: .98rem; line-height: 1.35; margin-top: 5px; }
+.daily-log-summary--report .dl-area-work-highlights { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+.daily-log-summary--report .dl-area-work-highlights strong { color: var(--dl-report-navy); font-weight: 700; }
+.daily-log-summary--report .dl-report-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.daily-log-summary--report .dl-report-photo { display: block; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); text-decoration: none; box-shadow: var(--dl-elevation); }
+.daily-log-summary--report .dl-report-photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--muted); }
+.daily-log-summary--report .dl-report-photo span { display: block; padding: 9px 12px; font-size: .85rem; font-weight: 600; overflow-wrap: anywhere; }
+.daily-log-summary--report .dl-report-photo small { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: .75rem; font-weight: 400; }
+.daily-log-summary--report .dl-report-audit { border: 1px solid var(--border); border-radius: 7px; background: var(--muted); padding: 4px 16px 14px; }
+.daily-log-summary--report .dl-report-audit > summary { min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--muted-foreground); font-size: .85rem; font-weight: 600; }
+.daily-log-summary--report .dl-report-audit dd { margin-top: 4px; color: var(--foreground); }
+@media (max-width: 1023px) {
+  .daily-log-summary--report .dl-summary-metrics > div { border-bottom: 1px solid var(--border); }
+}
+@media (max-width: 639px) {
+  .daily-log-summary--report .dl-summary-metrics > div { padding: 13px 14px; }
+  .daily-log-summary--report .dl-report-wbs > section,
+  .daily-log-summary--report .dl-report-alerts { padding: 15px; }
+  .daily-log-summary--report .dl-area-work-highlights strong { display: block; width: 100%; }
+}
+
+.daily-log-document-header .daily-log-document-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.daily-log-document-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.daily-log-document-header .daily-log-document-metadata {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0;
+}
+
+.daily-log-document-metadata dt { color: var(--muted-foreground); font-size: 13px; }
+.daily-log-document-metadata dd { margin: 4px 0 0; font-weight: 500; overflow-wrap: anywhere; }
+.daily-log-document-header .daily-log-document-actionbar { grid-column: 2; grid-row: 1; max-width: 34rem; }
+.daily-log-document-actionbar .daily-log-document-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+.daily-log-document-actionbar .daily-log-document-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.daily-log-document-actionbar .daily-log-document-button--primary { background: var(--daily-log-accent); border-color: var(--daily-log-accent); color: white; }
+.daily-log-document-actionbar .daily-log-document-button--approve { background: #047857; border-color: #047857; color: white; }
+.daily-log-document-actionbar .daily-log-document-button--return { background: #fffbeb; border-color: #d97706; color: #92400e; }
+.dark .daily-log-document-actionbar .daily-log-document-button--return { background: #451a03; border-color: #b45309; color: #fcd34d; }
+.daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled) { box-shadow: 0 2px 4px rgb(30 58 95 / 16%); }
+.daily-log-document-actionbar .daily-log-document-button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+.daily-log-document-actionbar .daily-log-document-button--close { background: var(--muted); }
+.daily-log-document-actionbar .daily-log-document-button:focus-visible { outline: 2px solid var(--daily-log-accent); outline-offset: 3px; }
+.daily-log-document-actionbar .daily-log-document-action-reason { margin: 8px 0 0; color: var(--foreground); font-size: 13px; overflow-wrap: anywhere; }
+
+.daily-log-document-header .daily-log-document-status { border-radius: 4px; padding: 4px 8px; font-size: 13px; font-weight: 500; background: var(--muted); }
+.daily-log-document-header .daily-log-document-status--pending { background: #f0fdfa; color: #115e59; }
+.daily-log-document-header .daily-log-document-status--returned { background: #fffbeb; color: #92400e; }
+.daily-log-document-header .daily-log-document-status--verified { background: #f0fdf4; color: #166534; }
+.dark .daily-log-document-header .daily-log-document-status--pending { background: #134e4a; color: #ccfbf1; }
+.dark .daily-log-document-header .daily-log-document-status--returned { background: #451a03; color: #fef3c7; }
+.dark .daily-log-document-header .daily-log-document-status--verified { background: #14532d; color: #dcfce7; }
+
+@media (hover: hover) {
+  .daily-log-document-actionbar .daily-log-document-button:not(:disabled):hover { background: var(--muted); }
+  .daily-log-document-actionbar .daily-log-document-button--primary:not(:disabled):hover { background: #1e40af; border-color: #1e40af; }
+  .daily-log-document-actionbar .daily-log-document-button--approve:not(:disabled):hover { background: #065f46; border-color: #065f46; }
+  .daily-log-document-actionbar .daily-log-document-button--return:not(:disabled):hover { background: #fef3c7; }
+  .dark .daily-log-document-actionbar .daily-log-document-button--return:not(:disabled):hover { background: #78350f; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The existing global button shorthand is !important; override it here
+     rather than changing shared styles or allowing transform animation. */
+  .daily-log-document-actionbar .daily-log-document-button { transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-log-document-actionbar .daily-log-document-button { transition: none !important; }
+}
+
+/* Physical-entry semantics must remain readable on small screens, overriding
+   the app's global mobile card-label ellipsis rule only inside this workspace. */
+.daily-log-summary dl .text-xs {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .daily-log-document-header { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; }
+  .daily-log-document-header h2 { font-size: 20px; }
+  .daily-log-document-header .daily-log-document-metadata { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .daily-log-document-header .daily-log-document-actionbar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    max-width: none;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--card);
+    box-shadow: 0 -2px 10px rgb(30 58 95 / 6%);
+  }
+  .daily-log-document-actionbar .daily-log-document-buttons { gap: 8px; }
+  .daily-log-document-actionbar .daily-log-document-button { min-height: 44px; flex: 1 1 auto; }
+  .daily-log-document-body { padding-bottom: calc(10rem + env(safe-area-inset-bottom, 0px)); }
+}

@@ -32,6 +32,7 @@ export type ProjectFinanceWorkspaceTab =
   | 'payables'
   | 'receivables'
   | 'payments'
+  | 'evidence'
   | 'cashflow'
   | 'ledger';
 

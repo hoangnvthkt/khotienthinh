@@ -209,7 +209,7 @@ const FINANCE_LEGACY_TAB_TO_WORKSPACE_TAB: Record<(typeof PROJECT_FINANCE_LEGACY
     payment: 'payments',
 };
 
-const FINANCE_WORKSPACE_TABS: ProjectFinanceWorkspaceTab[] = ['overview', 'budget', 'payables', 'receivables', 'payments', 'cashflow', 'ledger'];
+const FINANCE_WORKSPACE_TABS: ProjectFinanceWorkspaceTab[] = ['overview', 'budget', 'payables', 'receivables', 'payments', 'evidence', 'cashflow', 'ledger'];
 const normalizeFinanceWorkspaceTab = (value?: string | null): ProjectFinanceWorkspaceTab | null =>
     FINANCE_WORKSPACE_TABS.includes(value as ProjectFinanceWorkspaceTab) ? value as ProjectFinanceWorkspaceTab : null;
 
@@ -633,11 +633,14 @@ const ProjectDashboard: React.FC = () => {
 
     useEffect(() => {
         if (activeView !== 'overview') return;
+        const params = new URLSearchParams(location.search);
+        // Let the report's Room permission gate explain unknown/denied access.
+        if (overviewTab === 'dailylog' && params.get('tab') === 'dailylog' && params.get('dailyLogId')) return;
         if (visibleOverviewTabs.length === 0) return;
         if (!visibleOverviewTabs.some(tab => tab.key === overviewTab)) {
             setOverviewTab(visibleOverviewTabs[0].key);
         }
-    }, [activeView, overviewTab, visibleOverviewTabs]);
+    }, [activeView, location.search, overviewTab, visibleOverviewTabs]);
 
     const projectServerSort = useMemo<ProjectListSortKey>(
         () => ['updatedAt', 'code', 'name', 'startDate'].includes(projectSort)
@@ -3309,7 +3312,7 @@ const ProjectDashboard: React.FC = () => {
                         Đang tải tab...
                     </div>
                 }>
-                    {visibleOverviewTabs.length === 0 ? (
+                    {visibleOverviewTabs.length === 0 && !(overviewTab === 'dailylog' && routeTab === 'dailylog' && routeParams.get('dailyLogId')) ? (
                         <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-12 text-center shadow-sm">
                             <Shield size={40} className="mx-auto mb-3 text-slate-300" />
                             <p className="text-sm font-black text-slate-600 dark:text-slate-300">Tài khoản chưa được cấp quyền xem tab nào trong dự án này</p>
