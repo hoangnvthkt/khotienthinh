@@ -12,9 +12,16 @@ export interface CreatePurchaseOrderSupplierReturnInput {
   purchaseOrderId: string;
   sourceWarehouseId: string;
   reason: string;
+  /** Lý do chuẩn để thống kê theo NCC. */
+  reasonCode: SupplierReturnReasonCode;
   note?: string;
   lines: Array<{ purchaseOrderLineId: string; quantity: number }>;
 }
+
+export type SupplierReturnReasonCode = 'quality' | 'spec' | 'excess' | 'damaged' | 'other';
+export const SUPPLIER_RETURN_REASONS: Record<SupplierReturnReasonCode, string> = {
+  quality: 'Lỗi chất lượng', spec: 'Sai quy cách / chủng loại', excess: 'Giao thừa', damaged: 'Hư hỏng khi vận chuyển', other: 'Lý do khác',
+};
 
 const mapKeys = (value: any): any => {
   if (Array.isArray(value)) return value.map(mapKeys);
@@ -62,12 +69,13 @@ export const purchaseOrderSupplierReturnService = {
   },
 
   async create(input: CreatePurchaseOrderSupplierReturnInput): Promise<PurchaseOrderSupplierReturn> {
-    const { data, error } = await supabase.rpc('create_purchase_order_supplier_return', {
+    const { data, error } = await supabase.rpc('create_purchase_order_supplier_return_v2', {
       p_purchase_order_id: input.purchaseOrderId,
       p_source_warehouse_id: input.sourceWarehouseId,
       p_lines: input.lines,
       p_reason: input.reason,
       p_note: input.note || null,
+      p_reason_code: input.reasonCode,
     });
     if (error) throw error;
     return { ...mapKeys(data), lines: [] } as PurchaseOrderSupplierReturn;
