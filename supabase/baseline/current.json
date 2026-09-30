@@ -199,6 +199,7 @@
     "20261001090000_procurement_hub_orders.sql",
     "20261001150000_procurement_hub_deliveries.sql",
     "20261001210000_procurement_contracts.sql",
+    "20261002090000_wms_k1_stock_controls.sql",
     "20260930103243_request_template_lifecycle_keeps_published.sql",
     "20260930110802_request_watchers_reassign_soft_delete.sql"
   ],
