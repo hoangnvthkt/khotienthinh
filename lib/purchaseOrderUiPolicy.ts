@@ -107,6 +107,10 @@ const hasActiveDeliveryBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =
 const firstPlannedBatch = (deliveryBatches: PurchaseOrderDeliveryBatch[]) =>
   deliveryBatches.find(batch => batch.status === 'planned');
 
+/** Đơn lập tại màn Mua hàng (01/10/2026): tab dự án chỉ lập đợt giao và nhận hàng. */
+export const isProcurementHubPurchaseOrder = (po: Pick<PurchaseOrder, 'metadata'>) =>
+  (po.metadata as { channel?: unknown } | null | undefined)?.channel === 'procurement_hub';
+
 const isPurchasePackageV2 = (po: PurchaseOrder) =>
   po.sourceMode === 'from_request' && (po.purchaseMode === 'single' || po.purchaseMode === 'multiple');
 

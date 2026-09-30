@@ -31,6 +31,20 @@ describe('procurement source links', () => {
   });
 });
 
+describe('procurement orders', () => {
+  it('maps approval errors to plain Vietnamese', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'PROCUREMENT_PO_APPROVER_INVALID', code: '22023' } });
+    await expect(procurementInboxService.transitionOrder({ purchaseOrderId: 'po-1', expectedRowVersion: 1, action: 'submit', approverUserId: 'me' }))
+      .rejects.toThrow('không phải người lập');
+  });
+  it('sends the order payload unchanged to the save RPC', async () => {
+    rpc.mockResolvedValueOnce({ data: { purchaseOrderId: 'po-1', poNumber: 'PO-1', rowVersion: 1, totalAmount: 10, lines: 1 }, error: null });
+    const input = { vendorId: 'v1', vatRate: 8, items: [{ itemId: 'i1', unitPrice: 5, allocations: [{ sourceType: 'material_request' as const, sourceId: 'r1', lineId: 'l1', qty: 2 }] }] };
+    await procurementInboxService.saveOrder(input);
+    expect(rpc).toHaveBeenLastCalledWith('save_procurement_hub_po_v1', { p_input: input });
+  });
+});
+
 describe('procurement inbox errors', () => {
   it('maps a denied view to a code the page can show as a permission state', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'PROCUREMENT_VIEW_DENIED', code: '42501' } });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
-import { getPurchaseOrderUiPolicy } from '../purchaseOrderUiPolicy';
+import { getPurchaseOrderUiPolicy, isProcurementHubPurchaseOrder } from '../purchaseOrderUiPolicy';
 
 const makePo = (patch: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
   id: 'po-1',
@@ -388,5 +388,13 @@ describe('purchaseOrderUiPolicy', () => {
 
     expect(policy.primaryAction?.id).not.toBe('add_delivery');
     expect(policy.secondaryActions.map(action => action.id)).not.toContain('add_delivery');
+  });
+});
+
+describe('isProcurementHubPurchaseOrder', () => {
+  it('recognises orders created in Mua hàng only', () => {
+    expect(isProcurementHubPurchaseOrder({ metadata: { channel: 'procurement_hub' } })).toBe(true);
+    expect(isProcurementHubPurchaseOrder({ metadata: {} })).toBe(false);
+    expect(isProcurementHubPurchaseOrder({ metadata: null })).toBe(false);
   });
 });

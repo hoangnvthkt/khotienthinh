@@ -11,7 +11,7 @@ const ProcurementHub: React.FC = () => {
   const { search } = useLocation();
   const params = new URLSearchParams(search);
   if (LEGACY_PARAMS.some(key => params.has(key))) return <Navigate to={`/procurement/legacy${search}`} replace />;
-  return <ProcurementHubView currentUserId={user.id} />;
+  return <ProcurementHubView currentUserId={user.id} initialOrderId={params.get('po')} />;
 };
 
 export default ProcurementHub;
