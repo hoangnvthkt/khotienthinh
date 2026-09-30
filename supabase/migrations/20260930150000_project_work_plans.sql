@@ -281,15 +281,18 @@ begin
 end;
 $$;
 
+-- People explicitly granted a work_plan action in this scope. Admins pass every
+-- Room check, so they are listed only when granted by name (no notice flood).
 create function app_private.work_plan_room_holders(p_project_id text, p_site_id text, p_action text)
 returns uuid[] language sql stable security definer set search_path = '' as $$
   select coalesce(array_agg(distinct u.id), '{}'::uuid[])
-  from public.project_staff s
+  from public.project_permission_room_members m
+  join public.project_staff s on s.id = m.project_staff_id and s.end_date is null
   join public.users u on u.id::text = s.user_id and u.is_active and u.account_status = 'ACTIVE'
-  where s.project_id = p_project_id and s.end_date is null
-    and (nullif(p_site_id, '') is null or s.construction_site_id is null or s.construction_site_id = p_site_id)
-    and u.role <> 'ADMIN'
-    and app_private.project_actor_has_effective_room_action(u.id, p_project_id, nullif(p_site_id, ''), 'work_plan', p_action);
+  where m.project_id = p_project_id and m.room_code = 'work_plan' and m.is_active
+    and (nullif(p_site_id, '') is null or m.construction_site_id is null or m.construction_site_id = p_site_id)
+    and exists (select 1 from public.project_permission_room_member_actions a
+      where a.room_member_id = m.id and a.action_code = p_action and a.is_active);
 $$;
 
 -- 4. Read RPCs.
