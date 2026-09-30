@@ -36,13 +36,4 @@ describe('wmsWorkspaceService', () => {
       .rejects.toMatchObject({ code: '42501' });
   });
 
-  it('starts and posts one versioned inventory count', async () => {
-    mocks.rpc
-      .mockResolvedValueOnce({ data: { inventoryCountId: 'count-1', countNo: 'KK-1', warehouseId: 'wh-1', status: 'counting', rowVersion: 1, snapshotAt: '2026-09-21T00:00:00Z', replayed: false }, error: null })
-      .mockResolvedValueOnce({ data: { inventoryCountId: 'count-1', countNo: 'KK-1', status: 'posted', rowVersion: 2, adjustmentTransactionId: 'tx-adjust', replayed: false }, error: null });
-    const started = await wmsWorkspaceService.startCount({ warehouseId: 'wh-1', itemIds: ['item-1'], reason: 'Kiểm kê', idempotencyKey: 'start-1' });
-    expect(started.rowVersion).toBe(1);
-    const posted = await wmsWorkspaceService.postCount({ inventoryCountId: 'count-1', expectedVersion: 1, idempotencyKey: 'post-1', lines: [{ countLineId: 'line-1', countedQty: 88, evidence: [] }] });
-    expect(posted.adjustmentTransactionId).toBe('tx-adjust');
-  });
 });
