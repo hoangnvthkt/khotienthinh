@@ -18,7 +18,7 @@ import {
     resolveWorkflowStepAssigneeCandidates,
 } from '../lib/workflowAssignmentResolver';
 import { canPerform } from '../lib/permissions/permissionService';
-import { isWorkflowActionStep } from '../lib/workflowStepType';
+import { approvalAdvancesStage, getWorkflowStepApprovalState, isWorkflowActionStep } from '../lib/workflowStepType';
 
 // Left accent stripe per instance status. Base keeps the card body neutral and
 // reserves strong colour for the deadline state (see resolveCardTone below).
@@ -350,6 +350,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                 scopeType: 'global',
                 scopeId: '*',
             });
+        const approvalState = getWorkflowStepApprovalState(instance, currentNode);
+        const movingForward = targetNodeId === '__COMPLETED__'
+            || actionableColumns.findIndex(c => c.id === targetNodeId) === currentIdx + 1;
+        if (movingForward && approvalState.requiresAll && approvalState.approved.includes(user.id)) {
+            rejectDrop(`Bạn đã duyệt giai đoạn này. Đang chờ: ${approvalState.pending.map(id => users.find(u => u.id === id)?.name || 'người dùng').join(', ')}.`);
+            return;
+        }
         if (!hasAssignedAction) {
             rejectDrop('Tài khoản của bạn chưa được cấp quyền xử lý nhiệm vụ quy trình.');
             return;
@@ -480,10 +487,22 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
     const dragFromActionStep = isWorkflowActionStep(
         orderedColumns.find(column => column.id === dragTargetInstance?.currentNodeId),
     );
+    // "Tất cả phải duyệt": an approval that is not the last one keeps the card in place.
+    const dragApprovalState = getWorkflowStepApprovalState(
+        dragTargetInstance,
+        orderedColumns.find(column => column.id === dragTargetInstance?.currentNodeId),
+    );
+    const dragHoldsStage = Boolean(
+        showConfirmDrag
+        && !showConfirmDrag.isReopen
+        && showConfirmDrag.action === WorkflowInstanceAction.APPROVED
+        && !approvalAdvancesStage(dragApprovalState, user.id),
+    );
     // Finishing into END has no next stage, so it needs no assignee.
     const mustChooseDragAssignee = Boolean(
         showConfirmDrag &&
         !showConfirmDrag.isReopen &&
+        !dragHoldsStage &&
         !showConfirmDrag.isFinish &&
         dragTargetNode &&
         dragTargetNode.type !== WorkflowNodeType.END
@@ -722,6 +741,22 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                                     </p>
                                                 )}
 
+                                                {(() => {
+                                                    const cardApproval = isRunning && !isVirtual
+                                                        ? getWorkflowStepApprovalState(instance, col as WorkflowNode)
+                                                        : null;
+                                                    if (!cardApproval?.requiresAll) return null;
+                                                    return (
+                                                        <p
+                                                            className="mt-1 text-[10px] font-semibold"
+                                                            style={{ color: 'var(--wf-green-text)' }}
+                                                            title={`Đã xác nhận: ${cardApproval.approved.map(id => users.find(u => u.id === id)?.name || 'người dùng').join(', ') || 'chưa ai'}`}
+                                                        >
+                                                            ✓ {cardApproval.approved.length}/{cardApproval.required.length} đã {isWorkflowActionStep(col as WorkflowNode) ? 'hoàn thành' : 'duyệt'}
+                                                        </p>
+                                                    );
+                                                })()}
+
                                                 {/* Last comment preview */}
                                                 {lastLog?.comment && (
                                                     <p
@@ -889,8 +924,21 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                             </span>
                         </p>
 
+                        {dragHoldsStage && (
+                            <div
+                                className="mb-3 rounded border px-4 py-3 text-[13px]"
+                                style={{ borderColor: 'var(--wf-border-strong)', color: 'var(--wf-text-muted)' }}
+                            >
+                                Giai đoạn này cần tất cả cùng {dragFromActionStep ? 'hoàn thành' : 'duyệt'}. Nhiệm vụ sẽ ở lại giai đoạn hiện tại cho tới khi{' '}
+                                <strong style={{ color: 'var(--wf-text)' }}>
+                                    {dragApprovalState.pending.filter(id => id !== user.id).map(id => users.find(u => u.id === id)?.name || 'người dùng').join(', ')}
+                                </strong>{' '}
+                                cũng xác nhận.
+                            </div>
+                        )}
+
                         {/* Field 1 — assignee pool for the target stage */}
-                        {!showConfirmDrag.isReopen && dragTargetNode && dragTargetNode.type !== WorkflowNodeType.END && (
+                        {!showConfirmDrag.isReopen && !dragHoldsStage && dragTargetNode && dragTargetNode.type !== WorkflowNodeType.END && (
                             <div
                                 className="mb-3 rounded border px-4 py-3"
                                 style={{ borderColor: 'var(--wf-border-strong)' }}

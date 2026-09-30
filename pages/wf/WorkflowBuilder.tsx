@@ -197,7 +197,7 @@ const configPatchForKind = (
 ): Partial<ProjectWorkflowNodeConfig> => {
     switch (kind) {
         case 'fixed':
-            return { assignmentMode: 'fixed_user' };
+            return { assignmentMode: 'fixed_user', approvalPolicy: undefined };
         case 'pool':
             return {
                 assignmentMode: config.assignmentMode === 'select_on_submit' || config.assignmentMode === 'permission_pool'
@@ -207,9 +207,9 @@ const configPatchForKind = (
                 assigneeUserId: undefined,
             };
         case 'creator':
-            return { assignmentMode: 'creator', assigneeUserId: undefined };
+            return { assignmentMode: 'creator', assigneeUserId: undefined, approvalPolicy: undefined };
         case 'previous':
-            return { assignmentMode: 'previous_assignee', assigneeUserId: undefined };
+            return { assignmentMode: 'previous_assignee', assigneeUserId: undefined, approvalPolicy: undefined };
     }
 };
 
@@ -220,14 +220,18 @@ interface StepAssigneeEditorProps {
     users: User[];
     orgUnits: OrgUnit[];
     showProjectPermissionField: boolean;
+    /** "Tất cả phải duyệt" runs only on the Quy trình runtime, not on project material-request workflows. */
+    allowAllApprovalPolicy?: boolean;
+    isActionStep?: boolean;
     disabled: boolean;
     onPatch: (patch: Partial<ProjectWorkflowNodeConfig>) => void;
 }
 
 /** One question — "Ai xử lý giai đoạn này?" — instead of five overlapping fields. */
 export const StepAssigneeEditor: React.FC<StepAssigneeEditorProps> = ({
-    config, isFirstStep, issue, users, orgUnits, showProjectPermissionField, disabled, onPatch,
+    config, isFirstStep, issue, users, orgUnits, showProjectPermissionField, allowAllApprovalPolicy = true, isActionStep = false, disabled, onPatch,
 }) => {
+    const doneVerb = isActionStep ? 'hoàn thành' : 'duyệt';
     const kind = getWorkflowStepAssigneeKind(config);
     const userIds = getTargetUserIds(config.assignmentTargets);
     const departmentIds = getTargetDepartmentIds(config.assignmentTargets);
@@ -327,13 +331,41 @@ export const StepAssigneeEditor: React.FC<StepAssigneeEditorProps> = ({
                             className="mt-0.5 rounded border-slate-300 text-accent focus:ring-accent"
                             checked={config.assigneeSelectionMode === 'multiple'}
                             disabled={disabled}
-                            onChange={e => onPatch({ assigneeSelectionMode: e.target.checked ? 'multiple' : 'single' })}
+                            onChange={e => onPatch(e.target.checked
+                                ? { assigneeSelectionMode: 'multiple' }
+                                : { assigneeSelectionMode: 'single', approvalPolicy: undefined })}
                         />
-                        <span>
-                            Cho phép giao cho nhiều người cùng lúc
-                            <span className="block text-[11px] text-slate-400">Chỉ cần một người xử lý là giai đoạn được thông qua.</span>
-                        </span>
+                        <span>Cho phép giao cho nhiều người cùng lúc</span>
                     </label>
+                    {config.assigneeSelectionMode === 'multiple' && (
+                        <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Khi giao nhiều người">
+                            {([
+                                ['ANY_ONE', `Chỉ cần một người ${doneVerb}`, `Người đầu tiên ${doneVerb} là chuyển giai đoạn.`],
+                                ['ALL', `Tất cả phải ${doneVerb}`, `Chờ đủ mọi người được giao ${doneVerb} rồi mới chuyển giai đoạn.`],
+                            ] as const).map(([policy, title, hint]) => {
+                                const selected = (config.approvalPolicy || 'ANY_ONE') === policy;
+                                const unavailable = policy === 'ALL' && !allowAllApprovalPolicy;
+                                return (
+                                    <button
+                                        key={policy}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={selected}
+                                        disabled={disabled || (unavailable && !selected)}
+                                        onClick={() => onPatch({ approvalPolicy: policy === 'ALL' ? 'ALL' : undefined })}
+                                        className={`rounded-xl border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${selected
+                                            ? 'border-accent bg-emerald-50/80 ring-1 ring-accent dark:bg-emerald-900/20'
+                                            : 'border-slate-200 bg-white/70 hover:border-slate-300 dark:border-slate-600 dark:bg-slate-800/40'}`}
+                                    >
+                                        <span className="block text-xs font-black text-slate-700 dark:text-slate-100">{title}</span>
+                                        <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                            {unavailable ? 'Chưa hỗ trợ cho quy trình phiếu vật tư dự án' : hint}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             ) : null}
 
@@ -933,6 +965,8 @@ const WorkflowBuilder: React.FC = () => {
             || step.config.assignmentMode === 'permission_pool'
         ).length;
         const multiSteps = steps.filter(step => step.config.assigneeSelectionMode === 'multiple').length;
+        const allApproveSteps = steps.filter(step =>
+            step.config.assigneeSelectionMode === 'multiple' && step.config.approvalPolicy === 'ALL').length;
         const rejectSteps = steps.filter(step => step.type !== WorkflowNodeType.ACTION && step.config.allowReject !== false).length;
         const reassignSteps = steps.filter(step => step.config.allowReassign !== false).length;
         const stepWatcherSteps = steps.filter(step => (step.config.stepWatcherTargets || []).length > 0).length;
@@ -961,7 +995,9 @@ const WorkflowBuilder: React.FC = () => {
             {
                 label: 'Cho phép chọn nhiều người cho một giai đoạn',
                 value: multiSteps > 0 ? `${multiSteps}/${stepCount} giai đoạn` : 'Không',
-                hint: 'Duyệt đồng thời: một người trong danh sách duyệt là giai đoạn đi tiếp.',
+                hint: allApproveSteps > 0
+                    ? `${allApproveSteps} giai đoạn yêu cầu tất cả cùng duyệt; còn lại chỉ cần một người duyệt.`
+                    : 'Duyệt đồng thời: một người trong danh sách duyệt là giai đoạn đi tiếp.',
             },
             {
                 label: 'Người theo dõi riêng theo giai đoạn',
@@ -1592,7 +1628,9 @@ const WorkflowBuilder: React.FC = () => {
                                                     )}
                                                     {step.config.assigneeSelectionMode === 'multiple' && (
                                                         <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                                                            Duyệt đồng thời
+                                                            {step.config.approvalPolicy === 'ALL'
+                                                                ? `Tất cả phải ${step.type === WorkflowNodeType.ACTION ? 'hoàn thành' : 'duyệt'}`
+                                                                : 'Duyệt đồng thời'}
                                                         </span>
                                                     )}
                                                     {step.config.slaHours && (
@@ -1676,6 +1714,8 @@ const WorkflowBuilder: React.FC = () => {
                                                         users={users}
                                                         orgUnits={orgUnits}
                                                         showProjectPermissionField={isProjectScopedTemplate || (step.config.eligiblePermissionCodes || []).length > 0}
+                                                        allowAllApprovalPolicy={!isProjectScopedTemplate}
+                                                        isActionStep={step.type === WorkflowNodeType.ACTION}
                                                         disabled={!canConfigureTemplate}
                                                         onPatch={patch => patchStepConfig(step.id, patch)}
                                                     />

@@ -187,6 +187,7 @@
     "20260930044601_workflow_template_assignee_validation.sql",
     "20260930045056_workflow_publish_validate_after_activate.sql",
     "20260930052309_workflow_action_step_complete.sql",
+    "20260930075928_workflow_all_must_approve.sql",
     "20260930100000_daily_log_source_withdraw_delete_v2.sql",
     "20260930150000_project_work_plans.sql",
     "20260930190000_project_material_plans.sql",

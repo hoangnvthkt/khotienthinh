@@ -120,6 +120,9 @@ export const getWorkflowProcessErrorMessage = (
   if (message.includes('workflow instance is not running')) {
     return 'Phiếu đã được người khác xử lý hoặc không còn ở trạng thái đang chạy.';
   }
+  if (message.includes('workflow_already_approved')) {
+    return 'Bạn đã duyệt giai đoạn này rồi, đang chờ những người còn lại.';
+  }
   if (message.includes('workflow_reject_not_allowed')) {
     return 'Bước này không cho phép từ chối. Hãy hoàn thành hoặc yêu cầu bổ sung.';
   }

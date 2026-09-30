@@ -73,4 +73,15 @@ describe('StepAssigneeEditor', () => {
   it('keeps the project permission field only where it applies', () => {
     expect(render({}, { showProjectPermissionField: true })).toContain('giới hạn theo quyền trong dự án');
   });
+
+  it('offers "tất cả phải duyệt" once several people can be assigned', () => {
+    expect(render({ assignmentTargets: [{ type: 'user', userId: 'an' }] })).not.toContain('Tất cả phải duyệt');
+    const multiple = render({ assignmentTargets: [{ type: 'user', userId: 'an' }], assigneeSelectionMode: 'multiple' });
+    expect(multiple).toContain('Chỉ cần một người duyệt');
+    expect(multiple).toContain('Tất cả phải duyệt');
+    expect(render({ assigneeSelectionMode: 'multiple', assignmentTargets: [{ type: 'user', userId: 'an' }] }, { isActionStep: true }))
+      .toContain('Tất cả phải hoàn thành');
+    expect(render({ assigneeSelectionMode: 'multiple', assignmentTargets: [{ type: 'user', userId: 'an' }] }, { allowAllApprovalPolicy: false }))
+      .toContain('Chưa hỗ trợ cho quy trình phiếu vật tư dự án');
+  });
 });

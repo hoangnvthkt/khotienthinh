@@ -42,7 +42,7 @@ import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { buildWorkflowRoute } from '../../lib/workflowRoutes';
-import { getWorkflowStepActionCopy } from '../../lib/workflowStepType';
+import { approvalAdvancesStage, getWorkflowStepActionCopy, getWorkflowStepApprovalState } from '../../lib/workflowStepType';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     DRAFT: 'Bản nháp',
@@ -481,6 +481,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     }, [currentNode, edges, nodes]);
 
     const currentStepCopy = getWorkflowStepActionCopy(currentNode);
+    // "Tất cả phải duyệt": only the last pending approver moves the ticket on.
+    const approvalState = getWorkflowStepApprovalState(instance, currentNode);
+    const userAlreadyApproved = approvalState.requiresAll && approvalState.approved.includes(user.id);
+    const approvalAdvances = approvalAdvancesStage(approvalState, user.id);
+    const userLabel = (userId: string) => users.find(item => item.id === userId)?.name || 'Người dùng';
     const canAct = useMemo(() => {
         if (!instance) return false;
         const hasAssignedAction = user.role === Role.ADMIN
@@ -519,9 +524,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     }, [transitionTargetNode, instance, users, employees, orgUnits, instanceLogs]);
 
     const transitionSelectionMode = getWorkflowStepSelectionMode(transitionTargetNode);
+    const approvalHoldsStage = activeAction === WorkflowInstanceAction.APPROVED && !approvalAdvances;
     const mustChooseAssignee = Boolean(
         activeAction &&
         activeAction !== WorkflowInstanceAction.REJECTED &&
+        !approvalHoldsStage &&
         transitionTargetNode &&
         transitionTargetNode.type !== WorkflowNodeType.END
     );
@@ -550,7 +557,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 l.action === WorkflowInstanceAction.REJECTED
             );
 
-            if (resolveLog) {
+            if (resolveLog && !isCurrent) {
                 endTime = new Date(resolveLog.createdAt).getTime();
                 duration = endTime - startTime;
                 status = 'completed';
@@ -767,7 +774,8 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const runAction = async (action: WorkflowInstanceAction) => {
         if (!id) return false;
         const targetNode = action === WorkflowInstanceAction.REVISION_REQUESTED ? revisionNode : nextNode;
-        if (action !== WorkflowInstanceAction.REJECTED && targetNode && targetNode.type !== WorkflowNodeType.END && selectedAssigneeIds.length === 0) {
+        const holdsStage = action === WorkflowInstanceAction.APPROVED && !approvalAdvances;
+        if (action !== WorkflowInstanceAction.REJECTED && !holdsStage && targetNode && targetNode.type !== WorkflowNodeType.END && selectedAssigneeIds.length === 0) {
             setActionError('Vui lòng chọn người nhận xử lý bước tiếp theo.');
             return false;
         }
@@ -778,7 +786,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             action,
             user.id,
             actionComment,
-            action === WorkflowInstanceAction.REJECTED ? [] : selectedAssigneeIds,
+            action === WorkflowInstanceAction.REJECTED || holdsStage ? [] : selectedAssigneeIds,
         );
         if (!result.ok) {
             setActionError(result.errorMessage || 'Không xử lý được phiếu. Vui lòng thử lại.');
@@ -1100,6 +1108,26 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 <span>SLA: <strong className="text-slate-700 dark:text-slate-200">{currentNode?.config?.slaHours ? `${currentNode.config.slaHours}h` : 'Không hạn'}</strong></span>
                             </span>
                         </div>
+                        {approvalState.requiresAll && instance.status === WorkflowInstanceStatus.RUNNING && (
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] font-semibold" aria-label="Tiến độ duyệt của giai đoạn">
+                                <span className="text-slate-500 dark:text-slate-400">
+                                    Tất cả phải {currentStepCopy.isAction ? 'hoàn thành' : 'duyệt'}: <strong className="text-slate-700 dark:text-slate-200">{approvalState.approved.length}/{approvalState.required.length}</strong>
+                                </span>
+                                {approvalState.required.map(userId => {
+                                    const done = approvalState.approved.includes(userId);
+                                    return (
+                                        <span
+                                            key={userId}
+                                            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${done
+                                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
+                                        >
+                                            {done ? <CheckCircle size={11} /> : <Clock size={11} />} {userLabel(userId)}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     {/* Top Action Buttons (Purple / Red / Actions) */}
@@ -1108,9 +1136,14 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                             <div className={`grid ${currentStepCopy.canReject ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:flex sm:items-center sm:gap-2`}>
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.APPROVED); }}
-                                    className={`${currentStepCopy.canReject ? 'col-span-3' : 'col-span-2'} sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0`}
+                                    disabled={userAlreadyApproved}
+                                    title={userAlreadyApproved ? `Đang chờ: ${approvalState.pending.map(userLabel).join(', ')}` : undefined}
+                                    className={`${currentStepCopy.canReject ? 'col-span-3' : 'col-span-2'} sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60`}
                                 >
-                                    <CheckCircle size={15} /> <span>{currentStepCopy.primaryLabel}</span>
+                                    <CheckCircle size={15} />
+                                    <span>{userAlreadyApproved
+                                        ? `Bạn đã ${currentStepCopy.isAction ? 'hoàn thành' : 'duyệt'} · chờ ${approvalState.pending.length} người`
+                                        : currentStepCopy.primaryLabel}</span>
                                 </button>
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
@@ -1841,7 +1874,13 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
                         <div className="space-y-4">
                             {/* Assignee Selection */}
-                            {activeAction !== WorkflowInstanceAction.REJECTED && transitionTargetNode?.type !== WorkflowNodeType.END && (
+                            {approvalHoldsStage && (
+                                <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-semibold text-sky-800 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
+                                    Giai đoạn này cần tất cả cùng {currentStepCopy.isAction ? 'hoàn thành' : 'duyệt'}. Sau khi bạn xác nhận, phiếu vẫn chờ:{' '}
+                                    <strong>{approvalState.pending.filter(id => id !== user.id).map(userLabel).join(', ')}</strong>.
+                                </div>
+                            )}
+                            {activeAction !== WorkflowInstanceAction.REJECTED && !approvalHoldsStage && transitionTargetNode?.type !== WorkflowNodeType.END && (
                                 <div className="animate-fade-in">
                                     <label className="block text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
                                         Người nhận bước "{transitionTargetNode?.label || 'tiếp theo'}" *
