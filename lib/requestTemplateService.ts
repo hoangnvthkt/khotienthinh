@@ -81,10 +81,13 @@ const run = async <T>(name: string, payload: Record<string, unknown>): Promise<T
 };
 
 export const requestTemplateService = {
-  getDraft(templateId: string) {
-    return run<RequestTemplateDraftRecord>('get_request_template_draft', {
+  /** Resolves to null when the template has no draft (e.g. it was just published). */
+  async getDraft(templateId: string): Promise<RequestTemplateDraftRecord | null> {
+    const { data, error } = await supabase.rpc('get_request_template_draft', {
       p_request_template_id: templateId,
     });
+    if (error) throw error;
+    return (data as RequestTemplateDraftRecord | null) ?? null;
   },
 
   list(filters: {
@@ -134,6 +137,10 @@ export const requestTemplateService = {
       p_request_template_id: input.templateId,
       p_expected_updated_at: input.expectedUpdatedAt,
     });
+  },
+
+  directManagerCoverage() {
+    return run<{ activeUsers: number; withoutManager: number; sampleNames: string[] }>('request_direct_manager_coverage', {});
   },
 
   previewResolvers(input: SaveRequestTemplateDraftInput, sampleCreatorId: string) {
