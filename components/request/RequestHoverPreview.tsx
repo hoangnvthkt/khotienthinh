@@ -124,7 +124,7 @@ const RequestHoverCard: React.FC<OpenState> = ({ item, rect, placement }) => {
     >
       <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-xs font-bold text-emerald-700 dark:text-emerald-400">{item.code}</span>
+          <span className="font-mono text-xs font-bold text-mint-700 dark:text-mint-400">{item.code}</span>
           <RequestStatusBadge status={item.status} />
         </div>
         <p className="mt-1.5 line-clamp-2 text-sm font-bold leading-snug text-slate-900 dark:text-white">{item.title}</p>
