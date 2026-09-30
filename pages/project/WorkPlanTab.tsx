@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, History, Loader2, Plus,
+  AlertTriangle, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, HardHat, History, Loader2, Plus,
   RotateCcw, Save, Search, Send, Trash2, Undo2, X,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -140,58 +140,146 @@ const TaskPicker: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
+// Shared look: numbered, collapsible work groups (FastCons-style index 1 / 1.1)
+// and one stable colour per crew so the same team reads the same everywhere.
+// ---------------------------------------------------------------------------
+const CREW_COLORS = [
+  'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800',
+  'bg-violet-50 text-violet-800 border-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:border-violet-800',
+  'bg-orange-50 text-orange-800 border-orange-200 dark:bg-orange-950/40 dark:text-orange-200 dark:border-orange-800',
+  'bg-lime-50 text-lime-800 border-lime-200 dark:bg-lime-950/40 dark:text-lime-200 dark:border-lime-800',
+  'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200 dark:bg-fuchsia-950/40 dark:text-fuchsia-200 dark:border-fuchsia-800',
+  'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-200 dark:border-cyan-800',
+  'bg-yellow-50 text-yellow-900 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-100 dark:border-yellow-800',
+  'bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-800',
+];
+const crewColor = (name: string) => {
+  let hash = 0;
+  for (const ch of name.trim().toLocaleLowerCase('vi')) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return CREW_COLORS[hash % CREW_COLORS.length];
+};
+const CrewPill: React.FC<{ name: string | null | undefined }> = ({ name }) => name?.trim()
+  ? <span className={`inline-flex max-w-full items-center gap-1 truncate rounded-full border px-2 py-0.5 text-xs font-semibold ${crewColor(name)}`}><HardHat size={11} className="shrink-0" />{name.trim()}</span>
+  : <span className="text-xs text-muted-foreground">Chưa giao tổ đội</span>;
+
+const useGroupAccordion = (groups: string[]) => {
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  return {
+    isOpen: (group: string) => open.has(group),
+    toggle: (group: string) => setOpen(current => { const next = new Set(current); if (next.has(group)) next.delete(group); else next.add(group); return next; }),
+    expandAll: () => setOpen(new Set(groups)),
+    collapseAll: () => setOpen(new Set()),
+    allOpen: groups.length > 0 && groups.every(g => open.has(g)),
+  };
+};
+
+const AccordionToolbar: React.FC<{ count: number; allOpen: boolean; onExpand: () => void; onCollapse: () => void }> = ({ count, allOpen, onExpand, onCollapse }) =>
+  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+    <span>{count} hạng mục chính</span>
+    <button type="button" onClick={allOpen ? onCollapse : onExpand} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 font-semibold text-foreground hover:bg-muted">
+      <ChevronsUpDown size={13} />{allOpen ? 'Thu gọn hết' : 'Mở rộng hết'}</button>
+  </div>;
+
+const GroupHeader: React.FC<{
+  index: number; name: string; open: boolean; onToggle: () => void; count: number; tone: string; children?: React.ReactNode;
+}> = ({ index, name, open, onToggle, count, tone, children }) =>
+  <button type="button" aria-expanded={open} onClick={onToggle}
+    className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-l-4 border-border px-3 py-2.5 text-left transition-colors hover:brightness-[0.98] md:flex-nowrap ${tone}`}>
+    <ChevronRight size={16} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+    <span className="w-6 shrink-0 text-sm font-bold tabular-nums">{index}</span>
+    <span className="min-w-0 flex-1 text-sm font-bold uppercase tracking-wide">{name}<span className="ml-2 text-xs font-medium normal-case tracking-normal opacity-70">{count} việc</span></span>
+    {children && <span className="flex w-full flex-wrap items-center gap-1.5 pl-[3.25rem] md:w-auto md:justify-end md:pl-0">{children}</span>}
+  </button>;
+
+const uniqueCrews = (lines: Array<{ crewLabel: string | null }>) =>
+  Array.from(new Set(lines.map(l => l.crewLabel?.trim()).filter((c): c is string => Boolean(c))));
+
+// ---------------------------------------------------------------------------
 // Read view: plan vs actual.
 // ---------------------------------------------------------------------------
 const AchievementBar: React.FC<{ value: number | null }> = ({ value }) => {
   if (value == null) return <span className="text-xs text-muted-foreground">Chưa có số liệu</span>;
-  const tone = value >= 100 ? 'bg-emerald-500' : value >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+  const tone = value >= 100 ? 'bg-emerald-500' : value > 0 ? 'bg-amber-500' : 'bg-rose-500';
   return <span className="flex items-center gap-2"><span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"><span className={`block h-full ${tone}`} style={{ width: `${Math.min(value, 100)}%` }} /></span>
     <span className="text-xs font-semibold tabular-nums text-foreground">{fmt(value, 0)}%</span></span>;
 };
 
+const tally = (lines: WorkPlanLine[]) => {
+  let done = 0; let partial = 0; let none = 0; let unknown = 0;
+  lines.forEach(line => {
+    const a = workPlanLineAchievement(line);
+    if (a == null) unknown += 1; else if (a >= 100) done += 1; else if (a > 0) partial += 1; else none += 1;
+  });
+  return { done, partial, none, unknown };
+};
+
 const PlanSummary: React.FC<{ plan: WorkPlan; periodStarted: boolean }> = ({ plan, periodStarted }) => {
-  const stats = useMemo(() => {
-    let done = 0; let partial = 0; let none = 0; let unknown = 0;
-    plan.lines.forEach(line => {
-      const a = workPlanLineAchievement(line);
-      if (a == null) unknown += 1; else if (a >= 100) done += 1; else if (a > 0) partial += 1; else none += 1;
-    });
-    return { done, partial, none, unknown };
-  }, [plan.lines]);
+  const stats = useMemo(() => tally(plan.lines), [plan.lines]);
   const tiles = [
-    ['Công việc trong kế hoạch', plan.lines.length, 'text-foreground'],
-    ['Đạt kế hoạch', periodStarted ? stats.done : '—', 'text-emerald-700 dark:text-emerald-300'],
-    ['Đang làm, chưa đạt', periodStarted ? stats.partial : '—', 'text-amber-700 dark:text-amber-300'],
-    ['Chưa làm', periodStarted ? stats.none : '—', 'text-rose-700 dark:text-rose-300'],
+    ['Công việc trong kế hoạch', plan.lines.length, 'border-slate-200 text-foreground', 'bg-slate-400'],
+    ['Đạt kế hoạch', periodStarted ? stats.done : '—', 'border-emerald-200 text-emerald-700 dark:text-emerald-300', 'bg-emerald-500'],
+    ['Đang làm, chưa đạt', periodStarted ? stats.partial : '—', 'border-amber-200 text-amber-700 dark:text-amber-300', 'bg-amber-500'],
+    ['Chưa làm', periodStarted ? stats.none : '—', 'border-rose-200 text-rose-700 dark:text-rose-300', 'bg-rose-500'],
   ] as const;
   return <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-    {tiles.map(([label, value, tone]) => <div key={label} className="rounded-xl border border-border bg-background px-3 py-2.5">
-      <div className="text-[11px] font-semibold text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-xl font-bold tabular-nums ${tone}`}>{value}</div>
+    {tiles.map(([label, value, tone, dot]) => <div key={label} className={`rounded-xl border bg-background px-3 py-2.5 dark:border-border ${tone}`}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground"><span className={`h-2 w-2 rounded-full ${dot}`} />{label}</div>
+      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
     </div>)}
     {periodStarted && stats.unknown > 0 && <p className="col-span-2 text-xs text-muted-foreground md:col-span-4">{stats.unknown} công việc chưa có số liệu thực hiện (chưa ghi nhật ký/chốt tiến độ hoặc chưa có khối lượng).</p>}
     {!periodStarted && <p className="col-span-2 text-xs text-muted-foreground md:col-span-4">Kỳ chưa bắt đầu — số thực hiện sẽ tự lấy từ Nhật ký và Chốt tiến độ.</p>}
   </div>;
 };
 
-const PlanReadTable: React.FC<{ plan: WorkPlan; periodStarted: boolean }> = ({ plan, periodStarted }) =>
-  <div className="overflow-hidden rounded-xl border border-border">
-    <div className="hidden grid-cols-[minmax(0,2.6fr)_64px_120px_120px_130px_minmax(0,1fr)] gap-3 bg-muted/60 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground md:grid">
-      <span>Công việc</span><span>ĐVT</span><span className="text-right">Kế hoạch</span><span className="text-right">Thực hiện</span><span>% đạt</span><span>Tổ đội / nhà thầu</span>
+const readRowTone = (value: number | null, periodStarted: boolean) => !periodStarted || value == null ? ''
+  : value >= 100 ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : value > 0 ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'bg-rose-50/50 dark:bg-rose-950/20';
+const readGroupTone = (lines: WorkPlanLine[], periodStarted: boolean) => {
+  if (!periodStarted) return 'bg-teal-50 border-l-teal-600 text-teal-950 dark:bg-teal-950/40 dark:border-l-teal-500 dark:text-teal-100';
+  const t = tally(lines);
+  if (t.done === lines.length) return 'bg-emerald-50 border-l-emerald-600 text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100';
+  if (t.done + t.partial > 0) return 'bg-amber-50 border-l-amber-500 text-amber-950 dark:bg-amber-950/40 dark:text-amber-100';
+  return 'bg-rose-50 border-l-rose-500 text-rose-950 dark:bg-rose-950/40 dark:text-rose-100';
+};
+
+const READ_COLS = 'md:grid-cols-[56px_minmax(0,2.4fr)_60px_110px_110px_120px_minmax(0,1.2fr)]';
+const PlanReadTable: React.FC<{ plan: WorkPlan; periodStarted: boolean }> = ({ plan, periodStarted }) => {
+  const groups = useMemo(() => groupBy(plan.lines), [plan.lines]);
+  const accordion = useGroupAccordion(groups.map(([g]) => g));
+  return <div className="space-y-2">
+    <AccordionToolbar count={groups.length} allOpen={accordion.allOpen} onExpand={accordion.expandAll} onCollapse={accordion.collapseAll} />
+    <div className="overflow-hidden rounded-xl border border-border">
+      <div className={`hidden gap-3 bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300 md:grid ${READ_COLS}`}>
+        <span>Chỉ mục</span><span>Công việc</span><span>ĐVT</span><span className="text-right">Kế hoạch</span><span className="text-right">Thực hiện</span><span>% đạt</span><span>Tổ đội / nhà thầu</span>
+      </div>
+      {groups.map(([group, lines], gi) => {
+        const open = accordion.isOpen(group);
+        const t = tally(lines);
+        return <div key={group}>
+          <GroupHeader index={gi + 1} name={group} open={open} onToggle={() => accordion.toggle(group)} count={lines.length} tone={readGroupTone(lines, periodStarted)}>
+            {periodStarted && <span className="flex items-center gap-2 text-xs font-semibold">
+              <span className="text-emerald-700 dark:text-emerald-300">{t.done} đạt</span><span className="text-amber-700 dark:text-amber-300">{t.partial} đang làm</span><span className="text-rose-700 dark:text-rose-300">{t.none} chưa làm</span>
+            </span>}
+            {uniqueCrews(lines).slice(0, 3).map(c => <CrewPill key={c} name={c} />)}
+            {uniqueCrews(lines).length > 3 && <span className="text-xs opacity-70">+{uniqueCrews(lines).length - 3}</span>}
+          </GroupHeader>
+          {open && lines.map((line, li) => {
+            const achieved = workPlanLineAchievement(line);
+            return <div key={line.taskId} className={`grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border px-3 py-2.5 text-sm md:items-center ${READ_COLS} ${readRowTone(achieved, periodStarted)}`}>
+              <span className="hidden text-xs tabular-nums text-muted-foreground md:block">{gi + 1}.{li + 1}</span>
+              <span className="col-span-2 min-w-0 md:col-span-1"><span className="mr-1.5 text-muted-foreground">{line.wbsCode}</span>{line.taskName}
+                {line.note && <span className="block text-xs text-muted-foreground">{line.note}</span>}</span>
+              <span className="text-muted-foreground"><span className="md:hidden">ĐVT: </span>{line.unit || '—'}</span>
+              <span className="text-right tabular-nums"><span className="float-left text-xs text-muted-foreground md:hidden">Kế hoạch</span>{line.plannedQty == null ? <span className="text-muted-foreground">Chưa có KL</span> : fmt(line.plannedQty)}</span>
+              <span className="text-right tabular-nums font-semibold"><span className="float-left text-xs font-normal text-muted-foreground md:hidden">Thực hiện</span>{!periodStarted ? '—' : line.actualQty == null ? <span className="text-xs font-normal text-muted-foreground">Chưa có số liệu</span> : fmt(line.actualQty)}</span>
+              <span>{periodStarted ? <AchievementBar value={achieved} /> : <span className="text-xs text-muted-foreground">Chưa đến kỳ</span>}</span>
+              <span className="min-w-0"><CrewPill name={line.crewLabel} /></span>
+            </div>;
+          })}
+        </div>;
+      })}
     </div>
-    {groupBy(plan.lines).map(([group, lines]) => <div key={group}>
-      <div className="border-t border-border bg-muted/30 px-4 py-1.5 text-xs font-bold text-foreground">{group} <span className="font-normal text-muted-foreground">· {lines.length} việc</span></div>
-      {lines.map(line => <div key={line.taskId} className="grid grid-cols-2 gap-x-3 gap-y-1 border-t border-border px-4 py-2.5 text-sm md:grid-cols-[minmax(0,2.6fr)_64px_120px_120px_130px_minmax(0,1fr)] md:items-center">
-        <span className="col-span-2 min-w-0 md:col-span-1"><span className="mr-1.5 text-muted-foreground">{line.wbsCode}</span>{line.taskName}
-          {line.note && <span className="block text-xs text-muted-foreground">{line.note}</span>}</span>
-        <span className="text-muted-foreground"><span className="md:hidden">ĐVT: </span>{line.unit || '—'}</span>
-        <span className="text-right tabular-nums"><span className="float-left text-xs text-muted-foreground md:hidden">Kế hoạch</span>{line.plannedQty == null ? <span className="text-muted-foreground">Chưa có KL</span> : fmt(line.plannedQty)}</span>
-        <span className="text-right tabular-nums"><span className="float-left text-xs text-muted-foreground md:hidden">Thực hiện</span>{!periodStarted ? '—' : line.actualQty == null ? <span className="text-xs text-muted-foreground">Chưa có số liệu</span> : fmt(line.actualQty)}</span>
-        <span>{periodStarted ? <AchievementBar value={workPlanLineAchievement(line)} /> : <span className="text-xs text-muted-foreground">Chưa đến kỳ</span>}</span>
-        <span className="truncate text-muted-foreground">{line.crewLabel || '—'}</span>
-      </div>)}
-    </div>)}
   </div>;
+};
 
 // ---------------------------------------------------------------------------
 // Editor for a draft / returned plan.
@@ -200,51 +288,63 @@ const PlanEditor: React.FC<{
   lines: DraftLine[]; periodType: WorkPlanPeriodType; disabled: boolean;
   onChange: (taskId: string, patch: Partial<DraftLine>) => void; onRemove: (taskId: string) => void;
 }> = ({ lines, periodType, disabled, onChange, onRemove }) => {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const groups = useMemo(() => groupBy(lines), [lines]);
+  const accordion = useGroupAccordion(groups.map(([g]) => g));
   const showMonth = periodType === 'week' && lines.some(l => l.monthPlanQty != null);
-  const cols = showMonth ? 'md:grid-cols-[minmax(0,2.4fr)_60px_110px_100px_130px_minmax(0,1fr)_36px]' : 'md:grid-cols-[minmax(0,2.4fr)_60px_110px_130px_minmax(0,1fr)_36px]';
-  return <div className="overflow-hidden rounded-xl border border-border">
-    <div className={`hidden gap-3 bg-muted/60 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground md:grid ${cols}`}>
-      <span>Công việc</span><span>ĐVT</span><span className="text-right">Còn lại đầu kỳ</span>{showMonth && <span className="text-right">KH tháng</span>}
-      <span className="text-right">KL kế hoạch</span><span>Tổ đội / nhà thầu</span><span />
+  const cols = showMonth ? 'md:grid-cols-[56px_minmax(0,2.3fr)_56px_110px_100px_130px_minmax(0,1.1fr)_36px]' : 'md:grid-cols-[56px_minmax(0,2.3fr)_56px_110px_130px_minmax(0,1.1fr)_36px]';
+  return <div className="space-y-2">
+    <AccordionToolbar count={groups.length} allOpen={accordion.allOpen} onExpand={accordion.expandAll} onCollapse={accordion.collapseAll} />
+    <div className="overflow-hidden rounded-xl border border-border">
+      <div className={`hidden gap-3 bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300 md:grid ${cols}`}>
+        <span>Chỉ mục</span><span>Công việc</span><span>ĐVT</span><span className="text-right">Còn lại đầu kỳ</span>{showMonth && <span className="text-right">KH tháng</span>}
+        <span className="text-right">KL kế hoạch</span><span>Tổ đội / nhà thầu</span><span />
+      </div>
+      {groups.map(([group, rows], gi) => {
+        const open = accordion.isOpen(group);
+        const overdue = rows.filter(r => r.overdue).length;
+        const missing = rows.filter(r => r.totalQty != null && parseQty(r.plannedQty) == null).length;
+        return <div key={group}>
+          <GroupHeader index={gi + 1} name={group} open={open} onToggle={() => accordion.toggle(group)} count={rows.length}
+            tone="bg-teal-50 border-l-teal-600 text-teal-950 dark:bg-teal-950/40 dark:border-l-teal-500 dark:text-teal-100">
+            {overdue > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-200">{overdue} trễ hạn</span>}
+            {missing > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">{missing} chưa nhập KL</span>}
+            {uniqueCrews(rows).slice(0, 3).map(c => <CrewPill key={c} name={c} />)}
+          </GroupHeader>
+          {open && rows.map((line, li) => {
+            const qty = parseQty(line.plannedQty);
+            const remaining = remainingOf(line);
+            const invalid = Number.isNaN(qty) || (qty != null && qty < 0);
+            const over = qty != null && !Number.isNaN(qty) && remaining != null && qty > remaining;
+            return <div key={line.taskId} className={`relative grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border px-3 py-2.5 text-sm md:items-center ${cols} ${line.overdue ? 'bg-rose-50/60 dark:bg-rose-950/20' : ''}`}>
+              <span className="hidden text-xs tabular-nums text-muted-foreground md:block">{gi + 1}.{li + 1}</span>
+              <span className="col-span-2 min-w-0 pr-10 md:col-span-1 md:pr-0"><span className="mr-1.5 text-muted-foreground">{line.wbsCode}</span>{line.taskName}
+                {line.overdue && <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">Trễ hạn</span>}</span>
+              <span className="text-muted-foreground"><span className="md:hidden">ĐVT: </span>{line.unit || '—'}</span>
+              <span className="text-right tabular-nums text-muted-foreground"><span className="float-left text-xs md:hidden">Còn lại</span>{remaining == null ? 'Chưa có KL' : fmt(remaining)}</span>
+              {showMonth && <span className="text-right tabular-nums text-muted-foreground"><span className="float-left text-xs md:hidden">KH tháng</span>{line.monthPlanQty == null ? '—' : fmt(line.monthPlanQty)}</span>}
+              <label className="col-span-2 block md:col-span-1"><span className="sr-only">Khối lượng kế hoạch {line.taskName}</span>
+                <span className="mb-1 block text-xs text-muted-foreground md:hidden">KL kế hoạch</span>
+                <input inputMode="decimal" value={line.plannedQty} disabled={disabled} aria-invalid={invalid}
+                  placeholder={line.totalQty == null ? 'Không bắt buộc' : 'Nhập KL'}
+                  onChange={event => onChange(line.taskId, { plannedQty: event.target.value })}
+                  className={`w-full rounded-lg border bg-background px-2.5 py-1.5 text-right text-sm font-semibold tabular-nums outline-none focus:border-teal-600 ${invalid ? 'border-rose-500' : 'border-border'}`} />
+                {invalid && <span className="mt-1 block text-xs text-rose-600">Nhập số ≥ 0</span>}
+                {over && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">Vượt phần còn lại</span>}
+              </label>
+              <label className="col-span-2 block md:col-span-1"><span className="sr-only">Tổ đội hoặc nhà thầu</span>
+                <span className="relative block">
+                  <HardHat size={13} className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 ${line.crewLabel?.trim() ? 'text-teal-700 dark:text-teal-300' : 'text-muted-foreground'}`} />
+                  <input value={line.crewLabel || ''} disabled={disabled} placeholder="Tổ đội / nhà thầu"
+                    onChange={event => onChange(line.taskId, { crewLabel: event.target.value })}
+                    className={`w-full rounded-lg border py-1.5 pl-7 pr-2.5 text-sm outline-none focus:border-teal-600 ${line.crewLabel?.trim() ? `font-semibold ${crewColor(line.crewLabel)}` : 'border-border bg-background'}`} />
+                </span></label>
+              <button type="button" disabled={disabled} onClick={() => onRemove(line.taskId)} aria-label={`Bỏ ${line.taskName} khỏi kế hoạch`}
+                className="absolute right-2 top-2 rounded-lg p-1.5 text-muted-foreground hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 md:static md:justify-self-end"><Trash2 size={15} /></button>
+            </div>;
+          })}
+        </div>;
+      })}
     </div>
-    {groupBy(lines).map(([group, rows]) => {
-      const isCollapsed = collapsed.has(group);
-      return <div key={group}>
-        <button type="button" aria-expanded={!isCollapsed} onClick={() => setCollapsed(current => { const next = new Set(current); if (next.has(group)) next.delete(group); else next.add(group); return next; })}
-          className="flex w-full items-center gap-2 border-t border-border bg-muted/30 px-4 py-1.5 text-left text-xs font-bold text-foreground hover:bg-muted/60">
-          <ChevronDown size={14} className={`transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />{group}<span className="font-normal text-muted-foreground">· {rows.length} việc</span>
-        </button>
-        {!isCollapsed && rows.map(line => {
-          const qty = parseQty(line.plannedQty);
-          const remaining = remainingOf(line);
-          const invalid = Number.isNaN(qty) || (qty != null && qty < 0);
-          const over = qty != null && !Number.isNaN(qty) && remaining != null && qty > remaining;
-          return <div key={line.taskId} className={`grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border px-4 py-2.5 text-sm md:items-center ${cols}`}>
-            <span className="col-span-2 min-w-0 md:col-span-1"><span className="mr-1.5 text-muted-foreground">{line.wbsCode}</span>{line.taskName}
-              {line.overdue && <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">Trễ hạn</span>}</span>
-            <span className="text-muted-foreground"><span className="md:hidden">ĐVT: </span>{line.unit || '—'}</span>
-            <span className="text-right tabular-nums text-muted-foreground"><span className="float-left text-xs md:hidden">Còn lại</span>{remaining == null ? 'Chưa có KL' : fmt(remaining)}</span>
-            {showMonth && <span className="text-right tabular-nums text-muted-foreground"><span className="float-left text-xs md:hidden">KH tháng</span>{line.monthPlanQty == null ? '—' : fmt(line.monthPlanQty)}</span>}
-            <label className="col-span-2 block md:col-span-1"><span className="sr-only">Khối lượng kế hoạch {line.taskName}</span>
-              <span className="mb-1 block text-xs text-muted-foreground md:hidden">KL kế hoạch</span>
-              <input inputMode="decimal" value={line.plannedQty} disabled={disabled} aria-invalid={invalid}
-                placeholder={line.totalQty == null ? 'Không bắt buộc' : 'Nhập KL'}
-                onChange={event => onChange(line.taskId, { plannedQty: event.target.value })}
-                className={`w-full rounded-lg border bg-background px-2.5 py-1.5 text-right text-sm tabular-nums outline-none focus:border-teal-600 ${invalid ? 'border-rose-500' : 'border-border'}`} />
-              {invalid && <span className="mt-1 block text-xs text-rose-600">Nhập số ≥ 0</span>}
-              {over && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">Vượt phần còn lại</span>}
-            </label>
-            <label className="col-span-2 block md:col-span-1"><span className="sr-only">Tổ đội hoặc nhà thầu</span>
-              <input value={line.crewLabel || ''} disabled={disabled} placeholder="Tổ đội / nhà thầu"
-                onChange={event => onChange(line.taskId, { crewLabel: event.target.value })}
-                className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-teal-600" /></label>
-            <button type="button" disabled={disabled} onClick={() => onRemove(line.taskId)} aria-label={`Bỏ ${line.taskName} khỏi kế hoạch`}
-              className="col-span-2 justify-self-end rounded-lg p-1.5 text-muted-foreground hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 md:col-span-1"><Trash2 size={15} /></button>
-          </div>;
-        })}
-      </div>;
-    })}
   </div>;
 };
 
