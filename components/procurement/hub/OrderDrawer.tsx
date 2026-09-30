@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Loader2, Penci
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
 import { DELIVERY_STATUS_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail } from '../../../lib/procurementInboxService';
+import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
 import { DeliveryEditor } from './DeliveryEditor';
 import { Badge, Drawer, PoStatusChip, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
@@ -11,6 +12,7 @@ const EVENT_LABELS: Record<string, string> = {
   create: 'Lập đơn', update: 'Sửa đơn', submit: 'Gửi duyệt', approve: 'Duyệt đơn', return: 'Trả lại', delete: 'Xóa nháp',
   delivery_create: 'Lập đợt giao', delivery_request: 'Xin duyệt bổ sung đợt giao', delivery_approve: 'Duyệt bổ sung đợt giao',
   delivery_return: 'Trả lại đợt giao', delivery_cancel: 'Hủy đợt giao', close_short: 'Kết thúc thiếu',
+  return_replace: 'Trả NCC — đổi hàng', return_credit: 'Trả NCC — giảm trừ',
 };
 
 const DELIVERY_TONE: Record<string, string> = {
@@ -239,6 +241,36 @@ export const OrderDrawer: React.FC<{
               </div> : null}
             </li>;
           })}</ul>}
+      </section>}
+
+      {order.returns.length > 0 && <section>
+        <h3 className="mb-2 font-semibold text-foreground">Trả hàng NCC ({order.returns.length})</h3>
+        <ul className="space-y-2">{order.returns.map(rt => {
+          const value = rt.lines.reduce((sum, l) => sum + l.returnQty * l.unitPrice, 0);
+          return <li key={rt.id} className={`rounded-xl border bg-card px-3 py-2.5 ${!rt.resolution ? 'border-amber-300' : 'border-border'}`}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="font-semibold text-foreground">{rt.returnNo}</span>
+              <Badge className={rt.status === 'completed' ? 'border-mint-200 bg-mint-50 text-mint-800' : 'border-slate-200 bg-slate-100 text-slate-700'}>
+                {rt.status === 'completed' ? 'Kho đã xuất trả' : 'Chờ kho xuất trả'}</Badge>
+              <Badge className={rt.resolution === 'replace' ? 'border-leaf-200 bg-leaf-50 text-leaf-800' : rt.resolution === 'credit' ? 'border-mint-200 bg-mint-50 text-mint-800'
+                : 'border-amber-300 bg-amber-50 text-amber-800'}>
+                {rt.resolution === 'replace' ? 'Đổi hàng — NCC giao lại' : rt.resolution === 'credit' ? 'Giảm trừ công nợ' : 'Chờ Mua hàng quyết định'}</Badge>
+              <span className="ml-auto text-sm font-semibold tabular-nums text-leaf-700 dark:text-leaf-300">{money(value)} đ</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {SUPPLIER_RETURN_REASONS[(rt.reasonCode || 'other') as SupplierReturnReasonCode]}: {rt.reason} · {rt.warehouseName} · <span className="text-mint-700 dark:text-mint-300">{rt.createdByName}</span>, {dateVi(rt.createdAt)}</p>
+            <ul className="mt-1 text-xs text-muted-foreground">{rt.lines.map(l => <li key={l.lineId}>{l.name}: trả <b className="text-leaf-700 dark:text-leaf-300">{fmt(l.returnQty, 3)} {l.unit}</b>
+              {l.stockUnit && l.stockUnit !== l.unit ? ` = ${fmt(l.stockReturnQty, 3)} ${l.stockUnit}` : ''}</li>)}</ul>
+            {rt.resolutionByName && <p className="mt-1 text-xs text-muted-foreground">Quyết định bởi {rt.resolutionByName}{rt.resolutionNote ? `: ${rt.resolutionNote}` : ''}</p>}
+            {perms?.canDecideReturn && (!rt.resolution || rt.status === 'pending') && <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+              <span className="mr-auto text-xs text-muted-foreground">Đã thống nhất với NCC?</span>
+              <button type="button" disabled={busy} className={secondaryBtn} onClick={() => void runDelivery(() => procurementInboxService.decideReturn({ returnId: rt.id, resolution: 'credit' }),
+                `${rt.returnNo}: giảm trừ — phần trả quay lại Cần mua khi kho xuất trả xong`)}>Giảm trừ</button>
+              <button type="button" disabled={busy} className={primaryBtn} onClick={() => void runDelivery(() => procurementInboxService.decideReturn({ returnId: rt.id, resolution: 'replace' }),
+                `${rt.returnNo}: đổi hàng — lập đợt giao bù khi NCC giao lại`)}>Đổi hàng</button>
+            </div>}
+          </li>;
+        })}</ul>
       </section>}
 
       {order.events.length > 0 && <section>
