@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Pencil, Printer, Table2, User } from 'lucide-react';
+import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Pencil, Printer, Table2, Trash2, User } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { mapRequestRpcError, requestRuntimeService } from '../../lib/requestRuntimeService';
 import type { RequestDetail } from '../../lib/requestRuntimeService';
 import { buildRequestRoute } from '../../lib/requestRoutes';
 import { RequestActionBar } from './RequestActionBar';
@@ -71,6 +73,7 @@ export const RequestDetailPanel: React.FC<{
   error: Error | null;
   refresh: () => Promise<void>;
   onBack?: () => void;
+  onDeleted?: () => void;
   isInspectorCollapsed?: boolean;
   onToggleInspectorCollapse?: () => void;
 }> = ({
@@ -80,11 +83,14 @@ export const RequestDetailPanel: React.FC<{
   error,
   refresh,
   onBack,
+  onDeleted,
   isInspectorCollapsed = false,
   onToggleInspectorCollapse,
 }) => {
   const toast = useToast();
+  const confirm = useConfirm();
   const [copying, setCopying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
 
@@ -132,6 +138,30 @@ export const RequestDetailPanel: React.FC<{
     }
   };
 
+  const deleteRequest = async () => {
+    const accepted = await confirm({
+      title: 'Xóa đề xuất?',
+      targetName: `${detail.code} · ${detail.title}`,
+      subtitle: detail.status === 'PENDING'
+        ? 'Chưa có ai xử lý. Người duyệt sẽ không còn thấy đề xuất này. Không thể hoàn tác.'
+        : 'Đề xuất đã hủy sẽ bị ẩn khỏi mọi danh sách. Không thể hoàn tác.',
+      actionLabel: 'Xóa đề xuất',
+      intent: 'danger',
+    });
+    if (!accepted) return;
+    setDeleting(true);
+    try {
+      await requestRuntimeService.deleteRequest(detail.id, detail.updatedAt);
+      toast.success('Đã xóa đề xuất', detail.code);
+      onDeleted?.();
+    } catch (cause) {
+      toast.error('Không thể xóa đề xuất', mapRequestRpcError(cause).message);
+      await refresh();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="flex min-w-0 flex-1 overflow-hidden h-full">
@@ -174,6 +204,16 @@ export const RequestDetailPanel: React.FC<{
                   </div>
 
                   <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                    {detail.capabilities.canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => void deleteRequest()}
+                        disabled={deleting}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-300 dark:hover:bg-rose-950/40 transition"
+                      >
+                        {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} <span>Xóa</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowPrintPreview(true)}
@@ -323,6 +363,11 @@ export const RequestDetailPanel: React.FC<{
             </div>
           </section>
 
+          {/* Below xl the side inspector is hidden, so the approval flow renders inline. */}
+          <div className="xl:hidden">
+            <RequestApprovalInspector detail={detail} inline onChanged={refresh} />
+          </div>
+
           {detail.capabilities.canReadDiscussion && <RequestDiscussion requestId={detail.id} canComment={detail.capabilities.canComment} canAttach={detail.capabilities.canAttach} />}
         </article>
 
@@ -332,6 +377,7 @@ export const RequestDetailPanel: React.FC<{
             detail={detail}
             isCollapsed={isInspectorCollapsed}
             onToggleCollapse={onToggleInspectorCollapse}
+            onChanged={refresh}
           />
         </div>
       </div>

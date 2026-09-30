@@ -101,7 +101,7 @@ describe('requestRuntimeService.act', () => {
     }));
   });
 
-  it('maps stable database request codes while preserving diagnostics', async () => {
+  it('maps stable database request codes to Vietnamese while keeping diagnostics in cause', async () => {
     mocks.rpc.mockResolvedValue({
       data: null,
       error: { code: 'P0001', message: 'REQUEST_STALE_STATE: updated_at changed' },
@@ -114,7 +114,15 @@ describe('requestRuntimeService.act', () => {
     })).rejects.toMatchObject({
       name: 'RequestRpcError',
       code: 'REQUEST_STALE_STATE',
-      message: 'REQUEST_STALE_STATE: updated_at changed',
+      message: 'Đề xuất vừa được người khác cập nhật. Vui lòng tải lại rồi thực hiện tiếp.',
+      cause: { message: 'REQUEST_STALE_STATE: updated_at changed' },
+    });
+  });
+
+  it('never shows an unknown raw REQUEST_* code to users', () => {
+    expect(mapRequestRpcError({ code: '22023', message: 'REQUEST_WORKFLOW_BLOCK_NODE_MISSING' })).toMatchObject({
+      code: 'REQUEST_NOT_FOUND_OR_FORBIDDEN',
+      message: 'Không thể xử lý đề xuất. Vui lòng thử lại hoặc liên hệ quản trị viên.',
     });
   });
 
@@ -267,5 +275,39 @@ describe('requestRuntimeService queries', () => {
     mocks.rpc.mockResolvedValueOnce({ data: { all: 1 }, error: null });
     await expect(requestRuntimeService.getSummary())
       .rejects.toThrow('get_request_summary trả về dữ liệu không hợp lệ.');
+  });
+});
+
+describe('requestRuntimeService phase 2 commands', () => {
+  beforeEach(() => mocks.rpc.mockReset());
+
+  it('reassigns a specific assignment through its own command', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        requestId: 'rq-1', requestCode: 'RQ-2026-000001', status: 'PENDING',
+        workflowInstanceId: 'wi-1', workflowSubjectId: 'ws-1', currentBlockKeys: ['b1'],
+        updatedAt: '2026-09-30T00:00:00.000Z',
+      },
+      error: null,
+    });
+    await requestRuntimeService.reassign({
+      requestId: 'rq-1', assignmentId: 'as-1', assigneeUserId: 'u-2', comment: 'Đi công tác',
+      idempotencyKey: 'k-1', expectedUpdatedAt: '2026-09-29T00:00:00.000Z',
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('reassign_request_assignment', {
+      p_request_id: 'rq-1', p_assignment_id: 'as-1', p_assignee_user_id: 'u-2',
+      p_comment: 'Đi công tác', p_idempotency_key: 'k-1', p_expected_updated_at: '2026-09-29T00:00:00.000Z',
+    });
+  });
+
+  it('maps delete lock and watcher errors to Vietnamese', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: 'P0001', message: 'REQUEST_DELETE_LOCKED' } });
+    await expect(requestRuntimeService.deleteRequest('rq-1', '2026-09-29T00:00:00.000Z')).rejects.toMatchObject({
+      code: 'REQUEST_DELETE_LOCKED',
+      message: 'Chỉ xóa được khi chưa ai xử lý hoặc đề xuất đã hủy.',
+    });
+    mocks.rpc.mockResolvedValue({ data: { watchers: [{ id: 'u-3', name: 'A', avatarUrl: null, position: null, source: 'MANUAL', canRemove: true }] }, error: null });
+    await expect(requestRuntimeService.addWatchers('rq-1', ['u-3'])).resolves.toHaveLength(1);
+    expect(mocks.rpc).toHaveBeenLastCalledWith('add_request_watchers', { p_request_id: 'rq-1', p_user_ids: ['u-3'] });
   });
 });

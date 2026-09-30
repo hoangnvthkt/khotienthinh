@@ -1,14 +1,15 @@
 import React from 'react';
 import { CheckCircle2, Clock3, RotateCcw, XCircle } from 'lucide-react';
 import type { RequestListItem, RequestUserSnapshot } from '../../lib/requestRuntimeService';
+import { REQUEST_STATUS_LABELS } from '../../lib/requestLabels';
 
 const statusStyle: Record<RequestListItem['status'], { label: string; className: string; Icon: typeof Clock3 }> = {
-  DRAFT: { label: 'Nháp', className: 'bg-slate-100 text-slate-600', Icon: Clock3 },
-  PENDING: { label: 'Chờ duyệt', className: 'bg-amber-100 text-amber-800', Icon: Clock3 },
-  RETURNED: { label: 'Đã trả lại', className: 'bg-orange-100 text-orange-800', Icon: RotateCcw },
-  APPROVED: { label: 'Đã chấp thuận', className: 'bg-emerald-100 text-emerald-800', Icon: CheckCircle2 },
-  REJECTED: { label: 'Đã từ chối', className: 'bg-rose-100 text-rose-800', Icon: XCircle },
-  CANCELLED: { label: 'Đã hủy', className: 'bg-slate-100 text-slate-600', Icon: XCircle },
+  DRAFT: { label: REQUEST_STATUS_LABELS.DRAFT, className: 'bg-slate-100 text-slate-600', Icon: Clock3 },
+  PENDING: { label: REQUEST_STATUS_LABELS.PENDING, className: 'bg-amber-100 text-amber-800', Icon: Clock3 },
+  RETURNED: { label: REQUEST_STATUS_LABELS.RETURNED, className: 'bg-orange-100 text-orange-800', Icon: RotateCcw },
+  APPROVED: { label: REQUEST_STATUS_LABELS.APPROVED, className: 'bg-emerald-100 text-emerald-800', Icon: CheckCircle2 },
+  REJECTED: { label: REQUEST_STATUS_LABELS.REJECTED, className: 'bg-rose-100 text-rose-800', Icon: XCircle },
+  CANCELLED: { label: REQUEST_STATUS_LABELS.CANCELLED, className: 'bg-slate-100 text-slate-600', Icon: XCircle },
 };
 
 const dateTime = (value: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
