@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20260930200000_request_submit_watchers.sql'), 'utf8');
+const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20260930134954_request_submit_watchers.sql'), 'utf8');
 
 describe('request submit watchers migration', () => {
   it('keeps six-argument submit calls working through a defaulted p_options', () => {
