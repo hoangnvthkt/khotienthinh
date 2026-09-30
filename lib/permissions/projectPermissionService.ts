@@ -158,6 +158,7 @@ const getProjectManagePermissionCodes = (moduleCode: ProjectPermissionModuleCode
 const PROJECT_TAB_ROOM_CODES_BY_KEY: Partial<Record<ProjectOverviewTabKey, readonly ProjectPermissionRoomCode[]>> = {
   finance: ['quantity_acceptance', 'payment'],
   gantt: ['gantt'],
+  work_plan: ['work_plan'],
   weekly_progress: ['weekly_progress'],
   dailylog: ['daily_log'],
   material: ['material_planning', 'material_request', 'material_po'],
@@ -178,7 +179,7 @@ const PROJECT_MATERIAL_TAB_ROOM_CODE_BY_KEY: Partial<Record<ProjectMaterialTabKe
 // Material request / plan / BOQ still honor grants on the server and stay on
 // the capability path.
 const ROOM_AUTHORITATIVE_TAB_KEYS: readonly ProjectOverviewTabKey[] = [
-  'gantt', 'weekly_progress', 'dailylog', 'quality', 'safety', 'payment',
+  'gantt', 'work_plan', 'weekly_progress', 'dailylog', 'quality', 'safety', 'payment',
 ];
 const ROOM_AUTHORITATIVE_MATERIAL_TAB_KEYS: readonly ProjectMaterialTabKey[] = ['po'];
 

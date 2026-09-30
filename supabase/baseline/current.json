@@ -183,7 +183,8 @@
     "20260929120000_daily_log_crew_contracts.sql",
     "20260929150000_daily_log_labor_contract_linking.sql",
     "20260929180000_daily_log_contract_man_days.sql",
-    "20260930100000_daily_log_source_withdraw_delete_v2.sql"
+    "20260930100000_daily_log_source_withdraw_delete_v2.sql",
+    "20260930150000_project_work_plans.sql"
   ],
   "forbidIncludeAll": true
 }
