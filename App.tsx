@@ -46,6 +46,7 @@ const MisaExport = React.lazy(() => import('./pages/MisaExport'));
 const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
 const ProcurementWorkbench = React.lazy(() => import('./pages/procurement/ProcurementWorkbench'));
+const ProcurementHub = React.lazy(() => import('./pages/procurement/ProcurementHub'));
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
 const EmployeeDashboard = React.lazy(() => import('./pages/EmployeeDashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -230,7 +231,8 @@ const AppRoutes: React.FC = () => {
           <Route path="da" element={<ProjectDashboard />} />
           <Route path="safety-card/:qrToken" element={<SafetyCardLookup />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
-          <Route path="procurement" element={<ProcurementWorkbench />} />
+          <Route path="procurement" element={<ProcurementHub />} />
+          <Route path="procurement/legacy" element={<ProcurementWorkbench />} />
           <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
           <Route path="storage" element={<DataStorage />} />
           <Route path="ai" element={<AiAssistant />} />

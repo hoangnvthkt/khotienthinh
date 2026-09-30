@@ -185,7 +185,8 @@
     "20260929180000_daily_log_contract_man_days.sql",
     "20260930100000_daily_log_source_withdraw_delete_v2.sql",
     "20260930150000_project_work_plans.sql",
-    "20260930190000_project_material_plans.sql"
+    "20260930190000_project_material_plans.sql",
+    "20260930220000_procurement_inbox.sql"
   ],
   "forbidIncludeAll": true
 }
