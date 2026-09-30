@@ -77,6 +77,7 @@ Nguồn: `AGENTS.md` và các chỉ dẫn của chủ sản phẩm.
 - Mọi migration mới phải thêm vào `supabase/baseline/current.json` → `allowedPostBaselineFiles`.
 - Khi `git merge origin/main`, file baseline hay xung đột vì phiên Yêu cầu cũng thêm migration. Giải bằng **hợp hai danh sách**, rồi chạy `check:supabase-migrations`.
 - `gh pr merge` báo "Base branch was modified" thì chờ vài giây rồi thử lại.
+- **Chuỗi kiểm tra trước merge phải chạy với `set -o pipefail`**, không nối `| tail` rồi `&& git commit … ; gh pr merge`, vì pipe che mất lỗi. Ngày 30/09 phiên khác đã merge #40 với `current.json` hỏng, phải vá bằng #42. `gh pr merge` chỉ đặt sau `&&` của các bước kiểm đã pass. Giải xung đột `current.json` bằng **parse JSON hai phía** (`git show :2:` / `:3:`) rồi dump lại; kiểm bằng `python3 -c "import json; json.load(open(...))"`.
 - Check CI "Supabase Preview" hay đỏ/skip do migration chỉ có trên remote. Bình thường, bỏ qua. Check chính là "Typecheck, test and build".
 - Sau deploy: kiểm hàm có mặt (`select count(*) from pg_proc where proname in (…)`), rồi smoke-test bằng `qrb.mjs` với claims người dùng thật.
 
