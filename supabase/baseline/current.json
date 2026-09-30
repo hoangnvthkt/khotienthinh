@@ -198,7 +198,7 @@
     "20260930220000_procurement_inbox.sql",
     "20261001090000_procurement_hub_orders.sql",
     "20261001150000_procurement_hub_deliveries.sql",
-    "20261001210000_request_template_lifecycle_keeps_published.sql"
+    "20260930103243_request_template_lifecycle_keeps_published.sql"
   ],
   "forbidIncludeAll": true
 }

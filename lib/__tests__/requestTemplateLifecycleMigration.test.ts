@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const sql = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261001210000_request_template_lifecycle_keeps_published.sql'),
+  join(process.cwd(), 'supabase/migrations/20260930103243_request_template_lifecycle_keeps_published.sql'),
   'utf8',
 );
 const fn = (name: string) => sql.match(new RegExp(`create or replace function ${name}\\([\\s\\S]*?\\$function\\$;`, 'i'))?.[0] ?? '';
