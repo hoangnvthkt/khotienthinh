@@ -11,16 +11,27 @@ import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './h
 // dòng đơn hàng; SL đặt phân về từng dòng nhu cầu để theo dõi còn thiếu.
 
 interface Row { key: string; sourceType: ProcurementSourceRef['sourceType']; sourceId: string; code: string; lineId: string; needQty: number; orderedElsewhere: number; available: number; qty: string }
-interface Item { itemId: string; name: string; sku: string | null; unit: string | null; purchaseUnit: string | null; factor: number; price: string; rows: Row[] }
+interface Item {
+  itemId: string; name: string; sku: string | null; unit: string | null;
+  /** Buy in another unit than the stock unit (e.g. kg vs cây); quantity can be typed by hand. */
+  altUnit: boolean; purchaseUnit: string; factor: number; purchaseQty: string;
+  price: string; rows: Row[];
+}
 
 /** Need quantities are in the stock unit; orders and prices use the purchase unit (stock = purchase × factor). */
-const toPurchase = (item: Pick<Item, 'purchaseUnit' | 'factor'>, stockQty: number) => item.purchaseUnit ? stockQty / item.factor : stockQty;
+const autoPurchase = (item: Pick<Item, 'altUnit' | 'factor'>, stockQty: number) => item.altUnit ? Math.round(stockQty / item.factor * 1000) / 1000 : stockQty;
+const purchaseQtyOf = (item: Item, stockQty: number) => {
+  if (!item.altUnit) return stockQty;
+  const typed = parseQty(item.purchaseQty);
+  return typed == null ? autoPurchase(item, stockQty) : typed;
+};
 
 const VAT_CHOICES = [0, 8, 10];
 
 const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetail | null): Item[] => {
   const mine = new Map<string, { qty: number; price: number }>();
   order?.lines.forEach(line => line.allocations.forEach(a => mine.set(`${a.sourceType}:${a.sourceId}:${a.lineId}`, { qty: a.qty, price: line.unitPrice })));
+  const ownLine = new Map((order?.lines || []).map(line => [line.itemId, line]));
   const byItem = new Map<string, Item>();
   docs.forEach(doc => doc.lines.forEach(line => {
     if (!line.itemId) return;
@@ -29,8 +40,13 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
     const orderedElsewhere = Math.max(0, line.orderedQty - (own?.qty || 0));
     const available = Math.max(0, line.needQty - orderedElsewhere);
     if (!own && available <= 0) return;
+    const prev = ownLine.get(line.itemId);
+    const prevAlt = Boolean(prev && prev.stockUnit && prev.unit && prev.unit !== prev.stockUnit);
     const item = byItem.get(line.itemId) || { itemId: line.itemId, name: line.itemName, sku: line.sku, unit: line.unit,
-      purchaseUnit: line.purchaseUnit, factor: line.purchaseFactor && line.purchaseFactor > 0 ? line.purchaseFactor : 1, price: '', rows: [] };
+      altUnit: prevAlt || Boolean(line.purchaseUnit),
+      purchaseUnit: (prevAlt ? prev?.unit : line.purchaseUnit) || '',
+      factor: prevAlt && prev ? prev.factor : line.purchaseFactor && line.purchaseFactor > 0 ? line.purchaseFactor : 1,
+      purchaseQty: prevAlt && prev ? qtyInput(prev.qty) : '', price: '', rows: [] };
     if (own && !item.price) item.price = qtyInput(own.price);
     item.rows.push({ key, sourceType: doc.sourceType, sourceId: doc.sourceId, code: doc.code, lineId: line.lineId,
       needQty: line.needQty, orderedElsewhere, available, qty: qtyInput(own ? own.qty : available) });
@@ -97,8 +113,9 @@ export const OrderEditor: React.FC<{
         if (q != null && q > row.available * 1.0001 + 0.001) over += 1;
         return sum + (q && q > 0 ? q : 0);
       }, 0);
-      const qty = toPurchase(item, stockQty);
-      if (qty > 0) { lines += 1; if (price != null && (Number.isNaN(price) || price < 0)) invalid += 1; else if (!price) unpriced += 1; else subtotal += qty * price; }
+      const qty = purchaseQtyOf(item, stockQty);
+      if (item.altUnit && (qty == null || Number.isNaN(qty) || (stockQty > 0 && qty <= 0))) invalid += 1;
+      if (stockQty > 0 && qty > 0) { lines += 1; if (price != null && (Number.isNaN(price) || price < 0)) invalid += 1; else if (!price) unpriced += 1; else subtotal += qty * price; }
     });
     const vatRate = parseQty(vat) ?? 0;
     return { subtotal, vatAmount: subtotal * (Number.isNaN(vatRate) ? 0 : vatRate) / 100, invalid, over, lines, unpriced };
@@ -107,6 +124,7 @@ export const OrderEditor: React.FC<{
   const setRowQty = (itemId: string, key: string, qty: string) =>
     setItems(cur => cur.map(i => i.itemId !== itemId ? i : { ...i, rows: i.rows.map(r => r.key === key ? { ...r, qty } : r) }));
   const setPrice = (itemId: string, price: string) => setItems(cur => cur.map(i => i.itemId === itemId ? { ...i, price } : i));
+  const patchItem = (itemId: string, patch: Partial<Item>) => setItems(cur => cur.map(i => i.itemId === itemId ? { ...i, ...patch } : i));
 
   const save = async () => {
     setError(null);
@@ -117,6 +135,10 @@ export const OrderEditor: React.FC<{
     if (vatRate == null || Number.isNaN(vatRate) || vatRate < 0 || vatRate > 100) { setError('Thuế VAT phải từ 0 đến 100%.'); return; }
     const payload = items.map(item => ({
       itemId: item.itemId, unitPrice: parseQty(item.price) || 0,
+      ...(item.altUnit ? {
+        purchaseUnit: item.purchaseUnit.trim() || undefined,
+        purchaseQty: purchaseQtyOf(item, item.rows.reduce((sum, r) => sum + Math.max(0, parseQty(r.qty) || 0), 0)),
+      } : {}),
       allocations: item.rows.map(r => ({ sourceType: r.sourceType, sourceId: r.sourceId, lineId: r.lineId, qty: parseQty(r.qty) || 0 })).filter(a => a.qty > 0),
     })).filter(item => item.allocations.length > 0);
     setSaving(true);
@@ -187,21 +209,38 @@ export const OrderEditor: React.FC<{
                 {items.map((item, i) => {
                   const price = parseQty(item.price);
                   const stockQty = item.rows.reduce((s, r) => s + Math.max(0, parseQty(r.qty) || 0), 0);
-                  const qty = toPurchase(item, stockQty);
+                  const qty = purchaseQtyOf(item, stockQty);
+                  const typed = item.altUnit && item.purchaseQty.trim() !== '';
+                  const unitLabel = item.altUnit ? item.purchaseUnit || '?' : item.unit || '';
                   const priceBad = qty > 0 && price != null && (Number.isNaN(price) || price < 0);
                   return <div key={item.itemId} className="overflow-hidden rounded-2xl border border-border bg-card">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l-4 border-l-teal-500 bg-teal-50/60 px-3 py-2.5 dark:bg-teal-950/20">
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
                       <span className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] md:basis-auto"><span className="font-semibold text-foreground">{item.name}</span>
                         <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span></span>
-                      {item.purchaseUnit && <span className="text-xs text-muted-foreground" title={`Mua theo ${item.purchaseUnit}, tồn kho theo ${item.unit}`}>
-                        Đặt {fmt(qty, 3)} {item.purchaseUnit}</span>}
-                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">Đơn giá{item.purchaseUnit ? ` / ${item.purchaseUnit}` : item.unit ? ` / ${item.unit}` : ''}
+                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">Đơn giá{unitLabel ? ` / ${unitLabel}` : ''}
                         <input inputMode="decimal" value={item.price} onChange={e => setPrice(item.itemId, e.target.value)} placeholder="0"
                           aria-label={`Đơn giá ${item.name}`} aria-invalid={priceBad}
                           className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
-                      <span className="ml-auto w-32 text-right text-sm font-semibold tabular-nums text-foreground">{price && price > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
+                      <span className="ml-auto w-32 text-right text-sm font-semibold tabular-nums text-foreground">{price && price > 0 && qty > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
                     </div>
+                    {item.altUnit
+                      ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-amber-50/50 px-3 py-2 pl-11 text-xs text-muted-foreground dark:bg-amber-950/10">
+                        <label className="flex items-center gap-1.5">SL mua
+                          <input inputMode="decimal" value={typed ? item.purchaseQty : qtyInput(autoPurchase(item, stockQty))}
+                            onChange={e => patchItem(item.itemId, { purchaseQty: e.target.value })} aria-label={`SL mua ${item.name}`}
+                            className={`w-24 text-right tabular-nums ${inputCls} ${typed ? 'border-amber-400' : ''}`} />
+                          <input value={item.purchaseUnit} onChange={e => patchItem(item.itemId, { purchaseUnit: e.target.value })} aria-label={`Đơn vị mua ${item.name}`}
+                            placeholder="ĐV mua" className={`w-16 ${inputCls}`} /></label>
+                        <span aria-hidden>⇄</span>
+                        <span>SL kho <b className="text-foreground tabular-nums">{fmt(stockQty, 3)} {item.unit}</b></span>
+                        {qty > 0 && stockQty > 0 && <span>· 1 {item.purchaseUnit || 'ĐV mua'} = {fmt(stockQty / qty, 4)} {item.unit}</span>}
+                        {typed ? <button type="button" onClick={() => patchItem(item.itemId, { purchaseQty: '' })} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">Tự quy đổi</button>
+                          : <span className="italic">tự quy đổi theo hệ số vật tư — sửa được</span>}
+                        {!item.purchaseUnit && <button type="button" onClick={() => patchItem(item.itemId, { altUnit: false, purchaseQty: '' })} className="ml-auto text-muted-foreground hover:underline">Bỏ</button>}
+                      </div>
+                      : <div className="px-3 pt-1.5 pl-11"><button type="button" onClick={() => patchItem(item.itemId, { altUnit: true, factor: 1 })}
+                        className="text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">+ Mua theo đơn vị khác (VD kg ↔ cây)</button></div>}
                     <ul className="divide-y divide-border">{item.rows.map(row => {
                       const q = parseQty(row.qty);
                       const bad = q != null && Number.isNaN(q);
@@ -209,7 +248,7 @@ export const OrderEditor: React.FC<{
                       return <li key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 pl-11 text-sm">
                         <span className="min-w-[8rem] font-medium text-foreground">{row.code}</span>
                         <span className="text-xs text-muted-foreground">Cần {fmt(row.needQty)}{row.orderedElsewhere > 0 ? ` · đã đặt đơn khác ${fmt(row.orderedElsewhere)}` : ''} · còn {fmt(row.available)}</span>
-                        <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">SL đặt
+                        <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">{item.altUnit ? 'SL kho' : 'SL đặt'}
                           <input inputMode="decimal" value={row.qty} onChange={e => setRowQty(item.itemId, row.key, e.target.value)}
                             aria-label={`SL đặt ${item.name} cho ${row.code}`} aria-invalid={bad}
                             className={`w-24 text-right tabular-nums ${inputCls} ${bad ? 'border-rose-400 ring-2 ring-rose-400/30' : over ? 'border-amber-400' : ''}`} />

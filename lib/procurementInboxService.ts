@@ -81,6 +81,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PO_ITEMS_REQUIRED: 'Đơn hàng chưa có vật tư nào có SL đặt lớn hơn 0.',
   PROCUREMENT_PO_QTY_INVALID: 'SL đặt phải lớn hơn 0.',
   PROCUREMENT_PO_PRICE_INVALID: 'Đơn giá không hợp lệ.',
+  PROCUREMENT_PO_WAREHOUSE_REQUIRED: 'Đơn chưa có kho nhận. Cập nhật kho nhận ở phiếu đề xuất trong dự án rồi lập lại đơn.',
   PROCUREMENT_PO_PRICE_MISSING: 'Còn vật tư chưa có đơn giá. Sửa đơn, nhập đủ giá rồi gửi duyệt.',
   PROCUREMENT_PO_VAT_INVALID: 'Thuế VAT phải từ 0 đến 100%.',
   PROCUREMENT_PO_VENDOR_REQUIRED: 'Chọn nhà cung cấp.',
@@ -171,7 +172,7 @@ export interface ProcurementOrderDetail {
 export interface ProcurementOrderSaveInput {
   purchaseOrderId?: string; expectedRowVersion?: number; vendorId: string; targetWarehouseId?: string | null;
   expectedDeliveryDate?: string | null; vatRate: number; note?: string;
-  items: Array<{ itemId: string; unitPrice: number; note?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
+  items: Array<{ itemId: string; unitPrice: number; note?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
 }
 
 export const PROCUREMENT_PO_STATUS_LABELS: Record<string, string> = {

@@ -6,7 +6,7 @@
 --   bằng luồng sẵn có của tab dự án.
 -- * PO phải được duyệt bởi người có quyền Mua hàng — Quản trị hoặc Admin,
 --   không phải người lập. Tab dự án không sửa/gửi/duyệt/xóa PO này.
--- * Đơn hàng từ phiếu đề xuất không còn lập ở tab dự án (trừ Admin).
+-- * Đơn hàng (từ phiếu đề xuất hoặc mua chủ động) không còn lập ở tab dự án (trừ Admin).
 -- * Đóng nhu cầu không cần mua (kèm lý do), mở lại được.
 -- * SL đã nhận theo dòng nhu cầu = SL đặt × tỷ lệ đã nhận của dòng PO
 --   (purchase_order_request_lines.actual_received_qty_snapshot không được cập nhật).
@@ -373,7 +373,7 @@ declare
   v_project text; v_site text; v_warehouse text := nullif(p_input->>'targetWarehouseId', '');
   v_vat numeric := coalesce(nullif(p_input->>'vatRate', '')::numeric, 0);
   v_items jsonb := '[]'::jsonb; v_total numeric := 0; v_request_ids text[];
-  v_needed date; v_scopes integer; v_line_id text; v_ord integer := 0; it jsonb; al jsonb; v_qty numeric; v_price numeric; v_item record; v_src record;
+  v_needed date; v_scopes integer; v_line_id text; v_punit text; v_ord integer := 0; it jsonb; al jsonb; v_qty numeric; v_price numeric; v_item record; v_src record;
 begin
   if not app_private.procurement_can('manage') then
     raise exception using errcode = '42501', message = 'PROCUREMENT_MANAGE_DENIED'; end if;
@@ -387,12 +387,15 @@ begin
 
   -- Every allocation must be an open need line of the same item, in one project/site.
   create temp table if not exists pg_temp.hub_alloc (item_ord integer, po_line_id text, item_id text, unit_price numeric, item_note text,
+    purchase_qty numeric, purchase_unit text,
     source_type text, source_id text, line_id text, qty numeric, need_qty numeric, project_id text, site_id text,
     warehouse_id text, needed_date date, work_boq_item_id text, material_budget_item_id text, code text, unit text) on commit drop;
   truncate pg_temp.hub_alloc;
   for it in select value from jsonb_array_elements(p_input->'items') loop
     v_ord := v_ord + 1;
     v_price := coalesce(nullif(it->>'unitPrice', '')::numeric, 0);
+    if nullif(it->>'purchaseQty', '')::numeric <= 0 then
+      raise exception using errcode = '22023', message = 'PROCUREMENT_PO_QTY_INVALID'; end if;
     if v_price < 0 then raise exception using errcode = '22023', message = 'PROCUREMENT_PO_PRICE_INVALID'; end if;
     if jsonb_typeof(it->'allocations') is distinct from 'array' or jsonb_array_length(it->'allocations') = 0 then
       raise exception using errcode = '22023', message = 'PROCUREMENT_PO_ITEMS_REQUIRED'; end if;
@@ -408,7 +411,7 @@ begin
       if not found then raise exception using errcode = '22023', message = 'PROCUREMENT_SOURCE_NOT_FOUND'; end if;
       if v_src.closed_at is not null then raise exception using errcode = '22023', message = 'PROCUREMENT_NEED_CLOSED'; end if;
       insert into pg_temp.hub_alloc values (v_ord, null, it->>'itemId', v_price,
-        nullif(btrim(it->>'note'), ''), al->>'sourceType', al->>'sourceId', al->>'lineId', v_qty, v_src.need_qty,
+        nullif(btrim(it->>'note'), ''), nullif(it->>'purchaseQty', '')::numeric, nullif(btrim(it->>'purchaseUnit'), ''), al->>'sourceType', al->>'sourceId', al->>'lineId', v_qty, v_src.need_qty,
         v_src.project_id, v_src.construction_site_id, v_src.warehouse_id, v_src.needed_date, null, null, v_src.code, v_src.unit);
     end loop;
   end loop;
@@ -431,6 +434,7 @@ begin
   -- One PO line per item.
   for v_item in
     select a.item_id, max(a.unit_price) unit_price, sum(a.qty) qty, min(a.needed_date) needed_date, max(a.item_note) note,
+      max(a.purchase_qty) manual_purchase_qty, max(a.purchase_unit) manual_purchase_unit,
       count(*) n, min(a.source_type) st, min(a.source_id) sid, min(a.line_id) lid, min(a.code) code,
       coalesce(i.name, min(a.item_id)) name, i.sku, coalesce(i.unit, min(a.unit)) unit,
       -- Need quantities are in the stock unit; the order uses the purchase unit (stock = purchase × factor).
@@ -443,12 +447,15 @@ begin
     if (select count(distinct unit_price) from pg_temp.hub_alloc where item_id = v_item.item_id) > 1 then
       raise exception using errcode = '22023', message = 'PROCUREMENT_PO_PRICE_INVALID'; end if;
     v_line_id := 'mh-' || gen_random_uuid();
-    v_qty := case when v_item.purchase_unit is null then v_item.qty else round(v_item.qty / v_item.factor, 6) end;
+    -- The buyer may type the purchase quantity (e.g. 100 kg ↔ 10 cây); otherwise the item's default factor applies.
+    v_punit := coalesce(v_item.manual_purchase_unit, v_item.purchase_unit, v_item.unit);
+    v_qty := case when v_item.manual_purchase_qty is not null then v_item.manual_purchase_qty
+      when v_item.purchase_unit is null then v_item.qty else round(v_item.qty / v_item.factor, 6) end;
     v_items := v_items || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
       'lineId', v_line_id, 'itemId', v_item.item_id, 'sku', coalesce(v_item.sku, ''), 'name', v_item.name,
-      'itemNameSnapshot', v_item.name, 'unit', coalesce(v_item.purchase_unit, v_item.unit, ''),
-      'unitSnapshot', v_item.unit, 'stockUnitSnapshot', v_item.unit, 'purchaseUnitSnapshot', coalesce(v_item.purchase_unit, v_item.unit),
-      'purchaseConversionFactor', case when v_item.purchase_unit is null then 1 else v_item.factor end,
+      'itemNameSnapshot', v_item.name, 'unit', coalesce(v_punit, ''),
+      'unitSnapshot', v_item.unit, 'stockUnitSnapshot', v_item.unit, 'purchaseUnitSnapshot', v_punit,
+      'purchaseConversionFactor', round(v_item.qty / v_qty, 12), 'stockQty', v_item.qty,
       'qty', v_qty, 'unitPrice', v_item.unit_price, 'neededDate', v_item.needed_date, 'note', v_item.note,
       'requestId', case when v_item.n = 1 and v_item.st = 'material_request' then v_item.sid end,
       'requestCode', case when v_item.n = 1 and v_item.st = 'material_request' then v_item.code end,
@@ -560,6 +567,8 @@ begin
       raise exception using errcode = '22023', message = 'PROCUREMENT_PO_ITEMS_REQUIRED'; end if;
     if exists (select 1 from jsonb_array_elements(v_po.items) x where coalesce(nullif(x.value->>'unitPrice', '')::numeric, 0) <= 0) then
       raise exception using errcode = '22023', message = 'PROCUREMENT_PO_PRICE_MISSING'; end if;
+    if v_po.target_warehouse_id is null then
+      raise exception using errcode = '22023', message = 'PROCUREMENT_PO_WAREHOUSE_REQUIRED'; end if;
     if v_to is null or v_to = v_actor or not app_private.procurement_po_approver_ok(v_to) then
       raise exception using errcode = '22023', message = 'PROCUREMENT_PO_APPROVER_INVALID'; end if;
     select name into v_name from public.users where id = v_to;
@@ -579,6 +588,22 @@ begin
       update public.purchase_orders set status = 'confirmed', approved_total_amount = total_amount,
         last_action_by = v_actor::text, last_action_at = now()
       where id = v_po.id returning * into v_po;
+      -- Same as the project flow: a single-delivery order gets its delivery note + WMS/QR so the
+      -- warehouse receives it (both purchase and stock quantities) — actual qty may be short.
+      if coalesce(v_po.purchase_mode, 'single') = 'single' then
+        perform app_private.create_delivery_batch_with_wms_qr_core_v2(v_po.id, gen_random_uuid(), v_po.vendor_id, v_po.vendor_name,
+          v_po.fulfillment_mode, coalesce(v_po.vat_rate, 0), v_po.target_warehouse_id,
+          coalesce(app_private.procurement_date_or_null(v_po.expected_delivery_date), current_date),
+          'Đợt giao tự động khi duyệt đơn tại Mua hàng', v_actor,
+          (select jsonb_agg(jsonb_build_object('purchaseOrderLineId', coalesce(x.value->>'lineId', x.value->>'itemId'),
+              'itemId', x.value->>'itemId', 'purchaseQty', (x.value->>'qty')::numeric, 'purchaseUnit', x.value->>'purchaseUnitSnapshot',
+              'stockQty', (x.value->>'qty')::numeric * (x.value->>'purchaseConversionFactor')::numeric,
+              'stockUnit', coalesce(x.value->>'stockUnitSnapshot', x.value->>'unitSnapshot'),
+              'purchaseUnitPrice', (x.value->>'unitPrice')::numeric,
+              'stockUnitPrice', (x.value->>'unitPrice')::numeric / (x.value->>'purchaseConversionFactor')::numeric))
+            from jsonb_array_elements(v_po.items) x));
+        select * into v_po from public.purchase_orders where id = v_po.id;
+      end if;
       perform app_private.procurement_notify(v_po.created_by_id::uuid, 'Đơn hàng đã được duyệt',
         v_po.po_number || ' đã duyệt — gửi NCC và theo dõi giao hàng.', v_po.id, 'responsible');
     else
@@ -799,7 +824,7 @@ begin
     if new.source_mode = 'company_consolidated' then return new; end if;
     if v_is_admin then return new; end if;
     -- 01/10/2026: đơn hàng từ phiếu nhu cầu chỉ được lập tại Mua hàng.
-    if new.source_mode = 'from_request' then
+    if new.source_mode in ('from_request', 'proactive_project') then
       raise exception using errcode = '42501', message = 'PURCHASE_ORDER_CREATE_MOVED_TO_PROCUREMENT';
     end if;
     if v_actor is null

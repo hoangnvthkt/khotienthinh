@@ -34,6 +34,16 @@ describe('Mua hàng M2a migration', () => {
     expect(sql).toContain('app_private.procurement_po_line_received_ratio(o.items, k.purchase_order_line_id)');
   });
 
+  it('prepares the delivery note and pending WMS receipt when a single-delivery order is approved', () => {
+    expect(sql).toContain('perform app_private.create_delivery_batch_with_wms_qr_core_v2(v_po.id');
+    expect(sql).toContain("message = 'procurement_po_warehouse_required'");
+  });
+
+  it('lets the buyer type the purchase quantity next to the stock quantity', () => {
+    expect(sql).toContain("nullif(it->>'purchaseqty', '')::numeric");
+    expect(sql).toContain("'purchaseconversionfactor', round(v_item.qty / v_qty, 12)");
+  });
+
   it('closes needs only with a reason and can reopen them', () => {
     expect(sql).toContain("message = 'procurement_close_reason_required'");
     expect(sql).toContain("when d.closed_at is not null then 'closed'");
@@ -41,7 +51,7 @@ describe('Mua hàng M2a migration', () => {
 
   it('moves creation of request-based POs out of the project tab except for admins', () => {
     expect(sql).toContain("if app_private.procurement_hub_context_enabled() then");
-    expect(sql).toContain("if new.source_mode = 'from_request' then\n      raise exception using errcode = '42501', message = 'purchase_order_create_moved_to_procurement'");
+    expect(sql).toContain("if new.source_mode in ('from_request', 'proactive_project') then\n      raise exception using errcode = '42501', message = 'purchase_order_create_moved_to_procurement'");
     const adminBypass = sql.indexOf('if v_is_admin then return new; end if;\n    -- 01/10/2026');
     expect(adminBypass).toBeGreaterThan(0);
   });
