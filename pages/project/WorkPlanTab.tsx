@@ -5,6 +5,10 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
+import MaterialPlanPanel from '../../components/project/work-plan/MaterialPlanPanel';
+import {
+  AccordionToolbar, CrewPill, crewColor, dateVi, fmt, GroupHeader, groupBy, parseQty, qtyInput, StatusChip, uniqueCrews, useGroupAccordion,
+} from '../../components/project/work-plan/workPlanUi';
 import {
   formatWorkPlanPeriod, normalizeWorkPlanPeriodStart, projectWorkPlanService, shiftWorkPlanPeriod, toIsoDate,
   WORK_PLAN_STATUS_LABELS, workPlanLineAchievement,
@@ -23,34 +27,8 @@ type DraftLine = Pick<WorkPlanLine, 'taskId' | 'wbsCode' | 'taskName' | 'groupNa
   monthPlanQty?: number | null;
 };
 
-const fmt = (value: number | null | undefined, digits = 2) => value == null || Number.isNaN(value)
-  ? '' : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: digits }).format(value);
-const parseQty = (value: string): number | null => {
-  const text = value.trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
-  if (!text) return null;
-  const n = Number(text);
-  return Number.isFinite(n) ? n : NaN;
-};
-const qtyInput = (value: number | null | undefined) => value == null ? '' : String(Math.round(value * 1000) / 1000).replace('.', ',');
 const remainingOf = (line: Pick<DraftLine, 'totalQty' | 'doneBeforeQty'>) =>
   line.totalQty == null ? null : Math.max(line.totalQty - (line.doneBeforeQty ?? 0), 0);
-const dateVi = (value: string | null | undefined) => value ? new Date(value).toLocaleDateString('vi-VN') : '';
-
-const STATUS_STYLE: Record<WorkPlanStatus, string> = {
-  draft: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700',
-  submitted: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900',
-  returned: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-900',
-  approved: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900',
-  superseded: 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700',
-  cancelled: 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-700',
-};
-
-const StatusChip: React.FC<{ status: WorkPlanStatus }> = ({ status }) => (
-  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[status]}`}>
-    {WORK_PLAN_STATUS_LABELS[status]}
-  </span>
-);
-
 const toDraftLine = (line: WorkPlanLine | WorkPlanCandidate, plannedQty: number | null): DraftLine => ({
   taskId: line.taskId, wbsCode: line.wbsCode, taskName: line.taskName, groupName: line.groupName, unit: line.unit,
   totalQty: line.totalQty, doneBeforeQty: line.doneBeforeQty,
@@ -59,12 +37,6 @@ const toDraftLine = (line: WorkPlanLine | WorkPlanCandidate, plannedQty: number 
   overdue: 'overdue' in line ? line.overdue : undefined,
   monthPlanQty: 'monthPlanQty' in line ? line.monthPlanQty : undefined,
 });
-
-const groupBy = <T extends { groupName: string | null }>(rows: T[]) => {
-  const map = new Map<string, T[]>();
-  rows.forEach(row => { const key = row.groupName || 'Công việc khác'; map.set(key, [...(map.get(key) || []), row]); });
-  return Array.from(map.entries());
-};
 
 // ---------------------------------------------------------------------------
 // Task picker: adds work from the schedule to the plan being written.
@@ -138,61 +110,6 @@ const TaskPicker: React.FC<{
     </div>
   </div>;
 };
-
-// ---------------------------------------------------------------------------
-// Shared look: numbered, collapsible work groups (FastCons-style index 1 / 1.1)
-// and one stable colour per crew so the same team reads the same everywhere.
-// ---------------------------------------------------------------------------
-const CREW_COLORS = [
-  'bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800',
-  'bg-violet-50 text-violet-800 border-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:border-violet-800',
-  'bg-orange-50 text-orange-800 border-orange-200 dark:bg-orange-950/40 dark:text-orange-200 dark:border-orange-800',
-  'bg-lime-50 text-lime-800 border-lime-200 dark:bg-lime-950/40 dark:text-lime-200 dark:border-lime-800',
-  'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200 dark:bg-fuchsia-950/40 dark:text-fuchsia-200 dark:border-fuchsia-800',
-  'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-200 dark:border-cyan-800',
-  'bg-yellow-50 text-yellow-900 border-yellow-200 dark:bg-yellow-950/40 dark:text-yellow-100 dark:border-yellow-800',
-  'bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-800',
-];
-const crewColor = (name: string) => {
-  let hash = 0;
-  for (const ch of name.trim().toLocaleLowerCase('vi')) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return CREW_COLORS[hash % CREW_COLORS.length];
-};
-const CrewPill: React.FC<{ name: string | null | undefined }> = ({ name }) => name?.trim()
-  ? <span className={`inline-flex max-w-full items-center gap-1 truncate rounded-full border px-2 py-0.5 text-xs font-semibold ${crewColor(name)}`}><HardHat size={11} className="shrink-0" />{name.trim()}</span>
-  : <span className="text-xs text-muted-foreground">Chưa giao tổ đội</span>;
-
-const useGroupAccordion = (groups: string[]) => {
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  return {
-    isOpen: (group: string) => open.has(group),
-    toggle: (group: string) => setOpen(current => { const next = new Set(current); if (next.has(group)) next.delete(group); else next.add(group); return next; }),
-    expandAll: () => setOpen(new Set(groups)),
-    collapseAll: () => setOpen(new Set()),
-    allOpen: groups.length > 0 && groups.every(g => open.has(g)),
-  };
-};
-
-const AccordionToolbar: React.FC<{ count: number; allOpen: boolean; onExpand: () => void; onCollapse: () => void }> = ({ count, allOpen, onExpand, onCollapse }) =>
-  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-    <span>{count} hạng mục chính</span>
-    <button type="button" onClick={allOpen ? onCollapse : onExpand} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 font-semibold text-foreground hover:bg-muted">
-      <ChevronsUpDown size={13} />{allOpen ? 'Thu gọn hết' : 'Mở rộng hết'}</button>
-  </div>;
-
-const GroupHeader: React.FC<{
-  index: number; name: string; open: boolean; onToggle: () => void; count: number; tone: string; children?: React.ReactNode;
-}> = ({ index, name, open, onToggle, count, tone, children }) =>
-  <button type="button" aria-expanded={open} onClick={onToggle}
-    className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-l-4 border-border px-3 py-2.5 text-left transition-colors hover:brightness-[0.98] md:flex-nowrap ${tone}`}>
-    <ChevronRight size={16} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-    <span className="w-6 shrink-0 text-sm font-bold tabular-nums">{index}</span>
-    <span className="min-w-0 flex-1 text-sm font-bold uppercase tracking-wide">{name}<span className="ml-2 text-xs font-medium normal-case tracking-normal opacity-70">{count} việc</span></span>
-    {children && <span className="flex w-full flex-wrap items-center gap-1.5 pl-[3.25rem] md:w-auto md:justify-end md:pl-0">{children}</span>}
-  </button>;
-
-const uniqueCrews = (lines: Array<{ crewLabel: string | null }>) =>
-  Array.from(new Set(lines.map(l => l.crewLabel?.trim()).filter((c): c is string => Boolean(c))));
 
 // ---------------------------------------------------------------------------
 // Read view: plan vs actual.
@@ -359,9 +276,11 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
   const initial = (() => {
     const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
     const type = params.get('period') === 'week' ? 'week' : 'month';
-    return { type: type as WorkPlanPeriodType, start: normalizeWorkPlanPeriodStart(type, params.get('start') || toIsoDate(new Date())) };
+    return { type: type as WorkPlanPeriodType, start: normalizeWorkPlanPeriodStart(type, params.get('start') || toIsoDate(new Date())),
+      view: (params.get('view') === 'material' ? 'material' : 'work') as 'work' | 'material' };
   })();
   const [periodType, setPeriodType] = useState<WorkPlanPeriodType>(initial.type);
+  const [view, setView] = useState<'work' | 'material'>(initial.view);
   const [periodStart, setPeriodStart] = useState(initial.start);
   const [board, setBoard] = useState<WorkPlanBoard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -511,11 +430,17 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
 
   const header = <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
     <div>
-      <h2 className="flex items-center gap-2 text-lg font-bold text-foreground"><CalendarRange size={20} className="text-teal-600" />Kế hoạch thi công</h2>
-      <p className="text-xs text-muted-foreground">Lập kế hoạch tháng, tuần từ bảng tiến độ. Số thực hiện lấy tự động từ Nhật ký và Chốt tiến độ.</p>
+      <h2 className="flex items-center gap-2 text-lg font-bold text-foreground"><CalendarRange size={20} className="text-teal-600" />{view === 'work' ? 'Kế hoạch thi công' : 'Kế hoạch vật tư'}</h2>
+      <p className="text-xs text-muted-foreground">{view === 'work' ? 'Lập kế hoạch tháng, tuần từ bảng tiến độ. Số thực hiện lấy tự động từ Nhật ký và Chốt tiến độ.'
+        : 'Tính nhu cầu vật tư từ kế hoạch thi công đã duyệt, đối chiếu tồn kho và BOQ, gửi CHT duyệt.'}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex rounded-xl border border-border bg-muted/60 p-1" role="tablist" aria-label="Loại kế hoạch">
+      <div className="inline-flex rounded-xl border border-teal-200 bg-teal-50 p-1 dark:border-teal-900 dark:bg-teal-950/40" role="tablist" aria-label="Loại kế hoạch">
+        {([['work', 'Thi công'], ['material', 'Vật tư']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={view === key}
+          onClick={async () => { if (view !== key && (key === 'work' || await leaveDraft())) setView(key); }}
+          className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${view === key ? 'bg-teal-700 text-white shadow-sm' : 'text-teal-800 hover:bg-teal-100 dark:text-teal-200 dark:hover:bg-teal-900/40'}`}>{label}</button>)}
+      </div>
+      <div className="inline-flex rounded-xl border border-border bg-muted/60 p-1" role="tablist" aria-label="Kỳ kế hoạch">
         {(['month', 'week'] as const).map(type => <button key={type} type="button" role="tab" aria-selected={periodType === type}
           onClick={() => void changePeriod(type, periodType === type ? periodStart : today)}
           className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors ${periodType === type ? 'bg-card text-teal-700 shadow-sm dark:text-teal-300' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -528,6 +453,10 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
       </div>
       {!isCurrent && <button type="button" onClick={() => void changePeriod(periodType, today)} className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground">{periodType === 'month' ? 'Tháng này' : 'Tuần này'}</button>}
     </div>
+  </div>;
+
+  if (view === 'material') return <div className="space-y-4">{header}
+    <MaterialPlanPanel projectId={projectId} constructionSiteId={siteId} periodType={periodType} periodStart={periodStart} onOpenWorkPlan={() => setView('work')} />
   </div>;
 
   if (loading && !board) return <div className="space-y-4">{header}<div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card p-12 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" />Đang tải kế hoạch…</div></div>;

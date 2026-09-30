@@ -2979,6 +2979,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
             {materialAccess.planning.canView && activeSubTab === 'planning' && (
                 <div className="space-y-6">
+                    {projectId && <a href={`#/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'material', period: 'week' }).toString()}`}
+                        className="flex flex-col gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950 transition-colors hover:bg-teal-100 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-100 md:flex-row md:items-center md:justify-between">
+                        <span><strong>Kế hoạch vật tư tuần/tháng</strong> nay lập từ kế hoạch thi công đã duyệt, tự tính nhu cầu theo BOQ, đối chiếu tồn kho và gửi CHT duyệt.</span>
+                        <span className="shrink-0 font-semibold">Mở Kế hoạch → Vật tư ›</span>
+                    </a>}
                     <React.Suspense fallback={<LazyPanelFallback label="Đang tải cân đối BOQ..." />}>
                         <BoqMaterialPlanningWorkspace
                             projectId={projectId || null}
