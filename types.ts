@@ -3071,6 +3071,8 @@ export interface ProjectVendor {
 
 export interface PurchaseOrder extends ProjectSubmissionFields {
   id: string;
+  /** e.g. { channel: 'procurement_hub' } for orders created in Mua hàng. */
+  metadata?: Record<string, unknown> | null;
   projectId?: string | null;
   constructionSiteId?: string | null;
   vendorId: string;

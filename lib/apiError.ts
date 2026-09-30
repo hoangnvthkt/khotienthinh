@@ -32,6 +32,9 @@ export const getApiErrorMessage = (
 
   if (!rawMessage) return fallbackMessage;
 
+  if (rawMessage.includes('purchase_order_create_moved_to_procurement')) {
+    return 'Đơn hàng từ phiếu đề xuất nay lập tại màn Mua hàng. Phòng Mua hàng sẽ tiếp nhận phiếu đã duyệt.';
+  }
   if (rawMessage.includes('invalid login credentials')) {
     return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
   }

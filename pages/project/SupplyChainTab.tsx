@@ -180,7 +180,7 @@ import {
     hasRequestRowDefaultSupplierMismatch,
     setPurchaseOrderRequestCartGroupSelection,
 } from '../../lib/purchaseOrderRequestCart';
-import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
+import { getPurchaseOrderUiPolicy, isProcurementHubPurchaseOrder, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
 import { findPurchaseOrderCommercialLineIssue } from '../../lib/purchaseOrderCommercialLines';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
@@ -7141,11 +7141,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             </button>
                             {effectivePoCapabilities.canEditPo && (
                                 <>
-                                    <button onClick={openRequestPicker}
-                                        disabled={scopedRequestLines.length === 0}
-                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
-                                        <Package size={12} /> Tạo từ đề xuất
-                                    </button>
+                                    {/* 01/10/2026: đơn hàng từ phiếu đề xuất lập tại Mua hàng. */}
+                                    <a href="#/procurement"
+                                        title="Phòng Mua hàng tiếp nhận phiếu đề xuất đã duyệt, lập và duyệt đơn hàng tại màn Mua hàng."
+                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 active:scale-[0.98] dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
+                                        <Package size={12} /> Đơn từ đề xuất: lập tại Mua hàng
+                                    </a>
                                     <button onClick={openCreatePo}
                                         disabled={partners.length === 0 || inventoryItems.length === 0 || warehouses.length === 0}
                                         className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300">
@@ -7280,12 +7281,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                     const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                     const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                                    const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
-                                    const canSubmitPoDocument = Boolean(
+                                    // PO lập tại Mua hàng: tab dự án chỉ xem, lập đợt giao và nhận hàng.
+                                    const isHubPo = isProcurementHubPurchaseOrder(po);
+                                    const canMutatePoDocument = !isHubPo && canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                                    const canSubmitPoDocument = !isHubPo && Boolean(
                                         (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
                                         && ['draft', 'returned'].includes(po.status),
                                     );
-                                    const canApprovePoDocument = Boolean(
+                                    const canApprovePoDocument = !isHubPo && Boolean(
                                         effectivePoCapabilities.canApprovePo
                                         && (
                                             (po.status === 'sent' && isPoApprovalAssignee(po))
@@ -7300,10 +7303,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             )
                                         ),
                                     );
-                                    const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
+                                    const canDeletePoDocument = !isHubPo && canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                                     const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
                                     const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
-                                    const editBlockReason = isCompanyConsolidatedPo
+                                    const editBlockReason = isHubPo
+                                        ? 'Đơn lập tại Mua hàng — sửa, gửi và duyệt ở màn Mua hàng.'
+                                        : isCompanyConsolidatedPo
                                         ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
                                         : poEditBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
                                     const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
@@ -7447,12 +7452,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
-                const canSubmitPoDocument = Boolean(
+                // PO lập tại Mua hàng: tab dự án chỉ xem, lập đợt giao và nhận hàng.
+                const isHubPo = isProcurementHubPurchaseOrder(po);
+                const canMutatePoDocument = !isHubPo && canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                const canSubmitPoDocument = !isHubPo && Boolean(
                     (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
                     && ['draft', 'returned'].includes(po.status),
                 );
-                const canApprovePoDocument = Boolean(
+                const canApprovePoDocument = !isHubPo && Boolean(
                     effectivePoCapabilities.canApprovePo
                     && (
                         (po.status === 'sent' && isPoApprovalAssignee(po))
@@ -7467,7 +7474,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         )
                     ),
                 );
-                const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
+                const canDeletePoDocument = !isHubPo && canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
                 const editBlockReason = isCompanyConsolidatedPo
                     ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
