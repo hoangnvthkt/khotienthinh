@@ -398,3 +398,16 @@ describe('isProcurementHubPurchaseOrder', () => {
     expect(isProcurementHubPurchaseOrder({ metadata: null })).toBe(false);
   });
 });
+
+describe('Mua hàng orders in the project tab', () => {
+  it('lets the site open the delivery note but not create, clone or close deliveries', () => {
+    const policy = getPurchaseOrderUiPolicy({
+      po: makePo({ sourceMode: 'from_request', purchaseMode: 'multiple', status: 'confirmed', metadata: { channel: 'procurement_hub' } }),
+      canConfirmPo: true, canEditPoDocument: false, canSubmitPoDocument: false,
+    });
+    const ids = [policy.primaryAction?.id, ...policy.secondaryActions.map(a => a.id), ...policy.menuActions.map(a => a.id)];
+    expect(ids).not.toContain('add_delivery');
+    expect(ids).not.toContain('close_short');
+    expect(policy.nextStep).toContain('Phòng Mua hàng lập đợt giao');
+  });
+});

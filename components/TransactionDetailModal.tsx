@@ -596,6 +596,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                  const draftQty = parseQuantityInput(draft.quantity);
                  const orderedQty = Number(ti.orderedQty ?? ti.quantity ?? 0);
                  const hasVariance = Number.isFinite(draftQty) && draftQty !== orderedQty;
+                 // Phiếu giao của đơn mua: hiện thêm SL theo đơn vị mua (VD kg) cạnh SL kho (VD cây).
+                 const purchaseUnit = ti.accountingUnit && ti.accountingUnit !== item?.unit ? ti.accountingUnit : null;
+                 const purchasePerStock = purchaseUnit && orderedQty > 0 ? Number(ti.accountingQty || 0) / orderedQty : 0;
                   return (
                     <tr key={`${ti.fulfillmentBatchId || ''}-${ti.requestLineId || ti.itemId}-${idx}`}>
                       <td className="px-4 py-3">
@@ -604,6 +607,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                       </td>
                        <td className="px-4 py-3 text-right font-bold text-slate-800">
                          {orderedQty} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                         {purchaseUnit && <div className="text-[10px] font-bold text-slate-500">= {Number(ti.accountingQty || 0).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
                          {hasVariance && canAdjustQuantities && (
                            <div className="text-[10px] font-bold text-amber-600">Lệch: {(Number.isFinite(draftQty) ? draftQty : 0) - orderedQty}</div>
                          )}
@@ -621,6 +625,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                               />
                               <span className="w-8 text-left text-[10px] font-bold text-slate-400">{item?.unit}</span>
                             </div>
+                            {purchaseUnit && Number.isFinite(draftQty) && <div className="text-[10px] font-bold text-slate-500">
+                              ≈ {(Math.round(draftQty * purchasePerStock * 1000) / 1000).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
                             {hasVariance && (
                               <div className="flex items-center gap-2 w-full justify-end">
                                 <AlertTriangle size={14} className="text-amber-500 shrink-0" />

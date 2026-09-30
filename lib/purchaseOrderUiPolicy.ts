@@ -190,6 +190,8 @@ export const getPurchaseOrderUiPolicy = ({
   }
 
   if (isPackageV2) {
+    // Mua hàng lập và duyệt đợt giao cho đơn của mình; tab dự án chỉ mở phiếu giao để nhận hàng.
+    const hubManaged = isProcurementHubPurchaseOrder(po);
     const openBatch = firstOpenPackageBatch(deliveryBatches);
     const draftBatch = deliveryBatches.find(batch => (
       batch.status === 'planned'
@@ -264,15 +266,17 @@ export const getPurchaseOrderUiPolicy = ({
           qrToken: approvedWmsBatch.qrToken || null,
         };
         nextStep = 'Đợt đã duyệt đang chờ kho kiểm tra SL/CL và nhập kho.';
+      } else if (hubManaged) {
+        nextStep = 'Phòng Mua hàng lập đợt giao; khi có phiếu giao, công trường nhận hàng tại đây.';
       } else if (mayEditPo || maySubmitPo || mayReceivePo) {
         primaryAction = { id: 'add_delivery', label: 'Tạo đợt giao', intent: 'primary' };
         nextStep = 'Lập đợt giao thực tế với số lượng, giá và VAT riêng.';
       }
 
-      if ((mayEditPo || maySubmitPo || mayReceivePo) && primaryAction?.id !== 'add_delivery') {
+      if (!hubManaged && (mayEditPo || maySubmitPo || mayReceivePo) && primaryAction?.id !== 'add_delivery') {
         secondaryActions.push({ id: 'add_delivery', label: 'Tạo thêm đợt', intent: 'primary' });
       }
-      if ((mayEditPo || maySubmitPo) && openBatch) {
+      if (!hubManaged && (mayEditPo || maySubmitPo) && openBatch) {
         secondaryActions.push({
           id: 'clone_delivery',
           label: 'Clone đợt',
@@ -288,7 +292,7 @@ export const getPurchaseOrderUiPolicy = ({
           });
         }
       }
-      if (mayReceivePo && hasOpenReceiptNeed(receiptStats) && !openBatch) {
+      if (!hubManaged && mayReceivePo && hasOpenReceiptNeed(receiptStats) && !openBatch) {
         secondaryActions.push({ id: 'close_short', label: 'Kết thúc thiếu', intent: 'warning' });
       }
     }
