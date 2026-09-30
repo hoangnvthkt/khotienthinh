@@ -152,6 +152,14 @@ export interface RequestActionCapabilities {
   canReadDiscussion: boolean;
   canComment: boolean;
   canAttach: boolean;
+  canAddWatcher: boolean;
+  canDelete: boolean;
+  reassignableAssignmentIds: string[];
+}
+
+export interface RequestWatcher extends RequestUserSnapshot {
+  source: 'MANUAL' | 'TEMPLATE';
+  canRemove: boolean;
 }
 
 export interface RequestApprovalBlockSnapshot {
@@ -184,6 +192,7 @@ export interface RequestDetail extends RequestListItem {
   formData: Record<string, unknown>;
   approvalBlocks: RequestApprovalBlockSnapshot[];
   watcherIds: string[];
+  watchers: RequestWatcher[];
   timeline: Array<{
     id: string;
     eventType: string;
@@ -254,6 +263,10 @@ export type RequestRpcErrorCode =
   | 'REQUEST_TEMPLATE_FORBIDDEN'
   | 'REQUEST_TEMPLATE_VERSION_NOT_PUBLISHED'
   | 'REQUEST_AUTHENTICATION_REQUIRED'
+  | 'REQUEST_REASSIGN_REASON_REQUIRED'
+  | 'REQUEST_REASSIGN_TARGET_DUPLICATE'
+  | 'REQUEST_DELETE_LOCKED'
+  | 'REQUEST_WATCHER_INVALID'
   | 'REQUEST_NOT_FOUND_OR_FORBIDDEN';
 
 export class RequestRpcError extends Error {
@@ -383,7 +396,13 @@ const withCollaborationDefaults = (value: RequestDetail): RequestDetail => {
       canReadDiscussion: capabilities.canReadDiscussion === true,
       canComment: capabilities.canComment === true,
       canAttach: capabilities.canAttach === true,
+      canAddWatcher: capabilities.canAddWatcher === true,
+      canDelete: capabilities.canDelete === true,
+      reassignableAssignmentIds: Array.isArray(capabilities.reassignableAssignmentIds)
+        ? (capabilities.reassignableAssignmentIds as unknown[]).filter(isString)
+        : [],
     },
+    watchers: Array.isArray(raw.watchers) ? raw.watchers : [],
   } as unknown as RequestDetail;
 };
 
@@ -468,6 +487,10 @@ const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_TEMPLATE_FORBIDDEN',
   'REQUEST_TEMPLATE_VERSION_NOT_PUBLISHED',
   'REQUEST_AUTHENTICATION_REQUIRED',
+  'REQUEST_REASSIGN_REASON_REQUIRED',
+  'REQUEST_REASSIGN_TARGET_DUPLICATE',
+  'REQUEST_DELETE_LOCKED',
+  'REQUEST_WATCHER_INVALID',
   'REQUEST_NOT_FOUND_OR_FORBIDDEN',
 ]);
 
@@ -511,6 +534,10 @@ export const mapRequestRpcError = (error: unknown): RequestRpcError => {
     REQUEST_APPROVER_SINGLE_REQUIRED: 'Mẫu cấu hình sai số người duyệt. Vui lòng liên hệ quản trị viên mẫu.',
     REQUEST_AUTHENTICATION_REQUIRED: 'Phiên đăng nhập đã hết hoặc tài khoản không còn hoạt động.',
     REQUEST_NOT_FOUND_OR_FORBIDDEN: 'Không tìm thấy đề xuất hoặc bạn không có quyền.',
+    REQUEST_REASSIGN_REASON_REQUIRED: 'Vui lòng nhập lý do chuyển người duyệt.',
+    REQUEST_REASSIGN_TARGET_DUPLICATE: 'Người này đang là người duyệt ở bước này. Vui lòng chọn người khác.',
+    REQUEST_DELETE_LOCKED: 'Chỉ xóa được khi chưa ai xử lý hoặc đề xuất đã hủy.',
+    REQUEST_WATCHER_INVALID: 'Danh sách người theo dõi không hợp lệ hoặc có tài khoản đã khóa.',
   };
   // A raw REQUEST_* diagnostic is never shown to users.
   const fallback = /REQUEST_[A-Z0-9_]+/.test(diagnostic)
@@ -554,6 +581,52 @@ export const requestRuntimeService = {
     });
     if (error) throw mapRequestRpcError(error);
     return assertRequestCommandResult(data, 'act_on_request');
+  },
+
+  async reassign(input: {
+    requestId: string;
+    assignmentId: string;
+    assigneeUserId: string;
+    comment: string;
+    idempotencyKey: string;
+    expectedUpdatedAt: string;
+  }): Promise<RequestCommandResult> {
+    const { data, error } = await supabase.rpc('reassign_request_assignment', {
+      p_request_id: input.requestId,
+      p_assignment_id: input.assignmentId,
+      p_assignee_user_id: input.assigneeUserId,
+      p_comment: input.comment,
+      p_idempotency_key: input.idempotencyKey,
+      p_expected_updated_at: input.expectedUpdatedAt,
+    });
+    if (error) throw mapRequestRpcError(error);
+    return assertRequestCommandResult(data, 'reassign_request_assignment');
+  },
+
+  async addWatchers(requestId: string, userIds: string[]): Promise<RequestWatcher[]> {
+    const { data, error } = await supabase.rpc('add_request_watchers', {
+      p_request_id: requestId,
+      p_user_ids: userIds,
+    });
+    if (error) throw mapRequestRpcError(error);
+    return isRecord(data) && Array.isArray(data.watchers) ? data.watchers as RequestWatcher[] : [];
+  },
+
+  async removeWatcher(requestId: string, userId: string): Promise<RequestWatcher[]> {
+    const { data, error } = await supabase.rpc('remove_request_watcher', {
+      p_request_id: requestId,
+      p_user_id: userId,
+    });
+    if (error) throw mapRequestRpcError(error);
+    return isRecord(data) && Array.isArray(data.watchers) ? data.watchers as RequestWatcher[] : [];
+  },
+
+  async deleteRequest(requestId: string, expectedUpdatedAt: string): Promise<void> {
+    const { error } = await supabase.rpc('delete_request', {
+      p_request_id: requestId,
+      p_expected_updated_at: expectedUpdatedAt,
+    });
+    if (error) throw mapRequestRpcError(error);
   },
 
   async updateContent(input: UpdateRequestContentInput): Promise<RequestCommandResult & { contentRevision: number }> {

@@ -39,19 +39,36 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
   const [action, setAction] = useState<RequestAction | null>(null);
   const [comment, setComment] = useState('');
   const [assigneeUserId, setAssigneeUserId] = useState('');
+  const [sourceAssignmentId, setSourceAssignmentId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const actions = useMemo(() => getRequestActions({ status: detail.status, canApprove: detail.capabilities.canApprove, canCancel: detail.capabilities.canCancel, canReassign: detail.capabilities.canReassign, isCreator: detail.creator.id === user.id }), [detail, user.id]);
+  const actions = useMemo(() => getRequestActions({ status: detail.status, canApprove: detail.capabilities.canApprove, canCancel: detail.capabilities.canCancel, canReassign: detail.capabilities.canReassign && detail.capabilities.reassignableAssignmentIds.length > 0, isCreator: detail.creator.id === user.id }), [detail, user.id]);
+  // Pending assignments this user may hand over: their own, or any when admin.
+  const reassignable = useMemo(() => detail.approvalBlocks.flatMap(block => block.assignments
+    .filter(assignment => detail.capabilities.reassignableAssignmentIds.includes(assignment.id))
+    .map(assignment => ({ ...assignment, blockKey: block.key, blockName: block.name }))), [detail]);
+  const sourceAssignment = reassignable.find(item => item.id === sourceAssignmentId);
+  const excludedAssignees = useMemo(() => [
+    detail.creator.id,
+    ...detail.approvalBlocks
+      .filter(block => block.key === sourceAssignment?.blockKey)
+      .flatMap(block => block.assignments.filter(item => item.status === 'PENDING').map(item => item.approver.id)),
+  ], [detail, sourceAssignment]);
   if (actions.length === 0) return null;
-  const open = (next: RequestAction) => { setAction(next); setComment(''); setAssigneeUserId(''); setError(null); };
+  const open = (next: RequestAction) => {
+    setAction(next); setComment(''); setAssigneeUserId(''); setError(null);
+    setSourceAssignmentId((reassignable.find(item => item.approver.id === user.id) ?? reassignable[0])?.id ?? '');
+  };
   const needsComment = action === 'REJECT' || action === 'RETURN' || action === 'REASSIGN';
   const execute = async () => {
     if (!action) return;
     if (needsComment && !comment.trim()) { setError('Vui lòng nhập lý do cho hành động này.'); return; }
     if (action === 'REASSIGN' && !assigneeUserId) { setError('Vui lòng chọn người duyệt mới.'); return; }
+    if (action === 'REASSIGN' && !sourceAssignment) { setError('Không còn lượt duyệt nào có thể chuyển. Vui lòng tải lại.'); return; }
     setIsSubmitting(true); setError(null);
     try {
-      await requestRuntimeService.act({ requestId: detail.id, action, comment: comment.trim() || undefined, formData: action === 'RESUBMIT' ? detail.formData : undefined, assigneeUserId: action === 'REASSIGN' ? assigneeUserId : undefined, idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`, expectedUpdatedAt: detail.updatedAt });
+      if (action === 'REASSIGN' && sourceAssignment) await requestRuntimeService.reassign({ requestId: detail.id, assignmentId: sourceAssignment.id, assigneeUserId, comment: comment.trim(), idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`, expectedUpdatedAt: detail.updatedAt });
+      else await requestRuntimeService.act({ requestId: detail.id, action, comment: comment.trim() || undefined, formData: action === 'RESUBMIT' ? detail.formData : undefined, idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`, expectedUpdatedAt: detail.updatedAt });
       await onChanged();
       toast.success('Đã cập nhật đề xuất', labels[action]);
       setAction(null);
@@ -99,11 +116,25 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
             )}
 
             {action === 'REASSIGN' && (
-              <div className="mt-4">
-                <label className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">
-                  Người duyệt mới <span className="text-rose-500">*</span>
-                </label>
-                <UserSearchSelect users={users} excludeUserIds={[user.id, detail.creator.id]} value={assigneeUserId} onChange={userId => setAssigneeUserId(userId || '')} placeholder="Gõ tên hoặc vị trí người duyệt mới..." />
+              <div className="mt-4 space-y-4">
+                {reassignable.length > 1 ? (
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">Chuyển lượt duyệt của</span>
+                    <select value={sourceAssignmentId} onChange={event => { setSourceAssignmentId(event.target.value); setAssigneeUserId(''); }} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                      {reassignable.map(item => <option key={item.id} value={item.id}>{item.approver.id === user.id ? 'Tôi' : item.approver.name} · {item.blockName}</option>)}
+                    </select>
+                  </label>
+                ) : sourceAssignment && (
+                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    Chuyển lượt duyệt của <strong>{sourceAssignment.approver.id === user.id ? 'bạn' : sourceAssignment.approver.name}</strong> ở bước “{sourceAssignment.blockName}”. Người mới sẽ nhận thông báo và duyệt thay.
+                  </p>
+                )}
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">
+                    Người duyệt mới <span className="text-rose-500">*</span>
+                  </label>
+                  <UserSearchSelect users={users} excludeUserIds={excludedAssignees} value={assigneeUserId} onChange={userId => setAssigneeUserId(userId || '')} placeholder="Gõ tên hoặc vị trí người duyệt mới..." />
+                </div>
               </div>
             )}
 

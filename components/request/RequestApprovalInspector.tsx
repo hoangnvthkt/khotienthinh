@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Circle, Clock3, PanelRightClose, PanelRightOpen, RotateCcw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
 import type { RequestDetail } from '../../lib/requestRuntimeService';
+import { RequestWatchers } from './RequestWatchers';
 import { REQUEST_ASSIGNMENT_STATUS_LABELS, requestTimelineEventLabel, stripReassignPrefix } from '../../lib/requestLabels';
 
 const blockIcon = (status: RequestDetail['approvalBlocks'][number]['status']) => {
@@ -25,7 +26,8 @@ export const RequestApprovalInspector: React.FC<{
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   inline?: boolean;
-}> = ({ detail, isCollapsed = false, onToggleCollapse, inline = false }) => {
+  onChanged?: () => Promise<void>;
+}> = ({ detail, isCollapsed = false, onToggleCollapse, inline = false, onChanged }) => {
   if (isCollapsed) {
     return (
       <aside className="hidden xl:flex w-12 shrink-0 flex-col items-center border-l border-slate-200 bg-slate-50/70 py-4 dark:border-slate-800 dark:bg-slate-950/70">
@@ -113,6 +115,8 @@ export const RequestApprovalInspector: React.FC<{
           ))}
         </div>
       </section>
+
+      {onChanged && <RequestWatchers detail={detail} onChanged={onChanged} />}
 
       {/* Activity Timeline Card */}
       <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">

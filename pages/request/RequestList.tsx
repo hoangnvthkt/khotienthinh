@@ -123,6 +123,11 @@ const RequestList: React.FC = () => {
       forbiddenOrMissing={detail.forbiddenOrMissing}
       refresh={refreshAfterAction}
       onBack={clearSelection}
+      onDeleted={() => {
+        clearSelection();
+        void list.refresh();
+        void requestRuntimeService.getSummary().then(setSummary).catch(() => setSummary(null));
+      }}
       isInspectorCollapsed={isInspectorCollapsed}
       onToggleInspectorCollapse={() => setIsInspectorCollapsed(prev => !prev)}
     />
