@@ -7,9 +7,6 @@ import dbCatalog from './fixtures/dbPermissionCatalog.json';
 const FRONTEND_AHEAD_OF_DB = new Set([
   'system.vehicle_booking.view',
   'system.vehicle_booking.manage',
-  // Daily Log migrations in this candidate have not reached the production catalog.
-  'project.daily_log.publish_progress',
-  'project.payment.view_resource_evidence',
 ]);
 
 const dbCodes = new Map(dbCatalog.actions.map(action => [action.permissionCode, action.scopeTypes]));

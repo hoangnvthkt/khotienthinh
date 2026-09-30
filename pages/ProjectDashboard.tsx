@@ -97,6 +97,7 @@ const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
 const WeeklyProgressTab = React.lazy(() => import('./project/WeeklyProgressTab'));
+const WorkPlanTab = React.lazy(() => import('./project/WorkPlanTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
 const ProjectFinanceWorkspace = React.lazy(() => import('./project/ProjectFinanceWorkspace'));
 const PaymentWorkbenchTab = React.lazy(() => import('./project/PaymentWorkbenchTab'));
@@ -3359,6 +3360,8 @@ const ProjectDashboard: React.FC = () => {
                         </SensitiveDataGate>
                     ) : overviewTab === 'gantt' ? (
                         <GanttTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('gantt')} />
+                    ) : overviewTab === 'work_plan' ? (
+                        <WorkPlanTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                     ) : overviewTab === 'weekly_progress' ? (
                         <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                     ) : overviewTab === 'dailylog' ? (
