@@ -11,6 +11,7 @@ import { RequestStatusBadge } from './RequestTable';
 import { RequestPrintPreview } from './RequestPrintPreview';
 import { RequestEditDialog } from './RequestEditDialog';
 import { RequestDiscussion } from './RequestDiscussion';
+import { RequestRichTextView } from './RequestRichTextView';
 
 const displayValue = (value: unknown, fieldType?: string, options?: string[]): React.ReactNode => {
   if (value === null || value === undefined || value === '') return <span className="text-slate-400 font-normal italic">—</span>;
@@ -57,6 +58,10 @@ const displayValue = (value: unknown, fieldType?: string, options?: string[]): R
         </div>
       </div>
     );
+  }
+
+  if (fieldType === 'textarea' && typeof value === 'string') {
+    return <RequestRichTextView value={value} className="font-normal text-slate-800 dark:text-slate-100" />;
   }
 
   if (typeof value === 'string' || typeof value === 'number') {
@@ -323,9 +328,7 @@ export const RequestDetailPanel: React.FC<{
               <FileText size={15} className="text-emerald-600" /> Nội dung & Lý do đề xuất
             </h2>
             <div className="mt-3 rounded-xl bg-slate-50/80 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200 font-normal">
-                {detail.description || 'Không có mô tả chi tiết.'}
-              </p>
+              <RequestRichTextView value={detail.description} emptyText="Không có mô tả chi tiết." className="text-sm leading-relaxed text-slate-800 dark:text-slate-200" />
             </div>
           </section>
 
