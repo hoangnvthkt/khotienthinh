@@ -17,16 +17,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     await expect(page.getByText('Chưa đủ phân bổ công tác/ngân sách — không tự gán.')).toBeVisible();
 
     await page.getByRole('button', { name: 'Kho' }).click();
-    const openCount = page.getByRole('button', { name: 'Mở kiểm kê' });
-    await openCount.click();
-    const dialog = page.getByRole('dialog', { name: 'Kiểm kê kho' });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Chụp snapshot' }).click();
-    await expect(dialog.getByLabel('Số đếm Thép D16')).toHaveValue('88');
+    // Kiểm kê đi qua màn K5 có duyệt.
+    await expect(page.getByRole('link', { name: 'Mở kiểm kê' })).toHaveAttribute('href', '#/audit');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
     await page.screenshot({ path: `/tmp/g6-wms-${viewport.width}.png`, fullPage: true });
-    await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
-    await expect(openCount).toBeFocused();
   });
 }
