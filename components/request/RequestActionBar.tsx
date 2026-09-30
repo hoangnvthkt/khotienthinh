@@ -42,7 +42,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
   const [sourceAssignmentId, setSourceAssignmentId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const actions = useMemo(() => getRequestActions({ status: detail.status, canApprove: detail.capabilities.canApprove, canCancel: detail.capabilities.canCancel, canReassign: detail.capabilities.canReassign, isCreator: detail.creator.id === user.id }), [detail, user.id]);
+  const actions = useMemo(() => getRequestActions({ status: detail.status, canApprove: detail.capabilities.canApprove, canCancel: detail.capabilities.canCancel, canReassign: detail.capabilities.canReassign && detail.capabilities.reassignableAssignmentIds.length > 0, isCreator: detail.creator.id === user.id }), [detail, user.id]);
   // Pending assignments this user may hand over: their own, or any when admin.
   const reassignable = useMemo(() => detail.approvalBlocks.flatMap(block => block.assignments
     .filter(assignment => detail.capabilities.reassignableAssignmentIds.includes(assignment.id))
