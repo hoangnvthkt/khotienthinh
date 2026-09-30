@@ -22,12 +22,14 @@ import {
 } from '../../types';
 import {
     canUserActOnWorkflowStep,
+    getEffectiveStepAssigneeIds,
     getWorkflowAssigneeDisplay,
     getWorkflowStepSelectionMode,
     resolveCurrentWorkflowAssignees,
     resolveWorkflowStepAssigneeCandidates,
 } from '../../lib/workflowAssignmentResolver';
 import { workflowInstanceCommentService } from '../../lib/workflowInstanceCommentService';
+import { canAccessRoute } from '../../lib/routeAccess';
 import {
     findWorkflowMentionTrigger,
     insertWorkflowCommentMention,
@@ -488,7 +490,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const userLabel = (userId: string) => users.find(item => item.id === userId)?.name || 'Người dùng';
     const canAct = useMemo(() => {
         if (!instance) return false;
+        // Being picked as this stage's handler is enough to act on it, exactly as
+        // the database allows (process_workflow_instance_fast).
+        const isNamedHandler = getEffectiveStepAssigneeIds(instance, currentNode).includes(user.id);
         const hasAssignedAction = user.role === Role.ADMIN
+            || isNamedHandler
             || canPerform(user, 'workflow.instance.act_assigned', {
                 scopeType: 'assigned',
                 scopeId: user.id,
@@ -926,8 +932,13 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         return (
             <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 p-12 text-center">
                 <FileText className="mx-auto mb-3 text-slate-300" size={44} />
-                <h1 className="text-lg font-black text-slate-700 dark:text-slate-200">Không tìm thấy phiếu</h1>
-                <button onClick={() => navigate('/wf')} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white">Quay lại danh sách</button>
+                <h1 className="text-lg font-black text-slate-700 dark:text-slate-200">Không mở được phiếu</h1>
+                <p className="mx-auto mt-1 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                    Phiếu không còn tồn tại, hoặc bạn không phải người tạo, người xử lý, người theo dõi hay người được nhắc tên trong phiếu này.
+                </p>
+                <button onClick={() => navigate(canAccessRoute(user, '/wf') ? '/wf' : '/')} className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white">
+                    {canAccessRoute(user, '/wf') ? 'Quay lại danh sách' : 'Về trang chủ'}
+                </button>
             </div>
         );
     }
