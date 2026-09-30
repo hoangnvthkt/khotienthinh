@@ -900,6 +900,14 @@
       ]
     },
     {
+      "permissionCode": "project.daily_log.publish_progress",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
       "permissionCode": "project.daily_log.return",
       "scopeTypes": [
         "construction_site",
@@ -1605,6 +1613,14 @@
       ]
     },
     {
+      "permissionCode": "project.payment.view_resource_evidence",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
       "permissionCode": "project.quality.approve",
       "scopeTypes": [
         "construction_site",
@@ -1974,6 +1990,54 @@
     },
     {
       "permissionCode": "project.weekly_progress.view",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.work_plan.approve",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.work_plan.delete",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.work_plan.edit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.work_plan.submit",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.work_plan.verify",
+      "scopeTypes": [
+        "construction_site",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "project.work_plan.view",
       "scopeTypes": [
         "construction_site",
         "global",

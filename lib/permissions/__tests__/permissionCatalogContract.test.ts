@@ -7,16 +7,6 @@ import dbCatalog from './fixtures/dbPermissionCatalog.json';
 const FRONTEND_AHEAD_OF_DB = new Set([
   'system.vehicle_booking.view',
   'system.vehicle_booking.manage',
-  // Daily Log migrations in this candidate have not reached the production catalog.
-  'project.daily_log.publish_progress',
-  'project.payment.view_resource_evidence',
-  // Kế hoạch tháng/tuần (20260930150000_project_work_plans) until deployed and the fixture refreshed.
-  'project.work_plan.view',
-  'project.work_plan.edit',
-  'project.work_plan.delete',
-  'project.work_plan.submit',
-  'project.work_plan.verify',
-  'project.work_plan.approve',
 ]);
 
 const dbCodes = new Map(dbCatalog.actions.map(action => [action.permissionCode, action.scopeTypes]));
