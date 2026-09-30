@@ -16,9 +16,10 @@ const STATUS_FILTERS: Array<{ label: string; status?: RequestListFilter['status'
   { label: 'Tất cả' },
   { label: 'Quá hạn', overdue: true },
   { label: 'Chờ duyệt', status: 'PENDING' },
-  { label: 'Đã chấp thuận', status: 'APPROVED' },
-  { label: 'Đã từ chối', status: 'REJECTED' },
-  { label: 'Đã trả lại', status: 'RETURNED' },
+  { label: 'Trả lại', status: 'RETURNED' },
+  { label: 'Hoàn thành', status: 'APPROVED' },
+  { label: 'Từ chối', status: 'REJECTED' },
+  { label: 'Đã hủy', status: 'CANCELLED' },
 ];
 
 const useViewportWidth = () => {

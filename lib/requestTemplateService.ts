@@ -45,6 +45,7 @@ export interface RequestTemplateSummary {
   name: string;
   status: 'DRAFT' | 'PUBLISHED' | 'DEACTIVATED';
   publishedVersionNumber: number | null;
+  hasDraft?: boolean;
   usageScopeLabel: string;
   updatedAt: string;
 }
@@ -123,6 +124,13 @@ export const requestTemplateService = {
 
   deactivate(input: PublishRequestTemplateInput) {
     return run<RequestTemplateSummary>('deactivate_request_template', {
+      p_request_template_id: input.templateId,
+      p_expected_updated_at: input.expectedUpdatedAt,
+    });
+  },
+
+  reactivate(input: PublishRequestTemplateInput) {
+    return run<RequestTemplateSummary>('reactivate_request_template', {
       p_request_template_id: input.templateId,
       p_expected_updated_at: input.expectedUpdatedAt,
     });
