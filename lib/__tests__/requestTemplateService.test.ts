@@ -75,13 +75,17 @@ describe('requestTemplateService', () => {
     ]);
   });
 
-  it('surfaces RPC errors and empty data', async () => {
+  it('surfaces RPC errors, treats a missing draft as null and empty lists as errors', async () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'conflict' } });
     await expect(requestTemplateService.getDraft('rt-1')).rejects.toEqual({ message: 'conflict' });
 
+    // A published template without a pending draft is a normal state.
     mocks.rpc.mockResolvedValueOnce({ data: null, error: null });
-    await expect(requestTemplateService.getDraft('rt-1')).rejects.toThrow(
-      'get_request_template_draft không trả về dữ liệu.',
+    await expect(requestTemplateService.getDraft('rt-1')).resolves.toBeNull();
+
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+    await expect(requestTemplateService.list()).rejects.toThrow(
+      'list_request_templates không trả về dữ liệu.',
     );
   });
 });
