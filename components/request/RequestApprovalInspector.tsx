@@ -97,6 +97,11 @@ export const RequestApprovalInspector: React.FC<{
                     ) : null}
                   </div>
 
+                  {block.key === '__extra' && (
+                    <p className="mt-0.5 text-[10px] text-slate-400">
+                      Người tạo chọn · {block.completionPolicy === 'ANY_ONE' ? 'chỉ cần một người đồng ý' : 'tất cả phải đồng ý'}
+                    </p>
+                  )}
                   <p className="mt-0.5 text-[11px] font-medium text-slate-500">
                     {block.status === 'NOT_ACTIVE' && 'Chưa kích hoạt'}
                     {block.status === 'ACTIVE' && <span className="text-amber-600 dark:text-amber-400 font-bold">Đang chờ duyệt</span>}

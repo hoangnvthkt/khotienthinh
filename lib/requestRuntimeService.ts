@@ -15,6 +15,10 @@ export interface SubmitRequestInput {
   formData: Record<string, unknown>;
   dynamicApproversByBlock: Record<string, string[]>;
   idempotencyKey: string;
+  /** Optional step before the template flow; empty keeps the template as is. */
+  extraApproverIds?: string[];
+  extraCompletionPolicy?: RequestCompletionPolicy;
+  watcherIds?: string[];
 }
 
 export interface UsableRequestTemplate {
@@ -165,6 +169,8 @@ export interface RequestWatcher extends RequestUserSnapshot {
 export interface RequestApprovalBlockSnapshot {
   key: string;
   name: string;
+  /** Only set on the creator-chosen "__extra" step. */
+  completionPolicy?: RequestCompletionPolicy;
   sortOrder: number;
   status: 'NOT_ACTIVE' | 'ACTIVE' | 'COMPLETED' | 'RETURNED' | 'CANCELLED';
   slaHours: number | null;
@@ -566,6 +572,11 @@ export const requestRuntimeService = {
       p_form_data: input.formData,
       p_dynamic_approvers_by_block: input.dynamicApproversByBlock,
       p_idempotency_key: input.idempotencyKey,
+      p_options: {
+        extraApproverIds: input.extraApproverIds ?? [],
+        extraCompletionPolicy: input.extraCompletionPolicy ?? 'ALL',
+        watcherIds: input.watcherIds ?? [],
+      },
     }).then(result => assertRequestCommandResult(result, 'submit_request'));
   },
 

@@ -19,7 +19,7 @@ export const RequestFieldInput: React.FC<{
   if (field.fieldType === 'date') return <input type="date" value={stringValue} onChange={event => onChange(event.target.value)} className={controlClass} disabled={disabled} />;
   if (field.fieldType === 'number') return <input type="number" value={stringValue} onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))} className={controlClass} disabled={disabled} />;
   if (field.fieldType === 'user') return <UserSearchSelect users={users} value={stringValue} onChange={id => onChange(id || '')} placeholder="Gõ tên hoặc vị trí để tìm..." disabled={disabled} />;
-  if (field.fieldType === 'file') return <p className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Tệp của biểu mẫu chưa thuộc phạm vi đợt này. Anh/chị có thể đính kèm tệp trong phần Thảo luận.</p>;
+  if (field.fieldType === 'file') return <p className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">Đính kèm tệp ở mục “Tệp đính kèm” phía dưới hoặc trong phần Thảo luận của đề xuất.</p>;
   if (field.fieldType !== 'table') return <input value={stringValue} onChange={event => onChange(event.target.value)} className={controlClass} disabled={disabled} />;
 
   const columns = field.options.filter(Boolean).length ? field.options.filter(Boolean) : ['Nội dung', 'Số lượng', 'Ghi chú'];
