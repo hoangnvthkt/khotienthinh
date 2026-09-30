@@ -96,6 +96,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại để người lập biết cần sửa gì.',
   PROCUREMENT_PO_DELETE_DENIED: 'Chỉ xóa được đơn nháp chưa từng gửi duyệt.',
   ROW_VERSION_CONFLICT: 'Đơn hàng vừa được người khác cập nhật. Tải lại rồi thử lại.',
+  PROCUREMENT_DELIVERY_PO_STATE: 'Chỉ lập đợt giao hoặc kết thúc thiếu cho đơn đã duyệt, đang giao.',
+  PROCUREMENT_DELIVERY_NOT_EDITABLE: 'Đợt giao đã có phiếu nhập kho hoặc đang chờ duyệt nên không sửa được.',
+  PROCUREMENT_DELIVERY_APPROVER_REQUIRED: 'Đợt giao làm vượt giá trị đơn đã duyệt — chọn người duyệt bổ sung (không phải bạn).',
+  PROCUREMENT_DELIVERY_NOT_FOUND: 'Đợt giao không còn tồn tại. Tải lại.',
+  PROCUREMENT_DELIVERY_NOT_CANCELLABLE: 'Kho đã bắt đầu nhận đợt này nên không hủy được.',
+  PROCUREMENT_DELIVERY_STILL_OPEN: 'Còn đợt giao chưa nhận xong. Chờ kho nhận hoặc hủy đợt đó trước khi kết thúc thiếu.',
+  PROCUREMENT_CANCEL_REASON_REQUIRED: 'Nhập lý do hủy đợt giao.',
 };
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
@@ -134,6 +141,18 @@ export const procurementInboxService = {
   saveOrder(input: ProcurementOrderSaveInput) {
     return call<{ purchaseOrderId: string; poNumber: string; rowVersion: number; totalAmount: number; lines: number }>('save_procurement_hub_po_v1', { p_input: input });
   },
+  saveDelivery(input: ProcurementDeliverySaveInput) {
+    return call<{ deliveryId: string; deliveryNo: number; needsApproval: boolean; amount: number }>('save_procurement_delivery_v1', { p_input: input });
+  },
+  decideDelivery(input: { deliveryId: string; action: 'approve' | 'return'; reason?: string }) {
+    return call<{ deliveryId: string }>('decide_procurement_delivery_v1', { p_input: input });
+  },
+  cancelDelivery(input: { deliveryId: string; reason: string }) {
+    return call<{ deliveryId: string }>('cancel_procurement_delivery_v1', { p_input: input });
+  },
+  closeShort(input: { purchaseOrderId: string; expectedRowVersion: number; reason: string; returnToNeed: boolean }) {
+    return call<{ status: string; shortStockQty: number }>('close_procurement_po_short_v1', { p_input: input });
+  },
   transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string }) {
     return call<{ purchaseOrderId: string; status: string; rowVersion: number }>('transition_procurement_hub_po_v1', { p_input: input });
   },
@@ -149,12 +168,14 @@ export interface ProcurementOrderSummary {
   constructionSiteId: string | null; totalAmount: number; vatRate: number; orderDate: string | null; expectedDeliveryDate: string | null;
   late: boolean; lineCount: number; qtyTotal: number; qtyReceived: number;
   createdById: string | null; createdByName: string | null; submittedToUserId: string | null; submittedToName: string | null;
-  awaitingMe: boolean; sources: Array<ProcurementSourceRef & { code: string | null }>;
+  awaitingMe: boolean; purchaseMode: 'single' | 'multiple'; sources: Array<ProcurementSourceRef & { code: string | null }>;
 }
 export interface ProcurementOrderList { today: string; orders: ProcurementOrderSummary[]; awaitingMyApproval: number }
 export interface ProcurementOrderLine {
   lineId: string; itemId: string; name: string; sku: string | null; unit: string | null; qty: number; unitPrice: number; receivedQty: number; note: string | null;
   stockUnit: string | null; factor: number;
+  /** Purchase-unit quantity neither received nor on an open delivery. */
+  remainingToDeliver: number;
   allocations: Array<ProcurementSourceRef & { code: string | null; lineId: string; qty: number; needQty: number }>;
 }
 export interface ProcurementOrderDetail {
@@ -164,13 +185,37 @@ export interface ProcurementOrderDetail {
   orderDate: string | null; expectedDeliveryDate: string | null; totalAmount: number; vatRate: number; note: string | null;
   createdById: string | null; createdByName: string | null; createdAt: string; submittedToUserId: string | null; submittedToName: string | null;
   returnReason: string | null; everSubmitted: boolean;
+  purchaseMode: 'single' | 'multiple'; approvedTotalAmount: number;
+  shortClose: { reason: string; returnToNeed: boolean; shortStockQty: number; at: string; by: string | null } | null;
+  deliveries: ProcurementDelivery[];
   lines: ProcurementOrderLine[];
   events: Array<{ action: string; actorName: string | null; reason: string | null; at: string }>;
-  permissions: { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canDelete: boolean };
+  permissions: { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canDelete: boolean; canAddDelivery: boolean; canCloseShort: boolean };
   approvers: Array<{ id: string; name: string }>;
 }
+export interface ProcurementDelivery {
+  id: string; deliveryNo: number; status: string; approvalStatus: string | null; plannedDate: string | null; vatRate: number;
+  note: string | null; wmsTransactionId: string | null; hasQr: boolean; createdById: string | null; createdByName: string | null;
+  approvalAssigneeId: string | null; approvalAssigneeName: string | null; decisionNote: string | null;
+  receivedAt: string | null; receivedByName: string | null; amount: number; acceptedAmount: number;
+  lines: Array<{ lineId: string; itemId: string; name: string; plannedQty: number; unit: string | null; stockPlannedQty: number;
+    stockUnit: string | null; unitPrice: number; acceptedQty: number; acceptedStockQty: number }>;
+}
+export interface ProcurementDeliverySaveInput {
+  purchaseOrderId: string; deliveryId?: string; plannedDate?: string | null; vatRate: number; note?: string; approverUserId?: string;
+  lines: Array<{ purchaseOrderLineId: string; purchaseQty: number; stockQty: number; unitPrice: number }>;
+}
+export const DELIVERY_STATUS_LABELS: Record<string, string> = {
+  planned: 'Nháp', receiving: 'Chờ kho nhận', wms_pending: 'Chờ kho nhận', waiting_delivery: 'Chờ giao', quality_approved: 'Kho đã kiểm',
+  received: 'Đã nhận đủ', received_short: 'Nhận thiếu', received_over: 'Nhận dư', cancelled: 'Đã hủy', supplemental_pending: 'Chờ duyệt bổ sung',
+};
+/** Committed value of deliveries (before VAT): received ones at accepted qty, open ones at planned qty. */
+export const committedDeliveryAmount = (deliveries: ProcurementDelivery[], exceptId?: string) => deliveries
+  .filter(d => d.status !== 'cancelled' && d.id !== exceptId)
+  .reduce((sum, d) => sum + (['received', 'received_short', 'received_over'].includes(d.status) ? d.acceptedAmount : d.amount), 0);
+
 export interface ProcurementOrderSaveInput {
-  purchaseOrderId?: string; expectedRowVersion?: number; vendorId: string; targetWarehouseId?: string | null;
+  purchaseOrderId?: string; purchaseMode?: 'single' | 'multiple'; expectedRowVersion?: number; vendorId: string; targetWarehouseId?: string | null;
   expectedDeliveryDate?: string | null; vatRate: number; note?: string;
   items: Array<{ itemId: string; unitPrice: number; note?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
 }

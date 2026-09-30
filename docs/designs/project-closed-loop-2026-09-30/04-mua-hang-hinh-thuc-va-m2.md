@@ -30,3 +30,14 @@ Nguyên tắc: **dùng lại PO hiện có** để công trường nhận hàng 
 - **Đóng nhu cầu (không cần mua) + lý do**: phiếu ra khỏi danh sách cần mua, mở lại được.
 - Sửa lỗi M1: SL đã nhận theo dòng nhu cầu tính theo tỷ lệ nhận của dòng PO (`actual_received_qty_snapshot` không được cập nhật).
 - Các bước Đơn hàng / Đang giao / Đã giao đủ dùng danh sách PO mới (mọi PO, kể cả PO lập ở dự án trước đây — chỉ xem).
+
+## 3. M3 — Giao hàng & nhận hàng (chốt 01/10/2026)
+
+- **Giao 1 lần**: duyệt đơn → tự có đợt giao + phiếu nhập kho chờ (QR). Thủ kho nhận đúng SL thực tế.
+- **Giao nhiều đợt** (VD thép tấm): **Mua hàng lập từng đợt** (công trường chỉ nhận hàng) với SL mua, SL kho (nhập tay, VD 100 kg = 10 cây), đơn giá và VAT riêng của đợt.
+  - Tổng giá trị các đợt (trước VAT) trong giá trị đơn đã duyệt → tạo ngay phiếu nhập kho + QR.
+  - Vượt → phải chọn người duyệt bổ sung (Mua hàng — Quản trị/Admin, không phải người lập); duyệt xong mới có phiếu nhập kho và giá trị đơn đã duyệt được nâng lên.
+- **Giao thiếu** (VD 50/100 thùng sơn): thủ kho nhận 50 → đợt "Nhận thiếu", đơn "Giao một phần". Mua hàng chọn:
+  - **Giao bù phần thiếu**: lập đợt mới cho phần còn lại (gợi ý sẵn SL còn phải giao).
+  - **Kết thúc thiếu** (bắt buộc lý do, không còn đợt mở): phần thiếu **mặc định quay lại Cần mua**, hoặc chọn "Không cần nữa".
+- Hủy đợt chỉ khi kho chưa bắt đầu nhận. Phiếu nhận của thủ kho hiện cả SL theo đơn vị kho và đơn vị mua.

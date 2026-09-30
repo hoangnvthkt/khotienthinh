@@ -71,6 +71,7 @@ export const OrderEditor: React.FC<{
   const [expected, setExpected] = useState(order?.expectedDeliveryDate || '');
   const [vat, setVat] = useState(String(order?.vatRate ?? 10));
   const [note, setNote] = useState(order?.note || '');
+  const [mode, setMode] = useState<'single' | 'multiple'>(order?.purchaseMode || 'single');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,7 +145,7 @@ export const OrderEditor: React.FC<{
     setSaving(true);
     try {
       const result = await procurementInboxService.saveOrder({
-        purchaseOrderId: order?.id, expectedRowVersion: order?.rowVersion, vendorId: vendor.id,
+        purchaseOrderId: order?.id, expectedRowVersion: order?.rowVersion, vendorId: vendor.id, purchaseMode: mode,
         expectedDeliveryDate: expected || null, vatRate, note: note.trim(), items: payload,
       });
       onSaved(result.purchaseOrderId, result.poNumber);
@@ -199,6 +200,17 @@ export const OrderEditor: React.FC<{
                   <input aria-label="VAT khác (%)" inputMode="decimal" value={VAT_CHOICES.map(String).includes(vat) ? '' : vat} onChange={e => setVat(e.target.value)} placeholder="Khác" className={`w-16 ${inputCls}`} />
                 </div>
               </div>
+            </section>
+
+            <section role="radiogroup" aria-label="Hình thức giao" className="grid gap-2 md:grid-cols-2">
+              {([['single', 'Giao 1 lần', 'Đặt đơn nào về đơn ấy. Duyệt xong có ngay phiếu nhập kho cho thủ kho.'],
+                ['multiple', 'Giao nhiều đợt', 'Hàng về nhiều lần (VD thép tấm). Mua hàng lập từng đợt với SL, giá và VAT riêng.']] as const).map(([key, label, hint]) =>
+                <button key={key} type="button" role="radio" aria-checked={mode === key} onClick={() => setMode(key)}
+                  className={`rounded-2xl border p-3 text-left transition ${mode === key ? 'border-teal-500 bg-teal-50/70 ring-2 ring-teal-500/20 dark:bg-teal-950/20' : 'border-border bg-card hover:border-teal-300'}`}>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <span className={`h-3.5 w-3.5 rounded-full border-2 ${mode === key ? 'border-teal-600 bg-teal-600' : 'border-muted-foreground'}`} />{label}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
+                </button>)}
             </section>
 
             {items.length === 0

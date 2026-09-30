@@ -8,8 +8,8 @@ import { Badge, PoStatusChip, StateBox, inputCls, money } from './hubUi';
 
 const STAGE_COPY: Record<ProcurementOrderStage, { empty: string; hint: string }> = {
   drafting: { empty: 'Không có đơn đang lập hoặc chờ duyệt.', hint: 'Đơn nháp, chờ duyệt và bị trả lại.' },
-  ordered: { empty: 'Không có đơn đã duyệt đang chờ giao.', hint: 'Đã duyệt — chờ NCC giao. Công trường lập đợt giao ở tab dự án.' },
-  delivering: { empty: 'Không có đơn đang giao.', hint: 'Hàng đang về từng đợt.' },
+  ordered: { empty: 'Không có đơn đã duyệt đang chờ giao.', hint: 'Đã duyệt — chờ NCC giao. Đơn giao nhiều đợt: mở đơn để lập đợt giao.' },
+  delivering: { empty: 'Không có đơn đang giao.', hint: 'Hàng đang về từng đợt. Nhận thiếu: mở đơn để giao bù hoặc kết thúc thiếu.' },
   received: { empty: 'Chưa có đơn giao đủ.', hint: 'Đã giao đủ — đối chiếu chứng từ và đóng đơn.' },
 };
 
@@ -24,6 +24,7 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }>
           <PoStatusChip status={order.status} />
           {order.awaitingMe && <Badge className="border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-100">Chờ bạn duyệt</Badge>}
           {!order.isHub && <Badge className="border-border bg-muted text-muted-foreground" title="Lập ở tab dự án trước khi có Mua hàng">Lập ở dự án</Badge>}
+          {order.purchaseMode === 'multiple' && <Badge className="border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">Nhiều đợt</Badge>}
         </span>
         <span className="mt-0.5 block truncate text-sm text-muted-foreground">
           {order.vendorName || 'Chưa chọn NCC'} · {order.projectCode || 'Không gắn dự án'}{order.sources.length > 0 && ` · ${order.sources.map(s => s.code).filter(Boolean).slice(0, 3).join(', ')}${order.sources.length > 3 ? '…' : ''}`}

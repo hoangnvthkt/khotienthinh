@@ -416,7 +416,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
         setEditor(null); setSelected(new Set()); setOpenSnap(null); setOrderId(id); refreshAll();
       }} />}
 
-    {orderId && !editor && inbox && <OrderDrawer orderId={orderId} today={inbox.today} onClose={() => setOrderId(null)} onChanged={refreshAll}
+    {orderId && !editor && inbox && <OrderDrawer orderId={orderId} today={inbox.today} currentUserId={currentUserId} onClose={() => setOrderId(null)} onChanged={refreshAll}
       onEdit={order => setEditor({
         order, sources: Array.from(new Map(order.lines.flatMap(l => l.allocations).map(a => [docKey(a), refOf(a)])).values()),
       })} />}
