@@ -198,7 +198,8 @@
     "20260930220000_procurement_inbox.sql",
     "20261001090000_procurement_hub_orders.sql",
     "20261001150000_procurement_hub_deliveries.sql",
-    "20261001210000_procurement_contracts.sql"
+    "20261001210000_procurement_contracts.sql",
+    "20261002090000_wms_k1_stock_controls.sql"
   ],
   "forbidIncludeAll": true
 }
