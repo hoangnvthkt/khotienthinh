@@ -25,6 +25,7 @@ export interface ReconRecord {
   postedByName: string | null; postedAt: string | null;
   result: { batchStatus: string; poStatus: string; acceptedGross: number | null; payableId: string | null; closedShort: boolean } | null;
   updatedByName: string | null; updatedAt: string; events: ReconEvent[];
+  rejection: { side: ReconSide; byId: string; byName: string | null; at: string; reason: string } | null;
 }
 
 export interface ReconItem {
@@ -38,10 +39,16 @@ export interface ReconItem {
   otherOpenDeliveries: number;
   lines: ReconLine[];
   recon: ReconRecord | null;
-  can: { edit: boolean; buyer: boolean; keeper: boolean; confirmBuyer: boolean; confirmKeeper: boolean; post: boolean };
+  can: { edit: boolean; buyer: boolean; keeper: boolean; confirmBuyer: boolean; confirmKeeper: boolean;
+    rejectBuyer: boolean; rejectKeeper: boolean; post: boolean };
 }
 
-export interface ReconList { canBuyer: boolean; warehouses: Array<{ id: string; name: string | null }>; items: ReconItem[] }
+export interface ReconList {
+  canBuyer: boolean;
+  /** Bậc quyền của người xem: Mua hàng, thủ kho (kho được giao), Admin, hay chỉ xem. */
+  role: { buyer: boolean; keeper: boolean; admin: boolean; readOnly: boolean };
+  warehouses: Array<{ id: string; name: string | null }>; items: ReconItem[];
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   RECEIPT_RECON_VIEW_DENIED: 'Chỉ Mua hàng và thủ kho được giao kho mới vào được màn đối chiếu.',
@@ -60,6 +67,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   RECEIPT_RECON_NOT_FOUND: 'Đối chiếu không còn hoặc đã ghi sổ. Tải lại.',
   RECEIPT_RECON_NOT_CONFIRMED: 'Cần đủ xác nhận của Mua hàng và Thủ kho trước khi ghi sổ.',
   RECEIPT_RECON_LINES_CHANGED: 'Dòng hàng của đợt giao đã thay đổi. Tải lại và đối chiếu lại.',
+  RECEIPT_RECON_REJECT_REASON_REQUIRED: 'Nhập lý do từ chối để phía kia biết cần sửa gì.',
+  RECEIPT_RECON_NOTHING_TO_REJECT: 'Chỉ từ chối được khi phía kia đã xác nhận và bạn chưa xác nhận.',
   RECEIPT_RECON_REMAINDER_OPEN: 'PO còn đợt giao khác đang mở — ghi sổ các đợt đó trước khi chốt thiếu.',
   INVENTORY_NEGATIVE_STOCK: 'Thao tác làm tồn kho âm. Kiểm tra lại số lượng.',
 };
@@ -86,12 +95,15 @@ export const receiptReconciliationService = {
   confirm(input: { reconciliationId: string; side: ReconSide; revision: number; revoke?: boolean }) {
     return call<ReconItem>('confirm_receipt_reconciliation_v1', { p_input: input });
   },
+  reject(input: { reconciliationId: string; side: ReconSide; revision: number; reason: string }) {
+    return call<ReconItem>('reject_receipt_reconciliation_v1', { p_input: input });
+  },
   post(input: { reconciliationId: string; revision: number }) {
     return call<ReconItem>('post_receipt_reconciliation_v1', { p_input: input });
   },
 };
 
-export type ReconStage = 'todo' | 'waiting_buyer' | 'waiting_keeper' | 'ready' | 'posted';
+export type ReconStage = 'todo' | 'rejected' | 'waiting_buyer' | 'waiting_keeper' | 'ready' | 'posted';
 
 /** Where a row stands, from the viewer's point of view. */
 export const reconStage = (item: ReconItem): ReconStage => {
@@ -99,12 +111,13 @@ export const reconStage = (item: ReconItem): ReconStage => {
   if (r?.status === 'posted') return 'posted';
   if (!r) return 'todo';
   if (r.buyer && r.keeper) return 'ready';
+  if (r.rejection) return 'rejected';
   if (!r.buyer && !r.keeper) return 'todo';
   return r.buyer ? 'waiting_keeper' : 'waiting_buyer';
 };
 
 export const RECON_STAGE_LABELS: Record<ReconStage, string> = {
-  todo: 'Chưa đối chiếu', waiting_buyer: 'Chờ Mua hàng xác nhận', waiting_keeper: 'Chờ thủ kho xác nhận',
+  todo: 'Chưa đối chiếu', rejected: 'Bị từ chối — cần sửa', waiting_buyer: 'Chờ Mua hàng xác nhận', waiting_keeper: 'Chờ thủ kho xác nhận',
   ready: 'Đủ xác nhận — chờ ghi sổ', posted: 'Đã ghi sổ',
 };
 
@@ -112,9 +125,18 @@ export const RECON_DECISION_LABELS: Record<ReconDecision, string> = { full: 'V�
 
 export const RECON_EVENT_LABELS: Record<string, string> = {
   create: 'Lập đối chiếu', save: 'Sửa đối chiếu (xác nhận cũ mất hiệu lực)', confirm_buyer: 'Mua hàng xác nhận', confirm_keeper: 'Thủ kho xác nhận',
-  revoke_buyer: 'Mua hàng bỏ xác nhận', revoke_keeper: 'Thủ kho bỏ xác nhận', post: 'Ghi sổ',
+  revoke_buyer: 'Mua hàng bỏ xác nhận', revoke_keeper: 'Thủ kho bỏ xác nhận',
+  reject_buyer: 'Mua hàng từ chối', reject_keeper: 'Thủ kho từ chối', post: 'Ghi sổ',
 };
 
 /** Does the viewer still need to act on this row? */
 export const reconNeedsMe = (item: ReconItem) => item.open && (item.can.post || item.can.confirmBuyer || item.can.confirmKeeper
-  || (item.can.edit && !item.recon));
+  || (item.can.edit && !item.recon)
+  // Bị phía kia từ chối: phía mình phải sửa lại.
+  || (!!item.recon?.rejection && (item.recon.rejection.side === 'keeper' ? item.can.buyer : item.can.keeper)));
+
+/** Text the multi-purpose search box matches against. */
+export const reconSearchText = (item: ReconItem) => [item.poNumber, `đợt ${item.deliveryNo}`, item.vendorName, item.projectCode,
+  item.warehouseName, item.createdByName, ...item.lines.map(l => `${l.name} ${l.sku || ''}`)].join(' ').toLowerCase();
+
+export const reconValue = (item: ReconItem) => item.lines.reduce((s, l) => s + l.plannedQty * l.unitPrice, 0) * (1 + item.vatRate / 100);

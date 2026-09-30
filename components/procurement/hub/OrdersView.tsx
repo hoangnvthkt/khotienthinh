@@ -32,7 +32,7 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }>
         </span>
       </span>
       <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs md:w-[30rem] md:shrink-0 md:justify-end">
-        <span className={`inline-flex items-center gap-1 ${order.late ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
+        <span className={`inline-flex items-center gap-1 ${order.late ? 'overdue-blink rounded font-semibold text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
           <CalendarClock size={12} />{due ? `${order.late ? 'Quá hẹn · ' : 'Giao '}${dateVi(due)}` : 'Chưa hẹn ngày giao'}</span>
         {order.stage !== 'drafting' && <span className="inline-flex items-center gap-1.5 text-muted-foreground" title={`Đã nhận ${pct}% số lượng`}>
           <span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></span>{pct}%</span>}

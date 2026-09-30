@@ -85,6 +85,17 @@ Màn đối chiếu chốt **sự thật vật lý** của từng đợt (về b
 - Một người **không được ký cả hai phía**, kể cả Admin.
 - Chỉ phía Thủ kho được **ghi sổ**.
 
+### 4.3b Phân cấp quyền
+
+| Bậc | Ai | Được làm |
+|---|---|---|
+| Chỉ xem | Mua hàng — Xem | Xem mọi kho, không thao tác |
+| Mua hàng | Mua hàng — Quản lý | Lập/sửa, xác nhận hoặc từ chối phía Mua hàng, mọi kho |
+| Thủ kho | Thủ kho được giao đúng kho nhận | Lập/sửa, xác nhận hoặc từ chối phía Thủ kho, **ghi sổ** — chỉ kho của mình |
+| Quản trị | Quản trị WMS, Admin | Như thủ kho ở mọi kho; vẫn không ký hai phía |
+
+**Từ chối:** phía chưa xác nhận có thể từ chối (bắt buộc lý do). Xác nhận của phía kia bị gỡ, đợt hiện "Bị từ chối — cần sửa" kèm lý do. Sửa rồi lưu thì lời từ chối hết hiệu lực; phía từ chối đồng ý lại cũng vậy. Mọi xác nhận / từ chối / bỏ xác nhận / ghi sổ đều qua hộp thoại nêu rõ nội dung và hậu quả, và có thông báo thành công/thất bại mô tả cụ thể.
+
 ### 4.4 Phạm vi dữ liệu thật (30/09/2026)
 
 Có hai loại lệch.

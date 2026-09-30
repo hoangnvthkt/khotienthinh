@@ -52,7 +52,7 @@ const refOf = (d: ProcurementSourceRef): ProcurementSourceRef => ({ sourceType: 
 
 const UrgencyBadge: React.FC<{ date: string | null; today: string }> = ({ date, today }) => {
   const u = urgencyOf(date, today);
-  return <Badge className={URGENCY_STYLE[u.tone]}><CalendarClock size={11} />{u.label}</Badge>;
+  return <Badge className={`${URGENCY_STYLE[u.tone]} ${u.tone === 'overdue' ? 'overdue-blink' : ''}`}><CalendarClock size={11} />{u.label}</Badge>;
 };
 
 // ---------------------------------------------------------------------------

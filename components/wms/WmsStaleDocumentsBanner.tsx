@@ -11,7 +11,7 @@ export const WmsStaleDocumentsBanner: React.FC<{ onOpen: (transactionId: string)
   const poReceipts = data.documents.filter(d => d.sourceType === 'po_delivery_batch').length;
   return <section className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30">
     <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
-      <AlertTriangle size={18} className="shrink-0 text-amber-600" />
+      <AlertTriangle size={18} className="overdue-blink shrink-0 rounded-full text-amber-600" />
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-black text-amber-900 dark:text-amber-100">{data.total} phiếu kho chờ xử lý quá {data.minDays} ngày</span>
         <span className="block text-xs font-semibold text-amber-800/80 dark:text-amber-200/80">Cũ nhất {data.oldestDays} ngày. Nhận hàng, duyệt hoặc hủy để tồn kho và công nợ đúng thực tế.</span>

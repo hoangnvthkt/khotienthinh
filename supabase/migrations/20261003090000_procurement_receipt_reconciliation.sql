@@ -12,6 +12,9 @@
 -- * Đợt mà kho đã nhập phiếu WMS nhưng PO chưa ghi nhận (lệch ngược): không nhập kho lại; chỉ nhập bổ sung
 --   phần kho còn thiếu (phiếu nhập riêng theo ngày hàng về), rồi cập nhật PO và công nợ theo SL thực nhận.
 --   Không cho chốt thấp hơn số kho đã nhập — điều chỉnh giảm đi qua kiểm kê.
+-- * Phía còn lại có thể Từ chối (bắt buộc lý do): xác nhận của phía kia bị gỡ, phiếu hiện "Bị từ chối — cần sửa".
+-- * Phân quyền: Xem (Mua hàng — Xem, thủ kho, quản trị WMS, Admin) · Mua hàng xác nhận/từ chối (Mua hàng — Quản lý)
+--   · Thủ kho xác nhận/từ chối/ghi sổ (thủ kho được giao đúng kho nhận, quản trị WMS, Admin).
 -- * Mọi thao tác ghi vào nhật ký bất biến (ai, lúc nào, trước/sau).
 
 create table public.procurement_receipt_reconciliations (
@@ -34,6 +37,7 @@ create table public.procurement_receipt_reconciliations (
   posted_by uuid references public.users(id),
   posted_at timestamptz,
   result jsonb,
+  rejection jsonb,
   created_by uuid references public.users(id),
   created_at timestamptz not null default now(),
   updated_by uuid references public.users(id),
@@ -46,7 +50,7 @@ create unique index procurement_receipt_recon_active_batch_idx
 create table public.procurement_receipt_reconciliation_events (
   id bigint generated always as identity primary key,
   reconciliation_id uuid not null references public.procurement_receipt_reconciliations(id),
-  action text not null check (action in ('create', 'save', 'confirm_buyer', 'confirm_keeper', 'revoke_buyer', 'revoke_keeper', 'post')),
+  action text not null check (action in ('create', 'save', 'confirm_buyer', 'confirm_keeper', 'revoke_buyer', 'revoke_keeper', 'reject_buyer', 'reject_keeper', 'post')),
   actor_id uuid references public.users(id),
   revision integer not null,
   before jsonb,
@@ -183,6 +187,7 @@ begin
       'keeper', case when v_r.keeper_confirmed_by is not null then jsonb_build_object('id', v_r.keeper_confirmed_by,
         'name', (select name from public.users where id = v_r.keeper_confirmed_by), 'at', v_r.keeper_confirmed_at) end,
       'postedByName', (select name from public.users where id = v_r.posted_by), 'postedAt', v_r.posted_at, 'result', v_r.result,
+      'rejection', v_r.rejection,
       'updatedByName', (select name from public.users where id = v_r.updated_by), 'updatedAt', v_r.updated_at,
       'events', (select coalesce(jsonb_agg(jsonb_build_object('action', e.action, 'actorName', u.name, 'at', e.created_at,
           'revision', e.revision, 'before', e.before, 'after', e.after, 'note', e.note) order by e.id), '[]'::jsonb)
@@ -195,6 +200,10 @@ begin
         and v_r.keeper_confirmed_by is distinct from v_actor, false),
       'confirmKeeper', coalesce(v_open and v_keeper and v_r.status = 'open' and v_r.keeper_confirmed_by is null
         and v_r.buyer_confirmed_by is distinct from v_actor, false),
+      'rejectBuyer', coalesce(v_open and v_buyer and v_r.status = 'open' and v_r.buyer_confirmed_by is null
+        and v_r.keeper_confirmed_by is not null and v_r.keeper_confirmed_by <> v_actor, false),
+      'rejectKeeper', coalesce(v_open and v_keeper and v_r.status = 'open' and v_r.keeper_confirmed_by is null
+        and v_r.buyer_confirmed_by is not null and v_r.buyer_confirmed_by <> v_actor, false),
       'post', coalesce(v_open and v_keeper and v_r.status = 'open' and v_r.buyer_confirmed_by is not null
         and v_r.keeper_confirmed_by is not null, false))
   );
@@ -207,12 +216,15 @@ declare
   v_actor uuid := public.current_app_user_id();
   v_buyer boolean;
   v_all boolean;
+  v_keeper_any boolean;
   v_wh text := nullif(p_filter->>'warehouseId', '');
 begin
   if v_actor is null then raise exception using errcode = '42501', message = 'AUTH_REQUIRED'; end if;
   v_buyer := app_private.receipt_recon_is_buyer();
-  v_all := v_buyer or public.is_admin() or public.is_module_admin('WMS');
-  if not v_all and not exists (select 1 from public.warehouses w where v_actor in (select app_private.wms_warehouse_keepers(w.id))) then
+  v_keeper_any := exists (select 1 from public.warehouses w where v_actor in (select app_private.wms_warehouse_keepers(w.id)));
+  -- Bậc xem toàn công ty: Mua hàng (Xem/Quản lý), quản trị WMS, Admin. Thủ kho chỉ thấy kho được giao.
+  v_all := v_buyer or public.is_admin() or public.is_module_admin('WMS') or app_private.procurement_can('view');
+  if not v_all and not v_keeper_any then
     raise exception using errcode = '42501', message = 'RECEIPT_RECON_VIEW_DENIED';
   end if;
   return (
@@ -229,6 +241,8 @@ begin
     ), items as (select app_private.receipt_recon_item(v.batch_id) j from visible v)
     select jsonb_build_object(
       'canBuyer', v_buyer,
+      'role', jsonb_build_object('buyer', v_buyer, 'keeper', v_keeper_any or public.is_admin() or public.is_module_admin('WMS'),
+        'admin', public.is_admin(), 'readOnly', not (v_buyer or v_keeper_any or public.is_admin() or public.is_module_admin('WMS'))),
       'warehouses', (select coalesce(jsonb_agg(distinct jsonb_build_object('id', j->>'warehouseId', 'name', j->>'warehouseName')), '[]'::jsonb) from items),
       'items', coalesce((select jsonb_agg(j order by (j->>'open')::boolean desc, j->>'poNumber', (j->>'deliveryNo')::int) from items), '[]'::jsonb))
   );
@@ -333,7 +347,7 @@ begin
       update public.procurement_receipt_reconciliations
       set decision = v_decision, remainder = v_remainder, arrival_date = v_arrival, lines = v_lines, reason = v_reason,
         revision = revision + 1, buyer_confirmed_by = null, buyer_confirmed_at = null, keeper_confirmed_by = null, keeper_confirmed_at = null,
-        updated_by = v_actor, updated_at = now()
+        rejection = null, updated_by = v_actor, updated_at = now()
       where id = v_r.id returning * into v_r;
       insert into public.procurement_receipt_reconciliation_events (reconciliation_id, action, actor_id, revision, before, after)
       values (v_r.id, 'save', v_actor, v_r.revision, v_before, app_private.receipt_recon_snapshot(v_r));
@@ -393,15 +407,61 @@ begin
     if (case v_side when 'buyer' then v_r.buyer_confirmed_by else v_r.keeper_confirmed_by end) is not null then
       return app_private.receipt_recon_item(v_r.delivery_batch_id); end if;
     if v_side = 'buyer' then
-      update public.procurement_receipt_reconciliations set buyer_confirmed_by = v_actor, buyer_confirmed_at = now()
+      -- Phía đã từ chối nay đồng ý thì lời từ chối hết hiệu lực.
+      update public.procurement_receipt_reconciliations set buyer_confirmed_by = v_actor, buyer_confirmed_at = now(),
+        rejection = case when rejection->>'side' = 'buyer' then null else rejection end
       where id = v_r.id returning * into v_r;
     else
-      update public.procurement_receipt_reconciliations set keeper_confirmed_by = v_actor, keeper_confirmed_at = now()
+      update public.procurement_receipt_reconciliations set keeper_confirmed_by = v_actor, keeper_confirmed_at = now(),
+        rejection = case when rejection->>'side' = 'keeper' then null else rejection end
       where id = v_r.id returning * into v_r;
     end if;
   end if;
   insert into public.procurement_receipt_reconciliation_events (reconciliation_id, action, actor_id, revision, before, after)
   values (v_r.id, (case when v_revoke then 'revoke_' else 'confirm_' end) || v_side, v_actor, v_r.revision, v_before, app_private.receipt_recon_snapshot(v_r));
+  return app_private.receipt_recon_item(v_r.delivery_batch_id);
+end;
+$$;
+
+-- Phía chưa xác nhận không đồng ý: gỡ xác nhận phía kia, ghi lý do để người lập sửa lại.
+create function public.reject_receipt_reconciliation_v1(p_input jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_actor uuid := public.current_app_user_id();
+  v_side text := p_input->>'side';
+  v_reason text := nullif(btrim(coalesce(p_input->>'reason', '')), '');
+  v_r public.procurement_receipt_reconciliations%rowtype;
+  v_before jsonb;
+begin
+  if v_actor is null then raise exception using errcode = '42501', message = 'AUTH_REQUIRED'; end if;
+  if v_reason is null then raise exception using errcode = '22023', message = 'RECEIPT_RECON_REJECT_REASON_REQUIRED'; end if;
+  select * into v_r from public.procurement_receipt_reconciliations
+  where id = nullif(p_input->>'reconciliationId', '')::uuid for update;
+  if v_r.id is null or v_r.status <> 'open' then raise exception using errcode = 'PT404', message = 'RECEIPT_RECON_NOT_FOUND'; end if;
+  if v_r.revision is distinct from nullif(p_input->>'revision', '')::integer then
+    raise exception using errcode = '40001', message = 'RECEIPT_RECON_REVISION_CONFLICT'; end if;
+  if v_side = 'buyer' then
+    if not app_private.receipt_recon_is_buyer() then raise exception using errcode = '42501', message = 'RECEIPT_RECON_CONFIRM_DENIED'; end if;
+    if v_r.keeper_confirmed_by is null or v_r.buyer_confirmed_by is not null then
+      raise exception using errcode = '22023', message = 'RECEIPT_RECON_NOTHING_TO_REJECT'; end if;
+  elsif v_side = 'keeper' then
+    if not app_private.receipt_recon_is_keeper(v_r.warehouse_id) then raise exception using errcode = '42501', message = 'RECEIPT_RECON_CONFIRM_DENIED'; end if;
+    if v_r.buyer_confirmed_by is null or v_r.keeper_confirmed_by is not null then
+      raise exception using errcode = '22023', message = 'RECEIPT_RECON_NOTHING_TO_REJECT'; end if;
+  else
+    raise exception using errcode = '22023', message = 'RECEIPT_RECON_CONFIRM_DENIED';
+  end if;
+  if (case v_side when 'buyer' then v_r.keeper_confirmed_by else v_r.buyer_confirmed_by end) = v_actor then
+    raise exception using errcode = '22023', message = 'RECEIPT_RECON_SAME_PERSON'; end if;
+  v_before := app_private.receipt_recon_snapshot(v_r);
+  update public.procurement_receipt_reconciliations
+  set buyer_confirmed_by = null, buyer_confirmed_at = null, keeper_confirmed_by = null, keeper_confirmed_at = null,
+    rejection = jsonb_build_object('side', v_side, 'byId', v_actor, 'byName', (select name from public.users where id = v_actor),
+      'at', now(), 'reason', v_reason),
+    updated_by = v_actor, updated_at = now()
+  where id = v_r.id returning * into v_r;
+  insert into public.procurement_receipt_reconciliation_events (reconciliation_id, action, actor_id, revision, before, after, note)
+  values (v_r.id, 'reject_' || v_side, v_actor, v_r.revision, v_before, app_private.receipt_recon_snapshot(v_r), v_reason);
   return app_private.receipt_recon_item(v_r.delivery_batch_id);
 end;
 $$;
@@ -654,8 +714,8 @@ revoke all on function app_private.trg_receipt_recon_events_immutable(), app_pri
   app_private.receipt_recon_snapshot(public.procurement_receipt_reconciliations), app_private.receipt_recon_item(uuid)
   from public, anon, authenticated;
 revoke all on function public.list_receipt_reconciliations_v1(jsonb), public.save_receipt_reconciliation_v1(jsonb),
-  public.confirm_receipt_reconciliation_v1(jsonb), public.post_receipt_reconciliation_v1(jsonb) from public, anon;
+  public.confirm_receipt_reconciliation_v1(jsonb), public.reject_receipt_reconciliation_v1(jsonb), public.post_receipt_reconciliation_v1(jsonb) from public, anon;
 grant execute on function public.list_receipt_reconciliations_v1(jsonb), public.save_receipt_reconciliation_v1(jsonb),
-  public.confirm_receipt_reconciliation_v1(jsonb), public.post_receipt_reconciliation_v1(jsonb) to authenticated;
+  public.confirm_receipt_reconciliation_v1(jsonb), public.reject_receipt_reconciliation_v1(jsonb), public.post_receipt_reconciliation_v1(jsonb) to authenticated;
 
 notify pgrst, 'reload schema';

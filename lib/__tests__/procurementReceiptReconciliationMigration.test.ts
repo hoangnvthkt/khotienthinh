@@ -12,6 +12,12 @@ describe('Đối chiếu nhận hàng tồn đọng', () => {
     expect(sql).toContain("message = 'receipt_recon_post_denied'");
   });
 
+  it('lets the other side reject with a reason, which removes the first confirmation', () => {
+    expect(sql).toContain('create function public.reject_receipt_reconciliation_v1');
+    expect(sql).toContain("message = 'receipt_recon_reject_reason_required'");
+    expect(sql).toContain("'reject_' || v_side");
+  });
+
   it('keeps an append-only history', () => {
     expect(sql).toContain('before update or delete on public.procurement_receipt_reconciliation_events');
     expect(sql).toContain("message = 'receipt_recon_history_immutable'");
