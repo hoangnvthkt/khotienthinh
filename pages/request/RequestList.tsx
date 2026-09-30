@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Plus, Search } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { RequestContextNav } from '../../components/request/RequestContextNav';
 import { RequestCreateDialog } from '../../components/request/RequestCreateDialog';
 import { RequestDetailPanel } from '../../components/request/RequestDetailPanel';
@@ -11,6 +11,7 @@ import { useRequestList, type RequestListFilter } from '../../hooks/useRequestLi
 import { requestRuntimeService, type RequestSummary } from '../../lib/requestRuntimeService';
 import { buildRequestRoute } from '../../lib/requestRoutes';
 import { getRequestWorkspaceMode } from '../../lib/requestWorkspace';
+import { buildRequestListParams, parseRequestListParams } from '../../lib/requestQueryState';
 
 const STATUS_FILTERS: Array<{ label: string; status?: RequestListFilter['status']; overdue?: boolean }> = [
   { label: 'Tất cả' },
@@ -36,10 +37,13 @@ const RequestList: React.FC = () => {
   const navigate = useNavigate();
   const { requestId } = useParams<{ requestId: string }>();
   const width = useViewportWidth();
-  const [view, setView] = useState<RequestListFilter['view']>('ALL');
-  const [status, setStatus] = useState<RequestListFilter['status']>();
-  const [overdue, setOverdue] = useState(false);
-  const [search, setSearch] = useState('');
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { view, status, overdue, search } = parseRequestListParams(searchParams);
+  const updateFilter = (patch: Partial<{ view: RequestListFilter['view']; status: RequestListFilter['status']; overdue: boolean; search: string }>) => {
+    setSearchParams(buildRequestListParams({ view, status, overdue, search, ...patch }), { replace: true });
+  };
+  const setView = (next: RequestListFilter['view']) => updateFilter({ view: next });
   const [summary, setSummary] = useState<RequestSummary | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
@@ -57,8 +61,9 @@ const RequestList: React.FC = () => {
     void requestRuntimeService.getSummary().then(setSummary).catch(() => setSummary(null));
   }, [view]);
 
-  const select = (id: string) => navigate(buildRequestRoute(id));
-  const clearSelection = () => navigate('/rq');
+  // Carry the filters across list <-> detail, which are separate routes.
+  const select = (id: string) => navigate({ pathname: buildRequestRoute(id), search: location.search });
+  const clearSelection = () => navigate({ pathname: '/rq', search: location.search });
 
   const refreshAfterAction = async () => {
     await Promise.all([detail.refresh(), list.refresh()]);
@@ -155,7 +160,7 @@ const RequestList: React.FC = () => {
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
-            onChange={event => setSearch(event.target.value)}
+            onChange={event => updateFilter({ search: event.target.value })}
             placeholder="Tìm mã, tiêu đề..."
             className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           />
@@ -184,8 +189,7 @@ const RequestList: React.FC = () => {
                   type="button"
                   key={item.label}
                   onClick={() => {
-                    setStatus(item.status);
-                    setOverdue(Boolean(item.overdue));
+                    updateFilter({ status: item.status, overdue: Boolean(item.overdue) });
                   }}
                   className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                     active
