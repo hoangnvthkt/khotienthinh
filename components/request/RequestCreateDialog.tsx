@@ -15,6 +15,7 @@ import { buildRequestCommentDocument } from '../../lib/requestDiscussionModel';
 
 import UserSearchSelect from '../common/UserSearchSelect';
 import { RequestFormFields } from './RequestFormFields';
+import { RequestRichTextEditor } from './RequestRichTextEditor';
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap';
 
 const newIdempotencyKey = () => (
@@ -189,10 +190,10 @@ export const RequestCreateDialog: React.FC<{
               <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Tiêu đề <span className="text-rose-500">*</span></span>
               <input value={title} onChange={event => setTitle(event.target.value)} disabled={isSubmitting} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder="Nhập tiêu đề đề xuất" />
             </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Mô tả</span>
-              <textarea value={description} onChange={event => setDescription(event.target.value)} disabled={isSubmitting} rows={3} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder="Bổ sung nội dung nếu cần" />
-            </label>
+            <div>
+              <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Nội dung &amp; Lý do đề xuất</span>
+              <RequestRichTextEditor value={description} onChange={setDescription} disabled={isSubmitting} ariaLabel="Nội dung và lý do đề xuất" placeholder="Trình bày nội dung, lý do đề xuất..." />
+            </div>
             {selectedTemplate.formSchema.length > 0 && <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Thông tin đề xuất</h3>
               <RequestFormFields fields={selectedTemplate.formSchema} values={formData} onChange={setFormData} users={users} disabled={isSubmitting} />

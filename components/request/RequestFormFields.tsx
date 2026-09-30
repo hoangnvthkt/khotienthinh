@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { User } from '../../types';
 import type { UsableRequestTemplate } from '../../lib/requestRuntimeService';
 import UserSearchSelect from '../common/UserSearchSelect';
+import { RequestRichTextEditor } from './RequestRichTextEditor';
 
 const controlClass = 'w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100/70 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:focus:ring-emerald-950';
 
@@ -14,7 +15,7 @@ export const RequestFieldInput: React.FC<{
   disabled?: boolean;
 }> = ({ field, value, onChange, users, disabled }) => {
   const stringValue = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-  if (field.fieldType === 'textarea') return <textarea rows={4} value={stringValue} onChange={event => onChange(event.target.value)} className={controlClass} disabled={disabled} />;
+  if (field.fieldType === 'textarea') return <RequestRichTextEditor value={stringValue} onChange={onChange} disabled={disabled} minHeight={110} ariaLabel={field.label} placeholder={`Nhập ${field.label.toLowerCase()}...`} />;
   if (field.fieldType === 'select') return <select value={stringValue} onChange={event => onChange(event.target.value)} className={controlClass} disabled={disabled}><option value="">Chọn {field.label}</option>{field.options.map(option => <option key={option}>{option}</option>)}</select>;
   if (field.fieldType === 'date') return <input type="date" value={stringValue} onChange={event => onChange(event.target.value)} className={controlClass} disabled={disabled} />;
   if (field.fieldType === 'number') return <input type="number" value={stringValue} onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))} className={controlClass} disabled={disabled} />;

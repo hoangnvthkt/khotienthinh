@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FileText, Printer, UsersRound } from 'lucide-react';
 import type { RequestTemplateDraft } from '../../../lib/requestTemplateEditorModel';
+import { RequestRichTextEditor } from '../RequestRichTextEditor';
 
 type Tab = 'FORM' | 'APPROVAL' | 'PRINT';
 
@@ -53,11 +54,7 @@ const RequestTemplatePreview: React.FC<{ draft: RequestTemplateDraft }> = ({ dra
                   {field.required && <span className="ml-1 text-red-500">*</span>}
                 </span>
                 {field.fieldType === 'textarea' ? (
-                  <textarea
-                    disabled
-                    rows={3}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800"
-                  />
+                  <RequestRichTextEditor value="" onChange={() => undefined} disabled minHeight={80} placeholder="Người tạo soạn nội dung có định dạng tại đây" />
                 ) : field.fieldType === 'select' ? (
                   <select
                     disabled
