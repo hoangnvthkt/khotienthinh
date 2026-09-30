@@ -203,7 +203,8 @@
     "20261002150000_procurement_k2_supplier_returns.sql",
     "20261003090000_procurement_receipt_reconciliation.sql",
     "20260930103243_request_template_lifecycle_keeps_published.sql",
-    "20260930110802_request_watchers_reassign_soft_delete.sql"
+    "20260930110802_request_watchers_reassign_soft_delete.sql",
+    "20260930134954_request_submit_watchers.sql"
   ],
   "forbidIncludeAll": true
 }

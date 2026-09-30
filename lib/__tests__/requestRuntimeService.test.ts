@@ -311,3 +311,26 @@ describe('requestRuntimeService phase 2 commands', () => {
     expect(mocks.rpc).toHaveBeenLastCalledWith('add_request_watchers', { p_request_id: 'rq-1', p_user_ids: ['u-3'] });
   });
 });
+
+describe('requestRuntimeService.submit options', () => {
+  beforeEach(() => mocks.rpc.mockReset());
+
+  it('sends submit-time watchers as p_options', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        requestId: 'rq-1', requestCode: 'RQ-2026-000001', status: 'PENDING',
+        workflowInstanceId: 'wi-1', workflowSubjectId: 'ws-1', currentBlockKeys: ['b1'],
+        updatedAt: '2026-09-30T00:00:00.000Z',
+      },
+      error: null,
+    });
+    await requestRuntimeService.submit({
+      requestTemplateVersionId: 'v-1', title: 'T', description: '', formData: {},
+      dynamicApproversByBlock: {}, idempotencyKey: 'k',
+      watcherIds: ['u-3'],
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('submit_request', expect.objectContaining({
+      p_options: { watcherIds: ['u-3'] },
+    }));
+  });
+});

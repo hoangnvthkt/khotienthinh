@@ -15,6 +15,7 @@ export interface SubmitRequestInput {
   formData: Record<string, unknown>;
   dynamicApproversByBlock: Record<string, string[]>;
   idempotencyKey: string;
+  watcherIds?: string[];
 }
 
 export interface UsableRequestTemplate {
@@ -24,12 +25,15 @@ export interface UsableRequestTemplate {
   description: string;
   versionNumber: number;
   formSchema: RequestTemplateFieldSchema[];
+  flowMode?: RequestFlowMode;
+  completionPolicy?: RequestCompletionPolicy;
   approvalBlocks: Array<{
     key: string;
     name: string;
     source: 'FIXED_SINGLE' | 'FIXED_MULTI' | 'DIRECT_MANAGER' | 'DYNAMIC_CREATOR_SELECT';
     minimumDynamicApprovers: number | null;
     sortOrder: number;
+    fixedApprovers?: RequestUserSnapshot[];
   }>;
 }
 
@@ -566,6 +570,7 @@ export const requestRuntimeService = {
       p_form_data: input.formData,
       p_dynamic_approvers_by_block: input.dynamicApproversByBlock,
       p_idempotency_key: input.idempotencyKey,
+      p_options: { watcherIds: input.watcherIds ?? [] },
     }).then(result => assertRequestCommandResult(result, 'submit_request'));
   },
 
