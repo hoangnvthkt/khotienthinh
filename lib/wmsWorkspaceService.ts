@@ -1,6 +1,4 @@
 import { supabase } from './supabase';
-import { mapErpCompletionCommandError } from './erpCompletionRollout';
-import { fetchAllSupabaseRows } from './supabaseCompleteRead';
 
 export type WmsInventoryClassification = 'matched' | 'cache_missing' | 'negative_quantity' | 'quantity_mismatch' | 'unclassified' | string;
 
@@ -118,33 +116,5 @@ export const wmsWorkspaceService = {
     if (value.metricVersion !== 'g6.material-custody.v1' || !Array.isArray(value.rows)) throw new Error('Dữ liệu bàn giao vật tư không hợp lệ.');
     return value as { asOf: string; metricVersion: string; rows: MaterialCustodyRow[]; completeness: { allocationComplete: boolean } };
   },
-
-  async startCount(input: { warehouseId: string; itemIds: string[] | null; reason: string; idempotencyKey: string }) {
-    const { data, error } = await supabase.rpc('start_wms_inventory_count_v1', {
-      p_warehouse_id: input.warehouseId, p_item_ids: input.itemIds, p_reason: input.reason, p_idempotency_key: input.idempotencyKey,
-    });
-    if (error) throw mapErpCompletionCommandError(error);
-    return objectValue(data, 'Kết quả mở kiểm kê') as { inventoryCountId: string; countNo: string; warehouseId: string; status: 'counting'; rowVersion: number; snapshotAt: string; replayed: boolean };
-  },
-
-  async listCountLines(inventoryCountId: string) {
-    const { data, error } = await fetchAllSupabaseRows(supabase.from('wms_inventory_count_lines')
-      .select('id,inventory_count_id,item_id,unit,snapshot_qty,movement_qty,expected_qty_at_post,counted_qty,variance_qty,evidence,note')
-      .eq('inventory_count_id', inventoryCountId).order('item_id', { ascending: true }), {
-      label: 'lib/wmsWorkspaceService.ts:listCountLines',
-      maxRows: 50_000,
-      orderBy: ['inventory_count_id', 'id'],
-    });
-    if (error) throw error;
-    return data || [];
-  },
-
-  async postCount(input: { inventoryCountId: string; lines: Array<{ countLineId: string; countedQty: number; evidence?: unknown[]; note?: string }>; expectedVersion: number; idempotencyKey: string }) {
-    const { data, error } = await supabase.rpc('post_wms_inventory_count_v1', {
-      p_inventory_count_id: input.inventoryCountId, p_lines: input.lines,
-      p_expected_version: input.expectedVersion, p_idempotency_key: input.idempotencyKey,
-    });
-    if (error) throw mapErpCompletionCommandError(error);
-    return objectValue(data, 'Kết quả chốt kiểm kê') as { inventoryCountId: string; countNo: string; status: 'posted'; rowVersion: number; adjustmentTransactionId: string | null; replayed: boolean };
-  },
+  // Kiểm kê: dùng stockCountService (K5, có duyệt); lối G6 tự chốt đã đóng.
 };
