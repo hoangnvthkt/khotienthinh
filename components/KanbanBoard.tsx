@@ -18,6 +18,7 @@ import {
     resolveWorkflowStepAssigneeCandidates,
 } from '../lib/workflowAssignmentResolver';
 import { canPerform } from '../lib/permissions/permissionService';
+import { isWorkflowActionStep } from '../lib/workflowStepType';
 
 // Left accent stripe per instance status. Base keeps the card body neutral and
 // reserves strong colour for the deadline state (see resolveCardTone below).
@@ -475,6 +476,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
     }, [dragTargetInstance, getInstanceLogs]);
 
     const dragSelectionMode = getWorkflowStepSelectionMode(dragTargetNode);
+    // Finishing from a "Hành động" step completes a task rather than approving it.
+    const dragFromActionStep = isWorkflowActionStep(
+        orderedColumns.find(column => column.id === dragTargetInstance?.currentNodeId),
+    );
     // Finishing into END has no next stage, so it needs no assignee.
     const mustChooseDragAssignee = Boolean(
         showConfirmDrag &&
@@ -852,7 +857,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                         >
                             {showConfirmDrag.isFinish ? (
                                 <>
-                                    Duyệt giai đoạn cuối sẽ kết thúc nhiệm vụ{' '}
+                                    {dragFromActionStep ? 'Hoàn thành' : 'Duyệt'} giai đoạn cuối sẽ kết thúc nhiệm vụ{' '}
                                     <strong style={{ color: 'var(--wf-text)' }}>
                                         {dragTargetInstance?.title || 'này'}
                                     </strong>{' '}
@@ -1031,7 +1036,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                             {showConfirmDrag.isReopen
                                 ? 'Mở lại nhiệm vụ'
                                 : showConfirmDrag.isFinish
-                                    ? 'Duyệt và hoàn thành nhiệm vụ'
+                                    ? (dragFromActionStep ? 'Hoàn thành nhiệm vụ' : 'Duyệt và hoàn thành nhiệm vụ')
                                     : showConfirmDrag.action === WorkflowInstanceAction.APPROVED
                                         ? 'Chuyển sang giai đoạn kế tiếp'
                                         : 'Trả về giai đoạn trước'}

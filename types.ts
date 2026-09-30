@@ -4468,12 +4468,19 @@ export interface WorkflowTemplate {
   customFields: WorkflowCustomField[];
   managers: string[];         // user IDs — admin-like except delete
   defaultWatchers: string[];  // user IDs — view-only on all instances
+  categoryId?: string | null; // catalog group (Phòng HCNS, Phòng Vật tư...)
   createdAt: string;
   updatedAt: string;
   /** Set when this is a private copy owned by one project (hidden from Quy trình). */
   ownerSubjectType?: 'material_request' | null;
   ownerProjectId?: string | null;
   clonedFromTemplateId?: string | null;
+}
+
+export interface WorkflowTemplateCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
 }
 
 export interface WorkflowNode {

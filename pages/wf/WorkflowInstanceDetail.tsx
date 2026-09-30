@@ -42,6 +42,7 @@ import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { buildWorkflowRoute } from '../../lib/workflowRoutes';
+import { getWorkflowStepActionCopy } from '../../lib/workflowStepType';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     DRAFT: 'Bản nháp',
@@ -479,6 +480,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         return firstEdge ? nodes.find(node => node.id === firstEdge.targetNodeId) || null : null;
     }, [currentNode, edges, nodes]);
 
+    const currentStepCopy = getWorkflowStepActionCopy(currentNode);
     const canAct = useMemo(() => {
         if (!instance) return false;
         const hasAssignedAction = user.role === Role.ADMIN
@@ -541,6 +543,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             let actorName = '';
             let actionDate = '';
             let comment = '';
+            let resolvedAction: WorkflowInstanceAction | null = null;
 
             const resolveLog = stepLogs.find(l =>
                 l.action === WorkflowInstanceAction.APPROVED ||
@@ -555,6 +558,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 actorName = actor?.name || 'N/A';
                 actionDate = new Date(resolveLog.createdAt).toLocaleString('vi-VN');
                 comment = resolveLog.comment;
+                resolvedAction = resolveLog.action;
                 lastTime = endTime;
             } else if (isCurrent) {
                 endTime = Date.now();
@@ -575,6 +579,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 actorName,
                 actionDate,
                 comment,
+                resolvedAction,
                 logs: stepLogs
             };
         });
@@ -1100,12 +1105,12 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                     {/* Top Action Buttons (Purple / Red / Actions) */}
                     <div className="w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
                         {canAct ? (
-                            <div className="grid grid-cols-3 gap-2 sm:flex sm:items-center sm:gap-2">
+                            <div className={`grid ${currentStepCopy.canReject ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:flex sm:items-center sm:gap-2`}>
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.APPROVED); }}
-                                    className="col-span-3 sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0"
+                                    className={`${currentStepCopy.canReject ? 'col-span-3' : 'col-span-2'} sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0`}
                                 >
-                                    <CheckCircle size={15} /> <span>Chuyển tiếp / Duyệt</span>
+                                    <CheckCircle size={15} /> <span>{currentStepCopy.primaryLabel}</span>
                                 </button>
                                 <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
@@ -1113,12 +1118,12 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 >
                                     <RotateCcw size={13} /> <span className="truncate">Yêu cầu bổ sung</span>
                                 </button>
-                                <button
+                                {currentStepCopy.canReject && <button
                                     onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REJECTED); }}
                                     className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
                                     <XCircle size={13} /> <span>Từ chối</span>
-                                </button>
+                                </button>}
                                 <button
                                     onClick={() => refreshData()}
                                     className="inline-flex items-center justify-center p-2.5 sm:p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[42px] sm:min-h-0"
@@ -1677,7 +1682,12 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                         {timing.actorName && (
                                             <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 pt-1">
                                                 <div className="h-4 w-4 rounded-full bg-slate-300 flex items-center justify-center text-[8px]">👤</div>
-                                                <span>{timing.actorName}</span>
+                                                <span>
+                                                    {timing.resolvedAction === WorkflowInstanceAction.REJECTED
+                                                        ? 'Từ chối bởi'
+                                                        : getWorkflowStepActionCopy(orderedSteps[idx]).doneBy}{' '}
+                                                    {timing.actorName}
+                                                </span>
                                             </div>
                                         )}
                                     </div>
@@ -1817,7 +1827,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         <div className="flex justify-between items-center mb-3 sm:mb-4 pb-2.5 sm:pb-3 border-b border-slate-100 dark:border-slate-700">
                             <h3 className="text-xs sm:text-sm font-black uppercase text-slate-800 dark:text-white flex items-center gap-2">
                                 {activeAction === WorkflowInstanceAction.APPROVED ? (
-                                    <><CheckCircle className="text-emerald-500 shrink-0" size={17} /> <span>Phê duyệt & chuyển bước</span></>
+                                    <><CheckCircle className="text-emerald-500 shrink-0" size={17} /> <span>{currentStepCopy.dialogTitle}</span></>
                                 ) : activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? (
                                     <><RotateCcw className="text-amber-500 shrink-0" size={17} /> <span>Yêu cầu chỉnh sửa / bổ sung</span></>
                                 ) : (

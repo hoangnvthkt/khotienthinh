@@ -120,6 +120,9 @@ export const getWorkflowProcessErrorMessage = (
   if (message.includes('workflow instance is not running')) {
     return 'Phiếu đã được người khác xử lý hoặc không còn ở trạng thái đang chạy.';
   }
+  if (message.includes('workflow_reject_not_allowed')) {
+    return 'Bước này không cho phép từ chối. Hãy hoàn thành hoặc yêu cầu bổ sung.';
+  }
   if (message.includes('request_workflow_use_request_module')) {
     return 'Phiếu này phải được xử lý trong module Yêu cầu.';
   }
@@ -234,4 +237,82 @@ export const getWorkflowStepSelectionMode = (node?: WorkflowNode | null): 'singl
     (target.type === 'user' && target.userId) || (target.type === 'department' && target.orgUnitId)
   ).length;
   return targetCount > 1 ? 'multiple' : 'single';
+};
+
+// How a step picks its handler, as the builder presents it. Legacy role-only
+// steps keep working at runtime but are shown so admins can migrate them.
+export type WorkflowStepAssigneeKind = 'fixed' | 'pool' | 'creator' | 'previous' | 'role' | 'none';
+
+export const getWorkflowStepAssigneeKind = (config: WorkflowNode['config'] | undefined): WorkflowStepAssigneeKind => {
+  const safeConfig = config || {};
+  if (safeConfig.assignmentMode === 'creator') return 'creator';
+  if (safeConfig.assignmentMode === 'previous_assignee') return 'previous';
+  if (safeConfig.assigneeUserId) return 'fixed';
+  const hasTargets = (safeConfig.assignmentTargets || []).some(target =>
+    (target.type === 'user' && target.userId) || (target.type === 'department' && target.orgUnitId));
+  if (hasTargets) return 'pool';
+  if (safeConfig.assigneeRole) return 'role';
+  if (safeConfig.assignmentMode === 'fixed_user') return 'fixed';
+  return safeConfig.assignmentMode ? 'pool' : 'none';
+};
+
+// Mirrors app_private.workflow_template_assignee_errors so the builder can warn
+// before the server refuses to publish. Returns null when the step is usable.
+export const getWorkflowStepAssigneeIssue = ({
+  node,
+  isFirstStep,
+  users,
+  employees = [],
+}: {
+  node: Pick<WorkflowNode, 'label' | 'config'>;
+  isFirstStep: boolean;
+  users: User[];
+  employees?: Employee[];
+}): string | null => {
+  const config = node.config || {};
+  const kind = getWorkflowStepAssigneeKind(config);
+  const activeUserIds = new Set(users.filter(user => user.isActive !== false).map(user => user.id));
+  // An empty user list means people are still loading: unknown, not "nobody".
+  const peopleKnown = users.length > 1;
+
+  if (kind === 'creator') return null;
+  if (kind === 'previous') {
+    return isFirstStep ? 'Bước đầu tiên không có "người đã xử lý bước trước".' : null;
+  }
+  if (kind === 'fixed') {
+    if (!config.assigneeUserId) return 'Chưa chọn người xử lý cố định.';
+    return peopleKnown && !activeUserIds.has(config.assigneeUserId)
+      ? 'Người xử lý cố định đã nghỉ hoặc bị khóa tài khoản.'
+      : null;
+  }
+  if (kind === 'pool') {
+    const targets = config.assignmentTargets || [];
+    const hasTargets = targets.some(target =>
+      (target.type === 'user' && target.userId) || (target.type === 'department' && target.orgUnitId));
+    if (!hasTargets) return 'Chưa chọn người hoặc phòng ban để chọn người xử lý.';
+    if (!peopleKnown) return null;
+    const roleOf = new Map(users.map(user => [user.id, user.role]));
+    const matchesRole = (userId: string) => !config.assigneeRole || roleOf.get(userId) === config.assigneeRole;
+    const hasCandidate = targets.some(target => {
+      if (target.type === 'user' && target.userId) return activeUserIds.has(target.userId) && matchesRole(target.userId);
+      if (target.type === 'department' && target.orgUnitId) {
+        // Department membership needs HR data; without it the server decides.
+        if (employees.length === 0) return true;
+        return employees.some(employee =>
+          isActiveEmployee(employee)
+          && employeeBelongsToDepartment(employee, target.orgUnitId!)
+          && activeUserIds.has(employee.userId!)
+          && matchesRole(employee.userId!));
+      }
+      return false;
+    });
+    return hasCandidate ? null : 'Danh sách người xử lý không còn ai đang làm việc.';
+  }
+  if (kind === 'role') {
+    if (!peopleKnown) return null;
+    return users.some(user => user.isActive !== false && user.role === config.assigneeRole)
+      ? null
+      : 'Không có ai thuộc vai trò được chỉ định.';
+  }
+  return 'Chưa có người xử lý.';
 };
