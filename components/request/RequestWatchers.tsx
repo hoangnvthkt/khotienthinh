@@ -45,7 +45,7 @@ export const RequestWatchers: React.FC<{ detail: RequestDetail; onChanged: () =>
           <Eye size={14} /> Người theo dõi ({detail.watchers.length})
         </h3>
         {detail.capabilities.canAddWatcher && !isAdding && (
-          <button type="button" onClick={() => setIsAdding(true)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40">
+          <button type="button" onClick={() => setIsAdding(true)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-mint-700 hover:bg-mint-50 dark:text-mint-300 dark:hover:bg-mint-900/40">
             <Plus size={14} /> Thêm
           </button>
         )}
@@ -58,7 +58,7 @@ export const RequestWatchers: React.FC<{ detail: RequestDetail; onChanged: () =>
           <UserSearchSelect users={users} multiple values={selected} onValuesChange={setSelected} excludeUserIds={excluded} placeholder="Gõ tên để thêm người theo dõi..." />
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => { setIsAdding(false); setSelected([]); }} disabled={busyId === 'add'} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
-            <button type="button" onClick={() => void add()} disabled={!selected.length || busyId === 'add'} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+            <button type="button" onClick={() => void add()} disabled={!selected.length || busyId === 'add'} className="inline-flex items-center gap-1.5 rounded-lg bg-leaf-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-leaf-700 disabled:opacity-50">
               {busyId === 'add' && <Loader2 size={13} className="animate-spin" />} Thêm {selected.length > 0 ? `(${selected.length})` : ''}
             </button>
           </div>

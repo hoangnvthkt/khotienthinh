@@ -134,6 +134,8 @@ export interface RequestListItem {
   templateName: string;
   creator: RequestUserSnapshot;
   activeApprovers: Array<RequestUserSnapshot & { assignmentStatus: RequestAssignmentStatus }>;
+  /** Every approver of the current round with their status (newer servers). */
+  approvers?: Array<RequestUserSnapshot & { assignmentStatus: RequestAssignmentStatus }>;
   dueAt: string | null;
   createdAt: string;
   updatedAt: string;

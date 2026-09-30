@@ -25,12 +25,23 @@ const icons: Record<RequestAction, typeof Check> = {
 };
 
 const buttonStyles: Record<RequestAction, string> = {
-  APPROVE: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-95',
-  REJECT: 'bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/20 active:scale-95',
-  RETURN: 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/20 active:scale-95',
-  RESUBMIT: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-95',
-  CANCEL: 'bg-slate-600 hover:bg-slate-700 text-white shadow-md shadow-slate-600/20 active:scale-95',
-  REASSIGN: 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 active:scale-95',
+  // One solid primary action; the rest are outlined so the next step is obvious.
+  APPROVE: 'bg-leaf-600 hover:bg-leaf-700 text-white shadow-sm',
+  RESUBMIT: 'bg-leaf-600 hover:bg-leaf-700 text-white shadow-sm',
+  REJECT: 'border border-rose-200 bg-card text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40',
+  RETURN: 'border border-orange-200 bg-card text-orange-700 hover:bg-orange-50 dark:border-orange-900 dark:text-orange-300 dark:hover:bg-orange-950/40',
+  REASSIGN: 'border border-teal-200 bg-card text-teal-700 hover:bg-teal-50 dark:border-teal-900 dark:text-teal-300 dark:hover:bg-teal-950/40',
+  CANCEL: 'border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground',
+};
+
+// Confirm buttons inside the action dialog are always solid.
+const confirmStyles: Record<RequestAction, string> = {
+  APPROVE: 'bg-leaf-600 hover:bg-leaf-700',
+  RESUBMIT: 'bg-leaf-600 hover:bg-leaf-700',
+  REJECT: 'bg-rose-600 hover:bg-rose-700',
+  RETURN: 'bg-orange-600 hover:bg-orange-700',
+  REASSIGN: 'bg-teal-700 hover:bg-teal-800',
+  CANCEL: 'bg-slate-700 hover:bg-slate-800',
 };
 
 export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () => Promise<void> }> = ({ detail, onChanged }) => {
@@ -79,12 +90,12 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
   };
   return (
     <>
-      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5 sm:p-3 dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="rounded-xl border border-border bg-muted p-2.5 sm:p-3">
         <div className="mb-2 flex items-center justify-between sm:hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Thao tác xử lý</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Thao tác xử lý</span>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2.5">
-          <span className="hidden sm:inline-block text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Xử lý:</span>
+          <span className="mr-1 hidden text-xs font-semibold text-muted-foreground sm:inline-block">Xử lý:</span>
           {actions.map(item => {
             const Icon = icons[item];
             return (
@@ -92,7 +103,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 type="button"
                 key={item}
                 onClick={() => open(item)}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 sm:px-4 sm:py-2 text-xs font-bold transition active:scale-[0.98] min-h-[40px] sm:min-h-0 ${buttonStyles[item]}`}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 sm:px-4 sm:py-2 text-xs font-semibold transition min-h-[40px] sm:min-h-0 ${buttonStyles[item]}`}
               >
                 <Icon size={15} className="shrink-0" />
                 <span className="truncate">{labels[item]}</span>
@@ -144,7 +155,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 value={comment}
                 onChange={event => setComment(event.target.value)}
                 rows={4}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800 dark:text-white outline-none focus:border-emerald-500"
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800 dark:text-white outline-none focus:border-teal-500"
                 placeholder={needsComment ? 'Nhập bắt buộc lý do...' : 'Nhập ý kiến xử lý (tuỳ chọn)'}
               />
             </label>
@@ -162,7 +173,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => void execute()}
-                className={`inline-flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold text-white transition ${buttonStyles[action]}`}
+                className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white transition disabled:opacity-60 ${confirmStyles[action]}`}
               >
                 {isSubmitting && <Loader2 size={15} className="animate-spin" />}
                 {labels[action]}

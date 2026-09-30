@@ -292,7 +292,7 @@ export const RequestRichTextEditor: React.FC<{
     <div
       onKeyDown={event => { if (expanded && event.key === 'Escape') { event.stopPropagation(); setExpanded(false); } }}
       className={expanded ? 'fixed inset-0 z-[1250] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm sm:p-8' : ''}>
-      <div className={`flex flex-col overflow-visible rounded-xl border border-slate-200 bg-white focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-100/70 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-emerald-950 ${expanded ? 'h-full w-full max-w-4xl shadow-2xl' : ''} ${disabled ? 'opacity-60' : ''}`}>
+      <div className={`flex flex-col overflow-visible rounded-xl border border-slate-200 bg-white focus-within:border-teal-500 focus-within:ring-4 focus-within:ring-teal-100/70 dark:border-slate-700 dark:bg-slate-900 dark:focus-within:ring-teal-950 ${expanded ? 'h-full w-full max-w-4xl shadow-2xl' : ''} ${disabled ? 'opacity-60' : ''}`}>
         <div className="relative min-h-0 flex-1 overflow-y-auto">
           {isEmpty && <span className="pointer-events-none absolute left-3.5 top-2.5 text-sm text-slate-400">{placeholder}</span>}
           <div
