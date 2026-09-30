@@ -6,10 +6,10 @@ import {
 } from '../permissions/projectPermissionRooms';
 
 describe('projectPermissionRooms', () => {
-  it('exposes 13 unique active Room codes', () => {
+  it('exposes 14 unique active Room codes', () => {
     const codes = PROJECT_PERMISSION_ROOMS.map(room => room.code);
 
-    expect(codes).toHaveLength(13);
+    expect(codes).toHaveLength(14);
     expect(new Set(codes).size).toBe(codes.length);
     expect(codes).toEqual(expect.arrayContaining([
       'daily_log',
@@ -22,6 +22,9 @@ describe('projectPermissionRooms', () => {
       'payment',
       'quality',
       'safety',
+      'v2_month_plan',
+      'v2_construction_plan',
+      'v2_material_plan',
     ]));
   });
 
