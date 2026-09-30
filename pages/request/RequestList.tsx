@@ -182,7 +182,7 @@ const RequestList: React.FC = () => {
                     setStatus(item.status);
                     setOverdue(Boolean(item.overdue));
                   }}
-                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                     active
                       ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 font-semibold'
                       : 'bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
