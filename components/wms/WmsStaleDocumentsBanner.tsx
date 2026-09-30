@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, ClipboardCheck } from 'lucide-react';
 import { WMS_TYPE_LABELS, wmsStaleDocumentsService, type WmsStaleDocuments } from '../../lib/wmsStaleDocumentsService';
 
 // Cảnh báo phiếu kho treo quá 3 ngày ở đầu trang Nghiệp vụ kho; bấm từng phiếu để xử lý ngay.
-export const WmsStaleDocumentsBanner: React.FC<{ onOpen: (transactionId: string) => void; reloadKey?: number }> = ({ onOpen, reloadKey = 0 }) => {
+export const WmsStaleDocumentsBanner: React.FC<{ onOpen: (transactionId: string) => void; onReconcile?: () => void; reloadKey?: number }> = ({ onOpen, onReconcile, reloadKey = 0 }) => {
   const [data, setData] = useState<WmsStaleDocuments | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => { wmsStaleDocumentsService.list(3).then(setData).catch(() => setData(null)); }, [reloadKey]);
   if (!data || data.total === 0) return null;
+  const poReceipts = data.documents.filter(d => d.sourceType === 'po_delivery_batch').length;
   return <section className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30">
     <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
       <AlertTriangle size={18} className="shrink-0 text-amber-600" />
@@ -17,6 +18,11 @@ export const WmsStaleDocumentsBanner: React.FC<{ onOpen: (transactionId: string)
       </span>
       {open ? <ChevronDown size={18} className="text-amber-700" /> : <ChevronRight size={18} className="text-amber-700" />}
     </button>
+    {onReconcile && poReceipts > 0 && <div className="flex flex-wrap items-center gap-2 border-t border-amber-200 px-4 py-2 text-xs text-amber-900 dark:border-amber-900 dark:text-amber-100">
+      <span className="flex-1">{poReceipts} đợt giao theo đơn mua đang treo — chốt cùng Mua hàng để nhập kho và ghi công nợ đúng ngày hàng về.</span>
+      <button type="button" onClick={onReconcile} className="inline-flex items-center gap-1.5 rounded-lg bg-leaf-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-leaf-700">
+        <ClipboardCheck size={14} />Đối chiếu với Mua hàng</button>
+    </div>}
     {open && <ul className="divide-y divide-amber-200/70 border-t border-amber-200 bg-white/70 dark:divide-amber-900 dark:border-amber-900 dark:bg-slate-950/40">
       {data.documents.map(d => <li key={d.id}>
         <button type="button" onClick={() => onOpen(d.id)} className="flex w-full flex-col gap-1 px-4 py-2.5 text-left hover:bg-amber-50 dark:hover:bg-amber-950/40 md:flex-row md:items-center md:gap-4">
