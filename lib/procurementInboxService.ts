@@ -103,6 +103,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_DELIVERY_NOT_CANCELLABLE: 'Kho đã bắt đầu nhận đợt này nên không hủy được.',
   PROCUREMENT_DELIVERY_STILL_OPEN: 'Còn đợt giao chưa nhận xong. Chờ kho nhận hoặc hủy đợt đó trước khi kết thúc thiếu.',
   PROCUREMENT_CANCEL_REASON_REQUIRED: 'Nhập lý do hủy đợt giao.',
+  SUPPLIER_RETURN_NOT_FOUND: 'Phiếu trả NCC không còn. Tải lại.',
+  SUPPLIER_RETURN_ALREADY_DECIDED: 'Kho đã xuất trả nên không đổi được quyết định.',
 };
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
@@ -150,6 +152,9 @@ export const procurementInboxService = {
   cancelDelivery(input: { deliveryId: string; reason: string }) {
     return call<{ deliveryId: string }>('cancel_procurement_delivery_v1', { p_input: input });
   },
+  decideReturn(input: { returnId: string; resolution: 'replace' | 'credit'; note?: string }) {
+    return call<{ returnId: string; resolution: string }>('decide_procurement_supplier_return_v1', { p_input: input });
+  },
   closeShort(input: { purchaseOrderId: string; expectedRowVersion: number; reason: string; returnToNeed: boolean }) {
     return call<{ status: string; shortStockQty: number }>('close_procurement_po_short_v1', { p_input: input });
   },
@@ -168,12 +173,12 @@ export interface ProcurementOrderSummary {
   constructionSiteId: string | null; totalAmount: number; vatRate: number; orderDate: string | null; expectedDeliveryDate: string | null;
   late: boolean; lineCount: number; qtyTotal: number; qtyReceived: number;
   createdById: string | null; createdByName: string | null; submittedToUserId: string | null; submittedToName: string | null;
-  awaitingMe: boolean; purchaseMode: 'single' | 'multiple'; sources: Array<ProcurementSourceRef & { code: string | null }>;
+  awaitingMe: boolean; purchaseMode: 'single' | 'multiple'; returnsPending: number; sources: Array<ProcurementSourceRef & { code: string | null }>;
 }
 export interface ProcurementOrderList { today: string; orders: ProcurementOrderSummary[]; awaitingMyApproval: number }
 export interface ProcurementOrderLine {
   lineId: string; itemId: string; name: string; sku: string | null; unit: string | null; qty: number; unitPrice: number; receivedQty: number; note: string | null;
-  stockUnit: string | null; factor: number;
+  stockUnit: string | null; factor: number; returnedQty: number;
   /** Purchase-unit quantity neither received nor on an open delivery. */
   remainingToDeliver: number;
   allocations: Array<ProcurementSourceRef & { code: string | null; lineId: string; qty: number; needQty: number }>;
@@ -188,9 +193,10 @@ export interface ProcurementOrderDetail {
   purchaseMode: 'single' | 'multiple'; approvedTotalAmount: number;
   shortClose: { reason: string; returnToNeed: boolean; shortStockQty: number; at: string; by: string | null } | null;
   deliveries: ProcurementDelivery[];
+  returns: ProcurementSupplierReturn[];
   lines: ProcurementOrderLine[];
   events: Array<{ action: string; actorName: string | null; reason: string | null; at: string }>;
-  permissions: { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canDelete: boolean; canAddDelivery: boolean; canCloseShort: boolean };
+  permissions: { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canDelete: boolean; canAddDelivery: boolean; canCloseShort: boolean; canDecideReturn: boolean };
   approvers: Array<{ id: string; name: string }>;
 }
 export interface ProcurementDelivery {
@@ -200,6 +206,12 @@ export interface ProcurementDelivery {
   receivedAt: string | null; receivedByName: string | null; amount: number; acceptedAmount: number;
   lines: Array<{ lineId: string; itemId: string; name: string; plannedQty: number; unit: string | null; stockPlannedQty: number;
     stockUnit: string | null; unitPrice: number; acceptedQty: number; acceptedStockQty: number }>;
+}
+export interface ProcurementSupplierReturn {
+  id: string; returnNo: string; status: 'pending' | 'completed'; reason: string; reasonCode: string | null; note: string | null;
+  resolution: 'replace' | 'credit' | null; resolutionNote: string | null; resolutionByName: string | null;
+  createdAt: string; createdByName: string | null; completedAt: string | null; warehouseName: string | null;
+  lines: Array<{ lineId: string; itemId: string; name: string; returnQty: number; unit: string | null; stockReturnQty: number; stockUnit: string | null; unitPrice: number }>;
 }
 export interface ProcurementDeliverySaveInput {
   purchaseOrderId: string; deliveryId?: string; plannedDate?: string | null; vatRate: number; note?: string; approverUserId?: string;

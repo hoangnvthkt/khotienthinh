@@ -54,16 +54,18 @@ describe('purchaseOrderSupplierReturnService', () => {
       purchaseOrderId: 'po-1',
       sourceWarehouseId: 'warehouse-1',
       reason: 'Hang loi',
+      reasonCode: 'quality',
       note: undefined,
       lines: [{ purchaseOrderLineId: 'po-line-1', quantity: 10 }],
     });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_purchase_order_supplier_return', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_purchase_order_supplier_return_v2', {
       p_purchase_order_id: 'po-1',
       p_source_warehouse_id: 'warehouse-1',
       p_lines: [{ purchaseOrderLineId: 'po-line-1', quantity: 10 }],
       p_reason: 'Hang loi',
       p_note: null,
+      p_reason_code: 'quality',
     });
     expect(result).toMatchObject({
       id: 'return-1',
@@ -97,13 +99,14 @@ describe('purchaseOrderSupplierReturnService', () => {
       purchaseOrderId: 'po-commercial-lines',
       sourceWarehouseId: 'warehouse-1',
       reason: 'Hang loi',
+      reasonCode: 'quality',
       lines: [
         { purchaseOrderLineId: 'commercial-10k', quantity: 3 },
         { purchaseOrderLineId: 'commercial-12k', quantity: 7 },
       ],
     });
 
-    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_purchase_order_supplier_return', {
+    expect(supabaseMocks.rpc).toHaveBeenCalledWith('create_purchase_order_supplier_return_v2', {
       p_purchase_order_id: 'po-commercial-lines',
       p_source_warehouse_id: 'warehouse-1',
       p_lines: [
@@ -112,6 +115,7 @@ describe('purchaseOrderSupplierReturnService', () => {
       ],
       p_reason: 'Hang loi',
       p_note: null,
+      p_reason_code: 'quality',
     });
   });
 
@@ -191,6 +195,7 @@ describe('purchaseOrderSupplierReturnService', () => {
       purchaseOrderId: 'po-1',
       sourceWarehouseId: 'warehouse-1',
       reason: 'Hang loi',
+      reasonCode: 'quality',
       lines: [{ purchaseOrderLineId: 'po-line-1', quantity: 91 }],
     })).rejects.toThrow(error);
   });

@@ -24,6 +24,7 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }>
           <PoStatusChip status={order.status} />
           {order.awaitingMe && <Badge className="border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-100">Chờ bạn duyệt</Badge>}
           {!order.isHub && <Badge className="border-border bg-muted text-muted-foreground" title="Lập ở tab dự án trước khi có Mua hàng">Lập ở dự án</Badge>}
+          {order.returnsPending > 0 && <Badge className="border-amber-300 bg-amber-50 text-amber-800">{order.returnsPending} trả NCC chờ quyết định</Badge>}
           {order.purchaseMode === 'multiple' && <Badge className="border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">Nhiều đợt</Badge>}
         </span>
         <span className="mt-0.5 block truncate text-sm text-muted-foreground">
@@ -31,7 +32,7 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }>
         </span>
       </span>
       <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs md:w-[30rem] md:shrink-0 md:justify-end">
-        <span className={`inline-flex items-center gap-1 ${order.late ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
+        <span className={`inline-flex items-center gap-1 ${order.late ? 'overdue-blink rounded font-semibold text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
           <CalendarClock size={12} />{due ? `${order.late ? 'Quá hẹn · ' : 'Giao '}${dateVi(due)}` : 'Chưa hẹn ngày giao'}</span>
         {order.stage !== 'drafting' && <span className="inline-flex items-center gap-1.5 text-muted-foreground" title={`Đã nhận ${pct}% số lượng`}>
           <span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></span>{pct}%</span>}
