@@ -203,7 +203,7 @@
     "20260930103243_request_template_lifecycle_keeps_published.sql",
     "20260930110802_request_watchers_reassign_soft_delete.sql",
     "20260930134954_request_submit_watchers.sql",
-    "20260930160000_request_template_notifications_and_manager_coverage.sql"
+    "20260930140450_request_template_notifications_and_manager_coverage.sql"
   ],
   "forbidIncludeAll": true
 }

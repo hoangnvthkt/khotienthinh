@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20260930160000_request_template_notifications_and_manager_coverage.sql'), 'utf8');
+const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20260930140450_request_template_notifications_and_manager_coverage.sql'), 'utf8');
 
 describe('request template notifications migration', () => {
   it('suppresses an event only when the template explicitly disables it', () => {
