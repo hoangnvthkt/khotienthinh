@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronLeft, ChevronRight, ListFilter } from 'lucide-react';
 import type { RequestListItem } from '../../lib/requestRuntimeService';
 import { RequestStatusBadge } from './RequestTable';
+import { useRequestHoverPreview } from './RequestHoverPreview';
 
 export const RequestMasterList: React.FC<{
   items: RequestListItem[];
@@ -10,6 +11,7 @@ export const RequestMasterList: React.FC<{
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }> = ({ items, selectedId, onSelect, isCollapsed = false, onToggleCollapse }) => {
+  const { bind, preview } = useRequestHoverPreview('right');
   if (isCollapsed) {
     return (
       <aside className="hidden md:flex w-12 shrink-0 flex-col items-center border-r border-slate-200 bg-slate-50/60 py-3 dark:border-slate-800 dark:bg-slate-900/60">
@@ -60,6 +62,7 @@ export const RequestMasterList: React.FC<{
             <button
               type="button"
               key={item.id}
+              {...(isSelected ? {} : bind(item))}
               onClick={() => onSelect(item.id)}
               className={`group relative block w-full p-4 text-left transition-all duration-150 ${
                 isSelected
@@ -99,6 +102,7 @@ export const RequestMasterList: React.FC<{
             Không có đề xuất nào trong danh mục này.
           </div>
         )}
+        {preview}
       </div>
     </aside>
   );

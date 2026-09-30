@@ -6,6 +6,7 @@ import { RequestCreateDialog } from '../../components/request/RequestCreateDialo
 import { RequestDetailPanel } from '../../components/request/RequestDetailPanel';
 import { RequestMasterList } from '../../components/request/RequestMasterList';
 import { RequestStatusBadge, RequestTable } from '../../components/request/RequestTable';
+import { useRequestHoverPreview } from '../../components/request/RequestHoverPreview';
 import { useRequestDetail } from '../../hooks/useRequestDetail';
 import { useRequestList, type RequestListFilter } from '../../hooks/useRequestList';
 import { requestRuntimeService, type RequestSummary } from '../../lib/requestRuntimeService';
@@ -54,6 +55,7 @@ const RequestList: React.FC = () => {
 
   const filter: RequestListFilter = { view, status, overdue: overdue || undefined, search };
   const list = useRequestList(filter);
+  const cardPreview = useRequestHoverPreview('below');
   const detail = useRequestDetail(requestId);
   const workspaceMode = getRequestWorkspaceMode(width, Boolean(requestId));
 
@@ -94,6 +96,7 @@ const RequestList: React.FC = () => {
           <button
             type="button"
             key={item.id}
+            {...cardPreview.bind(item)}
             onClick={() => select(item.id)}
             className="w-full text-left rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-sm transition-all active:scale-[0.99] active:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:active:bg-slate-800/80"
           >
@@ -117,6 +120,7 @@ const RequestList: React.FC = () => {
       {list.items.length === 0 && (
         <div className="p-10 text-center text-sm text-slate-500">Không có đề xuất phù hợp.</div>
       )}
+      {cardPreview.preview}
     </>
   );
 
