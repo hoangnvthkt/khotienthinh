@@ -4,6 +4,7 @@ import {
   formatDailyLogTime,
   formatDailyLogQuantity,
   summarizeDailyLogPhysicalRows,
+  splitDailyLogDaysByCutover,
 } from '../dailyLogPresentation';
 
 describe('Daily Log document presentation', () => {
@@ -89,5 +90,23 @@ describe('Daily Log document presentation', () => {
   it.each([Number.NaN, -1, '', 'invalid', Infinity])('keeps invalid totals unknown: %s', value => {
     expect(summarizeDailyLogPhysicalRows({ workItems: [], labor: [{ peopleCount: value, totalLaborHours: 8 }], machines: [] }))
       .toMatchObject({ laborPersonEntries: null, totalLaborHours: 8 });
+  });
+});
+
+describe('history split at the workflow cutover', () => {
+  const rows = [
+    { date: '2026-10-02', officialStatus: 'draft' },
+    { date: '2026-10-01', officialStatus: null },
+    { date: '2026-09-30', officialStatus: 'submitted' },
+    { date: '2026-09-29', officialStatus: 'verified' },
+  ];
+  it('keeps every day in one list for a project not on the slip workflow', () => {
+    expect(splitDailyLogDaysByCutover(rows, null)).toEqual({ current: rows, legacy: [], legacyPendingApproval: 0 });
+  });
+  it('lists the cutover day with the new workflow and counts old days still awaiting approval', () => {
+    const split = splitDailyLogDaysByCutover(rows, '2026-10-01');
+    expect(split.current.map(row => row.date)).toEqual(['2026-10-02', '2026-10-01']);
+    expect(split.legacy.map(row => row.date)).toEqual(['2026-09-30', '2026-09-29']);
+    expect(split.legacyPendingApproval).toBe(1);
   });
 });

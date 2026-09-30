@@ -1221,6 +1221,10 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
         if (constructionSiteId) query.set('siteId', constructionSiteId);
         return `/da?${query.toString()}`;
     }, [constructionSiteId, location.search, projectId]);
+    // The day's approved summary, if any row of the selected date was published from one.
+    const selectedDayDailyLogHref = useMemo(() => buildDailyLogHref(allDailyProgress
+        .find(row => row.scopeKey === scopeKey && row.progressDate === selectedProgressDate && row.sourceDailyLogId)?.sourceDailyLogId),
+    [allDailyProgress, buildDailyLogHref, scopeKey, selectedProgressDate]);
 
     const openDailyProgressException = useCallback((row: ProjectDailyTaskProgress) => {
         setExceptionRow(row);
@@ -2345,8 +2349,13 @@ export default function WeeklyProgressTab({ projectId, constructionSiteId }: Wee
                 </div>
 
                 {dailyModeAuthoritative && <div className="mt-3 flex flex-col gap-2 rounded-xl border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900 sm:flex-row sm:items-center sm:justify-between dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-200">
-                    <div><strong>Tiến độ ngày lấy từ Nhật ký tổng hợp.</strong> Màn hình này chỉ đọc để tránh hai nguồn cùng sửa một số liệu.</div>
-                    {!dailyProgressAuthority?.canEditException && <span className="font-semibold">Liên hệ người có cả quyền sửa tiến độ và công bố nhật ký nếu cần điều chỉnh.</span>}
+                    <div className="space-y-1">
+                        <div><strong>Tiến độ ngày lấy từ nhật ký đã được CHT duyệt.</strong> Ở đây chỉ xem để không có hai nơi cùng nhập một số liệu; chốt tuần và khóa kỳ vẫn làm như cũ.</div>
+                        {!dailyProgressAuthority?.canEditException && <div className="font-semibold">Cần điều chỉnh ngoại lệ thì liên hệ người có cả quyền sửa tiến độ và công bố nhật ký.</div>}
+                    </div>
+                    {selectedDayDailyLogHref
+                        ? <Link to={selectedDayDailyLogHref} className="shrink-0 font-bold underline underline-offset-2">Mở nhật ký ngày {selectedProgressDate.split('-').reverse().join('/')}</Link>
+                        : <span className="shrink-0 font-semibold">Ngày này chưa có nhật ký được duyệt</span>}
                 </div>}
 
                 {/* Row 3: Sub-Filters for History Visualisation & Expand/Collapse */}
