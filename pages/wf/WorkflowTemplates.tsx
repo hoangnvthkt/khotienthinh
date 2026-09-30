@@ -6,7 +6,7 @@ import { Role, WorkflowNodeType, WorkflowTemplate, WorkflowTemplateCategory } fr
 import {
     Plus, GitBranch, Trash2, ToggleLeft, ToggleRight,
     Search, Layers, Clock, User, ShieldAlert, ChevronRight, Edit2, Shield, Eye, X,
-    Copy, FolderOpen, FolderCog, ChevronUp, ChevronDown, Check
+    Copy, FolderOpen, FolderCog, ChevronUp, ChevronDown, Check, FolderInput, ListChecks, Square, SquareCheck
 } from 'lucide-react';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
@@ -19,6 +19,7 @@ import { getApiErrorMessage } from '../../lib/apiError';
 import { canPerform } from '../../lib/permissions/permissionService';
 
 const UNCATEGORIZED = '__uncategorized__';
+const TEMPLATE_DRAG_TYPE = 'application/x-vioo-workflow-templates';
 const ALL_GROUPS = '__all__';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
@@ -53,7 +54,7 @@ const ModalShell: React.FC<{ title: React.ReactNode; onClose: () => void; footer
 const WorkflowTemplates: React.FC = () => {
     const navigate = useNavigate();
     const {
-        templates, categories, createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory,
+        templates, categories, createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory, moveTemplatesToCategory,
         saveCategory, deleteCategory, reorderCategories, instances, getTemplateNodes, loadTemplateStructures,
     } = useWorkflow();
     const { user, users } = useApp();
@@ -80,6 +81,13 @@ const WorkflowTemplates: React.FC = () => {
     const [editWatchers, setEditWatchers] = useState<string[]>([]);
     // Clone
     const [cloneSource, setCloneSource] = useState<WorkflowTemplate | null>(null);
+    // Moving templates between groups: one card, a checked selection, or drag onto a group chip.
+    const [selectionMode, setSelectionMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [moveTargetIds, setMoveTargetIds] = useState<string[] | null>(null);
+    const [isMoving, setIsMoving] = useState(false);
+    const [draggingIds, setDraggingIds] = useState<string[]>([]);
+    const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
     const [cloneName, setCloneName] = useState('');
     const [cloneCategoryId, setCloneCategoryId] = useState<string | null>(null);
     // Group management
@@ -90,7 +98,7 @@ const WorkflowTemplates: React.FC = () => {
     const [groupDeleteId, setGroupDeleteId] = useState<string | null>(null);
 
     useEffect(() => {
-        const hasActiveOverlay = showCreateModal || !!editingTemplate || !!deleteConfirmId || !!cloneSource || showGroupManager;
+        const hasActiveOverlay = showCreateModal || !!editingTemplate || !!deleteConfirmId || !!cloneSource || showGroupManager || !!moveTargetIds;
         if (hasActiveOverlay) {
             const originalOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
@@ -98,7 +106,7 @@ const WorkflowTemplates: React.FC = () => {
                 document.body.style.overflow = originalOverflow;
             };
         }
-    }, [showCreateModal, editingTemplate, deleteConfirmId, cloneSource, showGroupManager]);
+    }, [showCreateModal, editingTemplate, deleteConfirmId, cloneSource, showGroupManager, moveTargetIds]);
 
     // Helper: User picker component
     const UserPicker: React.FC<{ selected: string[]; onChange: (v: string[]) => void; label: string; icon: React.ReactNode; color: string }> = ({ selected, onChange, label, icon, color }) => {
@@ -376,17 +384,91 @@ const WorkflowTemplates: React.FC = () => {
         if (ok) setGroupDeleteId(null);
     };
 
+    // ---- Move between groups ----
+    const categoryLabel = (categoryId: string | null) =>
+        categoryId ? categories.find(c => c.id === categoryId)?.name || 'Chưa phân nhóm' : 'Chưa phân nhóm';
+
+    const toggleSelected = (templateId: string) =>
+        setSelectedIds(prev => prev.includes(templateId) ? prev.filter(id => id !== templateId) : [...prev, templateId]);
+
+    const exitSelectionMode = () => {
+        setSelectionMode(false);
+        setSelectedIds([]);
+    };
+
+    const moveTemplates = async (templateIds: string[], categoryId: string | null) => {
+        if (templateIds.length === 0 || isMoving) return;
+        setIsMoving(true);
+        try {
+            const moved = await moveTemplatesToCategory(templateIds, categoryId);
+            toast.success(`Đã chuyển ${moved} quy trình sang "${categoryLabel(categoryId)}"`);
+            setMoveTargetIds(null);
+            setSelectedIds(prev => prev.filter(id => !templateIds.includes(id)));
+            if (selectionMode && templateIds.length === selectedIds.length) setSelectionMode(false);
+        } catch (error) {
+            console.error('Move workflow templates failed:', error);
+            toast.error('Chưa chuyển được quy trình', getApiErrorMessage(error, 'Vui lòng thử lại.'));
+        } finally {
+            setIsMoving(false);
+        }
+    };
+
+    const groupKeyToCategoryId = (key: string) => (key === UNCATEGORIZED ? null : key);
+
+    const handleCardDragStart = (event: React.DragEvent, templateId: string) => {
+        // Dragging a checked card carries the whole selection.
+        const ids = selectedIds.includes(templateId) ? selectedIds : [templateId];
+        event.dataTransfer.setData(TEMPLATE_DRAG_TYPE, JSON.stringify(ids));
+        event.dataTransfer.effectAllowed = 'move';
+        setDraggingIds(ids);
+    };
+
+    const handleGroupDrop = (event: React.DragEvent, groupKey: string) => {
+        event.preventDefault();
+        setDropTargetKey(null);
+        setDraggingIds([]);
+        try {
+            const ids = JSON.parse(event.dataTransfer.getData(TEMPLATE_DRAG_TYPE) || '[]') as string[];
+            if (Array.isArray(ids) && ids.length > 0) void moveTemplates(ids, groupKeyToCategoryId(groupKey));
+        } catch {
+            // Not a template drag.
+        }
+    };
+
+    const groupDropProps = (groupKey: string) => (canEditWorkflowTemplates && groupKey !== ALL_GROUPS ? {
+        onDragOver: (event: React.DragEvent) => {
+            if (!event.dataTransfer.types.includes(TEMPLATE_DRAG_TYPE)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            setDropTargetKey(groupKey);
+        },
+        onDragLeave: () => setDropTargetKey(prev => (prev === groupKey ? null : prev)),
+        onDrop: (event: React.DragEvent) => handleGroupDrop(event, groupKey),
+    } : {});
+
     const renderCard = (t: WorkflowTemplate) => {
         const creator = users.find(u => u.id === t.createdBy);
         const nodeCount = getTemplateNodes(t.id).filter(n => n.type !== WorkflowNodeType.START && n.type !== WorkflowNodeType.END).length;
         const instanceCount = instances.filter(i => i.templateId === t.id).length;
         const canManageThisTemplate = canManageTemplate(t);
+        const isSelected = selectedIds.includes(t.id);
         return (
             <div
                 key={t.id}
-                className={`glass-card rounded-2xl p-5 transition-all group relative overflow-hidden ${canManageThisTemplate ? 'cursor-pointer hover:shadow-lg' : ''}`}
-                onClick={() => { if (canManageThisTemplate) navigate(`/wf/builder/${t.id}`); }}
+                draggable={canManageThisTemplate}
+                onDragStart={event => handleCardDragStart(event, t.id)}
+                onDragEnd={() => { setDraggingIds([]); setDropTargetKey(null); }}
+                className={`glass-card rounded-2xl p-5 transition-all group relative overflow-hidden ${canManageThisTemplate ? 'cursor-pointer hover:shadow-lg' : ''} ${isSelected ? 'ring-2 ring-accent' : ''} ${draggingIds.includes(t.id) ? 'opacity-50' : ''}`}
+                onClick={() => {
+                    if (selectionMode) { if (canManageThisTemplate) toggleSelected(t.id); return; }
+                    if (canManageThisTemplate) navigate(`/wf/builder/${t.id}`);
+                }}
             >
+                {selectionMode && canManageThisTemplate && (
+                    <span className={`absolute right-3 top-3 z-10 ${isSelected ? 'text-accent' : 'text-slate-300 dark:text-slate-600'}`} aria-hidden="true">
+                        {isSelected ? <SquareCheck size={20} /> : <Square size={20} />}
+                    </span>
+                )}
                 {/* Active indicator */}
                 <div className={`absolute top-0 left-0 w-full h-1 ${t.isActive ? 'bg-gradient-to-r from-emerald-400 to-teal-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
 
@@ -402,7 +484,7 @@ const WorkflowTemplates: React.FC = () => {
                             </span>
                         </div>
                     </div>
-                    {canManageThisTemplate && <ChevronRight size={16} className="shrink-0 text-slate-300 group-hover:text-accent transition" />}
+                    {canManageThisTemplate && !selectionMode && <ChevronRight size={16} className="shrink-0 text-slate-300 group-hover:text-accent transition" />}
                 </div>
 
                 {t.description && (
@@ -444,6 +526,16 @@ const WorkflowTemplates: React.FC = () => {
                                 {t.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
                             </button>
                         )}
+                        {canManageThisTemplate && (
+                            <button
+                                onClick={() => setMoveTargetIds([t.id])}
+                                className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition"
+                                title="Chuyển nhóm"
+                                aria-label="Chuyển nhóm"
+                            >
+                                <FolderInput size={14} />
+                            </button>
+                        )}
                         {canCreateWorkflowTemplates && (
                             <button
                                 onClick={() => openCloneModal(t)}
@@ -483,7 +575,7 @@ const WorkflowTemplates: React.FC = () => {
     const groupChips = [
         { key: ALL_GROUPS, name: 'Tất cả', count: filtered.length },
         ...categories.map(c => ({ key: c.id, name: c.name, count: countByGroup.get(c.id) || 0 })),
-        ...((countByGroup.get(UNCATEGORIZED) || 0) > 0 || activeGroup === UNCATEGORIZED
+        ...((countByGroup.get(UNCATEGORIZED) || 0) > 0 || activeGroup === UNCATEGORIZED || draggingIds.length > 0
             ? [{ key: UNCATEGORIZED, name: 'Chưa phân nhóm', count: countByGroup.get(UNCATEGORIZED) || 0 }]
             : []),
     ];
@@ -531,6 +623,18 @@ const WorkflowTemplates: React.FC = () => {
                         className="w-full pl-10 pr-4 py-2.5 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-accent text-sm"
                     />
                 </div>
+                {canEditWorkflowTemplates && (
+                    <button
+                        type="button"
+                        onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+                        aria-pressed={selectionMode}
+                        className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition ${selectionMode
+                            ? 'border-accent bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                            : 'border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 hover:border-accent/60'}`}
+                    >
+                        <ListChecks size={15} /> {selectionMode ? 'Xong' : 'Chọn nhiều'}
+                    </button>
+                )}
                 <div className="flex rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 p-1 text-xs font-bold">
                     {([['all', 'Tất cả'], ['active', 'Đang bật'], ['inactive', 'Đã tắt']] as Array<[StatusFilter, string]>).map(([value, label]) => (
                         <button
@@ -545,18 +649,28 @@ const WorkflowTemplates: React.FC = () => {
                 </div>
             </div>
 
+            {draggingIds.length > 0 && (
+                <p className="-mb-3 text-xs font-bold text-amber-600 dark:text-amber-300">
+                    Thả vào một nhóm bên dưới để chuyển {draggingIds.length} quy trình.
+                </p>
+            )}
+
             {/* Group chips */}
             <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
                 {groupChips.map(chip => {
                     const selected = activeGroup === chip.key;
+                    const isDropTarget = dropTargetKey === chip.key;
                     return (
                         <button
                             key={chip.key}
                             type="button"
                             onClick={() => setActiveGroup(chip.key)}
-                            className={`shrink-0 inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${selected
+                            {...groupDropProps(chip.key)}
+                            className={`shrink-0 inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${isDropTarget
+                                ? 'border-amber-400 bg-amber-50 text-amber-700 ring-2 ring-amber-300 dark:bg-amber-900/30 dark:text-amber-200'
+                                : selected
                                 ? 'border-accent bg-accent text-white shadow-md shadow-emerald-500/20'
-                                : 'border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:border-accent/60'}`}
+                                : `border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:border-accent/60 ${draggingIds.length > 0 && chip.key !== ALL_GROUPS ? 'border-dashed border-amber-300' : ''}`}`}
                         >
                             {chip.key !== ALL_GROUPS && <FolderOpen size={13} />}
                             {chip.name}
@@ -583,13 +697,31 @@ const WorkflowTemplates: React.FC = () => {
                 <div className="space-y-8">
                     {sections.map(section => (
                         <section key={section.key}>
-                            <div className="mb-3 flex items-center justify-between gap-3">
+                            <div
+                                {...groupDropProps(section.key)}
+                                className={`mb-3 flex items-center justify-between gap-3 rounded-xl ${dropTargetKey === section.key ? 'bg-amber-50 ring-2 ring-amber-300 dark:bg-amber-900/20' : ''}`}
+                            >
                                 <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
                                     <FolderOpen size={16} className={section.key === UNCATEGORIZED ? 'text-slate-400' : 'text-accent'} />
                                     {section.name}
                                     <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[10px] text-slate-500 dark:text-slate-400">{section.items.length}</span>
                                 </h2>
-                                {canCreateWorkflowTemplates && section.key !== UNCATEGORIZED && (
+                                {selectionMode && section.items.some(item => canManageTemplate(item)) && (() => {
+                                    const sectionIds = section.items.filter(item => canManageTemplate(item)).map(item => item.id);
+                                    const allChecked = sectionIds.every(id => selectedIds.includes(id));
+                                    return (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedIds(prev => allChecked
+                                                ? prev.filter(id => !sectionIds.includes(id))
+                                                : Array.from(new Set([...prev, ...sectionIds])))}
+                                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-accent hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                                        >
+                                            {allChecked ? <SquareCheck size={14} /> : <Square size={14} />} {allChecked ? 'Bỏ chọn cả nhóm' : 'Chọn cả nhóm'}
+                                        </button>
+                                    );
+                                })()}
+                                {!selectionMode && canCreateWorkflowTemplates && section.key !== UNCATEGORIZED && (
                                     <button
                                         type="button"
                                         onClick={() => openCreateModal(section.key)}
@@ -605,7 +737,7 @@ const WorkflowTemplates: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 px-4 py-6 text-center text-xs font-medium text-slate-400">
-                                    {isFiltering ? 'Không có quy trình phù hợp trong nhóm này.' : 'Nhóm chưa có quy trình. Tạo mới, hoặc sửa một quy trình có sẵn để chuyển vào nhóm.'}
+                                    {isFiltering ? 'Không có quy trình phù hợp trong nhóm này.' : 'Nhóm chưa có quy trình. Tạo mới, hoặc kéo thẻ quy trình thả vào tên nhóm ở trên.'}
                                 </div>
                             )}
                         </section>
@@ -654,6 +786,77 @@ const WorkflowTemplates: React.FC = () => {
                     )}
                 </ModalShell>
             )}
+
+            {selectionMode && (
+                <div className="sticky bottom-3 z-30 mx-auto flex max-w-2xl flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                        {selectedIds.length > 0 ? `Đã chọn ${selectedIds.length} quy trình` : 'Chạm vào thẻ để chọn quy trình'}
+                    </span>
+                    <div className="flex gap-2">
+                        {selectedIds.length > 0 && (
+                            <button type="button" onClick={() => setSelectedIds([])} className="rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+                                Bỏ chọn
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            disabled={selectedIds.length === 0}
+                            onClick={() => setMoveTargetIds(selectedIds)}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 disabled:opacity-50"
+                        >
+                            <FolderInput size={15} /> Chuyển nhóm
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Move-to-group Modal */}
+            {moveTargetIds && (() => {
+                const movingTemplates = templates.filter(t => moveTargetIds.includes(t.id));
+                const currentKeys = new Set(movingTemplates.map(groupKeyOf));
+                const options = [
+                    ...categories.map(c => ({ key: c.id, name: c.name })),
+                    { key: UNCATEGORIZED, name: 'Chưa phân nhóm' },
+                ];
+                return (
+                    <ModalShell
+                        title={<><FolderInput size={20} className="text-amber-500" /> Chuyển nhóm</>}
+                        onClose={() => setMoveTargetIds(null)}
+                        footer={<button onClick={() => setMoveTargetIds(null)} className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition">Hủy</button>}
+                    >
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                            {movingTemplates.length === 1
+                                ? <>Chuyển <span className="font-bold text-slate-700 dark:text-slate-200">{movingTemplates[0].name}</span> sang nhóm:</>
+                                : <>Chuyển <span className="font-bold text-slate-700 dark:text-slate-200">{movingTemplates.length} quy trình</span> sang nhóm:</>}
+                        </p>
+                        <div className="space-y-2" role="listbox" aria-label="Nhóm đích">
+                            {options.map(option => {
+                                const isCurrent = currentKeys.size === 1 && currentKeys.has(option.key);
+                                return (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        disabled={isMoving || isCurrent}
+                                        onClick={() => moveTemplates(moveTargetIds, groupKeyToCategoryId(option.key))}
+                                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm font-bold text-slate-700 transition hover:border-accent hover:bg-emerald-50/60 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800/40 dark:text-slate-200"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <FolderOpen size={16} className={option.key === UNCATEGORIZED ? 'text-slate-400' : 'text-accent'} />
+                                            {option.name}
+                                        </span>
+                                        {isCurrent && <span className="text-[11px] font-semibold text-slate-400">Nhóm hiện tại</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {categories.length === 0 && canManageGroups && (
+                            <button type="button" onClick={() => { setMoveTargetIds(null); setShowGroupManager(true); }} className="text-sm font-bold text-accent hover:underline">
+                                Chưa có nhóm nào — tạo nhóm mới
+                            </button>
+                        )}
+                    </ModalShell>
+                );
+            })()}
 
             {/* Clone Modal */}
             {cloneSource && (

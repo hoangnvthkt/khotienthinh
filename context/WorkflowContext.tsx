@@ -44,6 +44,7 @@ interface WorkflowContextType {
     deleteTemplate: (id: string) => Promise<void>;
     cloneTemplate: (sourceTemplateId: string, name: string, categoryId: string | null) => Promise<WorkflowCloneResult>;
     setTemplateCategory: (templateId: string, categoryId: string | null) => Promise<void>;
+    moveTemplatesToCategory: (templateIds: string[], categoryId: string | null) => Promise<number>;
 
     // Catalog groups
     saveCategory: (categoryId: string | null, name: string) => Promise<WorkflowTemplateCategory>;
@@ -81,7 +82,7 @@ interface WorkflowContextType {
 
 const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
 
-const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, created_at, updated_at';
+const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, step_approvals, created_at, updated_at';
 const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
 const WORKFLOW_TEMPLATE_LEGACY_SELECT = 'id,name,description,created_by,is_active,custom_fields,managers,default_watchers,created_at,updated_at';
 const WORKFLOW_TEMPLATE_SELECT = `${WORKFLOW_TEMPLATE_LEGACY_SELECT},owner_subject_type,owner_project_id,cloned_from_template_id,category_id`;
@@ -205,6 +206,7 @@ const mapInstanceFromDB = (row: any): WorkflowInstance => ({
     formData: row.form_data || row.formData || {},
     watchers: row.watchers || [],
     stepAssignees: row.step_assignees || row.stepAssignees || {},
+    stepApprovals: row.step_approvals || row.stepApprovals || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
@@ -527,6 +529,19 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
     };
 
+    const moveTemplatesToCategory = async (templateIds: string[], categoryId: string | null): Promise<number> => {
+        if (templateIds.length === 0) return 0;
+        const { data, error } = await supabase.rpc('move_workflow_templates_to_category', {
+            p_template_ids: templateIds,
+            p_category_id: categoryId,
+        });
+        if (error) throw error;
+        const rows = ((data as { templates?: any[] } | null)?.templates || []).map(mapTemplateFromDB);
+        const byId = new Map(rows.map(row => [row.id, row]));
+        setTemplates(prev => prev.map(t => byId.get(t.id) || t));
+        return rows.length;
+    };
+
     const saveCategory = async (categoryId: string | null, name: string): Promise<WorkflowTemplateCategory> => {
         const { data, error } = await supabase.rpc('save_workflow_template_category', {
             p_category_id: categoryId,
@@ -841,15 +856,14 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             };
         }
 
+        // The RPC row omits step_approvals ("tất cả phải duyệt" progress), so re-read the instance.
         let processedRow = Array.isArray(processedData) ? processedData[0] : processedData;
-        if (!processedRow) {
-            const { data: updatedRow } = await supabase
-                .from('workflow_instances')
-                .select(WORKFLOW_INSTANCE_LIST_SELECT)
-                .eq('id', instanceId)
-                .single();
-            processedRow = updatedRow;
-        }
+        const { data: updatedRow } = await supabase
+            .from('workflow_instances')
+            .select(WORKFLOW_INSTANCE_LIST_SELECT)
+            .eq('id', instanceId)
+            .single();
+        if (updatedRow) processedRow = updatedRow;
 
         if (processedRow) {
             const existingFormData = instances.find(i => i.id === instanceId)?.formData || {};
@@ -1191,7 +1205,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const value: WorkflowContextType = {
         templates, categories, nodes, edges, instances, logs, printTemplates, isLoading,
-        createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory,
+        createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory, moveTemplatesToCategory,
         saveCategory, deleteCategory, reorderCategories,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges, loadTemplateStructures,
         createInstance, createDraft, loadInstanceById, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,

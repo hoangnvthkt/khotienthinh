@@ -40,7 +40,7 @@ vi.mock('../../context/WorkflowContext', () => ({
       : [],
     loadTemplateStructures: vi.fn(async () => undefined),
     createTemplate: vi.fn(), updateTemplate: vi.fn(), deleteTemplate: vi.fn(), cloneTemplate: vi.fn(),
-    setTemplateCategory: vi.fn(), saveCategory: vi.fn(), deleteCategory: vi.fn(), reorderCategories: vi.fn(),
+    setTemplateCategory: vi.fn(), moveTemplatesToCategory: vi.fn(), saveCategory: vi.fn(), deleteCategory: vi.fn(), reorderCategories: vi.fn(),
   }),
 }));
 
@@ -85,6 +85,8 @@ describe('workflow template catalog', () => {
     const adminHtml = render();
     expect(adminHtml).toContain('Nhân bản quy trình');
     expect(adminHtml).toContain('Quản lý nhóm');
+    expect(adminHtml).toContain('Chuyển nhóm');
+    expect(adminHtml).toContain('Chọn nhiều');
 
     currentUser = {
       id: 'viewer', name: 'Viewer', email: 'viewer@example.com', role: Role.EMPLOYEE,
@@ -94,6 +96,8 @@ describe('workflow template catalog', () => {
     expect(viewerHtml).toContain('Quy trình tuyển dụng');
     expect(viewerHtml).not.toContain('Nhân bản quy trình');
     expect(viewerHtml).not.toContain('Quản lý nhóm');
+    expect(viewerHtml).not.toContain('Chuyển nhóm');
+    expect(viewerHtml).not.toContain('Chọn nhiều');
   });
 });
 

@@ -105,10 +105,13 @@ const isRequestTemplateEditorRoute = (pathname: string): boolean =>
   pathname === '/rq/templates/new'
   || (pathname.startsWith('/rq/templates/') && pathname !== '/rq/templates/');
 
-const isWorkflowInstanceRoute = (pathname: string): boolean =>
-  pathname === '/wf'
-  || pathname === '/wf/dashboard'
-  || (!!matchPath({ path: '/wf/:instanceId', end: true }, pathname)
+const isWorkflowListRoute = (pathname: string): boolean =>
+  pathname === '/wf' || pathname === '/wf/dashboard';
+
+// A single ticket opens for anyone named on it (creator, handler, watcher,
+// @mentioned) even without the module permission; RLS decides per ticket.
+const isWorkflowTicketRoute = (pathname: string): boolean =>
+  (!!matchPath({ path: '/wf/:instanceId', end: true }, pathname)
     && pathname !== '/wf/templates'
     && pathname !== '/wf/dashboard'
     && !pathname.startsWith('/wf/builder/'))
@@ -160,7 +163,8 @@ export const canAccessRoute = (
   if (isRequestTemplateEditorRoute(pathname)) {
     return canPerform(user, 'request.template.manage', GLOBAL_SCOPE);
   }
-  if (isWorkflowInstanceRoute(pathname)) {
+  if (isWorkflowTicketRoute(pathname)) return true;
+  if (isWorkflowListRoute(pathname)) {
     return canViewWorkflowInstances(user);
   }
   if (pathname === '/settings/role-templates') {

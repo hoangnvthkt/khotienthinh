@@ -4391,7 +4391,8 @@ export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' 
 export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
 export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback';
 export type WorkflowParticipantRole = 'ADMIN' | 'WATCHER' | 'CREATOR' | 'ASSIGNEE';
-export type WorkflowApprovalPolicy = 'ANY_ONE';
+// ANY_ONE: one assignee approving advances the stage. ALL: every assignee must approve.
+export type WorkflowApprovalPolicy = 'ANY_ONE' | 'ALL';
 export type ProjectWorkflowBindingScope = 'global' | 'project' | 'site';
 export type WorkflowAssignmentTargetType = 'user' | 'department' | 'project_permission' | 'creator';
 export type ProjectWorkflowAssignmentMode =
@@ -4876,6 +4877,7 @@ export interface WorkflowInstance {
   formData: Record<string, any>;
   watchers: string[];  // user IDs — view + comment only
   stepAssignees?: Record<string, string | string[]>; // node id -> assigned user id(s)
+  stepApprovals?: Record<string, string[]>; // node id -> assignees who approved the current round ("tất cả phải duyệt")
   createdAt: string;
   updatedAt: string;
 }
