@@ -101,7 +101,7 @@ describe('requestRuntimeService.act', () => {
     }));
   });
 
-  it('maps stable database request codes while preserving diagnostics', async () => {
+  it('maps stable database request codes to Vietnamese while keeping diagnostics in cause', async () => {
     mocks.rpc.mockResolvedValue({
       data: null,
       error: { code: 'P0001', message: 'REQUEST_STALE_STATE: updated_at changed' },
@@ -114,7 +114,15 @@ describe('requestRuntimeService.act', () => {
     })).rejects.toMatchObject({
       name: 'RequestRpcError',
       code: 'REQUEST_STALE_STATE',
-      message: 'REQUEST_STALE_STATE: updated_at changed',
+      message: 'Đề xuất vừa được người khác cập nhật. Vui lòng tải lại rồi thực hiện tiếp.',
+      cause: { message: 'REQUEST_STALE_STATE: updated_at changed' },
+    });
+  });
+
+  it('never shows an unknown raw REQUEST_* code to users', () => {
+    expect(mapRequestRpcError({ code: '22023', message: 'REQUEST_WORKFLOW_BLOCK_NODE_MISSING' })).toMatchObject({
+      code: 'REQUEST_NOT_FOUND_OR_FORBIDDEN',
+      message: 'Không thể xử lý đề xuất. Vui lòng thử lại hoặc liên hệ quản trị viên.',
     });
   });
 

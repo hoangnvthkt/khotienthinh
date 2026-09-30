@@ -323,6 +323,11 @@ export const RequestDetailPanel: React.FC<{
             </div>
           </section>
 
+          {/* Below xl the side inspector is hidden, so the approval flow renders inline. */}
+          <div className="xl:hidden">
+            <RequestApprovalInspector detail={detail} inline />
+          </div>
+
           {detail.capabilities.canReadDiscussion && <RequestDiscussion requestId={detail.id} canComment={detail.capabilities.canComment} canAttach={detail.capabilities.canAttach} />}
         </article>
 

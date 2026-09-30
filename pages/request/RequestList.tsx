@@ -16,9 +16,10 @@ const STATUS_FILTERS: Array<{ label: string; status?: RequestListFilter['status'
   { label: 'Tất cả' },
   { label: 'Quá hạn', overdue: true },
   { label: 'Chờ duyệt', status: 'PENDING' },
-  { label: 'Đã chấp thuận', status: 'APPROVED' },
-  { label: 'Đã từ chối', status: 'REJECTED' },
-  { label: 'Đã trả lại', status: 'RETURNED' },
+  { label: 'Trả lại', status: 'RETURNED' },
+  { label: 'Hoàn thành', status: 'APPROVED' },
+  { label: 'Từ chối', status: 'REJECTED' },
+  { label: 'Đã hủy', status: 'CANCELLED' },
 ];
 
 const useViewportWidth = () => {
@@ -181,7 +182,7 @@ const RequestList: React.FC = () => {
                     setStatus(item.status);
                     setOverdue(Boolean(item.overdue));
                   }}
-                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                  className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                     active
                       ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/25 font-semibold'
                       : 'bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
