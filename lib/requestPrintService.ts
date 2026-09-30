@@ -3,6 +3,7 @@ import Docxtemplater from 'docxtemplater';
 import { supabase } from './supabase';
 import type { RequestDetail } from './requestRuntimeService';
 import { escapeHtml } from './safeHtml';
+import { isRichText, richTextToPlain, richTextToSafeHtml } from './requestRichText';
 
 export interface RequestPrintDocument { fileName: string; mimeType: string; bytes: Uint8Array; }
 export interface RequestPrintModelField {
@@ -39,14 +40,15 @@ const tokenValue = (value: unknown): string => {
     if (value.length === 0) return '';
     return value.map(row => typeof row === 'object' && row !== null ? Object.values(row).join(' | ') : String(row)).join('\n');
   }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'string') return richTextToPlain(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
 };
 
 export const buildRequestPrintTokens = (detail: Pick<RequestDetail, 'code' | 'title' | 'description' | 'creator' | 'templateName' | 'createdAt' | 'formSchema' | 'formData' | 'approvalBlocks'>): Record<string, string> => {
   const approvalSummary = detail.approvalBlocks.map(block => `${block.name}: ${block.assignments.map(assignment => `${assignment.approver.name} (${assignment.status})`).join(', ') || block.status}`).join('\n');
   return {
-    code: detail.code, title: detail.title, description: detail.description, creator_name: detail.creator.name,
+    code: detail.code, title: detail.title, description: richTextToPlain(detail.description), creator_name: detail.creator.name,
     template_name: detail.templateName, created_at: detail.createdAt, approval_summary: approvalSummary,
     ...Object.fromEntries(detail.formSchema.map(field => [`field_${field.key}`, tokenValue(detail.formData[field.key])])),
   };
@@ -115,7 +117,8 @@ export const buildBrowserPrintModel = (detail: RequestDetail): RequestPrintModel
       key: field.key,
       label: field.label,
       fieldType: field.fieldType,
-      value: tokenValue(rawValue) || '—',
+      // Rich text keeps its stored form so the print HTML can render formatting.
+      value: isRichText(rawValue) ? rawValue : tokenValue(rawValue) || '—',
       isTable,
       tableColumns,
       tableRows,
@@ -198,7 +201,7 @@ export const buildRequestPrintHtml = (detail: RequestDetail): string => {
           ${scalarFields.map(f => `
             <tr>
               <td class="field-label">${escapeHtml(f.label)}</td>
-              <td class="field-value">${escapeHtml(f.value || '—')}</td>
+              <td class="field-value">${isRichText(f.value) ? `<div class="rich">${richTextToSafeHtml(f.value)}</div>` : escapeHtml(f.value || '—')}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -353,6 +356,9 @@ export const buildRequestPrintHtml = (detail: RequestDetail): string => {
       border-bottom: 1px solid #e2e8f0;
       padding-bottom: 4px;
     }
+    .rich { white-space: pre-wrap; }
+    .rich p { margin: 0; min-height: 1.4em; }
+    .rich ul, .rich ol { margin: 0; padding-left: 1.5em; }
     .desc-box {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
@@ -497,7 +503,7 @@ export const buildRequestPrintHtml = (detail: RequestDetail): string => {
 
   <div class="desc-section">
     <h3 class="section-title">Nội dung đề xuất</h3>
-    <div class="desc-box">${escapeHtml(model.description || 'Không có mô tả.')}</div>
+    <div class="desc-box">${isRichText(model.description) ? `<div class="rich">${richTextToSafeHtml(model.description)}</div>` : escapeHtml(model.description || 'Không có mô tả.')}</div>
   </div>
 
   ${(scalarFields.length > 0 || tableFields.length > 0) ? `

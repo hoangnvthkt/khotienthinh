@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBrowserPrintModel, buildRequestPrintFileName, buildRequestPrintTokens, buildRequestPrintHtml } from '../requestPrintService';
+import { serializeRichText } from '../requestRichText';
 
 const detail = {
   id: 'rq-1', code: 'RQ-2026-000001', title: 'Đề xuất mua máy tính', description: 'Nội dung',
@@ -92,5 +93,22 @@ describe('request print service', () => {
     expect(html).toContain('Xi măng');
     expect(html).toContain('Người lập đề xuất');
     expect(html).toContain('Người phê duyệt');
+  });
+
+  it('prints rich text with formatting and exports it to Word as plain text', () => {
+    const rich = serializeRichText({ version: 1, blocks: [
+      { type: 'paragraph', lines: [[{ text: 'Lý do', b: true }]] },
+      { type: 'bullet', lines: [[{ text: '<b>Máy cũ</b>', color: '#dc2626' }]] },
+    ] });
+    const richDetail = {
+      ...detail,
+      description: rich,
+      formSchema: [{ key: 'note', label: 'Ghi chú', fieldType: 'textarea', required: false, options: [], sortOrder: 1 }],
+      formData: { note: rich },
+    };
+    expect(buildRequestPrintTokens(richDetail)).toMatchObject({ description: 'Lý do\n• <b>Máy cũ</b>', field_note: 'Lý do\n• <b>Máy cũ</b>' });
+    const html = buildRequestPrintHtml(richDetail);
+    expect(html).toContain('<div class="desc-box"><div class="rich"><p><strong>Lý do</strong></p><ul><li><span style="color:#dc2626">&lt;b&gt;Máy cũ&lt;/b&gt;</span></li></ul></div></div>');
+    expect(html).not.toContain('RT1:');
   });
 });
