@@ -78,6 +78,9 @@ export const getApiErrorMessage = (
   if (rawMessage.includes('foreign key') || rawMessage.includes('23503') || rawMessage.includes('referenced from table')) {
     return 'Dữ liệu liên quan không hợp lệ hoặc đang được sử dụng ở nơi khác. Vui lòng kiểm tra lại.';
   }
+  if (rawMessage.includes('inventory_negative_stock')) {
+    return (originalMessage || '').replace(/^INVENTORY_NEGATIVE_STOCK:\s*/, '') || 'Không đủ tồn kho để xuất.';
+  }
   if (rawMessage.includes('insufficient stock') || rawMessage.includes('không đủ tồn') || rawMessage.includes('tồn khả dụng')) {
     return originalMessage || 'Không đủ tồn kho khả dụng để thực hiện thao tác.';
   }

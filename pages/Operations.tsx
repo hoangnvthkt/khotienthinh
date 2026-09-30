@@ -15,6 +15,7 @@ import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
 import TransactionDetailModal from '../components/TransactionDetailModal';
+import { WmsStaleDocumentsBanner } from '../components/wms/WmsStaleDocumentsBanner';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import Pagination from '../components/Pagination';
 import SearchableSelect from '../components/common/SearchableSelect';
@@ -1013,6 +1014,17 @@ const Operations: React.FC = () => {
           </>
         }
       />
+
+      {/* K1: phiếu kho chờ xử lý quá 3 ngày. */}
+      <WmsStaleDocumentsBanner reloadKey={viewingHistoryTx ? 0 : 1} onOpen={async id => {
+        try {
+          const tx = await wmsTransactionListService.getById(id);
+          if (tx) await openTransactionDetails(tx);
+          else toast.warning('Không mở được phiếu', 'Phiếu không còn hoặc bạn không có quyền xem.');
+        } catch (error) {
+          toast.error('Không mở được phiếu', getApiErrorMessage(error, 'Thử lại sau.'));
+        }
+      }} />
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex border-b border-slate-100 overflow-x-auto bg-slate-50/50 scrollbar-hide">
