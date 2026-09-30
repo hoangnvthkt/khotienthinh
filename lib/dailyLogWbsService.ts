@@ -83,7 +83,15 @@ export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
     previousItem: { cumulativeQuantityDone: number; areaPlannedQuantitySnapshot: number; unitSnapshot: string } | null;
     nextItem: { cumulativeQuantityDone: number | null; areaPlannedQuantitySnapshot: number | null; unitSnapshot: string | null } | null;
   }>;
-  permissions: DailyLogWbsBundle['permissions'] & { canCreateSource: boolean; canSubmitSource: boolean };
+  permissions: DailyLogWbsBundle['permissions'] & {
+    canCreateSource: boolean;
+    canSubmitSource: boolean;
+    /** Author may discard this never-sent draft (also frees its area code for the day). */
+    canDeleteSource?: boolean;
+    /** Author may take back this sent slip; false once a summary holds this version. */
+    canWithdrawSource?: boolean;
+    sourceInSummary?: boolean;
+  };
 }
 
 export interface CreateDailyLogSourceInput {
@@ -116,7 +124,7 @@ export interface SaveDailyLogSourceDocumentInput {
 
 export interface DailyLogSourceTransitionReceipt {
   contributionId: string;
-  status: 'submitted' | 'returned';
+  status: 'submitted' | 'returned' | 'draft';
   rowVersion: number;
   updatedAt: string;
   sourceFingerprint: string;
@@ -132,6 +140,19 @@ export interface ReturnDailyLogSourceInput {
   expectedSummaryUpdatedAt: string;
   expectedRowVersion: number;
   reason: string;
+}
+
+export interface DailyLogSourceAuthorCommandInput {
+  commandId: string;
+  contributionId: string;
+  expectedRowVersion: number;
+}
+
+export interface DailyLogSourceDeleteReceipt {
+  contributionId: string;
+  deleted: true;
+  workAreaCode: string;
+  workAreaName: string;
 }
 
 export interface SubmitDailyLogSourceInput {
@@ -278,6 +299,12 @@ export const dailyLogWbsService = {
   },
   submitSource(input: SubmitDailyLogSourceInput): Promise<DailyLogSourceTransitionReceipt> {
     return callRpc('submit_daily_log_source_v2', { p_input: input });
+  },
+  withdrawSource(input: DailyLogSourceAuthorCommandInput): Promise<DailyLogSourceTransitionReceipt> {
+    return callRpc('withdraw_daily_log_source_v2', { p_input: input });
+  },
+  deleteSource(input: DailyLogSourceAuthorCommandInput): Promise<DailyLogSourceDeleteReceipt> {
+    return callRpc('delete_daily_log_source_v2', { p_input: input });
   },
   saveSourceDocument(input: SaveDailyLogSourceDocumentInput): Promise<DailyLogWorkSaveReceipt> {
     return callRpc('save_daily_log_source_document_v2', { p_input: input });
