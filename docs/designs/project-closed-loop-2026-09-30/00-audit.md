@@ -93,3 +93,12 @@ Audit vòng 2 (trước khi code từng đợt) sẽ đọc sâu màn hình và 
 3. **Kỳ nào là chuẩn để mua hàng?** Đề xuất: KH vật tư **tuần** (cần gấp, sát thực tế); KH vật tư tháng chỉ để dự trù và đặt hàng dài.
 4. **Vượt BOQ vật tư:** chặn cứng hay cho vượt kèm lý do + người duyệt? Đề xuất: cho vượt kèm lý do, cảnh báo 2 ngưỡng (80% / 100%), người duyệt là CHT.
 5. **Code Project V2 của Codex:** đồng ý để em đọc và lấy lại từng phần phù hợp (không merge nguyên nhánh, không chạy 11 migration cũ nguyên trạng)?
+
+## 5. Quyết định đã chốt (30/09/2026)
+
+Chủ sản phẩm đồng ý cả 5 đề xuất ở mục 4:
+1. Kế hoạch tháng lập theo **công việc của bảng tiến độ toàn dự án**, có cột hợp đồng/tổ đội để lọc; không lập song song theo từng hợp đồng.
+2. KH tháng: CHT lập, GĐ dự án duyệt. KH tuần: kỹ sư/CHT lập, CHT duyệt. KH vật tư: sinh từ KH tuần, CHT duyệt, đi thẳng Mua hàng.
+3. Kỳ chuẩn để mua hàng là **KH vật tư tuần**; KH vật tư tháng để dự trù, đặt hàng dài.
+4. Vượt BOQ vật tư: **cho vượt kèm lý do**, cảnh báo 2 ngưỡng (80% / 100%), CHT duyệt.
+5. Được đọc và lấy lại từng phần phù hợp từ code Project V2 của Codex; không merge nguyên nhánh, không chạy nguyên trạng 11 migration cũ.
