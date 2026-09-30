@@ -447,8 +447,9 @@ const WorkflowBuilder: React.FC = () => {
     const [newFieldRequired, setNewFieldRequired] = useState(false);
     const [newFieldOptions, setNewFieldOptions] = useState('');
     const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+    // Read-only: the company-wide default for project material requests is set in
+    // the Dự án module; a one-click toggle here re-routed every project's requests.
     const [isMaterialRequestDefault, setIsMaterialRequestDefault] = useState(false);
-    const [bindingSaving, setBindingSaving] = useState(false);
     const [draftRestoredAt, setDraftRestoredAt] = useState<string | null>(null);
     const [serverRefreshSkippedAt, setServerRefreshSkippedAt] = useState<string | null>(null);
     const hydratedTemplateIdRef = useRef<string | null>(null);
@@ -550,40 +551,21 @@ const WorkflowBuilder: React.FC = () => {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [hasChanges]);
 
-    const selectedWorkflowUserIds = useMemo(() => {
-        const ids = new Set<string>();
-        template?.managers?.forEach(id => ids.add(id));
-        template?.defaultWatchers?.forEach(id => ids.add(id));
-        localNodes.forEach(node => {
-            if (node.config?.assigneeUserId) ids.add(node.config.assigneeUserId);
-            (node.config?.assignmentTargets || []).forEach((target: WorkflowAssignmentTarget) => {
-                if (target.type === 'user' && target.userId) ids.add(target.userId);
-            });
-            (node.config?.stepWatcherTargets || []).forEach((target: WorkflowAssignmentTarget) => {
-                if (target.type === 'user' && target.userId) ids.add(target.userId);
-            });
-        });
-        return Array.from(ids).filter(Boolean);
-    }, [localNodes, template?.defaultWatchers, template?.managers]);
-
-    const missingSelectedUserIds = useMemo(() => {
-        const loadedUserIds = new Set(users.map(item => item.id));
-        return selectedWorkflowUserIds.filter(id => !loadedUserIds.has(id));
-    }, [selectedWorkflowUserIds, users]);
-
-    const peopleHydrationStale = users.length <= 1 || missingSelectedUserIds.length > 0;
+    // Only an empty people list blocks editing. Background refreshes (page focus,
+    // realtime) run silently; people chosen earlier but since disabled simply
+    // stay out of the list instead of forcing endless reloads.
+    const peopleMissing = users.length <= 1;
     const peopleHydrationLoading = moduleLoadState['workflow-people'] === 'loading';
     const peopleHydrationError = moduleLoadErrors['workflow-people'] || null;
 
     useEffect(() => {
-        if (!templateId || !peopleHydrationStale || peopleHydrationLoading) return;
-        const reloadKey = `${users.length <= 1 ? 'few-users' : ''}|${[...missingSelectedUserIds].sort().join('|')}`;
-        if (lastPeopleReloadKeyRef.current === reloadKey) return;
-        lastPeopleReloadKeyRef.current = reloadKey;
-        loadModuleData('workflow-people', true).catch(error => {
-            console.warn('Workflow people reload failed:', error);
+        if (!templateId || !peopleMissing || peopleHydrationLoading) return;
+        if (lastPeopleReloadKeyRef.current === 'few-users') return;
+        lastPeopleReloadKeyRef.current = 'few-users';
+        loadModuleData('workflow-people').catch(error => {
+            console.warn('Workflow people load failed:', error);
         });
-    }, [loadModuleData, missingSelectedUserIds, orgUnits.length, peopleHydrationLoading, peopleHydrationStale, templateId, users.length]);
+    }, [loadModuleData, peopleHydrationLoading, peopleMissing, templateId]);
 
     const retryPeopleHydration = () => {
         lastPeopleReloadKeyRef.current = '';
@@ -629,34 +611,6 @@ const WorkflowBuilder: React.FC = () => {
     }, [templateId]);
 
     const generateId = () => crypto.randomUUID();
-
-    const toggleMaterialRequestDefaultBinding = async () => {
-        if (!templateId) return;
-        setBindingSaving(true);
-        try {
-            if (!isMaterialRequestDefault) {
-                await projectWorkflowService.setBinding({
-                    subjectType: 'material_request',
-                    workflowTemplateId: templateId,
-                    projectId: null,
-                    constructionSiteId: null,
-                });
-                setIsMaterialRequestDefault(true);
-            } else {
-                await projectWorkflowService.removeBinding({
-                    subjectType: 'material_request',
-                    projectId: null,
-                    constructionSiteId: null,
-                });
-                setIsMaterialRequestDefault(false);
-            }
-        } catch (error) {
-            console.error('Cannot update material request workflow binding:', error);
-            throw error;
-        } finally {
-            setBindingSaving(false);
-        }
-    };
 
     // ========== STEPS (NODES) MANAGEMENT ==========
 
@@ -1246,18 +1200,14 @@ const WorkflowBuilder: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                    {canConfigureTemplate && <button
-                        onClick={toggleMaterialRequestDefaultBinding}
-                        disabled={bindingSaving}
-                        className={`flex items-center px-4 py-2.5 rounded-xl text-xs font-black border transition disabled:opacity-50 ${
-                            isMaterialRequestDefault
-                                ? 'border-purple-200 bg-purple-50 text-purple-700'
-                                : 'border-slate-200 bg-white/70 text-slate-500 hover:bg-slate-50'
-                        }`}
-                    >
-                        <Zap size={14} className="mr-1.5" />
-                        {bindingSaving ? 'Đang lưu...' : isMaterialRequestDefault ? 'Mặc định phiếu vật tư' : 'Gán cho phiếu vật tư'}
-                    </button>}
+                    {isMaterialRequestDefault && (
+                        <span
+                            className="flex items-center rounded-xl border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-black text-purple-700"
+                            title="Đang là quy trình mặc định cho phiếu vật tư của các dự án chưa cấu hình riêng. Thay đổi trong module Dự án."
+                        >
+                            <Zap size={14} className="mr-1.5" /> Mặc định phiếu vật tư dự án
+                        </span>
+                    )}
                     {hasChanges && (
                         <span className="text-[10px] font-bold text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 rounded-lg animate-pulse">
                             • Chưa lưu
@@ -1361,7 +1311,7 @@ const WorkflowBuilder: React.FC = () => {
                 </div>
             )}
 
-            {(peopleHydrationLoading || peopleHydrationError || peopleHydrationStale) && (
+            {(peopleHydrationError || (peopleMissing && peopleHydrationLoading)) && (
                 <div className={`rounded-xl border px-4 py-3 text-xs font-bold ${
                     peopleHydrationError
                         ? 'border-rose-200 bg-rose-50 text-rose-700'
@@ -1369,11 +1319,9 @@ const WorkflowBuilder: React.FC = () => {
                 }`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            {peopleHydrationLoading
-                                ? 'Đang đồng bộ danh sách người dùng và phòng ban...'
-                                : peopleHydrationError
-                                    ? `Không tải được danh sách người: ${peopleHydrationError}`
-                                    : 'Danh sách người trên máy này chưa đầy đủ, hệ thống đang tải lại dữ liệu mới nhất.'}
+                            {peopleHydrationError
+                                ? `Không tải được danh sách người: ${peopleHydrationError}`
+                                : 'Đang tải danh sách người dùng và phòng ban...'}
                         </div>
                         <button
                             type="button"
