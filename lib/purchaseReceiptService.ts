@@ -95,6 +95,19 @@ export const purchaseReceiptService = {
     return assertReceiptCommandResult(data, input);
   },
 
+  /** Kiểm SL/CL và nhập kho trong một lệnh (một giao dịch). */
+  async receiveInOneStep(input: ApproveReceiptQualityInput): Promise<ReceiptCommandResult> {
+    const { data, error } = await supabase.rpc('receive_purchase_delivery_v1', {
+      p_delivery_batch_id: input.deliveryBatchId,
+      p_wms_transaction_id: input.wmsTransactionId,
+      p_quality_result: input.qualityResult,
+      p_lines: input.lines,
+      p_attachments: input.attachments,
+    });
+    if (error) throw error;
+    return assertReceiptCommandResult(data, input);
+  },
+
   async finalizeReceipt(input: {
     deliveryBatchId: string;
     wmsTransactionId: string;
