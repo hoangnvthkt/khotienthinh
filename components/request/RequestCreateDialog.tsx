@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Eye, FileText, Loader2, Paperclip, Send, UserPlus, UserRound, X } from 'lucide-react';
+import { Eye, FileText, Loader2, Paperclip, Send, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -12,7 +12,6 @@ import { buildRequestRoute } from '../../lib/requestRoutes';
 import { normalizeDynamicApprovers, validateRequestSubmission } from '../../lib/requestCreateModel';
 import { requestAttachmentService, validateRequestAttachment } from '../../lib/requestAttachmentService';
 import { buildRequestCommentDocument } from '../../lib/requestDiscussionModel';
-import type { RequestCompletionPolicy } from '../../types';
 
 import UserSearchSelect from '../common/UserSearchSelect';
 import { RequestFormFields } from './RequestFormFields';
@@ -42,17 +41,16 @@ export const RequestCreateDialog: React.FC<{
   const [dynamicApprovers, setDynamicApprovers] = useState<Record<string, string[]>>({});
   const [errors, setErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [extraApprovers, setExtraApprovers] = useState<string[]>([]);
-  const [extraPolicy, setExtraPolicy] = useState<RequestCompletionPolicy>('ALL');
   const [watchers, setWatchers] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [submitStage, setSubmitStage] = useState<string | null>(null);
-  const dirty = Boolean(selectedTemplateVersionId || title || description || Object.keys(formData).length || Object.keys(dynamicApprovers).length || extraApprovers.length || watchers.length || files.length);
+  const dirty = Boolean(selectedTemplateVersionId || title || description || Object.keys(formData).length || Object.keys(dynamicApprovers).length || watchers.length || files.length);
   const requestClose = () => { if (!dirty || window.confirm('Bỏ các thay đổi chưa gửi?')) onClose(); };
   useDialogFocusTrap(isOpen, dialogRef, requestClose);
 
   const selectedTemplate = useMemo(() => templates.find(template => template.templateVersionId === selectedTemplateVersionId), [templates, selectedTemplateVersionId]);
+  const approvalSteps = useMemo(() => [...(selectedTemplate?.approvalBlocks ?? [])].sort((a, b) => a.sortOrder - b.sortOrder), [selectedTemplate]);
   const dynamicBlocks = useMemo(() => (selectedTemplate?.approvalBlocks ?? []).filter(block => block.source === 'DYNAMIC_CREATOR_SELECT'), [selectedTemplate]);
 
   useEffect(() => {
@@ -64,8 +62,6 @@ export const RequestCreateDialog: React.FC<{
     setDescription('');
     setFormData({});
     setDynamicApprovers({});
-    setExtraApprovers([]);
-    setExtraPolicy('ALL');
     setWatchers([]);
     setFiles([]);
     setFileError(null);
@@ -140,7 +136,7 @@ export const RequestCreateDialog: React.FC<{
     setIsSubmitting(true);
     setErrors([]);
     try {
-      const payload=JSON.stringify({requestTemplateVersionId:selectedTemplate.templateVersionId,title:title.trim(),description:description.trim(),formData,dynamicApproversByBlock:normalizedApprovers,extraApprovers,extraPolicy,watchers});
+      const payload=JSON.stringify({requestTemplateVersionId:selectedTemplate.templateVersionId,title:title.trim(),description:description.trim(),formData,dynamicApproversByBlock:normalizedApprovers,watchers});
       if(payloadRef.current!==undefined&&payloadRef.current!==payload)idempotencyKeyRef.current=newIdempotencyKey();
       payloadRef.current=payload;
       const result = await requestRuntimeService.submit({
@@ -150,8 +146,6 @@ export const RequestCreateDialog: React.FC<{
         formData,
         dynamicApproversByBlock: normalizedApprovers,
         idempotencyKey: idempotencyKeyRef.current ?? (idempotencyKeyRef.current = newIdempotencyKey()),
-        extraApproverIds: extraApprovers,
-        extraCompletionPolicy: extraPolicy,
         watcherIds: watchers,
       });
       const failedFiles = files.length ? await uploadFiles(result.requestId) : 0;
@@ -203,31 +197,45 @@ export const RequestCreateDialog: React.FC<{
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Thông tin đề xuất</h3>
               <RequestFormFields fields={selectedTemplate.formSchema} values={formData} onChange={setFormData} users={users} disabled={isSubmitting} />
             </section>}
-            {dynamicBlocks.length > 0 && <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
-              <div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Người duyệt bắt buộc theo mẫu</h3><p className="text-xs text-slate-500">Mẫu này yêu cầu bạn chọn người duyệt cho các bước sau.</p></div>
-              {dynamicBlocks.map(block => <div key={block.key} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <div className="mb-3 flex items-center gap-2"><UserRound size={16} className="text-violet-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">{block.name}</p><p className="text-xs text-slate-500">Tối thiểu {block.minimumDynamicApprovers ?? 1} người duyệt</p></div></div>
-                <UserSearchSelect
-                  users={users}
-                  excludeUserIds={[user.id]}
-                  multiple
-                  values={dynamicApprovers[block.key] ?? []}
-                  onValuesChange={userIds => setDynamicApprovers(previous => ({ ...previous, [block.key]: userIds }))}
-                  placeholder="Gõ tên hoặc vị trí để tìm người duyệt..."
-                  disabled={isSubmitting}
-                />
-              </div>)}
+            {approvalSteps.length > 0 && <section className="space-y-3 border-t border-slate-100 pt-5 dark:border-slate-800">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Luồng duyệt</h3>
+                <p className="text-xs text-slate-500">{selectedTemplate.flowMode === 'PARALLEL'
+                  ? `Các bước được gửi duyệt cùng lúc${selectedTemplate.completionPolicy === 'ANY_ONE' ? ', chỉ cần một người đồng ý là hoàn thành' : ''}.`
+                  : 'Đề xuất đi lần lượt theo thứ tự các bước dưới đây.'}{dynamicBlocks.length > 0 ? ' Hãy chọn người duyệt cho các bước có dấu *.' : ''}</p>
+              </div>
+              <ol className="space-y-2.5">
+                {approvalSteps.map((block, index) => {
+                  const isDynamic = block.source === 'DYNAMIC_CREATOR_SELECT';
+                  const minimum = block.minimumDynamicApprovers ?? 1;
+                  return <li key={block.key} className={`rounded-xl border p-3.5 ${isDynamic ? 'border-violet-200 bg-violet-50/40 dark:border-violet-900 dark:bg-violet-950/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{selectedTemplate.flowMode === 'PARALLEL' ? '•' : index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{block.name}{isDynamic && <span className="ml-1 text-rose-500">*</span>}</p>
+                        {isDynamic ? <>
+                          <p className="mb-2 text-xs text-slate-500">{minimum > 1 ? `Chọn tối thiểu ${minimum} người duyệt` : 'Gõ tên để chọn người duyệt'}</p>
+                          <UserSearchSelect
+                            users={users}
+                            excludeUserIds={[user.id]}
+                            multiple
+                            values={dynamicApprovers[block.key] ?? []}
+                            onValuesChange={userIds => setDynamicApprovers(previous => ({ ...previous, [block.key]: userIds }))}
+                            placeholder="Gõ tên hoặc vị trí để tìm người duyệt..."
+                            disabled={isSubmitting}
+                          />
+                        </> : <p className="text-xs text-slate-500">{block.source === 'DIRECT_MANAGER'
+                          ? 'Quản lý trực tiếp của bạn (tự động)'
+                          : block.fixedApprovers?.length
+                            ? `${block.fixedApprovers.map(approver => approver.name).join(', ')} (cố định theo mẫu)`
+                            : 'Người duyệt cố định theo mẫu'}</p>}
+                      </div>
+                    </div>
+                  </li>;
+                })}
+              </ol>
             </section>}
             <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
-              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <div className="mb-3 flex items-start gap-2"><UserPlus size={16} className="mt-0.5 text-violet-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">Người duyệt thêm <span className="font-normal text-slate-400">(không bắt buộc)</span></p><p className="text-xs text-slate-500">Những người này duyệt trước, sau đó đề xuất mới đi theo luồng của mẫu.</p></div></div>
-                <UserSearchSelect users={users} excludeUserIds={[user.id]} multiple values={extraApprovers} onValuesChange={setExtraApprovers} placeholder="Gõ tên để thêm người duyệt..." disabled={isSubmitting} />
-                {extraApprovers.length > 1 && <fieldset className="mt-3 flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200 sm:flex-row sm:gap-5">
-                  <legend className="sr-only">Điều kiện hoàn thành bước người duyệt thêm</legend>
-                  <label className="inline-flex items-center gap-2"><input type="radio" name="extra-policy" checked={extraPolicy === 'ALL'} onChange={() => setExtraPolicy('ALL')} disabled={isSubmitting} className="accent-emerald-600" />Tất cả phải đồng ý</label>
-                  <label className="inline-flex items-center gap-2"><input type="radio" name="extra-policy" checked={extraPolicy === 'ANY_ONE'} onChange={() => setExtraPolicy('ANY_ONE')} disabled={isSubmitting} className="accent-emerald-600" />Chỉ cần một người đồng ý</label>
-                </fieldset>}
-              </div>
               <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                 <div className="mb-3 flex items-start gap-2"><Eye size={16} className="mt-0.5 text-violet-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">Người theo dõi <span className="font-normal text-slate-400">(không bắt buộc)</span></p><p className="text-xs text-slate-500">Được xem đề xuất và nhận thông báo, không cần duyệt.</p></div></div>
                 <UserSearchSelect users={users} excludeUserIds={[user.id]} multiple values={watchers} onValuesChange={setWatchers} placeholder="Gõ tên để thêm người theo dõi..." disabled={isSubmitting} />

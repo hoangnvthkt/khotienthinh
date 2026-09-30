@@ -315,11 +315,11 @@ describe('requestRuntimeService phase 2 commands', () => {
 describe('requestRuntimeService.submit options', () => {
   beforeEach(() => mocks.rpc.mockReset());
 
-  it('sends extra approvers, their policy and watchers as p_options', async () => {
+  it('sends submit-time watchers as p_options', async () => {
     mocks.rpc.mockResolvedValue({
       data: {
         requestId: 'rq-1', requestCode: 'RQ-2026-000001', status: 'PENDING',
-        workflowInstanceId: 'wi-1', workflowSubjectId: 'ws-1', currentBlockKeys: ['__extra'],
+        workflowInstanceId: 'wi-1', workflowSubjectId: 'ws-1', currentBlockKeys: ['b1'],
         updatedAt: '2026-09-30T00:00:00.000Z',
       },
       error: null,
@@ -327,10 +327,10 @@ describe('requestRuntimeService.submit options', () => {
     await requestRuntimeService.submit({
       requestTemplateVersionId: 'v-1', title: 'T', description: '', formData: {},
       dynamicApproversByBlock: {}, idempotencyKey: 'k',
-      extraApproverIds: ['u-1', 'u-2'], extraCompletionPolicy: 'ANY_ONE', watcherIds: ['u-3'],
+      watcherIds: ['u-3'],
     });
     expect(mocks.rpc).toHaveBeenCalledWith('submit_request', expect.objectContaining({
-      p_options: { extraApproverIds: ['u-1', 'u-2'], extraCompletionPolicy: 'ANY_ONE', watcherIds: ['u-3'] },
+      p_options: { watcherIds: ['u-3'] },
     }));
   });
 });
