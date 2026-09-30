@@ -15,6 +15,7 @@ import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from './h
 import { OrderDrawer } from './OrderDrawer';
 import { OrderEditor } from './OrderEditor';
 import { OrdersView } from './OrdersView';
+import { ContractsView } from './ContractsView';
 
 // Mua hàng hub: one place where the procurement team receives every purchase need
 // (KH vật tư, đề xuất công trường, later other modules), turns it into orders that
@@ -200,10 +201,11 @@ const DocumentRow: React.FC<{
 
 const EMPTY_FILTER: Required<ProcurementInboxFilter> = { source: '', progress: 'open', projectId: '', assigneeId: '', search: '' };
 
-export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null }> = ({ currentUserId, initialOrderId = null }) => {
+export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null; initialContractId?: string | null }> = ({ currentUserId, initialOrderId = null, initialContractId = null }) => {
   const toast = useToast();
   const askReason = useReasonConfirm();
   const [stage, setStage] = useState<Stage>(initialOrderId ? 'drafting' : 'intake');
+  const [mode, setMode] = useState<'orders' | 'contracts'>(initialContractId ? 'contracts' : 'orders');
   const [filter, setFilter] = useState<Required<ProcurementInboxFilter>>(EMPTY_FILTER);
   const [searchText, setSearchText] = useState('');
   const [inbox, setInbox] = useState<ProcurementInbox | null>(null);
@@ -308,6 +310,12 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
       : status === 'error' && !inbox ? <StateBox kind="error" title="Chưa tải được Mua hàng" message={message} onRetry={() => void load()} />
         : !inbox ? <StateBox kind="loading" title="Đang tải nhu cầu mua hàng…" />
           : <>
+            <div className="inline-flex rounded-xl border border-border bg-card p-1 shadow-sm" role="tablist" aria-label="Hình thức mua">
+              {([['orders', 'Đơn hàng (PO)'], ['contracts', 'Hợp đồng nguyên tắc']] as const).map(([k, l]) =>
+                <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
+                  className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>{l}</button>)}
+            </div>
+            {mode === 'contracts' ? <ContractsView projects={inbox.projects} initialContractId={initialContractId} /> : <>
             <StageStrip inbox={inbox} stage={stage} onStage={setStage} />
             {stage !== 'intake' ? <OrdersView stage={stage} projects={inbox.projects} reloadKey={ordersReload} onOpen={setOrderId} /> : <section className="space-y-3">
               <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Nguồn đề xuất">
@@ -386,9 +394,10 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
                   })}
                 </div>}
             </section>}
+            </>}
           </>}
 
-    {canManage && stage === 'intake' && selected.size > 0 && <div className="sticky bottom-3 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-teal-200 bg-card px-3 py-2.5 shadow-lg dark:border-teal-900">
+    {canManage && mode === 'orders' && stage === 'intake' && selected.size > 0 && <div className="sticky bottom-3 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-teal-200 bg-card px-3 py-2.5 shadow-lg dark:border-teal-900">
       <span className="text-sm font-semibold">Đã chọn {selected.size} phiếu</span>
       <button type="button" disabled={selectedScopes.size !== 1 || selectedOpen.length === 0}
         title={selectedScopes.size !== 1 ? 'Chỉ lập một đơn cho phiếu cùng dự án/công trường' : selectedOpen.length === 0 ? 'Các phiếu đã đặt đủ hoặc đã đóng' : undefined}

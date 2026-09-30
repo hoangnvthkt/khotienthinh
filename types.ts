@@ -2857,7 +2857,7 @@ export interface SupplierDirectDeliveryLine {
   updatedAt?: string | null;
 }
 
-export type SupplierDeliveryStatementStatus = 'draft' | 'posted' | 'cancelled' | 'reversed';
+export type SupplierDeliveryStatementStatus = 'draft' | 'confirmed' | 'posted' | 'cancelled' | 'reversed';
 
 export interface SupplierDeliveryStatement {
   id: string;
