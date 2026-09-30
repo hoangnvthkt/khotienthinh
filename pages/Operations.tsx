@@ -36,6 +36,7 @@ import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { purchasePackageService } from '../lib/purchasePackageService';
 import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
+import { ReceiptReconciliationView } from '../components/procurement/receipt/ReceiptReconciliationView';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -1016,7 +1017,7 @@ const Operations: React.FC = () => {
       />
 
       {/* K1: phiếu kho chờ xử lý quá 3 ngày. */}
-      <WmsStaleDocumentsBanner reloadKey={viewingHistoryTx ? 0 : 1} onOpen={async id => {
+      <WmsStaleDocumentsBanner reloadKey={viewingHistoryTx ? 0 : 1} onReconcile={isKeeper || isAdmin ? () => setActiveTab('RECONCILE') : undefined} onOpen={async id => {
         try {
           const tx = await wmsTransactionListService.getById(id);
           if (tx) await openTransactionDetails(tx);
@@ -1038,10 +1039,15 @@ const Operations: React.FC = () => {
             Quản lý phiếu
             {(pendingAdminTxs.length + pendingReceiptTxs.length) > 0 && <span className="ml-2 bg-orange-500 text-white text-[8px] md:text-[10px] px-1.5 py-0.5 rounded-full ring-2 ring-white">{(pendingAdminTxs.length + pendingReceiptTxs.length)}</span>}
           </button>
+          {(isKeeper || isAdmin) && (
+            <button onClick={() => setActiveTab('RECONCILE')} className={`flex-1 min-w-[120px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'RECONCILE' ? 'border-mint-500 text-mint-700 bg-white shadow-[0_-4px_0_inset_#3cbfaa]' : 'border-transparent text-slate-400 hover:text-mint-600'}`}>Đối chiếu</button>
+          )}
         </div>
 
         <div className="p-6 bg-white">
-          {activeTab === 'MATERIAL_ISSUE' ? (
+          {activeTab === 'RECONCILE' ? (
+            <ReceiptReconciliationView currentUserId={user.id} />
+          ) : activeTab === 'MATERIAL_ISSUE' ? (
             <MaterialIssuePanel />
           ) : activeTab === 'PENDING' ? (
             <div className="space-y-6">

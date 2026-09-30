@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, PackageX, X } from 'lucide-react';
 import { InventoryItem, PurchaseOrder, PurchaseOrderSupplierReturn, Warehouse } from '../../types';
-import { purchaseOrderSupplierReturnService } from '../../lib/purchaseOrderSupplierReturnService';
+import { purchaseOrderSupplierReturnService, SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../lib/purchaseOrderSupplierReturnService';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { parseQuantityInput, sanitizeQuantityInput } from '../../lib/quantityInput';
 import { useToast } from '../../context/ToastContext';
@@ -33,6 +33,7 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
   const [sourceWarehouseId, setSourceWarehouseId] = useState('');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
+  const [reasonCode, setReasonCode] = useState<SupplierReturnReasonCode>('quality');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -114,13 +115,14 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
         purchaseOrderId: purchaseOrder.id,
         sourceWarehouseId,
         reason: reason.trim(),
+        reasonCode,
         note: note.trim(),
         lines: selectedLines,
       });
       const touchedItemIds = selectedLines
         .map(line => purchaseOrder.items.find(item => (item.lineId || item.itemId) === line.purchaseOrderLineId)?.itemId)
         .filter(Boolean) as string[];
-      toast.success('Đã tạo phiếu trả NCC', `${result.returnNo} đang chờ WMS duyệt phiếu xuất kho.`);
+      toast.success('Đã tạo phiếu trả NCC', `${result.returnNo}: kho xuất trả; Mua hàng chọn đổi hàng hoặc giảm trừ với NCC.`);
       await onCreated(result, touchedItemIds);
       onClose();
     } catch (error) {
@@ -209,7 +211,15 @@ const PurchaseOrderSupplierReturnDialog: React.FC<PurchaseOrderSupplierReturnDia
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Lý do trả hàng *</label>
-              <textarea value={reason} onChange={event => setReason(event.target.value)} rows={3} className="w-full resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" />
+              <div className="mb-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Loại lý do trả hàng">
+                {(Object.keys(SUPPLIER_RETURN_REASONS) as SupplierReturnReasonCode[]).map(code => (
+                  <button key={code} type="button" role="radio" aria-checked={reasonCode === code} onClick={() => setReasonCode(code)}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${reasonCode === code ? 'border-mint-600 bg-mint-600 text-white' : 'border-slate-200 text-slate-600 hover:border-mint-400'}`}>
+                    {SUPPLIER_RETURN_REASONS[code]}
+                  </button>
+                ))}
+              </div>
+              <textarea placeholder="Mô tả cụ thể: lô nào, lỗi gì, ai kiểm…"  value={reason} onChange={event => setReason(event.target.value)} rows={3} className="w-full resize-none rounded-xl border border-slate-200 p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" />
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Ghi chú</label>
