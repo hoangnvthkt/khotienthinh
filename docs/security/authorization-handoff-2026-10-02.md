@@ -31,7 +31,7 @@ Agent mới nên:
   - chuyển vai trò thường sang quyền riêng từng người;
   - mẫu quyền theo vị trí cho toàn hệ thống;
   - giải thích lý do ô quyền bị khóa.
-- **Đang chặn, chờ chủ sản phẩm quyết:** lỗi hồi quy thiếu ngày hết hạn (mục 8.1). Đây là việc ưu tiên số 1.
+- **Đã xong 02/10 (xem rollout log):** lỗi thiếu ngày hết hạn (8.1), phạm vi `own` không nhạy cảm bỏ hạn, bỏ lý do khi chỉ sửa hồ sơ, thẻ Tài chính/Hợp đồng theo người, màn Room cũ được thay bằng "Phân quyền theo người", khảo sát Task 13.
 - Kiểm tra lần cuối (29/09, sau khi gộp `main`): `tsc` sạch; Vitest 2.630 pass; e2e phân quyền 5 pass.
 
 ---
@@ -154,6 +154,9 @@ Các quyết định 1–11 cũng lưu trong memory `authorization-owner-decisio
     - phạm vi: toàn công ty / dự án / kho;
     - tách nhiệm áp dụng cả với Admin;
     - UI khóa nút theo bậc và **giải thích vì sao** không thao tác được.
+16. (02/10) **Mẫu Room giữ Admin-only**; PM/CHT chưa được quản lý Room.
+17. (02/10) **Bỏ màn Room cũ**, thay bằng "Phân quyền theo người", với điều kiện không bỏ sót quyền (đã đối chiếu dữ liệu thật).
+18. (02/10) Bỏ lý do khi chỉ sửa hồ sơ; bỏ hạn 365 ngày cho `edit_profile@own`.
 
 ---
 
@@ -275,38 +278,9 @@ Xem bảng chi tiết trong `authorization-remediation-handoff-2026-09-28.md`, m
 
 ## 8. Việc đang mở (theo thứ tự ưu tiên)
 
-### 8.1 ⚠️ Lỗi hồi quy thiếu ngày hết hạn — CHỜ CHỦ SẢN PHẨM QUYẾT
+### 8.1 ✅ Lỗi hồi quy thiếu ngày hết hạn — ĐÃ XONG (02/10)
 
-**Hiện trạng (đo trên Cloud ngày 02/10):** grant đang hiệu lực, thuộc loại bắt buộc có hạn, nhưng `expires_at is null`:
-
-| Quyền | Số grant |
-|---|---|
-| `hrm.employee.edit_profile@own` | 47 |
-| `hrm.employee.edit_profile@global` | 6 |
-| `hrm.attendance.approve@global` | 6 |
-| `hrm.leave.approve@global` | 6 |
-| `project.*@project` (có từ trước, không do bước chuyển đổi) | 6 |
-
-**Hậu quả:**
-- Quyền đang có của những người này vẫn chạy bình thường.
-- Nhưng Admin mở Người dùng → Sửa, rồi lưu bất kỳ thay đổi nào của họ (hồ sơ hay quyền), thì server từ chối với `expiry_required`. Frontend cũng báo lỗi validation trước khi gửi.
-- Nguyên nhân: bước 8aba991 chuyển vai trò thành grant nhưng không gắn hạn.
-
-**Hai phương án đã trình chủ sản phẩm (chưa có câu trả lời):**
-1. **(Em khuyên)** Sửa `evaluate_direct_grant_replacement_impl`:
-   - Không bắt hạn cho grant **đã có sẵn, không đổi**: tồn tại grant `is_active`, `revoked_at is null`, `expires_at is null` cùng mã, phạm vi và `scope_id`.
-   - Tùy chọn: không bắt hạn cho phạm vi `own` khi `risk_level <> 'sensitive'`. Hiện thực tế chỉ khớp `hrm.employee.edit_profile`.
-   - Frontend sửa tương ứng trong `authorizationUpdateValidation.ts` (bỏ qua grant có trong `originalGrants` với cùng fingerprint) và `PermissionModuleCard`.
-   - **Bản sửa này bị bộ kiểm tra an toàn tự động từ chối** (lý do "Security Weaken"). Chỉ làm khi chủ sản phẩm **cho phép rõ ràng** trong chat. Nếu vẫn bị chặn thì chủ sản phẩm phải thêm quy tắc cho phép, hoặc tự chạy.
-2. Gắn hạn 12 tháng cho các grant trên. Cách này không đổi luật kiểm tra, nhưng sau 12 tháng mọi người mất quyền nếu không gia hạn.
-
-**Khi làm:**
-- Theo mục 4: dry-run, smoke persona (Admin lưu một người có `edit_profile@own` không hạn → phải thành công; cấp **mới** một quyền cần hạn mà không có hạn → vẫn phải bị từ chối), rollback, ghi log.
-- Mẫu "Nhân viên cơ bản" (và các mẫu vị trí khác) đang để `edit_profile@own` hết hạn sau 365 ngày. Nếu chọn phương án 1 kèm miễn hạn cho phạm vi own, phải sửa thêm hai chỗ:
-  - `app_private.normalize_user_permission_template_items`: chỉ gắn `expiresInDays` khi quyền thật sự cần hạn ở phạm vi đó;
-  - `buildGrantsFromTemplate` trong `lib/userPermissionTemplateService.ts`.
-
-  Hiện cả hai chỉ dựa vào cờ `direct_grant_requires_expiry` của action.
+Chủ sản phẩm chọn phương án 1. Migration `20261004100000` giữ nguyên quyền đang có không hạn; `20261004120000` bỏ hạn cho phạm vi `own` của quyền không nhạy cảm (hiện chỉ `hrm.employee.edit_profile`) cả ở kiểm tra grant và mẫu vị trí. Frontend dùng chung `grantRequiresExpiry(action, scope)`. Chi tiết và bằng chứng trong rollout log.
 
 ### 8.2 Việc chủ sản phẩm tự làm
 
@@ -316,12 +290,11 @@ Xem bảng chi tiết trong `authorization-remediation-handoff-2026-09-28.md`, m
 
 ### 8.3 P3 còn lại
 
-- **Hồ sơ quyền:** một màn hợp nhất theo từng người (quyền riêng + vai trò đặc biệt + Room theo dự án + công tắc Tài chính / Hợp đồng). Làm theo quyết định 12 và 15.
-- **Cho PM / CHT quản lý Room:** cần chủ sản phẩm quyết. Room template hiện chỉ Admin dùng được (`ROOM_TEMPLATE_ADMIN_REQUIRED`).
-- Chủ sản phẩm từng nói mẫu "Phân quyền theo người" có thể **thay luôn màn Room theo từng Room** trong tab Phân quyền dự án. Chưa làm; cần hỏi trước khi bỏ màn cũ.
-- **Task 13: xóa cột legacy** (`allowed_modules`, `admin_modules`, …). `can_access_module` và `resolve_effective_permission_sources` vẫn đọc các cột này; nguồn LEGACY vẫn xuất hiện trong snapshot.
-- Màn "Mẫu quyền" (vai trò nghiệp vụ, `SettingsRoleTemplates`) còn chữ kỹ thuật như "Assignment đang hiệu lực". Nên đổi tên tab thành "Vai trò đặc biệt" để không nhầm với hai màn mẫu mới.
-- Chưa có smoke file trong repo cho `20260928101825` và `20260928113000`; dry-run khi đó nằm trong scratchpad. Nên bổ sung `supabase/tests/authorization_p3_user_permission_templates_smoke.sql`, kiểm: nhân viên thường bị chặn, mã NODIRECT bị chặn, phạm vi kho bị chặn, có audit.
+- **Đã xong:** smoke cho `20260928101825` và `20260928113000`; tab "Mẫu quyền" đổi tên "Vai trò đặc biệt"; thẻ "Xem Tài chính và Hợp đồng" trong Người dùng → Sửa (RPC `get_user_sensitive_view_summary`); màn Room cũ thay bằng "Phân quyền theo người" (đã đối chiếu dữ liệu thật, không bỏ sót quyền).
+- **Hồ sơ quyền, phần còn lại:** gộp vai trò đặc biệt (HR, quản trị) và liên kết Room theo dự án vào cùng một màn theo người. Làm theo quyết định 12 và 15.
+- **PM / CHT quản lý Room:** chủ sản phẩm quyết **giữ Admin-only** (02/10).
+- **Task 13: xóa cột legacy:** đã khảo sát, **chưa xóa được**. Xem `authorization-task13-impact-survey-2026-10-02.md`: 49 người sẽ mất quyền đọc 10 bảng danh mục nếu bỏ `can_access_module`; cần chọn phương án thay policy (mục 5 của tài liệu đó) rồi mới làm từng bước.
+- **E2E Playwright:** máy chưa cài trình duyệt (`npx playwright install`); các e2e phân quyền chưa chạy lại sau các thay đổi 02/10.
 
 ### 8.4 Thông báo đúng người: phần còn mở
 
@@ -339,7 +312,7 @@ Xem bảng chi tiết trong `authorization-remediation-handoff-2026-09-28.md`, m
 
 ### 8.6 Câu hỏi UX còn treo
 
-`update_user_authorization_v2` bắt lý do tối thiểu 10 ký tự **kể cả khi chỉ sửa thông tin hồ sơ**. Chưa có quyết định.
+**Đã quyết 02/10:** bỏ yêu cầu lý do khi chỉ sửa hồ sơ. Frontend không đòi lý do và tự ghi "Cập nhật hồ sơ người dùng"; server vẫn đòi lý do khi đổi quyền hoặc loại tài khoản.
 
 ---
 

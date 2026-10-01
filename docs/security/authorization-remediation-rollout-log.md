@@ -825,3 +825,18 @@ Chỉ sửa frontend, không có migration.
   - frontend dùng chung hàm `grantRequiresExpiry(action, scope)`: ô nhập hạn, validation, điền theo mẫu, màn Cài đặt mẫu.
 - Kiểm tra: dry-run PASS; smoke trên hàm cũ thất bại đúng (đối chứng); smoke sau apply PASS; smoke 8.1 chỉnh fixture sang quyền vẫn cần hạn, PASS; Vitest 2.633 PASS; tsc đạt.
 - Rollback: `supabase/operations/authorization_p3_own_scope_no_expiry_rollback.sql`.
+
+### P3 — màn Room cũ được thay bằng "Phân quyền theo người" (02/10, chủ sản phẩm duyệt)
+
+- Tab Phân quyền của dự án không còn các thẻ Room + ngăn kéo sửa từng Room. Thay bằng:
+  - **Phân quyền theo người** (`ProjectPersonRoomEditor`): chọn người → điền theo mẫu → thêm/bớt từng quyền → lưu. Nay theo đúng luật server: quyền "chưa áp dụng đầy đủ" (audit_only) bị khóa, quyền tiên quyết lấy từ bảng ràng buộc của server, mẫu không thêm được quyền audit_only (bỏ qua và báo số lượng), hiện nguồn quyền (Backfill từ PBAC) và cảnh báo PBAC ngoại lệ.
+  - **Áp cho nhiều người** (`ProjectRoomBulkApply`): thêm theo mẫu / thay bằng mẫu / gỡ hết quyền Room, từng người một, cùng luật an toàn.
+  - **Ai đang có quyền trong từng Room** (`ProjectRoomOverview`): tìm kiếm + lọc nhóm, số thành viên, cảnh báo thiếu người duyệt, số người chỉ có PBAC; bấm Room để xem người + quyền, nút "Sửa quyền" nhảy sang trình sửa theo người.
+  - Công tắc Tài chính / Hợp đồng giữ nguyên.
+- Logic nháp tách ra `lib/projectRoomPersonDraft.ts` (có test). Test viết bắt được một lỗi thật: "thay bằng mẫu" giữ quyền khóa nhưng bỏ mất quyền tiên quyết của nó (server sẽ từ chối), đã sửa.
+- **Đối chiếu dữ liệu thật (giao dịch rollback, persona Admin, 7 phạm vi dự án/công trường, 84 người):**
+  - mở từng người rồi lưu không đổi: **0 thay đổi** (server `apply_project_room_template` mode exact, dry-run);
+  - quyền Room chỉ màn mới thấy: **0**;
+  - quyền chỉ màn cũ thấy: **20**, đều thuộc đúng 8 thành viên đã rời dự án và tài khoản bị khóa; server không tính quyền cho họ (`project_user_has_room_action` đòi `end_date is null` và tài khoản đang hoạt động) → **0 quyền có hiệu lực bị bỏ sót**;
+  - màn cũ còn đếm 8 người đó là "thành viên" và có thể tính họ là người duyệt (che cảnh báo thiếu người duyệt). Màn mới chỉ đếm người còn hiệu lực, đánh dấu và cho "Gỡ dòng cũ".
+- Kiểm tra: Vitest 2.816 PASS; tsc, lint, build, check-queries, check-migrations đạt; giao diện xem bằng fixture ở desktop và mobile (không tràn ngang). E2E Playwright chưa chạy (máy chưa cài trình duyệt Playwright).

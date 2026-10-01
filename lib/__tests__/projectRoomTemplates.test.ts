@@ -43,7 +43,7 @@ describe('project Room role templates', () => {
   });
 
   it('is reachable from the project Permissions tab and Settings', () => {
-    expect(read('pages/project/ProjectPermissionsTab.tsx')).toContain('<ProjectRoomTemplateAssign');
+    expect(read('pages/project/ProjectPermissionsTab.tsx')).toContain('<ProjectPersonRoomEditor');
     expect(read('pages/Settings.tsx')).toContain('<SettingsProjectRoomTemplates />');
     expect(read('pages/project/ProjectPermissionsTab.tsx')).not.toMatch(/PBAC|Room-authoritative/);
   });
@@ -60,7 +60,7 @@ describe('project Room role templates', () => {
     expect(diffRoomActions(current, current)).toEqual([]);
     expect(migration).toContain("p_mode not in ('merge', 'replace', 'exact')");
     expect(migration).toContain("'customized', v_customized");
-    expect(read('components/project/permissions/ProjectRoomTemplateAssign.tsx')).toContain("mode: 'exact'");
+    expect(read('components/project/permissions/ProjectPersonRoomEditor.tsx')).toContain("mode: 'exact'");
   });
 
   it('gives members added by the project form their Rooms from templates', () => {

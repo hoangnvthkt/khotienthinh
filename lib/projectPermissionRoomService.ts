@@ -62,6 +62,11 @@ export interface ProjectRoomStaffCandidate {
   disabledReason?: string | null;
 }
 
+export interface ProjectPermissionRoomOverview {
+  rooms: ProjectPermissionRoomSummary[];
+  membersByRoom: Partial<Record<ProjectPermissionRoomCode, ProjectPermissionRoomMember[]>>;
+}
+
 export interface ProjectRoomPbacException {
   roomCode: ProjectPermissionRoomCode;
   permissionCode: string;
@@ -235,6 +240,14 @@ export const projectPermissionRoomService = {
     projectId: string,
     constructionSiteId?: string | null,
   ): Promise<ProjectPermissionRoomSummary[]> {
+    return (await this.listOverview(projectId, constructionSiteId)).rooms;
+  },
+
+  /** Every Room with its summary and members, for the project Permissions tab. */
+  async listOverview(
+    projectId: string,
+    constructionSiteId?: string | null,
+  ): Promise<ProjectPermissionRoomOverview> {
     const { data, error } = await supabase.rpc('list_project_permission_rooms', {
       p_project_id: projectId,
       p_construction_site_id: constructionSiteId || null,
@@ -246,10 +259,12 @@ export const projectPermissionRoomService = {
       getRoomRows(projectId, constructionSiteId, ensureRoomCode(room.code)),
     ));
 
-    return rooms.map((room, index) => {
+    const membersByRoom: ProjectPermissionRoomOverview['membersByRoom'] = {};
+    const summaries = rooms.map((room, index) => {
       const members = memberRows[index]
         .map(toRoomMember)
         .filter((member): member is ProjectPermissionRoomMember => Boolean(member));
+      membersByRoom[ensureRoomCode(room.code)] = members;
       const actionCounts: Partial<Record<ProjectRoomActionCode, number>> = {};
       members.forEach(member => {
         member.actionCodes.forEach(action => { actionCounts[action] = (actionCounts[action] || 0) + 1; });
@@ -277,6 +292,20 @@ export const projectPermissionRoomService = {
         fallbackOnlyUserCount: Number(room.fallback_only_user_count || 0),
       };
     });
+    return { rooms: summaries, membersByRoom };
+  },
+
+  /** Active project members whose account is active: the people Rooms can be given to. */
+  async listStaffCandidateIds(
+    projectId: string,
+    constructionSiteId?: string | null,
+  ): Promise<Set<string>> {
+    const { data, error } = await supabase.rpc('list_project_room_staff_candidates', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+    return new Set((data || []).map((row: any) => String(row.project_staff_id)));
   },
 
   async getRoom(
