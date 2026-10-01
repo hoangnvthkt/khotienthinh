@@ -26,6 +26,6 @@ describe('request workspace', () => {
 
     expect(table).toContain('user.avatarUrl');
     expect(table).toContain('<RequestUserIdentity user={item.creator} />');
-    expect(table).toContain('<RequestUserAvatar user={approver} className="h-6 w-6" />');
+    expect(table).toContain('<RequestUserAvatar user={approver} className="h-7 w-7" />');
   });
 });

@@ -5,27 +5,25 @@ import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { TransactionType, Transaction, TransactionStatus, TransactionItem, InventoryItem, Role, BusinessPartner, SupplierContract } from '../types';
 import {
-  Plus, Trash2, ArrowRight, Save, Send, Clock,
-  CheckCircle, XCircle, FileText, User, History,
-  AlertTriangle, Flame, ShieldAlert, PackageSearch,
-  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Inbox, Minus, Scale, Banknote, Lock, Loader2,
-  Search, Printer, FileDown, Eye, LayoutList, LayoutGrid, Filter, RotateCcw, Layers, Check
+  Plus, Trash2, ArrowRight, Save, Send, CheckCircle, XCircle, History,
+  AlertTriangle, ShieldAlert, PackageSearch,
+  ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Minus, Scale, Banknote, Lock, Loader2,
+  Search, Printer, FileDown, Eye, LayoutList, LayoutGrid, Filter, RotateCcw, Check
 } from 'lucide-react';
 import ItemSelectionModal from '../components/ItemSelectionModal';
 import WarningModal from '../components/WarningModal';
 import ConfirmTransferModal from '../components/ConfirmTransferModal';
 import TransactionDetailModal from '../components/TransactionDetailModal';
-import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
+import { WmsStaleDocumentsBanner } from '../components/wms/WmsStaleDocumentsBanner';
 import Pagination from '../components/Pagination';
 import SearchableSelect from '../components/common/SearchableSelect';
 import MaterialIssuePanel from '../components/project/MaterialIssuePanel';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
-import { canApproveWmsTransaction, canReceiveWmsTransaction, canViewWmsTransaction, getWmsWarehouseAccess, isFulfillmentBatchTransaction, isWarehouseKeeper } from '../lib/wmsPermissions';
+import { canApproveWmsTransaction, canReceiveWmsTransaction, canViewWmsTransaction, getWmsWarehouseAccess, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { clampQuantity, formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
-import { getTransactionNextAction, getTransactionTypeLabel } from '../lib/erpWorkflow';
 import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
 import { partnerService } from '../lib/partnerService';
 import { supplierContractService } from '../lib/hdService';
@@ -35,6 +33,8 @@ import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { purchasePackageService } from '../lib/purchasePackageService';
 import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
+import { ReceiptReconciliationView } from '../components/procurement/receipt/ReceiptReconciliationView';
+import { WmsWorkspace } from '../components/wms/WmsWorkspace';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -95,10 +95,9 @@ const Operations: React.FC = () => {
   useModuleData('wms');
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
-  const [activeTab, setActiveTab] = useState<string>('IMPORT');
+  // Thủ kho / Admin vào thẳng màn xử lý phiếu; người lập phiếu vào form lập.
+  const [activeTab, setActiveTab] = useState<string>(() => (isWarehouseKeeper(user) || user.role === Role.ADMIN ? 'PENDING' : 'IMPORT'));
   const [opsSubTab, setOpsSubTab] = useState<'approvals' | 'history'>('approvals');
-  const [approvalQueueFilter, setApprovalQueueFilter] = useState<'all' | 'stage1' | 'stage2'>('all');
-  const [approvalSearch, setApprovalSearch] = useState('');
   const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('table');
   const openedStateTransactionRef = useRef<string | null>(null);
   const [pagedTransactions, setPagedTransactions] = useState<Transaction[]>([]);
@@ -241,7 +240,6 @@ const Operations: React.FC = () => {
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
   const [transactionQuantityInputs, setTransactionQuantityInputs] = useState<Record<string, string>>({});
   const [submittingTx, setSubmittingTx] = useState(false);
-  const [processingApproval, setProcessingApproval] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
   const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | TransactionType>('all');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | TransactionStatus.COMPLETED | TransactionStatus.CANCELLED>('all');
@@ -326,18 +324,6 @@ const Operations: React.FC = () => {
   };
 
   // State cho duyệt đếm ngược
-  const [approvalModal, setApprovalModal] = useState<{
-    isOpen: boolean;
-    txId: string;
-    type: 'APPROVE' | 'CANCEL' | 'RECEIVE';
-    title: string;
-    message: string;
-  }>({
-    isOpen: false, txId: '', type: 'APPROVE', title: '', message: ''
-  });
-  const [approvalDate, setApprovalDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [approvalNote, setApprovalNote] = useState('');
-
   // Lọc danh sách transaction đang chờ DUYỆT (PENDING - Chờ Admin)
   const pendingAdminTxs = useMemo(() => {
     const base = transactions.filter(t => t.status === TransactionStatus.PENDING);
@@ -354,57 +340,6 @@ const Operations: React.FC = () => {
     return [];
   }, [transactions, isAdmin, isKeeper, user]);
 
-  const filteredPendingAdminTxs = useMemo(() => {
-    if (!approvalSearch.trim()) return pendingAdminTxs;
-    const q = approvalSearch.trim().toLowerCase();
-    return pendingAdminTxs.filter(tx => {
-      const requester = users.find(u => u.id === tx.requesterId);
-      const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
-      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-      const itemNames = tx.items.map(ti => {
-        const item = items.find(i => i.id === ti.itemId);
-        return [item?.name, item?.sku].filter(Boolean).join(' ');
-      }).join(' ');
-      const str = [
-        formatVoucherCode(tx),
-        getVoucherTitle(tx),
-        tx.id,
-        requester?.name,
-        sourceWh?.name,
-        targetWh?.name,
-        tx.note,
-        itemNames,
-      ].filter(Boolean).join(' ').toLowerCase();
-      return str.includes(q);
-    });
-  }, [pendingAdminTxs, approvalSearch, users, warehouses, items]);
-
-  const filteredPendingReceiptTxs = useMemo(() => {
-    if (!approvalSearch.trim()) return pendingReceiptTxs;
-    const q = approvalSearch.trim().toLowerCase();
-    return pendingReceiptTxs.filter(tx => {
-      const requester = users.find(u => u.id === tx.requesterId);
-      const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
-      const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-      const itemNames = tx.items.map(ti => {
-        const item = items.find(i => i.id === ti.itemId);
-        return [item?.name, item?.sku].filter(Boolean).join(' ');
-      }).join(' ');
-      const str = [
-        formatVoucherCode(tx),
-        getVoucherTitle(tx),
-        tx.id,
-        requester?.name,
-        sourceWh?.name,
-        targetWh?.name,
-        tx.note,
-        itemNames,
-      ].filter(Boolean).join(' ').toLowerCase();
-      return str.includes(q);
-    });
-  }, [pendingReceiptTxs, approvalSearch, users, warehouses, items]);
-
-  // Lọc danh sách lịch sử đã xử lý
   const historyTransactions = useMemo(() => {
     const baseHistory = transactions.filter(t =>
       t.status === TransactionStatus.COMPLETED || t.status === TransactionStatus.CANCELLED
@@ -662,79 +597,6 @@ const Operations: React.FC = () => {
     }
   };
 
-  const triggerApproval = (txId: string, type: 'APPROVE' | 'CANCEL' | 'RECEIVE') => {
-    const tx = transactions.find(t => t.id === txId);
-    if (!tx) return;
-
-    if (type === 'APPROVE') {
-      setApprovalDate(new Date().toISOString().slice(0, 10));
-      setApprovalNote('');
-      const isNeedReceipt = tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER;
-      const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
-      setApprovalModal({
-        isOpen: true,
-        txId,
-        type,
-        title: isFulfillmentTx ? "Duyệt số lượng/chất lượng đợt cấp" : isNeedReceipt ? "Phê duyệt (Chờ kho nhận)" : "Phê duyệt & Hoàn tất",
-        message: isFulfillmentTx
-          ? "Bạn đang kiểm tra và duyệt số lượng/chất lượng đợt cấp tới kho công trường. Sau bước này, phiếu sẽ chuyển sang chờ xác nhận nhận hàng."
-          : isNeedReceipt
-            ? "Bạn đang phê duyệt lệnh này. Sau khi duyệt, phiếu sẽ chuyển tới Kho đích để xác nhận nhận hàng thực tế."
-          : "Phê duyệt lệnh này sẽ trừ kho ngay lập tức. Bạn có chắc chắn?"
-      });
-    } else if (type === 'RECEIVE') {
-      setApprovalModal({
-        isOpen: true,
-        txId,
-        type,
-        title: "Xác nhận nhận hàng",
-        message: "Hành động này xác nhận bạn đã nhận đủ hàng thực tế. Tồn kho tại kho của bạn sẽ được cộng thêm ngay lập tức."
-      });
-    } else if (type === 'CANCEL') {
-      setApprovalModal({
-        isOpen: true,
-        txId,
-        type,
-        title: "Xác nhận Từ chối phiếu",
-        message: "Hành động này sẽ hủy bỏ đề xuất này vĩnh viễn. Người yêu cầu sẽ nhận được thông báo về việc phiếu bị từ chối."
-      });
-    }
-  };
-
-  const handleConfirmAction = async () => {
-    const tx = transactions.find(t => t.id === approvalModal.txId);
-    if (!tx) return;
-
-    setProcessingApproval(true);
-    try {
-      if (approvalModal.type === 'APPROVE') {
-        const approval = {
-          approvedAt: dateInputToTransactionTimestamp(approvalDate),
-          approvalNote: approvalNote.trim() || undefined,
-        };
-        // Luồng mới: Nhập/Chuyển cần APPROVED trước khi COMPLETED
-        if (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) {
-          await updateTransactionStatus(tx.id, TransactionStatus.APPROVED, user.id, approval);
-        } else {
-          // Xuất/Hủy: Duyệt là COMPLETED luôn
-          await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id, approval);
-        }
-      } else if (approvalModal.type === 'RECEIVE') {
-        await updateTransactionStatus(tx.id, TransactionStatus.COMPLETED, user.id);
-      } else if (approvalModal.type === 'CANCEL') {
-        await updateTransactionStatus(tx.id, TransactionStatus.CANCELLED, user.id);
-      }
-
-      setApprovalModal(prev => ({ ...prev, isOpen: false }));
-      toast.success('Đã cập nhật phiếu kho');
-    } catch (err: any) {
-      logApiError('operations.updateTransactionStatus', err);
-      toast.error('Không thể cập nhật phiếu kho', getApiErrorMessage(err, 'Không thể cập nhật trạng thái phiếu kho.'));
-    } finally {
-      setProcessingApproval(false);
-    }
-  };
-
   // Xác định filterWarehouseId cho ItemSelectionModal
   // Nhập kho → chọn từ toàn bộ vật tư (tìm theo mã, không cần tồn)
   // Xuất/Chuyển/Hủy → luôn xem tồn theo kho xuất đang chọn.
@@ -956,47 +818,12 @@ const Operations: React.FC = () => {
       />
 
       <TransactionDetailModal
-        isOpen={!!viewingHistoryTx}
+        isOpen={!!viewingHistoryTx && !(activeTab === 'PENDING' && opsSubTab === 'approvals')}
         onClose={() => setViewingHistoryTx(null)}
         transaction={viewingHistoryTx}
         onUpdated={setViewingHistoryTx}
       />
 
-      <MasterDataConfirmModal
-        isOpen={approvalModal.isOpen}
-        onClose={() => setApprovalModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={handleConfirmAction}
-        title={approvalModal.title}
-        message={approvalModal.message}
-        type={approvalModal.type === 'CANCEL' ? 'danger' : (approvalModal.type === 'RECEIVE' ? 'success' : 'warning')}
-        actionLabel={approvalModal.type === 'APPROVE' ? 'Xác nhận Duyệt' : (approvalModal.type === 'RECEIVE' ? 'Xác nhận Nhận hàng' : 'Từ chối phiếu')}
-        countdownRequired={approvalModal.type !== 'RECEIVE'}
-        isLoading={processingApproval}
-      >
-        {approvalModal.type === 'APPROVE' && (
-          <div className="space-y-3">
-            <label className="block space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày duyệt phiếu</span>
-              <input
-                type="date"
-                value={approvalDate}
-                onChange={event => setApprovalDate(event.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 outline-none focus:border-orange-400"
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ghi chú duyệt</span>
-              <textarea
-                value={approvalNote}
-                onChange={event => setApprovalNote(event.target.value)}
-                rows={3}
-                placeholder="Nhập ghi chú cho lần duyệt này..."
-                className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-orange-400"
-              />
-            </label>
-          </div>
-        )}
-      </MasterDataConfirmModal>
 
       <PageHeader
         eyebrow="WMS"
@@ -1014,6 +841,17 @@ const Operations: React.FC = () => {
         }
       />
 
+      {/* K1: phiếu kho chờ xử lý quá 3 ngày. */}
+      <WmsStaleDocumentsBanner reloadKey={viewingHistoryTx ? 0 : 1} onReconcile={isKeeper || isAdmin ? () => setActiveTab('RECONCILE') : undefined} onOpen={async id => {
+        try {
+          const tx = await wmsTransactionListService.getById(id);
+          if (tx) await openTransactionDetails(tx);
+          else toast.warning('Không mở được phiếu', 'Phiếu không còn hoặc bạn không có quyền xem.');
+        } catch (error) {
+          toast.error('Không mở được phiếu', getApiErrorMessage(error, 'Thử lại sau.'));
+        }
+      }} />
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex border-b border-slate-100 overflow-x-auto bg-slate-50/50 scrollbar-hide">
           <button onClick={() => handleTabChange('IMPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'IMPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Nhập kho</button>
@@ -1023,13 +861,18 @@ const Operations: React.FC = () => {
             <button onClick={() => handleTabChange('LIQUIDATION')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'LIQUIDATION' ? 'border-red-600 text-red-600 bg-white shadow-[0_-4px_0_inset_#dc2626]' : 'border-transparent text-slate-400 hover:text-red-400'}`}>Xuất hủy</button>
           )}
           <button onClick={() => setActiveTab('PENDING')} className={`flex-1 min-w-[120px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all relative ${activeTab === 'PENDING' ? 'border-orange-500 text-orange-600 bg-white shadow-[0_-4px_0_inset_#f97316]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-            Quản lý phiếu
+            Xử lý phiếu
             {(pendingAdminTxs.length + pendingReceiptTxs.length) > 0 && <span className="ml-2 bg-orange-500 text-white text-[8px] md:text-[10px] px-1.5 py-0.5 rounded-full ring-2 ring-white">{(pendingAdminTxs.length + pendingReceiptTxs.length)}</span>}
           </button>
+          {(isKeeper || isAdmin) && (
+            <button onClick={() => setActiveTab('RECONCILE')} className={`flex-1 min-w-[120px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'RECONCILE' ? 'border-mint-500 text-mint-700 bg-white shadow-[0_-4px_0_inset_#3cbfaa]' : 'border-transparent text-slate-400 hover:text-mint-600'}`}>Đối chiếu</button>
+          )}
         </div>
 
         <div className="p-6 bg-white">
-          {activeTab === 'MATERIAL_ISSUE' ? (
+          {activeTab === 'RECONCILE' ? (
+            <ReceiptReconciliationView currentUserId={user.id} />
+          ) : activeTab === 'MATERIAL_ISSUE' ? (
             <MaterialIssuePanel />
           ) : activeTab === 'PENDING' ? (
             <div className="space-y-6">
@@ -1046,7 +889,7 @@ const Operations: React.FC = () => {
                     }`}
                   >
                     <ShieldAlert size={15} className={opsSubTab === 'approvals' ? 'text-amber-500' : 'text-slate-400'} />
-                    <span>Hàng đợi duyệt phiếu</span>
+                    <span>Nhập xuất hằng ngày</span>
                     {(pendingAdminTxs.length + pendingReceiptTxs.length) > 0 && (
                       <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-white shadow-sm">
                         {pendingAdminTxs.length + pendingReceiptTxs.length}
@@ -1077,320 +920,24 @@ const Operations: React.FC = () => {
                 </div>
               </div>
 
-              {/* VIEW 1: HÀNG ĐỢI DUYỆT PHIẾU */}
+              {/* VIEW 1: NHẬP XUẤT HẰNG NGÀY — một màn hình: danh sách bên trái, chi tiết + thao tác bên phải */}
               {opsSubTab === 'approvals' && (
-                <div className="space-y-6">
-                  {/* KPI SUMMARY HÀNG ĐỢI */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div
-                      onClick={() => setApprovalQueueFilter('stage1')}
-                      className={`cursor-pointer rounded-2xl border p-4 transition-all ${
-                        approvalQueueFilter === 'stage1'
-                          ? 'border-amber-400 bg-amber-50/50 shadow-sm ring-2 ring-amber-400/20'
-                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-500">Chờ duyệt SL/CL (GĐ 1)</span>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
-                          <ShieldAlert size={15} />
-                        </span>
-                      </div>
-                      <p className="mt-2 text-2xl font-black text-slate-900">{pendingAdminTxs.length}</p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">Phiếu chờ phê duyệt</p>
-                    </div>
-
-                    <div
-                      onClick={() => setApprovalQueueFilter('stage2')}
-                      className={`cursor-pointer rounded-2xl border p-4 transition-all ${
-                        approvalQueueFilter === 'stage2'
-                          ? 'border-blue-400 bg-blue-50/50 shadow-sm ring-2 ring-blue-400/20'
-                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-500">Chờ kho đích nhận (GĐ 2)</span>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
-                          <Inbox size={15} />
-                        </span>
-                      </div>
-                      <p className="mt-2 text-2xl font-black text-slate-900">{pendingReceiptTxs.length}</p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">Phiếu đang trung chuyển</p>
-                    </div>
-
-                    <div
-                      onClick={() => setApprovalQueueFilter('all')}
-                      className={`cursor-pointer rounded-2xl border p-4 transition-all ${
-                        approvalQueueFilter === 'all'
-                          ? 'border-indigo-400 bg-indigo-50/50 shadow-sm ring-2 ring-indigo-400/20'
-                          : 'border-slate-200/70 bg-slate-50/60 hover:bg-slate-100/60'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-500">Tổng phiếu cần xử lý</span>
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
-                          <CheckCircle size={15} />
-                        </span>
-                      </div>
-                      <p className="mt-2 text-2xl font-black text-slate-900">{pendingAdminTxs.length + pendingReceiptTxs.length}</p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-400">Tất cả hàng đợi</p>
-                    </div>
-                  </div>
-
-                  {/* THANH LỌC VÀ TÌM KIẾM HÀNG ĐỢI DUYỆT */}
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setApprovalQueueFilter('all')}
-                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition ${
-                          approvalQueueFilter === 'all'
-                            ? 'bg-slate-900 text-white shadow-sm'
-                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        Tất cả ({pendingAdminTxs.length + pendingReceiptTxs.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setApprovalQueueFilter('stage1')}
-                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition ${
-                          approvalQueueFilter === 'stage1'
-                            ? 'bg-amber-600 text-white shadow-sm'
-                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        Chờ duyệt SL/CL ({pendingAdminTxs.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setApprovalQueueFilter('stage2')}
-                        className={`rounded-xl px-3 py-1.5 text-xs font-black transition ${
-                          approvalQueueFilter === 'stage2'
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        Chờ kho đích nhận ({pendingReceiptTxs.length})
-                      </button>
-                    </div>
-
-                    <div className="relative w-full sm:w-72">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        value={approvalSearch}
-                        onChange={event => setApprovalSearch(event.target.value)}
-                        placeholder="Tìm trong hàng đợi..."
-                        className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-7 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
-                      />
-                      {approvalSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setApprovalSearch('')}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* PHẦN 1: PHIẾU CHỜ DUYỆT SL/CL (GIAI ĐOẠN 1) */}
-                  {(approvalQueueFilter === 'all' || approvalQueueFilter === 'stage1') && (
-                    <section className="space-y-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-bold text-slate-800 flex items-center text-sm">
-                          <ShieldAlert size={18} className="mr-2 text-red-500" />
-                          {isAdmin ? 'Phiếu chờ duyệt (Giai đoạn 1)' : 'Phiếu chờ bạn duyệt số lượng/chất lượng'}
-                        </h3>
-                        <span className="text-[10px] font-black bg-slate-100 px-2 py-0.5 rounded text-slate-500 uppercase">
-                          {filteredPendingAdminTxs.length} PHIẾU
-                        </span>
-                      </div>
-
-                      {filteredPendingAdminTxs.length === 0 ? (
-                        <EmptyState
-                          icon={<ShieldAlert size={18} />}
-                          title="Không có phiếu đang chờ duyệt"
-                          message={approvalSearch ? 'Không tìm thấy phiếu phù hợp với từ khóa.' : 'Các phiếu cần bạn duyệt số lượng/chất lượng sẽ xuất hiện tại đây.'}
-                        />
-                      ) : (
-                        <div className="grid grid-cols-1 gap-4">
-                          {filteredPendingAdminTxs.map(tx => {
-                            const requester = users.find(u => u.id === tx.requesterId);
-                            const sourceWh = warehouses.find(w => w.id === tx.sourceWarehouseId);
-                            const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-                            const displayWh = tx.type === TransactionType.IMPORT ? targetWh : (tx.type === TransactionType.TRANSFER ? sourceWh : sourceWh);
-
-                            // ── Reserved Stock: kiểm tra conflict cho phiếu xuất/chuyển/hủy ──
-                            const isExportType = tx.type === TransactionType.EXPORT ||
-                              tx.type === TransactionType.TRANSFER ||
-                              tx.type === TransactionType.LIQUIDATION;
-                            const stockConflicts = isExportType && tx.sourceWarehouseId
-                              ? tx.items.map(ti => ({
-                                  ...ti,
-                                  summary: getStockSummary(ti.itemId, tx.sourceWarehouseId!, { excludeTransactionId: tx.id }),
-                                  product: items.find(i => i.id === ti.itemId),
-                                })).filter(ti => ti.summary.reserved > 0 || ti.quantity > ti.summary.available)
-                              : [];
-                            const hasStockConflict = stockConflicts.length > 0;
-                            const isFulfillmentTx = isFulfillmentBatchTransaction(tx);
-                            const isMaterialIssueTx = tx.items.some(item => !!item.materialIssueOrderId);
-                            const pendingLabel = isFulfillmentTx ? 'CHỜ DUYỆT SL/CL' : (isMaterialIssueTx ? 'CHỜ KHO XUẤT CẤP' : 'CHỜ DUYỆT');
-                            const action = getTransactionNextAction(tx, user);
-                            const typeLabel = getTransactionTypeLabel(tx.type);
-
-                            return (
-                              <div
-                                key={tx.id}
-                                onClick={() => void openTransactionDetails(tx)}
-                                className={`bg-white border rounded-2xl p-4 hover:border-orange-200 transition-all cursor-pointer group shadow-sm ${
-                                  hasStockConflict ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200/80'
-                                }`}
-                              >
-                                <div className="flex flex-col md:flex-row justify-between gap-4">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                      <StatusBadge status={tx.status} label={pendingLabel} tone={action.tone} />
-                                      <span className="text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider bg-blue-50 text-blue-600 border border-blue-100">
-                                        {isMaterialIssueTx ? 'Xuất cấp thi công' : typeLabel}
-                                      </span>
-                                      <span className="text-[10px] text-slate-400 font-mono font-bold">{new Date(tx.date).toLocaleString()}</span>
-                                      {hasStockConflict && (
-                                        <span className="inline-flex items-center gap-1 text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white">
-                                          <Lock size={8} /> TỒN BỊ CHIẾM CHỖ
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <span className="text-sm font-black text-slate-700">{requester?.name}</span>
-                                      {tx.type === TransactionType.TRANSFER ? (
-                                        <>
-                                          <ArrowRight size={14} className="mx-1 text-slate-300" />
-                                          <span className="text-xs font-bold text-slate-500">{sourceWh?.name}</span>
-                                          <ArrowRight size={14} className="mx-0.5 text-accent" />
-                                          <span className="text-sm font-black text-accent">{targetWh?.name}</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <ArrowRight size={14} className="mx-1 text-slate-300" />
-                                          <span className="text-sm font-black text-accent">{displayWh?.name}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                    <div className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-xl group-hover:bg-orange-50/50 transition-colors">
-                                      {tx.items.length} vật tư • {tx.note || 'Không có ghi chú'}
-                                    </div>
-                                    <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
-                                    {hasStockConflict && (
-                                      <div className="mt-2 space-y-1">
-                                        {stockConflicts.map((ti, idx) => (
-                                          <div key={idx} className="flex items-center justify-between text-[10px] bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                                            <span className="font-black text-slate-700 truncate max-w-[140px]">{ti.product?.name}</span>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                              <span className="text-slate-400">Yêu cầu: <span className="font-black text-slate-600">{ti.quantity}</span></span>
-                                              <span className="text-amber-600 font-black flex items-center gap-0.5">
-                                                <Lock size={8} /> Giữ chỗ: {ti.summary.reserved}
-                                              </span>
-                                              <span className={`font-black ${
-                                                ti.summary.available >= ti.quantity ? 'text-emerald-600' : 'text-red-600'
-                                              }`}>
-                                                Khả dụng: {ti.summary.available}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {canApproveWmsTransaction(user, tx) && (
-                                    <div className="flex md:flex-col gap-2 min-w-[140px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? void openTransactionDetails(tx) : triggerApproval(tx.id, 'APPROVE')} className="flex-1 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition">
-                                        {isFulfillmentTx ? 'Duyệt SL/CL' : 'Duyệt Phiếu'}
-                                      </button>
-                                      <button onClick={() => triggerApproval(tx.id, 'CANCEL')} className="flex-1 py-2 bg-white border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 transition">
-                                        Từ Chối
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </section>
-                  )}
-
-                  {/* PHẦN 2: PHIẾU CHỜ KHO ĐÍCH XÁC NHẬN (GIAI ĐOẠN 2) */}
-                  {(approvalQueueFilter === 'all' || approvalQueueFilter === 'stage2') && (
-                    <section className="space-y-4 pt-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-bold text-slate-800 flex items-center text-sm">
-                          <Inbox size={18} className="mr-2 text-blue-500" />
-                          {isAdmin ? 'Đã duyệt - Chờ kho đích nhận hàng (Giai đoạn 2)' : 'Hàng đang tới - Chờ bạn xác nhận nhập kho'}
-                        </h3>
-                        <span className="text-[10px] font-black bg-blue-50 px-2 py-0.5 rounded text-blue-500 uppercase">
-                          {filteredPendingReceiptTxs.length} PHIẾU
-                        </span>
-                      </div>
-
-                      {filteredPendingReceiptTxs.length === 0 ? (
-                        <EmptyState
-                          icon={<Inbox size={18} />}
-                          title="Không có hàng đang chờ nhận"
-                          message={approvalSearch ? 'Không tìm thấy phiếu phù hợp với từ khóa.' : 'Các phiếu đã duyệt và cần kho đích xác nhận sẽ nằm ở hàng đợi này.'}
-                        />
-                      ) : (
-                        <div className="grid grid-cols-1 gap-4">
-                          {filteredPendingReceiptTxs.map(tx => {
-                            const targetWh = warehouses.find(w => w.id === tx.targetWarehouseId);
-                            const isMyWarehouse = targetWh?.id === user.assignedWarehouseId;
-                            const action = getTransactionNextAction(tx, user);
-                            return (
-                              <div
-                                key={tx.id}
-                                onClick={() => void openTransactionDetails(tx)}
-                                className={`bg-white border rounded-2xl p-4 transition-all cursor-pointer group shadow-sm ${
-                                  isMyWarehouse ? 'border-blue-200 bg-blue-50/5 shadow-md shadow-blue-500/5 hover:border-blue-400' : 'border-slate-200/80 hover:border-accent'
-                                }`}
-                              >
-                                <div className="flex flex-col md:flex-row justify-between gap-4">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <StatusBadge status={tx.status} label="Đã duyệt - chờ nhận" tone={action.tone} />
-                                      <span className="text-[10px] text-slate-400 font-mono font-bold">Admin đã duyệt lúc {new Date(tx.date).toLocaleTimeString()}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <span className="text-xs font-bold text-slate-400 uppercase">Kho nhận:</span>
-                                      <span className="text-sm font-black text-blue-600">{targetWh?.name}</span>
-                                    </div>
-                                    <div className="bg-white p-2.5 rounded-xl border border-slate-100 group-hover:bg-blue-50/30 transition-colors">
-                                      {tx.items.slice(0, 2).map((ti, i) => {
-                                        const it = items.find(item => item.id === ti.itemId);
-                                        return <div key={i} className="text-xs font-bold text-slate-700 flex justify-between"><span>• {it?.name}</span> <span>{ti.quantity} {it?.unit}</span></div>
-                                      })}
-                                      {tx.items.length > 2 && <div className="text-[10px] text-slate-400 mt-1 italic text-center">... và {tx.items.length - 2} hạng mục khác</div>}
-                                    </div>
-                                    <p className="mt-2 text-[11px] font-bold text-slate-500">{action.nextAction}</p>
-                                  </div>
-                                  {canReceiveWmsTransaction(user, tx) && (
-                                    <div className="flex md:flex-col gap-2 min-w-[160px] pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-slate-100 md:pl-4" onClick={(e) => e.stopPropagation()}>
-                                      <button onClick={() => (tx.type === TransactionType.IMPORT || tx.type === TransactionType.TRANSFER) ? void openTransactionDetails(tx) : triggerApproval(tx.id, 'RECEIVE')} className="flex-1 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition">
-                                        <CheckCircle size={14} /> XÁC NHẬN NHẬN
-                                      </button>
-                                      {isAdmin && <div className="text-[9px] text-slate-400 text-center italic mt-1 font-bold">Chờ kho đích bấm nhận</div>}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </section>
-                  )}
-                </div>
+                <WmsWorkspace
+                  user={user}
+                  open={[...pendingAdminTxs, ...pendingReceiptTxs]}
+                  done={historyTransactions.slice(0, 80)}
+                  users={users}
+                  warehouses={warehouses}
+                  items={items}
+                  partnerName={tx => { const name = getTransactionSupplyName(tx); return name && name !== '-' ? name : null; }}
+                  selectedId={viewingHistoryTx?.id || null}
+                  onSelect={tx => void openTransactionDetails(tx)}
+                  onBack={() => setViewingHistoryTx(null)}
+                  onCreate={kind => handleTabChange(kind)}
+                  canLiquidate={isAdmin}
+                  detail={viewingHistoryTx && <TransactionDetailModal key={viewingHistoryTx.id} variant="panel" isOpen
+                    onClose={() => setViewingHistoryTx(null)} transaction={viewingHistoryTx} onUpdated={setViewingHistoryTx} />}
+                />
               )}
 
               {/* VIEW 2: LỊCH SỬ NHẬP XUẤT */}

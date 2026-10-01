@@ -5,7 +5,7 @@ import {
     WorkflowTemplate, WorkflowNode, WorkflowEdge,
     WorkflowInstance, WorkflowInstanceLog, WorkflowPrintTemplate,
     WorkflowInstanceStatus, WorkflowInstanceAction, WorkflowNodeType,
-    WorkflowCustomField, Role
+    WorkflowCustomField, WorkflowTemplateCategory, Role
 } from '../types';
 import { notificationService } from '../lib/notificationService';
 import { auditService } from '../lib/auditService';
@@ -23,8 +23,14 @@ export interface WorkflowProcessResult {
     errorMessage?: string;
 }
 
+export interface WorkflowCloneResult {
+    template: WorkflowTemplate;
+    printTemplateCopyFailures: number;
+}
+
 interface WorkflowContextType {
     templates: WorkflowTemplate[];
+    categories: WorkflowTemplateCategory[];
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
     instances: WorkflowInstance[];
@@ -36,11 +42,21 @@ interface WorkflowContextType {
     createTemplate: (name: string, description: string, userId: string) => Promise<WorkflowTemplate | null>;
     updateTemplate: (template: WorkflowTemplate) => Promise<void>;
     deleteTemplate: (id: string) => Promise<void>;
+    cloneTemplate: (sourceTemplateId: string, name: string, categoryId: string | null) => Promise<WorkflowCloneResult>;
+    setTemplateCategory: (templateId: string, categoryId: string | null) => Promise<void>;
+    moveTemplatesToCategory: (templateIds: string[], categoryId: string | null) => Promise<number>;
+
+    // Catalog groups
+    saveCategory: (categoryId: string | null, name: string) => Promise<WorkflowTemplateCategory>;
+    deleteCategory: (categoryId: string) => Promise<void>;
+    reorderCategories: (categoryIds: string[]) => Promise<void>;
 
     // Nodes & Edges
     saveNodesAndEdges: (templateId: string, nodes: WorkflowNode[], edges: WorkflowEdge[]) => Promise<void>;
     getTemplateNodes: (templateId: string) => WorkflowNode[];
     getTemplateEdges: (templateId: string) => WorkflowEdge[];
+    // refreshData only preloads steps of active templates; admin screens load the rest on demand.
+    loadTemplateStructures: (templateIds: string[]) => Promise<void>;
 
     // Instances
     createInstance: (templateId: string, title: string, userId: string, formData?: Record<string, any>, firstAssigneeUserIds?: string | string[]) => Promise<WorkflowInstance | null>;
@@ -66,15 +82,17 @@ interface WorkflowContextType {
 
 const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
 
-const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, created_at, updated_at';
+const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, step_approvals, created_at, updated_at';
 const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
 const WORKFLOW_TEMPLATE_LEGACY_SELECT = 'id,name,description,created_by,is_active,custom_fields,managers,default_watchers,created_at,updated_at';
-const WORKFLOW_TEMPLATE_SELECT = `${WORKFLOW_TEMPLATE_LEGACY_SELECT},owner_subject_type,owner_project_id,cloned_from_template_id`;
+const WORKFLOW_TEMPLATE_SELECT = `${WORKFLOW_TEMPLATE_LEGACY_SELECT},owner_subject_type,owner_project_id,cloned_from_template_id,category_id`;
+const WORKFLOW_TEMPLATE_CATEGORY_SELECT = 'id,name,sort_order';
+const WORKFLOW_TEMPLATE_CATEGORY_LIMIT = 200;
 let workflowTemplateOwnershipColumnsAvailable = true;
 const isMissingColumnError = (error: any) => ['42703', 'PGRST204'].includes(String(error?.code || ''));
 
-// Ownership columns arrive with 20260926090000; until that migration is applied
-// the catalog must keep loading with the legacy projection.
+// Ownership/catalog columns arrive with 20260926090000 and 20260930042944; until
+// those migrations are applied the catalog must keep loading with the legacy projection.
 const queryWorkflowTemplates = async <T,>(
     run: (projection: string) => PromiseLike<{ data: T; error: any }>,
 ): Promise<{ data: T; error: any }> => {
@@ -137,12 +155,22 @@ const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
     customFields: row.custom_fields || [],
     managers: row.managers || [],
     defaultWatchers: row.default_watchers || [],
+    categoryId: row.category_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ownerSubjectType: row.owner_subject_type ?? null,
     ownerProjectId: row.owner_project_id ?? null,
     clonedFromTemplateId: row.cloned_from_template_id ?? null,
 });
+
+const mapCategoryFromDB = (row: any): WorkflowTemplateCategory => ({
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order ?? 0,
+});
+
+const sortCategories = (items: WorkflowTemplateCategory[]) =>
+    [...items].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, 'vi'));
 
 const mapNodeFromDB = (row: any): WorkflowNode => ({
     id: row.id,
@@ -178,6 +206,7 @@ const mapInstanceFromDB = (row: any): WorkflowInstance => ({
     formData: row.form_data || row.formData || {},
     watchers: row.watchers || [],
     stepAssignees: row.step_assignees || row.stepAssignees || {},
+    stepApprovals: row.step_approvals || row.stepApprovals || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
@@ -214,6 +243,7 @@ const buildMaterialRequestLink = (request: { id: string; project_id?: string | n
 
 export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+    const [categories, setCategories] = useState<WorkflowTemplateCategory[]>([]);
     const [nodes, setNodes] = useState<WorkflowNode[]>([]);
     const [edges, setEdges] = useState<WorkflowEdge[]>([]);
     const [instances, setInstances] = useState<WorkflowInstance[]>([]);
@@ -226,19 +256,24 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (inflightRefreshRef.current) return inflightRefreshRef.current;
         setIsLoading(true);
         const refreshTask = (async () => {
-            const [tRes, iRes, ptRes] = await Promise.all([
+            const [tRes, iRes, ptRes, cRes] = await Promise.all([
                 queryWorkflowTemplates(projection => supabase.from('workflow_templates').select(projection).order('created_at', { ascending: false }).limit(WORKFLOW_TEMPLATE_CATALOG_LIMIT)),
                 supabase.from('workflow_instances').select(WORKFLOW_INSTANCE_LIST_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_INSTANCE_LIST_LIMIT),
                 supabase.from('workflow_print_templates').select(WORKFLOW_PRINT_TEMPLATE_SELECT).order('created_at', { ascending: false }).limit(WORKFLOW_PRINT_TEMPLATE_LIMIT),
+                supabase.from('workflow_template_categories').select(WORKFLOW_TEMPLATE_CATEGORY_SELECT).order('sort_order', { ascending: true }).limit(WORKFLOW_TEMPLATE_CATEGORY_LIMIT),
             ]);
             if (tRes.data) setTemplates(tRes.data.map(mapTemplateFromDB));
+            if (cRes.error) console.warn('Workflow template categories fetch error:', cRes.error);
+            else if (cRes.data) setCategories(sortCategories(cRes.data.map(mapCategoryFromDB)));
             const activeTemplateIds = (tRes.data || []).filter((template: any) => template.is_active !== false).map((template: any) => template.id);
             const [nodeRows, edgeRows] = await Promise.all([
                 loadWorkflowRowsByIds('workflow_nodes', WORKFLOW_NODE_SELECT, 'template_id', activeTemplateIds),
                 loadWorkflowRowsByIds('workflow_edges', WORKFLOW_EDGE_SELECT, 'template_id', activeTemplateIds),
             ]);
-            setNodes(nodeRows.map(mapNodeFromDB));
-            setEdges(edgeRows.map(mapEdgeFromDB));
+            // Keep steps of inactive templates that an admin screen loaded on demand.
+            const inactiveTemplateIds = new Set((tRes.data || []).filter((template: any) => template.is_active === false).map((template: any) => template.id));
+            setNodes(prev => [...prev.filter(n => inactiveTemplateIds.has(n.templateId)), ...nodeRows.map(mapNodeFromDB)]);
+            setEdges(prev => [...prev.filter(e => inactiveTemplateIds.has(e.templateId)), ...edgeRows.map(mapEdgeFromDB)]);
             if (iRes.data) setInstances(iRes.data.map(mapInstanceFromDB));
             if (iRes.data && iRes.data.length > 0) {
                 const instanceIds = iRes.data.map((i: any) => i.id);
@@ -427,6 +462,120 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setTemplates(prev => prev.filter(t => t.id !== id));
         setNodes(prev => prev.filter(n => n.templateId !== id));
         setEdges(prev => prev.filter(e => e.templateId !== id));
+    };
+
+    const loadTemplateStructures = useCallback(async (templateIds: string[]) => {
+        const ids = Array.from(new Set(templateIds.filter(Boolean)));
+        if (ids.length === 0) return;
+        const [nodeRows, edgeRows] = await Promise.all([
+            loadWorkflowRowsByIds('workflow_nodes', WORKFLOW_NODE_SELECT, 'template_id', ids),
+            loadWorkflowRowsByIds('workflow_edges', WORKFLOW_EDGE_SELECT, 'template_id', ids),
+        ]);
+        const idSet = new Set(ids);
+        setNodes(prev => [...prev.filter(n => !idSet.has(n.templateId)), ...nodeRows.map(mapNodeFromDB)]);
+        setEdges(prev => [...prev.filter(e => !idSet.has(e.templateId)), ...edgeRows.map(mapEdgeFromDB)]);
+    }, []);
+
+    const cloneTemplate = async (sourceTemplateId: string, name: string, categoryId: string | null): Promise<WorkflowCloneResult> => {
+        const { data, error } = await supabase.rpc('clone_workflow_template', {
+            p_source_template_id: sourceTemplateId,
+            p_name: name,
+            p_category_id: categoryId,
+            p_idempotency_key: crypto.randomUUID(),
+        });
+        if (error) throw error;
+        const result = data as { template?: any; printTemplates?: Array<{ name: string; file_name: string; storage_path: string }> } | null;
+        if (!result?.template) throw new Error('Không nhận được dữ liệu quy trình sau khi nhân bản.');
+        const template = mapTemplateFromDB(result.template);
+        setTemplates(prev => [template, ...prev]);
+        await loadTemplateStructures([template.id]);
+
+        // Print-template files are copied into the new template's folder so deleting
+        // one template's file never breaks the other.
+        let printTemplateCopyFailures = 0;
+        const copiedPrintTemplates: WorkflowPrintTemplate[] = [];
+        for (const source of result.printTemplates || []) {
+            const fileName = source.storage_path.split('/').pop() || source.file_name;
+            const storagePath = `${template.id}/${fileName}`;
+            const { error: copyError } = await supabase.storage.from('workflow-templates').copy(source.storage_path, storagePath);
+            if (copyError) { printTemplateCopyFailures += 1; continue; }
+            const { data: row, error: insertError } = await supabase.from('workflow_print_templates').insert({
+                template_id: template.id,
+                name: source.name,
+                file_name: source.file_name,
+                storage_path: storagePath,
+            }).select(WORKFLOW_PRINT_TEMPLATE_SELECT).single();
+            if (insertError || !row) {
+                printTemplateCopyFailures += 1;
+                await supabase.storage.from('workflow-templates').remove([storagePath]);
+                continue;
+            }
+            copiedPrintTemplates.push(mapPrintTemplateFromDB(row));
+        }
+        if (copiedPrintTemplates.length > 0) setPrintTemplates(prev => [...copiedPrintTemplates, ...prev]);
+        return { template, printTemplateCopyFailures };
+    };
+
+    const setTemplateCategory = async (templateId: string, categoryId: string | null) => {
+        const { data, error } = await supabase.rpc('set_workflow_template_category', {
+            p_template_id: templateId,
+            p_category_id: categoryId,
+        });
+        if (error) throw error;
+        const row = (data as { template?: any } | null)?.template;
+        if (row) {
+            const updated = mapTemplateFromDB(row);
+            setTemplates(prev => prev.map(t => t.id === templateId ? updated : t));
+        }
+    };
+
+    const moveTemplatesToCategory = async (templateIds: string[], categoryId: string | null): Promise<number> => {
+        if (templateIds.length === 0) return 0;
+        const { data, error } = await supabase.rpc('move_workflow_templates_to_category', {
+            p_template_ids: templateIds,
+            p_category_id: categoryId,
+        });
+        if (error) throw error;
+        const rows = ((data as { templates?: any[] } | null)?.templates || []).map(mapTemplateFromDB);
+        const byId = new Map(rows.map(row => [row.id, row]));
+        setTemplates(prev => prev.map(t => byId.get(t.id) || t));
+        return rows.length;
+    };
+
+    const saveCategory = async (categoryId: string | null, name: string): Promise<WorkflowTemplateCategory> => {
+        const { data, error } = await supabase.rpc('save_workflow_template_category', {
+            p_category_id: categoryId,
+            p_name: name,
+            p_sort_order: null,
+        });
+        if (error) throw error;
+        const row = (data as { category?: any } | null)?.category;
+        if (!row) throw new Error('Không nhận được dữ liệu nhóm quy trình.');
+        const category = mapCategoryFromDB(row);
+        setCategories(prev => sortCategories([...prev.filter(c => c.id !== category.id), category]));
+        return category;
+    };
+
+    const deleteCategory = async (categoryId: string) => {
+        const { error } = await supabase.rpc('delete_workflow_template_category', { p_category_id: categoryId });
+        if (error) throw error;
+        setCategories(prev => prev.filter(c => c.id !== categoryId));
+        setTemplates(prev => prev.map(t => t.categoryId === categoryId ? { ...t, categoryId: null } : t));
+    };
+
+    const reorderCategories = async (categoryIds: string[]) => {
+        const previous = categories;
+        setCategories(prev => categoryIds
+            .map((id, index) => {
+                const found = prev.find(c => c.id === id);
+                return found ? { ...found, sortOrder: (index + 1) * 10 } : null;
+            })
+            .filter((c): c is WorkflowTemplateCategory => !!c));
+        const { error } = await supabase.rpc('reorder_workflow_template_categories', { p_category_ids: categoryIds });
+        if (error) {
+            setCategories(previous);
+            throw error;
+        }
     };
 
     // ---- Nodes & Edges ----
@@ -707,15 +856,14 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             };
         }
 
+        // The RPC row omits step_approvals ("tất cả phải duyệt" progress), so re-read the instance.
         let processedRow = Array.isArray(processedData) ? processedData[0] : processedData;
-        if (!processedRow) {
-            const { data: updatedRow } = await supabase
-                .from('workflow_instances')
-                .select(WORKFLOW_INSTANCE_LIST_SELECT)
-                .eq('id', instanceId)
-                .single();
-            processedRow = updatedRow;
-        }
+        const { data: updatedRow } = await supabase
+            .from('workflow_instances')
+            .select(WORKFLOW_INSTANCE_LIST_SELECT)
+            .eq('id', instanceId)
+            .single();
+        if (updatedRow) processedRow = updatedRow;
 
         if (processedRow) {
             const existingFormData = instances.find(i => i.id === instanceId)?.formData || {};
@@ -1056,9 +1204,10 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const value: WorkflowContextType = {
-        templates, nodes, edges, instances, logs, printTemplates, isLoading,
-        createTemplate, updateTemplate, deleteTemplate,
-        saveNodesAndEdges, getTemplateNodes, getTemplateEdges,
+        templates, categories, nodes, edges, instances, logs, printTemplates, isLoading,
+        createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory, moveTemplatesToCategory,
+        saveCategory, deleteCategory, reorderCategories,
+        saveNodesAndEdges, getTemplateNodes, getTemplateEdges, loadTemplateStructures,
         createInstance, createDraft, loadInstanceById, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,
         uploadPrintTemplate, deletePrintTemplate, getPrintTemplates,
         refreshData,

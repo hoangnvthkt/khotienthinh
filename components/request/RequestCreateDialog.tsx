@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Send, UserRound, X } from 'lucide-react';
+import { Eye, FileText, Loader2, Paperclip, Send, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -10,9 +10,12 @@ import {
 } from '../../lib/requestRuntimeService';
 import { buildRequestRoute } from '../../lib/requestRoutes';
 import { normalizeDynamicApprovers, validateRequestSubmission } from '../../lib/requestCreateModel';
+import { requestAttachmentService, validateRequestAttachment } from '../../lib/requestAttachmentService';
+import { buildRequestCommentDocument } from '../../lib/requestDiscussionModel';
 
 import UserSearchSelect from '../common/UserSearchSelect';
 import { RequestFormFields } from './RequestFormFields';
+import { RequestRichTextEditor } from './RequestRichTextEditor';
 import { useDialogFocusTrap } from '../../hooks/useDialogFocusTrap';
 
 const newIdempotencyKey = () => (
@@ -39,11 +42,16 @@ export const RequestCreateDialog: React.FC<{
   const [dynamicApprovers, setDynamicApprovers] = useState<Record<string, string[]>>({});
   const [errors, setErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const dirty = Boolean(selectedTemplateVersionId || title || description || Object.keys(formData).length || Object.keys(dynamicApprovers).length);
+  const [watchers, setWatchers] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [submitStage, setSubmitStage] = useState<string | null>(null);
+  const dirty = Boolean(selectedTemplateVersionId || title || description || Object.keys(formData).length || Object.keys(dynamicApprovers).length || watchers.length || files.length);
   const requestClose = () => { if (!dirty || window.confirm('Bỏ các thay đổi chưa gửi?')) onClose(); };
   useDialogFocusTrap(isOpen, dialogRef, requestClose);
 
   const selectedTemplate = useMemo(() => templates.find(template => template.templateVersionId === selectedTemplateVersionId), [templates, selectedTemplateVersionId]);
+  const approvalSteps = useMemo(() => [...(selectedTemplate?.approvalBlocks ?? [])].sort((a, b) => a.sortOrder - b.sortOrder), [selectedTemplate]);
   const dynamicBlocks = useMemo(() => (selectedTemplate?.approvalBlocks ?? []).filter(block => block.source === 'DYNAMIC_CREATOR_SELECT'), [selectedTemplate]);
 
   useEffect(() => {
@@ -55,6 +63,10 @@ export const RequestCreateDialog: React.FC<{
     setDescription('');
     setFormData({});
     setDynamicApprovers({});
+    setWatchers([]);
+    setFiles([]);
+    setFileError(null);
+    setSubmitStage(null);
     setErrors([]);
     setTemplateError(null);
     setIsLoadingTemplates(true);
@@ -65,6 +77,44 @@ export const RequestCreateDialog: React.FC<{
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const addFiles = (picked: FileList | null) => {
+    if (!picked) return;
+    const accepted: File[] = [];
+    const rejected: string[] = [];
+    Array.from(picked).forEach(file => {
+      try { validateRequestAttachment(file); accepted.push(file); }
+      catch (cause) { rejected.push(`${file.name}: ${(cause as Error).message}`); }
+    });
+    setFiles(previous => [...previous, ...accepted].slice(0, 10));
+    setFileError(rejected.length ? rejected.join(' ') : null);
+  };
+
+  // Files ride on the existing discussion attachment pipeline: uploaded after
+  // the request exists, then posted as its first discussion entry.
+  const uploadFiles = async (requestId: string) => {
+    const attachmentIds: string[] = [];
+    let failed = 0;
+    for (const [index, file] of files.entries()) {
+      setSubmitStage(`Đang tải tệp ${index + 1}/${files.length}...`);
+      try { attachmentIds.push(await requestAttachmentService.upload(requestId, file, newIdempotencyKey())); }
+      catch (cause) { console.error('Upload request attachment failed:', cause); failed += 1; }
+    }
+    if (attachmentIds.length) {
+      try {
+        await requestRuntimeService.comment('create', {
+          requestId,
+          content: buildRequestCommentDocument('Tệp đính kèm khi tạo đề xuất', []),
+          parentCommentId: null,
+          attachmentIds,
+        }, newIdempotencyKey());
+      } catch (cause) {
+        console.error('Attach files to request failed:', cause);
+        failed += attachmentIds.length;
+      }
+    }
+    return failed;
+  };
 
   const submit = async () => {
     if (!selectedTemplate) {
@@ -87,7 +137,7 @@ export const RequestCreateDialog: React.FC<{
     setIsSubmitting(true);
     setErrors([]);
     try {
-      const payload=JSON.stringify({requestTemplateVersionId:selectedTemplate.templateVersionId,title:title.trim(),description:description.trim(),formData,dynamicApproversByBlock:normalizedApprovers});
+      const payload=JSON.stringify({requestTemplateVersionId:selectedTemplate.templateVersionId,title:title.trim(),description:description.trim(),formData,dynamicApproversByBlock:normalizedApprovers,watchers});
       if(payloadRef.current!==undefined&&payloadRef.current!==payload)idempotencyKeyRef.current=newIdempotencyKey();
       payloadRef.current=payload;
       const result = await requestRuntimeService.submit({
@@ -97,8 +147,11 @@ export const RequestCreateDialog: React.FC<{
         formData,
         dynamicApproversByBlock: normalizedApprovers,
         idempotencyKey: idempotencyKeyRef.current ?? (idempotencyKeyRef.current = newIdempotencyKey()),
+        watcherIds: watchers,
       });
-      toast.success('Đã gửi đề xuất', `${result.requestCode} đã được tạo.`);
+      const failedFiles = files.length ? await uploadFiles(result.requestId) : 0;
+      if (failedFiles) toast.warning('Đã gửi đề xuất', `${result.requestCode} đã được tạo nhưng ${failedFiles} tệp chưa tải lên được. Vui lòng đính kèm lại trong phần Thảo luận.`);
+      else toast.success('Đã gửi đề xuất', `${result.requestCode} đã được tạo.`);
       onClose();
       navigate(buildRequestRoute(result.requestId));
     } catch (error) {
@@ -106,6 +159,7 @@ export const RequestCreateDialog: React.FC<{
       setErrors([mapped.message]);
     } finally {
       setIsSubmitting(false);
+      setSubmitStage(null);
     }
   };
 
@@ -120,12 +174,12 @@ export const RequestCreateDialog: React.FC<{
           <button type="button" onClick={requestClose} disabled={isSubmitting} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Đóng"><X size={18} /></button>
         </header>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-7">
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">Điền đầy đủ nội dung để hệ thống tự chuyển đề xuất tới đúng người duyệt. Các trường có dấu <span className="font-bold text-rose-500">*</span> là bắt buộc.</div>
+          <div className="rounded-2xl border border-mint-200 bg-mint-50 px-4 py-3 text-sm leading-6 text-mint-700 dark:border-mint-900 dark:bg-mint-900/40 dark:text-mint-200">Điền đầy đủ nội dung để hệ thống tự chuyển đề xuất tới đúng người duyệt. Các trường có dấu <span className="font-bold text-rose-500">*</span> là bắt buộc.</div>
           {templateError && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">Không tải được danh sách mẫu: {templateError}</p>}
           {errors.length > 0 && <ul className="list-disc space-y-1 rounded-lg bg-rose-50 px-8 py-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{errors.map(error => <li key={error}>{error}</li>)}</ul>}
           <label className="block">
             <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Mẫu đề xuất <span className="text-rose-500">*</span></span>
-            <select value={selectedTemplateVersionId} onChange={event => setSelectedTemplateVersionId(event.target.value)} disabled={isLoadingTemplates || isSubmitting} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+            <select value={selectedTemplateVersionId} onChange={event => setSelectedTemplateVersionId(event.target.value)} disabled={isLoadingTemplates || isSubmitting} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
               <option value="">{isLoadingTemplates ? 'Đang tải mẫu...' : 'Chọn mẫu đề xuất'}</option>
               {templates.map(template => <option key={template.templateVersionId} value={template.templateVersionId}>{template.name} · v{template.versionNumber}</option>)}
             </select>
@@ -134,36 +188,76 @@ export const RequestCreateDialog: React.FC<{
           {selectedTemplate && <>
             <label className="block">
               <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Tiêu đề <span className="text-rose-500">*</span></span>
-              <input value={title} onChange={event => setTitle(event.target.value)} disabled={isSubmitting} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder="Nhập tiêu đề đề xuất" />
+              <input value={title} onChange={event => setTitle(event.target.value)} disabled={isSubmitting} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder="Nhập tiêu đề đề xuất" />
             </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Mô tả</span>
-              <textarea value={description} onChange={event => setDescription(event.target.value)} disabled={isSubmitting} rows={3} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white" placeholder="Bổ sung nội dung nếu cần" />
-            </label>
+            <div>
+              <span className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Nội dung &amp; Lý do đề xuất</span>
+              <RequestRichTextEditor value={description} onChange={setDescription} disabled={isSubmitting} ariaLabel="Nội dung và lý do đề xuất" placeholder="Trình bày nội dung, lý do đề xuất..." />
+            </div>
             {selectedTemplate.formSchema.length > 0 && <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">Thông tin đề xuất</h3>
               <RequestFormFields fields={selectedTemplate.formSchema} values={formData} onChange={setFormData} users={users} disabled={isSubmitting} />
             </section>}
-            {dynamicBlocks.length > 0 && <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
-              <div><h3 className="text-sm font-bold text-slate-900 dark:text-white">Người duyệt được chọn khi gửi</h3><p className="text-xs text-slate-500">Các khối sau sẽ được kích hoạt theo cấu hình luồng duyệt của mẫu.</p></div>
-              {dynamicBlocks.map(block => <div key={block.key} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <div className="mb-3 flex items-center gap-2"><UserRound size={16} className="text-violet-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">{block.name}</p><p className="text-xs text-slate-500">Tối thiểu {block.minimumDynamicApprovers ?? 1} người duyệt</p></div></div>
-                <UserSearchSelect
-                  users={users}
-                  excludeUserIds={[user.id]}
-                  multiple
-                  values={dynamicApprovers[block.key] ?? []}
-                  onValuesChange={userIds => setDynamicApprovers(previous => ({ ...previous, [block.key]: userIds }))}
-                  placeholder="Gõ tên hoặc vị trí để tìm người duyệt..."
-                  disabled={isSubmitting}
-                />
-              </div>)}
+            {approvalSteps.length > 0 && <section className="space-y-3 border-t border-slate-100 pt-5 dark:border-slate-800">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Luồng duyệt</h3>
+                <p className="text-xs text-slate-500">{selectedTemplate.flowMode === 'PARALLEL'
+                  ? `Các bước được gửi duyệt cùng lúc${selectedTemplate.completionPolicy === 'ANY_ONE' ? ', chỉ cần một người đồng ý là hoàn thành' : ''}.`
+                  : 'Đề xuất đi lần lượt theo thứ tự các bước dưới đây.'}{dynamicBlocks.length > 0 ? ' Hãy chọn người duyệt cho các bước có dấu *.' : ''}</p>
+              </div>
+              <ol className="space-y-2.5">
+                {approvalSteps.map((block, index) => {
+                  const isDynamic = block.source === 'DYNAMIC_CREATOR_SELECT';
+                  const minimum = block.minimumDynamicApprovers ?? 1;
+                  return <li key={block.key} className={`rounded-xl border p-3.5 ${isDynamic ? 'border-teal-200 bg-teal-50/40 dark:border-teal-900 dark:bg-teal-950/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{selectedTemplate.flowMode === 'PARALLEL' ? '•' : index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-800 dark:text-white">{block.name}{isDynamic && <span className="ml-1 text-rose-500">*</span>}</p>
+                        {isDynamic ? <>
+                          <p className="mb-2 text-xs text-slate-500">{minimum > 1 ? `Chọn tối thiểu ${minimum} người duyệt` : 'Gõ tên để chọn người duyệt'}</p>
+                          <UserSearchSelect
+                            users={users}
+                            excludeUserIds={[user.id]}
+                            multiple
+                            values={dynamicApprovers[block.key] ?? []}
+                            onValuesChange={userIds => setDynamicApprovers(previous => ({ ...previous, [block.key]: userIds }))}
+                            placeholder="Gõ tên hoặc vị trí để tìm người duyệt..."
+                            disabled={isSubmitting}
+                          />
+                        </> : <p className="text-xs text-slate-500">{block.source === 'DIRECT_MANAGER'
+                          ? 'Quản lý trực tiếp của bạn (tự động)'
+                          : block.fixedApprovers?.length
+                            ? `${block.fixedApprovers.map(approver => approver.name).join(', ')} (cố định theo mẫu)`
+                            : 'Người duyệt cố định theo mẫu'}</p>}
+                      </div>
+                    </div>
+                  </li>;
+                })}
+              </ol>
             </section>}
+            <section className="space-y-4 border-t border-slate-100 pt-5 dark:border-slate-800">
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <div className="mb-3 flex items-start gap-2"><Eye size={16} className="mt-0.5 text-teal-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">Người theo dõi <span className="font-normal text-slate-400">(không bắt buộc)</span></p><p className="text-xs text-slate-500">Được xem đề xuất và nhận thông báo, không cần duyệt.</p></div></div>
+                <UserSearchSelect users={users} excludeUserIds={[user.id]} multiple values={watchers} onValuesChange={setWatchers} placeholder="Gõ tên để thêm người theo dõi..." disabled={isSubmitting} />
+              </div>
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2"><Paperclip size={16} className="mt-0.5 text-teal-600" /><div><p className="text-sm font-semibold text-slate-800 dark:text-white">Tệp đính kèm <span className="font-normal text-slate-400">(không bắt buộc)</span></p><p className="text-xs text-slate-500">PDF, Word, Excel, TXT tối đa 25 MB; ảnh JPEG, PNG, WebP tối đa 5 MB.</p></div></div>
+                  <label className={`inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800 ${isSubmitting || files.length >= 10 ? 'pointer-events-none opacity-50' : ''}`}>
+                    <Paperclip size={14} /> Chọn tệp
+                    <input type="file" multiple className="sr-only" disabled={isSubmitting || files.length >= 10} accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,image/jpeg,image/png,image/webp" onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
+                  </label>
+                </div>
+                {fileError && <p className="mb-2 rounded-lg bg-rose-50 p-2 text-xs text-rose-700 dark:bg-rose-950/40 dark:text-rose-200">{fileError}</p>}
+                {files.length > 0 && <ul className="space-y-1.5">{files.map((file, index) => <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200"><FileText size={14} className="shrink-0 text-slate-400" /><span className="min-w-0 flex-1 truncate">{file.name}</span><span className="shrink-0 text-slate-400">{Math.max(1, Math.round(file.size / 1024))} KB</span><button type="button" onClick={() => setFiles(previous => previous.filter((_, position) => position !== index))} disabled={isSubmitting} aria-label={`Bỏ ${file.name}`} className="rounded p-0.5 text-slate-400 hover:text-rose-600"><X size={14} /></button></li>)}</ul>}
+              </div>
+            </section>
           </>}
         </div>
         <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:justify-end sm:px-7">
           <button type="button" onClick={requestClose} disabled={isSubmitting} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-60 dark:text-slate-300 dark:hover:bg-slate-800">Hủy</button>
-          <button type="button" onClick={submit} disabled={!selectedTemplate || isSubmitting} className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">{isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Gửi đề xuất</button>
+          <button type="button" onClick={submit} disabled={!selectedTemplate || isSubmitting} className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-leaf-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-leaf-600/20 hover:bg-leaf-700 disabled:cursor-not-allowed disabled:opacity-60">{isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{submitStage ?? 'Gửi đề xuất'}</button>
         </footer>
       </div>
     </div>

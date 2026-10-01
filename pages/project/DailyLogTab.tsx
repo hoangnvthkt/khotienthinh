@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import AiInsightPanel from '../../components/AiInsightPanel';
-import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Save, Cloud, Sun, CloudRain, CloudLightning, Users, Calendar, AlertTriangle, Mic, MicOff, MapPin, Camera, Clock, Send, CheckCircle2, RotateCcw, LayoutList, ChevronLeft, ChevronRight, Loader2, UserCheck, Eye, Layers, Package, Wrench, Paperclip, Search, SlidersHorizontal, ChevronDown, ChevronUp, BarChart3, FileSpreadsheet, FileText, History } from 'lucide-react';
 import { DailyLog, DailyLogContribution, DailyLogPhoto, WeatherType, ProjectTask, DelayTaskEntry, DelayCategory, DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine, DailyLogStatus, ContractLaborCatalogItem, ContractMachineCatalogItem, ProjectStaff, BusinessPartner, ProjectWorkBoqItem } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { dailyLogContributionService, dailyLogService, dailyLogWbsService, workBoqService } from '../../lib/projectService';
 import { getDailyLogPublicationOutcome, type DailyLogDocumentBundle, type DailyLogWbsBundle } from '../../lib/dailyLogWbsService';
 import { loadDailyLogGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
+import { splitDailyLogDaysByCutover } from '../../lib/dailyLogPresentation';
 import { contractLaborCatalogService, contractMachineCatalogService } from '../../lib/contractMetadataService';
 import { partnerService } from '../../lib/partnerService';
 import { projectStaffService } from '../../lib/projectStaffService';
@@ -167,6 +168,7 @@ const shiftMonth = (monthKey: string, delta: number): string => {
 
 const getLogStatus = (log: DailyLog): DailyLogStatus => (log.status || (log.verified ? 'verified' : 'draft')) as DailyLogStatus;
 
+const formatViDate = (date: string | null) => date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '';
 const isSummaryDailyLog = (log: DailyLog): boolean => log.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE;
 
 const isLegacyDailyLogSource = (log: DailyLog): boolean =>
@@ -1218,6 +1220,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         reloadWbsBundle().catch(console.error);
     }, [reloadWbsBundle]);
 
+    // Switching from a pre-cutover date keeps the legacy bundle until the new one arrives;
+    // only a V2 document bundle (with the author's slips) may reach the engineer workspace.
+    const isDailyLogDocumentBundle = (value: unknown): value is DailyLogDocumentBundle =>
+        Boolean(value && Array.isArray((value as DailyLogDocumentBundle).myContributions));
     const isWbsContributionFlow = Boolean(
         !editing
         && wbsBundle?.rollout.enabled
@@ -2233,14 +2239,17 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const stats = useMemo(() => computeDailyLogMonthStats(logs, statsMonth, slipIssueDates), [logs, statsMonth, slipIssueDates]);
 
     // Projects on the source-slip workflow get the "Hôm nay" board instead of month cards.
-    const [todayBoardEnabled, setTodayBoardEnabled] = useState(false);
+    const [rolloutAccess, setRolloutAccess] = useState<{ mode: string; cutoverDate: string | null } | null>(null);
+    const todayBoardEnabled = rolloutAccess?.mode === 'pilot' || rolloutAccess?.mode === 'enforced';
+    // Days before the project's cutover were kept with the old workflow.
+    const workflowCutoverDate = todayBoardEnabled ? rolloutAccess?.cutoverDate || null : null;
     useEffect(() => {
         const scopeProjectId = projectId || effectiveId;
         if (!scopeProjectId) return;
         let active = true;
         dailyLogWbsService.getRolloutAccess({ projectId: scopeProjectId, constructionSiteId: constructionSiteId || null, date: toDateKey(new Date()) })
-            .then(access => { if (active) setTodayBoardEnabled(access.mode === 'pilot' || access.mode === 'enforced'); })
-            .catch(() => { if (active) setTodayBoardEnabled(false); });
+            .then(access => { if (active) setRolloutAccess({ mode: access.mode, cutoverDate: access.cutoverDate }); })
+            .catch(() => { if (active) setRolloutAccess(null); });
         return () => { active = false; };
     }, [projectId, effectiveId, constructionSiteId]);
 
@@ -2337,6 +2346,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         }).sort((a, b) => b.date.localeCompare(a.date));
     }, [filterMonth, filterStatus, filterWeather, getSummarySourceLogs, logs, searchQuery]);
 
+    const { current: currentDayRows, legacy: legacyDayRows, legacyPendingApproval: legacyPendingCount } = useMemo(
+        () => splitDailyLogDaysByCutover(dayRows, workflowCutoverDate), [dayRows, workflowCutoverDate]);
+    const [showLegacyDays, setShowLegacyDays] = useState(false);
     const calendarCells = useMemo(() => buildCalendarCells(calendarMonth), [calendarMonth]);
     const calendarTitle = useMemo(() => {
         const [year, month] = calendarMonth.split('-').map(Number);
@@ -2589,6 +2601,104 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             );
         }
     }
+
+    // One day in the history list. Pre-cutover days are the old workflow: no new
+    // old-form entry from here, but unfinished summaries/approvals can still close.
+    const renderDayRow = (row: typeof dayRows[number], legacy = false) => {
+        const officialLog = row.officialLog;
+        const status = row.officialStatus;
+        const statusCfg = status ? STATUS_CFG[status] : null;
+        const w = officialLog ? WEATHER[officialLog.weather] : null;
+        const borderAccentCls =
+            status === 'verified' ? 'bg-emerald-500 dark:bg-emerald-400' :
+                status === 'submitted' ? 'bg-amber-500 dark:bg-amber-400' :
+                    status === 'rejected' ? 'bg-rose-500 dark:bg-rose-400' :
+                        row.submittedCount > 0 ? 'bg-blue-500 dark:bg-blue-400' :
+                            'bg-slate-400 dark:bg-slate-500';
+        const dayLabel = new Date(`${row.date}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+        const summaryLabel = officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'submitted'
+            ? 'Chờ CHT duyệt'
+            : officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'verified'
+                ? 'Đã duyệt'
+                : officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'rejected'
+                    ? 'CHT trả lại'
+                    : statusCfg?.label || (row.submittedCount > 0 ? 'Chờ tổng hợp' : 'Chưa có bản ngày');
+        const sourceReportsReady = row.legacyReports.length > 0;
+        const summaryEditable = !!officialLog
+            && officialLog.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE
+            && ['draft', 'rejected'].includes(getLogStatus(officialLog));
+        const hasSummary = officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE;
+        const canSummarizeDay = hasDailyLogAction(DAILY_LOG_ACTION.summarize)
+            && ((!hasSummary && sourceReportsReady) || summaryEditable);
+        const canReportDay = !legacy && hasDailyLogAction(DAILY_LOG_ACTION.create);
+        const contributorNames = row.legacyReports.map(getLegacyDailyLogSourceName);
+        const openRow = () => officialLog ? openView(officialLog)
+            : canSummarizeDay ? openSummaryForDate(row.date)
+                : legacy ? (row.logs[0] ? openView(row.logs[0]) : undefined)
+                    : openCreateForDate(row.date);
+
+        return (
+            <div
+                key={row.date}
+                ref={el => { if (officialLog) logRefs.current[officialLog.id] = el; }}
+                onClick={openRow}
+                className={`group flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 transition-colors cursor-pointer ${officialLog && highlightLogId === officialLog.id ? 'bg-teal-50/50 dark:bg-teal-950/20' : ''
+                    }`}
+            >
+                {/* Left: Date info & Status badge */}
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                    {/* Date badge */}
+                    <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/60 flex flex-col items-center justify-center shrink-0">
+                        <span className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100">{new Date(`${row.date}T00:00:00`).getDate()}</span>
+                        <span className="text-[8px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase">Th{new Date(`${row.date}T00:00:00`).getMonth() + 1}</span>
+                    </div>
+
+                    {/* Day of Week + Date String + Weather icon + Status Badge */}
+                    <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap min-w-0">
+                        <span className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors capitalize">
+                            {dayLabel}
+                        </span>
+                        {w && <span className="text-xs sm:text-sm" title={w.label}>{w.emoji}</span>}
+
+                        {/* Status Badge */}
+                        <span className={`text-[10px] font-medium px-2.5 py-0.5 rounded-full border ${statusCfg?.cls || 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'}`}>
+                            {summaryLabel}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Right: Quick Action Buttons */}
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                    {canReportDay && (
+                        <button
+                            type="button"
+                            onClick={() => openCreateForDate(row.date)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-teal-500 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
+                        >
+                            <Plus size={13} /> Ghi nhật ký
+                        </button>
+                    )}
+                    {canSummarizeDay && (
+                        <button
+                            type="button"
+                            onClick={() => openSummaryForDate(row.date)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shadow-sm transition-colors"
+                        >
+                            <FileSpreadsheet size={13} /> Tổng hợp
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={openRow}
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                        title="Xem chi tiết"
+                    >
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-6">
@@ -2911,99 +3021,46 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                         <p className="text-sm font-bold text-slate-400">Chưa có báo cáo hoặc nhật ký nào</p>
                     </div>
                 ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-750">
-                        {dayRows.map(row => {
-                            const officialLog = row.officialLog;
-                            const status = row.officialStatus;
-                            const statusCfg = status ? STATUS_CFG[status] : null;
-                            const w = officialLog ? WEATHER[officialLog.weather] : null;
-                            const borderAccentCls =
-                                status === 'verified' ? 'bg-emerald-500 dark:bg-emerald-400' :
-                                    status === 'submitted' ? 'bg-amber-500 dark:bg-amber-400' :
-                                        status === 'rejected' ? 'bg-rose-500 dark:bg-rose-400' :
-                                            row.submittedCount > 0 ? 'bg-blue-500 dark:bg-blue-400' :
-                                                'bg-slate-400 dark:bg-slate-500';
-                            const dayLabel = new Date(`${row.date}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
-                            const summaryLabel = officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'submitted'
-                                ? 'Chờ CHT duyệt'
-                                : officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'verified'
-                                    ? 'Đã duyệt'
-                                    : officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE && status === 'rejected'
-                                        ? 'CHT trả lại'
-                                        : statusCfg?.label || (row.submittedCount > 0 ? 'Chờ tổng hợp' : 'Chưa có bản ngày');
-                            const sourceReportsReady = row.legacyReports.length > 0;
-                            const summaryEditable = !!officialLog
-                                && officialLog.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE
-                                && ['draft', 'rejected'].includes(getLogStatus(officialLog));
-                            const hasSummary = officialLog?.summarySourceType === DAILY_SUMMARY_SOURCE_TYPE;
-                            const canSummarizeDay = hasDailyLogAction(DAILY_LOG_ACTION.summarize)
-                                && ((!hasSummary && sourceReportsReady) || summaryEditable);
-                            const canReportDay = hasDailyLogAction(DAILY_LOG_ACTION.create);
-                            const contributorNames = row.legacyReports.map(getLegacyDailyLogSourceName);
-
-                            return (
-                                <div
-                                    key={row.date}
-                                    ref={el => { if (officialLog) logRefs.current[officialLog.id] = el; }}
-                                    onClick={() => officialLog ? openView(officialLog) : canSummarizeDay ? openSummaryForDate(row.date) : openCreateForDate(row.date)}
-                                    className={`group flex items-center justify-between px-4 sm:px-6 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 transition-colors cursor-pointer ${officialLog && highlightLogId === officialLog.id ? 'bg-teal-50/50 dark:bg-teal-950/20' : ''
-                                        }`}
+                    <>
+                        {currentDayRows.length > 0 ? (
+                            <div className="divide-y divide-slate-100 dark:divide-slate-750">
+                                {currentDayRows.map(row => renderDayRow(row))}
+                            </div>
+                        ) : (
+                            <div className="p-8 text-center">
+                                <Calendar size={32} className="mx-auto mb-2 text-slate-200" />
+                                <p className="text-sm font-bold text-slate-500">Chưa có nhật ký theo quy trình mới</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Nhật ký từ ngày {formatViDate(workflowCutoverDate)} sẽ hiện ở đây.</p>
+                            </div>
+                        )}
+                        {legacyDayRows.length > 0 && (
+                            <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40">
+                                <button
+                                    type="button"
+                                    aria-expanded={showLegacyDays}
+                                    onClick={() => setShowLegacyDays(value => !value)}
+                                    className="flex w-full items-center justify-between gap-3 px-4 sm:px-6 py-3.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors"
                                 >
-                                    {/* Left: Date info & Status badge */}
-                                    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                                        {/* Date badge */}
-                                        <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/60 flex flex-col items-center justify-center shrink-0">
-                                            <span className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100">{new Date(`${row.date}T00:00:00`).getDate()}</span>
-                                            <span className="text-[8px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase">Th{new Date(`${row.date}T00:00:00`).getMonth() + 1}</span>
-                                        </div>
-
-                                        {/* Day of Week + Date String + Weather icon + Status Badge */}
-                                        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap min-w-0">
-                                            <span className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors capitalize">
-                                                {dayLabel}
-                                            </span>
-                                            {w && <span className="text-xs sm:text-sm" title={w.label}>{w.emoji}</span>}
-
-                                            {/* Status Badge */}
-                                            <span className={`text-[10px] font-medium px-2.5 py-0.5 rounded-full border ${statusCfg?.cls || 'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'}`}>
-                                                {summaryLabel}
-                                            </span>
-                                        </div>
+                                    <span className="min-w-0">
+                                        <span className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                                            <History size={15} className="shrink-0 text-zinc-500" />
+                                            Nhật ký cũ (trước ngày áp dụng {formatViDate(workflowCutoverDate)})
+                                        </span>
+                                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                                            {legacyDayRows.length} ngày · Ghi theo mẫu cũ, giữ nguyên để xem lại.
+                                            {legacyPendingCount > 0 && <span className="font-semibold text-amber-700 dark:text-amber-400"> Còn {legacyPendingCount} ngày chờ CHT duyệt.</span>}
+                                        </span>
+                                    </span>
+                                    <ChevronDown size={16} className={`shrink-0 text-zinc-500 transition-transform ${showLegacyDays ? 'rotate-180' : ''}`} />
+                                </button>
+                                {showLegacyDays && (
+                                    <div className="divide-y divide-slate-100 dark:divide-slate-750">
+                                        {legacyDayRows.map(row => renderDayRow(row, true))}
                                     </div>
-
-                                    {/* Right: Quick Action Buttons */}
-                                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                                        {canReportDay && (
-                                            <button
-                                                type="button"
-                                                onClick={() => openCreateForDate(row.date)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-teal-500 hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
-                                            >
-                                                <Plus size={13} /> Ghi nhật ký
-                                            </button>
-                                        )}
-                                        {canSummarizeDay && (
-                                            <button
-                                                type="button"
-                                                onClick={() => openSummaryForDate(row.date)}
-                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold shadow-sm transition-colors"
-                                            >
-                                                <FileSpreadsheet size={13} /> Tổng hợp
-                                            </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => officialLog ? openView(officialLog) : canSummarizeDay ? openSummaryForDate(row.date) : openCreateForDate(row.date)}
-                                            className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-400 hover:text-teal-700 dark:hover:text-teal-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                            title="Xem chi tiết"
-                                        >
-                                            <ChevronRight size={16} />
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                )}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
@@ -3534,7 +3591,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             <button onClick={resetForm} disabled={savingLog} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center disabled:opacity-50 transition-colors"><X size={18} /></button>
                         </div>}
                         <div className={shouldRenderWbsEditor ? 'min-w-0 overflow-y-auto flex-1 bg-card' : 'p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto flex-1 bg-card'}>
-                            {shouldRenderWbsEditor ? <DailyLogEngineerWorkspace key={fDate} bundle={wbsBundle as DailyLogDocumentBundle | null}
+                            {shouldRenderWbsEditor ? <DailyLogEngineerWorkspace key={fDate} bundle={isDailyLogDocumentBundle(wbsBundle) ? wbsBundle : null}
                                 loading={wbsBundleLoading} error={wbsBundleError} projectId={projectId || effectiveId} constructionSiteId={constructionSiteId || null}
                                 date={fDate} onDateChange={setFDate} onClose={resetForm} onSubmitted={() => { reloadDailyLogRecords().catch(console.error); }}
                                 onUploadPhoto={async file => {

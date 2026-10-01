@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PurchaseOrder, PurchaseOrderDeliveryBatch } from '../../types';
-import { getPurchaseOrderUiPolicy } from '../purchaseOrderUiPolicy';
+import { getPurchaseOrderUiPolicy, isProcurementHubPurchaseOrder } from '../purchaseOrderUiPolicy';
 
 const makePo = (patch: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
   id: 'po-1',
@@ -388,5 +388,26 @@ describe('purchaseOrderUiPolicy', () => {
 
     expect(policy.primaryAction?.id).not.toBe('add_delivery');
     expect(policy.secondaryActions.map(action => action.id)).not.toContain('add_delivery');
+  });
+});
+
+describe('isProcurementHubPurchaseOrder', () => {
+  it('recognises orders created in Mua hàng only', () => {
+    expect(isProcurementHubPurchaseOrder({ metadata: { channel: 'procurement_hub' } })).toBe(true);
+    expect(isProcurementHubPurchaseOrder({ metadata: {} })).toBe(false);
+    expect(isProcurementHubPurchaseOrder({ metadata: null })).toBe(false);
+  });
+});
+
+describe('Mua hàng orders in the project tab', () => {
+  it('lets the site open the delivery note but not create, clone or close deliveries', () => {
+    const policy = getPurchaseOrderUiPolicy({
+      po: makePo({ sourceMode: 'from_request', purchaseMode: 'multiple', status: 'confirmed', metadata: { channel: 'procurement_hub' } }),
+      canConfirmPo: true, canEditPoDocument: false, canSubmitPoDocument: false,
+    });
+    const ids = [policy.primaryAction?.id, ...policy.secondaryActions.map(a => a.id), ...policy.menuActions.map(a => a.id)];
+    expect(ids).not.toContain('add_delivery');
+    expect(ids).not.toContain('close_short');
+    expect(policy.nextStep).toContain('Phòng Mua hàng lập đợt giao');
   });
 });

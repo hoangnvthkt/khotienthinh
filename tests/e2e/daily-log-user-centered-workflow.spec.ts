@@ -21,7 +21,8 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
       // % complete is the default entry; this acceptance flow records daily quantities.
       await page.getByLabel('Cách nhập khối lượng',{exact:true}).filter({visible:true}).selectOption('daily_quantity');
       await page.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true}).fill(area==='C'?'5':'30');
-      await page.getByLabel('Nội dung trong ngày').fill(`Thi công khu ${area}, số liệu hiện trường`);
+      await page.getByRole('button',{name:/Công tác thực hiện/}).filter({visible:true}).first().click();
+      await page.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({visible:true}).fill(`Thi công khu ${area}, số liệu hiện trường`);
       if(area!=='C') {
         await page.getByRole('button',{name:'Chi tiết',exact:true}).filter({visible:true}).click();
         const section=page.locator('section').filter({has:page.getByRole('heading',{name:area==='A'?'Nhân công hôm nay':'Máy hôm nay',exact:true})}).last();
@@ -109,7 +110,8 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     await authorA.getByRole('radio',{name:/Khu A nghiệm thu UX/}).click();await expect(authorA.getByText(f.longReason,{exact:true}).filter({visible:true}).last()).toBeVisible();
     await captureUxLayouts(authorA,'returned','.daily-log-engineer-slip[aria-label="Phiếu thi công ngày"]');
     await authorA.setViewportSize({width:1440,height:900});await authorA.getByLabel('Khối lượng hôm nay',{exact:true}).filter({visible:true}).fill('32');
-    await authorA.getByLabel('Nội dung trong ngày').fill('Đã đo lại A và bổ sung nguồn lực theo yêu cầu CHT');
+    await authorA.getByRole('button',{name:/Công tác thực hiện/}).filter({visible:true}).first().click();
+    await authorA.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({visible:true}).fill('Đã đo lại A và bổ sung nguồn lực theo yêu cầu CHT');
     await authorA.getByRole('button',{name:'Chi tiết',exact:true}).filter({visible:true}).click();
     await authorA.getByLabel('Số người',{exact:true}).filter({visible:true}).fill('6');
     await authorA.getByRole('button',{name:'Gửi lại tổng hợp',exact:true}).click();
@@ -117,9 +119,9 @@ test('two authors complete the real ERP return/edit/resend/refresh/CHT cycle wit
     await openSummary();
     const savedCard=summarize.locator('[data-testid="daily-log-area-card"]').filter({has:summarize.getByRole('heading',{name:'Khu A nghiệm thu UX',exact:true})});
     await expect(savedCard.getByText(f.longReason,{exact:true})).toBeVisible();
-    await expect(savedCard.getByText('Thi công khu A, số liệu hiện trường',{exact:true})).toBeVisible();
+    await expect(savedCard.getByText('- Thi công khu A, số liệu hiện trường',{exact:true}).first()).toBeVisible();
     await savedCard.locator('summary').filter({hasText:'Xem thay đổi so với phiếu nguồn mới nhất'}).click();
-    await expect(savedCard.getByText('Đã đo lại A và bổ sung nguồn lực theo yêu cầu CHT',{exact:true})).toBeVisible();
+    await expect(savedCard.getByText(/Đã đo lại A và bổ sung nguồn lực theo yêu cầu CHT/).first()).toBeVisible();
     await savedCard.getByRole('button',{name:'Cập nhật từ phiếu',exact:true}).click();await resolve('31');await saveSummary();await sendSummary();
     await cht.reload();await expect(report.getByRole('heading',{name:'Bản tổng hợp thi công ngày',exact:true})).toBeVisible({timeout:45000});
     await expect(report.getByRole('button',{name:'Đối chiếu thử nghiệm',exact:true})).toBeEnabled();

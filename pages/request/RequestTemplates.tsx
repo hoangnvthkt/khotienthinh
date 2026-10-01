@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, FilePlus2, FileText, Pencil, Power, RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { Copy, FilePlus2, FileText, Pencil, Power, RefreshCw, RotateCcw, Search, ShieldAlert } from 'lucide-react';
 import { usePermission } from '../../hooks/usePermission';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
@@ -63,7 +63,7 @@ const RequestTemplates: React.FC = () => {
     setIsMutatingId(template.id);
     try {
       const draft = await requestTemplateService.createDraftFromPublished(template.id);
-      toast.success('Đã tạo bản nháp', `Bạn đang sửa mẫu “${template.name}”.`);
+      toast.success(template.hasDraft ? 'Tiếp tục bản nháp' : 'Đã tạo bản nháp', `Bạn đang sửa mẫu “${template.name}”. Phiên bản đang áp dụng vẫn dùng bình thường đến khi phát hành.`);
       navigate(`/rq/templates/${draft.id}`);
     } catch (cause) {
       console.error('Create request template draft from published failed:', cause);
@@ -104,6 +104,28 @@ const RequestTemplates: React.FC = () => {
     } catch (cause) {
       console.error('Deactivate request template failed:', cause);
       toast.error('Không thể ngừng áp dụng mẫu', 'Mẫu có thể vừa được cập nhật bởi người khác. Hãy tải lại và thử lại.');
+    } finally {
+      setIsMutatingId(null);
+    }
+  };
+
+  const reactivate = async (template: RequestTemplateSummary) => {
+    const accepted = await confirm({
+      title: 'Áp dụng lại mẫu yêu cầu?',
+      targetName: template.name,
+      subtitle: `Người trong phạm vi sẽ lại tạo được đề xuất từ phiên bản v${template.publishedVersionNumber ?? '—'}.`,
+      actionLabel: 'Áp dụng lại',
+      intent: 'success',
+    });
+    if (!accepted) return;
+    setIsMutatingId(template.id);
+    try {
+      await requestTemplateService.reactivate({ templateId: template.id, expectedUpdatedAt: template.updatedAt });
+      toast.success('Đã áp dụng lại mẫu', template.name);
+      await load();
+    } catch (cause) {
+      console.error('Reactivate request template failed:', cause);
+      toast.error('Không thể áp dụng lại mẫu', 'Mẫu có thể vừa được cập nhật bởi người khác. Hãy tải lại và thử lại.');
     } finally {
       setIsMutatingId(null);
     }
@@ -153,14 +175,15 @@ const RequestTemplates: React.FC = () => {
         const state = STATUS[template.status];
         const busy = isMutatingId === template.id;
         return <article key={template.id} className="grid gap-3 border-b border-slate-100 px-5 py-4 last:border-b-0 dark:border-slate-800 md:grid-cols-[minmax(18rem,2fr)_9rem_7rem_11rem_12rem] md:items-center md:gap-4">
-          <div className="min-w-0"><p className="truncate font-bold text-slate-800 dark:text-slate-100">{template.name}</p><p className="mt-1 text-xs text-slate-400">ID: {template.id}</p></div>
+          <div className="min-w-0"><p className="truncate font-bold text-slate-800 dark:text-slate-100">{template.name}</p>{template.hasDraft && template.status !== 'DRAFT' && <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">Có bản nháp chưa phát hành</p>}</div>
           <div><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${state.className}`}>{state.label}</span></div>
           <div className="text-sm text-slate-600 dark:text-slate-300">{template.publishedVersionNumber ? `v${template.publishedVersionNumber}` : '—'}</div>
           <div className="text-sm text-slate-600 dark:text-slate-300">{template.usageScopeLabel}</div>
           <div className="flex items-center justify-between gap-3 text-sm text-slate-500"><span>{formatDateTime(template.updatedAt)}</span>{mayManage && <div className="flex shrink-0 gap-1">
             {template.status === 'DRAFT' && <button disabled={busy} onClick={() => navigate(`/rq/templates/${template.id}`)} title="Sửa bản nháp" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
-            {template.status === 'PUBLISHED' && <button disabled={busy} onClick={() => void editPublished(template)} title="Sửa mẫu" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
+            {template.status === 'PUBLISHED' && <button disabled={busy} onClick={() => void editPublished(template)} title={template.hasDraft ? 'Tiếp tục sửa bản nháp' : 'Sửa mẫu'} className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Pencil size={16} /></button>}
             <button disabled={busy} onClick={() => void copyTemplate(template)} title="Sao chép mẫu" className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-accent disabled:opacity-50 dark:hover:bg-slate-800"><Copy size={16} /></button>
+            {template.status === 'DEACTIVATED' && template.publishedVersionNumber !== null && <button disabled={busy} onClick={() => void reactivate(template)} title="Áp dụng lại" className="rounded-lg p-2 text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50 dark:hover:bg-emerald-950/30"><RotateCcw size={16} /></button>}
             {template.status !== 'DEACTIVATED' && <button disabled={busy} onClick={() => void deactivate(template)} title="Ngừng áp dụng" className="rounded-lg p-2 text-slate-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 dark:hover:bg-amber-950/30"><Power size={16} /></button>}
           </div>}</div>
         </article>;

@@ -25,12 +25,23 @@ const icons: Record<RequestAction, typeof Check> = {
 };
 
 const buttonStyles: Record<RequestAction, string> = {
-  APPROVE: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-95',
-  REJECT: 'bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/20 active:scale-95',
-  RETURN: 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/20 active:scale-95',
-  RESUBMIT: 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-95',
-  CANCEL: 'bg-slate-600 hover:bg-slate-700 text-white shadow-md shadow-slate-600/20 active:scale-95',
-  REASSIGN: 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 active:scale-95',
+  // One solid primary action; the rest are outlined so the next step is obvious.
+  APPROVE: 'bg-leaf-600 hover:bg-leaf-700 text-white shadow-sm',
+  RESUBMIT: 'bg-leaf-600 hover:bg-leaf-700 text-white shadow-sm',
+  REJECT: 'border border-rose-200 bg-card text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40',
+  RETURN: 'border border-orange-200 bg-card text-orange-700 hover:bg-orange-50 dark:border-orange-900 dark:text-orange-300 dark:hover:bg-orange-950/40',
+  REASSIGN: 'border border-teal-200 bg-card text-teal-700 hover:bg-teal-50 dark:border-teal-900 dark:text-teal-300 dark:hover:bg-teal-950/40',
+  CANCEL: 'border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground',
+};
+
+// Confirm buttons inside the action dialog are always solid.
+const confirmStyles: Record<RequestAction, string> = {
+  APPROVE: 'bg-leaf-600 hover:bg-leaf-700',
+  RESUBMIT: 'bg-leaf-600 hover:bg-leaf-700',
+  REJECT: 'bg-rose-600 hover:bg-rose-700',
+  RETURN: 'bg-orange-600 hover:bg-orange-700',
+  REASSIGN: 'bg-teal-700 hover:bg-teal-800',
+  CANCEL: 'bg-slate-700 hover:bg-slate-800',
 };
 
 export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () => Promise<void> }> = ({ detail, onChanged }) => {
@@ -39,19 +50,36 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
   const [action, setAction] = useState<RequestAction | null>(null);
   const [comment, setComment] = useState('');
   const [assigneeUserId, setAssigneeUserId] = useState('');
+  const [sourceAssignmentId, setSourceAssignmentId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const actions = useMemo(() => getRequestActions({ status: detail.status, canApprove: detail.capabilities.canApprove, canCancel: detail.capabilities.canCancel, canReassign: detail.capabilities.canReassign, isCreator: detail.creator.id === user.id }), [detail, user.id]);
+  const actions = useMemo(() => getRequestActions({ status: detail.status, canApprove: detail.capabilities.canApprove, canCancel: detail.capabilities.canCancel, canReassign: detail.capabilities.canReassign && detail.capabilities.reassignableAssignmentIds.length > 0, isCreator: detail.creator.id === user.id }), [detail, user.id]);
+  // Pending assignments this user may hand over: their own, or any when admin.
+  const reassignable = useMemo(() => detail.approvalBlocks.flatMap(block => block.assignments
+    .filter(assignment => detail.capabilities.reassignableAssignmentIds.includes(assignment.id))
+    .map(assignment => ({ ...assignment, blockKey: block.key, blockName: block.name }))), [detail]);
+  const sourceAssignment = reassignable.find(item => item.id === sourceAssignmentId);
+  const excludedAssignees = useMemo(() => [
+    detail.creator.id,
+    ...detail.approvalBlocks
+      .filter(block => block.key === sourceAssignment?.blockKey)
+      .flatMap(block => block.assignments.filter(item => item.status === 'PENDING').map(item => item.approver.id)),
+  ], [detail, sourceAssignment]);
   if (actions.length === 0) return null;
-  const open = (next: RequestAction) => { setAction(next); setComment(''); setAssigneeUserId(''); setError(null); };
+  const open = (next: RequestAction) => {
+    setAction(next); setComment(''); setAssigneeUserId(''); setError(null);
+    setSourceAssignmentId((reassignable.find(item => item.approver.id === user.id) ?? reassignable[0])?.id ?? '');
+  };
   const needsComment = action === 'REJECT' || action === 'RETURN' || action === 'REASSIGN';
   const execute = async () => {
     if (!action) return;
     if (needsComment && !comment.trim()) { setError('Vui lòng nhập lý do cho hành động này.'); return; }
     if (action === 'REASSIGN' && !assigneeUserId) { setError('Vui lòng chọn người duyệt mới.'); return; }
+    if (action === 'REASSIGN' && !sourceAssignment) { setError('Không còn lượt duyệt nào có thể chuyển. Vui lòng tải lại.'); return; }
     setIsSubmitting(true); setError(null);
     try {
-      await requestRuntimeService.act({ requestId: detail.id, action, comment: comment.trim() || undefined, formData: action === 'RESUBMIT' ? detail.formData : undefined, assigneeUserId: action === 'REASSIGN' ? assigneeUserId : undefined, idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`, expectedUpdatedAt: detail.updatedAt });
+      if (action === 'REASSIGN' && sourceAssignment) await requestRuntimeService.reassign({ requestId: detail.id, assignmentId: sourceAssignment.id, assigneeUserId, comment: comment.trim(), idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`, expectedUpdatedAt: detail.updatedAt });
+      else await requestRuntimeService.act({ requestId: detail.id, action, comment: comment.trim() || undefined, formData: action === 'RESUBMIT' ? detail.formData : undefined, idempotencyKey: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`, expectedUpdatedAt: detail.updatedAt });
       await onChanged();
       toast.success('Đã cập nhật đề xuất', labels[action]);
       setAction(null);
@@ -62,12 +90,12 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
   };
   return (
     <>
-      <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2.5 sm:p-3 dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="rounded-xl border border-border bg-muted p-2.5 sm:p-3">
         <div className="mb-2 flex items-center justify-between sm:hidden">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Thao tác xử lý</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Thao tác xử lý</span>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2.5">
-          <span className="hidden sm:inline-block text-xs font-bold uppercase tracking-wider text-slate-400 mr-1">Xử lý:</span>
+          <span className="mr-1 hidden text-xs font-semibold text-muted-foreground sm:inline-block">Xử lý:</span>
           {actions.map(item => {
             const Icon = icons[item];
             return (
@@ -75,7 +103,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 type="button"
                 key={item}
                 onClick={() => open(item)}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 sm:px-4 sm:py-2 text-xs font-bold transition active:scale-[0.98] min-h-[40px] sm:min-h-0 ${buttonStyles[item]}`}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 sm:px-4 sm:py-2 text-xs font-semibold transition min-h-[40px] sm:min-h-0 ${buttonStyles[item]}`}
               >
                 <Icon size={15} className="shrink-0" />
                 <span className="truncate">{labels[item]}</span>
@@ -99,11 +127,25 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
             )}
 
             {action === 'REASSIGN' && (
-              <div className="mt-4">
-                <label className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">
-                  Người duyệt mới <span className="text-rose-500">*</span>
-                </label>
-                <UserSearchSelect users={users} excludeUserIds={[user.id, detail.creator.id]} value={assigneeUserId} onChange={userId => setAssigneeUserId(userId || '')} placeholder="Gõ tên hoặc vị trí người duyệt mới..." />
+              <div className="mt-4 space-y-4">
+                {reassignable.length > 1 ? (
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">Chuyển lượt duyệt của</span>
+                    <select value={sourceAssignmentId} onChange={event => { setSourceAssignmentId(event.target.value); setAssigneeUserId(''); }} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                      {reassignable.map(item => <option key={item.id} value={item.id}>{item.approver.id === user.id ? 'Tôi' : item.approver.name} · {item.blockName}</option>)}
+                    </select>
+                  </label>
+                ) : sourceAssignment && (
+                  <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    Chuyển lượt duyệt của <strong>{sourceAssignment.approver.id === user.id ? 'bạn' : sourceAssignment.approver.name}</strong> ở bước “{sourceAssignment.blockName}”. Người mới sẽ nhận thông báo và duyệt thay.
+                  </p>
+                )}
+                <div>
+                  <label className="mb-1.5 block text-xs font-bold uppercase text-slate-700 dark:text-slate-200">
+                    Người duyệt mới <span className="text-rose-500">*</span>
+                  </label>
+                  <UserSearchSelect users={users} excludeUserIds={excludedAssignees} value={assigneeUserId} onChange={userId => setAssigneeUserId(userId || '')} placeholder="Gõ tên hoặc vị trí người duyệt mới..." />
+                </div>
               </div>
             )}
 
@@ -113,7 +155,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 value={comment}
                 onChange={event => setComment(event.target.value)}
                 rows={4}
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800 dark:text-white outline-none focus:border-emerald-500"
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal dark:border-slate-700 dark:bg-slate-800 dark:text-white outline-none focus:border-teal-500"
                 placeholder={needsComment ? 'Nhập bắt buộc lý do...' : 'Nhập ý kiến xử lý (tuỳ chọn)'}
               />
             </label>
@@ -131,7 +173,7 @@ export const RequestActionBar: React.FC<{ detail: RequestDetail; onChanged: () =
                 type="button"
                 disabled={isSubmitting}
                 onClick={() => void execute()}
-                className={`inline-flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold text-white transition ${buttonStyles[action]}`}
+                className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white transition disabled:opacity-60 ${confirmStyles[action]}`}
               >
                 {isSubmitting && <Loader2 size={15} className="animate-spin" />}
                 {labels[action]}

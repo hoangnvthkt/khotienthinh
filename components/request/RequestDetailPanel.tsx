@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Pencil, Printer, Table2, User } from 'lucide-react';
+import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Pencil, Printer, Table2, Trash2, User } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { mapRequestRpcError, requestRuntimeService } from '../../lib/requestRuntimeService';
 import type { RequestDetail } from '../../lib/requestRuntimeService';
 import { buildRequestRoute } from '../../lib/requestRoutes';
 import { RequestActionBar } from './RequestActionBar';
@@ -9,6 +11,7 @@ import { RequestStatusBadge } from './RequestTable';
 import { RequestPrintPreview } from './RequestPrintPreview';
 import { RequestEditDialog } from './RequestEditDialog';
 import { RequestDiscussion } from './RequestDiscussion';
+import { RequestRichTextView } from './RequestRichTextView';
 
 const displayValue = (value: unknown, fieldType?: string, options?: string[]): React.ReactNode => {
   if (value === null || value === undefined || value === '') return <span className="text-slate-400 font-normal italic">—</span>;
@@ -22,12 +25,12 @@ const displayValue = (value: unknown, fieldType?: string, options?: string[]): R
 
     const rows = value as Array<Record<string, string>>;
     return (
-      <div className="mt-2 overflow-hidden rounded-2xl border border-emerald-200/80 bg-white shadow-sm dark:border-emerald-800/40 dark:bg-slate-900">
+      <div className="mt-2 overflow-hidden rounded-2xl border border-mint-200/80 bg-white shadow-sm dark:border-mint-800/40 dark:bg-slate-900">
         <div className="overflow-x-auto max-h-[300px]">
           <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-emerald-100/90 backdrop-blur dark:bg-emerald-950/80 text-emerald-950 dark:text-emerald-100 font-bold border-b border-emerald-200 dark:border-emerald-800">
+            <thead className="sticky top-0 z-10 bg-mint-100/90 backdrop-blur dark:bg-mint-900/80 text-mint-900 dark:text-mint-100 font-bold border-b border-mint-200 dark:border-mint-800">
               <tr>
-                <th className="w-10 px-3 py-2 text-center text-emerald-700 dark:text-emerald-400 font-extrabold border-r border-emerald-200/60 dark:border-emerald-800/60">#</th>
+                <th className="w-10 px-3 py-2 text-center text-mint-700 dark:text-mint-400 font-extrabold border-r border-mint-200/60 dark:border-mint-800/60">#</th>
                 {cols.map(c => (
                   <th key={c} className="px-3.5 py-2 font-bold uppercase tracking-wider text-[11px] whitespace-nowrap">
                     {c}
@@ -37,7 +40,7 @@ const displayValue = (value: unknown, fieldType?: string, options?: string[]): R
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {rows.map((row, idx) => (
-                <tr key={idx} className={idx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/60 dark:bg-slate-850/40'}>
+                <tr key={idx} className={idx % 2 === 0 ? 'bg-card' : 'bg-slate-50/60 dark:bg-slate-850/40'}>
                   <td className="px-3 py-2 text-center font-bold text-slate-400 border-r border-slate-100 dark:border-slate-800">{idx + 1}</td>
                   {cols.map(c => (
                     <td key={c} className="px-3.5 py-2 text-slate-800 dark:text-slate-200 whitespace-nowrap">
@@ -49,12 +52,16 @@ const displayValue = (value: unknown, fieldType?: string, options?: string[]): R
             </tbody>
           </table>
         </div>
-        <div className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+        <div className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-semibold text-mint-700 dark:text-mint-400 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
           <FileSpreadsheet size={13} />
           <span>Bảng dữ liệu: {rows.length} dòng × {cols.length} cột</span>
         </div>
       </div>
     );
+  }
+
+  if (fieldType === 'textarea' && typeof value === 'string') {
+    return <RequestRichTextView value={value} className="font-normal text-slate-800 dark:text-slate-100" />;
   }
 
   if (typeof value === 'string' || typeof value === 'number') {
@@ -71,6 +78,7 @@ export const RequestDetailPanel: React.FC<{
   error: Error | null;
   refresh: () => Promise<void>;
   onBack?: () => void;
+  onDeleted?: () => void;
   isInspectorCollapsed?: boolean;
   onToggleInspectorCollapse?: () => void;
 }> = ({
@@ -80,11 +88,14 @@ export const RequestDetailPanel: React.FC<{
   error,
   refresh,
   onBack,
+  onDeleted,
   isInspectorCollapsed = false,
   onToggleInspectorCollapse,
 }) => {
   const toast = useToast();
+  const confirm = useConfirm();
   const [copying, setCopying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
 
@@ -92,7 +103,7 @@ export const RequestDetailPanel: React.FC<{
     return (
       <div className="flex flex-1 items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="animate-spin text-emerald-600" size={32} />
+          <Loader2 className="animate-spin text-mint-700" size={32} />
           <p className="text-xs font-semibold text-slate-500">Đang tải chi tiết đề xuất...</p>
         </div>
       </div>
@@ -132,11 +143,35 @@ export const RequestDetailPanel: React.FC<{
     }
   };
 
+  const deleteRequest = async () => {
+    const accepted = await confirm({
+      title: 'Xóa đề xuất?',
+      targetName: `${detail.code} · ${detail.title}`,
+      subtitle: detail.status === 'PENDING'
+        ? 'Chưa có ai xử lý. Người duyệt sẽ không còn thấy đề xuất này. Không thể hoàn tác.'
+        : 'Đề xuất đã hủy sẽ bị ẩn khỏi mọi danh sách. Không thể hoàn tác.',
+      actionLabel: 'Xóa đề xuất',
+      intent: 'danger',
+    });
+    if (!accepted) return;
+    setDeleting(true);
+    try {
+      await requestRuntimeService.deleteRequest(detail.id, detail.updatedAt);
+      toast.success('Đã xóa đề xuất', detail.code);
+      onDeleted?.();
+    } catch (cause) {
+      toast.error('Không thể xóa đề xuất', mapRequestRpcError(cause).message);
+      await refresh();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="flex min-w-0 flex-1 overflow-hidden h-full">
         {/* Column 3: Primary Content Display Area (Maximized area) */}
-        <article className="min-w-0 flex-1 overflow-y-auto bg-slate-50/50 p-4 dark:bg-slate-950 md:p-6 lg:p-7 space-y-6">
+        <article className="min-w-0 flex-1 overflow-y-auto bg-background p-4 md:p-5 lg:p-6 space-y-4">
 
           {/* Hero Header Card */}
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -155,7 +190,7 @@ export const RequestDetailPanel: React.FC<{
               <div className="min-w-0 flex-1">
                 <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-lg bg-emerald-100/90 px-2.5 py-1 text-xs font-mono font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 shrink-0">
+                    <span className="inline-flex items-center rounded-lg bg-mint-100/90 px-2.5 py-1 text-xs font-mono font-extrabold text-mint-700 dark:bg-mint-900/80 dark:text-mint-300 shrink-0">
                       {detail.code}
                     </span>
                     <div className="shrink-0">
@@ -165,7 +200,7 @@ export const RequestDetailPanel: React.FC<{
                       <button
                         type="button"
                         onClick={() => setShowEditDialog(true)}
-                        className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 shrink-0"
+                        className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-xl border border-mint-200 bg-mint-50 px-2.5 py-1 text-xs font-bold text-mint-700 hover:bg-mint-100 dark:border-mint-800 dark:bg-mint-900/60 dark:text-mint-300 shrink-0"
                       >
                         <Pencil size={13}/>
                         <span>Sửa</span>
@@ -174,6 +209,16 @@ export const RequestDetailPanel: React.FC<{
                   </div>
 
                   <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                    {detail.capabilities.canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => void deleteRequest()}
+                        disabled={deleting}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900 dark:bg-slate-800 dark:text-rose-300 dark:hover:bg-rose-950/40 transition"
+                      >
+                        {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} <span>Xóa</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowPrintPreview(true)}
@@ -196,7 +241,7 @@ export const RequestDetailPanel: React.FC<{
                       <button
                         type="button"
                         onClick={onToggleInspectorCollapse}
-                        className="hidden xl:inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900 transition"
+                        className="hidden xl:inline-flex items-center gap-1.5 rounded-xl border border-mint-200 bg-mint-50 px-3 py-1.5 text-xs font-bold text-mint-700 hover:bg-mint-100 dark:border-mint-800 dark:bg-mint-900/60 dark:text-mint-300 dark:hover:bg-mint-900 transition"
                         title={isInspectorCollapsed ? 'Mở quy trình duyệt' : 'Thu gọn quy trình duyệt'}
                       >
                         {isInspectorCollapsed ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
@@ -206,7 +251,7 @@ export const RequestDetailPanel: React.FC<{
                   </div>
                 </div>
 
-                <h1 className="mt-2.5 break-words [overflow-wrap:anywhere] text-lg sm:text-xl md:text-2xl font-extrabold leading-snug text-slate-900 dark:text-white">
+                <h1 className="mt-2.5 break-words [overflow-wrap:anywhere] text-lg font-bold leading-snug text-foreground sm:text-xl">
                   {detail.title}
                 </h1>
               </div>
@@ -222,7 +267,7 @@ export const RequestDetailPanel: React.FC<{
           <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-4 gap-2.5 sm:gap-3">
             <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="shrink-0 rounded-xl bg-emerald-50 p-2 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
+                <div className="shrink-0 rounded-xl bg-mint-50 p-2 text-mint-700 dark:bg-mint-900/60 dark:text-mint-400">
                   <User size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -236,7 +281,7 @@ export const RequestDetailPanel: React.FC<{
 
             <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="shrink-0 rounded-xl bg-blue-50 p-2 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                <div className="shrink-0 rounded-xl bg-teal-50 p-2 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300">
                   <FileText size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -250,7 +295,7 @@ export const RequestDetailPanel: React.FC<{
 
             <div className="rounded-xl sm:rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="shrink-0 rounded-xl bg-purple-50 p-2 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
+                <div className="shrink-0 rounded-xl bg-sky-50 p-2 text-sky-600 dark:bg-sky-950/60 dark:text-sky-300">
                   <Calendar size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -280,19 +325,17 @@ export const RequestDetailPanel: React.FC<{
           {/* Section 2: Request Description Card */}
           <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-slate-500">
-              <FileText size={15} className="text-emerald-600" /> Nội dung & Lý do đề xuất
+              <FileText size={15} className="text-mint-700" /> Nội dung & Lý do đề xuất
             </h2>
             <div className="mt-3 rounded-xl bg-slate-50/80 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200 font-normal">
-                {detail.description || 'Không có mô tả chi tiết.'}
-              </p>
+              <RequestRichTextView value={detail.description} emptyText="Không có mô tả chi tiết." className="text-sm leading-relaxed text-slate-800 dark:text-slate-200" />
             </div>
           </section>
 
           {/* Section 3 & 4: Form Data & Attachment Tables */}
           <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-slate-500 mb-4">
-              <Table2 size={15} className="text-emerald-600" /> Thông tin dữ liệu phiếu
+              <Table2 size={15} className="text-mint-700" /> Thông tin dữ liệu phiếu
             </h2>
 
             <div className="space-y-4">
@@ -303,7 +346,7 @@ export const RequestDetailPanel: React.FC<{
                 if (isTable) {
                   return (
                     <div key={field.key} className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-800 dark:text-emerald-400">
+                      <p className="text-xs font-extrabold uppercase tracking-wider text-mint-700 dark:text-mint-400">
                         {field.label}
                       </p>
                       {displayValue(rawValue, field.fieldType, field.options)}
@@ -323,6 +366,11 @@ export const RequestDetailPanel: React.FC<{
             </div>
           </section>
 
+          {/* Below xl the side inspector is hidden, so the approval flow renders inline. */}
+          <div className="xl:hidden">
+            <RequestApprovalInspector detail={detail} inline onChanged={refresh} />
+          </div>
+
           {detail.capabilities.canReadDiscussion && <RequestDiscussion requestId={detail.id} canComment={detail.capabilities.canComment} canAttach={detail.capabilities.canAttach} />}
         </article>
 
@@ -332,6 +380,7 @@ export const RequestDetailPanel: React.FC<{
             detail={detail}
             isCollapsed={isInspectorCollapsed}
             onToggleCollapse={onToggleInspectorCollapse}
+            onChanged={refresh}
           />
         </div>
       </div>

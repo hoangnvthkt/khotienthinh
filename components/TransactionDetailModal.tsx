@@ -5,6 +5,7 @@ import { Transaction, TransactionStatus, TransactionType, WmsTransactionAttachme
 import { useApp } from '../context/AppContext';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { materialRequestFulfillmentService } from '../lib/materialRequestFulfillmentService';
 import { purchaseReceiptService } from '../lib/purchaseReceiptService';
@@ -26,11 +27,16 @@ interface TransactionDetailModalProps {
   onClose: () => void;
   transaction: Transaction | null;
   onUpdated?: (transaction: Transaction) => void;
+  /** 'panel': hiện ngay trong cột phải của màn Nhập xuất kho thay vì hộp thoại nổi. */
+  variant?: 'modal' | 'panel';
 }
 
-const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated }) => {
+const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated, variant = 'modal' }) => {
   const { items, warehouses, users, suppliers, transactions, user, updateTransactionStatus, updateTransactionVoucher, refreshWmsRecords } = useApp();
   const toast = useToast();
+  const confirm = useConfirm();
+  // Ở màn một màn hình, khối chỉnh phiếu thu gọn để nội dung chính và nút xử lý lên trước.
+  const [showVoucherEdit, setShowVoucherEdit] = useState(false);
   const [localTransaction, setLocalTransaction] = useState<Transaction | null>(null);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, { quantity: string; reason: string }>>({});
   const [processing, setProcessing] = useState(false);
@@ -98,6 +104,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const isPoDeliveryTx = transaction.sourceType === 'po_delivery_batch';
   const isQualityApprovalTx = isFulfillmentTx || isPoDeliveryTx;
   const receiptStep = getPurchaseReceiptStep(transaction.status, transaction.sourceType);
+  // Phiếu nhập thường (không theo đợt giao/cấp phát, không đảo): duyệt và nhập kho cùng một lần nếu người duyệt cũng được nhập.
+  const mergesImportSteps = canApprove && transaction.type === TransactionType.IMPORT && !isQualityApprovalTx && !isReversal
+    && canReceiveWmsTransaction(user, { ...transaction, status: TransactionStatus.APPROVED });
   const canAdjustQuantities = !!actionMode
     && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER)
     && transaction.type !== TransactionType.TRANSFER
@@ -201,7 +210,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             nextAttachments = uploadResult.attachments;
           }
 
-          const result = await purchaseReceiptService.approveQuality({
+          const result = await purchaseReceiptService.receiveInOneStep({
             deliveryBatchId,
             wmsTransactionId: latestTransaction.id,
             actorUserId: user.id,
@@ -213,17 +222,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             itemIds: receiptPayload.lines.map(line => line.itemId),
             transactionIds: [result.wmsTransactionId],
           });
-          const updatedTransaction = {
-            ...latestTransaction,
-            status: TransactionStatus.APPROVED,
-            approverId: user.id,
-            approvedAt: new Date().toISOString(),
-            attachments: nextAttachments,
-          };
-          setLocalTransaction(updatedTransaction);
-          onUpdated?.(updatedTransaction);
           setAttachmentDrafts([]);
-          toast.success('Đã duyệt SL/CL', 'Số liệu đã khóa. Tiếp tục bấm Xác nhận nhập để cộng tồn.');
+          onClose();
+          toast.success('Đã nhận hàng và nhập kho',
+            `${receiptPayload.lines.length} dòng đã cộng tồn ${targetWh?.name || 'kho nhận'}; công nợ tạm tính ${Math.round(result.acceptedGrossAmount).toLocaleString('vi-VN')} đ đã chuyển kế toán.`);
           return;
         }
 
@@ -314,8 +316,15 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           : TransactionStatus.COMPLETED;
 
       await updateTransactionStatus(latestTransaction.id, nextStatus, user.id);
+      if (mergesImportSteps && nextStatus === TransactionStatus.APPROVED) {
+        await updateTransactionStatus(latestTransaction.id, TransactionStatus.COMPLETED, user.id);
+      }
       onClose();
-      toast.success(actionMode === 'receipt' ? 'Đã xác nhận nhập kho' : 'Đã duyệt phiếu kho');
+      toast.success(
+        actionMode === 'receipt' || mergesImportSteps ? 'Đã nhập kho' : 'Đã duyệt phiếu kho',
+        `${latestTransaction.items.length} dòng · ${actionMode === 'receipt' || mergesImportSteps
+          ? `đã cộng tồn ${targetWh?.name || 'kho nhận'}` : 'chờ bước tiếp theo'}.`,
+      );
     } catch (err: any) {
       if (uploadedPaths.length > 0) {
         try {
@@ -335,12 +344,27 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     }
   };
 
+  // Nhận hàng / nhập kho làm thay đổi tồn và công nợ — hỏi lại một lần với nội dung cụ thể.
+  const confirmPrimaryAction = async () => {
+    const stocksIn = (isPoDeliveryTx && actionMode === 'approval') || mergesImportSteps || actionMode === 'receipt';
+    if (stocksIn) {
+      const ok = await confirm({ title: `${primaryActionLabel}?`, confirmText: primaryActionLabel, targetName: transaction.note || transaction.id,
+        warningText: `${transaction.items.length} dòng sẽ cộng vào tồn ${targetWh?.name || 'kho nhận'} ngay${isPoDeliveryTx ? '; PO và công nợ tạm tính cập nhật theo SL thực nhận' : ''}. Kiểm tra SL thực nhận trước khi đồng ý.`,
+        actionLabel: 'Đồng ý', cancelLabel: 'Xem lại', intent: 'success', countdownSeconds: 0 });
+      if (!ok) return;
+    }
+    await handlePrimaryAction();
+  };
+
   const handleRejectAll = async () => {
+    const ok = await confirm({ title: 'Từ chối phiếu kho?', confirmText: 'Từ chối phiếu', targetName: transaction.note || transaction.id,
+      warningText: 'Phiếu chuyển sang Đã hủy, không cộng/trừ tồn kho. Người lập sẽ thấy phiếu bị từ chối.', actionLabel: 'Từ chối', intent: 'danger', countdownSeconds: 0 });
+    if (!ok) return;
     setProcessing(true);
     try {
       await updateTransactionStatus(transaction.id, TransactionStatus.CANCELLED, user.id);
       onClose();
-      toast.success('Đã từ chối phiếu');
+      toast.success('Đã từ chối phiếu', `${transaction.note || transaction.id} đã chuyển sang Đã hủy; tồn kho không đổi.`);
     } catch (err: any) {
       logApiError('transactionDetail.reject', err);
       toast.error('Không thể từ chối phiếu', getApiErrorMessage(err, 'Không thể cập nhật trạng thái phiếu kho.'));
@@ -394,13 +418,18 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const statusInfo = getStatusInfo(transaction.status);
   const primaryActionLabel = actionMode === 'receipt'
     ? transaction.type === TransactionType.TRANSFER ? 'Xác nhận số đã nhận' : 'Xác nhận nhập'
-    : isQualityApprovalTx
+    : isPoDeliveryTx
+      ? 'Nhận hàng & nhập kho'
+      : isQualityApprovalTx
       ? 'Duyệt SL/CL'
+      : mergesImportSteps ? 'Duyệt & nhập kho'
       : transaction.type === TransactionType.TRANSFER ? 'Xuất khỏi kho nguồn' : 'Duyệt phiếu';
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div className={variant === 'panel' ? 'min-w-0' : 'fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200'}>
+      <div className={variant === 'panel'
+        ? 'flex w-full flex-col overflow-clip rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800'
+        : 'bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden'}>
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
           <div>
@@ -430,7 +459,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               <div className="mt-1">Lý do đảo: {transaction.businessEventReason || transaction.note || 'Không có lý do'}</div>
             </div>
           )}
-          {canEditVoucher && (
+          {canEditVoucher && variant === 'panel' && !showVoucherEdit && (
+            <button type="button" onClick={() => setShowVoucherEdit(true)} className="text-xs font-bold text-indigo-600 hover:underline">
+              Chỉnh ngày tạo / ghi chú phiếu
+            </button>
+          )}
+          {canEditVoucher && (variant !== 'panel' || showVoucherEdit) && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Chỉnh phiếu</p>
@@ -596,6 +630,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                  const draftQty = parseQuantityInput(draft.quantity);
                  const orderedQty = Number(ti.orderedQty ?? ti.quantity ?? 0);
                  const hasVariance = Number.isFinite(draftQty) && draftQty !== orderedQty;
+                 // Phiếu giao của đơn mua: hiện thêm SL theo đơn vị mua (VD kg) cạnh SL kho (VD cây).
+                 const purchaseUnit = ti.accountingUnit && ti.accountingUnit !== item?.unit ? ti.accountingUnit : null;
+                 const purchasePerStock = purchaseUnit && orderedQty > 0 ? Number(ti.accountingQty || 0) / orderedQty : 0;
                   return (
                     <tr key={`${ti.fulfillmentBatchId || ''}-${ti.requestLineId || ti.itemId}-${idx}`}>
                       <td className="px-4 py-3">
@@ -604,6 +641,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                       </td>
                        <td className="px-4 py-3 text-right font-bold text-slate-800">
                          {orderedQty} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                         {purchaseUnit && <div className="text-[10px] font-bold text-slate-500">= {Number(ti.accountingQty || 0).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
                          {hasVariance && canAdjustQuantities && (
                            <div className="text-[10px] font-bold text-amber-600">Lệch: {(Number.isFinite(draftQty) ? draftQty : 0) - orderedQty}</div>
                          )}
@@ -621,6 +659,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                               />
                               <span className="w-8 text-left text-[10px] font-bold text-slate-400">{item?.unit}</span>
                             </div>
+                            {purchaseUnit && Number.isFinite(draftQty) && <div className="text-[10px] font-bold text-slate-500">
+                              ≈ {(Math.round(draftQty * purchasePerStock * 1000) / 1000).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
                             {hasVariance && (
                               <div className="flex items-center gap-2 w-full justify-end">
                                 <AlertTriangle size={14} className="text-amber-500 shrink-0" />
@@ -684,7 +724,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               <div className="flex items-center gap-2 text-sm font-black text-indigo-700">
                 <Paperclip size={16} /> Chứng từ thực nhận
               </div>
-              <p className="text-[11px] font-semibold text-slate-500">Có thể đính kèm phiếu cân, biên bản giao nhận hoặc ảnh chất lượng trước khi Duyệt SL/CL.</p>
+              <p className="text-[11px] font-semibold text-slate-500">Có thể đính kèm phiếu cân, biên bản giao nhận hoặc ảnh chất lượng trước khi {isPoDeliveryTx ? 'nhận hàng' : 'Duyệt SL/CL'}.</p>
               <input
                 type="file"
                 multiple
@@ -694,7 +734,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                 className="block w-full text-xs font-semibold text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-3 file:py-2 file:text-xs file:font-black file:text-white hover:file:bg-indigo-700"
               />
               {attachmentDrafts.length > 0 && (
-                <div className="text-[10px] font-bold text-indigo-700">Đã chọn {attachmentDrafts.length} tệp; tệp sẽ tải lên khi bấm Duyệt SL/CL.</div>
+                <div className="text-[10px] font-bold text-indigo-700">Đã chọn {attachmentDrafts.length} tệp; tệp sẽ tải lên khi bấm {isPoDeliveryTx ? 'Nhận hàng & nhập kho' : 'Duyệt SL/CL'}.</div>
               )}
             </div>
           )}
@@ -708,7 +748,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-white border-t border-slate-100 flex justify-between items-center">
+        <div className={`p-4 bg-white border-t border-slate-100 flex flex-wrap gap-2 justify-between items-center ${variant === 'panel' ? 'sticky bottom-0 z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]' : ''}`}>
           <div className="flex gap-2">
             {(canApprove || canReceive) && (
               <>
@@ -722,7 +762,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                   </button>
                 )}
                 <button 
-                  onClick={handlePrimaryAction}
+                  onClick={() => void confirmPrimaryAction()}
                   disabled={processing}
                   className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-all shadow-lg shadow-slate-900/20 text-sm uppercase tracking-widest flex items-center gap-2 disabled:opacity-60"
                 >
@@ -732,7 +772,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             )}
           </div>
           <button onClick={onClose} className="px-8 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm">
-            Đóng
+            {variant === 'panel' ? 'Bỏ chọn' : 'Đóng'}
           </button>
         </div>
       </div>

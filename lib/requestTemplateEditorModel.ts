@@ -6,6 +6,13 @@ import type {
 } from '../types';
 import type { SaveRequestTemplateDraftInput } from './requestTemplateService';
 
+export const REQUEST_TEMPLATE_NOTIFICATION_EVENTS = ['SUBMITTED', 'ASSIGNED', 'REASSIGNED', 'REMINDER', 'RETURNED', 'APPROVED', 'REJECTED'] as const;
+export type RequestTemplateNotificationEvent = typeof REQUEST_TEMPLATE_NOTIFICATION_EVENTS[number];
+
+/** Missing keys mean "on": templates saved before the toggles took effect keep every notification. */
+export const notificationEventsFromConfig = (config: Record<string, boolean>): RequestTemplateNotificationEvent[] =>
+  REQUEST_TEMPLATE_NOTIFICATION_EVENTS.filter(event => config[event] !== false);
+
 export type RequestScopeKind = 'COMPANY' | 'ORG_UNIT' | 'PERMISSION_GROUP' | 'USER';
 
 export interface RequestTemplateFieldDraft {
@@ -40,7 +47,7 @@ export interface RequestTemplateDraft {
   scopes: Array<{ kind: RequestScopeKind; targetId: string | null }>;
   fixedWatcherIds: string[];
   print: { browserPrintEnabled: boolean; docxStoragePath: string | null };
-  notificationEvents: Array<'SUBMITTED' | 'ASSIGNED' | 'REASSIGNED' | 'REMINDER' | 'RETURNED' | 'APPROVED' | 'REJECTED'>;
+  notificationEvents: RequestTemplateNotificationEvent[];
 }
 
 export type RequestTemplateDraftAction =
@@ -69,7 +76,7 @@ export const createEmptyRequestTemplateDraft = (): RequestTemplateDraft => ({
   flowMode: 'SEQUENTIAL', completionPolicy: 'ALL', fields: [], approverBlocks: [],
   scopes: [], fixedWatcherIds: [],
   print: { browserPrintEnabled: true, docxStoragePath: null },
-  notificationEvents: ['SUBMITTED', 'ASSIGNED', 'RETURNED', 'APPROVED', 'REJECTED'],
+  notificationEvents: [...REQUEST_TEMPLATE_NOTIFICATION_EVENTS],
 });
 
 export const createFieldKey = (label: string, existing: string[]): string => {
@@ -91,7 +98,7 @@ export const createApproverBlock = (
 ): RequestApproverBlockDraft => ({
   key: crypto.randomUUID(),
   name: source === 'DIRECT_MANAGER' ? 'Quản lý trực tiếp'
-    : source === 'DYNAMIC_CREATOR_SELECT' ? 'Người duyệt được chọn khi gửi'
+    : source === 'DYNAMIC_CREATOR_SELECT' ? 'Duyệt linh động'
       : 'Khối người duyệt',
   source,
   fixedUserIds: [],
@@ -215,7 +222,8 @@ export const toSaveDraftInput = (draft: RequestTemplateDraft, expectedUpdatedAt?
   },
   flowMode: draft.flowMode, completionPolicy: draft.completionPolicy, requestSlaHours: draft.requestSlaHours,
   blocks: draft.approverBlocks, watcherUserIds: draft.fixedWatcherIds, printConfig: draft.print,
-  notificationConfig: Object.fromEntries(draft.notificationEvents.map(event => [event, true])),
+  // Every event is stored explicitly; the delivery worker skips only `false`.
+  notificationConfig: Object.fromEntries(REQUEST_TEMPLATE_NOTIFICATION_EVENTS.map(event => [event, draft.notificationEvents.includes(event)])),
 });
 
 export const buildRequestTemplateSaveInput = (

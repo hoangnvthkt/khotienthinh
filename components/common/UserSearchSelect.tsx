@@ -48,6 +48,7 @@ export const UserSearchSelect: React.FC<UserSearchSelectProps> = (props) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   const updateMenuPosition = useCallback(() => {
@@ -136,6 +137,11 @@ export const UserSearchSelect: React.FC<UserSearchSelectProps> = (props) => {
     return candidates.slice(0, 50);
   }, [users, excludeUserIds, props.multiple, props.values, props.value, query]);
 
+  useEffect(() => { setActiveIndex(0); }, [query, open]);
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLElement>(`[data-option-index="${activeIndex}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
+
   const handleSelectUser = (user: User) => {
     if (props.multiple) {
       props.onValuesChange([...(props.values || []), user.id]);
@@ -178,7 +184,7 @@ export const UserSearchSelect: React.FC<UserSearchSelectProps> = (props) => {
           Không tìm thấy nhân viên phù hợp
         </div>
       ) : (
-        filteredUsers.map(u => {
+        filteredUsers.map((u, index) => {
           const isSelected = props.multiple
             ? (props.values || []).includes(u.id)
             : props.value === u.id;
@@ -186,8 +192,12 @@ export const UserSearchSelect: React.FC<UserSearchSelectProps> = (props) => {
             <button
               key={u.id}
               type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              data-option-index={index}
+              onMouseEnter={() => setActiveIndex(index)}
               onClick={() => handleSelectUser(u)}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-violet-50 dark:hover:bg-violet-950/40 ${
+              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs transition-colors hover:bg-violet-50 dark:hover:bg-violet-950/40 ${index === activeIndex ? 'ring-1 ring-inset ring-violet-300 dark:ring-violet-700' : ''} ${
                 isSelected
                   ? 'bg-violet-50 text-violet-700 font-semibold dark:bg-violet-950/50 dark:text-violet-300'
                   : 'text-slate-700 dark:text-slate-200'
@@ -263,8 +273,25 @@ export const UserSearchSelect: React.FC<UserSearchSelectProps> = (props) => {
             setOpen(true);
           }}
           onKeyDown={e => {
-            if (e.key === 'Escape') setOpen(false);
+            if (e.key === 'Escape') { setOpen(false); return; }
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              if (!open) { setOpen(true); return; }
+              const step = e.key === 'ArrowDown' ? 1 : -1;
+              setActiveIndex(index => filteredUsers.length ? (index + step + filteredUsers.length) % filteredUsers.length : 0);
+              return;
+            }
+            if (e.key === 'Enter') {
+              // Enter picks the highlighted person instead of submitting the form.
+              e.preventDefault();
+              const user = open ? filteredUsers[activeIndex] : undefined;
+              if (user) handleSelectUser(user);
+              else setOpen(true);
+            }
           }}
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
           placeholder={props.multiple && selectedUsersMulti.length > 0 ? 'Gõ để tìm thêm...' : placeholder}
           className={`w-full rounded-lg border border-slate-200 bg-white pl-9 pr-8 py-2 text-xs text-slate-800 outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-slate-50 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-violet-500 ${inputClassName}`}
         />

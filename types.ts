@@ -1288,6 +1288,28 @@ export interface DailyLogLaborInput {
   peopleCount: number;
   hoursPerPerson: number;
   note?: string | null;
+  /** Man-day line of the crew's labor subcontract; drives payment by công. */
+  contractItemId?: string | null;
+}
+
+/** A crew with a signed/active labor subcontract on the project (no prices). */
+export interface DailyLogCrewContract {
+  partnerId: string;
+  partnerCode?: string | null;
+  partnerName: string;
+  contracts: Array<{
+    id: string;
+    code?: string | null;
+    name?: string | null;
+    lines: Array<{ id: string; code?: string | null; name?: string | null; unit?: string | null; laborDayBasis?: 'hours_8' | 'person_day' | null }>;
+  }>;
+}
+
+/** QS view of labor lines to link to labor subcontract lines (2C-2). */
+export interface DailyLogCrewLaborLinks {
+  pending: Array<{ key: string; names: string[]; lineIds: string[]; lines: number; people: number; laborHours: number; firstDate?: string | null; lastDate?: string | null; legacyLines: number }>;
+  linked: Array<{ contractItemId: string; contractCode?: string | null; crewName?: string | null; lineCode?: string | null; lineName?: string | null; unit?: string | null; names: string[]; lineIds: string[]; lines: number; people: number; laborHours: number }>;
+  contractLines: Array<{ id: string; code?: string | null; name?: string | null; unit?: string | null; laborDayBasis?: string | null; contractId: string; contractCode?: string | null; crewName?: string | null }>;
 }
 
 export interface DailyLogMachineInput {
@@ -1322,7 +1344,10 @@ export interface DailyLogSourceItemV2 {
   baselineFingerprint: string;
   forecastFinishDate?: string | null;
   forecastChangeReason?: string | null;
+  /** "Công tác thực hiện": dash-bullet lines. */
   note?: string | null;
+  /** "Sự cố / vướng mắc" of this item: dash-bullet lines, kept in the slip draft. */
+  issues?: string | null;
   attachments?: Attachment[];
 }
 
@@ -1540,6 +1565,8 @@ export interface ContractItem {
   order: number;
   note?: string;
   createdAt?: string;
+  /** Man-day line of a labor subcontract: 8 hours = 1 công, or 1 person/day = 1 công. */
+  laborDayBasis?: 'hours_8' | 'person_day' | null;
 }
 
 export type ContractItemResourceType = 'material' | 'labor' | 'machine';
@@ -1802,6 +1829,8 @@ export interface QuantityAcceptanceItem {
   suggestedAmount?: number;     // GT gợi ý từ KL quy đổi × đơn giá
   acceptedAmount: number;       // GT nghiệm thu kỳ này, nhập tay
   sourceDailyLogVolumeIds?: string[];
+  /** Linked labor lines (man-day acceptance of a labor subcontract line). */
+  sourceDailyLogLaborIds?: string[];
   amountNote?: string;
   note?: string;
 }
@@ -2828,7 +2857,7 @@ export interface SupplierDirectDeliveryLine {
   updatedAt?: string | null;
 }
 
-export type SupplierDeliveryStatementStatus = 'draft' | 'posted' | 'cancelled' | 'reversed';
+export type SupplierDeliveryStatementStatus = 'draft' | 'confirmed' | 'posted' | 'cancelled' | 'reversed';
 
 export interface SupplierDeliveryStatement {
   id: string;
@@ -3042,6 +3071,8 @@ export interface ProjectVendor {
 
 export interface PurchaseOrder extends ProjectSubmissionFields {
   id: string;
+  /** e.g. { channel: 'procurement_hub' } for orders created in Mua hàng. */
+  metadata?: Record<string, unknown> | null;
   projectId?: string | null;
   constructionSiteId?: string | null;
   vendorId: string;
@@ -4360,7 +4391,8 @@ export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' 
 export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
 export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback';
 export type WorkflowParticipantRole = 'ADMIN' | 'WATCHER' | 'CREATOR' | 'ASSIGNEE';
-export type WorkflowApprovalPolicy = 'ANY_ONE';
+// ANY_ONE: one assignee approving advances the stage. ALL: every assignee must approve.
+export type WorkflowApprovalPolicy = 'ANY_ONE' | 'ALL';
 export type ProjectWorkflowBindingScope = 'global' | 'project' | 'site';
 export type WorkflowAssignmentTargetType = 'user' | 'department' | 'project_permission' | 'creator';
 export type ProjectWorkflowAssignmentMode =
@@ -4439,12 +4471,19 @@ export interface WorkflowTemplate {
   customFields: WorkflowCustomField[];
   managers: string[];         // user IDs — admin-like except delete
   defaultWatchers: string[];  // user IDs — view-only on all instances
+  categoryId?: string | null; // catalog group (Phòng HCNS, Phòng Vật tư...)
   createdAt: string;
   updatedAt: string;
   /** Set when this is a private copy owned by one project (hidden from Quy trình). */
   ownerSubjectType?: 'material_request' | null;
   ownerProjectId?: string | null;
   clonedFromTemplateId?: string | null;
+}
+
+export interface WorkflowTemplateCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
 }
 
 export interface WorkflowNode {
@@ -4838,6 +4877,7 @@ export interface WorkflowInstance {
   formData: Record<string, any>;
   watchers: string[];  // user IDs — view + comment only
   stepAssignees?: Record<string, string | string[]>; // node id -> assigned user id(s)
+  stepApprovals?: Record<string, string[]>; // node id -> assignees who approved the current round ("tất cả phải duyệt")
   createdAt: string;
   updatedAt: string;
 }
@@ -5935,7 +5975,7 @@ export interface ExpenseRecord {
 
 // ==================== HD: HỢP ĐỒNG ====================
 
-export type PartnerClassification = 'owner' | 'contractor' | 'supplier';
+export type PartnerClassification = 'owner' | 'contractor' | 'supplier' | 'crew';
 
 export interface BusinessPartner {
   id: string;
@@ -6491,6 +6531,8 @@ export interface SubcontractorContract {
   code: string;                   // HD-TP-2025-001
   name: string;
   subcontractorName: string;
+  /** Crew or contractor partner this subcontract is with. */
+  partnerId?: string;
   subcontractorTaxCode?: string;
   scopeOfWork?: string;
   projectId?: string;

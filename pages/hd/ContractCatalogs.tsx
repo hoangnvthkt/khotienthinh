@@ -731,6 +731,7 @@ const partnerClassLabel: Record<string, string> = {
   owner: 'Chủ đầu tư',
   contractor: 'Nhà thầu',
   supplier: 'Nhà cung cấp',
+  crew: 'Tổ đội',
 };
 
 const describePartner = (partner: BusinessPartner) =>

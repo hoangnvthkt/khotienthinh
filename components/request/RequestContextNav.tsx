@@ -19,7 +19,7 @@ export const RequestContextNav: React.FC<{
 }> = ({ view, onChange, summary, isCollapsed = false, onToggleCollapse }) => (
   <nav
     aria-label="Điều hướng đề xuất"
-    className={`flex shrink-0 transition-all duration-200 border-b border-slate-200 bg-slate-50/90 px-2 py-1.5 dark:border-slate-800 dark:bg-slate-950/90 ${
+    className={`flex shrink-0 transition-all duration-200 border-b border-border bg-card px-2 py-1.5 ${
       isCollapsed
         ? 'overflow-x-auto no-scrollbar md:w-16 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-2 md:py-3'
         : 'overflow-x-auto no-scrollbar md:w-52 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:px-3 md:py-4'
@@ -27,13 +27,13 @@ export const RequestContextNav: React.FC<{
   >
     <div className="hidden items-center justify-between px-2 pb-3 md:flex">
       {!isCollapsed && (
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Đề xuất</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Đề xuất</span>
       )}
       {onToggleCollapse && (
         <button
           type="button"
           onClick={onToggleCollapse}
-          className={`rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition ${
+          className={`rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground ${
             isCollapsed ? 'mx-auto' : ''
           }`}
           title={isCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
@@ -58,14 +58,14 @@ export const RequestContextNav: React.FC<{
               title={`${item.label}${count !== null ? ` (${count})` : ''}`}
               className={`relative flex h-9 w-9 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-xl transition ${
                 active
-                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
-                  : 'text-slate-600 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:bg-slate-900'
+                  ? 'bg-teal-700 text-white'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               <Icon size={17} />
               {count !== null && count > 0 && (
                 <span className={`absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                  active ? 'bg-amber-400 text-slate-900' : 'bg-emerald-600 text-white'
+                  item.view === 'ASSIGNED_TO_ME' ? 'bg-leaf-600 text-white' : 'bg-slate-600 text-white'
                 }`}>
                   {count}
                 </span>
@@ -79,18 +79,21 @@ export const RequestContextNav: React.FC<{
             key={item.view}
             type="button"
             onClick={() => onChange(item.view)}
-            className={`flex shrink-0 items-center gap-2 rounded-xl px-2.5 py-1.5 sm:px-3 sm:py-2.5 text-left text-xs sm:text-sm font-medium transition active:scale-[0.98] ${
+            aria-current={active ? 'page' : undefined}
+            className={`flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition sm:px-3 sm:py-2 sm:text-sm ${
               active
-                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20 font-semibold'
-                : 'text-slate-600 hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white'
+                ? 'bg-mint-50 font-semibold text-teal-800 ring-1 ring-inset ring-mint-200 dark:bg-mint-900/40 dark:text-teal-200 dark:ring-mint-900'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
-            <Icon size={16} className={active ? 'text-white' : 'text-slate-400 shrink-0'} />
+            <Icon size={16} className={`shrink-0 ${active ? 'text-teal-700 dark:text-teal-300' : ''}`} />
             <span className="whitespace-nowrap">{item.label}</span>
             {count !== null && (
               <span
-                className={`ml-1 sm:ml-auto rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
-                  active ? 'bg-emerald-700/70 text-emerald-100' : 'bg-slate-200/70 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                className={`ml-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums sm:ml-auto ${
+                  item.view === 'ASSIGNED_TO_ME' && count > 0
+                    ? 'bg-leaf-600 text-white'
+                    : active ? 'bg-teal-700 text-white' : 'bg-muted text-muted-foreground'
                 }`}
               >
                 {count}

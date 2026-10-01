@@ -90,3 +90,42 @@ describe('engineer v2 slip', () => {
     expect(html).toContain('Trước ngày này: 40 m³'); expect(html).not.toContain('Trước ngày này: 0');
   });
 });
+
+describe('engineer v2 slip withdraw / delete', () => {
+  const sent = (permissions: Partial<DailyLogDocumentBundle['permissions']>) => ({ ...engineerBundle,
+    contribution: { ...engineerBundle.contribution!, status: 'submitted' as const, submittedAt: '2026-09-27T08:00:00Z' },
+    permissions: { ...engineerBundle.permissions, canEditSource: false, canSubmitSource: false, ...permissions } });
+
+  it('offers a never-sent draft for deletion, away from the send actions', () => {
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={{ ...engineerBundle,
+      permissions: { ...engineerBundle.permissions, canDeleteSource: true } }} />);
+    expect(html).toContain('Xóa phiếu nháp');
+    expect(html).toContain('Khu vực &quot;Khu A&quot; sẽ được bỏ khỏi ngày');
+    expect(html.indexOf('Xóa phiếu nháp')).toBeGreaterThan(html.indexOf('Ảnh chung trong ngày'));
+  });
+
+  it('hides deletion when the server does not allow it', () => {
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={engineerBundle} />);
+    expect(html).not.toContain('Xóa phiếu nháp');
+  });
+
+  it('lets the author take back a sent slip the summarizer has not taken in', () => {
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={sent({ canWithdrawSource: true })} />);
+    expect(html).toMatch(/<button(?![^>]*disabled)[^>]*daily-log-document-button--return[^>]*>[\s\S]*?Rút về sửa/);
+    expect(html).toContain('Phiếu đã gửi, chờ người tổng hợp');
+    expect(html).not.toContain('Xóa phiếu nháp');
+  });
+
+  it('explains who can return a slip that is already in a summary', () => {
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={sent({ sourceInSummary: true })} />);
+    expect(html).not.toContain('Rút về sửa');
+    expect(html).toContain('Đang được tổng hợp');
+    expect(html).toContain('nhờ người tổng hợp trả phiếu');
+  });
+
+  it('calls a withdrawn slip a resend, not a first send', () => {
+    const html = renderToStaticMarkup(<DailyLogContributionWorkEditor bundle={{ ...engineerBundle,
+      contribution: { ...engineerBundle.contribution!, submittedAt: '2026-09-27T08:00:00Z' } }} />);
+    expect(html).toContain('Gửi lại tổng hợp');
+  });
+});

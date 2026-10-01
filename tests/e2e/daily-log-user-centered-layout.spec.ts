@@ -54,7 +54,8 @@ test('live ERP draft retains inputs on error, focuses feedback and has reachable
     await qty.fill('-1');await expect(qty).toHaveAttribute('aria-invalid','true');await expect(page.getByRole('button',{name:'Gửi tổng hợp',exact:true})).toBeDisabled();
     await qty.fill('12,5');await qty.focus();expect(await qty.evaluate(node=>getComputedStyle(node).outlineWidth)).toBe('2px');
     await page.keyboard.press('Tab');expect(await qty.evaluate(node=>document.activeElement===node)).toBe(false);
-    await page.getByLabel('Nội dung trong ngày').fill(f.longReason);
+    await page.getByRole('button',{name:/Công tác thực hiện/}).filter({visible:true}).first().click();
+    await page.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({visible:true}).fill(f.longReason);
     await page.route('**/rpc/save_daily_log_source_document_v2',route=>route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({code:'PT409',message:'UX8 controlled stale-save result'})}));
     await page.getByRole('button',{name:'Lưu nháp',exact:true}).click();
     const alert=page.getByRole('alert').filter({hasText:'UX8 controlled stale-save result'});await expect(alert).toBeVisible();await expect(alert).toBeFocused();await expect(qty).toHaveValue('12,5');
@@ -69,7 +70,7 @@ test('live ERP draft retains inputs on error, focuses feedback and has reachable
       const deleteRow=page.getByRole('button',{name:'Xóa dòng nhân công 1'}).filter({visible:true});
       const rect=await deleteRow.boundingBox();expect(rect!.height).toBeGreaterThanOrEqual(44);expect(rect!.width).toBeGreaterThanOrEqual(44);
       for(const button of await actions.getByRole('button').all()) {const r=await button.boundingBox();expect(r!.height).toBeGreaterThanOrEqual(44);expect(r!.width).toBeGreaterThanOrEqual(44);expect(r!.y+r!.height).toBeLessThanOrEqual(width===390?844:800);}
-      const last=page.getByLabel('Sự cố / vướng mắc');await last.scrollIntoViewIfNeeded();
+      const last=page.getByRole('textbox',{name:'Sự cố / vướng mắc',exact:true}).filter({visible:true});await last.scrollIntoViewIfNeeded();
       await page.locator('.daily-log-engineer-slip[aria-label="Phiếu thi công ngày"]').evaluate(node=>{let p=node.parentElement;while(p){if(p.scrollHeight>p.clientHeight)p.scrollTop=p.scrollHeight;p=p.parentElement;}});
       const field=await last.boundingBox(),bar=await actions.boundingBox();expect(field!.y+field!.height).toBeLessThan(bar!.y);
     }

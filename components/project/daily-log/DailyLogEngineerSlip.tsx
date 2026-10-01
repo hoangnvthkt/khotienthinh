@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
-import type { DailyLogEntryMode, DailyLogPhoto, DailyLogSourceItemV2 } from '../../../types';
+import { Plus, Search, Trash2 } from 'lucide-react';
+import type { DailyLogCrewContract, DailyLogEntryMode, DailyLogPhoto, DailyLogSourceItemV2 } from '../../../types';
 import { dailyLogWbsService, type DailyLogDocumentBundle, type SubmitDailyLogSourceInput } from '../../../lib/dailyLogWbsService';
 import { deriveDailyLogEntry } from '../../../lib/dailyLogEntryRules';
 import { validateResourceProvider } from '../../../lib/dailyLogResourceRules';
 import { formatDailyLogDate, formatDailyLogTime } from '../../../lib/dailyLogPresentation';
+import { composeSlipNotes, normalizeBulletText } from '../../../lib/dailyLogItemNotes';
 import { DailyLogDocumentHeader } from './DailyLogDocumentHeader';
 import { DailyLogResourceEditor } from './DailyLogResourceEditor';
 import { DailyLogWbsPicker } from './DailyLogWbsPicker';
@@ -37,7 +38,7 @@ const hydrateRow = (bundle: DailyLogDocumentBundle, item: DailyLogSourceItemV2):
 };
 
 export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps & { bundle: DailyLogDocumentBundle }> = ({
-  bundle, error, loading, denied, onReload, onSaved, onSubmitted, onClose, onUploadPhoto, onBusyChange,
+  bundle, error, loading, denied, onReload, onSaved, onSubmitted, onClose, onUploadPhoto, onBusyChange, onDeleted, onWithdrawn,
 }) => {
   const source = bundle.contribution!;
   const raw = source.sourceDraftPayload;
@@ -47,22 +48,37 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
     forecastFinishDate: w.forecastFinishDate, forecastChangeReason: w.forecastChangeReason, note: w.note, attachments: w.attachments,
   }));
   const [rows, setRows] = useState(() => rawItems.map(item => hydrateRow(bundle, item)));
+  // Slips written before per-item notes kept one free text; keep it until the author removes it.
+  const [legacyNotes, setLegacyNotes] = useState(() => {
+    const derived = composeSlipNotes(rows);
+    const pick = (text: string | null | undefined, own: string) => (text || '').trim() && (text || '').trim() !== own ? (text || '').trim() : '';
+    return { content: pick(raw?.content ?? source.content, derived.content), issues: pick(raw?.issues ?? source.issues, derived.issues) };
+  });
   const [labor, setLabor] = useState(raw?.labor || []);
   const [machines, setMachines] = useState(raw?.machines || []);
-  const [content, setContent] = useState(raw?.content ?? source.content);
-  const [issues, setIssues] = useState(raw?.issues ?? source.issues ?? '');
   const [photos, setPhotos] = useState<DailyLogPhoto[]>(raw?.photos ?? source.photos ?? []);
   const [areaName, setAreaName] = useState(raw?.workAreaName ?? source.workAreaName ?? '');
   const [picker, setPicker] = useState(false);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'work' | 'history'>('work');
-  const [busy, setBusy] = useState<'save' | 'submit' | 'photo' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'submit' | 'photo' | 'withdraw' | 'delete' | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [pendingSubmit, setPendingSubmit] = useState<SubmitDailyLogSourceInput | null>(null);
   const [sent, setSent] = useState(false);
+  const [crewContracts, setCrewContracts] = useState<DailyLogCrewContract[]>([]);
+  useEffect(() => {
+    if (!source.projectId) return;
+    let active = true;
+    dailyLogWbsService.getCrewContracts({ projectId: source.projectId, constructionSiteId: source.constructionSiteId })
+      .then(rows => { if (active) setCrewContracts(rows || []); })
+      .catch(() => { if (active) setCrewContracts([]); });
+    return () => { active = false; };
+  }, [source.projectId, source.constructionSiteId]);
   useEffect(() => { onBusyChange?.(Boolean(busy || pendingSubmit)); }, [busy, pendingSubmit, onBusyChange]);
   const [saved, setSaved] = useState(false);
   const version = useRef(source.rowVersion ?? 1);
+  // Reused only when the previous attempt's outcome is unknown (no server code).
+  const authorCommand = useRef<{ operation: 'withdraw' | 'delete'; commandId: string } | null>(null);
   const busyRef = useRef(false);
   const root = useRef<HTMLElement>(null);
   const readonly = sent || source.status === 'submitted' || source.status === 'included';
@@ -89,11 +105,16 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
     if (busyRef.current || !(send ? canSubmit : canSave)) return;
     busyRef.current = true; setBusy(send ? 'submit' : 'save'); setLocalError(null);
     try {
+      const cleanRows = rows.map(row => ({ ...row, note: normalizeBulletText(row.note), issues: normalizeBulletText(row.issues) }));
+      // Slip-level content/issues are derived from the items so the summary keeps one text per area.
+      const derived = composeSlipNotes(cleanRows);
+      const content = [derived.content, legacyNotes.content].filter(Boolean).join('\n');
+      const issues = [derived.issues, legacyNotes.issues].filter(Boolean).join('\n');
       const receipt = await dailyLogWbsService.saveSourceDocument({ contributionId: source.id, expectedRowVersion: version.current,
         workAreaCode: source.workAreaCode!, workAreaName: areaName.trim(), content, issues, photos,
-        items: rows.map(({ clientKey, taskId, workBoqItemId, areaPlannedQuantity, entryMode, enteredValue, baselineFingerprint,
-          forecastFinishDate, forecastChangeReason, note, attachments }) => ({ clientKey, taskId, workBoqItemId, areaPlannedQuantity,
-          entryMode, enteredValue, baselineFingerprint, forecastFinishDate, forecastChangeReason, note, attachments })), labor, machines });
+        items: cleanRows.map(({ clientKey, taskId, workBoqItemId, areaPlannedQuantity, entryMode, enteredValue, baselineFingerprint,
+          forecastFinishDate, forecastChangeReason, note, issues, attachments }) => ({ clientKey, taskId, workBoqItemId, areaPlannedQuantity,
+          entryMode, enteredValue, baselineFingerprint, forecastFinishDate, forecastChangeReason, note, issues, attachments })), labor, machines });
       version.current = receipt.rowVersion; setSaved(true);
       if (send) {
         const input = { commandId: crypto.randomUUID(), contributionId: source.id, expectedRowVersion: receipt.rowVersion };
@@ -109,6 +130,29 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
     catch (caught) { setLocalError(caught instanceof Error ? caught.message : 'Chưa xác định được kết quả gửi.'); focusError(); }
     finally { setBusy(null); busyRef.current = false; }
   };
+  const runAuthorCommand = async (operation: 'withdraw' | 'delete') => {
+    if (busyRef.current) return;
+    const area = areaName.trim() || source.workAreaName || 'chưa đặt tên';
+    const question = operation === 'withdraw'
+      ? 'Rút phiếu về để sửa?\nNgười tổng hợp sẽ được báo phiếu đang tạm rút. Sửa xong, bấm "Gửi lại tổng hợp".'
+      : `Xóa phiếu nháp "${area}" ngày ${formatDailyLogDate(source.date)}?\nToàn bộ nội dung đã ghi trên phiếu sẽ bị xóa và không khôi phục được.`;
+    if (!window.confirm(question)) return;
+    if (authorCommand.current?.operation !== operation) authorCommand.current = { operation, commandId: crypto.randomUUID() };
+    const input = { commandId: authorCommand.current.commandId, contributionId: source.id, expectedRowVersion: version.current };
+    busyRef.current = true; setBusy(operation); setLocalError(null);
+    try {
+      if (operation === 'withdraw') { await dailyLogWbsService.withdrawSource(input); authorCommand.current = null; onWithdrawn?.(); }
+      else { await dailyLogWbsService.deleteSource(input); authorCommand.current = null; onDeleted?.(area); }
+    } catch (caught) {
+      const known = caught as { code?: string; cause?: { code?: string } };
+      if (known.code || known.cause?.code) authorCommand.current = null;
+      setLocalError(caught instanceof Error ? caught.message : operation === 'withdraw' ? 'Chưa rút được phiếu.' : 'Chưa xóa được phiếu.');
+      focusError();
+    } finally { setBusy(null); busyRef.current = false; }
+  };
+  const canWithdraw = !sent && source.status === 'submitted' && bundle.permissions.canWithdrawSource === true;
+  const inSummary = !sent && source.status === 'submitted' && bundle.permissions.sourceInSummary === true;
+  const canDelete = !readonly && source.status === 'draft' && bundle.permissions.canDeleteSource === true;
   const patchRow = (key: string, patch: Partial<DailyLogEngineerRow>) => setRows(current => current.map(row => row.clientKey === key ? { ...row, ...patch } : row));
   const changeMode = (row: DailyLogEngineerRow, mode: DailyLogEntryMode) => {
     const result = deriveDailyLogEntry({ mode: row.entryMode, enteredValue: row.enteredValue, plannedQuantity: row.plannedQuantity,
@@ -135,11 +179,12 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
     : invalidResources.size ? 'Điền đủ số lượng, giờ và bên cung cấp ở dòng nguồn lực.' : !bundle.permissions.canSubmitSource ? 'Bạn chưa có quyền gửi phiếu.' : undefined;
   return <section ref={root} className="daily-log-engineer-slip" aria-label="Phiếu thi công ngày">
     <DailyLogDocumentHeader title="Phiếu thi công ngày" date={source.date} authorName={source.authorName || ''} areaName={readonly ? areaName : undefined} mode="author"
-      statusLabel={readonly ? 'Đã gửi để tổng hợp' : source.status === 'returned' ? 'Cần sửa' : 'Nháp'}
+      statusLabel={readonly ? source.status === 'included' ? 'Đã tổng hợp' : inSummary ? 'Đang được tổng hợp' : 'Đã gửi để tổng hợp' : source.status === 'returned' ? 'Cần sửa' : 'Nháp'}
       statusTone={readonly ? 'pending' : source.status === 'returned' ? 'returned' : 'neutral'}
-      busyAction={busy === 'submit' ? 'primary' : busy ? 'secondary' : null} closeDisabled={Boolean(pendingSubmit)} onClose={() => { if (!busyRef.current && !pendingSubmit) onClose?.(); }}
-      secondaryAction={!readonly && !pendingSubmit ? { label: source.status === 'returned' ? 'Lưu chỉnh sửa' : 'Lưu nháp', disabled: !canSave, onClick: () => save(false) } : undefined}
-      primaryAction={!readonly ? { label: pendingSubmit ? 'Thử gửi lại' : source.status === 'returned' ? 'Gửi lại tổng hợp' : 'Gửi tổng hợp',
+      busyAction={busy === 'submit' ? 'primary' : busy === 'delete' ? null : busy ? 'secondary' : null} closeDisabled={Boolean(pendingSubmit)} onClose={() => { if (!busyRef.current && !pendingSubmit) onClose?.(); }}
+      secondaryAction={canWithdraw ? { label: 'Rút về sửa', tone: 'return', disabled: Boolean(busy), onClick: () => runAuthorCommand('withdraw') }
+        : !readonly && !pendingSubmit ? { label: source.status === 'returned' ? 'Lưu chỉnh sửa' : 'Lưu nháp', disabled: !canSave, onClick: () => save(false) } : undefined}
+      primaryAction={!readonly ? { label: pendingSubmit ? 'Thử gửi lại' : source.status === 'returned' || source.submittedAt ? 'Gửi lại tổng hợp' : 'Gửi tổng hợp',
         disabled: pendingSubmit ? Boolean(busy) : !canSubmit, disabledReason: pendingSubmit ? undefined : disabledReason,
         onClick: pendingSubmit ? retrySubmit : () => save(true) } : undefined} />
     <div className="dl-slip-tabs" role="tablist" aria-label="Nội dung phiếu">
@@ -153,6 +198,10 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
       {permissionDenied && !readonly && <p role="alert" className="dl-slip-error">Bạn chưa có quyền sửa phiếu nguồn.</p>}
       {source.status === 'returned' && !sent && <aside className="dl-slip-return"><strong>Phiếu cần chỉnh sửa</strong><p>{source.returnReason || 'Chưa có lý do trả sửa được ghi nhận.'}</p>
         <p>{source.returnedByName || 'Chưa xác định người yêu cầu'}{source.returnedAt ? `, ${formatDailyLogDate(source.returnedAt)} lúc ${formatDailyLogTime(source.returnedAt)}` : ''}</p></aside>}
+      {canWithdraw && <aside className="dl-slip-info"><strong>Phiếu đã gửi, chờ người tổng hợp</strong>
+        <p>Cần sửa thì bấm "Rút về sửa" khi người tổng hợp chưa đưa phiếu vào bản tổng hợp.</p></aside>}
+      {inSummary && <aside className="dl-slip-info"><strong>Phiếu đã được đưa vào bản tổng hợp</strong>
+        <p>Không tự rút được nữa. Cần sửa thì nhờ người tổng hợp trả phiếu kèm lý do.</p></aside>}
       {saved && !pendingSubmit && !readonly && <p role="status">Đã lưu phiếu. Có thể tiếp tục ghi hoặc gửi tổng hợp.</p>}
       {tab === 'history' ? <dl className="dl-slip-history"><dt>Lập phiếu</dt><dd>{formatDailyLogDate(source.createdAt)} lúc {formatDailyLogTime(source.createdAt)}</dd>
         {source.submittedAt && <><dt>Gửi tổng hợp</dt><dd>{formatDailyLogDate(source.submittedAt)} lúc {formatDailyLogTime(source.submittedAt)}</dd></>}
@@ -164,23 +213,29 @@ export const DailyLogEngineerSlip: React.FC<DailyLogContributionWorkEditorProps 
         {!rows.length ? <p className="dl-slip-empty">Chưa có công việc. Chọn hạng mục thi công để ghi khối lượng, nhân công và máy.</p> : <DailyLogEngineerWorkTable
           rows={rows.filter(row => `${row.wbsCode} ${row.taskName}`.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')))} labor={labor} machines={machines}
           readOnly={readonly} disabled={frozen || permissionDenied} invalidResourceWorkItemKeys={invalidResources}
-          onChange={patchRow} onModeChange={changeMode} onRemove={key => { setRows(current => current.filter(row => row.clientKey !== key)); setLabor(current => current.filter(line => line.workItemClientKey !== key)); setMachines(current => current.filter(line => line.workItemClientKey !== key)); }}
+          onChange={patchRow} onModeChange={changeMode}
+          onAddResource={(row, kind) => kind === 'labor'
+            ? setLabor(current => [...current, { workItemClientKey: row.clientKey, laborType: '', peopleCount: 1, hoursPerPerson: 8, provider: { entryMode: 'catalog' } }])
+            : setMachines(current => [...current, { workItemClientKey: row.clientKey, machineType: '', machineCount: 1, hoursPerMachine: 8, provider: { entryMode: 'catalog' } }])} onRemove={key => { setRows(current => current.filter(row => row.clientKey !== key)); setLabor(current => current.filter(line => line.workItemClientKey !== key)); setMachines(current => current.filter(line => line.workItemClientKey !== key)); }}
           renderDetails={row => <>
-            <DailyLogResourceEditor workItemClientKey={row.clientKey} resourceProviders={bundle.resourceProviders} labor={labor.filter(l => l.workItemClientKey === row.clientKey)} machines={machines.filter(m => m.workItemClientKey === row.clientKey)} readOnly={frozen || permissionDenied} reportOnly={readonly}
+            <DailyLogResourceEditor workItemClientKey={row.clientKey} resourceProviders={bundle.resourceProviders} crewContracts={crewContracts} labor={labor.filter(l => l.workItemClientKey === row.clientKey)} machines={machines.filter(m => m.workItemClientKey === row.clientKey)} readOnly={frozen || permissionDenied} reportOnly={readonly}
               onLaborChange={next => setLabor(current => [...current.filter(l => l.workItemClientKey !== row.clientKey), ...next])}
               onMachinesChange={next => setMachines(current => [...current.filter(m => m.workItemClientKey !== row.clientKey), ...next])} />
-            <div className="dl-slip-detail-fields">{readonly ? <><p>Dự kiến hoàn thành: {row.forecastFinishDate ? formatDailyLogDate(row.forecastFinishDate) : 'Chưa ghi nhận'}</p><p>{row.forecastChangeReason}</p><p>{row.note}</p></> : <>
-              <label>Dự kiến hoàn thành<input type="date" disabled={frozen} value={row.forecastFinishDate || ''} onChange={event => patchRow(row.clientKey, { forecastFinishDate: event.target.value })} /></label>
-              <label>Lý do thay đổi ngày hoàn thành<input disabled={frozen} aria-invalid={Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate && !row.forecastChangeReason?.trim())} value={row.forecastChangeReason || ''} onChange={event => patchRow(row.clientKey, { forecastChangeReason: event.target.value })} /></label>
-              <label>Ghi chú hạng mục<textarea disabled={frozen} value={row.note || ''} onChange={event => patchRow(row.clientKey, { note: event.target.value })} /></label></>}
-            </div>{photoList(row.attachments || [], index => patchRow(row.clientKey, { attachments: row.attachments?.filter((_, i) => i !== index) }), row)}
+            {photoList(row.attachments || [], index => patchRow(row.clientKey, { attachments: row.attachments?.filter((_, i) => i !== index) }), row)}
           </>} />}
         {invalidResources.size > 0 && <p role="alert" className="dl-slip-error">Mỗi dòng nguồn lực cần tên, số lượng, thời gian và bên cung cấp hợp lệ.</p>}
-        <section className="dl-slip-notes"><h3>Ghi chú và ảnh trong ngày</h3>{readonly ? <><p>{content || 'Chưa ghi nội dung bổ sung.'}</p><p>{issues || 'Chưa ghi sự cố.'}</p></> : <div className="dl-slip-detail-fields">
-          <label>Nội dung trong ngày<textarea disabled={frozen || permissionDenied} value={content} onChange={event => setContent(event.target.value)} /></label>
-          <label>Sự cố / vướng mắc<textarea disabled={frozen || permissionDenied} value={issues} onChange={event => setIssues(event.target.value)} /></label></div>}
+        <section className="dl-slip-notes"><h3>Ảnh chung trong ngày</h3><p className="dl-slip-notes-hint">Công tác và sự cố ghi ở từng hạng mục phía trên. Ảnh riêng của hạng mục thêm trong Chi tiết.</p>
+          {(legacyNotes.content || legacyNotes.issues) && <aside className="dl-slip-legacy-notes"><strong>Ghi chú chung đã nhập trước đây</strong>
+            {legacyNotes.content && <p>{legacyNotes.content}</p>}{legacyNotes.issues && <p>Sự cố: {legacyNotes.issues}</p>}
+            {!readonly && <button type="button" disabled={frozen || permissionDenied} onClick={() => { if (window.confirm('Bỏ ghi chú chung này khỏi phiếu?')) setLegacyNotes({ content: '', issues: '' }); }}>Bỏ ghi chú chung</button>}</aside>}
           {photoList(photos, index => setPhotos(current => current.filter((_, i) => i !== index)))}
         </section>
+        {canDelete && <section className="dl-slip-danger" aria-label="Xóa phiếu nháp">
+          <div><strong>Không cần phiếu này nữa?</strong>
+            <p>Phiếu chưa gửi nên xóa được. Khu vực "{areaName.trim() || source.workAreaName}" sẽ được bỏ khỏi ngày {formatDailyLogDate(source.date)}.</p></div>
+          <button type="button" disabled={frozen} onClick={() => { void runAuthorCommand('delete'); }}>
+            <Trash2 size={16} aria-hidden="true" />{busy === 'delete' ? 'Đang xóa…' : 'Xóa phiếu nháp'}</button>
+        </section>}
       </>}
     </div>
     {picker && <DailyLogWbsPicker tasks={bundle.tasks} workBoqItems={bundle.workBoqItems} selectedTaskIds={new Set(rows.map(r => r.taskId))} recentTaskIds={[]} onClose={() => setPicker(false)} onConfirm={ids => {

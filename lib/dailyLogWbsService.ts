@@ -20,6 +20,7 @@ import type {
 import type { ProjectProgressPeriodState } from './projectWeeklyProgressService';
 import { mapDailyLogWbsCommandError } from './dailyLogWorkflow';
 import type { DailyLogTodayBoard } from './dailyLogTodayBoard';
+import type { DailyLogCrewContract, DailyLogCrewLaborLinks } from '../types';
 import { supabase } from './supabase';
 
 const toCamel = (key: string) => key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
@@ -82,7 +83,15 @@ export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
     previousItem: { cumulativeQuantityDone: number; areaPlannedQuantitySnapshot: number; unitSnapshot: string } | null;
     nextItem: { cumulativeQuantityDone: number | null; areaPlannedQuantitySnapshot: number | null; unitSnapshot: string | null } | null;
   }>;
-  permissions: DailyLogWbsBundle['permissions'] & { canCreateSource: boolean; canSubmitSource: boolean };
+  permissions: DailyLogWbsBundle['permissions'] & {
+    canCreateSource: boolean;
+    canSubmitSource: boolean;
+    /** Author may discard this never-sent draft (also frees its area code for the day). */
+    canDeleteSource?: boolean;
+    /** Author may take back this sent slip; false once a summary holds this version. */
+    canWithdrawSource?: boolean;
+    sourceInSummary?: boolean;
+  };
 }
 
 export interface CreateDailyLogSourceInput {
@@ -115,7 +124,7 @@ export interface SaveDailyLogSourceDocumentInput {
 
 export interface DailyLogSourceTransitionReceipt {
   contributionId: string;
-  status: 'submitted' | 'returned';
+  status: 'submitted' | 'returned' | 'draft';
   rowVersion: number;
   updatedAt: string;
   sourceFingerprint: string;
@@ -131,6 +140,19 @@ export interface ReturnDailyLogSourceInput {
   expectedSummaryUpdatedAt: string;
   expectedRowVersion: number;
   reason: string;
+}
+
+export interface DailyLogSourceAuthorCommandInput {
+  commandId: string;
+  contributionId: string;
+  expectedRowVersion: number;
+}
+
+export interface DailyLogSourceDeleteReceipt {
+  contributionId: string;
+  deleted: true;
+  workAreaCode: string;
+  workAreaName: string;
 }
 
 export interface SubmitDailyLogSourceInput {
@@ -278,6 +300,12 @@ export const dailyLogWbsService = {
   submitSource(input: SubmitDailyLogSourceInput): Promise<DailyLogSourceTransitionReceipt> {
     return callRpc('submit_daily_log_source_v2', { p_input: input });
   },
+  withdrawSource(input: DailyLogSourceAuthorCommandInput): Promise<DailyLogSourceTransitionReceipt> {
+    return callRpc('withdraw_daily_log_source_v2', { p_input: input });
+  },
+  deleteSource(input: DailyLogSourceAuthorCommandInput): Promise<DailyLogSourceDeleteReceipt> {
+    return callRpc('delete_daily_log_source_v2', { p_input: input });
+  },
   saveSourceDocument(input: SaveDailyLogSourceDocumentInput): Promise<DailyLogWorkSaveReceipt> {
     return callRpc('save_daily_log_source_document_v2', { p_input: input });
   },
@@ -404,6 +432,39 @@ export const dailyLogWbsService = {
       p_project_id: input.projectId,
       p_construction_site_id: input.constructionSiteId || null,
       p_date: input.date,
+    });
+  },
+
+  getCrewContracts(input: { projectId: string; constructionSiteId?: string | null }): Promise<DailyLogCrewContract[]> {
+    return callRpc('get_daily_log_crew_contracts_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+    });
+  },
+
+  listCrewLaborLinks(input: { projectId: string; constructionSiteId?: string | null }): Promise<DailyLogCrewLaborLinks> {
+    return callRpc('list_daily_log_crew_labor_links_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+    });
+  },
+
+  linkLaborToContract(input: { projectId: string; constructionSiteId?: string | null; lineIds: string[]; contractItemId: string; reason?: string }): Promise<{ linked: number }> {
+    return callRpc('link_daily_log_labor_to_contract_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_line_ids: input.lineIds,
+      p_contract_item_id: input.contractItemId,
+      p_reason: input.reason || null,
+    });
+  },
+
+  unlinkLaborContract(input: { projectId: string; constructionSiteId?: string | null; lineIds: string[]; reason: string }): Promise<{ unlinked: number }> {
+    return callRpc('unlink_daily_log_labor_contract_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_line_ids: input.lineIds,
+      p_reason: input.reason,
     });
   },
 

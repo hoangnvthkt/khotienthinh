@@ -86,3 +86,20 @@ export const summarizeDailyLogPhysicalRows = (input: {
   machineEntries: sumPhysicalMetric(input.machines.map(row => row.machineCount)),
   totalMachineHours: sumPhysicalMetric(input.machines.map(row => row.totalMachineHours)),
 });
+
+/**
+ * History list split for projects on the slip workflow: days from the cutover
+ * are the new workflow; earlier days keep the old form and are listed apart.
+ * Without a cutover (project not switched) every day stays in the main list.
+ */
+export const splitDailyLogDaysByCutover = <T extends { date: string; officialStatus: string | null }>(
+  rows: T[], cutoverDate: string | null,
+): { current: T[]; legacy: T[]; legacyPendingApproval: number } => {
+  if (!cutoverDate) return { current: rows, legacy: [], legacyPendingApproval: 0 };
+  const legacy = rows.filter(row => row.date < cutoverDate);
+  return {
+    current: rows.filter(row => row.date >= cutoverDate),
+    legacy,
+    legacyPendingApproval: legacy.filter(row => row.officialStatus === 'submitted').length,
+  };
+};

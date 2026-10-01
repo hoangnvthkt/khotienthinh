@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
-import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, WorkflowInstanceStatus, ProjectWorkflowNodeConfig, Role } from '../../types';
+import { WorkflowAssignmentTarget, WorkflowNode, WorkflowEdge, WorkflowNodeType, WorkflowCustomField, CustomFieldType, WorkflowPrintTemplate, WorkflowInstanceStatus, ProjectWorkflowNodeConfig, Role, User, OrgUnit } from '../../types';
 import { projectWorkflowService } from '../../lib/projectWorkflowService';
 import {
     appendStep,
@@ -19,10 +19,18 @@ import {
     ArrowLeft, Save, Plus, Trash2, GripVertical, ChevronUp, ChevronDown,
     UserCheck, Settings2, X, Layers, FileText, ToggleLeft, ToggleRight,
     Zap, Play, Flag, Clock, Type, AlignLeft, Hash, Calendar, List, Paperclip, Printer, Upload, Download, Eye,
-    Check, Table2, Edit
+    Check, Table2, Edit, Users, User as UserIcon, History, AlertTriangle
 } from 'lucide-react';
 import SearchableCheckboxSelect from '../../components/workflow/SearchableCheckboxSelect';
 import { canPerform } from '../../lib/permissions/permissionService';
+import { useToast } from '../../context/ToastContext';
+import { getApiErrorMessage } from '../../lib/apiError';
+import {
+    getWorkflowStepAssigneeIssue,
+    getWorkflowStepAssigneeKind,
+    type WorkflowStepAssigneeKind,
+} from '../../lib/workflowAssignmentResolver';
+import { isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
 import {
     buildUserNameById,
     describeAssignmentTargets,
@@ -170,15 +178,248 @@ const WorkflowRoleRow: React.FC<WorkflowRoleRowProps> = ({
     );
 };
 
+const ROLE_LABELS: Partial<Record<Role, string>> = {
+    [Role.ADMIN]: 'Quản trị',
+    [Role.WAREHOUSE_KEEPER]: 'Thủ kho',
+    [Role.EMPLOYEE]: 'Nhân viên',
+};
+
+const ASSIGNEE_KIND_OPTIONS: Array<{ kind: Exclude<WorkflowStepAssigneeKind, 'role' | 'none'>; title: string; description: string; icon: any }> = [
+    { kind: 'pool', title: 'Chọn từ danh sách', description: 'Người gửi/duyệt trước chọn người xử lý trong danh sách', icon: Users },
+    { kind: 'fixed', title: 'Một người cố định', description: 'Luôn giao cho đúng một người', icon: UserCheck },
+    { kind: 'creator', title: 'Người tạo nhiệm vụ', description: 'Người tạo nhiệm vụ tự xử lý giai đoạn này', icon: UserIcon },
+    { kind: 'previous', title: 'Người xử lý giai đoạn trước', description: 'Người vừa xử lý giai đoạn trước làm tiếp', icon: History },
+];
+
+const configPatchForKind = (
+    kind: Exclude<WorkflowStepAssigneeKind, 'role' | 'none'>,
+    config: ProjectWorkflowNodeConfig,
+): Partial<ProjectWorkflowNodeConfig> => {
+    switch (kind) {
+        case 'fixed':
+            return { assignmentMode: 'fixed_user', approvalPolicy: undefined };
+        case 'pool':
+            return {
+                assignmentMode: config.assignmentMode === 'select_on_submit' || config.assignmentMode === 'permission_pool'
+                    ? config.assignmentMode
+                    : 'select_on_transition',
+                // A fixed user outranks the list at runtime, so drop it.
+                assigneeUserId: undefined,
+            };
+        case 'creator':
+            return { assignmentMode: 'creator', assigneeUserId: undefined, approvalPolicy: undefined };
+        case 'previous':
+            return { assignmentMode: 'previous_assignee', assigneeUserId: undefined, approvalPolicy: undefined };
+    }
+};
+
+interface StepAssigneeEditorProps {
+    config: ProjectWorkflowNodeConfig;
+    isFirstStep: boolean;
+    issue: string | null;
+    users: User[];
+    orgUnits: OrgUnit[];
+    showProjectPermissionField: boolean;
+    /** "Tất cả phải duyệt" runs only on the Quy trình runtime, not on project material-request workflows. */
+    allowAllApprovalPolicy?: boolean;
+    isActionStep?: boolean;
+    disabled: boolean;
+    onPatch: (patch: Partial<ProjectWorkflowNodeConfig>) => void;
+}
+
+/** One question — "Ai xử lý giai đoạn này?" — instead of five overlapping fields. */
+export const StepAssigneeEditor: React.FC<StepAssigneeEditorProps> = ({
+    config, isFirstStep, issue, users, orgUnits, showProjectPermissionField, allowAllApprovalPolicy = true, isActionStep = false, disabled, onPatch,
+}) => {
+    const doneVerb = isActionStep ? 'hoàn thành' : 'duyệt';
+    const kind = getWorkflowStepAssigneeKind(config);
+    const userIds = getTargetUserIds(config.assignmentTargets);
+    const departmentIds = getTargetDepartmentIds(config.assignmentTargets);
+    const setTargets = (nextUserIds: string[], nextDepartmentIds: string[]) =>
+        onPatch({ assignmentTargets: buildAssignmentTargets(nextUserIds, nextDepartmentIds) });
+    const userOptions = users
+        .filter(u => u.isActive !== false || userIds.includes(u.id) || u.id === config.assigneeUserId)
+        .map(u => ({ id: u.id, label: u.name, sublabel: u.isActive === false ? 'Đã nghỉ/khóa' : (ROLE_LABELS[u.role] || u.role) }));
+    const labelClass = 'block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5';
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Ai xử lý giai đoạn này?</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Cách chọn người xử lý">
+                    {ASSIGNEE_KIND_OPTIONS.map(option => {
+                        const Icon = option.icon;
+                        const selected = kind === option.kind;
+                        const unavailable = option.kind === 'previous' && isFirstStep;
+                        return (
+                            <button
+                                key={option.kind}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                disabled={disabled || (unavailable && !selected)}
+                                onClick={() => onPatch(configPatchForKind(option.kind, config))}
+                                className={`flex items-start gap-2.5 rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${selected
+                                    ? 'border-accent bg-emerald-50/80 ring-1 ring-accent dark:bg-emerald-900/20'
+                                    : 'border-slate-200 bg-white/70 hover:border-slate-300 dark:border-slate-600 dark:bg-slate-800/40'}`}
+                            >
+                                <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${selected ? 'bg-accent text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300'}`}>
+                                    <Icon size={14} />
+                                </span>
+                                <span className="min-w-0">
+                                    <span className="block text-xs font-black text-slate-700 dark:text-slate-100">{option.title}</span>
+                                    <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                        {unavailable ? 'Không dùng được ở giai đoạn đầu tiên' : option.description}
+                                    </span>
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {kind === 'fixed' && (
+                <div>
+                    <label className={labelClass}>Người xử lý</label>
+                    <select
+                        value={config.assigneeUserId || ''}
+                        disabled={disabled}
+                        onChange={e => onPatch({ assigneeUserId: e.target.value || undefined, assignmentMode: 'fixed_user' })}
+                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                    >
+                        <option value="">-- Chọn một người --</option>
+                        {userOptions.map(option => (
+                            <option key={option.id} value={option.id}>{option.label} ({option.sublabel})</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {kind === 'pool' || kind === 'none' ? (
+                <div className="space-y-3">
+                    <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        {isFirstStep
+                            ? 'Khi tạo nhiệm vụ, người gửi chọn người xử lý trong danh sách dưới đây.'
+                            : 'Khi chuyển từ giai đoạn trước, người xử lý chọn người nhận tiếp theo trong danh sách dưới đây.'}
+                        {' '}Nếu danh sách chỉ có một người, hệ thống tự chọn sẵn.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className={labelClass}>Người</label>
+                            <SearchableCheckboxSelect
+                                options={userOptions}
+                                selectedValues={userIds}
+                                onChange={values => setTargets(values, departmentIds)}
+                                placeholder="Tìm kiếm người..."
+                                maxHeightClass="h-32"
+                            />
+                        </div>
+                        <div>
+                            <label className={labelClass}>Hoặc cả phòng ban</label>
+                            <SearchableCheckboxSelect
+                                options={orgUnits.filter(unit => unit.type === 'department').map(unit => ({ id: unit.id, label: unit.name }))}
+                                selectedValues={departmentIds}
+                                onChange={values => setTargets(userIds, values)}
+                                placeholder="Tìm kiếm phòng ban..."
+                                maxHeightClass="h-32"
+                            />
+                        </div>
+                    </div>
+                    <label className="flex items-start gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5 rounded border-slate-300 text-accent focus:ring-accent"
+                            checked={config.assigneeSelectionMode === 'multiple'}
+                            disabled={disabled}
+                            onChange={e => onPatch(e.target.checked
+                                ? { assigneeSelectionMode: 'multiple' }
+                                : { assigneeSelectionMode: 'single', approvalPolicy: undefined })}
+                        />
+                        <span>Cho phép giao cho nhiều người cùng lúc</span>
+                    </label>
+                    {config.assigneeSelectionMode === 'multiple' && (
+                        <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Khi giao nhiều người">
+                            {([
+                                ['ANY_ONE', `Chỉ cần một người ${doneVerb}`, `Người đầu tiên ${doneVerb} là chuyển giai đoạn.`],
+                                ['ALL', `Tất cả phải ${doneVerb}`, `Chờ đủ mọi người được giao ${doneVerb} rồi mới chuyển giai đoạn.`],
+                            ] as const).map(([policy, title, hint]) => {
+                                const selected = (config.approvalPolicy || 'ANY_ONE') === policy;
+                                const unavailable = policy === 'ALL' && !allowAllApprovalPolicy;
+                                return (
+                                    <button
+                                        key={policy}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={selected}
+                                        disabled={disabled || (unavailable && !selected)}
+                                        onClick={() => onPatch({ approvalPolicy: policy === 'ALL' ? 'ALL' : undefined })}
+                                        className={`rounded-xl border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${selected
+                                            ? 'border-accent bg-emerald-50/80 ring-1 ring-accent dark:bg-emerald-900/20'
+                                            : 'border-slate-200 bg-white/70 hover:border-slate-300 dark:border-slate-600 dark:bg-slate-800/40'}`}
+                                    >
+                                        <span className="block text-xs font-black text-slate-700 dark:text-slate-100">{title}</span>
+                                        <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                            {unavailable ? 'Chưa hỗ trợ cho quy trình phiếu vật tư dự án' : hint}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            ) : null}
+
+            {config.assigneeRole && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                    <span>
+                        {kind === 'role'
+                            ? <>Giai đoạn này đang giao theo vai trò <b>{ROLE_LABELS[config.assigneeRole] || config.assigneeRole}</b> (cách cũ): ai có vai trò này cũng xử lý được. Nên chọn một cách ở trên.</>
+                            : <>Đang lọc thêm theo vai trò <b>{ROLE_LABELS[config.assigneeRole] || config.assigneeRole}</b> (cách cũ).</>}
+                    </span>
+                    {!disabled && (
+                        <button type="button" onClick={() => onPatch({ assigneeRole: undefined })} className="rounded-lg bg-white px-2.5 py-1 font-black text-amber-700 shadow-sm hover:bg-amber-100 dark:bg-slate-800">
+                            Bỏ vai trò
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {showProjectPermissionField && (
+                <details className="rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2" open={(config.eligiblePermissionCodes || []).length > 0}>
+                    <summary className="cursor-pointer text-[11px] font-bold text-slate-500">Nâng cao: giới hạn theo quyền trong dự án (phiếu vật tư)</summary>
+                    <input
+                        type="text"
+                        value={(config.eligiblePermissionCodes || []).join(', ')}
+                        disabled={disabled}
+                        onChange={e => onPatch({ eligiblePermissionCodes: e.target.value.split(',').map(code => code.trim()).filter(Boolean) })}
+                        placeholder="VD: approve, verify"
+                        className="mt-2 w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
+                    />
+                </details>
+            )}
+
+            {issue && (
+                <p className="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-300">
+                    <AlertTriangle size={13} /> {issue}
+                </p>
+            )}
+        </div>
+    );
+};
+
 const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { templates, instances, getTemplateNodes, getTemplateEdges, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
-    const { users, orgUnits, user, loadModuleData, moduleLoadState, moduleLoadErrors } = useApp();
+    const { templates, instances, nodes, edges, getTemplateNodes, getTemplateEdges, loadTemplateStructures, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
+    const { users, employees, orgUnits, user, loadModuleData, moduleLoadState, moduleLoadErrors } = useApp();
+    const toast = useToast();
 
     const template = templates.find(t => t.id === templateId);
     const canConfigureTemplate = user.role === Role.ADMIN
         || canPerform(user, 'workflow.template.edit', { scopeType: 'global', scopeId: '*' });
+    const canPublishTemplate = user.role === Role.ADMIN
+        || canPerform(user, 'workflow.template.publish', { scopeType: 'global', scopeId: '*' });
+    const [isActivating, setIsActivating] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'steps' | 'fields' | 'print'>('steps');
     // Base keeps the roles block read-only until you hit "Chỉnh sửa".
@@ -206,13 +447,32 @@ const WorkflowBuilder: React.FC = () => {
     const [newFieldRequired, setNewFieldRequired] = useState(false);
     const [newFieldOptions, setNewFieldOptions] = useState('');
     const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
+    // Read-only: the company-wide default for project material requests is set in
+    // the Dự án module; a one-click toggle here re-routed every project's requests.
     const [isMaterialRequestDefault, setIsMaterialRequestDefault] = useState(false);
-    const [bindingSaving, setBindingSaving] = useState(false);
     const [draftRestoredAt, setDraftRestoredAt] = useState<string | null>(null);
     const [serverRefreshSkippedAt, setServerRefreshSkippedAt] = useState<string | null>(null);
     const hydratedTemplateIdRef = useRef<string | null>(null);
     const lastSavedDraftSignatureRef = useRef('');
     const lastTemplatesRef = useRef<unknown>(null);
+    // Steps of inactive templates are not preloaded; editing before they arrive would
+    // save an empty step list over the real one.
+    const [structureState, setStructureState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+    const loadStructure = () => {
+        if (!templateId) return () => undefined;
+        let alive = true;
+        setStructureState('loading');
+        loadTemplateStructures([templateId])
+            .then(() => { if (alive) setStructureState('ready'); })
+            .catch(error => {
+                console.error('Cannot load workflow template structure:', error);
+                if (alive) setStructureState('error');
+            });
+        return () => { alive = false; };
+    };
+
+    useEffect(loadStructure, [loadTemplateStructures, templateId]);
 
     useEffect(() => {
         const hasActiveOverlay = showAddField || !!editingFieldId;
@@ -260,7 +520,7 @@ const WorkflowBuilder: React.FC = () => {
         setCustomFields(template?.customFields || []);
         setDraftRestoredAt(null);
         if (isNewTemplate) setHasChanges(false);
-    }, [hasChanges, templateId, templates]);
+    }, [hasChanges, templateId, templates, nodes, edges]);
 
     useEffect(() => {
         if (!templateId || !hasChanges) return;
@@ -291,40 +551,21 @@ const WorkflowBuilder: React.FC = () => {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [hasChanges]);
 
-    const selectedWorkflowUserIds = useMemo(() => {
-        const ids = new Set<string>();
-        template?.managers?.forEach(id => ids.add(id));
-        template?.defaultWatchers?.forEach(id => ids.add(id));
-        localNodes.forEach(node => {
-            if (node.config?.assigneeUserId) ids.add(node.config.assigneeUserId);
-            (node.config?.assignmentTargets || []).forEach((target: WorkflowAssignmentTarget) => {
-                if (target.type === 'user' && target.userId) ids.add(target.userId);
-            });
-            (node.config?.stepWatcherTargets || []).forEach((target: WorkflowAssignmentTarget) => {
-                if (target.type === 'user' && target.userId) ids.add(target.userId);
-            });
-        });
-        return Array.from(ids).filter(Boolean);
-    }, [localNodes, template?.defaultWatchers, template?.managers]);
-
-    const missingSelectedUserIds = useMemo(() => {
-        const loadedUserIds = new Set(users.map(item => item.id));
-        return selectedWorkflowUserIds.filter(id => !loadedUserIds.has(id));
-    }, [selectedWorkflowUserIds, users]);
-
-    const peopleHydrationStale = users.length <= 1 || missingSelectedUserIds.length > 0;
+    // Only an empty people list blocks editing. Background refreshes (page focus,
+    // realtime) run silently; people chosen earlier but since disabled simply
+    // stay out of the list instead of forcing endless reloads.
+    const peopleMissing = users.length <= 1;
     const peopleHydrationLoading = moduleLoadState['workflow-people'] === 'loading';
     const peopleHydrationError = moduleLoadErrors['workflow-people'] || null;
 
     useEffect(() => {
-        if (!templateId || !peopleHydrationStale || peopleHydrationLoading) return;
-        const reloadKey = `${users.length <= 1 ? 'few-users' : ''}|${[...missingSelectedUserIds].sort().join('|')}`;
-        if (lastPeopleReloadKeyRef.current === reloadKey) return;
-        lastPeopleReloadKeyRef.current = reloadKey;
-        loadModuleData('workflow-people', true).catch(error => {
-            console.warn('Workflow people reload failed:', error);
+        if (!templateId || !peopleMissing || peopleHydrationLoading) return;
+        if (lastPeopleReloadKeyRef.current === 'few-users') return;
+        lastPeopleReloadKeyRef.current = 'few-users';
+        loadModuleData('workflow-people').catch(error => {
+            console.warn('Workflow people load failed:', error);
         });
-    }, [loadModuleData, missingSelectedUserIds, orgUnits.length, peopleHydrationLoading, peopleHydrationStale, templateId, users.length]);
+    }, [loadModuleData, peopleHydrationLoading, peopleMissing, templateId]);
 
     const retryPeopleHydration = () => {
         lastPeopleReloadKeyRef.current = '';
@@ -371,34 +612,6 @@ const WorkflowBuilder: React.FC = () => {
 
     const generateId = () => crypto.randomUUID();
 
-    const toggleMaterialRequestDefaultBinding = async () => {
-        if (!templateId) return;
-        setBindingSaving(true);
-        try {
-            if (!isMaterialRequestDefault) {
-                await projectWorkflowService.setBinding({
-                    subjectType: 'material_request',
-                    workflowTemplateId: templateId,
-                    projectId: null,
-                    constructionSiteId: null,
-                });
-                setIsMaterialRequestDefault(true);
-            } else {
-                await projectWorkflowService.removeBinding({
-                    subjectType: 'material_request',
-                    projectId: null,
-                    constructionSiteId: null,
-                });
-                setIsMaterialRequestDefault(false);
-            }
-        } catch (error) {
-            console.error('Cannot update material request workflow binding:', error);
-            throw error;
-        } finally {
-            setBindingSaving(false);
-        }
-    };
-
     // ========== STEPS (NODES) MANAGEMENT ==========
 
     // Get ordered steps (excluding START and END, which are auto-managed)
@@ -435,6 +648,12 @@ const WorkflowBuilder: React.FC = () => {
         setHasChanges(true);
     };
 
+    const patchStepConfig = (nodeId: string, patch: Partial<ProjectWorkflowNodeConfig>) => {
+        if (!canConfigureTemplate) return;
+        setLocalNodes(prev => prev.map(n => n.id === nodeId ? { ...n, config: { ...n.config, ...patch } } : n));
+        setHasChanges(true);
+    };
+
     const selectedOptions = (event: React.ChangeEvent<HTMLSelectElement>) =>
         Array.from(event.target.selectedOptions).map(option => option.value).filter(Boolean);
 
@@ -445,6 +664,20 @@ const WorkflowBuilder: React.FC = () => {
         departmentIds: string[],
     ) => {
         updateStepConfig(nodeId, key, buildAssignmentTargets(userIds, departmentIds));
+    };
+
+    const activateTemplate = async () => {
+        if (!template || !canPublishTemplate || hasChanges) return;
+        setIsActivating(true);
+        try {
+            await updateTemplate({ ...template, isActive: true });
+            toast.success('Đã bật quy trình', 'Nhân viên có thể tạo nhiệm vụ theo quy trình này.');
+        } catch (error) {
+            console.error('Activate workflow template failed:', error);
+            toast.error('Chưa bật được quy trình', getApiErrorMessage(error, 'Quy trình cần ít nhất một giai đoạn đã lưu và mỗi giai đoạn phải có tên.'));
+        } finally {
+            setIsActivating(false);
+        }
     };
 
     const updateTemplateUserList = async (key: 'managers' | 'defaultWatchers', userIds: string[]) => {
@@ -686,7 +919,9 @@ const WorkflowBuilder: React.FC = () => {
             || step.config.assignmentMode === 'permission_pool'
         ).length;
         const multiSteps = steps.filter(step => step.config.assigneeSelectionMode === 'multiple').length;
-        const rejectSteps = steps.filter(step => step.config.allowReject !== false).length;
+        const allApproveSteps = steps.filter(step =>
+            step.config.assigneeSelectionMode === 'multiple' && step.config.approvalPolicy === 'ALL').length;
+        const rejectSteps = steps.filter(step => step.type !== WorkflowNodeType.ACTION && step.config.allowReject !== false).length;
         const reassignSteps = steps.filter(step => step.config.allowReassign !== false).length;
         const stepWatcherSteps = steps.filter(step => (step.config.stepWatcherTargets || []).length > 0).length;
         const requiredFieldCount = customFields.filter(field => field.required).length;
@@ -714,7 +949,9 @@ const WorkflowBuilder: React.FC = () => {
             {
                 label: 'Cho phép chọn nhiều người cho một giai đoạn',
                 value: multiSteps > 0 ? `${multiSteps}/${stepCount} giai đoạn` : 'Không',
-                hint: 'Duyệt đồng thời: một người trong danh sách duyệt là giai đoạn đi tiếp.',
+                hint: allApproveSteps > 0
+                    ? `${allApproveSteps} giai đoạn yêu cầu tất cả cùng duyệt; còn lại chỉ cần một người duyệt.`
+                    : 'Duyệt đồng thời: một người trong danh sách duyệt là giai đoạn đi tiếp.',
             },
             {
                 label: 'Người theo dõi riêng theo giai đoạn',
@@ -751,10 +988,36 @@ const WorkflowBuilder: React.FC = () => {
         ];
     }, [customFields, localNodes]);
 
+    // Project material-request and Request-module templates resolve handlers from
+    // project staff / request rules, so the generic "who handles it" check is skipped.
+    const isProjectScopedTemplate = isMaterialRequestDefault || isMaterialRequestWorkflowTemplate(template);
+    const collectStepIssues = () => {
+        if (isProjectScopedTemplate) return [] as Array<{ stepId: string; label: string; issue: string }>;
+        return getOrderedSteps().flatMap((step, index) => {
+            const issue = getWorkflowStepAssigneeIssue({ node: step, isFirstStep: index === 0, users, employees });
+            return issue ? [{ stepId: step.id, label: step.label, issue }] : [];
+        });
+    };
+
+    const openStepAssignee = (stepId: string) => {
+        setActiveTab('steps');
+        setEditingStepId(stepId);
+        setStepConfigTabs(prev => ({ ...prev, [stepId]: 'assignee' }));
+    };
+
     // ========== SAVE ==========
 
     const handleSave = async () => {
-        if (!templateId || !template || !canConfigureTemplate) return;
+        if (!templateId || !template || !canConfigureTemplate || structureState !== 'ready') return;
+        const pendingIssues = collectStepIssues();
+        if (template.isActive && pendingIssues.length > 0) {
+            toast.error(
+                'Chưa lưu được',
+                `Quy trình đang bật nên mỗi giai đoạn phải có người xử lý. Còn thiếu ở: ${pendingIssues.map(item => `"${item.label}"`).join(', ')}.`,
+            );
+            openStepAssignee(pendingIssues[0].stepId);
+            return;
+        }
         setIsSaving(true);
         try {
             const { nodes: nodesToSave, edges: edgesToSave } = buildLinearTemplateStructure(templateId, localNodes, generateId);
@@ -771,6 +1034,10 @@ const WorkflowBuilder: React.FC = () => {
             setDraftRestoredAt(null);
             setServerRefreshSkippedAt(null);
             setHasChanges(false);
+            toast.success('Đã lưu quy trình');
+        } catch (error) {
+            console.error('Save workflow template failed:', error);
+            toast.error('Không lưu được quy trình', getApiErrorMessage(error, 'Vui lòng kiểm tra lại các giai đoạn rồi thử lại.'));
         } finally {
             setIsSaving(false);
         }
@@ -787,6 +1054,8 @@ const WorkflowBuilder: React.FC = () => {
     }
 
     const orderedSteps = getOrderedSteps();
+    const stepIssues = collectStepIssues();
+    const stepIssueById = new Map(stepIssues.map(item => [item.stepId, item.issue]));
 
     return (
         <div className="wf-base flex w-full items-start gap-4">
@@ -931,18 +1200,14 @@ const WorkflowBuilder: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                    {canConfigureTemplate && <button
-                        onClick={toggleMaterialRequestDefaultBinding}
-                        disabled={bindingSaving}
-                        className={`flex items-center px-4 py-2.5 rounded-xl text-xs font-black border transition disabled:opacity-50 ${
-                            isMaterialRequestDefault
-                                ? 'border-purple-200 bg-purple-50 text-purple-700'
-                                : 'border-slate-200 bg-white/70 text-slate-500 hover:bg-slate-50'
-                        }`}
-                    >
-                        <Zap size={14} className="mr-1.5" />
-                        {bindingSaving ? 'Đang lưu...' : isMaterialRequestDefault ? 'Mặc định phiếu vật tư' : 'Gán cho phiếu vật tư'}
-                    </button>}
+                    {isMaterialRequestDefault && (
+                        <span
+                            className="flex items-center rounded-xl border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-black text-purple-700"
+                            title="Đang là quy trình mặc định cho phiếu vật tư của các dự án chưa cấu hình riêng. Thay đổi trong module Dự án."
+                        >
+                            <Zap size={14} className="mr-1.5" /> Mặc định phiếu vật tư dự án
+                        </span>
+                    )}
                     {hasChanges && (
                         <span className="text-[10px] font-bold text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-3 py-1.5 rounded-lg animate-pulse">
                             • Chưa lưu
@@ -950,13 +1215,74 @@ const WorkflowBuilder: React.FC = () => {
                     )}
                     <button
                         onClick={handleSave}
-                        disabled={isSaving || !hasChanges || !canConfigureTemplate}
+                        disabled={isSaving || !hasChanges || !canConfigureTemplate || structureState !== 'ready'}
                         className="flex items-center px-5 py-2.5 bg-accent text-white rounded-xl text-sm font-bold hover:bg-emerald-600 transition disabled:opacity-50 shadow-lg shadow-emerald-500/20"
                     >
                         <Save size={15} className="mr-2" /> {isSaving ? 'Đang lưu...' : 'Lưu'}
                     </button>
                 </div>
             </div>
+
+            {structureState !== 'ready' && (
+                <div className={`rounded-xl border px-4 py-3 text-xs font-bold ${structureState === 'error' ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-200' : 'border-indigo-100 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-200'}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span>{structureState === 'error' ? 'Không tải được các giai đoạn của quy trình. Tạm khoá nút Lưu để tránh ghi đè.' : 'Đang tải các giai đoạn của quy trình...'}</span>
+                        {structureState === 'error' && (
+                            <button
+                                type="button"
+                                onClick={() => { loadStructure(); }}
+                                className="rounded-lg border border-white/70 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-600 shadow-sm hover:bg-slate-50"
+                            >
+                                Tải lại
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {structureState === 'ready' && stepIssues.length > 0 && (
+                <div className={`rounded-xl border px-4 py-3 text-xs ${template.isActive ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200'}`}>
+                    <p className="font-black flex items-center gap-1.5">
+                        <AlertTriangle size={14} />
+                        {template.isActive
+                            ? `${stepIssues.length} giai đoạn chưa có người xử lý — nhiệm vụ sẽ không chuyển được tới các giai đoạn này.`
+                            : `${stepIssues.length} giai đoạn chưa có người xử lý — cần bổ sung trước khi bật.`}
+                    </p>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                        {stepIssues.map(item => (
+                            <li key={item.stepId}>
+                                <button
+                                    type="button"
+                                    onClick={() => openStepAssignee(item.stepId)}
+                                    className="rounded-lg border border-current/20 bg-white/80 px-2.5 py-1 font-bold hover:bg-white dark:bg-slate-900/40"
+                                    title={item.issue}
+                                >
+                                    {item.label} →
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {!template.isActive && structureState === 'ready' && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span>Quy trình đang tắt — nhân viên chưa thấy quy trình này khi tạo nhiệm vụ. Kiểm tra các giai đoạn, lưu, rồi bật khi sẵn sàng.</span>
+                        {canPublishTemplate && (
+                            <button
+                                type="button"
+                                onClick={activateTemplate}
+                                disabled={isActivating || hasChanges || stepIssues.length > 0}
+                                title={stepIssues.length > 0 ? 'Bổ sung người xử lý cho các giai đoạn trước khi bật' : hasChanges ? 'Lưu thay đổi trước khi bật' : undefined}
+                                className="rounded-lg bg-accent px-3 py-1.5 text-[11px] font-black text-white shadow-sm hover:bg-emerald-600 disabled:opacity-50"
+                            >
+                                {isActivating ? 'Đang bật...' : stepIssues.length > 0 ? 'Chưa bật được' : hasChanges ? 'Lưu trước khi bật' : 'Bật quy trình'}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {hasChanges && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
@@ -985,7 +1311,7 @@ const WorkflowBuilder: React.FC = () => {
                 </div>
             )}
 
-            {(peopleHydrationLoading || peopleHydrationError || peopleHydrationStale) && (
+            {(peopleHydrationError || (peopleMissing && peopleHydrationLoading)) && (
                 <div className={`rounded-xl border px-4 py-3 text-xs font-bold ${
                     peopleHydrationError
                         ? 'border-rose-200 bg-rose-50 text-rose-700'
@@ -993,11 +1319,9 @@ const WorkflowBuilder: React.FC = () => {
                 }`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            {peopleHydrationLoading
-                                ? 'Đang đồng bộ danh sách người dùng và phòng ban...'
-                                : peopleHydrationError
-                                    ? `Không tải được danh sách người: ${peopleHydrationError}`
-                                    : 'Danh sách người trên máy này chưa đầy đủ, hệ thống đang tải lại dữ liệu mới nhất.'}
+                            {peopleHydrationError
+                                ? `Không tải được danh sách người: ${peopleHydrationError}`
+                                : 'Đang tải danh sách người dùng và phòng ban...'}
                         </div>
                         <button
                             type="button"
@@ -1238,15 +1562,23 @@ const WorkflowBuilder: React.FC = () => {
                                                         <StepIcon size={9} className="inline mr-0.5" />
                                                         {step.type === WorkflowNodeType.APPROVAL ? 'Duyệt' : 'Hành động'}
                                                     </span>
-                                                    <span
-                                                        className="max-w-[240px] truncate text-[10px] font-medium text-slate-400"
-                                                        title={describeStepAssignment(step.config)}
-                                                    >
-                                                        👤 {describeStepAssignment(step.config)}
-                                                    </span>
+                                                    {stepIssueById.has(step.id) ? (
+                                                        <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 dark:bg-rose-900/30 dark:text-rose-300">
+                                                            <AlertTriangle size={9} /> {stepIssueById.get(step.id)}
+                                                        </span>
+                                                    ) : (
+                                                        <span
+                                                            className="max-w-[240px] truncate text-[10px] font-medium text-slate-400"
+                                                            title={describeStepAssignment(step.config)}
+                                                        >
+                                                            👤 {describeStepAssignment(step.config)}
+                                                        </span>
+                                                    )}
                                                     {step.config.assigneeSelectionMode === 'multiple' && (
                                                         <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                                                            Duyệt đồng thời
+                                                            {step.config.approvalPolicy === 'ALL'
+                                                                ? `Tất cả phải ${step.type === WorkflowNodeType.ACTION ? 'hoàn thành' : 'duyệt'}`
+                                                                : 'Duyệt đồng thời'}
                                                         </span>
                                                     )}
                                                     {step.config.slaHours && (
@@ -1281,6 +1613,7 @@ const WorkflowBuilder: React.FC = () => {
                                                 ] as Array<[typeof activeStepConfigTab, string]>).map(([tab, label]) => (
                                                     <button
                                                         key={tab}
+                                                        aria-label={tab === 'assignee' && stepIssueById.has(step.id) ? `${label} (cần bổ sung)` : undefined}
                                                         type="button"
                                                         onClick={(event) => {
                                                             event.stopPropagation();
@@ -1289,6 +1622,9 @@ const WorkflowBuilder: React.FC = () => {
                                                         className={`rounded-lg px-3 py-1.5 text-[10px] font-black transition ${activeStepConfigTab === tab ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                                                     >
                                                         {label}
+                                                        {tab === 'assignee' && stepIssueById.has(step.id) && (
+                                                            <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-rose-500 align-middle" />
+                                                        )}
                                                     </button>
                                                 ))}
                                             </div>
@@ -1312,32 +1648,25 @@ const WorkflowBuilder: React.FC = () => {
                                                         <option value={WorkflowNodeType.APPROVAL}>Phê duyệt</option>
                                                         <option value={WorkflowNodeType.ACTION}>Hành động</option>
                                                     </select>
+                                                    <p className="mt-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                                        {step.type === WorkflowNodeType.ACTION
+                                                            ? 'Người xử lý làm một việc rồi bấm "Hoàn thành". Không có nút Từ chối.'
+                                                            : 'Người xử lý quyết định: Duyệt, Yêu cầu bổ sung hoặc Từ chối.'}
+                                                    </p>
                                                 </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Phân công theo vai trò</label>
-                                                    <select
-                                                        value={step.config.assigneeRole || ''}
-                                                        onChange={e => updateStepConfig(step.id, 'assigneeRole', e.target.value)}
-                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        <option value="">-- Không chỉ định --</option>
-                                                        <option value={Role.ADMIN}>Quản trị</option>
-                                                        <option value={Role.WAREHOUSE_KEEPER}>Thủ kho</option>
-                                                        <option value={Role.EMPLOYEE}>Nhân viên</option>
-                                                    </select>
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Hoặc chỉ định cụ thể</label>
-                                                    <select
-                                                        value={step.config.assigneeUserId || ''}
-                                                        onChange={e => updateStepConfig(step.id, 'assigneeUserId', e.target.value)}
-                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        <option value="">-- Không chỉ định --</option>
-                                                        {users.map(u => (
-                                                            <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                                                        ))}
-                                                    </select>
+                                                <div className={activeStepConfigTab === 'assignee' ? 'md:col-span-2' : 'hidden'}>
+                                                    <StepAssigneeEditor
+                                                        config={step.config}
+                                                        isFirstStep={idx === 0}
+                                                        issue={stepIssueById.get(step.id) || null}
+                                                        users={users}
+                                                        orgUnits={orgUnits}
+                                                        showProjectPermissionField={isProjectScopedTemplate || (step.config.eligiblePermissionCodes || []).length > 0}
+                                                        allowAllApprovalPolicy={!isProjectScopedTemplate}
+                                                        isActionStep={step.type === WorkflowNodeType.ACTION}
+                                                        disabled={!canConfigureTemplate}
+                                                        onPatch={patch => patchStepConfig(step.id, patch)}
+                                                    />
                                                 </div>
                                                 <div className={activeStepConfigTab === 'watchers' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">SLA (giờ)</label>
@@ -1346,52 +1675,6 @@ const WorkflowBuilder: React.FC = () => {
                                                         value={step.config.slaHours || ''}
                                                         onChange={e => updateStepConfig(step.id, 'slaHours', Number(e.target.value) || undefined)}
                                                         placeholder="VD: 24"
-                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
-                                                    />
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Cách gán người</label>
-                                                    <select
-                                                        value={step.config.assignmentMode || 'select_on_transition'}
-                                                        onChange={e => updateStepConfig(step.id, 'assignmentMode', e.target.value)}
-                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        <option value="select_on_submit">Chọn khi gửi</option>
-                                                        <option value="select_on_transition">Chọn khi chuyển bước</option>
-                                                        <option value="fixed_user">Người cố định</option>
-                                                        <option value="permission_pool">Theo nhóm quyền</option>
-                                                        <option value="previous_assignee">Người đã xử lý trước</option>
-                                                        <option value="creator">Người tạo phiếu</option>
-                                                    </select>
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Rule duyệt</label>
-                                                    <select
-                                                        value={step.config.approvalPolicy || 'ANY_ONE'}
-                                                        onChange={e => updateStepConfig(step.id, 'approvalPolicy', e.target.value)}
-                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        <option value="ANY_ONE">Một người duyệt là qua</option>
-                                                    </select>
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Chế độ chọn người khi chuyển bước</label>
-                                                    <select
-                                                        value={step.config.assigneeSelectionMode || 'single'}
-                                                        onChange={e => updateStepConfig(step.id, 'assigneeSelectionMode', e.target.value)}
-                                                        className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
-                                                    >
-                                                        <option value="single">Chọn một người</option>
-                                                        <option value="multiple">Chọn nhiều người</option>
-                                                    </select>
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Quyền được chọn</label>
-                                                    <input
-                                                        type="text"
-                                                        value={(step.config.eligiblePermissionCodes || []).join(', ')}
-                                                        onChange={e => updateStepConfig(step.id, 'eligiblePermissionCodes', e.target.value.split(',').map(code => code.trim()).filter(Boolean))}
-                                                        placeholder="VD: approve, verify"
                                                         className="w-full px-3 py-2.5 bg-white/80 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-accent"
                                                     />
                                                 </div>
@@ -1404,36 +1687,6 @@ const WorkflowBuilder: React.FC = () => {
                                                     >
                                                         <option value="to_creator">Về người tạo</option>
                                                     </select>
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool người mặc định</label>
-                                                    <SearchableCheckboxSelect
-                                                        options={users.map(item => ({ id: item.id, label: item.name, sublabel: item.role }))}
-                                                        selectedValues={getTargetUserIds(step.config.assignmentTargets)}
-                                                        onChange={values => updateStepTargets(
-                                                            step.id,
-                                                            'assignmentTargets',
-                                                            values,
-                                                            getTargetDepartmentIds(step.config.assignmentTargets),
-                                                        )}
-                                                        placeholder="Tìm kiếm người..."
-                                                        maxHeightClass="h-28"
-                                                    />
-                                                </div>
-                                                <div className={activeStepConfigTab === 'assignee' ? '' : 'hidden'}>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Pool phòng ban mặc định</label>
-                                                    <SearchableCheckboxSelect
-                                                        options={orgUnits.filter(unit => unit.type === 'department').map(unit => ({ id: unit.id, label: unit.name }))}
-                                                        selectedValues={getTargetDepartmentIds(step.config.assignmentTargets)}
-                                                        onChange={values => updateStepTargets(
-                                                            step.id,
-                                                            'assignmentTargets',
-                                                            getTargetUserIds(step.config.assignmentTargets),
-                                                            values,
-                                                        )}
-                                                        placeholder="Tìm kiếm phòng ban..."
-                                                        maxHeightClass="h-28"
-                                                    />
                                                 </div>
                                                 <div className={activeStepConfigTab === 'watchers' ? '' : 'hidden'}>
                                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Theo dõi bước - người</label>
@@ -1466,13 +1719,13 @@ const WorkflowBuilder: React.FC = () => {
                                                     />
                                                 </div>
                                                 <div className={`items-center gap-2 pt-5 ${activeStepConfigTab === 'actions' ? 'flex' : 'hidden'}`}>
-                                                    <button
+                                                    {step.type !== WorkflowNodeType.ACTION && <button
                                                         type="button"
                                                         onClick={() => updateStepConfig(step.id, 'allowReject', step.config.allowReject === false)}
                                                         className={`rounded-xl border px-3 py-2 text-xs font-black ${step.config.allowReject !== false ? 'border-red-200 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-400'}`}
                                                     >
                                                         Từ chối
-                                                    </button>
+                                                    </button>}
                                                     <button
                                                         type="button"
                                                         onClick={() => updateStepConfig(step.id, 'allowReassign', step.config.allowReassign === false)}

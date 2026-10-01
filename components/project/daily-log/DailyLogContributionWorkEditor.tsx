@@ -31,6 +31,10 @@ export interface DailyLogContributionWorkEditorProps {
   onClose?: () => void;
   onUploadPhoto?: (file: File) => Promise<DailyLogPhoto>;
   onBusyChange?: (busy: boolean) => void;
+  /** V2 slip only: the author discarded this never-sent draft. */
+  onDeleted?: (areaName: string) => void;
+  /** V2 slip only: the author took the sent slip back to edit. */
+  onWithdrawn?: () => void;
 }
 
 const blankProvider = (): DailyLogResourceProvider => ({ entryMode: 'catalog' });

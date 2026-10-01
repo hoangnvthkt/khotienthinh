@@ -12,7 +12,7 @@ import RequestTemplateNotificationSection from '../../components/request/templat
 import RequestTemplatePreview from '../../components/request/template/RequestTemplatePreview';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { buildRequestTemplateSaveInput, createEmptyRequestTemplateDraft, requestTemplateDraftReducer, shouldScheduleRequestTemplateAutosave, validateRequestTemplateForPublish, validateRequestTemplateForSave, type RequestTemplateDraft } from '../../lib/requestTemplateEditorModel';
+import { buildRequestTemplateSaveInput, createEmptyRequestTemplateDraft, notificationEventsFromConfig, requestTemplateDraftReducer, shouldScheduleRequestTemplateAutosave, validateRequestTemplateForPublish, validateRequestTemplateForSave, type RequestTemplateDraft } from '../../lib/requestTemplateEditorModel';
 import { formatRequestTemplateSaveError } from '../../lib/requestTemplateError';
 import { requestTemplateService, type RequestTemplateDraftRecord } from '../../lib/requestTemplateService';
 
@@ -34,7 +34,7 @@ const fromRecord = (record: RequestTemplateDraftRecord): RequestTemplateDraft =>
   ],
   fixedWatcherIds: record.payload.watcherUserIds,
   print: record.payload.printConfig,
-  notificationEvents: Object.entries(record.payload.notificationConfig).filter(([, enabled]) => enabled).map(([event]) => event as RequestTemplateDraft['notificationEvents'][number]),
+  notificationEvents: notificationEventsFromConfig(record.payload.notificationConfig),
 });
 
 const isStructurallySaveable = (draft: RequestTemplateDraft) => draft.name.trim().length > 0
@@ -57,6 +57,8 @@ const RequestTemplateEditor: React.FC = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [hasNoDraft, setHasNoDraft] = useState(false);
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
   const saveInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -67,6 +69,8 @@ const RequestTemplateEditor: React.FC = () => {
       try {
         const record = await requestTemplateService.getDraft(templateId);
         if (!active) return;
+        setHasNoDraft(!record);
+        if (!record) return;
         dispatch({ type: 'REPLACE_DRAFT', draft: fromRecord(record) });
         setUpdatedAt(record.updatedAt);
         setDraftVersionId(record.draftVersionId ?? null);
@@ -178,6 +182,31 @@ const RequestTemplateEditor: React.FC = () => {
     } finally { setIsPublishing(false); }
   };
   const saveHint = useMemo(() => isSaving ? 'Đang lưu...' : saveError ? 'Lưu thất bại' : isDirty ? 'Chưa lưu' : updatedAt ? 'Đã lưu' : 'Bản nháp mới', [isDirty, isSaving, saveError, updatedAt]);
+  const startDraft = async () => {
+    if (!templateId) return;
+    setIsCreatingDraft(true);
+    try {
+      const record = await requestTemplateService.createDraftFromPublished(templateId);
+      dispatch({ type: 'REPLACE_DRAFT', draft: fromRecord(record) });
+      setUpdatedAt(record.updatedAt);
+      setDraftVersionId(record.draftVersionId ?? null);
+      setHasNoDraft(false);
+      setSaveError(null);
+    } catch (cause) {
+      console.error('Create request template draft failed:', cause);
+      toast.error('Không thể tạo bản nháp', formatRequestTemplateSaveError(cause));
+    } finally { setIsCreatingDraft(false); }
+  };
+
+  if (hasNoDraft) return <div className="flex h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
+    <p className="text-base font-bold text-slate-800 dark:text-white">Mẫu này đang áp dụng và không có bản nháp</p>
+    <p className="max-w-md text-sm text-slate-500">Tạo bản nháp để sửa. Phiên bản đang áp dụng vẫn được dùng bình thường cho đến khi bạn phát hành bản mới.</p>
+    <div className="flex gap-2">
+      <button onClick={() => navigate('/rq/templates')} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300">Về danh sách mẫu</button>
+      <button disabled={isCreatingDraft} onClick={() => void startDraft()} className="inline-flex items-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50">{isCreatingDraft && <LoaderCircle size={16} className="mr-2 animate-spin" />}Tạo bản nháp để sửa</button>
+    </div>
+  </div>;
+
   if (isLoading) return <div className="flex h-[60vh] items-center justify-center gap-2 text-sm text-slate-400"><LoaderCircle size={20} className="animate-spin" /> Đang tải bản nháp...</div>;
 
   const general = <><RequestTemplateGeneralSection draft={draft} updatedAt={updatedAt} dispatch={apply} issues={validationIssues} /><RequestTemplateScopeEditor scopes={draft.scopes} dispatch={apply} /></>;

@@ -32,6 +32,9 @@ export const getApiErrorMessage = (
 
   if (!rawMessage) return fallbackMessage;
 
+  if (rawMessage.includes('purchase_order_create_moved_to_procurement')) {
+    return 'Đơn hàng từ phiếu đề xuất nay lập tại màn Mua hàng. Phòng Mua hàng sẽ tiếp nhận phiếu đã duyệt.';
+  }
   if (rawMessage.includes('invalid login credentials')) {
     return 'Tên đăng nhập hoặc mật khẩu không chính xác.';
   }
@@ -43,6 +46,22 @@ export const getApiErrorMessage = (
   }
   if (rawMessage.includes('failed to fetch') || rawMessage.includes('network') || rawMessage.includes('timeout')) {
     return 'Không kết nối được máy chủ. Vui lòng kiểm tra mạng và thử lại.';
+  }
+  if (rawMessage.includes('workflow_command_forbidden')) {
+    return 'Bạn không có quyền thực hiện thao tác này.';
+  }
+  if (rawMessage.includes('workflow_template_invalid') || rawMessage.includes('invalid workflow template structure')) {
+    return err.details
+      ? `Quy trình chưa hợp lệ. ${err.details.split('\n').join(' ')}`
+      : 'Quy trình chưa hợp lệ: cần ít nhất một bước xử lý đã lưu và mỗi bước phải có tên.';
+  }
+  if (rawMessage.includes('workflow_step_assignee_missing')) {
+    return err.details
+      ? `Mỗi bước phải có người xử lý. ${err.details.split('\n').join(' ')}`
+      : 'Mỗi bước phải có người xử lý trước khi bật quy trình.';
+  }
+  if (rawMessage.includes('workflow_category_name_taken')) {
+    return 'Tên nhóm này đã có. Vui lòng đặt tên khác.';
   }
   if (rawMessage.includes('row-level security') || rawMessage.includes('permission denied') || rawMessage.includes('not authorized') || err.status === 401 || err.status === 403) {
     return 'Bạn không có quyền thực hiện thao tác này.';
@@ -58,6 +77,15 @@ export const getApiErrorMessage = (
   }
   if (rawMessage.includes('foreign key') || rawMessage.includes('23503') || rawMessage.includes('referenced from table')) {
     return 'Dữ liệu liên quan không hợp lệ hoặc đang được sử dụng ở nơi khác. Vui lòng kiểm tra lại.';
+  }
+  if (rawMessage.includes('inventory_negative_stock')) {
+    return (originalMessage || '').replace(/^INVENTORY_NEGATIVE_STOCK:\s*/, '') || 'Không đủ tồn kho để xuất.';
+  }
+  if (rawMessage.includes('purchase_receipt_not_receivable')) {
+    return 'Đợt giao đã được nhận hoặc hủy ở nơi khác. Đóng và mở lại phiếu để xem trạng thái mới.';
+  }
+  if (rawMessage.includes('purchase_receipt_batch_mismatch')) {
+    return 'Phiếu kho không khớp đợt giao. Tải lại rồi thử lại.';
   }
   if (rawMessage.includes('insufficient stock') || rawMessage.includes('không đủ tồn') || rawMessage.includes('tồn khả dụng')) {
     return originalMessage || 'Không đủ tồn kho khả dụng để thực hiện thao tác.';

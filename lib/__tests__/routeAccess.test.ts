@@ -186,6 +186,14 @@ describe('workflow route access', () => {
     expect(canAccessRoute(templateViewer, '/wf')).toBe(false);
     expect(canAccessRoute(persona(Role.EMPLOYEE, []), '/wf')).toBe(false);
   });
+
+  it('opens a single ticket link for people named on it; the database decides per ticket', () => {
+    const noWorkflowPermission = persona(Role.EMPLOYEE, []);
+    expect(canAccessRoute(noWorkflowPermission, '/wf/3f0a8c1e-1111-4222-8333-944455556666')).toBe(true);
+    expect(canAccessRoute(noWorkflowPermission, '/wf/instances/instance-1')).toBe(true);
+    expect(canAccessRoute(noWorkflowPermission, '/wf/dashboard')).toBe(false);
+    expect(canAccessRoute(noWorkflowPermission, '/wf/builder/template-1')).toBe(false);
+  });
 });
 
 describe('navigation module access', () => {

@@ -18,7 +18,8 @@ describe('request template routes', () => {
   });
 
   it('separates same-template editing from independent template copying', () => {
-    expect(templateList).toContain('title="Sửa mẫu"');
+    expect(templateList).toContain("title={template.hasDraft ? 'Tiếp tục sửa bản nháp' : 'Sửa mẫu'}");
+    expect(templateList).toContain('requestTemplateService.reactivate');
     expect(templateList).toContain('title="Sửa bản nháp"');
     expect(templateList).toContain('title="Sao chép mẫu"');
     expect(templateList).toContain('requestTemplateService.createDraftFromPublished');

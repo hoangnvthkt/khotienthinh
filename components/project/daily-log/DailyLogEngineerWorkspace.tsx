@@ -21,6 +21,9 @@ export const DailyLogEngineerWorkspace: React.FC<{
   const [localError, setLocalError] = useState<string | null>(null);
   const [pendingCreate, setPendingCreate] = useState<CreateDailyLogSourceInput | null>(null);
   const [existingSourceId, setExistingSourceId] = useState<string | null>(null);
+  // Fresh list after a delete; the parent's bundle still lists the removed slip.
+  const [listBundle, setListBundle] = useState<DailyLogDocumentBundle | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const flight = useRef(false);
   const generation = useRef(0);
   useEffect(() => () => { generation.current += 1; }, []);
@@ -29,7 +32,7 @@ export const DailyLogEngineerWorkspace: React.FC<{
     if (flight.current || editorBusy || ids[0] === selected[0]) return;
     if (document && ['draft','returned'].includes(document.contribution!.status)
       && !window.confirm('Chuyển phiếu sẽ bỏ thay đổi chưa lưu. Anh/chị đã lưu phiếu đang sửa chưa?')) return;
-    flight.current = true; setBusy(true); setLocalError(null);
+    flight.current = true; setBusy(true); setLocalError(null); setNotice(null);
     const request = ++generation.current;
     try { const next = await load(ids[0]); if(request === generation.current) { setDocument(next); setSelected(ids); setCreate(false); } }
     catch(caught) { setLocalError(caught instanceof Error ? caught.message : 'Không thể mở phiếu đã chọn.'); }
@@ -51,13 +54,18 @@ export const DailyLogEngineerWorkspace: React.FC<{
     }
     finally { flight.current = false; setBusy(false); }
   };
-  const active = document || bundle;
+  const reloadDocument = (id: string) => { setBusy(true); load(id).then(setDocument).catch(caught => setLocalError(caught.message)).finally(() => setBusy(false)); };
+  const deleted = (areaName: string) => {
+    generation.current += 1; setDocument(null); setSelected([]); setNotice(`Đã xóa phiếu nháp "${areaName}".`); onSubmitted();
+    setBusy(true); load(null).then(setListBundle).catch(caught => setLocalError(caught.message)).finally(() => setBusy(false));
+  };
+  const active = document || listBundle || bundle;
   const selector = <>
       <label>Ngày lập phiếu<input type="date" value={date} disabled={busy || editorBusy} onChange={event => {
         if(!document || window.confirm('Đổi ngày sẽ bỏ thay đổi chưa lưu. Tiếp tục?')) onDateChange(event.target.value);
       }} /></label>
       {active && <fieldset disabled={busy || editorBusy || loading || Boolean(pendingCreate)} className="m-0 min-w-0 border-0 p-0">
-        <DailyLogSourcePicker sources={active.myContributions.filter(source => source.sourceDocumentVersion === 2)} selectedIds={selected} selectionMode="single"
+        <DailyLogSourcePicker sources={(active.myContributions ?? []).filter(source => source.sourceDocumentVersion === 2)} selectedIds={selected} selectionMode="single"
           onChange={ids => { void choose(ids); }} onCreateArea={active.permissions.canCreateSource ? () => {
             if(!document || !['draft','returned'].includes(document.contribution!.status) || window.confirm('Tạo phiếu khác sẽ bỏ thay đổi chưa lưu. Tiếp tục?')) { setCreate(true); setDocument(null); setSelected([]); }
           } : undefined} />
@@ -69,6 +77,7 @@ export const DailyLogEngineerWorkspace: React.FC<{
         {!document && <button type="button" onClick={onClose}>Đóng</button>}</div>
       }
       {loading && <p role="status">Đang tải danh sách phiếu…</p>}
+      {notice && !localError && <p role="status" className="dl-slip-info">{notice}</p>}
       {(error || localError) && <div role="alert" className="dl-slip-error"><p>{localError || error}</p>
         {existingSourceId && <button type="button" disabled={busy} onClick={() => { void choose([existingSourceId]); }}>Mở phiếu có sẵn</button>}</div>}
       {document ? <details key={document.contribution!.id} className="dl-slip-selection"><summary>Đổi ngày hoặc phiếu</summary><div>{selector}</div></details> : selector}
@@ -80,7 +89,9 @@ export const DailyLogEngineerWorkspace: React.FC<{
     </div>
     {document && document.contribution && <DailyLogContributionWorkEditor key={`${document.contribution.id}:${document.contribution.rowVersion}`} bundle={document}
       onClose={onClose} onBusyChange={setEditorBusy} onUploadPhoto={onUploadPhoto}
-      onReload={() => { setBusy(true); load(document.contribution!.id).then(setDocument).catch(caught => setLocalError(caught.message)).finally(() => setBusy(false)); }}
-      onSubmitted={() => { onSubmitted(); setBusy(true); load(document.contribution!.id).then(setDocument).catch(caught => setLocalError(caught.message)).finally(() => setBusy(false)); }} />}
+      onReload={() => reloadDocument(document.contribution!.id)}
+      onSubmitted={() => { onSubmitted(); reloadDocument(document.contribution!.id); }}
+      onWithdrawn={() => { setNotice('Đã rút phiếu về. Sửa xong bấm "Gửi lại tổng hợp".'); onSubmitted(); reloadDocument(document.contribution!.id); }}
+      onDeleted={deleted} />}
   </section>;
 };

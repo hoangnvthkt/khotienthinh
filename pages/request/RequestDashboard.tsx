@@ -8,7 +8,7 @@ import { buildRequestRoute } from '../../lib/requestRoutes';
 
 type SummaryCardProps = {
   label: string;
-  value: number;
+  value: number | null;
   description: string;
   Icon: typeof FileText;
   tone: string;
@@ -19,7 +19,7 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ label, value, description, Ic
     <div className="flex items-start justify-between gap-3">
       <div>
         <p className="text-xs font-semibold text-slate-500">{label}</p>
-        <p className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">{value}</p>
+        <p className="mt-1 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">{value ?? '—'}</p>
       </div>
       <span className={`rounded-xl p-2.5 ${tone}`}><Icon size={18} /></span>
     </div>
@@ -52,12 +52,12 @@ const RequestDashboard: React.FC = () => {
 
   const select = (requestId: string) => navigate(buildRequestRoute(requestId));
   const cards: SummaryCardProps[] = [
-    { label: 'Tổng đề xuất', value: summary?.all ?? 0, description: 'Các hồ sơ bạn có quyền xem.', Icon: FileText, tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
-    { label: 'Chờ bạn duyệt', value: summary?.assignedToMe ?? 0, description: 'Đang ở bước phê duyệt của bạn.', Icon: Clock3, tone: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' },
-    { label: 'Đã trả lại', value: summary?.returned ?? 0, description: 'Cần người tạo bổ sung hoặc gửi lại.', Icon: RotateCcw, tone: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300' },
-    { label: 'Quá hạn', value: summary?.overdue ?? 0, description: 'Hồ sơ vượt SLA đang được theo dõi.', Icon: TriangleAlert, tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' },
-    { label: 'Đã chấp thuận', value: summary?.approved ?? 0, description: 'Đề xuất hoàn tất phê duyệt.', Icon: CheckCircle2, tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' },
-    { label: 'Đã từ chối', value: summary?.rejected ?? 0, description: 'Đề xuất kết thúc vì bị từ chối.', Icon: XCircle, tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' },
+    { label: 'Tổng đề xuất', value: summary?.all ?? null, description: 'Các hồ sơ bạn có quyền xem.', Icon: FileText, tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+    { label: 'Chờ bạn duyệt', value: summary?.assignedToMe ?? null, description: 'Đang ở bước phê duyệt của bạn.', Icon: Clock3, tone: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' },
+    { label: 'Trả lại', value: summary?.returned ?? null, description: 'Cần người tạo bổ sung hoặc gửi lại.', Icon: RotateCcw, tone: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300' },
+    { label: 'Quá hạn', value: summary?.overdue ?? null, description: 'Hồ sơ vượt SLA đang được theo dõi.', Icon: TriangleAlert, tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' },
+    { label: 'Hoàn thành', value: summary?.approved ?? null, description: 'Đề xuất hoàn tất phê duyệt.', Icon: CheckCircle2, tone: 'bg-mint-100 text-mint-700 dark:bg-mint-900/40 dark:text-mint-300' },
+    { label: 'Từ chối', value: summary?.rejected ?? null, description: 'Đề xuất kết thúc vì bị từ chối.', Icon: XCircle, tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' },
   ];
 
   return (
@@ -80,7 +80,7 @@ const RequestDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/rq')}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-700"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-leaf-600 px-3 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm shadow-leaf-600/20 transition hover:bg-leaf-700"
           >
             <Send size={15} />
             <span>Mở danh sách</span>
@@ -108,7 +108,7 @@ const RequestDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => navigate('/rq')}
-            className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
+            className="inline-flex items-center gap-1 text-xs sm:text-sm font-semibold text-mint-700 hover:text-mint-700 dark:text-mint-400"
           >
             <span>Xem tất cả</span> <ArrowRight size={14} />
           </button>
@@ -116,7 +116,7 @@ const RequestDashboard: React.FC = () => {
 
         {list.loading ? (
           <div className="flex min-h-56 items-center justify-center">
-            <Loader2 className="animate-spin text-emerald-600" />
+            <Loader2 className="animate-spin text-mint-700" />
           </div>
         ) : list.error ? (
           <div className="flex min-h-56 flex-col items-center justify-center gap-3 p-6 text-center">
@@ -125,7 +125,7 @@ const RequestDashboard: React.FC = () => {
             <button
               type="button"
               onClick={() => void list.refresh()}
-              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+              className="rounded-xl bg-leaf-600 px-4 py-2 text-sm font-semibold text-white"
             >
               Thử lại
             </button>
@@ -142,7 +142,7 @@ const RequestDashboard: React.FC = () => {
                   className="w-full text-left rounded-xl border border-slate-200/80 bg-slate-50/50 p-3 shadow-xs transition-all active:bg-slate-100 dark:border-slate-800 dark:bg-slate-900/60 dark:active:bg-slate-800"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-mono text-xs font-semibold text-emerald-600 dark:text-emerald-400">{item.code}</span>
+                    <span className="font-mono text-xs font-semibold text-mint-700 dark:text-mint-400">{item.code}</span>
                     <RequestStatusBadge status={item.status} />
                   </div>
                   <p className="mt-1 text-sm font-semibold leading-snug text-slate-900 line-clamp-2 dark:text-white">{item.title}</p>

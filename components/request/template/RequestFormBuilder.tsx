@@ -10,7 +10,7 @@ interface Props {
 }
 
 const fieldTypes: Array<{ value: RequestFieldType; label: string }> = [
-  { value: 'text', label: 'Văn bản ngắn' }, { value: 'textarea', label: 'Văn bản dài' },
+  { value: 'text', label: 'Văn bản ngắn' }, { value: 'textarea', label: 'Văn bản dài (có định dạng)' },
   { value: 'number', label: 'Số' }, { value: 'date', label: 'Ngày tháng' },
   { value: 'select', label: 'Danh sách chọn' }, { value: 'table', label: 'Dữ liệu dạng bảng (table)' },
   { value: 'user', label: 'Người dùng' }, { value: 'file', label: 'Tệp đính kèm' },

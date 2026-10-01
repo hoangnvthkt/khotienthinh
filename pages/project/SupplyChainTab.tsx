@@ -180,7 +180,8 @@ import {
     hasRequestRowDefaultSupplierMismatch,
     setPurchaseOrderRequestCartGroupSelection,
 } from '../../lib/purchaseOrderRequestCart';
-import { getPurchaseOrderUiPolicy, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
+import { getPurchaseOrderUiPolicy, isProcurementHubPurchaseOrder, type PurchaseOrderUiAction } from '../../lib/purchaseOrderUiPolicy';
+import { procurementContractService } from '../../lib/procurementContractService';
 import { findPurchaseOrderCommercialLineIssue } from '../../lib/purchaseOrderCommercialLines';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { formatLocaleDecimalInput, formatViLiveInput, parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
@@ -437,6 +438,7 @@ const SUPPLIER_DIRECT_DELIVERY_STATUS: Record<SupplierDirectDeliveryNote['status
 
 const SUPPLIER_DELIVERY_STATEMENT_STATUS: Record<SupplierDeliveryStatement['status'], { label: string; tone: ErpStatusTone }> = {
     draft: { label: 'Nháp', tone: 'neutral' },
+    confirmed: { label: 'Chờ kế toán ghi công nợ', tone: 'warning' },
     posted: { label: 'Đã ghi AP', tone: 'success' },
     cancelled: { label: 'Huỷ', tone: 'danger' },
     reversed: { label: 'Đã đảo', tone: 'warning' },
@@ -1698,6 +1700,27 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         } catch (error: any) {
             logApiError('supplyChain.supplierDelivery.createWms', error);
             toast.error('Không tạo được WMS import', getApiErrorMessage(error, 'Không thể tạo phiếu nhập WMS từ phiếu giao HĐ.'));
+        } finally {
+            setSupplierDeliveryActionLoading(null);
+        }
+    };
+
+    const decideContractStatement = async (statementId: string, action: 'post' | 'return') => {
+        let reason: string | undefined;
+        if (action === 'return') {
+            const typed = await reasonConfirm({ title: 'Trả lại bảng đối soát cho Mua hàng', targetName: supplierDeliveryStatements.find(item => item.id === statementId)?.code || '',
+                reasonLabel: 'Lý do', reasonPlaceholder: 'VD: Sai đơn giá tháng 10, thiếu phiếu giao ngày…', actionLabel: 'Trả lại', intent: 'warning' });
+            if (!typed?.trim()) return;
+            reason = typed.trim();
+        }
+        setSupplierDeliveryActionLoading(`post:${statementId}`);
+        try {
+            await procurementContractService.transitionStatement({ statementId, action, reason });
+            toast.success(action === 'post' ? 'Đã ghi công nợ NCC' : 'Đã trả lại bảng đối soát cho Mua hàng');
+            const rows = await supplierDeliveryStatementService.list({ projectId: projectId || null, constructionSiteId: constructionSiteId || null });
+            setSupplierDeliveryStatements(rows);
+        } catch (error: any) {
+            toast.error('Chưa thực hiện được', error instanceof Error ? error.message : getApiErrorMessage(error, 'Thử lại sau.'));
         } finally {
             setSupplierDeliveryActionLoading(null);
         }
@@ -6795,6 +6818,26 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     </button>
                                 )}
                             </div>
+                            {/* 01/10/2026: Mua hàng lập bảng đối soát tháng; kế toán dự án ghi công nợ tại đây. */}
+                            <div className="border-b border-slate-100 px-4 py-2 text-[11px] font-semibold text-slate-500 dark:border-slate-800">
+                                Cuối tháng phòng Mua hàng gom phiếu giao thành bảng đối soát với NCC; kế toán dự án ghi công nợ bên dưới.
+                            </div>
+                            {supplierDeliveryStatements.some(item => item.status === 'confirmed') && (
+                                <div className="space-y-2 border-b border-amber-100 bg-amber-50/60 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+                                    <div className="text-[11px] font-black uppercase text-amber-800 dark:text-amber-200">Bảng đối soát chờ ghi công nợ</div>
+                                    {supplierDeliveryStatements.filter(item => item.status === 'confirmed').map(item => (
+                                        <div key={item.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs dark:border-amber-900 dark:bg-slate-950">
+                                            <span className="font-black text-slate-800 dark:text-slate-100">{item.code}</span>
+                                            <span className="text-slate-500">{item.supplierNameSnapshot} · HĐ {item.supplierContractCode}</span>
+                                            <span className="ml-auto font-black tabular-nums">{fmtMoney(item.totalAmount)} đ</span>
+                                            <button type="button" disabled={supplierDeliveryActionLoading === `post:${item.id}`} onClick={() => void decideContractStatement(item.id, 'return')}
+                                                className="rounded-md border border-slate-200 px-2 py-1 font-black text-slate-600 hover:bg-slate-50">Trả lại</button>
+                                            <button type="button" disabled={supplierDeliveryActionLoading === `post:${item.id}`} onClick={() => void decideContractStatement(item.id, 'post')}
+                                                className="rounded-md bg-emerald-600 px-2 py-1 font-black text-white hover:bg-emerald-700">Ghi công nợ</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-2 border-b border-slate-100 bg-slate-50/50 p-4 text-xs dark:border-slate-800 dark:bg-slate-900/20 lg:grid-cols-4">
                                 <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
                                     <div className="text-[10px] font-black uppercase text-slate-400">HĐ NCC</div>
@@ -6947,11 +6990,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                                                             <ExternalLink size={11} className="inline" /> Xuất {index + 1}
                                                                         </button>
                                                                     ))}
-                                                                    {effectiveSupplierDeliveryCapabilities.canReconcileSupplierDelivery && !postedStatement && (note.status === 'accepted' || note.status === 'statemented') && (
-                                                                        <button type="button" onClick={() => void openSupplierDeliveryStatementPricing(note)} disabled={isBusy || statementBlockedByWms} title={statementBlockedByWms ? 'Còn dòng nhập-xuất thẳng chưa WMS export COMPLETED.' : 'Tạo đối soát HĐ NCC và ghi AP'} className="rounded-md px-2 py-1 text-[10px] font-black text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">
-                                                                            {isBusy ? <Loader2 size={11} className="inline animate-spin" /> : <FileText size={11} className="inline" />} Đối soát/AP
-                                                                        </button>
-                                                                    )}
                                                                 </div>
                                                             </td>
                                                         </tr>
@@ -7135,23 +7173,13 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Quản lý PO theo nhà cung cấp, đợt giao, in chứng từ và trạng thái kho.</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <button onClick={handleDownloadPoTemplate}
-                                className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-100 active:scale-[0.98] dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300">
-                                <FileSpreadsheet size={12} /> Mẫu Excel
-                            </button>
+                            {/* 01/10/2026: mọi đơn hàng (từ đề xuất hay mua chủ động) lập và duyệt tại Mua hàng; tab dự án theo dõi, lập đợt giao và nhận hàng. */}
                             {effectivePoCapabilities.canEditPo && (
-                                <>
-                                    <button onClick={openRequestPicker}
-                                        disabled={scopedRequestLines.length === 0}
-                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
-                                        <Package size={12} /> Tạo từ đề xuất
-                                    </button>
-                                    <button onClick={openCreatePo}
-                                        disabled={partners.length === 0 || inventoryItems.length === 0 || warehouses.length === 0}
-                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300">
-                                        <Plus size={12} /> Tạo PO
-                                    </button>
-                                </>
+                                <a href="#/procurement"
+                                    title="Phòng Mua hàng tiếp nhận phiếu đề xuất / KH vật tư đã duyệt, lập và duyệt đơn hàng. Cần mua chủ động: lập đề xuất vật tư trước."
+                                    className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-700 transition hover:bg-teal-100 active:scale-[0.98] dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300">
+                                    <Package size={12} /> Đơn hàng lập tại Mua hàng
+                                </a>
                             )}
                         </div>
                     </div>
@@ -7221,7 +7249,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                             ) : inventoryItems.length === 0 || warehouses.length === 0 ? (
                                 <EmptyState icon={<AlertTriangle size={18} />} title="Thiếu danh mục vật tư hoặc kho nhận" message="Cần có vật tư WMS và kho nhận trước khi tạo PO." compact />
                             ) : (
-                                <EmptyState icon={<FileText size={18} />} title="Chưa có đơn hàng" message="Tạo PO thủ công hoặc tạo từ đề xuất công trường để bắt đầu theo dõi." />
+                                <EmptyState icon={<FileText size={18} />} title="Chưa có đơn hàng" message="Đơn hàng do phòng Mua hàng lập từ đề xuất vật tư đã duyệt; đơn sẽ hiện ở đây để theo dõi và nhận hàng." />
                             )}
                         </div>
                     ) : filteredPos.length === 0 ? (
@@ -7280,12 +7308,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                     const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                                     const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                                    const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
-                                    const canSubmitPoDocument = Boolean(
+                                    // PO lập tại Mua hàng: tab dự án chỉ xem, lập đợt giao và nhận hàng.
+                                    const isHubPo = isProcurementHubPurchaseOrder(po);
+                                    const canMutatePoDocument = !isHubPo && canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                                    const canSubmitPoDocument = !isHubPo && Boolean(
                                         (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
                                         && ['draft', 'returned'].includes(po.status),
                                     );
-                                    const canApprovePoDocument = Boolean(
+                                    const canApprovePoDocument = !isHubPo && Boolean(
                                         effectivePoCapabilities.canApprovePo
                                         && (
                                             (po.status === 'sent' && isPoApprovalAssignee(po))
@@ -7300,10 +7330,12 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                             )
                                         ),
                                     );
-                                    const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
+                                    const canDeletePoDocument = !isHubPo && canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                                     const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
                                     const isCompanyConsolidatedPo = po.sourceMode === 'company_consolidated';
-                                    const editBlockReason = isCompanyConsolidatedPo
+                                    const editBlockReason = isHubPo
+                                        ? 'Đơn lập tại Mua hàng — sửa, gửi và duyệt ở màn Mua hàng.'
+                                        : isCompanyConsolidatedPo
                                         ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
                                         : poEditBlockReason || (poHasStockImpact ? 'PO đã phát sinh nhập kho/hoàn kho nên không thể sửa.' : null);
                                     const poListSummary = buildPurchaseOrderListSummary(po, scopedMaterialRequests);
@@ -7447,12 +7479,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                 const poEditBlockReason = getPurchaseOrderEditBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const poRemovalBlockReason = getPurchaseOrderRemovalBlockReason(po, user, fulfillmentBatchesForPo, deliveryBatches, supplierReturns, effectivePoCapabilities);
                 const pendingSupplementalApproval = getPendingSupplementalApprovalForPo(po.id, deliveryBatches);
-                const canMutatePoDocument = canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
-                const canSubmitPoDocument = Boolean(
+                // PO lập tại Mua hàng: tab dự án chỉ xem, lập đợt giao và nhận hàng.
+                const isHubPo = isProcurementHubPurchaseOrder(po);
+                const canMutatePoDocument = !isHubPo && canUserMutatePurchaseOrder(po, user, effectivePoCapabilities);
+                const canSubmitPoDocument = !isHubPo && Boolean(
                     (isAdmin(user) || (effectivePoCapabilities.canSubmitPo && isPurchaseOrderCreator(po, user)))
                     && ['draft', 'returned'].includes(po.status),
                 );
-                const canApprovePoDocument = Boolean(
+                const canApprovePoDocument = !isHubPo && Boolean(
                     effectivePoCapabilities.canApprovePo
                     && (
                         (po.status === 'sent' && isPoApprovalAssignee(po))
@@ -7467,7 +7501,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                         )
                     ),
                 );
-                const canDeletePoDocument = canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
+                const canDeletePoDocument = !isHubPo && canUserRemovePurchaseOrder(po, user, effectivePoCapabilities);
                 const poHasStockImpact = hasPoStockImpactHint(po, supplierReturns);
                 const editBlockReason = isCompanyConsolidatedPo
                     ? 'PO công ty cần sửa tại màn Mua hàng công ty.'
@@ -7809,11 +7843,6 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 {effectiveSupplierDeliveryCapabilities.canDeleteSupplierDelivery && ['draft', 'cancelled'].includes(note.status) && (
                                     <button type="button" onClick={() => void deleteSupplierDeliveryNote(note)} disabled={actionBusy} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black text-red-600 hover:bg-red-100 disabled:opacity-50">
                                         <Trash2 size={12} /> Xóa
-                                    </button>
-                                )}
-                                {effectiveSupplierDeliveryCapabilities.canReconcileSupplierDelivery && !postedStatement && (note.status === 'accepted' || note.status === 'statemented') && (
-                                    <button type="button" onClick={() => void openSupplierDeliveryStatementPricing(note)} disabled={actionBusy || statementBlockedByWms} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50">
-                                        <FileText size={12} /> Đối soát/AP
                                     </button>
                                 )}
                                 <button type="button" onClick={() => openDocumentTrace(buildDocumentTracePath('supplier_direct_delivery_note', note.id, note.qrToken))} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">

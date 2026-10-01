@@ -15,6 +15,7 @@ export interface SubmitRequestInput {
   formData: Record<string, unknown>;
   dynamicApproversByBlock: Record<string, string[]>;
   idempotencyKey: string;
+  watcherIds?: string[];
 }
 
 export interface UsableRequestTemplate {
@@ -24,12 +25,15 @@ export interface UsableRequestTemplate {
   description: string;
   versionNumber: number;
   formSchema: RequestTemplateFieldSchema[];
+  flowMode?: RequestFlowMode;
+  completionPolicy?: RequestCompletionPolicy;
   approvalBlocks: Array<{
     key: string;
     name: string;
     source: 'FIXED_SINGLE' | 'FIXED_MULTI' | 'DIRECT_MANAGER' | 'DYNAMIC_CREATOR_SELECT';
     minimumDynamicApprovers: number | null;
     sortOrder: number;
+    fixedApprovers?: RequestUserSnapshot[];
   }>;
 }
 
@@ -130,6 +134,8 @@ export interface RequestListItem {
   templateName: string;
   creator: RequestUserSnapshot;
   activeApprovers: Array<RequestUserSnapshot & { assignmentStatus: RequestAssignmentStatus }>;
+  /** Every approver of the current round with their status (newer servers). */
+  approvers?: Array<RequestUserSnapshot & { assignmentStatus: RequestAssignmentStatus }>;
   dueAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -152,6 +158,14 @@ export interface RequestActionCapabilities {
   canReadDiscussion: boolean;
   canComment: boolean;
   canAttach: boolean;
+  canAddWatcher: boolean;
+  canDelete: boolean;
+  reassignableAssignmentIds: string[];
+}
+
+export interface RequestWatcher extends RequestUserSnapshot {
+  source: 'MANUAL' | 'TEMPLATE';
+  canRemove: boolean;
 }
 
 export interface RequestApprovalBlockSnapshot {
@@ -184,6 +198,7 @@ export interface RequestDetail extends RequestListItem {
   formData: Record<string, unknown>;
   approvalBlocks: RequestApprovalBlockSnapshot[];
   watcherIds: string[];
+  watchers: RequestWatcher[];
   timeline: Array<{
     id: string;
     eventType: string;
@@ -247,6 +262,17 @@ export type RequestRpcErrorCode =
   | 'REQUEST_MENTION_INELIGIBLE'
   | 'REQUEST_ATTACHMENT_INVALID'
   | 'REQUEST_ATTACHMENT_NOT_READY'
+  | 'REQUEST_TITLE_REQUIRED'
+  | 'REQUEST_REQUIRED_FIELD_MISSING'
+  | 'REQUEST_APPROVER_REQUIRED'
+  | 'REQUEST_APPROVER_SINGLE_REQUIRED'
+  | 'REQUEST_TEMPLATE_FORBIDDEN'
+  | 'REQUEST_TEMPLATE_VERSION_NOT_PUBLISHED'
+  | 'REQUEST_AUTHENTICATION_REQUIRED'
+  | 'REQUEST_REASSIGN_REASON_REQUIRED'
+  | 'REQUEST_REASSIGN_TARGET_DUPLICATE'
+  | 'REQUEST_DELETE_LOCKED'
+  | 'REQUEST_WATCHER_INVALID'
   | 'REQUEST_NOT_FOUND_OR_FORBIDDEN';
 
 export class RequestRpcError extends Error {
@@ -376,7 +402,13 @@ const withCollaborationDefaults = (value: RequestDetail): RequestDetail => {
       canReadDiscussion: capabilities.canReadDiscussion === true,
       canComment: capabilities.canComment === true,
       canAttach: capabilities.canAttach === true,
+      canAddWatcher: capabilities.canAddWatcher === true,
+      canDelete: capabilities.canDelete === true,
+      reassignableAssignmentIds: Array.isArray(capabilities.reassignableAssignmentIds)
+        ? (capabilities.reassignableAssignmentIds as unknown[]).filter(isString)
+        : [],
     },
+    watchers: Array.isArray(raw.watchers) ? raw.watchers : [],
   } as unknown as RequestDetail;
 };
 
@@ -454,6 +486,17 @@ const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
   'REQUEST_MENTION_INELIGIBLE',
   'REQUEST_ATTACHMENT_INVALID',
   'REQUEST_ATTACHMENT_NOT_READY',
+  'REQUEST_TITLE_REQUIRED',
+  'REQUEST_REQUIRED_FIELD_MISSING',
+  'REQUEST_APPROVER_REQUIRED',
+  'REQUEST_APPROVER_SINGLE_REQUIRED',
+  'REQUEST_TEMPLATE_FORBIDDEN',
+  'REQUEST_TEMPLATE_VERSION_NOT_PUBLISHED',
+  'REQUEST_AUTHENTICATION_REQUIRED',
+  'REQUEST_REASSIGN_REASON_REQUIRED',
+  'REQUEST_REASSIGN_TARGET_DUPLICATE',
+  'REQUEST_DELETE_LOCKED',
+  'REQUEST_WATCHER_INVALID',
   'REQUEST_NOT_FOUND_OR_FORBIDDEN',
 ]);
 
@@ -481,10 +524,34 @@ export const mapRequestRpcError = (error: unknown): RequestRpcError => {
     REQUEST_MENTION_INELIGIBLE: 'Người được nhắc không có quyền xem đề xuất này.',
     REQUEST_ATTACHMENT_INVALID: 'Tệp đính kèm không hợp lệ.',
     REQUEST_ATTACHMENT_NOT_READY: 'Tệp chưa xử lý xong hoặc không còn khả dụng.',
+    REQUEST_STALE_STATE: 'Đề xuất vừa được người khác cập nhật. Vui lòng tải lại rồi thực hiện tiếp.',
+    REQUEST_ACTION_FORBIDDEN: 'Bạn không có quyền thực hiện thao tác này hoặc còn thiếu lý do bắt buộc.',
+    REQUEST_ASSIGNMENT_NOT_ACTIVE: 'Bạn không còn lượt duyệt đang chờ ở đề xuất này.',
+    REQUEST_ALREADY_PROCESSED: 'Lượt duyệt này đã được xử lý.',
+    REQUEST_DYNAMIC_APPROVER_REQUIRED: 'Vui lòng chọn đủ số người duyệt tối thiểu cho từng bước.',
+    REQUEST_TEMPLATE_NOT_PUBLISHED: 'Mẫu đề xuất chưa được phát hành hoặc đã ngừng áp dụng.',
+    REQUEST_TEMPLATE_VERSION_NOT_PUBLISHED: 'Mẫu đề xuất vừa được cập nhật. Vui lòng đóng và chọn lại mẫu.',
+    REQUEST_TEMPLATE_OUT_OF_SCOPE: 'Bạn không thuộc phạm vi được dùng mẫu này.',
+    REQUEST_TEMPLATE_FORBIDDEN: 'Mẫu đề xuất đã ngừng áp dụng hoặc bạn không thuộc phạm vi sử dụng.',
+    REQUEST_IDEMPOTENCY_CONFLICT: 'Thao tác bị trùng. Vui lòng tải lại và thử lại.',
+    REQUEST_TITLE_REQUIRED: 'Tiêu đề đề xuất là bắt buộc.',
+    REQUEST_REQUIRED_FIELD_MISSING: 'Còn trường bắt buộc chưa được điền.',
+    REQUEST_APPROVER_REQUIRED: 'Chưa xác định được người duyệt cho một bước. Vui lòng chọn người duyệt hoặc liên hệ quản trị viên mẫu.',
+    REQUEST_APPROVER_SINGLE_REQUIRED: 'Mẫu cấu hình sai số người duyệt. Vui lòng liên hệ quản trị viên mẫu.',
+    REQUEST_AUTHENTICATION_REQUIRED: 'Phiên đăng nhập đã hết hoặc tài khoản không còn hoạt động.',
+    REQUEST_NOT_FOUND_OR_FORBIDDEN: 'Không tìm thấy đề xuất hoặc bạn không có quyền.',
+    REQUEST_REASSIGN_REASON_REQUIRED: 'Vui lòng nhập lý do chuyển người duyệt.',
+    REQUEST_REASSIGN_TARGET_DUPLICATE: 'Người này đang là người duyệt ở bước này. Vui lòng chọn người khác.',
+    REQUEST_DELETE_LOCKED: 'Chỉ xóa được khi chưa ai xử lý hoặc đề xuất đã hủy.',
+    REQUEST_WATCHER_INVALID: 'Danh sách người theo dõi không hợp lệ hoặc có tài khoản đã khóa.',
   };
+  // A raw REQUEST_* diagnostic is never shown to users.
+  const fallback = /REQUEST_[A-Z0-9_]+/.test(diagnostic)
+    ? 'Không thể xử lý đề xuất. Vui lòng thử lại hoặc liên hệ quản trị viên.'
+    : diagnostic;
   return new RequestRpcError(
     code,
-    localizedMessages[code as RequestRpcErrorCode] ?? diagnostic,
+    candidate === code ? localizedMessages[code as RequestRpcErrorCode] ?? fallback : fallback,
     error,
   );
 };
@@ -505,6 +572,7 @@ export const requestRuntimeService = {
       p_form_data: input.formData,
       p_dynamic_approvers_by_block: input.dynamicApproversByBlock,
       p_idempotency_key: input.idempotencyKey,
+      p_options: { watcherIds: input.watcherIds ?? [] },
     }).then(result => assertRequestCommandResult(result, 'submit_request'));
   },
 
@@ -520,6 +588,52 @@ export const requestRuntimeService = {
     });
     if (error) throw mapRequestRpcError(error);
     return assertRequestCommandResult(data, 'act_on_request');
+  },
+
+  async reassign(input: {
+    requestId: string;
+    assignmentId: string;
+    assigneeUserId: string;
+    comment: string;
+    idempotencyKey: string;
+    expectedUpdatedAt: string;
+  }): Promise<RequestCommandResult> {
+    const { data, error } = await supabase.rpc('reassign_request_assignment', {
+      p_request_id: input.requestId,
+      p_assignment_id: input.assignmentId,
+      p_assignee_user_id: input.assigneeUserId,
+      p_comment: input.comment,
+      p_idempotency_key: input.idempotencyKey,
+      p_expected_updated_at: input.expectedUpdatedAt,
+    });
+    if (error) throw mapRequestRpcError(error);
+    return assertRequestCommandResult(data, 'reassign_request_assignment');
+  },
+
+  async addWatchers(requestId: string, userIds: string[]): Promise<RequestWatcher[]> {
+    const { data, error } = await supabase.rpc('add_request_watchers', {
+      p_request_id: requestId,
+      p_user_ids: userIds,
+    });
+    if (error) throw mapRequestRpcError(error);
+    return isRecord(data) && Array.isArray(data.watchers) ? data.watchers as RequestWatcher[] : [];
+  },
+
+  async removeWatcher(requestId: string, userId: string): Promise<RequestWatcher[]> {
+    const { data, error } = await supabase.rpc('remove_request_watcher', {
+      p_request_id: requestId,
+      p_user_id: userId,
+    });
+    if (error) throw mapRequestRpcError(error);
+    return isRecord(data) && Array.isArray(data.watchers) ? data.watchers as RequestWatcher[] : [];
+  },
+
+  async deleteRequest(requestId: string, expectedUpdatedAt: string): Promise<void> {
+    const { error } = await supabase.rpc('delete_request', {
+      p_request_id: requestId,
+      p_expected_updated_at: expectedUpdatedAt,
+    });
+    if (error) throw mapRequestRpcError(error);
   },
 
   async updateContent(input: UpdateRequestContentInput): Promise<RequestCommandResult & { contentRevision: number }> {

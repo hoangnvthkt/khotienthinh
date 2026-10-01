@@ -14,4 +14,12 @@ describe('getApiErrorMessage', () => {
       message: 'workflow template has bindings/versions/instances and must be deactivated instead of deleted',
     })).toBe('Mẫu quy trình đã có phiếu, phiên bản hoặc liên kết sử dụng. Hãy tắt quy trình thay vì xóa.');
   });
+
+  it('shows which workflow steps are missing a handler', () => {
+    expect(getApiErrorMessage({
+      code: '22023',
+      message: 'WORKFLOW_STEP_ASSIGNEE_MISSING',
+      details: 'Bước "Tạo đề xuất" chưa có người xử lý.\nBước "Duyệt" chưa có người xử lý.',
+    })).toBe('Mỗi bước phải có người xử lý. Bước "Tạo đề xuất" chưa có người xử lý. Bước "Duyệt" chưa có người xử lý.');
+  });
 });
