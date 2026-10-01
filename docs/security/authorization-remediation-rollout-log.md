@@ -807,3 +807,11 @@ Chỉ sửa frontend, không có migration.
   - Chưa miễn hạn cho phạm vi `own` không nhạy cảm (tùy chọn trong handoff); mẫu vị trí vẫn gắn hạn 365 ngày.
 - Kiểm tra: dry-run (có rollback) PASS 4 tình huống; smoke trên hàm cũ thất bại đúng `expiry_required` (đối chứng); smoke sau apply PASS; Vitest 2.631 PASS; tsc sạch.
 - Rollback: `supabase/operations/authorization_p3_keep_existing_no_expiry_grants_rollback.sql`.
+
+### P3 — Hồ sơ quyền, bước 1: thẻ "Xem Tài chính và Hợp đồng" (02/10)
+
+- Migration `20261004110000_authorization_p3_user_sensitive_view_summary`: RPC chỉ đọc `get_user_sensitive_view_summary(user_id)`, chỉ Admin. Trả về công tắc Tài chính / Hợp đồng của người đó (tất cả dự án, từng dự án), dự án tự động xem qua Room Thanh toán hoặc Nghiệm thu, và có phải người quản lý hợp đồng công ty không. Không đổi quyền của ai.
+- Giao diện: Người dùng → Sửa có thêm thẻ chỉ đọc cùng kiểu thẻ Room; bật/tắt vẫn ở tab Phân quyền của dự án. Đủ trạng thái đang tải, lỗi (có Thử lại), chưa bật, Quản trị viên. Đã xem bằng fixture trong browser pane (5 trạng thái).
+- Kiểm tra: dry-run PASS; smoke sau apply PASS (nhân viên bị chặn; bật/tắt từng dự án và tất cả dự án phản ánh đúng, không lẫn Tài chính ↔ Hợp đồng); Vitest 2.631 PASS; tsc, build, check-queries đạt. E2E Playwright không chạy được vì máy chưa cài trình duyệt Playwright.
+- Rollback: `supabase/operations/authorization_p3_user_sensitive_view_summary_rollback.sql`.
+- Còn lại của Hồ sơ quyền: gộp vai trò đặc biệt (HR, quản trị) vào cùng màn.

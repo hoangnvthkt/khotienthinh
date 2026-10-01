@@ -30,6 +30,19 @@ export interface SensitiveDomainScope {
   siteIds: string[];
 }
 
+/** What one person may see in Finance and Contracts, and why (Admin only). */
+export interface UserSensitiveViewSummary {
+  isSystemAdmin: boolean;
+  financeAll: boolean;
+  contractAll: boolean;
+  financeProjectIds: string[];
+  contractProjectIds: string[];
+  /** Payment or Quantity-acceptance Room handlers: see both domains of these projects. */
+  roomProjectIds: string[];
+  /** Company contract manager: sees every contract. */
+  contractManager: boolean;
+}
+
 export type MySensitiveScope = Record<SensitiveViewDomain, SensitiveDomainScope>;
 
 const mapScope = (value: any): SensitiveDomainScope => ({
@@ -91,6 +104,22 @@ export const projectSensitiveAccessService = {
       p_reason: input.reason,
     });
     if (error) throw error;
+  },
+
+  /** Admin only. Read-only overview for the person being edited. */
+  async getUserSummary(userId: string): Promise<UserSensitiveViewSummary> {
+    const { data, error } = await supabase.rpc('get_user_sensitive_view_summary', { p_user_id: userId });
+    if (error) throw error;
+    const ids = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : [];
+    return {
+      isSystemAdmin: Boolean(data?.isSystemAdmin),
+      financeAll: Boolean(data?.financeAll),
+      contractAll: Boolean(data?.contractAll),
+      financeProjectIds: ids(data?.financeProjectIds),
+      contractProjectIds: ids(data?.contractProjectIds),
+      roomProjectIds: ids(data?.roomProjectIds),
+      contractManager: Boolean(data?.contractManager),
+    };
   },
 
   async getMyAccess(projectId: string, constructionSiteId?: string | null): Promise<MySensitiveAccess> {

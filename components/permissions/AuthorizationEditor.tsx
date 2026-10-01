@@ -17,6 +17,7 @@ import PermissionDiffPreview from './PermissionDiffPreview';
 import PermissionModuleEditor from './PermissionModuleEditor';
 import PermissionTemplateFill from './PermissionTemplateFill';
 import ProjectRoomSummary from './ProjectRoomSummary';
+import SensitiveViewSummary from './SensitiveViewSummary';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
 interface AuthorizationEditorProps {
@@ -242,6 +243,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         )}
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>
+
+      {targetUser.id && <SensitiveViewSummary userId={targetUser.id} isAdmin={targetUser.role === 'ADMIN'} />}
 
       <ProjectRoomSummary
         state={snapshotState}
