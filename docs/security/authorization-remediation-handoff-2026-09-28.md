@@ -1,5 +1,7 @@
 # Handoff — Phân quyền, RLS, Storage và Notification (P0 → P2)
 
+> **Đã có bản mới hơn:** [authorization-handoff-2026-10-02.md](authorization-handoff-2026-10-02.md).
+
 **Cập nhật:** 28/09/2026. Mục đích của tài liệu: một agent mới đọc xong có thể làm tiếp ngay mà không phải khảo sát lại.
 
 ## 1. Đọc gì trước
