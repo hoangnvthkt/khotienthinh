@@ -97,9 +97,15 @@ const ActionRow: React.FC<{
   const [scopeType, setScopeType] = useState<PermissionScopeType>(initialScope);
   const [scopeId, setScopeId] = useState(directGrant?.scopeId === '*' ? '' : directGrant?.scopeId || '');
   const [expiresAt, setExpiresAt] = useState(directGrant?.expiresAt?.slice(0, 16) || '');
-  const expiryReady = !action.directGrantRequiresExpiry
-    || (Boolean(expiresAt) && Date.parse(expiresAt) > Date.now());
   const entityScope = ENTITY_SCOPE_TYPES.has(scopeType);
+  // An existing grant without an expiry can stay as it is; the server accepts it unchanged.
+  const keepsExistingNoExpiry = Boolean(directGrant)
+    && !directGrant?.expiresAt
+    && scopeType === (directGrant?.scopeType || 'global')
+    && (entityScope ? scopeId : '*') === (directGrant?.scopeId || '*');
+  const expiryReady = !action.directGrantRequiresExpiry
+    || keepsExistingNoExpiry
+    || (Boolean(expiresAt) && Date.parse(expiresAt) > Date.now());
   const canToggle = action.directGrantAllowed
     && (!inherited || Boolean(directGrant))
     && expiryReady

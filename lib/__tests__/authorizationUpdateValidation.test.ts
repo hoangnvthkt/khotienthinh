@@ -79,6 +79,28 @@ describe('authorization update validation', () => {
     }));
   });
 
+  it('keeps an already-active grant without expiry, but still refuses new ones', () => {
+    const approve = { ...viewGrant, permissionCode: 'asset.assignment.approve' };
+    const reason = 'Sửa hồ sơ người dùng';
+
+    expect(validateAuthorizationUpdate({
+      changed: true, reason, grants: [approve], originalGrants: [approve], catalog, now,
+    })).toEqual([]);
+    // Not in the original list: a new grant still needs an expiry.
+    expect(validateAuthorizationUpdate({
+      changed: true, reason, grants: [approve], originalGrants: [viewGrant], catalog, now,
+    })).toContainEqual(expect.objectContaining({ code: 'expiry_required' }));
+    // Original grant had an expiry: dropping it is a change that needs one.
+    expect(validateAuthorizationUpdate({
+      changed: true, reason, grants: [approve],
+      originalGrants: [{ ...approve, expiresAt: '2027-01-01T00:00:00.000Z' }], catalog, now,
+    })).toContainEqual(expect.objectContaining({ code: 'expiry_required' }));
+    // A different scope is a different grant.
+    expect(validateAuthorizationUpdate({
+      changed: true, reason, grants: [{ ...approve, scopeType: 'own' }], originalGrants: [approve], catalog, now,
+    })).toContainEqual(expect.objectContaining({ code: 'expiry_required' }));
+  });
+
   it('rejects duplicate grant keys and unknown permissions', () => {
     const issues = validateAuthorizationUpdate({
       changed: true,

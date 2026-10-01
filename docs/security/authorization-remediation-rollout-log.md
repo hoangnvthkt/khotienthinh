@@ -797,3 +797,13 @@ Chỉ sửa frontend, không có migration.
 
 - Người dùng → Sửa: ô không tick được có dòng 🔒 nói lý do và chỗ đổi. Mã HR nhạy cảm → tab Vai trò nhân sự (HR / HR Manage); vai trò quản trị → Cài đặt → Mẫu quyền (thu hồi); loại tài khoản → ô Loại tài khoản; mã dự án → Room dự án. Nhãn cũ "Cấp qua mẫu quyền" đổi thành "Qua vai trò HR" / "Chỉ vai trò quản trị", vì mẫu quyền theo vị trí không chứa các mã này.
 - Test: `permissionLockReason.test.ts`, e2e phân quyền 5 PASS.
+
+### P3 — giữ nguyên quyền cũ không có ngày hết hạn (02/10, mục 8.1)
+
+- Nguyên nhân: bước chuyển vai trò → quyền riêng (28/09) không gắn hạn. Quyền vẫn chạy, nhưng Admin lưu bất kỳ thay đổi nào của người đó đều bị `expiry_required`; ô quyền không hạn còn bị khóa, không bỏ tick được.
+- Chủ sản phẩm chọn phương án 1 (02/10). Migration `20261004100000_authorization_p3_keep_existing_no_expiry_grants`:
+  - `evaluate_direct_grant_replacement_impl` không đòi hạn cho quyền **đã có**: đang hiệu lực, chưa thu hồi, không hạn, cùng mã + phạm vi + đối tượng. Quyền mới hoặc đổi phạm vi vẫn phải có hạn.
+  - Frontend áp luật tương tự: `authorizationUpdateValidation.ts` và `PermissionModuleCard.tsx`.
+  - Chưa miễn hạn cho phạm vi `own` không nhạy cảm (tùy chọn trong handoff); mẫu vị trí vẫn gắn hạn 365 ngày.
+- Kiểm tra: dry-run (có rollback) PASS 4 tình huống; smoke trên hàm cũ thất bại đúng `expiry_required` (đối chứng); smoke sau apply PASS; Vitest 2.631 PASS; tsc sạch.
+- Rollback: `supabase/operations/authorization_p3_keep_existing_no_expiry_grants_rollback.sql`.

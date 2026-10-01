@@ -140,6 +140,11 @@ export const validateAuthorizationUpdate = ({
   const retainedOriginalFingerprints = new Set(originalGrants
     .filter(grant => grant.isActive !== false)
     .map(retainedGrantFingerprint));
+  // An already-active grant without an expiry (e.g. converted from a role) may be kept
+  // unchanged; the server applies the same rule. New grants and scope changes still need one.
+  const keptNoExpiryKeys = new Set(originalGrants
+    .filter(grant => grant.isActive !== false && !grant.expiresAt)
+    .map(grantKey));
   const seen = new Set<string>();
   grants.filter(grant => grant.isActive !== false).forEach(grant => {
     const key = grantKey(grant);
@@ -207,7 +212,7 @@ export const validateAuthorizationUpdate = ({
         permissionCode: grant.permissionCode,
         message: `Ngày hết hạn của quyền ${action.label} phải ở tương lai.`,
       });
-    } else if (action.directGrantRequiresExpiry && !grant.expiresAt) {
+    } else if (action.directGrantRequiresExpiry && !grant.expiresAt && !keptNoExpiryKeys.has(key)) {
       issues.push({
         code: 'expiry_required',
         field: 'expiresAt',
