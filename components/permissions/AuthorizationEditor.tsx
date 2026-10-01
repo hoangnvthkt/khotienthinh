@@ -31,6 +31,8 @@ interface AuthorizationEditorProps {
   snapshotState?: 'loading' | 'ready' | 'error';
   onRetrySnapshot?: () => void;
   reason: string;
+  /** False while only the profile changed: the reason box becomes optional. */
+  reasonRequired?: boolean;
   validationIssues?: readonly AuthorizationValidationIssue[];
   disabled?: boolean;
   onCatalogChange?: (catalog: PermissionAdminCatalog | null) => void;
@@ -73,6 +75,7 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   snapshotState = 'ready',
   onRetrySnapshot = () => undefined,
   reason,
+  reasonRequired = true,
   validationIssues = [],
   disabled = false,
   onCatalogChange,
@@ -254,15 +257,18 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
       />
 
       <label className="block space-y-1">
-        <span className="text-xs font-black uppercase tracking-wide text-slate-600">Lý do thay đổi</span>
+        <span className="text-xs font-black uppercase tracking-wide text-slate-600">
+          Lý do thay đổi
+          {!reasonRequired && <span className="ml-1 font-semibold normal-case tracking-normal text-slate-400">(không bắt buộc khi chỉ sửa hồ sơ)</span>}
+        </span>
         <textarea
-          required
+          required={reasonRequired}
           value={reason}
           onChange={event => onReasonChange(event.target.value)}
           disabled={disabled}
           rows={2}
           className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-50"
-          placeholder="Mô tả lý do thay đổi hồ sơ hoặc quyền"
+          placeholder={reasonRequired ? 'Mô tả lý do thay đổi hồ sơ hoặc quyền' : 'Có thể bỏ trống'}
         />
       </label>
     </div>

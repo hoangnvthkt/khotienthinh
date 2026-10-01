@@ -815,3 +815,13 @@ Chỉ sửa frontend, không có migration.
 - Kiểm tra: dry-run PASS; smoke sau apply PASS (nhân viên bị chặn; bật/tắt từng dự án và tất cả dự án phản ánh đúng, không lẫn Tài chính ↔ Hợp đồng); Vitest 2.631 PASS; tsc, build, check-queries đạt. E2E Playwright không chạy được vì máy chưa cài trình duyệt Playwright.
 - Rollback: `supabase/operations/authorization_p3_user_sensitive_view_summary_rollback.sql`.
 - Còn lại của Hồ sơ quyền: gộp vai trò đặc biệt (HR, quản trị) vào cùng màn.
+
+### P3 — bỏ lý do khi chỉ sửa hồ sơ; bỏ hạn cho phạm vi "Chính mình" (02/10, chủ sản phẩm duyệt)
+
+- **Lý do:** Người dùng → Sửa không bắt lý do khi chỉ sửa hồ sơ (tên, điện thoại, ảnh, quản lý, kho). Vẫn bắt khi đổi quyền hoặc đổi loại tài khoản. Frontend tự ghi lý do mặc định "Cập nhật hồ sơ người dùng" để qua kiểm tra của server; server không đổi.
+- **Hạn:** migration `20261004120000_authorization_p3_own_scope_no_expiry`:
+  - `evaluate_direct_grant_replacement_impl` không đòi hạn cho phạm vi `own` của quyền không nhạy cảm (hiện chỉ `hrm.employee.edit_profile`);
+  - `normalize_user_permission_template_items` không gắn hạn mặc định 365 ngày cho các dòng đó; 10 mẫu vị trí đã được chuẩn hóa lại (tất cả đều chỉ là mặc định 365, không có hạn tùy chỉnh bị mất);
+  - frontend dùng chung hàm `grantRequiresExpiry(action, scope)`: ô nhập hạn, validation, điền theo mẫu, màn Cài đặt mẫu.
+- Kiểm tra: dry-run PASS; smoke trên hàm cũ thất bại đúng (đối chứng); smoke sau apply PASS; smoke 8.1 chỉnh fixture sang quyền vẫn cần hạn, PASS; Vitest 2.633 PASS; tsc đạt.
+- Rollback: `supabase/operations/authorization_p3_own_scope_no_expiry_rollback.sql`.

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PermissionAdminCatalog } from '../permissions/permissionTypes';
 import {
   getCatalogEditableGrants,
+  grantRequiresExpiry,
   getRetainedHiddenGrants,
   mapAuthorizationRpcError,
   validateAuthorizationUpdate,
@@ -99,6 +100,22 @@ describe('authorization update validation', () => {
     expect(validateAuthorizationUpdate({
       changed: true, reason, grants: [{ ...approve, scopeType: 'own' }], originalGrants: [approve], catalog, now,
     })).toContainEqual(expect.objectContaining({ code: 'expiry_required' }));
+  });
+
+  it('does not ask for a reason when only the profile changed', () => {
+    expect(validateAuthorizationUpdate({ changed: true, reasonRequired: false, reason: '', grants: [viewGrant], catalog, now }))
+      .toEqual([]);
+    expect(validateAuthorizationUpdate({ changed: true, reasonRequired: true, reason: '', grants: [viewGrant], catalog, now }))
+      .toContainEqual(expect.objectContaining({ code: 'reason_required' }));
+  });
+
+  it('exempts the own scope of a non-sensitive permission from the expiry rule', () => {
+    const important = { directGrantRequiresExpiry: true, riskLevel: 'important' as const };
+    const sensitive = { directGrantRequiresExpiry: true, riskLevel: 'sensitive' as const };
+    expect(grantRequiresExpiry(important, 'own')).toBe(false);
+    expect(grantRequiresExpiry(important, 'global')).toBe(true);
+    expect(grantRequiresExpiry(sensitive, 'own')).toBe(true);
+    expect(grantRequiresExpiry({ directGrantRequiresExpiry: false, riskLevel: 'normal' }, 'global')).toBe(false);
   });
 
   it('rejects duplicate grant keys and unknown permissions', () => {

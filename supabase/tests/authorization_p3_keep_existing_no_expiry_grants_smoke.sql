@@ -9,7 +9,7 @@ create temporary table p3_expiry_context (
 grant select on p3_expiry_context to authenticated;
 
 -- Target: an active non-admin user that holds an active grant without an expiry,
--- for a permission that requires an expiry.
+-- for a permission that still requires an expiry at that scope.
 insert into p3_expiry_context (admin_id, admin_auth, admin_email, target_id, kept_code, kept_scope, kept_scope_id)
 select a.id, a.auth_id, a.email, g.user_id, g.permission_code, g.scope_type, g.scope_id
 from (select * from public.users where role = 'ADMIN' and is_active and account_status = 'ACTIVE' and auth_id is not null order by created_at limit 1) a,
@@ -20,6 +20,7 @@ from (select * from public.users where role = 'ADMIN' and is_active and account_
        where pa.direct_grant_requires_expiry and pa.direct_grant_allowed
          and ug.is_active and ug.revoked_at is null and ug.expires_at is null
          and ug.user_id <> a.id
+         and not (ug.scope_type = 'own' and pa.risk_level <> 'sensitive') -- own scope is exempt since 20261004120000
        order by ug.created_at limit 1
      ) g;
 
