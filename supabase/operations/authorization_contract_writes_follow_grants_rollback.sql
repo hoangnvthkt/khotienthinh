@@ -1,0 +1,40 @@
+-- Rollback for 20261004150000_authorization_contract_writes_follow_grants.
+
+alter policy business_partners_delete on public.business_partners using (is_module_admin('HD'::text));
+alter policy business_partners_insert on public.business_partners with check (is_module_admin('HD'::text));
+alter policy business_partners_update on public.business_partners using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy contract_form_templates_delete on public.contract_form_templates using (is_module_admin('HD'::text));
+alter policy contract_form_templates_insert on public.contract_form_templates with check (is_module_admin('HD'::text));
+alter policy contract_form_templates_update on public.contract_form_templates using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy contract_guarantees_delete on public.contract_guarantees using (is_module_admin('HD'::text));
+alter policy contract_guarantees_insert on public.contract_guarantees with check (is_module_admin('HD'::text));
+alter policy contract_guarantees_update on public.contract_guarantees using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy contract_template_fields_delete on public.contract_template_fields using (is_module_admin('HD'::text));
+alter policy contract_template_fields_insert on public.contract_template_fields with check (is_module_admin('HD'::text));
+alter policy contract_template_fields_update on public.contract_template_fields using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy contract_template_sections_delete on public.contract_template_sections using (is_module_admin('HD'::text));
+alter policy contract_template_sections_insert on public.contract_template_sections with check (is_module_admin('HD'::text));
+alter policy contract_template_sections_update on public.contract_template_sections using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy contract_type_metadata_delete on public.contract_type_metadata using (is_module_admin('HD'::text));
+alter policy contract_type_metadata_insert on public.contract_type_metadata with check (is_module_admin('HD'::text));
+alter policy contract_type_metadata_update on public.contract_type_metadata using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy cost_norm_import_batches_manage on public.cost_norm_import_batches using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy cost_template_items_manage on public.cost_template_items using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy cost_template_parameters_manage on public.cost_template_parameters using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy cost_template_sections_manage on public.cost_template_sections using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy cost_templates_manage on public.cost_templates using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy customer_contracts_delete on public.customer_contracts using (is_module_admin('HD'::text));
+alter policy customer_contracts_insert on public.customer_contracts with check (is_module_admin('HD'::text));
+alter policy customer_contracts_update on public.customer_contracts using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+alter policy internal_norms_manage on public.internal_norms using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy internal_price_book_manage on public.internal_price_book using ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text))) with check ((is_admin() OR is_module_admin('HD'::text) OR is_module_admin('TENDER_AI'::text)));
+alter policy subcontractor_contracts_delete on public.subcontractor_contracts using (is_admin());
+alter policy subcontractor_contracts_insert on public.subcontractor_contracts with check (is_admin());
+alter policy subcontractor_contracts_update on public.subcontractor_contracts using (is_admin()) with check (is_admin());
+alter policy supplier_contracts_delete on public.supplier_contracts using (is_module_admin('HD'::text));
+alter policy supplier_contracts_insert on public.supplier_contracts with check (is_module_admin('HD'::text));
+alter policy supplier_contracts_update on public.supplier_contracts using (is_module_admin('HD'::text)) with check (is_module_admin('HD'::text));
+CREATE TRIGGER authorization_v2_admin_write_guard BEFORE INSERT OR DELETE OR UPDATE ON public.subcontractor_contracts FOR EACH ROW EXECUTE FUNCTION app_private.authorization_v2_assert_retired_module_admin_write();
+drop function if exists app_private.contract_actor_can_manage(text[]);
+delete from supabase_migrations.schema_migrations where version = '20261004150000';
+

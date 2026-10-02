@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
+import { canManageContracts } from '../../lib/permissions/contractPermissions';
+import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { SubcontractorContract, HdContractStatus, ContractAttachment, Project, BusinessPartner } from '../../types';
@@ -60,6 +62,7 @@ const EMPTY_FORM: Omit<SubcontractorContract, 'id' | 'attachments' | 'createdAt'
 
 const SubcontractorContracts: React.FC = () => {
   const { user } = useApp();
+  const canManage = canManageContracts(user, 'supplier');
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -106,7 +109,16 @@ const SubcontractorContracts: React.FC = () => {
   useEffect(() => { fetchContracts(); }, []);
 
   const handleSave = async () => {
-    if (!form.code.trim() || !form.name.trim() || !form.subcontractorName.trim()) return;
+    // Say exactly what is missing; returning silently made the save look broken.
+    const missing = [
+      !form.code.trim() && 'Mã hợp đồng',
+      !form.name.trim() && 'Tên hợp đồng',
+      !form.subcontractorName.trim() && 'Đơn vị thầu phụ (chọn trong danh sách)',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      toast.warning('Thiếu thông tin', `Vui lòng nhập: ${missing.join(', ')}.`);
+      return;
+    }
     if (!form.projectId) {
       toast.warning('Thiếu thông tin', 'Vui lòng chọn dự án liên kết.');
       return;
@@ -265,11 +277,12 @@ const SubcontractorContracts: React.FC = () => {
           <option value="">Tất cả trạng thái</option>
           {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        <button onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setDraftAttachments([]); setShowForm(true); }}
+        {canManage && <button onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setDraftAttachments([]); setShowForm(true); }}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-sm font-bold rounded-xl shadow-md shadow-amber-500/20 hover:shadow-amber-500/40 transition-all">
           <Plus size={15} /> Thêm hợp đồng
-        </button>
+        </button>}
       </div>
+      {!canManage && <ContractViewOnlyNotice kind="supplier" />}
 
       {/* Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
@@ -317,10 +330,12 @@ const SubcontractorContracts: React.FC = () => {
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => navigate(`/hd/subcontractor/${c.id}`)}
                           className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"><Eye size={14} /></button>
-                        <button onClick={() => handleEdit(c)}
+                        {canManage && <>
+                        <button onClick={() => handleEdit(c)} aria-label="Sửa hợp đồng"
                           className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(c.id)}
+                        <button onClick={() => handleDelete(c.id)} aria-label="Xóa hợp đồng"
                           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                        </>}
                       </div>
                     </td>
                   </tr>
@@ -551,6 +566,7 @@ const SubcontractorContracts: React.FC = () => {
               )}
               {detailTab === 'docs' && (
                 <div className="space-y-3">
+                  {canManage && (
                   <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-amber-200 dark:border-amber-800 rounded-xl p-6 cursor-pointer hover:border-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-all">
                     <Upload className="text-amber-400" size={24} />
                     <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Kéo thả hoặc click để tải lên</span>
@@ -559,6 +575,7 @@ const SubcontractorContracts: React.FC = () => {
                     {uploading && <div className="flex items-center gap-2 text-amber-500 text-xs font-bold"><Loader2 size={14} className="animate-spin" />Đang tải lên...</div>}
                     {uploadError && <p className="text-xs text-red-500 font-bold">{uploadError}</p>}
                   </label>
+                  )}
                   {selectedContract.attachments?.length === 0 && !uploading && (
                     <p className="text-center text-sm text-slate-400 py-4">Chưa có tài liệu đính kèm</p>
                   )}
@@ -571,7 +588,7 @@ const SubcontractorContracts: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => handleDownload(att)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"><Download size={13} /></button>
-                        <button onClick={() => handleDeleteFile(att)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={13} /></button>
+                        {canManage && <button onClick={() => handleDeleteFile(att)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={13} /></button>}
                       </div>
                     </div>
                   ))}
