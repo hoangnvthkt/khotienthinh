@@ -149,6 +149,15 @@ export const canPerform = (
   scope,
 ).allowed;
 
+/**
+ * Holds the permission in at least one scope (company, warehouse, department, assigned...).
+ * Mirrors app_private.asset_has_any_action for screens that are not tied to one record.
+ */
+export const canPerformInAnyScope = (user: PermissionUser, permissionCode: string): boolean => {
+  const decision = evaluateCapability(getUserAuthorizationSnapshot(user), permissionCode);
+  return decision.allowed || decision.reason === 'scope_mismatch';
+};
+
 const HRM_BUSINESS_ROLE_CODES = new Set(['HR', 'HR_MANAGE']);
 
 /** Mirrors app_private.has_hrm_template_permission for sensitive HRM surfaces. */

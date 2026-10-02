@@ -891,3 +891,11 @@ Chỉ sửa frontend, không có migration.
 - Migration `20261004180000_authorization_retire_label_only_permissions`: sao lưu vào `app_private.label_permission_retirement_backup`; thu hồi 13 grant không có tác dụng (để Admin vẫn lưu được hồ sơ những người đó); gỡ 5 dòng khỏi mẫu vị trí; ngừng kích hoạt 4 mã.
 - Kiểm tra: dry-run kèm diễn tập rollback (khôi phục đủ 4 mã, 13 grant, 5 dòng mẫu); smoke sau apply PASS; 14 mẫu còn 647 dòng, máy chủ công nhận 647/647; RPC danh mục của màn phân quyền không còn 4 mã. Danh mục giao diện và bản chụp `dbPermissionCatalog.json` cập nhật theo.
 - Rollback: `supabase/operations/authorization_retire_label_only_permissions_rollback.sql`.
+
+### Kiểm kê tài sản lưu thật + quyền `asset.audit.*` có tác dụng (02/10)
+
+- Lỗi: `pages/ts/AssetAudit.tsx` "Hoàn tất" chỉ giữ phiên trong bộ nhớ trang (setTimeout 0,8 giây) rồi báo "đã lưu"; tải lại là mất.
+- Migration `20261004190000_asset_audit_sessions`: bảng `public.asset_audit_sessions` (mỗi phiên một dòng; danh sách tài sản + tổng; ràng buộc tổng khớp danh sách); trigger gán người kiểm kê theo tài khoản đăng nhập; RLS: xem khi có `asset.audit.view` hoặc `asset.audit.perform` (bất kỳ phạm vi), ghi khi có `asset.audit.perform`, không ai sửa được, chỉ Admin xóa. `asset.audit.perform` chuyển sang `enforced`.
+- Giao diện: tải lịch sử từ máy chủ (đang tải / lỗi + Thử lại / trống), lưu thật, lỗi thì giữ nguyên dữ liệu đã nhập; người chỉ có quyền xem chỉ thấy tab Lịch sử kèm giải thích.
+- Kiểm tra: dry-run đúng ma trận (không quyền: không thấy, không ghi; chỉ xem: thấy, không ghi; kiểm kê: ghi được, người kiểm kê bị gán theo tài khoản dù gửi tên khác, tổng sai bị từ chối, không sửa/xóa được); smoke sau apply PASS; Vitest 2.827 PASS, lint, build, check-queries đạt.
+- Rollback: `supabase/operations/asset_audit_sessions_rollback.sql` (xóa bảng — xuất dữ liệu trước nếu đã có phiên thật).

@@ -34,7 +34,7 @@
 
 ## 4. Việc mở
 
-### 4.1 Kiểm kê tài sản không lưu (lỗi chức năng)
+### 4.1 Kiểm kê tài sản không lưu (lỗi chức năng) — ĐÃ SỬA 02/10 (migration `20261004190000`)
 `pages/ts/AssetAudit.tsx`: "Hoàn tất" chờ 0,8 giây, giữ phiên trong bộ nhớ trang và báo "Dữ liệu đã được lưu"; tải lại trang là mất. Cần bảng lưu + RLS theo `asset.audit.perform` / `asset.audit.view`. Đã tách thành việc riêng.
 
 ### 4.2 `system.da.manage` — ĐÃ THU HỒI (02/10, migration `20261004170000`)
