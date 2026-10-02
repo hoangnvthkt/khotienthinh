@@ -75,6 +75,18 @@ export const hrmPersonnelProfileService = {
     return requireData(data as HrmPersonnelSectionPayload | null, error, 'Không thể cập nhật liên hệ cá nhân.');
   },
 
+  async upsertAddress(input: {
+    employeeId: string; recordCode: string; addressType: string; provinceCode: string;
+    wardName: string; addressLine: string; reason: string;
+  }): Promise<HrmPersonnelSectionPayload> {
+    return runProfileCommand('upsert_hrm_employee_address', {
+      p_employee_id: input.employeeId, p_record_code: input.recordCode,
+      p_address_type: input.addressType, p_province_code: input.provinceCode,
+      p_ward_name: input.wardName.trim(), p_address_line: input.addressLine.trim(),
+      p_reason: input.reason,
+    }, 'Không thể cập nhật địa chỉ.');
+  },
+
   async upsertIdentityDocument(input: {
     employeeId: string; recordCode: string; documentTypeCode: string;
     documentNumber: string; issuedDate?: string | null; issuedPlace?: string | null;

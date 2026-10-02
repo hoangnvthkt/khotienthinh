@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BadgeDollarSign, BriefcaseBusiness, CalendarDays, Contact,
   FileBadge, FileText, GraduationCap, IdCard, Loader2, LockKeyhole,
-  PencilLine, Plus, RefreshCcw, Save, ShieldAlert, UserRound, X,
+  FilePenLine, PencilLine, Plus, RefreshCcw, Save, ShieldAlert, UserRound, X,
 } from 'lucide-react';
 import { hrmPersonnelProfileService } from '../../lib/hrmPersonnelProfileService';
 import type {
@@ -14,6 +14,9 @@ import type {
 } from '../../types/hrmPersonnelProfile';
 import { HRM_PERSONNEL_SECTION_KEYS } from '../../types/hrmPersonnelProfile';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
+import { codeLabel, EDITOR_META, type ProfileEditorKind } from '../../lib/hrmProfileFields';
+import MyProfileChangesCard from '../../components/hrm/MyProfileChangesCard';
+import ProfileChangeRequestDialog, { ProfileFieldInput } from '../../components/hrm/ProfileChangeRequestDialog';
 
 const SECTION_META: Array<{
   key: HrmPersonnelSectionKey;
@@ -31,117 +34,14 @@ const SECTION_META: Array<{
   { key: 'qualifications_documents', label: 'Trình độ & hồ sơ', shortLabel: 'Trình độ', icon: GraduationCap },
 ];
 
-type ProfileEditorKind =
-  | 'employment' | 'identity' | 'insurance' | 'dependent'
-  | 'bank' | 'tax' | 'qualification' | 'certification';
-
-interface EditorField {
-  key: string;
-  label: string;
-  type?: 'text' | 'date' | 'number' | 'checkbox' | 'select';
-  required?: boolean;
-  options?: Array<[code: string, label: string]>;
-  placeholder?: string;
-  hint?: string;
-}
-
-// Choices instead of typed codes; the stored code stays stable for reports and imports.
-const CODE_OPTIONS: Record<string, Array<[string, string]>> = {
-  eventTypeCode: [
-    ['TIEP_NHAN', 'Tiếp nhận'], ['THU_VIEC', 'Thử việc'], ['CHINH_THUC', 'Lên chính thức'],
-    ['DIEU_CHUYEN', 'Điều chuyển'], ['BO_NHIEM', 'Bổ nhiệm'], ['MIEN_NHIEM', 'Miễn nhiệm'],
-    ['DIEU_CHINH_LUONG', 'Điều chỉnh lương'], ['KHEN_THUONG', 'Khen thưởng'], ['KY_LUAT', 'Kỷ luật'],
-    ['TAM_HOAN', 'Tạm hoãn hợp đồng'], ['NGHI_VIEC', 'Nghỉ việc'],
-  ],
-  documentTypeCode: [['CCCD', 'Căn cước / CCCD'], ['CMND', 'Chứng minh nhân dân (cũ)'], ['HO_CHIEU', 'Hộ chiếu'], ['GPLD', 'Giấy phép lao động']],
-  participationStatusCode: [['TG', 'Đang tham gia'], ['1P', 'Tham gia một phần'], ['CTG', 'Chưa tham gia'], ['TS', 'Thai sản'], ['ĐĐ', 'Ốm đau'], ['HT', 'Hưu trí']],
-  relationshipCode: [['VO', 'Vợ'], ['CHONG', 'Chồng'], ['CON', 'Con'], ['BO', 'Bố'], ['ME', 'Mẹ'], ['ANH_CHI_EM', 'Anh / chị / em'], ['KHAC', 'Khác']],
-  bankCode: [
-    ['VCB', 'Vietcombank'], ['BIDV', 'BIDV'], ['CTG', 'VietinBank'], ['AGRIBANK', 'Agribank'], ['TCB', 'Techcombank'],
-    ['MB', 'MB Bank'], ['ACB', 'ACB'], ['VPB', 'VPBank'], ['TPB', 'TPBank'], ['SHB', 'SHB'], ['STB', 'Sacombank'],
-    ['HDB', 'HDBank'], ['VIB', 'VIB'], ['MSB', 'MSB'], ['OCB', 'OCB'], ['SEAB', 'SeABank'], ['LPB', 'LPBank'],
-    ['EIB', 'Eximbank'], ['KHAC', 'Ngân hàng khác'],
-  ],
-  taxResidencyCode: [['CU_TRU', 'Cá nhân cư trú'], ['KHONG_CU_TRU', 'Cá nhân không cư trú']],
-  educationLevelCode: [['TS', 'Tiến sĩ'], ['Ths', 'Thạc sĩ'], ['ĐH', 'Đại học'], ['CĐ', 'Cao đẳng'], ['TC', 'Trung cấp'], ['SC', 'Sơ cấp'], ['LĐPT', 'Lao động phổ thông']],
-  certificationTypeCode: [
-    ['ATLD', 'Thẻ / chứng chỉ an toàn lao động'], ['HANH_NGHE_XD', 'Chứng chỉ hành nghề xây dựng'], ['THO_HAN', 'Chứng chỉ thợ hàn'],
-    ['VAN_HANH', 'Vận hành thiết bị nâng / máy'], ['GPLX', 'Giấy phép lái xe'], ['PCCC', 'Phòng cháy chữa cháy'],
-    ['SO_CAP_CUU', 'Sơ cấp cứu'], ['KHAC', 'Khác'],
-  ],
-};
-const codeLabel = (key: string, value: unknown): string | null => {
-  const match = CODE_OPTIONS[key]?.find(([code]) => code === value);
-  return match ? match[1] : null;
-};
 const ACCESS_LEVEL_LABEL: Record<string, string> = {
   SELF: 'Hồ sơ của tôi', MANAGER: 'Quản lý trực tiếp', HR: 'HR', HR_MANAGE: 'HR Manage', DIRECTORY: 'Danh bạ',
 };
 const DEFAULT_CHANGE_REASON = 'Cập nhật hồ sơ nhân sự theo giấy tờ gốc';
 const newRecordCode = (kind: string) => `${kind.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 
-const EDITOR_META: Record<ProfileEditorKind, { label: string; fields: EditorField[] }> = {
-  employment: { label: 'Quá trình làm việc', fields: [
-    { key: 'eventTypeCode', label: 'Loại sự kiện', type: 'select', required: true, options: CODE_OPTIONS.eventTypeCode },
-    { key: 'eventDate', label: 'Ngày hiệu lực', type: 'date', required: true },
-    { key: 'titleSnapshot', label: 'Chức danh tại thời điểm' },
-    { key: 'sourceReference', label: 'Số quyết định / căn cứ', placeholder: 'Ví dụ: QĐ 12/2026/QĐ-TT' },
-    { key: 'eventReason', label: 'Nội dung' },
-  ] },
-  identity: { label: 'Giấy tờ định danh', fields: [
-    { key: 'documentTypeCode', label: 'Loại giấy tờ', type: 'select', required: true, options: CODE_OPTIONS.documentTypeCode },
-    { key: 'documentNumber', label: 'Số giấy tờ', required: true, hint: 'Số CCCD đồng thời là mã số thuế cá nhân (từ 01/07/2025).' },
-    { key: 'issuedDate', label: 'Ngày cấp', type: 'date' },
-    { key: 'issuedPlace', label: 'Nơi cấp' },
-    { key: 'expiryDate', label: 'Ngày hết hạn', type: 'date' },
-    { key: 'isPrimary', label: 'Giấy tờ chính', type: 'checkbox' },
-  ] },
-  insurance: { label: 'Bảo hiểm', fields: [
-    { key: 'socialInsuranceNumber', label: 'Số sổ BHXH' },
-    { key: 'healthInsuranceNumber', label: 'Số thẻ BHYT' },
-    { key: 'registeredClinicCode', label: 'Nơi đăng ký khám chữa bệnh' },
-    { key: 'participationStatusCode', label: 'Tình trạng tham gia', type: 'select', options: CODE_OPTIONS.participationStatusCode },
-    { key: 'effectiveFrom', label: 'Tham gia từ', type: 'date' },
-    { key: 'effectiveTo', label: 'Đến', type: 'date' },
-  ] },
-  dependent: { label: 'Người phụ thuộc', fields: [
-    { key: 'fullName', label: 'Họ và tên', required: true },
-    { key: 'relationshipCode', label: 'Quan hệ', type: 'select', required: true, options: CODE_OPTIONS.relationshipCode },
-    { key: 'dateOfBirth', label: 'Ngày sinh', type: 'date' },
-    { key: 'taxCode', label: 'Số CCCD / mã số thuế' },
-    { key: 'deductionFrom', label: 'Giảm trừ từ', type: 'date' },
-    { key: 'deductionTo', label: 'Giảm trừ đến', type: 'date' },
-  ] },
-  bank: { label: 'Tài khoản ngân hàng', fields: [
-    { key: 'bankCode', label: 'Ngân hàng', type: 'select', required: true, options: CODE_OPTIONS.bankCode },
-    { key: 'branchName', label: 'Chi nhánh' },
-    { key: 'accountNumber', label: 'Số tài khoản', required: true },
-    { key: 'accountHolder', label: 'Chủ tài khoản', required: true, placeholder: 'Viết hoa không dấu như trên thẻ' },
-    { key: 'isPayrollAccount', label: 'Tài khoản nhận lương', type: 'checkbox' },
-  ] },
-  tax: { label: 'Thông tin thuế', fields: [
-    { key: 'taxCode', label: 'Mã số thuế', hint: 'Từ 01/07/2025 dùng số CCCD.' },
-    { key: 'taxResidencyCode', label: 'Tình trạng cư trú', type: 'select', options: CODE_OPTIONS.taxResidencyCode },
-    { key: 'registrationDate', label: 'Ngày đăng ký', type: 'date' },
-  ] },
-  qualification: { label: 'Trình độ', fields: [
-    { key: 'educationLevelCode', label: 'Trình độ', type: 'select', options: CODE_OPTIONS.educationLevelCode },
-    { key: 'institutionName', label: 'Cơ sở đào tạo', required: true },
-    { key: 'majorName', label: 'Chuyên ngành' },
-    { key: 'degreeName', label: 'Văn bằng' },
-    { key: 'graduationYear', label: 'Năm tốt nghiệp', type: 'number' },
-  ] },
-  certification: { label: 'Chứng chỉ', fields: [
-    { key: 'certificationTypeCode', label: 'Loại chứng chỉ', type: 'select', options: CODE_OPTIONS.certificationTypeCode },
-    { key: 'certificationName', label: 'Tên chứng chỉ', required: true },
-    { key: 'certificateNumber', label: 'Số chứng chỉ' },
-    { key: 'issuerName', label: 'Đơn vị cấp' },
-    { key: 'issuedDate', label: 'Ngày cấp', type: 'date' },
-    { key: 'expiryDate', label: 'Ngày hết hạn', type: 'date', hint: 'Hệ thống sẽ nhắc trước khi hết hạn.' },
-  ] },
-};
-
 const SECTION_EDITORS: Partial<Record<HrmPersonnelSectionKey, ProfileEditorKind[]>> = {
+  personal_contact: ['address'],
   contracts_employment: ['employment'],
   legal_insurance: ['identity', 'insurance', 'dependent'],
   compensation_tax_bank: ['bank', 'tax'],
@@ -164,7 +64,8 @@ const FIELD_LABELS: Record<string, string> = {
   taxProfile: 'Thông tin thuế', bankAccounts: 'Tài khoản ngân hàng',
   salaryHistory: 'Lịch sử lương', recentPayrolls: 'Bảng lương gần đây',
   qualifications: 'Trình độ', certifications: 'Chứng chỉ', documents: 'Tài liệu hồ sơ',
-  recordCode: 'Mã bản ghi', addressType: 'Loại địa chỉ', addressLine: 'Địa chỉ',
+  recordCode: 'Mã bản ghi', addressType: 'Loại địa chỉ', addressLine: 'Số nhà, đường',
+  wardName: 'Xã / phường', provinceCode: 'Tỉnh / thành phố',
   fullNameContact: 'Họ và tên', relationshipCode: 'Quan hệ', phone: 'Điện thoại', email: 'Email',
   documentTypeCode: 'Loại giấy tờ', documentNumber: 'Số giấy tờ',
   issuedDate: 'Ngày cấp', issuedPlace: 'Nơi cấp', expiryDate: 'Ngày hết hạn',
@@ -289,6 +190,7 @@ const HrmPersonnelProfile: React.FC = () => {
   const [editorForm, setEditorForm] = useState<Record<string, string | boolean>>({});
   const [editorReason, setEditorReason] = useState('');
   const [savingEditor, setSavingEditor] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
 
   const loadOverview = useCallback(async () => {
     if (!employeeId) return;
@@ -389,6 +291,13 @@ const HrmPersonnelProfile: React.FC = () => {
             reason: editorReason,
           });
           break;
+        case 'address':
+          payload = await hrmPersonnelProfileService.upsertAddress({
+            employeeId, recordCode: textValue('recordCode'), addressType: textValue('addressType'),
+            provinceCode: textValue('provinceCode'), wardName: textValue('wardName'),
+            addressLine: textValue('addressLine'), reason: editorReason,
+          });
+          break;
         case 'identity':
           payload = await hrmPersonnelProfileService.upsertIdentityDocument({
             employeeId, recordCode: textValue('recordCode'),
@@ -478,7 +387,10 @@ const HrmPersonnelProfile: React.FC = () => {
     );
   }
 
+  const isSelf = overview.accessLevel === 'SELF';
   const canEditActive = overview.canEditSections.includes(activeSection);
+  // Employees change verified data through HR ("Đề nghị cập nhật"), never directly.
+  const canRequestActive = isSelf && ['personal_contact', 'contracts_employment', 'legal_insurance', 'qualifications_documents'].includes(activeSection);
   const selectedPayload = activeSection === 'overview' ? null : sectionData[activeSection];
   const selectedError = activeSection === 'overview' ? '' : sectionErrors[activeSection];
   const hasPermission = visibleSections.has(activeSection);
@@ -544,24 +456,29 @@ const HrmPersonnelProfile: React.FC = () => {
       </nav>
 
       {hasPermission && activeSection !== 'overview' && !selectedError && !(sectionLoading === activeSection && !selectedPayload) && (
-        <>{canEditActive && (
+        <>{(canEditActive || canRequestActive) && (
             <div className="flex flex-wrap justify-end gap-2">
-              {activeSection === 'personal_contact' && (
+              {canRequestActive && (
+                <button type="button" onClick={() => setRequestOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-black text-sky-800 active:scale-[0.98] dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                  <FilePenLine size={15} /> Đề nghị cập nhật
+                </button>
+              )}
+              {canEditActive && activeSection === 'personal_contact' && (
                 <button type="button" onClick={() => setEditingContact(true)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
                   <PencilLine size={15} /> Cập nhật liên hệ
                 </button>
               )}
-              {(SECTION_EDITORS[activeSection] || []).map(kind => (
+              {canEditActive && !isSelf && (SECTION_EDITORS[activeSection] || []).map(kind => (
                 <button key={kind} type="button" onClick={() => openEditor(kind)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
                   <Plus size={15} /> {EDITOR_META[kind].label}
                 </button>
               ))}
-              {activeSection === 'contracts_employment' && (
+              {canEditActive && !isSelf && activeSection === 'contracts_employment' && (
                 <button type="button" onClick={() => navigate('/hrm/contracts')} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                   <FileText size={15} /> Quản lý hợp đồng
                 </button>
               )}
-              {activeSection === 'qualifications_documents' && (
+              {canEditActive && !isSelf && activeSection === 'qualifications_documents' && (
                 <button type="button" onClick={() => navigate('/hrm/documents')} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                   <FileBadge size={15} /> Quản lý tài liệu
                 </button>
@@ -590,6 +507,7 @@ const HrmPersonnelProfile: React.FC = () => {
               ...overview.summary,
             }} />
           </section>
+          {isSelf ? <MyProfileChangesCard employeeId={overview.employeeId} /> : (
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-900">
             <h2 className="text-lg font-black text-slate-950 dark:text-white">Phạm vi hồ sơ</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-300">
@@ -601,6 +519,7 @@ const HrmPersonnelProfile: React.FC = () => {
               </p>
             )}
           </section>
+          )}
         </div>
       ) : sectionLoading === activeSection && !selectedPayload ? (
         <SectionSkeleton />
@@ -618,7 +537,7 @@ const HrmPersonnelProfile: React.FC = () => {
           <FileBadge className="mx-auto text-slate-400" size={30} />
           <h2 className="mt-3 text-lg font-black text-slate-900 dark:text-white">Chưa có dữ liệu</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">
-            {canEditActive ? 'Bấm nút thêm ở trên để nhập bản ghi đầu tiên.' : 'Nhóm thông tin này chưa có bản ghi phù hợp.'}
+            {canRequestActive ? 'Thấy thiếu? Bấm "Đề nghị cập nhật" để gửi HR kèm ảnh giấy tờ.' : canEditActive ? 'Bấm nút thêm ở trên để nhập bản ghi đầu tiên.' : 'Nhóm thông tin này chưa có bản ghi phù hợp.'}
           </p>
         </section>
       ) : (
@@ -670,39 +589,9 @@ const HrmPersonnelProfile: React.FC = () => {
               <button type="button" onClick={() => setEditorKind(null)} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Đóng"><X size={18} /></button>
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              {EDITOR_META[editorKind].fields.map(field => field.type === 'checkbox' ? (
-                <label key={field.key} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={editorForm[field.key] === true}
-                    onChange={event => setEditorForm(current => ({ ...current, [field.key]: event.target.checked }))}
-                    className="h-4 w-4 accent-sky-700"
-                  />
-                  {field.label}
-                </label>
-              ) : (
-                <label key={field.key} className="block space-y-2">
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{field.label}{field.required ? ' *' : ''}</span>
-                  {field.type === 'select' ? (
-                    <select
-                      value={String(editorForm[field.key] || '')}
-                      onChange={event => setEditorForm(current => ({ ...current, [field.key]: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="">— Chọn —</option>
-                      {(field.options || []).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-                    </select>
-                  ) : (
-                    <input
-                      type={field.type || 'text'}
-                      value={String(editorForm[field.key] || '')}
-                      placeholder={field.placeholder}
-                      onChange={event => setEditorForm(current => ({ ...current, [field.key]: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  )}
-                  {field.hint && <span className="block text-xs font-medium text-slate-500">{field.hint}</span>}
-                </label>
+              {EDITOR_META[editorKind].fields.map(field => (
+                <ProfileFieldInput key={field.key} field={field} value={editorForm[field.key]}
+                  onChange={value => setEditorForm(current => ({ ...current, [field.key]: value }))} />
               ))}
             </div>
             <label className="mt-5 block space-y-2">
@@ -728,6 +617,13 @@ const HrmPersonnelProfile: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {requestOpen && (
+        <ProfileChangeRequestDialog
+          employeeId={overview.employeeId}
+          onClose={() => setRequestOpen(false)}
+          onSubmitted={() => { setRequestOpen(false); selectSection('overview'); }}
+        />
       )}
     </main>
   );
