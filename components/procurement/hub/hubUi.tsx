@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { AlertTriangle, Inbox, Loader2, ShieldAlert, X } from 'lucide-react';
-import { PROCUREMENT_PO_STATUS_LABELS } from '../../../lib/procurementInboxService';
+import { PROCUREMENT_PO_STATUS_LABELS, type ProcurementPoPayment } from '../../../lib/procurementInboxService';
 
 // Shared pieces of the Mua hàng hub (tiếp nhận, đơn hàng).
 
@@ -34,6 +34,18 @@ const PO_STATUS_STYLE: Record<string, string> = {
 
 export const PoStatusChip: React.FC<{ status: string }> = ({ status }) =>
   <Badge className={PO_STATUS_STYLE[status] || PO_STATUS_STYLE.closed}>{PROCUREMENT_PO_STATUS_LABELS[status] || status}</Badge>;
+
+/** Tình trạng thanh toán PO cho Mua hàng: chưa / một phần / đủ, quá hạn nhấp nháy. Không hiện khi PO chưa phát sinh nợ. */
+export const PoPaymentChip: React.FC<{ payment?: ProcurementPoPayment | null }> = ({ payment: p }) => {
+  if (!p || p.status === 'none') return null;
+  if (p.status === 'paid') return <Badge className="border-leaf-200 bg-leaf-50 text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/40 dark:text-leaf-200">Đã thanh toán</Badge>;
+  const label = p.status === 'partial' ? 'TT một phần' : 'Chưa thanh toán';
+  return <>
+    <Badge className={p.overdue ? 'overdue-blink border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200' : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}
+      title={`Còn nợ ${money(p.outstanding)} đ${p.nextDue ? ` · hạn ${p.nextDue.split('-').reverse().join('/')}` : ''}`}>{p.overdue ? `${label} · quá hạn` : label}</Badge>
+    {p.inRequest > 0.5 && <Badge className="border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200" title={`${money(p.inRequest)} đ đang trong đề nghị chi`}>Đang đề nghị chi</Badge>}
+  </>;
+};
 
 /** Right-hand drawer on desktop, full screen on phones. Escape closes. */
 export const Drawer: React.FC<{ label: string; wide?: boolean; onClose: () => void; header: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }> = ({ label, wide, onClose, header, footer, children }) => {
