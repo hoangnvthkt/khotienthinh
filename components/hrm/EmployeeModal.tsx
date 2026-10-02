@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Employee, LeaveBalance } from '../../types';
+import { Employee } from '../../types';
 import { X, Save, User as UserIcon, MapPinned, Building, Layers, DollarSign, Calendar, CalendarDays, Camera, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
@@ -36,7 +36,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
     canManageOrganization = false,
     onManageOrganization,
 }) => {
-    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, leaveBalances, addHrmItem, updateHrmItem } = useApp();
+    const { addEmployee, updateEmployee, users, employees, warehouses, hrmAreas, hrmOffices, hrmEmployeeTypes, hrmSalaryPolicies, hrmWorkSchedules, leaveBalances } = useApp();
     const toast = useToast();
     const isSelfMode = mode === 'self';
     const [formData, setFormData] = useState<Partial<Employee>>({
@@ -106,16 +106,6 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
     // Leave balance state
     const currentYear = new Date().getFullYear();
     const existingBalance = employee ? leaveBalances.find(b => b.employeeId === employee.id && b.year === currentYear) : null;
-    const [initialDays, setInitialDays] = useState<number>(12);
-    const [remainingDays, setRemainingDays] = useState<number>(0);
-
-    useEffect(() => {
-        if (existingBalance) {
-            setInitialDays(existingBalance.initialDays);
-            setRemainingDays(leaveBalanceAvailable(existingBalance));
-        }
-    }, [existingBalance]);
-
     // Tìm các users chưa được gán cho nhân sự nào (ngoại trừ user đang được gán cho nhân sự hiện tại)
     const availableUsers = users.filter(usr => {
         const isLinkedToOther = employees.some(emp => emp.userId === usr.id && emp.id !== employee?.id);
@@ -174,46 +164,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
                     employeeCode: '', // Leave empty to let Supabase Sequence trigger
                 } as Employee;
                 await addEmployee(newEmployee);
-                // Tạo leave balance cho nhân sự mới
-                const currentMonth = new Date().getMonth() + 1;
-                const newBalance: LeaveBalance = {
-                    id: crypto.randomUUID(),
-                    employeeId: newEmployee.id,
-                    year: currentYear,
-                    initialDays: initialDays,
-                    monthlyAccrual: 1,
-                    accruedDays: currentMonth, // Cộng dồn cho các tháng đã qua
-                    usedPaidDays: 0,
-                    usedUnpaidDays: 0,
-                    lastAccrualMonth: currentMonth,
-                };
-                addHrmItem('hrm_leave_balances', newBalance);
             }
 
-            // Cập nhật leave balance nếu initialDays hoặc remainingDays thay đổi
-            if (employee && existingBalance) {
-                // Carried days stay as they are; the difference goes on the accrued part (ledger: HR adjustment).
-                const newAccruedDays = existingBalance.accruedDays + (remainingDays - leaveBalanceAvailable(existingBalance));
-                const hasChanges = existingBalance.initialDays !== initialDays || existingBalance.accruedDays !== newAccruedDays;
-                if (hasChanges) {
-                    updateHrmItem('hrm_leave_balances', { ...existingBalance, initialDays, accruedDays: newAccruedDays });
-                }
-            } else if (employee && !existingBalance) {
-                // Tạo mới balance nếu chưa có
-                const currentMonth = new Date().getMonth() + 1;
-                const newBalance: LeaveBalance = {
-                    id: crypto.randomUUID(),
-                    employeeId: employee.id,
-                    year: currentYear,
-                    initialDays: initialDays,
-                    monthlyAccrual: 1,
-                    accruedDays: currentMonth,
-                    usedPaidDays: 0,
-                    usedUnpaidDays: 0,
-                    lastAccrualMonth: currentMonth,
-                };
-                addHrmItem('hrm_leave_balances', newBalance);
-            }
             toast.success(employee ? 'Đã cập nhật hồ sơ nhân sự' : 'Đã thêm hồ sơ nhân sự');
             onClose();
         } catch (err: any) {
@@ -486,40 +438,20 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
                         </div>}
 
                         {/* ===== NGÀY PHÉP NĂM ===== */}
-                        {!isSelfMode && <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
-                            <h3 className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                <CalendarDays size={16} /> Quản lý ngày phép ({currentYear})
+                        {/* Leave balances are set and adjusted in Nghỉ phép → Số phép, with a reason on the ledger (G2b). */}
+                        {!isSelfMode && employee && <div className="border-t border-slate-100 dark:border-slate-800 pt-6 mt-6">
+                            <h3 className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                <CalendarDays size={16} /> Ngày phép năm {currentYear}
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tổng phép năm (ngày)</label>
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        max={365}
-                                        value={initialDays}
-                                        onChange={e => setInitialDays(Math.max(0, parseInt(e.target.value) || 0))}
-                                        className="w-full px-4 py-3 rounded-xl border border-emerald-200 dark:border-emerald-800/30 bg-emerald-50 dark:bg-emerald-900/10 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-emerald-500 font-bold"
-                                    />
-                                </div>
-                                {existingBalance && (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Phép còn lại (ngày)</label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            max={365}
-                                            value={remainingDays}
-                                            onChange={e => setRemainingDays(Math.max(0, parseFloat(e.target.value) || 0))}
-                                            className={`w-full px-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 ${
-                                                remainingDays <= 0
-                                                    ? 'border-red-200 dark:border-red-800/30 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 focus:ring-red-500'
-                                                    : 'border-emerald-200 dark:border-emerald-800/30 bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 focus:ring-emerald-500'
-                                            }`}
-                                        />
-                                        <p className="text-[10px] text-slate-400">Tích lũy hàng tháng. Reset về 0 sau tháng 3 năm kế tiếp.</p>
-                                    </div>
-                                )}
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 px-4 py-3">
+                                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                                    {existingBalance
+                                        ? <>Còn lại <span className="text-emerald-600 dark:text-emerald-400">{leaveBalanceAvailable(existingBalance).toLocaleString('vi-VN')} ngày</span></>
+                                        : 'Chưa có số phép năm nay'}
+                                </p>
+                                <a href="#/hrm/leave?tab=balances" onClick={onClose} className="text-xs font-black text-emerald-700 dark:text-emerald-300 hover:underline">
+                                    {existingBalance ? 'Xem sổ phép / điều chỉnh' : 'Thiết lập ở tab Số phép'}
+                                </a>
                             </div>
                         </div>}
 

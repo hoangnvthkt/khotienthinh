@@ -54,7 +54,7 @@ const LeaveManagement: React.FC = () => {
   const canManagePolicy = canPerformHrmTemplatePermission(user, 'hrm.master_data.manage');
   const me = useMemo(() => employees.find(employee => employee.userId === user.id && employee.status === 'Đang làm việc'), [employees, user.id]);
 
-  const [tab, setTab] = useState<Tab>('mine');
+  const [tab, setTab] = useState<Tab>(() => (searchParams.get('tab') === 'balances' ? 'balances' : 'mine'));
   const [requests, setRequests] = useState<LeaveRequestRow[]>([]);
   const [types, setTypes] = useState<LeaveTypeOption[]>([]);
   const [settings, setSettings] = useState<LeaveSettings | null>(null);
