@@ -899,3 +899,24 @@ Chỉ sửa frontend, không có migration.
 - Giao diện: tải lịch sử từ máy chủ (đang tải / lỗi + Thử lại / trống), lưu thật, lỗi thì giữ nguyên dữ liệu đã nhập; người chỉ có quyền xem chỉ thấy tab Lịch sử kèm giải thích.
 - Kiểm tra: dry-run đúng ma trận (không quyền: không thấy, không ghi; chỉ xem: thấy, không ghi; kiểm kê: ghi được, người kiểm kê bị gán theo tài khoản dù gửi tên khác, tổng sai bị từ chối, không sửa/xóa được); smoke sau apply PASS; Vitest 2.827 PASS, lint, build, check-queries đạt.
 - Rollback: `supabase/operations/asset_audit_sessions_rollback.sql` (xóa bảng — xuất dữ liệu trước nếu đã có phiên thật).
+
+### Nhắc chấm công vào / ra theo ca của từng người (02/10, chủ sản phẩm yêu cầu và cho phép apply)
+
+- Yêu cầu: mỗi nhân viên nhận thông báo đẩy 10 phút trước giờ chấm công vào và ra.
+- Trước đây: một giờ vào chung cho mỗi văn phòng / công trường (`checkInTime`), chỉ nhắc giờ vào, 5 phút trước.
+- Migration `20261008100000_notification_attendance_reminder_in_out`:
+  - `app_private.attendance_shift_of_day(employee, day)`: ca trong ngày theo đúng thứ tự của bảng công G4 (lịch ca theo ngày → lịch ca mặc định → lịch làm việc → 08:00–17:00); bỏ Chủ nhật, ngày lễ, ngày nghỉ theo lịch ca, thứ Bảy nếu cài đặt nghỉ; nghỉ phép đã duyệt cả ngày thì bỏ nhắc, nửa ngày thì dời giờ (cùng quy tắc bảng công, công tác vẫn nhắc).
+  - `app_private.alert_attendance_reminders(rule, now)`: nhắc vào nếu chưa chấm công vào; nhắc ra nếu đã vào mà chưa ra; ca đêm nhắc ra sáng hôm sau; mỗi người một lần mỗi loại mỗi ngày.
+  - `run_scheduled_alerts` gọi hàm mới (các cảnh báo khác giữ nguyên định nghĩa đang chạy trên Cloud). Quy tắc đổi tên "Nhắc chấm công vào / ra", mặc định 10 phút; **trạng thái bật/tắt giữ nguyên (đang tắt)**, chủ sản phẩm tự bật sau khi báo nhân viên.
+- Số liệu (rollback): một ngày làm việc lúc 07:50 có 79 người được nhắc; chạy mất khoảng 85 ms. Chỉ 20/79 người đã bật thông báo trên thiết bị (đăng ký web push); những người còn lại chỉ thấy trong chuông thông báo.
+- Kiểm tra: smoke `notification_attendance_reminder_in_out_smoke.sql` (đúng 10 phút, không lặp, đã vào thì không nhắc vào, chưa vào thì không nhắc ra, ca đêm, Chủ nhật) PASS trước và sau apply; smoke cảnh báo định kỳ cũ bỏ phần nhắc theo văn phòng, PASS.
+- Rollback: `supabase/operations/notification_attendance_reminder_in_out_rollback.sql`.
+
+### Gán vai trò đặc biệt trong Người dùng → Sửa + hướng dẫn nhanh (02/10, chỉ giao diện)
+
+- Chủ sản phẩm yêu cầu gộp chỗ gán vai trò đặc biệt vào Người dùng → Sửa và có hướng dẫn vì "nhiều mục phân quyền quá".
+- Mục "② Vai trò đặc biệt" trong trình sửa quyền: Nhân sự, Trưởng phòng nhân sự (một trong hai), Kiểm toán; mỗi dòng ghi dành cho ai và mở quyền gì; gán / đổi / thu hồi kèm hạn (không bắt buộc) và lý do, có hiệu lực ngay. Dùng đúng lệnh máy chủ cũ (`set_user_hr_business_role`, `assign_business_role_v2`, `revoke_business_role_assignment`), đã diễn tập bằng tài khoản Admin trong giao dịch rollback.
+- Quản trị hệ thống / Quản trị phân quyền: không gán mới được (mã quyền chưa `enforced`), 6 người đang giữ đều là tài khoản Quản trị viên → chỉ hiển thị khi đang giữ.
+- Bỏ tab "Vai trò nhân sự" trong ngăn kéo người dùng (gán ở một nơi). Chú thích ô khóa trỏ về mục ②.
+- Khung "Hướng dẫn nhanh" ở đầu trình sửa quyền: 3 bước thường dùng và ý nghĩa từng phần.
+- Quyết định ghi nhận cùng ngày: bảng đơn vị tính, danh mục, quy tắc duyệt, KPI **giữ chỉ Admin ghi**; Room An toàn (11 người xác nhận / duyệt) **đúng người**.

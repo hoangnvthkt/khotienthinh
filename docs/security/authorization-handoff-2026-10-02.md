@@ -157,6 +157,8 @@ Các quyết định 1–11 cũng lưu trong memory `authorization-owner-decisio
 16. (02/10) **Mẫu Room giữ Admin-only**; PM/CHT chưa được quản lý Room.
 17. (02/10) **Bỏ màn Room cũ**, thay bằng "Phân quyền theo người", với điều kiện không bỏ sót quyền (đã đối chiếu dữ liệu thật).
 18. (02/10) Bỏ lý do khi chỉ sửa hồ sơ; bỏ hạn 365 ngày cho `edit_profile@own`.
+19. (02/10) Gán vai trò đặc biệt ngay trong Người dùng → Sửa (đã làm). Đơn vị tính, danh mục, quy tắc duyệt, KPI: **chỉ Admin ghi**. Room An toàn (11 người xác nhận/duyệt): **đúng người**.
+20. (02/10) Nhắc chấm công vào/ra 10 phút trước, theo ca từng người: đã apply, **đang tắt**, chủ sản phẩm tự bật ở Cài đặt → Cảnh báo sau khi báo nhân viên.
 
 ---
 
@@ -286,12 +288,12 @@ Chủ sản phẩm chọn phương án 1. Migration `20261004100000` giữ nguy�
 
 - Purge CDN bucket `project-photos`: `curl -X DELETE …/storage/v1/cdn/project-photos`, cần secret key.
 - Mở thử Cài đặt → "Mẫu quyền theo vị trí" bằng tài khoản Admin thật. Màn này agent **chưa xem được trên giao diện thật**; mới kiểm bằng type-check và bằng mẫu của màn "Mẫu quyền dự án". Luồng "Điền nhanh" đã kiểm bằng fixture và e2e.
-- Bật lại nhắc chấm công ở Cài đặt → Cảnh báo, sau khi đã báo trước cho nhân viên.
+- Bật nhắc chấm công vào / ra ở Cài đặt → Cảnh báo, sau khi đã báo trước cho nhân viên. Nhắc đẩy chỉ tới máy đã bật thông báo (20/79 người lúc 02/10); người khác cần bật ở Cài đặt → Tài khoản.
 
 ### 8.3 P3 còn lại
 
 - **Đã xong:** smoke cho `20260928101825` và `20260928113000`; tab "Mẫu quyền" đổi tên "Vai trò đặc biệt"; thẻ "Xem Tài chính và Hợp đồng" trong Người dùng → Sửa (RPC `get_user_sensitive_view_summary`); màn Room cũ thay bằng "Phân quyền theo người" (đã đối chiếu dữ liệu thật, không bỏ sót quyền).
-- **Hồ sơ quyền: đã xong ở mức xem tổng hợp (02/10).** Người dùng → Sửa có khối "Quyền đến từ nguồn khác" (vai trò đặc biệt, Tài chính/Hợp đồng, Room dự án). Việc gán/đổi vai trò vẫn ở Cài đặt → Vai trò đặc biệt và tab Vai trò nhân sự; chưa gộp chỗ sửa vào một nơi (cần chủ sản phẩm quyết).
+- **Hồ sơ quyền: xong (02/10).** Người dùng → Sửa gồm: hướng dẫn nhanh, ① quyền theo công việc, ② vai trò đặc biệt (gán/thu hồi tại chỗ), ③ quyền đến từ nguồn khác (Tài chính/Hợp đồng, Room dự án; chỉ xem). Cài đặt → Vai trò đặc biệt chỉ còn dùng để tạo/sửa mẫu.
 - **PM / CHT quản lý Room:** chủ sản phẩm quyết **giữ Admin-only** (02/10).
 - **Task 13: xóa cột legacy:** bước 1 xong 02/10 (không còn quyết định quyền từ 4 cột; frontend thôi đọc). **T0 = 02/10, xóa cột sớm nhất 09/10** theo `authorization-v2-task13-runbook.md`: backup + diễn tập khôi phục, viết lại ~16 hàm quan sát/vòng đời còn đọc cột, rồi drop.
 - **E2E Playwright:** đã cài trình duyệt (02/10); e2e phân quyền 5/5 PASS.
@@ -299,7 +301,7 @@ Chủ sản phẩm chọn phương án 1. Migration `20261004100000` giữ nguy�
 ### 8.4 Thông báo đúng người: phần còn mở
 
 - **Dữ liệu:** chưa ai được gán chức vụ Chỉ huy trưởng trong nhân sự dự án; chỉ 6/86 dự án có nhân sự dự án. BCH và Room template phụ thuộc dữ liệu này.
-- Room An toàn có 11 người có quyền xác nhận / duyệt; nên rà lại cho đúng "người quản lý an toàn".
+- Room An toàn có 11 người có quyền xác nhận / duyệt: chủ sản phẩm xác nhận **đúng** (02/10).
 - `request_instances.due_date` chưa được màn Phiếu yêu cầu ghi, nên cảnh báo "Yêu cầu quá hạn" không có dữ liệu. Luồng Phiếu yêu cầu đã đổi nhiều sau 30/09 (#38, #45); kiểm tra lại trước khi làm.
 - Quy tắc "Tiến độ chậm" đang tắt. Nếu bật lại, nên lấy người nhận theo Room `gantt` (`edit`).
 
