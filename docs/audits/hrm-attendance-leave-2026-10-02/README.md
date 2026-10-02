@@ -423,7 +423,9 @@ Bổ sung 02/10 (lần 3):
 - Nghỉ phép nhân sự văn phòng: **người quản lý trong sơ đồ tổ chức** duyệt (G2 — cần điền quản lý cho từng đơn vị; hiện 21/23 đơn vị chưa có).
 - Chống chấm công hộ (dùng tài khoản người khác): đề xuất ở mục 12.
 
-Còn mở: "Giám đốc" duyệt bước 2 (> 3 ngày).
+- Bước 2 (đơn nghỉ > 3 ngày): **TGĐ Dương Xuân Thịnh** (tạm thời; Admin đổi được sau) — áp dụng ở G2.
+- G1 (lớp 1–3 chống chấm công hộ) lên production 02/10 (#58).
+- G2 (nhánh `feature/hrm-g2-leave-policy`): danh mục loại đơn, chuỗi duyệt tự xác định (công trường → người duyệt công trường; còn lại → quản lý trong sơ đồ tổ chức → quản lý trực tiếp của tài khoản → HCNS), bước 2 TGĐ khi > 3 ngày làm việc với phép năm / không lương, đi muộn / về sớm ≤ 60 phút mỗi lần (được duyệt thì bảng công không tính phút muộn), thông báo người duyệt, HR duyệt thay phải ghi lý do. Chưa làm: tự hết hạn phép tồn sau quý I, sổ phép dạng bút toán đầy đủ.
 
 
 ## 12. Chống chấm công hộ (dùng tài khoản người khác) — đề xuất

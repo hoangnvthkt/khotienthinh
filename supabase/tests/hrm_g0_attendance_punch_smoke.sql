@@ -23,6 +23,15 @@ where office.latitude is not null and office.longitude is not null
 order by office.name
 limit 1;
 
+-- G1 adds a passkey requirement; this smoke covers the location rules only.
+do $$
+begin
+  if to_regclass('public.hrm_attendance_settings') is not null then
+    execute 'update public.hrm_attendance_settings set require_device_passkey = false';
+  end if;
+end;
+$$;
+
 -- Start from a clean day for the persona so the first punch is "vào".
 delete from public.hrm_attendance
 where "employeeId" = current_setting('test.punch.employee_id')::uuid
