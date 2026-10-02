@@ -105,6 +105,20 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_CANCEL_REASON_REQUIRED: 'Nhập lý do hủy đợt giao.',
   SUPPLIER_RETURN_NOT_FOUND: 'Phiếu trả NCC không còn. Tải lại.',
   SUPPLIER_RETURN_ALREADY_DECIDED: 'Kho đã xuất trả nên không đổi được quyết định.',
+  PROCUREMENT_PROACTIVE_REASON_REQUIRED: 'Chọn lý do mua chủ động (chọn "Khác" thì ghi rõ lý do).',
+  PROCUREMENT_PROACTIVE_PROJECT_REQUIRED: 'Chọn dự án nhận hàng.',
+  PROCUREMENT_PROACTIVE_PROJECT_LOCKED: 'Không đổi được dự án của đơn chủ động. Xóa nháp và lập đơn mới cho dự án khác.',
+  PROCUREMENT_PROACTIVE_OVER_BOQ_REASON: 'Có vật tư vượt BOQ hoặc ngoài BOQ của dự án — ghi lý do mua vượt.',
+  PROCUREMENT_PROACTIVE_ALLOCATED: 'Có dòng đã gắn nhu cầu: không bỏ dòng đó và không giảm SL dưới phần đã gắn. Gỡ gắn trước nếu cần.',
+  PROCUREMENT_PO_PROACTIVE_USE_EDITOR: 'Đơn chủ động phải sửa bằng màn "Đơn chủ động". Tải lại rồi bấm Sửa.',
+  PROCUREMENT_PO_LINE_INVALID: 'Dòng đơn hàng không còn. Tải lại.',
+  PROCUREMENT_ITEM_NOT_FOUND: 'Vật tư không còn trong danh mục. Chọn lại.',
+  PROCUREMENT_PROACTIVE_LINK_STATE: 'Đơn này đã đóng hoặc bị trả lại nên không gắn/gỡ nhu cầu được.',
+  PROCUREMENT_PROACTIVE_ITEM_MISMATCH: 'Dòng đơn chủ động khác vật tư với dòng nhu cầu.',
+  PROCUREMENT_PROACTIVE_OVER_NEED: 'SL gắn lớn hơn phần nhu cầu còn thiếu.',
+  PROCUREMENT_PROACTIVE_OVER_UNALLOCATED: 'SL gắn lớn hơn phần chưa phân bổ của đơn chủ động.',
+  PROCUREMENT_UNLINK_REASON_REQUIRED: 'Nhập lý do gỡ gắn.',
+  PROCUREMENT_LINK_NOT_FOUND: 'Liên kết đã được gỡ trước đó. Tải lại.',
 };
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
@@ -158,6 +172,21 @@ export const procurementInboxService = {
   closeShort(input: { purchaseOrderId: string; expectedRowVersion: number; reason: string; returnToNeed: boolean }) {
     return call<{ status: string; shortStockQty: number }>('close_procurement_po_short_v1', { p_input: input });
   },
+  proactiveOptions() {
+    return call<{ projects: ProcurementProactiveProject[] }>('list_procurement_proactive_options_v1', {});
+  },
+  searchItems(projectId: string, search?: string) {
+    return call<ProcurementCatalogItem[]>('search_procurement_items_v1', { p_project_id: projectId, p_search: search || null });
+  },
+  saveProactiveOrder(input: ProcurementProactiveSaveInput) {
+    return call<{ purchaseOrderId: string; poNumber: string; rowVersion: number; totalAmount: number; lines: number; overBoq: number }>('save_procurement_proactive_po_v1', { p_input: input });
+  },
+  proactiveCandidates(sourceType: ProcurementSourceType, sourceId: string) {
+    return call<ProcurementProactiveCandidate[]>('list_procurement_proactive_candidates_v1', { p_source_type: sourceType, p_source_id: sourceId });
+  },
+  linkProactive(input: { action: 'link' | 'unlink'; purchaseOrderId: string; poLineId: string; sourceType: ProcurementSourceType; sourceId: string; lineId: string; qty?: number; reason?: string }) {
+    return call<{ purchaseOrderId: string; action: string; qty: number }>('link_procurement_proactive_need_v1', { p_input: input });
+  },
   transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string }) {
     return call<{ purchaseOrderId: string; status: string; rowVersion: number }>('transition_procurement_hub_po_v1', { p_input: input });
   },
@@ -173,7 +202,7 @@ export interface ProcurementOrderSummary {
   constructionSiteId: string | null; totalAmount: number; vatRate: number; orderDate: string | null; expectedDeliveryDate: string | null;
   late: boolean; lineCount: number; qtyTotal: number; qtyReceived: number;
   createdById: string | null; createdByName: string | null; submittedToUserId: string | null; submittedToName: string | null;
-  awaitingMe: boolean; purchaseMode: 'single' | 'multiple'; returnsPending: number; sources: Array<ProcurementSourceRef & { code: string | null }>;
+  awaitingMe: boolean; purchaseMode: 'single' | 'multiple'; returnsPending: number; kind: ProcurementOrderKind; sources: Array<ProcurementSourceRef & { code: string | null }>;
 }
 export interface ProcurementOrderList { today: string; orders: ProcurementOrderSummary[]; awaitingMyApproval: number }
 export interface ProcurementOrderLine {
@@ -181,6 +210,10 @@ export interface ProcurementOrderLine {
   stockUnit: string | null; factor: number; returnedQty: number;
   /** Purchase-unit quantity neither received nor on an open delivery. */
   remainingToDeliver: number;
+  /** Ordered quantity in the stock unit, and how much of it is already linked to needs. */
+  stockQty: number; allocatedQty: number;
+  /** Proactive orders: BOQ snapshot when the line was saved. */
+  boq: ProcurementBoqSnapshot | null;
   allocations: Array<ProcurementSourceRef & { code: string | null; lineId: string; qty: number; needQty: number }>;
 }
 export interface ProcurementOrderDetail {
@@ -191,12 +224,13 @@ export interface ProcurementOrderDetail {
   createdById: string | null; createdByName: string | null; createdAt: string; submittedToUserId: string | null; submittedToName: string | null;
   returnReason: string | null; everSubmitted: boolean;
   purchaseMode: 'single' | 'multiple'; approvedTotalAmount: number;
+  kind: ProcurementOrderKind; proactive: ProcurementProactiveInfo | null;
   shortClose: { reason: string; returnToNeed: boolean; shortStockQty: number; at: string; by: string | null } | null;
   deliveries: ProcurementDelivery[];
   returns: ProcurementSupplierReturn[];
   lines: ProcurementOrderLine[];
-  events: Array<{ action: string; actorName: string | null; reason: string | null; at: string }>;
-  permissions: { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canDelete: boolean; canAddDelivery: boolean; canCloseShort: boolean; canDecideReturn: boolean };
+  events: Array<{ action: string; actorName: string | null; reason: string | null; at: string; payload?: { sourceCode?: string; qty?: number } | null }>;
+  permissions: { canEdit: boolean; canSubmit: boolean; canApprove: boolean; canDelete: boolean; canAddDelivery: boolean; canCloseShort: boolean; canDecideReturn: boolean; canLink: boolean };
   approvers: Array<{ id: string; name: string }>;
 }
 export interface ProcurementDelivery {
@@ -271,3 +305,36 @@ export const urgencyOf = (date: string | null, today: string): { label: string; 
   if (d <= 3) return { label: `Còn ${d} ngày`, tone: 'soon' };
   return { label: `Còn ${d} ngày`, tone: 'normal' };
 };
+
+// ---------------------------------------------------------------------------
+// M2d — Đơn chủ động (Mua hàng tự lập, không cần phiếu nhu cầu)
+// ---------------------------------------------------------------------------
+export type ProcurementOrderKind = 'need' | 'proactive';
+export type ProcurementProactiveReason = 'price_lock' | 'long_lead' | 'min_stock' | 'other';
+export const PROACTIVE_REASON_LABELS: Record<ProcurementProactiveReason, { label: string; hint: string }> = {
+  price_lock: { label: 'Chốt giá tốt', hint: 'Mua trước khi NCC tăng giá' },
+  long_lead: { label: 'Hàng đặt dài ngày', hint: 'Phải đặt sớm mới kịp tiến độ' },
+  min_stock: { label: 'Bù tồn tối thiểu', hint: 'Giữ mức tồn an toàn ở kho công trường' },
+  other: { label: 'Khác', hint: 'Ghi rõ lý do' },
+};
+export interface ProcurementProactiveInfo { purpose: 'project'; reasonCode: ProcurementProactiveReason; reason?: string; overBoqReason?: string }
+export interface ProcurementBoqSnapshot { status: 'within' | 'over' | 'outside'; boqQty: number; orderedBefore: number }
+export interface ProcurementProactiveProject { id: string; code: string | null; name: string | null; status: string | null; warehouses: Array<{ id: string; name: string }> }
+export interface ProcurementCatalogItem {
+  id: string; name: string; sku: string | null; unit: string | null; purchaseUnit: string | null; purchaseFactor: number | null;
+  inBoq: boolean; boqQty: number; orderedQty: number;
+}
+export interface ProcurementProactiveSaveInput {
+  purchaseOrderId?: string; expectedRowVersion?: number; projectId: string; targetWarehouseId: string; vendorId: string;
+  purchaseMode: 'single' | 'multiple'; expectedDeliveryDate?: string | null; vatRate: number; note?: string;
+  reasonCode: ProcurementProactiveReason; reason?: string; overBoqReason?: string;
+  items: Array<{ lineId?: string; itemId: string; stockQty: number; purchaseQty?: number; purchaseUnit?: string; unitPrice: number; note?: string }>;
+}
+export interface ProcurementProactiveCandidate {
+  needLineId: string; itemId: string; itemName: string; unit: string | null; remainingQty: number;
+  purchaseOrderId: string; poNumber: string | null; status: string; vendorName: string | null; expectedDeliveryDate: string | null;
+  poLineId: string; lineStockQty: number; unallocatedQty: number; reasonCode: ProcurementProactiveReason | null;
+}
+/** BOQ status of a quantity about to be ordered: within, over the remaining BOQ, or an item outside the project BOQ. */
+export const boqStatusOf = (item: Pick<ProcurementCatalogItem, 'inBoq' | 'boqQty' | 'orderedQty'>, qty: number): ProcurementBoqSnapshot['status'] =>
+  !item.inBoq ? 'outside' : item.orderedQty + qty > item.boqQty * 1.0001 + 0.0005 ? 'over' : 'within';

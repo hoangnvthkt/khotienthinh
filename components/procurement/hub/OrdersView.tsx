@@ -25,6 +25,7 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }>
           {order.awaitingMe && <Badge className="border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-100">Chờ bạn duyệt</Badge>}
           {!order.isHub && <Badge className="border-border bg-muted text-muted-foreground" title="Lập ở tab dự án trước khi có Mua hàng">Lập ở dự án</Badge>}
           {order.returnsPending > 0 && <Badge className="border-amber-300 bg-amber-50 text-amber-800">{order.returnsPending} trả NCC chờ quyết định</Badge>}
+          {order.kind === 'proactive' && <Badge className="border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200" title="Mua hàng lập khi chưa có phiếu nhu cầu">Chủ động</Badge>}
           {order.purchaseMode === 'multiple' && <Badge className="border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">Nhiều đợt</Badge>}
         </span>
         <span className="mt-0.5 block truncate text-sm text-muted-foreground">
