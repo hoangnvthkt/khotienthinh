@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Search } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import {
   procurementInboxService,
-  type ProcurementInboxDetail, type ProcurementOrderDetail, type ProcurementSourceRef, type ProcurementVendor,
+  type ProcurementInboxDetail, type ProcurementOrderDetail, type ProcurementSourceRef,
 } from '../../../lib/procurementInboxService';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
 
 // Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu cùng dự án. Mỗi vật tư là một
 // dòng đơn hàng; SL đặt phân về từng dòng nhu cầu để theo dõi còn thiếu.
@@ -25,8 +26,6 @@ const purchaseQtyOf = (item: Item, stockQty: number) => {
   const typed = parseQty(item.purchaseQty);
   return typed == null ? autoPurchase(item, stockQty) : typed;
 };
-
-const VAT_CHOICES = [0, 8, 10];
 
 const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetail | null): Item[] => {
   const mine = new Map<string, { qty: number; price: number }>();
@@ -65,9 +64,6 @@ export const OrderEditor: React.FC<{
   const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [vendor, setVendor] = useState<{ id: string; name: string } | null>(order?.vendorId ? { id: order.vendorId, name: order.vendorName || '' } : null);
-  const [vendorQuery, setVendorQuery] = useState('');
-  const [vendors, setVendors] = useState<ProcurementVendor[] | null>(null);
-  const [vendorOpen, setVendorOpen] = useState(false);
   const [expected, setExpected] = useState(order?.expectedDeliveryDate || '');
   const [vat, setVat] = useState(String(order?.vatRate ?? 10));
   const [note, setNote] = useState(order?.note || '');
@@ -92,13 +88,6 @@ export const OrderEditor: React.FC<{
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceKey]);
-
-  useEffect(() => {
-    if (!vendorOpen) return;
-    setVendors(null);
-    const t = setTimeout(() => { procurementInboxService.vendors(vendorQuery).then(setVendors).catch(() => setVendors([])); }, 250);
-    return () => clearTimeout(t);
-  }, [vendorQuery, vendorOpen]);
 
   const project = docs?.[0];
   const mixedScope = Boolean(docs && new Set(docs.map(d => `${d.projectId}|${d.constructionSiteId}`)).size > 1);
@@ -168,50 +157,15 @@ export const OrderEditor: React.FC<{
         : mixedScope ? <StateBox kind="error" title="Các phiếu thuộc nhiều dự án/công trường" message="Một đơn hàng chỉ gồm phiếu của cùng một dự án và công trường. Chọn lại phiếu." />
           : <>
             <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="relative">
-                <label className="text-xs font-semibold text-muted-foreground" htmlFor="po-vendor">Nhà cung cấp</label>
-                {vendor && !vendorOpen
-                  ? <button id="po-vendor" type="button" onClick={() => { setVendorOpen(true); setVendorQuery(''); }} className={`mt-1 flex w-full items-center justify-between text-left ${inputCls}`}>
-                    <span className="truncate font-semibold">{vendor.name}</span><span className="text-xs text-teal-700 dark:text-teal-300">Đổi</span></button>
-                  : <div className="relative mt-1">
-                    <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <input id="po-vendor" autoFocus value={vendorQuery} onFocus={() => setVendorOpen(true)} onBlur={() => setTimeout(() => setVendorOpen(false), 150)} onChange={e => { setVendorQuery(e.target.value); setVendorOpen(true); }}
-                      placeholder="Tìm tên hoặc mã số thuế NCC…" className={`w-full pl-8 ${inputCls}`} />
-                  </div>}
-                {vendorOpen && <ul role="listbox" className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-                  {vendors == null && <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"><Loader2 size={14} className="animate-spin" />Đang tìm NCC…</li>}
-                  {vendors?.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">Không tìm thấy NCC. Khai NCC mới ở Hợp đồng — Đối tác.</li>}
-                  {vendors?.map(v => <li key={v.id}><button type="button" role="option" aria-selected={vendor?.id === v.id}
-                    onClick={() => { setVendor({ id: v.id, name: v.name }); setVendorOpen(false); }}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted">
-                    <span className="truncate">{v.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{v.recentOrders ? `${v.recentOrders} đơn` : v.taxCode && v.taxCode !== '0' ? v.taxCode : ''}</span></button></li>)}
-                </ul>}
-              </div>
+              <VendorPicker value={vendor} onChange={setVendor} />
               <div>
                 <label className="text-xs font-semibold text-muted-foreground" htmlFor="po-expected">Ngày cần giao</label>
                 <input id="po-expected" type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`mt-1 w-full ${inputCls}`} />
               </div>
-              <div>
-                <span className="text-xs font-semibold text-muted-foreground">Thuế VAT</span>
-                <div className="mt-1 flex items-center gap-1">
-                  {VAT_CHOICES.map(v => <button key={v} type="button" aria-pressed={vat === String(v)} onClick={() => setVat(String(v))}
-                    className={`rounded-lg border px-2.5 py-1.5 text-sm font-semibold ${vat === String(v) ? 'border-teal-600 bg-teal-700 text-white' : 'border-border hover:bg-muted'}`}>{v}%</button>)}
-                  <input aria-label="VAT khác (%)" inputMode="decimal" value={VAT_CHOICES.map(String).includes(vat) ? '' : vat} onChange={e => setVat(e.target.value)} placeholder="Khác" className={`w-16 ${inputCls}`} />
-                </div>
-              </div>
+              <VatPicker value={vat} onChange={setVat} />
             </section>
 
-            <section role="radiogroup" aria-label="Hình thức giao" className="grid gap-2 md:grid-cols-2">
-              {([['single', 'Giao 1 lần', 'Đặt đơn nào về đơn ấy. Duyệt xong có ngay phiếu nhập kho cho thủ kho.'],
-                ['multiple', 'Giao nhiều đợt', 'Hàng về nhiều lần (VD thép tấm). Mua hàng lập từng đợt với SL, giá và VAT riêng.']] as const).map(([key, label, hint]) =>
-                <button key={key} type="button" role="radio" aria-checked={mode === key} onClick={() => setMode(key)}
-                  className={`rounded-2xl border p-3 text-left transition ${mode === key ? 'border-teal-500 bg-teal-50/70 ring-2 ring-teal-500/20 dark:bg-teal-950/20' : 'border-border bg-card hover:border-teal-300'}`}>
-                  <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <span className={`h-3.5 w-3.5 rounded-full border-2 ${mode === key ? 'border-teal-600 bg-teal-600' : 'border-muted-foreground'}`} />{label}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
-                </button>)}
-            </section>
+            <DeliveryModePicker value={mode} onChange={setMode} />
 
             {items.length === 0
               ? <StateBox kind="empty" title="Các phiếu đã đặt đủ" message="Không còn dòng nhu cầu nào cần đặt thêm." />

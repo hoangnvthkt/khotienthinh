@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FileText, Inbox, Loader2, PackageCheck,
+  AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Inbox, Link2, Loader2, PackageCheck,
   RefreshCw, RotateCcw, Search, ShoppingCart, Stamp, Truck, UserRound, Warehouse,
 } from 'lucide-react';
-import { useReasonConfirm } from '../../../context/ConfirmContext';
+import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
 import {
-  PROCUREMENT_PROGRESS_LABELS, PROCUREMENT_SOURCE_LABELS, procurementInboxService, procurementSourceLink, urgencyOf,
+  PROCUREMENT_PO_STATUS_LABELS, PROCUREMENT_PROGRESS_LABELS, PROCUREMENT_SOURCE_LABELS, procurementInboxService, procurementSourceLink, urgencyOf,
+  type ProcurementProactiveCandidate,
   type ProcurementInbox, type ProcurementInboxDetail, type ProcurementInboxDocument, type ProcurementInboxFilter,
   type ProcurementOrderDetail, type ProcurementOrderStage, type ProcurementProgress, type ProcurementSourceRef, type ProcurementSourceType,
 } from '../../../lib/procurementInboxService';
@@ -14,6 +15,7 @@ import { dateVi, fmt, useGroupAccordion } from '../../project/work-plan/workPlan
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from './hubUi';
 import { OrderDrawer } from './OrderDrawer';
 import { OrderEditor } from './OrderEditor';
+import { ProactiveOrderEditor } from './ProactiveOrderEditor';
 import { OrdersView } from './OrdersView';
 import { ContractsView } from './ContractsView';
 import { ReceiptReconciliationView } from '../receipt/ReceiptReconciliationView';
@@ -93,9 +95,13 @@ const StageStrip: React.FC<{ inbox: ProcurementInbox; stage: Stage; onStage: (s:
 const NeedDrawer: React.FC<{
   doc: ProcurementInboxDocument; today: string; canManage: boolean; assignees: ProcurementInbox['assignees'];
   onClose: () => void; onAssign: (userId: string | null) => Promise<void>; onOrder: () => void;
-  onCloseNeed: () => void; onReopen: () => void; onOpenOrder: (id: string) => void;
-}> = ({ doc, today, canManage, assignees, onClose, onAssign, onOrder, onCloseNeed, onReopen, onOpenOrder }) => {
+  onCloseNeed: () => void; onReopen: () => void; onOpenOrder: (id: string) => void; onChanged: () => void;
+}> = ({ doc, today, canManage, assignees, onClose, onAssign, onOrder, onCloseNeed, onReopen, onOpenOrder, onChanged }) => {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [detail, setDetail] = useState<ProcurementInboxDetail | null>(null);
+  const [candidates, setCandidates] = useState<ProcurementProactiveCandidate[]>([]);
+  const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const load = useCallback(() => {
@@ -103,6 +109,26 @@ const NeedDrawer: React.FC<{
     procurementInboxService.get(doc.sourceType, doc.sourceId).then(setDetail).catch(e => setError(e instanceof Error ? e.message : String(e)));
   }, [doc.sourceType, doc.sourceId]);
   useEffect(load, [load, doc.progress, doc.closedAt]);
+  // Đơn chủ động cùng dự án còn phần chưa phân bổ cho vật tư phiếu đang thiếu: gắn vào thay vì mua thêm.
+  const loadCandidates = useCallback(() => {
+    if (!canManage || doc.closedAt) { setCandidates([]); return; }
+    procurementInboxService.proactiveCandidates(doc.sourceType, doc.sourceId).then(setCandidates).catch(() => setCandidates([]));
+  }, [canManage, doc.closedAt, doc.sourceType, doc.sourceId]);
+  useEffect(loadCandidates, [loadCandidates, doc.progress]);
+  const linkCandidate = async (c: ProcurementProactiveCandidate) => {
+    const qty = Math.min(c.remainingQty, c.unallocatedQty);
+    const ok = await confirm({ title: 'Gắn nhu cầu vào đơn chủ động?', targetName: `${doc.code} → ${c.poNumber}`, confirmText: 'Gắn vào đơn', actionLabel: 'Gắn vào đơn',
+      subtitle: `${c.itemName}: ${fmt(qty, 3)} ${c.unit || ''}. Dòng này tính là đã đặt; hàng của ${c.poNumber} về sẽ chia cho nhu cầu đã gắn trước.`,
+      warningText: `Gắn nhầm thì gỡ ở chi tiết ${c.poNumber} (bắt buộc ghi lý do) — phần đó quay lại Cần mua.`, intent: 'success', countdownSeconds: 0 });
+    if (!ok) return;
+    setLinking(true);
+    try {
+      await procurementInboxService.linkProactive({ action: 'link', purchaseOrderId: c.purchaseOrderId, poLineId: c.poLineId,
+        sourceType: doc.sourceType, sourceId: doc.sourceId, lineId: c.needLineId, qty });
+      toast.success(`Đã gắn ${fmt(qty, 3)} ${c.unit || ''} ${c.itemName} vào ${c.poNumber}`, `${doc.code} không cần lập đơn mới cho dòng này. Theo dõi giao hàng ở ${c.poNumber}.`);
+      load(); loadCandidates(); onChanged();
+    } catch (e) { toast.error('Chưa gắn được', e instanceof Error ? e.message : ''); } finally { setLinking(false); }
+  };
   const link = procurementSourceLink(doc);
   const lines = detail?.lines || [];
   const missing = lines.filter(l => l.remainingQty > 0).length;
@@ -133,7 +159,7 @@ const NeedDrawer: React.FC<{
         ? <button type="button" onClick={onReopen} className={secondaryBtn}><RotateCcw size={15} />Mở lại nhu cầu</button>
         : <>
           <button type="button" onClick={onCloseNeed} className={secondaryBtn}><CircleSlash size={15} />Đóng nhu cầu</button>
-          {missing > 0 && <button type="button" onClick={onOrder} className={primaryBtn}><ShoppingCart size={15} />Lập đơn hàng</button>}
+          {missing > 0 && <button type="button" onClick={onOrder} className={candidates.length > 0 ? secondaryBtn : primaryBtn}><ShoppingCart size={15} />Lập đơn hàng</button>}
         </>)}
     </>}>
     {closed && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm">
@@ -151,6 +177,20 @@ const NeedDrawer: React.FC<{
       {saving && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
       {detail?.assignment?.assignedAt && <span className="text-xs text-muted-foreground">từ {dateVi(detail.assignment.assignedAt)}</span>}
     </section>
+
+    {candidates.length > 0 && <section className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3 dark:border-teal-900 dark:bg-teal-950/20">
+      <p className="flex items-center gap-1.5 text-sm font-semibold text-teal-900 dark:text-teal-100"><Link2 size={15} />Đã có trong đơn chủ động — gắn vào thay vì mua thêm</p>
+      <ul className="space-y-1.5">{candidates.map(c => {
+        const qty = Math.min(c.remainingQty, c.unallocatedQty);
+        return <li key={`${c.purchaseOrderId}:${c.poLineId}:${c.needLineId}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-card px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1"><b className="text-mint-700 dark:text-mint-300">{c.itemName}</b> · thiếu <b className="text-leaf-700 dark:text-leaf-300">{fmt(c.remainingQty, 3)}</b> {c.unit}
+            <span className="block text-xs text-muted-foreground">
+              <button type="button" onClick={() => onOpenOrder(c.purchaseOrderId)} className="font-semibold text-mint-700 hover:underline dark:text-mint-300">{c.poNumber}</button>
+              {c.vendorName ? ` · ${c.vendorName}` : ''} · {PROCUREMENT_PO_STATUS_LABELS[c.status] || c.status} · còn {fmt(c.unallocatedQty, 3)} {c.unit} chưa phân bổ</span></span>
+          <button type="button" disabled={linking} onClick={() => void linkCandidate(c)} className={primaryBtn}>{linking ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}Gắn {fmt(qty, 3)} {c.unit}</button>
+        </li>;
+      })}</ul>
+    </section>}
 
     {error ? <StateBox kind="error" message={error} onRetry={load} />
       : !detail ? <StateBox kind="loading" title="Đang tải phiếu…" />
@@ -217,6 +257,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [openSnap, setOpenSnap] = useState<ProcurementInboxDocument | null>(null);
   const [editor, setEditor] = useState<{ sources: ProcurementSourceRef[]; order: ProcurementOrderDetail | null } | null>(null);
+  const [proactive, setProactive] = useState<{ order: ProcurementOrderDetail | null } | null>(null);
   const [orderId, setOrderId] = useState<string | null>(initialOrderId);
   const [ordersReload, setOrdersReload] = useState(0);
 
@@ -303,8 +344,12 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
           <p className="text-sm text-muted-foreground">Tiếp nhận nhu cầu từ mọi nguồn, lập và duyệt đơn hàng, theo dõi tới khi nhập kho.</p>
         </div>
       </div>
-      <button type="button" onClick={refreshAll} disabled={refreshing || status === 'loading'} className={`${secondaryBtn} bg-card`}>
-        <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />Làm mới</button>
+      <span className="flex flex-wrap items-center gap-2">
+        {canManage && mode === 'orders' && <button type="button" onClick={() => setProactive({ order: null })} className={primaryBtn}
+          title="Mua khi chưa có phiếu nhu cầu: chốt giá, hàng đặt dài ngày, bù tồn…"><FilePlus2 size={15} />Lập đơn chủ động</button>}
+        <button type="button" onClick={refreshAll} disabled={refreshing || status === 'loading'} className={`${secondaryBtn} bg-card`}>
+          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />Làm mới</button>
+      </span>
     </header>
 
     {status === 'denied' ? <StateBox kind="denied" message={message} />
@@ -416,10 +461,10 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
       <button type="button" onClick={() => setSelected(new Set())} className="rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted">Bỏ chọn</button>
     </div>}
 
-    {openDoc && inbox && !editor && !orderId && <NeedDrawer doc={openDoc} today={inbox.today} canManage={canManage} assignees={inbox.assignees}
+    {openDoc && inbox && !editor && !proactive && !orderId && <NeedDrawer doc={openDoc} today={inbox.today} canManage={canManage} assignees={inbox.assignees}
       onClose={() => setOpenSnap(null)} onAssign={userId => assign([docKey(openDoc)], userId)}
       onOrder={() => setEditor({ sources: [refOf(openDoc)], order: null })}
-      onCloseNeed={() => void closeNeeds([openDoc])} onReopen={() => void reopenNeed(openDoc)} onOpenOrder={setOrderId} />}
+      onCloseNeed={() => void closeNeeds([openDoc])} onReopen={() => void reopenNeed(openDoc)} onOpenOrder={setOrderId} onChanged={refreshAll} />}
 
     {editor && <OrderEditor sources={editor.sources} order={editor.order} onClose={() => setEditor(null)}
       onSaved={(id, poNumber) => {
@@ -427,8 +472,14 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
         setEditor(null); setSelected(new Set()); setOpenSnap(null); setOrderId(id); refreshAll();
       }} />}
 
-    {orderId && !editor && inbox && <OrderDrawer orderId={orderId} today={inbox.today} currentUserId={currentUserId} onClose={() => setOrderId(null)} onChanged={refreshAll}
-      onEdit={order => setEditor({
+    {proactive && <ProactiveOrderEditor order={proactive.order} onClose={() => setProactive(null)}
+      onSaved={(id, poNumber) => {
+        toast.success(proactive.order ? `Đã lưu ${poNumber}` : `Đã lập đơn chủ động nháp ${poNumber}`, 'Chọn người duyệt rồi bấm Gửi duyệt.');
+        setProactive(null); setStage('drafting'); setOrderId(id); refreshAll();
+      }} />}
+
+    {orderId && !editor && !proactive && inbox && <OrderDrawer orderId={orderId} today={inbox.today} currentUserId={currentUserId} onClose={() => setOrderId(null)} onChanged={refreshAll}
+      onEdit={order => order.kind === 'proactive' ? setProactive({ order }) : setEditor({
         order, sources: Array.from(new Map(order.lines.flatMap(l => l.allocations).map(a => [docKey(a), refOf(a)])).values()),
       })} />}
   </main>;

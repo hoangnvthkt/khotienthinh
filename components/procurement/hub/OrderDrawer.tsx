@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Loader2, Pencil, Send, Trash2, Truck, UserRound, Warehouse } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Link2, Loader2, Pencil, Send, Trash2, Truck, Unlink, UserRound, Warehouse } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
-import { DELIVERY_STATUS_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail } from '../../../lib/procurementInboxService';
+import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine } from '../../../lib/procurementInboxService';
 import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
 import { DeliveryEditor } from './DeliveryEditor';
@@ -13,7 +13,9 @@ const EVENT_LABELS: Record<string, string> = {
   delivery_create: 'Lập đợt giao', delivery_request: 'Xin duyệt bổ sung đợt giao', delivery_approve: 'Duyệt bổ sung đợt giao',
   delivery_return: 'Trả lại đợt giao', delivery_cancel: 'Hủy đợt giao', close_short: 'Kết thúc thiếu',
   return_replace: 'Trả NCC — đổi hàng', return_credit: 'Trả NCC — giảm trừ',
+  link_need: 'Gắn nhu cầu', unlink_need: 'Gỡ gắn nhu cầu',
 };
+const BOQ_TEXT = { within: 'Trong BOQ', over: 'Vượt BOQ', outside: 'Ngoài BOQ' } as const;
 
 const DELIVERY_TONE: Record<string, string> = {
   receiving: 'border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-200',
@@ -92,6 +94,17 @@ export const OrderDrawer: React.FC<{
     setShortOpen(false); setShortReason('');
   };
 
+  const unlink = async (line: ProcurementOrderLine, a: ProcurementOrderLine['allocations'][number]) => {
+    if (!order) return;
+    const reason = await askReason({ title: 'Gỡ gắn nhu cầu', targetName: `${a.code} khỏi ${order.poNumber}`,
+      subtitle: `${line.name}: ${fmt(a.qty, 3)} ${line.stockUnit || ''} sẽ quay lại "Cần mua" của ${a.code}.`, reasonLabel: 'Lý do gỡ',
+      reasonPlaceholder: 'VD: Gắn nhầm phiếu, nhu cầu lấy từ kho tổng…', actionLabel: 'Gỡ gắn', intent: 'warning' });
+    if (!reason) return;
+    await runDelivery(() => procurementInboxService.linkProactive({ action: 'unlink', purchaseOrderId: order.id, poLineId: line.lineId,
+      sourceType: a.sourceType, sourceId: a.sourceId, lineId: a.lineId, reason }),
+    `Đã gỡ ${a.code} khỏi ${order.poNumber} — phần này quay lại Cần mua`);
+  };
+
   const footer = order && <>
     {link && <a href={link} className={`${secondaryBtn} mr-auto`}><ArrowUpRight size={15} />Mở trong dự án</a>}
     {perms?.canDelete && <button type="button" disabled={busy} className={secondaryBtn}
@@ -128,6 +141,7 @@ export const OrderDrawer: React.FC<{
       <div className="flex flex-wrap items-center gap-1.5"><PoStatusChip status={order.status} />
         <Badge className={order.isHub ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200' : 'border-border bg-muted text-muted-foreground'}>
           {order.isHub ? 'Lập tại Mua hàng' : 'Lập ở dự án'}</Badge>
+        {order.kind === 'proactive' && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">Đơn chủ động</Badge>}
         {late && <Badge className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">Quá ngày giao</Badge>}</div>
       <h2 className="mt-2 text-lg font-bold text-foreground">{order.poNumber}<span className="font-medium text-muted-foreground"> · {order.vendorName || 'Chưa chọn NCC'}</span></h2>
       <p className="text-sm text-muted-foreground">{[order.projectCode, order.projectName].filter(Boolean).join(' — ')}</p>
@@ -142,6 +156,13 @@ export const OrderDrawer: React.FC<{
       {order.stage === 'ordered' && <p className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
         {order.purchaseMode === 'multiple' ? 'Đã duyệt — gửi đơn cho NCC. Khi NCC báo giao, lập đợt giao với SL, giá và VAT của đợt.'
           : 'Đã duyệt — gửi đơn cho NCC. Phiếu nhập kho (QR) đang chờ thủ kho nhận theo SL thực tế.'}</p>}
+      {order.kind === 'proactive' && order.proactive && <div className="space-y-1 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-2.5 text-sm dark:border-teal-900 dark:bg-teal-950/20">
+        <p><span className="text-muted-foreground">Mua chủ động: </span><b className="text-foreground">{PROACTIVE_REASON_LABELS[order.proactive.reasonCode]?.label || order.proactive.reasonCode}</b>
+          {order.proactive.reason && <span className="text-foreground"> — {order.proactive.reason}</span>}</p>
+        {order.proactive.overBoqReason && <p className="flex gap-1.5 text-amber-800 dark:text-amber-200"><AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          <span><b>Vượt/ngoài BOQ:</b> {order.proactive.overBoqReason}</span></p>}
+        <p className="text-xs text-muted-foreground">Nhu cầu cùng vật tư của dự án được gắn vào phần chưa phân bổ ở phiếu nhu cầu (Cần mua) thay vì lập đơn mới.</p>
+      </div>}
       {!order.isHub && <p className="rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">Đơn này lập ở tab dự án trước khi có Mua hàng — chỉ xem tại đây.</p>}
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
@@ -167,9 +188,22 @@ export const OrderDrawer: React.FC<{
               {line.receivedQty > 0 && <span className="font-semibold text-emerald-700 dark:text-emerald-300">Đã nhận {fmt(line.receivedQty, 3)} {line.unit}</span>}
               {['confirmed', 'in_transit', 'partial'].includes(order.status) && line.remainingToDeliver > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300">Còn phải giao {fmt(line.remainingToDeliver, 3)} {line.unit}</span>}
               {line.stockUnit && line.stockUnit !== line.unit && <span>= {fmt(line.qty * line.factor, 3)} {line.stockUnit}</span>}
-              {line.allocations.map(a => <span key={`${a.sourceId}:${a.lineId}`}>{a.code}: {fmt(a.qty)} {line.stockUnit || ''}</span>)}
-              {line.allocations.length === 0 && <span>Không gắn phiếu nhu cầu</span>}
+              {order.kind === 'proactive' && line.boq && <Badge className={line.boq.status === 'within'
+                ? 'border-leaf-200 bg-leaf-50 text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/40 dark:text-leaf-200'
+                : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'}
+                title={`Lúc lập đơn: BOQ ${fmt(line.boq.boqQty, 3)} · đã đặt đơn khác ${fmt(line.boq.orderedBefore, 3)} ${line.stockUnit || ''}`}>{BOQ_TEXT[line.boq.status]}</Badge>}
+              {order.kind !== 'proactive' && line.allocations.map(a => <span key={`${a.sourceId}:${a.lineId}`}>{a.code}: {fmt(a.qty)} {line.stockUnit || ''}</span>)}
+              {order.kind !== 'proactive' && line.allocations.length === 0 && <span>Không gắn phiếu nhu cầu</span>}
             </div>
+            {order.kind === 'proactive' && <div className="mt-1.5 space-y-1 text-xs">
+              <p className="text-muted-foreground">Đã gắn nhu cầu <b className="text-teal-700 dark:text-teal-300">{fmt(line.allocatedQty, 3)}</b> / {fmt(line.stockQty, 3)} {line.stockUnit || ''}
+                {line.stockQty - line.allocatedQty > 0.0005 && <> · <b className="text-foreground">còn {fmt(line.stockQty - line.allocatedQty, 3)}</b> chưa phân bổ (nhập kho dự phòng)</>}</p>
+              {line.allocations.map(a => <p key={`${a.sourceId}:${a.lineId}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-2 py-1">
+                <Link2 size={12} className="text-teal-700 dark:text-teal-300" /><span className="font-semibold text-mint-700 dark:text-mint-300">{a.code}</span>
+                <span className="text-muted-foreground">{fmt(a.qty, 3)} {line.stockUnit || ''} (phiếu cần {fmt(a.needQty, 3)})</span>
+                {perms?.canLink && <button type="button" disabled={busy} onClick={() => void unlink(line, a)}
+                  className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold text-muted-foreground hover:bg-card hover:text-rose-700"><Unlink size={12} />Gỡ</button>}</p>)}
+            </div>}
           </li>)}
         </ul>
         <dl className="ml-auto mt-2 w-full max-w-xs space-y-0.5 text-sm">
@@ -278,6 +312,7 @@ export const OrderDrawer: React.FC<{
         <ol className="space-y-1 text-sm">{order.events.map((e, i) => <li key={i} className="flex flex-wrap gap-x-2 text-muted-foreground">
           <span className="tabular-nums">{new Date(e.at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</span>
           <span className="font-medium text-foreground">{EVENT_LABELS[e.action] || e.action}</span><span>· {e.actorName}</span>
+          {e.payload?.sourceCode && <span>· {e.payload.sourceCode}{e.payload.qty != null ? ` (${fmt(e.payload.qty, 3)})` : ''}</span>}
           {e.reason && <span className="w-full pl-4 italic">“{e.reason}”</span>}</li>)}</ol>
       </section>}
     </>}
