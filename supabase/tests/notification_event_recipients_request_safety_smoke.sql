@@ -7,6 +7,9 @@ from public.request_instances r
 join public.workflow_step_assignments a on a.workflow_subject_id = r.workflow_subject_id and a.status = 'PENDING'
 join public.workflow_participants w on w.workflow_subject_id = r.workflow_subject_id and w.role = 'WATCHER' and w.is_active
 where w.user_id not in (r.created_by, a.assignee_user_id) and r.created_by <> a.assignee_user_id
+  -- an approver who also watches the request rightly gets the final result; pick one who does not
+  and not exists (select 1 from public.workflow_participants w2 where w2.workflow_subject_id = r.workflow_subject_id
+                  and w2.user_id = a.assignee_user_id and w2.role = 'WATCHER' and w2.is_active)
 limit 1;
 
 select app_private.enqueue_request_notification_event(request_id, e.event_type, null, 'ner-smoke-' || e.event_type,

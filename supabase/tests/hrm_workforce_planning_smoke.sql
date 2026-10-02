@@ -31,6 +31,12 @@ begin
   where user_row.role = 'ADMIN'
     and coalesce(user_row.is_active, true)
     and coalesce(user_row.account_status, 'ACTIVE') = 'ACTIVE'
+    -- a technical admin without HR roles (some admins also hold HR / HR Manage since 28/09)
+    and not exists (
+      select 1 from public.principal_role_assignments hr_row
+      join public.role_permission_templates hr_template on hr_template.id = hr_row.role_template_id
+      where hr_row.principal_id = user_row.id and hr_row.status = 'ACTIVE'
+        and hr_template.code in ('HR', 'HR_MANAGE'))
   order by user_row.created_at
   limit 1;
   if v_admin.id is null then
