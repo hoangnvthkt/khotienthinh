@@ -1,4 +1,4 @@
--- Run after 20261005140000_hrm_g3a_profile_self_view. Rolls back.
+-- Run after 20261006100000_hrm_g3a_profile_self_view. Rolls back.
 begin;
 set local statement_timeout = '60s';
 

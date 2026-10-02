@@ -225,7 +225,7 @@
     "20261005120000_hrm_g1_attendance_devices.sql",
     "20261005130000_hrm_g2_leave_policy.sql",
     "20261006090000_finance_k3a_payables.sql",
-    "20261005140000_hrm_g3a_profile_self_view.sql"
+    "20261006100000_hrm_g3a_profile_self_view.sql"
   ],
   "forbidIncludeAll": true
 }
