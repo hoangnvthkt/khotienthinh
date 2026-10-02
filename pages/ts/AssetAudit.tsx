@@ -1,17 +1,24 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useToast } from '../../context/ToastContext';
 import {
     ClipboardCheck, Search, Save, CheckCircle2, History,
     AlertCircle, Eye, Calendar, Download, ChevronLeft,
-    Shield, Landmark, XCircle, MapPin, AlertTriangle
+    Shield, Landmark, XCircle, MapPin, AlertTriangle, Lock, Loader2, RefreshCw
 } from 'lucide-react';
 import { AssetStatus, ASSET_STATUS_LABELS } from '../../types';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
+import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import {
+    assetAuditService,
+    canRecordAssetAudit,
+    type AssetAuditItem,
+    type AssetAuditSession,
+    type AssetCondition,
+} from '../../lib/assetAuditService';
 
-type AssetCondition = 'good' | 'damaged' | 'lost' | 'wrong_location';
 const CONDITION_LABELS: Record<AssetCondition, string> = {
     good: 'Tốt',
     damaged: 'Hư hỏng',
@@ -25,35 +32,12 @@ const CONDITION_COLORS: Record<AssetCondition, string> = {
     wrong_location: 'text-blue-600 bg-blue-50'
 };
 
-interface AssetAuditItem {
-    assetId: string;
-    assetName: string;
-    assetCode: string;
-    categoryName: string;
-    expectedStatus: AssetStatus;
-    actualCondition: AssetCondition;
-    expectedLocation: string;
-    actualLocation?: string;
-    note?: string;
-}
-
-interface AssetAuditSession {
-    id: string;
-    date: string;
-    auditorName: string;
-    items: AssetAuditItem[];
-    totalItems: number;
-    totalGood: number;
-    totalDamaged: number;
-    totalLost: number;
-    totalWrongLocation: number;
-}
-
 const AssetAudit: React.FC = () => {
     const { assets, assetCategories, users, user } = useApp();
   useModuleData('ts');
     const toast = useToast();
-    const [activeView, setActiveView] = useState<'audit' | 'history'>('audit');
+    const canRecord = canRecordAssetAudit(user);
+    const [activeView, setActiveView] = useState<'audit' | 'history'>(canRecord ? 'audit' : 'history');
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('ALL');
     const [isSaving, setIsSaving] = useState(false);
@@ -63,8 +47,20 @@ const AssetAudit: React.FC = () => {
     const [auditNotes, setAuditNotes] = useState<Record<string, string>>({});
     const [auditLocations, setAuditLocations] = useState<Record<string, string>>({});
 
-    // Session history (stored locally)
+    // Finished audits, stored on the server
     const [sessions, setSessions] = useState<AssetAuditSession[]>([]);
+    const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+    const loadHistory = useCallback(async () => {
+        setHistoryState('loading');
+        try {
+            setSessions(await assetAuditService.list());
+            setHistoryState('ready');
+        } catch (error) {
+            logApiError('assetAudit.list', error);
+            setHistoryState('error');
+        }
+    }, []);
+    useEffect(() => { void loadHistory(); }, [loadHistory]);
     const [viewingSession, setViewingSession] = useState<AssetAuditSession | null>(null);
 
     const filteredAssets = useMemo(() => {
@@ -86,11 +82,10 @@ const AssetAudit: React.FC = () => {
         return { audited, good, damaged, lost, wrongLocation };
     }, [auditData]);
 
-    const handleSaveAudit = () => {
-        if (Object.keys(auditData).length === 0) return;
+    const handleSaveAudit = async () => {
+        if (!canRecord || Object.keys(auditData).length === 0) return;
         setIsSaving(true);
-
-        const items: AssetAuditItem[] = Object.entries(auditData).map(([assetId, condition]: [string, AssetCondition]) => {
+        const items: AssetAuditItem[] = Object.entries(auditData).map(([assetId, condition]) => {
             const asset = assets.find(a => a.id === assetId)!;
             return {
                 assetId,
@@ -104,27 +99,20 @@ const AssetAudit: React.FC = () => {
                 note: auditNotes[assetId] || undefined
             };
         });
-
-        const session: AssetAuditSession = {
-            id: `tsaudit-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-            date: new Date().toISOString(),
-            auditorName: user.name || user.username,
-            items,
-            totalItems: items.length,
-            totalGood: items.filter(i => i.actualCondition === 'good').length,
-            totalDamaged: items.filter(i => i.actualCondition === 'damaged').length,
-            totalLost: items.filter(i => i.actualCondition === 'lost').length,
-            totalWrongLocation: items.filter(i => i.actualCondition === 'wrong_location').length,
-        };
-
-        setTimeout(() => {
-            setSessions(prev => [session, ...prev]);
+        try {
+            const saved = await assetAuditService.create(items);
+            setSessions(prev => [saved, ...prev]);
             setAuditData({});
             setAuditNotes({});
             setAuditLocations({});
+            toast.success('Đã lưu phiên kiểm kê', `${saved.totalItems} tài sản. Xem lại ở tab "Lịch sử".`);
+        } catch (error) {
+            // Keep what was entered so nothing has to be redone.
+            logApiError('assetAudit.create', error);
+            toast.error('Chưa lưu được phiên kiểm kê', getApiErrorMessage(error, 'Dữ liệu vẫn còn trên màn hình, vui lòng thử lại.'));
+        } finally {
             setIsSaving(false);
-            toast.success('Kiểm kê thành công', 'Dữ liệu đã được lưu. Xem chi tiết tại tab "Lịch sử".');
-        }, 800);
+        }
     };
 
     const exportSessionToExcel = async (session: AssetAuditSession) => {
@@ -278,14 +266,14 @@ const AssetAudit: React.FC = () => {
                 </div>
                 <div className="flex gap-2">
                     <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-1 flex gap-1">
-                        <button onClick={() => setActiveView('audit')} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeView === 'audit' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                        {canRecord && <button onClick={() => setActiveView('audit')} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeView === 'audit' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                             <ClipboardCheck size={14} className="inline mr-1.5" />Kiểm kê
-                        </button>
+                        </button>}
                         <button onClick={() => setActiveView('history')} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeView === 'history' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                            <History size={14} className="inline mr-1.5" />Lịch sử ({sessions.length})
+                            <History size={14} className="inline mr-1.5" />Lịch sử{historyState === 'ready' ? ` (${sessions.length})` : ''}
                         </button>
                     </div>
-                    {activeView === 'audit' && (
+                    {canRecord && activeView === 'audit' && (
                         <button disabled={Object.keys(auditData).length === 0 || isSaving} onClick={handleSaveAudit}
                             className="flex items-center px-6 py-2.5 bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition font-black uppercase text-[10px] tracking-widest shadow-lg shadow-rose-500/20 disabled:opacity-50 disabled:shadow-none">
                             {isSaving ? 'Đang lưu...' : <><Save size={16} className="mr-2" /> Hoàn tất</>}
@@ -293,6 +281,13 @@ const AssetAudit: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {!canRecord && (
+                <div role="note" className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <Lock size={14} className="mt-0.5 shrink-0 text-slate-400" />
+                    <span>Bạn đang có quyền xem lịch sử. Để thực hiện kiểm kê cần quyền "Thực hiện kiểm kê" của Kiểm kê tài sản (Cài đặt → Người dùng → Sửa → Tài sản).</span>
+                </div>
+            )}
 
             {/* ==================== HISTORY TAB ==================== */}
             {activeView === 'history' && (
@@ -303,11 +298,22 @@ const AssetAudit: React.FC = () => {
                         </h2>
                         <p className="text-xs text-slate-500 font-medium mt-1">Tất cả phiên kiểm kê đã hoàn thành.</p>
                     </div>
-                    {sessions.length === 0 ? (
+                    {historyState === 'loading' ? (
+                        <div className="p-12 text-center text-sm font-bold text-slate-400">
+                            <Loader2 size={18} className="inline animate-spin mr-2" />Đang tải lịch sử kiểm kê…
+                        </div>
+                    ) : historyState === 'error' ? (
+                        <div role="alert" className="m-6 flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                            Không tải được lịch sử kiểm kê.
+                            <button onClick={() => void loadHistory()} className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-xs font-black">
+                                <RefreshCw size={12} /> Thử lại
+                            </button>
+                        </div>
+                    ) : sessions.length === 0 ? (
                         <div className="p-16 text-center text-slate-300">
                             <ClipboardCheck size={48} className="mx-auto opacity-20 mb-4" />
                             <p className="font-black uppercase tracking-widest text-sm">Chưa có lịch sử kiểm kê</p>
-                            <p className="text-xs font-medium mt-1">Hoàn tất phiên kiểm kê đầu tiên để lưu lịch sử.</p>
+                            <p className="text-xs font-medium mt-1">{canRecord ? 'Hoàn tất phiên kiểm kê đầu tiên để lưu lịch sử.' : 'Chưa có phiên kiểm kê nào được lưu.'}</p>
                         </div>
                     ) : (
                         <div className="overflow-x-auto">

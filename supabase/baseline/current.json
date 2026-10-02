@@ -193,7 +193,12 @@
     "20260930083244_workflow_reminder_skip_project_rows.sql",
     "20260930092517_workflow_logs_rls_follow_ticket.sql",
     "20260930100000_daily_log_source_withdraw_delete_v2.sql",
+    "20260930103243_request_template_lifecycle_keeps_published.sql",
+    "20260930110802_request_watchers_reassign_soft_delete.sql",
+    "20260930134954_request_submit_watchers.sql",
+    "20260930140450_request_template_notifications_and_manager_coverage.sql",
     "20260930150000_project_work_plans.sql",
+    "20260930162745_request_list_approver_statuses.sql",
     "20260930190000_project_material_plans.sql",
     "20260930220000_procurement_inbox.sql",
     "20261001090000_procurement_hub_orders.sql",
@@ -202,13 +207,8 @@
     "20261002090000_wms_k1_stock_controls.sql",
     "20261002150000_procurement_k2_supplier_returns.sql",
     "20261003090000_procurement_receipt_reconciliation.sql",
-    "20260930103243_request_template_lifecycle_keeps_published.sql",
-    "20260930110802_request_watchers_reassign_soft_delete.sql",
-    "20260930134954_request_submit_watchers.sql",
     "20261003150000_wms_one_step_receipt.sql",
-    "20260930140450_request_template_notifications_and_manager_coverage.sql",
     "20261004090000_wms_k5_stock_count.sql",
-    "20260930162745_request_list_approver_statuses.sql",
     "20261004100000_authorization_p3_keep_existing_no_expiry_grants.sql",
     "20261004110000_authorization_p3_user_sensitive_view_summary.sql",
     "20261004120000_authorization_p3_own_scope_no_expiry.sql",
@@ -218,7 +218,10 @@
     "20261004160000_authorization_room_codes_not_directly_grantable.sql",
     "20261004170000_authorization_revoke_legacy_da_admin.sql",
     "20261004180000_authorization_retire_label_only_permissions.sql",
-    "20261005090000_procurement_m2d_proactive_orders.sql"
+    "20261004190000_asset_audit_sessions.sql",
+    "20261005090000_procurement_m2d_proactive_orders.sql",
+    "20261005100000_hrm_g0_attendance_punch_v2.sql",
+    "20261005110000_hrm_g0_leave_balance_and_privacy.sql"
   ],
   "forbidIncludeAll": true
 }
