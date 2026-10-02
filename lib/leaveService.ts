@@ -57,6 +57,8 @@ export interface LeavePreview {
   steps: LeaveStep[];
   problems: string[];
   paidBy: LeaveTypeOption['paidBy'];
+  /** Overtime confirmations: extra minutes of the month not yet claimed. */
+  unclaimedMinutes: number | null;
 }
 
 export interface LeaveSettings {
@@ -191,6 +193,7 @@ export const leaveService = {
       steps: (value.steps as LeaveStep[]) || [],
       problems: (value.problems as string[]) || [],
       paidBy: value.paidBy as LeavePreview['paidBy'],
+      unclaimedMinutes: value.unclaimedMinutes === null || value.unclaimedMinutes === undefined ? null : Number(value.unclaimedMinutes),
     };
   },
 
