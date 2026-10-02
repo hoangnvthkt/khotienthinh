@@ -875,3 +875,11 @@ Chỉ sửa frontend, không có migration.
 - Kiểm tra: dry-run đúng ma trận (chỉ xem: chặn hết; quản trị đối tác: chỉ đối tác; quản trị NCC: HĐ thầu phụ, không HĐ khách hàng); đối chứng trên schema cũ tái hiện đúng lỗi; smoke sau apply PASS; Vitest PASS, lint, build đạt.
 - Rollback: `supabase/operations/authorization_contract_writes_follow_grants_rollback.sql`.
 - Ghi nhận cho luồng khác (không sửa): trigger Admin-only còn trên `acceptance_records`, `boq_reconciliation_*`, `custom_material_*` (Mua hàng V2 / Dự án V2).
+
+### Thu hồi quản trị Dự án legacy `system.da.manage` (02/10, chủ sản phẩm đồng ý)
+
+- Theo quyết định 3. 39 grant đang hoạt động (37 người không phải Admin, 2 Admin); 27 trong số đó sinh ra từ bước chuyển dữ liệu legacy 10/09.
+- Máy chủ không kiểm tra mã này. Giao diện chỉ dùng ở **Ma trận duyệt** (đường dự phòng cho dự án chưa có nhân sự dự án): 4 quy tắc duyệt thanh toán / xác nhận đã chi / duyệt phát sinh / duyệt nghiệm thu cho "quản trị Dự án". Dự án đã có nhân sự kiểm theo quyền dự án; Admin luôn duyệt được. Lịch sử: 1 lần duyệt thanh toán (do Admin), 0 lần qua mã này.
+- Migration `20261004170000_authorization_revoke_legacy_da_admin`: sao lưu từng grant vào `app_private.da_admin_revocation_backup`, ghi 39 dòng `permission_audit_events`, thu hồi, tắt cấp trực tiếp mã này.
+- Kiểm tra: dry-run kèm **diễn tập rollback** trong cùng giao dịch (khôi phục đủ 39 grant, 39 dòng audit); smoke sau apply PASS; smoke "giữ quyền cũ không hạn" vẫn PASS.
+- Rollback: `supabase/operations/authorization_revoke_legacy_da_admin_rollback.sql` (khôi phục chính xác từng dòng từ bảng sao lưu).
