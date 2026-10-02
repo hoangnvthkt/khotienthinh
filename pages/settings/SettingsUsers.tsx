@@ -13,7 +13,6 @@ import UserAccountStatusModal from '../../components/UserAccountStatusModal';
 import { isChatEnabled } from '../../lib/featureFlags';
 import { getSettingsUserModuleKeys, isSettingsUserAdmin } from '../../lib/settingsPermissions';
 import { useToast } from '../../context/ToastContext';
-import HrmAuthorizationPanel from '../../components/permissions/HrmAuthorizationPanel';
 import AdminSetPasswordForm from '../../components/AdminSetPasswordForm';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { useNavigate } from 'react-router-dom';
@@ -91,7 +90,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   const [selectedUserForPopover, setSelectedUserForPopover] = useState<User | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<{ top: number; left: number } | null>(null);
   const [drawerUser, setDrawerUser] = useState<User | null>(null);
-  const [drawerActiveTab, setDrawerActiveTab] = useState<'account' | 'security' | 'schedule'>('account');
+  const [drawerActiveTab, setDrawerActiveTab] = useState<'account' | 'schedule'>('account');
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const navigate = useNavigate();
   // null while loading or when sessions cannot be read: online is then unknown, not assumed.
@@ -639,7 +638,6 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
               <div className="flex border-b border-slate-200 bg-slate-50 px-6 gap-2 pt-2">
                 {([
                   ['account', 'Thông tin chung', Shield],
-                  ['security', 'Vai trò nhân sự', ShieldCheck],
                   ['schedule', 'Kho phụ trách', MapPin],
                 ] as const).map(([tabKey, tabLabel, IconComp]) => (
                   <button
@@ -720,19 +718,6 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
                       </div>
                     )}
                   </div>
-                )}
-
-                {drawerActiveTab === 'security' && (
-                  <p className="text-xs text-slate-500">
-                    Vai trò nhân sự quyết định người này thấy hồ sơ nhân sự nào. Quyền theo phân hệ và Room dự án xem ở nút{' '}
-                    <span className="font-bold text-slate-700">Chỉnh sửa & phân quyền</span>.
-                  </p>
-                )}
-                {drawerActiveTab === 'security' && (
-                  <HrmAuthorizationPanel
-                    currentUserId={currentUser.id}
-                    targetUserId={drawerUser.id}
-                  />
                 )}
 
                 {drawerActiveTab === 'schedule' && (

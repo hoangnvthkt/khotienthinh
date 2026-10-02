@@ -20,7 +20,7 @@ describe('unified authorization editor UI contract', () => {
   });
 
   it('presents module-first capabilities and Project Room status in one editor', () => {
-    expect(editor).toContain('Quyền truy cập module');
+    expect(editor).toContain('Quyền theo công việc');
     expect(editor).toContain('<ProjectRoomSummary');
     expect(roomSummary).toContain('Quyền trong Room dự án');
     expect(editor).toContain('PermissionModuleEditor');
@@ -52,14 +52,18 @@ describe('unified authorization editor UI contract', () => {
     expect(moduleCard).toContain('Kế thừa');
   });
 
-  it('shows roles, Finance/Contract visibility and Rooms together as read-only sources', () => {
-    expect(editor).toContain('SpecialRolesSummary');
+  it('gives special roles in place and shows Finance/Contract visibility and Rooms as read-only sources', () => {
+    expect(editor).toContain('PermissionGuide');
+    expect(editor).toContain('SpecialRolesEditor');
     expect(editor).toContain('SensitiveViewSummary');
     expect(editor).toContain('ProjectRoomSummary');
     expect(editor).toContain('Quyền đến từ nguồn khác');
-    const roles = readFileSync(join(process.cwd(), 'components/permissions/SpecialRolesSummary.tsx'), 'utf8');
+    const roles = readFileSync(join(process.cwd(), 'components/permissions/SpecialRolesEditor.tsx'), 'utf8');
     expect(roles).toContain('getUserSpecialRoles');
-    expect(roles).toContain('Không giữ vai trò đặc biệt nào');
+    expect(roles).toContain('setUserHrmBusinessRole');
+    expect(roles).toContain('assignBusinessRole');
+    expect(roles).toContain('revokeBusinessRoleAssignment');
+    expect(roles).toContain('có hiệu lực ngay khi xác nhận');
     expect(roles).toContain('Thử lại');
   });
 
