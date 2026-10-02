@@ -6,6 +6,7 @@ import {
 import { financeService, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
+import { DirectReceiptsView } from './DirectReceiptsView';
 import { PendingStatementsView } from './PendingStatementsView';
 import { SupplierPanel } from './SupplierPanel';
 import { TransferReviewsView } from './TransferReviewsView';
@@ -42,6 +43,8 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
   const [mobileDetail, setMobileDetail] = useState(Boolean(initialSupplierId));
   const [panelKey, setPanelKey] = useState(0);
   const [transferCount, setTransferCount] = useState(0);
+  const [direct, setDirect] = useState<{ count: number; amount: number; missing: number } | null>(null);
+  const [pendingTab, setPendingTab] = useState<'direct' | 'statements'>('direct');
   const [showTransfers, setShowTransfers] = useState(initialSection === 'transfers');
 
   const load = useCallback(async (quiet = false) => {
@@ -50,6 +53,8 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       const r = await financeService.list({ projectId: projectId || undefined, source: source || undefined });
       setData(r); setStatus('ready');
       financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
+      financeService.directReceipts().then(d => setDirect({ count: d.receipts.length, amount: d.receipts.reduce((s, x) => s + x.value, 0), missing: d.receipts.filter(x => x.missingPrice > 0).length }))
+        .catch(() => setDirect(null));
       setSel(cur => cur && r.suppliers.some(s => s.supplierId === cur) ? cur : cur || r.suppliers[0]?.supplierId || null);
     } catch (e) {
       const denied = (e as { code?: string })?.code === 'FINANCE_VIEW_DENIED';
@@ -115,7 +120,8 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
             </p>}
 
             <nav aria-label="Các bước công nợ" className={`grid grid-cols-2 gap-2 md:grid-cols-5 ${mobileDetail ? 'hidden md:grid' : ''}`}>
-              {([['pending', 'Chờ ghi nợ', String(data.pendingStatements.count), data.pendingStatements.count ? `${shortMoney(data.pendingStatements.amount)} · bảng đối soát đã chốt` : 'bảng đối soát đã chốt', Inbox, true],
+              {([['pending', 'Chờ ghi nợ', direct ? String(data.pendingStatements.count + direct.count) : '…',
+                  direct ? `${direct.count} phiếu nhập trực tiếp · ${data.pendingStatements.count} bảng đối soát` : 'đang đếm…', Inbox, true],
                 ['owed', 'Đang nợ', String(t.docCount), `${shortMoney(t.owed)} · ${t.supplierCount} NCC`, Banknote, true],
                 ['request', 'Đề nghị chi', '—', 'mở ở K3b', FileCheck2, false], ['approved', 'Chờ chi', '—', 'mở ở K3b', CalendarClock, false], ['paid', 'Đã chi', '—', 'mở ở K3b', Truck, false]] as const).map(([k, l, v, h, I, on], i) =>
                 <button key={k} type="button" disabled={!on} aria-current={stage === k ? 'page' : undefined} onClick={() => on && setStage(k as Stage)}
@@ -125,7 +131,19 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                   <span className="block text-xs text-muted-foreground">{h}</span></button>)}
             </nav>
 
-            {stage === 'pending' ? <PendingStatementsView onChanged={() => void load(true)} /> : <>
+            {stage === 'pending' ? <div className="space-y-3">
+              <div role="tablist" aria-label="Nguồn chờ ghi nợ" className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm">
+                {([['direct', 'Phiếu nhập trực tiếp', direct?.count], ['statements', 'Bảng đối soát HĐ', data.pendingStatements.count]] as const).map(([k, l, n]) =>
+                  <button key={k} type="button" role="tab" aria-selected={pendingTab === k} onClick={() => setPendingTab(k)}
+                    className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${pendingTab === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+                    {l}{n != null && <span className={`rounded-full px-1.5 text-xs ${pendingTab === k ? 'bg-white/20' : 'bg-muted'}`}>{n}</span>}</button>)}
+              </div>
+              {pendingTab === 'direct' ? <>
+                <p className="rounded-2xl border border-teal-200 bg-teal-50/60 px-4 py-3 text-sm text-teal-950 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+                  <b>Phiếu nhập trực tiếp NCC</b> (kho nhập thẳng, không qua PO): kiểm giá và VAT rồi ghi công nợ — chi phí dự án ghi cùng lúc. Phiếu trước mốc MISA chỉ ghi nợ. Người lập/duyệt phiếu nhập không tự ghi nợ.</p>
+                <DirectReceiptsView onChanged={() => void load(true)} /></>
+                : <PendingStatementsView onChanged={() => void load(true)} />}
+            </div> : <>
               <section className={`grid grid-cols-2 gap-2 lg:grid-cols-4 ${mobileDetail ? 'hidden md:grid' : ''}`}>
                 <Kpi active={filter === 'all'} onClick={() => setFilter('all')} icon={Wallet} label="Phải trả" value={shortMoney(t.owed)} hint={`${t.docCount} chứng từ · ${t.supplierCount} NCC`} tone="text-leaf-700 dark:text-leaf-300" />
                 <Kpi active={filter === 'overdue'} onClick={() => setFilter('overdue')} icon={AlertTriangle} label="Quá hạn" value={shortMoney(t.overdue)}
@@ -140,7 +158,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                 <select value={projectId} onChange={e => setProjectId(e.target.value)} aria-label="Dự án" className={inputCls}>
                   <option value="">Mọi dự án</option>{data.projects.map(p => <option key={p.id} value={p.id}>{p.code || p.name}</option>)}</select>
                 <select value={source} onChange={e => setSource(e.target.value)} aria-label="Nguồn công nợ" className={inputCls}>
-                  <option value="">Mọi nguồn</option><option value="purchase_delivery_receipt">Nhận hàng PO</option><option value="supplier_delivery_statement">Đối soát HĐ</option>
+                  <option value="">Mọi nguồn</option><option value="purchase_delivery_receipt">Nhận hàng PO</option><option value="direct_supplier_receipt">Nhập trực tiếp NCC</option><option value="supplier_delivery_statement">Đối soát HĐ</option>
                   <option value="receipt_reconciliation">Đối chiếu lùi ngày</option><option value="opening_balance">Số dư đầu kỳ</option></select>
                 <select value={sort} onChange={e => setSort(e.target.value as Sort)} aria-label="Sắp xếp" className={inputCls}>
                   <option value="overdue">Quá hạn trước</option><option value="owed">Nợ nhiều nhất</option><option value="due">Hạn gần nhất</option><option value="name">Tên NCC</option></select>

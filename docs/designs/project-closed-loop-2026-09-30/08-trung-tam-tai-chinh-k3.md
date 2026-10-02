@@ -300,3 +300,34 @@ Migration `20261006150000_finance_k3a2_cost_cutover_stock.sql`.
 - Chỉ Quản trị Tài chính đổi được mốc.
 - Đơn dự trữ: lập → gửi → duyệt → nhận. Công nợ 132.000 đ cấp công ty, không có chi phí dự án, Kho Tổng tăng 100.
 - Chuyển 40 sang SMB → SMB +48.000 đ. Trả 10 về Kho Tổng → SMB −12.000 đ. Hủy phiếu → về 0.
+
+## 11. K3a-3: phiếu nhập trực tiếp NCC vào công nợ (02/10/2026)
+
+Migration `20261007090000_finance_k3a3_direct_receipts.sql`. Chủ SP duyệt 02/10, làm trước K3b.
+
+**Vấn đề:** phiếu nhập kho trực tiếp từ NCC / HĐ NCC (màn Nhập kho, không qua PO và không qua phiếu giao HĐ) trước đây **không sinh công nợ, không sinh chi phí dự án**. Có 46 phiếu đã hoàn tất từ 18/07; sau mốc chi phí: DA29 14 phiếu ≈ 5,41 tỷ, SMB 19 phiếu ≈ 909 tr. Ngoài ra 9 phiếu có dòng giá 0, và màn nhập kho chưa có ô VAT.
+
+**Cách làm:**
+- Phiếu đã hoàn tất vào Tài chính → **Chờ ghi nợ → Phiếu nhập trực tiếp**, nhóm theo NCC × dự án.
+- Kế toán làm 3 việc trước khi ghi công nợ: nhập giá cho dòng giá 0, chọn VAT, ghi số hóa đơn nếu có.
+- Mỗi phiếu thành 1 chứng từ công nợ (`direct_supplier_receipt`, giá trị đã gồm VAT). Hạn thanh toán tính theo HĐ → NCC → mặc định.
+- Chi phí dự án ghi cùng lúc, qua trigger ghi nhận dùng chung với đối soát HĐ:
+  - Phiếu trước mốc MISA: chi phí về 0, chỉ ghi nợ.
+  - Kho không thuộc dự án: công nợ ở cấp công ty, không ghi chi phí.
+- Giá kế toán nhập vào được ghi ngược về phiếu kho, sổ kho và giá trị tồn, có truy vết `priceSetBy`.
+- **Chặn ở máy chủ:**
+  - Người lập / người duyệt phiếu nhập không tự ghi nợ.
+  - Bắt buộc VAT và giá.
+  - Phiếu nghi trùng (cùng NCC, ngày, số tiền) phải tích "đã đối chiếu với kho".
+- **Trả lại kho** bắt buộc lý do, gửi thông báo cho người lập. Phiếu quay lại hộp khi kho sửa phiếu.
+- **Kho hủy phiếu đã ghi nợ:** nếu chưa có khoản chi thì công nợ hủy, chi phí về 0. Nếu đã có khoản chi thì chặn hủy.
+- **Màn Nhập kho:** thêm ô **Thuế VAT** (bắt buộc) và **đơn giá bắt buộc** cho mọi dòng. Giá cao hơn 20 lần giá danh mục thì bị chặn, để tránh lỗi nhập giá theo tấn vào ô giá theo kg như phiếu thép XHV.
+- **Ma trận duyệt v2:** thêm GĐ tài chính (Chuẩn) làm người dự phòng ở bước Kế toán trưởng, vì người lập không tự duyệt được.
+
+**Đã kiểm trên production (rollback, `tools/k3a3-test.mjs`):**
+- Danh sách 46 phiếu: 9 thiếu giá, 4 nghi trùng, 12 trước mốc.
+- NAZ 31/08 với VAT 8% → công nợ 262,5 tr, chi phí DA29 262,5 tr. NAZ 19/08 (trước mốc) → công nợ 93,8 tr, chi phí 0.
+- Đông Hà Nội giá 0 → bị chặn. Nhập 2.500 đ → sổ kho cập nhật, công nợ 1,65 tr.
+- Phiếu nghi trùng bị chặn cho tới khi xác nhận. Thủy tự lập thì không tự ghi nợ được. Trả lại kho có thông báo.
+- Kho hủy phiếu → công nợ hủy, chi phí 0.
+- Tổng sổ thu chi và số chứng từ công nợ không đổi khi áp migration.

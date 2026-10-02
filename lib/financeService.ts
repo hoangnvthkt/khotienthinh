@@ -50,6 +50,18 @@ export interface FinanceSupplierDetail {
   contracts: Array<{ id: string; code: string; status: string; paymentTermDays: number | null; paymentTermsText: string | null; requireInvoice: boolean }>;
   documents: FinanceDocument[]; payments: FinancePayment[]; openings: FinanceOpening[]; events: FinanceEvent[];
 }
+export type FinanceVatChoice = '0' | '5' | '8' | '10' | 'incl';
+export interface FinanceDirectReceipt {
+  id: string; rowVersion: number; date: string; note: string | null; warehouseId: string; warehouse: string;
+  projectId: string | null; projectCode: string | null; cutoverDate: string | null; beforeCutover: boolean;
+  supplierId: string | null; supplierName: string | null; contractCode: string | null;
+  createdByName: string | null; approvedByName: string | null; attachments: number; value: number; missingPrice: number;
+  lines: Array<{ index: number; itemId: string; itemName: string; unit: string | null; qty: number; price: number; catalogPrice: number | null;
+    vatRate: number | 'incl' | null; priceIncludesVat: boolean }>;
+  duplicateOf: string | null; canPost: boolean;
+  returned: { reason: string; at: string; byName: string | null } | null;
+}
+export interface FinanceDirectReceipts { receipts: FinanceDirectReceipt[]; returned: FinanceDirectReceipt[]; can: { record: boolean } }
 export interface FinancePendingStatement {
   id: string; code: string; supplierId: string; supplierName: string; contractCode: string | null; projectId: string; projectCode: string | null;
   periodMonth: string | null; statementDate: string | null; grossAmount: number; vatAmount: number; totalAmount: number;
@@ -112,6 +124,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_OPENING_HAS_PAYMENTS: 'Số dư đầu kỳ đã có khoản chi — không đảo được.',
   FINANCE_TRANSFER_NOT_COMPLETED: 'Phiếu chuyển không còn ở trạng thái hoàn tất (có thể đã hủy). Tải lại.',
   FINANCE_TRANSFER_ALREADY_CONFIRMED: 'Phiếu chuyển này đã được xác nhận chi phí. Tải lại.',
+  FINANCE_VAT_REQUIRED: 'Chọn thuế VAT cho phiếu.',
+  FINANCE_DIRECT_RECEIPT_REQUIRED: 'Chọn ít nhất một phiếu nhập.',
+  FINANCE_DIRECT_RECEIPT_STATE: 'Phiếu nhập đã đổi trạng thái (kho vừa sửa hoặc hủy). Tải lại.',
+  FINANCE_DIRECT_RECEIPT_POSTED: 'Phiếu nhập này đã được ghi công nợ. Tải lại.',
+  FINANCE_DIRECT_RECEIPT_SELF_POST: 'Bạn lập hoặc duyệt phiếu nhập này — nhờ kế toán khác ghi nợ.',
+  FINANCE_SUPPLIER_REQUIRED: 'Phiếu nhập chưa gắn nhà cung cấp — trả lại kho để bổ sung.',
+  FINANCE_DUPLICATE_UNCHECKED: 'Có phiếu nghi trùng — đối chiếu với kho rồi tích xác nhận.',
+  FINANCE_PRICE_REQUIRED: 'Nhập đơn giá cho các dòng chưa có giá.',
+  FINANCE_STOCK_BALANCE_MISMATCH: 'Sổ kho của vật tư không khớp để cập nhật giá — báo quản trị kiểm tra.',
   FINANCE_DOCUMENT_NOT_FOUND: 'Chứng từ không còn. Tải lại.',
   FINANCE_DOCUMENT_HAS_PAYMENTS: 'Chứng từ đã có khoản chi (hoặc đang chờ xác nhận) — không hủy được.',
   FINANCE_ADJUSTMENT_PENDING: 'Chứng từ đang có đề xuất hủy chờ xác nhận.',
@@ -152,6 +173,13 @@ const safeName = (name: string) => name.trim().replace(/[^a-zA-Z0-9._-]+/g, '_')
 export const financeService = {
   list(filter: { projectId?: string; source?: string } = {}) { return call<FinancePayablesList>('list_finance_payables_v1', { p_filter: filter }); },
   supplier(supplierId: string) { return call<FinanceSupplierDetail>('get_finance_supplier_v1', { p_supplier_id: supplierId }); },
+  directReceipts() { return call<FinanceDirectReceipts>('list_finance_direct_receipts_v1', {}); },
+  postDirectReceipts(input: { receipts: Array<{ transactionId: string; rowVersion: number; prices?: Record<string, number> }>; vat: FinanceVatChoice; invoiceNo?: string; duplicateChecked?: boolean }) {
+    return call<{ documents: Array<{ transactionId: string; code: string; amount: number }>; total: number }>('post_finance_direct_receipts_v1', { p_input: input });
+  },
+  returnDirectReceipts(input: { transactionIds: string[]; reason: string }) {
+    return call<{ returned: number }>('return_finance_direct_receipts_v1', { p_input: input });
+  },
   pendingStatements() { return call<FinancePendingStatement[]>('list_finance_pending_statements_v1', {}); },
   postStatement(input: { statementId: string; action: 'post' | 'return'; reason?: string }) {
     return call<{ statementId: string; status: string }>('transition_procurement_contract_statement_v1', { p_input: input });
@@ -230,7 +258,7 @@ export const DUE_SOURCE_LABELS: Record<string, string> = {
   contract: 'theo HĐ', supplier: 'theo NCC', default: 'mặc định công ty', manual: 'sửa tay',
 };
 export const SOURCE_LABELS: Record<string, string> = {
-  purchase_delivery_receipt: 'Nhận hàng PO', supplier_delivery_statement: 'Đối soát HĐ', opening_balance: 'Số dư đầu kỳ',
+  purchase_delivery_receipt: 'Nhận hàng PO', direct_supplier_receipt: 'Nhập trực tiếp NCC', supplier_delivery_statement: 'Đối soát HĐ', opening_balance: 'Số dư đầu kỳ',
   supplier_return_credit: 'Trả hàng NCC', manual_adjustment: 'Điều chỉnh', site_direct_purchase: 'Mua nóng', purchase_order: 'PO', supplier_invoice_adjustment: 'Điều chỉnh hóa đơn',
 };
 export const METHOD_LABELS: Record<string, string> = { bank_transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác', site_cash: 'Quỹ công trường', offset: 'Bù trừ' };
@@ -240,4 +268,5 @@ export const EVENT_LABELS: Record<string, string> = {
   external_payment_withdraw: 'Rút khoản chi', external_payment_reverse: 'Đảo khoản chi',
   opening_save: 'Lưu đối chiếu đầu kỳ', opening_submit: 'Gửi đối chiếu đầu kỳ', opening_confirm: 'Chốt đầu kỳ', opening_reject: 'Trả lại đối chiếu', opening_cancel: 'Hủy / đảo đối chiếu',
   cancel_request: 'Đề xuất hủy công nợ', cost_cutover_save: 'Đổi mốc chi phí MISA', transfer_cost_review: 'Chuyển kho chờ xác nhận giá vốn', transfer_cost_confirm: 'Xác nhận chi phí chuyển kho', cancel_confirm: 'Xác nhận hủy công nợ', cancel_reject: 'Từ chối hủy công nợ', cancel_withdraw: 'Rút đề xuất hủy',
+  direct_receipt_post: 'Ghi nợ phiếu nhập trực tiếp', direct_receipt_return: 'Trả lại phiếu nhập cho kho', direct_receipt_cancel: 'Kho hủy phiếu nhập — hủy công nợ',
 };

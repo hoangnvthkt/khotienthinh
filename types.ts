@@ -3606,6 +3606,9 @@ export interface TransactionItem {
   accountingQty?: number;      // Số lượng theo đơn vị mua (VD: 10.05 KG)
   accountingUnit?: string;     // Đơn vị mua (VD: 'KG') - snapshot tại thời điểm nhập
   accountingPrice?: number;    // Đơn giá theo đơn vị mua (VD: 15000 VNĐ/KG)
+  // --- VAT phiếu nhập trực tiếp NCC (K3a-3): Tài chính dùng khi ghi công nợ ---
+  vatRate?: number;
+  priceIncludesVat?: boolean;
 }
 
 export type MaterialIssueRecipientType = 'employee' | 'work_group' | 'subcontractor' | 'partner' | 'manual';
