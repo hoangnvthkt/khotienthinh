@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, ChevronRight, Search } from 'lucide-react';
 import {
-  procurementInboxService, type ProcurementOrderList, type ProcurementOrderStage, type ProcurementOrderSummary,
+  procurementInboxService, type ProcurementOrderList, type ProcurementOrderStage, type ProcurementOrderSummary, type ProcurementPoPayment,
 } from '../../../lib/procurementInboxService';
 import { dateVi } from '../../project/work-plan/workPlanUi';
-import { Badge, PoStatusChip, StateBox, inputCls, money } from './hubUi';
+import { Badge, PoPaymentChip, PoStatusChip, StateBox, inputCls, money } from './hubUi';
 
 const STAGE_COPY: Record<ProcurementOrderStage, { empty: string; hint: string }> = {
   drafting: { empty: 'Không có đơn đang lập hoặc chờ duyệt.', hint: 'Đơn nháp, chờ duyệt và bị trả lại.' },
@@ -13,7 +13,7 @@ const STAGE_COPY: Record<ProcurementOrderStage, { empty: string; hint: string }>
   received: { empty: 'Chưa có đơn giao đủ.', hint: 'Đã giao đủ — đối chiếu chứng từ và đóng đơn.' },
 };
 
-const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }> = ({ order, onOpen }) => {
+const OrderRow: React.FC<{ order: ProcurementOrderSummary; payment?: ProcurementPoPayment; onOpen: () => void }> = ({ order, payment, onOpen }) => {
   const pct = order.qtyTotal > 0 ? Math.min(100, Math.round(order.qtyReceived / order.qtyTotal * 100)) : 0;
   const due = order.expectedDeliveryDate;
   return <li>
@@ -22,6 +22,7 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; onOpen: () => void }>
         <span className="flex flex-wrap items-center gap-1.5">
           <span className="font-semibold text-foreground">{order.poNumber}</span>
           <PoStatusChip status={order.status} />
+          <PoPaymentChip payment={payment} />
           {order.awaitingMe && <Badge className="border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-900/50 dark:text-amber-100">Chờ bạn duyệt</Badge>}
           {!order.isHub && <Badge className="border-border bg-muted text-muted-foreground" title="Lập ở tab dự án trước khi có Mua hàng">Lập ở dự án</Badge>}
           {order.returnsPending > 0 && <Badge className="border-amber-300 bg-amber-50 text-amber-800">{order.returnsPending} trả NCC chờ quyết định</Badge>}
@@ -56,12 +57,17 @@ export const OrdersView: React.FC<{
   const [mine, setMine] = useState(false);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
+  const [payments, setPayments] = useState<Record<string, ProcurementPoPayment>>({});
 
   useEffect(() => { const t = setTimeout(() => setQuery(search.trim()), 300); return () => clearTimeout(t); }, [search]);
   const load = useCallback(() => {
     setError(null);
     procurementInboxService.listOrders({ stage, projectId: projectId || undefined, mine, search: query || undefined })
-      .then(setData).catch(e => setError(e instanceof Error ? e.message : String(e)));
+      .then(d => {
+        setData(d);
+        // Tình trạng thanh toán chỉ có khi đã nhận hàng (công nợ sinh lúc nhận) — không chặn danh sách nếu lỗi.
+        if (stage !== 'drafting') procurementInboxService.poPaymentStatus(d.orders.map(o => o.id)).then(setPayments).catch(() => setPayments({}));
+      }).catch(e => setError(e instanceof Error ? e.message : String(e)));
   }, [stage, projectId, mine, query]);
   useEffect(() => { load(); }, [load, reloadKey]);
 
@@ -97,7 +103,7 @@ export const OrdersView: React.FC<{
           : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
             {groups.map(g => <div key={g.key}>
               {g.label && <p className="border-t border-border bg-muted/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:border-t-0">{g.label} · {g.orders.length}</p>}
-              <ul>{g.orders.map(o => <OrderRow key={o.id} order={o} onOpen={() => onOpen(o.id)} />)}</ul>
+              <ul>{g.orders.map(o => <OrderRow key={o.id} order={o} payment={payments[o.id]} onOpen={() => onOpen(o.id)} />)}</ul>
             </div>)}
             {data.orders.length >= 300 && <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">Hiển thị 300 đơn đầu — dùng bộ lọc để thu hẹp.</p>}
           </div>}

@@ -233,7 +233,9 @@
     "20261007110000_hrm_position_catalog_cleanup.sql",
     "20261007120000_hrm_g2b_leave_ledger_carry.sql",
     "20261008090000_finance_k3b_payment_requests.sql",
-    "20261008100000_notification_attendance_reminder_in_out.sql"
+    "20261008100000_notification_attendance_reminder_in_out.sql",
+    "20261008133100_finance_k3b2_po_payment_status.sql",
+    "20261008133200_procurement_po_spec_print.sql"
   ],
   "forbidIncludeAll": true
 }

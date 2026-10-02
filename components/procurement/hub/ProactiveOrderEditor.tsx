@@ -14,7 +14,7 @@ import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from '.
 // được gắn vào phần chưa phân bổ của đơn này (ở phiếu nhu cầu) thay vì lập đơn mới.
 
 interface Line {
-  key: string; lineId?: string; itemId: string; name: string; sku: string | null; unit: string | null;
+  key: string; lineId?: string; itemId: string; name: string; spec: string; sku: string | null; unit: string | null;
   altUnit: boolean; purchaseUnit: string; factor: number; purchaseQty: string;
   stockQty: string; price: string; allocatedQty: number;
   boq: { inBoq: boolean; boqQty: number; orderedQty: number };
@@ -43,7 +43,7 @@ const purchaseQtyOf = (l: Line, stock: number) => {
 const fromOrder = (order: ProcurementOrderDetail): Line[] => order.lines.map(l => {
   const alt = Boolean(l.stockUnit && l.unit && l.unit !== l.stockUnit);
   return {
-    key: l.lineId, lineId: l.lineId, itemId: l.itemId, name: l.name, sku: l.sku, unit: l.stockUnit || l.unit,
+    key: l.lineId, lineId: l.lineId, itemId: l.itemId, name: l.name, spec: l.specification || '', sku: l.sku, unit: l.stockUnit || l.unit,
     altUnit: alt, purchaseUnit: alt ? l.unit || '' : '', factor: l.factor || 1, purchaseQty: alt ? qtyInput(l.qty) : '',
     stockQty: qtyInput(l.stockQty), price: qtyInput(l.unitPrice), allocatedQty: l.allocatedQty,
     boq: { inBoq: l.boq ? l.boq.status !== 'outside' : true, boqQty: l.boq?.boqQty ?? 0, orderedQty: l.boq?.orderedBefore ?? 0 },
@@ -98,7 +98,7 @@ export const ProactiveOrderEditor: React.FC<{
 
   const addItem = (item: ProcurementCatalogItem) => {
     setLines(cur => cur.some(l => l.itemId === item.id) ? cur : [...cur, {
-      key: item.id, itemId: item.id, name: item.name, sku: item.sku, unit: item.unit,
+      key: item.id, itemId: item.id, name: item.name, spec: '', sku: item.sku, unit: item.unit,
       altUnit: Boolean(item.purchaseUnit), purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1,
       purchaseQty: '', stockQty: '', price: '', allocatedQty: 0,
       boq: { inBoq: item.inBoq, boqQty: item.boqQty, orderedQty: item.orderedQty },
@@ -144,7 +144,7 @@ export const ProactiveOrderEditor: React.FC<{
         items: lines.map(l => {
           const stock = parseQty(l.stockQty) || 0;
           return {
-            lineId: l.lineId, itemId: l.itemId, stockQty: stock, unitPrice: parseQty(l.price) || 0,
+            lineId: l.lineId, itemId: l.itemId, stockQty: stock, unitPrice: parseQty(l.price) || 0, specification: l.spec.trim() || undefined,
             ...(l.altUnit ? { purchaseUnit: l.purchaseUnit.trim() || undefined, purchaseQty: purchaseQtyOf(l, stock) } : {}),
           };
         }),
@@ -265,9 +265,12 @@ export const ProactiveOrderEditor: React.FC<{
                   return <li key={l.key} className="overflow-hidden rounded-2xl border border-border bg-card">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l-4 border-l-teal-500 bg-teal-50/60 px-3 py-2.5 dark:bg-teal-950/20">
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
-                      <span className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] md:basis-auto">
+                      <span className="flex min-w-0 flex-1 basis-[calc(100%-2.5rem)] flex-wrap items-center gap-x-2 gap-y-1 md:basis-auto">
                         <span className="font-semibold text-mint-700 dark:text-mint-300">{l.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></span>
+                        <input value={l.spec} onChange={e => patch(l.key, { spec: e.target.value })} maxLength={160} aria-label={`Quy cách ${l.name}`}
+                          placeholder="Quy cách / cấu hình (VD KT 30x30)" title="Chỉ hiển thị trên đơn và mẫu in — kho vẫn theo mã vật tư gốc"
+                          className={`min-w-[10rem] flex-1 py-1 text-xs md:max-w-[16rem] ${inputCls}`} />
+                        <span className="w-full text-xs text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></span>
                       {purpose === 'project' && <Badge className={BOQ_TONE[status]}>{boqLabel(l, stockBad ? 0 : stock as number)}</Badge>}
                       <button type="button" disabled={l.allocatedQty > 0} title={l.allocatedQty > 0 ? 'Dòng đã gắn nhu cầu — gỡ gắn ở đơn trước' : 'Bỏ vật tư'}
                         aria-label={`Bỏ ${l.name}`} onClick={() => setLines(cur => cur.filter(x => x.key !== l.key))}
