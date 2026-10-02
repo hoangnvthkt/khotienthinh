@@ -151,6 +151,9 @@ export const procurementInboxService = {
   listOrders(filter: ProcurementOrderFilter) {
     return call<ProcurementOrderList>('list_procurement_orders_v1', { p_filter: filter });
   },
+  poPaymentStatus(ids: string[]) {
+    return ids.length ? call<Record<string, ProcurementPoPayment>>('get_procurement_po_payment_status_v1', { p_po_ids: ids }) : Promise.resolve({} as Record<string, ProcurementPoPayment>);
+  },
   getOrder(id: string) {
     return call<ProcurementOrderDetail>('get_procurement_order_v1', { p_po_id: id });
   },
@@ -215,6 +218,12 @@ export interface ProcurementOrderLine {
   /** Proactive orders: BOQ snapshot when the line was saved. */
   boq: ProcurementBoqSnapshot | null;
   allocations: Array<ProcurementSourceRef & { code: string | null; lineId: string; qty: number; needQty: number }>;
+}
+export type ProcurementPoPaymentState = 'none' | 'unpaid' | 'partial' | 'paid';
+/** Tình trạng thanh toán PO (từ công nợ nhận hàng) — Mua hàng chỉ thấy nợ, đã chi và hạn (K3b-2). */
+export interface ProcurementPoPayment {
+  status: ProcurementPoPaymentState; recognized: number; credit: number; paid: number; outstanding: number; inRequest: number;
+  documents: number; nextDue: string | null; overdue: boolean;
 }
 export interface ProcurementOrderDetail {
   id: string; poNumber: string | null; status: string; stage: ProcurementOrderStage | 'other'; isHub: boolean; rowVersion: number;

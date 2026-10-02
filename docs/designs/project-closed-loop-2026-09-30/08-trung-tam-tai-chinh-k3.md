@@ -369,3 +369,16 @@ Migration `20261008090000_finance_k3b_payment_requests.sql`. Mockup đã duyệt
 - Xây dựng & Vận tải 322,7 tr (2 bước): anh Chuẩn duyệt bước 1 nhưng không duyệt được bước 2. Admin Hoàng trả lại (không ghi lý do thì bị chặn). Gửi lại 2 chứng từ → chị Hương, rồi Admin Hoàng duyệt → hủy có lý do. Nhật ký đủ 7 bước.
 
 **Còn lại (K3b-2):** tạm ứng NCC theo PO; xuất UNC / phiếu chi sang MISA; Mua hàng thấy tình trạng thanh toán trên PO.
+
+## 13. K3b-2: Mua hàng thấy tình trạng thanh toán PO (02/10/2026)
+
+Migration `20261008100000_finance_k3b2_po_payment_status.sql`, RPC `get_procurement_po_payment_status_v1`.
+- **Nguồn số liệu:** mỗi PO tổng hợp từ công nợ sinh lúc kho nhận hàng (gồm cả đối chiếu lùi ngày). Gồm: đã ghi nợ (trừ giảm trừ), đã chi, còn nợ, đang trong đề nghị chi, hạn gần nhất, quá hạn hay chưa.
+- **Trạng thái:** Chưa thanh toán / TT một phần / Đã thanh toán, có nhãn "quá hạn" nhấp nháy.
+  - PO chưa phát sinh nợ trong Vioo (chưa nhận hàng, hoặc nhận từ trước khi có công nợ tự sinh) thì **không hiện nhãn**, không coi là 0.
+- **Quyền xem:** người xem Mua hàng đọc được, đúng nguyên tắc "Mua hàng chỉ xem nợ + hạn". Không hiện UNC hay người chi.
+- **Nơi hiện:**
+  - Danh sách đơn hàng: nhãn trạng thái thanh toán.
+  - Chi tiết PO: mục "Thanh toán NCC" và nút "Xem ở Tài chính".
+
+**Còn chờ chủ SP quyết:** tạm ứng NCC theo PO; mẫu xuất phiếu chi / UNC sang MISA.
