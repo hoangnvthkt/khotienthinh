@@ -62,6 +62,28 @@ export interface FinanceDirectReceipt {
   returned: { reason: string; at: string; byName: string | null } | null;
 }
 export interface FinanceDirectReceipts { receipts: FinanceDirectReceipt[]; returned: FinanceDirectReceipt[]; can: { record: boolean } }
+export type FinanceRequestStatus = 'pending' | 'returned' | 'approved' | 'paid' | 'rejected' | 'withdrawn' | 'cancelled' | 'reversed';
+export interface FinanceRouteStep { label: string; approverIds: string[]; eligibleIds: string[]; approverNames: string[]; eligibleNames: string[] }
+export interface FinanceRoutePreview {
+  route: { versionId: string; tierNo: number; amount: number; priorAmount: number; priorRequests: Array<{ code: string; amount: number; status: string }>;
+    thresholdAmount: number; steps: FinanceRouteStep[]; handlerNames: string[]; problemStep: string | null };
+  bank: { bankName: string | null; account: string } | null; internal: boolean; reserved: Record<string, number>; canRecord: boolean;
+}
+export interface FinancePaymentRequest {
+  id: string; code: string; supplierId: string; supplierName: string; method: 'bank_transfer' | 'cash'; bank: { bankName: string | null; account: string } | null;
+  plannedDate: string; amount: number; note: string | null; status: FinanceRequestStatus; route: FinanceRouteStep[]; currentStep: number;
+  thresholdAmount: number; priorRequests: Array<{ code: string; amount: number; status: string }>;
+  paid: { paymentDate: string; documentRef: string; attachments: FinanceAttachment[]; byName: string | null; at: string; note: string | null;
+    batches: Array<{ batchId: string; projectId: string | null; amount: number }>; reversal?: { reason: string; byName: string | null; at: string } } | null;
+  createdBy: string; createdByName: string | null; createdAt: string; rowVersion: number; submissionNo: number;
+  lines: Array<{ documentId: string; documentNo: string; code: string; sourceType: string; projectId: string | null; projectCode: string | null; amount: number; outstandingSnapshot: number; dueDate: string | null }>;
+  steps: Array<{ submissionNo: number; stepNo: number | null; label: string; action: string; actorName: string | null; reason: string | null; at: string }>;
+  canApprove: boolean; canWithdraw: boolean; canResubmit: boolean; canCancel: boolean; canConfirm: boolean; canReverse: boolean;
+}
+export interface FinancePaymentRequests {
+  counts: { request: number; approved: number; approvedAmount: number; paid: number; waitingMe: number };
+  requests: FinancePaymentRequest[];
+}
 export interface FinancePendingStatement {
   id: string; code: string; supplierId: string; supplierName: string; contractCode: string | null; projectId: string; projectCode: string | null;
   periodMonth: string | null; statementDate: string | null; grossAmount: number; vatAmount: number; totalAmount: number;
@@ -98,7 +120,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_RECORD_DENIED: 'Bạn chưa có quyền Tài chính — Ghi nhận.',
   FINANCE_CONFIRM_DENIED: 'Bạn chưa có quyền Tài chính — Xác nhận.',
   FINANCE_MANAGE_DENIED: 'Chỉ Admin hoặc Quản trị Tài chính được sửa phần này.',
-  FINANCE_SELF_CONFIRM: 'Người xác nhận phải khác người lập — kể cả Admin.',
+  FINANCE_SELF_CONFIRM: 'Người xác nhận phải khác người lập, người duyệt và người đã nhận hàng / chốt đối soát — kể cả Admin.',
   FINANCE_WITHDRAW_DENIED: 'Chỉ người lập được rút khi còn chờ xác nhận.',
   FINANCE_REASON_REQUIRED: 'Nhập lý do.',
   FINANCE_PAYMENT_DATE_INVALID: 'Ngày chi không hợp lệ (không được sau hôm nay).',
@@ -133,6 +155,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_DUPLICATE_UNCHECKED: 'Có phiếu nghi trùng — đối chiếu với kho rồi tích xác nhận.',
   FINANCE_PRICE_REQUIRED: 'Nhập đơn giá cho các dòng chưa có giá.',
   FINANCE_STOCK_BALANCE_MISMATCH: 'Sổ kho của vật tư không khớp để cập nhật giá — báo quản trị kiểm tra.',
+  FINANCE_SUPPLIER_BANK_REQUIRED: 'NCC chưa có số tài khoản — Mua hàng cập nhật ở hồ sơ đối tác, hoặc chọn chi tiền mặt.',
+  FINANCE_NO_ELIGIBLE_APPROVER: 'Bước duyệt không còn người hợp lệ (người lập / người xử lý chứng từ không được duyệt). Nhờ Quản trị Tài chính thêm người dự phòng hoặc ủy quyền.',
+  FINANCE_NOT_APPROVER: 'Bạn không phải người duyệt bước này (hoặc đã duyệt bước trước / là người lập / đã xử lý chứng từ).',
+  FINANCE_REQUEST_STATE: 'Đề nghị chi đã đổi trạng thái. Tải lại.',
+  FINANCE_REQUEST_NOT_FOUND: 'Đề nghị chi không còn. Tải lại.',
+  FINANCE_MATRIX_MISSING: 'Chưa có ma trận duyệt chi hiện hành — Quản trị Tài chính cấu hình ở Thiết lập.',
   FINANCE_DOCUMENT_NOT_FOUND: 'Chứng từ không còn. Tải lại.',
   FINANCE_DOCUMENT_HAS_PAYMENTS: 'Chứng từ đã có khoản chi (hoặc đang chờ xác nhận) — không hủy được.',
   FINANCE_ADJUSTMENT_PENDING: 'Chứng từ đang có đề xuất hủy chờ xác nhận.',
@@ -179,6 +207,23 @@ export const financeService = {
   },
   returnDirectReceipts(input: { transactionIds: string[]; reason: string }) {
     return call<{ returned: number }>('return_finance_direct_receipts_v1', { p_input: input });
+  },
+  paymentRequests(stage: 'request' | 'approved' | 'paid' | 'closed' | 'all') { return call<FinancePaymentRequests>('list_finance_payment_requests_v1', { p_filter: { stage } }); },
+  previewPaymentRequest(input: { supplierId: string; requestId?: string; lines: Array<{ documentId: string; amount: number }> }) {
+    return call<FinanceRoutePreview>('preview_finance_payment_request_v1', { p_input: input });
+  },
+  savePaymentRequest(input: { requestId?: string; expectedRowVersion?: number; supplierId: string; method: 'bank_transfer' | 'cash'; plannedDate: string; note?: string;
+    lines: Array<{ documentId: string; amount: number }> }) {
+    return call<{ requestId: string; code: string; amount: number }>('save_finance_payment_request_v1', { p_input: input });
+  },
+  decidePaymentRequest(input: { requestId: string; expectedRowVersion: number; action: 'approve' | 'return' | 'reject' | 'withdraw' | 'cancel'; reason?: string }) {
+    return call<{ status: FinanceRequestStatus; currentStep: number }>('decide_finance_payment_request_v1', { p_input: input });
+  },
+  confirmPaymentRequest(input: { requestId: string; expectedRowVersion: number; paymentDate: string; documentRef: string; attachments: FinanceAttachment[]; note?: string }) {
+    return call<{ status: FinanceRequestStatus }>('confirm_finance_payment_request_v1', { p_input: input });
+  },
+  reversePaymentRequest(input: { requestId: string; expectedRowVersion: number; reason: string }) {
+    return call<{ status: FinanceRequestStatus }>('reverse_finance_payment_request_v1', { p_input: input });
   },
   pendingStatements() { return call<FinancePendingStatement[]>('list_finance_pending_statements_v1', {}); },
   postStatement(input: { statementId: string; action: 'post' | 'return'; reason?: string }) {
@@ -268,5 +313,8 @@ export const EVENT_LABELS: Record<string, string> = {
   external_payment_withdraw: 'Rút khoản chi', external_payment_reverse: 'Đảo khoản chi',
   opening_save: 'Lưu đối chiếu đầu kỳ', opening_submit: 'Gửi đối chiếu đầu kỳ', opening_confirm: 'Chốt đầu kỳ', opening_reject: 'Trả lại đối chiếu', opening_cancel: 'Hủy / đảo đối chiếu',
   cancel_request: 'Đề xuất hủy công nợ', cost_cutover_save: 'Đổi mốc chi phí MISA', transfer_cost_review: 'Chuyển kho chờ xác nhận giá vốn', transfer_cost_confirm: 'Xác nhận chi phí chuyển kho', cancel_confirm: 'Xác nhận hủy công nợ', cancel_reject: 'Từ chối hủy công nợ', cancel_withdraw: 'Rút đề xuất hủy',
+  payment_request_submit: 'Lập / gửi đề nghị chi', payment_request_approve: 'Duyệt đề nghị chi', payment_request_return: 'Trả lại đề nghị chi',
+  payment_request_reject: 'Từ chối đề nghị chi', payment_request_withdraw: 'Rút đề nghị chi', payment_request_cancel: 'Hủy đề nghị chi đã duyệt',
+  payment_request_paid: 'Xác nhận đã chi', payment_request_reverse: 'Đảo phiếu chi',
   direct_receipt_post: 'Ghi nợ phiếu nhập trực tiếp', direct_receipt_return: 'Trả lại phiếu nhập cho kho', direct_receipt_cancel: 'Kho hủy phiếu nhập — hủy công nợ',
 };

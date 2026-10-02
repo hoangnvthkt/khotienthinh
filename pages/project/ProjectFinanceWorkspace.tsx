@@ -1119,11 +1119,11 @@ const SupplierPaymentBatchPanel = ({
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h4 className="text-sm font-black text-slate-800 dark:text-white">Thanh toán NCC</h4>
-        <p className="mt-0.5 text-[11px] font-bold text-slate-400">Tạo đợt thanh toán và xem phân bổ theo từng chứng từ AP.</p>
+        <p className="mt-0.5 text-[11px] font-bold text-slate-400">Xem các đợt đã chi. Lập đề nghị chi mới ở module Tài chính (duyệt theo ma trận, xác nhận UNC).</p>
       </div>
       {canManage && (
         <button type="button" onClick={onCreate} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
-          <Plus size={14} /> Tạo đợt thanh toán
+          <Plus size={14} /> Lập đề nghị chi ở Tài chính
         </button>
       )}
     </div>
@@ -1792,7 +1792,7 @@ const PayablesTable = ({
                   <div className="flex flex-wrap justify-end gap-1">
                     {canPayPurchaseOrder && (
                       <button type="button" onClick={() => onPayPurchaseOrder?.(row)} className="rounded-md px-2 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-50">
-                        <CreditCard size={11} className="inline" /> {row.paidAmount > 0 ? 'Thanh toán tiếp' : 'Thanh toán NCC'}
+                        <CreditCard size={11} className="inline" /> Đề nghị chi ở Tài chính
                       </button>
                     )}
                     {isPurchaseOrderPaid && (
@@ -3310,8 +3310,9 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
     }
   };
 
+  // K3b (02/10/2026): chi tiền NCC chỉ lập ở module Tài chính (đề nghị chi → duyệt → xác nhận chi) — không còn hai nơi chi tiền.
   const openPoPayment = (row: ProjectFinancePayableRow) => {
-    void openSupplierPaymentBatchForm(row);
+    navigate(row.sourceType === 'supplier_payable' && row.sourceId ? `/finance?supplier=${encodeURIComponent(row.sourceId)}` : '/finance');
   };
 
   const savePoPayment = async () => {
@@ -3948,8 +3949,8 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                     </button>
                   )}
                   {payablesView === 'payments' && canRecordPoPayment && (
-                    <button type="button" onClick={() => openSupplierPaymentBatchForm()} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors">
-                      <Plus size={14} /> Tạo đợt thanh toán
+                    <button type="button" onClick={() => navigate('/finance')} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 shadow-sm transition-colors">
+                      <Plus size={14} /> Lập đề nghị chi ở Tài chính
                     </button>
                   )}
                   {payablesView === 'settlements' && canManageFinance && (
@@ -3974,7 +3975,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
                   batches={supplierPaymentBatches}
                   loading={loadingSupplierPaymentBatches}
                   canManage={canRecordPoPayment}
-                  onCreate={() => openSupplierPaymentBatchForm()}
+                  onCreate={() => navigate('/finance')}
                   onOpenDetail={openSupplierPaymentBatchDetail}
                   onOpenTrace={openSupplierPaymentBatchTrace}
                 />

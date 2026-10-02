@@ -7,6 +7,7 @@ import { financeService, type FinancePayablesList, type FinanceSupplierSummary }
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
 import { DirectReceiptsView } from './DirectReceiptsView';
+import { PaymentRequestsView } from './PaymentRequestsView';
 import { PendingStatementsView } from './PendingStatementsView';
 import { SupplierPanel } from './SupplierPanel';
 import { TransferReviewsView } from './TransferReviewsView';
@@ -16,7 +17,7 @@ import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financ
 // K3a: phần Phải trả NCC (danh sách NCC trái, chi tiết phải), Chờ ghi nợ, Thiết lập. Các phần khác mở dần (K3b → F5).
 
 type Section = 'payables' | 'settings';
-type Stage = 'pending' | 'owed';
+type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid';
 type Filter = 'all' | 'overdue' | 'soon' | 'issues' | 'opening';
 type Sort = 'overdue' | 'owed' | 'due' | 'name';
 
@@ -27,9 +28,20 @@ const OPENING_BADGE: Record<FinanceSupplierSummary['opening'], { label: string; 
   done: { label: 'Đã chốt đầu kỳ', cls: 'border-leaf-200 bg-leaf-50 text-leaf-800' },
 };
 
-export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null }> = ({ currentUserId, initialSection, initialSupplierId }) => {
+export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null; initialRequestId?: string | null }> = ({ currentUserId, initialSection, initialSupplierId, initialRequestId }) => {
   const [section, setSection] = useState<Section>(initialSection === 'settings' ? 'settings' : 'payables');
-  const [stage, setStage] = useState<Stage>(initialSection === 'pending' ? 'pending' : 'owed');
+  const [stage, setStage] = useState<Stage>(initialSection === 'pending' ? 'pending' : initialSection === 'requests' ? 'request' : 'owed');
+  const [requestCounts, setRequestCounts] = useState<{ request: number; approved: number; approvedAmount: number; paid: number; waitingMe: number } | null>(null);
+  const [stageKey, setStageKey] = useState(0);
+  const today = useMemo(() => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }), []);
+  // Link từ thông báo (?section=requests&request=…) mở đúng bước theo trạng thái đề nghị.
+  useEffect(() => {
+    if (!initialRequestId) return;
+    financeService.paymentRequests('all').then(d => {
+      const s = d.requests.find(x => x.id === initialRequestId)?.status;
+      if (s === 'approved') setStage('approved'); else if (s === 'paid' || s === 'reversed') setStage('paid'); else setStage('request');
+    }).catch(() => undefined);
+  }, [initialRequestId]);
   const [data, setData] = useState<FinancePayablesList | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error' | 'denied'>('loading');
   const [message, setMessage] = useState('');
@@ -53,6 +65,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       const r = await financeService.list({ projectId: projectId || undefined, source: source || undefined });
       setData(r); setStatus('ready');
       financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
+      financeService.paymentRequests('request').then(d => setRequestCounts(d.counts)).catch(() => setRequestCounts(null));
       financeService.directReceipts().then(d => setDirect({ count: d.receipts.length, amount: d.receipts.reduce((s, x) => s + x.value, 0), missing: d.receipts.filter(x => x.missingPrice > 0).length }))
         .catch(() => setDirect(null));
       setSel(cur => cur && r.suppliers.some(s => s.supplierId === cur) ? cur : cur || r.suppliers[0]?.supplierId || null);
@@ -123,15 +136,19 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
               {([['pending', 'Chờ ghi nợ', direct ? String(data.pendingStatements.count + direct.count) : '…',
                   direct ? `${direct.count} phiếu nhập trực tiếp · ${data.pendingStatements.count} bảng đối soát` : 'đang đếm…', Inbox, true],
                 ['owed', 'Đang nợ', String(t.docCount), `${shortMoney(t.owed)} · ${t.supplierCount} NCC`, Banknote, true],
-                ['request', 'Đề nghị chi', '—', 'mở ở K3b', FileCheck2, false], ['approved', 'Chờ chi', '—', 'mở ở K3b', CalendarClock, false], ['paid', 'Đã chi', '—', 'mở ở K3b', Truck, false]] as const).map(([k, l, v, h, I, on], i) =>
+                ['request', 'Đề nghị chi', requestCounts ? String(requestCounts.request) : '…', requestCounts?.waitingMe ? `${requestCounts.waitingMe} chờ bạn duyệt` : 'đang duyệt', FileCheck2, true],
+                ['approved', 'Chờ chi', requestCounts ? String(requestCounts.approved) : '…', requestCounts ? shortMoney(requestCounts.approvedAmount) : '', CalendarClock, true],
+                ['paid', 'Đã chi', requestCounts ? String(requestCounts.paid) : '…', 'có UNC, đảo được', Truck, true]] as const).map(([k, l, v, h, I, on], i) =>
                 <button key={k} type="button" disabled={!on} aria-current={stage === k ? 'page' : undefined} onClick={() => on && setStage(k as Stage)}
                   className={`rounded-2xl border bg-card p-3 text-left transition ${stage === k ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${on ? '' : 'cursor-not-allowed opacity-50'} ${i === 0 ? 'col-span-2 md:col-span-1' : ''}`}>
                   <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><span className="grid h-5 w-5 place-items-center rounded-full bg-muted text-[11px] font-bold text-foreground">{i + 1}</span>{l}</span>
                   <span className="mt-1.5 flex items-center gap-2"><I size={17} className="text-teal-700" /><span className={`text-2xl font-bold tabular-nums ${k === 'pending' && Number(v) > 0 ? 'text-amber-700' : ''}`}>{v}</span></span>
-                  <span className="block text-xs text-muted-foreground">{h}</span></button>)}
+                  <span className={`block text-xs ${k === 'request' && requestCounts?.waitingMe ? 'font-semibold text-amber-700' : 'text-muted-foreground'}`}>{h}</span></button>)}
             </nav>
 
-            {stage === 'pending' ? <div className="space-y-3">
+            {stage === 'request' || stage === 'approved' || stage === 'paid'
+              ? <PaymentRequestsView key={`${stage}:${stageKey}`} stage={stage} today={today} initialRequestId={initialRequestId} onChanged={() => { void load(true); setStageKey(k => k + 1); }} />
+              : stage === 'pending' ? <div className="space-y-3">
               <div role="tablist" aria-label="Nguồn chờ ghi nợ" className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm">
                 {([['direct', 'Phiếu nhập trực tiếp', direct?.count], ['statements', 'Bảng đối soát HĐ', data.pendingStatements.count]] as const).map(([k, l, n]) =>
                   <button key={k} type="button" role="tab" aria-selected={pendingTab === k} onClick={() => setPendingTab(k)}

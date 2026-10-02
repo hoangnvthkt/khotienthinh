@@ -331,3 +331,41 @@ Migration `20261007090000_finance_k3a3_direct_receipts.sql`. Chủ SP duyệt 02
 - Phiếu nghi trùng bị chặn cho tới khi xác nhận. Thủy tự lập thì không tự ghi nợ được. Trả lại kho có thông báo.
 - Kho hủy phiếu → công nợ hủy, chi phí 0.
 - Tổng sổ thu chi và số chứng từ công nợ không đổi khi áp migration.
+
+## 12. K3b: đề nghị chi → duyệt theo ma trận → xác nhận đã chi (02/10/2026)
+
+Migration `20261008090000_finance_k3b_payment_requests.sql`. Mockup đã duyệt: `.superpowers/review/work-plan/k3b.html`.
+
+**Dữ liệu:**
+- `finance_payment_requests`: đề nghị chi theo NCC, cấp công ty. Lưu luồng duyệt đã chốt (`route`), ngưỡng xét duyệt và thông tin đã chi.
+- `finance_payment_request_lines`: chứng từ và số chi từng chứng từ.
+- `finance_payment_request_steps`: nhật ký bất biến (gửi, duyệt, trả lại, từ chối, rút, hủy, đã chi, đảo).
+
+**Luật (máy chủ chặn):**
+- **Số chi** không vượt phần còn nợ, sau khi trừ khoản chi ngoài đang chờ xác nhận và phần đã nằm trong đề nghị khác chưa xong. Chi một phần được.
+- **Hình thức chi:** chuyển khoản cần số tài khoản NCC. Đơn vị nội bộ không chi tiền.
+- **Luồng duyệt** lấy theo ma trận hiện hành và **chốt lúc gửi**.
+  - Ngưỡng tính theo số tiền **cộng dồn các đề nghị cùng NCC trong 7 ngày**.
+  - Người duyệt hợp lệ là người trong danh sách hoặc người được ủy quyền, trừ người lập và trừ người đã nhận hàng / lập-chốt đối soát / lập-duyệt phiếu nhập của chứng từ.
+  - Nếu một bước không còn ai hợp lệ thì không cho gửi.
+- **Một người không duyệt hai bước.**
+- **Trả lại:** bắt buộc lý do. Người lập sửa rồi gửi lại, luồng duyệt chạy lại từ đầu.
+- **Từ chối:** kết thúc đề nghị. Người lập có thể rút khi chưa duyệt xong. Hủy đề nghị đã duyệt bắt buộc lý do.
+- **Xác nhận đã chi:**
+  - Người xác nhận phải khác người lập, người duyệt và người xử lý chứng từ.
+  - Bắt buộc ngày chi (không sau hôm nay), số UNC (không trùng theo NCC) và file UNC.
+  - Phiếu chi được tách theo dự án (`supplier_payment_batches`, `metadata.kind = payment_request`) và ghi sổ qua engine G7: giảm công nợ, ghi dòng tiền ra của dự án. Chi phí dự án không đổi, vì báo cáo đã tách dòng chi tiền khỏi dòng chi phí.
+- **Đảo phiếu chi:** bắt buộc lý do, đảo qua engine G7, công nợ trở lại Đang nợ.
+- **Thông báo:** người duyệt bước kế tiếp, người lập (khi bị trả lại / từ chối / đã duyệt / đã chi / bị đảo), và người có quyền Xác nhận khi đề nghị đã duyệt đủ.
+
+**Giao diện:**
+- Chi tiết NCC có nút **Lập đề nghị chi**. Hệ thống gợi ý sẵn chứng từ quá hạn và đến hạn trong 7 ngày, và cho xem trước luồng duyệt trước khi gửi.
+- Bước 3 **Đề nghị chi**, 4 **Chờ chi**, 5 **Đã chi** đã mở. Có huy hiệu "Chờ bạn duyệt" và "Bạn chi được".
+- Tab Tài chính của dự án: nút "Tạo đợt thanh toán" và "Thanh toán NCC" chuyển sang mở module Tài chính, không còn hai nơi chi tiền.
+
+**Đã kiểm trên production (rollback, `tools/k3b-test.mjs`):**
+- Chặn: NCC chưa có số tài khoản; số chi vượt phần đã nằm trong đề nghị khác; người lập tự duyệt; người đã duyệt tự xác nhận chi; người lập tự xác nhận chi; người đã chốt đối soát xác nhận chi; thiếu file UNC.
+- Đông Hà Nội 62,3 tr: chị Hương duyệt, chị Tâm chi → công nợ về 0 và có dòng tiền ra SMB. Đảo → công nợ trở lại 62,3 tr.
+- Xây dựng & Vận tải 322,7 tr (2 bước): anh Chuẩn duyệt bước 1 nhưng không duyệt được bước 2. Admin Hoàng trả lại (không ghi lý do thì bị chặn). Gửi lại 2 chứng từ → chị Hương, rồi Admin Hoàng duyệt → hủy có lý do. Nhật ký đủ 7 bước.
+
+**Còn lại (K3b-2):** tạm ứng NCC theo PO; xuất UNC / phiếu chi sang MISA; Mua hàng thấy tình trạng thanh toán trên PO.
