@@ -883,3 +883,11 @@ Chỉ sửa frontend, không có migration.
 - Migration `20261004170000_authorization_revoke_legacy_da_admin`: sao lưu từng grant vào `app_private.da_admin_revocation_backup`, ghi 39 dòng `permission_audit_events`, thu hồi, tắt cấp trực tiếp mã này.
 - Kiểm tra: dry-run kèm **diễn tập rollback** trong cùng giao dịch (khôi phục đủ 39 grant, 39 dòng audit); smoke sau apply PASS; smoke "giữ quyền cũ không hạn" vẫn PASS.
 - Rollback: `supabase/operations/authorization_revoke_legacy_da_admin_rollback.sql` (khôi phục chính xác từng dòng từ bảng sao lưu).
+
+### Ẩn 4 quyền "nhãn" khỏi màn phân quyền (02/10, chủ sản phẩm yêu cầu)
+
+- Ẩn (ngừng kích hoạt): `booking.vehicle.trip.execute` (chuyến đi cấp theo phân công), `asset.catalog.manage`, `asset.maintenance.manage` (Tài sản dùng quyền chi tiết), `request.category.manage` (bảng danh mục phiếu không còn dùng). Không hàm, policy, màn hình hay vai trò đặc biệt nào dùng chúng.
+- **Giữ** `booking.vehicle.handover` (giao diện dùng để hiện menu và trang Bàn giao xe) và `asset.audit.*` (việc sửa Kiểm kê tài sản sẽ dùng).
+- Migration `20261004180000_authorization_retire_label_only_permissions`: sao lưu vào `app_private.label_permission_retirement_backup`; thu hồi 13 grant không có tác dụng (để Admin vẫn lưu được hồ sơ những người đó); gỡ 5 dòng khỏi mẫu vị trí; ngừng kích hoạt 4 mã.
+- Kiểm tra: dry-run kèm diễn tập rollback (khôi phục đủ 4 mã, 13 grant, 5 dòng mẫu); smoke sau apply PASS; 14 mẫu còn 647 dòng, máy chủ công nhận 647/647; RPC danh mục của màn phân quyền không còn 4 mã. Danh mục giao diện và bản chụp `dbPermissionCatalog.json` cập nhật theo.
+- Rollback: `supabase/operations/authorization_retire_label_only_permissions_rollback.sql`.

@@ -152,15 +152,6 @@
       ]
     },
     {
-      "permissionCode": "asset.catalog.manage",
-      "scopeTypes": [
-        "assigned",
-        "department",
-        "global",
-        "warehouse"
-      ]
-    },
-    {
       "permissionCode": "asset.catalog.transfer_stock",
       "scopeTypes": [
         "assigned",
@@ -198,15 +189,6 @@
     },
     {
       "permissionCode": "asset.maintenance.import",
-      "scopeTypes": [
-        "assigned",
-        "department",
-        "global",
-        "warehouse"
-      ]
-    },
-    {
-      "permissionCode": "asset.maintenance.manage",
       "scopeTypes": [
         "assigned",
         "department",
@@ -273,13 +255,6 @@
     {
       "permissionCode": "booking.vehicle.resolve_sensitive_feedback",
       "scopeTypes": [
-        "global"
-      ]
-    },
-    {
-      "permissionCode": "booking.vehicle.trip.execute",
-      "scopeTypes": [
-        "assigned",
         "global"
       ]
     },
@@ -2042,14 +2017,6 @@
         "construction_site",
         "global",
         "project"
-      ]
-    },
-    {
-      "permissionCode": "request.category.manage",
-      "scopeTypes": [
-        "assigned",
-        "global",
-        "own"
       ]
     },
     {

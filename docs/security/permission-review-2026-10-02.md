@@ -41,7 +41,7 @@
 - 37 người không phải Admin đang giữ (27 từ bước chuyển dữ liệu legacy 10/09: "quản trị module DA" cũ đổi thành quyền mới). Trái quyết định 3 ("DA: bỏ hết").
 - Máy chủ không dùng mã này, nhưng **Ma trận duyệt** (duyệt thanh toán, phát sinh, nghiệm thu) ở giao diện tính người giữ mã là người được duyệt theo 4 quy tắc "quản trị Dự án". Thu hồi sẽ đổi quyền duyệt theo ma trận của 37 người.
 
-### 4.3 Mã "nhãn" không có tác dụng
+### 4.3 Mã "nhãn" không có tác dụng — ĐÃ ẨN 4 mã (02/10, migration `20261004180000`); giữ `booking.vehicle.handover` (mở trang Bàn giao xe) và `asset.audit.*`
 `asset.catalog.manage`, `asset.maintenance.manage`, `request.category.manage`, `booking.vehicle.handover`, `booking.vehicle.trip.execute`, `asset.audit.*` (đến khi 4.1 xong). Đề xuất: ẩn khỏi màn phân quyền và mẫu, hoặc gắn chú thích "theo phân công".
 
 ### 4.4 Bảng Admin-only thuộc luồng khác (chỉ ghi nhận)
