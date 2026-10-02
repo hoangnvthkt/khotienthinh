@@ -226,7 +226,7 @@ const SUPABASE_PROJECTIONS: Readonly<Record<string, string>> = Object.freeze({
   "user_permission_grants": "id,user_id,permission_code,scope_type,scope_id,is_active,granted_by,granted_at,expires_at,created_at,updated_at,revoked_at,revoked_by,revoked_reason,grant_reason",
   "user_signatures": "id,user_id,image_path,created_at",
   "user_xp": "id,user_id,total_xp,level,streak_days,last_active_date,badges,created_at,updated_at",
-  "users": "id,name,email,username,phone,role,avatar,assigned_warehouse_id,created_at,updated_at,auth_id,allowed_modules,admin_modules,allowed_sub_modules,admin_sub_modules,is_active,account_status,disabled_at,disabled_by,disabled_reason,reactivated_at,reactivated_by,reactivation_reason,account_operation_status,account_operation_action,manager_id",
+  "users": "id,name,email,username,phone,role,avatar,assigned_warehouse_id,created_at,updated_at,auth_id,is_active,account_status,disabled_at,disabled_by,disabled_reason,reactivated_at,reactivated_by,reactivation_reason,account_operation_status,account_operation_action,manager_id",
   "warehouse_types": "code,name,description,color,is_system,is_active,sort_order,created_at,updated_at",
   "warehouses": "id,name,address,type,is_archived,created_at,construction_site_id,is_default_for_site,project_id",
   "weekly_progress_snapshots": "id,scope_key,project_id,construction_site_id,week_label,week_start,progress_percent,progress_mode,supplied_value,contract_total_value,gantt_percent,calculated_at,updated_at,created_at,construction_progress_percent,value_progress_percent,purchased_value,issued_value,recognized_value",

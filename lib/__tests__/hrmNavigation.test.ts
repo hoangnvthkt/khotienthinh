@@ -10,10 +10,6 @@ const persona = (
   name: 'Persona',
   email: 'persona@example.com',
   role,
-  allowedModules: [],
-  adminModules: [],
-  allowedSubModules: {},
-  adminSubModules: {},
   permissionGrants: grants.map(([permissionCode, scopeType]) => ({
     userId: 'persona-1',
     permissionCode,

@@ -849,3 +849,18 @@ Chỉ sửa frontend, không có migration.
 - Kiểm tra: dry-run PASS; smoke sau apply PASS (nhân viên bị chặn, người giữ vai trò thấy đúng vai trò, vai trò đã thu hồi không hiện); Vitest 2.819 PASS; tsc, lint, build, check-queries đạt; giao diện xem bằng fixture ở mobile.
 - Rollback: `supabase/operations/authorization_p3_user_special_roles_summary_rollback.sql`.
 - Hồ sơ quyền hoàn tất ở mức xem tổng hợp; việc gán/đổi vai trò vẫn ở Cài đặt → Vai trò đặc biệt và tab Vai trò nhân sự (chưa gộp vào một chỗ, chờ chủ sản phẩm quyết nếu muốn).
+
+### Task 13 — bước 1: không còn quyết định quyền từ 4 cột legacy (02/10, chủ sản phẩm giao chọn phương án)
+
+- Migration `20261004140000_authorization_task13_stop_reading_legacy_modules`:
+  - 10 bảng danh mục dùng chung (loại / nhóm / lĩnh vực dự án, mẫu kiểm tra chất lượng, nhóm làm việc): **mọi tài khoản đang hoạt động được đọc**. Policy hạn chế `*_active_actor_gate` vẫn chặn tài khoản khóa. Ghi vẫn theo capability Cài đặt. Lý do chọn: dữ liệu tham chiếu không nhạy cảm, chỉ màn Dự án / Chất lượng / Cài đặt dùng; không ai mất quyền; không tốn hiệu năng như phương án "chỉ ai có quyền dự án".
+  - `projects`: bỏ nhánh legacy `DA`; thêm `project_actor_is_active_staff`: **nhân sự đang làm ở dự án đọc được dòng dự án đó** (sửa lỗi có sẵn: thành viên Room không có grant `project.*` không đọc được dự án của mình).
+  - 5 hàm Quy trình: bỏ nhánh `can_access_module('WF')`. 4 hàm chỉ chạy nhánh này khi hành động chưa enforced (mọi hành động đã enforced → nhánh chết). `workflow_actor_can_mutate_own_draft` có nhánh đang sống: 14 người có `WF` legacy thiếu quyền sửa/xóa bản nháp riêng, nhưng không ai trong số đó có quyền tạo quy trình và có 0 bản nháp đang mở → không mất thao tác thực tế.
+  - 2 hàm Work workspace: bỏ nhánh `DA` (đã có đường grant dự án).
+  - `can_access_module`: không còn ai gọi; chỉ còn trả đúng cho Admin, không đọc cột legacy.
+- **Mô phỏng trước khi apply** (giao dịch rollback, persona từng người, 86 tài khoản đang hoạt động, đếm dòng đọc được ở 11 bảng trước/sau): **mất 0**; thêm: 32 người đọc được 10 bảng danh mục, 1 người đọc được dự án mình là nhân sự. Hàm/policy còn gọi `can_access_module`: 0.
+- Smoke `authorization_task13_stop_reading_legacy_modules_smoke.sql` PASS sau apply (đối chứng trên schema cũ thất bại đúng). Các smoke P3 trước vẫn PASS. App thật (Admin): Dự án, danh mục dự án, Người dùng tải 200.
+- **Frontend thôi đọc 4 cột:** bỏ khỏi kiểu `User`, hàm ánh xạ và câu select `users`; chỉ giữ nhãn trong `auditService` để đọc nhật ký cũ. Test cũ "trường legacy không cấp quyền" giữ nguyên ý nghĩa qua kiểu test `RetiredUserFields`.
+- Kiểm tra: Vitest 2.819 PASS, tsc, lint, build, check-queries, check-migrations đạt; **e2e Playwright 5/5 PASS** (đã cài trình duyệt Playwright).
+- **Mốc T0 quan sát Task 13: 02/10/2026** (apply bước 1). Theo runbook, xóa cột sớm nhất **09/10/2026**, sau khi backup + diễn tập khôi phục và dependency query rỗng.
+- Rollback: `supabase/operations/authorization_task13_stop_reading_legacy_modules_rollback.sql`.

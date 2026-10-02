@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { RetiredUserFields } from './retiredUserFields';
 import { Role, User } from '../../types';
 import {
   canPerform,
@@ -13,15 +14,11 @@ import {
   userHasPermissionGrant,
 } from '../permissions/permissionService';
 
-const user = (overrides: Partial<User> = {}): User => ({
+const user = (overrides: Partial<User> & RetiredUserFields = {}): User => ({
   id: 'user-1',
   name: 'Nguyễn Văn A',
   email: 'a@example.com',
   role: Role.EMPLOYEE,
-  allowedModules: [],
-  adminModules: [],
-  allowedSubModules: {},
-  adminSubModules: {},
   permissionGrants: [],
   ...overrides,
 });

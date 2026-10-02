@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { RetiredUserFields } from './retiredUserFields';
 import { MaterialRequestFulfillmentMode, RequestStatus, Role, TransactionStatus, TransactionType, User } from '../../types';
 import {
   canApproveMaterialRequest,
@@ -13,15 +14,11 @@ import {
   getWmsWarehouseAccess,
 } from '../wmsPermissions';
 
-const user = (overrides: Partial<User> = {}): User => ({
+const user = (overrides: Partial<User> & RetiredUserFields = {}): User => ({
   id: 'user-1',
   name: 'Nguyễn Văn A',
   email: 'a@example.com',
   role: Role.EMPLOYEE,
-  allowedModules: [],
-  adminModules: [],
-  allowedSubModules: {},
-  adminSubModules: {},
   permissionGrants: [],
   ...overrides,
 });

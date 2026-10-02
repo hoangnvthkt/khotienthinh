@@ -1,7 +1,9 @@
 # Task 13 — Khảo sát tác động khi xóa 4 cột legacy (02/10/2026)
 
 **Phạm vi:** chỉ đọc, không đổi gì trên Cloud. Cột: `public.users.allowed_modules`, `admin_modules`, `allowed_sub_modules`, `admin_sub_modules`.
-**Kết luận ngắn:** **chưa xóa được.** Một hàm (`app_private.can_access_module`) vẫn đọc cột và còn nằm trong quyết định cho phép đọc ở 10 bảng danh mục. Nếu xóa ngay, **49 người sẽ mất quyền đọc** các danh mục đó. Cần thay các policy đó trước, rồi mới xóa cột.
+**Cập nhật 02/10 (sau khảo sát):** bước 1 và 2 của lộ trình đã làm xong, chọn phương án (a); xem rollout log mục "Task 13 — bước 1". Còn bước 3–4 (sau mốc quan sát 09/10).
+
+**Kết luận ngắn (lúc khảo sát):** **chưa xóa được.** Một hàm (`app_private.can_access_module`) vẫn đọc cột và còn nằm trong quyết định cho phép đọc ở 10 bảng danh mục. Nếu xóa ngay, **49 người sẽ mất quyền đọc** các danh mục đó. Cần thay các policy đó trước, rồi mới xóa cột.
 
 ## 1. Hiện trạng dữ liệu (86 người đang hoạt động)
 

@@ -31,7 +31,6 @@ describe('supplier delivery permission registry', () => {
     const user = {
       id: 'user-1',
       role: Role.EMPLOYEE,
-      allowedModules: [],
       permissionGrants: [{
         id: 'grant-1',
         userId: 'user-1',
@@ -55,7 +54,6 @@ describe('supplier delivery permission registry', () => {
       role: Role.WAREHOUSE_KEEPER,
       allowedModules: ['DA'],
       allowedSubModules: { DA: ['/da/tabs/material', '/da/tabs/material/po'] },
-      adminModules: [],
       adminSubModules: { DA: ['/da/tabs/material/po'] },
       permissionGrants: [],
     } as User;

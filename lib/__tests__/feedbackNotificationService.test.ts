@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { RetiredUserFields } from './retiredUserFields';
 import { Role, User } from '../../types';
 import { getFeedbackCommentRecipientIds, getFeedbackManagerRecipientIds, uniqueFeedbackRecipientIds } from '../feedbackNotificationService';
 import { resolveNotificationPath } from '../notificationRoutes';
 
-const user = (patch: Partial<User> & Pick<User, 'id'>): User => ({
+const user = (patch: Partial<User> & Pick<User, 'id'> & RetiredUserFields): User => ({
   id: patch.id,
   name: patch.name || patch.id,
   email: `${patch.id}@example.com`,
