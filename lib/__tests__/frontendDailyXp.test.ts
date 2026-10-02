@@ -48,9 +48,9 @@ describe('frontend daily XP integration', () => {
   it('awards a persisted camera check-in by attendance UUID, never employee ID', () => {
     const source = readFileSync(join(process.cwd(), 'pages', 'hrm', 'CheckIn.tsx'), 'utf8');
 
-    const persistedAt = source.indexOf('const saved = await checkInService.submit');
+    const persistedAt = source.indexOf('const saved = await checkInService.punch');
     const awardedAt = source.indexOf("xpService.awardDailyXP('daily_checkin', saved.id)");
-    const refreshedAt = source.indexOf('await loadCheckInContext()', persistedAt);
+    const refreshedAt = source.indexOf('void loadCheckInContext()', persistedAt);
 
     expect(source).toContain("xpService.awardDailyXP('daily_checkin', saved.id)");
     expect(source).not.toMatch(/award(?:Daily)?XP\(currentEmployee!?\.id\s*,?\s*['"]daily_checkin/);

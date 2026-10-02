@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import {
@@ -83,10 +84,13 @@ const Attendance: React.FC = () => {
   const [holidayDate, setHolidayDate] = useState('');
 
   // Tab: 'timesheet' | 'proposals'
-  const [activeTab, setActiveTab] = useState<'timesheet' | 'proposals'>('timesheet');
+  // Check-in sends people here (?tab=proposals) when they are outside the allowed area.
+  const [searchParams] = useSearchParams();
+  const openProposals = searchParams.get('tab') === 'proposals';
+  const [activeTab, setActiveTab] = useState<'timesheet' | 'proposals'>(openProposals ? 'proposals' : 'timesheet');
 
   // Proposal state
-  const [showProposalForm, setShowProposalForm] = useState(false);
+  const [showProposalForm, setShowProposalForm] = useState(openProposals);
   const [pTargetEmployeeId, setPTargetEmployeeId] = useState('');
   const [pDate, setPDate] = useState('');
   const [pCheckIn, setPCheckIn] = useState('');
@@ -657,6 +661,13 @@ const Attendance: React.FC = () => {
   }, [attendanceProposals, currentEmployee, canViewAllAttendance, managedSiteIds, managedOfficeIds]);
 
   const pendingCount = useMemo(() => filteredProposals.filter(p => p.proposalStatus === 'pending').length, [filteredProposals]);
+
+  // Arriving from Check-in: the form opens for the person, dated today.
+  React.useEffect(() => {
+    if (!openProposals || !currentEmployee) return;
+    setPTargetEmployeeId(prev => prev || currentEmployee.id);
+    setPDate(prev => prev || new Date().toLocaleDateString('sv-SE'));
+  }, [openProposals, currentEmployee]);
 
   const resetProposalForm = () => {
     setShowProposalForm(false);
