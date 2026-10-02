@@ -53,7 +53,7 @@ const getAttendancePhotos = (record: AttendanceRecord) => {
 };
 
 const Attendance: React.FC = () => {
-  const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
+  const { employees, attendanceRecords, leaveRequests, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
   useModuleData('hrm');
   const canViewAllAttendance = canViewCompanyAttendance(user);
   const canManageAttendanceDevices = canPerformHrmTemplatePermission(user, 'hrm.employee.view_sensitive');
@@ -324,6 +324,20 @@ const Attendance: React.FC = () => {
   }, [canEditAttendance, recordMap, removeHrmItem, currentYear, currentMonth]);
 
   // Stats per employee
+  const excusedMinutes = useMemo(() => {
+    const map = new Map<string, { late: number; early: number }>();
+    leaveRequests
+      .filter(request => request.type === 'late_early' && request.status === 'approved' && request.minutes)
+      .forEach(request => {
+        const key = `${request.employeeId}_${request.startDate.slice(0, 10)}`;
+        const current = map.get(key) || { late: 0, early: 0 };
+        if (request.subtype === 'Về sớm') current.early += request.minutes || 0;
+        else if (request.subtype !== 'Ra ngoài trong giờ') current.late += request.minutes || 0;
+        map.set(key, current);
+      });
+    return map;
+  }, [leaveRequests]);
+
   const getStats = useCallback((employeeId: string) => {
     let present = 0, absent = 0, halfDay = 0, leave = 0, holiday = 0, trip = 0, overtime = 0;
     for (let d = 1; d <= daysInMonth; d++) {
@@ -351,20 +365,24 @@ const Attendance: React.FC = () => {
         const shift = getEmployeeShiftForDate(employeeId, dateStr);
         const stdStart = toMin(shift.startTime);
         const stdEnd = toMin(shift.endTime);
+        // Approved "đi muộn / về sớm" requests cover their minutes (owner decision 02/10/2026).
+        const excused = excusedMinutes.get(key) || { late: 0, early: 0 };
         if (rec.checkIn) {
           const ciMin = toMin(rec.checkIn);
+          const lateMin = ciMin - stdStart - excused.late;
           // Only count as late if beyond grace period
-          if (ciMin > stdStart + shift.graceLateMins) { lateCount++; totalLateMin += ciMin - stdStart; }
+          if (ciMin > stdStart + shift.graceLateMins && lateMin > 0) { lateCount++; totalLateMin += lateMin; }
         }
         if (rec.checkOut) {
           const coMin = toMin(rec.checkOut);
+          const earlyMin = stdEnd - coMin - excused.early;
           // Only count as early if beyond grace period
-          if (coMin < stdEnd - shift.graceEarlyMins) { earlyCount++; totalEarlyMin += stdEnd - coMin; }
+          if (coMin < stdEnd - shift.graceEarlyMins && earlyMin > 0) { earlyCount++; totalEarlyMin += earlyMin; }
         }
       }
     }
     return { present, absent, halfDay, leave, holiday, trip, overtime, workDays, lateCount, earlyCount, totalLateMin, totalEarlyMin };
-  }, [recordMap, daysInMonth, currentYear, currentMonth, getEmployeeShiftForDate]);
+  }, [recordMap, daysInMonth, currentYear, currentMonth, getEmployeeShiftForDate, excusedMinutes]);
 
   // Month nav
   const prevMonth = () => {
