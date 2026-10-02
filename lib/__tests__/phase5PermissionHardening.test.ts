@@ -43,11 +43,9 @@ describe('Phase 5 permission hardening guards', () => {
   });
 
   it('keeps legacy field access decisions confined to the Phase 5 readiness allowlist', () => {
+    // Task 13: only the audit labels remain, so old audit rows that mention these columns stay readable.
     const allowedLegacyConsumers = new Set([
       'lib/auditService.ts',
-      'lib/supabaseProjections.ts',
-      'context/authState.ts',
-      'types.ts',
     ]);
     const legacyFieldPattern = /\b(?:allowedModules|adminModules|allowedSubModules|adminSubModules|allowed_modules|admin_modules|allowed_sub_modules|admin_sub_modules)\b/;
     const scannedRoots = ['components', 'hooks', 'lib', 'pages', 'context', 'supabase/functions'];

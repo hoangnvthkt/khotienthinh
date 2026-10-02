@@ -7,10 +7,6 @@ const workUser = (role: Role, permissionCode?: string): User => ({
   name: 'Work User',
   email: 'work@example.com',
   role,
-  allowedModules: [],
-  adminModules: [],
-  allowedSubModules: {},
-  adminSubModules: {},
   permissionGrants: permissionCode ? [{
     userId: 'work-user-1',
     permissionCode,

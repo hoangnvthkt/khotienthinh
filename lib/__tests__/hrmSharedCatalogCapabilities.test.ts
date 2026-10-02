@@ -8,10 +8,6 @@ const userWith = (...permissionCodes: string[]): User => ({
   name: 'Nguyễn Văn A',
   email: 'a@example.com',
   role: Role.EMPLOYEE,
-  allowedModules: [],
-  adminModules: [],
-  allowedSubModules: {},
-  adminSubModules: {},
   permissionGrants: permissionCodes.map(permissionCode => ({
     userId: 'user-1',
     permissionCode,

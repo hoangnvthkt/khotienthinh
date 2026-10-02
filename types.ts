@@ -116,10 +116,6 @@ export interface User {
   role: Role;
   avatar?: string;
   assignedWarehouseId?: string; // ID kho được giao quản lý; WAREHOUSE_KEEPER không gán kho = phòng vật tư/toàn bộ kho
-  allowedModules?: string[]; // Danh sách module được phép sử dụng (VD: ['WMS', 'TS'])
-  adminModules?: string[]; // Danh sách module mà user là Quản trị viên ứng dụng
-  allowedSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app được phép (VD: { "HRM": ["/hrm/attendance", "/hrm/leave"] })
-  adminSubModules?: Record<string, string[]>; // Module key -> danh sách route sub-app có quyền CRUD (VD: { "HRM": ["/hrm/employees"] })
   signatureUrl?: string; // URL ảnh chữ ký số
   position?: string; // Chức danh / Vị trí công tác (VD: TP HCNS, Chỉ huy Phó, Cán bộ IT)
   managerId?: string; // User ID của người quản lý trực tiếp

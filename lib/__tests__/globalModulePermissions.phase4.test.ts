@@ -13,10 +13,6 @@ const user = (permissionCodes: string[] = [], overrides: Partial<User> = {}): Us
   name: 'Nguyen Van A',
   email: 'a@example.com',
   role: Role.EMPLOYEE,
-  allowedModules: [],
-  adminModules: [],
-  allowedSubModules: {},
-  adminSubModules: {},
   permissionGrants: permissionCodes.map((permissionCode, index) => ({
     id: `grant-${index}`,
     userId: 'user-1',

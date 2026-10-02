@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { RetiredUserFields } from './retiredUserFields';
 import { Role, User } from '../../types';
 import { canAccessRoute } from '../routeAccess';
 import {
@@ -12,10 +13,7 @@ const bookingUser = (allowedModules: string[]): User => ({
   name: 'Nguyễn Văn Booking',
   email: 'booking@example.com',
   role: Role.EMPLOYEE,
-  allowedModules,
-  allowedSubModules: {},
-  adminModules: [],
-  adminSubModules: {},
+  ...({ allowedModules } as RetiredUserFields),
   permissionGrants: [],
 });
 

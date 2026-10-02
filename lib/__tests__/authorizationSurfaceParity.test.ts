@@ -1,11 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { RetiredUserFields } from './retiredUserFields';
 import { Role, type User } from '../../types';
 import { getAuthorizedRouteFallback } from '../routeAccess';
 
 const user: User = { id: 'fixture', name: 'Fixture', email: 'fixture@invalid.local', role: Role.EMPLOYEE,
-  allowedSubModules: { DA: ['/da/tabs/material'] }, permissionGrants: [] };
+  ...({ allowedSubModules: { DA: ['/da/tabs/material'] } } as RetiredUserFields), permissionGrants: [] };
 
 describe('denied route fallback', () => {
   it('does not redirect into Project from a retained legacy submodule alone', () => {
