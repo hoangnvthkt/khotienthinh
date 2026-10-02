@@ -37,7 +37,7 @@
 ### 4.1 Kiểm kê tài sản không lưu (lỗi chức năng)
 `pages/ts/AssetAudit.tsx`: "Hoàn tất" chờ 0,8 giây, giữ phiên trong bộ nhớ trang và báo "Dữ liệu đã được lưu"; tải lại trang là mất. Cần bảng lưu + RLS theo `asset.audit.perform` / `asset.audit.view`. Đã tách thành việc riêng.
 
-### 4.2 `system.da.manage` — cần chủ sản phẩm quyết
+### 4.2 `system.da.manage` — ĐÃ THU HỒI (02/10, migration `20261004170000`)
 - 37 người không phải Admin đang giữ (27 từ bước chuyển dữ liệu legacy 10/09: "quản trị module DA" cũ đổi thành quyền mới). Trái quyết định 3 ("DA: bỏ hết").
 - Máy chủ không dùng mã này, nhưng **Ma trận duyệt** (duyệt thanh toán, phát sinh, nghiệm thu) ở giao diện tính người giữ mã là người được duyệt theo 4 quy tắc "quản trị Dự án". Thu hồi sẽ đổi quyền duyệt theo ma trận của 37 người.
 
