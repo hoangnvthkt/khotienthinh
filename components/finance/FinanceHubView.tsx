@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, Banknote, CalendarClock, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank,
-  RefreshCw, Scale, Search, Settings2, Truck, Wallet,
+  ArrowLeftRight, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
 } from 'lucide-react';
 import { financeService, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
 import { PendingStatementsView } from './PendingStatementsView';
 import { SupplierPanel } from './SupplierPanel';
+import { TransferReviewsView } from './TransferReviewsView';
 import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financeUi';
 
 // Module Tài chính: một nơi cho công nợ, chi tiền, dòng tiền toàn công ty — không phải vào từng dự án.
@@ -40,12 +41,15 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
   const [sel, setSel] = useState<string | null>(initialSupplierId || null);
   const [mobileDetail, setMobileDetail] = useState(Boolean(initialSupplierId));
   const [panelKey, setPanelKey] = useState(0);
+  const [transferCount, setTransferCount] = useState(0);
+  const [showTransfers, setShowTransfers] = useState(initialSection === 'transfers');
 
   const load = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
     try {
       const r = await financeService.list({ projectId: projectId || undefined, source: source || undefined });
       setData(r); setStatus('ready');
+      financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
       setSel(cur => cur && r.suppliers.some(s => s.supplierId === cur) ? cur : cur || r.suppliers[0]?.supplierId || null);
     } catch (e) {
       const denied = (e as { code?: string })?.code === 'FINANCE_VIEW_DENIED';
@@ -60,7 +64,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     const rows = data.suppliers.filter(s =>
       (filter === 'all' || (filter === 'overdue' && s.overdue > 0) || (filter === 'soon' && s.soon > 0) || (filter === 'issues' && s.issues > 0)
         || (filter === 'opening' && (s.opening === 'todo' || s.opening === 'pending')))
-      && words.every(w => `${s.name} ${s.projects.join(' ')}`.toLowerCase().includes(w)));
+      && words.every(w => `${s.name} ${s.projects.map(p => p || 'Kho công ty').join(' ')}`.toLowerCase().includes(w)));
     const by: Record<Sort, (a: FinanceSupplierSummary, b: FinanceSupplierSummary) => number> = {
       overdue: (a, b) => b.overdue - a.overdue || b.soon - a.soon || b.owed - a.owed,
       owed: (a, b) => b.owed - a.owed,
@@ -97,7 +101,13 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     {status === 'denied' ? <StateBox kind="denied" message={message} />
       : status === 'error' && !data ? <StateBox kind="error" title="Chưa tải được Tài chính" message={message} onRetry={() => void load()} />
         : !data || !t ? <StateBox kind="loading" title="Đang tải công nợ…" />
-          : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} /> : <>
+          : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} />
+          : showTransfers ? <TransferReviewsView onBack={() => setShowTransfers(false)} onChanged={() => void load(true)} /> : <>
+            {transferCount > 0 && <p className={`flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 ${hideOnMobile}`}>
+              <ArrowLeftRight size={17} className="shrink-0" />
+              <span className="min-w-[14rem] flex-1"><b>{transferCount} phiếu chuyển kho chờ xác nhận giá vốn.</b> Giá kho gửi chưa tin được nên chưa ghi chi phí dự án.</span>
+              <button type="button" onClick={() => setShowTransfers(true)} className={`${secondaryBtn} bg-card`}><ClipboardCheck size={15} />Xác nhận giá vốn</button>
+            </p>}
             {t.openingPendingSuppliers > 0 && <p className={`flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 ${hideOnMobile}`}>
               <AlertTriangle size={17} className="shrink-0" />
               <span className="min-w-[14rem] flex-1"><b>{t.openingPendingSuppliers}/{t.supplierCount} NCC chưa chốt đối chiếu đầu kỳ.</b> Số nợ và quá hạn chỉ gồm chứng từ phát sinh trong Vioo; kế toán có thể đã trả ngoài hệ thống. Đối chiếu đầu kỳ trước khi chi để tránh trả trùng.</span>
@@ -145,7 +155,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                       className={`flex w-full items-start gap-3 border-b border-l-4 border-border px-3 py-3 text-left ${TONE_BAR[s.worst]} ${sel === s.supplierId ? 'bg-teal-50/70 dark:bg-teal-950/20' : 'hover:bg-muted/40'}`}>
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate ${ENT}`}>{s.name}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">{s.projects.join(', ')} · {s.docCount} chứng từ
+                        <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">{s.projects.map(p => p || 'Kho công ty').join(', ')} · {s.docCount} chứng từ
                           {ob && <Badge className={ob.cls}>{ob.label}</Badge>}
                           {s.internal && <Badge className="border-amber-300 bg-amber-50 text-amber-800">Nội bộ</Badge>}
                           {s.issues > 0 && !s.internal && <Badge className="border-amber-300 bg-amber-50 text-amber-800">Cần xử lý</Badge>}

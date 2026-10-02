@@ -66,6 +66,7 @@ import {
   ProjectFinanceWorkspaceTab,
   projectFinanceWorkspaceService,
 } from '../../lib/projectFinanceWorkspaceService';
+import { financeService } from '../../lib/financeService';
 import { allocateSupplierPayment, assertSupplierPaymentBatchCanPost, supplierPaymentBatchService } from '../../lib/supplierPaymentBatchService';
 import { supplierPayableService } from '../../lib/supplierPayableService';
 import {
@@ -90,6 +91,7 @@ import { partnerService } from '../../lib/partnerService';
 import { paymentService } from '../../lib/projectService';
 import {
   buildProjectTransactionsFromImportRows,
+  applyMisaImportGuards,
   parseProjectTransactionImportPreviewRows,
   ProjectTransactionImportPreviewResult,
   PROJECT_TRANSACTION_IMPORT_HEADERS,
@@ -3459,7 +3461,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
       if (contractCostItems.length === 0 && importCostItems.length > 0) setContractCostItems(importCostItems);
       if (partners.length === 0 && importPartners.length > 0) setPartners(importPartners);
 
-      const previewResult = parseProjectTransactionImportPreviewRows(rows, {
+      const parsedPreview = parseProjectTransactionImportPreviewRows(rows, {
         projectId: projectId || null,
         projectFinanceId: '',
         constructionSiteId,
@@ -3467,6 +3469,11 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         partners: importPartners,
         createdBy: user?.id,
       });
+      // K3a-2: bỏ trước các dòng server sẽ từ chối (vật tư từ mốc chi phí MISA, dòng trùng) để người dùng thấy lý do.
+      const cutover = projectId
+        ? await financeService.costCutovers().then(r => r.cutovers.find(c => c.projectId === projectId)?.cutoverDate || null).catch(() => null)
+        : null;
+      const previewResult = applyMisaImportGuards(parsedPreview, { cutoverDate: cutover, existing: data?.ledger || [] });
 
       if (previewResult.items.length === 0) {
         toast.warning('File rỗng', 'File Excel không chứa dòng dữ liệu nào.');

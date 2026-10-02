@@ -17,7 +17,7 @@ export interface FinancePayablesList {
 }
 export interface FinanceSupplierSummary {
   supplierId: string; name: string; internal: boolean; owed: number; overdue: number; soon: number; pendingExternal: number;
-  docCount: number; nextDue: string | null; projects: string[]; issues: number; opening: FinanceOpeningStatus; worst: FinanceTone;
+  docCount: number; nextDue: string | null; projects: Array<string | null>; issues: number; opening: FinanceOpeningStatus; worst: FinanceTone;
 }
 export interface FinanceDocument {
   id: string; code: string; documentNo: string; sourceType: string; origin: string | null;
@@ -66,6 +66,19 @@ export interface FinanceSettings {
     reason: string; createdByName: string | null; revokedAt: string | null; revokeReason: string | null }>;
   users: Array<{ id: string; name: string }>;
 }
+export interface FinanceCostCutovers {
+  cutovers: Array<{ projectId: string; projectCode: string | null; projectName: string | null; cutoverDate: string; note: string;
+    updatedAt: string; updatedByName: string | null; overlapCount: number; overlapAmount: number }>;
+  projects: Array<{ id: string; code: string | null; name: string | null }>;
+}
+export type FinanceTransferReason = 'no_value' | 'dirty_stock' | 'no_average' | 'price_outlier';
+export interface FinanceTransferReview {
+  transactionId: string; date: string; note: string | null;
+  sourceWarehouse: string | null; targetWarehouse: string | null; sourceProject: string | null; targetProject: string | null;
+  lines: Array<{ itemId: string; itemName: string; unit: string | null; qty: number; unitPrice: number; amount: number;
+    refPrice: number | null; reason: FinanceTransferReason | null; suggested: number | null }>;
+  ledgerValue: number; suggested: number | null; flaggedAt: string; canConfirm: boolean;
+}
 export interface FinanceAttachment { name: string; path: string; size: number; type: string; uploadedAt: string }
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -97,6 +110,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_OPENING_VIOO_HIGHER: 'Số Vioo đang ghi nợ cao hơn sổ MISA: ghi các khoản đã trả ngoài hệ thống (hoặc đề xuất hủy chứng từ sai) trước khi gửi.',
   FINANCE_OPENING_STALE: 'Số nợ Vioo đã thay đổi kể từ lúc gửi. Trả lại để người lập kiểm tra và gửi lại.',
   FINANCE_OPENING_HAS_PAYMENTS: 'Số dư đầu kỳ đã có khoản chi — không đảo được.',
+  FINANCE_TRANSFER_NOT_COMPLETED: 'Phiếu chuyển không còn ở trạng thái hoàn tất (có thể đã hủy). Tải lại.',
+  FINANCE_TRANSFER_ALREADY_CONFIRMED: 'Phiếu chuyển này đã được xác nhận chi phí. Tải lại.',
   FINANCE_DOCUMENT_NOT_FOUND: 'Chứng từ không còn. Tải lại.',
   FINANCE_DOCUMENT_HAS_PAYMENTS: 'Chứng từ đã có khoản chi (hoặc đang chờ xác nhận) — không hủy được.',
   FINANCE_ADJUSTMENT_PENDING: 'Chứng từ đang có đề xuất hủy chờ xác nhận.',
@@ -142,6 +157,14 @@ export const financeService = {
     return call<{ statementId: string; status: string }>('transition_procurement_contract_statement_v1', { p_input: input });
   },
   settings() { return call<FinanceSettings>('get_finance_settings_v1', {}); },
+  transferReviews() { return call<FinanceTransferReview[]>('list_finance_transfer_reviews_v1', {}); },
+  confirmTransferCost(input: { transactionId: string; amount: number; reason?: string }) {
+    return call<{ amount: number; suggested: number | null }>('confirm_finance_transfer_cost_v1', { p_input: input });
+  },
+  costCutovers() { return call<FinanceCostCutovers>('get_finance_cost_cutovers_v1', {}); },
+  saveCostCutover(input: { projectId: string; cutoverDate: string | null; note?: string; reason: string }) {
+    return call<{ expenseBefore: number; expenseAfter: number }>('save_finance_cost_cutover_v1', { p_input: input });
+  },
   saveSupplierTerms(input: { supplierId: string; paymentDays: number | null; note?: string; applyToOpen: boolean; reason: string }) {
     return call<{ recomputed: number }>('save_finance_supplier_terms_v1', { p_input: input });
   },
@@ -149,7 +172,7 @@ export const financeService = {
     return call<{ recomputed: number }>('save_finance_contract_terms_v1', { p_input: input });
   },
   setDue(input: { documentId: string; dueDate: string | null; reason: string }) { return call<{ documentId: string }>('set_finance_payable_due_v1', { p_input: input }); },
-  saveExternalPayment(input: { supplierId: string; projectId: string; paymentDate: string; method: 'bank_transfer' | 'cash' | 'other'; documentRef: string;
+  saveExternalPayment(input: { supplierId: string; projectId: string | null; paymentDate: string; method: 'bank_transfer' | 'cash' | 'other'; documentRef: string;
     note?: string; attachments: FinanceAttachment[]; allocations: Array<{ documentId: string; amount: number }> }) {
     return call<{ paymentId: string; amount: number }>('save_finance_external_payment_v1', { p_input: input });
   },
@@ -216,5 +239,5 @@ export const EVENT_LABELS: Record<string, string> = {
   external_payment_submit: 'Ghi chi ngoài hệ thống', external_payment_confirm: 'Xác nhận chi ngoài', external_payment_reject: 'Từ chối chi ngoài',
   external_payment_withdraw: 'Rút khoản chi', external_payment_reverse: 'Đảo khoản chi',
   opening_save: 'Lưu đối chiếu đầu kỳ', opening_submit: 'Gửi đối chiếu đầu kỳ', opening_confirm: 'Chốt đầu kỳ', opening_reject: 'Trả lại đối chiếu', opening_cancel: 'Hủy / đảo đối chiếu',
-  cancel_request: 'Đề xuất hủy công nợ', cancel_confirm: 'Xác nhận hủy công nợ', cancel_reject: 'Từ chối hủy công nợ', cancel_withdraw: 'Rút đề xuất hủy',
+  cancel_request: 'Đề xuất hủy công nợ', cost_cutover_save: 'Đổi mốc chi phí MISA', transfer_cost_review: 'Chuyển kho chờ xác nhận giá vốn', transfer_cost_confirm: 'Xác nhận chi phí chuyển kho', cancel_confirm: 'Xác nhận hủy công nợ', cancel_reject: 'Từ chối hủy công nợ', cancel_withdraw: 'Rút đề xuất hủy',
 };

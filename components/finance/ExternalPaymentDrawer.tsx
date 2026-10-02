@@ -10,7 +10,7 @@ export const ExternalPaymentDrawer: React.FC<{
   detail: FinanceSupplierDetail; initialDocumentId?: string | null; onClose: () => void; onSaved: (message: string) => void;
 }> = ({ detail, initialDocumentId, onClose, onSaved }) => {
   const payable = detail.documents.filter(d => d.outstanding - d.pendingExternal > 0.5);
-  const projects = Array.from(new Map(payable.map(d => [d.projectId || '', d.projectCode || 'Không gắn dự án'])).entries());
+  const projects = Array.from(new Map(payable.map(d => [d.projectId || '', d.projectCode || 'Kho công ty'])).entries());
   const initialDoc = payable.find(d => d.id === initialDocumentId);
   const [projectId, setProjectId] = useState(initialDoc?.projectId || projects[0]?.[0] || '');
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
@@ -38,7 +38,7 @@ export const ExternalPaymentDrawer: React.FC<{
     if (date > detail.today) { setError('Ngày chi không được sau hôm nay.'); return; }
     setSaving(true);
     try {
-      const r = await financeService.saveExternalPayment({ supplierId: detail.supplier.id, projectId, paymentDate: date, method, documentRef: ref.trim(),
+      const r = await financeService.saveExternalPayment({ supplierId: detail.supplier.id, projectId: projectId || null, paymentDate: date, method, documentRef: ref.trim(),
         note: note.trim() || undefined, attachments: files, allocations });
       onSaved(`Đã ghi ${money(r.amount)} đ chi ngoài hệ thống (${ref.trim()}) — chờ người khác xác nhận rồi mới trừ công nợ.`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }

@@ -104,9 +104,11 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
     .reduce((sum, item) => sum + getAmount(item), 0);
 
   const warningCount = items.filter(item => item.status === 'warning_missing_cost_item').length;
+  const isBlocked = (item: ProjectTransactionImportPreviewItem) => item.status === 'blocked_after_cutover' || item.status === 'blocked_duplicate';
+  const blockedCount = items.filter(isBlocked).length;
 
   const toggleSelectAll = (checked: boolean) => {
-    setItems(prev => prev.map(item => getAmount(item) <= 0 ? item : { ...item, selected: checked }));
+    setItems(prev => prev.map(item => getAmount(item) <= 0 || isBlocked(item) ? item : { ...item, selected: checked }));
   };
 
   const toggleSelectItem = (index: number, checked: boolean) => {
@@ -121,6 +123,7 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
     setItems(prev => {
       const next = [...prev];
       const current = next[index];
+      if (isBlocked(current)) return prev;
       const updatedTx = updater(current.tx);
       const isMissingCost = updatedTx.type === 'expense' && !updatedTx.contractCostItemId;
       const isInvalidAmt = readLocaleNumber(updatedTx.amount) <= 0;
@@ -275,6 +278,13 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
           </div>
         </div>
 
+        {blockedCount > 0 && (
+          <div role="status" className="mx-5 mt-3 flex gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span><b>{blockedCount} dòng bị bỏ qua</b> (không nhập được): vật tư có ngày từ mốc chi phí MISA của dự án — Vioo đã tự ghi khi nhận hàng — hoặc trùng chứng từ đã nhập trước đó. Rê chuột vào dòng đỏ để xem lý do.</span>
+          </div>
+        )}
+
         {/* Toolbar & Filter Tabs */}
         <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900">
           <div className="flex items-center gap-1.5 overflow-x-auto py-1">
@@ -379,14 +389,15 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
                   return (
                     <tr
                       key={item.rowNumber}
-                      className={`align-middle transition-colors ${item.status === 'warning_missing_cost_item' ? 'bg-amber-50/50 dark:bg-amber-950/20' : item.status === 'invalid_amount' ? 'bg-red-50/40 dark:bg-red-950/20 opacity-60' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
+                      className={`align-middle transition-colors ${item.status === 'warning_missing_cost_item' ? 'bg-amber-50/50 dark:bg-amber-950/20' : item.status === 'invalid_amount' || isBlocked(item) ? 'bg-red-50/40 dark:bg-red-950/20 opacity-60' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
+                      title={isBlocked(item) ? item.warningMessage : undefined}
                     >
                       {/* Checkbox */}
                       <td className="px-3 py-2.5 text-center">
                         <input
                           type="checkbox"
                           checked={item.selected}
-                          disabled={item.tx.amount <= 0}
+                          disabled={item.tx.amount <= 0 || isBlocked(item)}
                           onChange={e => toggleSelectItem(originalIndex, e.target.checked)}
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer disabled:opacity-30"
                         />
@@ -396,6 +407,11 @@ export const ProjectTransactionImportPreviewModal: React.FC<Props> = ({
                       <td className="px-2 py-2.5 text-center font-mono font-bold text-slate-500">
                         <div className="flex items-center justify-center gap-1">
                           <span>{item.rowNumber}</span>
+                          {isBlocked(item) && (
+                            <span title={item.warningMessage}>
+                              <AlertTriangle size={12} className="text-rose-500 shrink-0" />
+                            </span>
+                          )}
                           {item.status === 'warning_missing_cost_item' && (
                             <span title={item.warningMessage}>
                               <AlertTriangle size={12} className="text-amber-500 shrink-0" />

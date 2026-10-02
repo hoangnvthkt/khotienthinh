@@ -154,7 +154,7 @@ export interface ProjectTransactionImportPreviewItem {
   rowNumber: number;
   selected: boolean;
   isTotal: boolean;
-  status: 'valid' | 'warning_missing_cost_item' | 'invalid_amount';
+  status: 'valid' | 'warning_missing_cost_item' | 'invalid_amount' | 'blocked_after_cutover' | 'blocked_duplicate';
   warningMessage?: string;
   rawCostItemInput: string;
   rawPartnerInput: string;
@@ -281,6 +281,30 @@ export const parseProjectTransactionImportPreviewRows = (
     totalRevenueAmount,
     warningCount,
   };
+};
+
+/** Rows the server would refuse (K3a-2): materials from the project's MISA cost cut-over on (Vioo records them
+ * at goods receipt) and rows already imported (same document no., amount, date and description). */
+export const applyMisaImportGuards = (
+  preview: ProjectTransactionImportPreviewResult,
+  input: { cutoverDate: string | null; existing: Array<Pick<ProjectTransaction, 'source' | 'invoiceNo' | 'amount' | 'date' | 'description'>> },
+): ProjectTransactionImportPreviewResult => {
+  const key = (t: Pick<ProjectTransaction, 'invoiceNo' | 'amount' | 'date' | 'description'>) =>
+    t.invoiceNo ? `${t.invoiceNo}|${Number(t.amount)}|${String(t.date || '').slice(0, 10)}|${t.description || ''}` : null;
+  const seen = new Set(input.existing.filter(t => t.source === 'import').map(key).filter((k): k is string => Boolean(k)));
+  const cut = input.cutoverDate ? `${input.cutoverDate.slice(8, 10)}/${input.cutoverDate.slice(5, 7)}/${input.cutoverDate.slice(0, 4)}` : '';
+  const items = preview.items.map(item => {
+    if (item.status === 'invalid_amount') return item;
+    if (input.cutoverDate && item.tx.type === 'expense' && item.tx.category === 'materials' && String(item.tx.date || '').slice(0, 10) >= input.cutoverDate) {
+      return { ...item, selected: false, status: 'blocked_after_cutover' as const,
+        warningMessage: `Vật tư từ ${cut} do Vioo ghi khi nhận hàng — không nhập từ MISA (tránh tính 2 lần)` };
+    }
+    const k = key(item.tx);
+    if (k && seen.has(k)) return { ...item, selected: false, status: 'blocked_duplicate' as const, warningMessage: `Trùng chứng từ ${item.tx.invoiceNo} đã nhập trước đó` };
+    if (k) seen.add(k);
+    return item;
+  });
+  return { ...preview, items };
 };
 
 export const buildProjectTransactionsFromImportRows = (
