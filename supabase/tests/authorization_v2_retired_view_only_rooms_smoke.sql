@@ -33,8 +33,12 @@ begin
       and grant_row.permission_code ~ '^project\.(material_waste|custom_material|subcontract)\.'
       and grant_row.permission_code not in ('project.material_waste.view', 'project.custom_material.view', 'project.subcontract.view')
   ) then raise exception 'AUTH_V2_RETIRED_NON_VIEW_GRANT_ACTIVE'; end if;
+  -- 14 since 20261004150000: subcontractor_contracts now follows contract.supplier.manage
+  -- (ordinary accounts without it are still denied, checked below).
   if (select count(*) from pg_trigger
-      where tgname = 'authorization_v2_admin_write_guard' and not tgisinternal) <> 15 then
+      where tgname = 'authorization_v2_admin_write_guard' and not tgisinternal) <> 14
+    or exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+               where t.tgname = 'authorization_v2_admin_write_guard' and c.relname = 'subcontractor_contracts') then
     raise exception 'AUTH_V2_ADMIN_WRITE_GUARDS_INCOMPLETE';
   end if;
 end;

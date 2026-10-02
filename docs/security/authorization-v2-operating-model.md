@@ -68,6 +68,8 @@ Mỗi Room có tập action riêng như `view`, `edit`, `delete`, `submit`, `ver
 
 Bốn chức năng `material_waste`, `custom_material`, `boq_reconciliation`, `subcontract` đã được loại khỏi cơ chế Room. Người không phải Admin chỉ đọc; Admin vẫn được ghi theo policy backend dành riêng cho các chức năng đã retire này.
 
+Từ 02/10/2026 (migration `20261004150000`), hợp đồng thầu phụ (`subcontractor_contracts`) ghi theo quyền `contract.supplier.manage` của phân hệ Hợp đồng (trang `/hd/subcontractor`), không còn chỉ Admin. Ba chức năng còn lại giữ nguyên.
+
 ## 7. Cách đọc màn hình phân quyền mới
 
 - Chọn **ứng dụng** chỉ để lọc/thu gọn ma trận, không tự cấp quyền.
