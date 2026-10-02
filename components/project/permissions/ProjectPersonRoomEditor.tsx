@@ -290,9 +290,9 @@ const ProjectPersonRoomEditor: React.FC<Props> = ({
                               : on ? 'border-emerald-500 bg-emerald-500 text-white'
                                 : was ? 'border-rose-300 bg-rose-50 text-rose-600 line-through'
                                   : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-200 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300';
+                            // Only the unusual source is worth saying; most grants are given directly.
                             const suffix = blocked ? ` · ${blocked}`
-                              : source === 'pbac_backfill' ? ' · Backfill từ PBAC'
-                                : source === 'manual_room' ? ' · Cấp trực tiếp' : '';
+                              : source === 'pbac_backfill' ? ' · Backfill từ PBAC' : '';
                             return (
                               <button key={action} type="button" aria-pressed={on} disabled={Boolean(blocked) || applying} title={blocked || undefined}
                                 onClick={() => toggle(room.code, action)}
