@@ -214,7 +214,8 @@
     "20261004120000_authorization_p3_own_scope_no_expiry.sql",
     "20261004130000_authorization_p3_user_special_roles_summary.sql",
     "20261004140000_authorization_task13_stop_reading_legacy_modules.sql",
-    "20261004150000_authorization_contract_writes_follow_grants.sql"
+    "20261004150000_authorization_contract_writes_follow_grants.sql",
+    "20261004160000_authorization_room_codes_not_directly_grantable.sql"
   ],
   "forbidIncludeAll": true
 }
