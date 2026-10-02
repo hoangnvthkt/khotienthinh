@@ -64,6 +64,7 @@ import {
   WorkflowInstance,
   WorkflowInstanceStatus,
 } from '../types';
+import { leaveBalanceAvailable } from '../lib/leaveBalance';
 import { AnimatedNumber, LastUpdated } from '../components/LiveDashboardWidgets';
 import DailyMissions from '../components/DailyMissions';
 import { getTimeGreeting } from '../lib/funMessages';
@@ -601,7 +602,7 @@ const Home: React.FC = () => {
   }, [leaveBalances, employee, thisYear]);
 
   const remainingLeave = myLeaveBalance
-    ? Math.max(0, (myLeaveBalance.accruedDays || 0) - (myLeaveBalance.usedPaidDays || 0))
+    ? Math.max(0, leaveBalanceAvailable(myLeaveBalance))
     : 0;
 
   // ─── My Leave Requests ───

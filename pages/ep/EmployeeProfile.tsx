@@ -11,6 +11,7 @@ import {
   Building, ChevronRight, Activity
 } from 'lucide-react';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
+import { leaveBalanceAvailable } from '../../lib/leaveBalance';
 
 // ======================== TAB DEFINITIONS ========================
 const TABS = [
@@ -100,7 +101,7 @@ const EmployeeProfile: React.FC = () => {
 
   // KPIs for header
   const workDays = monthAttendance.filter(r => ['present', 'late'].includes(r.status)).length;
-  const leaveRemaining = empBalance ? empBalance.accruedDays - empBalance.usedPaidDays : 0;
+  const leaveRemaining = empBalance ? leaveBalanceAvailable(empBalance) : 0;
   const latestPayroll = empPayroll[0];
   const activeAssets = empAssignments.filter(a => !a.returnedDate).length;
 
