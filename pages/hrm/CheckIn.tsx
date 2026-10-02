@@ -4,7 +4,9 @@ import {
   AlertTriangle,
   CameraOff,
   CheckCircle,
+  Copy,
   Crosshair,
+  ExternalLink,
   FilePlus2,
   Fingerprint,
   MapPin,
@@ -16,7 +18,9 @@ import { useCelebration } from '../../components/Celebration';
 import { AttendanceRecord } from '../../types';
 import { getApiErrorMessage } from '../../lib/apiError';
 import { checkInService, MyCheckInContext, PasskeyState } from '../../lib/checkInService';
-import { getPunchToken, isPasskeySupported, registerThisPhone } from '../../lib/attendancePasskey';
+import {
+  chromeIntentUrl, detectInAppBrowser, getPunchToken, isIosDevice, isPasskeySupported, registerThisPhone,
+} from '../../lib/attendancePasskey';
 import {
   CheckInPlace,
   DEFAULT_OFFICE_RADIUS_M,
@@ -78,6 +82,17 @@ const CheckIn: React.FC = () => {
   const [contextError, setContextError] = useState('');
   const [passkey, setPasskey] = useState<PasskeyState | null>(null);
   const [passkeySupported, setPasskeySupported] = useState<boolean | null>(null);
+  const inAppBrowser = useMemo(() => detectInAppBrowser(), []);
+  const isIos = useMemo(() => isIosDevice(), []);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyCheckInLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/#/hrm/checkin`);
+      setLinkCopied(true);
+    } catch {
+      window.prompt('Sao chép đường dẫn này rồi dán vào trình duyệt:', `${window.location.origin}/#/hrm/checkin`);
+    }
+  };
   const [registering, setRegistering] = useState(false);
   const [offerRegister, setOfferRegister] = useState(false);
 
@@ -370,8 +385,13 @@ const CheckIn: React.FC = () => {
   }
 
   // Why the button cannot be used right now, in the order the person can fix it.
-  const blocker: { text: string; proposal?: boolean } | null =
-    cameraError ? { text: cameraError }
+  // Inside Zalo / Facebook… nothing else can be fixed until the page is opened in a real browser.
+  const blocker: { text: string; proposal?: boolean; inApp?: boolean } | null =
+    needsPasskey && passkeySupported === false && inAppBrowser ? {
+      text: `Bạn đang mở Vioo trong ${inAppBrowser}. Trình duyệt của ${inAppBrowser} không hỗ trợ vân tay / Face ID nên không chấm công được. Hãy mở bằng ${isIos ? 'Safari' : 'Chrome'}.`,
+      inApp: true,
+    }
+    : cameraError ? { text: cameraError }
       : gps.status === 'denied' ? { text: 'Chưa cho phép truy cập vị trí. Mở cài đặt trình duyệt để cấp quyền vị trí.' }
         : gps.status === 'unavailable' ? { text: 'Không lấy được vị trí GPS. Bật định vị rồi bấm làm mới.' }
           : gps.status === 'locating' ? { text: 'Đang xác định vị trí…' }
@@ -385,7 +405,7 @@ const CheckIn: React.FC = () => {
                 }
                   : !cameraReady ? { text: 'Đang mở camera…' }
                     : needsPasskey && passkeySupported === false
-                      ? { text: 'Điện thoại / trình duyệt này chưa hỗ trợ mở khóa bằng vân tay / Face ID. Hãy bật khóa màn hình, cập nhật trình duyệt, hoặc liên hệ HCNS.' }
+                      ? { text: `Điện thoại chưa bật khóa màn hình (vân tay, khuôn mặt hoặc mã PIN) hoặc trình duyệt đã cũ. Vào Cài đặt → Bảo mật để bật khóa màn hình, cập nhật ${isIos ? 'iOS' : 'Chrome'}, rồi mở lại trang này. Vẫn không được: báo HCNS để được miễn tạm thời.` }
                       : needsPasskey && passkey && !hasActiveDevice && hasPendingDevice
                         ? { text: 'Điện thoại của bạn đang chờ HR duyệt. Bạn chấm công được ngay khi HR duyệt.' }
                         : null;
@@ -504,9 +524,26 @@ const CheckIn: React.FC = () => {
 
       <div className="sticky bottom-24 lg:bottom-4 z-10 space-y-2 rounded-2xl bg-white/95 p-2 shadow-lg backdrop-blur dark:bg-slate-900/95">
         {blocker && (
-          <p className={`px-1 text-xs font-bold ${blocker.proposal ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+          <p className={`px-1 text-xs font-bold ${blocker.proposal || blocker.inApp ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
             {blocker.text}
           </p>
+        )}
+        {blocker?.inApp && (
+          <div className="space-y-2 px-1">
+            {!isIos && (
+              <a href={chromeIntentUrl(window.location.origin)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-leaf-600 py-3 text-sm font-black text-white active:scale-[0.98]">
+                <ExternalLink size={16} /> Mở bằng Chrome
+              </a>
+            )}
+            <button type="button" onClick={() => void copyCheckInLink()}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">
+              <Copy size={15} /> {linkCopied ? 'Đã sao chép, dán vào ' + (isIos ? 'Safari' : 'Chrome') : 'Sao chép đường dẫn chấm công'}
+            </button>
+            <p className="text-[11px] font-semibold text-slate-500">
+              Hoặc bấm {isIos ? '•••' : '⋮'} ở góc trên màn hình → chọn “Mở bằng trình duyệt”. Lần sau hãy mở Vioo từ {isIos ? 'Safari' : 'Chrome'} hoặc biểu tượng Vioo trên màn hình chính.
+            </p>
+          </div>
         )}
         {nextAction === 'check_in' && !blocker && !showRegister && (todayRecord === null) && currentTime.getHours() >= 12 && (
           <p className="px-1 text-[11px] font-bold text-slate-500">
