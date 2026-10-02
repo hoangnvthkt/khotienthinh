@@ -46,7 +46,6 @@ describe('vehicle booking permission registry', () => {
       'booking.vehicle.view_own',
       'booking.vehicle.approve_direct_reports',
       'booking.vehicle.dispatch',
-      'booking.vehicle.trip.execute',
       'booking.vehicle.handover',
       'booking.vehicle.manage_authorizations',
       'booking.vehicle.manage_fleet',

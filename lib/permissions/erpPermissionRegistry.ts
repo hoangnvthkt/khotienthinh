@@ -342,7 +342,6 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       ])),
       module('request.category', 'Danh mục yêu cầu', 'RQ', ['/rq/categories'], 20, actions('request.category', 'RQ', '/rq/categories', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
-        ['manage', 'Quản trị danh mục', 20],
       ])),
       module('request.template', 'Mẫu yêu cầu', 'RQ', ['/rq/templates', '/rq/templates/new', '/rq/templates/:templateId'], 30, actions('request.template', 'RQ', '/rq/templates', WORKFLOW_SCOPE, [
         ['view', 'Xem', 10],
@@ -357,7 +356,6 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     modules: [
       module('asset.catalog', 'Danh mục tài sản', 'TS', ['/ts/dashboard', '/ts/catalog', '/ts/asset/:id'], 10, actions('asset.catalog', 'TS', '/ts/catalog', ASSET_SCOPE, [
         ['view', 'Xem', 10],
-        ['manage', 'Quản trị', 20],
         ['create', 'Tạo', 20],
         ['edit', 'Sửa', 30],
         ['delete', 'Xóa', 40],
@@ -374,7 +372,6 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('asset.maintenance', 'Bảo trì tài sản', 'TS', ['/ts/maintenance'], 30, actions('asset.maintenance', 'TS', '/ts/maintenance', ASSET_SCOPE, [
         ['view', 'Xem', 10],
         ['create', 'Tạo', 20],
-        ['manage', 'Quản trị', 30],
         ['complete', 'Hoàn tất', 30],
         ['import', 'Import', 40],
       ])),
@@ -479,7 +476,6 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
           vehicleBookingAction('view_own', 'Xem yêu cầu cá nhân', ['global', 'own'], '/booking/vehicle', false, 20),
           vehicleBookingAction('approve_direct_reports', 'Duyệt yêu cầu cấp dưới', ['global', 'department'], '/booking/vehicle', false, 30),
           vehicleBookingAction('dispatch', 'Điều phối & duyệt thay', ['global', 'department', 'assigned'], '/booking/vehicle/dispatch', false, 40),
-          vehicleBookingAction('trip.execute', 'Thực hiện chuyến đi', ['global', 'assigned'], '/booking/vehicle', false, 50),
           vehicleBookingAction('handover', 'Bàn giao xe tự lái', ['global', 'assigned'], '/booking/vehicle', false, 60),
           vehicleBookingAction('manage_authorizations', 'Quản lý ủy quyền tài xế', ['global'], '/booking/vehicle/drivers', true, 70),
           vehicleBookingAction('manage_fleet', 'Quản lý hồ sơ xe', ['global'], '/booking/vehicle/fleet', true, 80),

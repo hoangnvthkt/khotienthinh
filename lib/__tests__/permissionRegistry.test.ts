@@ -196,7 +196,7 @@ describe('permissionRegistry', () => {
       'hrm.payroll.manage',
       'expense.expense_record.view_all',
       'workflow.instance.act_assigned',
-      'request.category.manage',
+      'request.category.view',
       'asset.audit.perform',
       'contract.cost_library.view',
       'ai.report.generate',
@@ -204,6 +204,10 @@ describe('permissionRegistry', () => {
       'kb.manage',
       'analytics.export',
     ]));
+    // Hidden on 02/10: nothing checked them, so the permission screen no longer offers them.
+    expect(actionCodes.filter(code => [
+      'asset.catalog.manage', 'asset.maintenance.manage', 'request.category.manage', 'booking.vehicle.trip.execute',
+    ].includes(code))).toEqual([]);
   });
 
   it('keeps Phase 4 domain modules scoped to their allowed operational scopes', () => {
