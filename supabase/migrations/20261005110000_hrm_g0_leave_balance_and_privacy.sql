@@ -124,8 +124,7 @@ drop policy if exists hrm_leave_logs_approve_delete on public.hrm_leave_logs;
 -- ── Privacy (decision 7): only HR sees other people's leave and profiles ──
 -- The 28/09 P3 conversion turned legacy HR module-view roles into direct company-wide
 -- grants of hrm.leave.view / hrm.employee.view_profile for ~44 non-HR accounts.
--- Kept: HR / HR Manage role holders, and the accounts that still approve leave company-wide
--- (their approvals need the view until rule-based routing replaces them in G2).
+-- Kept: HR / HR Manage role holders only (owner, 02/10: also revoke the non-HR company-wide approvers).
 create table if not exists app_private.hrm_g0_privacy_revocation_backup (
   grant_id uuid primary key,
   user_id uuid not null,
@@ -144,8 +143,7 @@ where grant_row.is_active
     (grant_row.permission_code = 'hrm.employee.view_profile'
       and not app_private.has_hrm_template_permission(grant_row.user_id, 'hrm.employee.view_sensitive'))
     or (grant_row.permission_code = 'hrm.leave.view'
-      and not app_private.has_hrm_template_permission(grant_row.user_id, 'hrm.employee.view_sensitive')
-      and not app_private.has_governed_hrm_permission(grant_row.user_id, 'hrm.leave.approve', 'global', '*'))
+      and not app_private.has_hrm_template_permission(grant_row.user_id, 'hrm.employee.view_sensitive'))
   )
 on conflict (grant_id) do nothing;
 

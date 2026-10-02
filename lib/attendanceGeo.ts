@@ -77,3 +77,25 @@ export const matchPlace = (
 export const formatDistance = (meters: number): string => (
   meters >= 1000 ? `${(meters / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} km` : `${meters} m`
 );
+
+/**
+ * Coordinates pasted from Google Maps: "20.447910, 106.316350", a maps link with
+ * "@20.4479,106.3163" or "q=20.4479,106.3163", or "!3d20.4479!4d106.3163".
+ */
+export const parseCoordinateText = (text: string): GeoPoint | null => {
+  const value = text.trim();
+  const patterns = [
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
+    /^\(?\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*\)?$/,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(value);
+    if (!match) continue;
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng };
+  }
+  return null;
+};

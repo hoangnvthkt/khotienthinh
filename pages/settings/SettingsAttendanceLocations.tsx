@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
 import { supabase } from '../../lib/supabase';
 import { getApiErrorMessage } from '../../lib/apiError';
-import { DEFAULT_OFFICE_RADIUS_M, DEFAULT_SITE_RADIUS_M, toCoordinate } from '../../lib/attendanceGeo';
+import { DEFAULT_OFFICE_RADIUS_M, DEFAULT_SITE_RADIUS_M, parseCoordinateText, toCoordinate } from '../../lib/attendanceGeo';
 
 type LocationTable = 'hrm_construction_sites' | 'hrm_offices';
 
@@ -177,7 +177,7 @@ const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }
       {missingCount > 0 && (
         <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-          <span>{missingCount} địa điểm chưa có tọa độ — nhân viên tại đó chưa chấm công được. Cách nhanh nhất: người quản lý đứng tại địa điểm, mở màn này trên điện thoại và bấm "Lấy vị trí tại đây".</span>
+          <span>{missingCount} địa điểm chưa có tọa độ — nhân viên tại đó chưa chấm công được. Bấm Sửa rồi dán tọa độ từ Google Maps, hoặc đứng tại địa điểm và bấm "Lấy vị trí tại đây".</span>
         </div>
       )}
       {!canEdit && (
@@ -242,6 +242,20 @@ const SettingsAttendanceLocations: React.FC<{ canEdit: boolean }> = ({ canEdit }
                       </span>
                     )}
                   </div>
+                  <label className="sm:col-span-2 text-xs font-bold text-slate-500">
+                    Dán tọa độ hoặc link Google Maps
+                    <input
+                      placeholder="Ví dụ: 20.447910, 106.316350 hoặc link chia sẻ Google Maps"
+                      onChange={event => {
+                        const point = parseCoordinateText(event.target.value);
+                        if (point) setDraft({ ...draft, lat: point.lat.toFixed(6), lng: point.lng.toFixed(6), capturedAccuracy: null });
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold dark:border-slate-700 dark:bg-slate-900"
+                    />
+                    <span className="mt-1 block text-[11px] font-medium text-slate-400">
+                      Trên Google Maps: nhấn giữ vào vị trí công trường → sao chép dãy số tọa độ → dán vào đây. Vĩ độ/kinh độ bên dưới tự điền.
+                    </span>
+                  </label>
                   <label className="text-xs font-bold text-slate-500">
                     Vĩ độ
                     <input value={draft.lat} onChange={event => setDraft({ ...draft, lat: event.target.value })} inputMode="decimal" placeholder="20.447910"

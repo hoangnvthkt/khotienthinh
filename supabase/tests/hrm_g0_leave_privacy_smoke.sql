@@ -39,7 +39,7 @@ begin
   exception when check_violation then null;
   end;
 
-  -- Only HR role holders and company-wide leave approvers still see everyone's leave.
+  -- Only HR role holders still see everyone's leave.
   select count(*) filter (where app_private.has_governed_hrm_permission(u.id, 'hrm.leave.view', 'global', '*')),
          count(*) filter (where app_private.has_governed_hrm_permission(u.id, 'hrm.employee.view_profile', 'global', '*')),
          count(*) filter (where app_private.has_hrm_template_permission(u.id, 'hrm.employee.view_sensitive'))
@@ -54,7 +54,6 @@ begin
     where coalesce(u.is_active, true)
       and app_private.has_governed_hrm_permission(u.id, 'hrm.leave.view', 'global', '*')
       and not app_private.has_hrm_template_permission(u.id, 'hrm.employee.view_sensitive')
-      and not app_private.has_governed_hrm_permission(u.id, 'hrm.leave.approve', 'global', '*')
   ) then
     raise exception 'HRM_G0_NON_HR_LEAVE_VIEWERS_LEFT';
   end if;

@@ -417,7 +417,28 @@ Bổ sung 02/10 (lần 2):
 - Hạn mức đi muộn / về sớm **60 phút mỗi lần**. Muộn có lý do (ví dụ đi xử lý công việc), gửi trưởng bộ phận và được duyệt → **tính đủ công**. Muộn không lý do hoặc không được duyệt → ghi **giờ muộn**, cộng dồn tới hết tháng.
 - G0 triển khai trên nhánh riêng `feature/hrm-g0-attendance-leave` (worktree `.worktrees/hrm-g0`, tách từ `origin/main`).
 
-Còn mở (cần trước G2): người duyệt **nghỉ phép** của nhân sự văn phòng ở bước 1 (trưởng phòng theo sơ đồ hay người duyệt của địa điểm) và "Giám đốc" ở bước 2 (> 3 ngày).
+Bổ sung 02/10 (lần 3):
+- Thu hồi luôn quyền xem đơn phép toàn công ty của 4 tài khoản duyệt phép không phải HR (Đoàn Văn Dương, Lưu Công Danh, Nguyễn Quang Huy, demo).
+- Tọa độ địa điểm lấy theo Google Maps (dán tọa độ / link); vị trí người chấm so bán kính quanh tọa độ đó.
+- Nghỉ phép nhân sự văn phòng: **người quản lý trong sơ đồ tổ chức** duyệt (G2 — cần điền quản lý cho từng đơn vị; hiện 21/23 đơn vị chưa có).
+- Chống chấm công hộ (dùng tài khoản người khác): đề xuất ở mục 12.
+
+Còn mở: "Giám đốc" duyệt bước 2 (> 3 ngày).
+
+
+## 12. Chống chấm công hộ (dùng tài khoản người khác) — đề xuất
+
+Bản chất: người chấm hộ có mật khẩu (hoặc điện thoại) của đồng nghiệp. GPS và ảnh không chặn được vì người chấm hộ đứng đúng chỗ. Cần chứng minh **"đúng người, đúng máy"**.
+
+| Lớp | Cách làm | Chặn được | Ghi chú |
+|---|---|---|---|
+| 1. **Xác thực sinh trắc của chính điện thoại** (WebAuthn / passkey) | Lần đầu, nhân viên đăng ký điện thoại của mình bằng vân tay / Face ID. Mỗi lượt chấm phải mở khóa sinh trắc trên máy đã đăng ký | Đăng nhập tài khoản người khác trên máy mình (máy chưa đăng ký); biết mật khẩu nhưng không có máy | Server **không lưu** vân tay / khuôn mặt (chỉ khóa công khai) → không phát sinh dữ liệu sinh trắc theo Luật BVDLCN. Chạy được trên PWA iOS 16+ / Android 9+ |
+| 2. **Một nhân viên – một thiết bị** | Đổi máy mới phải HR duyệt; một máy không dùng cho 2 tài khoản trong cùng ngày | Một người cầm nhiều tài khoản trên cùng máy | Kèm lớp 1 thì gần như không lách được |
+| 3. **Ảnh làm bằng chứng + soát ngẫu nhiên** | Người duyệt địa điểm xem nhanh ảnh các lượt trong ngày (dạng lưới); hệ thống gắn cờ "nghi chấm hộ" khi 2 tài khoản chấm từ cùng thiết bị hoặc cách nhau < 1 phút ở cùng chỗ | Răn đe, phát hiện sau | Không cần AI nhận diện khuôn mặt |
+| 4. **Quy chế** | Nội quy: chấm hộ là vi phạm kỷ luật (cả người nhờ và người chấm); NV ký cam kết bảo mật tài khoản | Hành vi | Không phạt tiền (Điều 127 BLLĐ), xử lý theo nội quy |
+
+Khuyến nghị: làm **lớp 1 + 2 + cờ nghi vấn của lớp 3** ở G1. Không dùng nhận diện khuôn mặt tự động (dữ liệu sinh trắc, nghĩa vụ pháp lý cao).
+Ngoại lệ: máy hỏng / mất → HR cấp "mã chấm tạm" 1 ngày hoặc người duyệt địa điểm xác nhận chấm công bù.
 
 ---
 
