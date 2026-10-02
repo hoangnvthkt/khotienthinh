@@ -48,12 +48,14 @@ import {
 } from '../lib/contractCostItemOptions';
 import { partnerService } from '../lib/partnerService';
 import {
+    applyMisaImportGuards,
     buildProjectTransactionsFromImportRows,
     parseProjectTransactionImportPreviewRows,
     ProjectTransactionImportPreviewResult,
     PROJECT_TRANSACTION_IMPORT_HEADERS,
     PROJECT_TRANSACTION_IMPORT_SAMPLE_ROWS,
 } from '../lib/projectTransactionImport';
+import { financeService } from '../lib/financeService';
 import { ProjectTransactionImportPreviewModal } from '../components/project/ProjectTransactionImportPreviewModal';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import {
@@ -2257,13 +2259,21 @@ const ProjectDashboard: React.FC = () => {
                 if (contractCostItems.length === 0 && importCostItems.length > 0) setContractCostItems(importCostItems);
                 const importPartners = partners.length > 0 ? partners : await partnerService.list();
                 if (partners.length === 0 && importPartners.length > 0) setPartners(importPartners);
-                const previewResult = parseProjectTransactionImportPreviewRows(rows, {
+                const parsedPreview = parseProjectTransactionImportPreviewRows(rows, {
                     projectId: selectedProject?.id || null,
                     projectFinanceId: financeId!,
                     constructionSiteId: effectiveSiteId,
                     costItems: importCostItems,
                     partners: importPartners,
                     createdBy: user.id,
+                });
+                // K3a-2: bỏ trước dòng vật tư từ mốc chi phí MISA và dòng trùng (server cũng chặn).
+                const cutover = selectedProject?.id
+                    ? await financeService.costCutovers().then(r => r.cutovers.find(c => c.projectId === selectedProject.id)?.cutoverDate || null).catch(() => null)
+                    : null;
+                const previewResult = applyMisaImportGuards(parsedPreview, {
+                    cutoverDate: cutover,
+                    existing: projectTransactions.filter(t => t.projectId === selectedProject?.id),
                 });
 
                 if (previewResult.items.length === 0) {

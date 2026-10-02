@@ -15,7 +15,7 @@ const EVENT_LABELS: Record<string, string> = {
   return_replace: 'Trả NCC — đổi hàng', return_credit: 'Trả NCC — giảm trừ',
   link_need: 'Gắn nhu cầu', unlink_need: 'Gỡ gắn nhu cầu',
 };
-const BOQ_TEXT = { within: 'Trong BOQ', over: 'Vượt BOQ', outside: 'Ngoài BOQ' } as const;
+const BOQ_TEXT = { within: 'Trong BOQ', over: 'Vượt BOQ', outside: 'Ngoài BOQ', stock: 'Dự trữ' } as const;
 
 const DELIVERY_TONE: Record<string, string> = {
   receiving: 'border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-200',
@@ -141,7 +141,7 @@ export const OrderDrawer: React.FC<{
       <div className="flex flex-wrap items-center gap-1.5"><PoStatusChip status={order.status} />
         <Badge className={order.isHub ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200' : 'border-border bg-muted text-muted-foreground'}>
           {order.isHub ? 'Lập tại Mua hàng' : 'Lập ở dự án'}</Badge>
-        {order.kind === 'proactive' && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">Đơn chủ động</Badge>}
+        {order.kind === 'proactive' && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">{order.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : 'Đơn chủ động'}</Badge>}
         {late && <Badge className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">Quá ngày giao</Badge>}</div>
       <h2 className="mt-2 text-lg font-bold text-foreground">{order.poNumber}<span className="font-medium text-muted-foreground"> · {order.vendorName || 'Chưa chọn NCC'}</span></h2>
       <p className="text-sm text-muted-foreground">{[order.projectCode, order.projectName].filter(Boolean).join(' — ')}</p>
@@ -161,7 +161,9 @@ export const OrderDrawer: React.FC<{
           {order.proactive.reason && <span className="text-foreground"> — {order.proactive.reason}</span>}</p>
         {order.proactive.overBoqReason && <p className="flex gap-1.5 text-amber-800 dark:text-amber-200"><AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <span><b>Vượt/ngoài BOQ:</b> {order.proactive.overBoqReason}</span></p>}
-        <p className="text-xs text-muted-foreground">Nhu cầu cùng vật tư của dự án được gắn vào phần chưa phân bổ ở phiếu nhu cầu (Cần mua) thay vì lập đơn mới.</p>
+        <p className="text-xs text-muted-foreground">{order.proactive.purpose === 'stock'
+          ? 'Hàng vào Kho Tổng: công nợ NCC ghi cấp công ty; chi phí vào dự án khi chuyển kho sang công trường.'
+          : 'Nhu cầu cùng vật tư của dự án được gắn vào phần chưa phân bổ ở phiếu nhu cầu (Cần mua) thay vì lập đơn mới.'}</p>
       </div>}
       {!order.isHub && <p className="rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">Đơn này lập ở tab dự án trước khi có Mua hàng — chỉ xem tại đây.</p>}
 
@@ -188,14 +190,14 @@ export const OrderDrawer: React.FC<{
               {line.receivedQty > 0 && <span className="font-semibold text-emerald-700 dark:text-emerald-300">Đã nhận {fmt(line.receivedQty, 3)} {line.unit}</span>}
               {['confirmed', 'in_transit', 'partial'].includes(order.status) && line.remainingToDeliver > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300">Còn phải giao {fmt(line.remainingToDeliver, 3)} {line.unit}</span>}
               {line.stockUnit && line.stockUnit !== line.unit && <span>= {fmt(line.qty * line.factor, 3)} {line.stockUnit}</span>}
-              {order.kind === 'proactive' && line.boq && <Badge className={line.boq.status === 'within'
+              {order.kind === 'proactive' && line.boq && <Badge className={line.boq.status === 'within' || line.boq.status === 'stock'
                 ? 'border-leaf-200 bg-leaf-50 text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/40 dark:text-leaf-200'
                 : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'}
                 title={`Lúc lập đơn: BOQ ${fmt(line.boq.boqQty, 3)} · đã đặt đơn khác ${fmt(line.boq.orderedBefore, 3)} ${line.stockUnit || ''}`}>{BOQ_TEXT[line.boq.status]}</Badge>}
               {order.kind !== 'proactive' && line.allocations.map(a => <span key={`${a.sourceId}:${a.lineId}`}>{a.code}: {fmt(a.qty)} {line.stockUnit || ''}</span>)}
               {order.kind !== 'proactive' && line.allocations.length === 0 && <span>Không gắn phiếu nhu cầu</span>}
             </div>
-            {order.kind === 'proactive' && <div className="mt-1.5 space-y-1 text-xs">
+            {order.kind === 'proactive' && order.proactive?.purpose !== 'stock' && <div className="mt-1.5 space-y-1 text-xs">
               <p className="text-muted-foreground">Đã gắn nhu cầu <b className="text-teal-700 dark:text-teal-300">{fmt(line.allocatedQty, 3)}</b> / {fmt(line.stockQty, 3)} {line.stockUnit || ''}
                 {line.stockQty - line.allocatedQty > 0.0005 && <> · <b className="text-foreground">còn {fmt(line.stockQty - line.allocatedQty, 3)}</b> chưa phân bổ (nhập kho dự phòng)</>}</p>
               {line.allocations.map(a => <p key={`${a.sourceId}:${a.lineId}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/50 px-2 py-1">

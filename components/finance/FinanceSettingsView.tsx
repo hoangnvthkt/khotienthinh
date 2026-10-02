@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceSettings } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, moneyInput, parseMoney, viDate } from './financeUi';
+import { CostCutoverSection } from './CostCutoverSection';
 
 // Thiết lập Tài chính: hạn thanh toán mặc định, ma trận duyệt chi (có phiên bản), ủy quyền duyệt.
 // Admin / Quản trị Tài chính sửa; mỗi lần sửa ghi nhật ký và báo cho Admin, Quản trị Tài chính.
@@ -67,6 +68,8 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
         {data.settings.updatedByName && <span className="text-muted-foreground"> · sửa bởi {data.settings.updatedByName} {viDate(data.settings.updatedAt)}</span>}
         {manage && <button type="button" onClick={() => setDays({ value: String(data.settings.defaultPaymentDays), reason: '', apply: false })} className="ml-2 font-semibold text-teal-700 hover:underline">Sửa</button>}</p>}
     </section>
+
+    <CostCutoverSection canManage={manage} />
 
     <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">

@@ -61,9 +61,9 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
   const groups = useMemo(() => {
     if (!detail) return [];
     const byProject = new Map<string, FinanceDocument[]>();
-    detail.documents.forEach(d => { const k = d.projectCode || 'Không gắn dự án'; byProject.set(k, [...(byProject.get(k) || []), d]); });
+    detail.documents.forEach(d => { const k = d.projectCode || 'Kho công ty'; byProject.set(k, [...(byProject.get(k) || []), d]); });
     return Array.from(byProject.entries()).map(([project, docs]) => ({
-      project, name: docs[0].projectName, contracts: Array.from(new Set(docs.map(d => d.contractCode || ''))).map(c => ({ c, docs: docs.filter(d => (d.contractCode || '') === c) })),
+      project, name: docs[0].projectId ? docs[0].projectName : 'Hàng dự trữ — công nợ cấp công ty, chi phí vào dự án khi chuyển kho', contracts: Array.from(new Set(docs.map(d => d.contractCode || ''))).map(c => ({ c, docs: docs.filter(d => (d.contractCode || '') === c) })),
     }));
   }, [detail]);
 

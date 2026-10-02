@@ -17,7 +17,7 @@ export interface FinancePayablesList {
 }
 export interface FinanceSupplierSummary {
   supplierId: string; name: string; internal: boolean; owed: number; overdue: number; soon: number; pendingExternal: number;
-  docCount: number; nextDue: string | null; projects: string[]; issues: number; opening: FinanceOpeningStatus; worst: FinanceTone;
+  docCount: number; nextDue: string | null; projects: Array<string | null>; issues: number; opening: FinanceOpeningStatus; worst: FinanceTone;
 }
 export interface FinanceDocument {
   id: string; code: string; documentNo: string; sourceType: string; origin: string | null;
@@ -65,6 +65,11 @@ export interface FinanceSettings {
   delegations: Array<{ id: string; fromUserId: string; fromName: string; toUserId: string; toName: string; validFrom: string; validTo: string;
     reason: string; createdByName: string | null; revokedAt: string | null; revokeReason: string | null }>;
   users: Array<{ id: string; name: string }>;
+}
+export interface FinanceCostCutovers {
+  cutovers: Array<{ projectId: string; projectCode: string | null; projectName: string | null; cutoverDate: string; note: string;
+    updatedAt: string; updatedByName: string | null; overlapCount: number; overlapAmount: number }>;
+  projects: Array<{ id: string; code: string | null; name: string | null }>;
 }
 export interface FinanceAttachment { name: string; path: string; size: number; type: string; uploadedAt: string }
 
@@ -142,6 +147,10 @@ export const financeService = {
     return call<{ statementId: string; status: string }>('transition_procurement_contract_statement_v1', { p_input: input });
   },
   settings() { return call<FinanceSettings>('get_finance_settings_v1', {}); },
+  costCutovers() { return call<FinanceCostCutovers>('get_finance_cost_cutovers_v1', {}); },
+  saveCostCutover(input: { projectId: string; cutoverDate: string | null; note?: string; reason: string }) {
+    return call<{ expenseBefore: number; expenseAfter: number }>('save_finance_cost_cutover_v1', { p_input: input });
+  },
   saveSupplierTerms(input: { supplierId: string; paymentDays: number | null; note?: string; applyToOpen: boolean; reason: string }) {
     return call<{ recomputed: number }>('save_finance_supplier_terms_v1', { p_input: input });
   },
@@ -149,7 +158,7 @@ export const financeService = {
     return call<{ recomputed: number }>('save_finance_contract_terms_v1', { p_input: input });
   },
   setDue(input: { documentId: string; dueDate: string | null; reason: string }) { return call<{ documentId: string }>('set_finance_payable_due_v1', { p_input: input }); },
-  saveExternalPayment(input: { supplierId: string; projectId: string; paymentDate: string; method: 'bank_transfer' | 'cash' | 'other'; documentRef: string;
+  saveExternalPayment(input: { supplierId: string; projectId: string | null; paymentDate: string; method: 'bank_transfer' | 'cash' | 'other'; documentRef: string;
     note?: string; attachments: FinanceAttachment[]; allocations: Array<{ documentId: string; amount: number }> }) {
     return call<{ paymentId: string; amount: number }>('save_finance_external_payment_v1', { p_input: input });
   },
@@ -216,5 +225,5 @@ export const EVENT_LABELS: Record<string, string> = {
   external_payment_submit: 'Ghi chi ngoài hệ thống', external_payment_confirm: 'Xác nhận chi ngoài', external_payment_reject: 'Từ chối chi ngoài',
   external_payment_withdraw: 'Rút khoản chi', external_payment_reverse: 'Đảo khoản chi',
   opening_save: 'Lưu đối chiếu đầu kỳ', opening_submit: 'Gửi đối chiếu đầu kỳ', opening_confirm: 'Chốt đầu kỳ', opening_reject: 'Trả lại đối chiếu', opening_cancel: 'Hủy / đảo đối chiếu',
-  cancel_request: 'Đề xuất hủy công nợ', cancel_confirm: 'Xác nhận hủy công nợ', cancel_reject: 'Từ chối hủy công nợ', cancel_withdraw: 'Rút đề xuất hủy',
+  cancel_request: 'Đề xuất hủy công nợ', cost_cutover_save: 'Đổi mốc chi phí MISA', cancel_confirm: 'Xác nhận hủy công nợ', cancel_reject: 'Từ chối hủy công nợ', cancel_withdraw: 'Rút đề xuất hủy',
 };

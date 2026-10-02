@@ -60,7 +60,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     const rows = data.suppliers.filter(s =>
       (filter === 'all' || (filter === 'overdue' && s.overdue > 0) || (filter === 'soon' && s.soon > 0) || (filter === 'issues' && s.issues > 0)
         || (filter === 'opening' && (s.opening === 'todo' || s.opening === 'pending')))
-      && words.every(w => `${s.name} ${s.projects.join(' ')}`.toLowerCase().includes(w)));
+      && words.every(w => `${s.name} ${s.projects.map(p => p || 'Kho công ty').join(' ')}`.toLowerCase().includes(w)));
     const by: Record<Sort, (a: FinanceSupplierSummary, b: FinanceSupplierSummary) => number> = {
       overdue: (a, b) => b.overdue - a.overdue || b.soon - a.soon || b.owed - a.owed,
       owed: (a, b) => b.owed - a.owed,
@@ -145,7 +145,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                       className={`flex w-full items-start gap-3 border-b border-l-4 border-border px-3 py-3 text-left ${TONE_BAR[s.worst]} ${sel === s.supplierId ? 'bg-teal-50/70 dark:bg-teal-950/20' : 'hover:bg-muted/40'}`}>
                       <span className="min-w-0 flex-1">
                         <span className={`block truncate ${ENT}`}>{s.name}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">{s.projects.join(', ')} · {s.docCount} chứng từ
+                        <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">{s.projects.map(p => p || 'Kho công ty').join(', ')} · {s.docCount} chứng từ
                           {ob && <Badge className={ob.cls}>{ob.label}</Badge>}
                           {s.internal && <Badge className="border-amber-300 bg-amber-50 text-amber-800">Nội bộ</Badge>}
                           {s.issues > 0 && !s.internal && <Badge className="border-amber-300 bg-amber-50 text-amber-800">Cần xử lý</Badge>}

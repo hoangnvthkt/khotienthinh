@@ -24,6 +24,7 @@ const BOQ_TONE: Record<ProcurementBoqSnapshot['status'], string> = {
   within: 'border-leaf-200 bg-leaf-50 text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/40 dark:text-leaf-200',
   over: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
   outside: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
+  stock: 'border-slate-200 bg-slate-100 text-slate-700',
 };
 const boqLabel = (l: Pick<Line, 'boq' | 'unit'>, qty: number) => {
   const status = boqStatusOf(l.boq, qty);
@@ -55,6 +56,8 @@ export const ProactiveOrderEditor: React.FC<{
   onSaved: (purchaseOrderId: string, poNumber: string) => void;
 }> = ({ order = null, onClose, onSaved }) => {
   const [projects, setProjects] = useState<ProcurementProactiveProject[] | null>(null);
+  const [stockWarehouses, setStockWarehouses] = useState<Array<{ id: string; name: string }>>([]);
+  const [purpose, setPurpose] = useState<'project' | 'stock'>(order?.proactive?.purpose === 'stock' ? 'stock' : 'project');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [projectId, setProjectId] = useState(order?.projectId || '');
   const [warehouseId, setWarehouseId] = useState(order?.targetWarehouseId || '');
@@ -75,18 +78,23 @@ export const ProactiveOrderEditor: React.FC<{
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    procurementInboxService.proactiveOptions().then(r => setProjects(r.projects)).catch(e => setLoadError(e instanceof Error ? e.message : String(e)));
+    procurementInboxService.proactiveOptions().then(r => { setProjects(r.projects); setStockWarehouses(r.stockWarehouses || []); })
+      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)));
   }, []);
   const project = projects?.find(p => p.id === projectId) || null;
   useEffect(() => {
+    if (purpose === 'stock') { if (!stockWarehouses.some(w => w.id === warehouseId)) setWarehouseId(stockWarehouses[0]?.id || ''); return; }
     if (project && !project.warehouses.some(w => w.id === warehouseId)) setWarehouseId(project.warehouses[0]?.id || '');
-  }, [project, warehouseId]);
+  }, [project, warehouseId, purpose, stockWarehouses]);
+  const stock = purpose === 'stock';
+  const scopeReady = stock ? Boolean(warehouseId) : Boolean(projectId);
   useEffect(() => {
-    if (!searchOpen || !projectId) return;
+    if (!searchOpen || !scopeReady) return;
+    if (stock && !query.trim()) { setResults([]); return; }
     setResults(null);
-    const t = setTimeout(() => { procurementInboxService.searchItems(projectId, query).then(setResults).catch(() => setResults([])); }, 250);
+    const t = setTimeout(() => { procurementInboxService.searchItems(stock ? null : projectId, query).then(setResults).catch(() => setResults([])); }, 250);
     return () => clearTimeout(t);
-  }, [query, searchOpen, projectId]);
+  }, [query, searchOpen, projectId, stock, scopeReady]);
 
   const addItem = (item: ProcurementCatalogItem) => {
     setLines(cur => cur.some(l => l.itemId === item.id) ? cur : [...cur, {
@@ -109,15 +117,15 @@ export const ProactiveOrderEditor: React.FC<{
       const qty = purchaseQtyOf(l, stock);
       if (!(qty > 0)) invalid += 1;
       if (price != null && (Number.isNaN(price) || price < 0)) invalid += 1; else if (!price) unpriced += 1; else subtotal += qty * price;
-      if (boqStatusOf(l.boq, stock) !== 'within') overBoq += 1;
+      if (purpose === 'project' && boqStatusOf(l.boq, stock) !== 'within') overBoq += 1;
     });
     const vatRate = parseQty(vat) ?? 0;
     return { subtotal, vatAmount: subtotal * (Number.isNaN(vatRate) ? 0 : vatRate) / 100, invalid, unpriced, overBoq, belowAllocated };
-  }, [lines, vat]);
+  }, [lines, vat, purpose]);
 
   const save = async () => {
     setError(null);
-    if (!projectId || !warehouseId) { setError('Chọn dự án và kho nhận.'); return; }
+    if (!scopeReady || !warehouseId) { setError(stock ? 'Chọn Kho Tổng nhận hàng.' : 'Chọn dự án và kho nhận.'); return; }
     if (!vendor) { setError('Chọn nhà cung cấp.'); return; }
     if (!reasonCode) { setError('Chọn lý do mua chủ động.'); return; }
     if (reasonCode === 'other' && !reason.trim()) { setError('Chọn "Khác" thì ghi rõ lý do.'); return; }
@@ -130,7 +138,7 @@ export const ProactiveOrderEditor: React.FC<{
     setSaving(true);
     try {
       const result = await procurementInboxService.saveProactiveOrder({
-        purchaseOrderId: order?.id, expectedRowVersion: order?.rowVersion, projectId, targetWarehouseId: warehouseId, vendorId: vendor.id,
+        purchaseOrderId: order?.id, expectedRowVersion: order?.rowVersion, purpose, projectId: stock ? null : projectId, targetWarehouseId: warehouseId, vendorId: vendor.id,
         purchaseMode: mode, expectedDeliveryDate: expected || null, vatRate, note: note.trim(),
         reasonCode, reason: reason.trim() || undefined, overBoqReason: totals.overBoq ? overReason.trim() : undefined,
         items: lines.map(l => {
@@ -160,7 +168,22 @@ export const ProactiveOrderEditor: React.FC<{
       : !projects ? <StateBox kind="loading" title="Đang tải dự án và kho…" />
         : projects.length === 0 ? <StateBox kind="empty" title="Chưa có dự án nào có kho công trường" message="Đơn chủ động nhận vào kho công trường của dự án. Mua dự trữ Kho Tổng sẽ mở cùng phần Công nợ NCC (K3a)." />
           : <>
+            <section role="radiogroup" aria-label="Mục đích mua" className="grid gap-2 md:grid-cols-2">
+              {([['project', 'Cho một dự án', 'Nhận vào kho công trường; chi phí ghi cho dự án khi nhận hàng; so với BOQ dự án.'],
+                ['stock', 'Dự trữ Kho Tổng', 'Nhận vào Kho Tổng; công nợ ghi cấp công ty; chi phí vào dự án khi chuyển kho sang công trường.']] as const).map(([k, label, hint]) =>
+                <button key={k} type="button" role="radio" aria-checked={purpose === k} disabled={Boolean(order) && purpose !== k}
+                  onClick={() => { if (purpose !== k) { setPurpose(k); setLines([]); setWarehouseId(''); } }}
+                  className={`rounded-2xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${purpose === k ? 'border-teal-500 bg-teal-50/70 ring-2 ring-teal-500/20 dark:bg-teal-950/20' : 'border-border bg-card hover:border-teal-300'}`}>
+                  <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <span className={`h-3.5 w-3.5 rounded-full border-2 ${purpose === k ? 'border-teal-600 bg-teal-600' : 'border-muted-foreground'}`} />{label}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{hint}</span></button>)}
+            </section>
             <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-2">
+              {stock ? <label className="text-xs font-semibold text-muted-foreground md:col-span-2">Kho nhận
+                <select value={warehouseId} disabled={Boolean(order)} onChange={e => setWarehouseId(e.target.value)} className={`mt-1 w-full ${inputCls}`}>
+                  {stockWarehouses.length === 0 && <option value="">Chưa có Kho Tổng</option>}
+                  {stockWarehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select></label> : <>
               <label className="text-xs font-semibold text-muted-foreground">Dự án nhận hàng
                 <select value={projectId} disabled={Boolean(order)} onChange={e => { setProjectId(e.target.value); setLines([]); }} className={`mt-1 w-full ${inputCls}`}>
                   <option value="">Chọn dự án…</option>
@@ -173,7 +196,7 @@ export const ProactiveOrderEditor: React.FC<{
                   {!project && <option value="">Chọn dự án trước</option>}
                   {project?.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
-              </label>
+              </label></>}
               <VendorPicker value={vendor} onChange={setVendor} autoFocus={false} />
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <label className="text-xs font-semibold text-muted-foreground">Ngày cần giao
@@ -207,11 +230,11 @@ export const ProactiveOrderEditor: React.FC<{
               </div>
               <div className="relative">
                 <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input ref={searchRef} value={query} disabled={!projectId} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                <input ref={searchRef} value={query} disabled={!scopeReady} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
                   onChange={e => { setQuery(e.target.value); setSearchOpen(true); }} aria-label="Thêm vật tư"
-                  placeholder={projectId ? 'Thêm vật tư — gõ tên hoặc mã (để trống: gợi ý vật tư trong BOQ dự án)' : 'Chọn dự án trước khi thêm vật tư'}
+                  placeholder={!scopeReady ? 'Chọn dự án trước khi thêm vật tư' : stock ? 'Thêm vật tư — gõ tên hoặc mã' : 'Thêm vật tư — gõ tên hoặc mã (để trống: gợi ý vật tư trong BOQ dự án)'}
                   className={`w-full pl-8 ${inputCls}`} />
-                {searchOpen && projectId && <ul role="listbox" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+                {searchOpen && scopeReady && (!stock || query.trim()) && <ul role="listbox" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
                   {results == null && <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"><Loader2 size={14} className="animate-spin" />Đang tìm vật tư…</li>}
                   {results?.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{query ? 'Không tìm thấy vật tư. Đề xuất cấp mã ở Vật tư → Đề xuất cấp mã.' : 'Dự án chưa có BOQ vật tư — gõ tên để tìm trong danh mục.'}</li>}
                   {results?.map(item => {
@@ -220,7 +243,7 @@ export const ProactiveOrderEditor: React.FC<{
                       className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50">
                       <span className="min-w-0"><span className="font-medium text-mint-700 dark:text-mint-300">{item.name}</span>
                         <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span></span>
-                      <span className="text-xs text-muted-foreground">{added ? 'Đã thêm' : item.inBoq
+                      <span className="text-xs text-muted-foreground">{added ? 'Đã thêm' : stock ? (item.unit || '') : item.inBoq
                         ? <>BOQ <b className="text-leaf-700 dark:text-leaf-300">{fmt(item.boqQty, 3)}</b> · đã đặt {fmt(item.orderedQty, 3)}</>
                         : 'Ngoài BOQ'}</span></button></li>;
                   })}
@@ -229,7 +252,7 @@ export const ProactiveOrderEditor: React.FC<{
 
               {lines.length === 0
                 ? <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                  {projectId ? 'Chưa có vật tư. Bấm ô tìm ở trên để thêm.' : 'Chọn dự án nhận hàng rồi thêm vật tư.'}</p>
+                  {scopeReady ? 'Chưa có vật tư. Bấm ô tìm ở trên để thêm.' : 'Chọn dự án nhận hàng rồi thêm vật tư.'}</p>
                 : <ul className="space-y-3">{lines.map((l, i) => {
                   const stock = parseQty(l.stockQty);
                   const stockBad = stock == null || Number.isNaN(stock) || stock <= 0;
@@ -245,7 +268,7 @@ export const ProactiveOrderEditor: React.FC<{
                       <span className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] md:basis-auto">
                         <span className="font-semibold text-mint-700 dark:text-mint-300">{l.name}</span>
                         <span className="ml-2 text-xs text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></span>
-                      <Badge className={BOQ_TONE[status]}>{boqLabel(l, stockBad ? 0 : stock as number)}</Badge>
+                      {purpose === 'project' && <Badge className={BOQ_TONE[status]}>{boqLabel(l, stockBad ? 0 : stock as number)}</Badge>}
                       <button type="button" disabled={l.allocatedQty > 0} title={l.allocatedQty > 0 ? 'Dòng đã gắn nhu cầu — gỡ gắn ở đơn trước' : 'Bỏ vật tư'}
                         aria-label={`Bỏ ${l.name}`} onClick={() => setLines(cur => cur.filter(x => x.key !== l.key))}
                         className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-rose-700 disabled:opacity-40"><Trash2 size={15} /></button>
@@ -270,7 +293,7 @@ export const ProactiveOrderEditor: React.FC<{
                     </div>
                   </li>;
                 })}</ul>}
-              {projectId && lines.length > 0 && <button type="button" onClick={() => { searchRef.current?.focus(); setSearchOpen(true); }} className={`${secondaryBtn} bg-card`}><Plus size={15} />Thêm vật tư</button>}
+              {scopeReady && lines.length > 0 && <button type="button" onClick={() => { searchRef.current?.focus(); setSearchOpen(true); }} className={`${secondaryBtn} bg-card`}><Plus size={15} />Thêm vật tư</button>}
             </section>
 
             {totals.overBoq > 0 && <section className="space-y-1.5 rounded-2xl border border-amber-300 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/20">
@@ -291,7 +314,7 @@ export const ProactiveOrderEditor: React.FC<{
                 {expected && <p className="pt-1 text-xs text-muted-foreground">Cần giao trước {dateVi(expected)}</p>}
               </dl>
             </section>
-            <p className="text-xs text-muted-foreground">Mua dự trữ cho Kho Tổng (không gắn dự án) sẽ mở cùng phần Công nợ NCC, vì cần ghi công nợ cấp công ty và chi phí khi xuất cho dự án.</p>
+            {stock && <p className="text-xs text-muted-foreground">Đơn dự trữ: công nợ NCC ghi cấp công ty (module Tài chính, nhóm "Kho công ty"); chi phí vào dự án khi chuyển kho sang kho công trường, theo giá vốn sổ kho.</p>}
           </>}
   </Drawer>;
 };

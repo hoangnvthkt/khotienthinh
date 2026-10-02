@@ -249,3 +249,37 @@ Người kiêm nhiều vai cần chú ý: chị Tâm (ADMIN, thủ kho SMB, kế
 - Tổng `project_transactions` không đổi sau migration.
 
 **Còn lại ở K3a-2:** mua dự trữ Kho Tổng (công nợ cấp công ty, chi phí ghi khi xuất cho dự án) và mốc chi phí MISA (gắn nhãn chi phí trước mốc, chặn nhập trùng).
+
+## 10. K3a-2: mốc chi phí MISA, chặn nhập trùng, dự trữ Kho Tổng (02/10/2026)
+
+Migration `20261006150000_finance_k3a2_cost_cutover_stock.sql`.
+
+**Mốc chi phí theo dự án** (bảng `finance_project_cost_cutovers`; ban đầu SMB 01/08/2026, DA29 20/08/2026; Admin / Quản trị Tài chính sửa ở Thiết lập)
+- Chi phí vật tư Vioo tự sinh từ chứng từ NCC có ngày trước mốc:
+  - Số tiền về 0, số gốc lưu ở `project_transactions.misa_overlap_amount`, diễn giải thêm nhãn "[Đã có trong MISA]".
+  - Áp cho nhận hàng, trả NCC và ghi nợ từ đối soát HĐ.
+  - Không áp cho khoản chi tiền (dòng tiền thật).
+- Đổi mốc thì hệ thống tự tính lại cả hai chiều, có nhật ký.
+- Trường hợp chính cần chặn: đối chiếu nhận hàng tồn của SMB tháng 7 ghi lùi ngày.
+
+**Nhập file MISA vào sổ giao dịch dự án**
+- Chặn dòng vật tư có ngày từ mốc trở đi (`MISA_IMPORT_AFTER_CUTOVER`), và dòng trùng số chứng từ + số tiền + ngày + diễn giải (`MISA_IMPORT_DUPLICATE`).
+- Màn xem trước khi nhập đánh đỏ, bỏ chọn sẵn các dòng này và hiện lý do.
+
+**Mua dự trữ Kho Tổng** (đơn chủ động, mục đích "Dự trữ Kho Tổng", `source_mode = proactive_stock`)
+- Nhận vào kho loại GENERAL.
+- Công nợ NCC ghi **cấp công ty** (`metadata.scope = company`). Ràng buộc "phải gắn dự án" được nới cho trường hợp này, cả với khoản chi.
+- **Không** ghi chi phí dự án lúc nhận hàng hoặc trả hàng.
+
+**Chuyển kho giữa hai kho thuộc dự án khác nhau** (gồm Kho Tổng ↔ công trường)
+- Khi phiếu chuyển hoàn tất: dự án nhận ghi chi phí bằng giá vốn sổ kho; dự án gửi ghi giảm.
+- Phiếu chuyển bị hủy thì các dòng này về 0 kèm nhãn "[Phiếu chuyển đã hủy]".
+- Dòng có giá vốn bằng 0 được ghi nhật ký `transfer_cost_missing` để xử lý sau.
+
+**Đã kiểm trên production** (rollback):
+- Tổng sổ thu chi không đổi.
+- Mốc chi phí: về 0, khôi phục khi đổi ngày, về 0 lại.
+- Chặn nhập vật tư sau mốc và dòng trùng; chi phí chung vẫn nhập được.
+- Chỉ Quản trị Tài chính đổi được mốc.
+- Đơn dự trữ: lập → gửi → duyệt → nhận. Công nợ 132.000 đ cấp công ty, không có chi phí dự án, Kho Tổng tăng 100.
+- Chuyển 40 sang SMB → SMB +48.000 đ. Trả 10 về Kho Tổng → SMB −12.000 đ. Hủy phiếu → về 0.

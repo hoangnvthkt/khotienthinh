@@ -173,9 +173,9 @@ export const procurementInboxService = {
     return call<{ status: string; shortStockQty: number }>('close_procurement_po_short_v1', { p_input: input });
   },
   proactiveOptions() {
-    return call<{ projects: ProcurementProactiveProject[] }>('list_procurement_proactive_options_v1', {});
+    return call<{ projects: ProcurementProactiveProject[]; stockWarehouses: Array<{ id: string; name: string }> }>('list_procurement_proactive_options_v1', {});
   },
-  searchItems(projectId: string, search?: string) {
+  searchItems(projectId: string | null, search?: string) {
     return call<ProcurementCatalogItem[]>('search_procurement_items_v1', { p_project_id: projectId, p_search: search || null });
   },
   saveProactiveOrder(input: ProcurementProactiveSaveInput) {
@@ -317,15 +317,15 @@ export const PROACTIVE_REASON_LABELS: Record<ProcurementProactiveReason, { label
   min_stock: { label: 'Bù tồn tối thiểu', hint: 'Giữ mức tồn an toàn ở kho công trường' },
   other: { label: 'Khác', hint: 'Ghi rõ lý do' },
 };
-export interface ProcurementProactiveInfo { purpose: 'project'; reasonCode: ProcurementProactiveReason; reason?: string; overBoqReason?: string }
-export interface ProcurementBoqSnapshot { status: 'within' | 'over' | 'outside'; boqQty: number; orderedBefore: number }
+export interface ProcurementProactiveInfo { purpose: 'project' | 'stock'; reasonCode: ProcurementProactiveReason; reason?: string; overBoqReason?: string }
+export interface ProcurementBoqSnapshot { status: 'within' | 'over' | 'outside' | 'stock'; boqQty: number; orderedBefore: number }
 export interface ProcurementProactiveProject { id: string; code: string | null; name: string | null; status: string | null; warehouses: Array<{ id: string; name: string }> }
 export interface ProcurementCatalogItem {
   id: string; name: string; sku: string | null; unit: string | null; purchaseUnit: string | null; purchaseFactor: number | null;
   inBoq: boolean; boqQty: number; orderedQty: number;
 }
 export interface ProcurementProactiveSaveInput {
-  purchaseOrderId?: string; expectedRowVersion?: number; projectId: string; targetWarehouseId: string; vendorId: string;
+  purchaseOrderId?: string; expectedRowVersion?: number; purpose: 'project' | 'stock'; projectId: string | null; targetWarehouseId: string; vendorId: string;
   purchaseMode: 'single' | 'multiple'; expectedDeliveryDate?: string | null; vatRate: number; note?: string;
   reasonCode: ProcurementProactiveReason; reason?: string; overBoqReason?: string;
   items: Array<{ lineId?: string; itemId: string; stockQty: number; purchaseQty?: number; purchaseUnit?: string; unitPrice: number; note?: string }>;
