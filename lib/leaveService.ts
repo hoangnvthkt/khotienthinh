@@ -69,6 +69,59 @@ export interface LeaveSettings {
   saturdayIsWorkday: boolean;
 }
 
+export interface LeaveLedgerBalance {
+  year: number;
+  accruedDays: number;
+  usedPaidDays: number;
+  usedUnpaidDays: number;
+  carriedDays: number;
+  carryUsedDays: number;
+  carryExpiredDays: number;
+  carryExpiresOn: string | null;
+  /** Carried days still usable today (0 after 31/03). */
+  carryLeft: number;
+  availableDays: number;
+  pendingDays: number;
+}
+
+export type LeaveLedgerKind = 'opening' | 'accrual' | 'leave' | 'leave_cancel' | 'carry_in' | 'carry_expire' | 'adjust';
+
+export interface LeaveLedgerEntry {
+  id: string;
+  kind: LeaveLedgerKind;
+  days: number;
+  carryDays: number;
+  balanceAfter: number;
+  note: string | null;
+  createdAt: string;
+  leaveRequestId: string | null;
+  leaveCode: string | null;
+  leaveStart: string | null;
+  leaveEnd: string | null;
+  actorName: string | null;
+}
+
+export interface LeaveBalanceRow {
+  employeeId: string;
+  employeeCode: string | null;
+  fullName: string;
+  orgUnitName: string | null;
+  officialDate: string | null;
+  balance: LeaveLedgerBalance | null;
+}
+
+const toBalance = (value: unknown): LeaveLedgerBalance | null => {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  const num = (key: string) => Number(row[key]) || 0;
+  return {
+    year: num('year'), accruedDays: num('accruedDays'), usedPaidDays: num('usedPaidDays'), usedUnpaidDays: num('usedUnpaidDays'),
+    carriedDays: num('carriedDays'), carryUsedDays: num('carryUsedDays'), carryExpiredDays: num('carryExpiredDays'),
+    carryExpiresOn: (row.carryExpiresOn as string | null) ?? null, carryLeft: num('carryLeft'),
+    availableDays: num('availableDays'), pendingDays: num('pendingDays'),
+  };
+};
+
 export interface LeaveLogRow {
   id: string;
   action: string;
@@ -172,11 +225,33 @@ export const leaveService = {
     return (data || []).map(row => ({ id: row.id, action: row.action, actedBy: row.acted_by, comment: row.comment, createdAt: row.created_at }));
   },
 
-  async myAnnualBalance(employeeId: string, year: number): Promise<{ accrued: number; used: number } | null> {
-    const { data, error } = await supabase.from('hrm_leave_balances').select('"accruedDays","usedPaidDays"')
-      .eq('employeeId', employeeId).eq('year', year).limit(1).maybeSingle();
-    if (error) fail(error, 'Không tải được số phép.');
-    return data ? { accrued: Number(data.accruedDays) || 0, used: Number(data.usedPaidDays) || 0 } : null;
+  /** Balance with carried days and every add / deduct line (own ledger, or anyone's for HR). */
+  async ledger(employeeId: string, year: number): Promise<{ balance: LeaveLedgerBalance | null; entries: LeaveLedgerEntry[] }> {
+    const { data, error } = await supabase.rpc('get_hrm_leave_ledger', { p_employee_id: employeeId, p_year: year });
+    if (error) fail(error, 'Không tải được sổ phép.');
+    const value = (data || {}) as { balance?: unknown; entries?: Array<Record<string, unknown>> };
+    return {
+      balance: toBalance(value.balance),
+      entries: (value.entries || []).map(entry => ({
+        ...(entry as unknown as LeaveLedgerEntry),
+        days: Number(entry.days) || 0, carryDays: Number(entry.carryDays) || 0, balanceAfter: Number(entry.balanceAfter) || 0,
+      })),
+    };
+  },
+
+  async listBalances(year: number): Promise<LeaveBalanceRow[]> {
+    const { data, error } = await supabase.rpc('list_hrm_leave_balances', { p_year: year });
+    if (error) fail(error, 'Không tải được số phép toàn công ty.');
+    return ((data || []) as Array<Record<string, unknown>>).map(row => ({
+      ...(row as unknown as LeaveBalanceRow), balance: toBalance(row.balance),
+    }));
+  },
+
+  async adjustBalance(employeeId: string, year: number, remaining: number, reason: string): Promise<void> {
+    const { error } = await supabase.rpc('adjust_hrm_leave_balance', {
+      p_employee_id: employeeId, p_year: year, p_remaining: remaining, p_reason: reason,
+    });
+    if (error) fail(error, 'Không điều chỉnh được số phép.');
   },
 
   async preview(input: { type: string; start: string; end: string; startSession: LeaveSession; endSession: LeaveSession; minutes: number | null }): Promise<LeavePreview> {

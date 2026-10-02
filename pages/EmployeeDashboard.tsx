@@ -18,6 +18,7 @@ import { getTimeGreeting, getRandomQuote } from '../lib/funMessages';
 import { isChatEnabled } from '../lib/featureFlags';
 import { getEmployeeDashboardQuickLinks } from '../lib/hrmNavigation';
 import { buildRequestRoute } from '../lib/requestRoutes';
+import { leaveBalanceAvailable } from '../lib/leaveBalance';
 
 // ═══════════════════════════════════════════════════════
 //  EMPLOYEE DASHBOARD — Mobile-First Todo-List Style
@@ -92,7 +93,7 @@ const EmployeeDashboard: React.FC = () => {
     }, [leaveBalances, employee, thisYear]);
 
     const remainingLeave = myLeaveBalance
-        ? Math.max(0, (myLeaveBalance.accruedDays || 0) - (myLeaveBalance.usedPaidDays || 0))
+        ? Math.max(0, leaveBalanceAvailable(myLeaveBalance))
         : 0;
 
     // ─── My Leave Requests ───
