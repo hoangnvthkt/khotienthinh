@@ -6,6 +6,7 @@ import {
   BarChart3, Users, Calendar, DollarSign, Clock, Download,
   TrendingUp, AlertTriangle, Award, CalendarOff
 } from 'lucide-react';
+import { leaveBalanceAvailable } from '../../lib/leaveBalance';
 
 type ReportTab = 'overview' | 'attendance' | 'payroll' | 'leave';
 
@@ -92,7 +93,7 @@ const HrmReports: React.FC = () => {
         accrued: bal?.accruedDays || 0,
         usedPaid: bal?.usedPaidDays || 0,
         usedUnpaid: bal?.usedUnpaidDays || 0,
-        remaining: (bal?.accruedDays || 0) - (bal?.usedPaidDays || 0),
+        remaining: bal ? leaveBalanceAvailable(bal) : 0,
         totalUsed,
         monthUsed,
       };

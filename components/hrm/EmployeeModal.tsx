@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import HrmEmployeeOrganizationCard from './organization/HrmEmployeeOrganizationCard';
 import type { HrmEmployeeOrganizationSummary } from '../../types/hrmSharedCatalog';
+import { leaveBalanceAvailable } from '../../lib/leaveBalance';
 
 interface EmployeeModalProps {
     employee: Employee | null;
@@ -111,7 +112,7 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
     useEffect(() => {
         if (existingBalance) {
             setInitialDays(existingBalance.initialDays);
-            setRemainingDays(existingBalance.accruedDays - existingBalance.usedPaidDays);
+            setRemainingDays(leaveBalanceAvailable(existingBalance));
         }
     }, [existingBalance]);
 
@@ -191,7 +192,8 @@ const EmployeeModal: React.FC<EmployeeModalProps> = ({
 
             // Cập nhật leave balance nếu initialDays hoặc remainingDays thay đổi
             if (employee && existingBalance) {
-                const newAccruedDays = remainingDays + existingBalance.usedPaidDays;
+                // Carried days stay as they are; the difference goes on the accrued part (ledger: HR adjustment).
+                const newAccruedDays = existingBalance.accruedDays + (remainingDays - leaveBalanceAvailable(existingBalance));
                 const hasChanges = existingBalance.initialDays !== initialDays || existingBalance.accruedDays !== newAccruedDays;
                 if (hasChanges) {
                     updateHrmItem('hrm_leave_balances', { ...existingBalance, initialDays, accruedDays: newAccruedDays });

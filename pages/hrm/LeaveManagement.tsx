@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, CalendarOff, CheckCircle2, ChevronRight, Clock, Inbox, Plus, RefreshCw,
+  AlertTriangle, BookOpenCheck, CalendarOff, CheckCircle2, ChevronRight, Clock, Inbox, Plus, RefreshCw,
   Send, Settings2, UserCheck, Users, X, XCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -11,11 +11,13 @@ import { useReasonConfirm } from '../../context/ConfirmContext';
 import { canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
-  currentLeaveStep, LeaveLogRow, LeavePreview, LeaveRequestRow, leaveService, LeaveSession,
+  currentLeaveStep, LeaveLedgerBalance, LeaveLogRow, LeavePreview, LeaveRequestRow, leaveService, LeaveSession,
   LeaveSettings, LeaveStatus, LeaveTypeOption,
 } from '../../lib/leaveService';
+import LeaveLedgerDrawer from '../../components/hrm/LeaveLedgerDrawer';
+import LeaveBalancesPanel from '../../components/hrm/LeaveBalancesPanel';
 
-type Tab = 'mine' | 'approve' | 'all' | 'policy';
+type Tab = 'mine' | 'approve' | 'all' | 'balances' | 'policy';
 
 const STATUS: Record<LeaveStatus, { label: string; tone: string }> = {
   pending: { label: 'Chờ duyệt', tone: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' },
@@ -56,7 +58,8 @@ const LeaveManagement: React.FC = () => {
   const [requests, setRequests] = useState<LeaveRequestRow[]>([]);
   const [types, setTypes] = useState<LeaveTypeOption[]>([]);
   const [settings, setSettings] = useState<LeaveSettings | null>(null);
-  const [balance, setBalance] = useState<{ accrued: number; used: number } | null | undefined>(undefined);
+  const [balance, setBalance] = useState<LeaveLedgerBalance | null | undefined>(undefined);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('request'));
@@ -79,7 +82,7 @@ const LeaveManagement: React.FC = () => {
       setRequests(requestRows);
       setTypes(typeRows);
       setSettings(settingRow);
-      if (me) setBalance(await leaveService.myAnnualBalance(me.id, new Date().getFullYear()));
+      if (me) setBalance((await leaveService.ledger(me.id, new Date().getFullYear())).balance);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Không tải được đơn nghỉ.');
     } finally {
@@ -161,12 +164,13 @@ const LeaveManagement: React.FC = () => {
     await run(() => leaveService.cancel(request.id, reason), 'Đã hủy đơn');
   };
 
-  const remaining = balance ? balance.accrued - balance.used - pendingAnnual : null;
+  const remaining = balance ? balance.availableDays - pendingAnnual : null;
 
   const tabs: Array<{ id: Tab; label: string; count?: number; icon: typeof Inbox; show: boolean }> = [
     { id: 'mine', label: 'Đơn của tôi', count: mine.filter(request => request.status === 'pending').length, icon: CalendarOff, show: true },
     { id: 'approve', label: 'Chờ tôi duyệt', count: toApprove.length, icon: UserCheck, show: true },
     { id: 'all', label: 'Toàn công ty', icon: Users, show: isHr },
+    { id: 'balances', label: 'Số phép', icon: BookOpenCheck, show: isHr },
     { id: 'policy', label: 'Chính sách', icon: Settings2, show: isHr },
   ];
 
@@ -190,15 +194,19 @@ const LeaveManagement: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="rounded-2xl bg-mint-50 p-3 sm:p-4 dark:bg-mint-900/20">
+        <button type="button" onClick={() => me && setLedgerOpen(true)} disabled={!me} title="Xem sổ phép"
+          className="rounded-2xl bg-mint-50 p-3 sm:p-4 text-left dark:bg-mint-900/20">
           <p className="text-[10px] sm:text-[11px] font-black uppercase text-mint-700 dark:text-mint-300">Phép còn lại</p>
           <p className="text-lg sm:text-2xl font-black text-mint-700 dark:text-mint-300">
             {balance === undefined ? '…' : remaining === null ? 'Chưa có' : `${remaining.toLocaleString('vi-VN')} ngày`}
           </p>
           <p className="hidden text-[11px] text-muted-foreground sm:block">
-            {balance === null ? 'HR chưa thiết lập số phép năm nay cho bạn.' : pendingAnnual > 0 ? `Đã trừ ${pendingAnnual} ngày đang chờ duyệt` : 'Cộng 1 ngày vào mùng 1 hằng tháng'}
+            {balance === null ? 'HR chưa thiết lập số phép năm nay cho bạn.'
+              : balance && balance.carryLeft > 0 && balance.carryExpiresOn ? `Gồm ${balance.carryLeft.toLocaleString('vi-VN')} ngày phép tồn, dùng đến ${formatDate(balance.carryExpiresOn)}`
+              : pendingAnnual > 0 ? `Đã trừ ${pendingAnnual} ngày đang chờ duyệt` : 'Cộng 1 ngày vào mùng 1 hằng tháng'}
           </p>
-        </div>
+          {me && <p className="mt-1 text-[11px] font-bold text-mint-700 underline-offset-2 hover:underline dark:text-mint-300">Xem sổ phép</p>}
+        </button>
         <div className="rounded-2xl bg-amber-50 p-3 sm:p-4 dark:bg-amber-950/20">
           <p className="text-[10px] sm:text-[11px] font-black uppercase text-amber-700 dark:text-amber-300">Đơn đang chờ</p>
           <p className="text-lg sm:text-2xl font-black text-amber-700 dark:text-amber-300">{loading ? '…' : mine.filter(request => request.status === 'pending').length}</p>
@@ -221,7 +229,9 @@ const LeaveManagement: React.FC = () => {
 
       {loadError && <p className="text-sm font-bold text-rose-600">{loadError}</p>}
 
-      {tab === 'policy' ? (
+      {tab === 'balances' ? (
+        <LeaveBalancesPanel ownEmployeeId={me?.id} />
+      ) : tab === 'policy' ? (
         <PolicyPanel settings={settings} types={types} users={users.filter(item => item.isActive !== false)} canEdit={canManagePolicy} onSaved={load} />
       ) : (
         <div className="rounded-2xl border border-border bg-card">
@@ -284,6 +294,10 @@ const LeaveManagement: React.FC = () => {
           onReject={() => void reject(selected)}
           onCancel={() => void cancel(selected)}
         />
+      )}
+
+      {ledgerOpen && me && (
+        <LeaveLedgerDrawer employeeId={me.id} employeeName={me.fullName} year={new Date().getFullYear()} canAdjust={false} onClose={() => setLedgerOpen(false)} />
       )}
 
       {showCreate && me && (

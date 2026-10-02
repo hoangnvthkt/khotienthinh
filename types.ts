@@ -5802,6 +5802,10 @@ export interface LeaveBalance {
   usedPaidDays: number;      // Ngày phép đã sử dụng (có lương)
   usedUnpaidDays: number;    // Ngày phép không lương
   lastAccrualMonth: number;  // Tháng cuối cùng đã tích lũy (1-12)
+  carriedDays?: number;      // Phép tồn chuyển từ năm trước
+  carryExpiresOn?: string | null; // Phép tồn dùng đến ngày này (31/03)
+  carryUsedDays?: number;    // Phần phép tồn đã dùng
+  carryExpiredDays?: number; // Phần phép tồn hết hạn chưa dùng
   createdAt?: string;
 }
 

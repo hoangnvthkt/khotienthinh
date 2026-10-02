@@ -103,7 +103,7 @@ const SUPABASE_PROJECTIONS: Readonly<Record<string, string>> = Object.freeze({
   "hrm_employee_types": "id,name,created_at",
   "hrm_holidays": "id,name,date,year,\"createdAt\"",
   "hrm_labor_contracts": "id,employee_id,contract_number,type,status,effective_from,effective_to,base_salary,allowance_position,allowance_other,signed_by,note,created_at,updated_at,created_by,updated_by",
-  "hrm_leave_balances": "id,\"employeeId\",year,\"initialDays\",\"monthlyAccrual\",\"accruedDays\",\"usedPaidDays\",\"usedUnpaidDays\",\"lastAccrualMonth\",\"createdAt\"",
+  "hrm_leave_balances": "id,\"employeeId\",year,\"initialDays\",\"monthlyAccrual\",\"accruedDays\",\"usedPaidDays\",\"usedUnpaidDays\",\"lastAccrualMonth\",\"carriedDays\",\"carryExpiresOn\",\"carryUsedDays\",\"carryExpiredDays\",\"createdAt\"",
   "hrm_leave_logs": "id,leave_request_id,action,acted_by,comment,created_at",
   "hrm_leave_requests": "id,\"employeeId\",type,\"startDate\",\"endDate\",\"totalDays\",reason,status,\"approvedBy\",\"approvedAt\",\"rejectionReason\",\"createdAt\",\"isPaid\",code,approvers,priority,\"dueDate\",minutes,subtype,start_session,end_session",
   "hrm_offices": "id,name,address,created_at,latitude,longitude,\"checkInRadius\",\"managerId\",\"checkInTime\",\"checkOutTime\"",

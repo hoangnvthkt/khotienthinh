@@ -8,6 +8,7 @@ import {
   Cake, FileSignature, TrendingUp, TrendingDown, ArrowRight,
   CheckCircle, XCircle, CalendarOff, MapPin, Award
 } from 'lucide-react';
+import { leaveBalanceAvailable } from '../../lib/leaveBalance';
 
 const HrmDashboard: React.FC = () => {
   const {
@@ -91,7 +92,7 @@ const HrmDashboard: React.FC = () => {
     ).length;
     const lowBalance = activeEmployees.filter(emp => {
       const bal = leaveBalances.find(b => b.employeeId === emp.id && b.year === currentYear);
-      return bal && (bal.accruedDays - bal.usedPaidDays) <= 1;
+      return bal && leaveBalanceAvailable(bal) <= 1;
     });
     return { pending, approvedThisMonth, lowBalance };
   }, [leaveRequests, activeEmployees, leaveBalances, currentMonth, currentYear]);
