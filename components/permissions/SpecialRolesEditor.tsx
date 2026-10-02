@@ -141,7 +141,7 @@ const SpecialRolesEditor: React.FC<SpecialRolesEditorProps> = ({ userId }) => {
     <section className="space-y-3 rounded-2xl border border-indigo-100 bg-white p-4">
       <div>
         <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-indigo-700">
-          <ShieldCheck size={14} /> Vai trò đặc biệt
+          <ShieldCheck size={14} /> ② Vai trò đặc biệt
         </div>
         <p className="mt-1 text-[11px] text-slate-500">
           Chỉ vài người cần: mở dữ liệu nhân sự nhạy cảm (hồ sơ, lương) hoặc quyền kiểm toán. Thay đổi ở đây

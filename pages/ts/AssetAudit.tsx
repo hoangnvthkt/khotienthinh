@@ -483,8 +483,15 @@ const AssetAudit: React.FC = () => {
             {/* ==================== AUDIT TAB ==================== */}
             {activeView === 'audit' && (
                 <>
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {/* Stats: one compact line on phones */}
+                    <div className="md:hidden flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-xs font-bold dark:border-slate-800 dark:bg-slate-900">
+                        <span className="text-slate-800 dark:text-white">Đã kiểm {stats.audited}<span className="text-slate-400">/{assets.length}</span></span>
+                        <span className="text-emerald-600">Tốt {stats.good}</span>
+                        <span className="text-orange-600">Hư hỏng {stats.damaged}</span>
+                        <span className="text-red-600">Mất {stats.lost}</span>
+                        <span className="text-blue-600">Sai vị trí {stats.wrongLocation}</span>
+                    </div>
+                    <div className="hidden md:grid grid-cols-5 gap-4">
                         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2">
                                 <ClipboardCheck size={16} className="text-slate-400" />
