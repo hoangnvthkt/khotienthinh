@@ -372,7 +372,7 @@ Migration `20261008090000_finance_k3b_payment_requests.sql`. Mockup đã duyệt
 
 ## 13. K3b-2: Mua hàng thấy tình trạng thanh toán PO (02/10/2026)
 
-Migration `20261008100000_finance_k3b2_po_payment_status.sql`, RPC `get_procurement_po_payment_status_v1`.
+Migration `20261008133100_finance_k3b2_po_payment_status.sql`, RPC `get_procurement_po_payment_status_v1`.
 - **Nguồn số liệu:** mỗi PO tổng hợp từ công nợ sinh lúc kho nhận hàng (gồm cả đối chiếu lùi ngày). Gồm: đã ghi nợ (trừ giảm trừ), đã chi, còn nợ, đang trong đề nghị chi, hạn gần nhất, quá hạn hay chưa.
 - **Trạng thái:** Chưa thanh toán / TT một phần / Đã thanh toán, có nhãn "quá hạn" nhấp nháy.
   - PO chưa phát sinh nợ trong Vioo (chưa nhận hàng, hoặc nhận từ trước khi có công nợ tự sinh) thì **không hiện nhãn**, không coi là 0.

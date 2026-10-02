@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261008100000_finance_k3b2_po_payment_status.sql'), 'utf8').toLowerCase();
+const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261008133100_finance_k3b2_po_payment_status.sql'), 'utf8').toLowerCase();
 
 describe('K3b-2 — tình trạng thanh toán PO cho Mua hàng', () => {
   it('derives status from receipt payables of the PO only', () => {
