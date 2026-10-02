@@ -409,7 +409,14 @@ const TOOL_SOURCES: Record<string, { title: string; fileName: string }> = {
   ai_tool_executive_dashboard: { title: 'Dashboard tổng hợp', fileName: 'Hệ thống Quản lý Vioo ERP' },
 };
 
+const HR_ONLY_TOOL_MESSAGE = 'Thông tin nhân sự của người khác chỉ HR / HR Manage được tra cứu. Anh/chị xem dữ liệu của mình trong mục Hồ sơ của tôi, Chấm công và Nghỉ phép.';
+
 const TOOL_ACCESS: Record<string, { requiresJwt?: boolean; permissionCodes: string[]; message: string }> = {
+  // These tools run with the service role and return other people's personal data
+  // (date of birth, marital status, attendance), so they follow the HR role, not ai.assistant.use.
+  ai_tool_employee_summary: { requiresJwt: true, permissionCodes: ['hrm.employee.view_sensitive'], message: HR_ONLY_TOOL_MESSAGE },
+  ai_tool_employee_search: { requiresJwt: true, permissionCodes: ['hrm.employee.view_sensitive'], message: HR_ONLY_TOOL_MESSAGE },
+  ai_tool_attendance_report: { requiresJwt: true, permissionCodes: ['hrm.employee.view_sensitive'], message: HR_ONLY_TOOL_MESSAGE },
   ai_tool_cost_template_summary: {
     requiresJwt: true,
     permissionCodes: ['contract.cost_library.manage', 'system.tender_ai.manage'],

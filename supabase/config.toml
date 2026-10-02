@@ -35,6 +35,13 @@ verify_jwt = false
 import_map = "./functions/process-work-notifications/deno.json"
 entrypoint = "./functions/process-work-notifications/index.ts"
 
+[functions.hrm-checkin-photo-retention]
+enabled = true
+# Daily cron worker; authenticates with the Vault-held x-web-push-secret, never an end-user JWT.
+verify_jwt = false
+import_map = "./functions/hrm-checkin-photo-retention/deno.json"
+entrypoint = "./functions/hrm-checkin-photo-retention/index.ts"
+
 [functions.work-attachments]
 enabled = true
 # Validates end-user JWT with Auth.getUser; cleanup requires the Vault-held secret.

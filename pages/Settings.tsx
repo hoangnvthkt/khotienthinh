@@ -32,6 +32,7 @@ import SettingsRoleTemplates from './settings/SettingsRoleTemplates';
 import SettingsProjectRoomTemplates from './settings/SettingsProjectRoomTemplates';
 import SettingsUserPermissionTemplates from './settings/SettingsUserPermissionTemplates';
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
+import SettingsAttendanceLocations from './settings/SettingsAttendanceLocations';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -51,7 +52,7 @@ import {
   getLocalInventoryItemDeleteBlockers,
 } from '../lib/inventoryItemDeleteGuard';
 import { canAccessSettingsFeature, canManageSettingsFeature, hasAnySettingsManagementFeature, type SettingsFeatureId } from '../lib/settingsPermissions';
-import { canPerform } from '../lib/permissions/permissionService';
+import { canPerform, canPerformHrmTemplatePermission } from '../lib/permissions/permissionService';
 import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabilities';
 import { canAccessRoute } from '../lib/routeAccess';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
@@ -123,6 +124,10 @@ const Settings: React.FC = () => {
   const canManageBusinessRoles = canPerform(currentUser, 'system.authorization.manage_roles');
   const hrmSharedCatalogCapabilities = getHrmSharedCatalogCapabilities(currentUser);
   const canViewHrmSharedCatalog = canAccessRoute(currentUser, '/settings/hrm-shared-catalog');
+  const canEditAttendanceLocations = canPerformHrmTemplatePermission(currentUser, 'hrm.master_data.manage');
+  const canViewAttendanceLocations = isSettingsAdmin
+    || canEditAttendanceLocations
+    || canPerformHrmTemplatePermission(currentUser, 'hrm.employee.view_sensitive');
   const hasSettingsManagementAccess = hasAnySettingsManagementFeature(currentUser)
     || canManageBusinessRoles
     || canViewHrmSharedCatalog;
@@ -1111,6 +1116,7 @@ const Settings: React.FC = () => {
     { id: 'work-groups', label: 'Nhóm làm việc', icon: Users },
     { id: 'loss-norms', label: 'Định mức hao hụt', icon: TrendingDown },
     { id: 'hrm-master-data', label: 'Danh mục dùng chung HRM', icon: GitBranch },
+    { id: 'attendance-locations', label: 'Địa điểm chấm công', icon: MapPin },
     { id: 'users', label: 'Người dùng', icon: Users },
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
@@ -1129,9 +1135,12 @@ const Settings: React.FC = () => {
       ? isSettingsAdmin
       : tab.id === 'hrm-master-data'
         ? canViewHrmSharedCatalog
-        : canOpenSettingsFeature(tab.id as SettingsFeatureId));
+        : tab.id === 'attendance-locations'
+          ? canViewAttendanceLocations
+          : canOpenSettingsFeature(tab.id as SettingsFeatureId));
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
   const activeFeatureReadOnly = activeSettingsTab !== 'account'
+    && activeSettingsTab !== 'attendance-locations'
     && activeSettingsTab !== 'release-notes'
     && activeSettingsTab !== 'role-templates'
     && activeSettingsTab !== 'project-room-templates'
@@ -1820,6 +1829,10 @@ const Settings: React.FC = () => {
               actorId={currentUser.id}
               capabilities={hrmSharedCatalogCapabilities}
             />
+          )}
+
+          {activeSettingsTab === 'attendance-locations' && (
+            <SettingsAttendanceLocations canEdit={canEditAttendanceLocations} />
           )}
 
           {activeSettingsTab === '__legacy-hrm-master-data' && (
