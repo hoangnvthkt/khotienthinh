@@ -14,7 +14,10 @@
 -- * Giá vốn chuyển kho (02/10): bình quân gia quyền của kho gửi tại lúc xuất, như phần mềm kế toán; kho đích nhận
 --   đúng giá đó, hàng trả về kho gửi cũng vậy. Kho gửi chưa có giá trị tồn → dùng đơn giá trên phiếu (ghi nguồn giá).
 --   Chi phí dự án chỉ tính phần hàng thực nhận ở kho đích (cả luồng xuất–nhận 2 bước); hàng mất dọc đường ở lại dự án gửi.
---   Phiếu chuyển bị hủy sau khi hoàn tất → các dòng chi phí đó về 0 kèm nhãn. Dòng giá vốn bằng 0 ghi nhật ký để xử lý.
+--   Phiếu chuyển bị hủy sau khi hoàn tất → các dòng chi phí đó về 0 kèm nhãn.
+-- * Chốt chặn (02/10, khi tồn kho Vioo chưa sạch): dòng giá 0, kho gửi có hàng giá trị 0 / hết hàng còn giá trị,
+--   kho gửi chưa có giá trị tồn, hoặc giá lệch quá 3 lần giá mua gần nhất → KHÔNG tự ghi chi phí; phiếu chờ kế toán
+--   xác nhận ở Tài chính (gợi ý = SL × giá mua gần nhất; khác gợi ý phải ghi lý do; 0 = không tính). Báo người có quyền Ghi nhận.
 -- ===========================================================================
 
 -- ---------------------------------------------------------------------------
@@ -181,39 +184,138 @@ begin
   on conflict (source_ref) do nothing;
 end $$;
 
+-- Dòng hàng thực nhận ở kho đích của một phiếu chuyển + kiểm tra giá vốn (chốt chặn khi tồn kho chưa sạch).
+-- reason: no_value (giá 0) | dirty_stock (kho gửi có hàng giá trị 0 / hết hàng còn giá trị) | no_average (kho gửi chưa có giá trị tồn)
+--         | price_outlier (lệch quá 3 lần giá mua gần nhất). suggested = qty × giá mua gần nhất khi dòng bị chặn.
+create function app_private.finance_transfer_cost_lines(p_tx text)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  with tx as (select * from public.transactions where id = p_tx),
+  rec as (
+    select le.material_id, sum(le.quantity_in) qty, sum(le.quantity_in * le.unit_price) val
+    from public.inventory_ledger_entries le join tx on le.warehouse_id = tx.target_warehouse_id
+    where le.source_code = p_tx and le.transaction_type = 'transfer_receipt' and le.movement_direction = 'in'
+    group by le.material_id),
+  iss as (
+    select le.material_id, bool_or(coalesce(le.metadata->>'priceSource', 'document') <> 'weighted_average') no_avg,
+      bool_or(coalesce((le.metadata->>'dirtyStock')::boolean, false)) dirty
+    from public.inventory_ledger_entries le
+    where le.source_code = p_tx and le.transaction_type = 'transfer_issue' group by le.material_id),
+  x as (
+    select r.*, i.name item_name, i.unit, coalesce(s.no_avg, true) no_avg, coalesce(s.dirty, false) dirty,
+      coalesce((select le.unit_price from public.inventory_ledger_entries le
+        where le.material_id = r.material_id and le.transaction_type = 'purchase_receipt' and le.unit_price > 0
+        order by le.transaction_date desc, le.created_at desc limit 1), nullif(i.price_in, 0)) ref_price
+    from rec r left join iss s on s.material_id = r.material_id left join public.items i on i.id = r.material_id),
+  y as (
+    select x.*, case when x.val <= 0 then 'no_value' when x.dirty then 'dirty_stock' when x.no_avg then 'no_average'
+      when x.ref_price is not null and (x.val / x.qty > 3 * x.ref_price or x.val / x.qty < x.ref_price / 3) then 'price_outlier' end reason
+    from x where x.qty > 0)
+  select coalesce(jsonb_agg(jsonb_build_object('itemId', material_id, 'itemName', coalesce(item_name, material_id), 'unit', unit,
+    'qty', round(qty, 4), 'unitPrice', round(val / qty, 2), 'amount', round(val, 2), 'refPrice', round(ref_price, 2), 'reason', reason,
+    'suggested', case when reason is null then round(val, 2) when ref_price is not null then round(qty * ref_price, 2) end) order by item_name), '[]'::jsonb)
+  from y;
+$$;
+
 create function app_private.trg_finance_transfer_cost()
 returns trigger language plpgsql security definer set search_path = '' as $$
-declare v_src text; v_tgt text; v_value numeric; v_zero integer; v_date text := left(new.date::text, 10); v_code text;
+declare v_src text; v_tgt text; v_lines jsonb; v_value numeric; v_date text := left(new.date::text, 10); v_code text;
+  v_actor text := coalesce(new.approver_id, new.requester_id)::text;
 begin
   if new.type::text <> 'TRANSFER' then return new; end if;
   if new.status::text = 'COMPLETED' and (tg_op = 'INSERT' or old.status is distinct from new.status) then
     v_src := app_private.finance_warehouse_project(new.source_warehouse_id);
     v_tgt := app_private.finance_warehouse_project(new.target_warehouse_id);
     if v_src is not distinct from v_tgt then return new; end if;
-    select coalesce(sum(le.amount), 0), count(*) filter (where coalesce(le.amount, 0) = 0) into v_value, v_zero
-    from public.inventory_ledger_entries le
-    where le.source_code = new.id and le.transaction_type = 'transfer_receipt' and le.movement_direction = 'in'
-      and le.warehouse_id = new.target_warehouse_id;
-    v_code := 'Chuyển kho ' || coalesce((select name from public.warehouses where id = new.source_warehouse_id), '?')
-      || ' → ' || coalesce((select name from public.warehouses where id = new.target_warehouse_id), '?') || ' (' || new.id || ')';
-    if v_value > 0 then
-      if v_tgt is not null then
-        perform app_private.finance_insert_project_cost(v_tgt, v_value, 'Nhận vật tư: ' || v_code, v_date, 'stock_transfer:' || new.id || ':in', coalesce(new.approver_id, new.requester_id)::text);
-      end if;
-      if v_src is not null then
-        perform app_private.finance_insert_project_cost(v_src, -v_value, 'Chuyển vật tư đi: ' || v_code, v_date, 'stock_transfer:' || new.id || ':out', coalesce(new.approver_id, new.requester_id)::text);
-      end if;
-    end if;
-    if v_zero > 0 then
+    v_lines := app_private.finance_transfer_cost_lines(new.id);
+    if jsonb_array_length(v_lines) = 0 then return new; end if;
+    if exists (select 1 from jsonb_array_elements(v_lines) l where l->>'reason' is not null) then
+      -- Chốt chặn: giá vốn chưa tin được → không tự ghi chi phí; chờ kế toán xác nhận ở Tài chính.
       insert into public.finance_events (entity_type, entity_id, action, payload)
-      values ('stock_transfer', new.id, 'transfer_cost_missing', jsonb_build_object('lines', v_zero, 'sourceProject', v_src, 'targetProject', v_tgt));
+      values ('stock_transfer', new.id, 'transfer_cost_review', jsonb_build_object('lines', v_lines, 'sourceProject', v_src, 'targetProject', v_tgt));
+      insert into public.notifications (user_id, type, category, title, message, body, severity, icon, link, source_type, source_id,
+        priority, push_enabled, metadata, delivery_reason)
+      select u.id::text, 'info', 'finance', 'Chuyển kho chờ xác nhận giá vốn', 'Phiếu ' || new.id || ': giá vốn kho gửi chưa tin được, cần kế toán xác nhận chi phí dự án.',
+        'Phiếu ' || new.id || ': giá vốn kho gửi chưa tin được, cần kế toán xác nhận chi phí dự án.', 'warning', '🏦', '/#/finance?section=transfers',
+        'finance_transfer_review', 'finance_transfer_review:' || new.id, 'normal', true, '{}'::jsonb, 'responsible'
+      from public.users u where coalesce(u.is_active, true)
+        and (u.role = 'ADMIN' or app_private.has_permission(u.id, 'system.finance.record'));
+      return new;
     end if;
+    select sum((l->>'amount')::numeric) into v_value from jsonb_array_elements(v_lines) l;
+    perform app_private.finance_post_transfer_cost(new, v_src, v_tgt, v_value, v_actor);
   elsif tg_op = 'UPDATE' and old.status::text = 'COMPLETED' and new.status::text <> 'COMPLETED' then
     update public.project_transactions set amount = 0, description = '[Phiếu chuyển đã hủy] ' || description
     where source_ref in ('stock_transfer:' || new.id || ':in', 'stock_transfer:' || new.id || ':out') and amount <> 0;
   end if;
   return new;
 end $$;
+
+create function app_private.finance_post_transfer_cost(p_tx public.transactions, p_src text, p_tgt text, p_value numeric, p_actor text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare v_code text := 'Chuyển kho ' || coalesce((select name from public.warehouses where id = p_tx.source_warehouse_id), '?')
+  || ' → ' || coalesce((select name from public.warehouses where id = p_tx.target_warehouse_id), '?') || ' (' || p_tx.id || ')';
+  v_date text := left(p_tx.date::text, 10);
+begin
+  if coalesce(p_value, 0) <= 0 then return; end if;
+  if p_tgt is not null then
+    perform app_private.finance_insert_project_cost(p_tgt, p_value, 'Nhận vật tư: ' || v_code, v_date, 'stock_transfer:' || p_tx.id || ':in', p_actor);
+  end if;
+  if p_src is not null then
+    perform app_private.finance_insert_project_cost(p_src, -p_value, 'Chuyển vật tư đi: ' || v_code, v_date, 'stock_transfer:' || p_tx.id || ':out', p_actor);
+  end if;
+end $$;
+
+create function public.list_finance_transfer_reviews_v1()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not app_private.finance_can('view') then raise exception using errcode = '42501', message = 'FINANCE_VIEW_DENIED'; end if;
+  return coalesce((select jsonb_agg(r order by r->>'date' desc) from (
+    select jsonb_build_object('transactionId', t.id, 'date', left(t.date::text, 10), 'note', t.note,
+      'sourceWarehouse', ws.name, 'targetWarehouse', wt.name,
+      'sourceProject', (select coalesce(p.code, p.name) from public.projects p where p.id = e.payload->>'sourceProject'),
+      'targetProject', (select coalesce(p.code, p.name) from public.projects p where p.id = e.payload->>'targetProject'),
+      'lines', l.lines, 'ledgerValue', (select sum((x->>'amount')::numeric) from jsonb_array_elements(l.lines) x),
+      'suggested', case when exists (select 1 from jsonb_array_elements(l.lines) x where x->>'suggested' is null) then null
+        else (select sum((x->>'suggested')::numeric) from jsonb_array_elements(l.lines) x) end,
+      'flaggedAt', e.created_at, 'canConfirm', app_private.finance_can('record')) r
+    from public.finance_events e
+    join public.transactions t on t.id = e.entity_id and t.status::text = 'COMPLETED'
+    left join public.warehouses ws on ws.id = t.source_warehouse_id left join public.warehouses wt on wt.id = t.target_warehouse_id
+    cross join lateral (select app_private.finance_transfer_cost_lines(t.id) lines) l
+    where e.entity_type = 'stock_transfer' and e.action = 'transfer_cost_review'
+      and not exists (select 1 from public.finance_events c where c.entity_type = 'stock_transfer' and c.entity_id = e.entity_id and c.action = 'transfer_cost_confirm')
+  ) q), '[]'::jsonb);
+end $$;
+
+-- Kế toán xác nhận chi phí của phiếu chuyển bị chặn: số tiền gợi ý = SL × giá mua gần nhất; khác gợi ý phải ghi lý do; 0 = không tính.
+create function public.confirm_finance_transfer_cost_v1(p_input jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_actor uuid := public.current_app_user_id(); v_tx public.transactions%rowtype; v_ev public.finance_events%rowtype;
+  v_amount numeric := round(nullif(p_input->>'amount', '')::numeric, 2); v_reason text := nullif(btrim(p_input->>'reason'), '');
+  v_lines jsonb; v_suggested numeric;
+begin
+  if not app_private.finance_can('record') then raise exception using errcode = '42501', message = 'FINANCE_RECORD_DENIED'; end if;
+  select * into v_tx from public.transactions where id = p_input->>'transactionId' for update;
+  if not found or v_tx.type::text <> 'TRANSFER' or v_tx.status::text <> 'COMPLETED' then
+    raise exception using errcode = '22023', message = 'FINANCE_TRANSFER_NOT_COMPLETED'; end if;
+  select * into v_ev from public.finance_events where entity_type = 'stock_transfer' and entity_id = v_tx.id and action = 'transfer_cost_review'
+    order by created_at desc limit 1;
+  if not found or exists (select 1 from public.finance_events where entity_type = 'stock_transfer' and entity_id = v_tx.id and action = 'transfer_cost_confirm')
+    or exists (select 1 from public.project_transactions where source_ref in ('stock_transfer:' || v_tx.id || ':in', 'stock_transfer:' || v_tx.id || ':out')) then
+    raise exception using errcode = '22023', message = 'FINANCE_TRANSFER_ALREADY_CONFIRMED'; end if;
+  if v_amount is null or v_amount < 0 then raise exception using errcode = '22023', message = 'FINANCE_AMOUNT_INVALID'; end if;
+  v_lines := app_private.finance_transfer_cost_lines(v_tx.id);
+  v_suggested := case when exists (select 1 from jsonb_array_elements(v_lines) x where x->>'suggested' is null) then null
+    else (select sum((x->>'suggested')::numeric) from jsonb_array_elements(v_lines) x) end;
+  if v_reason is null and (v_suggested is null or abs(v_amount - v_suggested) > 1) then
+    raise exception using errcode = '22023', message = 'FINANCE_REASON_REQUIRED'; end if;
+  perform app_private.finance_post_transfer_cost(v_tx, v_ev.payload->>'sourceProject', v_ev.payload->>'targetProject', v_amount, v_actor::text);
+  insert into public.finance_events (entity_type, entity_id, action, actor_id, reason, after, payload)
+  values ('stock_transfer', v_tx.id, 'transfer_cost_confirm', v_actor, v_reason, jsonb_build_object('amount', v_amount),
+    jsonb_build_object('suggested', v_suggested, 'lines', v_lines));
+  return jsonb_build_object('transactionId', v_tx.id, 'amount', v_amount, 'suggested', v_suggested);
+end $$;
+
 create trigger zz_trg_finance_transfer_cost after insert or update on public.transactions
   for each row execute function app_private.trg_finance_transfer_cost();
 
@@ -235,6 +337,7 @@ declare
   v_price numeric := coalesce(p_unit_price, 0);
   v_avg numeric;
   v_price_source text;
+  v_dirty boolean := false;
 begin
   if p_qty is null or p_qty <= 0 then
     raise exception 'ledger quantity must be positive';
@@ -264,6 +367,9 @@ begin
       then round(sum(b.total_value) / sum(b.on_hand_qty), 6) end into v_avg
     from public.inventory_balances b where b.material_id = p_material_id and b.warehouse_id = p_warehouse_id;
     v_price_source := case when v_avg is not null then 'weighted_average' else 'document' end;
+    -- Tồn có hàng mà giá trị 0, hoặc hết hàng mà còn giá trị → giá bình quân chưa tin được.
+    select exists (select 1 from public.inventory_balances b where b.material_id = p_material_id and b.warehouse_id = p_warehouse_id
+      and ((b.on_hand_qty > 0 and b.total_value <= 0) or (b.on_hand_qty <= 0 and abs(b.total_value) > 1))) into v_dirty;
   elsif p_transaction_type = 'transfer_receipt' and p_direction = 'in' and nullif(p_source_code, '') is not null then
     select case when sum(le.quantity_out) > 0
       then round(sum(le.quantity_out * le.unit_price) / sum(le.quantity_out), 6) end into v_avg
@@ -336,7 +442,8 @@ begin
     v_balance_after_qty, v_balance_after_value,
     p_description,
     coalesce(p_metadata, '{}'::jsonb) || case when v_price_source is null then '{}'::jsonb
-      else jsonb_build_object('priceSource', v_price_source, 'documentPrice', coalesce(p_unit_price, 0)) end,
+      else jsonb_build_object('priceSource', v_price_source, 'documentPrice', coalesce(p_unit_price, 0))
+        || case when v_dirty then jsonb_build_object('dirtyStock', true) else '{}'::jsonb end end,
     p_created_by, p_approved_by
   );
 
@@ -805,9 +912,12 @@ $$;
 
 revoke all on function app_private.finance_text_date(text), app_private.finance_is_vioo_supplier_cost(text, text),
   app_private.trg_project_transaction_finance_guard(), app_private.trg_finance_company_scope(), app_private.finance_warehouse_project(text),
-  app_private.finance_insert_project_cost(text, numeric, text, text, text, text), app_private.trg_finance_transfer_cost()
+  app_private.finance_insert_project_cost(text, numeric, text, text, text, text), app_private.trg_finance_transfer_cost(),
+  app_private.finance_transfer_cost_lines(text), app_private.finance_post_transfer_cost(public.transactions, text, text, numeric, text)
   from public, anon, authenticated;
-revoke all on function public.get_finance_cost_cutovers_v1(), public.save_finance_cost_cutover_v1(jsonb) from public, anon;
-grant execute on function public.get_finance_cost_cutovers_v1(), public.save_finance_cost_cutover_v1(jsonb) to authenticated;
+revoke all on function public.get_finance_cost_cutovers_v1(), public.save_finance_cost_cutover_v1(jsonb),
+  public.list_finance_transfer_reviews_v1(), public.confirm_finance_transfer_cost_v1(jsonb) from public, anon;
+grant execute on function public.get_finance_cost_cutovers_v1(), public.save_finance_cost_cutover_v1(jsonb),
+  public.list_finance_transfer_reviews_v1(), public.confirm_finance_transfer_cost_v1(jsonb) to authenticated;
 
 notify pgrst, 'reload schema';

@@ -26,7 +26,14 @@ describe('K3a-2 — mốc chi phí MISA, chặn nhập trùng, dự trữ Kho T�
   it('values transfers at the source weighted average and costs only goods received at the target', () => {
     expect(sql).toContain("v_price_source := case when v_avg is not null then 'weighted_average' else 'document' end;");
     expect(sql).toContain("le.transaction_type = 'transfer_issue' and le.source_code = p_source_code and le.material_id = p_material_id");
-    expect(sql).toContain("and le.warehouse_id = new.target_warehouse_id;");
+    expect(sql).toContain("join tx on le.warehouse_id = tx.target_warehouse_id");
+  });
+
+  it('holds suspicious transfer costs for accountant confirmation instead of posting them', () => {
+    expect(sql).toContain("x.val / x.qty > 3 * x.ref_price or x.val / x.qty < x.ref_price / 3) then 'price_outlier'");
+    expect(sql).toContain("values ('stock_transfer', new.id, 'transfer_cost_review'");
+    expect(sql).toContain("message = 'finance_transfer_already_confirmed'");
+    expect(sql).toContain("if v_reason is null and (v_suggested is null or abs(v_amount - v_suggested) > 1) then");
   });
 });
 

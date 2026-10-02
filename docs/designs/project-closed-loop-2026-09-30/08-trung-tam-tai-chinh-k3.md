@@ -281,6 +281,15 @@ Migration `20261006150000_finance_k3a2_cost_cutover_stock.sql`.
   - Phiếu nhập thép CT Xin Hai Vina ghi tổng tiền vào ô đơn giá (409 triệu/cây).
   - Nguyên nhân: phiếu xuất dùng vẫn lấy giá danh mục, không lấy giá bình quân.
   - Cần làm sạch tồn đầu kỳ theo MISA trước khi tin giá bình quân.
+- **Chốt chặn (chủ SP duyệt 02/10):** phiếu chuyển không tự ghi chi phí dự án nếu có một trong các trường hợp:
+  - giá vốn bằng 0;
+  - tồn ở kho gửi chưa sạch;
+  - kho gửi chưa có giá trị tồn;
+  - giá lệch quá 3 lần so với giá mua gần nhất.
+- Những phiếu này hiện ở Tài chính → "Chuyển kho chờ xác nhận giá vốn" và hệ thống báo cho người có quyền Ghi nhận.
+  - Số tiền gợi ý = SL × giá mua gần nhất. Sửa khác gợi ý phải ghi lý do; chọn "Không tính" thì cũng phải có lý do.
+  - Mỗi lần xác nhận ghi nhật ký `transfer_cost_confirm`.
+- **Việc tiếp theo đã duyệt:** làm sạch tồn kho đầu kỳ theo bảng tổng hợp tồn MISA tại 30/09 và chuyển phiếu xuất dùng sang giá bình quân.
 - Phiếu chuyển bị hủy thì các dòng này về 0 kèm nhãn "[Phiếu chuyển đã hủy]".
 - Dòng có giá vốn bằng 0 được ghi nhật ký `transfer_cost_missing` để xử lý sau.
 
