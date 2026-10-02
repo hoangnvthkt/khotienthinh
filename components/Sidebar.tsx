@@ -9,7 +9,7 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -52,6 +52,7 @@ const MODULE_CONFIG = [
   { key: 'WF' as const, icon: GitBranch, label: 'Quy trình', shortLabel: 'QT', route: '/wf', gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
   { key: 'DA' as const, icon: BarChart3, label: 'Dự án', shortLabel: 'DA', route: '/da', gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/25' },
   { key: 'PROCUREMENT' as const, icon: ShoppingCart, label: 'Mua hàng', shortLabel: 'MH', route: '/procurement', gradient: 'from-emerald-600 to-teal-700', shadow: 'shadow-emerald-600/25' },
+  { key: 'FINANCE' as const, icon: Wallet, label: 'Tài chính', shortLabel: 'TC', route: '/finance', gradient: 'from-teal-600 to-emerald-600', shadow: 'shadow-teal-600/25' },
   { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
   { key: 'EX' as const, icon: Calculator, label: 'Chi phí', shortLabel: 'CP', route: '/expense', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
@@ -114,6 +115,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/wf')) return 'WF';
     if (p.startsWith('/da')) return 'DA';
     if (p.startsWith('/procurement')) return 'PROCUREMENT';
+    if (p.startsWith('/finance')) return 'FINANCE';
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
     if (p.startsWith('/expense')) return 'EX';
@@ -271,6 +273,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     ],
     PROCUREMENT: [
       { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
+    ],
+    FINANCE: [
+      { to: '/finance', icon: Wallet, label: 'Tài chính công ty' },
     ],
     TS: [
       { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },

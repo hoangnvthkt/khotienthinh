@@ -54,6 +54,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── MUA HÀNG CẤP CÔNG TY ─────────────────────────────
   '/procurement': 'PROCUREMENT',
 
+  // ── TÀI CHÍNH CẤP CÔNG TY ────────────────────────────
+  '/finance': 'FINANCE',
+
   // ── TÀI SẢN ──────────────────────────────────────────
   '/ts/dashboard':   'TS',
   '/ts/catalog':     'TS',

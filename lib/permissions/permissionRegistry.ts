@@ -122,6 +122,29 @@ const authorizationAdminModule: PermissionModuleDefinition = {
   })),
 };
 
+// Tài chính (K3a): công nợ NCC toàn công ty. Tách nhiệm: người xác nhận luôn khác người ghi nhận (server chặn).
+const financeModule: PermissionModuleDefinition = {
+  code: 'system.finance',
+  label: 'Tài chính',
+  routes: ['/finance'],
+  legacyModuleKey: 'FINANCE',
+  sortOrder: 55,
+  actions: ([
+    ['view', 'Xem công nợ toàn công ty', 10],
+    ['record', 'Ghi nhận', 20],
+    ['confirm', 'Xác nhận', 30],
+    ['manage', 'Quản trị Tài chính', 40],
+  ] as const).map(([action, label, sortOrder]) => ({
+    action,
+    label,
+    permissionCode: `system.finance.${action}`,
+    legacyModuleKey: 'FINANCE',
+    legacyRoute: '/finance',
+    scopeTypes: ['global'],
+    sortOrder,
+  })),
+};
+
 const deepFreeze = <T>(value: T): T => {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -137,7 +160,7 @@ export const permissionRegistry = deepFreeze([
     code: 'system',
     label: 'Hệ thống ERP',
     sortOrder: 10,
-    modules: [...systemModules, authorizationAdminModule],
+    modules: [...systemModules, financeModule, authorizationAdminModule],
   },
   {
     code: 'project',

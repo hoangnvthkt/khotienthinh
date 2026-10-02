@@ -15,6 +15,7 @@ import {
   Package,
   ShoppingCart,
   Zap,
+  Wallet,
 } from 'lucide-react';
 import { User } from '../../types';
 import {
@@ -83,6 +84,16 @@ const DOCK_MODULE_DEFS: DockModuleItem[] = [
     icon: ShoppingCart,
     gradient: 'from-cyan-500 to-blue-600',
     glowColor: 'rgba(6, 182, 212, 0.4)',
+  },
+  {
+    key: 'FINANCE',
+    label: 'Tài chính',
+    shortLabel: 'TC',
+    description: 'Công nợ & chi tiền',
+    route: '/finance',
+    icon: Wallet,
+    gradient: 'from-teal-600 to-emerald-600',
+    glowColor: 'rgba(13, 148, 136, 0.4)',
   },
   {
     key: 'TS',

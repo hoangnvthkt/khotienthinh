@@ -1,0 +1,78 @@
+import React, { useRef, useState } from 'react';
+import { FileText, Loader2, Paperclip, X } from 'lucide-react';
+import { financeService, type FinanceAttachment } from '../../lib/financeService';
+import { money } from '../procurement/hub/hubUi';
+
+// Quy ước màu FastCons: dữ liệu có id màu xanh ngọc, số liệu xanh lá, cam/đỏ chỉ cho cảnh báo.
+export const ENT = 'font-semibold text-mint-700 dark:text-mint-300';
+export const NUM = 'font-semibold tabular-nums text-leaf-700 dark:text-leaf-300';
+
+export const viDate = (d: string | null | undefined) => d ? d.slice(0, 10).split('-').reverse().join('/') : '—';
+export const shortMoney = (n: number) => n >= 1e9 ? `${(n / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỷ`
+  : n >= 1e6 ? `${(n / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tr` : `${money(n)} đ`;
+export const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${a.slice(0, 10)}T00:00:00`) - Date.parse(`${b.slice(0, 10)}T00:00:00`)) / 86400000);
+export const parseMoney = (v: string) => { const n = Number(v.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : NaN; };
+export const moneyInput = (n: number | null | undefined) => n == null ? '' : Math.round(n).toLocaleString('vi-VN');
+
+export type Tone = 'overdue' | 'soon' | 'later' | 'none' | 'settled';
+export const toneOf = (dueDate: string | null, outstanding: number, today: string): Tone => {
+  if (outstanding <= 0) return 'settled';
+  if (!dueDate) return 'none';
+  const left = daysBetween(dueDate, today);
+  return left < 0 ? 'overdue' : left <= 7 ? 'soon' : 'later';
+};
+export const TONE_TEXT: Record<Tone, string> = {
+  overdue: 'text-rose-700 dark:text-rose-300', soon: 'text-amber-700 dark:text-amber-300', later: 'text-muted-foreground',
+  none: 'text-slate-500 dark:text-slate-400', settled: 'text-leaf-700 dark:text-leaf-300',
+};
+export const TONE_BAR: Record<Tone, string> = {
+  overdue: 'border-l-rose-500', soon: 'border-l-amber-400', later: 'border-l-leaf-500', none: 'border-l-slate-300', settled: 'border-l-leaf-300',
+};
+export const dueText = (dueDate: string | null, outstanding: number, today: string) => {
+  if (outstanding <= 0) return 'Đã trả đủ';
+  if (!dueDate) return 'Chưa có hạn';
+  const left = daysBetween(dueDate, today);
+  return left < 0 ? `Quá hạn ${-left} ngày` : left === 0 ? 'Đến hạn hôm nay' : `Còn ${left} ngày`;
+};
+
+export const Kpi: React.FC<{ active: boolean; onClick: () => void; icon: React.ElementType; label: string; value: string; hint: string; tone: string; blink?: boolean }> =
+  ({ active, onClick, icon: Icon, label, value, hint, tone, blink }) =>
+    <button type="button" onClick={onClick} aria-pressed={active}
+      className={`rounded-2xl border bg-card p-3 text-left shadow-sm transition ${active ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'}`}>
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><Icon size={14} className={tone} />{label}</span>
+      <span className={`mt-1.5 block text-xl font-bold tabular-nums ${tone} ${blink ? 'overdue-blink' : ''}`}>{value}</span>
+      <span className="block text-xs text-muted-foreground">{hint}</span>
+    </button>;
+
+/** Pick files, upload to the private finance bucket, list them with remove. */
+export const AttachmentPicker: React.FC<{ supplierId: string; value: FinanceAttachment[]; onChange: (v: FinanceAttachment[]) => void; label: string; required?: boolean; disabled?: boolean }> =
+  ({ supplierId, value, onChange, label, required, disabled }) => {
+    const ref = useRef<HTMLInputElement>(null);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    return <div className="text-xs font-semibold text-muted-foreground">
+      {label}{required && <span className="text-rose-600"> *</span>}
+      <div className="mt-1 space-y-1">
+        {value.map(a => <div key={a.path} className="flex items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5 font-normal">
+          <FileText size={14} className="text-teal-700" />
+          <button type="button" onClick={() => void financeService.openAttachment(a.path)} className="min-w-0 flex-1 truncate text-left text-sm text-foreground hover:underline">{a.name}</button>
+          {!disabled && <button type="button" aria-label={`Bỏ ${a.name}`} onClick={() => onChange(value.filter(x => x.path !== a.path))} className="rounded p-0.5 hover:bg-muted"><X size={14} /></button>}
+        </div>)}
+        {!disabled && <button type="button" disabled={busy} onClick={() => ref.current?.click()}
+          className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-sm font-normal hover:bg-muted ${required && value.length === 0 ? 'border-amber-400' : 'border-border'}`}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}{busy ? 'Đang tải lên…' : 'Chọn tệp (ảnh, PDF, Excel)'}</button>}
+        <input ref={ref} type="file" multiple hidden accept="image/*,application/pdf,.xls,.xlsx,.doc,.docx"
+          onChange={async e => {
+            const files = Array.from(e.target.files || []); e.target.value = '';
+            if (!files.length) return;
+            setBusy(true); setError(null);
+            try { onChange([...value, ...await financeService.upload(supplierId, files)]); }
+            catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); }
+          }} />
+        {error && <p role="alert" className="font-normal text-rose-700">{error}</p>}
+      </div>
+    </div>;
+  };
+
+export const FieldError: React.FC<{ error: string | null }> = ({ error }) => error
+  ? <p role="alert" className="mr-auto text-sm text-rose-700 dark:text-rose-300">{error}</p> : null;

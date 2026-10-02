@@ -2435,6 +2435,30 @@
       ]
     },
     {
+      "permissionCode": "system.finance.confirm",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.finance.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.finance.record",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "system.finance.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "system.hd.manage",
       "scopeTypes": [
         "global"
