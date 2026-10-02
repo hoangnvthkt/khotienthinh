@@ -26,6 +26,10 @@ const Provenance: React.FC<{ d: FinanceDocument }> = ({ d }) => {
     rows.push(<>Hợp đồng <b className={ENT}>{d.contractCode || '—'}</b></>);
     rows.push(<>Bảng đối soát <b className={ENT}>{p.statementCode}</b> · kỳ {viDate(p.periodMonth as string).slice(3)} · {p.notes ?? 0} phiếu giao</>);
     rows.push(<>Lập: <span className={ENT}>{p.createdByName || '—'}</span> · Chốt: <span className={ENT}>{p.confirmedByName || '—'}</span> · Ghi nợ: <span className={ENT}>{p.postedByName || '—'}</span> {viDate(p.postedAt as string)}</>);
+  } else if (d.sourceType === 'direct_supplier_receipt') {
+    rows.push(<>Phiếu nhập trực tiếp <b className={ENT}>{p.transactionId as string}</b> · kho <b className={ENT}>{(p.warehouse as string) || '—'}</b>{p.note ? ` · ${p.note}` : ''}</>);
+    rows.push(<>Lập: <span className={ENT}>{(p.receivedByName as string) || '—'}</span> · Duyệt nhập: <span className={ENT}>{(p.approvedByName as string) || '—'}</span> · Ghi nợ: <span className={ENT}>{(p.postedByName as string) || '—'}</span> {viDate(p.postedAt as string)}</>);
+    rows.push(<>Tiền hàng <b className={NUM}>{money(Number(p.netAmount || 0))} đ</b> · {p.priceIncludesVat ? 'giá đã gồm VAT' : `VAT ${Number(p.vatRate || 0)}% = ${money(Number(p.vatAmount || 0))} đ`}{p.duplicateOf ? ` · đã đối chiếu không trùng ${p.duplicateOf as string}` : ''}</>);
   } else if (d.sourceType === 'opening_balance') {
     rows.push(<>Đối chiếu đầu kỳ: sổ MISA <b className={NUM}>{money(Number(p.misaAmount || 0))} đ</b></>);
     rows.push(<>Lập: <span className={ENT}>{p.createdByName}</span> · Chốt: <span className={ENT}>{p.confirmedByName}</span> {viDate(p.confirmedAt as string)}</>);

@@ -30,6 +30,7 @@ import { supplierContractService } from '../lib/hdService';
 import { buildWmsImportSupplySource, type WmsImportSupplySourceSelection } from '../lib/wmsSupplySource';
 import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
+import { IMPORT_VAT_OPTIONS, findImportPricingIssue, vatFields, type ImportVatChoice } from '../lib/wmsImportPricing';
 import { purchasePackageService } from '../lib/purchasePackageService';
 import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
@@ -248,6 +249,9 @@ const Operations: React.FC = () => {
   const [historyDateTo, setHistoryDateTo] = useState('');
   // State lưu thông tin kế toán khi NHẬP KHO: itemId -> { accountingQty, accountingPrice }
   const [accountingData, setAccountingData] = useState<Record<string, { qty: string; price: string }>>({});
+  // NHẬP KHO trực tiếp từ NCC: đơn giá (đơn vị kho) cho vật tư một đơn vị + VAT của phiếu — bắt buộc để Tài chính ghi công nợ.
+  const [importPrices, setImportPrices] = useState<Record<string, string>>({});
+  const [importVat, setImportVat] = useState<ImportVatChoice>('');
 
   // Tự động gán kho cho Thủ kho khi mount hoặc đổi tab
   useEffect(() => {
@@ -496,6 +500,7 @@ const Operations: React.FC = () => {
       if (hasDualUnit && Number.isFinite(accountingQty) && accountingQty > 0) {
         return {
           ...ti,
+          ...vatFields(importVat),
           accountingQty,
           accountingUnit: product!.purchaseUnit,
           accountingPrice: acc.price ? readLocaleNumber(acc.price) : undefined,
@@ -505,7 +510,7 @@ const Operations: React.FC = () => {
             : ti.price
         };
       }
-      return ti;
+      return { ...ti, price: readLocaleNumber(importPrices[ti.itemId] ?? ''), ...vatFields(importVat) };
     });
 
     const supplySource = activeTab === TransactionType.IMPORT && selectedSupplySource
@@ -542,6 +547,8 @@ const Operations: React.FC = () => {
       setTxItems([]);
       setTransactionQuantityInputs({});
       setAccountingData({});
+      setImportPrices({});
+      setImportVat('');
       setNote('');
       setSupplySourceId('');
       setVoucherDate(new Date().toISOString().slice(0, 10));
@@ -572,6 +579,24 @@ const Operations: React.FC = () => {
         title: 'Số lượng không hợp lệ',
         message: `${product?.name || 'Vật tư'} phải có số lượng lớn hơn 0.`,
       });
+    }
+    if (activeTab === TransactionType.IMPORT) {
+      const issue = findImportPricingIssue(txItems.map(ti => {
+        const product = items.find(item => item.id === ti.itemId);
+        const dual = Boolean(product?.purchaseUnit && product.purchaseUnit !== product.unit);
+        const acc = accountingData[ti.itemId];
+        const unitPrice = dual
+          ? (ti.quantity > 0 ? parseQuantityInput(acc?.qty) * readLocaleNumber(acc?.price ?? '') / ti.quantity : 0)
+          : readLocaleNumber(importPrices[ti.itemId] ?? '');
+        return { itemId: ti.itemId, name: product?.name || 'Vật tư', unit: product?.unit || '', stockQty: ti.quantity, unitPrice, catalogPrice: Number(product?.priceIn || 0) };
+      }), importVat);
+      if (issue) {
+        return setWarningState(issue.kind === 'vat'
+          ? { isOpen: true, title: 'Chưa chọn VAT', message: 'Chọn thuế VAT của phiếu (hoặc "Giá đã gồm VAT") để kế toán ghi công nợ đúng.' }
+          : issue.kind === 'price'
+            ? { isOpen: true, title: 'Thiếu đơn giá', message: `${issue.name} chưa có đơn giá. Nhập giá mua theo hóa đơn/phiếu giao của NCC.` }
+            : { isOpen: true, title: 'Đơn giá cao bất thường', message: `${issue.name}: ${Math.round(issue.unitPrice).toLocaleString('vi-VN')} ₫/${issue.unit}, gấp ${issue.ratio} lần giá danh mục (${Math.round(issue.catalogPrice).toLocaleString('vi-VN')} ₫). Kiểm tra lại đơn vị — ví dụ giá theo tấn bị nhập vào ô giá theo kg.` });
+      }
     }
     if (activeTab !== TransactionType.IMPORT) {
       const overAvailableItem = txItems.find(ti => ti.quantity > (getMaxIssueQuantity(ti.itemId) ?? 0));
@@ -1553,6 +1578,20 @@ const Operations: React.FC = () => {
                   </label>
                 )}
 
+                {activeTab === TransactionType.IMPORT && (
+                  <label className="space-y-2">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Thuế VAT <span className="text-rose-500">*</span></span>
+                    <select
+                      value={importVat}
+                      onChange={event => setImportVat(event.target.value as ImportVatChoice)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      {IMPORT_VAT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                    <p className="text-[10px] font-medium text-slate-400">Theo hóa đơn/phiếu giao của NCC — kế toán dùng để ghi công nợ.</p>
+                  </label>
+                )}
+
                 {/* Kho chính (kho của thủ kho) */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -1762,7 +1801,17 @@ const Operations: React.FC = () => {
                                         )}
                                       </div>
                                     ) : (
-                                      <div className="text-center text-[10px] text-slate-300 italic">—</div>
+                                      <div className="flex items-center gap-1">
+                                        <input
+                                          type="text" inputMode="decimal"
+                                          aria-label={`Đơn giá ${product?.name || ''}`}
+                                          placeholder={product?.priceIn ? `DM ${Number(product.priceIn).toLocaleString('vi-VN')}` : 'Bắt buộc'}
+                                          value={importPrices[item.itemId] ?? ''}
+                                          onChange={e => setImportPrices(prev => ({ ...prev, [item.itemId]: e.target.value }))}
+                                          className="w-full border-2 border-amber-200 bg-amber-50 rounded-lg px-2 py-1.5 text-center font-black text-amber-800 text-sm outline-none focus:border-amber-400"
+                                        />
+                                        <span className="text-[10px] font-black text-amber-600 whitespace-nowrap">₫/{product?.unit}</span>
+                                      </div>
                                     )}
                                   </td>
                                 )}
@@ -1841,6 +1890,31 @@ const Operations: React.FC = () => {
                                 <button onClick={() => adjustTransactionQuantity(item.itemId, 1)} className="p-1.5 bg-white rounded border border-slate-200 text-slate-400"><Plus size={14} /></button>
                               </div>
                             </div>
+                            {activeTab === TransactionType.IMPORT && (() => {
+                              const dual = Boolean(product?.purchaseUnit && product.purchaseUnit !== product.unit);
+                              const accData = accountingData[item.itemId] || { qty: '', price: '' };
+                              const inputClass = 'w-28 border-2 border-amber-200 bg-amber-50 rounded-lg px-2 py-1.5 text-right font-black text-amber-800 text-sm outline-none focus:border-amber-400';
+                              return dual ? (
+                                <div className="grid grid-cols-2 gap-2">
+                                  <label className="text-[10px] font-bold uppercase text-amber-700">SL ({product?.purchaseUnit})
+                                    <input type="text" inputMode="decimal" value={accData.qty} placeholder="0"
+                                      onChange={e => setAccountingData(prev => ({ ...prev, [item.itemId]: { ...accData, qty: sanitizeQuantityInput(e.target.value, { previousValue: accData.qty }) } }))}
+                                      className={`mt-1 w-full ${inputClass}`} /></label>
+                                  <label className="text-[10px] font-bold uppercase text-amber-700">₫/{product?.purchaseUnit}
+                                    <input type="text" inputMode="decimal" value={accData.price} placeholder="0"
+                                      onChange={e => setAccountingData(prev => ({ ...prev, [item.itemId]: { ...accData, price: e.target.value } }))}
+                                      className={`mt-1 w-full ${inputClass}`} /></label>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-amber-700 font-bold uppercase">Đơn giá (₫/{product?.unit}):</span>
+                                  <input type="text" inputMode="decimal" aria-label={`Đơn giá ${product?.name || ''}`}
+                                    placeholder={product?.priceIn ? `DM ${Number(product.priceIn).toLocaleString('vi-VN')}` : 'Bắt buộc'}
+                                    value={importPrices[item.itemId] ?? ''} onChange={e => setImportPrices(prev => ({ ...prev, [item.itemId]: e.target.value }))}
+                                    className={inputClass} />
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
