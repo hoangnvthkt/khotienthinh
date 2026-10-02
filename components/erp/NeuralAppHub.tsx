@@ -20,6 +20,7 @@ import {
   ShoppingCart,
   Sparkles,
   Zap,
+  Wallet,
 } from 'lucide-react';
 import { User } from '../../types';
 import {
@@ -97,6 +98,18 @@ const ALL_MODULE_DEFS: ModuleAppDefinition[] = [
     description: 'Đơn mua hàng PO & Giao nhận',
     route: '/procurement',
     icon: ShoppingCart,
+    gradient: 'from-cyan-500 to-blue-600',
+    glowColor: 'rgba(6, 182, 212, 0.4)',
+    strokeColor: '#06b6d4',
+    badgeTone: 'cyan',
+  },
+  {
+    key: 'FINANCE',
+    label: 'Tài chính',
+    shortLabel: 'TC',
+    description: 'Công nợ NCC & chi tiền',
+    route: '/finance',
+    icon: Wallet,
     gradient: 'from-cyan-500 to-blue-600',
     glowColor: 'rgba(6, 182, 212, 0.4)',
     strokeColor: '#06b6d4',

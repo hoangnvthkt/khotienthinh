@@ -47,6 +47,7 @@ const ProjectDashboard = React.lazy(() => import('./pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('./pages/PortfolioDashboard'));
 const ProcurementWorkbench = React.lazy(() => import('./pages/procurement/ProcurementWorkbench'));
 const ProcurementHub = React.lazy(() => import('./pages/procurement/ProcurementHub'));
+const FinanceHub = React.lazy(() => import('./pages/finance/FinanceHub'));
 const MyProfile = React.lazy(() => import('./pages/MyProfile'));
 const EmployeeDashboard = React.lazy(() => import('./pages/EmployeeDashboard'));
 const NotFound = React.lazy(() => import('./pages/NotFound'));
@@ -232,6 +233,7 @@ const AppRoutes: React.FC = () => {
           <Route path="safety-card/:qrToken" element={<SafetyCardLookup />} />
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="procurement" element={<ProcurementHub />} />
+          <Route path="finance" element={<FinanceHub />} />
           <Route path="procurement/legacy" element={<ProcurementWorkbench />} />
           <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
           <Route path="storage" element={<DataStorage />} />

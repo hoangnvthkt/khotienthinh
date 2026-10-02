@@ -42,6 +42,7 @@ import {
   FileSignature,
   IdCard,
   AppWindow,
+  Wallet,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useWorkflow } from '../context/WorkflowContext';
@@ -347,6 +348,16 @@ const SYSTEM_APPS = [
     gradient: 'from-emerald-600 to-teal-700',
     shadow: 'shadow-emerald-600/25',
     moduleKey: 'PROCUREMENT',
+  },
+  {
+    key: 'FINANCE',
+    to: '/finance',
+    label: 'Tài chính',
+    description: 'Công nợ NCC & chi tiền',
+    icon: Wallet,
+    gradient: 'from-teal-600 to-emerald-600',
+    shadow: 'shadow-teal-600/25',
+    moduleKey: 'FINANCE',
   },
   {
     key: 'HRM',

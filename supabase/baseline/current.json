@@ -223,7 +223,8 @@
     "20261005100000_hrm_g0_attendance_punch_v2.sql",
     "20261005110000_hrm_g0_leave_balance_and_privacy.sql",
     "20261005120000_hrm_g1_attendance_devices.sql",
-    "20261005130000_hrm_g2_leave_policy.sql"
+    "20261005130000_hrm_g2_leave_policy.sql",
+    "20261006090000_finance_k3a_payables.sql"
   ],
   "forbidIncludeAll": true
 }
