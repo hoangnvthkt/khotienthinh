@@ -220,7 +220,8 @@
     "20261004180000_authorization_retire_label_only_permissions.sql",
     "20261004190000_asset_audit_sessions.sql",
     "20261005100000_hrm_g0_attendance_punch_v2.sql",
-    "20261005110000_hrm_g0_leave_balance_and_privacy.sql"
+    "20261005110000_hrm_g0_leave_balance_and_privacy.sql",
+    "20261005120000_hrm_g1_attendance_devices.sql"
   ],
   "forbidIncludeAll": true
 }

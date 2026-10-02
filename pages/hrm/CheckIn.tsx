@@ -9,11 +9,14 @@ import {
   Fingerprint,
   MapPin,
   RefreshCw,
+  ShieldCheck,
+  Smartphone,
 } from 'lucide-react';
 import { useCelebration } from '../../components/Celebration';
 import { AttendanceRecord } from '../../types';
 import { getApiErrorMessage } from '../../lib/apiError';
-import { checkInService, MyCheckInContext } from '../../lib/checkInService';
+import { checkInService, MyCheckInContext, PasskeyState } from '../../lib/checkInService';
+import { getPunchToken, isPasskeySupported, registerThisPhone } from '../../lib/attendancePasskey';
 import {
   CheckInPlace,
   DEFAULT_OFFICE_RADIUS_M,
@@ -73,6 +76,10 @@ const CheckIn: React.FC = () => {
   const [checkInContext, setCheckInContext] = useState<MyCheckInContext | null>(null);
   const [contextLoading, setContextLoading] = useState(true);
   const [contextError, setContextError] = useState('');
+  const [passkey, setPasskey] = useState<PasskeyState | null>(null);
+  const [passkeySupported, setPasskeySupported] = useState<boolean | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const [offerRegister, setOfferRegister] = useState(false);
 
   const loadCheckInContext = useCallback(async () => {
     setContextLoading(true);
@@ -94,6 +101,25 @@ const CheckIn: React.FC = () => {
   }, []);
 
   const currentEmployee = checkInContext?.employee || null;
+
+  const loadPasskey = useCallback(async (employeeId: string) => {
+    try {
+      setPasskey(await checkInService.loadPasskeyState(employeeId));
+    } catch {
+      // Unknown state: the server still enforces the rule, the punch shows the reason.
+      setPasskey({ required: true, exempt: false, devices: [] });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentEmployee) return;
+    void loadPasskey(currentEmployee.id);
+    void isPasskeySupported().then(setPasskeySupported);
+  }, [currentEmployee, loadPasskey]);
+
+  const needsPasskey = Boolean(passkey?.required && !passkey.exempt);
+  const hasActiveDevice = Boolean(passkey?.devices.some(device => device.status === 'ACTIVE'));
+  const hasPendingDevice = Boolean(passkey?.devices.some(device => device.status === 'PENDING'));
 
   // The work day follows the clock, so an app left open overnight starts a new day.
   const workDate = todayLocal(currentTime);
@@ -248,7 +274,18 @@ const CheckIn: React.FC = () => {
     if (!currentEmployee || !selectedPlace || gps.status !== 'ready') return;
     setProcessing(true);
     setResult(null);
+    setOfferRegister(false);
     try {
+      // Fingerprint / Face ID first: the photo is only taken for an unlocked punch.
+      let punchToken: string | null = null;
+      if (needsPasskey) {
+        try {
+          punchToken = await getPunchToken();
+        } catch (error) {
+          if (/không phải thiết bị chấm công đã đăng ký/i.test(formatSyncError(error))) setOfferRegister(true);
+          throw error;
+        }
+      }
       const imageBlob = await capturePhotoBlob(selectedPlace.name);
       const saved = await checkInService.punch({
         employeeId: currentEmployee.id,
@@ -257,6 +294,7 @@ const CheckIn: React.FC = () => {
         accuracyM: gps.accuracy,
         location: { id: selectedPlace.id, type: selectedPlace.type },
         imageBlob,
+        punchToken,
       });
       setLastSavedRecord(saved);
       const isFirst = Number(saved.eventCount) <= 1;
@@ -273,6 +311,24 @@ const CheckIn: React.FC = () => {
       setResult({ ok: false, message: formatSyncError(error) });
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const registerPhone = async () => {
+    if (!currentEmployee) return;
+    setRegistering(true);
+    setResult(null);
+    try {
+      const device = await registerThisPhone();
+      setOfferRegister(false);
+      setResult(device.status === 'ACTIVE'
+        ? { ok: true, message: 'Đã đăng ký điện thoại chấm công. Từ nay mỗi lần chấm công bạn mở khóa bằng vân tay / Face ID.' }
+        : { ok: true, message: 'Đã gửi HR duyệt điện thoại này. Bạn chấm công được ngay khi HR duyệt.' });
+      await loadPasskey(currentEmployee.id);
+    } catch (error) {
+      setResult({ ok: false, message: formatSyncError(error) });
+    } finally {
+      setRegistering(false);
     }
   };
 
@@ -328,7 +384,13 @@ const CheckIn: React.FC = () => {
                   proposal: true,
                 }
                   : !cameraReady ? { text: 'Đang mở camera…' }
-                    : null;
+                    : needsPasskey && passkeySupported === false
+                      ? { text: 'Điện thoại / trình duyệt này chưa hỗ trợ mở khóa bằng vân tay / Face ID. Hãy bật khóa màn hình, cập nhật trình duyệt, hoặc liên hệ HCNS.' }
+                      : needsPasskey && passkey && !hasActiveDevice && hasPendingDevice
+                        ? { text: 'Điện thoại của bạn đang chờ HR duyệt. Bạn chấm công được ngay khi HR duyệt.' }
+                        : null;
+  const mustRegister = needsPasskey && passkey !== null && !hasActiveDevice && !hasPendingDevice && passkeySupported !== false;
+  const showRegister = !blocker && (mustRegister || offerRegister);
 
   const actionLabel = nextAction === 'check_in' ? 'Chấm công vào' : 'Chấm công ra';
 
@@ -446,12 +508,32 @@ const CheckIn: React.FC = () => {
             {blocker.text}
           </p>
         )}
-        {nextAction === 'check_in' && !blocker && (todayRecord === null) && currentTime.getHours() >= 12 && (
+        {nextAction === 'check_in' && !blocker && !showRegister && (todayRecord === null) && currentTime.getHours() >= 12 && (
           <p className="px-1 text-[11px] font-bold text-slate-500">
             Hôm nay bạn chưa chấm vào. Lượt này sẽ ghi là giờ vào; nếu quên chấm buổi sáng, hãy gửi đề xuất chấm công bù.
           </p>
         )}
-        {blocker?.proposal ? (
+        {showRegister && (
+          <div className="flex items-start gap-2 px-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+            <ShieldCheck size={16} className="mt-0.5 shrink-0 text-mint-600" />
+            <span>
+              {mustRegister
+                ? 'Lần đầu: đăng ký điện thoại này để chấm công. Mỗi lần chấm bạn mở khóa bằng vân tay / Face ID; công ty không lưu vân tay hay khuôn mặt của bạn.'
+                : 'Đây không phải điện thoại đã đăng ký. Bạn có thể đăng ký điện thoại này — cần HR duyệt trước khi chấm được.'}
+            </span>
+          </div>
+        )}
+        {showRegister ? (
+          <button
+            type="button"
+            onClick={() => void registerPhone()}
+            disabled={registering}
+            className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-xl bg-mint-600 px-4 text-base font-black text-white shadow-lg shadow-mint-600/20 hover:bg-mint-700 disabled:opacity-40"
+          >
+            {registering ? <RefreshCw size={20} className="animate-spin" /> : <Smartphone size={20} />}
+            {registering ? 'Đang đăng ký…' : 'Đăng ký điện thoại này'}
+          </button>
+        ) : blocker?.proposal ? (
           <Link
             to={PROPOSAL_LINK}
             className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-50 px-4 text-sm font-black text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"

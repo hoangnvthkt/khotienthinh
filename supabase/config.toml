@@ -35,6 +35,13 @@ verify_jwt = false
 import_map = "./functions/process-work-notifications/deno.json"
 entrypoint = "./functions/process-work-notifications/index.ts"
 
+[functions.hrm-attendance-passkey]
+enabled = true
+# Validates the end-user JWT with Auth.getUser and verifies WebAuthn assertions itself.
+verify_jwt = false
+import_map = "./functions/hrm-attendance-passkey/deno.json"
+entrypoint = "./functions/hrm-attendance-passkey/index.ts"
+
 [functions.hrm-checkin-photo-retention]
 enabled = true
 # Daily cron worker; authenticates with the Vault-held x-web-push-secret, never an end-user JWT.
