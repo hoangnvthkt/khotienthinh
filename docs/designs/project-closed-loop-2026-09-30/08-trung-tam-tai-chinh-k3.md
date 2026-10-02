@@ -204,3 +204,48 @@ Người kiêm nhiều vai cần chú ý: chị Tâm (ADMIN, thủ kho SMB, kế
 | F4 | Phải thu CĐT, thanh toán thầu phụ, theo HĐ |
 | F5 | Dòng tiền & quỹ, chi phí & ngân sách (gộp module "Chi phí"), Tổng quan, khóa kỳ; bỏ tab cũ |
 | Đi kèm | Mua dự trữ Kho Tổng (công nợ cấp công ty, chi phí ghi khi xuất cho dự án); Sổ tiêu hao theo công việc (Đ4); M2c mua nóng + gọi theo HĐ |
+
+## 9. K3a đã làm (02/10/2026)
+
+**Migration** `20261006090000_finance_k3a_payables.sql`. **Giao diện** ở `/finance` (`components/finance/*`, `lib/financeService.ts`).
+
+**Quyền**
+- Bộ quyền `system.finance.{view, record, confirm, manage}` theo phạm vi toàn công ty. Admin (vai ADMIN) được làm mọi việc nhưng vẫn bị chặn tự xác nhận việc mình lập.
+- Kế toán có quyền Ghi nhận được ghi công nợ từ bảng đối soát HĐ, vẫn phải khác người chốt.
+
+**Hạn thanh toán**
+- Có trigger tính hạn khi ghi nợ và khi đổi ngày ghi nợ (ví dụ đối chiếu ghi lùi ngày). Cột `due_date_source` lưu nguồn hạn.
+- Đã gán hạn mặc định 30 ngày cho 25 chứng từ đang mở.
+- Khai hạn theo NCC hoặc HĐ, có tùy chọn tính lại chứng từ đang mở. Sửa hạn tay có lý do.
+
+**Bảo vệ dữ liệu**
+- Ghi thẳng vào bảng `supplier_payable_documents` qua API (không qua `/rpc/`) bị chặn với mã `SUPPLIER_PAYABLE_DIRECT_WRITE`.
+- Hàm nghiệp vụ, trigger và migration vẫn ghi bình thường.
+
+**Chi ngoài hệ thống**
+- Bắt buộc số UNC, ngày chi thật (không sau hôm nay) và file đính kèm. Chặn trùng số UNC của cùng NCC, chặn chi vượt phần còn nợ, chặn chi cho đơn vị nội bộ.
+- Người khác xác nhận thì mới ghi sổ qua engine G7 (sinh dòng tiền ra của dự án). Đảo phải có lý do.
+
+**Đối chiếu đầu kỳ**
+- Theo NCC × dự án tại mốc 01/10. Số MISA phải lớn hơn hoặc bằng số Vioo còn nợ trước mốc.
+- Phần chênh được ghi thành chứng từ "số dư đầu kỳ" ngày 30/09, không sinh chi phí dự án.
+- Không chốt được nếu còn khoản chi hoặc đề xuất hủy đang chờ xác nhận, hoặc số Vioo đã đổi kể từ lúc gửi.
+- Đảo được khi số dư đầu kỳ chưa có khoản chi.
+- Chứng từ phát sinh sau khi đã chốt mà có ngày trước mốc được gắn cờ `after_opening`.
+- Các bảng đối soát do cùng một người lập và ghi nợ phải được tick "Đã soát xét" khi gửi.
+
+**Hủy công nợ**
+- Lập đề xuất có lý do, người khác xác nhận. Chỉ hủy được khi chứng từ chưa có khoản chi.
+- Đơn vị nội bộ đánh dấu ở bảng `finance_internal_partners`. Đã đánh dấu "Công trình RICO" (PO-462).
+
+**Ma trận duyệt chi**
+- Có phiên bản, mỗi lần sửa ghi nhật ký và báo cho Admin và Quản trị Tài chính. Có ủy quyền có thời hạn.
+- Cấu hình ban đầu theo mục 1. Ma trận được dùng từ K3b.
+
+**Đã kiểm trên production** (giao dịch rollback, các vai Thủy / Hương / TGĐ / Chung):
+- Luồng chuẩn và các nhánh bị chặn: không có quyền, tự xác nhận, thiếu file, ngày sau hôm nay, chi vượt, trùng UNC, đơn vị nội bộ, Vioo cao hơn MISA, gửi trùng phiên đối chiếu, ma trận hở mức.
+- Đảo khoản chi, đảo đầu kỳ, hủy RICO (chi phí của DA29 giữ nguyên).
+- Khai hạn theo NCC và theo HĐ, ma trận phiên bản 2, ủy quyền rồi thu hồi, nhật ký bất biến.
+- Tổng `project_transactions` không đổi sau migration.
+
+**Còn lại ở K3a-2:** mua dự trữ Kho Tổng (công nợ cấp công ty, chi phí ghi khi xuất cho dự án) và mốc chi phí MISA (gắn nhãn chi phí trước mốc, chặn nhập trùng).
