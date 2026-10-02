@@ -423,7 +423,8 @@ Bổ sung 02/10 (lần 3):
 - Nghỉ phép nhân sự văn phòng: **người quản lý trong sơ đồ tổ chức** duyệt (G2 — cần điền quản lý cho từng đơn vị; hiện 21/23 đơn vị chưa có).
 - Chống chấm công hộ (dùng tài khoản người khác): đề xuất ở mục 12.
 
-Còn mở: "Giám đốc" duyệt bước 2 (> 3 ngày).
+- Bước 2 (đơn nghỉ > 3 ngày): **TGĐ Dương Xuân Thịnh** (tạm thời; Admin đổi được sau) — áp dụng ở G2.
+- G1 (lớp 1–3 chống chấm công hộ) được duyệt và triển khai trên nhánh `feature/hrm-g1-anti-buddy-punch`.
 
 
 ## 12. Chống chấm công hộ (dùng tài khoản người khác) — đề xuất

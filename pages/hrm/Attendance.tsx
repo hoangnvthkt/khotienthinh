@@ -6,7 +6,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
   Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus,
-  MapPin, Eye, Save, X, Edit3, Camera
+  MapPin, Eye, Save, X, Edit3, Camera, ShieldCheck
 } from 'lucide-react';
 import {
   AttendanceStatus, AttendanceRecord,
@@ -15,7 +15,8 @@ import {
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS
 } from '../../types';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
-import { canPerform } from '../../lib/permissions/permissionService';
+import { canPerform, canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
+import AttendanceDevicesPanel from './AttendanceDevicesPanel';
 import {
   canViewCompanyAttendance,
   selectAttendanceEmployees,
@@ -55,6 +56,7 @@ const Attendance: React.FC = () => {
   const { employees, attendanceRecords, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
   useModuleData('hrm');
   const canViewAllAttendance = canViewCompanyAttendance(user);
+  const canManageAttendanceDevices = canPerformHrmTemplatePermission(user, 'hrm.employee.view_sensitive');
   const canEditAttendance = canPerform(user, 'hrm.attendance.edit');
   const canApproveAttendance = canPerform(user, 'hrm.attendance.approve')
     || canPerform(user, 'hrm.attendance.approve', { scopeType: 'direct_reports', scopeId: '*' });
@@ -87,7 +89,7 @@ const Attendance: React.FC = () => {
   // Check-in sends people here (?tab=proposals) when they are outside the allowed area.
   const [searchParams] = useSearchParams();
   const openProposals = searchParams.get('tab') === 'proposals';
-  const [activeTab, setActiveTab] = useState<'timesheet' | 'proposals'>(openProposals ? 'proposals' : 'timesheet');
+  const [activeTab, setActiveTab] = useState<'timesheet' | 'proposals' | 'devices'>(openProposals ? 'proposals' : 'timesheet');
 
   // Proposal state
   const [showProposalForm, setShowProposalForm] = useState(openProposals);
@@ -824,7 +826,20 @@ const Attendance: React.FC = () => {
             <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{pendingCount}</span>
           )}
         </button>
+        {canManageAttendanceDevices && (
+          <button onClick={() => setActiveTab('devices')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'devices' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            <ShieldCheck size={14} className="inline mr-1.5" />Thiết bị & nghi vấn
+          </button>
+        )}
       </div>
+
+      {activeTab === 'devices' && canManageAttendanceDevices && (
+        <AttendanceDevicesPanel
+          employees={employees}
+          canManageSettings={canPerformHrmTemplatePermission(user, 'hrm.master_data.manage')}
+        />
+      )}
 
       {activeTab === 'timesheet' && (
       <>

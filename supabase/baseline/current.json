@@ -221,7 +221,8 @@
     "20261004190000_asset_audit_sessions.sql",
     "20261005090000_procurement_m2d_proactive_orders.sql",
     "20261005100000_hrm_g0_attendance_punch_v2.sql",
-    "20261005110000_hrm_g0_leave_balance_and_privacy.sql"
+    "20261005110000_hrm_g0_leave_balance_and_privacy.sql",
+    "20261005120000_hrm_g1_attendance_devices.sql"
   ],
   "forbidIncludeAll": true
 }

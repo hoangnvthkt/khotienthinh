@@ -10,6 +10,16 @@ export interface AttendancePunchInput {
   accuracyM: number;
   location: { id: string; type: CheckInLocationType };
   imageBlob: Blob;
+  /** Single-use token from a verified fingerprint / Face ID unlock (G1). */
+  punchToken: string | null;
+}
+
+export interface PasskeyState {
+  /** Company setting: punches need the registered phone's fingerprint / Face ID. */
+  required: boolean;
+  /** HR exempted this person (phone without passkey support). */
+  exempt: boolean;
+  devices: Array<{ id: string; status: 'ACTIVE' | 'PENDING' | 'REVOKED'; deviceLabel: string | null; registeredAt: string }>;
 }
 
 export interface MyCheckInContext {
@@ -104,9 +114,32 @@ export const checkInService = {
       p_location_id: input.location.id,
       p_image_url: imageUrl,
       p_device_info: createDeviceInfo(),
+      p_punch_token: input.punchToken,
     });
     if (error) throw error;
     if (!data || Array.isArray(data)) throw new Error('Chưa nhận được kết quả chấm công. Vui lòng thử lại.');
     return data as AttendanceRecord;
+  },
+
+  async loadPasskeyState(employeeId: string): Promise<PasskeyState> {
+    const [settings, exemption, devices] = await Promise.all([
+      supabase.from('hrm_attendance_settings').select('require_device_passkey').limit(1).maybeSingle(),
+      supabase.from('hrm_attendance_passkey_exemptions').select('valid_until').eq('employee_id', employeeId).limit(1).maybeSingle(),
+      supabase.from('hrm_attendance_devices').select('id,status,device_label,registered_at')
+        .eq('employee_id', employeeId).neq('status', 'REVOKED').order('registered_at', { ascending: false }).limit(10),
+    ]);
+    if (settings.error) throw settings.error;
+    if (devices.error) throw devices.error;
+    const validUntil = exemption.data?.valid_until as string | null | undefined;
+    return {
+      required: settings.data?.require_device_passkey !== false,
+      exempt: Boolean(exemption.data) && (!validUntil || validUntil >= new Date().toLocaleDateString('sv-SE')),
+      devices: (devices.data || []).map(row => ({
+        id: String(row.id),
+        status: row.status as 'ACTIVE' | 'PENDING' | 'REVOKED',
+        deviceLabel: (row.device_label as string | null) || null,
+        registeredAt: String(row.registered_at),
+      })),
+    };
   },
 };
