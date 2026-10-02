@@ -273,6 +273,14 @@ Migration `20261006150000_finance_k3a2_cost_cutover_stock.sql`.
 
 **Chuyển kho giữa hai kho thuộc dự án khác nhau** (gồm Kho Tổng ↔ công trường)
 - Khi phiếu chuyển hoàn tất: dự án nhận ghi chi phí bằng giá vốn sổ kho; dự án gửi ghi giảm.
+- **Giá vốn chuyển kho (chủ SP 02/10):** lấy theo bình quân gia quyền của kho gửi tại lúc xuất, giống phần mềm kế toán; không dùng đơn giá gõ trên phiếu. Kho đích nhận đúng giá đó, hàng trả về kho gửi cũng vậy. Nguồn giá ghi ở `metadata.priceSource`.
+- Chỉ tính chi phí cho phần hàng thực nhận ở kho đích, áp dụng cả với luồng xuất–nhận 2 bước. Hàng mất dọc đường vẫn tính cho dự án gửi.
+- **Rủi ro dữ liệu (02/10):** giá trị tồn kho trong Vioo chưa sạch:
+  - 43/89 cặp vật tư × kho đang có tồn nhưng giá trị bằng 0.
+  - 31 cặp đã hết hàng nhưng còn giá trị, tổng −3,02 tỷ.
+  - Phiếu nhập thép CT Xin Hai Vina ghi tổng tiền vào ô đơn giá (409 triệu/cây).
+  - Nguyên nhân: phiếu xuất dùng vẫn lấy giá danh mục, không lấy giá bình quân.
+  - Cần làm sạch tồn đầu kỳ theo MISA trước khi tin giá bình quân.
 - Phiếu chuyển bị hủy thì các dòng này về 0 kèm nhãn "[Phiếu chuyển đã hủy]".
 - Dòng có giá vốn bằng 0 được ghi nhật ký `transfer_cost_missing` để xử lý sau.
 

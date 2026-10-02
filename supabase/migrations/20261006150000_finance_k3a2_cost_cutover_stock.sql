@@ -11,6 +11,9 @@
 -- * Mua dự trữ Kho Tổng (đơn chủ động mục đích "stock"): công nợ NCC ghi cấp CÔNG TY (không gắn dự án),
 --   KHÔNG ghi chi phí dự án lúc nhận hàng. Chi phí vào dự án khi chuyển kho sang kho công trường của dự án
 --   (theo giá vốn sổ kho); chuyển ngược về Kho Tổng / sang dự án khác thì dự án gửi được ghi giảm.
+-- * Giá vốn chuyển kho (02/10): bình quân gia quyền của kho gửi tại lúc xuất, như phần mềm kế toán; kho đích nhận
+--   đúng giá đó, hàng trả về kho gửi cũng vậy. Kho gửi chưa có giá trị tồn → dùng đơn giá trên phiếu (ghi nguồn giá).
+--   Chi phí dự án chỉ tính phần hàng thực nhận ở kho đích (cả luồng xuất–nhận 2 bước); hàng mất dọc đường ở lại dự án gửi.
 --   Phiếu chuyển bị hủy sau khi hoàn tất → các dòng chi phí đó về 0 kèm nhãn. Dòng giá vốn bằng 0 ghi nhật ký để xử lý.
 -- ===========================================================================
 
@@ -188,7 +191,9 @@ begin
     v_tgt := app_private.finance_warehouse_project(new.target_warehouse_id);
     if v_src is not distinct from v_tgt then return new; end if;
     select coalesce(sum(le.amount), 0), count(*) filter (where coalesce(le.amount, 0) = 0) into v_value, v_zero
-    from public.inventory_ledger_entries le where le.source_id = new.id and le.movement_direction = 'in';
+    from public.inventory_ledger_entries le
+    where le.source_code = new.id and le.transaction_type = 'transfer_receipt' and le.movement_direction = 'in'
+      and le.warehouse_id = new.target_warehouse_id;
     v_code := 'Chuyển kho ' || coalesce((select name from public.warehouses where id = new.source_warehouse_id), '?')
       || ' → ' || coalesce((select name from public.warehouses where id = new.target_warehouse_id), '?') || ' (' || new.id || ')';
     if v_value > 0 then
@@ -211,6 +216,133 @@ begin
 end $$;
 create trigger zz_trg_finance_transfer_cost after insert or update on public.transactions
   for each row execute function app_private.trg_finance_transfer_cost();
+
+-- Giá vốn chuyển kho = bình quân gia quyền của kho gửi (bản sửa của post_inventory_ledger_entry, giữ nguyên quyền).
+CREATE OR REPLACE FUNCTION app_private.post_inventory_ledger_entry(p_inventory_transaction_id uuid, p_entry_no integer, p_document_code text, p_transaction_date timestamp with time zone, p_transaction_type text, p_direction text, p_material_id text, p_warehouse_id text, p_project_id text, p_construction_site_id text, p_source_type text, p_source_id text, p_source_code text, p_source_line_id text, p_related_request_id text, p_qty numeric, p_unit_price numeric, p_description text, p_metadata jsonb, p_created_by uuid, p_approved_by uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $$
+declare
+  v_entry_id uuid := gen_random_uuid();
+  v_delta numeric;
+  v_value_delta numeric;
+  v_balance_after_qty numeric;
+  v_balance_after_value numeric;
+  v_unit text;
+  v_total_after numeric;
+  v_price numeric := coalesce(p_unit_price, 0);
+  v_avg numeric;
+  v_price_source text;
+begin
+  if p_qty is null or p_qty <= 0 then
+    raise exception 'ledger quantity must be positive';
+  end if;
+  if nullif(p_material_id, '') is null then
+    raise exception 'material id is required';
+  end if;
+  if nullif(p_warehouse_id, '') is null then
+    raise exception 'warehouse id is required';
+  end if;
+
+  select i.unit into v_unit
+  from public.items i
+  where i.id = p_material_id;
+
+  v_unit := coalesce(
+    v_unit,
+    nullif(p_metadata->>'unit', ''),
+    nullif(p_metadata->>'unitSnapshot', ''),
+    nullif(p_metadata->>'accountingUnit', '')
+  );
+
+  -- K3a-2: chuyển kho đi theo giá vốn bình quân gia quyền của kho gửi tại lúc xuất (như phần mềm kế toán),
+  -- không theo đơn giá gõ trên phiếu. Nhập vào kho đích, hoặc hàng trả về kho gửi, dùng đúng giá đã xuất của phiếu.
+  if p_transaction_type = 'transfer_issue' and p_direction = 'out' then
+    select case when sum(b.on_hand_qty) > 0 and sum(b.total_value) > 0
+      then round(sum(b.total_value) / sum(b.on_hand_qty), 6) end into v_avg
+    from public.inventory_balances b where b.material_id = p_material_id and b.warehouse_id = p_warehouse_id;
+    v_price_source := case when v_avg is not null then 'weighted_average' else 'document' end;
+  elsif p_transaction_type = 'transfer_receipt' and p_direction = 'in' and nullif(p_source_code, '') is not null then
+    select case when sum(le.quantity_out) > 0
+      then round(sum(le.quantity_out * le.unit_price) / sum(le.quantity_out), 6) end into v_avg
+    from public.inventory_ledger_entries le
+    where le.transaction_type = 'transfer_issue' and le.source_code = p_source_code and le.material_id = p_material_id;
+    v_price_source := case when v_avg is not null then 'transfer_issue' else 'document' end;
+  end if;
+  v_price := coalesce(v_avg, v_price);
+
+  v_delta := case when p_direction = 'in' then p_qty else -p_qty end;
+  v_value_delta := v_delta * v_price;
+
+  insert into public.inventory_balances (
+    material_id, warehouse_id, project_id, construction_site_id,
+    on_hand_qty, total_value, average_unit_cost,
+    last_ledger_entry_id, last_transaction_date, updated_at
+  )
+  values (
+    p_material_id, p_warehouse_id, nullif(p_project_id, ''), nullif(p_construction_site_id, ''),
+    v_delta, v_value_delta,
+    case when v_delta = 0 then 0 else v_price end,
+    v_entry_id, p_transaction_date, now()
+  )
+  on conflict (material_id, warehouse_id, scope_key)
+  do update set
+    on_hand_qty = public.inventory_balances.on_hand_qty + excluded.on_hand_qty,
+    total_value = public.inventory_balances.total_value + excluded.total_value,
+    average_unit_cost = case
+      when (public.inventory_balances.on_hand_qty + excluded.on_hand_qty) = 0 then 0
+      else (public.inventory_balances.total_value + excluded.total_value)
+        / nullif(public.inventory_balances.on_hand_qty + excluded.on_hand_qty, 0)
+    end,
+    last_ledger_entry_id = excluded.last_ledger_entry_id,
+    last_transaction_date = excluded.last_transaction_date,
+    updated_at = now()
+  returning on_hand_qty, total_value
+    into v_balance_after_qty, v_balance_after_value;
+
+  -- K1 (01/10/2026): không xuất quá tồn. Kiểm tra tổng tồn của vật tư trong kho (mọi phạm vi dự án/lô)
+  -- để không chặn nhầm khi hàng nhập và xuất ghi ở hai phạm vi khác nhau của cùng một kho.
+  if p_direction = 'out' and coalesce(current_setting('app.inventory_allow_negative', true), '') <> 'on' then
+    select coalesce(sum(b.on_hand_qty), 0) into v_total_after
+    from public.inventory_balances b where b.material_id = p_material_id and b.warehouse_id = p_warehouse_id;
+    if v_total_after < -0.0005 then
+      raise exception using errcode = 'P0001',
+        message = format('INVENTORY_NEGATIVE_STOCK: Không đủ tồn "%s" tại kho "%s": còn %s %s, cần xuất %s. Kiểm tra lại tồn hoặc nhập bù trước khi xuất.',
+          coalesce((select i.name from public.items i where i.id = p_material_id), p_material_id),
+          coalesce((select w.name from public.warehouses w where w.id = p_warehouse_id), p_warehouse_id),
+          trim(to_char(v_total_after + p_qty, 'FM999G999G990D###')), coalesce(v_unit, ''), trim(to_char(p_qty, 'FM999G999G990D###')));
+    end if;
+  end if;
+
+  insert into public.inventory_ledger_entries (
+    id, inventory_transaction_id, entry_no, document_code,
+    transaction_date, transaction_type, movement_direction,
+    material_id, warehouse_id, project_id, construction_site_id,
+    source_type, source_id, source_code, source_line_id, related_request_id,
+    quantity_in, quantity_out, unit, unit_price,
+    balance_after_qty, balance_after_value,
+    description, metadata, created_by, approved_by
+  )
+  values (
+    v_entry_id, p_inventory_transaction_id, p_entry_no, p_document_code,
+    p_transaction_date, p_transaction_type, p_direction,
+    p_material_id, p_warehouse_id, nullif(p_project_id, ''), nullif(p_construction_site_id, ''),
+    p_source_type, p_source_id, p_source_code, nullif(p_source_line_id, ''), nullif(p_related_request_id, ''),
+    case when p_direction = 'in' then p_qty else 0 end,
+    case when p_direction = 'out' then p_qty else 0 end,
+    v_unit, v_price,
+    v_balance_after_qty, v_balance_after_value,
+    p_description,
+    coalesce(p_metadata, '{}'::jsonb) || case when v_price_source is null then '{}'::jsonb
+      else jsonb_build_object('priceSource', v_price_source, 'documentPrice', coalesce(p_unit_price, 0)) end,
+    p_created_by, p_approved_by
+  );
+
+  return v_entry_id;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 4. Mua hàng: đơn chủ động mục đích "Dự trữ Kho Tổng"

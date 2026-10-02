@@ -22,6 +22,12 @@ describe('K3a-2 — mốc chi phí MISA, chặn nhập trùng, dự trữ Kho T�
     expect(sql).toContain("'stock_transfer:' || new.id || ':in'");
     expect(sql).toContain("case v_purpose when 'stock' then 'proactive_stock' else 'proactive_project' end");
   });
+
+  it('values transfers at the source weighted average and costs only goods received at the target', () => {
+    expect(sql).toContain("v_price_source := case when v_avg is not null then 'weighted_average' else 'document' end;");
+    expect(sql).toContain("le.transaction_type = 'transfer_issue' and le.source_code = p_source_code and le.material_id = p_material_id");
+    expect(sql).toContain("and le.warehouse_id = new.target_warehouse_id;");
+  });
 });
 
 describe('applyMisaImportGuards', () => {
