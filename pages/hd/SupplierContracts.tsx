@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { useApp } from '../../context/AppContext';
+import { canManageContracts } from '../../lib/permissions/contractPermissions';
+import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
@@ -114,6 +116,7 @@ const EMPTY_FORM: Omit<SupplierContract, 'id' | 'attachments' | 'createdAt' | 'u
 // ─── Main Component ────────────────────────────────────────────────────────────
 const SupplierContracts: React.FC = () => {
   const { user } = useApp();
+  const canManage = canManageContracts(user, 'supplier');
   const [suppliers, setSuppliers] = useState<BusinessPartner[]>([]);
   useModuleData('wms');
   const navigate = useNavigate();
@@ -253,7 +256,11 @@ const SupplierContracts: React.FC = () => {
 
   // ── save (add / edit) ────────────────────────────────────────────────────────
   const handleSave = async () => {
-    if (!form.code.trim() || !form.name.trim()) return;
+    const missing = [!form.code.trim() && 'Mã hợp đồng', !form.name.trim() && 'Tên hợp đồng'].filter(Boolean);
+    if (missing.length > 0) {
+      toast.warning('Thiếu thông tin', `Vui lòng nhập: ${missing.join(', ')}.`);
+      return;
+    }
     if (!form.projectId) {
       toast.warning('Thiếu thông tin', 'Vui lòng chọn dự án liên kết.');
       return;
@@ -470,13 +477,14 @@ const SupplierContracts: React.FC = () => {
             <option key={k} value={k}>{v.label}</option>
           ))}
         </select>
-        <button
+        {canManage && <button
           onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setDraftAttachments([]); setShowForm(true); }}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-500/20 hover:shadow-blue-500/40 transition-all"
         >
           <Plus size={15} /> Thêm hợp đồng
-        </button>
+        </button>}
       </div>
+      {!canManage && <ContractViewOnlyNotice kind="supplier" />}
 
       {/* Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
@@ -528,6 +536,7 @@ const SupplierContracts: React.FC = () => {
                           className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Xem chi tiết">
                           <Eye size={14} />
                         </button>
+                        {canManage && <>
                         <button onClick={() => handleEdit(c)}
                           className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors" title="Sửa">
                           <Edit2 size={14} />
@@ -536,6 +545,7 @@ const SupplierContracts: React.FC = () => {
                           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Xóa">
                           <Trash2 size={14} />
                         </button>
+                        </>}
                       </div>
                     </td>
                   </tr>
@@ -1002,6 +1012,7 @@ const SupplierContracts: React.FC = () => {
               {detailTab === 'docs' && (
                 <div className="space-y-3">
                   {/* Upload area */}
+                  {canManage && (
                   <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-blue-200 dark:border-blue-800 rounded-xl p-6 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-900/10 transition-all">
                     <Upload className="text-blue-400" size={24} />
                     <span className="text-sm font-bold text-slate-600 dark:text-slate-300">Kéo thả hoặc click để tải lên</span>
@@ -1010,6 +1021,7 @@ const SupplierContracts: React.FC = () => {
                     {uploading && <div className="flex items-center gap-2 text-blue-500 text-xs font-bold"><Loader2 size={14} className="animate-spin" />Đang tải lên...</div>}
                     {uploadError && <p className="text-xs text-red-500 font-bold">{uploadError}</p>}
                   </label>
+                  )}
                   {/* File list */}
                   {selectedContract.attachments?.length === 0 && !uploading && (
                     <p className="text-center text-sm text-slate-400 py-4">Chưa có tài liệu đính kèm</p>
@@ -1026,10 +1038,10 @@ const SupplierContracts: React.FC = () => {
                           className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Tải xuống">
                           <Download size={13} />
                         </button>
-                        <button onClick={() => handleDeleteFile(att)}
+                        {canManage && <button onClick={() => handleDeleteFile(att)}
                           className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Xóa">
                           <Trash2 size={13} />
-                        </button>
+                        </button>}
                       </div>
                     </div>
                   ))}

@@ -47,12 +47,12 @@ begin
     select 1 from jsonb_array_elements(snapshot_row->'templates') template_row
     where template_row->>'code'='SUPER_ADMIN'
       and (template_row->>'dynamic')::boolean
-      and (template_row->>'effectiveActionCount')::integer=384
+      and (template_row->>'effectiveActionCount')::integer=(select count(*) from public.permission_actions where is_active)
   ) then raise exception 'E27 snapshot did not expose protected dynamic SUPER_ADMIN'; end if;
 
   preview_row:=public.preview_business_role_assignment_v2(target_one.id,super_id,'global','*');
   if not (preview_row->>'dynamic')::boolean
-     or (preview_row->>'permissionCount')::integer<>384
+     or (preview_row->>'permissionCount')::integer<>(select count(*) from public.permission_actions where is_active)
      or jsonb_array_length(preview_row->'warnings')=0
      or coalesce(preview_row->>'fingerprint','')='' then
     raise exception 'E27 SUPER_ADMIN impact preview is incomplete';

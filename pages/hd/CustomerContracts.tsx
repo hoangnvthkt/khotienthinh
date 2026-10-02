@@ -21,6 +21,8 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import SearchableSelect from '../../components/common/SearchableSelect';
 
 import { useApp } from '../../context/AppContext';
+import { canManageContracts } from '../../lib/permissions/contractPermissions';
+import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
@@ -173,6 +175,7 @@ const getTemplateDefaults = (template: ContractFormTemplate | null): Record<stri
 
 const CustomerContracts: React.FC = () => {
   const { user } = useApp();
+  const canManage = canManageContracts(user, 'customer');
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -578,13 +581,14 @@ const CustomerContracts: React.FC = () => {
           <option value="">Tất cả trạng thái</option>
           {Object.entries(STATUS_CONFIG).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
         </select>
-        <button
+        {canManage && <button
           onClick={openCreate}
           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-500/20"
         >
           <Plus size={15} /> Tạo HĐ nhận thầu
-        </button>
+        </button>}
       </div>
+      {!canManage && <ContractViewOnlyNotice kind="customer" />}
 
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -626,8 +630,10 @@ const CustomerContracts: React.FC = () => {
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
                         <button onClick={() => navigate(`/hd/customer/${contract.id}`)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"><Eye size={14} /></button>
-                        <button onClick={() => openEdit(contract)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 size={14} /></button>
-                        <button onClick={() => handleDelete(contract)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
+                        {canManage && <>
+                        <button onClick={() => openEdit(contract)} aria-label="Sửa hợp đồng" className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 size={14} /></button>
+                        <button onClick={() => handleDelete(contract)} aria-label="Xóa hợp đồng" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
+                        </>}
                       </div>
                     </td>
                   </tr>

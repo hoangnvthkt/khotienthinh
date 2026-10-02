@@ -22,6 +22,12 @@ begin
   where user_row.role = 'ADMIN'
     and user_row.is_active
     and user_row.account_status = 'ACTIVE'
+    -- a technical admin without HR roles (some admins also hold HR / HR Manage since 28/09)
+    and not exists (
+      select 1 from public.principal_role_assignments hr_row
+      join public.role_permission_templates hr_template on hr_template.id = hr_row.role_template_id
+      where hr_row.principal_id = user_row.id and hr_row.status = 'ACTIVE'
+        and hr_template.code in ('HR', 'HR_MANAGE'))
   order by user_row.created_at
   limit 1;
 

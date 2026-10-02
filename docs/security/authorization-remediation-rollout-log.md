@@ -864,3 +864,14 @@ Chỉ sửa frontend, không có migration.
 - Kiểm tra: Vitest 2.819 PASS, tsc, lint, build, check-queries, check-migrations đạt; **e2e Playwright 5/5 PASS** (đã cài trình duyệt Playwright).
 - **Mốc T0 quan sát Task 13: 02/10/2026** (apply bước 1). Theo runbook, xóa cột sớm nhất **09/10/2026**, sau khi backup + diễn tập khôi phục và dependency query rỗng.
 - Rollback: `supabase/operations/authorization_task13_stop_reading_legacy_modules_rollback.sql`.
+
+### Hợp đồng — quyền ghi theo đúng contract.*.manage (02/10, chủ sản phẩm cho phép apply)
+
+- Báo lỗi: người được cấp đủ quyền Hợp đồng vẫn không tạo được hợp đồng đối tác; đã thành Admin vẫn không tạo được HĐ thầu phụ.
+- Nguyên nhân 1 (máy chủ): ghi `business_partners`, `customer_contracts`, `supplier_contracts`, `contract_guarantees`, 4 bảng mẫu HĐ chỉ nhận `is_module_admin('HD')` (= `system.hd.manage`, không ai giữ); `subcontractor_contracts` chỉ nhận Admin (policy + trigger `authorization_v2_admin_write_guard`); 7 bảng thư viện đơn giá không nhận `contract.cost_library.manage`. Trong khi màn phân quyền/mẫu cấp `contract.*.manage`.
+- Nguyên nhân 2 (giao diện): form HĐ thầu phụ và HĐ NCC thoát im lặng khi thiếu mã / tên / đơn vị; log máy chủ không có request tạo nào bị từ chối; giả lập tạo với tài khoản đó trên máy chủ thành công.
+- Migration `20261004150000_authorization_contract_writes_follow_grants`: helper `app_private.contract_actor_can_manage(codes[])` (Admin, HD module admin, hoặc giữ một trong các mã); 34 policy ghi đổi sang mã tương ứng; bỏ trigger Admin-only trên riêng `subcontractor_contracts`. Không người không-Admin nào giữ `contract.*.manage` lúc apply → không ai tự có thêm quyền.
+- Giao diện: nút Thêm/Sửa/Xóa/tải tệp ở Đối tác, HĐ khách hàng, HĐ NCC, HĐ thầu phụ, Loại & mẫu HĐ chỉ hiện khi có quyền; người chỉ xem thấy dòng giải thích cần quyền gì, cấp ở đâu; form báo rõ trường còn thiếu.
+- Kiểm tra: dry-run đúng ma trận (chỉ xem: chặn hết; quản trị đối tác: chỉ đối tác; quản trị NCC: HĐ thầu phụ, không HĐ khách hàng); đối chứng trên schema cũ tái hiện đúng lỗi; smoke sau apply PASS; Vitest PASS, lint, build đạt.
+- Rollback: `supabase/operations/authorization_contract_writes_follow_grants_rollback.sql`.
+- Ghi nhận cho luồng khác (không sửa): trigger Admin-only còn trên `acceptance_records`, `boq_reconciliation_*`, `custom_material_*` (Mua hàng V2 / Dự án V2).

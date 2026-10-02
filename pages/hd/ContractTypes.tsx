@@ -10,6 +10,9 @@ import {
 import { contractTemplateService, contractTypeService } from '../../lib/contractMetadataService';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useApp } from '../../context/AppContext';
+import { canManageContracts } from '../../lib/permissions/contractPermissions';
+import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
 
 const FIELD_TYPES: Array<{ value: ContractTemplateFieldType; label: string }> = [
   { value: 'text', label: 'Text' },
@@ -47,6 +50,8 @@ const emptyField = (templateId = '', sectionId = ''): Partial<ContractTemplateFi
 });
 
 const ContractTypes: React.FC = () => {
+  const { user } = useApp();
+  const canManage = canManageContracts(user, 'template');
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -221,11 +226,13 @@ const ContractTypes: React.FC = () => {
   };
 
   return (
+    <div className="space-y-4">
+    {!canManage && <ContractViewOnlyNotice kind="template" />}
     <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-4">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
         <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="font-black text-slate-800 dark:text-white flex items-center gap-2"><Settings2 size={17} /> Loại hợp đồng</div>
-          <button onClick={() => { setEditingType(emptyType()); setShowTypeForm(true); }} className="p-2 rounded-xl bg-violet-600 text-white"><Plus size={14} /></button>
+          {canManage && <button onClick={() => { setEditingType(emptyType()); setShowTypeForm(true); }} aria-label="Thêm loại hợp đồng" className="p-2 rounded-xl bg-violet-600 text-white"><Plus size={14} /></button>}
         </div>
         <div className="divide-y divide-slate-100 dark:divide-slate-800">
           {loading ? (
@@ -248,10 +255,10 @@ const ContractTypes: React.FC = () => {
                   {type.isActive ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <div className="mt-2 flex gap-1">
+              {canManage && <div className="mt-2 flex gap-1">
                 <span onClick={e => { e.stopPropagation(); setEditingType(type); setShowTypeForm(true); }} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-amber-600 hover:bg-amber-50"><Edit2 size={12} /> Sửa</span>
                 <span onClick={e => { e.stopPropagation(); deactivateType(type); }} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 size={12} /> Ẩn</span>
-              </div>
+              </div>}
             </button>
           ))}
         </div>
@@ -263,7 +270,7 @@ const ContractTypes: React.FC = () => {
             <div className="font-black text-slate-800 dark:text-white flex items-center gap-2"><Layers size={17} /> Mẫu khai báo</div>
             <div className="text-xs text-slate-400">{selectedType ? selectedType.name : 'Chọn loại hợp đồng để cấu hình mẫu'}</div>
           </div>
-          {selectedType && !activeTemplate && (
+          {canManage && selectedType && !activeTemplate && (
             <button onClick={ensureTemplate} disabled={saving} className="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
               Tạo mẫu mặc định
             </button>
@@ -281,7 +288,7 @@ const ContractTypes: React.FC = () => {
               <div className="text-xs text-slate-500">{activeTemplate.description || 'Không có mô tả'}</div>
             </div>
 
-            <div className="flex gap-2">
+            {canManage && <div className="flex gap-2">
               <input
                 value={sectionTitle}
                 onChange={e => setSectionTitle(e.target.value)}
@@ -291,7 +298,7 @@ const ContractTypes: React.FC = () => {
               <button onClick={addSection} disabled={saving || !sectionTitle.trim()} className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-bold disabled:opacity-50">
                 Thêm nhóm
               </button>
-            </div>
+            </div>}
 
             {(activeTemplate.sections || []).map(section => (
               <div key={section.id} className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden">
@@ -300,10 +307,10 @@ const ContractTypes: React.FC = () => {
                     <div className="font-black text-slate-700 dark:text-slate-200">{section.title}</div>
                     <div className="text-xs text-slate-400">{section.fields?.length || 0} trường</div>
                   </div>
-                  <div className="flex gap-1">
+                  {canManage && <div className="flex gap-1">
                     <button onClick={() => setFieldForm(emptyField(activeTemplate.id, section.id))} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold">Thêm trường</button>
                     <button onClick={() => deactivateSection(section)} className="px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50 text-xs font-bold">Ẩn nhóm</button>
-                  </div>
+                  </div>}
                 </div>
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {(section.fields || []).length === 0 ? (
@@ -314,10 +321,10 @@ const ContractTypes: React.FC = () => {
                         <div className="font-bold text-slate-800 dark:text-white">{field.label} {field.required && <span className="text-red-500">*</span>}</div>
                         <div className="text-xs text-slate-400 font-mono">{field.key} · {FIELD_TYPES.find(t => t.value === field.fieldType)?.label}</div>
                       </div>
-                      <div className="flex gap-1">
+                      {canManage && <div className="flex gap-1">
                         <button onClick={() => setFieldForm(field)} className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50"><Edit2 size={14} /></button>
                         <button onClick={() => deactivateField(field)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
-                      </div>
+                      </div>}
                     </div>
                   ))}
                 </div>
@@ -399,6 +406,7 @@ const ContractTypes: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

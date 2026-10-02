@@ -8,6 +8,9 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import ExcelImportReviewModal from '../../components/ExcelImportReviewModal';
 import { ExcelImportMode, ExcelImportPreview, applyImportChanges, buildImportPreview, parseExcelRows } from '../../lib/excelImport';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
+import { useApp } from '../../context/AppContext';
+import { canManageContracts } from '../../lib/permissions/contractPermissions';
+import ContractViewOnlyNotice from '../../components/hd/ContractViewOnlyNotice';
 
 const CLASSIFICATION_OPTIONS: Array<{ value: PartnerClassification; label: string }> = [
   { value: 'owner', label: 'Chủ đầu tư' },
@@ -96,6 +99,8 @@ const parseClassifications = (value: unknown): PartnerClassification[] => {
 const formatDate = (value?: string) => value ? new Date(value).toLocaleDateString('vi-VN') : '-';
 
 const BusinessPartners: React.FC = () => {
+  const { user } = useApp();
+  const canManage = canManageContracts(user, 'partner');
   const toast = useToast();
   const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -414,6 +419,7 @@ const BusinessPartners: React.FC = () => {
         >
           <Download size={15} /> Mẫu
         </button>
+        {canManage && <>
         <button
           onClick={() => openPartnerImport('create')}
           disabled={saving}
@@ -435,7 +441,9 @@ const BusinessPartners: React.FC = () => {
         >
           <Plus size={15} /> Thêm đối tác
         </button>
+        </>}
       </div>
+      {!canManage && <ContractViewOnlyNotice kind="partner" />}
 
       {importPreview && (
         <ExcelImportReviewModal
@@ -493,10 +501,10 @@ const BusinessPartners: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-center gap-1">
-                      <button onClick={() => openEdit(partner)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(partner)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
-                    </div>
+                    {canManage && <div className="flex justify-center gap-1">
+                      <button onClick={() => openEdit(partner)} aria-label="Sửa đối tác" className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDelete(partner)} aria-label="Xóa đối tác" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
+                    </div>}
                   </td>
                 </tr>
               ))}

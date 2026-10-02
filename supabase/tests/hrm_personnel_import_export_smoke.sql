@@ -21,6 +21,12 @@ begin
   join public.role_permission_templates template
     on template.id = assignment_row.role_template_id and template.code = 'SYSTEM_ADMIN'
   where account.role = 'ADMIN' and account.is_active and account.account_status = 'ACTIVE'
+    -- a technical admin without HR roles (some admins also hold HR / HR Manage since 28/09)
+    and not exists (
+      select 1 from public.principal_role_assignments hr_row
+      join public.role_permission_templates hr_template on hr_template.id = hr_row.role_template_id
+      where hr_row.principal_id = account.id and hr_row.status = 'ACTIVE'
+        and hr_template.code in ('HR', 'HR_MANAGE'))
   order by account.created_at limit 1;
   select employee.* into v_employee
   from public.employees employee

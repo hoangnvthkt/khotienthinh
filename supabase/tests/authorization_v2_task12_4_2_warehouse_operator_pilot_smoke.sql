@@ -79,7 +79,9 @@ begin
     perform public.save_business_role_v2(
       null, 0, 'E30_NOT_READY', 'E30 Not Ready', 'Rollback-only invalid role',
       jsonb_build_array(jsonb_build_object(
-        'permission_code', 'workflow.instance.view',
+        -- any capability still only declared (workflow.instance.view became enforced on 17/09)
+        'permission_code', (select permission_code from public.permission_actions
+          where is_active and grant_readiness = 'declared' order by permission_code limit 1),
         'scope_type', 'global',
         'scope_id', '*',
         'sort_order', 0
