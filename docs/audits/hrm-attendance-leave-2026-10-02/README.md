@@ -426,6 +426,7 @@ Bổ sung 02/10 (lần 3):
 - Bước 2 (đơn nghỉ > 3 ngày): **TGĐ Dương Xuân Thịnh** (tạm thời; Admin đổi được sau) — áp dụng ở G2.
 - G1 (lớp 1–3 chống chấm công hộ) lên production 02/10 (#58).
 - G2 (nhánh `feature/hrm-g2-leave-policy`): danh mục loại đơn, chuỗi duyệt tự xác định (công trường → người duyệt công trường; còn lại → quản lý trong sơ đồ tổ chức → quản lý trực tiếp của tài khoản → HCNS), bước 2 TGĐ khi > 3 ngày làm việc với phép năm / không lương, đi muộn / về sớm ≤ 60 phút mỗi lần (được duyệt thì bảng công không tính phút muộn), thông báo người duyệt, HR duyệt thay phải ghi lý do. Chưa làm: tự hết hạn phép tồn sau quý I, sổ phép dạng bút toán đầy đủ.
+- G3a (nhánh `feature/hrm-g3-profile`): nhân viên tự xem hợp đồng, quá trình công tác, CCCD, BHXH, người phụ thuộc (chỉ đọc); form hồ sơ chọn từ danh sách, mã bản ghi tự sinh, lý do điền sẵn; sửa lỗi nhóm trống ẩn nút thêm (nguyên nhân 0 bản ghi); bảng "Hồ sơ còn thiếu" cho HR. G3b còn lại: cảnh báo hết hạn HĐ / CCCD / chứng chỉ, một nguồn quản lý trực tiếp, dọn danh mục vị trí, địa chỉ 2 cấp, đề nghị cập nhật hồ sơ của nhân viên.
 
 
 ## 12. Chống chấm công hộ (dùng tài khoản người khác) — đề xuất
@@ -441,6 +442,18 @@ Bản chất: người chấm hộ có mật khẩu (hoặc điện thoại) c�
 
 Khuyến nghị: làm **lớp 1 + 2 + cờ nghi vấn của lớp 3** ở G1. Không dùng nhận diện khuôn mặt tự động (dữ liệu sinh trắc, nghĩa vụ pháp lý cao).
 Ngoại lệ: máy hỏng / mất → HR cấp "mã chấm tạm" 1 ngày hoặc người duyệt địa điểm xác nhận chấm công bù.
+
+
+## 13. Bảng công thực dụng — yêu cầu chủ sản phẩm (02/10/2026, làm ở G4)
+
+Mục tiêu: HR mở **một nhân viên** trên bảng tổng hợp là thấy đủ chấm công, nghỉ phép, đi muộn / về sớm, đến sớm / về muộn của người đó trong tháng — và dùng thẳng để tính lương.
+
+1. **Tính theo ca.** Mỗi ngày so giờ chấm với ca được phân (ca hành chính 08:00–17:00 = 480 phút làm việc).
+2. **Đi muộn / về sớm làm tròn theo block 30 phút**: muộn 1–30 phút tính 30; 31–60 tính 60; cứ thế cộng 30 cho mỗi khoảng tiếp theo. Áp dụng riêng cho đầu ca (muộn) và cuối ca (sớm). Hiển thị theo ngày và tổng tháng.
+3. **Đi muộn / về sớm có giải trình** được duyệt **2 bước: trưởng bộ phận → HR (HR hoặc HR Manage)** thì tính đủ công, không trừ block. *(Khác G2 đang chạy: đơn đi muộn / về sớm hiện chỉ 1 bước — cần đổi sang 2 bước.)*
+4. **Đến sớm / về muộn**: cộng **số phút thực tế** (không làm tròn block). Cuối tháng nhân viên giải trình, được duyệt thì thành **phút tăng ca**; HR dùng làm căn cứ tính lương làm thêm giờ. Chưa duyệt thì chỉ hiển thị, không tính tiền.
+5. **Bảng tổng hợp theo nhân viên** (HR): ngày công thực tế, công nghỉ phép theo loại, số lần + tổng block muộn / sớm (đã trừ phần được duyệt), phút dư chờ duyệt / đã duyệt thành tăng ca, ngày thiếu lượt chấm, ngày vắng — kèm drill-down từng ngày (lượt chấm, ảnh, địa điểm, đơn liên quan). Xuất Excel cho tính lương.
+6. Nguyên tắc pháp lý giữ nguyên: block muộn là **giờ không làm việc bị trừ công**, không phải phạt tiền (Điều 127 BLLĐ); tăng ca vẫn chịu trần 40 giờ/tháng, 200 giờ/năm.
 
 ---
 

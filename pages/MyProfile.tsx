@@ -1,12 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useModuleData } from '../hooks/useModuleData';
 import { Employee, AssetStatus, Asset } from '../types';
 import {
-    User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building,
-    Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight,
-    Settings, Package, FileText, Hash, Edit3, Save, X, Check,
-    Sparkles, Zap, TrendingUp, Activity, Medal, Camera, Loader2
+    User as UserIcon, Briefcase, Phone, Calendar, MapPin, Building, Heart, Landmark, Mail, Shield, Clock, Award, ChevronRight, Settings, Package, FileText, Hash, Edit3, Save, X, Check, Sparkles, Zap, TrendingUp, Activity, Medal, Camera, Loader2
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { supabase } from '../lib/supabase';
@@ -378,6 +376,20 @@ const MyProfile: React.FC = () => {
                     </div>
                 </div>
             </div>
+
+            {employee && (
+                <Link
+                    to={`/ep/${employee.id}`}
+                    className="flex items-center gap-3 rounded-2xl border border-mint-200 bg-mint-50 p-4 text-left transition hover:bg-mint-100 dark:border-mint-900/50 dark:bg-mint-900/20"
+                >
+                    <FileText size={20} className="shrink-0 text-mint-700 dark:text-mint-300" />
+                    <div className="min-w-0 flex-1">
+                        <p className="text-sm font-black text-mint-800 dark:text-mint-200">Hồ sơ nhân sự đầy đủ</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300">Hợp đồng, quá trình công tác, CCCD, BHXH, người phụ thuộc, trình độ — chỉ bạn và HR xem được.</p>
+                    </div>
+                    <ChevronRight size={18} className="shrink-0 text-mint-700 dark:text-mint-300" />
+                </Link>
+            )}
 
             {/* ═══════════════════════════════════════════════
                 TAB CONTENT — Frosted Glass Panel
