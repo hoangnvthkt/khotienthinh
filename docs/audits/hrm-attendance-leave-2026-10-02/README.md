@@ -448,7 +448,7 @@ Ngoại lệ: máy hỏng / mất → HR cấp "mã chấm tạm" 1 ngày hoặc
 
 Mục tiêu: HR mở **một nhân viên** trên bảng tổng hợp là thấy đủ chấm công, nghỉ phép, đi muộn / về sớm, đến sớm / về muộn của người đó trong tháng — và dùng thẳng để tính lương.
 
-1. **Tính theo ca.** Mỗi ngày so giờ chấm với ca được phân (ca hành chính 08:00–17:00 = 480 phút làm việc).
+1. **Tính theo ca.** *(G4 — nhánh `feature/hrm-g4-timesheet`: đã làm mục 1–5; ca lấy theo phân ca theo ngày → phân ca mặc định → lịch làm việc → 08:00–17:00; không áp thời gian ân hạn của ca.)* Mỗi ngày so giờ chấm với ca được phân (ca hành chính 08:00–17:00 = 480 phút làm việc).
 2. **Đi muộn / về sớm làm tròn theo block 30 phút**: muộn 1–30 phút tính 30; 31–60 tính 60; cứ thế cộng 30 cho mỗi khoảng tiếp theo. Áp dụng riêng cho đầu ca (muộn) và cuối ca (sớm). Hiển thị theo ngày và tổng tháng.
 3. **Đi muộn / về sớm có giải trình** được duyệt **2 bước: trưởng bộ phận → HR (HR hoặc HR Manage)** thì tính đủ công, không trừ block. *(Khác G2 đang chạy: đơn đi muộn / về sớm hiện chỉ 1 bước — cần đổi sang 2 bước.)*
 4. **Đến sớm / về muộn**: cộng **số phút thực tế** (không làm tròn block). Cuối tháng nhân viên giải trình, được duyệt thì thành **phút tăng ca**; HR dùng làm căn cứ tính lương làm thêm giờ. Chưa duyệt thì chỉ hiển thị, không tính tiền.
