@@ -840,3 +840,12 @@ Chỉ sửa frontend, không có migration.
   - quyền chỉ màn cũ thấy: **20**, đều thuộc đúng 8 thành viên đã rời dự án và tài khoản bị khóa; server không tính quyền cho họ (`project_user_has_room_action` đòi `end_date is null` và tài khoản đang hoạt động) → **0 quyền có hiệu lực bị bỏ sót**;
   - màn cũ còn đếm 8 người đó là "thành viên" và có thể tính họ là người duyệt (che cảnh báo thiếu người duyệt). Màn mới chỉ đếm người còn hiệu lực, đánh dấu và cho "Gỡ dòng cũ".
 - Kiểm tra: Vitest 2.816 PASS; tsc, lint, build, check-queries, check-migrations đạt; giao diện xem bằng fixture ở desktop và mobile (không tràn ngang). E2E Playwright chưa chạy (máy chưa cài trình duyệt Playwright).
+
+### P3 — Hồ sơ quyền, bước 2: vai trò đặc biệt trong màn theo người (02/10)
+
+- Migration `20261004130000_authorization_p3_user_special_roles_summary`: RPC chỉ đọc `get_user_special_roles(user_id)`, chỉ Admin; trả các vai trò đang hiệu lực của một người (HR, HR Manage, Quản trị hệ thống, Quản trị phân quyền, Kiểm toán, ...). Không đổi quyền của ai.
+- Người dùng → Sửa: khối **"Quyền đến từ nguồn khác"** gom 3 thẻ chỉ xem cạnh quyền riêng: Vai trò đặc biệt (kèm chỗ đổi), Xem Tài chính và Hợp đồng, Quyền trong Room dự án. Đủ trạng thái đang tải, lỗi (có Thử lại), rỗng.
+- Lỗi bắt được khi viết smoke: `principal_type` lưu chữ thường `user`; smoke nay **bắt buộc** có người giữ vai trò (không âm thầm bỏ qua).
+- Kiểm tra: dry-run PASS; smoke sau apply PASS (nhân viên bị chặn, người giữ vai trò thấy đúng vai trò, vai trò đã thu hồi không hiện); Vitest 2.819 PASS; tsc, lint, build, check-queries đạt; giao diện xem bằng fixture ở mobile.
+- Rollback: `supabase/operations/authorization_p3_user_special_roles_summary_rollback.sql`.
+- Hồ sơ quyền hoàn tất ở mức xem tổng hợp; việc gán/đổi vai trò vẫn ở Cài đặt → Vai trò đặc biệt và tab Vai trò nhân sự (chưa gộp vào một chỗ, chờ chủ sản phẩm quyết nếu muốn).

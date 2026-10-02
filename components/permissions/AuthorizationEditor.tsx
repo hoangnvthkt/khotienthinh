@@ -18,6 +18,7 @@ import PermissionModuleEditor from './PermissionModuleEditor';
 import PermissionTemplateFill from './PermissionTemplateFill';
 import ProjectRoomSummary from './ProjectRoomSummary';
 import SensitiveViewSummary from './SensitiveViewSummary';
+import SpecialRolesSummary from './SpecialRolesSummary';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
 interface AuthorizationEditorProps {
@@ -247,14 +248,20 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>
 
-      {targetUser.id && <SensitiveViewSummary userId={targetUser.id} isAdmin={targetUser.role === 'ADMIN'} />}
-
-      <ProjectRoomSummary
-        state={snapshotState}
-        roomActions={roomActions}
-        isAdmin={targetUser.role === 'ADMIN'}
-        onRetry={onRetrySnapshot}
-      />
+      <div className="space-y-3 rounded-2xl bg-slate-50 p-3">
+        <div>
+          <h4 className="text-xs font-black uppercase tracking-wide text-slate-700">Quyền đến từ nguồn khác</h4>
+          <p className="text-[11px] text-slate-500">Chỉ để xem. Cùng với quyền riêng ở trên, đây là toàn bộ những gì người này có thể làm.</p>
+        </div>
+        {targetUser.id && <SpecialRolesSummary userId={targetUser.id} />}
+        {targetUser.id && <SensitiveViewSummary userId={targetUser.id} isAdmin={targetUser.role === 'ADMIN'} />}
+        <ProjectRoomSummary
+          state={snapshotState}
+          roomActions={roomActions}
+          isAdmin={targetUser.role === 'ADMIN'}
+          onRetry={onRetrySnapshot}
+        />
+      </div>
 
       <label className="block space-y-1">
         <span className="text-xs font-black uppercase tracking-wide text-slate-600">

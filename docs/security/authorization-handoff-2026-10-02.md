@@ -291,7 +291,7 @@ Chủ sản phẩm chọn phương án 1. Migration `20261004100000` giữ nguy�
 ### 8.3 P3 còn lại
 
 - **Đã xong:** smoke cho `20260928101825` và `20260928113000`; tab "Mẫu quyền" đổi tên "Vai trò đặc biệt"; thẻ "Xem Tài chính và Hợp đồng" trong Người dùng → Sửa (RPC `get_user_sensitive_view_summary`); màn Room cũ thay bằng "Phân quyền theo người" (đã đối chiếu dữ liệu thật, không bỏ sót quyền).
-- **Hồ sơ quyền, phần còn lại:** gộp vai trò đặc biệt (HR, quản trị) và liên kết Room theo dự án vào cùng một màn theo người. Làm theo quyết định 12 và 15.
+- **Hồ sơ quyền: đã xong ở mức xem tổng hợp (02/10).** Người dùng → Sửa có khối "Quyền đến từ nguồn khác" (vai trò đặc biệt, Tài chính/Hợp đồng, Room dự án). Việc gán/đổi vai trò vẫn ở Cài đặt → Vai trò đặc biệt và tab Vai trò nhân sự; chưa gộp chỗ sửa vào một nơi (cần chủ sản phẩm quyết).
 - **PM / CHT quản lý Room:** chủ sản phẩm quyết **giữ Admin-only** (02/10).
 - **Task 13: xóa cột legacy:** đã khảo sát, **chưa xóa được**. Xem `authorization-task13-impact-survey-2026-10-02.md`: 49 người sẽ mất quyền đọc 10 bảng danh mục nếu bỏ `can_access_module`; cần chọn phương án thay policy (mục 5 của tài liệu đó) rồi mới làm từng bước.
 - **E2E Playwright:** máy chưa cài trình duyệt (`npx playwright install`); các e2e phân quyền chưa chạy lại sau các thay đổi 02/10.

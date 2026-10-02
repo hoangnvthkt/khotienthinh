@@ -52,6 +52,17 @@ describe('unified authorization editor UI contract', () => {
     expect(moduleCard).toContain('Kế thừa');
   });
 
+  it('shows roles, Finance/Contract visibility and Rooms together as read-only sources', () => {
+    expect(editor).toContain('SpecialRolesSummary');
+    expect(editor).toContain('SensitiveViewSummary');
+    expect(editor).toContain('ProjectRoomSummary');
+    expect(editor).toContain('Quyền đến từ nguồn khác');
+    const roles = readFileSync(join(process.cwd(), 'components/permissions/SpecialRolesSummary.tsx'), 'utf8');
+    expect(roles).toContain('getUserSpecialRoles');
+    expect(roles).toContain('Không giữ vai trò đặc biệt nào');
+    expect(roles).toContain('Thử lại');
+  });
+
   it('fails closed until the catalog is ready and there is a valid change', () => {
     expect(editor).toContain('onCatalogChange');
     expect(userModal).toContain('!authorizationCatalog');
