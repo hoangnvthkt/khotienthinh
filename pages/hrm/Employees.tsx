@@ -19,6 +19,7 @@ import { hrmSharedCatalogService } from '../../lib/hrmSharedCatalogService';
 import type { HrmSharedCatalogBundle, HrmStaffingRow } from '../../types/hrmSharedCatalog';
 import HrmPersonnelImportExportPanel from '../../components/hrm/HrmPersonnelImportExportPanel';
 import HrmProfileCompletenessPanel from '../../components/hrm/HrmProfileCompletenessPanel';
+import HrmWorkQueuePanel from '../../components/hrm/HrmWorkQueuePanel';
 
 const Employees: React.FC = () => {
     const { employees, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
@@ -249,6 +250,7 @@ const Employees: React.FC = () => {
                 </div>
             </div>
 
+            {isHr && <HrmWorkQueuePanel />}
             {isHr && <HrmProfileCompletenessPanel />}
 
             {/* Search */}
