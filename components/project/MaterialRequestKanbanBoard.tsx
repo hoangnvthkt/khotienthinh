@@ -23,12 +23,15 @@ import {
   MATERIAL_REQUEST_KANBAN_COLUMNS,
   resolveRequestKanbanStage,
 } from '../../lib/materialRequestService';
+import type { MaterialRequestSupplySummary } from '../../lib/materialRequestSupplyService';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 
 interface MaterialRequestKanbanBoardProps {
   requests: MaterialRequest[];
   fulfillmentSummaries: Record<string, MaterialRequestFulfillmentSummary>;
   fulfillmentBatches: Record<string, MaterialRequestFulfillmentBatch[]>;
+  /** Tiến độ cung ứng theo dòng của đề xuất Đang cung ứng (việc 1). */
+  supplySummaries?: Record<string, MaterialRequestSupplySummary>;
   eventsByRequest: Record<string, MaterialRequestEvent[]>;
   transactions: Transaction[];
   inventoryItemById: Map<string, InventoryItem>;
@@ -54,6 +57,7 @@ const columnHeaderGradient: Record<MaterialRequestKanbanStage, string> = {
   site_quality_check: 'from-teal-700 via-emerald-800 to-teal-900',
   site_receipt: 'from-teal-600 via-emerald-700 to-teal-800',
   completed: 'from-emerald-700 via-teal-800 to-teal-950',
+  ended: 'from-slate-600 via-slate-700 to-slate-800',
   closed: 'from-zinc-600 via-zinc-700 to-zinc-800',
 };
 
@@ -65,6 +69,7 @@ const columnBgTone: Record<MaterialRequestKanbanStage, string> = {
   site_quality_check: 'bg-teal-50/50 dark:bg-teal-950/25',
   site_receipt: 'bg-teal-50/60 dark:bg-teal-950/30',
   completed: 'bg-emerald-50/50 dark:bg-emerald-950/30',
+  ended: 'bg-slate-100/50 dark:bg-slate-900/40',
   closed: 'bg-zinc-100/40 dark:bg-zinc-900/40',
 };
 
@@ -76,6 +81,7 @@ const columnBorderTone: Record<MaterialRequestKanbanStage, string> = {
   site_quality_check: 'border-teal-200/80 dark:border-teal-800/50',
   site_receipt: 'border-teal-200/80 dark:border-teal-800/50',
   completed: 'border-emerald-200/80 dark:border-emerald-800/60',
+  ended: 'border-slate-200 dark:border-slate-800',
   closed: 'border-zinc-200 dark:border-zinc-800',
 };
 
@@ -109,6 +115,7 @@ const getLaneBorderColor = (laneId: MaterialRequestKanbanLaneId) => {
     site_quality_check: 'border-l-teal-700',
     site_receipt: 'border-l-teal-600',
     completed: 'border-l-emerald-600',
+    ended: 'border-l-slate-400',
     closed: 'border-l-zinc-400',
   };
   return colors[laneId as MaterialRequestKanbanStage] || 'border-l-zinc-400';
@@ -141,6 +148,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
   requests,
   fulfillmentSummaries,
   fulfillmentBatches,
+  supplySummaries = {},
   eventsByRequest,
   transactions,
   inventoryItemById,
@@ -244,7 +252,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
       }
     });
     const logistics = MATERIAL_REQUEST_KANBAN_COLUMNS.filter(column =>
-      ['batch_planning', 'site_quality_check', 'site_receipt', 'completed', 'closed'].includes(column.id)
+      ['batch_planning', 'site_quality_check', 'site_receipt', 'completed', 'ended', 'closed'].includes(column.id)
     );
     const draftColumn = {
       ...MATERIAL_REQUEST_KANBAN_COLUMNS[0],
@@ -335,7 +343,10 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
 
   const displayColumns = useMemo(() => {
     return columns.filter(column => {
-      if (column.id === 'legacy_review') return (requestsByStage[column.id] || []).length > 0;
+      // Cột đợt cấp cũ chỉ hiện khi còn phiếu theo luồng cũ.
+      if (column.id === 'legacy_review' || column.id === 'site_quality_check' || column.id === 'site_receipt') {
+        return (requestsByStage[column.id] || []).length > 0;
+      }
       if (!hideEmptyWorkflowLanes) return true;
       if (column.id === 'draft') return (requestsByStage[column.id] || []).length > 0;
       if (!column.id.startsWith('workflow:')) return true;
@@ -391,7 +402,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
       return `${prefix} Chỉ người đang xử lý bước hiện tại mới chuyển được phiếu.`;
     }
     if (stage === 'batch_planning') {
-      return `${prefix} Phiếu phải qua hết các bước duyệt trước khi sang tạo đợt cấp.`;
+      return `${prefix} Phiếu phải qua hết các bước duyệt trước khi sang Đang cung ứng.`;
     }
     return `${prefix} Chỉ chuyển được sang đúng bước kế tiếp, và cần quyền Duyệt trong room Đề xuất vật tư.`;
   };
@@ -447,6 +458,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                     : handlerNames[0] || request.submittedToName || '';
                   const workflowStepLabel = workflowSubject?.currentRuntimeNode?.label || workflowSubject?.currentNode?.label || undefined;
                   const summary = fulfillmentSummaries[request.id];
+                  const supply = supplySummaries[request.id];
                   const events = eventsByRequest[request.id] || [];
                   const slaState = getMaterialRequestSlaState(request);
                   const progress = summary && summary.committedQty > 0
@@ -539,7 +551,15 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                           )}
                         </div>
 
-                        {summary && summary.committedQty > 0 && (
+                        {supply ? (
+                          <div className="mt-2 space-y-1.5 rounded-lg bg-muted px-2.5 py-1.5 text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-2">
+                              <span className="h-1.5 w-16 overflow-hidden rounded-full bg-background"><span className="block h-full rounded-full bg-leaf-500" style={{ width: `${Math.round(supply.doneLines / Math.max(1, supply.lineCount) * 100)}%` }} /></span>
+                              Đủ {supply.doneLines}/{supply.lineCount} dòng
+                            </span>
+                            {supply.unsourcedLines > 0 && <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">{supply.unsourcedLines} dòng chưa có nguồn</span>}
+                          </div>
+                        ) : summary && summary.committedQty > 0 && (
                           <div className="mt-2 flex items-start gap-1.5 text-[10px] text-muted-foreground bg-muted rounded-lg px-2.5 py-1.5">
                             <Package size={10} className="shrink-0 mt-0.5 text-slate-300" />
                             <span className="line-clamp-1">Nhận {summary.receivedQty.toLocaleString('vi-VN')} / {summary.committedQty.toLocaleString('vi-VN')} ({progress}%)</span>
@@ -715,7 +735,7 @@ const MaterialRequestKanbanBoard: React.FC<MaterialRequestKanbanBoardProps> = ({
                             </div>
 
                             {/* Fulfillment progress */}
-                            {summary && summary.committedQty > 0 && (
+                            {!supply && summary && summary.committedQty > 0 && (
                               <div className="border-t border-border pt-3">
                                 <div className="flex justify-between text-[10px] font-black text-muted-foreground mb-1">
                                   <span>Tiến độ nhận hàng</span>

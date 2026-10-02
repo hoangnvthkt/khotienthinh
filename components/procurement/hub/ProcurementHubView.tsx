@@ -8,7 +8,7 @@ import { useToast } from '../../../context/ToastContext';
 import {
   PROCUREMENT_PO_STATUS_LABELS, PROCUREMENT_PROGRESS_LABELS, PROCUREMENT_SOURCE_LABELS, procurementInboxService, procurementSourceLink, urgencyOf,
   type ProcurementProactiveCandidate,
-  type ProcurementInbox, type ProcurementInboxDetail, type ProcurementInboxDocument, type ProcurementInboxFilter,
+  type ProcurementInbox, type ProcurementInboxDetail, type ProcurementInboxDocument, type ProcurementInboxFilter, type ProcurementInboxLine,
   type ProcurementOrderDetail, type ProcurementOrderStage, type ProcurementProgress, type ProcurementSourceRef, type ProcurementSourceType,
 } from '../../../lib/procurementInboxService';
 import { dateVi, fmt, useGroupAccordion } from '../../project/work-plan/workPlanUi';
@@ -19,6 +19,7 @@ import { ProactiveOrderEditor } from './ProactiveOrderEditor';
 import { OrdersView } from './OrdersView';
 import { ContractsView } from './ContractsView';
 import { ReceiptReconciliationView } from '../receipt/ReceiptReconciliationView';
+import { SupplyFromStockDrawer, TRANSFER_STATUS_LABELS } from './SupplyFromStockDrawer';
 
 // Mua hàng hub: one place where the procurement team receives every purchase need
 // (KH vật tư, đề xuất công trường, later other modules), turns it into orders that
@@ -104,6 +105,7 @@ const NeedDrawer: React.FC<{
   const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [supplyLine, setSupplyLine] = useState<ProcurementInboxLine | null>(null);
   const load = useCallback(() => {
     setError(null); setDetail(null);
     procurementInboxService.get(doc.sourceType, doc.sourceId).then(setDetail).catch(e => setError(e instanceof Error ? e.message : String(e)));
@@ -204,12 +206,22 @@ const NeedDrawer: React.FC<{
               <p className="font-medium text-foreground">{l.itemName}<span className="ml-2 text-xs font-normal text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></p>
               <span className={`shrink-0 text-sm font-semibold ${l.remainingQty > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{l.remainingQty > 0 ? `Thiếu ${fmt(l.remainingQty)}` : 'Đã đặt đủ'}</span>
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">Cần {fmt(l.needQty)} · đã đặt {fmt(l.orderedQty) || 0} · đã nhận {fmt(l.receivedQty) || 0} · tồn kho nhận {l.stockQty == null ? '—' : fmt(l.stockQty)}</p>
-            {l.orders.length > 0 && <p className="mt-1 flex flex-wrap gap-1">{l.orders.map(o => <button key={o.id} type="button" onClick={() => onOpenOrder(o.id)}
+            <p className="mt-0.5 text-xs text-muted-foreground">Cần {fmt(l.needQty)} · đã đặt/cấp {fmt(l.orderedQty) || 0} · đã nhận {fmt(l.receivedQty) || 0} · tồn kho nhận {l.stockQty == null ? '—' : fmt(l.stockQty)}</p>
+            {(l.orders.length > 0 || (l.transfers || []).length > 0) && <p className="mt-1 flex flex-wrap gap-1">{l.orders.map(o => <button key={o.id} type="button" onClick={() => onOpenOrder(o.id)}
               className="rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 hover:underline dark:bg-sky-950/40 dark:text-sky-200">
-              {o.poNumber || 'PO'} · {fmt(o.orderedQty)}{o.vendorName ? ` · ${o.vendorName}` : ''}</button>)}</p>}
+              {o.poNumber || 'PO'} · {fmt(o.orderedQty)}{o.vendorName ? ` · ${o.vendorName}` : ''}</button>)}
+              {(l.transfers || []).map(t => <span key={t.id} title={t.id} className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${t.status === 'CANCELLED' ? 'bg-muted text-muted-foreground line-through' : 'bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200'}`}>
+                <Truck size={11} />Chuyển kho · {fmt(t.qty)} · {t.sourceWarehouseName || 'kho gửi'} · {TRANSFER_STATUS_LABELS[t.status] || t.status}</span>)}</p>}
+            {canManage && !closed && l.remainingQty > 0 && (l.otherStock || []).length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => setSupplyLine(l)} className={secondaryBtn}>
+                <Warehouse size={15} />Cấp từ kho
+                <span className="rounded-full bg-teal-100 px-1.5 text-xs tabular-nums text-teal-800 dark:bg-teal-900/60 dark:text-teal-100">{fmt((l.otherStock || []).reduce((sum, x) => sum + x.qty, 0))}</span></button>
+              <span className="text-xs text-muted-foreground">{(l.otherStock || []).length} kho khác còn hàng</span>
+            </div>}
           </li>)}</ul>
         </section>}
+    {supplyLine && <SupplyFromStockDrawer doc={doc} line={supplyLine} onClose={() => setSupplyLine(null)}
+      onDone={() => { setSupplyLine(null); load(); onChanged(); }} />}
   </Drawer>;
 };
 

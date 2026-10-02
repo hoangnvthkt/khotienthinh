@@ -50,6 +50,7 @@ import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/l
 import { BoqSummaryStrip } from './erp';
 import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
 import { getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
+import { MaterialRequestSupplyPanel } from './project/material/MaterialRequestSupplyPanel';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
 
@@ -90,6 +91,13 @@ const FALLBACK_DETAIL_APPROVAL_STEPS: Array<{ id: MaterialRequestWorkflowStep; l
     { id: 'material_department_review', label: 'BP vật tư tiếp nhận', hint: 'Kiểm tra nguồn cấp và điều phối' },
 ];
 
+// Đề xuất dự án (việc 1): bỏ bước tạo đợt cấp — duyệt xong là Đang cung ứng, tự Hoàn tất khi nhận đủ.
+// Mã bước nội bộ vẫn là 'batch_planning'.
+const PROJECT_OPERATION_STEPS: Array<{ id: MaterialRequestWorkflowStep; label: string; hint: string }> = [
+    { id: 'batch_planning', label: 'Đang cung ứng', hint: 'Mua hàng mua mới hoặc cấp từ kho' },
+    { id: 'completed', label: 'Hoàn tất', hint: 'Tự chuyển khi mọi dòng đã nhận đủ hoặc đã đóng' },
+];
+
 const DETAIL_OPERATION_STEPS: Array<{ id: MaterialRequestWorkflowStep; label: string; hint: string }> = [
     { id: 'batch_planning', label: 'Tạo đợt cấp / PO', hint: 'Lập đợt cấp hàng hoặc đặt mua' },
     { id: 'site_quality_check', label: 'Kho kiểm tra', hint: 'Kho công trường duyệt số lượng/chất lượng' },
@@ -101,6 +109,7 @@ const getWorkflowStepLabel = (step?: string | null) => {
     if (!step) return 'Tạo đề xuất';
     if (step === 'returned_to_creator') return 'Trả về người tạo';
     if (step === 'rejected') return 'Từ chối';
+    if (step === 'ended') return 'Đã kết thúc';
     const column = MATERIAL_REQUEST_KANBAN_COLUMNS.find(item => item.id === step);
     if (column?.label) return column.label;
     const fallback = [...FALLBACK_DETAIL_APPROVAL_STEPS, ...DETAIL_OPERATION_STEPS].find(item => item.id === step);
@@ -416,15 +425,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
             || request.workflowStep === 'material_department_review'
         );
     const canReviewProjectWorkflow = isProjectWorkflowReviewStep && canApproveProjectRequest && canProcessProjectWorkflow;
-    const canPlanProjectFulfillment = !!request
-        && isProjectRequest
-        && canConfirmProjectRequest
-        && request.status === RequestStatus.APPROVED
-        && (request.workflowStep === 'batch_planning' || !request.workflowStep)
-        && (
-            request.submittedToUserId === user.id
-            || canProcessProjectWorkflow
-        );
+    // Việc 1: không còn bước tạo đợt cấp / phân nguồn ở dự án — Mua hàng cung ứng ở Cần mua.
+    const canPlanProjectFulfillment = false;
     const workBoqMap = useMemo(() => new Map(workBoqItems.map(item => [item.id, item])), [workBoqItems]);
     const materialBudgetMap = useMemo(() => new Map(materialBudgetItems.map(item => [item.id, item])), [materialBudgetItems]);
     const getWorkBoqLabel = (item?: ProjectWorkBoqItem | null) => item
@@ -2317,6 +2319,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
 
     const permissionRequest = request ? { ...request, sourceWarehouseId: sourceWarehouseId || request.sourceWarehouseId } : undefined;
     const canPrepareIssue = !!request
+        && !isProjectRequest
         && request.status === RequestStatus.APPROVED
         && !request.relatedTransactionId
         && (
@@ -2326,6 +2329,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
         );
     const canEditApprovalQuantities = isApproving || canPrepareIssue || canPlanProjectFulfillment;
     const canCreateFulfillmentBatch = !!request
+        && !isProjectRequest
         && isBatchFulfillmentRequest
         && (request.status === RequestStatus.APPROVED || request.status === RequestStatus.IN_TRANSIT)
         && (!isProjectRequest || canConfirmProjectRequest)
@@ -2408,7 +2412,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
             }]
             : []),
         ...approvalDetailSteps,
-        ...DETAIL_OPERATION_STEPS.map(step => ({ id: step.id, label: step.label, hint: step.hint })),
+        ...(isProjectRequest
+            ? PROJECT_OPERATION_STEPS.map(step => step.id === 'completed' && materialRequestWorkflowStepText === 'ended'
+                ? { id: step.id, label: 'Đã kết thúc', hint: 'Phần còn thiếu đã đóng theo lý do của người kết thúc' }
+                : step)
+            : DETAIL_OPERATION_STEPS).map(step => ({ id: step.id, label: step.label, hint: step.hint })),
     ];
     const currentDynamicStepId = currentTemplateNodeId ? `workflow:${currentTemplateNodeId}` : '';
     const hasCurrentDynamicStep = currentDynamicStepId
@@ -2418,6 +2426,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
     if (request?.status === RequestStatus.COMPLETED || materialRequestWorkflowStepText === 'completed') {
         detailCurrentStepId = 'completed';
     } else if (request?.status === RequestStatus.APPROVED && (!request.workflowStep || ['site_manager_review', 'material_department_review'].includes(materialRequestWorkflowStepText))) {
+        detailCurrentStepId = 'batch_planning';
+    } else if (isProjectRequest && ['site_quality_check', 'site_receipt'].includes(materialRequestWorkflowStepText)) {
+        // Đợt cấp cũ còn mở: vẫn nằm trong Đang cung ứng.
         detailCurrentStepId = 'batch_planning';
     } else if ((projectWorkflowSubject?.status === 'RUNNING' || projectWorkflowSubject?.status === 'RETURNED') && hasCurrentDynamicStep) {
         detailCurrentStepId = currentDynamicStepId;
@@ -3115,9 +3126,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                         <>
                                             {canSeeAvailability && <th className="py-3 px-3 w-28 text-right text-blue-600 bg-blue-50/40 dark:bg-blue-950/20">{stockContextWarehouseId ? 'Tồn kho' : 'Tổng tồn'}</th>}
                                             <th className="py-3 px-3 w-28 text-right text-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/20">Cam kết</th>
+                                            {!isProjectRequest && <>
                                             <th className="py-3 px-3 w-24 text-right text-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/20">Đã xuất</th>
                                             <th className="py-3 px-3 w-24 text-right text-cyan-600 bg-cyan-50/40 dark:bg-cyan-950/20">Đã nhận</th>
                                             <th className="py-3 px-3 w-24 text-right text-slate-500">Còn lại</th>
+                                            </>}
                                         </>
                                     )}
                                     {isEditable && <th className="py-3 px-3 w-10 text-center"></th>}
@@ -3133,7 +3146,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                     const sourceStock = stockSummary?.available || 0;
                                     const canEditGroupQty = isEditable && !hasMultipleSources;
                                     const canEditGroupApproval = !isEditable && canEditApprovalQuantities && !hasMultipleSources;
-                                    const groupColSpan = isEditable ? 4 : canSeeAvailability ? 8 : 7;
+                                    const groupColSpan = isEditable ? 4 : (canSeeAvailability ? 8 : 7) - (isProjectRequest ? 3 : 0);
 
                                     return (
                                         <React.Fragment key={group.key}>
@@ -3267,9 +3280,11 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                 </span>
                                                             )}
                                                         </td>
+                                                        {!isProjectRequest && <>
                                                         <td className="py-2.5 px-3 text-right font-bold text-indigo-600 text-xs">{group.issuedQty.toLocaleString('vi-VN')}</td>
                                                         <td className="py-2.5 px-3 text-right font-bold text-cyan-600 text-xs">{group.receivedQty.toLocaleString('vi-VN')}</td>
                                                         <td className="py-2.5 px-3 text-right font-bold text-muted-foreground text-xs">{group.remainingToReceive.toLocaleString('vi-VN')}</td>
+                                                        </>}
                                                     </>
                                                 )}
                                                 {isEditable && (
@@ -3328,6 +3343,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                                     <div className="text-[9px] uppercase font-bold text-emerald-500">Cam kết</div>
                                                                                     <div className="font-black">{source.approvedQty.toLocaleString('vi-VN')}</div>
                                                                                 </div>
+                                                                                {!isProjectRequest && <>
                                                                                 <div className="col-span-6 md:col-span-1 text-right">
                                                                                     <div className="text-[9px] uppercase font-bold text-indigo-500">Đã xuất</div>
                                                                                     <div className="font-black">{source.issuedQty.toLocaleString('vi-VN')}</div>
@@ -3336,6 +3352,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                                     <div className="text-[9px] uppercase font-bold text-cyan-500">Đã nhận</div>
                                                                                     <div className="font-black">{source.receivedQty.toLocaleString('vi-VN')}</div>
                                                                                 </div>
+                                                                                </>}
                                                                             </>
                                                                         )}
                                                                         {isEditable && (
@@ -3502,7 +3519,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             </div>
                                         )}
                                     </div>
-                                    {!isEditable && (
+                                    {!isEditable && !isProjectRequest && (
                                         <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted border border-border p-2">
                                             <div>
                                                 <div className="text-[9px] uppercase font-bold text-indigo-505 dark:text-indigo-400">Đã xuất</div>
@@ -3543,7 +3560,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                     <div className="font-black">{source.requestQty.toLocaleString('vi-VN')}</div>
                                                                 )}
                                                             </div>
-                                                            {!isEditable && (
+                                                            {!isEditable && !isProjectRequest && (
                                                                 <>
                                                                     <div className="flex-1 text-right">
                                                                         <div className="text-[9px] uppercase font-bold text-indigo-500">Đã xuất</div>
@@ -3584,7 +3601,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
                         )}
                     </div>
 
-                    {!isEditable && request && isBatchFulfillmentRequest && (
+                    {!isEditable && request && isProjectRequest && [RequestStatus.APPROVED, RequestStatus.IN_TRANSIT, RequestStatus.COMPLETED].includes(request.status) && (
+                        <div className="mt-5">
+                            <MaterialRequestSupplyPanel requestId={request.id} requestCode={request.code} onEnded={onClose} />
+                        </div>
+                    )}
+
+                    {!isEditable && request && isBatchFulfillmentRequest && fulfillmentBatches.length > 0 && (
                         <div className="mt-5 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                             <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
                                 <div>
