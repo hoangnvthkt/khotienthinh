@@ -18,7 +18,8 @@ import PermissionModuleEditor from './PermissionModuleEditor';
 import PermissionTemplateFill from './PermissionTemplateFill';
 import ProjectRoomSummary from './ProjectRoomSummary';
 import SensitiveViewSummary from './SensitiveViewSummary';
-import SpecialRolesSummary from './SpecialRolesSummary';
+import SpecialRolesEditor from './SpecialRolesEditor';
+import PermissionGuide from './PermissionGuide';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
 interface AuthorizationEditorProps {
@@ -168,22 +169,15 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
 
   return (
     <div className="space-y-4 rounded-2xl border border-blue-100 bg-blue-50/30 p-4">
-      <section>
-        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-blue-700">
-          <Layers size={14} /> Quyền truy cập module
-        </div>
-        <p className="mt-1 text-[10px] text-slate-500">
-          Tích Module để tự chọn toàn bộ quyền Xem hợp lệ; mở chi tiết khi cần điều chỉnh từng phân hệ.
-        </p>
-      </section>
+      <PermissionGuide />
 
       <section className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-blue-700">
-              <ShieldCheck size={14} /> Quyền theo phạm vi
+              <Layers size={14} /> ① Quyền theo công việc
             </div>
-            <p className="mt-1 text-[10px] text-slate-500">Chỉ sửa được quyền cấp riêng cho người này; quyền có sẵn từ vai trò hay mẫu quyền hiển thị ở trạng thái khóa.</p>
+            <p className="mt-1 text-[10px] text-slate-500">Điền theo mẫu chức vụ rồi chỉnh từng phân hệ. Tích tên phân hệ để chọn nhanh quyền Xem; mở ra khi cần chỉnh từng thao tác.</p>
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={copyDirectGrants} disabled={disabled || !catalog} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[10px] font-black text-slate-600 disabled:opacity-50">
@@ -248,12 +242,13 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>
 
+      {targetUser.id && <SpecialRolesEditor userId={targetUser.id} />}
+
       <div className="space-y-3 rounded-2xl bg-slate-50 p-3">
         <div>
-          <h4 className="text-xs font-black uppercase tracking-wide text-slate-700">Quyền đến từ nguồn khác</h4>
-          <p className="text-[11px] text-slate-500">Chỉ để xem. Cùng với quyền riêng ở trên, đây là toàn bộ những gì người này có thể làm.</p>
+          <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-700"><ShieldCheck size={14} /> ③ Quyền đến từ nguồn khác</h4>
+          <p className="text-[11px] text-slate-500">Chỉ để xem. Cùng với ① và ②, đây là toàn bộ những gì người này có thể làm.</p>
         </div>
-        {targetUser.id && <SpecialRolesSummary userId={targetUser.id} />}
         {targetUser.id && <SensitiveViewSummary userId={targetUser.id} isAdmin={targetUser.role === 'ADMIN'} />}
         <ProjectRoomSummary
           state={snapshotState}

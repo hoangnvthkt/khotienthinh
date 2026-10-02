@@ -4,7 +4,7 @@ import type { PermissionCatalogAction } from './permissionTypes';
 // Why a permission box in the user editor cannot be ticked, and where to
 // change it, in words an Admin can act on.
 
-const HR_ROLE_LABELS: Record<string, string> = { HR: 'HR', HR_MANAGE: 'HR Manage' };
+const ROLE_LABELS: Record<string, string> = { HR: 'Nhân sự', HR_MANAGE: 'Trưởng phòng nhân sự', AUDITOR: 'Kiểm toán' };
 
 export interface PermissionLockReason {
   badge: string;
@@ -18,8 +18,8 @@ export const notDirectGrantReason = (action: Pick<PermissionCatalogAction, 'perm
   }
   if (action.permissionCode.startsWith('hrm.')) {
     return {
-      badge: 'Qua vai trò HR',
-      hint: 'Dữ liệu nhân sự nhạy cảm: cấp bằng vai trò HR hoặc HR Manage ở Người dùng → mở người này → tab Vai trò nhân sự.',
+      badge: 'Qua vai trò nhân sự',
+      hint: 'Dữ liệu nhân sự nhạy cảm: gán vai trò Nhân sự hoặc Trưởng phòng nhân sự ở mục ② Vai trò đặc biệt bên dưới.',
     };
   }
   return {
@@ -32,11 +32,11 @@ export const notDirectGrantReason = (action: Pick<PermissionCatalogAction, 'perm
 export const inheritedLockHint = (source: Pick<EffectivePermissionSource, 'sourceType' | 'sourceCode'>): string => {
   const type = String(source.sourceType).toUpperCase();
   const code = source.sourceCode || '';
-  if ((type === 'ROLE' || type === 'BUSINESS_ROLE') && HR_ROLE_LABELS[code]) {
-    return `Đã có qua vai trò ${HR_ROLE_LABELS[code]}. Muốn bỏ: Người dùng → mở người này → tab Vai trò nhân sự.`;
+  if ((type === 'ROLE' || type === 'BUSINESS_ROLE') && ROLE_LABELS[code]) {
+    return `Đã có qua vai trò ${ROLE_LABELS[code]}. Muốn bỏ: thu hồi ở mục ② Vai trò đặc biệt bên dưới.`;
   }
   if (type === 'ROLE' || type === 'BUSINESS_ROLE') {
-    return `Đã có qua vai trò ${code || 'quản trị'}. Muốn bỏ: thu hồi vai trò ở Cài đặt → Mẫu quyền.`;
+    return `Đã có qua vai trò ${code || 'quản trị'}. Muốn bỏ: thu hồi vai trò ở Cài đặt → Vai trò đặc biệt.`;
   }
   if (type === 'INHERITED' || type === 'ADMIN') {
     return 'Đã có theo loại tài khoản. Muốn bỏ: đổi Loại tài khoản ở phía trên.';

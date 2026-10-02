@@ -31,6 +31,35 @@ const CONDITION_COLORS: Record<AssetCondition, string> = {
     lost: 'text-red-600 bg-red-50',
     wrong_location: 'text-blue-600 bg-blue-50'
 };
+const CONDITIONS = Object.keys(CONDITION_LABELS) as AssetCondition[];
+const CONDITION_ACTIVE: Record<AssetCondition, string> = {
+    good: 'border-emerald-500 bg-emerald-500 text-white',
+    damaged: 'border-orange-500 bg-orange-500 text-white',
+    lost: 'border-red-500 bg-red-500 text-white',
+    wrong_location: 'border-blue-500 bg-blue-500 text-white'
+};
+
+// One tap per asset instead of a dropdown; tapping the chosen state again clears it.
+const ConditionPicker: React.FC<{
+    assetName: string;
+    value?: AssetCondition;
+    onChange: (value?: AssetCondition) => void;
+}> = ({ assetName, value, onChange }) => (
+    <div role="radiogroup" aria-label={`Tình trạng thực tế của ${assetName}`} className="flex flex-wrap gap-1.5">
+        {CONDITIONS.map(key => {
+            const active = value === key;
+            return (
+                <button key={key} type="button" role="radio" aria-checked={active}
+                    onClick={() => onChange(active ? undefined : key)}
+                    className={`rounded-lg border px-3 py-2 md:px-2.5 md:py-1.5 text-xs md:text-[11px] font-bold transition ${active
+                        ? CONDITION_ACTIVE[key]
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                    {CONDITION_LABELS[key]}
+                </button>
+            );
+        })}
+    </div>
+);
 
 const AssetAudit: React.FC = () => {
     const { assets, assetCategories, users, user } = useApp();
@@ -72,6 +101,33 @@ const AssetAudit: React.FC = () => {
     }, [assets, searchTerm, filterCategory]);
 
     const getCategoryName = (catId: string) => assetCategories.find(c => c.id === catId)?.name || 'Khác';
+
+    const setCondition = (assetId: string, value?: AssetCondition) => {
+        setAuditData(prev => {
+            const next = { ...prev };
+            if (value) next[assetId] = value; else delete next[assetId];
+            return next;
+        });
+    };
+
+    const renderDetailInputs = (assetId: string, condition?: AssetCondition) => {
+        if (!condition) return null;
+        const inputClass = 'w-full px-3 py-2 md:px-2 md:py-1 text-sm md:text-[11px] border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:ring-1 focus:ring-rose-500 font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800';
+        return (
+            <div className="space-y-1.5">
+                {condition === 'wrong_location' && (
+                    <input type="text" placeholder="Vị trí thực tế..." aria-label="Vị trí thực tế"
+                        value={auditLocations[assetId] || ''}
+                        onChange={e => setAuditLocations(prev => ({ ...prev, [assetId]: e.target.value }))}
+                        className={inputClass} />
+                )}
+                <input type="text" placeholder="Ghi chú..." aria-label="Ghi chú"
+                    value={auditNotes[assetId] || ''}
+                    onChange={e => setAuditNotes(prev => ({ ...prev, [assetId]: e.target.value }))}
+                    className={inputClass} />
+            </div>
+        );
+    };
 
     const stats = useMemo(() => {
         const audited = Object.keys(auditData).length;
@@ -172,15 +228,15 @@ const AssetAudit: React.FC = () => {
     if (viewingSession) {
         return (
             <div className="space-y-6">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3 md:gap-4">
                     <button onClick={() => setViewingSession(null)} className="flex items-center px-4 py-2 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition font-bold text-xs">
                         <ChevronLeft size={16} className="mr-1" /> Quay lại
                     </button>
-                    <div className="flex-1">
-                        <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Chi tiết kiểm kê tài sản</h1>
+                    <div className="order-last w-full md:order-none md:w-auto md:flex-1">
+                        <h1 className="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">Chi tiết kiểm kê tài sản</h1>
                         <p className="text-slate-500 text-sm font-medium">{new Date(viewingSession.date).toLocaleString('vi-VN')} — {viewingSession.auditorName}</p>
                     </div>
-                    <button onClick={() => exportSessionToExcel(viewingSession)} className="flex items-center px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20">
+                    <button onClick={() => exportSessionToExcel(viewingSession)} className="ml-auto md:ml-0 flex items-center px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20">
                         <Download size={16} className="mr-2" /> Xuất Excel
                     </button>
                 </div>
@@ -208,7 +264,28 @@ const AssetAudit: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
+                <ul className="md:hidden space-y-2">
+                    {viewingSession.items.map(item => (
+                        <li key={item.assetId} className={`rounded-2xl border p-4 ${item.actualCondition !== 'good' ? 'border-amber-200 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/10' : 'border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900'}`}>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="font-black text-sm text-slate-800 dark:text-white">{item.assetName}</div>
+                                    <div className="text-[10px] font-bold text-slate-400 font-mono">{item.assetCode} · {item.categoryName}</div>
+                                </div>
+                                <span className={`shrink-0 text-[10px] font-black uppercase px-2 py-1 rounded-full ${CONDITION_COLORS[item.actualCondition]}`}>
+                                    {CONDITION_LABELS[item.actualCondition]}
+                                </span>
+                            </div>
+                            <div className="mt-2 text-xs text-slate-500">
+                                Hệ thống: {ASSET_STATUS_LABELS[item.expectedStatus]} · {item.expectedLocation}
+                                {item.actualLocation && <span className="text-blue-600 font-bold"> → {item.actualLocation}</span>}
+                            </div>
+                            {item.note && <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{item.note}</div>}
+                        </li>
+                    ))}
+                </ul>
+
+                <div className="hidden md:block bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
@@ -264,7 +341,7 @@ const AssetAudit: React.FC = () => {
                     </h1>
                     <p className="text-slate-500 text-sm font-medium">Đối soát tình trạng tài sản thực tế và hệ thống.</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex w-full md:w-auto flex-wrap items-center gap-2">
                     <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-1 flex gap-1">
                         {canRecord && <button onClick={() => setActiveView('audit')} className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeView === 'audit' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                             <ClipboardCheck size={14} className="inline mr-1.5" />Kiểm kê
@@ -275,7 +352,7 @@ const AssetAudit: React.FC = () => {
                     </div>
                     {canRecord && activeView === 'audit' && (
                         <button disabled={Object.keys(auditData).length === 0 || isSaving} onClick={handleSaveAudit}
-                            className="flex items-center px-6 py-2.5 bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition font-black uppercase text-[10px] tracking-widest shadow-lg shadow-rose-500/20 disabled:opacity-50 disabled:shadow-none">
+                            className="ml-auto md:ml-0 flex items-center px-6 py-2.5 bg-rose-500 text-white rounded-xl hover:bg-rose-600 transition font-black uppercase text-[10px] tracking-widest shadow-lg shadow-rose-500/20 disabled:opacity-50 disabled:shadow-none">
                             {isSaving ? 'Đang lưu...' : <><Save size={16} className="mr-2" /> Hoàn tất</>}
                         </button>
                     )}
@@ -316,7 +393,36 @@ const AssetAudit: React.FC = () => {
                             <p className="text-xs font-medium mt-1">{canRecord ? 'Hoàn tất phiên kiểm kê đầu tiên để lưu lịch sử.' : 'Chưa có phiên kiểm kê nào được lưu.'}</p>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto">
+                        <>
+                        <ul className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                            {sessions.map(session => (
+                                <li key={session.id} className="p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div className="font-bold text-sm text-slate-800 dark:text-white">
+                                                {new Date(session.date).toLocaleDateString('vi-VN')} <span className="text-xs font-medium text-slate-400">{new Date(session.date).toLocaleTimeString('vi-VN')}</span>
+                                            </div>
+                                            <div className="text-xs text-slate-500">{session.auditorName} · {session.totalItems} tài sản</div>
+                                        </div>
+                                        <div className="flex shrink-0 gap-1.5">
+                                            <button onClick={() => setViewingSession(session)} aria-label="Xem phiên kiểm kê" className="flex items-center px-3 py-2 bg-blue-50 dark:bg-blue-950/20 text-blue-600 rounded-lg text-xs font-bold">
+                                                <Eye size={14} className="mr-1" /> Xem
+                                            </button>
+                                            <button onClick={() => exportSessionToExcel(session)} aria-label="Xuất Excel" className="flex items-center px-3 py-2 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 rounded-lg text-xs font-bold">
+                                                <Download size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-black">
+                                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-600">Tốt {session.totalGood}</span>
+                                        {session.totalDamaged > 0 && <span className="rounded-full bg-orange-50 px-2 py-0.5 text-orange-600">Hư hỏng {session.totalDamaged}</span>}
+                                        {session.totalLost > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-600">Mất {session.totalLost}</span>}
+                                        {session.totalWrongLocation > 0 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-blue-600">Sai vị trí {session.totalWrongLocation}</span>}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                        <div className="hidden md:block overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead>
                                     <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 text-[10px] uppercase font-black tracking-widest text-slate-400">
@@ -369,6 +475,7 @@ const AssetAudit: React.FC = () => {
                                 </tbody>
                             </table>
                         </div>
+                        </>
                     )}
                 </div>
             )}
@@ -376,8 +483,15 @@ const AssetAudit: React.FC = () => {
             {/* ==================== AUDIT TAB ==================== */}
             {activeView === 'audit' && (
                 <>
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    {/* Stats: one compact line on phones */}
+                    <div className="md:hidden flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-xs font-bold dark:border-slate-800 dark:bg-slate-900">
+                        <span className="text-slate-800 dark:text-white">Đã kiểm {stats.audited}<span className="text-slate-400">/{assets.length}</span></span>
+                        <span className="text-emerald-600">Tốt {stats.good}</span>
+                        <span className="text-orange-600">Hư hỏng {stats.damaged}</span>
+                        <span className="text-red-600">Mất {stats.lost}</span>
+                        <span className="text-blue-600">Sai vị trí {stats.wrongLocation}</span>
+                    </div>
+                    <div className="hidden md:grid grid-cols-5 gap-4">
                         <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2">
                                 <ClipboardCheck size={16} className="text-slate-400" />
@@ -440,8 +554,38 @@ const AssetAudit: React.FC = () => {
                         </select>
                     </div>
 
+                    {/* Audit list: cards on phones */}
+                    <ul className="md:hidden space-y-2">
+                        {filteredAssets.map(asset => {
+                            const condition = auditData[asset.id];
+                            const isIssue = condition !== undefined && condition !== 'good';
+                            return (
+                                <li key={asset.id} className={`rounded-2xl border p-4 space-y-3 ${isIssue ? 'border-amber-200 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/10' : condition ? 'border-emerald-200 bg-emerald-50/30 dark:border-emerald-900 dark:bg-emerald-950/10' : 'border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900'}`}>
+                                    <div>
+                                        <div className="font-black text-slate-800 dark:text-white text-sm">{asset.name}</div>
+                                        <div className="text-[10px] font-bold text-slate-400 font-mono">{asset.code} · {getCategoryName(asset.categoryId)}</div>
+                                        <div className="text-[11px] text-slate-500 mt-0.5">
+                                            Hệ thống: {ASSET_STATUS_LABELS[asset.status]}
+                                            {asset.assignedToName && <span className="text-blue-500 font-bold"> · 👤 {asset.assignedToName}</span>}
+                                        </div>
+                                    </div>
+                                    <ConditionPicker assetName={asset.name} value={condition} onChange={value => setCondition(asset.id, value)} />
+                                    {renderDetailInputs(asset.id, condition)}
+                                </li>
+                            );
+                        })}
+                        {filteredAssets.length === 0 && (
+                            <li className="rounded-2xl border border-slate-100 bg-white p-10 text-center dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex flex-col items-center opacity-20">
+                                    <Landmark size={40} />
+                                    <p className="text-xs font-black uppercase mt-4 tracking-widest">Không tìm thấy tài sản</p>
+                                </div>
+                            </li>
+                        )}
+                    </ul>
+
                     {/* Audit Table */}
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
+                    <div className="hidden md:block bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse min-w-[900px]">
                                 <thead>
@@ -449,7 +593,7 @@ const AssetAudit: React.FC = () => {
                                         <th className="p-4">Tài sản</th>
                                         <th className="p-4">Phân loại</th>
                                         <th className="p-4 text-center">Trạng thái HT</th>
-                                        <th className="p-4 text-center">Tình trạng thực tế</th>
+                                        <th className="p-4">Tình trạng thực tế</th>
                                         <th className="p-4">Ghi chú</th>
                                     </tr>
                                 </thead>
@@ -470,27 +614,11 @@ const AssetAudit: React.FC = () => {
                                                 <td className="p-4 text-center">
                                                     <span className="text-[10px] font-bold text-slate-500">{ASSET_STATUS_LABELS[asset.status]}</span>
                                                 </td>
-                                                <td className="p-4 text-center">
-                                                    <select value={condition || ''} onChange={e => {
-                                                        if (e.target.value) {
-                                                            setAuditData(prev => ({ ...prev, [asset.id]: e.target.value as AssetCondition }));
-                                                        } else {
-                                                            setAuditData(prev => { const n = { ...prev }; delete n[asset.id]; return n; });
-                                                        }
-                                                    }} className={`px-3 py-1.5 text-[11px] font-bold border rounded-lg outline-none focus:ring-2 focus:ring-rose-500 ${hasInput ? 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800' : 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800'}`}>
-                                                        <option value="">-- Chọn --</option>
-                                                        {Object.entries(CONDITION_LABELS).map(([key, label]) => (
-                                                            <option key={key} value={key}>{label}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
                                                 <td className="p-4">
-                                                    {hasInput && (
-                                                        <input type="text" placeholder="Ghi chú..."
-                                                            value={auditNotes[asset.id] || ''}
-                                                            onChange={e => setAuditNotes(prev => ({ ...prev, [asset.id]: e.target.value }))}
-                                                            className="w-full px-2 py-1 text-[10px] border border-slate-200 dark:border-slate-600 rounded-lg outline-none focus:ring-1 focus:ring-rose-500 font-medium text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800" />
-                                                    )}
+                                                    <ConditionPicker assetName={asset.name} value={condition} onChange={value => setCondition(asset.id, value)} />
+                                                </td>
+                                                <td className="p-4 min-w-[180px]">
+                                                    {renderDetailInputs(asset.id, condition)}
                                                 </td>
                                             </tr>
                                         );

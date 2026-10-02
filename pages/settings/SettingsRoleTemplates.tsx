@@ -223,7 +223,7 @@ const SettingsRoleTemplates: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 md:flex-row md:items-center md:justify-between">
-        <div><h2 className="text-xl font-black text-slate-800">Vai trò đặc biệt</h2><p className="text-xs text-slate-500">Dành cho vai trò quản trị hoặc nhạy cảm (ví dụ HR, quản trị quy trình). Quyền thường ngày của từng người đặt ở Cài đặt → Người dùng.</p></div>
+        <div><h2 className="text-xl font-black text-slate-800">Vai trò đặc biệt</h2><p className="text-xs text-slate-500">Nơi tạo và sửa <b>mẫu</b> vai trò đặc biệt. Gán hoặc thu hồi cho từng người: Cài đặt → Người dùng → Sửa → mục "Vai trò đặc biệt".</p></div>
         <div className="flex gap-2"><button onClick={() => void load(selectedId)} className="rounded-xl border px-3 py-2 text-xs font-bold"><RefreshCcw size={14} className="mr-1 inline" />Tải lại</button><button onClick={startNew} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white"><Plus size={14} className="mr-1 inline" />Tạo mẫu</button></div>
       </div>
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</div>}

@@ -70,6 +70,17 @@ const PROJECT_PERMISSION_SCOPE: Partial<Record<AlertRuleKey, string>> = {
   safety_critical: 'Thành viên Room An toàn có quyền',
 };
 
+const THRESHOLD_LABELS: Record<string, string> = {
+  warningPercent: 'Cảnh báo khi đạt (%)',
+  criticalPercent: 'Khẩn cấp khi đạt (%)',
+  minProgressPercent: 'Tiến độ dưới (%)',
+  minutesBefore: 'Nhắc trước (phút)',
+  daysBeforeWarning: 'Báo trước (ngày)',
+  criticalDays: 'Khẩn cấp khi còn (ngày)',
+  startDay: 'Bắt đầu nhắc từ ngày',
+  daysPending: 'Chờ quá (ngày)',
+};
+
 const getRuleTone = (category: string) => {
   if (category === 'safety') return 'border-red-100 bg-red-50 text-red-700';
   if (category === 'payment') return 'border-rose-100 bg-rose-50 text-rose-700';
@@ -482,7 +493,7 @@ const SettingsAlerts: React.FC<SettingsAlertsProps> = ({ users, currentUserId })
                 <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                   {Object.entries(rule.thresholds || {}).map(([key, value]) => (
                     <label key={key} className="space-y-1">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{key}</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{THRESHOLD_LABELS[key] || key}</span>
                       <input
                         type="number"
                         value={value}
