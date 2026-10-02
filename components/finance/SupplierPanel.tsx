@@ -12,6 +12,7 @@ import {
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ExternalPaymentDrawer } from './ExternalPaymentDrawer';
 import { OpeningDrawer } from './OpeningDrawer';
+import { PaymentRequestDrawer } from './PaymentRequestDrawer';
 import { TermsDrawer } from './TermsDrawer';
 import { ENT, NUM, TONE_BAR, TONE_TEXT, dueText, shortMoney, toneOf, viDate } from './financeUi';
 
@@ -47,7 +48,7 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
   const [busy, setBusy] = useState(false);
   const [openDoc, setOpenDoc] = useState<string | null>(null);
   const [dueEdit, setDueEdit] = useState<{ id: string; date: string; reason: string } | null>(null);
-  const [drawer, setDrawer] = useState<{ kind: 'external'; documentId?: string | null } | { kind: 'opening'; projectId?: string | null } | { kind: 'terms' } | null>(null);
+  const [drawer, setDrawer] = useState<{ kind: 'external'; documentId?: string | null } | { kind: 'opening'; projectId?: string | null } | { kind: 'terms' } | { kind: 'request' } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const load = useCallback(() => {
@@ -225,11 +226,12 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
       <span className="mr-auto text-xs text-muted-foreground">{can.confirm ? 'Bạn ghi nhận và xác nhận được — nhưng không xác nhận việc do chính bạn lập.' : can.record ? 'Bạn ghi nhận được; người khác có quyền Xác nhận sẽ xác nhận.' : 'Bạn chỉ xem.'}</span>
       {can.record && !detail.supplier.internal && <button type="button" className={secondaryBtn} onClick={() => setDrawer({ kind: 'external' })}><Banknote size={15} />Ghi chi ngoài hệ thống</button>}
-      <button type="button" disabled title="Mở ở đợt K3b" className={secondaryBtn}>Lập đề nghị chi</button>
+      {can.record && !detail.supplier.internal && openDocs.length > 0 && <button type="button" onClick={() => setDrawer({ kind: 'request' })} className={primaryBtn}><FileText size={15} />Lập đề nghị chi</button>}
       {(can.record || can.confirm) && preProjects.length > 0 && <button type="button" onClick={() => setDrawer({ kind: 'opening' })} className={primaryBtn}>
         {busy ? <Loader2 size={15} className="animate-spin" /> : <ClipboardCheck size={15} />}Đối chiếu đầu kỳ</button>}
     </footer>
 
+    {drawer?.kind === 'request' && <PaymentRequestDrawer supplierId={detail.supplier.id} onClose={() => setDrawer(null)} onSaved={code => done(`Đã gửi ${code} — xem ở bước Đề nghị chi.`)} />}
     {drawer?.kind === 'external' && <ExternalPaymentDrawer detail={detail} initialDocumentId={drawer.documentId} onClose={() => setDrawer(null)} onSaved={done} />}
     {drawer?.kind === 'opening' && <OpeningDrawer detail={detail} projectId={drawer.projectId} onClose={() => setDrawer(null)} onChanged={done}
       onExternalPayment={documentId => setDrawer({ kind: 'external', documentId })} />}
