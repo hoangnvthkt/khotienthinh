@@ -1114,7 +1114,7 @@ const Settings: React.FC = () => {
     { id: 'users', label: 'Người dùng', icon: Users },
     { id: 'alerts', label: 'Cảnh báo', icon: BellRing },
     { id: 'permission-health', label: 'Permission health', icon: ShieldCheck, healthOnly: true },
-    { id: 'role-templates', label: 'Mẫu quyền', icon: ShieldCheck, rolesOnly: true },
+    { id: 'role-templates', label: 'Vai trò đặc biệt', icon: ShieldCheck, rolesOnly: true },
     { id: 'user-permission-templates', label: 'Mẫu quyền theo vị trí', icon: ShieldCheck, adminOnly: true },
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },

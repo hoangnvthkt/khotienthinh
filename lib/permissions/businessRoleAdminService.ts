@@ -201,3 +201,32 @@ export const revokeBusinessRoleAssignment = async (
   });
   if (error) throw rpcError(error);
 };
+
+/** A role a person holds right now (Admin only; read-only overview for the user editor). */
+export interface UserSpecialRole {
+  assignmentId: string;
+  roleCode: string;
+  roleName: string;
+  scopeType: PermissionScopeType;
+  scopeId: string;
+  startsAt: string;
+  expiresAt?: string;
+}
+
+export const getUserSpecialRoles = async (
+  userId: string,
+  custom?: BusinessRoleGateway,
+): Promise<UserSpecialRole[]> => {
+  const { data, error } = await gateway(custom).rpc('get_user_special_roles', { p_user_id: userId });
+  if (error) throw rpcError(error);
+  if (!Array.isArray(data)) throw new Error('Dữ liệu vai trò đặc biệt không hợp lệ.');
+  return data.map((row: any) => ({
+    assignmentId: String(row.assignmentId),
+    roleCode: String(row.roleCode),
+    roleName: String(row.roleName),
+    scopeType: row.scopeType,
+    scopeId: String(row.scopeId ?? '*'),
+    startsAt: String(row.startsAt),
+    expiresAt: row.expiresAt || undefined,
+  }));
+};

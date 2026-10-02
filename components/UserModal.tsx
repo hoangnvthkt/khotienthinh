@@ -24,6 +24,9 @@ interface UserModalProps {
   users?: User[];
 }
 
+// The server records a reason with every change; profile-only edits get this one automatically.
+const PROFILE_EDIT_REASON = 'Cập nhật hồ sơ người dùng';
+
 const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [] }) => {
   const toast = useToast();
   const [formData, setFormData] = useState<Partial<User>>({});
@@ -131,10 +134,11 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     const roleChanged = formData.role !== userToEdit.role;
     const warehouseChanged = formData.role === Role.WAREHOUSE_KEEPER
       && normalizeValue(formData.assignedWarehouseId || '*') !== normalizeValue(userToEdit.assignedWarehouseId || '*');
+    const grantsChanged = JSON.stringify(grantKeys(originalPermissionGrants)) !== JSON.stringify(grantKeys(permissionGrants));
     return {
       accountRoleTransitionChanged: roleChanged || warehouseChanged,
-      otherAuthorizationChanged: JSON.stringify(beforeProfile) !== JSON.stringify(afterProfile)
-        || JSON.stringify(grantKeys(originalPermissionGrants)) !== JSON.stringify(grantKeys(permissionGrants)),
+      grantsChanged,
+      otherAuthorizationChanged: JSON.stringify(beforeProfile) !== JSON.stringify(afterProfile) || grantsChanged,
     };
   }, [formData, originalPermissionGrants, permissionGrants, userToEdit]);
   const authorizationChanged = Boolean(userToEdit && (
@@ -143,15 +147,20 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
     )
   ));
 
+  // A reason is needed only when permissions or the account type change, not for profile edits.
+  const reasonRequired = Boolean(authorizationChanges
+    && (authorizationChanges.accountRoleTransitionChanged || authorizationChanges.grantsChanged));
+
   const authorizationIssues = useMemo(() => authorizationCatalog && userToEdit
     ? validateAuthorizationUpdate({
       changed: authorizationChanged,
+      reasonRequired,
       reason: authorizationReason,
       grants: permissionGrants,
       originalGrants: originalPermissionGrants,
       catalog: authorizationCatalog,
     })
-    : [], [authorizationCatalog, authorizationChanged, authorizationReason, originalPermissionGrants, permissionGrants, userToEdit]);
+    : [], [authorizationCatalog, authorizationChanged, reasonRequired, authorizationReason, originalPermissionGrants, permissionGrants, userToEdit]);
 
   if (!isOpen) return null;
 
@@ -246,7 +255,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
               assignedWarehouseId: hasWmsAccess ? formData.assignedWarehouseId || null : null,
             },
             grants: permissionGrants,
-            reason: authorizationReason,
+            reason: authorizationReason.trim() || PROFILE_EDIT_REASON,
             expectedUpdatedAt: userToEdit.updatedAt || '',
           }), async receipt => { await onAuthorizationSaved(receipt.userId); });
           if (outcome.status === 'saved_refresh_pending') {
@@ -380,6 +389,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             snapshotState={snapshotState}
             onRetrySnapshot={() => setSnapshotReload(value => value + 1)}
             reason={authorizationReason}
+            reasonRequired={reasonRequired}
             validationIssues={authorizationIssues}
             disabled={saving}
             onCatalogChange={setAuthorizationCatalog}

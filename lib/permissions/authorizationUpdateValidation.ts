@@ -33,8 +33,20 @@ export class AuthorizationCommandError extends Error {
   }
 }
 
+/**
+ * Whether a grant of this action at this scope must carry an expiry. A personal (own) scope of
+ * an action that is not sensitive never expires; the server applies the same rule.
+ */
+export const grantRequiresExpiry = (
+  action: Pick<PermissionCatalogAction, 'directGrantRequiresExpiry' | 'riskLevel'>,
+  scopeType: PermissionScopeType | string,
+): boolean => action.directGrantRequiresExpiry
+  && !(scopeType === 'own' && action.riskLevel !== 'sensitive');
+
 interface ValidationInput {
   changed: boolean;
+  /** A reason is only needed when permissions or the account type change; defaults to `changed`. */
+  reasonRequired?: boolean;
   reason: string;
   grants: readonly UserPermissionGrant[];
   originalGrants?: readonly UserPermissionGrant[];
@@ -112,6 +124,7 @@ export const getCatalogEditableGrants = ({
 
 export const validateAuthorizationUpdate = ({
   changed,
+  reasonRequired = changed,
   reason,
   grants,
   originalGrants = [],
@@ -122,7 +135,9 @@ export const validateAuthorizationUpdate = ({
 
   const issues: AuthorizationValidationIssue[] = [];
   const normalizedReason = reason.trim();
-  if (!normalizedReason) {
+  if (!reasonRequired) {
+    // Reason is optional for profile-only edits.
+  } else if (!normalizedReason) {
     issues.push({
       code: 'reason_required',
       field: 'reason',
@@ -140,6 +155,11 @@ export const validateAuthorizationUpdate = ({
   const retainedOriginalFingerprints = new Set(originalGrants
     .filter(grant => grant.isActive !== false)
     .map(retainedGrantFingerprint));
+  // An already-active grant without an expiry (e.g. converted from a role) may be kept
+  // unchanged; the server applies the same rule. New grants and scope changes still need one.
+  const keptNoExpiryKeys = new Set(originalGrants
+    .filter(grant => grant.isActive !== false && !grant.expiresAt)
+    .map(grantKey));
   const seen = new Set<string>();
   grants.filter(grant => grant.isActive !== false).forEach(grant => {
     const key = grantKey(grant);
@@ -207,7 +227,7 @@ export const validateAuthorizationUpdate = ({
         permissionCode: grant.permissionCode,
         message: `Ngày hết hạn của quyền ${action.label} phải ở tương lai.`,
       });
-    } else if (action.directGrantRequiresExpiry && !grant.expiresAt) {
+    } else if (grantRequiresExpiry(action, scopeType) && !grant.expiresAt && !keptNoExpiryKeys.has(key)) {
       issues.push({
         code: 'expiry_required',
         field: 'expiresAt',

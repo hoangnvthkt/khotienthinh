@@ -7,6 +7,7 @@ import {
   PermissionCatalogApplication,
   PermissionScopeType,
 } from '../../lib/permissions/permissionTypes';
+import { grantRequiresExpiry } from '../../lib/permissions/authorizationUpdateValidation';
 import { ApplicationGrantState } from '../../lib/permissions/moduleGrantSelection';
 import {
   getScopeEntityLabel,
@@ -97,9 +98,16 @@ const ActionRow: React.FC<{
   const [scopeType, setScopeType] = useState<PermissionScopeType>(initialScope);
   const [scopeId, setScopeId] = useState(directGrant?.scopeId === '*' ? '' : directGrant?.scopeId || '');
   const [expiresAt, setExpiresAt] = useState(directGrant?.expiresAt?.slice(0, 16) || '');
-  const expiryReady = !action.directGrantRequiresExpiry
-    || (Boolean(expiresAt) && Date.parse(expiresAt) > Date.now());
   const entityScope = ENTITY_SCOPE_TYPES.has(scopeType);
+  // An existing grant without an expiry can stay as it is; the server accepts it unchanged.
+  const keepsExistingNoExpiry = Boolean(directGrant)
+    && !directGrant?.expiresAt
+    && scopeType === (directGrant?.scopeType || 'global')
+    && (entityScope ? scopeId : '*') === (directGrant?.scopeId || '*');
+  const needsExpiry = grantRequiresExpiry(action, scopeType);
+  const expiryReady = !needsExpiry
+    || keepsExistingNoExpiry
+    || (Boolean(expiresAt) && Date.parse(expiresAt) > Date.now());
   const canToggle = action.directGrantAllowed
     && (!inherited || Boolean(directGrant))
     && expiryReady
@@ -130,7 +138,7 @@ const ActionRow: React.FC<{
         {notDirect && (
           <span className={`rounded-full px-2 py-1 text-[10px] font-black ${action.permissionCode.startsWith('project.') ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>{notDirect.badge}</span>
         )}
-        {action.directGrantRequiresExpiry && (
+        {needsExpiry && (
           <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">Cần ngày hết hạn</span>
         )}
       </div>
@@ -205,7 +213,7 @@ const ActionRow: React.FC<{
               />
             </label>
           )}
-          {action.directGrantRequiresExpiry && (
+          {needsExpiry && (
             <label className="space-y-1 sm:col-span-2">
               <span className="block text-[10px] font-bold text-slate-500">Ngày hết hạn</span>
               <input

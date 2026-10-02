@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { UserPermissionGrant } from '../types';
 import type { PermissionAdminCatalog, PermissionCatalogAction } from './permissions/permissionTypes';
+import { grantRequiresExpiry } from './permissions/authorizationUpdateValidation';
 
 // Person templates outside projects: a bundle of permissions copied into one
 // person's own grants, then adjusted before saving (server:
@@ -133,7 +134,7 @@ export const buildGrantsFromTemplate = ({
     const key = keyOf(item.permissionCode, item.scopeType);
     if (keys.has(key)) continue;
     keys.add(key);
-    const days = action.directGrantRequiresExpiry ? item.expiresInDays || 365 : undefined;
+    const days = grantRequiresExpiry(action, item.scopeType) ? item.expiresInDays || 365 : undefined;
     added.push({
       id: `template-${template.code}-${item.permissionCode}-${item.scopeType}`,
       userId,

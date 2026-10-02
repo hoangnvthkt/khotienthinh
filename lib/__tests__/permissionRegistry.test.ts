@@ -436,9 +436,9 @@ describe('permissionRegistry', () => {
 
     expect(org).not.toContain('PermissionMatrix');
     expect(org).not.toContain('PROJECT_PERMISSION_TEMPLATES');
-    expect(permissions).toContain('ProjectPermissionRoomsPanel');
+    expect(permissions).toContain('ProjectRoomOverview');
     expect(permissions).toContain('theo từng Room và đúng công trường của dự án');
-    expect(permissions).toContain('<ProjectRoomTemplateAssign');
+    expect(permissions).toContain('<ProjectPersonRoomEditor');
     expect(dashboard).toContain("overviewTab === 'permissions'");
     expect(dashboard).toContain('user?.role === Role.ADMIN');
   });

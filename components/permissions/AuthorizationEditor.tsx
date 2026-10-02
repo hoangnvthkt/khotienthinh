@@ -17,6 +17,8 @@ import PermissionDiffPreview from './PermissionDiffPreview';
 import PermissionModuleEditor from './PermissionModuleEditor';
 import PermissionTemplateFill from './PermissionTemplateFill';
 import ProjectRoomSummary from './ProjectRoomSummary';
+import SensitiveViewSummary from './SensitiveViewSummary';
+import SpecialRolesSummary from './SpecialRolesSummary';
 import RetainedPermissionGrantNotice from './RetainedPermissionGrantNotice';
 
 interface AuthorizationEditorProps {
@@ -30,6 +32,8 @@ interface AuthorizationEditorProps {
   snapshotState?: 'loading' | 'ready' | 'error';
   onRetrySnapshot?: () => void;
   reason: string;
+  /** False while only the profile changed: the reason box becomes optional. */
+  reasonRequired?: boolean;
   validationIssues?: readonly AuthorizationValidationIssue[];
   disabled?: boolean;
   onCatalogChange?: (catalog: PermissionAdminCatalog | null) => void;
@@ -72,6 +76,7 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   snapshotState = 'ready',
   onRetrySnapshot = () => undefined,
   reason,
+  reasonRequired = true,
   validationIssues = [],
   disabled = false,
   onCatalogChange,
@@ -243,23 +248,34 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
         <PermissionDiffPreview before={originalDirectGrants} after={directGrants} />
       </section>
 
-      <ProjectRoomSummary
-        state={snapshotState}
-        roomActions={roomActions}
-        isAdmin={targetUser.role === 'ADMIN'}
-        onRetry={onRetrySnapshot}
-      />
+      <div className="space-y-3 rounded-2xl bg-slate-50 p-3">
+        <div>
+          <h4 className="text-xs font-black uppercase tracking-wide text-slate-700">Quyền đến từ nguồn khác</h4>
+          <p className="text-[11px] text-slate-500">Chỉ để xem. Cùng với quyền riêng ở trên, đây là toàn bộ những gì người này có thể làm.</p>
+        </div>
+        {targetUser.id && <SpecialRolesSummary userId={targetUser.id} />}
+        {targetUser.id && <SensitiveViewSummary userId={targetUser.id} isAdmin={targetUser.role === 'ADMIN'} />}
+        <ProjectRoomSummary
+          state={snapshotState}
+          roomActions={roomActions}
+          isAdmin={targetUser.role === 'ADMIN'}
+          onRetry={onRetrySnapshot}
+        />
+      </div>
 
       <label className="block space-y-1">
-        <span className="text-xs font-black uppercase tracking-wide text-slate-600">Lý do thay đổi</span>
+        <span className="text-xs font-black uppercase tracking-wide text-slate-600">
+          Lý do thay đổi
+          {!reasonRequired && <span className="ml-1 font-semibold normal-case tracking-normal text-slate-400">(không bắt buộc khi chỉ sửa hồ sơ)</span>}
+        </span>
         <textarea
-          required
+          required={reasonRequired}
           value={reason}
           onChange={event => onReasonChange(event.target.value)}
           disabled={disabled}
           rows={2}
           className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-50"
-          placeholder="Mô tả lý do thay đổi hồ sơ hoặc quyền"
+          placeholder={reasonRequired ? 'Mô tả lý do thay đổi hồ sơ hoặc quyền' : 'Có thể bỏ trống'}
         />
       </label>
     </div>

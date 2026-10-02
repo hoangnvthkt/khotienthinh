@@ -797,3 +797,55 @@ Chỉ sửa frontend, không có migration.
 
 - Người dùng → Sửa: ô không tick được có dòng 🔒 nói lý do và chỗ đổi. Mã HR nhạy cảm → tab Vai trò nhân sự (HR / HR Manage); vai trò quản trị → Cài đặt → Mẫu quyền (thu hồi); loại tài khoản → ô Loại tài khoản; mã dự án → Room dự án. Nhãn cũ "Cấp qua mẫu quyền" đổi thành "Qua vai trò HR" / "Chỉ vai trò quản trị", vì mẫu quyền theo vị trí không chứa các mã này.
 - Test: `permissionLockReason.test.ts`, e2e phân quyền 5 PASS.
+
+### P3 — giữ nguyên quyền cũ không có ngày hết hạn (02/10, mục 8.1)
+
+- Nguyên nhân: bước chuyển vai trò → quyền riêng (28/09) không gắn hạn. Quyền vẫn chạy, nhưng Admin lưu bất kỳ thay đổi nào của người đó đều bị `expiry_required`; ô quyền không hạn còn bị khóa, không bỏ tick được.
+- Chủ sản phẩm chọn phương án 1 (02/10). Migration `20261004100000_authorization_p3_keep_existing_no_expiry_grants`:
+  - `evaluate_direct_grant_replacement_impl` không đòi hạn cho quyền **đã có**: đang hiệu lực, chưa thu hồi, không hạn, cùng mã + phạm vi + đối tượng. Quyền mới hoặc đổi phạm vi vẫn phải có hạn.
+  - Frontend áp luật tương tự: `authorizationUpdateValidation.ts` và `PermissionModuleCard.tsx`.
+  - Chưa miễn hạn cho phạm vi `own` không nhạy cảm (tùy chọn trong handoff); mẫu vị trí vẫn gắn hạn 365 ngày.
+- Kiểm tra: dry-run (có rollback) PASS 4 tình huống; smoke trên hàm cũ thất bại đúng `expiry_required` (đối chứng); smoke sau apply PASS; Vitest 2.631 PASS; tsc sạch.
+- Rollback: `supabase/operations/authorization_p3_keep_existing_no_expiry_grants_rollback.sql`.
+
+### P3 — Hồ sơ quyền, bước 1: thẻ "Xem Tài chính và Hợp đồng" (02/10)
+
+- Migration `20261004110000_authorization_p3_user_sensitive_view_summary`: RPC chỉ đọc `get_user_sensitive_view_summary(user_id)`, chỉ Admin. Trả về công tắc Tài chính / Hợp đồng của người đó (tất cả dự án, từng dự án), dự án tự động xem qua Room Thanh toán hoặc Nghiệm thu, và có phải người quản lý hợp đồng công ty không. Không đổi quyền của ai.
+- Giao diện: Người dùng → Sửa có thêm thẻ chỉ đọc cùng kiểu thẻ Room; bật/tắt vẫn ở tab Phân quyền của dự án. Đủ trạng thái đang tải, lỗi (có Thử lại), chưa bật, Quản trị viên. Đã xem bằng fixture trong browser pane (5 trạng thái).
+- Kiểm tra: dry-run PASS; smoke sau apply PASS (nhân viên bị chặn; bật/tắt từng dự án và tất cả dự án phản ánh đúng, không lẫn Tài chính ↔ Hợp đồng); Vitest 2.631 PASS; tsc, build, check-queries đạt. E2E Playwright không chạy được vì máy chưa cài trình duyệt Playwright.
+- Rollback: `supabase/operations/authorization_p3_user_sensitive_view_summary_rollback.sql`.
+- Còn lại của Hồ sơ quyền: gộp vai trò đặc biệt (HR, quản trị) vào cùng màn.
+
+### P3 — bỏ lý do khi chỉ sửa hồ sơ; bỏ hạn cho phạm vi "Chính mình" (02/10, chủ sản phẩm duyệt)
+
+- **Lý do:** Người dùng → Sửa không bắt lý do khi chỉ sửa hồ sơ (tên, điện thoại, ảnh, quản lý, kho). Vẫn bắt khi đổi quyền hoặc đổi loại tài khoản. Frontend tự ghi lý do mặc định "Cập nhật hồ sơ người dùng" để qua kiểm tra của server; server không đổi.
+- **Hạn:** migration `20261004120000_authorization_p3_own_scope_no_expiry`:
+  - `evaluate_direct_grant_replacement_impl` không đòi hạn cho phạm vi `own` của quyền không nhạy cảm (hiện chỉ `hrm.employee.edit_profile`);
+  - `normalize_user_permission_template_items` không gắn hạn mặc định 365 ngày cho các dòng đó; 10 mẫu vị trí đã được chuẩn hóa lại (tất cả đều chỉ là mặc định 365, không có hạn tùy chỉnh bị mất);
+  - frontend dùng chung hàm `grantRequiresExpiry(action, scope)`: ô nhập hạn, validation, điền theo mẫu, màn Cài đặt mẫu.
+- Kiểm tra: dry-run PASS; smoke trên hàm cũ thất bại đúng (đối chứng); smoke sau apply PASS; smoke 8.1 chỉnh fixture sang quyền vẫn cần hạn, PASS; Vitest 2.633 PASS; tsc đạt.
+- Rollback: `supabase/operations/authorization_p3_own_scope_no_expiry_rollback.sql`.
+
+### P3 — màn Room cũ được thay bằng "Phân quyền theo người" (02/10, chủ sản phẩm duyệt)
+
+- Tab Phân quyền của dự án không còn các thẻ Room + ngăn kéo sửa từng Room. Thay bằng:
+  - **Phân quyền theo người** (`ProjectPersonRoomEditor`): chọn người → điền theo mẫu → thêm/bớt từng quyền → lưu. Nay theo đúng luật server: quyền "chưa áp dụng đầy đủ" (audit_only) bị khóa, quyền tiên quyết lấy từ bảng ràng buộc của server, mẫu không thêm được quyền audit_only (bỏ qua và báo số lượng), hiện nguồn quyền (Backfill từ PBAC) và cảnh báo PBAC ngoại lệ.
+  - **Áp cho nhiều người** (`ProjectRoomBulkApply`): thêm theo mẫu / thay bằng mẫu / gỡ hết quyền Room, từng người một, cùng luật an toàn.
+  - **Ai đang có quyền trong từng Room** (`ProjectRoomOverview`): tìm kiếm + lọc nhóm, số thành viên, cảnh báo thiếu người duyệt, số người chỉ có PBAC; bấm Room để xem người + quyền, nút "Sửa quyền" nhảy sang trình sửa theo người.
+  - Công tắc Tài chính / Hợp đồng giữ nguyên.
+- Logic nháp tách ra `lib/projectRoomPersonDraft.ts` (có test). Test viết bắt được một lỗi thật: "thay bằng mẫu" giữ quyền khóa nhưng bỏ mất quyền tiên quyết của nó (server sẽ từ chối), đã sửa.
+- **Đối chiếu dữ liệu thật (giao dịch rollback, persona Admin, 7 phạm vi dự án/công trường, 84 người):**
+  - mở từng người rồi lưu không đổi: **0 thay đổi** (server `apply_project_room_template` mode exact, dry-run);
+  - quyền Room chỉ màn mới thấy: **0**;
+  - quyền chỉ màn cũ thấy: **20**, đều thuộc đúng 8 thành viên đã rời dự án và tài khoản bị khóa; server không tính quyền cho họ (`project_user_has_room_action` đòi `end_date is null` và tài khoản đang hoạt động) → **0 quyền có hiệu lực bị bỏ sót**;
+  - màn cũ còn đếm 8 người đó là "thành viên" và có thể tính họ là người duyệt (che cảnh báo thiếu người duyệt). Màn mới chỉ đếm người còn hiệu lực, đánh dấu và cho "Gỡ dòng cũ".
+- Kiểm tra: Vitest 2.816 PASS; tsc, lint, build, check-queries, check-migrations đạt; giao diện xem bằng fixture ở desktop và mobile (không tràn ngang). E2E Playwright chưa chạy (máy chưa cài trình duyệt Playwright).
+
+### P3 — Hồ sơ quyền, bước 2: vai trò đặc biệt trong màn theo người (02/10)
+
+- Migration `20261004130000_authorization_p3_user_special_roles_summary`: RPC chỉ đọc `get_user_special_roles(user_id)`, chỉ Admin; trả các vai trò đang hiệu lực của một người (HR, HR Manage, Quản trị hệ thống, Quản trị phân quyền, Kiểm toán, ...). Không đổi quyền của ai.
+- Người dùng → Sửa: khối **"Quyền đến từ nguồn khác"** gom 3 thẻ chỉ xem cạnh quyền riêng: Vai trò đặc biệt (kèm chỗ đổi), Xem Tài chính và Hợp đồng, Quyền trong Room dự án. Đủ trạng thái đang tải, lỗi (có Thử lại), rỗng.
+- Lỗi bắt được khi viết smoke: `principal_type` lưu chữ thường `user`; smoke nay **bắt buộc** có người giữ vai trò (không âm thầm bỏ qua).
+- Kiểm tra: dry-run PASS; smoke sau apply PASS (nhân viên bị chặn, người giữ vai trò thấy đúng vai trò, vai trò đã thu hồi không hiện); Vitest 2.819 PASS; tsc, lint, build, check-queries đạt; giao diện xem bằng fixture ở mobile.
+- Rollback: `supabase/operations/authorization_p3_user_special_roles_summary_rollback.sql`.
+- Hồ sơ quyền hoàn tất ở mức xem tổng hợp; việc gán/đổi vai trò vẫn ở Cài đặt → Vai trò đặc biệt và tab Vai trò nhân sự (chưa gộp vào một chỗ, chờ chủ sản phẩm quyết nếu muốn).

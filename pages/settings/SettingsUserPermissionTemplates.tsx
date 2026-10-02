@@ -8,6 +8,7 @@ import {
 } from '../../lib/userPermissionTemplateService';
 import { listPermissionAdminCatalog } from '../../lib/permissions/permissionCatalogService';
 import type { PermissionAdminCatalog, PermissionCatalogAction } from '../../lib/permissions/permissionTypes';
+import { grantRequiresExpiry } from '../../lib/permissions/authorizationUpdateValidation';
 import { SCOPE_LABELS } from '../../components/permissions/PermissionModuleCard';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
@@ -102,14 +103,15 @@ const SettingsUserPermissionTemplates: React.FC = () => {
   const toggleAction = (action: PermissionCatalogAction) => setDraft(prev => {
     const exists = prev.items.some(item => item.permissionCode === action.permissionCode);
     const scopes = templateScopes(action);
+    const scopeType: TemplateScopeType = scopes.includes('global') && !scopes.includes('own') ? 'global' : scopes[0];
     return {
       ...prev,
       items: exists
         ? prev.items.filter(item => item.permissionCode !== action.permissionCode)
         : [...prev.items, {
           permissionCode: action.permissionCode,
-          scopeType: scopes.includes('global') && !scopes.includes('own') ? 'global' : scopes[0],
-          ...(action.directGrantRequiresExpiry ? { expiresInDays: 365 } : {}),
+          scopeType,
+          ...(grantRequiresExpiry(action, scopeType) ? { expiresInDays: 365 } : {}),
         }],
     };
   });
@@ -240,7 +242,7 @@ const SettingsUserPermissionTemplates: React.FC = () => {
                                     {action.label}
                                   </label>
                                   {action.riskLevel === 'sensitive' && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700">Nhạy cảm</span>}
-                                  {item && action.directGrantRequiresExpiry && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Hết hạn sau {item.expiresInDays || 365} ngày</span>}
+                                  {item && grantRequiresExpiry(action, item.scopeType) && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Hết hạn sau {item.expiresInDays || 365} ngày</span>}
                                   {item && scopes.length > 1 && (
                                     <select aria-label={`Phạm vi ${action.label}`} value={item.scopeType} onChange={event => setScope(action.permissionCode, event.target.value as TemplateScopeType)}
                                       className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600">

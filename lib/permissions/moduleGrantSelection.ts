@@ -6,6 +6,7 @@ import {
   PermissionScopeType,
   PermissionScope,
 } from './permissionTypes';
+import { grantRequiresExpiry } from './authorizationUpdateValidation';
 
 export type ApplicationGrantState = 'unchecked' | 'checked' | 'indeterminate';
 
@@ -147,7 +148,7 @@ const validateDirectAction = (
       action.permissionCode,
     );
   }
-  if (action.directGrantRequiresExpiry && (
+  if (grantRequiresExpiry(action, scopeType) && (
     !expiresAt || Number.isNaN(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now.getTime()
   )) {
     throw new ModuleGrantSelectionError(
