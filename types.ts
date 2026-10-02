@@ -5733,14 +5733,17 @@ export interface AttendanceProposal {
 
 // ===== NGHỈ PHÉP =====
 
-export type LeaveType = 'annual' | 'sick' | 'personal' | 'maternity' | 'unpaid' | 'other';
+export type LeaveType = 'annual' | 'sick' | 'personal' | 'personal_unpaid' | 'maternity' | 'unpaid' | 'late_early' | 'business_trip' | 'other';
 
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   annual: 'Phép năm',
-  sick: 'Ốm đau',
-  personal: 'Việc riêng',
-  maternity: 'Thai sản',
-  unpaid: 'Không lương',
+  sick: 'Ốm đau (BHXH)',
+  personal: 'Việc riêng có lương',
+  personal_unpaid: 'Việc riêng không lương',
+  maternity: 'Thai sản (BHXH)',
+  unpaid: 'Nghỉ không lương',
+  late_early: 'Đi muộn / về sớm',
+  business_trip: 'Công tác',
   other: 'Khác',
 };
 
@@ -5779,6 +5782,11 @@ export interface LeaveRequest {
   rejectionReason?: string;
   dueDate?: string;
   createdAt: string;
+  /** Late arrival / early leave requests (G2). */
+  minutes?: number | null;
+  subtype?: string | null;
+  start_session?: 'full' | 'morning' | 'afternoon';
+  end_session?: 'full' | 'morning' | 'afternoon';
 }
 
 export interface LeaveBalance {
