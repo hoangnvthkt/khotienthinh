@@ -17,6 +17,7 @@ import {
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import { canPerform, canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import AttendanceDevicesPanel from './AttendanceDevicesPanel';
+import AttendanceSummaryPanel from './AttendanceSummaryPanel';
 import {
   canViewCompanyAttendance,
   selectAttendanceEmployees,
@@ -89,7 +90,7 @@ const Attendance: React.FC = () => {
   // Check-in sends people here (?tab=proposals) when they are outside the allowed area.
   const [searchParams] = useSearchParams();
   const openProposals = searchParams.get('tab') === 'proposals';
-  const [activeTab, setActiveTab] = useState<'timesheet' | 'proposals' | 'devices'>(openProposals ? 'proposals' : 'timesheet');
+  const [activeTab, setActiveTab] = useState<'summary' | 'timesheet' | 'proposals' | 'devices'>(openProposals ? 'proposals' : 'timesheet');
 
   // Proposal state
   const [showProposalForm, setShowProposalForm] = useState(openProposals);
@@ -832,7 +833,11 @@ const Attendance: React.FC = () => {
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-2xl p-1">
+      <div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-2xl p-1">
+        <button onClick={() => setActiveTab('summary')}
+          className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'summary' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+          <Clock size={14} className="inline mr-1.5" />Tổng hợp công
+        </button>
         <button onClick={() => setActiveTab('timesheet')}
           className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'timesheet' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
           <Calendar size={14} className="inline mr-1.5" />Bảng Công
@@ -851,6 +856,20 @@ const Attendance: React.FC = () => {
           </button>
         )}
       </div>
+
+      {activeTab === 'summary' && (
+        <AttendanceSummaryPanel
+          myEmployeeId={currentEmployee?.id || null}
+          isHr={canManageAttendanceDevices}
+          onRequestMakeup={date => {
+            resetProposalForm();
+            setPTargetEmployeeId(currentEmployee?.id || '');
+            setPDate(date);
+            setActiveTab('proposals');
+            setShowProposalForm(true);
+          }}
+        />
+      )}
 
       {activeTab === 'devices' && canManageAttendanceDevices && (
         <AttendanceDevicesPanel

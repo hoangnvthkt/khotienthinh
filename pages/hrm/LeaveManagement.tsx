@@ -506,7 +506,27 @@ const CreateDialog: React.FC<{
 
           <div>
             <p className="mb-2 text-[11px] font-black uppercase text-muted-foreground">2. Thời gian</p>
-            {isMinute ? (
+            {typeCode === 'overtime' ? (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-bold text-muted-foreground">Tháng
+                  <input type="month" value={start.slice(0, 7)} onChange={event => setStart(`${event.target.value}-01`)}
+                    className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
+                </label>
+                <label className="text-xs font-bold text-muted-foreground">Số phút xác nhận
+                  <input type="number" min={1} value={minutes}
+                    onChange={event => setMinutes(Math.max(0, parseInt(event.target.value, 10) || 0))}
+                    className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
+                </label>
+                {preview?.unclaimedMinutes !== null && preview?.unclaimedMinutes !== undefined && (
+                  <p className="col-span-2 text-[11px] text-muted-foreground">
+                    Tháng này còn <b>{preview.unclaimedMinutes} phút</b> đến sớm / về muộn chưa xác nhận.{' '}
+                    {preview.unclaimedMinutes > 0 && minutes !== preview.unclaimedMinutes && (
+                      <button type="button" className="font-bold text-mint-700 underline" onClick={() => setMinutes(preview.unclaimedMinutes || 0)}>Dùng hết</button>
+                    )}
+                  </p>
+                )}
+              </div>
+            ) : isMinute ? (
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-xs font-bold text-muted-foreground">Ngày
                   <input type="date" value={start} onChange={event => setStart(event.target.value)} className="mt-1 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
