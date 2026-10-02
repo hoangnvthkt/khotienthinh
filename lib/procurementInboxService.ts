@@ -207,6 +207,8 @@ export interface ProcurementOrderSummary {
 export interface ProcurementOrderList { today: string; orders: ProcurementOrderSummary[]; awaitingMyApproval: number }
 export interface ProcurementOrderLine {
   lineId: string; itemId: string; name: string; sku: string | null; unit: string | null; qty: number; unitPrice: number; receivedQty: number; note: string | null;
+  /** Quy cách / cấu hình hiển thị cạnh tên (đơn chủ động) — kho vẫn theo mã vật tư gốc. */
+  specification?: string | null;
   stockUnit: string | null; factor: number; returnedQty: number;
   /** Purchase-unit quantity neither received nor on an open delivery. */
   remainingToDeliver: number;
@@ -221,7 +223,7 @@ export interface ProcurementOrderDetail {
   vendorId: string | null; vendorName: string | null; projectId: string | null; constructionSiteId: string | null;
   projectCode: string | null; projectName: string | null; targetWarehouseId: string | null; warehouseName: string | null;
   orderDate: string | null; expectedDeliveryDate: string | null; totalAmount: number; vatRate: number; note: string | null;
-  createdById: string | null; createdByName: string | null; createdAt: string; submittedToUserId: string | null; submittedToName: string | null;
+  createdById: string | null; createdByName: string | null; createdByTitle?: string | null; createdAt: string; submittedToUserId: string | null; submittedToName: string | null;
   returnReason: string | null; everSubmitted: boolean;
   purchaseMode: 'single' | 'multiple'; approvedTotalAmount: number;
   kind: ProcurementOrderKind; proactive: ProcurementProactiveInfo | null;
@@ -328,7 +330,7 @@ export interface ProcurementProactiveSaveInput {
   purchaseOrderId?: string; expectedRowVersion?: number; purpose: 'project' | 'stock'; projectId: string | null; targetWarehouseId: string; vendorId: string;
   purchaseMode: 'single' | 'multiple'; expectedDeliveryDate?: string | null; vatRate: number; note?: string;
   reasonCode: ProcurementProactiveReason; reason?: string; overBoqReason?: string;
-  items: Array<{ lineId?: string; itemId: string; stockQty: number; purchaseQty?: number; purchaseUnit?: string; unitPrice: number; note?: string }>;
+  items: Array<{ lineId?: string; itemId: string; stockQty: number; purchaseQty?: number; purchaseUnit?: string; unitPrice: number; note?: string; specification?: string }>;
 }
 export interface ProcurementProactiveCandidate {
   needLineId: string; itemId: string; itemName: string; unit: string | null; remainingQty: number;

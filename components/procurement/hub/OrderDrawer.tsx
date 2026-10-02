@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Link2, Loader2, Pencil, Send, Trash2, Truck, Unlink, UserRound, Warehouse } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Link2, Loader2, Pencil, Printer, Send, Trash2, Truck, Unlink, UserRound, Warehouse } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
 import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine } from '../../../lib/procurementInboxService';
+import { buildPoApprovalPrintHtml, lineDisplayName } from '../../../lib/procurementApprovalPrint';
 import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
 import { DeliveryEditor } from './DeliveryEditor';
@@ -31,6 +32,27 @@ const deliveryLabel = (d: ProcurementDelivery) => d.status === 'planned'
 const deliveryTone = (d: ProcurementDelivery) => d.status === 'planned'
   ? d.approvalStatus === 'rejected' ? DELIVERY_TONE.received_short : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
   : DELIVERY_TONE[d.status] || DELIVERY_TONE.cancelled;
+
+/** Mở cửa sổ in "Đề nghị duyệt đơn hàng" (nội dung theo mẫu in PO ở tab dự án; dòng vật tư chỉ có tên + quy cách). */
+export const printPoApproval = (o: ProcurementOrderDetail): boolean => {
+  const names = Array.from(new Set(o.lines.map(l => l.name).filter(Boolean)));
+  const itemLabel = names.length > 1 ? `${names[0]} và ${names.length - 1} vật tư khác` : names[0] || o.poNumber || '';
+  const subject = `${itemLabel}${o.projectName || o.projectCode ? ` ${o.projectName || o.projectCode}` : ''}${o.vendorName ? ` → ${o.vendorName}` : ''}`.toUpperCase();
+  const approver = [...o.events].reverse().find(e => e.action === 'approve')?.actorName || o.submittedToName || '';
+  const html = buildPoApprovalPrintHtml({
+    poNumber: o.poNumber, orderDate: o.orderDate || o.createdAt, subject, vendorName: o.vendorName,
+    projectLabel: o.projectCode ? `${o.projectCode}${o.projectName ? ` — ${o.projectName}` : ''}` : o.kind === 'proactive' && o.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : null,
+    warehouseName: o.warehouseName, expectedDeliveryDate: o.expectedDeliveryDate, requesterName: o.createdByName || '', requesterPosition: o.createdByTitle || '',
+    vatRate: o.vatRate, note: o.note,
+    lines: o.lines.map(l => ({ sku: l.sku, name: l.name, specification: l.specification, unit: l.unit, qty: l.qty, unitPrice: l.unitPrice, stockUnit: l.stockUnit, stockQty: l.stockQty })),
+    signers: [{ role: 'BP Vật tư - TB', name: o.createdByName || '' }, { role: 'CB phụ trách dự án', name: '' }, { role: 'Giám đốc vật tư', name: approver }, { role: 'Tổng giám đốc', name: 'Dương Xuân Thịnh' }],
+  });
+  const w = window.open('', '_blank', 'width=980,height=760');
+  if (!w) return false;
+  w.document.open(); w.document.write(html); w.document.close(); w.focus();
+  setTimeout(() => w.print(), 300);
+  return true;
+};
 
 /** Link to the PO inside its project, where the site schedules deliveries and receives goods. */
 export const projectPoLink = (o: Pick<ProcurementOrderDetail, 'id' | 'projectId' | 'constructionSiteId'>) => {
@@ -106,7 +128,11 @@ export const OrderDrawer: React.FC<{
   };
 
   const footer = order && <>
-    {link && <a href={link} className={`${secondaryBtn} mr-auto`}><ArrowUpRight size={15} />Mở trong dự án</a>}
+    <span className="mr-auto flex flex-wrap gap-2">
+      {link && <a href={link} className={secondaryBtn}><ArrowUpRight size={15} />Mở trong dự án</a>}
+      {order.lines.length > 0 && <button type="button" className={secondaryBtn} onClick={() => { if (!printPoApproval(order)) toast.error('Không mở được cửa sổ in', 'Trình duyệt đang chặn cửa sổ bật lên — cho phép rồi thử lại.'); }}>
+        <Printer size={15} />In đề nghị duyệt</button>}
+    </span>
     {perms?.canDelete && <button type="button" disabled={busy} className={secondaryBtn}
       onClick={async () => { if (await confirm({ title: 'Xóa đơn nháp?', targetName: order.poNumber || '', actionLabel: 'Xóa nháp' })) void act('delete'); }}>
       <Trash2 size={15} />Xóa nháp</button>}
@@ -183,7 +209,7 @@ export const OrderDrawer: React.FC<{
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {order.lines.map(line => <li key={line.lineId} className="px-3 py-2.5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="font-medium text-foreground">{line.name}<span className="ml-2 text-xs text-muted-foreground">{line.sku}</span></span>
+              <span className="font-medium text-foreground">{lineDisplayName(line.name, line.specification)}<span className="ml-2 text-xs text-muted-foreground">{line.sku}</span></span>
               <span className="text-sm tabular-nums">{fmt(line.qty)} {line.unit} × {money(line.unitPrice)} = <b>{money(line.qty * line.unitPrice)} đ</b></span>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
