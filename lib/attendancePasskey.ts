@@ -46,6 +46,30 @@ export const describeThisDevice = (): string => {
   return 'Thiết bị khác';
 };
 
+/**
+ * Browsers built into other apps (Zalo, Facebook, TikTok…) run pages in a WebView, which has no
+ * fingerprint / Face ID for websites. Returns the app name so the screen can say "open in Chrome".
+ */
+export const detectInAppBrowser = (agent: string = typeof navigator === 'undefined' ? '' : navigator.userAgent): string | null => {
+  if (/Zalo/i.test(agent)) return 'Zalo';
+  if (/FBAN|FBAV|FB_IAB|FBIOS/i.test(agent)) return /Messenger/i.test(agent) ? 'Messenger' : 'Facebook';
+  if (/Instagram/i.test(agent)) return 'Instagram';
+  if (/musical_ly|BytedanceWebview|TikTok/i.test(agent)) return 'TikTok';
+  if (/\bLine\//.test(agent)) return 'LINE';
+  if (/Android/i.test(agent) && /; wv\)/.test(agent)) return 'ứng dụng này';
+  if (/iPhone|iPad/i.test(agent) && !/Safari\//.test(agent)) return 'ứng dụng này';
+  return null;
+};
+
+export const isIosDevice = (agent: string = typeof navigator === 'undefined' ? '' : navigator.userAgent): boolean =>
+  /iPhone|iPad|iPod/i.test(agent);
+
+/** Android: an intent link that reopens the app in Chrome (falls back to the normal link). */
+export const chromeIntentUrl = (origin: string): string => {
+  const url = new URL(origin);
+  return `intent://${url.host}/#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(`${url.origin}/`)};end`;
+};
+
 export const isPasskeySupported = async (): Promise<boolean> => {
   try {
     if (typeof window === 'undefined' || !window.PublicKeyCredential) return false;
