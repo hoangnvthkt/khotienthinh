@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Link2, Loader2, Pencil, Printer, Send, Trash2, Truck, Unlink, UserRound, Warehouse } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
-import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine } from '../../../lib/procurementInboxService';
+import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine, type ProcurementPoPayment } from '../../../lib/procurementInboxService';
 import { buildPoApprovalPrintHtml, lineDisplayName } from '../../../lib/procurementApprovalPrint';
 import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
 import { DeliveryEditor } from './DeliveryEditor';
-import { Badge, Drawer, PoStatusChip, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { Badge, Drawer, PoPaymentChip, PoStatusChip, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 
 const EVENT_LABELS: Record<string, string> = {
   create: 'Lập đơn', update: 'Sửa đơn', submit: 'Gửi duyệt', approve: 'Duyệt đơn', return: 'Trả lại', delete: 'Xóa nháp',
@@ -75,9 +75,11 @@ export const OrderDrawer: React.FC<{
   const [shortOpen, setShortOpen] = useState(false);
   const [shortReason, setShortReason] = useState('');
   const [returnToNeed, setReturnToNeed] = useState(true);
+  const [payment, setPayment] = useState<ProcurementPoPayment | null>(null);
 
   const load = useCallback(() => {
     setError(null);
+    procurementInboxService.poPaymentStatus([orderId]).then(m => setPayment(m[orderId] || null)).catch(() => setPayment(null));
     procurementInboxService.getOrder(orderId).then(o => { setOrder(o); setApprover(a => a || o.submittedToUserId || ''); })
       .catch(e => setError(e instanceof Error ? e.message : String(e)));
   }, [orderId]);
@@ -243,6 +245,17 @@ export const OrderDrawer: React.FC<{
             <dd className="tabular-nums">{money(order.deliveries.filter(d => d.status !== 'cancelled').reduce((sum, d) => sum + d.acceptedAmount, 0))} đ</dd></div>}
         </dl>
       </section>
+      {payment && payment.status !== 'none' && <section className="rounded-2xl border border-border p-3 text-sm">
+        <h3 className="flex flex-wrap items-center gap-2 font-semibold text-foreground">Thanh toán NCC <PoPaymentChip payment={payment} />
+          {order.vendorId && <a href={`#/finance?supplier=${encodeURIComponent(order.vendorId)}`} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:underline">Xem ở Tài chính<ArrowUpRight size={12} /></a>}</h3>
+        <dl className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {([['Đã ghi nợ', payment.recognized - payment.credit], ['Đã chi', payment.paid], ['Còn nợ', payment.outstanding], ['Đang đề nghị chi', payment.inRequest]] as const).map(([l, v]) =>
+            <div key={l} className="rounded-xl bg-muted/50 px-3 py-2"><dt className="text-xs text-muted-foreground">{l}</dt><dd className="font-semibold tabular-nums">{money(v)} đ</dd></div>)}
+        </dl>
+        <p className={`mt-2 text-xs ${payment.overdue ? 'overdue-blink font-semibold text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
+          {payment.outstanding > 0.5 ? (payment.nextDue ? `Hạn thanh toán gần nhất ${payment.nextDue.split('-').reverse().join('/')}${payment.overdue ? ' — đã quá hạn' : ''}` : 'Chưa có hạn thanh toán') : 'Đã thanh toán đủ phần đã nhận.'}
+          {' '}· Tính trên {payment.documents} lần nhận hàng; Tài chính lập đề nghị chi và chi tiền.</p>
+      </section>}
       {order.note && <p className="rounded-xl bg-muted/50 px-3 py-2 text-sm"><span className="text-muted-foreground">Ghi chú: </span>{order.note}</p>}
       {order.shortClose && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm">
         <b>Đã kết thúc thiếu</b> {fmt(order.shortClose.shortStockQty, 3)} {new Set(order.lines.map(l => l.stockUnit)).size === 1 ? order.lines[0]?.stockUnit : '(ĐV kho)'} — {order.shortClose.reason}.
