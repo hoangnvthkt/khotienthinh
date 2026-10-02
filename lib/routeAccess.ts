@@ -167,6 +167,13 @@ export const canAccessRoute = (
   if (isWorkflowListRoute(pathname)) {
     return canViewWorkflowInstances(user);
   }
+  // One person's profile: the server shows only the sections the caller may see
+  // (own record, direct report, HR), so everyone in the directory can open it.
+  if (matchPath({ path: '/ep/:employeeId', end: true }, pathname)) {
+    return canPerform(user, 'hrm.employee.view_directory', GLOBAL_SCOPE)
+      || canPerform(user, 'hrm.employee.view_profile', OWN_SCOPE)
+      || canViewRoute(user, pathname);
+  }
   if (pathname === '/settings/role-templates') {
     return canPerform(user, 'system.authorization.manage_roles', GLOBAL_SCOPE);
   }

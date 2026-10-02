@@ -326,3 +326,13 @@ describe('role-template route', () => {
     expect(canAccessRoute(user(), '/settings/role-templates')).toBe(false);
   });
 });
+
+describe('personnel profile route', () => {
+  it('lets an employee open a profile; the server decides which sections show', () => {
+    expect(canAccessRoute(businessUser, '/ep/7f1d9a3e-1111-4222-8333-944455556666')).toBe(true);
+  });
+
+  it('keeps the profile closed to accounts without directory or own-profile access', () => {
+    expect(canAccessRoute(user([]), '/ep/7f1d9a3e-1111-4222-8333-944455556666')).toBe(false);
+  });
+});

@@ -8,7 +8,7 @@ import EmployeeDetailModal from '../../components/hrm/EmployeeDetailModal';
 import ConfirmDeleteModal from '../../components/ConfirmDeleteModal';
 import Pagination from '../../components/Pagination';
 import { usePagination } from '../../hooks/usePagination';
-import { canPerform } from '../../lib/permissions/permissionService';
+import { canPerform, canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
@@ -18,10 +18,12 @@ import { buildHrmStaffingRows, getHrmEmployeeOrganizationSummary } from '../../l
 import { hrmSharedCatalogService } from '../../lib/hrmSharedCatalogService';
 import type { HrmSharedCatalogBundle, HrmStaffingRow } from '../../types/hrmSharedCatalog';
 import HrmPersonnelImportExportPanel from '../../components/hrm/HrmPersonnelImportExportPanel';
+import HrmProfileCompletenessPanel from '../../components/hrm/HrmProfileCompletenessPanel';
 
 const Employees: React.FC = () => {
     const { employees, updateEmployee, updateUser, replaceEmployeeLocal, removeEmployee, hrmOffices, hrmPositions, hrmConstructionSites, orgUnits, user, loadModuleData } = useApp();
     const canCRUD = canPerform(user, 'hrm.employee.edit_profile');
+    const isHr = canPerformHrmTemplatePermission(user, 'hrm.employee.view_sensitive');
     useModuleData('hrm');
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
@@ -246,6 +248,8 @@ const Employees: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {isHr && <HrmProfileCompletenessPanel />}
 
             {/* Search */}
             <div className="relative">

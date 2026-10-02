@@ -38,74 +38,106 @@ type ProfileEditorKind =
 interface EditorField {
   key: string;
   label: string;
-  type?: 'text' | 'date' | 'number' | 'checkbox';
+  type?: 'text' | 'date' | 'number' | 'checkbox' | 'select';
   required?: boolean;
+  options?: Array<[code: string, label: string]>;
+  placeholder?: string;
+  hint?: string;
 }
+
+// Choices instead of typed codes; the stored code stays stable for reports and imports.
+const CODE_OPTIONS: Record<string, Array<[string, string]>> = {
+  eventTypeCode: [
+    ['TIEP_NHAN', 'Tiếp nhận'], ['THU_VIEC', 'Thử việc'], ['CHINH_THUC', 'Lên chính thức'],
+    ['DIEU_CHUYEN', 'Điều chuyển'], ['BO_NHIEM', 'Bổ nhiệm'], ['MIEN_NHIEM', 'Miễn nhiệm'],
+    ['DIEU_CHINH_LUONG', 'Điều chỉnh lương'], ['KHEN_THUONG', 'Khen thưởng'], ['KY_LUAT', 'Kỷ luật'],
+    ['TAM_HOAN', 'Tạm hoãn hợp đồng'], ['NGHI_VIEC', 'Nghỉ việc'],
+  ],
+  documentTypeCode: [['CCCD', 'Căn cước / CCCD'], ['CMND', 'Chứng minh nhân dân (cũ)'], ['HO_CHIEU', 'Hộ chiếu'], ['GPLD', 'Giấy phép lao động']],
+  participationStatusCode: [['TG', 'Đang tham gia'], ['1P', 'Tham gia một phần'], ['CTG', 'Chưa tham gia'], ['TS', 'Thai sản'], ['ĐĐ', 'Ốm đau'], ['HT', 'Hưu trí']],
+  relationshipCode: [['VO', 'Vợ'], ['CHONG', 'Chồng'], ['CON', 'Con'], ['BO', 'Bố'], ['ME', 'Mẹ'], ['ANH_CHI_EM', 'Anh / chị / em'], ['KHAC', 'Khác']],
+  bankCode: [
+    ['VCB', 'Vietcombank'], ['BIDV', 'BIDV'], ['CTG', 'VietinBank'], ['AGRIBANK', 'Agribank'], ['TCB', 'Techcombank'],
+    ['MB', 'MB Bank'], ['ACB', 'ACB'], ['VPB', 'VPBank'], ['TPB', 'TPBank'], ['SHB', 'SHB'], ['STB', 'Sacombank'],
+    ['HDB', 'HDBank'], ['VIB', 'VIB'], ['MSB', 'MSB'], ['OCB', 'OCB'], ['SEAB', 'SeABank'], ['LPB', 'LPBank'],
+    ['EIB', 'Eximbank'], ['KHAC', 'Ngân hàng khác'],
+  ],
+  taxResidencyCode: [['CU_TRU', 'Cá nhân cư trú'], ['KHONG_CU_TRU', 'Cá nhân không cư trú']],
+  educationLevelCode: [['TS', 'Tiến sĩ'], ['Ths', 'Thạc sĩ'], ['ĐH', 'Đại học'], ['CĐ', 'Cao đẳng'], ['TC', 'Trung cấp'], ['SC', 'Sơ cấp'], ['LĐPT', 'Lao động phổ thông']],
+  certificationTypeCode: [
+    ['ATLD', 'Thẻ / chứng chỉ an toàn lao động'], ['HANH_NGHE_XD', 'Chứng chỉ hành nghề xây dựng'], ['THO_HAN', 'Chứng chỉ thợ hàn'],
+    ['VAN_HANH', 'Vận hành thiết bị nâng / máy'], ['GPLX', 'Giấy phép lái xe'], ['PCCC', 'Phòng cháy chữa cháy'],
+    ['SO_CAP_CUU', 'Sơ cấp cứu'], ['KHAC', 'Khác'],
+  ],
+};
+const codeLabel = (key: string, value: unknown): string | null => {
+  const match = CODE_OPTIONS[key]?.find(([code]) => code === value);
+  return match ? match[1] : null;
+};
+const ACCESS_LEVEL_LABEL: Record<string, string> = {
+  SELF: 'Hồ sơ của tôi', MANAGER: 'Quản lý trực tiếp', HR: 'HR', HR_MANAGE: 'HR Manage', DIRECTORY: 'Danh bạ',
+};
+const DEFAULT_CHANGE_REASON = 'Cập nhật hồ sơ nhân sự theo giấy tờ gốc';
+const newRecordCode = (kind: string) => `${kind.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 
 const EDITOR_META: Record<ProfileEditorKind, { label: string; fields: EditorField[] }> = {
   employment: { label: 'Quá trình làm việc', fields: [
-    { key: 'recordCode', label: 'Mã bản ghi', required: true },
-    { key: 'eventTypeCode', label: 'Loại sự kiện', required: true },
-    { key: 'eventDate', label: 'Ngày sự kiện', type: 'date', required: true },
+    { key: 'eventTypeCode', label: 'Loại sự kiện', type: 'select', required: true, options: CODE_OPTIONS.eventTypeCode },
+    { key: 'eventDate', label: 'Ngày hiệu lực', type: 'date', required: true },
     { key: 'titleSnapshot', label: 'Chức danh tại thời điểm' },
-    { key: 'sourceReference', label: 'Nguồn tham chiếu', required: true },
-    { key: 'eventReason', label: 'Nội dung sự kiện' },
+    { key: 'sourceReference', label: 'Số quyết định / căn cứ', placeholder: 'Ví dụ: QĐ 12/2026/QĐ-TT' },
+    { key: 'eventReason', label: 'Nội dung' },
   ] },
   identity: { label: 'Giấy tờ định danh', fields: [
-    { key: 'recordCode', label: 'Mã bản ghi', required: true },
-    { key: 'documentTypeCode', label: 'Loại giấy tờ', required: true },
-    { key: 'documentNumber', label: 'Số giấy tờ', required: true },
+    { key: 'documentTypeCode', label: 'Loại giấy tờ', type: 'select', required: true, options: CODE_OPTIONS.documentTypeCode },
+    { key: 'documentNumber', label: 'Số giấy tờ', required: true, hint: 'Số CCCD đồng thời là mã số thuế cá nhân (từ 01/07/2025).' },
     { key: 'issuedDate', label: 'Ngày cấp', type: 'date' },
     { key: 'issuedPlace', label: 'Nơi cấp' },
     { key: 'expiryDate', label: 'Ngày hết hạn', type: 'date' },
     { key: 'isPrimary', label: 'Giấy tờ chính', type: 'checkbox' },
   ] },
   insurance: { label: 'Bảo hiểm', fields: [
-    { key: 'socialInsuranceNumber', label: 'Số BHXH' },
-    { key: 'healthInsuranceNumber', label: 'Số BHYT' },
-    { key: 'registeredClinicCode', label: 'Mã nơi khám chữa bệnh' },
-    { key: 'participationStatusCode', label: 'Trạng thái tham gia' },
-    { key: 'effectiveFrom', label: 'Hiệu lực từ', type: 'date' },
-    { key: 'effectiveTo', label: 'Hiệu lực đến', type: 'date' },
+    { key: 'socialInsuranceNumber', label: 'Số sổ BHXH' },
+    { key: 'healthInsuranceNumber', label: 'Số thẻ BHYT' },
+    { key: 'registeredClinicCode', label: 'Nơi đăng ký khám chữa bệnh' },
+    { key: 'participationStatusCode', label: 'Tình trạng tham gia', type: 'select', options: CODE_OPTIONS.participationStatusCode },
+    { key: 'effectiveFrom', label: 'Tham gia từ', type: 'date' },
+    { key: 'effectiveTo', label: 'Đến', type: 'date' },
   ] },
   dependent: { label: 'Người phụ thuộc', fields: [
-    { key: 'recordCode', label: 'Mã bản ghi', required: true },
     { key: 'fullName', label: 'Họ và tên', required: true },
-    { key: 'relationshipCode', label: 'Quan hệ', required: true },
+    { key: 'relationshipCode', label: 'Quan hệ', type: 'select', required: true, options: CODE_OPTIONS.relationshipCode },
     { key: 'dateOfBirth', label: 'Ngày sinh', type: 'date' },
-    { key: 'taxCode', label: 'Mã số thuế' },
+    { key: 'taxCode', label: 'Số CCCD / mã số thuế' },
     { key: 'deductionFrom', label: 'Giảm trừ từ', type: 'date' },
     { key: 'deductionTo', label: 'Giảm trừ đến', type: 'date' },
   ] },
   bank: { label: 'Tài khoản ngân hàng', fields: [
-    { key: 'recordCode', label: 'Mã bản ghi', required: true },
-    { key: 'bankCode', label: 'Mã ngân hàng', required: true },
+    { key: 'bankCode', label: 'Ngân hàng', type: 'select', required: true, options: CODE_OPTIONS.bankCode },
     { key: 'branchName', label: 'Chi nhánh' },
     { key: 'accountNumber', label: 'Số tài khoản', required: true },
-    { key: 'accountHolder', label: 'Chủ tài khoản', required: true },
+    { key: 'accountHolder', label: 'Chủ tài khoản', required: true, placeholder: 'Viết hoa không dấu như trên thẻ' },
     { key: 'isPayrollAccount', label: 'Tài khoản nhận lương', type: 'checkbox' },
   ] },
   tax: { label: 'Thông tin thuế', fields: [
-    { key: 'taxCode', label: 'Mã số thuế' },
-    { key: 'taxResidencyCode', label: 'Mã cư trú thuế' },
+    { key: 'taxCode', label: 'Mã số thuế', hint: 'Từ 01/07/2025 dùng số CCCD.' },
+    { key: 'taxResidencyCode', label: 'Tình trạng cư trú', type: 'select', options: CODE_OPTIONS.taxResidencyCode },
     { key: 'registrationDate', label: 'Ngày đăng ký', type: 'date' },
   ] },
   qualification: { label: 'Trình độ', fields: [
-    { key: 'recordCode', label: 'Mã bản ghi', required: true },
-    { key: 'educationLevelCode', label: 'Mã trình độ' },
+    { key: 'educationLevelCode', label: 'Trình độ', type: 'select', options: CODE_OPTIONS.educationLevelCode },
     { key: 'institutionName', label: 'Cơ sở đào tạo', required: true },
     { key: 'majorName', label: 'Chuyên ngành' },
     { key: 'degreeName', label: 'Văn bằng' },
     { key: 'graduationYear', label: 'Năm tốt nghiệp', type: 'number' },
   ] },
   certification: { label: 'Chứng chỉ', fields: [
-    { key: 'recordCode', label: 'Mã bản ghi', required: true },
-    { key: 'certificationTypeCode', label: 'Loại chứng chỉ' },
+    { key: 'certificationTypeCode', label: 'Loại chứng chỉ', type: 'select', options: CODE_OPTIONS.certificationTypeCode },
     { key: 'certificationName', label: 'Tên chứng chỉ', required: true },
     { key: 'certificateNumber', label: 'Số chứng chỉ' },
     { key: 'issuerName', label: 'Đơn vị cấp' },
     { key: 'issuedDate', label: 'Ngày cấp', type: 'date' },
-    { key: 'expiryDate', label: 'Ngày hết hạn', type: 'date' },
+    { key: 'expiryDate', label: 'Ngày hết hạn', type: 'date', hint: 'Hệ thống sẽ nhắc trước khi hết hạn.' },
   ] },
 };
 
@@ -172,15 +204,17 @@ const formatValue = (value: unknown): string => {
   return text;
 };
 
+const HIDDEN_KEYS = ['employeeId', 'maskedFields', 'recordCode', 'id'];
+
 const DataFields: React.FC<{ value: Record<string, unknown> }> = ({ value }) => (
   <dl className="grid gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
     {Object.entries(value)
-      .filter(([key]) => !['employeeId', 'maskedFields'].includes(key))
+      .filter(([key]) => !HIDDEN_KEYS.includes(key))
       .map(([key, fieldValue]) => (
         <div key={key} className="min-w-0">
           <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">{humanize(key)}</dt>
           <dd className="mt-1 break-words text-sm font-bold text-slate-800 dark:text-slate-100">
-            {formatValue(fieldValue)}
+            {codeLabel(key, fieldValue) || formatValue(fieldValue)}
           </dd>
         </div>
       ))}
@@ -334,8 +368,8 @@ const HrmPersonnelProfile: React.FC = () => {
 
   const openEditor = (kind: ProfileEditorKind) => {
     setEditorKind(kind);
-    setEditorForm({});
-    setEditorReason('');
+    setEditorForm({ recordCode: newRecordCode(kind) });
+    setEditorReason(DEFAULT_CHANGE_REASON);
   };
 
   const saveDomainRecord = async () => {
@@ -351,7 +385,7 @@ const HrmPersonnelProfile: React.FC = () => {
           payload = await hrmPersonnelProfileService.upsertEmploymentEvent({
             employeeId, recordCode: textValue('recordCode'), eventTypeCode: textValue('eventTypeCode'),
             eventDate: textValue('eventDate'), titleSnapshot: optional('titleSnapshot'),
-            eventReason: optional('eventReason'), sourceReference: textValue('sourceReference'),
+            eventReason: optional('eventReason'), sourceReference: textValue('sourceReference') || 'Hồ sơ giấy tại phòng HCNS',
             reason: editorReason,
           });
           break;
@@ -451,8 +485,8 @@ const HrmPersonnelProfile: React.FC = () => {
 
   return (
     <main className="mx-auto max-w-[1500px] space-y-5 pb-10">
-      <button type="button" onClick={() => navigate('/ep')} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-sky-700 dark:text-slate-300 dark:hover:text-sky-300">
-        <ArrowLeft size={16} /> Danh sách nhân sự
+      <button type="button" onClick={() => navigate(overview.accessLevel === 'SELF' ? '/my-profile' : '/ep')} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-sky-700 dark:text-slate-300 dark:hover:text-sky-300">
+        <ArrowLeft size={16} /> {overview.accessLevel === 'SELF' ? 'Hồ sơ của tôi' : 'Danh sách nhân sự'}
       </button>
 
       <header className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
@@ -474,7 +508,7 @@ const HrmPersonnelProfile: React.FC = () => {
           </div>
           <div className="rounded-xl bg-slate-100 px-4 py-3 text-right dark:bg-slate-800">
             <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Mức truy cập</p>
-            <p className="mt-1 text-sm font-black text-sky-700 dark:text-sky-300">{overview.accessLevel}</p>
+            <p className="mt-1 text-sm font-black text-sky-700 dark:text-sky-300">{ACCESS_LEVEL_LABEL[overview.accessLevel] || overview.accessLevel}</p>
           </div>
         </div>
       </header>
@@ -508,6 +542,33 @@ const HrmPersonnelProfile: React.FC = () => {
           })}
         </div>
       </nav>
+
+      {hasPermission && activeSection !== 'overview' && !selectedError && !(sectionLoading === activeSection && !selectedPayload) && (
+        <>{canEditActive && (
+            <div className="flex flex-wrap justify-end gap-2">
+              {activeSection === 'personal_contact' && (
+                <button type="button" onClick={() => setEditingContact(true)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
+                  <PencilLine size={15} /> Cập nhật liên hệ
+                </button>
+              )}
+              {(SECTION_EDITORS[activeSection] || []).map(kind => (
+                <button key={kind} type="button" onClick={() => openEditor(kind)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
+                  <Plus size={15} /> {EDITOR_META[kind].label}
+                </button>
+              ))}
+              {activeSection === 'contracts_employment' && (
+                <button type="button" onClick={() => navigate('/hrm/contracts')} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <FileText size={15} /> Quản lý hợp đồng
+                </button>
+              )}
+              {activeSection === 'qualifications_documents' && (
+                <button type="button" onClick={() => navigate('/hrm/documents')} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <FileBadge size={15} /> Quản lý tài liệu
+                </button>
+              )}
+            </div>
+          )}</>
+      )}
 
       {!hasPermission ? (
         <section className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900">
@@ -556,36 +617,14 @@ const HrmPersonnelProfile: React.FC = () => {
         <section className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900">
           <FileBadge className="mx-auto text-slate-400" size={30} />
           <h2 className="mt-3 text-lg font-black text-slate-900 dark:text-white">Chưa có dữ liệu</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Nhóm thông tin này chưa có bản ghi phù hợp.</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">
+            {canEditActive ? 'Bấm nút thêm ở trên để nhập bản ghi đầu tiên.' : 'Nhóm thông tin này chưa có bản ghi phù hợp.'}
+          </p>
         </section>
       ) : (
         <div className="space-y-4">
-          {canEditActive && (
-            <div className="flex flex-wrap justify-end gap-2">
-              {activeSection === 'personal_contact' && (
-                <button type="button" onClick={() => setEditingContact(true)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
-                  <PencilLine size={15} /> Cập nhật liên hệ
-                </button>
-              )}
-              {(SECTION_EDITORS[activeSection] || []).map(kind => (
-                <button key={kind} type="button" onClick={() => openEditor(kind)} className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white active:scale-[0.98]">
-                  <Plus size={15} /> {EDITOR_META[kind].label}
-                </button>
-              ))}
-              {activeSection === 'contracts_employment' && (
-                <button type="button" onClick={() => navigate('/hrm/contracts')} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                  <FileText size={15} /> Quản lý hợp đồng
-                </button>
-              )}
-              {activeSection === 'qualifications_documents' && (
-                <button type="button" onClick={() => navigate('/hrm/documents')} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-black text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                  <FileBadge size={15} /> Quản lý tài liệu
-                </button>
-              )}
-            </div>
-          )}
           {Object.entries(selectedPayload)
-            .filter(([key]) => !['employeeId', 'maskedFields'].includes(key))
+            .filter(([key]) => !HIDDEN_KEYS.includes(key))
             .map(([key, value]) => <PayloadGroup key={key} name={key} value={value} />)}
         </div>
       )}
@@ -626,7 +665,7 @@ const HrmPersonnelProfile: React.FC = () => {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black text-slate-950 dark:text-white">{EDITOR_META[editorKind].label}</h2>
-                <p className="mt-1 text-sm font-semibold text-slate-500">Mỗi bản ghi dùng mã ổn định để cập nhật đúng dữ liệu.</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">Mỗi lần lưu đều được ghi lịch sử (người sửa, thời điểm, lý do).</p>
               </div>
               <button type="button" onClick={() => setEditorKind(null)} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Đóng"><X size={18} /></button>
             </div>
@@ -644,12 +683,25 @@ const HrmPersonnelProfile: React.FC = () => {
               ) : (
                 <label key={field.key} className="block space-y-2">
                   <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{field.label}{field.required ? ' *' : ''}</span>
-                  <input
-                    type={field.type || 'text'}
-                    value={String(editorForm[field.key] || '')}
-                    onChange={event => setEditorForm(current => ({ ...current, [field.key]: event.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
+                  {field.type === 'select' ? (
+                    <select
+                      value={String(editorForm[field.key] || '')}
+                      onChange={event => setEditorForm(current => ({ ...current, [field.key]: event.target.value }))}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="">— Chọn —</option>
+                      {(field.options || []).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      type={field.type || 'text'}
+                      value={String(editorForm[field.key] || '')}
+                      placeholder={field.placeholder}
+                      onChange={event => setEditorForm(current => ({ ...current, [field.key]: event.target.value }))}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  )}
+                  {field.hint && <span className="block text-xs font-medium text-slate-500">{field.hint}</span>}
                 </label>
               ))}
             </div>
