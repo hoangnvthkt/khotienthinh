@@ -18,6 +18,7 @@ interface ReasonConfirmModalProps {
   intent?: ReasonConfirmIntent;
   countdownSeconds?: number;
   isSubmitting?: boolean;
+  minLength?: number;
 }
 
 const stylesByIntent = {
@@ -62,6 +63,7 @@ const ReasonConfirmModal: React.FC<ReasonConfirmModalProps> = ({
   intent = 'warning',
   countdownSeconds = 0,
   isSubmitting = false,
+  minLength,
 }) => {
   const [timeLeft, setTimeLeft] = useState(countdownSeconds);
   const [reason, setReason] = useState('');
@@ -89,7 +91,9 @@ const ReasonConfirmModal: React.FC<ReasonConfirmModalProps> = ({
   if (!isOpen) return null;
 
   const trimmedReason = reason.trim();
-  const canSubmit = trimmedReason.length > 0 && timeLeft <= 0 && !isSubmitting;
+  const minChars = Math.max(1, minLength ?? 1);
+  const tooShort = trimmedReason.length < minChars;
+  const canSubmit = !tooShort && timeLeft <= 0 && !isSubmitting;
 
   const submit = () => {
     setTouched(true);
@@ -139,6 +143,9 @@ const ReasonConfirmModal: React.FC<ReasonConfirmModalProps> = ({
             />
             {touched && !trimmedReason && (
               <p className="mt-1 text-xs font-bold text-red-500">Cần nhập lý do để tiếp tục.</p>
+            )}
+            {trimmedReason && tooShort && (
+              <p className="mt-1 text-xs font-bold text-amber-600">Lý do cần ít nhất {minChars} ký tự.</p>
             )}
           </div>
 

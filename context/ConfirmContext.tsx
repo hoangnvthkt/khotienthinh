@@ -37,6 +37,8 @@ interface ReasonConfirmOptions {
   cancelLabel?: string;
   intent?: 'danger' | 'warning' | 'success';
   countdownSeconds?: number;
+  /** Shortest reason accepted (characters after trimming); default 1. */
+  minLength?: number;
 }
 
 type ReasonConfirmFn = (opts: ReasonConfirmOptions) => Promise<string | null>;
@@ -119,6 +121,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
           cancelLabel={reasonOpts.cancelLabel}
           intent={reasonOpts.intent}
           countdownSeconds={reasonOpts.countdownSeconds ?? 0}
+          minLength={reasonOpts.minLength}
         />
       </ReasonConfirmContext.Provider>
     </ConfirmContext.Provider>
