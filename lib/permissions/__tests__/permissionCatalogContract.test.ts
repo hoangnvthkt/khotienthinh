@@ -7,6 +7,11 @@ import dbCatalog from './fixtures/dbPermissionCatalog.json';
 const FRONTEND_AHEAD_OF_DB = new Set([
   'system.vehicle_booking.view',
   'system.vehicle_booking.manage',
+  // V1-2 Module Vật tư (migration 20261008137200) — gỡ sau khi deploy và refresh fixture.
+  'wms.transaction.keeper',
+  'wms.transaction.exception_approve',
+  'wms.accounting.manage',
+  'wms.accounting.close_period',
 ]);
 
 const dbCodes = new Map(dbCatalog.actions.map(action => [action.permissionCode, action.scopeTypes]));
