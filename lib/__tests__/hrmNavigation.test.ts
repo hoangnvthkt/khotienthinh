@@ -92,6 +92,7 @@ describe('HRM navigation', () => {
       { to: '/hrm/checkin', label: 'Check-in / Check-out' },
       { to: '/hrm/attendance', label: 'Chấm công của tôi' },
       { to: '/hrm/leave', label: 'Nghỉ phép của tôi' },
+      { to: '/hrm/assignments', label: 'Điều động của tôi' },
     ]);
   });
 
@@ -107,6 +108,7 @@ describe('HRM navigation', () => {
       '/hrm/attendance',
       '/hrm/shifts',
       '/hrm/leave',
+      '/hrm/assignments',
       '/hrm/payroll',
       '/hrm/contracts',
       '/hrm/documents',

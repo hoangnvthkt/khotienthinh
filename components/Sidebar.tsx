@@ -76,6 +76,7 @@ const HRM_NAV_ICONS: Record<string, LucideIcon> = {
   '/hrm/attendance': Calendar,
   '/hrm/shifts': Clock,
   '/hrm/leave': CalendarOff,
+  '/hrm/assignments': HardHat,
   '/hrm/payroll': DollarSign,
   '/hrm/contracts': FileSignature,
   '/hrm/documents': FolderOpen,
