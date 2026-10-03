@@ -567,3 +567,5 @@ Lưu ý khi duyệt:
 
 **Còn lại:** dòng tồn của "Thép D8" (mã đã xóa) ở Kho SMB có số lượng 0 nhưng còn giá trị 90 triệu → xử lý ở V3 (điều chỉnh giá trị).
 
+
+**Chủ SP duyệt 03/10/2026:** deploy + merge #88. Dầu Diezel, Dầu DO, mực máy in giữ **Lưu kho**. Còn 30 mã đặt theo danh sách: 7 Dùng ngay (Base A/B, bê tông M100–M350), 23 Không qua kho. Cấp "Đề xuất vật tư → Tạo" cho thủ kho Luật, Minh để gửi đề xuất mã mới. Script chạy sau deploy: `.superpowers/review/work-plan/v1-deploy-data.mjs` (đã chạy thử kèm migration trong giao dịch hoàn tác: đạt).
