@@ -120,3 +120,44 @@ export const similarCatalogItems = <T extends { name: string }>(items: T[], quer
 export const guessInventoryMode = (name: string, unit?: string | null, category?: string | null): InventoryMode =>
   category === 'DV' || ['Giờ', 'Ca', 'Lần', 'Chuyến'].includes(unit || '') || /^chi phí|ca máy|vận chuyển/i.test(name) ? 'service'
     : /bê tông thương phẩm|^base\b|dầu diezel|dầu do\b/i.test(name) ? 'use' : 'stock';
+
+// ---------- V1-2: Người phụ trách kho ----------
+export interface WmsOwnersData {
+  can: { edit: boolean };
+  warehouses: Array<{ id: string; name: string; type: string; project: string | null }>;
+  users: Array<{ id: string; name: string; role: string; assignedWarehouseId: string | null }>;
+  grants: Array<{ userId: string; code: string; scopeType: string; scopeId: string }>;
+  activity: Array<{ userId: string; warehouseId: string; n: number }>;
+  viewers: number;
+  log: Array<{ at: string; by: string | null; lines: string[] | null }>;
+}
+export interface WmsOwnersAssign { keepers: Record<string, string[]>; code: string[]; exception: string[]; accounting: string[]; closer: string | null }
+
+const OWNER_ERRORS: Record<string, string> = {
+  WMS_OWNERS_EDIT_DENIED: 'Chỉ Admin sửa được người phụ trách kho.',
+  WMS_OWNERS_VIEW_DENIED: 'Bạn chưa có quyền xem kho.',
+  WMS_OWNERS_CLOSER_NOT_ACCOUNTANT: 'Người khóa kỳ phải nằm trong danh sách Kế toán kho.',
+  WMS_OWNERS_WAREHOUSE_INVALID: 'Có kho không còn hoạt động. Tải lại trang.',
+  WMS_OWNERS_USER_INVALID: 'Có người đã nghỉ / bị khóa tài khoản. Tải lại trang.',
+};
+export const ownersErrorMessage = (error: unknown, fallback = 'Chưa lưu được. Thử lại sau.') => {
+  const raw = String((error as any)?.message || error || '');
+  const code = Object.keys(OWNER_ERRORS).find(k => raw.includes(k));
+  return code ? OWNER_ERRORS[code] : catalogErrorMessage(error, fallback);
+};
+
+export const wmsOwnersService = {
+  get: () => rpc<WmsOwnersData>('get_wms_owners_v1'),
+  save: (assign: WmsOwnersAssign) => rpc<{ added: number; removed: number; lines: string[] }>('save_wms_owners_v1', { p: assign }),
+};
+
+/** Đọc phân công hiện tại từ danh sách quyền. */
+export const ownersFromGrants = (d: WmsOwnersData): WmsOwnersAssign & { globalKeepers: string[] } => {
+  const of = (code: string) => [...new Set(d.grants.filter(g => g.code === code && g.scopeType === 'global').map(g => g.userId))];
+  const keepers: Record<string, string[]> = Object.fromEntries(d.warehouses.map(w => [w.id, [] as string[]]));
+  d.grants.filter(g => g.code === 'wms.transaction.keeper' && g.scopeType === 'warehouse' && keepers[g.scopeId]).forEach(g => {
+    if (!keepers[g.scopeId].includes(g.userId)) keepers[g.scopeId].push(g.userId);
+  });
+  return { keepers, code: of('wms.master_data.issue_code'), exception: of('wms.transaction.exception_approve'), accounting: of('wms.accounting.manage'),
+    closer: of('wms.accounting.close_period')[0] || null, globalKeepers: of('wms.transaction.keeper') };
+};
