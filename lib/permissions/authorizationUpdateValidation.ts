@@ -284,6 +284,23 @@ export const mapAuthorizationRpcError = (error: RpcErrorLike): AuthorizationComm
       'reason',
     );
   }
+  // Luật tách nhiệm (SoD): server không gửi kèm mã chi tiết nên phải nhận theo câu lỗi.
+  if (/SoD warning acknowledgement required/i.test(error.message || '')) {
+    return new AuthorizationCommandError(
+      'Bộ quyền này chạm luật tách nhiệm, ví dụ "Quản lý danh mục kho" cùng "Duyệt phiếu kho", hoặc "Tạo PO" cùng "Duyệt PO". Màn này chưa hỗ trợ xác nhận ngoại lệ: bỏ một trong hai quyền rồi lưu lại.',
+      'sod_warning_ack_required',
+      undefined,
+      'permissionCode',
+    );
+  }
+  if (/hard SoD rule/i.test(error.message || '')) {
+    return new AuthorizationCommandError(
+      'Bộ quyền này vi phạm luật tách nhiệm bắt buộc (ví dụ tự cấp quyền nhạy cảm cho chính mình). Bỏ quyền vi phạm rồi lưu lại.',
+      'sod_hard_deny',
+      undefined,
+      'permissionCode',
+    );
+  }
   if (/duplicate direct permission grant/i.test(error.message || '')) {
     return new AuthorizationCommandError(
       'Danh sách quyền có mục bị trùng cùng phạm vi.',
