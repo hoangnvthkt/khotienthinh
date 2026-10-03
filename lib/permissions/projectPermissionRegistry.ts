@@ -78,6 +78,7 @@ export const PROJECT_MATERIAL_TAB_MODULE_CODE_BY_KEY = {
   request: 'project.material_request',
   custom: 'project.custom_material',
   po: 'project.material_po',
+  hot_purchase: 'project.material_request',
   waste: 'project.material_waste',
   dashboard: 'project.material_request',
 } as const;
@@ -191,6 +192,7 @@ export const PROJECT_PERMISSION_MODULES: readonly PermissionModuleDefinition[] =
     PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.summary,
     PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.request,
     PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.dashboard,
+    PROJECT_MATERIAL_TAB_ROUTE_BY_KEY.hot_purchase,
   ], 50, [
     ...workflowActions('project.material_request', PROJECT_TAB_ROUTE_BY_KEY.material)
       .filter(action => action.action !== 'verify'),

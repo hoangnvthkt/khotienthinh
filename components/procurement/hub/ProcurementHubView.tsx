@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Inbox, Link2, Loader2, PackageCheck,
+  AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Flame, Inbox, Link2, Loader2, PackageCheck,
   RefreshCw, RotateCcw, Search, ShoppingCart, Stamp, Truck, UserRound, Warehouse,
 } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
+import { useApp } from '../../../context/AppContext';
 import {
   PROCUREMENT_PO_STATUS_LABELS, PROCUREMENT_PROGRESS_LABELS, PROCUREMENT_SOURCE_LABELS, procurementInboxService, procurementSourceLink, urgencyOf,
   type ProcurementProactiveCandidate,
@@ -20,6 +21,8 @@ import { OrdersView } from './OrdersView';
 import { ContractsView } from './ContractsView';
 import { ReceiptReconciliationView } from '../receipt/ReceiptReconciliationView';
 import { SupplyFromStockDrawer, TRANSFER_STATUS_LABELS } from './SupplyFromStockDrawer';
+import { HotPurchaseView } from '../hotPurchase/HotPurchaseView';
+import type { HotPurchasePrefill } from '../../../lib/hotPurchaseService';
 
 // Mua hàng hub: one place where the procurement team receives every purchase need
 // (KH vật tư, đề xuất công trường, later other modules), turns it into orders that
@@ -97,7 +100,8 @@ const NeedDrawer: React.FC<{
   doc: ProcurementInboxDocument; today: string; canManage: boolean; assignees: ProcurementInbox['assignees'];
   onClose: () => void; onAssign: (userId: string | null) => Promise<void>; onOrder: () => void;
   onCloseNeed: () => void; onReopen: () => void; onOpenOrder: (id: string) => void; onChanged: () => void;
-}> = ({ doc, today, canManage, assignees, onClose, onAssign, onOrder, onCloseNeed, onReopen, onOpenOrder, onChanged }) => {
+  onHotPurchase: (prefill: HotPurchasePrefill) => void;
+}> = ({ doc, today, canManage, assignees, onClose, onAssign, onOrder, onCloseNeed, onReopen, onOpenOrder, onChanged, onHotPurchase }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const [detail, setDetail] = useState<ProcurementInboxDetail | null>(null);
@@ -212,11 +216,15 @@ const NeedDrawer: React.FC<{
               {o.poNumber || 'PO'} · {fmt(o.orderedQty)}{o.vendorName ? ` · ${o.vendorName}` : ''}</button>)}
               {(l.transfers || []).map(t => <span key={t.id} title={t.id} className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${t.status === 'CANCELLED' ? 'bg-muted text-muted-foreground line-through' : 'bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200'}`}>
                 <Truck size={11} />Chuyển kho · {fmt(t.qty)} · {t.sourceWarehouseName || 'kho gửi'} · {TRANSFER_STATUS_LABELS[t.status] || t.status}</span>)}</p>}
-            {canManage && !closed && l.remainingQty > 0 && (l.otherStock || []).length > 0 && <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => setSupplyLine(l)} className={secondaryBtn}>
+            {canManage && !closed && l.remainingQty > 0 && <div className="mt-2 flex flex-wrap items-center gap-2">
+              {(l.otherStock || []).length > 0 && <button type="button" onClick={() => setSupplyLine(l)} className={secondaryBtn}>
                 <Warehouse size={15} />Cấp từ kho
-                <span className="rounded-full bg-teal-100 px-1.5 text-xs tabular-nums text-teal-800 dark:bg-teal-900/60 dark:text-teal-100">{fmt((l.otherStock || []).reduce((sum, x) => sum + x.qty, 0))}</span></button>
-              <span className="text-xs text-muted-foreground">{(l.otherStock || []).length} kho khác còn hàng</span>
+                <span className="rounded-full bg-teal-100 px-1.5 text-xs tabular-nums text-teal-800 dark:bg-teal-900/60 dark:text-teal-100">{fmt((l.otherStock || []).reduce((sum, x) => sum + x.qty, 0))}</span></button>}
+              {doc.sourceType === 'material_request' && doc.projectId && <button type="button" className={secondaryBtn} title="Công trường mua gấp / nhỏ lẻ: dưới ngưỡng mua trước báo sau, từ ngưỡng CHT duyệt trước"
+                onClick={() => onHotPurchase({ projectId: doc.projectId!, constructionSiteId: doc.constructionSiteId, targetWarehouseId: doc.warehouseId,
+                  line: { itemId: l.itemId, name: l.itemName, unit: l.unit, qty: l.remainingQty, materialRequestId: doc.sourceId, requestLineId: l.lineId, requestCode: doc.code } })}>
+                <Flame size={15} />Mua nóng</button>}
+              {(l.otherStock || []).length > 0 && <span className="text-xs text-muted-foreground">{(l.otherStock || []).length} kho khác còn hàng</span>}
             </div>}
           </li>)}</ul>
         </section>}
@@ -254,11 +262,13 @@ const DocumentRow: React.FC<{
 
 const EMPTY_FILTER: Required<ProcurementInboxFilter> = { source: '', progress: 'open', projectId: '', assigneeId: '', search: '' };
 
-export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null; initialContractId?: string | null; initialMode?: string | null }> = ({ currentUserId, initialOrderId = null, initialContractId = null, initialMode = null }) => {
+export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null; initialContractId?: string | null; initialMode?: string | null; initialHotPurchaseId?: string | null }> = ({ currentUserId, initialOrderId = null, initialContractId = null, initialMode = null, initialHotPurchaseId = null }) => {
   const toast = useToast();
   const askReason = useReasonConfirm();
+  const { items } = useApp();
   const [stage, setStage] = useState<Stage>(initialOrderId ? 'drafting' : 'intake');
-  const [mode, setMode] = useState<'orders' | 'contracts' | 'reconcile'>(initialContractId ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : 'orders');
+  const [mode, setMode] = useState<'orders' | 'contracts' | 'hot' | 'reconcile'>(initialContractId ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : initialMode === 'hot' || initialHotPurchaseId ? 'hot' : 'orders');
+  const [hotPrefill, setHotPrefill] = useState<HotPurchasePrefill | null>(null);
   const [filter, setFilter] = useState<Required<ProcurementInboxFilter>>(EMPTY_FILTER);
   const [searchText, setSearchText] = useState('');
   const [inbox, setInbox] = useState<ProcurementInbox | null>(null);
@@ -364,16 +374,18 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
       </span>
     </header>
 
-    {status === 'denied' ? <StateBox kind="denied" message={message} />
+    {status === 'denied' && mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} />
+      : status === 'denied' ? <StateBox kind="denied" message={message} />
       : status === 'error' && !inbox ? <StateBox kind="error" title="Chưa tải được Mua hàng" message={message} onRetry={() => void load()} />
         : !inbox ? <StateBox kind="loading" title="Đang tải nhu cầu mua hàng…" />
           : <>
             <div className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm" role="tablist" aria-label="Hình thức mua">
-              {([['orders', 'Đơn hàng (PO)'], ['contracts', 'Hợp đồng nguyên tắc'], ['reconcile', 'Đối chiếu nhận hàng']] as const).map(([k, l]) =>
+              {([['orders', 'Đơn hàng (PO)'], ['contracts', 'Hợp đồng nguyên tắc'], ['hot', 'Mua nóng'], ['reconcile', 'Đối chiếu nhận hàng']] as const).map(([k, l]) =>
                 <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
                   className={`whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>{l}</button>)}
             </div>
             {mode === 'reconcile' ? <ReceiptReconciliationView currentUserId={currentUserId} />
+              : mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} prefill={hotPrefill} onPrefillUsed={() => setHotPrefill(null)} showSettings />
               : mode === 'contracts' ? <ContractsView projects={inbox.projects} initialContractId={initialContractId} /> : <>
             <StageStrip inbox={inbox} stage={stage} onStage={setStage} />
             {stage !== 'intake' ? <OrdersView stage={stage} projects={inbox.projects} reloadKey={ordersReload} onOpen={setOrderId} /> : <section className="space-y-3">
@@ -476,7 +488,8 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
     {openDoc && inbox && !editor && !proactive && !orderId && <NeedDrawer doc={openDoc} today={inbox.today} canManage={canManage} assignees={inbox.assignees}
       onClose={() => setOpenSnap(null)} onAssign={userId => assign([docKey(openDoc)], userId)}
       onOrder={() => setEditor({ sources: [refOf(openDoc)], order: null })}
-      onCloseNeed={() => void closeNeeds([openDoc])} onReopen={() => void reopenNeed(openDoc)} onOpenOrder={setOrderId} onChanged={refreshAll} />}
+      onCloseNeed={() => void closeNeeds([openDoc])} onReopen={() => void reopenNeed(openDoc)} onOpenOrder={setOrderId} onChanged={refreshAll}
+      onHotPurchase={prefill => { setOpenSnap(null); setHotPrefill(prefill); setMode('hot'); }} />}
 
     {editor && <OrderEditor sources={editor.sources} order={editor.order} onClose={() => setEditor(null)}
       onSaved={(id, poNumber) => {

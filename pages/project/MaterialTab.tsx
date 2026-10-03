@@ -35,6 +35,7 @@ import ProjectOpeningBalanceModal from '../../components/project/ProjectOpeningB
 import { MaterialRequestTab } from '../../components/project/material/MaterialRequestTab';
 import { MaterialSummaryTab } from '../../components/project/material/MaterialSummaryTab';
 import { MaterialTabHeader } from '../../components/project/material/MaterialTabHeader';
+const HotPurchaseView = React.lazy(() => import('../../components/procurement/hotPurchase/HotPurchaseView'));
 import { MaterialWasteTab } from '../../components/project/material/MaterialWasteTab';
 import {
     aggregateMaterialWasteRows,
@@ -2587,6 +2588,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         request: '📦 Yêu cầu',
         custom: '🧩 Phi tiêu chuẩn',
         po: '🛒 Đơn hàng (PO)',
+        hot_purchase: '🔥 Mua nóng',
         waste: '📊 Hao hụt',
         dashboard: '📈 Dashboard',
     };
@@ -2597,6 +2599,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         request: requests.length,
         custom: 0,
         po: 0,
+        hot_purchase: 0,
         waste: stats.overWaste,
         dashboard: 0,
     };
@@ -3121,6 +3124,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         initialDraftPoKey={planningDraftPoKey}
                         deepLinkPoId={activePurchaseOrderDeepLinkId}
                         compact
+                    />
+                </React.Suspense>
+            )}
+
+            {materialAccess.hot_purchase.canView && activeSubTab === 'hot_purchase' && projectId && (
+                <React.Suspense fallback={<LazyPanelFallback label="Đang tải mua nóng..." />}>
+                    <HotPurchaseView
+                        items={inventoryItems}
+                        projectId={projectId}
+                        constructionSiteId={constructionSiteId || null}
+                        initialPurchaseId={new URLSearchParams(location.search).get('hp')}
                     />
                 </React.Suspense>
             )}
