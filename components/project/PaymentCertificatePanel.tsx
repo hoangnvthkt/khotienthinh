@@ -61,6 +61,8 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   const { user } = useApp();
   // Owner decision 2026-09-27: only System Admin records project advances.
   const canRecordAdvance = user?.role === Role.ADMIN;
+  // Chủ SP 03/10: chứng từ thanh toán với chủ đầu tư làm ở Tài chính → Phải thu; ở Dự án chỉ xem.
+  const financeOnly = contractType === 'customer';
   const [certs, setCerts] = useState<PaymentCertificate[]>([]);
   const [advances, setAdvances] = useState<AdvancePayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -420,19 +422,21 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
         ))}
       </div>
 
+      {financeOnly && <p className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+        Đợt thu và chứng từ thanh toán với chủ đầu tư lập, gửi CĐT, ghi thu ở <a href="#/finance?section=receivables" className="underline">Tài chính → Phải thu</a>. Ở đây chỉ xem.</p>}
       {/* Advance Payments Section */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-black text-slate-700 dark:text-white flex items-center gap-1.5">
             <DollarSign size={13} className="text-amber-500" /> Tạm ứng
           </h4>
-          {canRecordAdvance ? (
+          {canRecordAdvance && !financeOnly ? (
             <button onClick={() => setShowAddAdvance(!showAddAdvance)}
               className="text-[10px] font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1">
               <Plus size={10} /> Thêm TU
             </button>
           ) : (
-            <span className="text-[10px] font-semibold text-slate-400">Chỉ Admin được ghi tạm ứng</span>
+            <span className="text-[10px] font-semibold text-slate-400">{financeOnly ? 'Ghi ở Tài chính → Phải thu' : 'Chỉ Admin được ghi tạm ứng'}</span>
           )}
         </div>
         {showAddAdvance && canRecordAdvance && (
@@ -479,7 +483,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
             <FileText size={13} className="text-indigo-500" /> Đợt thanh toán ({certs.length})
           </h4>
           <button onClick={handleCreateCert}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100">
+            className={`${financeOnly ? 'hidden' : 'flex'} items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100`}>
             <Plus size={10} /> Tạo đợt mới
           </button>
         </div>
@@ -705,7 +709,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
                       </div>
 
                       {/* Actions */}
-                      <div className="flex gap-2 justify-end">
+                      <div className={`${financeOnly ? 'hidden' : 'flex'} gap-2 justify-end`}>
                         {(cert.status === 'draft' || cert.status === 'returned') && (
                           <>
                             {cert.status === 'draft' && <button onClick={() => handleDeleteCert(cert)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold text-red-500 hover:bg-red-50 border border-red-200">Xoá</button>}

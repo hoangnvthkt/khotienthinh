@@ -203,6 +203,25 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_ADVANCE_TRANSFER_PO_ONLY: 'Chỉ chuyển được tạm ứng gắn đơn hàng.',
   FINANCE_ADVANCE_SETTINGS_INVALID: 'Thông số chưa hợp lệ: ngưỡng cảnh báo ≤ ngưỡng duyệt thêm ≤ 100%, số ngày 0–365, người duyệt đang làm việc.',
   FINANCE_ADVANCE_EXTRA_APPROVER_REQUIRED: 'Chọn ít nhất một người duyệt tạm ứng vượt ngưỡng.',
+  FINANCE_ROUND_KIND_INVALID: 'Loại đợt không hợp lệ.',
+  FINANCE_ROUND_DESCRIPTION_REQUIRED: 'Nhập nội dung đợt thu.',
+  FINANCE_ROUND_NOT_FOUND: 'Đợt thu không còn. Tải lại.',
+  FINANCE_ROUND_STATE: 'Đợt thu đã đổi trạng thái (hoặc là đợt cũ / số dư đầu kỳ — không sửa được). Tải lại.',
+  FINANCE_ROUND_ADJUST_REASON: 'Thu hồi tạm ứng / giữ lại khác gợi ý theo HĐ — ghi lý do.',
+  FINANCE_ROUND_DEDUCTION_INVALID: 'Thu hồi tạm ứng + giữ lại không được lớn hơn giá trị đợt.',
+  FINANCE_ROUND_HAS_RECEIPTS: 'Đợt đã có phiếu thu (chờ xác nhận hoặc đã xác nhận) — đảo / rút phiếu thu trước khi hủy.',
+  FINANCE_ROUND_SCOPE: 'Đợt thu không thuộc HĐ này hoặc chưa được CĐT xác nhận.',
+  FINANCE_RETENTION_OVER: 'Số đề nghị trả giữ lại lớn hơn số đang bị giữ.',
+  FINANCE_INVOICE_REQUIRED: 'Nhập số hóa đơn.',
+  FINANCE_DATE_FUTURE: 'Ngày không được sau hôm nay.',
+  FINANCE_RECEIPT_REF_REQUIRED: 'Nhập số giấy báo có / phiếu thu.',
+  FINANCE_RECEIPT_REF_DUPLICATE: 'Số giấy báo có này đã được ghi cho HĐ — kiểm tra có ghi trùng không.',
+  FINANCE_RECEIPT_OVER_ALLOCATED: 'Tổng trừ vào các đợt lớn hơn số tiền còn trống của phiếu thu.',
+  FINANCE_RECEIPT_NOT_FOUND: 'Phiếu thu không còn. Tải lại.',
+  FINANCE_RECEIPT_STATE: 'Phiếu thu đã đổi trạng thái. Tải lại.',
+  FINANCE_GUARANTEE_NOT_FOUND: 'Không tìm thấy bảo lãnh của HĐ chủ đầu tư.',
+  FINANCE_GUARANTEE_INVALID: 'Bảo lãnh đang hiệu lực cần số tiền và ngày hết hạn (không trước ngày phát hành).',
+  CUSTOMER_RECEIVABLE_FINANCE_ONLY: 'Đợt thu / chứng từ thanh toán của HĐ chủ đầu tư lập và ghi thu ở Tài chính → Phải thu.',
   ROW_VERSION_CONFLICT: 'Dữ liệu vừa được người khác cập nhật. Tải lại rồi thử lại.',
   PROCUREMENT_STATEMENT_POST_DENIED: 'Bạn chưa có quyền ghi công nợ cho dự án này.',
   PROCUREMENT_STATEMENT_SELF_POST: 'Người ghi công nợ phải khác người chốt bảng đối soát.',
@@ -237,12 +256,64 @@ export interface FinanceOverviewProject {
   payable: { outstanding: number; overdue: number; soon: number; docs: number };
   /** Tạm ứng NCC còn lại (đã chi, chưa cấn trừ / hoàn); null = không có. */
   supplierAdvance?: number | null;
+  /** Phải thu CĐT của dự án (đợt CĐT đã xác nhận chưa trả), quá hạn, sản lượng chưa đề nghị (null = chưa có tiến độ). */
+  ar?: { outstanding: number; overdue: number; unbilled: number | null; advanceRemaining: number } | null;
   receivables: Array<{ description: string; amount: number; paidAmount: number | null; dueDate: string | null; paidDate: string | null; status: string; advance: boolean }>;
 }
 export interface FinanceOverview {
   canOverview: boolean; today: string; projects: FinanceOverviewProject[];
   companyPayable?: { outstanding: number; docs: number };
   advances?: { remaining: number; overdue: number; overdueCount: number; refundDue: number; refundDueCount: number } | null;
+  receivables?: { outstanding: number; overdue: number; unbilled: number | null } | null;
+}
+
+export type ReceivableRoundKind = 'advance' | 'progress' | 'settlement' | 'retention' | 'other' | 'opening';
+export type ReceivableRoundStatus = 'draft' | 'sent' | 'confirmed' | 'cancelled';
+export interface CustomerContractMetrics {
+  gross: number; progress: number | null; estOutput: number | null; billed: number; received: number; outstanding: number; overdue: number; prepayment: number;
+  advanceReceived: number; advanceRemaining: number; advanceRecovered: number; retentionHeld: number; unbilled: number | null;
+  recoveryPercent: number; recoveryPercentSource: 'contract' | 'auto'; retentionPercent: number; retentionPercentSource: 'contract' | 'default';
+  paymentTermDays: number; paymentTermSource: 'contract' | 'default'; warrantyMonths: number | null; opening: 'confirmed' | 'submitted' | 'todo' | 'not_needed';
+}
+export interface FinanceReceivables {
+  today: string; can: FinanceCan; currentUserId: string; cutoverDate: string;
+  totals: { outstanding: number; overdue: number; overdueCount: number; unbilled: number | null; advanceRemaining: number; retentionHeld: number; prepayment: number;
+    sentStale: number; receiptsPending: number; receiptsPendingMe: number; openingsTodo: number; openingsPending: number; guaranteesExpiring: number; guaranteesMissing: number };
+  contracts: Array<{ id: string; code: string; name: string; projectId: string | null; projectCode: string | null; customerName: string; value: number; vatPercent: number | null;
+    endDate: string | null; status: string; nextDue: string | null; draftRounds: number; metrics: CustomerContractMetrics }>;
+  reviewRevenues: Array<{ id: string; projectCode: string; date: string; amount: number; description: string | null; source: string | null }>;
+}
+export interface ReceivableRound {
+  id: string; sequenceNo: number; kind: ReceivableRoundKind; description: string; netAmount: number; vatPercent: number; vatAmount: number; gross: number;
+  advanceRecovery: number; retention: number; receivable: number; suggestedRecovery: number | null; suggestedRetention: number | null; adjustReason: string | null;
+  status: ReceivableRoundStatus; sentDate: string | null; confirmedDate: string | null; confirmedByName: string | null; submittedGross: number | null; customerNote: string | null;
+  dueDate: string | null; invoiceNo: string | null; invoiceDate: string | null; attachments: FinanceAttachment[]; note: string | null; legacy: boolean; cancelReason: string | null;
+  createdByName: string | null; createdAt: string; rowVersion: number; received: number; pending: number; outstanding: number; overdue: boolean; lastReceived: string | null;
+  canEdit: boolean; canAct: boolean;
+}
+export interface CustomerReceipt {
+  id: string; code: string; receiptDate: string; amount: number; documentRef: string; attachments: FinanceAttachment[]; note: string | null;
+  status: 'submitted' | 'confirmed' | 'rejected' | 'withdrawn' | 'reversed'; rowVersion: number; createdBy: string; createdByName: string | null; createdAt: string;
+  decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; reversedByName: string | null; reversedAt: string | null; reverseReason: string | null;
+  allocations: Array<{ roundId: string; sequenceNo: number; description: string; amount: number; kind: 'receipt' | 'prepayment' }>; unallocated: number;
+  canDecide: boolean; canWithdraw: boolean; canReverse: boolean;
+}
+export interface CustomerOpening {
+  id: string; cutoverDate: string; receivableAmount: number; receivableDueDate: string | null; advanceRemaining: number; retentionHeld: number; note: string | null;
+  attachments: FinanceAttachment[]; status: 'submitted' | 'confirmed' | 'rejected' | 'cancelled'; createdBy: string; createdByName: string | null; createdAt: string;
+  decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; canDecide: boolean; canCancel: boolean;
+}
+export interface ContractGuarantee {
+  id: string; type: 'advance' | 'performance' | 'warranty' | string; name: string; amount: number | null; percent: number | null; bankName: string | null; number: string | null;
+  issueDate: string | null; expiryDate: string | null; status: 'draft' | 'active' | 'released' | 'expired' | string; note: string | null; expiring: boolean;
+}
+export interface CustomerContractDetail {
+  today: string; can: FinanceCan; currentUserId: string; cutoverDate: string;
+  contract: { id: string; code: string; name: string; customerName: string; customerTaxCode: string | null; projectId: string | null; projectCode: string | null;
+    value: number; vatPercent: number; signedDate: string | null; endDate: string | null; status: string; warrantyMonths: number | null;
+    advanceRecoveryPercent: number | null; retentionPercent: number | null; paymentTermDays: number | null };
+  metrics: CustomerContractMetrics; rounds: ReceivableRound[]; receipts: CustomerReceipt[]; openings: CustomerOpening[]; guarantees: ContractGuarantee[];
+  events: Array<{ action: string; actorName: string | null; reason: string | null; payload: Record<string, unknown>; at: string }>;
 }
 
 export type FinanceAdvanceState = 'approving' | 'to_pay' | 'open' | 'refund_due' | 'settled' | 'reversed' | 'closed';
@@ -345,6 +416,34 @@ export const financeService = {
   saveAdvanceSettings(input: { warnPercent: number; extraPercent: number; graceDays: number; extraApproverIds: string[]; expectedRowVersion: number; reason: string }) {
     return call<{ ok: boolean }>('save_finance_advance_settings_v1', { p_input: input });
   },
+  receivables() { return call<FinanceReceivables>('get_finance_receivables_v1', {}); },
+  customerContract(contractId: string) { return call<CustomerContractDetail>('get_finance_customer_contract_v1', { p_contract_id: contractId }); },
+  saveCustomerTerms(input: { contractId: string; advanceRecoveryPercent: number | null; retentionPercent: number | null; paymentTermDays: number | null; warrantyMonths: number | null; reason: string }) {
+    return call<{ contractId: string }>('save_finance_customer_terms_v1', { p_input: input });
+  },
+  saveGuarantee(input: { id: string; amount: number; percent?: number | null; bankName?: string; number?: string; issueDate?: string | null; expiryDate?: string | null; status: string; note?: string }) {
+    return call<{ id: string }>('save_finance_guarantee_v1', { p_input: input });
+  },
+  saveRound(input: { id?: string; expectedRowVersion?: number; contractId: string; kind: ReceivableRoundKind; description: string; netAmount: number; vatPercent?: number;
+    advanceRecovery?: number | null; retention?: number | null; adjustReason?: string; attachments: FinanceAttachment[]; note?: string }) {
+    return call<{ id: string; sequenceNo: number; receivable: number }>('save_finance_receivable_round_v1', { p_input: input });
+  },
+  transitionRound(input: { id: string; expectedRowVersion: number; action: 'send' | 'confirm' | 'return' | 'invoice' | 'cancel'; date?: string; confirmedGross?: number;
+    advanceRecovery?: number | null; retention?: number | null; reason?: string; invoiceNo?: string }) {
+    return call<{ id: string; status: ReceivableRoundStatus; receivable: number; dueDate: string | null }>('transition_finance_receivable_round_v1', { p_input: input });
+  },
+  saveCustomerReceipt(input: { contractId: string; amount: number; receiptDate: string; documentRef: string; attachments: FinanceAttachment[]; note?: string;
+    allocations: Array<{ roundId: string; amount: number }> }) {
+    return call<{ id: string; code: string; unallocated: number }>('save_finance_customer_receipt_v1', { p_input: input });
+  },
+  decideCustomerReceipt(input: { id: string; expectedRowVersion: number; action: 'confirm' | 'reject' | 'withdraw' | 'reverse'; reason?: string }) {
+    return call<{ id: string }>('decide_finance_customer_receipt_v1', { p_input: input });
+  },
+  applyCustomerPrepayment(input: { receiptId: string; roundId: string; amount: number }) { return call<{ id: string }>('apply_finance_customer_prepayment_v1', { p_input: input }); },
+  saveCustomerOpening(input: { contractId: string; receivableAmount: number; receivableDueDate?: string | null; advanceRemaining: number; retentionHeld: number; note?: string; attachments: FinanceAttachment[] }) {
+    return call<{ id: string }>('save_finance_customer_opening_v1', { p_input: input });
+  },
+  decideCustomerOpening(input: { id: string; action: 'confirm' | 'reject' | 'cancel'; reason?: string }) { return call<{ id: string }>('decide_finance_customer_opening_v1', { p_input: input }); },
   pendingStatements() { return call<FinancePendingStatement[]>('list_finance_pending_statements_v1', {}); },
   postStatement(input: { statementId: string; action: 'post' | 'return'; reason?: string }) {
     return call<{ statementId: string; status: string }>('transition_procurement_contract_statement_v1', { p_input: input });
@@ -440,6 +539,11 @@ export const EVENT_LABELS: Record<string, string> = {
   advance_refund_submit: 'Ghi NCC hoàn tạm ứng', advance_refund_confirm: 'Xác nhận NCC hoàn tạm ứng', advance_refund_reject: 'Từ chối phiếu hoàn tạm ứng',
   advance_refund_withdraw: 'Rút phiếu hoàn tạm ứng', advance_refund_reverse: 'Đảo phiếu thu hoàn tạm ứng',
   advance_transfer_submit: 'Đề nghị chuyển tạm ứng sang đơn khác', advance_transfer_confirm: 'Xác nhận chuyển tạm ứng', advance_transfer_reject: 'Từ chối chuyển tạm ứng',
-  advance_transfer_withdraw: 'Rút đề nghị chuyển tạm ứng', advance_offset_failed: 'Cấn trừ tạm ứng tự động không được — cần cấn tay', advance_settings_save: 'Đổi thông số tạm ứng',
+  advance_transfer_withdraw: 'Rút đề nghị chuyển tạm ứng',
+  customer_terms_save: 'Khai điều khoản HĐ chủ đầu tư', guarantee_save: 'Khai bảo lãnh', round_create: 'Lập đợt thu', round_update: 'Sửa đợt thu',
+  round_send: 'Gửi hồ sơ CĐT', round_confirm: 'CĐT xác nhận số tiền', round_return: 'CĐT trả lại hồ sơ', round_invoice: 'Ghi hóa đơn', round_cancel: 'Hủy đợt thu',
+  receipt_submit: 'Ghi phiếu thu', receipt_confirm: 'Xác nhận phiếu thu', receipt_reject: 'Từ chối phiếu thu', receipt_withdraw: 'Rút phiếu thu',
+  receipt_reverse: 'Đảo phiếu thu', receipt_apply_prepayment: 'Trừ tiền trả trước vào đợt', customer_opening_submit: 'Gửi đối chiếu đầu kỳ phải thu',
+  customer_opening_confirm: 'Chốt đầu kỳ phải thu', customer_opening_reject: 'Trả lại đối chiếu đầu kỳ', customer_opening_cancel: 'Hủy chốt đầu kỳ phải thu', advance_offset_failed: 'Cấn trừ tạm ứng tự động không được — cần cấn tay', advance_settings_save: 'Đổi thông số tạm ứng',
   direct_receipt_post: 'Ghi nợ phiếu nhập trực tiếp', direct_receipt_return: 'Trả lại phiếu nhập cho kho', direct_receipt_cancel: 'Kho hủy phiếu nhập — hủy công nợ',
 };

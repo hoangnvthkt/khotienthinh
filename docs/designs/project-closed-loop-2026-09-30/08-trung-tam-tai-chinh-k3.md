@@ -432,3 +432,36 @@ Việc cần làm + Tổng quan có tạm ứng quá hạn / chờ hoàn; Mua h�
 trả hàng 100tr trả lại tạm ứng, hoàn tác / cấn tay, NCC hoàn 20tr, chặn tự duyệt / tự xác nhận / vượt giá trị đơn / hạn quá khứ /
 chuyển khác dự án / đảo khi còn cấn trừ; chuyển PO-116 → PO-259, chứng từ hủy trả lại tạm ứng, đảo phiếu thu hoàn rồi đảo phiếu chi;
 tạm ứng theo HĐ tự cấn khi chốt đối soát.
+
+## 16. Tài chính đợt 2 — Phải thu chủ đầu tư (03/10/2026)
+
+Chủ SP duyệt mockup `rc-v1` + 8 câu (03/10): đợt nhập số tổng theo hồ sơ (không bắt buộc BOQ); thành phải thu khi CĐT xác nhận,
+hạn = xác nhận + số ngày HĐ (mặc định 30); kế toán lập đợt và ghi thu, người khác xác nhận phiếu thu; khai % thu hồi tạm ứng,
+% giữ lại, tháng bảo hành, số ngày thanh toán trên HĐ (sửa từng đợt phải có lý do); đối chiếu đầu kỳ MISA 30/09; bảo lãnh có hạn,
+nhắc trước 30 ngày; phần CĐT ở Dự án → Hợp đồng chỉ xem; khoản thu ghi tay đưa vào "cần soát xét".
+
+Migration `20261008134100_finance_customer_receivables.sql`.
+
+**Mô hình**
+- `finance_receivable_rounds` (đợt thu): loại (tạm ứng / nghiệm thu / quyết toán / trả giữ lại / khác / số dư đầu kỳ), giá trị trước VAT,
+  VAT, gộp, thu hồi tạm ứng, giữ lại, `receivable` (cột tính), gợi ý + lý do khi khác; trạng thái nháp → đã gửi CĐT → CĐT xác nhận
+  (lưu số gửi nếu CĐT duyệt khác) → hủy; hóa đơn; hạn thu. 6 dòng lịch thanh toán cũ chuyển thành đợt "từ lịch cũ" (đã thu đủ,
+  chưa tách thu hồi / giữ lại).
+- `finance_customer_receipts` + `_allocations`: phiếu thu (giấy báo có + file) trừ vào các đợt; xác nhận (người khác) ghi
+  `project_transactions` revenue_received `finance_customer_receipt:<id>`; đảo ghi dòng âm `:reversal`. Phần chưa trừ = CĐT trả trước,
+  trừ vào đợt sau (`kind = prepayment`).
+- `finance_customer_openings`: đầu kỳ (phải thu còn lại, tạm ứng chưa thu hồi, giữ lại) — chốt sinh đợt "Số dư đầu kỳ" (số thứ tự 0).
+- `customer_contracts`: `advance_recovery_percent`, `retention_percent`, `payment_term_days` (+ `warranty_months` có sẵn) — Quản trị Tài chính khai.
+- Đợt thu đồng bộ sang `payment_schedules` (id `fr-<round>`) để Dự án / Tổng quan vẫn đọc đúng; trigger chặn ghi lịch thanh toán và
+  chứng từ thanh toán của HĐ CĐT ngoài hàm Tài chính (`CUSTOMER_RECEIVABLE_FINANCE_ONLY`).
+- Chỉ số HĐ: giá trị gồm VAT, sản lượng ước tính (Gantt), đã đề nghị, đã thu, phải thu, quá hạn, sản lượng chưa đề nghị,
+  tạm ứng còn thu hồi (từ đầu kỳ nếu đã chốt), giữ lại, trả trước.
+
+**Màn hình**: Tài chính → Phải thu (5 số lớn, Cần chú ý, danh sách HĐ với thanh đã thu / đã đề nghị / sản lượng); chi tiết HĐ
+(đợt thu, phiếu thu, tạm ứng CĐT, giữ lại, bảo lãnh, đầu kỳ, lịch sử); Việc cần làm (quá hạn thu, phiếu thu chờ xác nhận, đợt gửi
+quá 15 ngày, đầu kỳ, bảo lãnh); Tổng quan (phải thu quá hạn, sản lượng chưa đề nghị); Dự án → Hợp đồng (phần CĐT) chỉ xem.
+
+**Kiểm thử** rollback (`tools/rcv-test.mjs`): gợi ý SMB 31,26% / 5%, sửa không lý do bị chặn, gửi → CĐT duyệt 26 tỷ (thấp hơn 27 tỷ,
+có lý do) → hạn +30 ngày → hóa đơn → phiếu thu 10 tỷ (8 tỷ vào đợt, 2 tỷ trả trước) → tự xác nhận bị chặn → Hương xác nhận (dòng tiền
+vào) → trừ trả trước → hủy đợt đã thu bị chặn → đảo phiếu thu; đầu kỳ DA29/SMB (tự chốt bị chặn); bảo lãnh thiếu hạn bị chặn;
+Dự án sửa thẳng lịch thanh toán CĐT bị chặn, lịch NCC/thầu phụ vẫn sửa được; Tổng quan có phải thu; người không quyền bị chặn.
