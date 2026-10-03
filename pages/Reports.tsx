@@ -560,6 +560,15 @@ const Reports: React.FC = () => {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* V1: Đồng bộ MISA không còn là menu riêng của Vật tư — mở từ Báo cáo (chỉ Admin). */}
+            {user.role === 'ADMIN' && (
+              <button
+                onClick={() => navigate('/misa-export')}
+                className="flex items-center px-4 py-2.5 bg-white/10 text-white rounded-xl hover:bg-white/15 transition font-bold text-sm border border-white/10"
+              >
+                <FileText size={18} className="mr-2" /> Đồng bộ MISA
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               className="flex items-center px-4 py-2.5 bg-white/10 text-white rounded-xl hover:bg-white/15 transition font-bold text-sm border border-white/10"

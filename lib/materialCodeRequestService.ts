@@ -21,6 +21,7 @@ const mapMaterialCodeRequestFromDb = (row: any): MaterialCodeRequest => ({
   approvedByName: row.approved_by_name,
   approvedAt: row.approved_at,
   rejectionReason: row.rejection_reason,
+  resolution: row.resolution ?? null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });

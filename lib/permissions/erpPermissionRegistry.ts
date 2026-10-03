@@ -167,6 +167,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       ])),
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10, ['global', 'warehouse']],
+        ['issue_code', 'Cấp mã', 20, ['global']],
       ])),
     ],
   },

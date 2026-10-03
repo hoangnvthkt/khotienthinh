@@ -8,7 +8,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -1296,18 +1296,19 @@ const Settings: React.FC = () => {
             <div className="animate-in slide-in-from-right-4 duration-300">
               {!activeMasterSection ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* V1 Module Vật tư: cấp / sửa / ngừng dùng mã chỉ ở Kho vật tư → Danh mục vật tư (một cửa, có quyền Cấp mã). */}
                   <button
-                    onClick={() => setActiveMasterSection('items')}
+                    onClick={() => navigate('/material-code-requests')}
                     className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-emerald-200 transition-all group text-left"
                   >
                     <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                       <Package size={28} />
                     </div>
                     <h3 className="text-xl font-black text-slate-800 mb-2">Danh mục vật tư</h3>
-                    <p className="text-sm text-slate-500 font-medium">Quản lý mã SKU, tên vật tư, nhóm vật tư và đơn vị mua hàng.</p>
+                    <p className="text-sm text-slate-500 font-medium">Cấp mã, sửa, ngừng dùng vật tư ở Kho vật tư → Danh mục vật tư.</p>
                     <div className="mt-6 flex items-center justify-between">
                       <span className="text-emerald-600 font-bold text-xs uppercase tracking-widest flex items-center">
-                        Thiết lập ngay <Plus size={14} className="ml-1" />
+                        Mở Danh mục vật tư <ChevronRight size={14} className="ml-1" />
                       </span>
                       <span className="text-xs font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">{items.length} mục</span>
                     </div>

@@ -250,15 +250,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   // Nav items per module
   const moduleNavMap: Record<AppKey, any[]> = {
     'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
+    // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
     WMS: [
-      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/requests', icon: FileText, label: 'Đề xuất vật tư', badge: pendingReqCount > 0 ? pendingReqCount : null },
-      { to: '/material-code-requests', icon: ClipboardCheck, label: 'Đề xuất cấp mã' },
-      { to: '/inventory', icon: Package, label: 'Kho & Vật tư', badge: lowStockCount > 0 ? lowStockCount : null, badgeColor: 'bg-amber-500' },
-      { to: '/operations', icon: ArrowLeftRight, label: 'Nhập / Xuất', badge: pendingTxCount > 0 ? pendingTxCount : null },
+      { to: '/inventory', icon: Package, label: 'Tồn kho' },
+      { to: '/operations', icon: ArrowLeftRight, label: 'Phiếu kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
       { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
-      { to: '/reports', icon: History, label: 'Báo cáo WMS' },
-      { to: '/misa-export', icon: FileSpreadsheet, label: 'Đồng bộ MISA', roles: [Role.ADMIN] },
+      { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
+      { to: '/reports', icon: History, label: 'Báo cáo' },
     ],
     HRM: getHrmNavigationItems(user).map(item => ({
       ...item,
