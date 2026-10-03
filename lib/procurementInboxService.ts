@@ -95,6 +95,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PO_VAT_INVALID: 'Thuế VAT phải từ 0 đến 100%.',
   PROCUREMENT_PO_VENDOR_REQUIRED: 'Chọn nhà cung cấp.',
   PROCUREMENT_PO_SCOPE_MIXED: 'Một đơn hàng chỉ gồm phiếu của cùng một dự án/công trường.',
+  PROCUREMENT_GROUP_WAREHOUSE_REQUIRED: 'Đơn gom: có phiếu nhu cầu chưa chọn kho nhận. Cập nhật kho nhận ở phiếu trong dự án rồi lập lại.',
+  PROCUREMENT_GROUP_SITE_REQUIRED: 'Đơn gom: chọn công trường nhận cho đợt giao.',
+  PROCUREMENT_GROUP_SITE_INVALID: 'Công trường không thuộc đơn gom này.',
+  PROCUREMENT_GROUP_LINE_NOT_AT_SITE: 'Có vật tư không đặt cho công trường này. Bỏ dòng đó khỏi đợt giao.',
+  PROCUREMENT_EXCESS_REASON_REQUIRED: 'Nhập lý do gán phần thừa.',
+  PROCUREMENT_EXCESS_OVER: 'SL gán lớn hơn phần thừa đang có ở công trường.',
+  PROCUREMENT_EXCESS_TARGET_INVALID: 'Chỉ gán phần thừa cho dòng đề xuất đang chờ cung ứng, cùng vật tư, cùng dự án của công trường.',
   PROCUREMENT_PO_DUPLICATE_LINE: 'Một dòng nhu cầu bị chọn hai lần.',
   PROCUREMENT_PO_WAREHOUSE_INVALID: 'Kho nhận không hợp lệ.',
   PROCUREMENT_PO_NOT_FOUND: 'Đơn hàng không còn tồn tại. Tải lại.',
@@ -211,6 +218,9 @@ export const procurementInboxService = {
     return call<{ transactionId: string; qty: number; unit: string | null; itemName: string; sourceWarehouseName: string; targetWarehouseName: string; code: string }>(
       'create_material_request_supply_transfer_v1', { p_input: input });
   },
+  assignGroupExcess(input: { purchaseOrderId: string; warehouseId: string; poLineId: string; sourceId: string; lineId: string; qty: number; reason: string }) {
+    return call<{ purchaseOrderId: string; qty: number; code: string }>('assign_group_po_excess_v1', { p_input: input });
+  },
   transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string }) {
     return call<{ purchaseOrderId: string; status: string; rowVersion: number }>('transition_procurement_hub_po_v1', { p_input: input });
   },
@@ -227,6 +237,8 @@ export interface ProcurementOrderSummary {
   late: boolean; lineCount: number; qtyTotal: number; qtyReceived: number;
   createdById: string | null; createdByName: string | null; submittedToUserId: string | null; submittedToName: string | null;
   awaitingMe: boolean; purchaseMode: 'single' | 'multiple'; returnsPending: number; kind: ProcurementOrderKind; sources: Array<ProcurementSourceRef & { code: string | null }>;
+  /** Đơn gom nhiều dự án (giao thẳng từng công trường). */
+  isGroup?: boolean;
 }
 export interface ProcurementOrderList { today: string; orders: ProcurementOrderSummary[]; awaitingMyApproval: number }
 export interface ProcurementOrderLine {
@@ -240,7 +252,17 @@ export interface ProcurementOrderLine {
   stockQty: number; allocatedQty: number;
   /** Proactive orders: BOQ snapshot when the line was saved. */
   boq: ProcurementBoqSnapshot | null;
-  allocations: Array<ProcurementSourceRef & { code: string | null; lineId: string; qty: number; needQty: number }>;
+  allocations: Array<ProcurementSourceRef & { code: string | null; lineId: string; qty: number; needQty: number;
+    projectCode?: string | null; warehouseId?: string | null; warehouseName?: string | null; excessReason?: string | null }>;
+}
+
+/** Một công trường của đơn gom: SL đặt / đã nhận / còn phải giao theo dòng đơn (đơn vị kho) và từng dòng nhu cầu. */
+export interface ProcurementGroupSite {
+  warehouseId: string; warehouseName: string; projectId: string | null; projectCode: string | null;
+  lines: Array<{ lineId: string; orderedStockQty: number; receivedStockQty: number; undeliveredStockQty: number;
+    /** Đã nhận về công trường nhưng vượt các dòng nhu cầu (tồn kho) và đề xuất cùng dự án có thể nhận phần thừa. */
+    excessStockQty: number; excessCandidates: Array<{ sourceId: string; lineId: string; code: string; shortQty: number }>;
+    allocations: Array<{ linkId: string; kind: ProcurementSourceType; code: string | null; neededDate: string | null; orderedQty: number; receivedQty: number; excess: boolean; excessReason: string | null }> }>;
 }
 export type ProcurementPoPaymentState = 'none' | 'unpaid' | 'partial' | 'paid';
 /** Tình trạng thanh toán PO (từ công nợ nhận hàng) — Mua hàng chỉ thấy nợ, đã chi và hạn (K3b-2). */
@@ -258,6 +280,7 @@ export interface ProcurementOrderDetail {
   purchaseMode: 'single' | 'multiple'; approvedTotalAmount: number;
   kind: ProcurementOrderKind; proactive: ProcurementProactiveInfo | null;
   shortClose: { reason: string; returnToNeed: boolean; shortStockQty: number; at: string; by: string | null } | null;
+  isGroup?: boolean; sites?: ProcurementGroupSite[];
   deliveries: ProcurementDelivery[];
   returns: ProcurementSupplierReturn[];
   lines: ProcurementOrderLine[];
@@ -270,6 +293,7 @@ export interface ProcurementDelivery {
   note: string | null; wmsTransactionId: string | null; hasQr: boolean; createdById: string | null; createdByName: string | null;
   approvalAssigneeId: string | null; approvalAssigneeName: string | null; decisionNote: string | null;
   receivedAt: string | null; receivedByName: string | null; amount: number; acceptedAmount: number;
+  targetWarehouseId?: string | null; warehouseName?: string | null; projectCode?: string | null; allocationMode?: 'earliest' | 'ratio';
   lines: Array<{ lineId: string; itemId: string; name: string; plannedQty: number; unit: string | null; stockPlannedQty: number;
     stockUnit: string | null; unitPrice: number; acceptedQty: number; acceptedStockQty: number }>;
 }
@@ -281,6 +305,8 @@ export interface ProcurementSupplierReturn {
 }
 export interface ProcurementDeliverySaveInput {
   purchaseOrderId: string; deliveryId?: string; plannedDate?: string | null; vatRate: number; note?: string; approverUserId?: string;
+  /** Đơn gom: công trường nhận và cách chia khi giao thiếu cho nhiều dòng nhu cầu của công trường. */
+  targetWarehouseId?: string; allocationMode?: 'earliest' | 'ratio';
   lines: Array<{ purchaseOrderLineId: string; purchaseQty: number; stockQty: number; unitPrice: number }>;
 }
 export const DELIVERY_STATUS_LABELS: Record<string, string> = {

@@ -14,17 +14,28 @@ const today = () => new Date().toISOString().slice(0, 10);
 export const DeliveryEditor: React.FC<{
   order: ProcurementOrderDetail; delivery?: ProcurementDelivery | null; onClose: () => void; onSaved: (needsApproval: boolean) => void;
 }> = ({ order, delivery = null, onClose, onSaved }) => {
-  const [rows, setRows] = useState<Row[]>(() => order.lines.map(line => {
+  // Đơn gom (việc 2): mỗi đợt giao về một công trường; "còn phải giao" tính theo công trường đó.
+  const sites = order.isGroup ? order.sites || [] : [];
+  const [siteId, setSiteId] = useState<string>(() => delivery?.targetWarehouseId
+    || sites.find(s => s.lines.some(l => l.undeliveredStockQty > 0.0005))?.warehouseId || sites[0]?.warehouseId || '');
+  const [mode, setMode] = useState<'earliest' | 'ratio'>(delivery?.allocationMode || 'earliest');
+  const site = sites.find(s => s.warehouseId === siteId);
+  const buildRows = (wh: string): Row[] => order.lines.filter(line => !order.isGroup || sites.find(s => s.warehouseId === wh)?.lines.some(l => l.lineId === line.lineId)).map(line => {
     const own = delivery?.lines.find(l => l.lineId === line.lineId);
     const unit = line.unit || '';
     const stockUnit = line.stockUnit || unit;
-    const remaining = line.remainingToDeliver + (own?.plannedQty || 0);
+    const siteLine = sites.find(s => s.warehouseId === wh)?.lines.find(l => l.lineId === line.lineId);
+    const remaining = order.isGroup && siteLine
+      ? Math.round(siteLine.undeliveredStockQty / (line.factor || 1) * 1000) / 1000 + (own?.plannedQty || 0)
+      : line.remainingToDeliver + (own?.plannedQty || 0);
     const qty = own ? own.plannedQty : remaining;
     return { lineId: line.lineId, name: line.name, unit, stockUnit, factor: line.factor || 1, remaining,
       include: own ? true : remaining > 0, purchaseQty: qty > 0 ? qtyInput(qty) : '',
       stockQty: own ? qtyInput(own.stockPlannedQty) : qty > 0 ? qtyInput(qty * (line.factor || 1)) : '', stockTyped: Boolean(own),
       price: qtyInput(own ? own.unitPrice : line.unitPrice) };
-  }));
+  });
+  const [rows, setRows] = useState<Row[]>(() => buildRows(siteId));
+  const pickSite = (wh: string) => { setSiteId(wh); setRows(buildRows(wh)); };
   const [vat, setVat] = useState(String(delivery?.vatRate ?? order.vatRate));
   const [date, setDate] = useState(delivery?.plannedDate || order.expectedDeliveryDate || today());
   const [note, setNote] = useState(delivery?.note || '');
@@ -63,6 +74,7 @@ export const DeliveryEditor: React.FC<{
       const result = await procurementInboxService.saveDelivery({
         purchaseOrderId: order.id, deliveryId: delivery?.id, plannedDate: date || null, vatRate, note: note.trim(),
         approverUserId: calc.exceeds ? approver : undefined,
+        ...(order.isGroup ? { targetWarehouseId: siteId, allocationMode: mode } : {}),
         lines: rows.filter(r => r.include).map(r => ({ purchaseOrderLineId: r.lineId, purchaseQty: parseQty(r.purchaseQty) || 0, stockQty: parseQty(r.stockQty) || 0, unitPrice: parseQty(r.price) || 0 })),
       });
       onSaved(result.needsApproval);
@@ -74,7 +86,8 @@ export const DeliveryEditor: React.FC<{
     header={<>
       <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">{delivery ? 'Sửa' : 'Lập'} đợt giao {nextNo} · {order.poNumber}</p>
       <h2 className="mt-1 text-lg font-bold text-foreground">{order.vendorName}</h2>
-      <p className="text-sm text-muted-foreground">{[order.projectCode, order.warehouseName && `Kho nhận: ${order.warehouseName}`].filter(Boolean).join(' · ')}</p>
+      <p className="text-sm text-muted-foreground">{order.isGroup ? `Đơn gom · kho nhận: ${site?.warehouseName || 'chọn công trường'}${site?.projectCode ? ` (${site.projectCode})` : ''}`
+        : [order.projectCode, order.warehouseName && `Kho nhận: ${order.warehouseName}`].filter(Boolean).join(' · ')}</p>
     </>}
     footer={<>
       {error && <p role="alert" className="mr-auto flex items-center gap-1.5 text-sm text-rose-700 dark:text-rose-300"><AlertTriangle size={15} />{error}</p>}
@@ -96,6 +109,20 @@ export const DeliveryEditor: React.FC<{
       <label className="text-xs font-semibold text-muted-foreground">Ghi chú (số phiếu NCC, xe…)
         <input value={note} onChange={e => setNote(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
     </section>
+
+    {order.isGroup && <section className="space-y-2 rounded-2xl border border-border bg-card p-4">
+      <p className="text-sm font-semibold text-foreground">Công trường nhận <span className="font-normal text-muted-foreground">— mỗi đợt một công trường; thủ kho công trường đó nhận, công nợ + chi phí ghi cho dự án của công trường</span></p>
+      <div className="grid gap-2 sm:grid-cols-2">{sites.map(s => { const left = s.lines.reduce((sum, l) => sum + l.undeliveredStockQty, 0);
+        return <label key={s.warehouseId} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 ${siteId === s.warehouseId ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${delivery ? 'cursor-not-allowed opacity-80' : ''}`}>
+          <input type="radio" name="delivery-site" disabled={Boolean(delivery)} checked={siteId === s.warehouseId} onChange={() => pickSite(s.warehouseId)} className="accent-teal-600" />
+          <span className="min-w-0 flex-1"><b className="text-foreground">{s.warehouseName}</b><span className="block text-xs text-muted-foreground">{s.projectCode} · còn phải giao {fmt(left, 3)} (ĐV kho)</span></span></label>; })}</div>
+      {rows.some(r => { const pq = parseQty(r.purchaseQty); return r.include && pq != null && pq < r.remaining - 0.001; })
+        && site?.lines.some(l => l.allocations.filter(a => !a.excess).length > 1) && <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+        Giao ít hơn phần còn thiếu: chia cho các đề xuất của công trường này theo
+        <span className="ml-2 inline-flex gap-1">{([['earliest', 'Ngày cần sớm nhất trước'], ['ratio', 'Tỷ lệ']] as const).map(([k, l]) => <button key={k} type="button" aria-pressed={mode === k} onClick={() => setMode(k)}
+          className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${mode === k ? 'border-teal-600 bg-teal-700 text-white' : 'border-amber-300 bg-card'}`}>{l}</button>)}</span>
+        <span className="mt-1 block text-xs">Phần chưa giao chờ đợt sau; kết thúc thiếu thì quay về Cần mua của dự án đó.</span></div>}
+    </section>}
 
     <section className="overflow-hidden rounded-2xl border border-border bg-card">
       <p className="border-b border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">SL mua theo đơn vị NCC giao; SL kho tự quy đổi theo đơn hàng — sửa tay nếu thực tế khác (VD 100 kg = 10 cây).</p>
@@ -119,7 +146,7 @@ export const DeliveryEditor: React.FC<{
               <input inputMode="decimal" value={r.price} onChange={e => patch(r.lineId, { price: e.target.value })} aria-label={`Đơn giá ${r.name}`}
                 className={`w-28 text-right tabular-nums ${inputCls}`} /></label>
             <span className="ml-auto font-semibold tabular-nums text-foreground">{pq && price ? `${money(pq * price)} đ` : ''}</span>
-            {over && <span className="w-full text-amber-700 dark:text-amber-300">Vượt phần còn phải giao {fmt((pq || 0) - r.remaining, 3)} {r.unit}</span>}
+            {over && <span className="w-full text-amber-700 dark:text-amber-300">Vượt phần còn phải giao {fmt((pq || 0) - r.remaining, 3)} {r.unit}{order.isGroup ? ` — phần thừa thành tồn kho ${site?.warehouseName || 'công trường'}; gán cho đề xuất khác cùng dự án ở chi tiết đơn` : ''}</span>}
           </div>}
         </li>;
       })}</ul>

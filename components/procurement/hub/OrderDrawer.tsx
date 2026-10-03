@@ -7,6 +7,7 @@ import { buildPoApprovalPrintHtml, lineDisplayName } from '../../../lib/procurem
 import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
 import { DeliveryEditor } from './DeliveryEditor';
+import { GroupSitesSection } from './GroupSitesSection';
 import { Badge, Drawer, PoPaymentChip, PoStatusChip, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 
 const EVENT_LABELS: Record<string, string> = {
@@ -41,10 +42,15 @@ export const printPoApproval = (o: ProcurementOrderDetail): boolean => {
   const approver = [...o.events].reverse().find(e => e.action === 'approve')?.actorName || o.submittedToName || '';
   const html = buildPoApprovalPrintHtml({
     poNumber: o.poNumber, orderDate: o.orderDate || o.createdAt, subject, vendorName: o.vendorName,
-    projectLabel: o.projectCode ? `${o.projectCode}${o.projectName ? ` — ${o.projectName}` : ''}` : o.kind === 'proactive' && o.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : null,
+    projectLabel: o.isGroup ? `Đơn gom: ${Array.from(new Set((o.sites || []).map(x => x.projectCode || '—'))).join(', ')}` : o.projectCode ? `${o.projectCode}${o.projectName ? ` — ${o.projectName}` : ''}` : o.kind === 'proactive' && o.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : null,
     warehouseName: o.warehouseName, expectedDeliveryDate: o.expectedDeliveryDate, requesterName: o.createdByName || '', requesterPosition: o.createdByTitle || '',
     vatRate: o.vatRate, note: o.note,
     lines: o.lines.map(l => ({ sku: l.sku, name: l.name, specification: l.specification, unit: l.unit, qty: l.qty, unitPrice: l.unitPrice, stockUnit: l.stockUnit, stockQty: l.stockQty })),
+    allocations: o.isGroup ? (o.sites || []).flatMap(site => site.lines.map(sl => {
+      const line = o.lines.find(l => l.lineId === sl.lineId);
+      const qty = sl.orderedStockQty / (line?.factor || 1);
+      return { project: site.projectCode || '—', warehouse: site.warehouseName, item: line?.name || sl.lineId, unit: line?.unit || '', qty, amount: qty * (line?.unitPrice || 0) };
+    })) : undefined,
     signers: [{ role: 'BP Vật tư - TB', name: o.createdByName || '' }, { role: 'CB phụ trách dự án', name: '' }, { role: 'Giám đốc vật tư', name: approver }, { role: 'Tổng giám đốc', name: 'Dương Xuân Thịnh' }],
   });
   const w = window.open('', '_blank', 'width=980,height=760');
@@ -169,10 +175,12 @@ export const OrderDrawer: React.FC<{
       <div className="flex flex-wrap items-center gap-1.5"><PoStatusChip status={order.status} />
         <Badge className={order.isHub ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200' : 'border-border bg-muted text-muted-foreground'}>
           {order.isHub ? 'Lập tại Mua hàng' : 'Lập ở dự án'}</Badge>
+        {order.isGroup && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">Đơn gom {(order.sites || []).length} công trường</Badge>}
         {order.kind === 'proactive' && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">{order.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : 'Đơn chủ động'}</Badge>}
         {late && <Badge className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">Quá ngày giao</Badge>}</div>
       <h2 className="mt-2 text-lg font-bold text-foreground">{order.poNumber}<span className="font-medium text-muted-foreground"> · {order.vendorName || 'Chưa chọn NCC'}</span></h2>
-      <p className="text-sm text-muted-foreground">{[order.projectCode, order.projectName].filter(Boolean).join(' — ')}</p>
+      <p className="text-sm text-muted-foreground">{order.isGroup ? (order.sites || []).map(s => `${s.projectCode} · ${s.warehouseName}`).join(' | ')
+        : [order.projectCode, order.projectName].filter(Boolean).join(' — ')}</p>
     </> : <h2 className="text-lg font-bold">Đơn hàng</h2>}>
     {error ? <StateBox kind="error" message={error} onRetry={load} /> : !order ? <StateBox kind="loading" title="Đang tải đơn hàng…" /> : <>
       {order.status === 'returned' && order.returnReason && <p role="alert" className="flex gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -197,7 +205,7 @@ export const OrderDrawer: React.FC<{
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
         {([
-          [Warehouse, 'Kho nhận', order.warehouseName || 'Chưa chọn kho'],
+          [Warehouse, 'Kho nhận', order.isGroup ? `${(order.sites || []).length} công trường — chọn ở từng đợt giao` : order.warehouseName || 'Chưa chọn kho'],
           [CalendarClock, 'Ngày cần giao', order.expectedDeliveryDate ? dateVi(order.expectedDeliveryDate) : 'Chưa hẹn'],
           [UserRound, 'Người lập', order.createdByName || '—'],
           [UserRound, 'Người duyệt', order.submittedToName || '—'],
@@ -245,6 +253,7 @@ export const OrderDrawer: React.FC<{
             <dd className="tabular-nums">{money(order.deliveries.filter(d => d.status !== 'cancelled').reduce((sum, d) => sum + d.acceptedAmount, 0))} đ</dd></div>}
         </dl>
       </section>
+      <GroupSitesSection order={order} canManage={Boolean(perms?.canDecideReturn)} onChanged={() => { load(); onChanged(); }} />
       {payment && payment.status !== 'none' && <section className="rounded-2xl border border-border p-3 text-sm">
         <h3 className="flex flex-wrap items-center gap-2 font-semibold text-foreground">Thanh toán NCC <PoPaymentChip payment={payment} />
           {order.vendorId && <a href={`#/finance?supplier=${encodeURIComponent(order.vendorId)}`} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:underline">Xem ở Tài chính<ArrowUpRight size={12} /></a>}</h3>
@@ -289,7 +298,8 @@ export const OrderDrawer: React.FC<{
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-semibold text-foreground">Đợt {d.deliveryNo}</span>
                 <Badge className={deliveryTone(d)}>{deliveryLabel(d)}</Badge>
-                <span className="text-xs text-muted-foreground">{d.plannedDate ? `Giao ${dateVi(d.plannedDate)}` : ''} · VAT {fmt(d.vatRate)}%</span>
+                {order.isGroup && d.warehouseName && <Badge className="border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200"><Warehouse size={11} />{d.warehouseName}{d.projectCode ? ` · ${d.projectCode}` : ''}</Badge>}
+                <span className="text-xs text-muted-foreground">{d.plannedDate ? `Giao ${dateVi(d.plannedDate)}` : ''} · VAT {fmt(d.vatRate)}%{order.isGroup && d.allocationMode === 'ratio' ? ' · chia theo tỷ lệ' : ''}</span>
                 <span className="ml-auto text-sm font-semibold tabular-nums">{money(d.amount * (1 + d.vatRate / 100))} đ</span>
               </div>
               <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">{d.lines.map(l => <li key={l.lineId}>

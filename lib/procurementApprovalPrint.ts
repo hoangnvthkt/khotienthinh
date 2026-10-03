@@ -11,6 +11,8 @@ export interface ApprovalPrintInput {
   requesterName: string; requesterPosition: string; vatRate: number; note: string | null; lines: ApprovalPrintLine[];
   signers: Array<{ role: string; name: string }>;
   place?: string; companyName?: string;
+  /** Đơn gom nhiều dự án: SL và tiền hàng (trước VAT) phân về từng dự án / công trường nhận. */
+  allocations?: Array<{ project: string; warehouse: string; item: string; unit: string; qty: number; amount: number }>;
 }
 
 const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
@@ -48,6 +50,17 @@ export const vietnameseMoneyWords = (amount: number): string => {
   }
   const text = parts.join(' ').replace(/\s+/g, ' ').trim();
   return `${text.charAt(0).toUpperCase()}${text.slice(1)} đồng`;
+};
+
+// Bảng phân bổ của đơn gom: mỗi dự án / công trường nhận một phần; cộng theo dự án (gồm VAT) để biết nợ + chi phí.
+const allocationTable = (rows: NonNullable<ApprovalPrintInput['allocations']>, vatRate: number) => {
+  const byProject = new Map<string, number>();
+  rows.forEach(r => byProject.set(r.project, (byProject.get(r.project) || 0) + r.amount));
+  return `<div class="intro">Phân bổ theo dự án (mỗi đợt giao về một công trường, công nợ và chi phí ghi cho dự án nhận):</div>
+  <table class="lines"><thead><tr><th>Dự án</th><th>Kho nhận</th><th>Hàng hóa</th><th style="width:48px">ĐVT</th><th style="width:80px">Khối lượng</th><th style="width:110px">Tiền hàng</th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td class="b">${esc(r.project)}</td><td>${esc(r.warehouse)}</td><td class="name">${esc(r.item)}</td><td class="c">${esc(r.unit)}</td><td class="r">${num(r.qty, 3)}</td><td class="r">${num(r.amount)}</td></tr>`).join('')}</tbody>
+    <tfoot>${Array.from(byProject.entries()).map(([project, amount]) => `<tr><td colspan="5" class="r">${esc(project)} — gồm VAT ${num(vatRate, 2)}%</td><td class="r">${num(amount * (1 + vatRate / 100))}</td></tr>`).join('')}</tfoot>
+  </table>`;
 };
 
 export const buildPoApprovalPrintHtml = (p: ApprovalPrintInput): string => {
@@ -117,6 +130,7 @@ export const buildPoApprovalPrintHtml = (p: ApprovalPrintInput): string => {
     </tfoot>
   </table>
   <div class="words">Bằng chữ: ${esc(vietnameseMoneyWords(total))}.</div>
+  ${p.allocations?.length ? allocationTable(p.allocations, p.vatRate || 0) : ''}
   ${p.note ? `<div class="note"><b>Ghi chú:</b> ${esc(p.note)}</div>` : ''}
   <div class="signs">${p.signers.map(s => `<div><strong>${esc(s.role)}</strong><em>(Ký, ghi rõ họ tên)</em><span>${esc(s.name)}</span></div>`).join('')}</div>
 </body></html>`;

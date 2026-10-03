@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Flame, Inbox, Link2, Loader2, PackageCheck,
+  AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Flame, Inbox, Layers, Link2, Loader2, PackageCheck,
   RefreshCw, RotateCcw, Search, ShoppingCart, Stamp, Truck, UserRound, Warehouse,
 } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
@@ -316,6 +316,9 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const selectedDocs = docs.filter(d => selected.has(docKey(d)));
   const selectedScopes = new Set(selectedDocs.map(d => `${d.projectId}|${d.constructionSiteId}`));
   const selectedOpen = selectedDocs.filter(d => d.progress === 'new' || d.progress === 'partial');
+  // Việc 2: phiếu của nhiều dự án → một đơn gom (mỗi phiếu cần kho nhận).
+  const selectedProjects = new Set(selectedOpen.map(d => d.projectId)).size;
+  const missingWarehouse = selectedOpen.filter(d => !d.warehouseId).length;
 
   const assign = async (keys: string[], userId: string | null) => {
     const sources = docs.filter(d => keys.includes(docKey(d))).map(refOf);
@@ -431,7 +434,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
                 ? <StateBox kind="empty" title="Không có phiếu nào khớp bộ lọc" message={filtersActive ? 'Thử bỏ bớt bộ lọc.' : 'Chưa có phiếu nhu cầu nào cần mua. Phiếu mới xuất hiện ngay khi KH vật tư hoặc đề xuất công trường được duyệt.'} />
                 : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground">
-                    <span>{docs.length} phiếu · {groups.length} dự án{canManage && ' · tick phiếu cùng dự án để lập một đơn hàng'}</span>
+                    <span>{docs.length} phiếu · {groups.length} dự án{canManage && ' · tick phiếu (cả khác dự án) để lập một đơn hàng / đơn gom'}</span>
                     <button type="button" onClick={accordion.allOpen ? accordion.collapseAll : accordion.expandAll} className="rounded-lg border border-border px-2.5 py-1 font-semibold text-foreground hover:bg-muted">
                       {accordion.allOpen ? 'Thu gọn hết' : 'Mở rộng hết'}</button>
                   </div>
@@ -470,10 +473,11 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
 
     {canManage && mode === 'orders' && stage === 'intake' && selected.size > 0 && <div className="sticky bottom-3 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-teal-200 bg-card px-3 py-2.5 shadow-lg dark:border-teal-900">
       <span className="text-sm font-semibold">Đã chọn {selected.size} phiếu</span>
-      <button type="button" disabled={selectedScopes.size !== 1 || selectedOpen.length === 0}
-        title={selectedScopes.size !== 1 ? 'Chỉ lập một đơn cho phiếu cùng dự án/công trường' : selectedOpen.length === 0 ? 'Các phiếu đã đặt đủ hoặc đã đóng' : undefined}
-        onClick={() => setEditor({ sources: selectedOpen.map(refOf), order: null })} className={primaryBtn}><ShoppingCart size={15} />Lập đơn hàng</button>
-      {selectedScopes.size > 1 && <span className="text-xs text-amber-700 dark:text-amber-300">Khác dự án — lập riêng từng dự án</span>}
+      <button type="button" disabled={selectedOpen.length === 0 || (selectedScopes.size > 1 && missingWarehouse > 0)}
+        title={selectedOpen.length === 0 ? 'Các phiếu đã đặt đủ hoặc đã đóng' : selectedScopes.size > 1 && missingWarehouse > 0 ? 'Có phiếu chưa chọn kho nhận — đơn gom cần kho nhận của từng phiếu' : undefined}
+        onClick={() => setEditor({ sources: selectedOpen.map(refOf), order: null })} className={primaryBtn}>
+        {selectedScopes.size > 1 ? <><Layers size={15} />Lập đơn gom {selectedProjects} dự án</> : <><ShoppingCart size={15} />Lập đơn hàng</>}</button>
+      {selectedScopes.size > 1 && <span className="text-xs text-teal-800 dark:text-teal-200">{missingWarehouse > 0 ? `${missingWarehouse} phiếu chưa có kho nhận` : 'Một NCC, một giá · mỗi đợt giao về một công trường · nợ + chi phí theo dự án nhận'}</span>}
       <span className="flex min-w-0 flex-1 items-center gap-1">
         <select aria-label="Giao cho" value={bulkAssignee} onChange={e => setBulkAssignee(e.target.value)} className={`min-w-0 flex-1 ${inputCls}`}>
           <option value="">Giao cho…</option>
