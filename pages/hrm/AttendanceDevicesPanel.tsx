@@ -6,6 +6,7 @@ import { getApiErrorMessage } from '../../lib/apiError';
 import { useToast } from '../../context/ToastContext';
 import { useReasonConfirm } from '../../context/ConfirmContext';
 import AttendancePhoto from '../../components/hrm/AttendancePhoto';
+import SearchableSelect from '../../components/common/SearchableSelect';
 
 interface DeviceRow {
   id: string;
@@ -146,6 +147,7 @@ const AttendanceDevicesPanel: React.FC<{ employees: Employee[]; canManageSetting
       reasonPlaceholder: 'Ví dụ: điện thoại đời cũ không hỗ trợ',
       actionLabel: 'Miễn',
       intent: 'warning',
+      minLength: 5,
     });
     if (reason === null) return;
     setBusyId('exempt');
@@ -185,6 +187,9 @@ const AttendanceDevicesPanel: React.FC<{ employees: Employee[]; canManageSetting
     employee.status === 'Đang làm việc'
     && !active.some(device => device.employee_id === employee.id)
     && !exemptions.some(exemption => exemption.employee_id === employee.id));
+
+  const exemptCandidates = employees.filter(employee =>
+    employee.status === 'Đang làm việc' && !exemptions.some(exemption => exemption.employee_id === employee.id));
 
   const card = 'rounded-2xl border border-border bg-card p-4';
 
@@ -324,13 +329,17 @@ const AttendanceDevicesPanel: React.FC<{ employees: Employee[]; canManageSetting
         <h3 className="mb-1 text-sm font-black text-foreground">Miễn xác thực vân tay / Face ID</h3>
         <p className="mb-3 text-xs text-muted-foreground">Dành cho điện thoại đời cũ không hỗ trợ. Các lượt chấm của người được miễn vẫn có ảnh, GPS và được gắn nhãn để theo dõi.</p>
         <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-          <select value={newExemptEmployee} onChange={event => setNewExemptEmployee(event.target.value)}
-            className="flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm">
-            <option value="">— Chọn nhân viên —</option>
-            {employees.filter(employee => employee.status === 'Đang làm việc').map(employee => (
-              <option key={employee.id} value={employee.id}>{employee.fullName} ({employee.employeeCode})</option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={newExemptEmployee || null}
+            options={exemptCandidates}
+            onChange={employee => setNewExemptEmployee(employee?.id || '')}
+            getOptionValue={employee => employee.id}
+            getOptionLabel={employee => `${employee.fullName}${employee.employeeCode ? ` (${employee.employeeCode})` : ''}`}
+            getOptionSearchText={employee => [employee.fullName, employee.employeeCode].filter(Boolean).join(' ')}
+            placeholder="Gõ tên hoặc mã nhân viên…"
+            emptyLabel="Không tìm thấy nhân viên"
+            className="flex-1"
+          />
           <input type="date" value={newExemptUntil} onChange={event => setNewExemptUntil(event.target.value)} title="Miễn đến ngày (để trống = không thời hạn)"
             className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
           <button type="button" onClick={() => void addExemption()} disabled={!newExemptEmployee || busyId === 'exempt'}
