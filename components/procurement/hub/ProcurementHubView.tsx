@@ -265,9 +265,9 @@ const EMPTY_FILTER: Required<ProcurementInboxFilter> = { source: '', progress: '
 export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null; initialContractId?: string | null; initialMode?: string | null; initialHotPurchaseId?: string | null }> = ({ currentUserId, initialOrderId = null, initialContractId = null, initialMode = null, initialHotPurchaseId = null }) => {
   const toast = useToast();
   const askReason = useReasonConfirm();
-  const { items } = useApp();
+  const { items, warehouses } = useApp();
   const [stage, setStage] = useState<Stage>(initialOrderId ? 'drafting' : 'intake');
-  const [mode, setMode] = useState<'orders' | 'contracts' | 'hot' | 'reconcile'>(initialContractId ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : initialMode === 'hot' || initialHotPurchaseId ? 'hot' : 'orders');
+  const [mode, setMode] = useState<'orders' | 'contracts' | 'hot' | 'reconcile'>(initialContractId || initialMode === 'contracts' ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : initialMode === 'hot' || initialHotPurchaseId ? 'hot' : 'orders');
   const [hotPrefill, setHotPrefill] = useState<HotPurchasePrefill | null>(null);
   const [filter, setFilter] = useState<Required<ProcurementInboxFilter>>(EMPTY_FILTER);
   const [searchText, setSearchText] = useState('');
@@ -378,6 +378,8 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
     </header>
 
     {status === 'denied' && mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} />
+      // Công trường không có quyền Mua hàng vẫn gọi hàng theo HĐ của dự án mình (link ?mode=contracts).
+      : status === 'denied' && mode === 'contracts' ? <ContractsView projects={[]} warehouses={warehouses} initialContractId={initialContractId} currentUserId={currentUserId} />
       : status === 'denied' ? <StateBox kind="denied" message={message} />
       : status === 'error' && !inbox ? <StateBox kind="error" title="Chưa tải được Mua hàng" message={message} onRetry={() => void load()} />
         : !inbox ? <StateBox kind="loading" title="Đang tải nhu cầu mua hàng…" />
@@ -389,7 +391,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
             </div>
             {mode === 'reconcile' ? <ReceiptReconciliationView currentUserId={currentUserId} />
               : mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} prefill={hotPrefill} onPrefillUsed={() => setHotPrefill(null)} showSettings />
-              : mode === 'contracts' ? <ContractsView projects={inbox.projects} initialContractId={initialContractId} /> : <>
+              : mode === 'contracts' ? <ContractsView projects={inbox.projects} warehouses={warehouses} initialContractId={initialContractId} currentUserId={currentUserId} /> : <>
             <StageStrip inbox={inbox} stage={stage} onStage={setStage} />
             {stage !== 'intake' ? <OrdersView stage={stage} projects={inbox.projects} reloadKey={ordersReload} onOpen={setOrderId} /> : <section className="space-y-3">
               <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Nguồn đề xuất">
