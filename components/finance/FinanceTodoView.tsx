@@ -1,10 +1,12 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeftRight, Banknote, Building2, CalendarClock, CheckCircle2, ChevronRight, FileCheck2, FileWarning, Scale } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, Banknote, Building2, CalendarClock, CheckCircle2, ChevronRight, FileCheck2, FileWarning, HandCoins, RotateCcw, Scale } from 'lucide-react';
+import type { FinanceAdvances } from '../../lib/financeService';
 import { shortMoney } from './financeUi';
 
 // Việc cần làm của kế toán: mỗi ô là một hàng đợi, bấm để mở đúng chỗ xử lý ở Phải trả.
 
-export type TodoTarget = 'opening' | 'overdue' | 'soon' | 'issues' | 'direct' | 'statements' | 'request' | 'approved' | 'transfers';
+export type TodoTarget = 'opening' | 'overdue' | 'soon' | 'issues' | 'direct' | 'statements' | 'request' | 'approved' | 'transfers'
+  | 'advance_overdue' | 'advance_refund' | 'advance_adjust';
 
 export const FinanceTodoView: React.FC<{
   totals: { overdue: number; overdueCount: number; soon: number; soonCount: number; issues: number; openingPendingSuppliers: number; supplierCount: number };
@@ -12,9 +14,10 @@ export const FinanceTodoView: React.FC<{
   pendingStatements: { count: number; amount: number };
   requests: { request: number; approved: number; approvedAmount: number; waitingMe: number } | null;
   transferCount: number;
+  advances?: FinanceAdvances['totals'] | null;
   canRecord: boolean; canConfirm: boolean;
   onGo: (target: TodoTarget) => void;
-}> = ({ totals, direct, pendingStatements, requests, transferCount, canRecord, canConfirm, onGo }) => {
+}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, canRecord, canConfirm, onGo }) => {
   const items: Array<{ key: TodoTarget; title: string; count: number | null; value: string; hint: string; icon: React.ElementType; urgent?: boolean; who?: string }> = [
     { key: 'opening', title: 'Đối chiếu đầu kỳ NCC', count: totals.openingPendingSuppliers, value: `${totals.openingPendingSuppliers}/${totals.supplierCount} NCC`,
       hint: 'Chốt theo sổ MISA 30/09 — làm trước để cảnh báo quá hạn đúng', icon: FileWarning, urgent: true },
@@ -27,6 +30,12 @@ export const FinanceTodoView: React.FC<{
       hint: requests?.waitingMe ? `${requests.waitingMe} chờ bạn duyệt` : 'theo ma trận duyệt chi', icon: FileCheck2, urgent: Boolean(requests?.waitingMe) },
     { key: 'approved', title: 'Đã duyệt, chờ xác nhận đã chi', count: requests?.approved ?? null, value: requests ? `${requests.approved} đề nghị` : '…',
       hint: requests ? `${shortMoney(requests.approvedAmount)} · cần UNC + file` : '', icon: Banknote, who: canConfirm ? undefined : 'Cần quyền Tài chính — Xác nhận' },
+    { key: 'advance_overdue', title: 'Tạm ứng NCC quá hạn hoàn ứng', count: advances ? advances.overdueCount : null, value: advances ? `${advances.overdueCount} khoản` : '…',
+      hint: advances ? `${shortMoney(advances.overdue)} · NCC chưa giao hàng — nhờ Mua hàng đôn đốc` : '', icon: HandCoins, urgent: true },
+    { key: 'advance_refund', title: 'Tạm ứng chờ hoàn', count: advances ? advances.refundDueCount : null, value: advances ? `${advances.refundDueCount} khoản` : '…',
+      hint: advances ? `${shortMoney(advances.refundDue)} · đơn đã kết thúc — thu hồi hoặc chuyển đơn` : '', icon: RotateCcw, urgent: true },
+    { key: 'advance_adjust', title: 'Hoàn / chuyển tạm ứng chờ xác nhận', count: advances ? advances.adjustmentsWaiting : null, value: advances ? `${advances.adjustmentsWaiting} phiếu` : '…',
+      hint: advances?.adjustmentsWaitingMe ? `${advances.adjustmentsWaitingMe} chờ bạn xác nhận` : 'người khác người lập xác nhận', icon: HandCoins, who: canConfirm ? undefined : 'Cần quyền Tài chính — Xác nhận' },
     { key: 'transfers', title: 'Chuyển kho chờ xác nhận giá vốn', count: transferCount, value: `${transferCount} phiếu`, hint: 'giá kho gửi chưa tin được → chưa ghi chi phí dự án', icon: ArrowLeftRight },
     { key: 'issues', title: 'Chứng từ cần soát xét', count: totals.issues, value: `${totals.issues} chứng từ`, hint: 'đơn vị nội bộ, số tiền bất thường, cùng người lập + ghi', icon: FileWarning },
   ];
@@ -56,6 +65,7 @@ export const FinanceTodoView: React.FC<{
         <li>Ghi nợ phiếu nhập trực tiếp và bảng đối soát đang chờ (sửa phiếu thiếu giá trước).</li>
         <li>Lập đề nghị chi cho nợ quá hạn và đến hạn trong tuần → duyệt → xác nhận đã chi (UNC).</li>
         <li>Xác nhận giá vốn chuyển kho để chi phí dự án đủ.</li>
+        <li>Theo dõi tạm ứng NCC quá hạn hoàn ứng / chờ hoàn: nhờ Mua hàng đôn đốc giao, thu hồi tiền hoặc chuyển sang đơn khác.</li>
       </ol>
     </section>
   </div>;

@@ -394,3 +394,41 @@ Chủ SP duyệt mockup `fn-v1` và 5 câu. Migration `20261008133900_finance_ov
 - **Đánh giá dự án:** Rủi ro (chi phí vượt số đã thu); Cần chú ý (chi phí % HĐ > tiến độ + 10, vật tư % dự toán > tiến độ + 15, nợ quá hạn ≥ 50 tr); Ổn định; Chưa phát sinh.
 - **Việc cần làm:** đầu kỳ NCC, phiếu nhập trực tiếp chờ ghi nợ, bảng đối soát chờ ghi nợ, nợ quá hạn / đến hạn, đề nghị chi đang duyệt / chờ chi, chuyển kho chờ giá vốn, chứng từ cần soát xét — bấm mở đúng chỗ ở Phải trả.
 - **Câu 5 (tiến độ trùng):** 17 dòng `project_finances` của SMB là lịch sử mỗi lần cập nhật (15% → 40%), chỉ là nguồn dự phòng khi không có Gantt. Tổng quan dùng Gantt (SMB 82%, DA29 7%) nên không sửa dữ liệu.
+
+## 15. Tạm ứng NCC + Quản trị Tài chính (03/10/2026)
+
+Chủ SP duyệt mockup `fa-v1` và 6 câu (03/10): tạm ứng gắn PO hoặc HĐ nguyên tắc; không chặn theo %, vượt ngưỡng thì duyệt thêm;
+trừ hết vào các đợt giao đầu; cấn trừ tự động, kế toán hoàn tác được; dùng chung ma trận + luật 3 người của đề nghị chi;
+quá hạn hoàn ứng thì cảnh báo ở Việc cần làm / Tổng quan. Chủ SP yêu cầu thêm phần **Quản trị** để cài thông số, trách nhiệm, ràng buộc.
+
+Migration `20261008134000_finance_supplier_advances.sql`.
+
+**Mô hình**
+- Đề nghị tạm ứng = `finance_payment_requests.kind = 'advance'` (mã `TU-YYMM-NNN`), không có dòng chứng từ; gắn `purchase_order_id`
+  hoặc `supplier_contract_id` + `project_id` (null = Kho Tổng, cấp công ty), `advance_base` (giá trị đơn gồm VAT / giá trị HĐ),
+  `advance_percent`, `repay_due_date`. Duyệt, trả lại, rút, hủy dùng nguyên `decide_finance_payment_request_v1`.
+- Xác nhận đã chi (`confirm_finance_payment_request_v1` → `finance_confirm_advance`): một `supplier_payment_batches` trạng thái
+  `paid`, `metadata.kind = 'advance'`, không phân bổ; dòng tiền ra `project_transactions` source_ref `supplier_payment_batch:<id>`
+  (như mọi khoản chi NCC — tiền thật, không phải chi phí).
+- Cấn trừ = phân bổ của chính phiếu chi tạm ứng vào chứng từ công nợ (`supplier_payment_allocations`), mỗi lần ghi
+  `supplier_advance_offsets` (tự động / tay, trả lại một phần / toàn bộ, lý do). Số dư tạm ứng = đã chi − đang cấn trừ − NCC đã hoàn.
+- Trigger trên `supplier_payable_documents`: chứng từ mở lần đầu (nhận hàng PO, chốt đối soát HĐ) → trừ tạm ứng cùng NCC, cùng dự án,
+  cùng PO / HĐ (chi trước trừ trước); lỗi không chặn kho, ghi `advance_offset_failed`. Giảm trừ tăng (trả hàng) làm vượt phần đã trả,
+  hoặc chứng từ hủy / đảo → trả lại phần cấn trừ.
+- `supplier_advance_adjustments`: NCC hoàn tiền (giấy báo có + file; dòng tiền ra âm `…:refund:<id>`, đảo được) và chuyển sang PO
+  khác cùng NCC, cùng dự án — người khác người lập xác nhận. Đảo phiếu chi tạm ứng chỉ khi chưa cấn trừ / chưa có phiếu hoàn.
+- Trạng thái hiển thị: đang duyệt · chờ chi · còn tạm ứng (quá hạn khi qua hạn hoàn ứng) · chờ hoàn (đơn giao đủ / kết thúc / hủy,
+  HĐ đóng) · đã cấn trừ hết · đã đảo.
+
+**Quản trị** (`finance_settings`): ngưỡng cảnh báo (30%), ngưỡng duyệt thêm (50%), người duyệt vượt ngưỡng (mặc định TGĐ),
+số ngày cộng vào hạn hoàn ứng (0). `get_finance_settings_v1` trả thêm `responsibilities` (ai giữ Xem / Ghi nhận / Xác nhận / Quản trị).
+Màn Quản trị chia 4 mục: Thông số chung · Duyệt chi & ủy quyền · Tạm ứng NCC · Trách nhiệm & ràng buộc.
+
+**Màn hình**: Phải trả → thẻ "Tạm ứng NCC" (còn lại, quá hạn hoàn ứng, chờ hoàn, đang duyệt; chi tiết cấn trừ / hoàn / chuyển);
+chi tiết NCC có "Tạm ứng còn lại · Phải trả ròng" và nút Lập tạm ứng; Đề nghị chi hiện đề nghị tạm ứng (đơn / HĐ, %, hạn hoàn ứng);
+Việc cần làm + Tổng quan có tạm ứng quá hạn / chờ hoàn; Mua hàng thấy "Đã tạm ứng" trên PO (không lộ UNC, người chi).
+
+**Kiểm thử** rollback trên production (`tools/adv-test.mjs`, `adv-test2.mjs`): lập–duyệt–chi PO-429 30%, nhận hàng tự cấn,
+trả hàng 100tr trả lại tạm ứng, hoàn tác / cấn tay, NCC hoàn 20tr, chặn tự duyệt / tự xác nhận / vượt giá trị đơn / hạn quá khứ /
+chuyển khác dự án / đảo khi còn cấn trừ; chuyển PO-116 → PO-259, chứng từ hủy trả lại tạm ứng, đảo phiếu thu hoàn rồi đảo phiếu chi;
+tạm ứng theo HĐ tự cấn khi chốt đối soát.

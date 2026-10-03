@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, Ban, Banknote, CalendarClock, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, History, Loader2,
+  AlertTriangle, ArrowLeft, Ban, Banknote, CalendarClock, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, HandCoins, History, Loader2,
   RotateCcw, ShieldCheck, Undo2, X,
 } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import {
   DUE_SOURCE_LABELS, EVENT_LABELS, ISSUE_LABELS, METHOD_LABELS, SOURCE_LABELS, financeService,
-  type FinanceDocument, type FinancePayment, type FinanceSupplierDetail,
+  type FinanceAdvances, type FinanceDocument, type FinancePayment, type FinanceSupplierDetail,
 } from '../../lib/financeService';
+import { AdvanceDrawer } from './AdvanceDrawer';
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ExternalPaymentDrawer } from './ExternalPaymentDrawer';
 import { OpeningDrawer } from './OpeningDrawer';
@@ -39,7 +40,7 @@ const Provenance: React.FC<{ d: FinanceDocument }> = ({ d }) => {
   return <ol className="mt-2 space-y-1 border-l-2 border-mint-200 pl-3 text-xs text-muted-foreground dark:border-mint-900">{rows.map((r, i) => <li key={i}>{r}</li>)}</ol>;
 };
 
-export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; onChanged: () => void }> = ({ supplierId, onBack, onChanged }) => {
+export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; onChanged: () => void; onOpenAdvances?: () => void }> = ({ supplierId, onBack, onChanged, onOpenAdvances }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const askReason = useReasonConfirm();
@@ -48,12 +49,14 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
   const [busy, setBusy] = useState(false);
   const [openDoc, setOpenDoc] = useState<string | null>(null);
   const [dueEdit, setDueEdit] = useState<{ id: string; date: string; reason: string } | null>(null);
-  const [drawer, setDrawer] = useState<{ kind: 'external'; documentId?: string | null } | { kind: 'opening'; projectId?: string | null } | { kind: 'terms' } | { kind: 'request' } | null>(null);
+  const [drawer, setDrawer] = useState<{ kind: 'external'; documentId?: string | null } | { kind: 'opening'; projectId?: string | null } | { kind: 'terms' } | { kind: 'request' } | { kind: 'advance' } | null>(null);
+  const [advances, setAdvances] = useState<FinanceAdvances | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
     financeService.supplier(supplierId).then(setDetail).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    financeService.advances(supplierId).then(setAdvances).catch(() => setAdvances(null));
   }, [supplierId]);
   useEffect(() => { setDetail(null); setOpenDoc(null); load(); }, [load]);
 
@@ -80,6 +83,8 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
   const overdue = openDocs.filter(d => toneOf(d.dueDate, d.outstanding, today) === 'overdue').reduce((s, d) => s + d.outstanding, 0);
   const soon = openDocs.filter(d => toneOf(d.dueDate, d.outstanding, today) === 'soon').reduce((s, d) => s + d.outstanding, 0);
   const paid = detail.documents.reduce((s, d) => s + d.paid, 0);
+  const liveAdvances = (advances?.advances || []).filter(a => ['approving', 'to_pay', 'open', 'refund_due'].includes(a.state));
+  const advanceLeft = liveAdvances.reduce((s, a) => s + a.remaining, 0);
   const preProjects = Array.from(new Set(detail.documents.filter(d => d.documentDate < detail.cutoverDate && d.sourceType !== 'opening_balance').map(d => d.projectCode || '')));
   const waitingMe = detail.payments.filter(p => p.status === 'submitted' && can.confirm && p.createdBy !== me).length
     + detail.documents.filter(d => d.pendingAdjustment && can.confirm && d.pendingAdjustment.createdBy !== me).length
@@ -123,12 +128,14 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className={ENT}>{p.code}</span>
       <Badge className={p.status === 'paid' ? 'border-leaf-200 bg-leaf-50 text-leaf-800' : p.status === 'submitted' ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-border bg-muted text-muted-foreground'}>
-        {p.status === 'paid' ? 'Đã trừ công nợ' : p.status === 'submitted' ? 'Chờ xác nhận' : p.status === 'reversed' ? 'Đã đảo' : p.rejection ? 'Bị từ chối' : 'Đã rút'}</Badge>
+        {p.status === 'paid' ? (p.kind === 'advance' ? 'Đã chi' : 'Đã trừ công nợ') : p.status === 'submitted' ? 'Chờ xác nhận' : p.status === 'reversed' ? 'Đã đảo' : p.rejection ? 'Bị từ chối' : 'Đã rút'}</Badge>
       {p.external && <Badge className="border-slate-200 bg-slate-100 text-slate-700">Chi ngoài hệ thống</Badge>}
+      {p.kind === 'advance' && <Badge className="border-mint-200 bg-mint-50 text-mint-800">Tạm ứng {p.requestCode}</Badge>}
       <span className="text-xs text-muted-foreground">{p.projectCode} · {viDate(p.paymentDate)} · {METHOD_LABELS[p.method] || p.method} · {p.documentRef}</span>
       <span className={`ml-auto ${NUM}`}>{money(p.amount)} đ</span>
     </div>
-    <p className="mt-1 text-xs text-muted-foreground">{(p.allocations || []).map(a => `${a.documentNo}: ${money(a.amount)} đ`).join(' · ')}</p>
+    <p className="mt-1 text-xs text-muted-foreground">{p.kind === 'advance' ? (p.allocations?.length ? `Đã cấn trừ: ${p.allocations.map(a => `${a.documentNo} ${money(a.amount)} đ`).join(' · ')}` : 'Chưa cấn trừ vào chứng từ nào')
+      : (p.allocations || []).map(a => `${a.documentNo}: ${money(a.amount)} đ`).join(' · ')}</p>
     <p className="mt-0.5 text-xs text-muted-foreground">Lập: <span className={ENT}>{p.createdByName}</span>{p.paidByName ? <> · Xác nhận: <span className={ENT}>{p.paidByName}</span> {viDate(p.paidAt)}</> : ''}
       {p.rejection ? ` · Từ chối: ${p.rejection.reason}` : ''}{p.reversal ? ` · Lý do đảo: ${p.reversal}` : ''}</p>
     {p.attachments.length > 0 && <p className="mt-1 flex flex-wrap gap-2">{p.attachments.map(a => <button key={a.path} type="button" onClick={() => void financeService.openAttachment(a.path)}
@@ -164,9 +171,14 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
       {detail.supplier.internal && <p className="mt-2 flex gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-900"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{detail.supplier.internalReason} — không chi tiền; đề xuất hủy công nợ.</p>}
       <dl className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
         {([['Đang nợ', shortMoney(owed), NUM], ['Quá hạn', shortMoney(overdue), `font-semibold tabular-nums ${overdue > 0 ? 'text-rose-700' : 'text-muted-foreground'}`],
-          ['Đến hạn 7 ngày', shortMoney(soon), `font-semibold tabular-nums ${soon > 0 ? 'text-amber-700' : 'text-muted-foreground'}`], ['Đã chi trong Vioo', shortMoney(paid), 'font-semibold tabular-nums text-foreground']] as const).map(([l, v, c]) =>
+          ['Đến hạn 7 ngày', shortMoney(soon), `font-semibold tabular-nums ${soon > 0 ? 'text-amber-700' : 'text-muted-foreground'}`], [advanceLeft > 0.5 || liveAdvances.length ? 'Đã trả (gồm cấn trừ tạm ứng)' : 'Đã chi trong Vioo', shortMoney(paid), 'font-semibold tabular-nums text-foreground']] as const).map(([l, v, c]) =>
           <div key={l} className="rounded-xl bg-muted/50 px-3 py-2"><dt className="text-xs text-muted-foreground">{l}</dt><dd className={c}>{v}</dd></div>)}
       </dl>
+      {advanceLeft > 0.5 && <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-mint-200 bg-mint-50/50 px-3 py-2 text-sm dark:border-mint-900 dark:bg-mint-950/20">
+        <span className="inline-flex items-center gap-1.5"><HandCoins size={15} className="text-teal-700" />Tạm ứng còn lại <b className={NUM}>{shortMoney(advanceLeft)}</b></span>
+        {owed - advanceLeft >= 0 ? <span>Phải trả ròng <b className={NUM}>{shortMoney(owed - advanceLeft)}</b></span>
+          : <span>Ứng vượt nợ <b className="font-semibold tabular-nums text-amber-700 dark:text-amber-300">{shortMoney(advanceLeft - owed)}</b></span>}
+        <span className="text-xs text-muted-foreground">đang nợ − tạm ứng còn lại · tự trừ khi kho nhận hàng của đơn</span></p>}
       {preProjects.length > 0 && <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck size={13} />Đầu kỳ:
         {preProjects.map(code => { const o = detail.openings.find(x => (x.projectCode || '') === code && x.status !== 'cancelled');
           return <button key={code} type="button" onClick={() => setDrawer({ kind: 'opening', projectId: detail.documents.find(d => (d.projectCode || '') === code)?.projectId })}
@@ -208,6 +220,21 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
         </div>)}
       </div>)}
 
+      {liveAdvances.length > 0 && <section className="overflow-hidden rounded-xl border border-border">
+        <h3 className="flex items-center gap-2 bg-mint-50/60 px-3 py-2 text-sm font-semibold dark:bg-mint-950/20"><HandCoins size={15} className="text-teal-700" />Tạm ứng ({liveAdvances.length})
+          {onOpenAdvances && <button type="button" onClick={onOpenAdvances} className="ml-auto text-xs font-semibold text-teal-700 hover:underline">Xử lý ở Tạm ứng NCC</button>}</h3>
+        <ul className="divide-y divide-border text-sm">{liveAdvances.map(a => <li key={a.id} className="space-y-1 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2"><b className={ENT}>{a.code}</b>
+            <Badge className="border-teal-200 bg-teal-50 text-teal-800">{a.target?.no} · {a.projectCode || 'Kho Tổng'}</Badge>
+            {a.state === 'approving' || a.state === 'to_pay' ? <Badge className="border-amber-300 bg-amber-50 text-amber-800">{a.state === 'approving' ? 'Đang duyệt' : 'Chờ chi'}</Badge>
+              : a.state === 'refund_due' ? <Badge className="border-rose-300 bg-rose-50 text-rose-700">Chờ hoàn</Badge>
+                : a.overdue ? <Badge className="overdue-blink border-rose-300 bg-rose-50 text-rose-700">Quá hạn hoàn ứng</Badge> : null}
+            <span className={`ml-auto ${NUM}`}>{money(a.paid ? a.remaining : a.amount)} đ</span></div>
+          {a.paid && <div className="flex items-center gap-2 text-xs"><span className="h-2 flex-1 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-leaf-500" style={{ width: `${a.amount ? Math.min(100, ((a.offset + a.refunded) / a.amount) * 100) : 0}%` }} /></span>
+            <span className="tabular-nums text-muted-foreground">đã trừ {shortMoney(a.offset + a.refunded)} / {shortMoney(a.amount)} · hạn {viDate(a.repayDueDate)}</span></div>}
+        </li>)}</ul>
+      </section>}
+
       {detail.payments.length > 0 && <section>
         <h3 className="mb-2 font-semibold text-foreground">Khoản chi ({detail.payments.length})</h3>
         <ul className="space-y-2">{detail.payments.map(paymentRow)}</ul>
@@ -226,6 +253,7 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
       <span className="mr-auto text-xs text-muted-foreground">{can.confirm ? 'Bạn ghi nhận và xác nhận được — nhưng không xác nhận việc do chính bạn lập.' : can.record ? 'Bạn ghi nhận được; người khác có quyền Xác nhận sẽ xác nhận.' : 'Bạn chỉ xem.'}</span>
       {can.record && !detail.supplier.internal && <button type="button" className={secondaryBtn} onClick={() => setDrawer({ kind: 'external' })}><Banknote size={15} />Ghi chi ngoài hệ thống</button>}
+      {can.record && !detail.supplier.internal && <button type="button" onClick={() => setDrawer({ kind: 'advance' })} className={secondaryBtn}><HandCoins size={15} />Lập tạm ứng</button>}
       {can.record && !detail.supplier.internal && openDocs.length > 0 && <button type="button" onClick={() => setDrawer({ kind: 'request' })} className={primaryBtn}><FileText size={15} />Lập đề nghị chi</button>}
       {(can.record || can.confirm) && preProjects.length > 0 && <button type="button" onClick={() => setDrawer({ kind: 'opening' })} className={primaryBtn}>
         {busy ? <Loader2 size={15} className="animate-spin" /> : <ClipboardCheck size={15} />}Đối chiếu đầu kỳ</button>}
@@ -236,5 +264,6 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     {drawer?.kind === 'opening' && <OpeningDrawer detail={detail} projectId={drawer.projectId} onClose={() => setDrawer(null)} onChanged={done}
       onExternalPayment={documentId => setDrawer({ kind: 'external', documentId })} />}
     {drawer?.kind === 'terms' && <TermsDrawer detail={detail} onClose={() => setDrawer(null)} onSaved={done} />}
+    {drawer?.kind === 'advance' && <AdvanceDrawer supplierId={detail.supplier.id} onClose={() => setDrawer(null)} onSaved={code => done(`Đã gửi ${code} — xem ở bước Đề nghị chi.`)} />}
   </section>;
 };

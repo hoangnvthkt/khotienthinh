@@ -254,15 +254,19 @@ export const OrderDrawer: React.FC<{
         </dl>
       </section>
       <GroupSitesSection order={order} canManage={Boolean(perms?.canDecideReturn)} onChanged={() => { load(); onChanged(); }} />
-      {payment && payment.status !== 'none' && <section className="rounded-2xl border border-border p-3 text-sm">
+      {payment && (payment.status !== 'none' || (payment.advance || 0) > 0.5 || (payment.advancePending || 0) > 0.5) && <section className="rounded-2xl border border-border p-3 text-sm">
         <h3 className="flex flex-wrap items-center gap-2 font-semibold text-foreground">Thanh toán NCC <PoPaymentChip payment={payment} />
           {order.vendorId && <a href={`#/finance?supplier=${encodeURIComponent(order.vendorId)}`} className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-teal-700 hover:underline">Xem ở Tài chính<ArrowUpRight size={12} /></a>}</h3>
         <dl className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-          {([['Đã ghi nợ', payment.recognized - payment.credit], ['Đã chi', payment.paid], ['Còn nợ', payment.outstanding], ['Đang đề nghị chi', payment.inRequest]] as const).map(([l, v]) =>
+          {([['Đã ghi nợ', payment.recognized - payment.credit], ['Đã chi', payment.paid - (payment.advanceOffset || 0)], ['Còn nợ', payment.outstanding], ['Đang đề nghị chi', payment.inRequest]] as const).map(([l, v]) =>
             <div key={l} className="rounded-xl bg-muted/50 px-3 py-2"><dt className="text-xs text-muted-foreground">{l}</dt><dd className="font-semibold tabular-nums">{money(v)} đ</dd></div>)}
         </dl>
+        {((payment.advance || 0) > 0.5 || (payment.advancePending || 0) > 0.5) && <dl className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {([['Đã tạm ứng', payment.advance || 0], ['Đã trừ vào công nợ', payment.advanceOffset || 0], ['Tạm ứng còn lại', payment.advanceRemaining || 0], ['Đang đề nghị tạm ứng', payment.advancePending || 0]] as const).map(([l, v]) =>
+            <div key={l} className="rounded-xl bg-mint-50/60 px-3 py-2 dark:bg-mint-950/20"><dt className="text-xs text-muted-foreground">{l}</dt><dd className="font-semibold tabular-nums">{money(v)} đ</dd></div>)}
+        </dl>}
         <p className={`mt-2 text-xs ${payment.overdue ? 'overdue-blink font-semibold text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
-          {payment.outstanding > 0.5 ? (payment.nextDue ? `Hạn thanh toán gần nhất ${payment.nextDue.split('-').reverse().join('/')}${payment.overdue ? ' — đã quá hạn' : ''}` : 'Chưa có hạn thanh toán') : 'Đã thanh toán đủ phần đã nhận.'}
+          {payment.status === 'none' ? 'Chưa nhận hàng nên chưa phát sinh nợ; tạm ứng sẽ tự trừ khi kho nhận hàng.' : payment.outstanding > 0.5 ? (payment.nextDue ? `Hạn thanh toán gần nhất ${payment.nextDue.split('-').reverse().join('/')}${payment.overdue ? ' — đã quá hạn' : ''}` : 'Chưa có hạn thanh toán') : 'Đã thanh toán đủ phần đã nhận.'}
           {' '}· Tính trên {payment.documents} lần nhận hàng; Tài chính lập đề nghị chi và chi tiền.</p>
       </section>}
       {order.note && <p className="rounded-xl bg-muted/50 px-3 py-2 text-sm"><span className="text-muted-foreground">Ghi chú: </span>{order.note}</p>}

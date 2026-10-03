@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Check, FileText, Loader2, RotateCcw, Send, Undo2, Wallet, X } from 'lucide-react';
+import { ArrowLeft, Ban, Check, FileText, HandCoins, Loader2, RotateCcw, Send, Undo2, Wallet, X } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceAttachment, type FinancePaymentRequest, type FinancePaymentRequests, type FinanceRequestStatus } from '../../lib/financeService';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { AttachmentPicker, ENT, NUM, shortMoney, viDate } from './financeUi';
 import { PaymentRequestDrawer } from './PaymentRequestDrawer';
+import { AdvanceDrawer } from './AdvanceDrawer';
 
 // Bước 3–5 của Phải trả: Đề nghị chi (đang duyệt) → Chờ chi (đã duyệt) → Đã chi (có UNC, đảo được).
 
@@ -21,7 +22,7 @@ const STATUS: Record<FinanceRequestStatus, { label: string; cls: string }> = {
   reversed: { label: 'Đã đảo', cls: 'border-slate-200 bg-slate-100 text-slate-600' },
 };
 const EMPTY: Record<RequestStage, [string, string]> = {
-  request: ['Không có đề nghị chi đang duyệt', 'Lập đề nghị chi từ chi tiết NCC ở bước Đang nợ.'],
+  request: ['Không có đề nghị chi đang duyệt', 'Lập đề nghị chi từ chi tiết NCC ở bước Đang nợ; đề nghị tạm ứng lập ở Tạm ứng NCC.'],
   approved: ['Không có khoản chờ chi', 'Đề nghị đã duyệt đủ sẽ chờ ở đây để kế toán chi và đính UNC.'],
   paid: ['Chưa có khoản đã chi', 'Khoản chi đã xác nhận (kèm UNC) hiện ở đây.'],
 };
@@ -39,7 +40,7 @@ const PayDrawer: React.FC<{ r: FinancePaymentRequest; today: string; onClose: ()
     setBusy(true);
     try {
       await financeService.confirmPaymentRequest({ requestId: r.id, expectedRowVersion: r.rowVersion, paymentDate: date, documentRef: ref.trim(), attachments: files, note: note.trim() || undefined });
-      toast.success(`${r.code}: đã chi ${money(r.amount)} đ`, 'Công nợ đã giảm; phiếu chi tách theo dự án đã ghi sổ.');
+      toast.success(`${r.code}: đã chi ${money(r.amount)} đ`, r.kind === 'advance' ? 'Đã ghi phiếu chi tạm ứng và dòng tiền ra; kho nhận hàng của đơn sẽ tự trừ tạm ứng.' : 'Công nợ đã giảm; phiếu chi tách theo dự án đã ghi sổ.');
       onDone();
     } catch (e) { toast.error('Chưa xác nhận được', e instanceof Error ? e.message : ''); } finally { setBusy(false); }
   };
@@ -56,11 +57,15 @@ const PayDrawer: React.FC<{ r: FinancePaymentRequest; today: string; onClose: ()
     <AttachmentPicker supplierId={r.supplierId} value={files} onChange={setFiles} label="UNC / phiếu chi (ảnh hoặc PDF)" required />
     <label className="block text-sm font-medium">Ghi chú<input value={note} onChange={e => setNote(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
     <section className="rounded-xl border border-border p-3 text-sm"><h3 className="font-bold">Hệ thống sẽ ghi</h3>
-      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+      {r.kind === 'advance' ? <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
+        <li>Phiếu chi tạm ứng cho <b className="text-foreground">{r.advance?.projectCode || 'Kho Tổng (cấp công ty)'}</b> · {r.advance?.poNumber ? `đơn ${r.advance.poNumber}` : `HĐ ${r.advance?.contractCode}`}.</li>
+        <li>Ghi dòng tiền ra của dự án. Không ghi chi phí — chi phí ghi khi kho nhận hàng.</li>
+        <li>Công nợ của {r.advance?.poNumber ? 'đơn' : 'HĐ'} sinh ra (đã có hoặc sau này) tự trừ tạm ứng cho tới khi hết.</li>
+      </ul> : <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
         <li>Phiếu chi theo từng dự án: {byProject.map(([p, v]) => <b key={p} className="text-foreground">{p} {money(v)} đ </b>)}</li>
         <li>Giảm công nợ {r.lines.length} chứng từ; chứng từ chi một phần vẫn còn nợ phần còn lại.</li>
         <li>Ghi dòng tiền ra của dự án. Chi phí dự án không đổi (đã ghi lúc nhận hàng / ghi nợ).</li>
-      </ul></section>
+      </ul>}</section>
   </Drawer>;
 };
 
@@ -107,6 +112,7 @@ export const PaymentRequestsView: React.FC<{ stage: RequestStage; today: string;
       {data.requests.map(x => <li key={x.id}><button type="button" onClick={() => { setSel(x.id); setMobile(true); }}
         className={`flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left ${r.id === x.id ? 'bg-teal-50/70 dark:bg-teal-950/20' : 'hover:bg-muted/40'}`}>
         <span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-1.5"><span className={ENT}>{x.code}</span><Badge className={STATUS[x.status].cls}>{STATUS[x.status].label}</Badge>
+          {x.kind === 'advance' && <Badge className="border-mint-200 bg-mint-50 text-mint-800"><HandCoins size={11} className="mr-0.5 inline" />Tạm ứng {x.advance?.poNumber || x.advance?.contractCode}</Badge>}
           {x.canApprove && <Badge className="border-teal-500 bg-teal-600 text-white">Chờ bạn duyệt</Badge>}{x.canConfirm && <Badge className="border-teal-500 bg-teal-600 text-white">Bạn chi được</Badge>}</span>
           <span className="block truncate text-sm">{x.supplierName}</span>
           <span className="text-xs text-muted-foreground">{x.status === 'pending' ? `Bước ${x.currentStep + 1}/${x.route.length}: ${x.route[x.currentStep]?.label}` : x.paid ? `${x.paid.documentRef} · ${viDate(x.paid.paymentDate)}` : `Lập bởi ${x.createdByName || '—'} · ${viDate(x.createdAt)}`}</span></span>
@@ -134,10 +140,20 @@ export const PaymentRequestsView: React.FC<{ stage: RequestStage; today: string;
         <li className="flex items-start gap-2 text-sm"><span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${r.paid ? 'bg-leaf-600 text-white' : 'bg-muted text-muted-foreground'}`}>{r.paid ? <Check size={12} /> : <Wallet size={11} />}</span>
           <span><b>Xác nhận đã chi</b> <span className="text-muted-foreground">— {r.paid ? `${r.paid.byName}, ${viDate(r.paid.paymentDate)} · ${r.paid.documentRef}` : 'kế toán khác người lập và người duyệt'}</span></span></li></ol>
 
+      {r.kind === 'advance' && r.advance ? <section className="mt-4 rounded-xl border border-mint-200 bg-mint-50/40 p-3 text-sm dark:border-mint-900 dark:bg-mint-950/20">
+        <h3 className="flex items-center gap-1.5 font-bold"><HandCoins size={15} className="text-teal-700" />Tạm ứng NCC — chưa có chứng từ công nợ</h3>
+        <dl className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {([[r.advance.poNumber ? 'Đơn hàng' : 'HĐ nguyên tắc', r.advance.poNumber || r.advance.contractCode || '—'], ['Dự án', r.advance.projectCode || 'Kho Tổng'],
+            ['Tỷ lệ', r.advance.percent != null ? `${Number(r.advance.percent).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% của ${shortMoney(r.advance.base || 0)}` : 'HĐ chưa có giá trị'],
+            ['Hạn hoàn ứng', viDate(r.advance.repayDueDate)]] as const).map(([l, v]) =>
+            <div key={l} className="rounded-lg bg-card px-2 py-1.5"><dt className="text-xs text-muted-foreground">{l}</dt><dd className="font-semibold">{v}</dd></div>)}
+        </dl>
+        <p className="mt-2 text-xs text-muted-foreground">{r.paid ? `Đã cấn trừ vào công nợ ${money(r.advance.offset)} đ — theo dõi ở Phải trả → Tạm ứng NCC.` : 'Sau khi chi: kho nhận hàng của đơn (hoặc chốt đối soát HĐ) thì công nợ tự trừ tạm ứng.'}</p>
+      </section> : <>
       <h3 className="mt-4 text-sm font-bold">Chứng từ ({r.lines.length})</h3>
       <ul className="mt-1 divide-y divide-border rounded-xl border border-border">{r.lines.map(l => <li key={l.documentId} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
         <span className="min-w-0"><span className={`block truncate ${ENT}`}>{l.documentNo}</span><span className="text-xs text-muted-foreground">{l.projectCode || 'Kho công ty'} · hạn {viDate(l.dueDate)}{l.amount < l.outstandingSnapshot - 0.5 ? ` · chi một phần / còn ${money(l.outstandingSnapshot)} đ` : ''}</span></span>
-        <span className={`whitespace-nowrap ${NUM}`}>{money(l.amount)}</span></li>)}</ul>
+        <span className={`whitespace-nowrap ${NUM}`}>{money(l.amount)}</span></li>)}</ul></>}
       {byProject.length > 1 && !r.paid && <p className="mt-2 text-xs text-muted-foreground">Khi xác nhận đã chi, hệ thống tự tách phiếu chi theo dự án: {byProject.map(([p, v]) => `${p} ${money(v)} đ`).join(' · ')}.</p>}
       {r.paid && <div className="mt-3 rounded-xl border border-border px-3 py-2 text-sm">
         <p>Chi ngày <b>{viDate(r.paid.paymentDate)}</b> · {r.paid.documentRef} · xác nhận bởi <span className={ENT}>{r.paid.byName}</span></p>
@@ -161,7 +177,7 @@ export const PaymentRequestsView: React.FC<{ stage: RequestStage; today: string;
             }}><Check size={15} />Duyệt</button></>}
         </>}
         {r.status === 'returned' && <>
-          <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">{r.canResubmit ? 'Sửa số tiền / chứng từ rồi gửi lại — luồng duyệt chạy lại từ đầu.' : `Chờ ${r.createdByName} sửa và gửi lại.`}</span>
+          <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">{r.canResubmit ? `Sửa ${r.kind === 'advance' ? 'số tiền / hạn hoàn ứng' : 'số tiền / chứng từ'} rồi gửi lại — luồng duyệt chạy lại từ đầu.` : `Chờ ${r.createdByName} sửa và gửi lại.`}</span>
           {r.canWithdraw && <button type="button" disabled={busy} className={secondaryBtn} onClick={() => void act('withdraw')}><RotateCcw size={15} />Rút</button>}
           {r.canResubmit && <button type="button" className={primaryBtn} onClick={() => setResubmit(true)}><Send size={15} />Sửa và gửi lại</button>}
         </>}
@@ -171,19 +187,20 @@ export const PaymentRequestsView: React.FC<{ stage: RequestStage; today: string;
           {r.canConfirm && <button type="button" className={primaryBtn} onClick={() => setPay(true)}><Wallet size={15} />Xác nhận đã chi</button>}
         </>}
         {r.status === 'paid' && <>
-          <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">Chi nhầm NCC / sai số tiền thì đảo (không xóa) — công nợ trở lại Đang nợ.</span>
+          <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">{r.kind === 'advance' ? 'Chi nhầm thì đảo (không xóa) — chỉ đảo được khi tạm ứng chưa cấn trừ / chưa có phiếu hoàn.' : 'Chi nhầm NCC / sai số tiền thì đảo (không xóa) — công nợ trở lại Đang nợ.'}</span>
           {r.canReverse && <button type="button" disabled={busy} className={secondaryBtn} onClick={async () => {
-            const reason = await askReason({ title: 'Đảo phiếu chi', targetName: `${r.code} · ${money(r.amount)} đ`, subtitle: 'Công nợ được cộng lại, dòng tiền ra được ghi đảo. Không xóa phiếu chi.', reasonLabel: 'Lý do', actionLabel: 'Đảo', intent: 'danger' });
+            const reason = await askReason({ title: 'Đảo phiếu chi', targetName: `${r.code} · ${money(r.amount)} đ`, subtitle: r.kind === 'advance' ? 'Tạm ứng về 0, dòng tiền ra được ghi đảo. Không xóa phiếu chi.' : 'Công nợ được cộng lại, dòng tiền ra được ghi đảo. Không xóa phiếu chi.', reasonLabel: 'Lý do', actionLabel: 'Đảo', intent: 'danger' });
             if (!reason) return;
             setBusy(true);
-            try { await financeService.reversePaymentRequest({ requestId: r.id, expectedRowVersion: r.rowVersion, reason }); toast.success(r.code, 'Đã đảo phiếu chi — công nợ trở lại Đang nợ.'); refresh(); }
+            try { await financeService.reversePaymentRequest({ requestId: r.id, expectedRowVersion: r.rowVersion, reason }); toast.success(r.code, r.kind === 'advance' ? 'Đã đảo phiếu chi tạm ứng — dòng tiền ra được ghi đảo.' : 'Đã đảo phiếu chi — công nợ trở lại Đang nợ.'); refresh(); }
             catch (e) { toast.error('Chưa đảo được', e instanceof Error ? e.message : ''); } finally { setBusy(false); }
           }}><RotateCcw size={15} />Đảo phiếu chi</button>}
         </>}
-        {['reversed', 'rejected', 'withdrawn', 'cancelled'].includes(r.status) && <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">Đề nghị đã kết thúc — chứng từ trở lại Đang nợ.</span>}
+        {['reversed', 'rejected', 'withdrawn', 'cancelled'].includes(r.status) && <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">{r.kind === 'advance' ? 'Đề nghị tạm ứng đã kết thúc.' : 'Đề nghị đã kết thúc — chứng từ trở lại Đang nợ.'}</span>}
       </div>
     </section>
     {pay && <PayDrawer r={r} today={today} onClose={() => setPay(false)} onDone={() => { setPay(false); refresh(); }} />}
-    {resubmit && <PaymentRequestDrawer supplierId={r.supplierId} request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />}
+    {resubmit && (r.kind === 'advance' ? <AdvanceDrawer supplierId={r.supplierId} request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />
+      : <PaymentRequestDrawer supplierId={r.supplierId} request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />)}
   </div>;
 };
