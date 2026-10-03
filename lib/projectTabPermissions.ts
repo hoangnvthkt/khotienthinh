@@ -50,6 +50,7 @@ export const PROJECT_MATERIAL_TAB_PERMISSIONS = [
   { key: 'request', label: 'Yêu cầu', route: '/da/tabs/material/request' },
   { key: 'custom', label: 'Phi tiêu chuẩn', route: '/da/tabs/material/custom' },
   { key: 'po', label: 'Đơn hàng PO', route: '/da/tabs/material/po' },
+  { key: 'hot_purchase', label: 'Mua nóng', route: '/da/tabs/material/hot_purchase' },
   { key: 'waste', label: 'Hao hụt', route: '/da/tabs/material/waste' },
   { key: 'dashboard', label: 'Dashboard', route: '/da/tabs/material/dashboard' },
 ] as const;

@@ -203,6 +203,11 @@ export const useProjectMaterialAccess = ({
                 || materialCapabilities.canReconcileSupplierDelivery,
             waste: materialCapabilities.canViewWaste,
             dashboard: materialCapabilities.canViewMaterialSummary,
+            // Mua nóng (M2c): người lập phiếu ở công trường và CHT (thường có quyền Đề xuất vật tư) — server lọc phiếu theo quyền.
+            hot_purchase: materialCapabilities.canViewDirectPurchase
+                || materialCapabilities.canCreateDirectPurchase
+                || materialCapabilities.canEditDirectPurchase
+                || materialCapabilities.canViewMaterialRequest,
         };
         return PROJECT_MATERIAL_TAB_PERMISSIONS.reduce<ProjectMaterialTabPermissionMap>((acc, tab) => {
             const scoped = materialPermissions?.[tab.key];
@@ -214,6 +219,8 @@ export const useProjectMaterialAccess = ({
                         || (hasScopedPermissions ? Boolean(scoped?.canView) : false)
                     : tab.key === 'request'
                         ? Boolean(explicitViews.request)
+                    : tab.key === 'hot_purchase'
+                        ? Boolean(explicitViews.hot_purchase) || canManage
                     : Boolean(explicitViews[tab.key as ProjectMaterialTabKey])
                         || canManage
                         || (hasScopedPermissions ? Boolean(scoped?.canView) : true),
