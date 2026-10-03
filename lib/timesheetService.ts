@@ -27,12 +27,18 @@ export interface TimesheetDay {
   workedMinutes: number;
   locationName: string | null;
   flags: string[];
+  /** HR changed this day while closing the month (H4). */
+  adjusted?: boolean;
+  /** The person is not required to punch; working days count in full. */
+  notRequired?: boolean;
 }
 
 export interface TimesheetTotals {
   workDays: number;
   paidLeaveDays: number;
   unpaidLeaveDays: number;
+  /** Sick / maternity days paid by social insurance (H4). */
+  insuranceLeaveDays?: number;
   leaveByType: Record<string, number>;
   holidays: number;
   absentDays: number;
