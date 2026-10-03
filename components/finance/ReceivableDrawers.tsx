@@ -5,7 +5,7 @@ import {
   financeService, type ContractGuarantee, type CustomerContractDetail, type FinanceAttachment, type ReceivableRound, type ReceivableRoundKind,
 } from '../../lib/financeService';
 import { Drawer, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { AttachmentPicker, ENT, FieldError, NUM, moneyInput, parseMoney, viDate } from './financeUi';
+import { AttachmentPicker, CashAccountSelect, ENT, FieldError, NUM, moneyInput, parseMoney, viDate } from './financeUi';
 
 // Các form của Phải thu CĐT. Máy chủ tính lại và kiểm tra mọi số; ở đây chỉ gợi ý để người dùng thấy trước.
 
@@ -137,18 +137,19 @@ export const ReceiptDrawer: React.FC<{ d: CustomerContractDetail; onClose: () =>
   const [amount, setAmount] = useState(''); const [date, setDate] = useState(d.today); const [ref, setRef] = useState('');
   const [files, setFiles] = useState<FinanceAttachment[]>([]); const [note, setNote] = useState('');
   const [alloc, setAlloc] = useState<Record<string, string>>({});
+  const [cashAccountId, setCashAccountId] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
   const amt = parseMoney(amount) || 0;
   // Gợi ý: trừ vào đợt hạn sớm trước cho tới khi hết tiền.
   const fifo = () => { let left = amt; const next: Record<string, string> = {}; open.forEach(r => { const take = Math.max(0, Math.min(left, r.outstanding - r.pending)); if (take > 0) next[r.id] = moneyInput(take); left -= take; }); setAlloc(next); };
   const lines = open.map(r => ({ roundId: r.id, amount: parseMoney(alloc[r.id] || '') || 0, max: r.outstanding - r.pending })).filter(l => l.amount > 0);
   const allocated = lines.reduce((s, l) => s + l.amount, 0);
-  const blockers = [!(amt > 0) && 'Nhập số tiền', !ref.trim() && 'Nhập số giấy báo có', !files.length && 'Đính giấy báo có / sao kê', date > d.today && 'Ngày không được sau hôm nay',
+  const blockers = [!(amt > 0) && 'Nhập số tiền', !cashAccountId && 'Chọn tài khoản nhận tiền', !ref.trim() && 'Nhập số giấy báo có', !files.length && 'Đính giấy báo có / sao kê', date > d.today && 'Ngày không được sau hôm nay',
     allocated > amt + 0.5 && 'Trừ vào đợt nhiều hơn số tiền nhận', lines.some(l => l.amount > l.max + 0.5) && 'Trừ quá phần còn phải thu của đợt'].filter(Boolean) as string[];
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      const r = await financeService.saveCustomerReceipt({ contractId: d.contract.id, amount: amt, receiptDate: date, documentRef: ref.trim(), attachments: files, note: note.trim() || undefined,
+      const r = await financeService.saveCustomerReceipt({ contractId: d.contract.id, amount: amt, receiptDate: date, documentRef: ref.trim(), attachments: files, note: note.trim() || undefined, cashAccountId,
         allocations: lines.map(l => ({ roundId: l.roundId, amount: l.amount })) });
       onSaved(`Đã ghi ${r.code} — chờ người khác xác nhận.${r.unallocated > 0.5 ? ` ${money(r.unallocated)} đ là CĐT trả trước.` : ''}`);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
@@ -172,6 +173,7 @@ export const ReceiptDrawer: React.FC<{ d: CustomerContractDetail; onClose: () =>
           <input value={alloc[r.id] || ''} onChange={e => setAlloc(a => ({ ...a, [r.id]: e.target.value }))} inputMode="numeric" aria-label={`Trừ vào đợt ${r.sequenceNo}`} className={`w-40 text-right tabular-nums ${inputCls}`} /></li>)}</ul>}
       <p className="mt-2 flex justify-between text-xs text-muted-foreground"><span>Trừ vào đợt {money(allocated)} đ</span>{amt - allocated > 0.5 && <span className="font-semibold text-teal-800 dark:text-teal-200">CĐT trả trước {money(amt - allocated)} đ</span>}</p>
     </section>
+    <CashAccountSelect value={cashAccountId} onChange={setCashAccountId} label="Tiền vào tài khoản" />
     <AttachmentPicker supplierId={`customer/${d.contract.id}`} value={files} onChange={setFiles} label="Giấy báo có / sao kê" required />
     <Field label="Ghi chú"><input value={note} onChange={e => setNote(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></Field>
   </Drawer>;
