@@ -239,7 +239,8 @@
     "20261008133300_material_request_supply_v1.sql",
     "20261008140000_hrm_leave_policy_admin.sql",
     "20261008133400_procurement_hot_purchase_m2c.sql",
-    "20261008133500_procurement_group_po_multi_project.sql"
+    "20261008133500_procurement_group_po_multi_project.sql",
+    "20261008133600_procurement_framework_contract_orders.sql"
   ],
   "forbidIncludeAll": true
 }

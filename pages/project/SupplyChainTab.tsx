@@ -6806,16 +6806,15 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                     <h3 className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-slate-100">
                                         <Truck size={16} className="text-blue-500" /> Gọi hàng HĐ NCC
                                     </h3>
-                                    <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Cát, đá, xi măng, bê tông giao tới công trường dùng ngay: không PO, có thể không qua kho hoặc nhập-xuất thẳng WMS, AP vẫn từ bảng đối soát HĐ NCC.</p>
+                                    <p className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">03/10/2026: gọi hàng theo HĐ nguyên tắc đã chuyển sang Mua hàng → Hợp đồng nguyên tắc (thủ kho nhận như đơn PO, lưu kho hoặc nhập–xuất thẳng). Phiếu giao cũ bên dưới vẫn xem và đối soát được.</p>
                                 </div>
                                 {effectiveSupplierDeliveryCapabilities.canCreateSupplierDelivery && (
-                                    <button
-                                        type="button"
-                                        onClick={openCreateSupplierDelivery}
-                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-100 active:scale-[0.98]"
+                                    <a
+                                        href="/procurement?mode=contracts"
+                                        className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-800 transition hover:bg-teal-100 active:scale-[0.98]"
                                     >
-                                        <Plus size={12} /> Tạo phiếu giao HĐ
-                                    </button>
+                                        <Truck size={12} /> Gọi hàng ở Mua hàng
+                                    </a>
                                 )}
                             </div>
                             {/* 01/10/2026: Mua hàng lập bảng đối soát tháng; kế toán dự án ghi công nợ tại đây. */}
