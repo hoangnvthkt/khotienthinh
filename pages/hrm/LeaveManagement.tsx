@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, BookOpenCheck, CalendarOff, CheckCircle2, ChevronRight, Clock, Inbox, Plus, RefreshCw,
+  AlertTriangle, BookOpenCheck, CalendarOff, CheckCircle2, ChevronRight, FileText, Inbox, Paperclip, Plus, RefreshCw,
   Send, Settings2, UserCheck, Users, X, XCircle,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -11,9 +11,11 @@ import { useReasonConfirm } from '../../context/ConfirmContext';
 import { canPerformHrmTemplatePermission } from '../../lib/permissions/permissionService';
 import { matchesSearchQueryMultiple } from '../../lib/searchUtils';
 import {
-  currentLeaveStep, LeaveLedgerBalance, LeaveLogRow, LeavePreview, LeaveRequestRow, leaveService, LeaveSession,
+  currentLeaveStep, LEAVE_MAX_ATTACHMENTS, LeaveLedgerBalance, LeaveLogRow, LeavePreview, LeaveRequestRow, leaveService, LeaveSession,
   LeaveSettings, LeaveStatus, LeaveTypeOption,
 } from '../../lib/leaveService';
+import { PAID_BY_LABEL, subtypeProblem } from '../../lib/leavePolicy';
+import LeavePolicySettings, { type LeaveTypeUsage } from '../../components/hrm/LeavePolicySettings';
 import LeaveLedgerDrawer from '../../components/hrm/LeaveLedgerDrawer';
 import LeaveBalancesPanel from '../../components/hrm/LeaveBalancesPanel';
 
@@ -26,10 +28,6 @@ const STATUS: Record<LeaveStatus, { label: string; tone: string }> = {
   cancelled: { label: 'Đã hủy', tone: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400' },
 };
 const SESSION_LABEL: Record<LeaveSession, string> = { full: 'cả ngày', morning: 'buổi sáng', afternoon: 'buổi chiều' };
-const PAID_BY_LABEL = { company: 'Công ty trả lương', social_insurance: 'Quỹ BHXH chi trả', none: 'Không hưởng lương' } as const;
-const LATE_SUBTYPES = ['Đi muộn', 'Về sớm', 'Ra ngoài trong giờ'];
-const PERSONAL_SUBTYPES = ['Kết hôn (3 ngày)', 'Con kết hôn (1 ngày)', 'Bố/mẹ, vợ/chồng, con mất (3 ngày)'];
-const PERSONAL_UNPAID_SUBTYPES = ['Ông bà, anh chị em ruột mất', 'Bố/mẹ, anh chị em ruột kết hôn'];
 const LOG_ACTION: Record<string, string> = { create: 'tạo đơn', approve: 'duyệt', reject: 'từ chối', cancel: 'hủy đơn', revoke: 'thu hồi' };
 
 const formatDate = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString('vi-VN');
@@ -54,7 +52,10 @@ const LeaveManagement: React.FC = () => {
   const canManagePolicy = canPerformHrmTemplatePermission(user, 'hrm.master_data.manage');
   const me = useMemo(() => employees.find(employee => employee.userId === user.id && employee.status === 'Đang làm việc'), [employees, user.id]);
 
-  const [tab, setTab] = useState<Tab>(() => (searchParams.get('tab') === 'balances' ? 'balances' : 'mine'));
+  const [tab, setTab] = useState<Tab>(() => {
+    const value = searchParams.get('tab');
+    return value === 'balances' || value === 'policy' ? value : 'mine';
+  });
   const [requests, setRequests] = useState<LeaveRequestRow[]>([]);
   const [types, setTypes] = useState<LeaveTypeOption[]>([]);
   const [settings, setSettings] = useState<LeaveSettings | null>(null);
@@ -110,6 +111,16 @@ const LeaveManagement: React.FC = () => {
     ], search));
 
   const selected = requests.find(request => request.id === selectedId) || null;
+
+  const usage = useMemo(() => {
+    const result: Record<string, LeaveTypeUsage> = {};
+    for (const request of requests) {
+      const row = result[request.type] || (result[request.type] = { total: 0, pending: 0 });
+      row.total += 1;
+      if (request.status === 'pending') row.pending += 1;
+    }
+    return result;
+  }, [requests]);
 
   const openRequest = (id: string | null) => {
     setSelectedId(id);
@@ -171,7 +182,7 @@ const LeaveManagement: React.FC = () => {
     { id: 'approve', label: 'Chờ tôi duyệt', count: toApprove.length, icon: UserCheck, show: true },
     { id: 'all', label: 'Toàn công ty', icon: Users, show: isHr },
     { id: 'balances', label: 'Số phép', icon: BookOpenCheck, show: isHr },
-    { id: 'policy', label: 'Chính sách', icon: Settings2, show: isHr },
+    { id: 'policy', label: 'Thiết lập', icon: Settings2, show: isHr || canManagePolicy },
   ];
 
   return (
@@ -227,12 +238,13 @@ const LeaveManagement: React.FC = () => {
         ))}
       </div>
 
-      {loadError && <p className="text-sm font-bold text-rose-600">{loadError}</p>}
+      {loadError && tab !== 'policy' && <p className="text-sm font-bold text-rose-600">{loadError}</p>}
 
       {tab === 'balances' ? (
         <LeaveBalancesPanel ownEmployeeId={me?.id} />
       ) : tab === 'policy' ? (
-        <PolicyPanel settings={settings} types={types} users={users.filter(item => item.isActive !== false)} canEdit={canManagePolicy} onSaved={load} />
+        <LeavePolicySettings settings={settings} types={types} users={users.filter(item => item.isActive !== false)} usage={usage}
+          canEdit={canManagePolicy} loading={loading} error={loadError} onChanged={load} />
       ) : (
         <div className="rounded-2xl border border-border bg-card">
           {tab !== 'mine' && (
@@ -302,6 +314,7 @@ const LeaveManagement: React.FC = () => {
 
       {showCreate && me && (
         <CreateDialog
+          employeeId={me.id}
           types={types.filter(type => type.isActive)}
           settings={settings}
           onClose={() => setShowCreate(false)}
@@ -327,9 +340,14 @@ const RequestDrawer: React.FC<{
   onCancel: () => void;
 }> = ({ request, employeeName, typeName, userName, isOwner, isMyStep, isHr, busy, onClose, onApprove, onReject, onCancel }) => {
   const [logs, setLogs] = useState<LeaveLogRow[]>([]);
+  const [papers, setPapers] = useState<Array<{ path: string; url: string | null; isPdf: boolean }> | null>(null);
   useEffect(() => {
     leaveService.listLogs(request.id).then(setLogs).catch(() => setLogs([]));
   }, [request.id, request.status, request.currentStep]);
+  useEffect(() => {
+    setPapers(null);
+    leaveService.attachmentUrls(request.attachmentPaths).then(setPapers).catch(() => setPapers([]));
+  }, [request.attachmentPaths]);
 
   const canDecide = request.status === 'pending' && !isOwner && (isMyStep || isHr);
   const canCancel = (request.status === 'pending' && (isOwner || isHr)) || (request.status === 'approved' && isHr);
@@ -352,11 +370,31 @@ const RequestDrawer: React.FC<{
         <div className="flex-1 space-y-4 overflow-y-auto p-5">
           <div className="rounded-xl bg-muted/60 p-3 text-sm">
             <p className="font-bold text-foreground">{describeTime(request)}</p>
-            {request.minutes === null && <p className="text-muted-foreground">{request.totalDays.toLocaleString('vi-VN')} ngày làm việc</p>}
+            {request.minutes === null && <p className="text-muted-foreground">{request.totalDays.toLocaleString('vi-VN')} ngày làm việc{request.subtype ? ` · ${request.subtype}` : ''}</p>}
             <p className="mt-2 text-foreground">{request.reason}</p>
             {request.rejectionReason && <p className="mt-2 font-bold text-rose-600">Lý do từ chối: {request.rejectionReason}</p>}
             {request.cancelReason && <p className="mt-2 text-muted-foreground">Lý do hủy: {request.cancelReason}</p>}
           </div>
+
+          {request.attachmentPaths.length > 0 && (
+            <div>
+              <p className="mb-2 text-[11px] font-black uppercase text-muted-foreground">Giấy tờ đính kèm</p>
+              {papers === null ? <p className="text-xs text-muted-foreground">Đang tải…</p> : (
+                <div className="flex flex-wrap gap-2">
+                  {papers.map((paper, index) => paper.url ? (
+                    <a key={paper.path} href={paper.url} target="_blank" rel="noreferrer"
+                      className="block overflow-hidden rounded-xl border border-border hover:ring-2 hover:ring-mint-500/40">
+                      {paper.isPdf
+                        ? <span className="flex h-20 w-20 flex-col items-center justify-center gap-1 text-xs font-bold text-mint-700"><FileText size={22} />PDF {index + 1}</span>
+                        : <img src={paper.url} alt={`Giấy tờ ${index + 1}`} className="h-20 w-20 object-cover" />}
+                    </a>
+                  ) : (
+                    <span key={paper.path} className="flex h-20 w-20 items-center justify-center rounded-xl border border-dashed border-border text-center text-[10px] text-muted-foreground">Không mở được</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="mb-2 text-[11px] font-black uppercase text-muted-foreground">Người duyệt</p>
@@ -428,11 +466,12 @@ const RequestDrawer: React.FC<{
 };
 
 const CreateDialog: React.FC<{
+  employeeId: string;
   types: LeaveTypeOption[];
   settings: LeaveSettings | null;
   onClose: () => void;
   onSubmitted: () => Promise<void>;
-}> = ({ types, settings, onClose, onSubmitted }) => {
+}> = ({ employeeId, types, settings, onClose, onSubmitted }) => {
   const toast = useToast();
   const [typeCode, setTypeCode] = useState(types[0]?.code || 'annual');
   const [start, setStart] = useState(today());
@@ -442,6 +481,7 @@ const CreateDialog: React.FC<{
   const [minutes, setMinutes] = useState(30);
   const [subtype, setSubtype] = useState('');
   const [reason, setReason] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<LeavePreview | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [sending, setSending] = useState(false);
@@ -449,7 +489,7 @@ const CreateDialog: React.FC<{
   const type = types.find(item => item.code === typeCode);
   const isMinute = type?.unit === 'minute';
   const singleDay = start === end;
-  const subtypes = typeCode === 'late_early' ? LATE_SUBTYPES : typeCode === 'personal' ? PERSONAL_SUBTYPES : typeCode === 'personal_unpaid' ? PERSONAL_UNPAID_SUBTYPES : [];
+  const subtypes = type?.subtypes || [];
   const payload = {
     type: typeCode,
     start,
@@ -457,6 +497,7 @@ const CreateDialog: React.FC<{
     startSession: isMinute ? 'full' as const : startSession,
     endSession: isMinute ? 'full' as const : singleDay ? startSession : endSession,
     minutes: isMinute ? minutes : null,
+    subtype: subtype || null,
   };
 
   useEffect(() => {
@@ -469,12 +510,12 @@ const CreateDialog: React.FC<{
     }, 250);
     return () => { cancelled = true; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeCode, start, end, startSession, endSession, minutes, isMinute]);
+  }, [typeCode, start, end, startSession, endSession, minutes, isMinute, subtype]);
 
   const submit = async () => {
     setSending(true);
     try {
-      await leaveService.submit({ ...payload, subtype: subtype || null, reason });
+      await leaveService.submit({ ...payload, reason, employeeId, files });
       toast.success('Đã gửi đơn', preview?.steps[0] ? `Chờ ${preview.steps[0].name || preview.steps[0].label} duyệt.` : undefined);
       await onSubmitted();
     } catch (error) {
@@ -484,7 +525,19 @@ const CreateDialog: React.FC<{
     }
   };
 
-  const blocked = !preview || preview.problems.length > 0 || reason.trim().length < 3 || (subtypes.length > 0 && typeCode === 'late_early' && !subtype);
+  const reasonProblem = type && preview ? subtypeProblem(type, subtype, preview.days) : null;
+  const missingPaper = !!type?.requiresAttachment && files.length === 0;
+  const missing = [
+    ...(subtypes.length > 0 && !subtype ? ['chọn lý do nghỉ'] : []),
+    ...(reason.trim().length < 3 ? ['ghi lý do'] : []),
+    ...(missingPaper ? ['giấy tờ đính kèm'] : []),
+  ];
+  const blocked = !preview || preview.problems.length > 0 || reason.trim().length < 3 || !!reasonProblem || missingPaper;
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const picked = Array.from(list).filter(file => file.type.startsWith('image/') || file.type === 'application/pdf');
+    setFiles(current => [...current, ...picked].slice(0, LEAVE_MAX_ATTACHMENTS));
+  };
   const sessionButtons = (value: LeaveSession, onChange: (value: LeaveSession) => void, options: LeaveSession[]) => (
     <div className="flex gap-1">
       {options.map(option => (
@@ -508,7 +561,7 @@ const CreateDialog: React.FC<{
             <p className="mb-2 text-[11px] font-black uppercase text-muted-foreground">1. Loại đơn</p>
             <div className="grid grid-cols-2 gap-2">
               {types.map(item => (
-                <button key={item.code} type="button" onClick={() => { setTypeCode(item.code); setSubtype(''); }}
+                <button key={item.code} type="button" onClick={() => { setTypeCode(item.code); setSubtype(''); setFiles([]); }}
                   className={`rounded-xl border p-2.5 text-left ${typeCode === item.code ? 'border-mint-500 bg-mint-50 dark:bg-mint-900/30' : 'border-border'}`}>
                   <p className="text-xs font-black text-foreground">{item.name}</p>
                   <p className="text-[10px] text-muted-foreground">{PAID_BY_LABEL[item.paidBy]}</p>
@@ -570,13 +623,16 @@ const CreateDialog: React.FC<{
               </div>
             )}
             {subtypes.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {subtypes.map(item => (
-                  <button key={item} type="button" onClick={() => setSubtype(item === subtype ? '' : item)}
-                    className={`rounded-full border px-3 py-1 text-[11px] font-bold ${subtype === item ? 'border-mint-500 bg-mint-50 text-mint-700 dark:bg-mint-900/30' : 'border-border text-muted-foreground'}`}>
-                    {item}
-                  </button>
-                ))}
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs font-bold text-muted-foreground">Lý do nghỉ</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {subtypes.map(item => (
+                    <button key={item.name} type="button" onClick={() => setSubtype(item.name === subtype ? '' : item.name)} aria-pressed={subtype === item.name}
+                      className={`rounded-full border px-3 py-1 text-[11px] font-bold ${subtype === item.name ? 'border-mint-500 bg-mint-50 text-mint-700 dark:bg-mint-900/30' : 'border-border text-muted-foreground'}`}>
+                      {item.name}{item.maxDays !== null && !isMinute ? <span className="font-normal"> · tối đa {item.maxDays.toLocaleString('vi-VN')} ngày</span> : null}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -587,6 +643,32 @@ const CreateDialog: React.FC<{
               placeholder={isMinute ? 'Ví dụ: đi xử lý hồ sơ tại sở xây dựng' : 'Ví dụ: về quê có việc gia đình'}
               className="w-full resize-none rounded-xl border border-border bg-card px-3 py-2 text-sm" />
           </div>
+
+          {!isMinute && (
+            <div>
+              <p className="mb-2 text-[11px] font-black uppercase text-muted-foreground">
+                4. Giấy tờ {type?.requiresAttachment ? <span className="text-rose-600">(bắt buộc)</span> : <span className="font-bold normal-case">(không bắt buộc)</span>}
+              </p>
+              {type?.requiresAttachment && type.attachmentHint && <p className="mb-2 text-xs text-foreground">{type.attachmentHint}</p>}
+              {files.length > 0 && (
+                <ul className="mb-2 space-y-1">
+                  {files.map((file, index) => (
+                    <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-xl bg-muted/60 px-3 py-1.5 text-xs">
+                      <FileText size={13} className="shrink-0 text-mint-600" /><span className="min-w-0 flex-1 truncate">{file.name}</span>
+                      <button type="button" onClick={() => setFiles(current => current.filter((_, i) => i !== index))} aria-label={`Bỏ ${file.name}`}
+                        className="rounded p-0.5 text-muted-foreground hover:text-rose-600"><X size={13} /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {files.length < LEAVE_MAX_ATTACHMENTS && (
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-dashed border-mint-400 px-3 py-2 text-xs font-bold text-mint-700 hover:bg-mint-50 dark:text-mint-300 dark:hover:bg-mint-900/20">
+                  <Paperclip size={14} /> Chụp ảnh / chọn file
+                  <input type="file" accept="image/*,application/pdf" multiple className="sr-only" onChange={event => { addFiles(event.target.files); event.target.value = ''; }} />
+                </label>
+              )}
+            </div>
+          )}
 
           <div className="rounded-2xl border border-border bg-muted/40 p-3">
             {previewError ? (
@@ -613,6 +695,7 @@ const CreateDialog: React.FC<{
                     </React.Fragment>
                   ))}
                 </div>
+                {reasonProblem && subtype && <p className="flex items-start gap-1 font-bold text-rose-600"><AlertTriangle size={12} className="mt-0.5 shrink-0" />{reasonProblem}</p>}
                 {preview.problems.map(problem => (
                   <p key={problem} className="flex items-start gap-1 font-bold text-rose-600"><AlertTriangle size={12} className="mt-0.5 shrink-0" />{problem}</p>
                 ))}
@@ -621,10 +704,8 @@ const CreateDialog: React.FC<{
           </div>
         </div>
         <div className="border-t border-border p-4">
-          {preview && preview.problems.length === 0 && blocked && (
-            <p className="mb-2 text-xs font-bold text-muted-foreground">
-              {typeCode === 'late_early' && !subtype ? 'Chọn đi muộn, về sớm hoặc ra ngoài trong giờ.' : 'Nhập lý do để gửi đơn.'}
-            </p>
+          {preview && preview.problems.length === 0 && missing.length > 0 && (
+            <p className="mb-2 text-xs font-bold text-muted-foreground">Còn thiếu: {missing.join(', ')}.</p>
           )}
           <div className="flex gap-2">
           <button type="button" onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted">Đóng</button>
@@ -635,111 +716,6 @@ const CreateDialog: React.FC<{
           </div>
         </div>
       </div>
-    </div>
-  );
-};
-
-const PolicyPanel: React.FC<{
-  settings: LeaveSettings | null;
-  types: LeaveTypeOption[];
-  users: Array<{ id: string; name: string }>;
-  canEdit: boolean;
-  onSaved: () => Promise<void>;
-}> = ({ settings, types, users, canEdit, onSaved }) => {
-  const toast = useToast();
-  const [draft, setDraft] = useState<LeaveSettings | null>(settings);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => setDraft(settings), [settings]);
-  if (!draft) return <p className="text-sm text-muted-foreground">Chưa có chính sách.</p>;
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await leaveService.saveSettings(draft);
-      toast.success('Đã lưu chính sách nghỉ');
-      await onSaved();
-    } catch (error) {
-      toast.error('Chưa lưu được', error instanceof Error ? error.message : 'Vui lòng thử lại.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleType = async (type: LeaveTypeOption) => {
-    try {
-      await leaveService.setTypeActive(type.code, !type.isActive);
-      toast.success(type.isActive ? `Đã tắt "${type.name}"` : `Đã bật "${type.name}"`);
-      await onSaved();
-    } catch (error) {
-      toast.error('Chưa cập nhật được', error instanceof Error ? error.message : 'Vui lòng thử lại.');
-    }
-  };
-
-  const field = 'mt-1 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm disabled:opacity-60';
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-border bg-card p-4">
-        <h3 className="text-sm font-black text-foreground">Quy tắc duyệt</h3>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Bước 1 tự xác định: nhân sự công trường → người duyệt của công trường; còn lại → quản lý trong sơ đồ tổ chức
-          (nếu chưa có thì quản lý trực tiếp của tài khoản, cuối cùng là phòng HCNS). Bước 2 thêm cho loại đơn có đánh dấu khi vượt ngưỡng ngày.
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-xs font-bold text-muted-foreground">Thêm bước 2 khi đơn dài hơn (ngày làm việc)
-            <input type="number" min={0} step={0.5} disabled={!canEdit} value={draft.secondStepThresholdDays}
-              onChange={event => setDraft({ ...draft, secondStepThresholdDays: Number(event.target.value) || 0 })} className={field} />
-          </label>
-          <label className="text-xs font-bold text-muted-foreground">Người duyệt bước 2
-            <select disabled={!canEdit} value={draft.secondStepApproverUserId || ''}
-              onChange={event => setDraft({ ...draft, secondStepApproverUserId: event.target.value || null })} className={field}>
-              <option value="">— Không có bước 2 —</option>
-              {users.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
-          <label className="text-xs font-bold text-muted-foreground">Tên bước 2
-            <input disabled={!canEdit} value={draft.secondStepLabel} onChange={event => setDraft({ ...draft, secondStepLabel: event.target.value })} className={field} />
-          </label>
-          <label className="text-xs font-bold text-muted-foreground">Đi muộn / về sớm tối đa mỗi lần (phút)
-            <input type="number" min={5} max={480} disabled={!canEdit} value={draft.lateEarlyMaxMinutes}
-              onChange={event => setDraft({ ...draft, lateEarlyMaxMinutes: Number(event.target.value) || 60 })} className={field} />
-          </label>
-          <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground sm:col-span-2">
-            <input type="checkbox" disabled={!canEdit} checked={draft.saturdayIsWorkday} onChange={event => setDraft({ ...draft, saturdayIsWorkday: event.target.checked })} />
-            Thứ Bảy là ngày làm việc (tính vào số ngày nghỉ)
-          </label>
-        </div>
-        {canEdit ? (
-          <button type="button" onClick={() => void save()} disabled={saving}
-            className="mt-3 rounded-xl bg-leaf-600 px-4 py-2 text-xs font-black text-white hover:bg-leaf-700 disabled:opacity-50">
-            {saving ? 'Đang lưu…' : 'Lưu chính sách'}
-          </button>
-        ) : <p className="mt-3 text-xs text-muted-foreground">Chỉ HR Manage được sửa.</p>}
-      </div>
-
-      <div className="rounded-2xl border border-border bg-card p-4">
-        <h3 className="mb-3 text-sm font-black text-foreground">Loại đơn</h3>
-        <div className="divide-y divide-border">
-          {types.filter(type => type.code !== 'other').map(type => (
-            <div key={type.code} className="flex items-center gap-3 py-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-foreground">{type.name}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {PAID_BY_LABEL[type.paidBy]}{type.deductsAnnual ? ' · trừ phép năm' : ''}{type.needsSecondStep ? ' · có bước 2 khi vượt ngưỡng' : ''}{type.unit === 'minute' ? ' · tính theo phút' : ''}
-                </p>
-              </div>
-              <span className={`rounded-lg px-2 py-1 text-[11px] font-black ${type.isActive ? 'bg-leaf-50 text-leaf-700 dark:bg-leaf-900/30 dark:text-leaf-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>
-                {type.isActive ? 'Đang dùng' : 'Đã tắt'}
-              </span>
-              {canEdit && (
-                <button type="button" onClick={() => void toggleType(type)} className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-muted">
-                  {type.isActive ? 'Tắt' : 'Bật'}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-      <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><Clock size={12} /> Phép năm cộng 1 ngày vào mùng 1 hằng tháng (trừ nhân sự thử việc). HR sửa trực tiếp số phép còn lại trong hồ sơ nhân sự.</p>
     </div>
   );
 };
