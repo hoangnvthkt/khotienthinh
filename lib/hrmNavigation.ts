@@ -19,6 +19,7 @@ const HRM_NAVIGATION_ITEMS = [
   { to: '/hrm/attendance', employeeLabel: 'Chấm công của tôi', hrLabel: 'Chấm công' },
   { to: '/hrm/shifts', employeeLabel: 'Ca làm việc', hrLabel: 'Ca làm việc' },
   { to: '/hrm/leave', employeeLabel: 'Nghỉ phép của tôi', hrLabel: 'Nghỉ phép' },
+  { to: '/hrm/assignments', employeeLabel: 'Điều động của tôi', hrLabel: 'Điều động công trường' },
   { to: '/hrm/payroll', employeeLabel: 'Bảng lương', hrLabel: 'Bảng lương' },
   { to: '/hrm/contracts', employeeLabel: 'Hợp đồng LĐ', hrLabel: 'Hợp đồng LĐ' },
   { to: '/hrm/documents', employeeLabel: 'Hồ sơ & Công văn', hrLabel: 'Hồ sơ & Công văn' },

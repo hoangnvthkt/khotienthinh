@@ -67,6 +67,10 @@ export const HRM_ROUTE_PERMISSION_REQUIREMENTS: Readonly<Record<string, RoutePer
     permissionCode: 'hrm.leave.view',
     scope: OWN_SCOPE,
   },
+  '/hrm/assignments': {
+    permissionCode: 'hrm.attendance.view',
+    scope: OWN_SCOPE,
+  },
   '/hrm/payroll': {
     permissionCode: 'hrm.payroll.view',
     scope: GLOBAL_SCOPE,

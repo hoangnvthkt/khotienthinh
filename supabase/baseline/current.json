@@ -242,6 +242,7 @@
     "20261008133500_procurement_group_po_multi_project.sql",
     "20261008133600_procurement_framework_contract_orders.sql",
     "20261008133700_procurement_close_need_ends_request.sql",
+    "20261008150000_hrm_h2_site_assignments.sql",
     "20261008133800_procurement_statement_self_post.sql"
   ],
   "forbidIncludeAll": true
