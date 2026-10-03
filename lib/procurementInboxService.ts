@@ -269,6 +269,8 @@ export type ProcurementPoPaymentState = 'none' | 'unpaid' | 'partial' | 'paid';
 export interface ProcurementPoPayment {
   status: ProcurementPoPaymentState; recognized: number; credit: number; paid: number; outstanding: number; inRequest: number;
   documents: number; nextDue: string | null; overdue: boolean;
+  /** Tạm ứng NCC của PO: đã chi, còn lại (chưa trừ), đang duyệt; phần đã trừ vào công nợ (nằm trong paid). */
+  advance?: number; advanceRemaining?: number; advancePending?: number; advanceOffset?: number;
 }
 export interface ProcurementOrderDetail {
   id: string; poNumber: string | null; status: string; stage: ProcurementOrderStage | 'other'; isHub: boolean; rowVersion: number;

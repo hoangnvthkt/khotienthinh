@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Banknote, CalendarClock, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank,
+  AlertTriangle, Banknote, CalendarClock, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank, Coins,
   ArrowLeftRight, ListTodo, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
 } from 'lucide-react';
-import { financeService, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
+import { financeService, type FinanceAdvances, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
+import { AdvancesView, type AdvanceFilter } from './AdvancesView';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
 import { DirectReceiptsView } from './DirectReceiptsView';
@@ -16,10 +17,10 @@ import { FinanceTodoView, type TodoTarget } from './FinanceTodoView';
 import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financeUi';
 
 // Module Tài chính: một nơi cho công nợ, chi tiền, dòng tiền toàn công ty — không phải vào từng dự án.
-// Tổng quan (Ban giám đốc), Việc cần làm (kế toán), Phải trả NCC, Thiết lập. Phải thu, Thu chi & quỹ, Chi phí & ngân sách mở ở đợt sau.
+// Tổng quan (Ban giám đốc), Việc cần làm (kế toán), Phải trả NCC (gồm tạm ứng NCC), Quản trị. Phải thu, Thu chi & quỹ, Chi phí & ngân sách mở ở đợt sau.
 
 type Section = 'auto' | 'overview' | 'todo' | 'payables' | 'settings';
-type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid';
+type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid' | 'advances';
 type Filter = 'all' | 'overdue' | 'soon' | 'issues' | 'opening';
 type Sort = 'overdue' | 'owed' | 'due' | 'name';
 
@@ -34,7 +35,9 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
   // Không chỉ định phần: Ban giám đốc (Tài chính — Quản trị) vào Tổng quan, kế toán vào Việc cần làm.
   const [section, setSection] = useState<Section>(initialSection === 'settings' || initialSection === 'overview' || initialSection === 'todo' ? initialSection
     : initialSection || initialSupplierId || initialRequestId ? 'payables' : 'auto');
-  const [stage, setStage] = useState<Stage>(initialSection === 'pending' ? 'pending' : initialSection === 'requests' ? 'request' : 'owed');
+  const [stage, setStage] = useState<Stage>(initialSection === 'pending' ? 'pending' : initialSection === 'requests' ? 'request' : initialSection === 'advances' ? 'advances' : 'owed');
+  const [advanceFilter, setAdvanceFilter] = useState<AdvanceFilter>('active');
+  const [advances, setAdvances] = useState<FinanceAdvances['totals'] | null>(null);
   const [requestCounts, setRequestCounts] = useState<{ request: number; approved: number; approvedAmount: number; paid: number; waitingMe: number } | null>(null);
   const [stageKey, setStageKey] = useState(0);
   const today = useMemo(() => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }), []);
@@ -71,6 +74,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       setSection(cur => (cur === 'auto' ? (r.can.manage ? 'overview' : 'todo') : cur));
       financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
       financeService.paymentRequests('request').then(d => setRequestCounts(d.counts)).catch(() => setRequestCounts(null));
+      financeService.advances().then(d => setAdvances(d.totals)).catch(() => setAdvances(null));
       financeService.directReceipts().then(d => setDirect({ count: d.receipts.length, amount: d.receipts.reduce((s, x) => s + x.value, 0), missing: d.receipts.filter(x => x.missingPrice > 0).length }))
         .catch(() => setDirect(null));
       setSel(cur => cur && r.suppliers.some(s => s.supplierId === cur) ? cur : cur || r.suppliers[0]?.supplierId || null);
@@ -99,8 +103,9 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
 
   const t = data?.totals;
   const hideOnMobile = mobileDetail ? 'hidden md:block' : '';
-  const openPayables = (opts: { stage?: Stage; filter?: Filter; projectId?: string; pending?: 'direct' | 'statements'; transfers?: boolean } = {}) => {
+  const openPayables = (opts: { stage?: Stage; filter?: Filter; projectId?: string; pending?: 'direct' | 'statements'; transfers?: boolean; advance?: AdvanceFilter } = {}) => {
     setSection('payables'); setStage(opts.stage || 'owed'); setFilter(opts.filter || 'all'); setShowTransfers(Boolean(opts.transfers));
+    if (opts.advance) { setAdvanceFilter(opts.advance); setStageKey(k => k + 1); }
     if (opts.pending) setPendingTab(opts.pending);
     if (opts.projectId !== undefined) setProjectId(opts.projectId);
     window.scrollTo({ top: 0 });
@@ -109,6 +114,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     if (k === 'opening' || k === 'overdue' || k === 'soon' || k === 'issues') openPayables({ filter: k });
     else if (k === 'direct' || k === 'statements') openPayables({ stage: 'pending', pending: k });
     else if (k === 'request' || k === 'approved') openPayables({ stage: k });
+    else if (k === 'advance_overdue' || k === 'advance_refund' || k === 'advance_adjust') openPayables({ stage: 'advances', advance: k === 'advance_overdue' ? 'overdue' : k === 'advance_refund' ? 'refund' : 'active' });
     else openPayables({ transfers: true });
   };
   return <main className="min-h-screen space-y-4 bg-slate-50 px-3 py-4 text-foreground dark:bg-slate-950 sm:px-5 md:py-5">
@@ -124,7 +130,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
 
     <nav className={`inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm ${mobileDetail ? 'hidden md:inline-flex' : ''}`} role="tablist" aria-label="Phần">
       {([['overview', 'Tổng quan', CircleDollarSign], ['todo', 'Việc cần làm', ListTodo], ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet],
-        ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['settings', 'Thiết lập', Settings2]] as const).map(([k, l, I]) => {
+        ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['settings', 'Quản trị', Settings2]] as const).map(([k, l, I]) => {
         const ready = k === 'payables' || k === 'settings' || k === 'todo' || k === 'overview';
         return <button key={k} type="button" role="tab" aria-selected={section === k} disabled={!ready} title={ready ? undefined : 'Sẽ mở ở các đợt sau (F4, F5)'}
           onClick={() => ready && setSection(k as Section)}
@@ -138,8 +144,9 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
         : !data || !t ? <StateBox kind="loading" title="Đang tải công nợ…" />
           : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} />
           : section === 'overview' ? <FinanceOverviewView openingPendingSuppliers={t.openingPendingSuppliers} supplierCount={t.supplierCount} directPending={direct}
-            onOpenPayables={projectId => openPayables({ projectId: projectId || '' })} onOpenPending={() => openPayables({ stage: 'pending', pending: 'direct' })} onOpenTodo={() => setSection('todo')} />
-          : section === 'todo' || section === 'auto' ? <FinanceTodoView totals={t} direct={direct} pendingStatements={data.pendingStatements} requests={requestCounts} transferCount={transferCount}
+            onOpenPayables={projectId => openPayables({ projectId: projectId || '' })} onOpenPending={() => openPayables({ stage: 'pending', pending: 'direct' })} onOpenTodo={() => setSection('todo')}
+            onOpenAdvances={f => openPayables({ stage: 'advances', advance: f })} />
+          : section === 'todo' || section === 'auto' ? <FinanceTodoView totals={t} direct={direct} pendingStatements={data.pendingStatements} requests={requestCounts} transferCount={transferCount} advances={advances}
             canRecord={data.can.record} canConfirm={data.can.confirm} onGo={goTodo} />
           : showTransfers ? <TransferReviewsView onBack={() => setShowTransfers(false)} onChanged={() => void load(true)} /> : <>
             {transferCount > 0 && <p className={`flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 ${hideOnMobile}`}>
@@ -153,21 +160,25 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
               <button type="button" onClick={() => setFilter('opening')} className={`${secondaryBtn} bg-card`}><ClipboardCheck size={15} />Xem NCC cần đối chiếu</button>
             </p>}
 
-            <nav aria-label="Các bước công nợ" className={`grid grid-cols-2 gap-2 md:grid-cols-5 ${mobileDetail ? 'hidden md:grid' : ''}`}>
+            <nav aria-label="Các bước công nợ" className={`grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6 ${mobileDetail ? 'hidden md:grid' : ''}`}>
               {([['pending', 'Chờ ghi nợ', direct ? String(data.pendingStatements.count + direct.count) : '…',
                   direct ? `${direct.count} phiếu nhập trực tiếp · ${data.pendingStatements.count} bảng đối soát` : 'đang đếm…', Inbox, true],
                 ['owed', 'Đang nợ', String(t.docCount), `${shortMoney(t.owed)} · ${t.supplierCount} NCC`, Banknote, true],
                 ['request', 'Đề nghị chi', requestCounts ? String(requestCounts.request) : '…', requestCounts?.waitingMe ? `${requestCounts.waitingMe} chờ bạn duyệt` : 'đang duyệt', FileCheck2, true],
                 ['approved', 'Chờ chi', requestCounts ? String(requestCounts.approved) : '…', requestCounts ? shortMoney(requestCounts.approvedAmount) : '', CalendarClock, true],
-                ['paid', 'Đã chi', requestCounts ? String(requestCounts.paid) : '…', 'có UNC, đảo được', Truck, true]] as const).map(([k, l, v, h, I, on], i) =>
+                ['paid', 'Đã chi', requestCounts ? String(requestCounts.paid) : '…', 'có UNC, đảo được', Truck, true],
+                ['advances', 'Tạm ứng NCC', advances ? shortMoney(advances.remaining) : '…', advances ? (advances.overdueCount + advances.refundDueCount > 0
+                  ? `${advances.overdueCount} quá hạn hoàn ứng · ${advances.refundDueCount} chờ hoàn` : `${advances.openCount} khoản còn lại · ${advances.approving} đang duyệt`) : 'đang tải…', Coins, true]] as const).map(([k, l, v, h, I, on], i) =>
                 <button key={k} type="button" disabled={!on} aria-current={stage === k ? 'page' : undefined} onClick={() => on && setStage(k as Stage)}
-                  className={`rounded-2xl border bg-card p-3 text-left transition ${stage === k ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${on ? '' : 'cursor-not-allowed opacity-50'} ${i === 0 ? 'col-span-2 md:col-span-1' : ''}`}>
-                  <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><span className="grid h-5 w-5 place-items-center rounded-full bg-muted text-[11px] font-bold text-foreground">{i + 1}</span>{l}</span>
+                  className={`rounded-2xl border bg-card p-3 text-left transition ${stage === k ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${on ? '' : 'cursor-not-allowed opacity-50'} ${i === 0 || k === 'advances' ? 'col-span-2 md:col-span-1' : ''} ${k === 'advances' ? 'border-dashed' : ''}`}>
+                  <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{k === 'advances' ? <HandCoins size={15} className="text-teal-700" />
+                    : <span className="grid h-5 w-5 place-items-center rounded-full bg-muted text-[11px] font-bold text-foreground">{i + 1}</span>}{l}</span>
                   <span className="mt-1.5 flex items-center gap-2"><I size={17} className="text-teal-700" /><span className={`text-2xl font-bold tabular-nums ${k === 'pending' && Number(v) > 0 ? 'text-amber-700' : ''}`}>{v}</span></span>
-                  <span className={`block text-xs ${k === 'request' && requestCounts?.waitingMe ? 'font-semibold text-amber-700' : 'text-muted-foreground'}`}>{h}</span></button>)}
+                  <span className={`block text-xs ${(k === 'request' && requestCounts?.waitingMe) || (k === 'advances' && advances && advances.overdueCount + advances.refundDueCount > 0) ? 'font-semibold text-amber-700' : 'text-muted-foreground'}`}>{h}</span></button>)}
             </nav>
 
-            {stage === 'request' || stage === 'approved' || stage === 'paid'
+            {stage === 'advances' ? <AdvancesView key={`adv:${stageKey}`} initialFilter={advanceFilter} onChanged={() => void load(true)} onOpenRequests={() => setStage('request')} />
+              : stage === 'request' || stage === 'approved' || stage === 'paid'
               ? <PaymentRequestsView key={`${stage}:${stageKey}`} stage={stage} today={today} initialRequestId={initialRequestId} onChanged={() => { void load(true); setStageKey(k => k + 1); }} />
               : stage === 'pending' ? <div className="space-y-3">
               <div role="tablist" aria-label="Nguồn chờ ghi nợ" className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm">
@@ -223,7 +234,8 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                     </button></li>; })}
                 </ul>
                 <div className={`min-w-0 ${mobileDetail ? '' : 'hidden md:block'}`}>
-                  {sel ? <SupplierPanel key={`${sel}:${panelKey}`} supplierId={sel} onBack={() => setMobileDetail(false)} onChanged={() => void load(true)} />
+                  {sel ? <SupplierPanel key={`${sel}:${panelKey}`} supplierId={sel} onBack={() => setMobileDetail(false)} onChanged={() => void load(true)}
+                    onOpenAdvances={() => openPayables({ stage: 'advances', advance: 'active' })} />
                     : <StateBox kind="empty" title="Chọn một NCC" message="Chọn NCC ở danh sách để xem chứng từ, nguồn gốc và các khoản chi." />}
                 </div>
               </div>

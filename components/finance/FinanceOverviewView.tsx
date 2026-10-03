@@ -123,6 +123,7 @@ const ProjectHealth: React.FC<{ p: FinanceOverviewProject; today: string; onBack
             <div key={l} className="rounded-xl bg-muted/50 p-2"><dt className="text-xs text-muted-foreground">{l}</dt><dd className={`font-bold tabular-nums ${v > 0 ? cls : ''}`}>{shortMoney(v)}</dd></div>)}
         </dl>
         <p className="mt-2 text-xs text-muted-foreground">{p.payable.docs} chứng từ đang mở. Quá hạn là tạm tính khi NCC chưa chốt đối chiếu đầu kỳ.</p>
+        {p.supplierAdvance ? <p className="mt-1 text-xs text-muted-foreground">Đã tạm ứng NCC còn lại <b className="text-foreground">{shortMoney(p.supplierAdvance)}</b> (đã chi, sẽ trừ vào công nợ khi kho nhận hàng) — phải trả ròng {shortMoney(Math.max(0, p.payable.outstanding - p.supplierAdvance))}.</p> : null}
         <button type="button" onClick={() => onOpenPayables(p.id)} className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-teal-700 dark:text-teal-300">Mở Phải trả của dự án<ChevronRight size={15} /></button></Card>
     </div>
   </div>;
@@ -134,7 +135,8 @@ const ProjectHealth: React.FC<{ p: FinanceOverviewProject; today: string; onBack
 export const FinanceOverviewView: React.FC<{
   openingPendingSuppliers: number; supplierCount: number; directPending: { count: number; amount: number; missing: number } | null;
   onOpenPayables: (projectId?: string) => void; onOpenPending: () => void; onOpenTodo: () => void;
-}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo }) => {
+  onOpenAdvances?: (filter: 'overdue' | 'refund' | 'active') => void;
+}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances }) => {
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('all');
@@ -174,6 +176,10 @@ export const FinanceOverviewView: React.FC<{
   if (directPending && directPending.count > 0) alerts.push({ tone: 'amber', title: `${shortMoney(directPending.amount)} phiếu nhập trực tiếp chưa ghi nợ`, text: `${directPending.count} phiếu chờ kế toán kiểm giá + VAT${directPending.missing ? ` (${directPending.missing} phiếu thiếu giá)` : ''} — chi phí dự án đang ghi thiếu tương ứng.`, onClick: onOpenPending });
   if (openingPendingSuppliers > 0) alerts.push({ tone: 'amber', title: `${openingPendingSuppliers}/${supplierCount} NCC chưa đối chiếu đầu kỳ`, text: 'Số nợ quá hạn chỉ là tạm tính — có thể kế toán đã trả ngoài hệ thống.', onClick: () => onOpenPayables() });
   const advanceTotal = data.projects.reduce((s, p) => s + (p.advanceReceived || 0), 0);
+  const adv = data.advances;
+  if (adv && adv.overdueCount > 0) alerts.push({ tone: 'rose', title: `${shortMoney(adv.overdue)} tạm ứng NCC quá hạn hoàn ứng`, text: `${adv.overdueCount} khoản đã chi nhưng NCC chưa giao hàng để trừ — cần đôn đốc hoặc thu hồi.`, onClick: () => onOpenAdvances?.('overdue') });
+  if (adv && adv.refundDueCount > 0) alerts.push({ tone: 'amber', title: `${shortMoney(adv.refundDue)} tạm ứng NCC chờ hoàn`, text: `${adv.refundDueCount} khoản: đơn đã kết thúc mà còn tạm ứng — thu hồi tiền hoặc chuyển đơn.`, onClick: () => onOpenAdvances?.('refund') });
+  if (adv && adv.remaining > 0 && !adv.overdueCount && !adv.refundDueCount) alerts.push({ tone: 'teal', title: `Đã tạm ứng NCC ${shortMoney(adv.remaining)}`, text: 'Tiền đã ra, sẽ trừ vào công nợ khi kho nhận hàng của các đơn.', onClick: () => onOpenAdvances?.('active') });
   if (advanceTotal > 0) alerts.push({ tone: 'teal', title: `Tạm ứng chủ đầu tư ${ty(advanceTotal)}`, text: 'Tiền dương một phần nhờ tạm ứng; sẽ bị khấu trừ dần qua các đợt nghiệm thu.' });
   data.projects.filter(p => !p.received && !p.cost && p.contractValue).forEach(p => alerts.push({ tone: 'slate', title: `${p.code}: HĐ ${ty(p.contractValue)} chưa phát sinh thu chi`, text: 'Chưa có giao dịch nào trong Vioo.', onClick: () => setOpen(p.id) }));
   const ALERT_CLS = { amber: 'border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/30', rose: 'border-rose-200 bg-rose-50/70 dark:border-rose-900 dark:bg-rose-950/30',

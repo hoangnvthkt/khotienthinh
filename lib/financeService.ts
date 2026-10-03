@@ -34,6 +34,8 @@ export interface FinancePayment {
   note: string | null; attachments: FinanceAttachment[]; createdBy: string | null; createdByName: string | null; createdAt: string;
   paidByName: string | null; paidAt: string | null; rejection: { reason: string; byName: string; at: string } | null; reversal: string | null;
   allocations: Array<{ documentId: string; documentNo: string; amount: number }> | null;
+  /** 'advance' = phiếu chi tạm ứng; phân bổ là các lần cấn trừ vào chứng từ. */
+  kind?: string; requestCode?: string | null;
 }
 export interface FinanceOpening {
   id: string; projectId: string; projectCode: string | null; status: 'draft' | 'submitted' | 'confirmed' | 'rejected' | 'cancelled';
@@ -63,7 +65,7 @@ export interface FinanceDirectReceipt {
 }
 export interface FinanceDirectReceipts { receipts: FinanceDirectReceipt[]; returned: FinanceDirectReceipt[]; can: { record: boolean } }
 export type FinanceRequestStatus = 'pending' | 'returned' | 'approved' | 'paid' | 'rejected' | 'withdrawn' | 'cancelled' | 'reversed';
-export interface FinanceRouteStep { label: string; approverIds: string[]; eligibleIds: string[]; approverNames: string[]; eligibleNames: string[] }
+export interface FinanceRouteStep { label: string; approverIds: string[]; eligibleIds: string[]; approverNames: string[]; eligibleNames: string[]; extra?: boolean }
 export interface FinanceRoutePreview {
   route: { versionId: string; tierNo: number; amount: number; priorAmount: number; priorRequests: Array<{ code: string; amount: number; status: string }>;
     thresholdAmount: number; steps: FinanceRouteStep[]; handlerNames: string[]; problemStep: string | null };
@@ -79,6 +81,10 @@ export interface FinancePaymentRequest {
   lines: Array<{ documentId: string; documentNo: string; code: string; sourceType: string; projectId: string | null; projectCode: string | null; amount: number; outstandingSnapshot: number; dueDate: string | null }>;
   steps: Array<{ submissionNo: number; stepNo: number | null; label: string; action: string; actorName: string | null; reason: string | null; at: string }>;
   canApprove: boolean; canWithdraw: boolean; canResubmit: boolean; canCancel: boolean; canConfirm: boolean; canReverse: boolean;
+  /** 'advance' = đề nghị tạm ứng NCC (không có chứng từ; gắn PO hoặc HĐ nguyên tắc). */
+  kind?: 'payable' | 'advance';
+  advance?: { purchaseOrderId: string | null; poNumber: string | null; contractId: string | null; contractCode: string | null; projectId: string | null;
+    projectCode: string | null; base: number | null; percent: number | null; repayDueDate: string; offset: number } | null;
 }
 export interface FinancePaymentRequests {
   counts: { request: number; approved: number; approvedAmount: number; paid: number; waitingMe: number };
@@ -92,7 +98,10 @@ export interface FinancePendingStatement {
 export interface FinanceApprovalStep { label: string; approvers: Array<{ id: string; name: string; active: boolean }> }
 export interface FinanceSettings {
   can: FinanceCan;
-  settings: { defaultPaymentDays: number; cutoverDate: string; rowVersion: number; updatedAt: string; updatedByName: string | null };
+  settings: { defaultPaymentDays: number; cutoverDate: string; rowVersion: number; updatedAt: string; updatedByName: string | null;
+    advanceWarnPercent: number; advanceExtraPercent: number; advanceExtraApproverIds: string[]; advanceGraceDays: number };
+  /** Ai đang giữ từng quyền Tài chính (Admin luôn có đủ). */
+  responsibilities: Record<'view' | 'record' | 'confirm' | 'manage', Array<{ id: string; name: string; admin: boolean }>>;
   matrix: { id: string; versionNo: number; note: string | null; createdAt: string; createdByName: string | null;
     rules: Array<{ tierNo: number; minAmount: number; maxAmount: number | null; steps: FinanceApprovalStep[] }> };
   versions: Array<{ versionNo: number; note: string | null; createdAt: string; createdByName: string | null; current: boolean }>;
@@ -160,7 +169,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_NOT_APPROVER: 'Bạn không phải người duyệt bước này (hoặc đã duyệt bước trước / là người lập / đã xử lý chứng từ).',
   FINANCE_REQUEST_STATE: 'Đề nghị chi đã đổi trạng thái. Tải lại.',
   FINANCE_REQUEST_NOT_FOUND: 'Đề nghị chi không còn. Tải lại.',
-  FINANCE_MATRIX_MISSING: 'Chưa có ma trận duyệt chi hiện hành — Quản trị Tài chính cấu hình ở Thiết lập.',
+  FINANCE_MATRIX_MISSING: 'Chưa có ma trận duyệt chi hiện hành — Quản trị Tài chính cấu hình ở Quản trị.',
   FINANCE_DOCUMENT_NOT_FOUND: 'Chứng từ không còn. Tải lại.',
   FINANCE_DOCUMENT_HAS_PAYMENTS: 'Chứng từ đã có khoản chi (hoặc đang chờ xác nhận) — không hủy được.',
   FINANCE_ADJUSTMENT_PENDING: 'Chứng từ đang có đề xuất hủy chờ xác nhận.',
@@ -177,6 +186,23 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_DELEGATION_INVALID: 'Ủy quyền chưa hợp lệ (người nhận khác người ủy quyền, ngày kết thúc không trước ngày bắt đầu).',
   FINANCE_DELEGATION_STATE: 'Ủy quyền đã được thu hồi.',
   FINANCE_ACTION_INVALID: 'Thao tác không hợp lệ.',
+  FINANCE_ADVANCE_TARGET_REQUIRED: 'Chọn đơn hàng hoặc hợp đồng nguyên tắc để gắn tạm ứng.',
+  FINANCE_ADVANCE_TARGET_SCOPE: 'Đơn hàng / hợp đồng không thuộc NCC này.',
+  FINANCE_ADVANCE_TARGET_CLOSED: 'Đơn hàng / hợp đồng đã kết thúc (giao đủ, hủy hoặc hết hạn) — không tạm ứng thêm.',
+  FINANCE_ADVANCE_CONTRACT_ORDER: 'Đơn gọi hàng theo HĐ nguyên tắc: tạm ứng theo hợp đồng (chọn "Theo HĐ nguyên tắc").',
+  FINANCE_ADVANCE_OVER_ORDER: 'Tổng tạm ứng của đơn vượt giá trị đơn (gồm VAT).',
+  FINANCE_ADVANCE_DUE_INVALID: 'Chọn hạn hoàn ứng từ hôm nay trở đi.',
+  FINANCE_ADVANCE_STATE: 'Tạm ứng đã đổi trạng thái (chưa chi, đã đảo hoặc đã hết). Tải lại.',
+  FINANCE_ADVANCE_DOCUMENT_SCOPE: 'Chứng từ không cùng NCC, dự án hoặc đơn / HĐ với tạm ứng.',
+  FINANCE_ADVANCE_OVER: 'Số tiền lớn hơn tạm ứng còn lại hoặc phần còn nợ của chứng từ.',
+  FINANCE_ADVANCE_OFFSET_STATE: 'Lần cấn trừ này đã được hoàn tác. Tải lại.',
+  FINANCE_ADVANCE_HAS_OFFSETS: 'Tạm ứng đã cấn trừ vào công nợ — hoàn tác cấn trừ trước khi đảo phiếu chi.',
+  FINANCE_ADVANCE_HAS_ADJUSTMENTS: 'Tạm ứng có phiếu hoàn / chuyển đang chờ hoặc đã xác nhận — xử lý trước khi đảo phiếu chi.',
+  FINANCE_ADVANCE_ADJUSTMENT_PENDING: 'Tạm ứng đang có phiếu hoàn / chuyển chờ xác nhận — xử lý xong rồi lập tiếp.',
+  FINANCE_ADVANCE_TRANSFER_SCOPE: 'Chỉ chuyển sang đơn khác của cùng NCC, cùng dự án (không phải đơn theo HĐ nguyên tắc).',
+  FINANCE_ADVANCE_TRANSFER_PO_ONLY: 'Chỉ chuyển được tạm ứng gắn đơn hàng.',
+  FINANCE_ADVANCE_SETTINGS_INVALID: 'Thông số chưa hợp lệ: ngưỡng cảnh báo ≤ ngưỡng duyệt thêm ≤ 100%, số ngày 0–365, người duyệt đang làm việc.',
+  FINANCE_ADVANCE_EXTRA_APPROVER_REQUIRED: 'Chọn ít nhất một người duyệt tạm ứng vượt ngưỡng.',
   ROW_VERSION_CONFLICT: 'Dữ liệu vừa được người khác cập nhật. Tải lại rồi thử lại.',
   PROCUREMENT_STATEMENT_POST_DENIED: 'Bạn chưa có quyền ghi công nợ cho dự án này.',
   PROCUREMENT_STATEMENT_SELF_POST: 'Người ghi công nợ phải khác người chốt bảng đối soát.',
@@ -209,11 +235,66 @@ export interface FinanceOverviewProject {
   months: Array<{ month: string; in: number | null; out: number | null }>;
   materialBudget: number | null;
   payable: { outstanding: number; overdue: number; soon: number; docs: number };
+  /** Tạm ứng NCC còn lại (đã chi, chưa cấn trừ / hoàn); null = không có. */
+  supplierAdvance?: number | null;
   receivables: Array<{ description: string; amount: number; paidAmount: number | null; dueDate: string | null; paidDate: string | null; status: string; advance: boolean }>;
 }
 export interface FinanceOverview {
   canOverview: boolean; today: string; projects: FinanceOverviewProject[];
   companyPayable?: { outstanding: number; docs: number };
+  advances?: { remaining: number; overdue: number; overdueCount: number; refundDue: number; refundDueCount: number } | null;
+}
+
+export type FinanceAdvanceState = 'approving' | 'to_pay' | 'open' | 'refund_due' | 'settled' | 'reversed' | 'closed';
+export interface FinanceAdvanceAdjustment {
+  id: string; kind: 'refund' | 'transfer'; amount: number; status: 'submitted' | 'confirmed' | 'rejected' | 'withdrawn' | 'reversed';
+  targetPoNumber: string | null; sourcePoNumber: string | null; paymentDate: string | null; documentRef: string | null; attachments: FinanceAttachment[];
+  reason: string; createdBy: string; createdByName: string | null; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null;
+  canDecide: boolean; canWithdraw: boolean; canReverse: boolean;
+}
+export interface FinanceAdvance {
+  id: string; code: string; status: FinanceRequestStatus; state: FinanceAdvanceState; supplierId: string; supplierName: string;
+  projectId: string | null; projectCode: string | null; purchaseOrderId: string | null; supplierContractId: string | null;
+  target: { kind: 'po' | 'contract'; no: string; status: string | null; expectedDate: string | null; base: number | null; received: number | null } | null;
+  amount: number; percent: number | null; base: number | null; offset: number; refunded: number; remaining: number;
+  repayDueDate: string; overdue: boolean; note: string | null; createdByName: string | null; createdAt: string; rowVersion: number;
+  paid: { paymentDate: string; documentRef: string; byName: string | null; attachments: FinanceAttachment[]; reversal: { reason: string; byName: string | null; at: string } | null } | null;
+  currentStepLabel: string | null;
+  offsets: Array<{ id: string; documentId: string; documentNo: string; amount: number; released: number; mode: 'auto' | 'manual'; status: 'active' | 'released';
+    at: string; byName: string | null; releasedAt: string | null; releasedByName: string | null; releaseKind: 'manual' | 'return' | 'document_cancel' | null; releaseReason: string | null }>;
+  adjustments: FinanceAdvanceAdjustment[];
+  candidates: Array<{ documentId: string; documentNo: string; documentDate: string; available: number }>;
+  transferTargets: Array<{ id: string; poNumber: string; expectedDate: string | null; base: number }>;
+  canAct: boolean; canRelease: boolean;
+}
+export interface FinanceAdvances {
+  today: string; can: FinanceCan; currentUserId: string;
+  totals: { remaining: number; openCount: number; overdue: number; overdueCount: number; refundDue: number; refundDueCount: number;
+    approving: number; approvingAmount: number; adjustmentsWaiting: number; adjustmentsWaitingMe: number };
+  advances: FinanceAdvance[];
+}
+export interface FinanceAdvanceOrder {
+  id: string; poNumber: string; status: string; projectId: string | null; projectCode: string | null; expectedDate: string | null; vatRate: number | null;
+  base: number; received: number; advanced: number; items: string | null;
+}
+export interface FinanceAdvanceOptions {
+  today: string; can: FinanceCan;
+  settings: { warnPercent: number; extraPercent: number; graceDays: number };
+  supplier: { id: string; name: string; bankName: string | null; bankAccount: string | null; internal: boolean };
+  orders: FinanceAdvanceOrder[];
+  contracts: Array<{ id: string; code: string; name: string; status: string | null; value: number | null; expiryDate: string | null; projectId: string | null }>;
+  projects: Array<{ id: string; code: string | null; name: string | null }>;
+}
+export interface FinanceAdvanceSupplier { id: string; name: string; hasBank: boolean; orders: number; value: number }
+export interface FinanceAdvancePreview {
+  route: FinanceRoutePreview['route'] & { percent: number | null; warnPercent: number; extraPercent: number; extraCovered?: boolean };
+  target: { base: number | null; received: number | null; other: number; poNumber: string | null; contractCode: string | null; expectedDate: string | null;
+    projectId: string | null; available: number | null };
+  bank: { bankName: string | null; account: string } | null; internal: boolean; canRecord: boolean;
+}
+export interface FinanceAdvanceInput {
+  requestId?: string; expectedRowVersion?: number; supplierId: string; purchaseOrderId?: string | null; contractId?: string | null; projectId?: string | null;
+  amount: number; repayDueDate: string; method: 'bank_transfer' | 'cash'; plannedDate: string; note: string;
 }
 
 export const financeService = {
@@ -244,6 +325,25 @@ export const financeService = {
   },
   reversePaymentRequest(input: { requestId: string; expectedRowVersion: number; reason: string }) {
     return call<{ status: FinanceRequestStatus }>('reverse_finance_payment_request_v1', { p_input: input });
+  },
+  advances(supplierId?: string) { return call<FinanceAdvances>('list_finance_advances_v1', { p_filter: supplierId ? { supplierId } : {} }); },
+  advanceSuppliers() { return call<{ suppliers: FinanceAdvanceSupplier[] }>('get_finance_advance_options_v1', { p_supplier_id: null }); },
+  advanceOptions(supplierId: string) { return call<FinanceAdvanceOptions>('get_finance_advance_options_v1', { p_supplier_id: supplierId }); },
+  previewAdvance(input: { supplierId: string; requestId?: string; purchaseOrderId?: string | null; contractId?: string | null; projectId?: string | null; amount: number }) {
+    return call<FinanceAdvancePreview>('preview_finance_advance_v1', { p_input: input });
+  },
+  saveAdvance(input: FinanceAdvanceInput) { return call<{ requestId: string; code: string; amount: number }>('save_finance_advance_request_v1', { p_input: input }); },
+  releaseAdvanceOffset(input: { offsetId: string; reason: string }) { return call<{ released: number }>('release_finance_advance_offset_v1', { p_input: input }); },
+  applyAdvanceOffset(input: { requestId: string; documentId: string; amount: number }) { return call<{ amount: number }>('apply_finance_advance_offset_v1', { p_input: input }); },
+  saveAdvanceAdjustment(input: { requestId: string; kind: 'refund' | 'transfer'; reason: string; amount?: number; paymentDate?: string; documentRef?: string;
+    attachments?: FinanceAttachment[]; targetPurchaseOrderId?: string }) {
+    return call<{ adjustmentId: string }>('save_finance_advance_adjustment_v1', { p_input: input });
+  },
+  decideAdvanceAdjustment(input: { adjustmentId: string; action: 'confirm' | 'reject' | 'withdraw' | 'reverse'; reason?: string }) {
+    return call<{ adjustmentId: string }>('decide_finance_advance_adjustment_v1', { p_input: input });
+  },
+  saveAdvanceSettings(input: { warnPercent: number; extraPercent: number; graceDays: number; extraApproverIds: string[]; expectedRowVersion: number; reason: string }) {
+    return call<{ ok: boolean }>('save_finance_advance_settings_v1', { p_input: input });
   },
   pendingStatements() { return call<FinancePendingStatement[]>('list_finance_pending_statements_v1', {}); },
   postStatement(input: { statementId: string; action: 'post' | 'return'; reason?: string }) {
@@ -336,5 +436,10 @@ export const EVENT_LABELS: Record<string, string> = {
   payment_request_submit: 'Lập / gửi đề nghị chi', payment_request_approve: 'Duyệt đề nghị chi', payment_request_return: 'Trả lại đề nghị chi',
   payment_request_reject: 'Từ chối đề nghị chi', payment_request_withdraw: 'Rút đề nghị chi', payment_request_cancel: 'Hủy đề nghị chi đã duyệt',
   payment_request_paid: 'Xác nhận đã chi', payment_request_reverse: 'Đảo phiếu chi',
+  advance_submit: 'Lập đề nghị tạm ứng', advance_paid: 'Chi tạm ứng', advance_offset: 'Cấn trừ tạm ứng vào công nợ', advance_release: 'Hoàn tác cấn trừ tạm ứng',
+  advance_refund_submit: 'Ghi NCC hoàn tạm ứng', advance_refund_confirm: 'Xác nhận NCC hoàn tạm ứng', advance_refund_reject: 'Từ chối phiếu hoàn tạm ứng',
+  advance_refund_withdraw: 'Rút phiếu hoàn tạm ứng', advance_refund_reverse: 'Đảo phiếu thu hoàn tạm ứng',
+  advance_transfer_submit: 'Đề nghị chuyển tạm ứng sang đơn khác', advance_transfer_confirm: 'Xác nhận chuyển tạm ứng', advance_transfer_reject: 'Từ chối chuyển tạm ứng',
+  advance_transfer_withdraw: 'Rút đề nghị chuyển tạm ứng', advance_offset_failed: 'Cấn trừ tạm ứng tự động không được — cần cấn tay', advance_settings_save: 'Đổi thông số tạm ứng',
   direct_receipt_post: 'Ghi nợ phiếu nhập trực tiếp', direct_receipt_return: 'Trả lại phiếu nhập cho kho', direct_receipt_cancel: 'Kho hủy phiếu nhập — hủy công nợ',
 };
