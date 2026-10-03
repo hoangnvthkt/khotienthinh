@@ -158,6 +158,11 @@ const Operations: React.FC = () => {
     if (location.state?.tab) {
       setActiveTab(location.state.tab);
     }
+    // Mở từ màn Tồn kho (V1): điền sẵn kho và vật tư cho phiếu chuyển kho.
+    if (location.state?.tab === TransactionType.TRANSFER && location.state?.prefillItemId) {
+      if (location.state.warehouseId) setSelectedWarehouseId(location.state.warehouseId);
+      setTxItems([{ itemId: location.state.prefillItemId, quantity: 0, price: 0 }]);
+    }
   }, [location.state]);
 
   useEffect(() => {
@@ -898,7 +903,7 @@ const Operations: React.FC = () => {
           {activeTab === 'RECONCILE' ? (
             <ReceiptReconciliationView currentUserId={user.id} />
           ) : activeTab === 'MATERIAL_ISSUE' ? (
-            <MaterialIssuePanel />
+            <MaterialIssuePanel defaultSourceWarehouseId={location.state?.warehouseId || null} initialItemId={location.state?.prefillItemId || null} />
           ) : activeTab === 'PENDING' ? (
             <div className="space-y-6">
               {/* SUB-NAVIGATION CHO QUẢN LÝ PHIẾU */}

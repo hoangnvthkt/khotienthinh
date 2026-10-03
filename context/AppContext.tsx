@@ -293,6 +293,8 @@ const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   supplierId: i.supplier_id,
   imageUrl: i.image_url,
   stockByWarehouse: i.stock_by_warehouse || {},
+  status: i.status === 'retired' ? 'retired' : 'active',
+  inventoryMode: i.inventory_mode || 'stock',
 });
 
 const INVENTORY_FETCH_PAGE_SIZE = 1000;
@@ -639,7 +641,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           priceIn: i.price_in, priceOut: i.price_out, minStock: i.min_stock, defaultLeadTimeDays: i.default_lead_time_days ?? 7,
           supplierId: i.supplier_id, imageUrl: i.image_url, stockByWarehouse: i.stock_by_warehouse,
           purchaseUnit: i.purchase_unit ?? undefined,
-          purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1)
+          purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1),
+          status: i.status === 'retired' ? 'retired' : 'active',
+          inventoryMode: i.inventory_mode || 'stock',
         };
         setItems(prev => {
           const exists = prev.find(item => item.id === mapped.id);
