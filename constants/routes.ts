@@ -31,6 +31,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/hrm/attendance':  'HRM',
   '/hrm/shifts':      'HRM',
   '/hrm/leave':       'HRM',
+  '/hrm/timesheet':   'HRM',
   '/hrm/assignments': 'HRM',
   '/hrm/payroll':     'HRM',
   '/hrm/contracts':   'HRM',

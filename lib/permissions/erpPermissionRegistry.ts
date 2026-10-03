@@ -194,7 +194,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['assign', 'Phân bổ nhân sự', 30, ['global', 'org_unit']],
         ['set_manager', 'Đặt quản lý đơn vị', 40, ['global', 'org_unit']],
       ])),
-      module('hrm.attendance', 'Chấm công', 'HRM', ['/hrm/checkin', '/hrm/attendance', '/hrm/assignments'], 20, actions('hrm.attendance', 'HRM', '/hrm/attendance', HRM_SCOPE, [
+      module('hrm.attendance', 'Chấm công', 'HRM', ['/hrm/checkin', '/hrm/attendance', '/hrm/assignments', '/hrm/timesheet'], 20, actions('hrm.attendance', 'HRM', '/hrm/attendance', HRM_SCOPE, [
         ['view', 'Xem', 10],
         ['edit', 'Sửa', 20],
         ['approve', 'Duyệt/chốt công', 30, ['global', 'org_unit', 'direct_reports', 'assigned']],

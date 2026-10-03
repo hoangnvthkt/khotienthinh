@@ -17,6 +17,7 @@ const HRM_NAVIGATION_ITEMS = [
   { to: '/hrm/employees', employeeLabel: 'Danh bạ nhân sự', hrLabel: 'Hồ sơ nhân sự' },
   { to: '/hrm/checkin', employeeLabel: 'Check-in / Check-out', hrLabel: 'Check-in / Check-out' },
   { to: '/hrm/attendance', employeeLabel: 'Chấm công của tôi', hrLabel: 'Chấm công' },
+  { to: '/hrm/timesheet', employeeLabel: 'Công tháng của tôi', hrLabel: 'Chốt công' },
   { to: '/hrm/shifts', employeeLabel: 'Ca làm việc', hrLabel: 'Ca làm việc' },
   { to: '/hrm/leave', employeeLabel: 'Nghỉ phép của tôi', hrLabel: 'Nghỉ phép' },
   { to: '/hrm/assignments', employeeLabel: 'Điều động của tôi', hrLabel: 'Điều động công trường' },

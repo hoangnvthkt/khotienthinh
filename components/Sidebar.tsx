@@ -8,7 +8,7 @@ import {
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
-  Calendar, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
+  Calendar, CalendarCheck, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
   IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -76,6 +76,7 @@ const HRM_NAV_ICONS: Record<string, LucideIcon> = {
   '/hrm/attendance': Calendar,
   '/hrm/shifts': Clock,
   '/hrm/leave': CalendarOff,
+  '/hrm/timesheet': CalendarCheck,
   '/hrm/assignments': HardHat,
   '/hrm/payroll': DollarSign,
   '/hrm/contracts': FileSignature,

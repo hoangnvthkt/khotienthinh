@@ -57,6 +57,7 @@ const SafetyCardLookup = React.lazy(() => import('./pages/SafetyCardLookup'));
 const Employees = React.lazy(() => import('./pages/hrm/Employees'));
 const Attendance = React.lazy(() => import('./pages/hrm/Attendance'));
 const LeaveManagement = React.lazy(() => import('./pages/hrm/LeaveManagement'));
+const TimesheetClose = React.lazy(() => import('./pages/hrm/TimesheetClose'));
 const SiteAssignments = React.lazy(() => import('./pages/hrm/SiteAssignments'));
 const Payroll = React.lazy(() => import('./pages/hrm/Payroll'));
 const MyPayroll = React.lazy(() => import('./pages/hrm/MyPayroll'));
@@ -224,6 +225,7 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm/attendance" element={<Attendance />} />
           <Route path="hrm/shifts" element={<ShiftManagement />} />
           <Route path="hrm/leave" element={<LeaveManagement />} />
+          <Route path="hrm/timesheet" element={<TimesheetClose />} />
           <Route path="hrm/assignments" element={<SiteAssignments />} />
           <Route path="hrm/payroll" element={<Payroll />} />
           <Route path="hrm/contracts" element={<LaborContractPage />} />
