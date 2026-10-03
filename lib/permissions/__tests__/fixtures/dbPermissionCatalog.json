@@ -2595,6 +2595,12 @@
       ]
     },
     {
+      "permissionCode": "wms.master_data.issue_code",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "wms.master_data.manage",
       "scopeTypes": [
         "global",

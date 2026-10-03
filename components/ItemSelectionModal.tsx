@@ -35,7 +35,8 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
   const targetWarehouse = warehouses.find(w => w.id === filterWarehouseId);
 
   const { items: filteredItems, totalMatches } = useMemo(
-    () => getItemSelectionResults(items, {
+    // Mã ngừng dùng (Danh mục vật tư) không chọn được cho phiếu mới.
+    () => getItemSelectionResults(items.filter(item => item.status !== 'retired'), {
       query: debouncedSearchTerm,
       filterWarehouseId,
       allowAllItems,

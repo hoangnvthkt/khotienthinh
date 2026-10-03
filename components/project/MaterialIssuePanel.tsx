@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ChevronDown,
@@ -51,6 +51,8 @@ type MaterialIssuePanelProps = {
   constructionSiteId?: string | null;
   materialRequestId?: string | null;
   defaultSourceWarehouseId?: string | null;
+  /** Mở từ màn Tồn kho: chọn sẵn vật tư này (một lần) khi kho xuất có tồn. */
+  initialItemId?: string | null;
   compact?: boolean;
   canCreate?: boolean;
   onChanged?: () => void;
@@ -150,6 +152,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
   constructionSiteId,
   materialRequestId,
   defaultSourceWarehouseId,
+  initialItemId,
   compact = false,
   canCreate = true,
   onChanged,
@@ -318,6 +321,14 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       },
     }));
   };
+
+  const initialItemAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!initialItemId || initialItemAppliedRef.current || !availableStockItemIdSet.has(initialItemId)) return;
+    initialItemAppliedRef.current = true;
+    toggleStockItemSelection(initialItemId, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialItemId, availableStockItemIdSet]);
 
   const clearStockSelection = () => {
     setSelectedItemIds([]);

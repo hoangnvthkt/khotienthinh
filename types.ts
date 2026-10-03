@@ -3549,6 +3549,10 @@ export interface InventoryItem {
   imageUrl?: string;
   location?: string; // Vị trí trong kho, ví dụ: Kệ A-3, Ô 2
   stockByWarehouse: Record<string, number>; // warehouseId -> quantity (in base unit)
+  /** Ngừng dùng thay cho xóa (V1 Module Vật tư). */
+  status?: 'active' | 'retired';
+  /** Cách quản lý kho: Lưu kho / Dùng ngay / Không qua kho. */
+  inventoryMode?: 'stock' | 'use' | 'service';
 }
 
 export type MaterialCodeRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -3571,6 +3575,8 @@ export interface MaterialCodeRequest {
   approvedByName?: string | null;
   approvedAt?: string | null;
   rejectionReason?: string | null;
+  /** issued = cấp mã mới · existing = dùng mã có sẵn · rejected = từ chối. */
+  resolution?: 'issued' | 'existing' | 'rejected' | null;
   createdAt: string;
   updatedAt?: string | null;
 }
