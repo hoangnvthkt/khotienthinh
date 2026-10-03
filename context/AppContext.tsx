@@ -269,6 +269,8 @@ interface AppContextType {
   moduleLoadErrors: Partial<Record<AppModule, string>>;
   setActiveRealtimeModules: (modules: AppModule[]) => void;
   refreshWmsRecords: (options: WmsRecordRefreshOptions) => Promise<void>;
+  /** Reload attendance rows between two dates (YYYY-MM-DD) from the server and replace them in memory. */
+  refreshAttendanceRange: (from: string, to: string) => Promise<void>;
   isLoading: boolean;
   isRefreshing: boolean;
   connectionError: string | null;
@@ -1616,6 +1618,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...(tx?.items || []).map(item => item.itemId),
       ...(tx?.pendingItems || []).map(item => item.id),
     ]));
+
+  const refreshAttendanceRange = useCallback(async (from: string, to: string) => {
+    if (!isSupabaseConfigured) return;
+    const { data, error } = await supabase.from('hrm_attendance')
+      .select(getSupabaseProjection('hrm_attendance'))
+      .gte('date', from).lte('date', to)
+      .order('date').limit(10_000);
+    if (error) throw new Error(error.message || 'Không tải lại được chấm công.');
+    const fresh = (data || []) as unknown as AttendanceRecord[];
+    setAttendanceRecords(prev => [...prev.filter(row => row.date < from || row.date > to), ...fresh]);
+  }, []);
 
   const refreshWmsRecords = useCallback(async (options: WmsRecordRefreshOptions) => {
     if (!isSupabaseConfigured) return;
@@ -3583,7 +3596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       assets, assetCategories, assetAssignments, assetMaintenances, assetLocationStocks, assetTransfers,
       addAsset, addAssetWithInitialStock, updateAsset, removeAsset, addAssetCategory, updateAssetCategory, removeAssetCategory,
       addAssetAssignment, addAssetMaintenance, updateAssetMaintenance, addAssetTransfer, transferAssetStock,
-      isModuleAdmin, loadModuleData, moduleLoadState, moduleLoadedAt, moduleLoadErrors, setActiveRealtimeModules, refreshWmsRecords,
+      isModuleAdmin, loadModuleData, moduleLoadState, moduleLoadedAt, moduleLoadErrors, setActiveRealtimeModules, refreshWmsRecords, refreshAttendanceRange,
       saveSignature, deleteSignature,
       isLoading, isRefreshing, connectionError, systemSlowMessage, realtimeStatus, lastRealtimeEvent
     }}>

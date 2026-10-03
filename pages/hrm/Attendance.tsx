@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
@@ -6,7 +6,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
   Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus,
-  MapPin, Eye, Save, X, Edit3, Camera, ShieldCheck
+  MapPin, Eye, Save, X, Edit3, Camera, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import {
   AttendanceStatus, AttendanceRecord,
@@ -54,7 +54,7 @@ const getAttendancePhotos = (record: AttendanceRecord) => {
 };
 
 const Attendance: React.FC = () => {
-  const { employees, attendanceRecords, leaveRequests, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData } = useApp();
+  const { employees, attendanceRecords, leaveRequests, hrmConstructionSites, hrmOffices, hrmWorkSchedules, holidays, attendanceProposals, addHrmItem, updateHrmItem, removeHrmItem, user, users, shiftTypes, employeeShifts, loadModuleData, refreshAttendanceRange } = useApp();
   useModuleData('hrm');
   const canViewAllAttendance = canViewCompanyAttendance(user);
   const canManageAttendanceDevices = canPerformHrmTemplatePermission(user, 'hrm.employee.view_sensitive');
@@ -164,6 +164,37 @@ const Attendance: React.FC = () => {
   }, [getEmployeeShiftForDate]);
 
   const daysInMonth = useMemo(() => new Date(currentYear, currentMonth, 0).getDate(), [currentYear, currentMonth]);
+
+  // Punches come from phones all day; the app loads HRM data once per session, so re-read the
+  // shown month when the page opens, the month changes, the user comes back to the app, and every minute.
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const syncMonth = useCallback(async () => {
+    const monthKey = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+    setSyncing(true);
+    try {
+      await refreshAttendanceRange(`${monthKey}-01`, `${monthKey}-${String(daysInMonth).padStart(2, '0')}`);
+      setSyncedAt(new Date());
+      setSyncError('');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Không tải lại được chấm công.');
+    } finally {
+      setSyncing(false);
+    }
+  }, [currentYear, currentMonth, daysInMonth, refreshAttendanceRange]);
+  useEffect(() => {
+    void syncMonth();
+    const onVisible = () => { if (document.visibilityState === 'visible') void syncMonth(); };
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void syncMonth(); }, 60_000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [syncMonth]);
   const dayHeaders = useMemo(() => {
     const days: { dayNum: number; dayOfWeek: string; isWeekend: boolean }[] = [];
     for (let d = 1; d <= daysInMonth; d++) {
@@ -408,26 +439,6 @@ const Attendance: React.FC = () => {
     });
     return { totalWork, totalAbsent, totalLeave, totalLate, totalEarly, totalEmployees: filteredEmployees.length };
   }, [filteredEmployees, getStats]);
-
-  // Quick fill: mark all empty cells of today as 'present'
-  const quickFillToday = () => {
-    if (!canEditAttendance) return;
-    const today = new Date();
-    if (today.getMonth() + 1 !== currentMonth || today.getFullYear() !== currentYear) return;
-    const dateStr = getDateKey(today.getDate());
-    filteredEmployees.forEach(emp => {
-      const key = `${emp.id}_${dateStr}`;
-      if (!recordMap.has(key)) {
-        addHrmItem('hrm_attendance', {
-          id: crypto.randomUUID(),
-          employeeId: emp.id,
-          date: dateStr,
-          status: 'present' as AttendanceStatus,
-          createdAt: new Date().toISOString(),
-        });
-      }
-    });
-  };
 
   // Export CSV
   const exportCSV = () => {
@@ -780,13 +791,19 @@ const Attendance: React.FC = () => {
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">
             Theo dõi ngày công nhân viên hàng tháng
           </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" onClick={() => void syncMonth()} disabled={syncing}
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 font-bold text-teal-700 hover:bg-muted disabled:opacity-60 dark:text-teal-300">
+              <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} /> Tải lại
+            </button>
+            {syncError
+              ? <span className="font-bold text-rose-600">{syncError}</span>
+              : <span className="text-muted-foreground">{syncedAt ? `Cập nhật lúc ${syncedAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · tự làm mới mỗi phút` : 'Đang tải lượt chấm mới nhất…'}</span>}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canEditAttendance && (
             <>
-              <button onClick={quickFillToday} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition flex items-center gap-1.5">
-                <CheckCircle size={14} /> Chấm hôm nay
-              </button>
               <button onClick={downloadTemplate} className="px-3 py-2 bg-teal-500 text-white rounded-xl text-xs font-black hover:bg-teal-600 transition flex items-center gap-1.5">
                 <FileSpreadsheet size={14} /> Tải mẫu
               </button>
