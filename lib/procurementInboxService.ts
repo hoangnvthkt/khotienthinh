@@ -167,7 +167,7 @@ export const procurementInboxService = {
     return call<{ assigned: number }>('assign_procurement_inbox_v1', { p_input: input });
   },
   close(input: { sources: ProcurementSourceRef[]; action: 'close' | 'reopen'; reason?: string }) {
-    return call<{ changed: number }>('close_procurement_need_v1', { p_input: input });
+    return call<{ changed: number; endedRequests?: number }>('close_procurement_need_v1', { p_input: input });
   },
   vendors(search?: string) {
     return call<ProcurementVendor[]>('list_procurement_vendors_v1', { p_search: search || null });

@@ -333,15 +333,20 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   };
 
   const closeNeeds = async (targets: ProcurementInboxDocument[]) => {
+    // Đề xuất vật tư: đóng nhu cầu = Kết thúc đề xuất bên dự án (dòng đã đặt / đang chuyển vẫn giao).
+    const hasRequest = targets.some(d => d.sourceType === 'material_request');
     const reason = await askReason({
       title: targets.length > 1 ? `Đóng ${targets.length} phiếu nhu cầu` : 'Đóng nhu cầu', targetName: targets.map(d => d.code).join(', '),
-      subtitle: 'Phiếu sẽ ra khỏi danh sách cần mua. Có thể mở lại khi cần.', reasonLabel: 'Lý do không cần mua',
+      subtitle: hasRequest
+        ? 'Phiếu ra khỏi Cần mua và đề xuất bên dự án chuyển "Kết thúc" kèm lý do này. Dòng đã đặt PO / đang chuyển kho vẫn giao bình thường. Mở lại được khi cần.'
+        : 'Phiếu sẽ ra khỏi danh sách cần mua. Có thể mở lại khi cần.', reasonLabel: 'Lý do không cần mua',
       reasonPlaceholder: 'VD: Đã mua ngoài, công trường hủy, trùng phiếu…', actionLabel: 'Đóng nhu cầu', intent: 'warning',
     });
     if (!reason) return;
     try {
       const r = await procurementInboxService.close({ sources: targets.map(refOf), action: 'close', reason });
-      toast.success(`Đã đóng ${r.changed} phiếu nhu cầu`, 'Xem lại ở bộ lọc "Đã đóng".');
+      toast.success(`Đã đóng ${r.changed} phiếu nhu cầu`, r.endedRequests
+        ? `${r.endedRequests} đề xuất bên dự án đã chuyển Kết thúc. Xem lại ở bộ lọc "Đã đóng".` : 'Xem lại ở bộ lọc "Đã đóng".');
       setOpenSnap(cur => (cur && targets.some(t => docKey(t) === docKey(cur)) ? { ...cur, progress: 'closed', closedAt: new Date().toISOString(), closeReason: reason } : cur));
       setSelected(new Set());
       await load(true);
@@ -350,7 +355,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const reopenNeed = async (doc: ProcurementInboxDocument) => {
     try {
       await procurementInboxService.close({ sources: [refOf(doc)], action: 'reopen' });
-      toast.success(`Đã mở lại ${doc.code}`);
+      toast.success(`Đã mở lại ${doc.code}`, doc.sourceType === 'material_request' ? 'Đề xuất bên dự án về lại "Đang cung ứng".' : undefined);
       setOpenSnap(cur => (cur && docKey(cur) === docKey(doc) ? { ...cur, progress: 'new', closedAt: null, closeReason: null } : cur));
       await load(true);
     } catch (e) { toast.error('Chưa mở lại được', e instanceof Error ? e.message : ''); }
