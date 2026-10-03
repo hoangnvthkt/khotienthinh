@@ -198,8 +198,28 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
 export const FINANCE_BUCKET = 'finance-attachments';
 const safeName = (name: string) => name.trim().replace(/[^a-zA-Z0-9._-]+/g, '_') || 'file';
 
+export interface FinanceOverviewProject {
+  id: string; code: string; name: string; status: string | null;
+  /** null = chưa khai HĐ chủ đầu tư. */
+  contractValue: number | null;
+  /** Tiến độ theo Gantt (như màn dự án); null = chưa có kế hoạch. */
+  progress: number | null;
+  received: number; advanceReceived: number | null; cost: number;
+  costByCategory: Record<string, number>;
+  months: Array<{ month: string; in: number | null; out: number | null }>;
+  materialBudget: number | null;
+  payable: { outstanding: number; overdue: number; soon: number; docs: number };
+  receivables: Array<{ description: string; amount: number; paidAmount: number | null; dueDate: string | null; paidDate: string | null; status: string; advance: boolean }>;
+}
+export interface FinanceOverview {
+  canOverview: boolean; today: string; projects: FinanceOverviewProject[];
+  companyPayable?: { outstanding: number; docs: number };
+}
+
 export const financeService = {
   list(filter: { projectId?: string; source?: string } = {}) { return call<FinancePayablesList>('list_finance_payables_v1', { p_filter: filter }); },
+  /** Tổng quan toàn công ty + sức khỏe từng dự án (chỉ Tài chính — Quản trị / Admin). */
+  overview() { return call<FinanceOverview>('get_finance_overview_v1', {}); },
   supplier(supplierId: string) { return call<FinanceSupplierDetail>('get_finance_supplier_v1', { p_supplier_id: supplierId }); },
   directReceipts() { return call<FinanceDirectReceipts>('list_finance_direct_receipts_v1', {}); },
   postDirectReceipts(input: { receipts: Array<{ transactionId: string; rowVersion: number; prices?: Record<string, number> }>; vat: FinanceVatChoice; invoiceNo?: string; duplicateChecked?: boolean }) {
