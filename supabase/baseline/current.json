@@ -246,7 +246,8 @@
     "20261008133800_procurement_statement_self_post.sql",
     "20261008160000_hrm_h4_timesheet_close.sql",
     "20261008133900_finance_overview.sql",
-    "20261008134000_finance_supplier_advances.sql"
+    "20261008134000_finance_supplier_advances.sql",
+    "20261008134100_finance_customer_receivables.sql"
   ],
   "forbidIncludeAll": true
 }

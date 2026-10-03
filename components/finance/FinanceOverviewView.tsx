@@ -136,7 +136,8 @@ export const FinanceOverviewView: React.FC<{
   openingPendingSuppliers: number; supplierCount: number; directPending: { count: number; amount: number; missing: number } | null;
   onOpenPayables: (projectId?: string) => void; onOpenPending: () => void; onOpenTodo: () => void;
   onOpenAdvances?: (filter: 'overdue' | 'refund' | 'active') => void;
-}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances }) => {
+  onOpenReceivables?: () => void;
+}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances, onOpenReceivables }) => {
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('all');
@@ -176,6 +177,9 @@ export const FinanceOverviewView: React.FC<{
   if (directPending && directPending.count > 0) alerts.push({ tone: 'amber', title: `${shortMoney(directPending.amount)} phiếu nhập trực tiếp chưa ghi nợ`, text: `${directPending.count} phiếu chờ kế toán kiểm giá + VAT${directPending.missing ? ` (${directPending.missing} phiếu thiếu giá)` : ''} — chi phí dự án đang ghi thiếu tương ứng.`, onClick: onOpenPending });
   if (openingPendingSuppliers > 0) alerts.push({ tone: 'amber', title: `${openingPendingSuppliers}/${supplierCount} NCC chưa đối chiếu đầu kỳ`, text: 'Số nợ quá hạn chỉ là tạm tính — có thể kế toán đã trả ngoài hệ thống.', onClick: () => onOpenPayables() });
   const advanceTotal = data.projects.reduce((s, p) => s + (p.advanceReceived || 0), 0);
+  const ar = data.receivables;
+  if (ar && ar.overdue > 0.5) alerts.push({ tone: 'rose', title: `${shortMoney(ar.overdue)} phải thu CĐT quá hạn`, text: 'CĐT đã xác nhận đợt thanh toán nhưng chưa trả — đôn đốc thu.', onClick: onOpenReceivables });
+  if (ar && ar.unbilled && ar.unbilled > 1e9) alerts.push({ tone: 'amber', title: `${shortMoney(ar.unbilled)} sản lượng chưa đề nghị thanh toán`, text: 'Ước tính theo tiến độ Gantt × giá trị HĐ — kiểm tra để lập đợt thu.', onClick: onOpenReceivables });
   const adv = data.advances;
   if (adv && adv.overdueCount > 0) alerts.push({ tone: 'rose', title: `${shortMoney(adv.overdue)} tạm ứng NCC quá hạn hoàn ứng`, text: `${adv.overdueCount} khoản đã chi nhưng NCC chưa giao hàng để trừ — cần đôn đốc hoặc thu hồi.`, onClick: () => onOpenAdvances?.('overdue') });
   if (adv && adv.refundDueCount > 0) alerts.push({ tone: 'amber', title: `${shortMoney(adv.refundDue)} tạm ứng NCC chờ hoàn`, text: `${adv.refundDueCount} khoản: đơn đã kết thúc mà còn tạm ứng — thu hồi tiền hoặc chuyển đơn.`, onClick: () => onOpenAdvances?.('refund') });
