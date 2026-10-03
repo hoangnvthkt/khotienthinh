@@ -8,10 +8,12 @@ import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPla
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
 
-// Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu cùng dự án. Mỗi vật tư là một
-// dòng đơn hàng; SL đặt phân về từng dòng nhu cầu để theo dõi còn thiếu.
+// Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu. Mỗi vật tư là một dòng đơn hàng; SL đặt phân về
+// từng dòng nhu cầu để theo dõi còn thiếu. Phiếu của nhiều dự án → đơn gom: một NCC, một giá,
+// mỗi đợt giao về một công trường, nợ + chi phí theo dự án nhận (việc 2).
 
-interface Row { key: string; sourceType: ProcurementSourceRef['sourceType']; sourceId: string; code: string; lineId: string; needQty: number; orderedElsewhere: number; available: number; qty: string }
+interface Row { key: string; sourceType: ProcurementSourceRef['sourceType']; sourceId: string; code: string; lineId: string; needQty: number; orderedElsewhere: number; available: number; qty: string;
+  projectCode: string | null; warehouseName: string | null }
 interface Item {
   itemId: string; name: string; sku: string | null; unit: string | null;
   /** Buy in another unit than the stock unit (e.g. kg vs cây); quantity can be typed by hand. */
@@ -48,7 +50,8 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
       purchaseQty: prevAlt && prev ? qtyInput(prev.qty) : '', price: '', rows: [] };
     if (own && !item.price) item.price = qtyInput(own.price);
     item.rows.push({ key, sourceType: doc.sourceType, sourceId: doc.sourceId, code: doc.code, lineId: line.lineId,
-      needQty: line.needQty, orderedElsewhere, available, qty: qtyInput(own ? own.qty : available) });
+      needQty: line.needQty, orderedElsewhere, available, qty: qtyInput(own ? own.qty : available),
+      projectCode: doc.projectCode, warehouseName: doc.warehouseName });
     byItem.set(line.itemId, item);
   }));
   return Array.from(byItem.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
@@ -90,8 +93,20 @@ export const OrderEditor: React.FC<{
   }, [sourceKey]);
 
   const project = docs?.[0];
-  const mixedScope = Boolean(docs && new Set(docs.map(d => `${d.projectId}|${d.constructionSiteId}`)).size > 1);
+  const isGroup = Boolean(docs && new Set(docs.map(d => `${d.projectId}|${d.constructionSiteId}`)).size > 1);
+  const groupProjects = Array.from(new Set((docs || []).map(d => d.projectCode || d.projectName || '—')));
   const warehouses = Array.from(new Set((docs || []).map(d => d.warehouseName).filter(Boolean)));
+  // Đơn gom: tiền hàng tạm tính theo dự án (SL phân bổ × đơn giá), để biết nợ + chi phí mỗi dự án.
+  const perProject = useMemo(() => {
+    const map = new Map<string, number>();
+    items.forEach(item => {
+      const price = parseQty(item.price) || 0;
+      const stockQty = item.rows.reduce((sum, r) => sum + Math.max(0, parseQty(r.qty) || 0), 0);
+      const qty = purchaseQtyOf(item, stockQty);
+      item.rows.forEach(r => { const q = Math.max(0, parseQty(r.qty) || 0); if (stockQty > 0) map.set(r.projectCode || '—', (map.get(r.projectCode || '—') || 0) + qty * price * q / stockQty); });
+    });
+    return Array.from(map.entries());
+  }, [items]);
 
   const totals = useMemo(() => {
     let subtotal = 0; let invalid = 0; let over = 0; let lines = 0; let unpriced = 0;
@@ -144,18 +159,20 @@ export const OrderEditor: React.FC<{
   return <Drawer wide label={order ? `Sửa ${order.poNumber}` : 'Lập đơn hàng'} onClose={onClose}
     header={<>
       <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">{order ? `Sửa đơn ${order.poNumber}` : 'Lập đơn hàng'}</p>
-      <h2 className="mt-1 text-lg font-bold text-foreground">{project ? [project.projectCode, project.projectName].filter(Boolean).join(' — ') : 'Đang tải…'}</h2>
+      <h2 className="mt-1 text-lg font-bold text-foreground">{!project ? 'Đang tải…' : isGroup ? <>Đơn gom {groupProjects.length} dự án <span className="font-medium text-muted-foreground">· {groupProjects.join(', ')}</span></>
+        : [project.projectCode, project.projectName].filter(Boolean).join(' — ')}</h2>
       <p className="text-sm text-muted-foreground">{docs ? `Từ ${docs.map(d => d.code).join(', ')}` : ''}{warehouses.length ? ` · Kho nhận: ${warehouses.join(', ')}` : ''}</p>
     </>}
-    footer={docs && !mixedScope ? <>
+    footer={docs ? <>
       {error && <p role="alert" className="mr-auto flex items-center gap-1.5 text-sm text-rose-700 dark:text-rose-300"><AlertTriangle size={15} />{error}</p>}
       <button type="button" onClick={onClose} className={secondaryBtn}>Hủy</button>
       <button type="button" onClick={() => void save()} disabled={saving} className={primaryBtn}>{saving && <Loader2 size={15} className="animate-spin" />}{order ? 'Lưu thay đổi' : 'Lưu đơn nháp'}</button>
     </> : undefined}>
     {loadError ? <StateBox kind="error" message={loadError} />
       : !docs ? <StateBox kind="loading" title="Đang tải phiếu nhu cầu…" />
-        : mixedScope ? <StateBox kind="error" title="Các phiếu thuộc nhiều dự án/công trường" message="Một đơn hàng chỉ gồm phiếu của cùng một dự án và công trường. Chọn lại phiếu." />
           : <>
+            {isGroup && <p className="rounded-xl border border-teal-200 bg-teal-50/70 px-3 py-2.5 text-sm text-teal-950 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+              <b>Đơn gom nhiều dự án:</b> một NCC, một đơn giá mỗi vật tư. Sau khi duyệt, mỗi đợt giao chọn <b>một công trường</b>; thủ kho công trường đó nhận, công nợ NCC và chi phí ghi cho dự án của công trường.</p>}
             <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <VendorPicker value={vendor} onChange={setVendor} />
               <div>
@@ -165,7 +182,7 @@ export const OrderEditor: React.FC<{
               <VatPicker value={vat} onChange={setVat} />
             </section>
 
-            <DeliveryModePicker value={mode} onChange={setMode} />
+            {!isGroup && <DeliveryModePicker value={mode} onChange={setMode} />}
 
             {items.length === 0
               ? <StateBox kind="empty" title="Các phiếu đã đặt đủ" message="Không còn dòng nhu cầu nào cần đặt thêm." />
@@ -212,7 +229,8 @@ export const OrderEditor: React.FC<{
                       const bad = q != null && Number.isNaN(q);
                       const over = q != null && !bad && q > row.available * 1.0001 + 0.001;
                       return <li key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 pl-11 text-sm">
-                        <span className="min-w-[8rem] font-medium text-foreground">{row.code}</span>
+                        <span className="min-w-[8rem] font-medium text-foreground">{row.code}
+                          {isGroup && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{row.projectCode} · {row.warehouseName || 'chưa có kho'}</span>}</span>
                         <span className="text-xs text-muted-foreground">Cần {fmt(row.needQty)}{row.orderedElsewhere > 0 ? ` · đã đặt đơn khác ${fmt(row.orderedElsewhere)}` : ''} · còn {fmt(row.available)}</span>
                         <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">{item.altUnit ? 'SL kho' : 'SL đặt'}
                           <input inputMode="decimal" value={row.qty} onChange={e => setRowQty(item.itemId, row.key, e.target.value)}
@@ -233,6 +251,7 @@ export const OrderEditor: React.FC<{
                 <div className="flex justify-between"><dt className="text-muted-foreground">Tiền hàng</dt><dd className="tabular-nums">{money(totals.subtotal)} đ</dd></div>
                 <div className="flex justify-between"><dt className="text-muted-foreground">VAT {vat}%</dt><dd className="tabular-nums">{money(totals.vatAmount)} đ</dd></div>
                 <div className="flex justify-between border-t border-border pt-1 font-bold"><dt>Tổng cộng</dt><dd className="tabular-nums">{money(totals.subtotal + totals.vatAmount)} đ</dd></div>
+                {isGroup && perProject.map(([code, amount]) => <div key={code} className="flex justify-between text-xs text-muted-foreground"><dt>{code} (trước VAT)</dt><dd className="tabular-nums">{money(amount)} đ</dd></div>)}
                 {totals.unpriced > 0 && <p className="pt-1 text-xs text-amber-700 dark:text-amber-300">{totals.unpriced} vật tư chưa có đơn giá — lưu nháp được, cần đủ giá mới gửi duyệt.</p>}
                 {totals.over > 0 && <p className="pt-1 text-xs text-amber-700 dark:text-amber-300">{totals.over} dòng đặt vượt phần còn thiếu — vẫn lưu được.</p>}
                 {expected && <p className="pt-1 text-xs text-muted-foreground">Cần giao trước {dateVi(expected)}</p>}
