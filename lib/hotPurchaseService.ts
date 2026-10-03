@@ -95,6 +95,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   HOT_PURCHASE_APPROVE_DENIED: 'Chỉ Chỉ huy trưởng dự án duyệt được (dự án chưa có CHT thì Admin). Người lập không tự duyệt.',
   HOT_PURCHASE_ACTION_INVALID: 'Thao tác không hợp lệ.',
   HOT_PURCHASE_REASON_REQUIRED: 'Nhập lý do.',
+  HOT_PURCHASE_CANCEL_DENIED: 'Chỉ người lập phiếu được hủy. CHT dùng Trả lại.',
   HOT_PURCHASE_OVERRUN_PENDING: 'Thực tế vượt số đã duyệt quá 10% — chờ CHT xác nhận lại rồi mới nhận hàng.',
   HOT_PURCHASE_RECEIVE_KEEPER_REQUIRED: 'Phiếu có dòng Nhập kho: thủ kho kho nhận phải xác nhận (cần quyền hoàn tất phiếu kho ở kho đó).',
   HOT_PURCHASE_THRESHOLD_INVALID: 'Ngưỡng phải lớn hơn 0.',

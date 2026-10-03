@@ -297,7 +297,8 @@ begin
       from public.procurement_hub_events e where e.entity_type = 'hot_purchase' and e.entity_id = p.id::text), '[]'::jsonb),
     'permissions', jsonb_build_object(
       'canEdit', p.status = 'draft' and v_edit,
-      'canCancel', p.status in ('draft', 'submitted', 'approved_to_buy') and v_edit,
+      -- Chỉ người lập hủy được (CHT trả lại chứ không hủy).
+      'canCancel', p.status in ('draft', 'submitted', 'approved_to_buy') and p.created_by = public.current_app_user_id(),
       'canDecide', p.status = 'submitted' and app_private.hot_purchase_can_approve(p),
       'canMarkPurchased', p.status = 'approved_to_buy' and v_edit,
       'canConfirmOverrun', p.status = 'purchased' and p.overrun_status = 'pending' and app_private.hot_purchase_can_approve(p),
@@ -625,7 +626,7 @@ begin
   select * into p from public.site_direct_purchases where id = (p_input->>'id')::uuid and hub_flow for update;
   if not found then raise exception using errcode = '22023', message = 'HOT_PURCHASE_NOT_FOUND'; end if;
   if p.status not in ('draft', 'submitted', 'approved_to_buy') then raise exception using errcode = '22023', message = 'HOT_PURCHASE_STATE'; end if;
-  if not app_private.hot_purchase_can_edit(p) then raise exception using errcode = '42501', message = 'HOT_PURCHASE_DENIED'; end if;
+  if p.created_by is distinct from public.current_app_user_id() then raise exception using errcode = '42501', message = 'HOT_PURCHASE_CANCEL_DENIED'; end if;
   if v_reason is null then raise exception using errcode = '22023', message = 'HOT_PURCHASE_REASON_REQUIRED'; end if;
   perform set_config('app.hot_purchase_command', 'on', true);
   update public.site_direct_purchases set status = 'cancelled', last_action_by = public.current_app_user_id()::text, last_action_at = now()
