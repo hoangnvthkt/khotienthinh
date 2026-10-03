@@ -43,6 +43,16 @@ export const getMaterialRequestStatusView = (status?: RequestStatus | string | n
 export const getMaterialRequestNextAction = (request: MaterialRequest, user: User): ErpNextActionView => {
   const view = getMaterialRequestStatusView(request.status);
 
+  // Đề xuất dự án (việc 1): duyệt xong là Đang cung ứng ở Mua hàng, tự hoàn tất hoặc được kết thúc.
+  if (request.requestOrigin === 'project') {
+    if (request.status === RequestStatus.APPROVED || request.status === RequestStatus.IN_TRANSIT) {
+      return { label: 'Đang cung ứng', tone: 'info', nextAction: 'Mua hàng mua mới hoặc cấp từ kho. Đủ hàng thì phiếu tự hoàn tất.', actionLabel: 'Xem tiến độ', isActionable: false };
+    }
+    if (request.status === RequestStatus.COMPLETED && request.workflowStep === 'ended') {
+      return { label: 'Đã kết thúc', tone: 'neutral', nextAction: 'Phần còn thiếu đã đóng theo lý do kết thúc.', actionLabel: 'Xem phiếu', isActionable: false };
+    }
+  }
+
   if (request.status === RequestStatus.PENDING || request.status === RequestStatus.LEGACY_PENDING) {
     const actionable = canApproveMaterialRequest(user, request);
     return {

@@ -390,6 +390,8 @@ export type MaterialRequestWorkflowStep =
   | 'site_quality_check'
   | 'site_receipt'
   | 'completed'
+  /** Việc 1: CHT / người lập kết thúc phần còn thiếu (status COMPLETED). */
+  | 'ended'
   | 'rejected'
   | 'returned_to_creator';
 
@@ -401,6 +403,7 @@ export type MaterialRequestKanbanStage =
   | 'site_quality_check'
   | 'site_receipt'
   | 'completed'
+  | 'ended'
   | 'closed';
 
 export type MaterialRequestKanbanLaneId =

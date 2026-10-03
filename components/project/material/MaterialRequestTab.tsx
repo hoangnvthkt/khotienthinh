@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Activity,
     AlertTriangle,
@@ -51,6 +51,8 @@ import {
 } from '../../../lib/materialRequestImportService';
 import { MaterialRequestImportPreviewModal } from './MaterialRequestImportPreviewModal';
 import { MaterialRequestColumnMapModal } from './MaterialRequestColumnMapModal';
+import { StaleSupplyRequestsDialog } from './MaterialRequestSupplyPanel';
+import { materialRequestSupplyService, type MaterialRequestSupplySummary } from '../../../lib/materialRequestSupplyService';
 
 const MaterialRequestKanbanBoard = React.lazy(() => import('../MaterialRequestKanbanBoard'));
 const ProjectWorkflowAnalyticsPanel = React.lazy(() => import('../ProjectWorkflowAnalyticsPanel'));
@@ -102,6 +104,8 @@ type MaterialRequestTabProps = {
     canMoveMaterialRequest: (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => boolean;
     onMoveMaterialRequest: (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => void;
     onOpenRequest: (request: MaterialRequest) => void;
+    /** Tải lại danh sách đề xuất sau khi kết thúc hàng loạt. */
+    onRequestsChanged?: () => void;
 };
 
 export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
@@ -136,9 +140,28 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
     canMoveMaterialRequest,
     onMoveMaterialRequest,
     onOpenRequest,
+    onRequestsChanged,
 }) => {
     const { addRequest, warehouses } = useApp();
     const toast = useToast();
+
+    // Việc 1: tiến độ cung ứng theo dòng cho đề xuất Đang cung ứng + danh sách đề xuất treo cần quyết.
+    const [supplySummaries, setSupplySummaries] = useState<Record<string, MaterialRequestSupplySummary>>({});
+    const [showStale, setShowStale] = useState(false);
+    const loadSupply = useCallback(() => {
+        if (!projectId) { setSupplySummaries({}); return; }
+        materialRequestSupplyService.list(projectId, constructionSiteId || null)
+            .then(setSupplySummaries)
+            .catch(error => { console.warn('Material request supply summary unavailable', error); setSupplySummaries({}); });
+    }, [constructionSiteId, projectId]);
+    useEffect(loadSupply, [loadSupply, requests]);
+    const staleRequests = useMemo(() => requests
+        .filter(request => supplySummaries[request.id] && !supplySummaries[request.id].sourcedAny)
+        .map(request => ({
+            id: request.id, code: request.code, title: request.title || 'Đề xuất vật tư',
+            lineCount: supplySummaries[request.id].lineCount, createdDate: request.createdDate,
+            requesterName: userById.get(request.requesterId)?.name || '—', canEnd: supplySummaries[request.id].canEnd,
+        })), [requests, supplySummaries, userById]);
 
     const [viewMode, setViewMode] = useState<'list' | 'kanban'>('kanban');
     const [importPreview, setImportPreview] = useState<MaterialRequestImportPreview | null>(null);
@@ -513,6 +536,15 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                     Tài khoản chỉ đang có quyền xem. Muốn tạo/gửi đề xuất cần quyền submit trong Tổ chức dự án.
                 </div>
             )}
+            {staleRequests.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                    <AlertTriangle size={16} className="shrink-0" />
+                    <span className="w-full sm:w-auto sm:flex-1"><b>{staleRequests.length} đề xuất đã duyệt nhưng chưa có PO hay phiếu chuyển nào.</b> Chỉ huy trưởng xem để giữ hay kết thúc.</span>
+                    <button type="button" onClick={() => setShowStale(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-card px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-100">
+                        <ListChecks size={14} /> Xem {staleRequests.length} phiếu cần quyết
+                    </button>
+                </div>
+            )}
             {transitioningRequestId && (
                 <div className="border-b border-indigo-100 bg-indigo-50 px-5 py-2 text-[11px] font-bold text-indigo-700">
                     Đang cập nhật luồng phiếu {transitioningRequestId.slice(-6)}...
@@ -533,6 +565,7 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                         requests={sortedRequests}
                         fulfillmentSummaries={requestFulfillmentSummaries}
                         fulfillmentBatches={requestFulfillmentBatches}
+                        supplySummaries={supplySummaries}
                         eventsByRequest={requestEventsByRequest}
                         transactions={transactions}
                         inventoryItemById={inventoryItemById}
@@ -550,6 +583,15 @@ export const MaterialRequestTab: React.FC<MaterialRequestTabProps> = ({
                         onOpenRequest={onOpenRequest}
                     />
                 </React.Suspense>
+            )}
+
+            {showStale && staleRequests.length > 0 && (
+                <StaleSupplyRequestsDialog
+                    requests={staleRequests}
+                    onClose={() => setShowStale(false)}
+                    onOpen={id => { const request = requests.find(item => item.id === id); if (request) { setShowStale(false); onOpenRequest(request); } }}
+                    onEnded={() => { loadSupply(); onRequestsChanged?.(); }}
+                />
             )}
 
             {/* Bước 1: Modal Ánh xạ Cột Column Mapping (Hiển thị khi file tự do hoặc người dùng muốn chỉnh lại cột) */}

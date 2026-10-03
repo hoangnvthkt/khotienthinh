@@ -49,6 +49,15 @@ export interface ProcurementInboxLine {
   /** Set when the item is bought in another unit: stock qty = purchase qty × purchaseFactor. */
   purchaseUnit: string | null; purchaseFactor: number | null;
   orders: Array<{ id: string; poNumber: string | null; status: string; vendorName: string | null; expectedDeliveryDate: string | null; orderedQty: number }>;
+  /** Đề xuất công trường: tồn khả dụng ở kho khác (Cấp từ kho) và phiếu chuyển đã lập cho dòng. */
+  otherStock?: ProcurementOtherStock[];
+  transfers?: Array<{ id: string; status: string; qty: number; sourceWarehouseName: string | null }>;
+}
+
+export interface ProcurementOtherStock {
+  warehouseId: string; warehouseName: string; warehouseType: string | null; qty: number;
+  /** Cả kho gửi và kho nhận đã bật chuyển kho 2 bước — chưa bật thì thủ kho không xuất/nhận được. */
+  transferReady: boolean;
 }
 
 export interface ProcurementInboxDetail {
@@ -119,6 +128,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PROACTIVE_OVER_UNALLOCATED: 'SL gắn lớn hơn phần chưa phân bổ của đơn chủ động.',
   PROCUREMENT_UNLINK_REASON_REQUIRED: 'Nhập lý do gỡ gắn.',
   PROCUREMENT_LINK_NOT_FOUND: 'Liên kết đã được gỡ trước đó. Tải lại.',
+  MR_SUPPLY_NOT_FOUND: 'Không tìm thấy đề xuất. Tải lại.',
+  MR_SUPPLY_STATE: 'Đề xuất đã hoàn tất hoặc đã kết thúc nên không cấp thêm.',
+  MR_SUPPLY_WAREHOUSE_INVALID: 'Kho gửi không hợp lệ hoặc trùng kho nhận.',
+  MR_SUPPLY_TRANSFER_NOT_ENABLED: 'Kho gửi hoặc kho nhận chưa bật chuyển kho 2 bước nên thủ kho chưa xuất/nhận được. Nhờ quản trị bật rồi thử lại, hoặc Mua mới.',
+  MR_SUPPLY_LINE_NOT_FOUND: 'Dòng vật tư không còn trong đề xuất. Tải lại.',
+  MR_SUPPLY_QTY_INVALID: 'SL chuyển phải lớn hơn 0.',
+  MR_SUPPLY_OVER_NEED: 'SL chuyển lớn hơn phần còn thiếu của dòng.',
+  MR_SUPPLY_STOCK_INSUFFICIENT: 'Kho gửi không còn đủ hàng khả dụng (đã trừ phiếu chuyển đang chờ xuất). Tải lại.',
 };
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
@@ -189,6 +206,10 @@ export const procurementInboxService = {
   },
   linkProactive(input: { action: 'link' | 'unlink'; purchaseOrderId: string; poLineId: string; sourceType: ProcurementSourceType; sourceId: string; lineId: string; qty?: number; reason?: string }) {
     return call<{ purchaseOrderId: string; action: string; qty: number }>('link_procurement_proactive_need_v1', { p_input: input });
+  },
+  supplyFromStock(input: { requestId: string; lineId: string; sourceWarehouseId: string; qty: number; note?: string }) {
+    return call<{ transactionId: string; qty: number; unit: string | null; itemName: string; sourceWarehouseName: string; targetWarehouseName: string; code: string }>(
+      'create_material_request_supply_transfer_v1', { p_input: input });
   },
   transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string }) {
     return call<{ purchaseOrderId: string; status: string; rowVersion: number }>('transition_procurement_hub_po_v1', { p_input: input });

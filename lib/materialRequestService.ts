@@ -87,10 +87,12 @@ export const MATERIAL_REQUEST_STEP_SLA_HOURS: Record<MaterialRequestWorkflowStep
   draft: null,
   site_manager_review: 24,
   material_department_review: 24,
-  batch_planning: 48,
+  // Đang cung ứng (mã cũ batch_planning): không đặt SLA — đề xuất chờ hàng theo PO / phiếu chuyển.
+  batch_planning: null,
   site_quality_check: 8,
   site_receipt: 8,
   completed: null,
+  ended: null,
   rejected: null,
   returned_to_creator: null,
 };
@@ -105,10 +107,12 @@ export const MATERIAL_REQUEST_KANBAN_COLUMNS: Array<{ id: MaterialRequestKanbanS
   { id: 'draft', label: 'Nháp', hint: 'Phiếu đang soạn hoặc chưa gửi duyệt' },
   { id: 'site_manager_review', label: 'Chờ quản lý CT duyệt', hint: 'Đang chờ người duyệt tại công trường' },
   { id: 'material_department_review', label: 'Chờ phòng vật tư xử lý', hint: 'Đã qua công trường, chờ phòng vật tư duyệt' },
-  { id: 'batch_planning', label: 'Chờ tạo đợt cấp', hint: 'Đã duyệt, chờ tạo đợt cấp/PO' },
-  { id: 'site_quality_check', label: 'Đang cấp - chờ duyệt SL/CL', hint: 'Đợt cấp đã tạo, thủ kho công trường kiểm tra' },
-  { id: 'site_receipt', label: 'Chờ xác nhận nhập kho', hint: 'Đã duyệt SL/CL, chờ xác nhận nhận hàng' },
-  { id: 'completed', label: 'Hoàn tất', hint: 'Đã nhận đủ theo phiếu' },
+  // Việc 1: không còn bước tạo đợt giao. Mã 'batch_planning' giữ làm bước "Đang cung ứng".
+  { id: 'batch_planning', label: 'Đang cung ứng', hint: 'Mua hàng mua mới hoặc cấp từ kho — không cần tạo đợt giao' },
+  { id: 'site_quality_check', label: 'Đợt cấp cũ - chờ duyệt SL/CL', hint: 'Đợt cấp tạo theo luồng cũ, thủ kho công trường kiểm tra' },
+  { id: 'site_receipt', label: 'Đợt cấp cũ - chờ nhập kho', hint: 'Đợt cấp theo luồng cũ, chờ xác nhận nhận hàng' },
+  { id: 'completed', label: 'Hoàn tất', hint: 'Tự chuyển khi mọi dòng đã nhận đủ hoặc đã đóng' },
+  { id: 'ended', label: 'Đã kết thúc', hint: 'CHT hoặc người lập kết thúc phần còn thiếu, có lý do' },
   { id: 'closed', label: 'Từ chối / trả lại', hint: 'Phiếu bị từ chối hoặc trả lại người tạo' },
 ];
 
@@ -256,6 +260,8 @@ export const getDefaultMaterialRequestWorkflowStep = (
 };
 
 export const getMaterialRequestSlaState = (request: MaterialRequest): 'none' | 'normal' | 'urgent' | 'overdue' => {
+  // Đang cung ứng không có hạn bước (phiếu duyệt trước việc 1 có thể còn hạn 48h cũ).
+  if (request.requestOrigin === 'project' && request.workflowStep === 'batch_planning') return 'none';
   if (!request.workflowStepDueAt || !request.workflowStepStartedAt || !request.workflowStepSlaHours) return 'none';
   const due = new Date(request.workflowStepDueAt).getTime();
   const started = new Date(request.workflowStepStartedAt).getTime();
@@ -275,6 +281,7 @@ export const resolveRequestKanbanStage = (
   if (request.status === RequestStatus.REJECTED || request.workflowStep === 'rejected' || request.workflowStep === 'returned_to_creator') {
     return 'closed';
   }
+  if (request.workflowStep === 'ended') return 'ended';
   if (request.status === RequestStatus.COMPLETED || request.workflowStep === 'completed') return 'completed';
   if (request.status === RequestStatus.DRAFT) return 'draft';
 

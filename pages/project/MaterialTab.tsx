@@ -3072,6 +3072,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     canMoveMaterialRequest={canMoveMaterialRequest}
                     onMoveMaterialRequest={handleMoveMaterialRequest}
                     onOpenRequest={openProjectRequestDetail}
+                    onRequestsChanged={() => void loadProjectRequests()}
                 />
             )}
 
