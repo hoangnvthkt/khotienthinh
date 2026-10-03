@@ -46,3 +46,12 @@ Lập → CT duyệt → Phòng vật tư duyệt (giữ nguyên) → **Đang cu
 ## Kiểm thử rollback trên production (02/10)
 
 `tools/mr-test.mjs` (`stats`, `flow`, `po`, `perf`): chuyển đổi đúng số đã duyệt; Cấp từ kho → xuất → nhận 398/400 tự hoàn tất, chi phí 2,77 triệu chuyển dự án; chặn đúng quyền / lý do / vượt nhu cầu / kho chưa bật chuyển kho; PO nhận đủ → hoàn tất, trả NCC một nửa → mở lại; tốc độ Cần mua không đổi (~0,7 s).
+
+## Bổ sung 03/10 — "Đóng nhu cầu" ở Mua hàng tự Kết thúc đề xuất
+
+Migration `20261008133700_procurement_close_need_ends_request.sql` (chủ SP đồng ý 03/10).
+
+- Mua hàng đóng nhu cầu của một đề xuất vật tư đang cung ứng → đề xuất chuyển **Kết thúc** như CHT bấm Kết thúc: dòng chưa có nguồn ghi đóng kèm lý do; dòng đã đặt PO / đang chuyển kho vẫn giao, hàng về thành tồn kho công trường. Lịch sử ghi "Mua hàng đóng nhu cầu: <lý do>".
+- **Mở lại** ở Mua hàng → gỡ đúng các dòng đóng của lần đóng đó, đề xuất về **Đang cung ứng** (hoặc tự hoàn tất nếu đã nhận đủ). Không gỡ Kết thúc do CHT bấm.
+- Phiếu kết thúc do Mua hàng đóng vẫn ở tab "Đã đóng" để mở lại. Kế hoạch vật tư giữ như cũ.
+- Thử rollback trên production (`tools/cn-test.mjs`): MR-2026-9776 (3 dòng đã đủ, 3 dòng chờ) → đóng: Kết thúc, đóng 3 dòng, vẫn ở tab Đã đóng → mở lại: Đang cung ứng, gỡ 3 dòng.
