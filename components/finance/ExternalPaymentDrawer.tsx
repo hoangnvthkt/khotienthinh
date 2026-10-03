@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Banknote, Loader2 } from 'lucide-react';
 import { financeService, type FinanceAttachment, type FinanceSupplierDetail } from '../../lib/financeService';
 import { Drawer, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { AttachmentPicker, ENT, FieldError, NUM, moneyInput, parseMoney, viDate } from './financeUi';
+import { AttachmentPicker, CashAccountSelect, ENT, FieldError, NUM, moneyInput, parseMoney, viDate } from './financeUi';
 
 // Ghi khoản đã trả NCC ngoài Vioo (trước khi có đề nghị chi K3b). Người khác xác nhận mới trừ công nợ.
 
@@ -20,6 +20,8 @@ export const ExternalPaymentDrawer: React.FC<{
   const [ref, setRef] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<FinanceAttachment[]>([]);
+  const [cashAccountId, setCashAccountId] = useState('');
+  const afterCutover = date >= detail.cutoverDate;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const docs = payable.filter(d => (d.projectId || '') === projectId);
@@ -36,10 +38,11 @@ export const ExternalPaymentDrawer: React.FC<{
     if (!ref.trim()) { setError('Nhập số UNC / phiếu chi.'); return; }
     if (!files.length) { setError('Đính kèm UNC / phiếu chi.'); return; }
     if (date > detail.today) { setError('Ngày chi không được sau hôm nay.'); return; }
+    if (afterCutover && !cashAccountId) { setError('Từ mốc 01/10: chọn tài khoản đã chi.'); return; }
     setSaving(true);
     try {
       const r = await financeService.saveExternalPayment({ supplierId: detail.supplier.id, projectId: projectId || null, paymentDate: date, method, documentRef: ref.trim(),
-        note: note.trim() || undefined, attachments: files, allocations });
+        note: note.trim() || undefined, attachments: files, allocations, cashAccountId: afterCutover ? cashAccountId : null });
       onSaved(`Đã ghi ${money(r.amount)} đ chi ngoài hệ thống (${ref.trim()}) — chờ người khác xác nhận rồi mới trừ công nợ.`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
   };
@@ -70,7 +73,8 @@ export const ExternalPaymentDrawer: React.FC<{
           <div className="mt-1 flex flex-wrap gap-1">{([['bank_transfer', 'Chuyển khoản'], ['cash', 'Tiền mặt'], ['other', 'Khác']] as const).map(([k, l]) =>
             <button key={k} type="button" aria-pressed={method === k} onClick={() => setMethod(k)}
               className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${method === k ? 'border-teal-600 bg-teal-700 text-white' : 'border-border hover:bg-muted'}`}>{l}</button>)}</div></div>
-        <div className="md:col-span-2"><AttachmentPicker supplierId={detail.supplier.id} value={files} onChange={setFiles} label="UNC / phiếu chi (ảnh hoặc PDF)" required /></div>
+        <div className="md:col-span-2">{afterCutover && <CashAccountSelect value={cashAccountId} onChange={setCashAccountId} label="Chi từ tài khoản" hint="Từ mốc 01/10 mọi khoản chi ghi qua tài khoản tiền." />}
+        <AttachmentPicker supplierId={detail.supplier.id} value={files} onChange={setFiles} label="UNC / phiếu chi (ảnh hoặc PDF)" required /></div>
         <label className="text-xs font-semibold text-muted-foreground md:col-span-2">Ghi chú
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="VD: trả theo đề nghị ngày 20/09 của chị Hương" className={`mt-1 w-full ${inputCls}`} /></label>
       </section>
