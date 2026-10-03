@@ -1,9 +1,19 @@
 // Leave requests (G2): every change goes through server RPCs that pick the approvers,
 // count working days, move the balance and notify people.
 import { supabase } from './supabase';
+import { compressImageWithinLimit } from './vehicleBookingService';
+
+const EVIDENCE_BUCKET = 'hrm-leave-evidence';
+export const LEAVE_MAX_ATTACHMENTS = 4;
 
 export type LeaveSession = 'full' | 'morning' | 'afternoon';
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+/** A reason inside a leave type (e.g. "Kết hôn"), with its own day limit. */
+export interface LeaveSubtype {
+  name: string;
+  maxDays: number | null;
+}
 
 export interface LeaveTypeOption {
   code: string;
@@ -12,8 +22,38 @@ export interface LeaveTypeOption {
   paidBy: 'company' | 'social_insurance' | 'none';
   deductsAnnual: boolean;
   unit: 'day' | 'minute';
-  needsSecondStep: boolean;
+  /** Add the director step when the request is longer than this many working days; null = never. */
+  secondStepAfterDays: number | null;
+  /** HR checks last (late/early explanations, overtime). */
+  hrStep: boolean;
+  requiresOfficial: boolean;
+  subtypes: LeaveSubtype[];
+  requiresAttachment: boolean;
+  attachmentHint: string | null;
+  isSystem: boolean;
   isActive: boolean;
+}
+
+/** What HR edits on a leave type. */
+export interface LeaveTypeDraft {
+  name: string;
+  description: string;
+  paidBy: LeaveTypeOption['paidBy'];
+  secondStepAfterDays: number | null;
+  hrStep: boolean;
+  requiresOfficial: boolean;
+  subtypes: LeaveSubtype[];
+  requiresAttachment: boolean;
+  attachmentHint: string;
+}
+
+export interface LeavePolicyLogRow {
+  id: string;
+  target: string;
+  action: 'create' | 'update' | 'activate' | 'deactivate';
+  changes: Record<string, { from: unknown; to: unknown }>;
+  actorName: string | null;
+  createdAt: string;
 }
 
 export interface LeaveStep {
@@ -47,6 +87,7 @@ export interface LeaveRequestRow {
   subtype: string | null;
   rejectionReason: string | null;
   cancelReason: string | null;
+  attachmentPaths: string[];
   createdAt: string;
 }
 
@@ -62,7 +103,6 @@ export interface LeavePreview {
 }
 
 export interface LeaveSettings {
-  secondStepThresholdDays: number;
   secondStepApproverUserId: string | null;
   secondStepLabel: string;
   lateEarlyMaxMinutes: number;
@@ -130,7 +170,7 @@ export interface LeaveLogRow {
   createdAt: string;
 }
 
-const REQUEST_SELECT = 'id,code,"employeeId",type,"startDate","endDate","totalDays",reason,status,approvers,current_step,start_session,end_session,minutes,subtype,"rejectionReason",cancel_reason,"createdAt"';
+const REQUEST_SELECT = 'id,code,"employeeId",type,"startDate","endDate","totalDays",reason,status,approvers,current_step,start_session,end_session,minutes,subtype,"rejectionReason",cancel_reason,attachment_paths,"createdAt"';
 
 const mapRequest = (row: Record<string, unknown>): LeaveRequestRow => ({
   id: String(row.id),
@@ -150,11 +190,24 @@ const mapRequest = (row: Record<string, unknown>): LeaveRequestRow => ({
   subtype: (row.subtype as string) || null,
   rejectionReason: (row.rejectionReason as string) || null,
   cancelReason: (row.cancel_reason as string) || null,
+  attachmentPaths: Array.isArray(row.attachment_paths) ? row.attachment_paths as string[] : [],
   createdAt: String(row.createdAt),
 });
 
 const fail = (error: { message?: string } | null, fallback: string): never => {
   throw new Error(error?.message || fallback);
+};
+
+const uploadEvidence = async (employeeId: string, file: File): Promise<string> => {
+  const isPdf = file.type === 'application/pdf';
+  if (isPdf && file.size > 5 * 1024 * 1024) throw new Error('File PDF vượt quá 5 MB.');
+  const body = isPdf ? file : await compressImageWithinLimit(file, 1);
+  const path = `${employeeId}/${crypto.randomUUID()}.${isPdf ? 'pdf' : 'jpg'}`;
+  const { error } = await supabase.storage.from(EVIDENCE_BUCKET).upload(path, body, {
+    contentType: isPdf ? 'application/pdf' : 'image/jpeg', upsert: false,
+  });
+  if (error) throw new Error('Không tải được giấy tờ đính kèm. Kiểm tra mạng rồi thử lại.');
+  return path;
 };
 
 /** The step waiting for a decision, or null when the request is closed. */
@@ -167,23 +220,42 @@ export const currentLeaveStep = (request: Pick<LeaveRequestRow, 'status' | 'appr
 export const leaveService = {
   async listTypes(): Promise<LeaveTypeOption[]> {
     const { data, error } = await supabase.from('hrm_leave_types')
-      .select('code,name,description,paid_by,deducts_annual,unit,needs_second_step,is_active,sort_order')
-      .order('sort_order').limit(50);
+      .select('code,name,description,paid_by,deducts_annual,unit,second_step_after_days,second_step_hr,requires_official,subtypes,requires_attachment,attachment_hint,is_system,is_active,sort_order')
+      .order('sort_order').limit(100);
     if (error) fail(error, 'Không tải được loại đơn.');
     return (data || []).map(row => ({
       code: row.code, name: row.name, description: row.description, paidBy: row.paid_by,
-      deductsAnnual: row.deducts_annual, unit: row.unit, needsSecondStep: row.needs_second_step, isActive: row.is_active,
+      deductsAnnual: row.deducts_annual, unit: row.unit,
+      secondStepAfterDays: row.second_step_after_days === null ? null : Number(row.second_step_after_days),
+      hrStep: row.second_step_hr, requiresOfficial: row.requires_official,
+      subtypes: (Array.isArray(row.subtypes) ? row.subtypes : []).map((item: { name: string; maxDays?: number | null }) => ({
+        name: String(item.name), maxDays: item.maxDays === null || item.maxDays === undefined ? null : Number(item.maxDays),
+      })),
+      requiresAttachment: row.requires_attachment, attachmentHint: row.attachment_hint,
+      isSystem: row.is_system, isActive: row.is_active,
     }));
+  },
+
+  /** Create (code null) or update a leave type; returns its code. HR Manage / Admin only. */
+  async saveType(code: string | null, draft: LeaveTypeDraft): Promise<string> {
+    const { data, error } = await supabase.rpc('save_hrm_leave_type', { p_code: code, p_payload: draft });
+    if (error) fail(error, 'Không lưu được loại đơn.');
+    return String(data);
+  },
+
+  async listPolicyLog(): Promise<LeavePolicyLogRow[]> {
+    const { data, error } = await supabase.rpc('list_hrm_leave_policy_log', { p_limit: 200 });
+    if (error) fail(error, 'Không tải được lịch sử thay đổi.');
+    return (data || []) as LeavePolicyLogRow[];
   },
 
   async getSettings(): Promise<LeaveSettings | null> {
     const { data, error } = await supabase.from('hrm_leave_settings')
-      .select('second_step_threshold_days,second_step_approver_user_id,second_step_label,late_early_max_minutes,saturday_is_workday')
+      .select('second_step_approver_user_id,second_step_label,late_early_max_minutes,saturday_is_workday')
       .limit(1).maybeSingle();
     if (error) fail(error, 'Không tải được chính sách nghỉ.');
     if (!data) return null;
     return {
-      secondStepThresholdDays: Number(data.second_step_threshold_days),
       secondStepApproverUserId: data.second_step_approver_user_id,
       secondStepLabel: data.second_step_label,
       lateEarlyMaxMinutes: data.late_early_max_minutes,
@@ -192,22 +264,13 @@ export const leaveService = {
   },
 
   async saveSettings(settings: LeaveSettings): Promise<void> {
-    const { data, error } = await supabase.from('hrm_leave_settings').update({
-      second_step_threshold_days: settings.secondStepThresholdDays,
-      second_step_approver_user_id: settings.secondStepApproverUserId,
-      second_step_label: settings.secondStepLabel,
-      late_early_max_minutes: settings.lateEarlyMaxMinutes,
-      saturday_is_workday: settings.saturdayIsWorkday,
-      updated_at: new Date().toISOString(),
-    }).eq('singleton', true).select('singleton');
-    if (error) fail(error, 'Không lưu được chính sách.');
-    if (!data?.length) throw new Error('Chỉ HR Manage được sửa chính sách nghỉ.');
+    const { error } = await supabase.rpc('save_hrm_leave_settings', { p_payload: settings });
+    if (error) fail(error, 'Không lưu được quy tắc chung.');
   },
 
   async setTypeActive(code: string, isActive: boolean): Promise<void> {
-    const { data, error } = await supabase.from('hrm_leave_types').update({ is_active: isActive }).eq('code', code).select('code');
+    const { error } = await supabase.rpc('set_hrm_leave_type_active', { p_code: code, p_active: isActive });
     if (error) fail(error, 'Không cập nhật được loại đơn.');
-    if (!data?.length) throw new Error('Chỉ HR Manage được bật/tắt loại đơn.');
   },
 
   /** Requests the caller may see: own, assigned to approve, or all (HR) — RLS decides. */
@@ -254,10 +317,11 @@ export const leaveService = {
     if (error) fail(error, 'Không điều chỉnh được số phép.');
   },
 
-  async preview(input: { type: string; start: string; end: string; startSession: LeaveSession; endSession: LeaveSession; minutes: number | null }): Promise<LeavePreview> {
+  async preview(input: { type: string; start: string; end: string; startSession: LeaveSession; endSession: LeaveSession; minutes: number | null; subtype?: string | null }): Promise<LeavePreview> {
     const { data, error } = await supabase.rpc('preview_my_leave_request', {
       p_type: input.type, p_start: input.start, p_end: input.end,
       p_start_session: input.startSession, p_end_session: input.endSession, p_minutes: input.minutes,
+      p_subtype: input.subtype ?? null,
     });
     if (error) fail(error, 'Không xem trước được đơn.');
     const value = data as Record<string, unknown>;
@@ -272,13 +336,30 @@ export const leaveService = {
     };
   },
 
-  async submit(input: { type: string; start: string; end: string; startSession: LeaveSession; endSession: LeaveSession; minutes: number | null; subtype: string | null; reason: string }): Promise<void> {
+  async submit(input: {
+    type: string; start: string; end: string; startSession: LeaveSession; endSession: LeaveSession;
+    minutes: number | null; subtype: string | null; reason: string; employeeId?: string; files?: File[];
+  }): Promise<void> {
+    const paths: string[] = [];
+    if (input.files?.length && input.employeeId) {
+      for (const file of input.files.slice(0, LEAVE_MAX_ATTACHMENTS)) paths.push(await uploadEvidence(input.employeeId, file));
+    }
     const { error } = await supabase.rpc('submit_my_leave_request', {
       p_type: input.type, p_start: input.start, p_end: input.end,
       p_start_session: input.startSession, p_end_session: input.endSession,
-      p_minutes: input.minutes, p_subtype: input.subtype, p_reason: input.reason,
+      p_minutes: input.minutes, p_subtype: input.subtype, p_reason: input.reason, p_attachment_paths: paths,
     });
     if (error) fail(error, 'Không gửi được đơn.');
+  },
+
+  /** Short-lived links to a request's papers (owner, its approvers, HR). */
+  async attachmentUrls(paths: string[]): Promise<Array<{ path: string; url: string | null; isPdf: boolean }>> {
+    if (paths.length === 0) return [];
+    const { data } = await supabase.storage.from(EVIDENCE_BUCKET).createSignedUrls(paths, 600);
+    return paths.map(path => ({
+      path, isPdf: path.endsWith('.pdf'),
+      url: data?.find(item => item.path === path)?.signedUrl || null,
+    }));
   },
 
   async decide(requestId: string, decision: 'approve' | 'reject', comment: string | null): Promise<void> {

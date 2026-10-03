@@ -97,6 +97,7 @@
 | #65 | Dọn vị trí | `20261007110000` | Danh mục vị trí 121 → 99: xóa 13 vị trí tên số và mục `G3-BOQ`, gộp 6 cặp trùng tên, "Chỉ huy trưởng/phó" bỏ hậu tố tên dự án |
 | #67 | G2b | `20261007120000` | Phép tồn: cột `carriedDays`, `carryExpiresOn` (31/03), `carryUsedDays`, `carryExpiredDays`; phép tồn dùng trước nếu đơn **bắt đầu** đến hết 31/03; sổ phép `hrm_leave_ledger` do trigger ghi; `adjust_hrm_leave_balance` bắt buộc lý do; tab "Số phép" cho HR |
 | #69 | Sửa lỗi | (không) | Nhận diện trình duyệt nhúng (Zalo, Facebook, TikTok…) và hiện nút "Mở bằng Chrome"; form nhân viên không còn tự tạo hay sửa số phép |
+| (03/10) | Thiết lập nghỉ phép | `20261008140000` | Tab Nghỉ phép → **Thiết lập**: ngưỡng thêm bước TGĐ riêng từng loại (`second_step_after_days`), lý do con + số ngày tối đa (`subtypes`, vượt thì chặn), bắt buộc đính kèm (`requires_attachment`, bucket `hrm-leave-evidence`, cột `attachment_paths`), HR Manage/Admin thêm loại mới (mã `custom_*`, chỉ tắt không xóa); ghi qua RPC `save_hrm_leave_type`, `set_hrm_leave_type_active`, `save_hrm_leave_settings`, lịch sử `hrm_leave_policy_log`; khóa hưởng lương của annual/late_early/overtime/business_trip và lý do của late_early |
 
 **File và đối tượng chính** (tra cứu khi cần sửa):
 - **Chấm công:**
@@ -139,7 +140,8 @@
 11. Bước duyệt thứ 2 cho đơn nghỉ trên 3 ngày là TGĐ Dương Xuân Thịnh. Admin đổi được người này ở tab Chính sách.
 12. Duyệt phép của nhân sự văn phòng: quản lý trên sơ đồ tổ chức.
 13. Chống chấm công hộ làm đủ 3 lớp: passkey, mỗi người một thiết bị, cờ nghi vấn.
-14. Dọn danh mục vị trí:
+14. (03/10) Thiết lập nghỉ phép: ngưỡng TGĐ riêng từng loại; lý do con + số ngày tối đa; bắt buộc đính kèm (Ốm đau/Thai sản chưa bật sẵn, HR tự bật); HR Manage + Admin sửa, HR khác chỉ xem; không làm "báo trước tối thiểu".
+15. Dọn danh mục vị trí:
     - Đã duyệt mục 1–3.
     - "Cố vấn" là vị trí mặc định do chủ sản phẩm đặt; họ sẽ tự sửa sau.
     - Còn giữ 6 vị trí tên số vì đang gắn với 31 bản ghi đãi ngộ. Khi HR gán lại vị trí thì xóa nốt.
@@ -221,7 +223,7 @@ Các nguyên tắc rút ra:
 - Thông báo cho nhân viên: mở Vioo bằng Chrome/Safari, không mở từ Zalo; đăng ký vân tay/Face ID; xin nghỉ trên app.
 
 **B. Câu hỏi chờ chủ sản phẩm:**
-- **Ân hạn 15 phút:** ca làm việc có trường ân hạn 15 phút, nhưng G4 đang bỏ qua theo đúng yêu cầu "muộn 1 phút tính 30 phút". Hỏi họ có muốn áp dụng ân hạn không.
+- ~~Ân hạn 15 phút~~ — chủ sản phẩm chốt 03/10: **không ân hạn**, giữ "muộn 1 phút tính 30 phút".
 
 **C. Hạng mục mới (mục 5 và 6.3 của README); chủ sản phẩm chọn:**
 - **H2. Điều động nhân sự tới công trường** (Claude đề xuất làm trước):
