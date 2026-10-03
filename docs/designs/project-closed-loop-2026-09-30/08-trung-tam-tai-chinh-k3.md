@@ -382,3 +382,15 @@ Migration `20261008133100_finance_k3b2_po_payment_status.sql`, RPC `get_procurem
   - Chi tiết PO: mục "Thanh toán NCC" và nút "Xem ở Tài chính".
 
 **Còn chờ chủ SP quyết:** tạm ứng NCC theo PO; mẫu xuất phiếu chi / UNC sang MISA.
+
+## 14. Kiện toàn đợt 1: Tổng quan, Sức khỏe dự án, Việc cần làm (03/10/2026)
+
+Chủ SP duyệt mockup `fn-v1` và 5 câu. Migration `20261008133900_finance_overview.sql`, RPC `get_finance_overview_v1`.
+
+- **Khung tab:** Tổng quan · Việc cần làm · Phải thu · Phải trả · Thu chi & quỹ · Chi phí & ngân sách · Thiết lập (Phải thu, Thu chi & quỹ, Chi phí & ngân sách ở đợt sau). Mở `/finance` không chỉ định phần: Tài chính — Quản trị / Admin vào **Tổng quan**, kế toán vào **Việc cần làm**.
+- **Tổng quan** (chỉ Tài chính — Quản trị / Admin): dải số lớn (đã thu, chi phí, thu − chi, phải trả NCC), số phụ (giá trị HĐ, còn phải thu, tạm ứng CĐT, sản lượng ước tính), "Cần Ban giám đốc chú ý", dòng tiền theo tháng, cơ cấu chi phí, bảng sức khỏe từng dự án; lọc kỳ (lũy kế / năm / quý / tháng) và dự án.
+- **Sức khỏe dự án:** HĐ → sản lượng ước tính → nghiệm thu → đã thu → chi phí; thu chi theo tháng; chi phí theo khoản mục so với dự toán; phải thu CĐT theo đợt; phải trả NCC.
+- **Nguồn số:** HĐ = HĐ chủ đầu tư; tiến độ = Gantt có trọng số (như màn dự án); sản lượng = tiến độ × HĐ, nhãn "ước tính" cho tới khi có nghiệm thu; đã thu = giao dịch thu; chi phí = giao dịch chi phí trừ dòng ghi sổ chi tiền NCC; phải trả = chứng từ công nợ còn nợ (trừ đơn vị nội bộ). Số chưa có nguồn hiện "Chưa có dữ liệu".
+- **Đánh giá dự án:** Rủi ro (chi phí vượt số đã thu); Cần chú ý (chi phí % HĐ > tiến độ + 10, vật tư % dự toán > tiến độ + 15, nợ quá hạn ≥ 50 tr); Ổn định; Chưa phát sinh.
+- **Việc cần làm:** đầu kỳ NCC, phiếu nhập trực tiếp chờ ghi nợ, bảng đối soát chờ ghi nợ, nợ quá hạn / đến hạn, đề nghị chi đang duyệt / chờ chi, chuyển kho chờ giá vốn, chứng từ cần soát xét — bấm mở đúng chỗ ở Phải trả.
+- **Câu 5 (tiến độ trùng):** 17 dòng `project_finances` của SMB là lịch sử mỗi lần cập nhật (15% → 40%), chỉ là nguồn dự phòng khi không có Gantt. Tổng quan dùng Gantt (SMB 82%, DA29 7%) nên không sửa dữ liệu.

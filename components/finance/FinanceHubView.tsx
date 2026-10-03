@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, Banknote, CalendarClock, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank,
-  ArrowLeftRight, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
+  ArrowLeftRight, ListTodo, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
 } from 'lucide-react';
 import { financeService, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
@@ -11,12 +11,14 @@ import { PaymentRequestsView } from './PaymentRequestsView';
 import { PendingStatementsView } from './PendingStatementsView';
 import { SupplierPanel } from './SupplierPanel';
 import { TransferReviewsView } from './TransferReviewsView';
+import { FinanceOverviewView } from './FinanceOverviewView';
+import { FinanceTodoView, type TodoTarget } from './FinanceTodoView';
 import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financeUi';
 
 // Module Tài chính: một nơi cho công nợ, chi tiền, dòng tiền toàn công ty — không phải vào từng dự án.
-// K3a: phần Phải trả NCC (danh sách NCC trái, chi tiết phải), Chờ ghi nợ, Thiết lập. Các phần khác mở dần (K3b → F5).
+// Tổng quan (Ban giám đốc), Việc cần làm (kế toán), Phải trả NCC, Thiết lập. Phải thu, Thu chi & quỹ, Chi phí & ngân sách mở ở đợt sau.
 
-type Section = 'payables' | 'settings';
+type Section = 'auto' | 'overview' | 'todo' | 'payables' | 'settings';
 type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid';
 type Filter = 'all' | 'overdue' | 'soon' | 'issues' | 'opening';
 type Sort = 'overdue' | 'owed' | 'due' | 'name';
@@ -29,7 +31,9 @@ const OPENING_BADGE: Record<FinanceSupplierSummary['opening'], { label: string; 
 };
 
 export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null; initialRequestId?: string | null }> = ({ currentUserId, initialSection, initialSupplierId, initialRequestId }) => {
-  const [section, setSection] = useState<Section>(initialSection === 'settings' ? 'settings' : 'payables');
+  // Không chỉ định phần: Ban giám đốc (Tài chính — Quản trị) vào Tổng quan, kế toán vào Việc cần làm.
+  const [section, setSection] = useState<Section>(initialSection === 'settings' || initialSection === 'overview' || initialSection === 'todo' ? initialSection
+    : initialSection || initialSupplierId || initialRequestId ? 'payables' : 'auto');
   const [stage, setStage] = useState<Stage>(initialSection === 'pending' ? 'pending' : initialSection === 'requests' ? 'request' : 'owed');
   const [requestCounts, setRequestCounts] = useState<{ request: number; approved: number; approvedAmount: number; paid: number; waitingMe: number } | null>(null);
   const [stageKey, setStageKey] = useState(0);
@@ -64,6 +68,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     try {
       const r = await financeService.list({ projectId: projectId || undefined, source: source || undefined });
       setData(r); setStatus('ready');
+      setSection(cur => (cur === 'auto' ? (r.can.manage ? 'overview' : 'todo') : cur));
       financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
       financeService.paymentRequests('request').then(d => setRequestCounts(d.counts)).catch(() => setRequestCounts(null));
       financeService.directReceipts().then(d => setDirect({ count: d.receipts.length, amount: d.receipts.reduce((s, x) => s + x.value, 0), missing: d.receipts.filter(x => x.missingPrice > 0).length }))
@@ -94,21 +99,33 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
 
   const t = data?.totals;
   const hideOnMobile = mobileDetail ? 'hidden md:block' : '';
+  const openPayables = (opts: { stage?: Stage; filter?: Filter; projectId?: string; pending?: 'direct' | 'statements'; transfers?: boolean } = {}) => {
+    setSection('payables'); setStage(opts.stage || 'owed'); setFilter(opts.filter || 'all'); setShowTransfers(Boolean(opts.transfers));
+    if (opts.pending) setPendingTab(opts.pending);
+    if (opts.projectId !== undefined) setProjectId(opts.projectId);
+    window.scrollTo({ top: 0 });
+  };
+  const goTodo = (k: TodoTarget) => {
+    if (k === 'opening' || k === 'overdue' || k === 'soon' || k === 'issues') openPayables({ filter: k });
+    else if (k === 'direct' || k === 'statements') openPayables({ stage: 'pending', pending: k });
+    else if (k === 'request' || k === 'approved') openPayables({ stage: k });
+    else openPayables({ transfers: true });
+  };
   return <main className="min-h-screen space-y-4 bg-slate-50 px-3 py-4 text-foreground dark:bg-slate-950 sm:px-5 md:py-5">
     <header className={`flex flex-wrap items-start justify-between gap-3 ${mobileDetail ? 'hidden md:flex' : ''}`}>
       <div className="flex min-w-0 items-start gap-3">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-700 to-mint-500 text-white shadow-sm"><Wallet size={22} /></span>
         <div><h1 className="text-xl font-bold tracking-tight md:text-2xl">Tài chính</h1>
-          <p className="text-sm text-muted-foreground">Công nợ, chi tiền và dòng tiền toàn công ty — không cần vào từng dự án.</p></div>
+          <p className="text-sm text-muted-foreground">Sức khỏe tài chính toàn công ty và từng dự án; công nợ, chi tiền cho kế toán.</p></div>
       </div>
       <button type="button" onClick={() => { void load(true); setPanelKey(k => k + 1); }} disabled={refreshing} className={`${secondaryBtn} bg-card`}>
         <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />Làm mới</button>
     </header>
 
     <nav className={`inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm ${mobileDetail ? 'hidden md:inline-flex' : ''}`} role="tablist" aria-label="Phần">
-      {([['payables', 'Phải trả', Wallet], ['receivables', 'Phải thu', HandCoins], ['cash', 'Dòng tiền & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale],
-        ['overview', 'Tổng quan', CircleDollarSign], ['settings', 'Thiết lập', Settings2]] as const).map(([k, l, I]) => {
-        const ready = k === 'payables' || k === 'settings';
+      {([['overview', 'Tổng quan', CircleDollarSign], ['todo', 'Việc cần làm', ListTodo], ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet],
+        ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['settings', 'Thiết lập', Settings2]] as const).map(([k, l, I]) => {
+        const ready = k === 'payables' || k === 'settings' || k === 'todo' || k === 'overview';
         return <button key={k} type="button" role="tab" aria-selected={section === k} disabled={!ready} title={ready ? undefined : 'Sẽ mở ở các đợt sau (F4, F5)'}
           onClick={() => ready && setSection(k as Section)}
           className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${section === k ? 'bg-teal-700 text-white' : ready ? 'text-muted-foreground hover:text-foreground' : 'cursor-not-allowed text-muted-foreground/60'}`}>
@@ -120,6 +137,10 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       : status === 'error' && !data ? <StateBox kind="error" title="Chưa tải được Tài chính" message={message} onRetry={() => void load()} />
         : !data || !t ? <StateBox kind="loading" title="Đang tải công nợ…" />
           : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} />
+          : section === 'overview' ? <FinanceOverviewView openingPendingSuppliers={t.openingPendingSuppliers} supplierCount={t.supplierCount} directPending={direct}
+            onOpenPayables={projectId => openPayables({ projectId: projectId || '' })} onOpenPending={() => openPayables({ stage: 'pending', pending: 'direct' })} onOpenTodo={() => setSection('todo')} />
+          : section === 'todo' || section === 'auto' ? <FinanceTodoView totals={t} direct={direct} pendingStatements={data.pendingStatements} requests={requestCounts} transferCount={transferCount}
+            canRecord={data.can.record} canConfirm={data.can.confirm} onGo={goTodo} />
           : showTransfers ? <TransferReviewsView onBack={() => setShowTransfers(false)} onChanged={() => void load(true)} /> : <>
             {transferCount > 0 && <p className={`flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 ${hideOnMobile}`}>
               <ArrowLeftRight size={17} className="shrink-0" />
