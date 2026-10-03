@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeftRight, CalendarClock, ClipboardCheck, Landmark, Loader2, Save, Send, ShieldCheck } from 'lucide-react';
 import { financeService, type CashAccount, type CashAccountKind, type CashPlan, type FinanceAttachment, type FinanceCash, type FinancePaymentRequest, type FinanceRoutePreview } from '../../lib/financeService';
 import { Drawer, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { AttachmentPicker, ENT, FieldError, moneyInput, parseMoney } from './financeUi';
+import { AttachmentPicker, ENT, FieldError, RouteExtrasNote, moneyInput, parseMoney } from './financeUi';
 
 // Các form của Thu chi & quỹ. Máy chủ kiểm tra mọi số, quyền và tách nhiệm; ở đây chỉ gợi ý.
 
@@ -156,7 +156,7 @@ export const ExpenseDrawer: React.FC<{ projects?: Array<{ id: string; code: stri
   const [project, setProject] = useState(request?.expense?.projectId || ''); const [cost, setCost] = useState(request?.expense?.costCategory || 'overhead');
   const [preview, setPreview] = useState<{ route: FinanceRoutePreview['route']; canRecord: boolean } | null>(null);
   const { busy, err, run } = useRun(onSaved); const amt = parseMoney(amount) || 0;
-  useEffect(() => { if (!(amt > 0)) { setPreview(null); return; } const t = setTimeout(() => { financeService.previewExpense({ amount: amt, requestId: request?.id }).then(setPreview).catch(() => setPreview(null)); }, 350); return () => clearTimeout(t); }, [amt, request?.id]);
+  useEffect(() => { if (!(amt > 0)) { setPreview(null); return; } const t = setTimeout(() => { financeService.previewExpense({ amount: amt, requestId: request?.id, projectId: project || null, costCategory: project ? cost : null }).then(setPreview).catch(() => setPreview(null)); }, 350); return () => clearTimeout(t); }, [amt, request?.id, project, cost]);
   const blockers = [!party.trim() && 'Nhập người nhận', !(amt > 0) && 'Nhập số tiền', !note.trim() && 'Nhập nội dung', preview?.route.problemStep && `Bước "${preview.route.problemStep}" chưa có người duyệt`,
     preview && !preview.canRecord && 'Cần quyền Tài chính — Ghi nhận'].filter(Boolean) as string[];
   return <Drawer label="Phiếu chi khác" wide onClose={onClose}
@@ -182,6 +182,7 @@ export const ExpenseDrawer: React.FC<{ projects?: Array<{ id: string; code: stri
         : <ol className="mt-2 flex flex-wrap items-center gap-2">{preview.route.steps.map((s, i) => <li key={i} className="flex items-center gap-2">{i > 0 && <span className="text-muted-foreground">→</span>}
           <span className={`rounded-lg border px-2 py-1 ${s.eligibleIds.length ? 'border-border' : 'border-rose-300 bg-rose-50'}`}><b>{i + 1}. {s.label}</b><span className="block text-xs text-muted-foreground">{s.eligibleNames.join(' hoặc ') || 'Không còn người hợp lệ'}</span></span></li>)}
           <li className="flex items-center gap-2"><span className="text-muted-foreground">→</span><span className="rounded-lg border border-dashed border-border px-2 py-1"><b>Xác nhận đã chi</b><span className="block text-xs text-muted-foreground">người thứ ba · chọn tài khoản · UNC</span></span></li></ol>}
+      <RouteExtrasNote route={preview?.route} />
     </section>
     <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Landmark size={13} />Khoản lặp lại hằng tháng: khai thêm ở "Khoản định kỳ" để dự báo dòng tiền tính trước.</p>
   </Drawer>;

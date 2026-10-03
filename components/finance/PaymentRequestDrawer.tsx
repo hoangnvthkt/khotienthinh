@@ -3,7 +3,7 @@ import { Loader2, Lock, Send, ShieldCheck } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { SOURCE_LABELS, financeService, type FinancePaymentRequest, type FinanceRoutePreview, type FinanceSupplierDetail } from '../../lib/financeService';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { ENT, NUM, moneyInput, parseMoney, toneOf, viDate } from './financeUi';
+import { ENT, NUM, RouteExtrasNote, moneyInput, parseMoney, toneOf, viDate } from './financeUi';
 
 // Lập (hoặc sửa và gửi lại) đề nghị chi cho một NCC: chọn chứng từ, số chi từng chứng từ, xem trước luồng duyệt theo ma trận.
 
@@ -135,6 +135,7 @@ export const PaymentRequestDrawer: React.FC<{ supplierId: string; request?: Fina
                   <span className="block text-xs text-muted-foreground">{s.eligibleNames.length ? s.eligibleNames.join(' hoặc ') : 'Không còn người hợp lệ'}</span></span></li>)}
               <li className="flex items-center gap-2"><span className="text-muted-foreground">→</span><span className="rounded-lg border border-dashed border-border px-2 py-1"><b>Xác nhận đã chi</b>
                 <span className="block text-xs text-muted-foreground">kế toán khác người lập và người duyệt</span></span></li></ol>
+            <RouteExtrasNote route={preview.route} />
             {preview.route.handlerNames.length > 0 && <p className="mt-2 text-xs text-muted-foreground"><Lock size={12} className="inline" /> {preview.route.handlerNames.join(', ')} đã nhận hàng / lập-chốt chứng từ nên không duyệt và không xác nhận chi đề nghị này.</p>}
           </>}
         </section>

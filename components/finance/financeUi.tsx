@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { FileText, Loader2, Paperclip, X } from 'lucide-react';
-import { financeService, type FinanceAttachment } from '../../lib/financeService';
+import { financeService, type FinanceAttachment, type FinanceRouteExtras } from '../../lib/financeService';
 import { money } from '../procurement/hub/hubUi';
 
 // Quy ước màu FastCons: dữ liệu có id màu xanh ngọc, số liệu xanh lá, cam/đỏ chỉ cho cảnh báo.
@@ -73,6 +73,20 @@ export const AttachmentPicker: React.FC<{ supplierId: string; value: FinanceAtta
       </div>
     </div>;
   };
+
+/** Vì sao luồng duyệt có bước thêm: khoản mục vượt ngân sách, quỹ dự án âm; dự án chưa chốt đầu kỳ quỹ thì chưa xét. */
+export const RouteExtrasNote: React.FC<{ route?: FinanceRouteExtras | null }> = ({ route }) => {
+  if (!route) return null;
+  const over = route.budgetOver || []; const short = route.fundShort || []; const unknown = route.fundUnknown || [];
+  if (!over.length && !short.length && !unknown.length) return null;
+  return <ul className="mt-2 space-y-1 text-xs">
+    {over.map((o, i) => <li key={`o${i}`} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+      <b>{o.projectCode} · {o.item} vượt ngân sách:</b> sau khoản này {shortMoney(o.projected)} / ngân sách {shortMoney(o.budget)} → thêm bước "Duyệt vượt ngân sách".</li>)}
+    {short.map((s, i) => <li key={`s${i}`} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-100">
+      <b>Quỹ dự án {s.projectCode} không đủ:</b> còn {shortMoney(s.balance)}{s.pending > 0.5 ? `, đang duyệt / chờ chi ${shortMoney(s.pending)}` : ''} → sau khoản này âm {shortMoney(-s.after)}. Thêm bước "Cấp vốn dự án"; chi xong phần thiếu tự ghi là vốn công ty cấp.</li>)}
+    {unknown.length > 0 && <li className="text-muted-foreground">{unknown.join(', ')} chưa chốt đầu kỳ quỹ dự án — chưa xét được bước cấp vốn.</li>}
+  </ul>;
+};
 
 export const FieldError: React.FC<{ error: string | null }> = ({ error }) => error
   ? <p role="alert" className="mr-auto text-sm text-rose-700 dark:text-rose-300">{error}</p> : null;

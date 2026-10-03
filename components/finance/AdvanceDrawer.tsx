@@ -5,7 +5,7 @@ import {
   financeService, type FinanceAdvanceOptions, type FinanceAdvancePreview, type FinanceAdvanceSupplier, type FinancePaymentRequest,
 } from '../../lib/financeService';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { ENT, NUM, moneyInput, parseMoney, shortMoney, viDate } from './financeUi';
+import { ENT, NUM, RouteExtrasNote, moneyInput, parseMoney, shortMoney, viDate } from './financeUi';
 
 // Lập (hoặc sửa và gửi lại) đề nghị tạm ứng NCC: gắn một đơn hàng hoặc một HĐ nguyên tắc + dự án, % / số tiền, hạn hoàn ứng, lý do.
 // Duyệt theo ma trận đề nghị chi; vượt ngưỡng % thì thêm bước duyệt (cài ở Quản trị). Kho nhận hàng của đơn đó thì tự cấn trừ.
@@ -203,6 +203,7 @@ export const AdvanceDrawer: React.FC<{ supplierId?: string | null; request?: Fin
                       <span className="block text-xs text-muted-foreground">{s.eligibleNames.length ? s.eligibleNames.join(' hoặc ') : 'Không còn người hợp lệ'}</span></span></li>)}
                   <li className="flex items-center gap-2"><span className="text-muted-foreground">→</span><span className="rounded-lg border border-dashed border-border px-2 py-1"><b className="inline-flex items-center gap-1"><Banknote size={13} />Xác nhận đã chi</b>
                     <span className="block text-xs text-muted-foreground">kế toán khác người lập và người duyệt · UNC + file</span></span></li></ol>
+                <RouteExtrasNote route={preview.route} />
                 {preview.route.extraCovered && <p className="mt-2 text-xs text-muted-foreground">Vượt {preview.route.extraPercent}% nhưng người duyệt vượt ngưỡng đã có trong luồng — không thêm bước.</p>}
               </>}
           </section>

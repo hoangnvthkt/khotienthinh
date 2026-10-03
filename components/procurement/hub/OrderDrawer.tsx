@@ -95,10 +95,11 @@ export const OrderDrawer: React.FC<{
     if (!order) return;
     setBusy(true);
     try {
-      await procurementInboxService.transitionOrder({ purchaseOrderId: order.id, expectedRowVersion: order.rowVersion, action,
+      const r = await procurementInboxService.transitionOrder({ purchaseOrderId: order.id, expectedRowVersion: order.rowVersion, action,
         approverUserId: action === 'submit' ? approver : undefined, reason });
       const who = order.approvers.find(a => a.id === approver)?.name;
-      toast.success({ submit: `Đã gửi ${order.poNumber} cho ${who} duyệt`, approve: `Đã duyệt ${order.poNumber}`, return: `Đã trả lại ${order.poNumber}`, delete: `Đã xóa nháp ${order.poNumber}` }[action],
+      if (r.budgetPending) toast.warning(`${order.poNumber} vượt dự toán vật tư`, `Chưa duyệt được: chờ ${(r.budgetApproverNames || []).join(', ') || 'người duyệt vượt ngân sách'} duyệt ở Tài chính → Chi phí & ngân sách. Duyệt xong bạn được báo để duyệt đơn.`);
+      else toast.success({ submit: `Đã gửi ${order.poNumber} cho ${who} duyệt`, approve: `Đã duyệt ${order.poNumber}`, return: `Đã trả lại ${order.poNumber}`, delete: `Đã xóa nháp ${order.poNumber}` }[action],
         action === 'approve' ? (order.purchaseMode === 'multiple' ? 'Gửi đơn cho NCC. Khi NCC báo giao, bấm "Lập đợt giao" với SL, giá, VAT của đợt.'
           : 'Gửi đơn cho NCC. Phiếu nhập kho (QR) đã sẵn sàng cho thủ kho.') : undefined);
       onChanged();
@@ -183,6 +184,9 @@ export const OrderDrawer: React.FC<{
         : [order.projectCode, order.projectName].filter(Boolean).join(' — ')}</p>
     </> : <h2 className="text-lg font-bold">Đơn hàng</h2>}>
     {error ? <StateBox kind="error" message={error} onRetry={load} /> : !order ? <StateBox kind="loading" title="Đang tải đơn hàng…" /> : <>
+      {order.budgetApproval && order.status === 'sent' && <p className={`flex gap-2 rounded-xl border px-3 py-2.5 text-sm ${order.budgetApproval.status === 'approved' ? 'border-leaf-200 bg-leaf-50 text-leaf-900 dark:border-leaf-900 dark:bg-leaf-950/30 dark:text-leaf-100' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100'}`}>
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><b>{order.budgetApproval.status === 'approved' ? `Đã duyệt vượt ngân sách${order.budgetApproval.decidedByName ? ` (${order.budgetApproval.decidedByName})` : ''}` : 'Vượt dự toán vật tư — chờ duyệt vượt ngân sách'}:</b> sau đơn này vật tư {order.budgetApproval.projectCode || ''} dùng {money(order.budgetApproval.projected)} đ / dự toán {money(order.budgetApproval.budget)} đ.
+          {order.budgetApproval.status === 'pending' && ` ${(order.budgetApproval.approverNames || []).join(', ') || 'Người duyệt vượt ngân sách'} duyệt ở Tài chính trước, sau đó mới duyệt được đơn.`}</span></p>}
       {order.status === 'returned' && order.returnReason && <p role="alert" className="flex gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
         <AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><b>Bị trả lại:</b> {order.returnReason}</span></p>}
       {perms?.canSubmit && unpriced > 0 && <p className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">

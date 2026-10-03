@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, ChevronRight, Search } from 'lucide-react';
+import { AlertTriangle, CalendarClock, ChevronRight, Search } from 'lucide-react';
 import {
   procurementInboxService, type ProcurementOrderList, type ProcurementOrderStage, type ProcurementOrderSummary, type ProcurementPoPayment,
 } from '../../../lib/procurementInboxService';
@@ -58,6 +58,7 @@ export const OrdersView: React.FC<{
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [payments, setPayments] = useState<Record<string, ProcurementPoPayment>>({});
+  const [staleOnly, setStaleOnly] = useState(false);
 
   useEffect(() => { const t = setTimeout(() => setQuery(search.trim()), 300); return () => clearTimeout(t); }, [search]);
   const load = useCallback(() => {
@@ -71,8 +72,14 @@ export const OrdersView: React.FC<{
   }, [stage, projectId, mine, query]);
   useEffect(() => { load(); }, [load, reloadKey]);
 
+  // Quá hẹn giao hơn 30 ngày: NCC có thể không giao nữa — nhắc kết thúc đơn để cam kết chi phí (Tài chính) không bị thổi phồng.
+  const stale = useMemo(() => {
+    if (!data) return [];
+    const limit = new Date(Date.parse(`${data.today}T00:00:00Z`) - 30 * 86400000).toISOString().slice(0, 10);
+    return data.orders.filter(o => o.late && o.expectedDeliveryDate && o.expectedDeliveryDate.slice(0, 10) < limit);
+  }, [data]);
   const groups = useMemo(() => {
-    const orders = data?.orders || [];
+    const orders = staleOnly ? stale : data?.orders || [];
     if (stage !== 'drafting') return [{ key: 'all', label: '', orders }];
     return [
       { key: 'me', label: 'Chờ bạn duyệt', orders: orders.filter(o => o.awaitingMe) },
@@ -80,7 +87,7 @@ export const OrdersView: React.FC<{
       { key: 'sent', label: 'Chờ duyệt', orders: orders.filter(o => !o.awaitingMe && o.status === 'sent') },
       { key: 'draft', label: 'Nháp', orders: orders.filter(o => o.status === 'draft') },
     ].filter(g => g.orders.length > 0);
-  }, [data, stage]);
+  }, [data, stage, staleOnly, stale]);
 
   return <section className="space-y-3">
     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-sm">
@@ -97,6 +104,11 @@ export const OrdersView: React.FC<{
         </label>
       </span>
     </div>
+    {stale.length > 0 && <p className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+      <AlertTriangle size={17} className="shrink-0" />
+      <span className="min-w-[14rem] flex-1"><b>{stale.length} đơn quá hẹn giao hơn 30 ngày.</b> Liên hệ NCC; nếu NCC không giao nữa, mở đơn → "Kết thúc thiếu" (đơn lập ở dự án: xử lý ở tab dự án) để Tài chính không tính phần chưa giao vào chi phí sắp phát sinh.</span>
+      <button type="button" onClick={() => setStaleOnly(s => !s)} className="rounded-lg border border-amber-300 bg-card px-3 py-1.5 text-sm font-semibold">{staleOnly ? 'Xem mọi đơn' : 'Chỉ xem các đơn này'}</button>
+    </p>}
     {error ? <StateBox kind="error" message={error} onRetry={load} />
       : !data ? <StateBox kind="loading" title="Đang tải đơn hàng…" />
         : data.orders.length === 0 ? <StateBox kind="empty" title={STAGE_COPY[stage].empty} message={projectId || mine || query ? 'Thử bỏ bớt bộ lọc.' : undefined} />
