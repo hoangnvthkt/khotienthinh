@@ -495,3 +495,45 @@ ràng buộc thu chi); Việc cần làm + Tổng quan (chưa khai tài khoản,
 (không chọn TK bị chặn) → số dư đúng; chi điện 18 tr gắn SMB → chi phí overhead → đảo (sổ + chi phí ghi đảo); chuyển tiền / thu lãi
 (cùng TK, thiếu chứng từ, tự xác nhận bị chặn); phiếu thu CĐT bắt buộc TK; chi ngoài sau mốc bắt buộc TK, trước mốc không cần; đối chiếu
 tháng chưa hết bị chặn, chốt T9; dự báo; tồn quỹ tối thiểu chỉ Quản trị sửa; sửa thẳng danh mục quỹ / sổ thu chi bị chặn.
+
+## 18. Tài chính đợt 3b-1 — Chi phí & ngân sách + Quỹ dự án (04/10/2026)
+
+Chủ SP duyệt mockup `cb-v1` + 8 câu (03/10) và 4 câu quỹ dự án: ngân sách theo cây khoản mục đang dùng, vật tư lấy từ dự toán vật tư,
+QS / kế toán lập, Quản trị Tài chính duyệt, điều chỉnh = phiên bản mới; cảnh báo từ 90%, phiếu chi khác / đơn mua làm khoản mục vượt
+100% thì thêm bước duyệt; dự báo khi hoàn thành = chi phí ÷ tiến độ Gantt khi tiến độ ≥ 20%; quỹ dự án tự động (đầu kỳ 30/09 theo MISA,
+người khác chốt + tiền CĐT trả + vốn công ty cấp − tiền đã chi); khoản chi làm quỹ âm thêm bước "Cấp vốn dự án" (người cấp vốn ở Quản trị,
+mặc định chị Mơ; không chặn cứng); nhắc Mua hàng kết thúc đơn quá hẹn giao 30 ngày. Phân bổ lương công nhân / chi phí chung và quỹ công
+trường + hoàn ứng làm ở đợt 3b-2.
+
+Migration `20261008134300_finance_cost_budget.sql` (chạy sau `20261008134200` Thu chi & quỹ).
+
+**Mô hình**
+- `finance_project_budgets` (phiên bản, trạng thái chờ duyệt / đang áp dụng / bị trả lại / đã rút / bản cũ; một bản chờ duyệt và một bản
+  đang áp dụng mỗi dự án) + `finance_project_budget_lines` (khoản mục lá, không gồm vật tư, VAT, thu nhập chịu thuế tính trước).
+- Chi phí theo khoản mục (`finance_project_cost_lines`): `project_transactions` loại chi phí (bỏ dòng chi tiền `supplier_payment_batch:%`);
+  giao dịch chưa gắn khoản mục tự xếp theo loại chi phí (đánh dấu "tự xếp"). Cam kết = đơn mua đã duyệt chưa nhận hết (giá trước VAT, đơn
+  Mua hàng đang chờ duyệt chưa tính) + phiếu chi khác đã duyệt chưa chi. Chưa có ngân sách = null, không xét vượt.
+- Quỹ dự án (`finance_project_fund_rows` / `finance_project_fund`): từ sổ thu chi — phiếu thu CĐT, NCC hoàn tạm ứng, thu khác gắn dự án (+);
+  chi NCC theo dự án của từng chứng từ trong đề nghị, tạm ứng, chi khác gắn dự án, chi ngoài (−); chuyển tiền sang / về quỹ công trường của
+  dự án (−/+), khoản chi ngay trên quỹ công trường không tính lại; vốn công ty cấp / thu hồi (`finance_project_capital`).
+  Đầu kỳ `finance_project_fund_openings` (đã thu − đã chi đến 30/09, người khác chốt). Chưa chốt đầu kỳ → số dư null ("chưa biết").
+- Bước duyệt thêm (`finance_route_extras`, vá 6 hàm xem trước / gửi đề nghị chi NCC, tạm ứng, chi khác): "Duyệt vượt ngân sách"
+  (`finance_settings.budget_extra_approver_ids`, mặc định TGĐ) cho phiếu chi khác gắn dự án; "Cấp vốn dự án" (`capital_provider_ids`)
+  khi số dư quỹ − khoản đang duyệt / chờ chi − khoản này < 0. Người đã có trong luồng thì gắn vào bước của họ.
+- Xác nhận chi khoản đã qua bước cấp vốn mà quỹ âm → tự ghi vốn công ty cấp đúng phần thiếu (người cấp = người duyệt bước đó);
+  đảo phiếu chi → đảo khoản cấp vốn đó. Cấp / thu hồi vốn tay chỉ người cấp vốn, bắt buộc lý do, thu hồi ≤ số đang ứng.
+- Đơn Mua hàng (`transition_procurement_hub_po_v1`): gửi duyệt / duyệt đơn làm vật tư dự án vượt dự toán → ghi "chờ duyệt vượt ngân
+  sách" vào đơn, báo người duyệt vượt ngân sách; người đó duyệt / không duyệt ở Tài chính (`decide_finance_po_budget_v1`, không duyệt =
+  trả đơn về người lập); người duyệt đơn chỉ duyệt được sau đó. Đơn nhiều dự án (không gắn một dự án) chưa xét.
+
+**Màn hình**: Tài chính → Chi phí & ngân sách (4 số lớn, chờ xử lý, cần chú ý, bảng dự án; mở dự án: ngân sách theo khoản mục, bản chờ
+duyệt so với bản đang áp dụng, đơn chưa nhận, lịch sử phiên bản; quỹ dự án: số dư, đầu kỳ, tiền vào / ra, cấp / thu hồi vốn);
+ghi chú vì sao có bước thêm ở form đề nghị chi / tạm ứng / chi khác; Việc cần làm, Tổng quan, Quản trị (ngưỡng, người duyệt vượt ngân
+sách, người cấp vốn, ràng buộc); Mua hàng: nhắc đơn quá hẹn > 30 ngày, đơn chờ duyệt vượt ngân sách.
+
+**Kiểm thử** rollback (`tools/cb-test.mjs`): ngân sách (vật tư nhập tay, thiếu lý do, hai bản chờ duyệt, tự duyệt, người không có quyền
+Quản trị bị chặn; duyệt → bản cũ; trả lại cần lý do); đầu kỳ quỹ (thiếu chứng từ, trùng, tự chốt bị chặn; trước khi chốt số dư null);
+phiếu chi khác nhân công SMB 3 tỷ → thêm "Duyệt vượt ngân sách"; chi DA29 35 tỷ (quỹ 33,8 tỷ) → thêm "Cấp vốn dự án", chị Mơ duyệt, chi
+xong tự ghi vốn cấp 1,185 tỷ, quỹ về 0; đảo → vốn cấp đảo, quỹ về 33,8 tỷ; cấp / thu hồi vốn tay (người khác, thu hồi vượt, ngày tương lai,
+đảo làm vốn âm bị chặn); chuyển tiền sang quỹ công trường SMB = chi của quỹ; PO-557 (SMB, vượt dự toán vật tư) → chờ duyệt vượt ngân sách,
+kế toán không duyệt được, TGĐ duyệt → người duyệt đơn duyệt → đã duyệt; Quản trị chỉ Quản trị Tài chính sửa.

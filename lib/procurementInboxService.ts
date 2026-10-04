@@ -222,7 +222,7 @@ export const procurementInboxService = {
     return call<{ purchaseOrderId: string; qty: number; code: string }>('assign_group_po_excess_v1', { p_input: input });
   },
   transitionOrder(input: { purchaseOrderId: string; expectedRowVersion: number; action: 'submit' | 'approve' | 'return' | 'delete'; approverUserId?: string; reason?: string }) {
-    return call<{ purchaseOrderId: string; status: string; rowVersion: number }>('transition_procurement_hub_po_v1', { p_input: input });
+    return call<{ purchaseOrderId: string; status: string; rowVersion: number; budgetPending?: boolean; budgetApproverNames?: string[] }>('transition_procurement_hub_po_v1', { p_input: input });
   },
 };
 
@@ -282,6 +282,9 @@ export interface ProcurementOrderDetail {
   purchaseMode: 'single' | 'multiple'; approvedTotalAmount: number;
   kind: ProcurementOrderKind; proactive: ProcurementProactiveInfo | null;
   shortClose: { reason: string; returnToNeed: boolean; shortStockQty: number; at: string; by: string | null } | null;
+  /** Đơn làm vật tư của dự án vượt dự toán: chờ / đã duyệt vượt ngân sách ở Tài chính. */
+  budgetApproval?: { status: 'pending' | 'approved' | 'rejected'; budget: number; projected: number; order: number; projectCode: string | null;
+    approverNames?: string[]; decidedByName?: string; note?: string | null } | null;
   isGroup?: boolean; sites?: ProcurementGroupSite[];
   deliveries: ProcurementDelivery[];
   returns: ProcurementSupplierReturn[];

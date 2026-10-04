@@ -65,10 +65,16 @@ export interface FinanceDirectReceipt {
 }
 export interface FinanceDirectReceipts { receipts: FinanceDirectReceipt[]; returned: FinanceDirectReceipt[]; can: { record: boolean } }
 export type FinanceRequestStatus = 'pending' | 'returned' | 'approved' | 'paid' | 'rejected' | 'withdrawn' | 'cancelled' | 'reversed';
-export interface FinanceRouteStep { label: string; approverIds: string[]; eligibleIds: string[]; approverNames: string[]; eligibleNames: string[]; extra?: boolean }
+export interface FinanceRouteStep { label: string; approverIds: string[]; eligibleIds: string[]; approverNames: string[]; eligibleNames: string[]; extra?: boolean; budget?: boolean; fund?: boolean }
+/** Vì sao có bước duyệt thêm: khoản mục vượt ngân sách, quỹ dự án âm; dự án chưa chốt đầu kỳ quỹ thì chưa xét được. */
+export interface FinanceRouteExtras {
+  budgetOver?: Array<{ projectId: string; projectCode: string; item: string; budget: number; projected: number }>;
+  fundShort?: Array<{ projectId: string; projectCode: string; balance: number; pending: number; amount: number; after: number }>;
+  fundUnknown?: string[];
+}
 export interface FinanceRoutePreview {
   route: { versionId: string; tierNo: number; amount: number; priorAmount: number; priorRequests: Array<{ code: string; amount: number; status: string }>;
-    thresholdAmount: number; steps: FinanceRouteStep[]; handlerNames: string[]; problemStep: string | null };
+    thresholdAmount: number; steps: FinanceRouteStep[]; handlerNames: string[]; problemStep: string | null } & FinanceRouteExtras;
   bank: { bankName: string | null; account: string } | null; internal: boolean; reserved: Record<string, number>; canRecord: boolean;
 }
 export interface FinancePaymentRequest {
@@ -103,7 +109,8 @@ export interface FinanceApprovalStep { label: string; approvers: Array<{ id: str
 export interface FinanceSettings {
   can: FinanceCan;
   settings: { defaultPaymentDays: number; cutoverDate: string; rowVersion: number; updatedAt: string; updatedByName: string | null;
-    advanceWarnPercent: number; advanceExtraPercent: number; advanceExtraApproverIds: string[]; advanceGraceDays: number; cashMinBalance: number };
+    advanceWarnPercent: number; advanceExtraPercent: number; advanceExtraApproverIds: string[]; advanceGraceDays: number; cashMinBalance: number;
+    budgetWarnPercent: number; budgetApproverIds: string[]; capitalProviderIds: string[] };
   /** Ai đang giữ từng quyền Tài chính (Admin luôn có đủ). */
   responsibilities: Record<'view' | 'record' | 'confirm' | 'manage', Array<{ id: string; name: string; admin: boolean }>>;
   matrix: { id: string; versionNo: number; note: string | null; createdAt: string; createdByName: string | null;
@@ -250,6 +257,25 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_STATEMENT_SELF_POST: 'Người ghi công nợ phải khác người chốt bảng đối soát.',
   PROCUREMENT_STATEMENT_STATE: 'Bảng đối soát đã đổi trạng thái. Tải lại.',
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại.',
+  FINANCE_PROJECT_NOT_FOUND: 'Không tìm thấy dự án (hoặc dự án không thuộc phạm vi Tài chính).',
+  FINANCE_BUDGET_PENDING: 'Dự án đang có một ngân sách chờ duyệt — duyệt / trả lại hoặc rút bản đó trước.',
+  FINANCE_BUDGET_EMPTY: 'Nhập ngân sách cho ít nhất một khoản mục.',
+  FINANCE_BUDGET_LINE_INVALID: 'Khoản mục hoặc số tiền không hợp lệ (vật tư lấy từ dự toán, không nhập tay).',
+  FINANCE_BUDGET_NOT_FOUND: 'Không tìm thấy ngân sách.',
+  FINANCE_BUDGET_STATE: 'Ngân sách đã đổi trạng thái. Tải lại.',
+  FINANCE_BUDGET_SELF_DECIDE: 'Người lập không tự duyệt.',
+  FINANCE_BUDGET_APPROVER_DENIED: 'Chỉ người duyệt vượt ngân sách (cài ở Quản trị) mới duyệt được.',
+  FINANCE_PO_BUDGET_STATE: 'Đơn hàng không còn chờ duyệt vượt ngân sách. Tải lại.',
+  FINANCE_FUND_OPENING_EXISTS: 'Dự án đã có đầu kỳ quỹ (đang chờ chốt hoặc đã chốt).',
+  FINANCE_FUND_OPENING_NOT_FOUND: 'Không tìm thấy đầu kỳ quỹ.',
+  FINANCE_FUND_OPENING_STATE: 'Đầu kỳ quỹ đã đổi trạng thái. Tải lại.',
+  FINANCE_CAPITAL_DENIED: 'Chỉ người cấp vốn dự án (cài ở Quản trị) mới ghi được.',
+  FINANCE_CAPITAL_DATE_INVALID: 'Ngày không hợp lệ (từ mốc 01/10 đến hôm nay).',
+  FINANCE_CAPITAL_RETURN_EXCEEDS: 'Số thu hồi vượt số vốn công ty đang ứng cho dự án.',
+  FINANCE_CAPITAL_NOT_FOUND: 'Không tìm thấy khoản cấp vốn.',
+  FINANCE_CAPITAL_STATE: 'Khoản cấp vốn đã bị đảo.',
+  FINANCE_CAPITAL_AUTO: 'Khoản cấp vốn tự ghi khi chi — muốn bỏ thì đảo phiếu chi gốc.',
+  FINANCE_COST_SETTINGS_INVALID: 'Ngưỡng 50–100%, cần ít nhất một người duyệt vượt ngân sách và một người cấp vốn.',
 };
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
@@ -338,6 +364,61 @@ export interface CustomerContractDetail {
     advanceRecoveryPercent: number | null; retentionPercent: number | null; paymentTermDays: number | null };
   metrics: CustomerContractMetrics; rounds: ReceivableRound[]; receipts: CustomerReceipt[]; openings: CustomerOpening[]; guarantees: ContractGuarantee[];
   events: Array<{ action: string; actorName: string | null; reason: string | null; payload: Record<string, unknown>; at: string }>;
+}
+
+/** Quỹ dự án: số dư null = chưa chốt đầu kỳ (chưa biết), không hiện 0. */
+export interface FinanceProjectFund {
+  opening: number | null; openingDate: string | null; received: number; otherIn: number; spent: number; capital: number; flow: number; balance: number | null;
+}
+export interface FinanceCostProjectSummary extends FinanceProjectFund {
+  /** Tổng các khoản mục đã có ngân sách (vật tư = dự toán); null = chưa có khoản nào. */
+  budget: number | null; actual: number; committed: number; autoMapped: number; unclassified: number;
+  materialBudget: number | null; materialActual: number; materialCommitted: number;
+  overItems: number; warnItems: number; missingItems: number; overList: Array<{ item: string; budget: number; used: number }>;
+  /** Tiến độ Gantt; null = chưa có kế hoạch. Dự báo khi hoàn thành chỉ khi tiến độ ≥ 20%. */
+  progress: number | null; eac: number | null;
+}
+export interface FinanceCostProject extends FinanceCostProjectSummary {
+  id: string; code: string; name: string; contractValue: number | null; receivedAll: number;
+  currentBudget: { id: string; versionNo: number; decidedAt: string } | null;
+  pendingBudget: { id: string; versionNo: number; createdByName: string; canDecide: boolean } | null;
+  openingStatus: 'none' | 'submitted' | 'confirmed'; openingCanDecide: boolean;
+}
+export interface FinanceCostCan { view: boolean; record: boolean; confirm: boolean; manage: boolean; capital: boolean }
+export interface FinancePoBudgetPending {
+  purchaseOrderId: string; poNumber: string; projectId: string; projectCode: string; vendor: string | null; order: number; budget: number; projected: number;
+  requestedByName: string | null; requestedAt: string | null; approverName: string | null; createdByName: string | null; canDecide: boolean;
+}
+export interface FinanceCost {
+  today: string; cutoverDate: string; warnPercent: number; can: FinanceCostCan; capitalProviders: string[]; budgetApprovers: string[];
+  projects: FinanceCostProject[]; poBudget: FinancePoBudgetPending[];
+  stale: { count: number; amount: number; items: Array<{ poNumber: string; projectCode: string | null; vendor: string | null; status: string; expectedDate: string | null; openNet: number; hub: boolean }> };
+}
+export interface FinanceCostLine {
+  costItemId: string | null; symbol: string | null; name: string | null; groupSymbol: string | null; groupName: string | null;
+  budget: number | null; actual: number; autoMapped: number; committed: number; budgetSource: 'material' | 'budget' | null;
+}
+export interface FinanceProjectBudget {
+  id: string; versionNo: number; status: 'submitted' | 'approved' | 'rejected' | 'withdrawn' | 'superseded'; reason: string; materialBudget: number | null; otherTotal: number;
+  createdByName: string; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; rowVersion: number;
+  canDecide: boolean; canWithdraw: boolean; lines: Array<{ costItemId: string; amount: number; note: string | null }>;
+}
+export type FinanceFundRowKind = 'customer_receipt' | 'advance_refund' | 'other_receipt' | 'supplier_payment' | 'expense' | 'site_transfer' | 'capital' | 'capital_return';
+export interface FinanceProjectCost {
+  today: string; cutoverDate: string; warnPercent: number; can: FinanceCostCan;
+  project: FinanceCostProjectSummary & { id: string; code: string; name: string; contractValue: number | null; receivedAll: number };
+  items: Array<{ id: string; symbol: string; name: string; groupSymbol: string; groupName: string }>;
+  lines: FinanceCostLine[]; budgets: FinanceProjectBudget[];
+  commitments: Array<{ poNumber: string; vendor: string | null; status: string; expectedDate: string | null; netTotal: number; receivedNet: number; openNet: number; stale: boolean; hub: boolean }>;
+  fund: FinanceProjectFund & {
+    pending: number;
+    openingRecord: { id: string; status: 'submitted' | 'confirmed' | 'rejected' | 'cancelled'; cutoverDate: string; receivedToDate: number; spentToDate: number; balance: number;
+      note: string | null; attachments: FinanceAttachment[]; createdByName: string; createdAt: string; decidedByName: string | null; decidedAt: string | null;
+      decisionNote: string | null; canDecide: boolean; canCancel: boolean } | null;
+    rows: Array<{ date: string; kind: FinanceFundRowKind; code: string | null; description: string; amount: number; sourceType: string; reversal: boolean }>;
+    capitalList: Array<{ id: string; code: string; kind: 'topup' | 'return'; amount: number; date: string; reason: string; sourceType: 'manual' | 'payment_request';
+      status: 'posted' | 'reversed'; createdByName: string; createdAt: string; reversedByName: string | null; reverseReason: string | null; canReverse: boolean }>;
+  };
 }
 
 export type CashAccountKind = 'cash' | 'bank' | 'site';
@@ -520,12 +601,36 @@ export const financeService = {
   decideCashMovement(input: { id: string; expectedRowVersion: number; action: 'confirm' | 'reject' | 'withdraw' | 'reverse'; reason?: string }) {
     return call<{ id: string }>('decide_finance_cash_movement_v1', { p_input: input });
   },
-  previewExpense(input: { amount: number; requestId?: string }) { return call<{ route: FinanceRoutePreview['route']; canRecord: boolean }>('preview_finance_expense_v1', { p_input: input }); },
+  previewExpense(input: { amount: number; requestId?: string; projectId?: string | null; costCategory?: string | null }) { return call<{ route: FinanceRoutePreview['route']; canRecord: boolean }>('preview_finance_expense_v1', { p_input: input }); },
   saveExpense(input: { requestId?: string; expectedRowVersion?: number; counterparty: string; category: string; amount: number; plannedDate: string; method: 'bank_transfer' | 'cash';
     note: string; projectId?: string | null; costCategory?: string | null }) {
     return call<{ requestId: string; code: string; amount: number }>('save_finance_expense_request_v1', { p_input: input });
   },
   pendingStatements() { return call<FinancePendingStatement[]>('list_finance_pending_statements_v1', {}); },
+  cost() { return call<FinanceCost>('get_finance_cost_v1', {}); },
+  projectCost(projectId: string) { return call<FinanceProjectCost>('get_finance_project_cost_v1', { p_project_id: projectId }); },
+  saveProjectBudget(input: { projectId: string; reason: string; lines: Array<{ costItemId: string; amount: number; note?: string }> }) {
+    return call<{ id: string; versionNo: number }>('save_finance_project_budget_v1', { p_input: input });
+  },
+  decideProjectBudget(input: { id: string; expectedRowVersion: number; action: 'approve' | 'reject' | 'withdraw'; reason?: string }) {
+    return call<{ id: string; status: string }>('decide_finance_project_budget_v1', { p_input: input });
+  },
+  saveFundOpening(input: { projectId: string; receivedToDate: number; spentToDate: number; note?: string; attachments: FinanceAttachment[] }) {
+    return call<{ id: string }>('save_finance_project_fund_opening_v1', { p_input: input });
+  },
+  decideFundOpening(input: { id: string; action: 'confirm' | 'reject' | 'cancel'; reason?: string }) {
+    return call<{ id: string; status: string }>('decide_finance_project_fund_opening_v1', { p_input: input });
+  },
+  saveCapital(input: { projectId: string; kind: 'topup' | 'return'; amount: number; date: string; reason: string }) {
+    return call<{ id: string; code: string }>('save_finance_project_capital_v1', { p_input: input });
+  },
+  reverseCapital(input: { id: string; reason: string }) { return call<{ id: string }>('reverse_finance_project_capital_v1', { p_input: input }); },
+  decidePoBudget(input: { purchaseOrderId: string; action: 'approve' | 'reject'; reason?: string }) {
+    return call<{ purchaseOrderId: string; status: string }>('decide_finance_po_budget_v1', { p_input: input });
+  },
+  saveCostSettings(input: { warnPercent: number; budgetApproverIds: string[]; capitalProviderIds: string[]; reason: string; expectedRowVersion: number }) {
+    return call<{ ok: boolean }>('save_finance_cost_settings_v1', { p_input: input });
+  },
   postStatement(input: { statementId: string; action: 'post' | 'return'; reason?: string }) {
     return call<{ statementId: string; status: string }>('transition_procurement_contract_statement_v1', { p_input: input });
   },
@@ -622,6 +727,11 @@ export const EVENT_LABELS: Record<string, string> = {
   advance_transfer_submit: 'Đề nghị chuyển tạm ứng sang đơn khác', advance_transfer_confirm: 'Xác nhận chuyển tạm ứng', advance_transfer_reject: 'Từ chối chuyển tạm ứng',
   advance_transfer_withdraw: 'Rút đề nghị chuyển tạm ứng',
   expense_submit: 'Lập phiếu chi khác', expense_paid: 'Chi phiếu chi khác', cash_settings_save: 'Đổi tồn quỹ tối thiểu',
+  budget_submit: 'Lập ngân sách dự án', budget_approve: 'Duyệt ngân sách dự án', budget_reject: 'Trả lại ngân sách dự án', budget_withdraw: 'Rút ngân sách dự án',
+  fund_opening_submit: 'Gửi đầu kỳ quỹ dự án', fund_opening_confirm: 'Chốt đầu kỳ quỹ dự án', fund_opening_reject: 'Trả lại đầu kỳ quỹ dự án', fund_opening_cancel: 'Hủy đầu kỳ quỹ dự án',
+  capital_topup: 'Công ty cấp vốn cho dự án', capital_return: 'Thu hồi vốn từ dự án', capital_reverse: 'Đảo khoản cấp vốn', capital_auto_topup: 'Tự ghi cấp vốn khi chi (quỹ âm)',
+  po_budget_request: 'Đơn mua vượt ngân sách chờ duyệt', po_budget_approve: 'Duyệt đơn mua vượt ngân sách', po_budget_reject: 'Không duyệt đơn mua vượt ngân sách',
+  cost_settings_save: 'Đổi thông số ngân sách / cấp vốn',
   customer_terms_save: 'Khai điều khoản HĐ chủ đầu tư', guarantee_save: 'Khai bảo lãnh', round_create: 'Lập đợt thu', round_update: 'Sửa đợt thu',
   round_send: 'Gửi hồ sơ CĐT', round_confirm: 'CĐT xác nhận số tiền', round_return: 'CĐT trả lại hồ sơ', round_invoice: 'Ghi hóa đơn', round_cancel: 'Hủy đợt thu',
   receipt_submit: 'Ghi phiếu thu', receipt_confirm: 'Xác nhận phiếu thu', receipt_reject: 'Từ chối phiếu thu', receipt_withdraw: 'Rút phiếu thu',
