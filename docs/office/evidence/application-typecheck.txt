@@ -1,0 +1,1 @@
+Application typecheck: 0 diagnostic(s); docs/references and .claude checkouts excluded.

@@ -51,6 +51,11 @@ export const resolveNotificationPath = (notification: AppNotification): string |
   const metadata = notification.metadata || {};
   const sourceType = notification.sourceType || '';
 
+  if (sourceType === 'office_document' || notification.entityType === 'office_document') {
+    const id = getMetaValue(metadata, ['documentId']) || notification.sourceId || notification.entityId;
+    return id ? `/office/documents/${encodeURIComponent(id)}` : '/office';
+  }
+
   if (sourceType === 'work_task' || notification.entityType === 'work_task') {
     const taskRef = getMetaValue(metadata, ['taskCode', 'workTaskId']) || notification.sourceId || notification.entityId;
     return taskRef ? withQuery(`/work/tasks/${encodeURIComponent(taskRef)}`, { comment: getMetaValue(metadata, ['commentId']) }) : '/work';

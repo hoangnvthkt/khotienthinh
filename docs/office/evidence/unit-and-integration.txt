@@ -1,0 +1,8 @@
+
+ RUN  v4.1.8 /Users/admin/khotienthinh
+
+
+ Test Files  3 passed (3)
+      Tests  61 passed (61)
+   Start at  16:56:45
+   Duration  584ms (transform 498ms, setup 90ms, import 518ms, tests 265ms, environment 0ms)

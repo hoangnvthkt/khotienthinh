@@ -164,6 +164,11 @@ export const canAccessRoute = (
 
   const pathname = normalizeRoutePath(route);
   if (isAuthenticatedOpenRoute(pathname)) return true;
+  if (pathname === '/office' || pathname.startsWith('/office/')) {
+    return getRouteModuleKey(pathname) === 'office.module'
+      && canPerform(user, 'office.module.access', GLOBAL_SCOPE)
+      && (pathname !== '/office/settings' || canPerform(user, 'office.configuration.manage', GLOBAL_SCOPE));
+  }
   if (isWorkRoute(pathname)) {
     return isViooWorkEnabled
       && getRouteModuleKey(pathname) === 'work.module'

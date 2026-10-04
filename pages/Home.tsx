@@ -290,6 +290,16 @@ const SYSTEM_APPS = [
     moduleKey: 'RQ',
   },
   {
+    key: 'OFFICE',
+    to: '/office',
+    label: 'Vioo Office',
+    description: 'Văn bản, công văn và hồ sơ doanh nghiệp',
+    icon: FileText,
+    gradient: 'from-teal-600 to-emerald-700',
+    shadow: 'shadow-teal-600/25',
+    moduleKey: 'office.module',
+  },
+  {
     key: 'WORK',
     to: '/work/my',
     label: 'Vioo Work',

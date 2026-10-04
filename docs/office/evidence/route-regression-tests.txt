@@ -1,0 +1,9 @@
+
+ RUN  v4.1.8 <office-worktree>
+
+
+ Test Files  4 passed (4)
+      Tests  54 passed (54)
+   Start at  21:54:48
+   Duration  392ms (transform 655ms, setup 168ms, import 735ms, tests 52ms, environment 0ms)
+

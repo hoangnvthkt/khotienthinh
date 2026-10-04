@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-10-04T13:40:52.540Z",
+  "office": [
+    {
+      "name": "rls_enabled_no_policy",
+      "title": "RLS Enabled No Policy",
+      "level": "INFO",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects cases where row level security (RLS) has been enabled on a table but no RLS policies have been created.",
+      "detail": "Table \\`app_private.office_ai_usage\\` has RLS enabled, but no policies exist",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy",
+      "metadata": {
+        "schema": "app_private",
+        "name": "office_ai_usage",
+        "type": "table"
+      },
+      "cache_key": "rls_enabled_no_policy_app_private_office_ai_usage",
+      "observed_at": "2026-10-04T13:40:51.962Z"
+    },
+    {
+      "name": "rls_enabled_no_policy",
+      "title": "RLS Enabled No Policy",
+      "level": "INFO",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects cases where row level security (RLS) has been enabled on a table but no RLS policies have been created.",
+      "detail": "Table \\`app_private.office_commands\\` has RLS enabled, but no policies exist",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy",
+      "metadata": {
+        "schema": "app_private",
+        "name": "office_commands",
+        "type": "table"
+      },
+      "cache_key": "rls_enabled_no_policy_app_private_office_commands",
+      "observed_at": "2026-10-04T13:40:51.962Z"
+    },
+    {
+      "name": "rls_enabled_no_policy",
+      "title": "RLS Enabled No Policy",
+      "level": "INFO",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects cases where row level security (RLS) has been enabled on a table but no RLS policies have been created.",
+      "detail": "Table \\`app_private.office_number_sequences\\` has RLS enabled, but no policies exist",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy",
+      "metadata": {
+        "schema": "app_private",
+        "name": "office_number_sequences",
+        "type": "table"
+      },
+      "cache_key": "rls_enabled_no_policy_app_private_office_number_sequences",
+      "observed_at": "2026-10-04T13:40:51.962Z"
+    }
+  ],
+  "assessment": "Three INFO notices on private tables with RLS and deliberately no client policies. No Office WARN or ERROR finding."
+}

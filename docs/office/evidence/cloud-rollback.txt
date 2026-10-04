@@ -1,0 +1,1 @@
+PASS: Office migration and requested assertions executed; transaction rolled back. [{"operation":"list_25_of_2000","rows":2000,"elapsed_ms":"144.578000"},{"operation":"report_2000","rows":2000,"elapsed_ms":"83.992000"},{"operation":"export_2000","rows":2000,"elapsed_ms":"136.033000"}]

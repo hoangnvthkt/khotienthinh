@@ -1,0 +1,43 @@
+{
+  "verifiedAt": "2026-10-04T13:50:13.915Z",
+  "project": "ftciqmqhmfvjtwoycswe",
+  "adminOfficePermissions": 14,
+  "canCreate": true,
+  "canConfigure": true,
+  "lifecycle": "P0, P1 and extended assertions passed on applied schema; fixtures rolled back",
+  "edgeFunctionDeployed": true,
+  "result": [
+    {
+      "verification": {
+        "documents": 0,
+        "notifications": 0,
+        "privateBucket": true,
+        "numberCounters": 0,
+        "testUsersAbsent": true,
+        "migrationRecorded": true
+      }
+    }
+  ],
+  "realAccountWorkflowVerifiedAt": "2026-10-04T14:07:25.283Z",
+  "realAccountWorkflow": [
+    {
+      "result": "PASS: real admin creates/submits; assigned approver approves but cannot number; admin numbers/publishes; recipient reads; notification targets verified; rolled back"
+    }
+  ],
+  "approverOfficePermissions": 3,
+  "defaultWorkflowTypes": 16,
+  "realPushDeliveryTested": false,
+  "finalPostflightAt": "2026-10-04T14:17:56.603Z",
+  "finalState": [
+    {
+      "final_state": {
+        "documents": 0,
+        "notifications": 0,
+        "numberCounters": 0,
+        "migrationRecorded": true,
+        "activeWorkflowSteps": 1,
+        "approverOfficeGrants": 3
+      }
+    }
+  ]
+}

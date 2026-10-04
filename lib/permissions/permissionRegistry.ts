@@ -1,3 +1,4 @@
+import { OFFICE_PERMISSION_APPLICATION } from '../office/officePermissions';
 import { ROUTE_TO_MODULE } from '../../constants/routes';
 import {
   PermissionActionDefinition,
@@ -169,6 +170,7 @@ export const permissionRegistry = deepFreeze([
     modules: PROJECT_PERMISSION_MODULES,
   },
   ...ERP_PERMISSION_APPLICATIONS,
+  OFFICE_PERMISSION_APPLICATION,
 ] satisfies readonly PermissionApplicationDefinition[]);
 
 export const getPermissionApplications = (): readonly PermissionApplicationDefinition[] => permissionRegistry;

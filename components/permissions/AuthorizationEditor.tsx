@@ -37,6 +37,7 @@ interface AuthorizationEditorProps {
   reasonRequired?: boolean;
   validationIssues?: readonly AuthorizationValidationIssue[];
   disabled?: boolean;
+  initialApplicationCode?: string;
   onCatalogChange?: (catalog: PermissionAdminCatalog | null) => void;
   onDirectGrantsChange: (grants: UserPermissionGrant[]) => void;
   onReasonChange: (reason: string) => void;
@@ -80,6 +81,7 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
   reasonRequired = true,
   validationIssues = [],
   disabled = false,
+  initialApplicationCode,
   onCatalogChange,
   onDirectGrantsChange,
   onReasonChange,
@@ -220,6 +222,8 @@ const AuthorizationEditor: React.FC<AuthorizationEditorProps> = ({
             />
             <RetainedPermissionGrantNotice grants={retainedHiddenGrants} />
             <PermissionModuleEditor
+              initialApplicationCode={initialApplicationCode}
+              initialExpandedApplicationCodes={initialApplicationCode ? [initialApplicationCode] : []}
               catalog={catalog}
               grants={directGrants}
               inheritedSources={inheritedSources}

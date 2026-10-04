@@ -1,5 +1,6 @@
 
 import { PROJECT_TAB_PERMISSIONS } from '../lib/projectTabPermissions';
+import { OFFICE_ROUTES } from '../lib/office/officePermissions';
 
 /**
  * ROUTE_TO_MODULE — Single source of truth.
@@ -76,6 +77,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/rq/templates': 'RQ',
   '/rq/templates/new': 'RQ',
   '/rq/templates/:templateId': 'RQ',
+
+  // ── VIOO OFFICE ──────────────────────────────────────
+  ...Object.fromEntries(OFFICE_ROUTES.map(route => [route, 'office.module'])),
 
   // ── VIOO WORK ────────────────────────────────────────
   '/work': 'work.module',

@@ -62,3 +62,10 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/request-attachment-processor/deno.json"
 entrypoint = "./functions/request-attachment-processor/index.ts"
+
+[functions.office-assistant]
+# JWT verified explicitly with Auth, then every query uses the caller's RLS context.
+enabled = true
+verify_jwt = false
+import_map = "./functions/office-assistant/deno.json"
+entrypoint = "./functions/office-assistant/index.ts"

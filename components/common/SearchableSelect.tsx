@@ -7,6 +7,8 @@ interface SearchableSelectProps<T> {
   value?: string | null;
   options: T[];
   onChange: (option: T | null) => void;
+  onSearchChange?: (query: string) => void;
+  ariaLabel?: string;
   getOptionValue: (option: T) => string;
   getOptionLabel: (option: T) => string;
   getOptionSearchText?: (option: T) => string;
@@ -25,6 +27,8 @@ export default function SearchableSelect<T>({
   value,
   options,
   onChange,
+  onSearchChange,
+  ariaLabel,
   getOptionValue,
   getOptionLabel,
   getOptionSearchText,
@@ -154,12 +158,17 @@ export default function SearchableSelect<T>({
       <div className="relative" title={displayText}>
         <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
+          aria-label={ariaLabel}
           value={open ? query : displayText}
           disabled={disabled}
           title={displayText}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            if (!open) onSearchChange?.('');
+            setOpen(true);
+          }}
           onChange={event => {
             setQuery(event.target.value);
+            onSearchChange?.(event.target.value);
             setOpen(true);
           }}
           onKeyDown={event => {
@@ -182,7 +191,7 @@ export default function SearchableSelect<T>({
           </button>
         )}
       </div>
-      {typeof document !== 'undefined' && menu ? createPortal(menu, document.body) : menu}
+      {typeof document !== 'undefined' && menu ? createPortal(menu, wrapperRef.current?.closest('dialog') || document.body) : menu}
     </div>
   );
 }

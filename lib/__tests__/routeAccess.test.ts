@@ -64,6 +64,28 @@ const governedHrPersona = (
   },
 });
 
+describe('Office route access', () => {
+  it.each(['/office/templates', '/office/reports'])('opens %s only with explicit Office access', route => {
+    expect(canAccessRoute(user(['office.module.access']), route)).toBe(true);
+    expect(getRouteModuleKey(route)).toBe('office.module');
+    expect(canAccessRoute(user([]), route)).toBe(false);
+    expect(canAccessRoute(persona(Role.ADMIN, []), route)).toBe(false);
+  });
+  it('does not allow unregistered Office paths', () => {
+    expect(canAccessRoute(user(['office.module.access', 'office.configuration.manage']), '/office/unknown')).toBe(false);
+  });
+  it('requires explicit Office access even for a technical admin', () => {
+    expect(canAccessRoute(persona(Role.ADMIN, []), '/office')).toBe(false);
+    expect(canAccessRoute(user(['office.document.view']), '/office/documents/doc-id')).toBe(false);
+    expect(canAccessRoute(user(['office.module.access']), '/office/documents/doc-id')).toBe(true);
+    expect(getRouteModuleKey('/office/documents/doc-id/edit')).toBe('office.module');
+  });
+  it('keeps configuration behind its separate capability', () => {
+    expect(canAccessRoute(user(['office.module.access']), '/office/settings')).toBe(false);
+    expect(canAccessRoute(user(['office.module.access', 'office.configuration.manage']), '/office/settings')).toBe(true);
+  });
+});
+
 describe('chat route access', () => {
   it('maps the chat route to the CHAT module', () => {
     expect(getRouteModuleKey('/chat')).toBe('CHAT');

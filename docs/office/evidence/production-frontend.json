@@ -1,0 +1,22 @@
+{
+  "verifiedAt": "2026-10-04T13:55:37.725Z",
+  "deployment": "khotienthinh-guzzk7ln3-hoangnvthkts-projects.vercel.app",
+  "entrypoint": "/assets/index-Cm8PnV3x.js",
+  "supabaseRefs": [
+    "ftciqmqhmfvjtwoycswe"
+  ],
+  "officeChunks": [
+    "OfficePage-C-BGV1Dl.js"
+  ],
+  "promotedAt": "2026-10-04T14:14:12.465Z",
+  "productionUrl": "https://khotienthinh.vercel.app/#/office",
+  "deploymentId": "dpl_EkFmXKj4XxCktmjQuo6qRB8YsbAD",
+  "sourceBranch": "codex/vioo-office",
+  "sourceCommit": "07733527bfe9a02146439572786eb2dacdc91fd4",
+  "httpStatus": 200,
+  "officeChunkHttpStatus": 200,
+  "entrypointSha256": "b390c4e97f76213cfe179369d2b8dab042a726b799bdcad42442141e2d09f372",
+  "cleanArchiveFileCount": 3142,
+  "localEnvIncluded": false,
+  "browserObservation": "Production app loads login page; no authenticated browser session available"
+}

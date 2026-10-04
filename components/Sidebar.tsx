@@ -46,6 +46,7 @@ interface SidebarProps {
 }
 
 const MODULE_CONFIG = [
+  { key: 'office.module' as const, icon: FileText, label: 'Vioo Office', shortLabel: 'OFFICE', route: '/office', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
   { key: 'work.module' as const, icon: ClipboardCheck, label: 'Vioo Work', shortLabel: 'WORK', route: '/work', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
   { key: 'WMS' as const, icon: Package, label: 'Vật tư', shortLabel: 'KHO', route: '/inventory', gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25' },
   { key: 'HRM' as const, icon: Briefcase, label: 'Nhân sự', shortLabel: 'NS', route: '/my-profile', gradient: 'from-purple-500 to-pink-600', shadow: 'shadow-purple-500/25' },
@@ -111,6 +112,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   // Detect if we're inside a module from URL
   const detectAppFromUrl = (): AppKey | null => {
     const p = location.pathname;
+    if (p === '/office' || p.startsWith('/office/')) return 'office.module';
     if (p === '/work' || p.startsWith('/work/')) return 'work.module';
     if (p.startsWith('/booking/vehicle')) return 'VEHICLE_BOOKING';
     if (p.startsWith('/hrm') || p === '/my-profile' || p === '/my-payroll' || p === '/employee-dashboard') return 'HRM';
@@ -249,6 +251,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Nav items per module
   const moduleNavMap: Record<AppKey, any[]> = {
+    'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/templates', icon: BookOpen, label: 'Mẫu văn bản' }, { to: '/office/reports', icon: BarChart3, label: 'Báo cáo' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
     'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
     // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
     WMS: [

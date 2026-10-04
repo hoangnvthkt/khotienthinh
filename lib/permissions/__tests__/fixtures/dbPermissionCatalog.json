@@ -651,6 +651,135 @@
       ]
     },
     {
+      "permissionCode": "office.configuration.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "office.document.approve",
+      "scopeTypes": [
+        "assigned",
+        "construction_site",
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.archive",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "own",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.assign",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "own",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.create",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "own",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.edit",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "own",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.issue_number",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.process",
+      "scopeTypes": [
+        "assigned",
+        "construction_site",
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.publish",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.revoke",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.submit",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "own",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.view",
+      "scopeTypes": [
+        "assigned",
+        "construction_site",
+        "department",
+        "global",
+        "own",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.document.view_restricted",
+      "scopeTypes": [
+        "construction_site",
+        "department",
+        "global",
+        "project"
+      ]
+    },
+    {
+      "permissionCode": "office.module.access",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "project.budget.edit",
       "scopeTypes": [
         "construction_site",
