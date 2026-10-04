@@ -187,14 +187,35 @@ describe('Phase 4 WMS permission adapter', () => {
     })).toBe(false);
   });
 
-  it('still keeps legacy warehouse keeper fallback during the transition', () => {
+  it('V1-2: thủ kho theo ô quyền Thủ kho của kho, không theo vai trò tài khoản', () => {
     const keeper = user({
-      role: Role.WAREHOUSE_KEEPER,
-      assignedWarehouseId: 'wh-source',
+      permissionGrants: [{ id: 'g-keeper', userId: 'user-1', permissionCode: 'wms.transaction.keeper', scopeType: 'warehouse', scopeId: 'wh-source', isActive: true }] as any,
     });
-
     expect(canViewWmsTransaction(keeper, tx)).toBe(true);
     expect(canApproveWmsTransaction(keeper, tx)).toBe(true);
+    expect(canApproveWmsTransaction(keeper, { ...tx, sourceWarehouseId: 'wh-other' })).toBe(false);
+
+    const legacyRoleOnly = user({ role: Role.WAREHOUSE_KEEPER, assignedWarehouseId: 'wh-source' });
+    expect(canApproveWmsTransaction(legacyRoleOnly, tx)).toBe(false);
+  });
+
+  it('V1-2: xuất hủy / điều chỉnh chỉ người Duyệt ngoại lệ duyệt, và khác người lập', () => {
+    const liquidation = { ...tx, type: TransactionType.LIQUIDATION, requesterId: 'keeper-1' };
+    const keeper = user({ id: 'keeper-1', permissionGrants: [{ id: 'g', userId: 'keeper-1', permissionCode: 'wms.transaction.keeper', scopeType: 'warehouse', scopeId: 'wh-source', isActive: true }] as any });
+    const approver = user({ id: 'mo', permissionGrants: [{ id: 'g2', userId: 'mo', permissionCode: 'wms.transaction.exception_approve', scopeType: 'global', scopeId: '*', isActive: true }] as any });
+    expect(canApproveWmsTransaction(keeper, liquidation)).toBe(false);
+    expect(canApproveWmsTransaction(approver, liquidation)).toBe(true);
+    expect(canApproveWmsTransaction(approver, { ...liquidation, requesterId: 'mo' })).toBe(false);
+    expect(canApproveWmsTransaction(user({ id: 'admin', role: Role.ADMIN }), { ...liquidation, requesterId: 'admin' })).toBe(false);
+  });
+
+  it('V1-2: thủ kho một kho mặc định mở kho của mình', () => {
+    const warehouses = [{ id: 'wh-a', name: 'A' }, { id: 'wh-b', name: 'B' }] as any;
+    const keeper = user({ permissionGrants: [
+      { id: 'v', userId: 'user-1', permissionCode: 'wms.transaction.view', scopeType: 'global', scopeId: '*', isActive: true },
+      { id: 'k', userId: 'user-1', permissionCode: 'wms.transaction.keeper', scopeType: 'warehouse', scopeId: 'wh-b', isActive: true },
+    ] as any });
+    expect(getDefaultWmsWarehouseFilter(keeper, warehouses, 'wms.transaction.view')).toBe('wh-b');
   });
 
   it('treats explicit grants for every warehouse as all-warehouse WMS access even when a legacy warehouse is still assigned', () => {

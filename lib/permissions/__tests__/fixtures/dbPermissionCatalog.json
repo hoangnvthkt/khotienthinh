@@ -2579,6 +2579,18 @@
       ]
     },
     {
+      "permissionCode": "wms.accounting.close_period",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "wms.accounting.manage",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "wms.inventory.edit",
       "scopeTypes": [
         "global",
@@ -2704,6 +2716,20 @@
         "assigned",
         "global",
         "own",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.exception_approve",
+      "scopeTypes": [
+        "global",
+        "warehouse"
+      ]
+    },
+    {
+      "permissionCode": "wms.transaction.keeper",
+      "scopeTypes": [
+        "global",
         "warehouse"
       ]
     },

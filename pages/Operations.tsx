@@ -21,7 +21,7 @@ import MaterialIssuePanel from '../components/project/MaterialIssuePanel';
 import { usePagination } from '../hooks/usePagination';
 import { useReservedStock } from '../hooks/useReservedStock';
 import { useModuleData } from '../hooks/useModuleData';
-import { canApproveWmsTransaction, canReceiveWmsTransaction, canViewWmsTransaction, getWmsWarehouseAccess, isWarehouseKeeper } from '../lib/wmsPermissions';
+import { canApproveWmsException, canApproveWmsTransaction, canReceiveWmsTransaction, canViewWmsTransaction, getWmsWarehouseAccess, isWarehouseKeeper } from '../lib/wmsPermissions';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { clampQuantity, formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../lib/quantityInput';
 import { EmptyState, PageHeader, StatusBadge } from '../components/erp';
@@ -225,6 +225,8 @@ const Operations: React.FC = () => {
   const hasAssignedWh = !!user.assignedWarehouseId;
   const isAdmin = user.role === Role.ADMIN;
   const isKeeper = isWarehouseKeeper(user);
+  // V1-2: thủ kho lập phiếu xuất hủy, người Duyệt ngoại lệ duyệt (trước đây chỉ Admin).
+  const canLiquidate = isAdmin || isKeeper || canApproveWmsException(user);
   const wmsViewAccess = useMemo(
     () => getWmsWarehouseAccess(user, warehouses, 'wms.transaction.view'),
     [user, warehouses],
@@ -887,7 +889,7 @@ const Operations: React.FC = () => {
           <button onClick={() => handleTabChange('IMPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'IMPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Nhập kho</button>
           <button onClick={() => handleTabChange('MATERIAL_ISSUE')} className={`flex-1 min-w-[140px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'MATERIAL_ISSUE' ? 'border-indigo-500 text-indigo-600 bg-white shadow-[0_-4px_0_inset_#6366f1]' : 'border-transparent text-slate-400 hover:text-indigo-500'}`}>Xuất cấp thi công</button>
           <button onClick={() => handleTabChange('TRANSFER')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'TRANSFER' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Chuyển kho</button>
-          {isAdmin && (
+          {canLiquidate && (
             <button onClick={() => handleTabChange('LIQUIDATION')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'LIQUIDATION' ? 'border-red-600 text-red-600 bg-white shadow-[0_-4px_0_inset_#dc2626]' : 'border-transparent text-slate-400 hover:text-red-400'}`}>Xuất hủy</button>
           )}
           <button onClick={() => setActiveTab('PENDING')} className={`flex-1 min-w-[120px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all relative ${activeTab === 'PENDING' ? 'border-orange-500 text-orange-600 bg-white shadow-[0_-4px_0_inset_#f97316]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
@@ -964,7 +966,7 @@ const Operations: React.FC = () => {
                   onSelect={tx => void openTransactionDetails(tx)}
                   onBack={() => setViewingHistoryTx(null)}
                   onCreate={kind => handleTabChange(kind)}
-                  canLiquidate={isAdmin}
+                  canLiquidate={canLiquidate}
                   detail={viewingHistoryTx && <TransactionDetailModal key={viewingHistoryTx.id} variant="panel" isOpen
                     onClose={() => setViewingHistoryTx(null)} transaction={viewingHistoryTx} onUpdated={setViewingHistoryTx} />}
                 />
