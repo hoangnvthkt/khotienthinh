@@ -643,3 +643,50 @@ Mockup: `.superpowers/review/work-plan/v12.html` (dữ liệu thật qua `tools/
 - Áp bộ đã duyệt qua đúng hàm của màn.
 - Đổi vai trò 5 người sang Nhân viên qua `change_user_account_role_v2`.
 - Thu quyền "mọi kho". Sau đó không còn quyền thao tác kho nào ở phạm vi "mọi kho".
+
+**Đã lên production 04/10/2026** (PR #90, main `2786da7`). Chủ SP tự chạy migration và script dữ liệu: thêm 7 quyền, 5 người sang Nhân viên, không còn quyền "mọi kho".
+
+## 16. V1-3 — Quy cách + Gộp mã (mockup 04/10/2026)
+
+Mockup: `.superpowers/review/work-plan/v13.html` (dữ liệu `tools/v13-data.mjs`, chỉ đọc). 4 cảnh: Gộp mã trùng · Quy cách của mã · Đơn mua ô Quy cách · Nhập kho & Tồn.
+
+### 16.1 Phát hiện từ dữ liệu thật
+
+- **20 nhóm tên giống nhau** sau khi bỏ dấu / dấu cách — nhưng không phải nhóm nào cũng trùng:
+  - 11 nhóm trùng rõ (chỉ khác hoa thường, dấu cách, `*` / `x`): Đá 1x2 (3 mã), Đá 4x6, Đá hộc, Cát vàng, Bulong móng M24x650, Cáp CXV 4x35, Tôn sóng 0.4mm, Thép tròn trơn D20, Sơn kem Việt Tiệp, Mũi khoan côn/cần 27, Bi treo cửa xếp. Phần lớn có một mã chưa dùng lần nào.
+  - 4 nhóm khác ĐVT: Bulong M16x50 / M16x60 / M20x50 / M24x60 — một mã "Cái", một mã "Bộ". Có thể là vật tư khác (bộ gồm đai ốc, long đen).
+  - 4 nhóm khác chữ / dấu: "Bu lông móng" / "Bulong móng" M24x750 và M27x900 (cùng vật tư, cả hai mã đều có tồn ở SMB); nhưng "Con lăn sơn nhỏ / nhỡ" và "Tụ điện / Tủ điện" là **vật tư khác**.
+  - 1 nhóm khác số: Cáp CXV 4x25 / 4x2.5 → không trùng, tự loại.
+  - Ô "Tên trùng" của V1-1 đang so cả các cặp khác nhau này → V1-3 phân loại lại, người Cấp mã quyết định.
+- **9/297 dòng đơn mua ghi tên khác tên mã:** "Bật mực màu đen", "Mỡ bò chịu nhiệt - 1 thùng 30 tuýp" (đúng là quy cách); "Dây cáp **D16**" ghi trên mã **D14** (vật tư khác); "Thuê xe cẩu 15 tấn phục vụ…" (là ghi chú); ô quy cách PO-384 ghi cả câu giải thích (là ghi chú).
+- **"Phụ kiện tôn" gom 9 vật tư khác nhau** trên PO-334, giá từ 5.500 đến 96.000 đ. Theo quy tắc 3 câu đây không phải quy cách, nên tách mã cho lần mua sau. Đơn cũ giữ nguyên.
+
+### 16.2 Gộp mã — cách làm đề xuất
+
+- **Không sửa lịch sử.** Sổ kho, phiếu, đơn mua đã xong của mã phụ giữ nguyên. Thẻ kho mã giữ hiện kèm, nhãn "từ mã …".
+- **Tồn chuyển bằng phiếu gộp mã** (có ghi sổ): xuất khỏi mã phụ, nhập vào mã giữ, cùng kho, **giữ nguyên giá trị**.
+- **Kế hoạch chuyển sang mã giữ:** dòng BOQ / ngân sách vật tư, đề xuất đang mở → so BOQ cộng chung.
+- **Chặn gộp** khi mã phụ còn: đơn mua chưa xong, phiếu kho chờ duyệt / đang chuyển, hợp đồng nguyên tắc NCC. Xử lý xong (hoặc đổi dòng sang mã giữ) rồi gộp.
+- Mã phụ thành "Đã gộp vào …"; gõ tìm mã cũ / tên cũ ra mã giữ. Không hoàn tác bằng một nút.
+- Khác ĐVT: phải tick "đã kiểm: cùng vật tư, số lượng tính như nhau" mới gộp được. "Không phải trùng" bắt buộc ghi lý do, không hiện lại.
+- Gợi ý mã giữ: mã có kế hoạch → đơn mua mở → phiếu chờ → có tồn → nhiều chứng từ hơn. Người dùng đổi được.
+
+### 16.3 Quy cách — cách làm đề xuất
+
+- **Danh mục, chi tiết mã:** danh sách quy cách kèm tồn từng kho, hàng đang về. Thao tác: Giữ (duyệt quy cách mới), Sửa chữ, Gộp vào…, Ngừng dùng (khóa khi còn tồn / đang về). Thêm quy cách có kiểm trùng sau chuẩn hóa và cảnh báo khác kích thước.
+- **Ô "Quy cách chờ rà":** quy cách mới do Mua hàng / thủ kho tạo, có gợi ý: giữ làm quy cách / chuyển thành ghi chú / có thể là vật tư khác (đề xuất mã mới) / không cần quy cách.
+- **Đơn mua:** ô Quy cách gợi ý quy cách có sẵn; gõ khác cách viết vẫn khớp ("hoa phat cb 300" → "Hòa Phát CB300"). Gõ mới → tạo nhãn "mới", không chặn đơn. Tối đa 40 ký tự; ô Ghi chú tách riêng. In "Tên – Quy cách".
+- **Nhập kho:** quy cách lấy theo đợt giao, thủ kho đổi được nếu hàng về khác (người mua được báo).
+- **Tồn kho:** dòng mã mở ra từng quy cách. Hàng nhập trước bản này nằm ở "Chưa ghi quy cách" — không tự đoán.
+- **Chuyển quy cách:** phiếu nội bộ cùng mã, cùng giá, bắt buộc lý do. Dùng khi nhập nhầm, hoặc gắn quy cách cho hàng cũ sau khi kiểm thực tế.
+- **Xuất / chuyển kho ở V1-3:** tự lấy quy cách nhập trước, in trên phiếu. Chọn tay ở V2 "Phiếu kho một màn". Kiểm kê theo quy cách ở V4.
+- Giá bình quân và MISA: theo mã (như đã chốt).
+- Dữ liệu cũ ô quy cách: PO-384 → chuyển sang Ghi chú; PO-375 "nối ống lưới D27" → giữ làm quy cách.
+
+### 16.4 Câu hỏi cho chủ SP
+
+28. Gộp mã theo 16.2: không sửa lịch sử, tồn chuyển bằng phiếu gộp mã giữ nguyên giá trị, chặn khi mã phụ còn đơn mua / phiếu đang mở. Đồng ý?
+29. 4 cặp Bulong "Cái" / "Bộ" (M16x50, M16x60, M20x50, M24x60): thực tế "Bộ" có gồm đai ốc + long đen không? Nếu có → giữ 2 mã riêng.
+30. Xuất kho ở V1-3 tự lấy quy cách nhập trước; chọn tay ở V2. Đồng ý?
+31. Hàng cũ để "Chưa ghi quy cách", không tự gắn. Thủ kho muốn thì chuyển quy cách sau khi kiểm thực tế. Đồng ý?
+32. "Phụ kiện tôn": lần mua sau cấp mã riêng cho phụ kiện mua thường xuyên (đai kẹp tôn seam, cóc kẹp, chặn trên dưới…), thứ lặt vặt một lần để "Không qua kho". Đồng ý?
