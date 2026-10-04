@@ -3553,6 +3553,8 @@ export interface InventoryItem {
   status?: 'active' | 'retired';
   /** Cách quản lý kho: Lưu kho / Dùng ngay / Không qua kho. */
   inventoryMode?: 'stock' | 'use' | 'service';
+  /** V1-3a: mã đã gộp vào mã này (mã cũ ngừng dùng). */
+  mergedIntoId?: string | null;
 }
 
 export type MaterialCodeRequestStatus = 'pending' | 'approved' | 'rejected';

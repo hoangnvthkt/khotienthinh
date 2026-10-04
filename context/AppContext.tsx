@@ -295,6 +295,7 @@ const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   stockByWarehouse: i.stock_by_warehouse || {},
   status: i.status === 'retired' ? 'retired' : 'active',
   inventoryMode: i.inventory_mode || 'stock',
+  mergedIntoId: i.merged_into_id ?? null,
 });
 
 const INVENTORY_FETCH_PAGE_SIZE = 1000;
@@ -644,6 +645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           purchaseConversionFactor: Number(i.purchase_conversion_factor ?? 1),
           status: i.status === 'retired' ? 'retired' : 'active',
           inventoryMode: i.inventory_mode || 'stock',
+          mergedIntoId: i.merged_into_id ?? null,
         };
         setItems(prev => {
           const exists = prev.find(item => item.id === mapped.id);
