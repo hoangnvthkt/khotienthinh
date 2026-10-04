@@ -6,6 +6,12 @@ Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex
 
 Đây là module dùng service/RPC thật. Fixture UI chỉ phục vụ kiểm thử. Ứng dụng production đọc database thật, không thay lỗi hoặc kho trống bằng dữ liệu demo.
 
+## Sửa điều hướng sau nghiệm thu người dùng
+
+Ngày 04/10, người dùng báo Mẫu văn bản và Báo cáo bị đưa về trang chủ. Nguyên nhân: `OFFICE_ROUTES` và các trang con đã có hai đường dẫn, nhưng `ROUTE_TO_MODULE` dùng danh sách chép tay thiếu chúng; global route guard từ chối trước khi vào Office. Fixture browser trước đây không đi qua guard này. Đã dùng chung `OFFICE_ROUTES`, bổ sung test quyền/đường dẫn không hợp lệ và cho fixture chạy `canAccessRoute` thật. Hai regression tests thất bại trước sửa, 54 tests liên quan đạt sau sửa; TypeScript và build đạt.
+
+Fix source `d49ccf9` đã lên production trên branch Office, không migration/cấp quyền mới. Kiểm tra bằng phiên đăng nhập thực tế của chủ dự án: mở thư viện và form tạo mẫu, chuyển sang báo cáo lấy dữ liệu thật, tải lại vẫn giữ trang. Thư viện đang trống và báo cáo 0; không tạo mẫu/văn bản thật trong lượt kiểm tra này. Kiểm tra bố cục 390/820/1440 px không tràn ngang. Các browser assertions mới đã được thêm vào suite; lượt này xác minh UI trực tiếp bằng browser, không chạy lại toàn suite Playwright. [Bằng chứng](evidence/route-regression.json), [54 tests](evidence/route-regression-tests.txt).
+
 ## Phạm vi hiện có
 
 - Bốn nghiệp vụ: thông báo, văn bản đến, văn bản đi, văn bản nội bộ; dashboard, danh sách phân trang/tìm kiếm/bộ lọc, kho và thư mục con.
@@ -57,7 +63,7 @@ Office được lazy-load: JS 118,23 kB / 33,10 kB gzip; CSS 46,47 kB / 9,02 kB 
 
 ## Các giới hạn còn lại
 
-- Đã kiểm tra quyền hiện hành của hai tài khoản thật qua RPC dưới role `authenticated` và request claims trong transaction rollback. Chưa kiểm thử đăng nhập browser bằng hai tài khoản, Storage HTTP/signed URL hoặc push tới thiết bị thật. Browser production hiển thị màn hình đăng nhập, không có session sẵn.
+- Đã kiểm tra quyền hiện hành của hai tài khoản thật qua RPC dưới role `authenticated` và request claims trong transaction rollback. Chưa kiểm thử đăng nhập browser bằng hai tài khoản, Storage HTTP/signed URL hoặc push tới thiết bị thật. Ở lần rollout đầu chưa có session. Lần sửa điều hướng sau đó đã dùng phiên đăng nhập sẵn của chủ dự án để kiểm tra thư viện/form tạo mẫu và báo cáo; chưa thực hiện ghi dữ liệu thật hoặc kiểm thử đăng nhập tài khoản người duyệt.
 - Chưa kiểm thử hai phiên cấp số đồng thời. Đã kiểm tra counter/uniqueness/retry trong transaction; chưa gọi đó là nghiệm thu race condition. Schema nay đã commit, có thể thực hiện ở một đợt nghiệm thu được kiểm soát.
 - AI đã có adapter và tests mock, chưa gọi provider thật, chưa kiểm tra chất lượng OCR bằng key/model của chủ dự án.
 - Chưa tích hợp chữ ký số vì chưa có provider/chứng thư. `SignaturePad` hiện có là chữ ký ảnh, không phải chữ ký số.

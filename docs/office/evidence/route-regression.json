@@ -1,0 +1,37 @@
+{
+  "verifiedAt": "2026-10-04T15:15:50.813Z",
+  "sourceCommit": "d49ccf9490386ed006d68bcdc9289d0fe03d32e3",
+  "branch": "codex/vioo-office",
+  "deploymentId": "dpl_CqmQjebuogpys72YazGhRkxK9gMb",
+  "productionUrl": "https://khotienthinh.vercel.app",
+  "entrypoint": "/assets/index-AbNQomt5.js",
+  "officeChunk": "OfficePage-BihxPE4e.js",
+  "supabaseRefs": [
+    "ftciqmqhmfvjtwoycswe"
+  ],
+  "httpStatus": 200,
+  "officeChunkHttpStatus": 200,
+  "regressionBefore": {
+    "failed": 2,
+    "passed": 37
+  },
+  "regressionAfter": {
+    "files": 4,
+    "passed": 54
+  },
+  "typecheck": "PASS",
+  "build": "PASS",
+  "liveBrowser": {
+    "session": "existing authenticated owner session",
+    "templates": "opened; empty library; create-template form opens",
+    "reports": "opened; real empty dataset; reload remains on route",
+    "viewportWidths": [
+      390,
+      820,
+      1440
+    ],
+    "horizontalOverflow": false
+  },
+  "databaseChanges": false,
+  "permissionsChanged": false
+}

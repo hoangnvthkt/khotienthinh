@@ -2,6 +2,10 @@
 
 Office đã hoạt động tại [app production](https://khotienthinh.vercel.app/#/office). Đợt triển khai thực hiện sau khi chủ dự án yêu cầu áp migration production, chỉ định tài khoản quản trị và chị Đặng Thị Hương làm người duyệt. Mọi thay đổi mã nguồn nằm trên `codex/vioo-office`; không merge main hoặc sửa checkout khác.
 
+## Bản sửa điều hướng
+
+Frontend hiện tại là source `d49ccf9` trên cùng branch, deployment `dpl_CqmQjebuogpys72YazGhRkxK9gMb`: bổ sung Mẫu văn bản/Báo cáo vào global route guard qua danh sách Office dùng chung. Đã kiểm tra hai trang trên phiên đăng nhập thật, tải dữ liệu trống đúng trạng thái và reload không về trang chủ. Không thay database/quyền. [Bằng chứng mới](evidence/route-regression.json). Các thông tin deployment `0773352` bên dưới ghi lại đợt kích hoạt đầu.
+
 ## Database và quyền
 
 - Supabase Cloud từ `.env`: `ftciqmqhmfvjtwoycswe`. Chỉ áp migration `20261004085552_office_p0_document_lifecycle.sql` vào 20:15 giờ Việt Nam; SHA-256 `cf809dc9a9157172bb45be6d34bac0838d9049980186ddd84581858faebfe398`.
