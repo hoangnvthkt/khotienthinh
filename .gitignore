@@ -53,3 +53,4 @@ service-account*.json
 # Browser test reports (fixtures contain no production credentials)
 /test-results/
 /playwright-report/
+/.office-test-results/

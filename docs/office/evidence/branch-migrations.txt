@@ -1,0 +1,5 @@
+
+> vioo@0.0.0 check:supabase-migrations
+> node scripts/check-supabase-migration-baseline.mjs
+
+Supabase migration baseline check passed: 251 active SQL files, 402 archived SQL files.

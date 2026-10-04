@@ -77,6 +77,14 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/rq/templates/new': 'RQ',
   '/rq/templates/:templateId': 'RQ',
 
+  // ── VIOO OFFICE ──────────────────────────────────────
+  '/office': 'office.module',
+  '/office/documents': 'office.module',
+  '/office/new': 'office.module',
+  '/office/documents/:id': 'office.module',
+  '/office/documents/:id/edit': 'office.module',
+  '/office/settings': 'office.module',
+
   // ── VIOO WORK ────────────────────────────────────────
   '/work': 'work.module',
   '/work/my': 'work.module',

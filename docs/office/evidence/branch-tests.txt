@@ -1,0 +1,12 @@
+
+> vioo@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.8 /Users/admin/.codex/worktrees/vioo-office/khotienthinh
+
+
+ Test Files  615 passed | 2 skipped (617)
+      Tests  3007 passed | 2 skipped (3009)
+   Start at  17:17:25
+   Duration  20.89s (transform 24.92s, setup 7.45s, import 57.46s, tests 19.12s, environment 106ms)

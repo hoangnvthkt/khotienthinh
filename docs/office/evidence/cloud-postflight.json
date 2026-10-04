@@ -1,0 +1,10 @@
+{
+  "checkedAt": "2026-10-04T09:58:42.046Z",
+  "project": "ftciqmqhmfvjtwoycswe",
+  "mode": "transaction-rollback-only",
+  "office_schema_absent": true,
+  "office_permissions_absent": true,
+  "office_bucket_absent": true,
+  "migration_unapplied": true,
+  "test_users_absent": true
+}

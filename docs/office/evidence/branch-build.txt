@@ -1,0 +1,8 @@
+dist/assets/index-BiaJwrT6.js                             739.62 kB │ gzip: 200.19 kB
+dist/assets/three-CAk_fx77.js                             963.16 kB │ gzip: 272.21 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 25.44s

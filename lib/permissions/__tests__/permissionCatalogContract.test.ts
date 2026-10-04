@@ -7,6 +7,21 @@ import dbCatalog from './fixtures/dbPermissionCatalog.json';
 const FRONTEND_AHEAD_OF_DB = new Set([
   'system.vehicle_booking.view',
   'system.vehicle_booking.manage',
+  // Office 20261004085552 is tested in Cloud rollback transactions; deployment is pending.
+  'office.module.access',
+  'office.document.view',
+  'office.document.view_restricted',
+  'office.document.create',
+  'office.document.edit',
+  'office.document.submit',
+  'office.document.approve',
+  'office.document.issue_number',
+  'office.document.publish',
+  'office.document.assign',
+  'office.document.process',
+  'office.document.revoke',
+  'office.document.archive',
+  'office.configuration.manage',
 ]);
 
 const dbCodes = new Map(dbCatalog.actions.map(action => [action.permissionCode, action.scopeTypes]));

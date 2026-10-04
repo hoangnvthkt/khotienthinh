@@ -254,7 +254,8 @@
     "20261008134300_finance_cost_budget.sql",
     "20261008134400_finance_allocation_site_fund.sql",
     "20261008137300_wms_access_jobs.sql",
-    "20261008137400_wms_v1_3a_catalog_merge.sql"
+    "20261008137400_wms_v1_3a_catalog_merge.sql",
+    "20261004085552_office_p0_document_lifecycle.sql"
   ],
   "forbidIncludeAll": true
 }

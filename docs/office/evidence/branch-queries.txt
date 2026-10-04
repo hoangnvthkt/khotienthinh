@@ -1,0 +1,11 @@
+
+> vioo@0.0.0 check:supabase-queries
+> node scripts/audit-supabase-queries.mjs --check docs/performance/supabase-query-inventory.json
+
+{
+  "findings": 0,
+  "errors": 0,
+  "wildcardLists": 0,
+  "missingResultPolicies": 0,
+  "unclassified": 0
+}
