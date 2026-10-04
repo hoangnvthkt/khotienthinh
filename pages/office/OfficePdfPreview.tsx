@@ -21,7 +21,7 @@ export default function OfficePdfPreview({ url, title }: { url: string; title: s
     let active = true;
     setPdf(null); setPage(1); setError(null); setBusy(true);
     const assets = import.meta.env.DEV ? '/node_modules/pdfjs-dist/' : `${import.meta.env.BASE_URL}pdfjs/${version}/`;
-    const task = getDocument({ url, isEvalSupported: false, cMapUrl: `${assets}cmaps/`, cMapPacked: true, standardFontDataUrl: `${assets}standard_fonts/`, wasmUrl: `${assets}wasm/`, iccUrl: `${assets}iccs/` });
+    const task = getDocument({ url, cMapUrl: `${assets}cmaps/`, cMapPacked: true, standardFontDataUrl: `${assets}standard_fonts/`, wasmUrl: `${assets}wasm/`, iccUrl: `${assets}iccs/` });
     void task.promise.then(value => { if (active) setPdf(value); }).catch(error => {
       if (active) { setError(error?.name === 'PasswordException' ? new Error('PDF có mật khẩu. Vui lòng tải tệp và mở bằng ứng dụng PDF trên thiết bị.') : new Error('Không đọc được PDF. Anh/chị có thể tải tệp hoặc thử mở bằng ứng dụng khác.')); setBusy(false); }
     });
