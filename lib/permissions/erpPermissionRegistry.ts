@@ -139,7 +139,7 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
     label: 'Kho vật tư',
     sortOrder: 30,
     modules: [
-      module('wms.inventory', 'Tồn kho', 'WMS', ['/dashboard', '/inventory'], 10, actions('wms.inventory', 'WMS', '/inventory', WMS_SCOPE, [
+      module('wms.inventory', 'Tồn kho', 'WMS', ['/dashboard', '/inventory', '/wms/owners'], 10, actions('wms.inventory', 'WMS', '/inventory', WMS_SCOPE, [
         ['view', 'Xem', 10],
         ['edit', 'Sửa', 20, ['global', 'warehouse']],
       ])),
@@ -157,6 +157,8 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
         ['approve', 'Duyệt', 30],
         ['complete', 'Hoàn tất', 40],
         ['reverse', 'Hủy duyệt', 50, ['global', 'warehouse']],
+        ['keeper', 'Thủ kho', 60, ['global', 'warehouse']],
+        ['exception_approve', 'Duyệt ngoại lệ', 70, ['global', 'warehouse']],
       ])),
       module('wms.material_issue', 'Xuất cấp thi công', 'WMS', ['/operations'], 35, actions('wms.material_issue', 'WMS', '/operations', WMS_WAREHOUSE_SCOPE, [
         ['settle', 'Quyết toán xuất cấp', 10],
@@ -168,6 +170,10 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10, ['global', 'warehouse']],
         ['issue_code', 'Cấp mã', 20, ['global']],
+      ])),
+      module('wms.accounting', 'Kế toán kho', 'WMS', [], 45, actions('wms.accounting', 'WMS', undefined, WMS_SCOPE, [
+        ['manage', 'Kế toán kho', 10, ['global']],
+        ['close_period', 'Khóa kỳ', 20, ['global']],
       ])),
     ],
   },

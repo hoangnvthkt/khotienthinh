@@ -48,13 +48,32 @@ const canUseWmsRequestPermission = (user: User, request: MaterialRequest, permis
 
 export const isAdmin = (user: User): boolean => user.role === Role.ADMIN;
 
-export const isWarehouseKeeper = (user: User): boolean => user.role === Role.WAREHOUSE_KEEPER;
+// V1-2 Module Vật tư: thủ kho theo ô quyền "Giao dịch kho → Thủ kho" (wms.transaction.keeper) theo từng kho,
+// không còn theo vai trò tài khoản + một kho được gán (khớp app_private.wms_user_is_keeper).
+const KEEPER_CODE = 'wms.transaction.keeper';
+const EXCEPTION_CODE = 'wms.transaction.exception_approve';
+
+/** Các kho người dùng là thủ kho (ô Thủ kho theo kho). */
+export const getKeeperWarehouseIds = (user: User): string[] => [...new Set((user.permissionGrants || [])
+  .filter(grant => grant.permissionCode === KEEPER_CODE && grant.scopeType === 'warehouse' && grant.scopeId && grant.scopeId !== '*' && isActiveGrant(grant))
+  .map(grant => grant.scopeId as string))];
 
 export const isGlobalWarehouseKeeper = (user: User): boolean =>
-  isWarehouseKeeper(user) && !user.assignedWarehouseId;
+  hasExplicitWmsGrant(user, KEEPER_CODE, 'global', '*') || hasExplicitWmsGrant(user, KEEPER_CODE, 'warehouse', '*');
+
+export const isWarehouseKeeper = (user: User): boolean =>
+  isGlobalWarehouseKeeper(user) || getKeeperWarehouseIds(user).length > 0;
 
 export const isWarehouseKeeperFor = (user: User, warehouseId?: string): boolean =>
-  isWarehouseKeeper(user) && !!warehouseId && user.assignedWarehouseId === warehouseId;
+  !!warehouseId && (isGlobalWarehouseKeeper(user) || getKeeperWarehouseIds(user).includes(warehouseId));
+
+/** Duyệt ngoại lệ (xuất hủy, điều chỉnh, chênh lệch kiểm kê). Admin luôn có. */
+export const canApproveWmsException = (user: User, warehouseId?: string): boolean =>
+  isAdmin(user) || hasExplicitWmsGrant(user, EXCEPTION_CODE, 'global', '*')
+  || (!!warehouseId && hasExplicitWmsGrant(user, EXCEPTION_CODE, 'warehouse', warehouseId));
+
+const isExceptionTransaction = (tx: Transaction): boolean =>
+  tx.type === TransactionType.LIQUIDATION || String(tx.type) === 'ADJUSTMENT';
 
 export const getWmsWarehouseAccess = (
   user: User,
@@ -73,8 +92,7 @@ export const getWmsWarehouseAccess = (
     return { canViewAll: true, warehouseIds: activeWarehouseIds };
   }
 
-  const visibleWarehouseIds = new Set<string>();
-  if (isWarehouseKeeper(user) && user.assignedWarehouseId) visibleWarehouseIds.add(user.assignedWarehouseId);
+  const visibleWarehouseIds = new Set<string>(getKeeperWarehouseIds(user));
   user.permissionGrants?.forEach(grant => {
     if (
       grant.permissionCode === permissionCode &&
@@ -105,6 +123,9 @@ export const getDefaultWmsWarehouseFilter = (
   permissionCode = 'wms.transaction.view',
 ): string => {
   const access = getWmsWarehouseAccess(user, warehouses, permissionCode);
+  // Thủ kho đúng một kho: mặc định mở kho của mình.
+  const keeperWarehouses = getKeeperWarehouseIds(user).filter(id => access.warehouseIds.includes(id));
+  if (keeperWarehouses.length === 1 && !isGlobalWarehouseKeeper(user)) return keeperWarehouses[0];
   if (access.canViewAll) return 'ALL';
   return access.warehouseIds[0] || user.assignedWarehouseId || 'ALL';
 };
@@ -113,6 +134,8 @@ export const isFulfillmentBatchTransaction = (tx: Transaction): boolean =>
   (tx.items || []).some(item => !!item.fulfillmentBatchId);
 
 export const canApproveWmsTransaction = (user: User, tx: Transaction): boolean => {
+  // Xuất hủy / điều chỉnh: chỉ người Duyệt ngoại lệ, và khác người lập (tách nhiệm, cả Admin).
+  if (isExceptionTransaction(tx)) return tx.requesterId !== user.id && canApproveWmsException(user, tx.sourceWarehouseId || tx.targetWarehouseId);
   const approvalWarehouses = tx.type === TransactionType.IMPORT
     ? [tx.targetWarehouseId]
     : tx.type === TransactionType.TRANSFER && isFulfillmentBatchTransaction(tx) && tx.targetWarehouseId
@@ -142,6 +165,7 @@ export const canReceiveWmsTransaction = (user: User, tx: Transaction): boolean =
     : [tx.sourceWarehouseId];
   if (canUseWmsTransactionPermission(user, tx, 'wms.transaction.complete', completionWarehouses)) return true;
   if (isAdmin(user)) return true;
+  if (isExceptionTransaction(tx) && canApproveWmsException(user, tx.sourceWarehouseId || tx.targetWarehouseId)) return true;
   if (isGlobalWarehouseKeeper(user)) return true;
   if (!isWarehouseKeeper(user)) return false;
 
@@ -175,8 +199,7 @@ export const canViewWmsTransaction = (user: User, tx: Transaction): boolean => {
   if (isAdmin(user)) return true;
   if (tx.requesterId === user.id) return true;
   if (isGlobalWarehouseKeeper(user)) return true;
-  if (!isWarehouseKeeper(user)) return false;
-  return user.assignedWarehouseId === tx.sourceWarehouseId || user.assignedWarehouseId === tx.targetWarehouseId;
+  return isWarehouseKeeperFor(user, tx.sourceWarehouseId) || isWarehouseKeeperFor(user, tx.targetWarehouseId);
 };
 
 export const canApproveMaterialRequest = (user: User, request: MaterialRequest): boolean =>
@@ -208,8 +231,7 @@ export const canViewMaterialRequest = (user: User, request: MaterialRequest): bo
   if (request.requesterId === user.id) return true;
   if (isGlobalWarehouseKeeper(user)) return true;
   if (request.requestOrigin === 'project' || request.projectId) return true;
-  if (!isWarehouseKeeper(user)) return false;
-  return user.assignedWarehouseId === request.sourceWarehouseId || user.assignedWarehouseId === request.siteWarehouseId;
+  return isWarehouseKeeperFor(user, request.sourceWarehouseId) || isWarehouseKeeperFor(user, request.siteWarehouseId);
 };
 
 export const canDeleteWmsMaterialRequest = (user: User, request: MaterialRequest): boolean => {

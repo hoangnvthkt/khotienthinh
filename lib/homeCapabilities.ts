@@ -1,5 +1,6 @@
 import { Role, User } from '../types';
 import { canPerform, canViewModule } from './permissions/permissionService';
+import { isWarehouseKeeper } from './wmsPermissions';
 
 export type HomeCapabilities = {
   admin: boolean;
@@ -21,5 +22,5 @@ export const resolveHomeCapabilities = (
   approver: Boolean(signals.hasApprovalWork),
   material: canUseModule(user, 'WMS'),
   project: canUseModule(user, 'DA'),
-  warehouse: user.role === Role.WAREHOUSE_KEEPER || Boolean(user.assignedWarehouseId),
+  warehouse: isWarehouseKeeper(user) || user.role === Role.WAREHOUSE_KEEPER || Boolean(user.assignedWarehouseId),
 });

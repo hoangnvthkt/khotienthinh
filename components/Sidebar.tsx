@@ -127,7 +127,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/ep')) return 'EP';
     if (p.startsWith('/hd')) return 'HD';
     if (p.startsWith('/tender-ai')) return 'TENDER_AI';
-    if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/material-code-requests', '/misa-export'].includes(p)) return 'WMS';
+    if (['/dashboard', '/inventory', '/operations', '/audit', '/reports', '/requests', '/material-code-requests', '/misa-export', '/wms/owners'].includes(p)) return 'WMS';
     return null;
   };
 
@@ -257,6 +257,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
       { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
       { to: '/reports', icon: History, label: 'Báo cáo' },
+      { to: '/wms/owners', icon: Users, label: 'Người phụ trách' },
     ],
     HRM: getHrmNavigationItems(user).map(item => ({
       ...item,
