@@ -136,7 +136,7 @@ export interface FinanceTransferReview {
 export interface FinanceAttachment { name: string; path: string; size: number; type: string; uploadedAt: string }
 
 const ERROR_MESSAGES: Record<string, string> = {
-  FINANCE_VIEW_DENIED: 'Bạn chưa có quyền xem Tài chính. Nhờ quản trị cấp quyền "Tài chính — Xem công nợ toàn công ty".',
+  FINANCE_VIEW_DENIED: 'Bạn chưa có quyền xem Tài chính. Nhờ quản trị cấp quyền "Tài chính — Xem Tài chính toàn công ty".',
   FINANCE_RECORD_DENIED: 'Bạn chưa có quyền Tài chính — Ghi nhận.',
   FINANCE_CONFIRM_DENIED: 'Bạn chưa có quyền Tài chính — Xác nhận.',
   FINANCE_MANAGE_DENIED: 'Chỉ Admin hoặc Quản trị Tài chính được sửa phần này.',
@@ -275,6 +275,18 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_CAPITAL_NOT_FOUND: 'Không tìm thấy khoản cấp vốn.',
   FINANCE_CAPITAL_STATE: 'Khoản cấp vốn đã bị đảo.',
   FINANCE_CAPITAL_AUTO: 'Khoản cấp vốn tự ghi khi chi — muốn bỏ thì đảo phiếu chi gốc.',
+  FINANCE_SITE_FUND_INVALID: 'Quỹ công trường không hợp lệ hoặc đã ngừng dùng.',
+  FINANCE_SITE_FUND_DENIED: 'Chỉ người giữ quỹ công trường (hoặc kế toán có quyền Ghi nhận) mới ghi được khoản chi.',
+  FINANCE_SITE_EXPENSE_INVALID: 'Khoản chi chưa hợp lệ: cần nội dung, số tiền, khoản mục và ngày từ mốc đến hôm nay.',
+  FINANCE_SITE_EXPENSE_NOT_FOUND: 'Không tìm thấy khoản chi.',
+  FINANCE_SITE_EXPENSE_STATE: 'Khoản chi đã đổi trạng thái. Tải lại.',
+  FINANCE_ALLOCATION_MONTH_INVALID: 'Chỉ phân bổ tháng đã kết thúc, từ tháng 10/2026.',
+  FINANCE_ALLOCATION_EXISTS: 'Tháng này đã có kỳ phân bổ (đang lập, chờ chốt hoặc đã chốt).',
+  FINANCE_ALLOCATION_NOT_FOUND: 'Không tìm thấy kỳ phân bổ.',
+  FINANCE_ALLOCATION_STATE: 'Kỳ phân bổ đã đổi trạng thái. Tải lại.',
+  FINANCE_ALLOCATION_DAYS_INVALID: 'Số công không hợp lệ (0–31, chỉ dự án có HĐ chủ đầu tư).',
+  FINANCE_ALLOCATION_POOL_INVALID: 'Nhập nội dung, số tiền và lý do cho khoản chi phí chung thêm tay.',
+  FINANCE_ALLOCATION_NOT_READY: 'Chưa gửi chốt được: HR chưa chốt bảng công tháng hoặc bảng lương tháng chưa duyệt.',
   FINANCE_COST_SETTINGS_INVALID: 'Ngưỡng 50–100%, cần ít nhất một người duyệt vượt ngân sách và một người cấp vốn.',
 };
 
@@ -403,7 +415,7 @@ export interface FinanceProjectBudget {
   createdByName: string; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; rowVersion: number;
   canDecide: boolean; canWithdraw: boolean; lines: Array<{ costItemId: string; amount: number; note: string | null }>;
 }
-export type FinanceFundRowKind = 'customer_receipt' | 'advance_refund' | 'other_receipt' | 'supplier_payment' | 'expense' | 'site_transfer' | 'capital' | 'capital_return';
+export type FinanceFundRowKind = 'customer_receipt' | 'advance_refund' | 'other_receipt' | 'supplier_payment' | 'expense' | 'site_transfer' | 'capital' | 'capital_return' | 'allocation';
 export interface FinanceProjectCost {
   today: string; cutoverDate: string; warnPercent: number; can: FinanceCostCan;
   project: FinanceCostProjectSummary & { id: string; code: string; name: string; contractValue: number | null; receivedAll: number };
@@ -421,11 +433,48 @@ export interface FinanceProjectCost {
   };
 }
 
+export type FinanceSiteExpenseStatus = 'submitted' | 'approved' | 'rejected' | 'withdrawn' | 'reversed';
+export interface FinanceSiteExpense {
+  id: string; code: string; date: string; description: string; counterparty: string | null; costItemId: string; costItem: string; amount: number;
+  attachments: FinanceAttachment[]; status: FinanceSiteExpenseStatus; submissionNo: number; createdById: string; createdByName: string; createdAt: string;
+  decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; reverseReason: string | null; rowVersion: number;
+  canEdit: boolean; canDecide: boolean; canReverse: boolean;
+}
+export interface FinanceSiteFund {
+  id: string; name: string; projectId: string; projectCode: string | null; holderUserId: string | null; holderName: string | null; active: boolean; mine: boolean;
+  /** Số dư sổ thu chi của quỹ (âm = công ty đang nợ người giữ quỹ). */
+  /** received = tiền đã chuyển vào quỹ trừ tiền nộp lại (ròng). */
+  balance: number; received: number; pending: number; approved: number; expenses: FinanceSiteExpense[];
+}
+export interface FinanceSiteFunds {
+  today: string; cutoverDate: string; can: { view: boolean; record: boolean; confirm: boolean };
+  items: Array<{ id: string; symbol: string; name: string; groupName: string }>; funds: FinanceSiteFund[];
+}
+export type FinanceAllocationStatus = 'draft' | 'submitted' | 'confirmed' | 'reversed' | 'cancelled';
+export interface FinanceAllocation {
+  month: string; firstMonth: string; lastClosableMonth: string; can: { view: boolean; record: boolean; confirm: boolean; manage: boolean };
+  readiness: { timesheet: { status: 'reviewing' | 'submitted' | 'closed'; version: number; decidedAt: string | null } | null;
+    payroll: { confirmed: number; draft: number; gross: number }; receipts: Array<{ projectId: string; projectCode: string; amount: number }> };
+  projects: Array<{ id: string; code: string }>;
+  runs: Array<{ id: string; code: string; month: string; status: FinanceAllocationStatus; siteTotal: number; poolTotal: number; createdByName: string;
+    decidedByName: string | null; decidedAt: string | null; reverseReason: string | null; decisionNote: string | null }>;
+  run: null | {
+    id: string; code: string; month: string; status: FinanceAllocationStatus; timesheetVersion: number | null; payrollCount: number; payrollTotal: number;
+    siteTotal: number; officeTotal: number; poolTotal: number; receiptsTotal: number; note: string | null; rowVersion: number;
+    createdByName: string; createdAt: string; submittedAt: string | null; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null;
+    canEdit: boolean; canSubmit: boolean; canDecide: boolean; canCancel: boolean; canReverse: boolean;
+    staff: Array<{ employeeId: string; name: string; gross: number; siteDays: Record<string, number>; officeDays: number; autoSiteDays: Record<string, number>;
+      autoOfficeDays: number; edited: boolean; editReason: string | null }>;
+    pool: Array<{ id: string; sourceType: 'expense_request' | 'office_salary' | 'manual'; description: string; category: string | null; amount: number; included: boolean; note: string | null }>;
+    lines: Array<{ projectId: string; projectCode: string; kind: 'salary' | 'overhead'; amount: number; basis: number | null; share: number | null }>;
+  };
+}
+
 export type CashAccountKind = 'cash' | 'bank' | 'site';
 export interface CashAccountOption { id: string; name: string; kind: CashAccountKind; bankName: string | null; accountNo: string | null; balance: number; openingConfirmed: boolean }
 export interface CashAccount {
   id: string; name: string; kind: CashAccountKind; bankName: string | null; accountNo: string | null; projectId: string | null; projectCode: string | null;
-  holderName: string | null; note: string | null; active: boolean; balance: number; lockedThrough: string | null;
+  holderName: string | null; holderUserId?: string | null; note: string | null; active: boolean; balance: number; lockedThrough: string | null;
   opening: { id: string; status: 'submitted' | 'confirmed' | 'rejected' | 'cancelled'; balance: number; cutoverDate: string; note: string | null; attachments: FinanceAttachment[];
     createdBy: string; createdByName: string | null; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; canDecide: boolean } | null;
   lastRecon: { id: string; month: string; status: 'submitted' | 'confirmed' | 'rejected'; bookBalance: number; statementBalance: number; difference: number; explanation: string | null;
@@ -581,7 +630,7 @@ export const financeService = {
   decideCustomerOpening(input: { id: string; action: 'confirm' | 'reject' | 'cancel'; reason?: string }) { return call<{ id: string }>('decide_finance_customer_opening_v1', { p_input: input }); },
   cashAccounts() { return call<CashAccountOption[]>('get_finance_cash_accounts_v1', {}); },
   cash(filter: { month?: string; accountId?: string } = {}) { return call<FinanceCash>('get_finance_cash_v1', { p_filter: filter }); },
-  saveCashAccount(input: { id?: string; name: string; kind: CashAccountKind; bankName?: string; accountNo?: string; projectId?: string | null; holderName?: string; note?: string; isActive?: boolean }) {
+  saveCashAccount(input: { id?: string; name: string; kind: CashAccountKind; bankName?: string; accountNo?: string; projectId?: string | null; holderName?: string; holderUserId?: string | null; note?: string; isActive?: boolean }) {
     return call<{ id: string }>('save_finance_cash_account_v1', { p_input: input });
   },
   saveCashOpening(input: { accountId: string; balance: number; note?: string; attachments: FinanceAttachment[] }) { return call<{ id: string }>('save_finance_cash_opening_v1', { p_input: input }); },
@@ -627,6 +676,23 @@ export const financeService = {
   reverseCapital(input: { id: string; reason: string }) { return call<{ id: string }>('reverse_finance_project_capital_v1', { p_input: input }); },
   decidePoBudget(input: { purchaseOrderId: string; action: 'approve' | 'reject'; reason?: string }) {
     return call<{ purchaseOrderId: string; status: string }>('decide_finance_po_budget_v1', { p_input: input });
+  },
+  siteFunds() { return call<FinanceSiteFunds>('get_finance_site_funds_v1', {}); },
+  saveSiteExpense(input: { id?: string; expectedRowVersion?: number; accountId: string; spentDate: string; description: string; counterparty?: string; costItemId: string; amount: number; attachments: FinanceAttachment[] }) {
+    return call<{ id: string; code: string }>('save_finance_site_expense_v1', { p_input: input });
+  },
+  withdrawSiteExpense(input: { id: string; expectedRowVersion: number }) { return call<{ id: string }>('withdraw_finance_site_expense_v1', { p_input: input }); },
+  decideSiteExpenses(input: { action: 'approve' | 'reject' | 'reverse'; reason?: string; items: Array<{ id: string; expectedRowVersion: number; costItemId?: string }> }) {
+    return call<{ count: number }>('decide_finance_site_expenses_v1', { p_input: input });
+  },
+  allocation(month?: string) { return call<FinanceAllocation>('get_finance_allocation_v1', { p_month: month || null }); },
+  createAllocation(month: string) { return call<{ id: string; code: string }>('create_finance_allocation_v1', { p_input: { month } }); },
+  saveAllocation(input: { runId: string; expectedRowVersion: number; action: 'refresh' | 'staff' | 'pool' | 'pool_add' | 'pool_remove'; employeeId?: string;
+    siteDays?: Record<string, number>; officeDays?: number; itemId?: string; included?: boolean; description?: string; amount?: number; reason?: string }) {
+    return call<{ id: string }>('save_finance_allocation_v1', { p_input: input });
+  },
+  decideAllocation(input: { id: string; expectedRowVersion: number; action: 'submit' | 'return' | 'confirm' | 'cancel' | 'reverse'; reason?: string }) {
+    return call<{ id: string; status: string }>('decide_finance_allocation_v1', { p_input: input });
   },
   saveCostSettings(input: { warnPercent: number; budgetApproverIds: string[]; capitalProviderIds: string[]; reason: string; expectedRowVersion: number }) {
     return call<{ ok: boolean }>('save_finance_cost_settings_v1', { p_input: input });
@@ -732,6 +798,11 @@ export const EVENT_LABELS: Record<string, string> = {
   capital_topup: 'Công ty cấp vốn cho dự án', capital_return: 'Thu hồi vốn từ dự án', capital_reverse: 'Đảo khoản cấp vốn', capital_auto_topup: 'Tự ghi cấp vốn khi chi (quỹ âm)',
   po_budget_request: 'Đơn mua vượt ngân sách chờ duyệt', po_budget_approve: 'Duyệt đơn mua vượt ngân sách', po_budget_reject: 'Không duyệt đơn mua vượt ngân sách',
   cost_settings_save: 'Đổi thông số ngân sách / cấp vốn',
+  site_expense_submit: 'Ghi khoản chi quỹ công trường', site_expense_withdraw: 'Rút khoản chi quỹ công trường', site_expense_approve: 'Duyệt khoản chi quỹ công trường',
+  site_expense_reject: 'Trả lại khoản chi quỹ công trường', site_expense_reverse: 'Đảo khoản chi quỹ công trường',
+  allocation_create: 'Lập phân bổ tháng', allocation_refresh: 'Làm mới phân bổ', allocation_staff: 'Sửa số công phân bổ', allocation_pool: 'Bỏ / tính khoản chi phí chung',
+  allocation_pool_add: 'Thêm khoản chi phí chung', allocation_pool_remove: 'Xóa khoản chi phí chung', allocation_submit: 'Gửi chốt phân bổ', allocation_return: 'Trả lại phân bổ',
+  allocation_confirm: 'Chốt phân bổ tháng', allocation_cancel: 'Hủy kỳ phân bổ', allocation_reverse: 'Đảo phân bổ tháng',
   customer_terms_save: 'Khai điều khoản HĐ chủ đầu tư', guarantee_save: 'Khai bảo lãnh', round_create: 'Lập đợt thu', round_update: 'Sửa đợt thu',
   round_send: 'Gửi hồ sơ CĐT', round_confirm: 'CĐT xác nhận số tiền', round_return: 'CĐT trả lại hồ sơ', round_invoice: 'Ghi hóa đơn', round_cancel: 'Hủy đợt thu',
   receipt_submit: 'Ghi phiếu thu', receipt_confirm: 'Xác nhận phiếu thu', receipt_reject: 'Từ chối phiếu thu', receipt_withdraw: 'Rút phiếu thu',

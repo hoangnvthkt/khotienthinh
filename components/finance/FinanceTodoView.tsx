@@ -1,13 +1,13 @@
 import React from 'react';
 import { Wallet, AlertTriangle, ArrowLeftRight, Banknote, Building2, Calculator, CalendarClock, CheckCircle2, ChevronRight, ClipboardList, FileCheck2, FileWarning, HandCoins, PiggyBank, RotateCcw, Scale } from 'lucide-react';
-import type { FinanceAdvances, FinanceCost, FinanceReceivables } from '../../lib/financeService';
+import type { FinanceAdvances, FinanceAllocation, FinanceCost, FinanceReceivables, FinanceSiteFunds } from '../../lib/financeService';
 import { shortMoney } from './financeUi';
 
 // Việc cần làm của kế toán: mỗi ô là một hàng đợi, bấm để mở đúng chỗ xử lý ở Phải trả.
 
 export type TodoTarget = 'opening' | 'overdue' | 'soon' | 'issues' | 'direct' | 'statements' | 'request' | 'approved' | 'transfers'
   | 'advance_overdue' | 'advance_refund' | 'advance_adjust' | 'receivable_overdue' | 'receivable_sent' | 'receivable_receipts' | 'receivable_opening' | 'receivable_guarantee' | 'cash_setup' | 'cash_confirm' | 'cash_forecast'
-  | 'cost_decide' | 'cost_over' | 'cost_fund_setup' | 'cost_fund_negative' | 'cost_stale';
+  | 'cost_decide' | 'cost_over' | 'cost_fund_setup' | 'cost_fund_negative' | 'cost_stale' | 'cost_allocation' | 'cash_site';
 
 export const FinanceTodoView: React.FC<{
   totals: { overdue: number; overdueCount: number; soon: number; soonCount: number; issues: number; openingPendingSuppliers: number; supplierCount: number };
@@ -18,10 +18,12 @@ export const FinanceTodoView: React.FC<{
   advances?: FinanceAdvances['totals'] | null;
   receivables?: FinanceReceivables['totals'] | null;
   cash?: { waitingMe: number; openings: number; reconciliations: number; movements: number; accountsWithoutOpening: number; accounts: number; belowMinWeek: string | null; lowest: number | null; minBalance: number } | null;
-  cost?: FinanceCost | null;
+  cost?: FinanceCost | null; allocation?: FinanceAllocation | null; site?: FinanceSiteFunds | null;
   canRecord: boolean; canConfirm: boolean;
   onGo: (target: TodoTarget) => void;
-}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, receivables: rc, cash, cost, canRecord, canConfirm, onGo }) => {
+}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, receivables: rc, cash, cost, allocation: al, site, canRecord, canConfirm, onGo }) => {
+  const allocDue = al ? (al.run?.status === 'submitted' && al.run.canDecide ? 'confirm' : al.can.record && al.lastClosableMonth >= al.firstMonth && (!al.run || al.run.status === 'draft') ? 'record' : null) : null;
+  const sitePending = site ? site.funds.reduce((s, f) => s + f.expenses.filter(x => x.status === 'submitted' && x.canDecide).length, 0) : null;
   const cp = cost?.projects || [];
   const decide = cost ? cost.poBudget.filter(o => o.canDecide).length + cp.filter(p => p.pendingBudget?.canDecide || p.openingCanDecide).length : null;
   const over = cp.filter(p => p.overItems > 0 || p.warnItems > 0);
@@ -47,6 +49,10 @@ export const FinanceTodoView: React.FC<{
       hint: cash?.belowMinWeek ? `xuống dưới tồn quỹ tối thiểu ${shortMoney(cash.minBalance)}` : '', icon: AlertTriangle, urgent: true },
     { key: 'cost_decide', title: 'Ngân sách / vượt ngân sách chờ bạn', count: decide, value: decide == null ? '…' : `${decide} việc`,
       hint: cost ? `${cost.poBudget.length} đơn mua vượt dự toán · ${cp.filter(p => p.pendingBudget).length} ngân sách · ${cp.filter(p => p.openingCanDecide).length} đầu kỳ quỹ` : '', icon: Calculator, urgent: true },
+    { key: 'cost_allocation', title: 'Phân bổ tháng', count: al ? (allocDue ? 1 : 0) : null, value: al ? (allocDue === 'confirm' ? 'Chờ bạn chốt' : allocDue === 'record' ? (al.run ? 'Đang lập' : 'Chưa lập') : 'Không') : '…',
+      hint: al ? `Tháng ${al.month.slice(5, 7)}/${al.month.slice(0, 4)} · lương công trường + chi phí chung → chi phí dự án${al.readiness.timesheet?.status !== 'closed' ? ' · chờ HR chốt công' : ''}` : '', icon: ClipboardList, urgent: allocDue === 'confirm' },
+    { key: 'cash_site', title: 'Khoản chi quỹ công trường chờ duyệt', count: sitePending, value: sitePending == null ? '…' : `${sitePending} khoản`,
+      hint: site ? `${site.funds.length} quỹ công trường · CHT gửi kèm ảnh hóa đơn` : '', icon: Wallet, who: canRecord ? undefined : 'Cần quyền Tài chính — Ghi nhận' },
     { key: 'cost_over', title: 'Dự án vượt / sắp vượt ngân sách', count: cost ? over.length : null, value: cost ? `${over.length} dự án` : '…',
       hint: over.map(p => `${p.code}: ${p.overItems ? `vượt ${p.overItems}` : ''}${p.overItems && p.warnItems ? ', ' : ''}${p.warnItems ? `≥ ${cost?.warnPercent}% ${p.warnItems}` : ''} khoản mục`).join(' · '), icon: Scale, urgent: over.some(p => p.overItems > 0) },
     { key: 'cost_fund_setup', title: 'Khai đầu kỳ quỹ dự án', count: cost ? noOpening.length : null, value: cost ? `${noOpening.length} dự án` : '…',

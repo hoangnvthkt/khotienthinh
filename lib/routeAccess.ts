@@ -17,6 +17,8 @@ const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/notifications',
   '/my-profile',
   '/my-payroll',
+  // Quỹ công trường của tôi: máy chủ chỉ trả quỹ mà người dùng đang giữ.
+  '/site-fund',
   '/employee-dashboard',
   '/feedback',
   '/leaderboard',

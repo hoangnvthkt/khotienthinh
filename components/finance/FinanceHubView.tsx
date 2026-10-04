@@ -8,7 +8,7 @@ import { AdvancesView, type AdvanceFilter } from './AdvancesView';
 import { ReceivablesView } from './ReceivablesView';
 import { CashView } from './CashView';
 import { CostView } from './CostView';
-import type { FinanceCost, FinanceReceivables } from '../../lib/financeService';
+import type { FinanceAllocation, FinanceCost, FinanceReceivables, FinanceSiteFunds } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
 import { DirectReceiptsView } from './DirectReceiptsView';
@@ -35,7 +35,7 @@ const OPENING_BADGE: Record<FinanceSupplierSummary['opening'], { label: string; 
   done: { label: 'Đã chốt đầu kỳ', cls: 'border-leaf-200 bg-leaf-50 text-leaf-800' },
 };
 
-export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null; initialRequestId?: string | null; initialContractId?: string | null; initialProjectId?: string | null }> = ({ currentUserId, initialSection, initialSupplierId, initialRequestId, initialContractId, initialProjectId }) => {
+export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null; initialRequestId?: string | null; initialContractId?: string | null; initialProjectId?: string | null; initialView?: string | null }> = ({ currentUserId, initialSection, initialSupplierId, initialRequestId, initialContractId, initialProjectId, initialView }) => {
   // Không chỉ định phần: Ban giám đốc (Tài chính — Quản trị) vào Tổng quan, kế toán vào Việc cần làm.
   const [section, setSection] = useState<Section>(initialSection === 'settings' || initialSection === 'overview' || initialSection === 'todo' || initialSection === 'receivables' || initialSection === 'cash' || initialSection === 'cost' ? initialSection
     : initialSection || initialSupplierId || initialRequestId ? 'payables' : 'auto');
@@ -47,6 +47,9 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
   const [cashPending, setCashPending] = useState<{ waitingMe: number; openings: number; reconciliations: number; movements: number; accountsWithoutOpening: number; accounts: number; belowMinWeek: string | null; lowest: number | null; minBalance: number } | null>(null);
   const [cost, setCost] = useState<FinanceCost | null>(null);
   const [costKey, setCostKey] = useState(0);
+  const [costView, setCostView] = useState<string | null>(initialView || null);
+  const [alloc, setAlloc] = useState<FinanceAllocation | null>(null);
+  const [site, setSite] = useState<FinanceSiteFunds | null>(null);
   const [requestCounts, setRequestCounts] = useState<{ request: number; approved: number; approvedAmount: number; paid: number; waitingMe: number } | null>(null);
   const [stageKey, setStageKey] = useState(0);
   const today = useMemo(() => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }), []);
@@ -87,6 +90,8 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       financeService.receivables().then(d => setReceivables(d.totals)).catch(() => setReceivables(null));
       financeService.cash().then(d => setCashPending({ ...d.pending, accounts: d.forecast.accounts, belowMinWeek: d.forecast.belowMinWeek, lowest: d.forecast.lowest, minBalance: d.forecast.minBalance })).catch(() => setCashPending(null));
       financeService.cost().then(setCost).catch(() => setCost(null));
+      financeService.allocation().then(setAlloc).catch(() => setAlloc(null));
+      financeService.siteFunds().then(setSite).catch(() => setSite(null));
       financeService.directReceipts().then(d => setDirect({ count: d.receipts.length, amount: d.receipts.reduce((s, x) => s + x.value, 0), missing: d.receipts.filter(x => x.missingPrice > 0).length }))
         .catch(() => setDirect(null));
       setSel(cur => cur && r.suppliers.some(s => s.supplierId === cur) ? cur : cur || r.suppliers[0]?.supplierId || null);
@@ -127,7 +132,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     else if (k === 'direct' || k === 'statements') openPayables({ stage: 'pending', pending: k });
     else if (k === 'request' || k === 'approved') openPayables({ stage: k });
     else if (k.startsWith('cash_')) { setSection('cash'); window.scrollTo({ top: 0 }); }
-    else if (k.startsWith('cost_')) { setSection('cost'); setCostKey(x => x + 1); window.scrollTo({ top: 0 }); }
+    else if (k.startsWith('cost_')) { setCostView(k === 'cost_allocation' ? 'allocation' : null); setSection('cost'); setCostKey(x => x + 1); window.scrollTo({ top: 0 }); }
     else if (k.startsWith('receivable_')) { setSection('receivables'); setRcvKey(x => x + 1); window.scrollTo({ top: 0 }); }
     else if (k === 'advance_overdue' || k === 'advance_refund' || k === 'advance_adjust') openPayables({ stage: 'advances', advance: k === 'advance_overdue' ? 'overdue' : k === 'advance_refund' ? 'refund' : 'active' });
     else openPayables({ transfers: true });
@@ -146,7 +151,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     <nav className={`inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm ${mobileDetail ? 'hidden md:inline-flex' : ''}`} role="tablist" aria-label="Phần">
       {([['overview', 'Tổng quan', CircleDollarSign], ['todo', 'Việc cần làm', ListTodo], ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet],
         ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['settings', 'Quản trị', Settings2]] as const).map(([k, l, I]) =>
-        <button key={k} type="button" role="tab" aria-selected={section === k} onClick={() => { setSection(k as Section); if (k === 'cost') setCostKey(x => x + 1); }}
+        <button key={k} type="button" role="tab" aria-selected={section === k} onClick={() => { setSection(k as Section); if (k === 'cost') { setCostView(null); setCostKey(x => x + 1); } }}
           className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${section === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>
           <I size={14} />{l}</button>)}
     </nav>
@@ -155,13 +160,13 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       : status === 'error' && !data ? <StateBox kind="error" title="Chưa tải được Tài chính" message={message} onRetry={() => void load()} />
         : !data || !t ? <StateBox kind="loading" title="Đang tải công nợ…" />
           : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} />
-          : section === 'cost' ? <CostView key={costKey} initialProjectId={costKey === 0 ? initialProjectId : null} onChanged={() => void load(true)} />
+          : section === 'cost' ? <CostView key={costKey} initialProjectId={costKey === 0 ? initialProjectId : null} initialView={costView} onChanged={() => void load(true)} />
           : section === 'cash' ? <CashView onChanged={() => void load(true)} onOpenRequests={() => openPayables({ stage: 'request' })} />
           : section === 'receivables' ? <ReceivablesView key={rcvKey} initialContractId={initialContractId} onChanged={() => void load(true)} />
           : section === 'overview' ? <FinanceOverviewView openingPendingSuppliers={t.openingPendingSuppliers} supplierCount={t.supplierCount} directPending={direct}
             onOpenPayables={projectId => openPayables({ projectId: projectId || '' })} onOpenPending={() => openPayables({ stage: 'pending', pending: 'direct' })} onOpenTodo={() => setSection('todo')}
             onOpenAdvances={f => openPayables({ stage: 'advances', advance: f })} onOpenReceivables={() => setSection('receivables')} onOpenCash={() => setSection('cash')} cost={cost} onOpenCost={() => { setSection('cost'); setCostKey(x => x + 1); }} />
-          : section === 'todo' || section === 'auto' ? <FinanceTodoView totals={t} direct={direct} pendingStatements={data.pendingStatements} requests={requestCounts} transferCount={transferCount} advances={advances} receivables={receivables} cash={cashPending} cost={cost}
+          : section === 'todo' || section === 'auto' ? <FinanceTodoView totals={t} direct={direct} pendingStatements={data.pendingStatements} requests={requestCounts} transferCount={transferCount} advances={advances} receivables={receivables} cash={cashPending} cost={cost} allocation={alloc} site={site}
             canRecord={data.can.record} canConfirm={data.can.confirm} onGo={goTodo} />
           : showTransfers ? <TransferReviewsView onBack={() => setShowTransfers(false)} onChanged={() => void load(true)} /> : <>
             {transferCount > 0 && <p className={`flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100 ${hideOnMobile}`}>

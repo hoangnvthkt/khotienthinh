@@ -251,7 +251,8 @@
     "20261008137100_wms_v1_catalog_stock.sql",
     "20261008137200_wms_v1_2_owners.sql",
     "20261008134200_finance_cash_treasury.sql",
-    "20261008134300_finance_cost_budget.sql"
+    "20261008134300_finance_cost_budget.sql",
+    "20261008134400_finance_allocation_site_fund.sql"
   ],
   "forbidIncludeAll": true
 }
