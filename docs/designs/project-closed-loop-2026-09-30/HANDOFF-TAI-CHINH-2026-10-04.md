@@ -4,7 +4,7 @@ Người đọc: phiên Claude mới tiếp nhận **module Tài chính** của 
 
 Trạng thái lúc bàn giao: không có việc Tài chính nào đang code dở. Bốn đợt Tài chính cuối (#86, #87, #89, #91, #93) **đã lên production và đã merge**. Việc tiếp theo do chủ SP chọn (gợi ý ở mục 9).
 
-**Không phải việc của phiên này:** Module Vật tư (kho) do một phiên khác làm ở worktree `project-loop`, nhánh `feature/wms-v1-3-variants`, PR #92. Không đụng vào nhánh, worktree hay migration `20261008137200`, `20261008137300` của phiên đó. Nếu chủ SP nhắn việc Vật tư nhầm sang đây thì hỏi lại.
+**Không phải việc của phiên này:** Module Vật tư (kho) do một phiên khác làm ở worktree `project-loop`, nhánh `feature/wms-v1-3-variants` (Phân quyền kho #92 đã lên prod 04/10, tiếp V1-3a gộp mã). Không đụng vào nhánh, worktree hay migration `20261008137200`, `20261008137300` của phiên đó. Nếu chủ SP nhắn việc Vật tư nhầm sang đây thì hỏi lại.
 
 ---
 
