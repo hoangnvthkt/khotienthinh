@@ -8,7 +8,7 @@ import { DailyLogResourceEditor } from './DailyLogResourceEditor';
 import { DailyLogWbsPicker } from './DailyLogWbsPicker';
 import { DailyLogWorkItemTable, type DailyLogWorkItemEditorRow } from './DailyLogWorkItemTable';
 import { DailyLogEngineerSlip } from './DailyLogEngineerSlip';
-import type { DailyLogDocumentBundle } from '../../../lib/dailyLogWbsService';
+import type { DailyLogDocumentBundle, DailyLogRecentArea } from '../../../lib/dailyLogWbsService';
 import type { DailyLogPhoto } from '../../../types';
 
 export interface ContributionEditorDraft {
@@ -35,6 +35,8 @@ export interface DailyLogContributionWorkEditorProps {
   onDeleted?: (areaName: string) => void;
   /** V2 slip only: the author took the sent slip back to edit. */
   onWithdrawn?: () => void;
+  /** V2 slip only: recent fronts with their last slip, for "Chép từ phiếu trước". */
+  recentAreas?: DailyLogRecentArea[];
 }
 
 const blankProvider = (): DailyLogResourceProvider => ({ entryMode: 'catalog' });
