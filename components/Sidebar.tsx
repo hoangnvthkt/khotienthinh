@@ -257,7 +257,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
       { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
       { to: '/reports', icon: History, label: 'Báo cáo' },
-      { to: '/wms/owners', icon: Users, label: 'Người phụ trách' },
+      { to: '/wms/owners', icon: Users, label: 'Phân quyền kho' },
     ],
     HRM: getHrmNavigationItems(user).map(item => ({
       ...item,

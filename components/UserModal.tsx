@@ -362,7 +362,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Briefcase size={12} className="mr-1" /> Loại tài khoản</span>
               <select value={formData.role || Role.EMPLOYEE} onChange={e => setFormData({ ...formData, role: e.target.value as Role })} className={fieldClass}>
                 <option value={Role.ADMIN}>Quản trị viên</option>
-                {/* V1-2: thủ kho chọn ở Kho vật tư → Người phụ trách; vai trò "Tài khoản kho" chỉ còn hiện cho tài khoản cũ. */}
+                {/* V1-2: thủ kho chọn ở Kho vật tư → Phân quyền kho; vai trò "Tài khoản kho" chỉ còn hiện cho tài khoản cũ. */}
                 {(formData.role === Role.WAREHOUSE_KEEPER || userToEdit?.role === Role.WAREHOUSE_KEEPER) && <option value={Role.WAREHOUSE_KEEPER}>Tài khoản kho (cũ)</option>}
                 <option value={Role.EMPLOYEE}>Tài khoản thường</option>
               </select>
@@ -376,7 +376,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
             </label>
             <label className="space-y-1">
               <span className="flex items-center text-xs font-bold uppercase text-slate-500"><Building size={12} className="mr-1" /> Kho phụ trách</span>
-              <span className="block text-[10px] text-slate-400">Thủ kho chọn ở Kho vật tư → Người phụ trách.</span>
+              <span className="block text-[10px] text-slate-400">Thủ kho chọn ở Kho vật tư → Phân quyền kho.</span>
               <select value={formData.role === Role.WAREHOUSE_KEEPER ? formData.assignedWarehouseId || '*' : ''} onChange={e => setFormData({ ...formData, assignedWarehouseId: e.target.value })} disabled={formData.role !== Role.WAREHOUSE_KEEPER} className={fieldClass}>
                 <option value="*">Toàn bộ kho (phải chọn rõ)</option>{warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
               </select>
