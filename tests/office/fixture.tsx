@@ -1,7 +1,9 @@
 // Fictional data, confined to the UI test harness. No Supabase operations.
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { canAccessRoute, getAuthorizedRouteFallback } from "../../lib/routeAccess";
+import { Role, type User } from "../../types";
 import { OfficeWorkspace } from "../../pages/office/OfficePage";
 import { createOfficeService } from "../../lib/office/officeService";
 import { newOfficeDraft } from "../../lib/office/officePresentation";
@@ -664,14 +666,31 @@ const service = createOfficeService({ rpc } as any, {
     uploadedUrls.delete(ref.id);
   },
 });
+const routeUser: User = {
+  id: "author",
+  name: "Office route fixture",
+  email: "office-route@example.invalid",
+  role: Role.EMPLOYEE,
+  permissionGrants: ["office.module.access", "office.configuration.manage"].map(permissionCode => ({
+    userId: "author", permissionCode, scopeType: "global", scopeId: "*", isActive: true,
+  })),
+};
+function GuardedOfficeFixture() {
+  const { pathname } = useLocation();
+  // Exercise the app's real route authorization before entering the module.
+  return canAccessRoute(routeUser, pathname)
+    ? <OfficeWorkspace service={service} />
+    : <Navigate to={getAuthorizedRouteFallback(routeUser, pathname)} replace />;
+}
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
     <div style={{ padding: "16px", maxWidth: "1600px", margin: "auto" }}>
       <Routes>
         <Route
           path="/office/*"
-          element={<OfficeWorkspace service={service} />}
+          element={<GuardedOfficeFixture />}
         />
+        <Route path="/" element={<h1>Trang chủ kiểm thử</h1>} />
         <Route path="*" element={<Navigate to="/office" replace />} />
       </Routes>
     </div>

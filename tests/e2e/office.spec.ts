@@ -19,6 +19,17 @@ for (const [label, width, height] of [
       }),
     ).toBeVisible();
     await expect(page.locator(".office-kpis")).toContainText("Chờ tôi duyệt");
+    await page.getByRole("link", { name: "Mẫu văn bản", exact: true }).click();
+    await expect(page).toHaveURL(/#\/office\/templates$/);
+    await expect(page.getByRole("heading", { name: "Mẫu văn bản", exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Mẫu văn bản", exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "Báo cáo", exact: true }).click();
+    await expect(page).toHaveURL(/#\/office\/reports$/);
+    await expect(page.getByRole("heading", { name: "Báo cáo văn bản", exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Báo cáo văn bản", exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "Tổng quan", exact: true }).click();
     await expect(page.locator(".office-document-row")).toHaveCount(5);
     await page.screenshot({
       path: `.office-test-results/${label}-overview.png`,
