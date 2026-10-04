@@ -18,9 +18,12 @@ import {
   ShieldCheck,
   Trash2,
   UploadCloud,
+  Camera,
   X,
 } from "lucide-react";
-import { WorkRichTextEditor } from "../work/WorkRichTextEditor";
+import { OfficeRichTextEditor } from "./OfficeRichText";
+import { OfficeAssistant } from "./OfficeAssistant";
+import { OfficeTemplateChooser } from "./OfficeLibrary";
 import type { OfficeService } from "../../lib/office/officeService";
 import type {
   AudienceKind,
@@ -194,6 +197,7 @@ export function OfficeDraftPage({
       catalog={catalog}
       existing={existing.data}
       initialGroup={group in OFFICE_GROUPS ? group : undefined}
+      initialTemplateId={params.get("template") || undefined}
     />
   );
 }
@@ -202,13 +206,16 @@ function OfficeDraftForm({
   catalog,
   existing,
   initialGroup,
+  initialTemplateId,
 }: {
   service: OfficeService;
   catalog: OfficeCatalog;
   existing: OfficeDetail | null;
   initialGroup?: OfficeGroup;
+  initialTemplateId?: string;
 }) {
   const navigate = useNavigate();
+  const [templateOpen, setTemplateOpen] = useState(!!initialTemplateId);
   const command = useOfficeCommand(service);
   const [draft, setDraft] = useState<OfficeDraft>(() =>
     existing ? editableDraft(existing.document) : newOfficeDraft(initialGroup),
@@ -261,6 +268,55 @@ function OfficeDraftForm({
     setFiles((old) => [...old, ...selected.map((file) => ({ file }))]);
     setDirty(true);
   };
+  async function uploadInlineImage(file: File): Promise<OfficeAttachment> {
+    if (!draft.title.trim() || !draft.document_type_id)
+      throw new Error("Điền tiêu đề và loại văn bản trước khi tải ảnh.");
+    if (
+      !["image/png", "image/jpeg", "image/webp"].includes(
+        officeFileMime(file),
+      ) ||
+      file.size === 0 ||
+      file.size > 50 * 1024 * 1024
+    )
+      throw new Error("OFFICE_FILE_TYPE");
+    setBusy(true);
+    try {
+      if (!saved.current || persistedDraft.current !== JSON.stringify(draft)) {
+        saved.current = await command({
+          command: saved.current ? "save" : "create",
+          documentId: saved.current?.id,
+          expectedVersion: saved.current?.version,
+          payload: draft,
+        });
+        persistedDraft.current = JSON.stringify(draft);
+      }
+      const reserved = await command({
+        command: "attachment_begin",
+        documentId: saved.current.id,
+        expectedVersion: saved.current.version,
+        payload: {
+          fileName: file.name,
+          mimeType: officeFileMime(file),
+          size: file.size,
+        },
+      });
+      saved.current = reserved;
+      const ref = reserved.attachment!;
+      setAttachments((old) => [...old, ref]);
+      await service.upload(ref, file);
+      saved.current = await command({
+        command: "attachment_finish",
+        documentId: saved.current.id,
+        expectedVersion: saved.current.version,
+        payload: { attachmentId: ref.id },
+      });
+      const ready = { ...ref, status: "READY" as const };
+      setAttachments((old) => old.map((f) => (f.id === ref.id ? ready : f)));
+      return ready;
+    } finally {
+      setBusy(false);
+    }
+  }
   async function save(submit: boolean) {
     if (!formRef.current?.reportValidity()) return;
     setBusy(true);
@@ -338,6 +394,22 @@ function OfficeDraftForm({
         payload: { attachmentId: attachment.id },
       });
       setAttachments((old) => old.filter((f) => f.id !== attachment.id));
+      if (
+        draft.content.content.some(
+          (block) =>
+            block.type === "image" && block.attachmentId === attachment.id,
+        )
+      ) {
+        patch({
+          content: {
+            ...draft.content,
+            content: draft.content.content.filter(
+              (block) =>
+                block.type !== "image" || block.attachmentId !== attachment.id,
+            ),
+          },
+        });
+      }
       await service.removeFile(attachment);
     } catch (e) {
       setError(e);
@@ -527,6 +599,23 @@ function OfficeDraftForm({
                       />
                     </OfficeField>
                   </div>
+                  <OfficeField label="Công trường">
+                    <OfficePicker
+                      service={service}
+                      kind="site"
+                      value={draft.construction_site_id}
+                      onChange={(o) =>
+                        patch({ construction_site_id: o?.id || null })
+                      }
+                      label="Chọn công trường"
+                    />
+                  </OfficeField>
+                  <p className="office-helper">
+                    Người soạn / gửi:{" "}
+                    {existing?.document.creator_name ||
+                      catalog.actorName ||
+                      "Tài khoản hiện tại"}
+                  </p>
                   {draft.document_group === "INCOMING" && (
                     <div className="office-incoming-fields">
                       <h3>Thông tin tiếp nhận</h3>
@@ -583,8 +672,31 @@ function OfficeDraftForm({
                       />
                     </OfficeField>
                   )}
+                  <div className="office-inline-actions office-composer-tools">
+                    <button
+                      type="button"
+                      className="office-secondary"
+                      onClick={() => setTemplateOpen(true)}
+                    >
+                      <FileText size={16} />
+                      Chọn mẫu văn bản
+                    </button>
+                    <OfficeAssistant
+                      service={service}
+                      documentId={saved.current?.id}
+                      attachments={attachments}
+                      editable
+                      onApply={patch}
+                    />
+                  </div>
                   <OfficeField label="Nội dung">
-                    <WorkRichTextEditor
+                    <OfficeRichTextEditor
+                      images={attachments.filter(
+                        (f) =>
+                          f.mime_type.startsWith("image/") &&
+                          f.status === "READY",
+                      )}
+                      onImageUpload={uploadInlineImage}
                       label="Nội dung văn bản"
                       value={draft.content}
                       onChange={(content) => patch({ content })}
@@ -631,6 +743,24 @@ function OfficeDraftForm({
                         }}
                       />
                     </div>
+                    <label className="office-secondary office-scan-button">
+                      <Camera size={17} />
+                      Chụp bản giấy
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        hidden
+                        onChange={(e) => {
+                          if (e.target.files) addFiles(e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    <p className="office-helper">
+                      Chụp đủ các trang, giữ rõ chữ và kiểm tra tệp trước khi
+                      đăng ký tiếp nhận.
+                    </p>
                     <div className="office-file-list">
                       {attachments.map((f) => (
                         <div key={f.id}>
@@ -730,17 +860,7 @@ function OfficeDraftForm({
                         label="Chọn dự án"
                       />
                     </OfficeField>
-                    <OfficeField label="Công trường">
-                      <OfficePicker
-                        service={service}
-                        kind="site"
-                        value={draft.construction_site_id}
-                        onChange={(o) =>
-                          patch({ construction_site_id: o?.id || null })
-                        }
-                        label="Chọn công trường"
-                      />
-                    </OfficeField>
+
                     <OfficeField label="Trích yếu">
                       <textarea
                         aria-label="Trích yếu"
@@ -785,6 +905,30 @@ function OfficeDraftForm({
               <aside className="office-form-context">
                 <section className="office-panel office-form-section">
                   <h2>Phân loại & lưu trữ</h2>
+                  <OfficeField label="Hiệu lực đến ngày">
+                    <input
+                      type="date"
+                      aria-label="Hiệu lực đến ngày"
+                      min={draft.document_date}
+                      value={draft.expires_on || ""}
+                      onChange={(e) =>
+                        patch({ expires_on: e.target.value || null })
+                      }
+                    />
+                    <small>
+                      Để trống nếu văn bản không có ngày hết hiệu lực.
+                    </small>
+                  </OfficeField>
+                  <label className="office-check-label">
+                    <input
+                      type="checkbox"
+                      checked={draft.require_acknowledgement}
+                      onChange={(e) =>
+                        patch({ require_acknowledgement: e.target.checked })
+                      }
+                    />
+                    Yêu cầu người nhận xác nhận đã đọc và hiểu
+                  </label>
                   <OfficeField label="Mức độ khẩn">
                     <select
                       aria-label="Mức độ khẩn"
@@ -957,6 +1101,18 @@ function OfficeDraftForm({
             </div>
           </footer>
         </form>
+      )}
+      {templateOpen && step === 3 && (
+        <OfficeTemplateChooser
+          service={service}
+          draft={draft}
+          initialId={initialTemplateId}
+          onClose={() => setTemplateOpen(false)}
+          onApply={(value) => {
+            patch(value);
+            setTemplateOpen(false);
+          }}
+        />
       )}
     </div>
   );

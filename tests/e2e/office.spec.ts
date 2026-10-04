@@ -178,21 +178,174 @@ test("archiving a revoked document retains its warning", async ({ page }) => {
   );
 });
 
-test('incoming document supports assignment, acceptance and completion', async ({ page }) => {
+test("incoming document supports assignment, acceptance and completion", async ({
+  page,
+}) => {
   await page.goto(`${base}#/office/documents/doc-3`);
-  await page.getByRole('button', {name: 'Giao lại', exact: true}).click();
-  await page.getByLabel('Chọn người phụ trách').fill('Nguyễn');
-  await page.getByRole('button', {name: 'Nguyễn Minh An', exact: true}).click();
-  await page.getByLabel('Hạn xử lý').fill('2026-10-10');
-  await page.getByLabel('Yêu cầu xử lý').fill('Đối chiếu và phản hồi chủ đầu tư');
-  await page.getByRole('dialog').getByRole('button', {name: 'Giao xử lý', exact: true}).click();
-  for (const name of ['Xác nhận tiếp nhận', 'Bắt đầu xử lý']) {
-    await page.getByRole('button', {name, exact: true}).click();
-    await page.getByRole('dialog').getByRole('button', {name, exact: true}).click();
+  await page.getByRole("button", { name: "Giao lại", exact: true }).click();
+  await page.getByLabel("Chọn người phụ trách").fill("Nguyễn");
+  await page
+    .getByRole("button", { name: "Nguyễn Minh An", exact: true })
+    .click();
+  await page.getByLabel("Hạn xử lý").fill("2026-10-10");
+  await page
+    .getByLabel("Yêu cầu xử lý")
+    .fill("Đối chiếu và phản hồi chủ đầu tư");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Giao xử lý", exact: true })
+    .click();
+  for (const name of ["Xác nhận tiếp nhận", "Bắt đầu xử lý"]) {
+    await page.getByRole("button", { name, exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name, exact: true })
+      .click();
   }
-  await page.getByRole('button', {name: 'Hoàn thành xử lý', exact: true}).click();
-  await page.getByLabel('Kết quả xử lý').fill('Đã kiểm tra và gửi phản hồi');
-  await page.getByRole('dialog').getByRole('button', {name: 'Hoàn thành xử lý', exact: true}).click();
-  await expect(page.locator('.office-result')).toContainText('Đã kiểm tra và gửi phản hồi');
-  await expect(page.getByRole('button', {name: 'Hoàn thành xử lý', exact: true})).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Hoàn thành xử lý", exact: true })
+    .click();
+  await page.getByLabel("Kết quả xử lý").fill("Đã kiểm tra và gửi phản hồi");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Hoàn thành xử lý", exact: true })
+    .click();
+  await expect(page.locator(".office-result")).toContainText(
+    "Đã kiểm tra và gửi phản hồi",
+  );
+  await expect(
+    page.getByRole("button", { name: "Hoàn thành xử lý", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("explicit acknowledgement is separate from the automatic read receipt", async ({
+  page,
+}) => {
+  await page.goto(`${base}#/office/documents/doc-1`);
+  await expect(page.locator(".office-confirm-banner")).toContainText(
+    "Mở văn bản chỉ ghi nhận đã xem",
+  );
+  expect(
+    await page.evaluate(() =>
+      (window as any).officeTest.commands.some(
+        (x: any) => x.p_command === "confirm_read",
+      ),
+    ),
+  ).toBe(false);
+  await page
+    .getByRole("button", { name: "Tôi đã đọc và hiểu nội dung", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Tôi đã đọc và hiểu nội dung", exact: true })
+    .click();
+  await expect(page.locator(".office-confirm-banner")).toContainText(
+    "Bạn đã xác nhận",
+  );
+});
+test("mobile rich editor, template variables and report remain usable", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}#/office/new?group=ANNOUNCEMENT`);
+  await page.getByRole("button", { name: /Thông báo TB/ }).click();
+  await page.getByLabel("Tiêu đề văn bản").fill("Thông báo định dạng");
+  await page
+    .getByRole("button", { name: "Chọn mẫu văn bản", exact: true })
+    .click();
+  await page
+    .getByLabel("Mẫu văn bản", { exact: true })
+    .selectOption("template-1");
+  await page.getByLabel("Tên công ty", { exact: true }).fill("Tiến Thịnh");
+  await page.getByRole("button", { name: "Áp dụng mẫu", exact: true }).click();
+  const editor = page.getByRole("textbox", {
+    name: "Nội dung văn bản",
+    exact: true,
+  });
+  await expect(editor).toContainText("Kính gửi Tiến Thịnh");
+  await editor.click();
+  await page.getByRole("button", { name: "Thêm", exact: true }).click();
+  await page.getByRole("button", { name: "Chèn bảng", exact: true }).click();
+  await page.getByLabel("Số hàng", { exact: true }).fill("2");
+  await page.getByLabel("Số cột", { exact: true }).fill("2");
+  await page
+    .locator(".office-editor-tool")
+    .getByRole("button", { name: "Chèn bảng", exact: true })
+    .click();
+  await expect(editor.locator("table")).toHaveCount(1);
+  await editor.locator("td").first().fill("Thông tin");
+  await page.getByLabel("Yêu cầu người nhận xác nhận đã đọc và hiểu").check();
+  await page.getByRole("button", { name: "Lưu nháp", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Thông báo định dạng" }),
+  ).toBeVisible();
+  await expect(page.locator(".office-rich-view table")).toContainText(
+    "Thông tin",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: ".office-test-results/mobile-rich-document.png",
+    fullPage: true,
+  });
+  await page.getByRole("link", { name: "Báo cáo", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Báo cáo văn bản", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".office-report-kpis")).toContainText(
+    "Chưa có dữ liệu",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+test("filtered Excel export has a real workbook and complete title", async ({
+  page,
+}) => {
+  await page.goto(`${base}#/office/documents?group=INCOMING`);
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Xuất Excel", exact: true }).click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toContain("Sổ-văn-bản-đến.xlsx");
+  const XLSX = await import("xlsx");
+  const fs = await import("node:fs");
+  const workbook = XLSX.read(fs.readFileSync((await download.path())!));
+  const rows = XLSX.utils.sheet_to_json(
+    workbook.Sheets[workbook.SheetNames[0]],
+  );
+  expect(rows).toHaveLength(1);
+  expect((rows[0] as any)["Tiêu đề"]).toBe(
+    "Công văn đề nghị xác nhận tiến độ bàn giao mặt bằng",
+  );
+});
+test("late department tagging and version comparison are accessible", async ({
+  page,
+}) => {
+  await page.goto(`${base}#/office/documents/doc-1`);
+  await page
+    .getByRole("button", { name: "Gửi bổ sung / tag bộ phận", exact: true })
+    .click();
+  await page.getByLabel("Nhóm người nhận").selectOption("department");
+  await page.getByRole("dialog").getByRole("textbox").fill("Hành");
+  await page
+    .getByRole("button", { name: "Hành chính Nhân sự", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Gửi bổ sung", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("tab", { name: "Phiên bản", exact: true }).click();
+  await page.getByRole("button", { name: /v2 · Nguyễn/ }).click();
+  await expect(page.locator(".office-version-compare")).toContainText(
+    "Tiêu đề ban đầu",
+  );
+  await expect(page.locator(".office-version-preview")).toContainText(
+    "Thay đổi: Tiêu đề",
+  );
 });

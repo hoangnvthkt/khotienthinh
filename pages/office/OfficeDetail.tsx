@@ -21,13 +21,16 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
-import { WorkRichTextView } from "../work/WorkRichTextView";
+import { OfficeRichTextView } from "./OfficeRichText";
+import { OfficeAssistant } from "./OfficeAssistant";
+import { OfficeLinks, OfficeVersions } from "./OfficeLibrary";
 import type { OfficeService } from "../../lib/office/officeService";
 import type {
   OfficeAttachment,
   OfficeCatalog,
   OfficeCommand,
   OfficeDetail,
+  RecipientSpec,
 } from "../../lib/office/officeTypes";
 import {
   CONFIDENTIALITY,
@@ -47,8 +50,11 @@ import {
   OfficePicker,
   useOfficeQuery,
 } from "./OfficeShared";
-import { useOfficeCommand } from "./OfficeDraft";
+import { useOfficeCommand, OfficeAudience } from "./OfficeDraft";
 const actionLabels: Partial<Record<OfficeCommand, string>> = {
+  cancel: "Hủy văn bản",
+  add_recipients: "Gửi bổ sung",
+  confirm_read: "Tôi đã đọc và hiểu nội dung",
   submit: "Gửi duyệt",
   approve: "Duyệt nội dung",
   return: "Trả lại chỉnh sửa",
@@ -63,6 +69,10 @@ const actionLabels: Partial<Record<OfficeCommand, string>> = {
   complete: "Hoàn thành xử lý",
 };
 const activityLabels: Record<string, string> = {
+  READ_CONFIRMED: "Xác nhận đã đọc và hiểu",
+  RECIPIENTS_ADDED: "Gửi bổ sung người nhận",
+  LINKS_UPDATED: "Cập nhật liên kết",
+  CANCELLED: "Hủy văn bản",
   CREATED: "Tạo bản nháp",
   EDITED: "Chỉnh sửa bản nháp",
   SUBMITTED: "Trình duyệt / đăng ký tiếp nhận",
@@ -350,6 +360,33 @@ function OfficeDetailContent({
         </div>
       )}
       {success && <p role="status">{success}</p>}
+      {d.status === "EXPIRED" && (
+        <div className="office-expiry-banner" role="status">
+          Văn bản hết hiệu lực từ {displayDate(d.expires_on)}. Nội dung được giữ
+          để tra cứu lịch sử.
+        </div>
+      )}
+      {d.require_acknowledgement && d.issued_at && (
+        <div className="office-confirm-banner">
+          <div>
+            <strong>Yêu cầu xác nhận đã đọc và hiểu</strong>
+            <p>
+              {detail.receipt?.acknowledged_at
+                ? `Bạn đã xác nhận lúc ${displayDate(detail.receipt.acknowledged_at, true)}`
+                : "Mở văn bản chỉ ghi nhận đã xem. Người nhận cần chủ động xác nhận nội dung."}
+            </p>
+          </div>
+          {caps.confirm_read && (
+            <button
+              className="office-primary"
+              disabled={busy}
+              onClick={() => setModal("confirm_read")}
+            >
+              Tôi đã đọc và hiểu nội dung
+            </button>
+          )}
+        </div>
+      )}
       <div className="office-detail-layout">
         <div className="office-detail-main">
           <section className="office-panel">
@@ -368,6 +405,8 @@ function OfficeDetailContent({
                       ],
                     ]
                   : []),
+                ["links", "Liên quan"],
+                ...(caps.track ? [["versions", "Phiên bản"]] : []),
                 ["activity", "Lịch sử"],
               ].map(([key, label]) => (
                 <button
@@ -387,13 +426,24 @@ function OfficeDetailContent({
                   <p className="office-document-summary">{d.summary}</p>
                 )}
                 {d.content.content.length ? (
-                  <WorkRichTextView document={d.content} />
+                  <OfficeRichTextView
+                    document={d.content}
+                    attachments={detail.attachments}
+                    service={service}
+                  />
                 ) : (
                   <OfficeEmpty
                     title="Nội dung nằm trong tệp đính kèm"
                     description="Mở tệp bên dưới để xem văn bản đầy đủ."
                   />
                 )}
+                <div className="office-inline-actions">
+                  <OfficeAssistant
+                    service={service}
+                    documentId={d.id}
+                    attachments={detail.attachments}
+                  />
+                </div>
                 <section className="office-attachments">
                   <h2>
                     <Paperclip size={18} />
@@ -429,6 +479,14 @@ function OfficeDetailContent({
                 service={service}
                 detail={{ ...detail, recipientStats }}
               />
+            ) : tab === "links" ? (
+              <OfficeLinks
+                service={service}
+                detail={detail}
+                refresh={refresh}
+              />
+            ) : tab === "versions" ? (
+              <OfficeVersions service={service} detail={detail} />
             ) : (
               <OfficeActivityTimeline service={service} id={d.id} />
             )}
@@ -489,8 +547,14 @@ function OfficeDetailContent({
             <h2>Thông tin văn bản</h2>
             <dl className="office-meta">
               {[
+                ["Người gửi / người soạn", d.creator_name],
+                [
+                  "Hiệu lực đến",
+                  d.expires_on ? displayDate(d.expires_on) : "Không giới hạn",
+                ],
                 ["Ngày văn bản", displayDate(d.document_date)],
                 ["Đơn vị ban hành", detail.departmentName],
+                ["Công trường", detail.siteName],
                 ["Người ký", detail.signerName],
                 ["Dưới tư cách", d.signer_position],
                 ["Mức độ khẩn", URGENCY[d.urgency]],
@@ -601,9 +665,43 @@ function OfficeDetailContent({
               </span>
             </div>
           </section>
-          {(caps.revoke || caps.archive || caps.approve) && (
+          <section className="office-panel office-form-section">
+            <h2>Gửi & nhận</h2>
+            {detail.distribution?.length ? (
+              detail.distribution.map((batch, i) => (
+                <div className="office-distribution" key={i}>
+                  <strong>{batch.sender}</strong>
+                  <small>{displayDate(batch.created_at, true)}</small>
+                  <p>{batch.specs.map((s) => s.label || s.type).join(" · ")}</p>
+                </div>
+              ))
+            ) : (
+              <p className="office-helper">
+                Dự kiến gửi:{" "}
+                {(detail.pendingRecipientSpecs || d.recipient_specs)
+                  .map((s) => s.label || s.type)
+                  .join(" · ") || "Chưa chọn người nhận"}
+                . Danh sách được chốt khi phát hành.
+              </p>
+            )}
+            {caps.distribute && (
+              <button
+                className="office-secondary"
+                onClick={() => setModal("add_recipients")}
+              >
+                Gửi bổ sung / tag bộ phận
+              </button>
+            )}
+          </section>
+          {(caps.revoke || caps.archive || caps.approve || caps.cancel) && (
             <section className="office-panel office-more-actions">
               <h3>Thao tác khác</h3>
+              {caps.cancel && (
+                <button disabled={busy} onClick={() => setModal("cancel")}>
+                  <XCircle size={16} />
+                  Hủy văn bản
+                </button>
+              )}
               {caps.approve && (
                 <button disabled={busy} onClick={() => setModal("reject")}>
                   <XCircle size={16} />
@@ -713,8 +811,15 @@ function OfficeActionDialog({
       : detail.document.document_group === "INCOMING" && action === "submit"
         ? "Đăng ký tiếp nhận"
         : actionLabels[action] || "Xác nhận";
-  const needReason = ["return", "reject", "revoke"].includes(action);
+  const [specs, setSpecs] = useState<RecipientSpec[]>([]);
+  const needReason = ["return", "reject", "revoke", "cancel"].includes(action);
   const descriptions: Partial<Record<OfficeCommand, string>> = {
+    add_recipients:
+      "Thêm cá nhân, phòng ban hoặc công trường. Người nhận mới được thông báo; người đã nhận không bị gửi lặp.",
+    confirm_read:
+      "Xác nhận bạn đã đọc và hiểu nội dung văn bản. Thao tác này được lưu cùng thời điểm và tài khoản của bạn.",
+    cancel:
+      "Dừng bản nháp hoặc yêu cầu đang chờ duyệt. Lịch sử được giữ để tra cứu.",
     publish:
       "Phát hành sẽ chốt người nhận và khóa nội dung, người ký, số và tệp đính kèm. Người nhận sẽ được thông báo.",
     issue_number:
@@ -734,16 +839,30 @@ function OfficeActionDialog({
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit(
-            action === "assign"
-              ? { userId, dueDate, instruction, collaboratorIds: collaborators }
-              : action === "complete"
-                ? { result: reason }
-                : { reason: reason || undefined },
+            action === "add_recipients"
+              ? { specs }
+              : action === "assign"
+                ? {
+                    userId,
+                    dueDate,
+                    instruction,
+                    collaboratorIds: collaborators,
+                  }
+                : action === "complete"
+                  ? { result: reason }
+                  : { reason: reason || undefined },
           );
         }}
       >
         <fieldset disabled={busy}>
           {descriptions[action] && <p>{descriptions[action]}</p>}
+          {action === "add_recipients" && (
+            <OfficeAudience
+              service={service}
+              value={specs}
+              onChange={setSpecs}
+            />
+          )}
           {action === "assign" && (
             <>
               <OfficeField label="Người phụ trách" required>
@@ -842,7 +961,11 @@ function OfficeActionDialog({
                 ? "office-danger"
                 : "office-primary"
             }
-            disabled={busy || (action === "assign" && !userId)}
+            disabled={
+              busy ||
+              (action === "assign" && !userId) ||
+              (action === "add_recipients" && !specs.length)
+            }
           >
             {busy ? "Đang xử lý…" : label}
           </button>
@@ -883,6 +1006,25 @@ function OfficeRecipients({
           {filter === "all" ? "Xem người chưa đọc" : "Xem tất cả"}
         </button>
       </div>
+      {detail.document.require_acknowledgement && (
+        <div className="office-receipt-summary">
+          <span>
+            <strong>{detail.recipientStats?.acknowledged ?? "—"}</strong> đã xác
+            nhận
+          </span>
+          <button
+            className="office-secondary"
+            onClick={() => {
+              setFilter(filter === "unconfirmed" ? "all" : "unconfirmed");
+              setPage(0);
+            }}
+          >
+            {filter === "unconfirmed"
+              ? "Xem tất cả xác nhận"
+              : "Xem người chưa xác nhận"}
+          </button>
+        </div>
+      )}
       {list.loading ? (
         <OfficeLoading />
       ) : list.error ? (
@@ -892,7 +1034,16 @@ function OfficeRecipients({
           {list.data.items.map((r) => (
             <li key={r.user_id}>
               <UserRound size={18} />
-              <strong>{r.name}</strong>
+              <strong>
+                {r.name}
+                {detail.document.require_acknowledgement && (
+                  <small>
+                    {r.acknowledged_at
+                      ? `Đã xác nhận · ${displayDate(r.acknowledged_at, true)}`
+                      : "Chưa xác nhận"}
+                  </small>
+                )}
+              </strong>
               <span>
                 {r.read_at ? (
                   <>

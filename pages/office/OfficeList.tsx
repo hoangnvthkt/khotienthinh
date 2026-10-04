@@ -45,6 +45,8 @@ import {
   OfficePicker,
   useOfficeQuery,
 } from "./OfficeShared";
+import { OfficeAssistant } from "./OfficeAssistant";
+import { OfficeExportButton } from "./OfficeLibrary";
 export const groupIcons = {
   ANNOUNCEMENT: Bell,
   INCOMING: ArrowDownLeft,
@@ -355,6 +357,10 @@ export function OfficeListPage({
           <div>
             <h1>{title}</h1>
             <p>Tìm đúng văn bản, nắm rõ trạng thái và bước tiếp theo.</p>
+          </div>
+          <div className="office-inline-actions">
+            <OfficeAssistant service={service} searchOnly />
+            <OfficeExportButton service={service} filters={filters} />
           </div>
         </div>
         <div className="office-mobile-view">

@@ -1,4 +1,4 @@
-import type { WorkTextDocument } from "../work/workTypes";
+import type { OfficeTextDocument } from "./officeContent";
 export type OfficeGroup = "ANNOUNCEMENT" | "INCOMING" | "OUTGOING" | "INTERNAL";
 export type OfficeStatus =
   | "DRAFT"
@@ -9,12 +9,11 @@ export type OfficeStatus =
   | "WAITING_NUMBER"
   | "ISSUED"
   | "REVOKED"
-  | "ARCHIVED";
+  | "ARCHIVED"
+  | "EXPIRED"
+  | "CANCELLED";
 export type ProcessingStatus =
-  | "RECEIVED"
-  | "ASSIGNED"
-  | "IN_PROGRESS"
-  | "COMPLETED";
+  "RECEIVED" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED";
 export type OfficeView =
   | "all"
   | "approval"
@@ -27,13 +26,7 @@ export type OfficeView =
   | "favorites"
   | "archive";
 export type AudienceKind =
-  | "company"
-  | "user"
-  | "department"
-  | "factory"
-  | "project"
-  | "site"
-  | "role";
+  "company" | "user" | "department" | "factory" | "project" | "site" | "role";
 export interface RecipientSpec {
   type: AudienceKind;
   id?: string;
@@ -86,13 +79,16 @@ export interface OfficeCatalog {
   canConfigure: boolean;
   canCreate: boolean;
   actorId: string;
+  actorName?: string;
 }
 export interface OfficeDraft {
+  require_acknowledgement: boolean;
+  expires_on: string | null;
   document_group: OfficeGroup;
   document_type_id: string;
   title: string;
   summary: string;
-  content: WorkTextDocument;
+  content: OfficeTextDocument;
   document_date: string;
   received_date: string | null;
   due_date: string | null;
@@ -177,12 +173,7 @@ export interface OfficeApproval {
   name: string;
   user_id: string;
   status:
-    | "WAITING"
-    | "PENDING"
-    | "APPROVED"
-    | "RETURNED"
-    | "REJECTED"
-    | "CANCELLED";
+    "WAITING" | "PENDING" | "APPROVED" | "RETURNED" | "REJECTED" | "CANCELLED";
   acted_at: string | null;
   comment: string | null;
 }
@@ -196,19 +187,35 @@ export type OfficeCapability =
   | "archive"
   | "assign"
   | "process"
+  | "cancel"
+  | "distribute"
+  | "confirm_read"
   | "track"
   | "read";
 export interface OfficeDetail {
+  pendingRecipientSpecs?: RecipientSpec[];
+  receipt?: { read_at: string | null; acknowledged_at: string | null } | null;
+  distribution?: {
+    created_at: string;
+    sender: string;
+    specs: RecipientSpec[];
+  }[];
   document: OfficeDocument;
   capabilities: Record<OfficeCapability, boolean>;
   attachments: OfficeAttachment[];
   approvals: OfficeApproval[];
   typeName: string;
+  siteName?: string | null;
   departmentName: string | null;
   projectName: string | null;
   signerName: string | null;
   assigneeName: string | null;
-  recipientStats: { total: number; read: number; unread: number } | null;
+  recipientStats: {
+    total: number;
+    read: number;
+    unread: number;
+    acknowledged?: number;
+  } | null;
   bookmark: { favorite: boolean; following: boolean };
 }
 export interface OfficeFilters {
@@ -241,6 +248,7 @@ export interface OfficeDashboard {
   issuedThisMonth: number;
 }
 export interface OfficeRecipient {
+  acknowledged_at: string | null;
   user_id: string;
   name: string;
   delivered_at: string;
@@ -259,6 +267,11 @@ export interface OfficeActivity {
   created_at: string;
 }
 export type OfficeCommand =
+  | "confirm_read"
+  | "cancel"
+  | "add_recipients"
+  | "link_add"
+  | "link_remove"
   | "create"
   | "save"
   | "submit"
@@ -294,4 +307,57 @@ export interface OfficeCommandResult {
 export interface OfficePage<T> {
   items: T[];
   total: number;
+}
+
+export interface OfficeTemplate {
+  id: string;
+  name: string;
+  document_type_id: string | null;
+  document_group: OfficeGroup;
+  title: string;
+  summary: string;
+  content: OfficeTextDocument;
+  version: number;
+  is_active: boolean;
+  updated_at: string;
+}
+export interface OfficeVersion {
+  version: number;
+  created_at: string;
+  actor_name: string;
+  status: OfficeStatus;
+  snapshot?: OfficeDocument & { attachments: OfficeAttachment[] };
+}
+export type OfficeTargetType =
+  "document" | "project" | "work_task" | "project_contract";
+export interface OfficeTarget {
+  id: string;
+  label: string;
+  href: string;
+  kind: OfficeTargetType;
+}
+export interface OfficeLink {
+  id: string;
+  target_type: OfficeTargetType;
+  target_id: string;
+  relation: "related" | "replaces" | "responds_to" | "implements";
+  incoming: boolean;
+  target: OfficeTarget;
+}
+export interface OfficeReport {
+  total: number;
+  incoming: number;
+  outgoing: number;
+  announcements: number;
+  pending: number;
+  overdue: number;
+  unread: number;
+  averageApprovalHours: number | null;
+  byMonth: {
+    month: string;
+    total: number;
+    incoming: number;
+    outgoing: number;
+  }[];
+  byDepartment: { name: string; total: number }[];
 }

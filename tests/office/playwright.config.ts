@@ -1,8 +1,16 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "../e2e",
-  testMatch: "office.spec.ts",
+  testMatch: /office(?:-mobile)?\.spec\.ts/,
   workers: 1,
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    {
+      name: "mobile-safari",
+      use: { ...devices["iPhone 13"], browserName: "webkit" },
+      testMatch: "office-mobile.spec.ts",
+    },
+  ],
   use: { baseURL: "http://127.0.0.1:4206", trace: "retain-on-failure" },
   outputDir: "../../.office-test-results",
   webServer: {

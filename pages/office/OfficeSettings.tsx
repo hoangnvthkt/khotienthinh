@@ -81,8 +81,8 @@ export function OfficeSettingsPage({
           <h1>Cấu hình văn bản</h1>
           <p>Thiết lập một lần, áp dụng nhất quán trong quy trình hằng ngày.</p>
         </div>
-        <Link className="office-secondary" to="/settings">
-          Phân quyền hệ thống
+        <Link className="office-secondary" to="/settings/role-templates">
+          Vai trò & quyền quản trị
         </Link>
       </div>
       <div className="office-group-tabs">

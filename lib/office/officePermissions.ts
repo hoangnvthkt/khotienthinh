@@ -9,6 +9,8 @@ export const OFFICE_ROUTES = [
   "/office/documents/:id",
   "/office/documents/:id/edit",
   "/office/settings",
+  "/office/templates",
+  "/office/reports",
 ] as const;
 const scopes: readonly PermissionScopeType[] = [
   "global",

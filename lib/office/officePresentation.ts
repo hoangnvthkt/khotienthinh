@@ -52,11 +52,13 @@ export const OFFICE_STATUSES: Record<OfficeStatus, string> = {
   PENDING_APPROVAL: "Chờ duyệt",
   RETURNED: "Cần chỉnh sửa",
   REJECTED: "Đã từ chối",
-  APPROVED: "Sẵn sàng phát hành",
+  APPROVED: "Đã duyệt",
   WAITING_NUMBER: "Chờ cấp số",
   ISSUED: "Đã phát hành",
   REVOKED: "Đã thu hồi",
   ARCHIVED: "Đã lưu trữ",
+  EXPIRED: "Hết hiệu lực",
+  CANCELLED: "Đã hủy",
 };
 export const OFFICE_VIEWS = {
   all: "Tất cả văn bản",
@@ -129,6 +131,8 @@ export function newOfficeDraft(
   group: OfficeGroup = "ANNOUNCEMENT",
 ): OfficeDraft {
   return {
+    require_acknowledgement: false,
+    expires_on: null,
     document_group: group,
     document_type_id: "",
     title: "",
@@ -163,6 +167,25 @@ export function editableDraft(document: OfficeDraft): OfficeDraft {
 export function officeError(error: unknown): string {
   const message = (error as { message?: string })?.message || "";
   const errors: Record<string, string> = {
+    OFFICE_EXPORT_LIMIT:
+      "Danh sách vượt 5.000 văn bản. Hãy thu hẹp khoảng ngày hoặc bộ lọc để xuất đầy đủ.",
+    OFFICE_INVALID_CONTENT:
+      "Nội dung hoặc định dạng không hợp lệ. Kiểm tra kích thước và định dạng văn bản.",
+    OFFICE_TEMPLATE_UNFILLED:
+      "Vui lòng điền đầy đủ các biến trong mẫu trước khi gửi duyệt.",
+    OFFICE_TEMPLATE_IMAGE:
+      "Mẫu dùng nội dung và bảng. Hãy thêm ảnh đính kèm khi soạn từng văn bản.",
+    OFFICE_INVALID_EXPIRY: "Ngày hết hiệu lực phải từ ngày văn bản trở đi.",
+    OFFICE_EXPIRED:
+      "Văn bản đã hết hiệu lực, không thể phát hành hoặc gửi bổ sung.",
+    OFFICE_AI_NOT_CONFIGURED:
+      "AI/OCR chưa được cấu hình. Quản trị viên có thể thêm API key và model để kích hoạt.",
+    OFFICE_AI_RATE_LIMIT:
+      "Bạn đã đạt giới hạn AI. Chờ một phút để thử lại (tối đa 100 lượt/ngày).",
+    OFFICE_AI_FILE_LIMIT:
+      "OCR hỗ trợ PDF/ảnh tối đa 8 MB mỗi lần. Hãy chọn tệp nhỏ hơn.",
+    OFFICE_AI_FAILED:
+      "AI chưa trả được kết quả. Vui lòng thử lại; nội dung văn bản chưa thay đổi.",
     OFFICE_VERSION_CONFLICT:
       "Văn bản đã thay đổi ở phiên khác. Vui lòng tải lại trước khi tiếp tục.",
     OFFICE_NOT_FOUND: "Không tìm thấy văn bản hoặc bạn chưa có quyền truy cập.",

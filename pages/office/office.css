@@ -2465,3 +2465,549 @@
   grid-column: 1 / -1;
   justify-self: end;
 }
+
+/* Office P1 follows procurement's quiet surfaces, stage cues and touch targets. */
+.office-topbar {
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+.office-topbar nav {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+.office-topbar nav a {
+  flex-shrink: 0;
+}
+.office-inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.office-composer-tools {
+  justify-content: flex-end;
+  margin: 12px 0;
+}
+.office-template-grid,
+.office-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.office-template-grid article {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.office-template-grid article .office-inline-actions {
+  margin-top: auto;
+}
+.office-template-help {
+  margin: 16px 0;
+  padding: 12px;
+  background: var(--of-bg, #f7f8f9);
+  border-radius: 10px;
+}
+.office-template-help dl > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 4px 0;
+}
+.office-template-help dt {
+  font-family: monospace;
+}
+.office-check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0;
+  line-height: 1.6;
+  cursor: pointer;
+}
+.office-check-label input {
+  margin-top: 4px;
+}
+.office-report-filters {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.office-report-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.office-report-kpis > div {
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+}
+.office-report-kpis strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.office-report-kpis span {
+  color: var(--of-muted);
+}
+.office-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.office-report-table th,
+.office-report-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--of-border);
+}
+.office-report-bar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin: 18px 0;
+}
+.office-report-bar progress {
+  grid-column: 1/-1;
+  width: 100%;
+  height: 8px;
+  accent-color: var(--of-accent);
+}
+.office-version-panel,
+.office-links-panel {
+  padding: 24px;
+  min-width: 0;
+}
+.office-version-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.office-version-list button {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+.office-version-list small {
+  margin-left: auto;
+}
+.office-secondary.is-active {
+  border-color: #0f766e;
+  background: #edf7f5;
+  color: #115e59;
+}
+.office-version-preview {
+  margin-top: 20px;
+}
+.office-version-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.office-version-compare > section {
+  border: 1px solid var(--of-border);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.office-links-list {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+}
+.office-links-list li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--of-border);
+}
+.office-links-list a {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  text-decoration: none;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+.office-links-list small,
+.office-distribution small {
+  display: block;
+  color: var(--of-muted);
+}
+.office-target-options {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  margin: 12px 0;
+}
+.office-target-options button {
+  white-space: normal;
+  justify-content: flex-start;
+  text-align: left;
+}
+.office-distribution {
+  border-left: 2px solid var(--of-border);
+  padding: 0 0 0 14px;
+  margin: 16px 0;
+}
+.office-distribution p {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.office-confirm-banner,
+.office-expiry-banner {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #b3d9d2;
+  border-radius: 14px;
+  padding: 18px 20px;
+  background: #edf7f5;
+  color: #134e4a;
+  margin-bottom: 20px;
+}
+.office-confirm-banner p {
+  margin: 5px 0 0;
+}
+.office-expiry-banner {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #854d0e;
+}
+.office-recipient-list strong small {
+  display: block;
+  color: var(--of-muted);
+  font-weight: 400;
+  margin-top: 5px;
+}
+.office-scan-button {
+  cursor: pointer;
+  margin-top: 12px;
+}
+.office-rich-editor {
+  border: 1px solid var(--of-border, #dfe3e6);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--of-surface, #fff);
+}
+.office-rich-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-bottom: 1px solid var(--of-border, #dfe3e6);
+  background: var(--of-bg, #f7f8f9);
+}
+.office-rich-toolbar button {
+  min-height: 36px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+.office-rich-toolbar button:hover {
+  background: #e2ece9;
+}
+.office-rich-toolbar select {
+  font-size: 12px;
+  padding: 6px;
+  min-height: 36px;
+}
+.office-rich-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 0 5px;
+}
+.office-rich-toolbar input[type="color"] {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border-radius: 5px;
+}
+.office-editor-tool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 14px;
+  border-bottom: 1px solid var(--of-border, #dfe3e6);
+}
+.office-editor-tool label {
+  display: grid;
+  gap: 5px;
+}
+.office-editor-tool input[type="number"] {
+  width: 90px;
+}
+.office-editor-tool p {
+  width: 100%;
+}
+.office-rich-canvas {
+  padding: 22px;
+  min-height: 300px;
+  font-size: 16px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.office-rich-canvas:focus {
+  outline: 2px solid #9bd1c9;
+  outline-offset: -2px;
+}
+.office-rich-canvas:empty:before {
+  content: attr(data-placeholder);
+  color: #929ba4;
+  pointer-events: none;
+}
+.office-rich-canvas p {
+  min-height: 1.5em;
+}
+.office-rich-canvas h1,
+.office-rich-view h3 {
+  font-size: 1.7em;
+  font-weight: 700;
+}
+.office-rich-canvas h2,
+.office-rich-view h4 {
+  font-size: 1.4em;
+  font-weight: 700;
+}
+.office-rich-canvas h3,
+.office-rich-view h5 {
+  font-size: 1.15em;
+  font-weight: 700;
+}
+.office-rich-canvas ul,
+.office-rich-view ul {
+  list-style: disc;
+  padding-left: 24px;
+}
+.office-rich-canvas ol,
+.office-rich-view ol {
+  list-style: decimal;
+  padding-left: 24px;
+}
+.office-rich-canvas table,
+.office-rich-view table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  margin: 16px 0;
+}
+.office-rich-canvas td,
+.office-rich-view td {
+  border: 1px solid #cbd5e1;
+  padding: 10px;
+  vertical-align: top;
+  min-width: 70px;
+  overflow-wrap: anywhere;
+}
+.office-rich-table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.office-rich-view {
+  font-size: 16px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.office-rich-view img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: auto;
+}
+.office-rich-view figure {
+  margin: 18px 0;
+}
+.office-rich-view figcaption {
+  font-size: 12px;
+  text-align: center;
+  color: var(--of-muted);
+}
+.office-rich-view blockquote,
+.office-rich-canvas blockquote {
+  border-left: 3px solid #9bd1c9;
+  padding-left: 16px;
+  margin: 16px 0;
+}
+.office-inline-image-placeholder {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  box-sizing: border-box;
+  border: 1px dashed #9bd1c9;
+  color: #0f766e;
+  background: #edf7f5;
+  margin: 10px 0;
+}
+.office-editor-footnote {
+  padding: 8px 14px;
+  border-top: 1px solid var(--of-border, #dfe3e6);
+  font-size: 11px;
+  color: var(--of-muted, #71767e);
+  margin: 0;
+}
+.office-detail-tabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.office-detail-tabs button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.office-badge[data-status="CANCELLED"] {
+  color: #64748b;
+  background: #f1f5f9;
+}
+.office-badge[data-status="EXPIRED"] {
+  color: #92400e;
+  background: #fffbeb;
+}
+@media (max-width: 1000px) {
+  .office-topbar nav {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .office-report-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .office-topbar {
+    padding: 14px;
+    gap: 12px;
+  }
+  .office-topbar nav a {
+    min-height: 44px;
+  }
+  .office-template-grid,
+  .office-report-grid,
+  .office-version-compare {
+    grid-template-columns: 1fr;
+  }
+  .office-confirm-banner {
+    display: block;
+    padding: 16px;
+  }
+  .office-confirm-banner button {
+    width: 100%;
+    margin-top: 12px;
+    white-space: normal;
+    min-height: 48px;
+  }
+  .office-rich-toolbar button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .office-rich-toolbar select {
+    font-size: 16px;
+  }
+  .office-rich-canvas {
+    padding: 16px;
+  }
+  .office-rich-view {
+    font-size: 16px;
+    line-height: 1.8;
+  }
+  .office-rich-view table {
+    min-width: 400px;
+  }
+  .office-version-panel,
+  .office-links-panel {
+    padding: 16px;
+  }
+  .office-version-list small {
+    width: 100%;
+    margin: 0;
+  }
+  .office-report-filters {
+    gap: 10px;
+  }
+  .office-report-filters > div {
+    flex: 1;
+  }
+  .office-section-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .office-document-title h3 {
+    -webkit-line-clamp: unset;
+    display: block;
+    overflow: visible;
+  }
+  .office-primary,
+  .office-secondary,
+  .office-danger {
+    min-height: 44px;
+  }
+  .office-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .office-app *,
+  .office-modal * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+.dark .office-confirm-banner {
+  background: #0f302d;
+  border-color: #24655f;
+  color: #ccfbf1;
+}
+.dark .office-rich-toolbar button:hover,
+.dark .office-secondary.is-active {
+  background: #173733;
+  color: #ccfbf1;
+}
+.office-ai-unavailable {
+  text-align: center;
+  padding: 28px 12px;
+  max-width: 520px;
+  margin: auto;
+}
+.office-ai-unavailable svg {
+  margin: auto auto 16px;
+  color: var(--of-accent, #0f766e);
+}
+.office-ai-result {
+  margin: 20px 0;
+  padding: 20px;
+  background: var(--of-bg, #f7f8f9);
+  border: 1px solid var(--of-border, #dfe3e6);
+  border-radius: 12px;
+}
+.office-ai-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+.office-ai-result dl > div {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.office-ai-result dt {
+  min-width: 90px;
+  color: var(--of-muted, #71767e);
+}

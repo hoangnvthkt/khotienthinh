@@ -1,65 +1,59 @@
-# Vioo Office P0 — bàn giao mã nguồn, 04/10/2026
+# Vioo Office — kiểm thử và bàn giao, 04/10/2026
 
 ## Trạng thái
 
-Đã triển khai mã nguồn P0 trên branch `codex/vioo-office`, tách từ `origin/main` tại `6e32def`. Checkout hiện tại: `/Users/admin/.codex/worktrees/vioo-office/khotienthinh`. **Chưa áp dụng migration, chưa cấp quyền cho tài khoản thật, chưa triển khai frontend.** Theo chỉ dẫn của chủ dự án, kiểm thử backend dùng Supabase Cloud hiện tại trong transaction rồi rollback. Không dùng Docker hoặc Supabase local.
+Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex/vioo-office`, nền `origin/main` tại `6e32def`. **Chưa áp migration, chưa cấp quyền cho tài khoản thật, chưa deploy frontend hoặc Edge Function.** Backend kiểm thử trên Supabase Cloud trong transaction rồi rollback theo chỉ dẫn của chủ dự án; không Docker/local và không sub-agent.
 
-Cloud postflight xác nhận không còn bảng Office, bucket Office, permission application Office, user thử nghiệm hay bản ghi migration `20261004085552`. Xem [kết quả postflight](evidence/cloud-postflight.json).
+Đây là module dùng service/RPC thật. Fixture UI chỉ phục vụ kiểm thử. Việc chưa kích hoạt database không được che bằng dữ liệu demo trong ứng dụng thật.
 
-## Phạm vi được triển khai
+## Phạm vi hiện có
 
-- Navigation, tổng quan và các view cá nhân; danh sách phân trang, tìm kiếm và bộ lọc. Kho cha tìm được văn bản trong thư mục con.
-- Bốn nghiệp vụ: thông báo, văn bản đến, văn bản đi, văn bản nội bộ. Wizard ba bước; form theo nghiệp vụ; lưu/sửa nháp; rich text tái sử dụng Vioo Work.
-- Loại văn bản, tuyến duyệt tuần tự, quy tắc số và cây kho cấu hình trong Office.
-- Duyệt nội dung, cấp số và phát hành là các quyền/thao tác riêng. Trả lại có lý do và gửi duyệt lại tạo vòng mới, giữ lịch sử vòng trước.
-- Cấp số dùng UPSERT counter trong transaction theo rule/type/year, khóa dòng và unique constraints. RPC có version check và idempotency key; số không được sửa qua giao diện.
-- Chốt người nhận khi phát hành, thông báo qua hạ tầng hiện có. Chỉ ghi đã đọc khi người nhận mở nội dung trong tab đang hiển thị. Người soạn không tự được đánh dấu đã đọc.
-- Văn bản đến giữ số bên gửi, hỗ trợ phân phối, giao người phụ trách/phối hợp, hạn xử lý, tiếp nhận, bắt đầu và kết quả hoàn thành.
-- Follow/favorite, thu hồi, lưu trữ, lịch sử và audit. Văn bản thu hồi vẫn có cảnh báo sau khi lưu trữ và không xuất hiện trong danh sách chưa đọc.
-- File private; server cấp reservation/bucket/path; chỉ cho sửa file khi nháp/cần chỉnh sửa. Kiểm tra loại, kích thước và metadata trước khi hoàn tất; signed URL ngắn hạn.
-- Quyền canonical theo global/own/assigned/department/project/construction_site, RLS và restrictive storage policies. Quyền ADMIN kỹ thuật không tự cấp quyền Office. Direct writes vào bảng nghiệp vụ bị chặn.
+- Bốn nghiệp vụ: thông báo, văn bản đến, văn bản đi, văn bản nội bộ; dashboard, danh sách phân trang/tìm kiếm/bộ lọc, kho và thư mục con.
+- Soạn/sửa nháp, trình/duyệt/trả lại/từ chối, cấp số atomic, phát hành, hủy, hết hiệu lực theo ngày Việt Nam, thu hồi và lưu trữ. Lifecycle độc lập với xử lý văn bản đến.
+- Người soạn/gửi, đơn vị ban hành, công trường; gửi nhiều người/đơn vị/công trường/toàn công ty. Tag bổ sung sau phát hành giữ nguyên nội dung chính thức, ghi đợt phân phối và chỉ thông báo người mới.
+- Thành viên đơn vị được chốt từ cơ cấu HRM/project staff đang hoạt động lúc gửi. Người nhận cần quyền truy cập Office và quyền xem theo phân công. Xem và chủ động xác nhận đã đọc là hai sự kiện khác nhau.
+- Cấu hình loại, tuyến duyệt tuần tự, quy tắc cấp số, cây thư mục; quản trị quyền dùng RBAC hiện có. Không có quyền nghiệp vụ tự động cho ADMIN kỹ thuật.
+- Editor Office riêng: đậm/nghiêng/gạch chân/gạch ngang, 4 cách căn lề, heading/list, font/cỡ/màu/nền chữ, chỉ số trên/dưới, link, bảng, ảnh private, hoàn tác/làm lại, dán nội dung được làm sạch. Tệp tối đa 50 MB; tối đa 30 tệp/văn bản.
+- Mẫu có biến và lịch sử; số chính thức chỉ điền khi backend cấp số. Export Excel theo bộ lọc, tối đa 5.000 dòng trong một snapshot; vượt giới hạn phải thu hẹp lọc. Lịch sử phiên bản/so sánh, liên kết văn bản/dự án/công việc/hợp đồng theo quyền ở nguồn.
+- Báo cáo theo thời gian và phạm vi; tiếp nhận bản scan/chụp từ điện thoại.
+- AI/OCR: đọc PDF/ảnh, đề xuất metadata, tóm tắt, hỏi đáp, tìm kiếm và soạn thảo. Edge Function xác thực Auth, đọc qua quyền của caller, kiểm tra lại quyền/version sau phản hồi AI. Quota 10 yêu cầu/phút, 100/ngày/người; không tự lưu/phát hành/duyệt. Chưa có key/model thì báo chưa kích hoạt.
+- Notification transaction và deeplink `/office/documents/:id`, chống trùng theo sự kiện/lệnh/người nhận; dùng hạ tầng push hiện có.
+- RLS, private Storage, version check, idempotency, snapshot và audit backend; chặn direct writes. Nội dung đã phát hành và số chính thức không sửa được qua privileged UPDATE thông thường.
 
-P1/P2 của đặc tả chưa triển khai: template nâng cao, export sổ, history nâng cao, related documents, liên kết ERP generic, acknowledgement bắt buộc, báo cáo, scan UX, OCR/AI, chữ ký số. Editor P0 dùng các định dạng hiện có của Vioo Work; chưa bổ sung bảng và ảnh nội tuyến.
+## Kết quả cuối
 
-## Kết quả kiểm thử
-
-| Kiểm tra | Kết quả | Chứng cứ |
+| Kiểm tra | Kết quả | Bằng chứng |
 | --- | --- | --- |
-| Build ứng dụng | PASS | [log](evidence/branch-build.txt), 25.44 giây; còn cảnh báo kích thước chunk của ứng dụng |
-| TypeScript toàn repo (`npm run lint`) | PASS | [log](evidence/branch-typecheck.txt) |
-| Toàn bộ unit/integration suite (`npm test`) | PASS, 3.007 tests; 2 skipped | [log](evidence/branch-tests.txt) |
-| Migration allowlist và Supabase query audit | PASS | [migrations](evidence/branch-migrations.txt), [queries](evidence/branch-queries.txt) |
-| UI desktop / tablet / mobile | PASS, 8 tests | [log](evidence/browser-tests.txt) |
-| Cloud SQL lifecycle / permissions / RLS | PASS; rollback toàn transaction | [log](evidence/cloud-rollback.txt) |
-| Xác nhận không thay đổi Cloud | PASS | [postflight](evidence/cloud-postflight.json) |
+| TypeScript toàn repo | PASS | [log](evidence/branch-typecheck.txt) |
+| Unit/integration toàn repo | 3.016 passed, 2 skipped; 617 files passed | [log](evidence/branch-tests.txt) |
+| Production build | PASS, 8,14 giây | [log](evidence/branch-build.txt) |
+| Migration baseline / query audit | PASS; 0 findings/errors | [migration](evidence/branch-migrations.txt), [query](evidence/branch-queries.txt) |
+| Chromium + WebKit/iPhone 13 mô phỏng | 22 passed | [log](evidence/browser-tests.txt) |
+| Edge Function Deno typecheck | PASS | [log](evidence/deno-check.txt) |
+| Cloud P0/P1/extended/performance SQL | PASS; toàn bộ rollback | [log](evidence/cloud-rollback.txt) |
+| Cloud postflight chỉ đọc | 8 điều kiện sạch, migration chưa áp | [JSON](evidence/cloud-postflight.json) |
 
-Cloud assertions bao gồm: bốn nhóm văn bản; idempotent create/number; stale edit; duyệt đúng thứ tự; không cấp số sớm; người duyệt không được cấp số; publish, receipt, favorite, archive/search; return/edit/resubmit; metadata tệp, storage ACL và cleanup; giao/tiếp nhận/bắt đầu/hoàn thành; thu hồi; immutability kể cả UPDATE bằng chủ bảng; notifications/audit. Cùng loại/năm nhận số kế tiếp; retry không tăng counter. Người công trường A không đọc được confidential của B qua SELECT/RPC; quyền xem thông thường ở B vẫn cần quyền hạn chế hoặc liên quan trực tiếp.
+Cloud kiểm tra: lifecycle đủ 4 nhóm, duyệt đúng thứ tự, cấp số/idempotency, immutable content, recipient/receipt/ack, stale edit, templates/history, links/reverse privacy, hủy/hết hạn, quota AI, Storage metadata/RLS và notification. Kịch bản phòng ban xác nhận người đúng đơn vị được xem, người ngoài bị chặn, tag đơn vị thứ hai mới có quyền và đúng một thông báo/người. Đường query tối ưu được so sánh với quyền xem từng văn bản cho cả 7 persona thử nghiệm.
 
-UI chạy production components/service adapter với dữ liệu giả lập, không kết nối Supabase. Viewports: 1440×1050, 820×1180, 390×844. Đã walkthrough và xem ảnh các màn hình tổng quan, danh sách, soạn thảo, chi tiết; kiểm tra không tràn ngang, picker trong dialog, lỗi dashboard, thu hồi/lưu trữ và xử lý văn bản đến.
+Browser dùng production components/service adapter với fixtures và file blob trong bộ nhớ, không kết nối Supabase. Kích thước 1440×1050, 820×1180, 390×844 cùng WebKit iPhone 13. Kiểm tra tiêu đề/nội dung dài, bảng, xác nhận đọc, tag đơn vị, định dạng/dán an toàn, upload ảnh, hoàn tác/làm lại, lưu và xóa ảnh không mất văn bản. Đã xem ảnh desktop/tablet/mobile. **Đây là mô phỏng trình duyệt, chưa phải kiểm thử trên điện thoại vật lý.**
 
-### Tách khỏi các lỗi của checkout cũ
+## Hiệu năng đo được
 
-Branch Office được tạo từ `origin/main`, chỉ mang thay đổi Office. TypeScript và toàn bộ unit suite nay đã pass bằng lệnh CI tiêu chuẩn; không cần loại trừ prototype hoặc checkout lồng. Các lỗi đã báo ở lần kiểm thử trước thuộc workspace `feature/refactor-du-an-t9-1`, không được đưa vào branch này.
+Bộ SQL tạo 2.000 văn bản thử rồi rollback: danh sách 25 dòng **144,6 ms**, báo cáo **84,0 ms**, export **136,0 ms** ở phía PostgreSQL. Quyền tập hợp được tính một lần cho mỗi truy vấn; đã so sánh với predicate quyền gốc. Số liệu là một phép đo có giới hạn, không bao gồm mạng/client hay tải đồng thời và không phải cam kết p95 production.
 
-Office vẫn được thêm tường minh vào allowlist frontend đi trước DB của contract hiện có, vì chủ dự án chưa cho áp migration. Sau rollout cần refresh fixture rồi bỏ 14 mã Office khỏi allowlist. Thêm file migration vào `supabase/baseline/current.json` chỉ phục vụ kiểm tra mã nguồn, không thực hiện SQL trên Cloud.
+Office được lazy-load: JS 118,23 kB / 33,10 kB gzip; CSS 46,47 kB / 9,02 kB gzip. XLSX import khi xuất. Build vẫn có cảnh báo chunk lớn sẵn có của ứng dụng tổng; không mở rộng refactor ngoài Office.
 
-Xem [kết quả branch](evidence/branch-validation.json) và [kế hoạch toàn bộ Office](roadmap.md).
+## Các giới hạn còn lại
 
-## Giới hạn nghiệm thu và bước kích hoạt còn lại
+- Chưa kiểm thử Auth thật + Storage HTTP + signed URL thực tế hoặc push tới thiết bị thật. SQL dùng `authenticated` và JWT claims fixture; không upload bytes hay gửi push thật.
+- Chưa kiểm thử hai phiên cấp số đồng thời: schema chưa commit không hiện ra ở phiên thứ hai. Đã kiểm tra counter/uniqueness/retry trong transaction; không gọi đó là nghiệm thu race condition.
+- AI đã có adapter và tests mock, chưa gọi provider thật, chưa kiểm tra chất lượng OCR bằng key/model của chủ dự án.
+- Chưa tích hợp chữ ký số vì chưa có provider/chứng thư. `SignaturePad` hiện có là chữ ký ảnh, không phải chữ ký số.
+- Office service độc lập UI đáp ứng kiến trúc cho Command Center; chưa có host Command Center trong repo để tích hợp giao diện actions.
 
-**Chưa xác nhận nghiệm thu end-to-end trên môi trường triển khai.** Những phần sau cần môi trường có migration đã commit:
+Permission contract vẫn giữ allowlist 14 mã Office đi trước DB. Khi rollout cần refresh fixture và bỏ allowlist sau khi DB catalog đã có. Migration duy nhất được mở rộng vì chưa từng áp dụng; không sửa một migration đã triển khai. Xem [activation.md](activation.md).
 
-1. Hai phiên/browser cấp số đồng thời và thử retry khi mất phản hồi mạng. Rollback hiện tại đã kiểm tra thứ tự, uniqueness và idempotency trong một transaction; schema chưa commit không thể được phiên thứ hai nhìn thấy. Không gọi đây là bài kiểm thử race condition đã hoàn tất.
-2. Tệp thật qua Storage HTTP, signed URL và tài khoản Auth thật. SQL hiện kiểm tra RLS dưới role `authenticated` với JWT claims fixture; dữ liệu tệp là metadata thử nghiệm trong transaction, không upload bytes thật.
-3. Thông báo realtime/push thực tế và walkthrough dưới các tài khoản được phân quyền qua giao diện Vioo. Các notification/audit insert đã được kiểm tra trong transaction, không gửi thông báo thật.
-
-Khi chủ dự án quyết định kích hoạt: dùng quy trình migration của repository cho đúng một migration Office; cấp `office.module.access`, quyền xem/phạm vi và các action theo nhiệm vụ qua quản trị quyền hiện có; cấu hình người duyệt, loại văn bản, quy tắc số và kho; chạy ba mục nghiệm thu trên trước khi mở rộng sử dụng. Không có grant tự động cho người dùng thật trong migration. Nếu tiếp nối sổ cũ, cần xác nhận mốc chuyển đổi số trước khi đưa vào dùng.
-
-Rollback vận hành: thu hồi quyền truy cập Office hoặc gỡ route khỏi bản frontend để ngừng sử dụng; giữ dữ liệu và số đã phát hành, không DROP bảng hoặc tái sử dụng số.
-
-## Lệnh chạy lại
-
-Từ root repository:
+## Chạy lại
 
 ```sh
 npm run lint
@@ -68,15 +62,13 @@ npm run check:supabase-migrations
 npm run check:supabase-queries
 npx playwright test -c tests/office/playwright.config.ts
 npm run build
-node --env-file=.env scripts/office/cloud-rollback.mjs supabase/tests/office_p0_smoke.sql
+npx deno check --no-lock --config supabase/functions/office-assistant/deno.json supabase/functions/office-assistant/index.ts
+node --env-file=.env scripts/office/cloud-rollback.mjs supabase/tests/office_p0_smoke.sql supabase/tests/office_p1_smoke.sql supabase/tests/office_extended_acceptance.sql supabase/tests/office_performance.sql
+node --env-file=.env scripts/office/cloud-postflight.mjs
 ```
 
-Lệnh Cloud cuối chỉ phù hợp khi migration Office chưa áp dụng và vẫn được phép kiểm thử rollback trên Cloud này. Runner dùng `.env`, không in secrets, đặt lock timeout 3 giây và statement timeout 45 giây.
+Hai lệnh Cloud cuối chỉ dành cho trạng thái **chưa áp migration** và quyền kiểm thử rollback đã được cấp. Runner đặt lock timeout 3 giây/statement timeout 45 giây; không ghi migration history, không in secrets. Log chạy ở `.office-run-logs/`; Playwright tự dọn `.office-test-results/`, không lưu log Cloud ở đó.
 
-## Ảnh kiểm tra bằng dữ liệu giả lập
+## Ảnh từ dữ liệu giả lập
 
-- [Tổng quan desktop](evidence/desktop-overview.png)
-- [Soạn thảo desktop](evidence/desktop-draft.png)
-- [Chi tiết desktop](evidence/desktop-detail.png)
-- [Chi tiết tablet](evidence/tablet-detail.png)
-- [Danh sách mobile](evidence/mobile-list.png)
+[Desktop tổng quan](evidence/desktop-overview.png) · [Desktop soạn thảo](evidence/desktop-draft.png) · [Tablet chi tiết](evidence/tablet-detail.png) · [Mobile đọc](evidence/phone-reader.png) · [Mobile soạn](evidence/mobile-draft.png) · [Mobile bảng/nội dung dài](evidence/mobile-rich-document.png)

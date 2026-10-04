@@ -1,15 +1,37 @@
 {
   "branch": "codex/vioo-office",
   "base": "6e32def",
-  "checkedAt": "2026-10-04T10:20:00.949398+00:00",
+  "checkedAt": "2026-10-04T12:24:20.932060+00:00",
   "fullTypecheck": "passed",
-  "testFilesPassed": 615,
-  "testsPassed": 3007,
+  "testFilesPassed": 617,
+  "testsPassed": 3016,
   "testsSkipped": 2,
-  "browserTestsPassed": 8,
+  "browserTestsPassed": 22,
+  "browserEngines": [
+    "Chromium",
+    "WebKit iPhone 13 emulation"
+  ],
+  "physicalDeviceTested": false,
   "build": "passed",
+  "edgeFunctionTypecheck": "passed",
   "migrationCheck": "passed",
   "queryCheck": "passed",
+  "cloudRollbackSuite": [
+    "office_p0_smoke.sql",
+    "office_p1_smoke.sql",
+    "office_extended_acceptance.sql",
+    "office_performance.sql"
+  ],
   "cloudMigrationApplied": false,
-  "migrationSha256": "fa04282360f5904cce06412aa52a3f73a481e1551f1fb9c81a9057c8f9dc48b4"
+  "edgeFunctionDeployed": false,
+  "liveAiProviderTested": false,
+  "realPushDeliveryTested": false,
+  "migrationSha256": "cf809dc9a9157172bb45be6d34bac0838d9049980186ddd84581858faebfe398",
+  "benchmark": {
+    "rows": 2000,
+    "list25Ms": 144.578,
+    "reportMs": 83.992,
+    "exportMs": 136.033,
+    "scope": "PostgreSQL execution, one bounded rollback run; excludes network and client"
+  }
 }

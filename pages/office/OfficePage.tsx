@@ -1,6 +1,8 @@
 import React from "react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import {
+  BarChart3,
+  BookOpen,
   ArrowLeft,
   FileText,
   LayoutDashboard,
@@ -18,10 +20,13 @@ import { OfficeDashboardPage, OfficeListPage } from "./OfficeList";
 import { OfficeDraftPage } from "./OfficeDraft";
 import { OfficeDetailPage } from "./OfficeDetail";
 import { OfficeSettingsPage } from "./OfficeSettings";
+import { OfficeTemplatesPage, OfficeReportsPage } from "./OfficeLibrary";
+import { createOfficeAiService } from "../../lib/office/officeAiService";
 import "./office.css";
 const defaultService = createOfficeService(
   supabase,
   createOfficeFileStore(supabase.storage),
+  createOfficeAiService(supabase.functions),
 );
 export function OfficeWorkspace({
   service = defaultService,
@@ -58,6 +63,20 @@ export function OfficeWorkspace({
           >
             <FileText size={16} />
             <span>Văn bản</span>
+          </Link>
+          <Link
+            className={active.endsWith("/templates") ? "is-active" : ""}
+            to="/office/templates"
+          >
+            <BookOpen size={16} />
+            <span>Mẫu văn bản</span>
+          </Link>
+          <Link
+            className={active.endsWith("/reports") ? "is-active" : ""}
+            to="/office/reports"
+          >
+            <BarChart3 size={16} />
+            <span>Báo cáo</span>
           </Link>
           {catalog.data?.canConfigure && (
             <Link
@@ -126,6 +145,16 @@ export function OfficeWorkspace({
                   catalog={catalog.data}
                 />
               }
+            />
+            <Route
+              path="templates"
+              element={
+                <OfficeTemplatesPage service={service} catalog={catalog.data} />
+              }
+            />
+            <Route
+              path="reports"
+              element={<OfficeReportsPage service={service} />}
             />
             <Route
               path="settings"

@@ -1,6 +1,13 @@
+import { unavailableOfficeAi, type OfficeAiService } from "./officeAiService";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeOfficeFilters } from "./officePresentation";
 import type {
+  OfficeTemplate,
+  OfficeVersion,
+  OfficeReport,
+  OfficeTarget,
+  OfficeTargetType,
+  OfficeLink,
   AudienceKind,
   OfficeActivity,
   OfficeAttachment,
@@ -57,6 +64,7 @@ export function createOfficeFileStore(
 export function createOfficeService(
   client: Pick<SupabaseClient, "rpc">,
   files?: OfficeFileStore,
+  ai: OfficeAiService = unavailableOfficeAi,
 ) {
   async function query<T>(name: string, params: object = {}): Promise<T> {
     const { data, error } = await client.rpc("office_query", {
@@ -68,6 +76,27 @@ export function createOfficeService(
     return data as T;
   }
   return {
+    ai,
+    templates: () => query<OfficeTemplate[]>("templates"),
+    templateVersions: (id: string, page = 0) =>
+      query<(OfficeVersion & { snapshot: OfficeTemplate })[]>(
+        "template_versions",
+        { id, page },
+      ),
+    versions: (id: string, page = 0) =>
+      query<OfficeVersion[]>("versions", { id, page }),
+    version: (id: string, version: number) =>
+      query<OfficeVersion>("version", { id, version }),
+    links: (id: string) => query<OfficeLink[]>("links", { id }),
+    targets: (kind: OfficeTargetType, search: string) =>
+      query<OfficeTarget[]>("target_options", { kind, search }),
+    report: (filters: OfficeFilters) =>
+      query<OfficeReport>("report", normalizeOfficeFilters(filters)),
+    export: (filters: OfficeFilters) =>
+      query<OfficePage<OfficeSummary> & { generatedAt: string }>(
+        "export",
+        normalizeOfficeFilters(filters),
+      ),
     catalog: () => query<OfficeCatalog>("catalog"),
     dashboard: () => query<OfficeDashboard>("dashboard"),
     list: (filters: OfficeFilters) =>
@@ -101,7 +130,7 @@ export function createOfficeService(
       return data;
     },
     async configure(
-      kind: "type" | "workflow" | "rule" | "folder",
+      kind: "type" | "workflow" | "rule" | "folder" | "template",
       id: string | null,
       data: object,
     ): Promise<string> {

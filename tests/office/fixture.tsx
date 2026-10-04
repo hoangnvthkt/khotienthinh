@@ -99,7 +99,40 @@ const catalog: OfficeCatalog = {
 };
 const now = "2026-10-04T08:00:00Z";
 const docs = new Map<string, OfficeDocument>();
+const attachmentRows = new Map<string, any[]>();
+const uploadedUrls = new Map<string, string>();
 const reads = new Set<string>();
+const confirmed = new Set<string>();
+const templates: any[] = [
+  {
+    id: "template-1",
+    name: "Thông báo chuẩn",
+    document_group: "ANNOUNCEMENT",
+    document_type_id: "type-tb",
+    title: "Thông báo từ mẫu",
+    summary: "Mẫu nội bộ",
+    version: 1,
+    is_active: true,
+    updated_at: now,
+    content: {
+      version: 1,
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          align: "center",
+          content: [
+            {
+              type: "text",
+              text: "Kính gửi {{company_name}} — số {{document_number}}",
+            },
+          ],
+        },
+      ],
+    },
+  },
+];
+const fixtureLinks = new Map<string, any[]>();
 const bookmarks = new Map<string, { favorite: boolean; following: boolean }>();
 const commands: any[] = [];
 (window as any).officeTest = { commands };
@@ -202,6 +235,7 @@ for (let i = 0; i < titles.length; i++) {
         },
       ],
     },
+    require_acknowledgement: i === 0,
     recipient_specs: [{ type: "company", label: "Toàn công ty" }],
   } as OfficeDocument;
   docs.set(d.id, d);
@@ -212,14 +246,25 @@ function detail(id: string): OfficeDetail {
   const editable = ["DRAFT", "RETURNED"].includes(d.status);
   return {
     document: d,
+    receipt: {
+      read_at: reads.has(id) ? now : null,
+      acknowledged_at: confirmed.has(id) ? now : null,
+    },
+    distribution: [
+      { created_at: now, sender: d.creator_name, specs: d.recipient_specs },
+    ],
     typeName:
       catalog.types.find((t) => t.id === d.document_type_id)?.name || "Văn bản",
     departmentName: "Hành chính Nhân sự",
     projectName: d.document_group === "INCOMING" ? "RICO" : null,
     signerName: "Trần Hải Nam",
     assigneeName: "Nguyễn Minh An",
-    attachments: [],
+    attachments: attachmentRows.get(id) || [],
     capabilities: {
+      cancel: editable,
+      distribute: d.status === "ISSUED",
+      confirm_read:
+        !!d.require_acknowledgement && !!d.issued_at && !confirmed.has(id),
       edit: editable,
       submit: editable,
       approve: d.status === "PENDING_APPROVAL",
@@ -235,6 +280,7 @@ function detail(id: string): OfficeDetail {
     },
     bookmark: bookmarks.get(id) || { favorite: false, following: false },
     recipientStats: {
+      acknowledged: confirmed.has(id) ? 1 : 0,
       total: 42,
       read: reads.has(id) ? 37 : 36,
       unread: reads.has(id) ? 5 : 6,
@@ -294,6 +340,74 @@ const rpc = async (name: string, p: any) => {
         q === "dashboard"
       )
         throw new Error("offline");
+      if (q === "templates") return { data: templates, error: null };
+      if (q === "template_versions")
+        return {
+          data: templates
+            .filter((t) => t.id === x.id)
+            .map((t) => ({
+              version: t.version,
+              snapshot: t,
+              actor_name: "Nguyễn Thu Hương",
+              created_at: now,
+            })),
+          error: null,
+        };
+      if (q === "links")
+        return { data: fixtureLinks.get(x.id) || [], error: null };
+      if (q === "target_options")
+        return {
+          data: [
+            {
+              id: "doc-1",
+              kind: "document",
+              label: titles[0],
+              href: "/office/documents/doc-1",
+            },
+          ],
+          error: null,
+        };
+      if (q === "versions")
+        return {
+          data: [1, 2, 3, 4].reverse().map((version) => ({
+            version,
+            created_at: now,
+            actor_name: "Nguyễn Thu Hương",
+            status: "DRAFT",
+          })),
+          error: null,
+        };
+      if (q === "version")
+        return {
+          data: {
+            version: x.version,
+            created_at: now,
+            actor_name: "Nguyễn Thu Hương",
+            snapshot: {
+              ...docs.get(x.id),
+              title:
+                x.version === 1 ? "Tiêu đề ban đầu" : docs.get(x.id)?.title,
+              attachments: [],
+            },
+          },
+          error: null,
+        };
+      if (q === "report")
+        return {
+          data: {
+            total: 5,
+            incoming: 1,
+            outgoing: 1,
+            announcements: 2,
+            pending: 1,
+            overdue: 1,
+            unread: 3,
+            averageApprovalHours: null,
+            byMonth: [{ month: "2026-10", total: 5, incoming: 1, outgoing: 1 }],
+            byDepartment: [{ name: "Hành chính Nhân sự", total: 5 }],
+          },
+          error: null,
+        };
       if (q === "catalog") return { data: catalog, error: null };
       if (q === "dashboard")
         return {
@@ -326,7 +440,7 @@ const rpc = async (name: string, p: any) => {
           error: null,
         };
       if (q === "detail") return { data: detail(x.id), error: null };
-      if (q === "list") {
+      if (q === "list" || q === "export") {
         const rows = [...docs.values()]
           .filter(
             (d) =>
@@ -409,7 +523,19 @@ const rpc = async (name: string, p: any) => {
           error: null,
         };
     }
-    if (name === "office_configure") return { data: "configured", error: null };
+    if (name === "office_configure") {
+      if (p.p_kind === "template") {
+        const existing = templates.findIndex((t) => t.id === p.p_id);
+        const t = {
+          ...p.p_data,
+          id: p.p_id || crypto.randomUUID(),
+          version: existing >= 0 ? templates[existing].version + 1 : 1,
+        };
+        if (existing >= 0) templates[existing] = t;
+        else templates.push(t);
+      }
+      return { data: "configured", error: null };
+    }
     if (name === "office_command") {
       commands.push(p);
       const action = p.p_command,
@@ -431,6 +557,37 @@ const rpc = async (name: string, p: any) => {
         docs.set(d.id, d);
       }
       if (!d) throw new Error("OFFICE_NOT_FOUND");
+      let attachment: any;
+      if (action === "attachment_begin") {
+        attachment = {
+          id: crypto.randomUUID(),
+          document_id: d.id,
+          file_name: data.fileName,
+          mime_type: data.mimeType,
+          size_bytes: data.size,
+          bucket: "office-attachments",
+          path: crypto.randomUUID(),
+          status: "PENDING",
+          created_at: now,
+        };
+        attachmentRows.set(d.id, [
+          ...(attachmentRows.get(d.id) || []),
+          attachment,
+        ]);
+      }
+      if (action === "attachment_finish") {
+        const ref = attachmentRows
+          .get(d.id)
+          ?.find((f) => f.id === data.attachmentId);
+        if (ref) ref.status = "READY";
+      }
+      if (action === "attachment_remove")
+        attachmentRows.set(
+          d.id,
+          (attachmentRows.get(d.id) || []).filter(
+            (f) => f.id !== data.attachmentId,
+          ),
+        );
       if (action === "save") Object.assign(d, data);
       if (action === "submit") {
         d.status =
@@ -449,6 +606,23 @@ const rpc = async (name: string, p: any) => {
         d.status = "ISSUED";
         d.issued_at = now;
       }
+      if (action === "cancel") d.status = "CANCELLED";
+      if (action === "confirm_read") {
+        confirmed.add(d.id);
+        reads.add(d.id);
+      }
+      if (action === "link_add")
+        fixtureLinks.set(d.id, [
+          {
+            id: "link-1",
+            target_type: data.targetType,
+            target_id: data.targetId,
+            relation: data.relation,
+            incoming: false,
+            target: { label: titles[0], href: "/office/documents/doc-1" },
+          },
+        ]);
+      if (action === "link_remove") fixtureLinks.set(d.id, []);
       if (action === "read") reads.add(d.id);
       if (action === "bookmark") bookmarks.set(d.id, data);
       if (action === "archive") d.status = "ARCHIVED";
@@ -469,9 +643,10 @@ const rpc = async (name: string, p: any) => {
         d.processing_status = "COMPLETED";
         d.processing_result = data.result;
       }
-      if (!["read", "bookmark", "create"].includes(action)) d.version++;
+      if (!["read", "bookmark", "create", "confirm_read"].includes(action))
+        d.version++;
       return {
-        data: { id: d.id, version: d.version, status: d.status },
+        data: { id: d.id, version: d.version, status: d.status, attachment },
         error: null,
       };
     }
@@ -480,7 +655,15 @@ const rpc = async (name: string, p: any) => {
     return { data: null, error };
   }
 };
-const service = createOfficeService({ rpc } as any);
+const service = createOfficeService({ rpc } as any, {
+  upload: async (ref, file) => {
+    uploadedUrls.set(ref.id, URL.createObjectURL(file));
+  },
+  url: async (ref) => uploadedUrls.get(ref.id) || "",
+  remove: async (ref) => {
+    uploadedUrls.delete(ref.id);
+  },
+});
 createRoot(document.getElementById("root")!).render(
   <HashRouter>
     <div style={{ padding: "16px", maxWidth: "1600px", margin: "auto" }}>

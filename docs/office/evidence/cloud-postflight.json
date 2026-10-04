@@ -1,10 +1,13 @@
 {
-  "checkedAt": "2026-10-04T09:58:42.046Z",
+  "checkedAt": "2026-10-04T12:17:18.600Z",
   "project": "ftciqmqhmfvjtwoycswe",
   "mode": "transaction-rollback-only",
   "office_schema_absent": true,
+  "office_functions_absent": true,
   "office_permissions_absent": true,
   "office_bucket_absent": true,
   "migration_unapplied": true,
-  "test_users_absent": true
+  "test_users_absent": true,
+  "test_departments_absent": true,
+  "office_notifications_absent": true
 }

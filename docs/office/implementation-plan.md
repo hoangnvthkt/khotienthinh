@@ -1,4 +1,4 @@
-# Vioo Office — P0, 04/10/2026
+# Vioo Office — P0, P1 và AI/OCR, 04/10/2026
 
 ## Yêu cầu và người dùng
 
@@ -9,7 +9,7 @@ Nguồn: đặc tả 50 mục và 4 ảnh Base Office người dùng cung cấp.
 - SPA React/TypeScript/Vite, HashRouter tại `App.tsx`; route guard tập trung tại `lib/routeAccess.ts`; Sidebar dùng registry/module access.
 - Quyền canonical: `permission_applications/modules/actions`, `app_private.has_permission`, snapshot hiện hành. Office đăng ký thêm capability trong hệ này; không tạo user/role/grant engine riêng.
 - Người dùng `users`, cơ cấu `org_units` + effective slot assignments, dự án/công trường `projects` + `project_staff`. Không dùng department legacy để xác định thành viên.
-- Rich text: `pages/work/WorkRichTextEditor.tsx` và `WorkRichTextView.tsx` render JSON an toàn. Reuse trong Office.
+- Rich text: editor Office riêng dùng JSON allowlist, hỗ trợ căn chỉnh, font, màu, bảng và ảnh private; giữ nguyên editor Work. Dùng lại quy tắc href an toàn của Work.
 - File hiện có adapter theo module (`documentService`, `contractAttachmentService`, `workAttachmentService`), chưa có kho attachment generic. Office dùng adapter tiêm phụ thuộc và bucket private do server cấp, cùng Supabase client; UI không chứa storage provider.
 - Notification dùng bảng `notifications` và worker/push hiện có; ghi trong transaction nghiệp vụ, deeplink `/office/documents/:id`.
 - Audit tập trung `audit_trail`; ghi event từ backend vào đây, timeline Office lọc theo document. Không gọi logger best-effort từ client.
@@ -20,7 +20,7 @@ Nguồn: đặc tả 50 mục và 4 ảnh Base Office người dùng cung cấp.
 ## Thiết kế
 
 - `/office`: tổng quan có chỉ số thật và lối vào công việc cần xử lý. `/office/documents`: search/filter + phân trang, bốn nhóm, các view cá nhân. `/office/documents/:id`: nội dung, file, tiến trình duyệt, người nhận/đọc và lịch sử. `/office/new`: wizard ba bước. `/office/settings`: loại văn bản, tuyến duyệt, quy tắc số và cây lưu trữ.
-- Neutral surfaces, accent teal của Vioo Work, Lucide, mật độ enterprise. Mobile chuyển list thành card; form một cột; action rõ ràng. Loading/error/denied không giả số 0.
+- Tham khảo ProcurementHub/Workbench: nền trung tính, accent teal, card có viền nhẹ, thông tin theo công việc, vùng chạm tối thiểu 44 px. Mobile chuyển list thành card, hiển thị đủ tiêu đề/nội dung, bảng cuộn trong khối, form một cột. Loading/error/denied không giả số 0.
 - Lifecycle và processing độc lập. Snapshot người nhận ở thời điểm phát hành; receipt chỉ từ thao tác mở bản phát hành. Creator không tự được đánh dấu đã đọc.
 - Command RPC kiểm tra actor, quyền, trạng thái, version, idempotency. Nội dung/attachment chỉ đổi khi DRAFT/RETURNED chưa cấp số. Không hard delete văn bản đã phát hành.
 - Cấp số khóa counter trong transaction, unique rule/type/year/sequence và unique document_number. Không cấp trước khi duyệt đủ; số không tái sử dụng.
@@ -37,15 +37,15 @@ Nguồn: đặc tả 50 mục và 4 ảnh Base Office người dùng cung cấp.
 
 ## Phân kỳ và rollout
 
-P0 theo 22 mục đặc tả. P1: template nâng cao, export, lịch sử phiên bản nâng cao, quan hệ/liên kết ERP generic, acknowledgement, báo cáo, scan UX. P2: OCR/AI/chữ ký số. P0 giữ project/site reference và version để mở rộng. Chưa publish frontend hoặc áp migration production khi chưa có kết quả kiểm thử.
+P0 và toàn bộ P1 đã có mã nguồn. AI/OCR được bổ sung theo yêu cầu mới, có adapter provider, kiểm tra Auth/RLS, quota và giao diện đề xuất trước khi áp dụng. Chưa bật provider thật. Tích hợp chữ ký số cần nhà cung cấp/chứng thư; tích hợp giao diện Command Center cần module host. Không dùng chữ ký ảnh để thay thế chữ ký số.
 
-Rollback: migration additive không đổi nghiệp vụ cũ. Có thể gỡ route/module access để tắt Office; giữ dữ liệu và số đã cấp, không DROP bảng hoặc tái sử dụng số. Migration lỗi rollback toàn transaction.
+Cơ chế nhận theo đơn vị chốt thành viên đang hoạt động lúc gửi. Tag thêm sau phát hành tạo đợt phân phối mới; chỉ người mới được thông báo, giữ nguyên nội dung chính thức. Hết hạn được tính theo ngày Việt Nam, không phụ thuộc cron. Đã xem và xác nhận đã đọc là hai sự kiện riêng.
+
+Rollback: migration additive không đổi nghiệp vụ cũ. Có thể gỡ quyền module để tắt Office; giữ dữ liệu và số đã cấp. Không DROP dữ liệu hoặc tái sử dụng số.
 
 ## Tiến độ
 
-- Đã triển khai mã nguồn P0 và hoàn tất các kiểm tra trong phạm vi rollback được cho phép.
-- Build, typecheck toàn repo, 3.007 unit/integration tests, 8 browser tests, migration/query checks đều qua trên branch riêng. Cloud rollback assertions đã qua; SQL không đổi khi chuyển branch.
-- Chưa kích hoạt Office trên Cloud; nghiệm thu hai phiên cấp số đồng thời và HTTP/Auth/Storage thật còn chờ môi trường đã áp migration.
-- Chi tiết: [báo cáo kiểm thử và bàn giao](validation.md).
-
-Kế hoạch tiếp tục toàn bộ P0/P1/P2 trên branch riêng: [roadmap](roadmap.md).
+- Đã triển khai P0/P1 và AI/OCR trên cùng branch `codex/vioo-office`.
+- Đã kiểm thử logic, quyền, Cloud rollback và giao diện responsive; xem [báo cáo](validation.md) để biết số test và bằng chứng hiện hành.
+- Chưa kích hoạt Office trên Cloud; Auth/Storage/push thực tế và cấp số hai phiên đồng thời cần schema đã commit.
+- [Kế hoạch tổng thể](roadmap.md) và [runbook kích hoạt](activation.md) ghi rõ các tích hợp bên ngoài còn lại.
