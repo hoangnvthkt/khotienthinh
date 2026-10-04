@@ -1,7 +1,11 @@
 // "Hôm nay tại công trường": types for get_daily_log_today_board_v1 and the
 // pure rules that turn one day's slips into what each role should see first.
 
+export interface TodayBoardLaborLine { provider?: string | null; laborType?: string | null; people: number; hours: number; manual?: boolean; contractLinked?: boolean }
+export interface TodayBoardMachineLine { machineType?: string | null; provider?: string | null; count: number; hours: number }
+
 export interface TodayBoardItem {
+  taskId?: string | null;
   wbsCode?: string | null;
   taskName?: string | null;
   unit?: string | null;
@@ -11,6 +15,13 @@ export interface TodayBoardItem {
   forecastFinishDate?: string | null;
   scheduleFinishDate?: string | null;
   attachmentCount?: number;
+  plannedQuantity?: number | null;
+  forecastChangeReason?: string | null;
+  /** Công tác hôm nay (dòng gạch đầu). */
+  note?: string | null;
+  photos?: Array<{ url: string; name?: string }>;
+  labor?: TodayBoardLaborLine[];
+  machines?: TodayBoardMachineLine[];
 }
 
 export type TodayBoardSlipStatus = 'draft' | 'submitted' | 'returned' | 'included';
@@ -51,6 +62,8 @@ export interface TodayBoardSummary {
   verifiedBy?: string | null;
   weather?: string | null;
   issues?: string | null;
+  submittedAt?: string | null;
+  verifiedAt?: string | null;
 }
 
 export interface TodayBoardDay {
@@ -59,6 +72,8 @@ export interface TodayBoardDay {
   people: number;
   machineHours: number;
   summaryStatus?: string | null;
+  /** Số người trên bản tổng hợp (nhật ký trước cutover chỉ có số này). */
+  summaryPeople?: number | null;
   hasIssue: boolean;
 }
 
@@ -77,9 +92,55 @@ export const isSentSlip = (slip: TodayBoardSlip) => slip.status !== 'draft';
 export const isItemDelayed = (item: TodayBoardItem, date: string): boolean => {
   const planned = item.scheduleFinishDate?.slice(0, 10);
   const forecast = item.forecastFinishDate?.slice(0, 10);
-  if (!planned) return false;
-  if (forecast) return forecast > planned;
-  return planned < date && Number(item.cumulativePercent ?? 0) < 100;
+  if (!planned || Number(item.cumulativePercent ?? 0) >= 100) return false;
+  // A forecast equal to a plan date already passed does not make the item on time.
+  return Boolean(forecast && forecast > planned) || planned < date;
+};
+
+/** Ngày trễ so với kế hoạch: theo ngày dự kiến mới nếu có, không thì tính đến ngày báo cáo. */
+export const lateDays = (item: TodayBoardItem, date: string): number | null => {
+  if (!isItemDelayed(item, date)) return null;
+  const planned = item.scheduleFinishDate!.slice(0, 10);
+  const forecast = item.forecastFinishDate?.slice(0, 10);
+  const until = forecast && forecast > planned ? forecast : date;
+  const days = Math.round((Date.parse(`${until}T00:00:00Z`) - Date.parse(`${planned}T00:00:00Z`)) / 86_400_000);
+  return days > 0 ? days : null;
+};
+
+/** Đã quá ngày kế hoạch, chưa xong và kỹ sư chưa ghi ngày dự kiến mới. */
+export const needsNewForecast = (item: TodayBoardItem, date: string): boolean => {
+  const planned = item.scheduleFinishDate?.slice(0, 10);
+  const forecast = item.forecastFinishDate?.slice(0, 10);
+  return Boolean(planned && planned < date && Number(item.cumulativePercent ?? 0) < 100 && (!forecast || forecast <= planned));
+};
+
+export interface CrewTotal { name: string; people: number; hours: number; manual: boolean; contractLinked: boolean; items: Array<{ item: TodayBoardItem; slip: TodayBoardSlip }> }
+export interface MachineTotal { name: string; provider?: string | null; count: number; hours: number; items: Array<{ item: TodayBoardItem; slip: TodayBoardSlip }> }
+
+/** "Ai làm": cộng nhân công theo tổ đội và máy theo loại máy, trên các phiếu đã gửi. */
+export const resourceTotals = (board: DailyLogTodayBoard) => {
+  const crews = new Map<string, CrewTotal>();
+  const machines = new Map<string, MachineTotal>();
+  for (const slip of board.slips.filter(isSentSlip)) for (const item of slip.items) {
+    for (const line of item.labor || []) {
+      const name = line.provider?.trim() || line.laborType?.trim() || 'Chưa rõ tổ đội';
+      const crew = crews.get(name) || { name, people: 0, hours: 0, manual: Boolean(line.manual), contractLinked: false, items: [] };
+      crew.people += Number(line.people || 0); crew.hours += Number(line.hours || 0);
+      crew.contractLinked ||= Boolean(line.contractLinked); crew.manual &&= Boolean(line.manual);
+      if (!crew.items.some(entry => entry.item === item)) crew.items.push({ item, slip });
+      crews.set(name, crew);
+    }
+    for (const line of item.machines || []) {
+      const name = line.machineType?.trim() || 'Máy chưa đặt tên';
+      const key = `${name}|${line.provider || ''}`;
+      const total = machines.get(key) || { name, provider: line.provider, count: 0, hours: 0, items: [] };
+      total.count += Number(line.count || 0); total.hours += Number(line.hours || 0);
+      if (!total.items.some(entry => entry.item === item)) total.items.push({ item, slip });
+      machines.set(key, total);
+    }
+  }
+  const byPeople = (a: CrewTotal, b: CrewTotal) => b.people - a.people || a.name.localeCompare(b.name, 'vi');
+  return { crews: [...crews.values()].sort(byPeople), machines: [...machines.values()].sort((a, b) => b.hours - a.hours) };
 };
 
 export const delayDays = (item: TodayBoardItem): number | null => {
@@ -99,10 +160,13 @@ export const buildAttention = (board: DailyLogTodayBoard): AttentionItem[] => {
   const items: AttentionItem[] = [];
   for (const slip of board.slips.filter(isSentSlip)) {
     for (const item of slip.items.filter(entry => isItemDelayed(entry, board.date))) {
-      const days = delayDays(item);
+      const days = lateDays(item, board.date);
+      const noForecast = needsNewForecast(item, board.date);
       items.push({
         key: `late:${slip.id}:${item.wbsCode}:${item.taskName}`, tone: 'danger', slipId: slip.id,
-        text: `${[item.wbsCode, item.taskName].filter(Boolean).join(' ')} ${days ? `trễ ${days} ngày` : 'quá hạn kế hoạch'}${item.forecastFinishDate ? `, dự kiến xong ${formatShortDate(item.forecastFinishDate)}` : ''} (${frontName(slip)})`,
+        text: `${[item.wbsCode, item.taskName].filter(Boolean).join(' ')} ${days ? `trễ ${days} ngày` : 'quá hạn kế hoạch'}${noForecast
+          ? `, kế hoạch xong ${formatShortDate(item.scheduleFinishDate!)}, chưa có ngày dự kiến mới`
+          : item.forecastFinishDate ? `, dự kiến xong ${formatShortDate(item.forecastFinishDate)}` : ''} (${frontName(slip)})`,
       });
     }
   }
