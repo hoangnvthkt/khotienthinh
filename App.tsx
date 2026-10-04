@@ -39,6 +39,7 @@ const Operations = React.lazy(() => import('./pages/Operations'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const RequestWorkflow = React.lazy(() => import('./pages/RequestWorkflow'));
 const MaterialCodeRequests = React.lazy(() => import('./pages/MaterialCodeRequests'));
+const WmsOwners = React.lazy(() => import('./pages/WmsOwners'));
 const Audit = React.lazy(() => import('./pages/Audit'));
 const Reports = React.lazy(() => import('./pages/Reports'));
 const DocumentTracePage = React.lazy(() => import('./pages/DocumentTracePage'));
@@ -201,6 +202,7 @@ const AppRoutes: React.FC = () => {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="requests" element={<RequestWorkflow />} />
           <Route path="material-code-requests" element={<MaterialCodeRequests />} />
+          <Route path="wms/owners" element={<WmsOwners />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="operations" element={<Operations />} />
           <Route path="audit" element={<Audit />} />

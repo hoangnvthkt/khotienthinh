@@ -569,3 +569,77 @@ Lưu ý khi duyệt:
 
 
 **Chủ SP duyệt 03/10/2026:** deploy + merge #88. Dầu Diezel, Dầu DO, mực máy in giữ **Lưu kho**. Còn 30 mã đặt theo danh sách: 7 Dùng ngay (Base A/B, bê tông M100–M350), 23 Không qua kho. Cấp "Đề xuất vật tư → Tạo" cho thủ kho Luật, Minh để gửi đề xuất mã mới. Script chạy sau deploy: `.superpowers/review/work-plan/v1-deploy-data.mjs` (đã chạy thử kèm migration trong giao dịch hoàn tác: đạt).
+
+---
+
+## 14. V1-2 — Người phụ trách kho (mockup 03/10/2026)
+
+V1-1 đã lên production và đã merge (#88, main ebca25f). Chủ SP đã kiểm màn Tồn kho và Danh mục: "OK hết rồi".
+
+Mockup: `.superpowers/review/work-plan/v12.html` (dữ liệu thật qua `tools/v12-data.mjs`).
+
+**Màn Kho vật tư → Thiết lập → Người phụ trách.** Chỉ Admin sửa; người khác chỉ xem.
+- **Theo kho & việc:**
+  - Mỗi kho một thẻ: danh sách thủ kho (thêm / bỏ), những người đang lập phiếu từ 01/08 kèm số phiếu, và các quyền lẻ của kho (chọn "Thành thủ kho" hoặc "Gỡ").
+  - Bên phải là 3 việc toàn công ty: Cấp mã, Duyệt ngoại lệ, Kế toán kho (có ô chọn người khóa kỳ). Bên dưới là cảnh báo tách nhiệm và nhật ký phân công.
+- **Theo người:** bảng người × 4 việc. Bấm một người để chỉnh, có nút điền theo mẫu Thủ kho / GĐ vật tư / Kế toán kho.
+- Lưu một lần, có hộp xác nhận liệt kê từng thay đổi, có nhật ký phân quyền. Dữ liệu dùng chung với Cài đặt → Người dùng.
+
+**Hiện trạng thật (03/10):**
+- Thủ kho theo vai trò cũ: Luật–SMB, Minh–XHV. "Thủ kho toàn công ty": Linh, Mơ, Thủy.
+- Quyền lẻ theo kho:
+  - Đặng Thị Hương: tạo / duyệt / hoàn tất phiếu ở Kho VPP.
+  - Nguyễn Duy Đảng: sửa tồn, hoàn tất phiếu ở XHV.
+  - Đoàn Văn Dương: duyệt phiếu ở XHV.
+- Luật và Minh có "Tạo phiếu" cho **mọi kho**; Minh có thêm "Sửa tồn" mọi kho.
+- Cấp mã: Mơ, Linh. Duyệt ngoại lệ: chỉ Admin. Kế toán kho: chưa có ai. 37 người xem được tồn kho.
+
+**Bộ đề xuất (9 thay đổi):**
+- Thủ kho: Kho Tổng → Đặng Thị Hương; XHV → thêm Thủy (cùng Minh).
+- Duyệt ngoại lệ → Mơ.
+- Kế toán kho → Nguyễn Thị Hương, Thủy. Người khóa kỳ: Nguyễn Thị Hương.
+- Bỏ vai trò "thủ kho toàn công ty" của Linh, Mơ, Thủy.
+
+**Câu hỏi V1-2:**
+21. "Chị Hương nhận Kho Tổng" là **Đặng Thị Hương** (đang giữ Kho VPP), còn **Nguyễn Thị Hương** (KTT) làm kế toán kho và khóa kỳ — đúng không ạ? Nếu đúng thì không vướng tách nhiệm ở Kho Tổng.
+22. Quyền lẻ ở XHV: anh Đoàn Văn Dương (duyệt phiếu) và anh Nguyễn Duy Đảng (sửa tồn, hoàn tất phiếu) — cho làm thủ kho XHV, hay gỡ?
+23. Thu "Tạo phiếu" / "Sửa tồn" đang cấp cho mọi kho của anh Luật và anh Minh về đúng kho mình (SMB / XHV)?
+24. Kho RICO chưa có thủ kho: để trống (chỉ Admin thao tác) cho tới khi có người?
+25. Khi lưu, vai trò tài khoản "thủ kho" của Linh, Mơ, Thủy, Luật, Minh chuyển thành "Nhân viên". Quyền kho từ đó chỉ đi theo 4 việc trên. Đồng ý?
+26. Màn Người phụ trách: mọi người có quyền xem kho đều xem được để minh bạch, chỉ Admin sửa. Đồng ý?
+
+**Chủ SP trả lời 04/10/2026:**
+- 21: đúng — Đặng Thị Hương giữ Kho Tổng; Nguyễn Thị Hương làm kế toán kho và khóa kỳ.
+- 22: quyền lẻ của anh Dương và anh Đảng ở XHV, chủ SP tự xử lý.
+- 23: đồng ý thu quyền "mọi kho" về đúng kho.
+- 24: chủ SP đã tự xử lý quyền của anh Luật và anh Minh. Kho RICO để trống.
+- 25, 26: đồng ý.
+- Duyệt mockup, bắt đầu code.
+
+## 15. V1-2 — đã code (04/10/2026)
+
+**Migration `20261008137200_wms_v1_2_owners.sql`:**
+- 4 ô quyền mới: `wms.transaction.keeper` (Thủ kho, theo kho), `wms.transaction.exception_approve` (Duyệt ngoại lệ), `wms.accounting.manage` (Kế toán kho), `wms.accounting.close_period` (Khóa kỳ).
+- **9 hàm đang dựa vai trò "thủ kho" + kho được gán chuyển sang ô Thủ kho.** Script `tools/gen_v12.py` lấy định nghĩa đang chạy trên production rồi vá từng đoạn. Các hàm: `current_user_is_wms_keeper_for`, `current_user_is_global_wms_keeper`, `wms_warehouse_keepers`, `wms_user_has_action`, `can_read_inventory_scope`, `current_user_can_receive_purchase_batch_v2`, `stock_count_can_approve` (thêm Duyệt ngoại lệ), `process_transaction_status` (Duyệt ngoại lệ duyệt được xuất hủy / điều chỉnh), `list_wms_action_recipients`.
+- Tự chuyển thủ kho đang gán theo vai trò + một kho thành ô Thủ kho đúng kho đó (Luật–SMB, Minh–XHV), để không mất nút thao tác trong lúc chờ.
+- Trigger: phiếu xuất hủy / điều chỉnh chỉ người Duyệt ngoại lệ (hoặc Admin) duyệt, và người duyệt phải khác người lập (cả Admin).
+- Hàm đọc / lưu màn Người phụ trách (`get_wms_owners_v1`, `save_wms_owners_v1`). Lưu chỉ Admin; nhật ký ghi `source = wms_owners`.
+
+**Giao diện:**
+- Thêm màn **Kho vật tư → Người phụ trách** (`/wms/owners`), có 2 cách xem: Theo kho & việc, Theo người.
+- Các hàm kiểm thủ kho ở giao diện chuyển sang đọc ô quyền.
+- Tab Xuất hủy mở cho thủ kho (lập phiếu) và người Duyệt ngoại lệ (duyệt).
+- Thủ kho chỉ giữ một kho thì mặc định mở đúng kho của mình.
+- Hộp sửa người dùng ẩn lựa chọn cũ "Tài khoản kho".
+
+**Đã kiểm trên production trong giao dịch hoàn tác** (`tools/v12-test.mjs`), tất cả đạt:
+- Bước chuyển đổi đúng; anh Luật xem được màn nhưng không lưu được.
+- Admin lưu bộ đã duyệt: thêm 7 quyền; lưu lại lần nữa thêm 0.
+- Chọn người khóa kỳ không phải kế toán kho → bị chặn.
+- Chị Thủy chỉ thao tác được ở XHV, không duyệt được kiểm kê; chị Mơ duyệt được kiểm kê.
+- Anh Luật duyệt xuất hủy → bị chặn. Chị Mơ duyệt phiếu của anh Luật → được. Chị Mơ tự duyệt phiếu của mình → bị chặn.
+
+**Script chạy sau deploy:** `.superpowers/review/work-plan/v12-deploy-data.mjs` — đã chạy thử kèm migration, đạt.
+- Áp bộ đã duyệt qua đúng hàm của màn.
+- Đổi vai trò 5 người sang Nhân viên qua `change_user_account_role_v2`.
+- Thu quyền "mọi kho". Sau đó không còn quyền thao tác kho nào ở phạm vi "mọi kho".
