@@ -2,9 +2,9 @@
 
 ## Trạng thái
 
-Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex/vioo-office`, nền `origin/main` tại `6e32def`. **Chưa áp migration lên Cloud production trong `.env`, chưa cấp quyền cho tài khoản thật và chưa triển khai production.** Backend kiểm thử trên Supabase Cloud trong transaction rồi rollback theo chỉ dẫn của chủ dự án; không Docker/local và không sub-agent.
+Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex/vioo-office`, nền `origin/main` tại `6e32def`. **Đã kích hoạt production ngày 04/10/2026 theo yêu cầu tiếp theo của chủ dự án:** migration `20261004085552`, quyền cho hai tài khoản được chỉ định, tuyến duyệt mặc định, Edge Function và frontend. Không merge main, không Docker/local và không sub-agent. Kiểm thử nghiệp vụ vẫn dùng transaction/rollback để không để lại văn bản hoặc số thử. Xem [báo cáo production](production-rollout.md).
 
-Đây là module dùng service/RPC thật. Fixture UI chỉ phục vụ kiểm thử. Việc chưa kích hoạt database không được che bằng dữ liệu demo trong ứng dụng thật.
+Đây là module dùng service/RPC thật. Fixture UI chỉ phục vụ kiểm thử. Ứng dụng production đọc database thật, không thay lỗi hoặc kho trống bằng dữ liệu demo.
 
 ## Phạm vi hiện có
 
@@ -31,7 +31,11 @@ Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex
 | Chromium + WebKit/iPhone 13 mô phỏng | 22 passed | [log](evidence/browser-tests.txt) |
 | Edge Function Deno typecheck | PASS | [log](evidence/deno-check.txt) |
 | Cloud P0/P1/extended/performance SQL | PASS; toàn bộ rollback | [log](evidence/cloud-rollback.txt) |
-| Cloud postflight chỉ đọc | 8 điều kiện sạch, migration chưa áp | [JSON](evidence/cloud-postflight.json) |
+| Cloud postflight trước triển khai (lịch sử) | 8 điều kiện sạch tại thời điểm chưa áp | [JSON](evidence/cloud-postflight.json) |
+| Production schema + P0/P1/extended | PASS sau áp dụng; fixtures rollback | [JSON](evidence/production-verification.json) |
+| Luồng bằng quyền hai tài khoản thật | Soạn/trình → duyệt → cấp số/phát hành → đọc, notification đúng người; rollback | [JSON](evidence/production-verification.json) |
+| Production frontend | HTTP 200, Office chunk 200, đúng Cloud và source branch | [JSON](evidence/production-frontend.json) |
+| Contract sau refresh permission catalog | 14 tests passed | [log](evidence/production-contract-tests.txt) |
 
 Cloud kiểm tra: lifecycle đủ 4 nhóm, duyệt đúng thứ tự, cấp số/idempotency, immutable content, recipient/receipt/ack, stale edit, templates/history, links/reverse privacy, hủy/hết hạn, quota AI, Storage metadata/RLS và notification. Kịch bản phòng ban xác nhận người đúng đơn vị được xem, người ngoài bị chặn, tag đơn vị thứ hai mới có quyền và đúng một thông báo/người. Đường query tối ưu được so sánh với quyền xem từng văn bản cho cả 7 persona thử nghiệm.
 
@@ -43,7 +47,7 @@ PR nháp [#95](https://github.com/hoangnvthkt/khotienthinh/pull/95) trên đúng
 
 Repository tự tạo Vercel Preview khi push (SUCCESS). Tích hợp **Supabase Preview thất bại** khi dựng database mới tại migration có sẵn trên main `20261006090000_finance_k3a_payables.sql`: insert `finance_internal_partners` tham chiếu supplier chưa có trong `business_partners` (`finance_internal_partners_supplier_id_fkey`, SQLSTATE 23503). File Finance không thay đổi so với base `6e32def`. Không sửa migration Finance đã tồn tại, tạo đối tác giả hoặc bỏ constraint chỉ để làm preview xanh. Đây là giới hạn dựng preview toàn repository, không phải bằng chứng nghiệm thu Office end-to-end. [Kết quả checks](evidence/github-checks.json).
 
-Không chủ động deploy Cloud/Edge Function trong task. Trạng thái rollback sạch trong báo cáo áp dụng **Cloud production lấy từ `.env`**; không suy diễn trạng thái database preview do GitHub integration tạo. Postflight production được chạy lại sau khi PR được tạo và vẫn sạch.
+Sau khi chủ dự án cho phép production, đã triển khai đúng một migration Office, function và frontend. Bằng chứng `cloud-postflight.json` là lịch sử trước triển khai; bằng chứng `production-*.json` phản ánh đợt kích hoạt mới. Không suy diễn trạng thái database preview từ production.
 
 ## Hiệu năng đo được
 
@@ -53,13 +57,13 @@ Office được lazy-load: JS 118,23 kB / 33,10 kB gzip; CSS 46,47 kB / 9,02 kB 
 
 ## Các giới hạn còn lại
 
-- Chưa kiểm thử Auth thật + Storage HTTP + signed URL thực tế hoặc push tới thiết bị thật. SQL dùng `authenticated` và JWT claims fixture; không upload bytes hay gửi push thật.
-- Chưa kiểm thử hai phiên cấp số đồng thời: schema chưa commit không hiện ra ở phiên thứ hai. Đã kiểm tra counter/uniqueness/retry trong transaction; không gọi đó là nghiệm thu race condition.
+- Đã kiểm tra quyền hiện hành của hai tài khoản thật qua RPC dưới role `authenticated` và request claims trong transaction rollback. Chưa kiểm thử đăng nhập browser bằng hai tài khoản, Storage HTTP/signed URL hoặc push tới thiết bị thật. Browser production hiển thị màn hình đăng nhập, không có session sẵn.
+- Chưa kiểm thử hai phiên cấp số đồng thời. Đã kiểm tra counter/uniqueness/retry trong transaction; chưa gọi đó là nghiệm thu race condition. Schema nay đã commit, có thể thực hiện ở một đợt nghiệm thu được kiểm soát.
 - AI đã có adapter và tests mock, chưa gọi provider thật, chưa kiểm tra chất lượng OCR bằng key/model của chủ dự án.
 - Chưa tích hợp chữ ký số vì chưa có provider/chứng thư. `SignaturePad` hiện có là chữ ký ảnh, không phải chữ ký số.
 - Office service độc lập UI đáp ứng kiến trúc cho Command Center; chưa có host Command Center trong repo để tích hợp giao diện actions.
 
-Permission contract vẫn giữ allowlist 14 mã Office đi trước DB. Khi rollout cần refresh fixture và bỏ allowlist sau khi DB catalog đã có. Migration duy nhất được mở rộng vì chưa từng áp dụng; không sửa một migration đã triển khai. Xem [activation.md](activation.md).
+Permission contract đã cập nhật 14 mã Office từ DB và bỏ allowlist tương ứng. Migration đã áp dụng; mọi thay đổi schema sau này cần migration mới. Xem [activation.md](activation.md).
 
 ## Chạy lại
 
@@ -71,11 +75,9 @@ npm run check:supabase-queries
 npx playwright test -c tests/office/playwright.config.ts
 npm run build
 npx deno check --no-lock --config supabase/functions/office-assistant/deno.json supabase/functions/office-assistant/index.ts
-node --env-file=.env scripts/office/cloud-rollback.mjs supabase/tests/office_p0_smoke.sql supabase/tests/office_p1_smoke.sql supabase/tests/office_extended_acceptance.sql supabase/tests/office_performance.sql
-node --env-file=.env scripts/office/cloud-postflight.mjs
 ```
 
-Hai lệnh Cloud cuối chỉ dành cho trạng thái **chưa áp migration** và quyền kiểm thử rollback đã được cấp. Runner đặt lock timeout 3 giây/statement timeout 45 giây; không ghi migration history, không in secrets. Log chạy ở `.office-run-logs/`; Playwright tự dọn `.office-test-results/`, không lưu log Cloud ở đó.
+Các runner `cloud-rollback.mjs` và `cloud-postflight.mjs` chỉ dành cho trạng thái **chưa áp migration**, không chạy lại trên production đã kích hoạt. Kiểm thử sau triển khai thực thi SQL assertions trong `BEGIN/ROLLBACK` trên schema có sẵn, không nạp lại migration. Dùng lock timeout 3 giây/statement timeout 45 giây và không in secrets. Log chạy ở `.office-run-logs/`; Playwright tự dọn `.office-test-results/`, không lưu log Cloud ở đó.
 
 ## Ảnh từ dữ liệu giả lập
 

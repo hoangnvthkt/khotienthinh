@@ -1,0 +1,9 @@
+.env
+.env.*
+.office-run-logs
+.office-test-results
+node_modules
+dist
+test-results
+playwright-report
+docs/office/evidence

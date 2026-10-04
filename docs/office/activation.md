@@ -1,17 +1,17 @@
-# Vioo Office — hướng dẫn kích hoạt sau khi được phép
+# Vioo Office — vận hành sau kích hoạt production
 
 ## Phạm vi bàn giao hiện tại
 
-Chỉ source branch `codex/vioo-office` được thay đổi. Cloud hiện tại chỉ đã chạy transaction/rollback; không có bảng Office hoặc migration history đã commit trên Cloud production trong `.env`. GitHub tự tạo Vercel Preview khi push; Supabase Preview đang lỗi foreign key của migration Finance có sẵn (xem validation). Không thực hiện các bước triển khai dưới đây trong đợt kiểm thử này.
+Ngày 04/10/2026, chủ dự án đã cho phép áp dụng production và chỉ định người soạn/quản trị cùng người duyệt. Đã áp dụng migration Office, cấp quyền cho hai tài khoản được chỉ định, triển khai `office-assistant` và đưa frontend từ `codex/vioo-office` lên [app production](https://khotienthinh.vercel.app/#/office). Không merge main, không sửa branch khác. Chi tiết và bằng chứng: [production-rollout.md](production-rollout.md).
 
 ## Database và quyền
 
 1. Chọn Supabase Cloud đích, kiểm tra lịch sử migrations hiện hành và backup theo quy trình repository. Không dùng Docker hoặc Supabase local. Không chạy blanket `db push --include-all`: branch còn chứa migration của module khác và các version ngày sau Office.
-2. Review và triển khai **đúng một file** `supabase/migrations/20261004085552_office_p0_document_lifecycle.sql` bằng quy trình migration của repository, ghi đúng history và reload schema cache. P0/P1/AI quota nằm chung file vì file chưa từng được triển khai. Khi file đã áp dụng, mọi sửa đổi tiếp theo phải là migration mới.
+2. Đã triển khai **đúng một file** `supabase/migrations/20261004085552_office_p0_document_lifecycle.sql` bằng quy trình migration của repository, ghi đúng history và reload schema cache. P0/P1/AI quota nằm chung file. File đã áp dụng và không được sửa lại; mọi sửa đổi schema tiếp theo phải là migration mới. Không chạy lại migration hoặc runner kiểm thử trước triển khai.
 3. Cấp quyền qua hệ thống vai trò/quyền hiện có. Người nhận thông thường cần `office.module.access` global + `office.document.view` assigned. Người soạn cần thêm create/edit/submit với scope phù hợp; người duyệt cần approve assigned và có trong tuyến; văn thư có issue_number/publish; quản trị module có `office.configuration.manage`. Chỉ cấp view global/view_restricted khi vai trò thực sự cần.
 4. Cấu hình loại văn bản, tuyến duyệt/người duyệt, quy tắc số và cây thư mục phòng ban trong Office. Cây thư mục phục vụ phân loại; quyền xem được quyết định bởi văn bản và người nhận, không bởi tên thư mục.
 5. Nếu nối sổ cũ, xác định số cuối cùng của từng rule/type/year trước khi phát hành số đầu tiên. Migration không tự đoán mốc hoặc nhập dữ liệu Base.
-6. Refresh permission-contract fixture, bỏ allowlist frontend đi trước DB của 14 permission Office; chạy lại suite trước rollout rộng.
+6. Đã refresh permission-contract fixture từ production, bỏ allowlist của 14 permission Office; 14 tests permission catalog/service đạt sau thay đổi.
 
 Gửi theo phòng ban/công trường chốt **thành viên đang hoạt động tại thời điểm gửi**. Người được bổ sung vào tổ chức sau đó không tự nhận lịch sử; dùng gửi bổ sung/tag lại để phân phối cho người mới. UI báo người chưa có quyền Office; không tự cấp quyền chỉ vì được chọn làm người nhận. Toàn công ty dùng user đang active trong công ty/instance ERP hiện tại, không có cơ chế multi-tenant mới.
 
@@ -32,11 +32,11 @@ supabase secrets set --env-file /absolute/path/office-ai.secrets --project-ref P
 supabase functions deploy office-assistant --project-ref PROJECT_REF --use-api
 ```
 
-`--use-api` bundle trên Cloud, không Docker. `supabase/config.toml` đặt `verify_jwt=false` vì handler tự xác thực bearer bằng `auth.getUser`, sau đó dùng client mang token của caller cho RPC/Storage; không có service-role client. Deploy frontend cùng branch sau khi schema có sẵn. Kiểm tra trạng thái AI trước khi gửi tài liệu thật.
+`--use-api` bundle trên Cloud, không Docker. `supabase/config.toml` đặt `verify_jwt=false` vì handler tự xác thực bearer bằng `auth.getUser`, sau đó dùng client mang token của caller cho RPC/Storage; không có service-role client. Frontend và function đã triển khai. Kiểm tra trạng thái AI sau khi thêm secrets, trước khi gửi tài liệu thật.
 
 OCR nhận tệp READY thuộc văn bản người dùng có quyền sửa; PDF/JPEG/PNG/WebP tối đa 8 MB, dù attachment thường có thể 50 MB. Tóm tắt/hỏi đáp chỉ nhận nội dung văn bản người dùng được xem. Tìm kiếm AI đề xuất từ khóa rồi query lại bằng RLS; không lấy toàn bộ kho gửi model. Quota 10 lần/phút và 100 lần/ngày/người; timeout provider 55 giây. Kết quả phải được xem và chủ động áp dụng vào nháp; AI không có công cụ duyệt/cấp số/phát hành.
 
-API key/model chưa được thêm, function chưa deploy và chưa gọi provider thật trong đợt này. Cần kiểm tra chất lượng OCR, độ trễ và hạn mức chi phí bằng tài liệu thử được phép gửi dịch vụ. Tài liệu provider: [PDF/ảnh](https://ai.google.dev/gemini-api/docs/document-processing), [JSON output](https://ai.google.dev/gemini-api/docs/structured-output), [Supabase Auth trong Edge Functions](https://supabase.com/docs/guides/functions/auth).
+API key/model chưa được thêm; function đã deploy và chưa gọi provider thật. HTTP không có Auth bị từ chối với 401 `OFFICE_DENIED`. Cần kiểm tra chất lượng OCR, độ trễ và hạn mức chi phí bằng tài liệu thử được phép gửi dịch vụ. Tài liệu provider: [PDF/ảnh](https://ai.google.dev/gemini-api/docs/document-processing), [JSON output](https://ai.google.dev/gemini-api/docs/structured-output), [Supabase Auth trong Edge Functions](https://supabase.com/docs/guides/functions/auth).
 
 ## Nghiệm thu thực tế trước rollout
 

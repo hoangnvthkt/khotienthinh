@@ -15,7 +15,7 @@ Nguồn: đặc tả 50 mục và 4 ảnh Base Office người dùng cung cấp.
 - Audit tập trung `audit_trail`; ghi event từ backend vào đây, timeline Office lọc theo document. Không gọi logger best-effort từ client.
 - Workflow hiện tại có chủ thể/gate riêng từng nghiệp vụ. Office dùng cấu hình tuyến duyệt tuần tự và snapshot bước duyệt bất biến; không sửa engine của các module khác.
 - Khởi đầu ở workspace có thay đổi ngoài Office; nay Office đã tách sang branch `codex/vioo-office` từ `origin/main` trong checkout riêng. Giữ nguyên thay đổi của các module khác. Không sub-agent, không Docker/local Supabase.
-- Cloud trong `.env` trỏ production; staging cấu hình cũ trả 404. Chủ dự án đã cho phép kiểm thử trong transaction rồi rollback, chưa áp dụng migration.
+- Cloud trong `.env` trỏ production; staging cấu hình cũ trả 404. Ban đầu chủ dự án chỉ cho phép rollback; sau đó đã cho phép áp migration production. Đã kích hoạt theo [báo cáo triển khai](production-rollout.md).
 
 ## Thiết kế
 
@@ -25,7 +25,7 @@ Nguồn: đặc tả 50 mục và 4 ảnh Base Office người dùng cung cấp.
 - Command RPC kiểm tra actor, quyền, trạng thái, version, idempotency. Nội dung/attachment chỉ đổi khi DRAFT/RETURNED chưa cấp số. Không hard delete văn bản đã phát hành.
 - Cấp số khóa counter trong transaction, unique rule/type/year/sequence và unique document_number. Không cấp trước khi duyệt đủ; số không tái sử dụng.
 - RLS trên mọi bảng Office; private functions + public invoker wrapper; người ngoài phạm vi không được xem confidential bằng REST/RPC/storage. Favorites/follows không tự tạo quyền xem.
-- Workflow/type/rule/folder cấu hình trong DB. Permission dùng scope global/own/assigned/department/project/construction_site hiện có. Không tự cấp quyền nghiệp vụ cho tài khoản thật.
+- Workflow/type/rule/folder cấu hình trong DB. Permission dùng scope global/own/assigned/department/project/construction_site hiện có. Chỉ cấp quyền nghiệp vụ cho tài khoản thật khi được chủ dự án chỉ định; không tự mở quyền toàn công ty.
 
 ## Kế hoạch thực hiện
 
@@ -47,5 +47,5 @@ Rollback: migration additive không đổi nghiệp vụ cũ. Có thể gỡ quy
 
 - Đã triển khai P0/P1 và AI/OCR trên cùng branch `codex/vioo-office`.
 - Đã kiểm thử logic, quyền, Cloud rollback và giao diện responsive; xem [báo cáo](validation.md) để biết số test và bằng chứng hiện hành.
-- Chưa kích hoạt Office trên Cloud; Auth/Storage/push thực tế và cấp số hai phiên đồng thời cần schema đã commit.
+- Đã kích hoạt Office trên Cloud và app production; đã kiểm tra luồng quyền hai tài khoản bằng RPC/rollback. Auth trên browser, Storage/push thiết bị thật và cấp số hai phiên đồng thời còn cần nghiệm thu.
 - [Kế hoạch tổng thể](roadmap.md) và [runbook kích hoạt](activation.md) ghi rõ các tích hợp bên ngoài còn lại.

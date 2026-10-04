@@ -1,6 +1,6 @@
 # Vioo Office — trạng thái trên branch riêng
 
-Branch `codex/vioo-office`, nền `origin/main` tại `6e32def`. Mọi mã nguồn Office nằm trong checkout riêng; không merge main, không sửa nhánh làm việc khác. Theo chỉ dẫn hiện hành, Supabase Cloud chỉ được kiểm thử trong transaction rồi rollback. Không Docker/local, không sub-agent.
+Branch `codex/vioo-office`, nền `origin/main` tại `6e32def`. Mọi mã nguồn Office nằm trong checkout riêng; không merge main, không sửa nhánh làm việc khác. Chủ dự án đã cho phép kích hoạt production; migration, quyền hai tài khoản, tuyến duyệt, Edge Function và frontend đã triển khai. Các dữ liệu kiểm thử nghiệp vụ vẫn rollback. Không Docker/local, không sub-agent.
 
 | Nhóm | Trạng thái |
 | --- | --- |
@@ -11,13 +11,13 @@ Branch `codex/vioo-office`, nền `origin/main` tại `6e32def`. Mọi mã ngu�
 | AI/OCR: đọc PDF/ảnh, metadata, tóm tắt, hỏi đáp, tìm kiếm, soạn | Đã có backend/UI; chưa cấu hình key/model hay gọi provider thật |
 | Digital signature integration | Chưa tích hợp; cần provider, chứng thư và quy trình ký chính thức |
 | Command Center | Service độc lập UI đã sẵn sàng; chưa có module host để gắn actions vào giao diện |
-| Kích hoạt production | Chưa thực hiện; migration vẫn chưa áp dụng |
+| Kích hoạt production | Đã áp migration, cấu hình hai tài khoản, deploy function/frontend; [báo cáo](production-rollout.md) |
 
 ## Bước vận hành còn lại
 
-1. Review migration duy nhất và cấu hình quyền/người duyệt/kho/sổ số; xác định mốc số chuyển đổi nếu dùng tiếp sổ cũ.
-2. Khi được phép kích hoạt Cloud, triển khai đúng migration và frontend. Nghiệm thu bằng Auth thật, tệp thật qua Storage HTTP, thông báo/push trên thiết bị thật và hai phiên cấp số đồng thời.
-3. Thêm secrets AI/model, deploy `office-assistant`, kiểm tra OCR bằng tài liệu được phép gửi provider. Không có khóa frontend hay provider fallback tự bật.
+1. Khi mở rộng dùng thực tế, cấp quyền Office cho người nhận qua RBAC và xác định mốc số nếu nối sổ cũ. Migration không tự nhập dữ liệu Base.
+2. Nghiệm thu bằng Auth trên browser, tệp thật qua Storage HTTP, thông báo/push trên thiết bị thật và hai phiên cấp số đồng thời. Luồng quyền hai tài khoản đã đạt bằng RPC transaction rollback.
+3. Thêm secrets AI/model cho `office-assistant` đã deploy, kiểm tra OCR bằng tài liệu được phép gửi provider. Không có khóa frontend hay provider fallback tự bật.
 4. Chọn provider/chứng thư ký số và host Command Center trước khi triển khai hai tích hợp còn lại. Đây là phần chưa hoàn tất, không có nút giả báo đã ký.
 
 [Bằng chứng kiểm thử](validation.md) · [Runbook kích hoạt](activation.md) · [Kế hoạch P1](p1-plan.md)
