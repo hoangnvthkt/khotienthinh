@@ -690,3 +690,57 @@ Mockup: `.superpowers/review/work-plan/v13.html` (dữ liệu `tools/v13-data.mj
 30. Xuất kho ở V1-3 tự lấy quy cách nhập trước; chọn tay ở V2. Đồng ý?
 31. Hàng cũ để "Chưa ghi quy cách", không tự gắn. Thủ kho muốn thì chuyển quy cách sau khi kiểm thực tế. Đồng ý?
 32. "Phụ kiện tôn": lần mua sau cấp mã riêng cho phụ kiện mua thường xuyên (đai kẹp tôn seam, cóc kẹp, chặn trên dưới…), thứ lặt vặt một lần để "Không qua kho". Đồng ý?
+
+### Trả lời của chủ SP (04/10/2026)
+
+- 28–32: đồng ý tất cả. Bulong "Cái" / "Bộ" theo câu 29: chỉ gộp khi người Cấp mã xác nhận cùng vật tư.
+- Yêu cầu thêm: một khu vực phân quyền kho "ai làm được gì" (ví dụ việc chị Linh, chị Mơ đang làm), để sau này chọn người khác cùng chức năng → mục 17.
+
+## 17. Phân quyền kho (mockup 04/10/2026)
+
+Mockup: `.superpowers/review/work-plan/v14.html` (dữ liệu `tools/v14-data.mjs`, chỉ đọc). Mở rộng màn **Người phụ trách** (V1-2) thành **Kho vật tư → Phân quyền kho**. Xem: mọi người có quyền xem kho; sửa: chỉ Admin.
+
+### 17.1 Hiện trạng (dữ liệu thật)
+
+- 25 ô quyền kỹ thuật cho kho (`wms.*`, `system.wms.*`, `settings.warehouses.*`); người dùng khó biết ô nào là việc gì.
+- Chị Linh (Chuyên viên Vật tư): Cấp mã — 12 lần duyệt đề xuất mã từ 01/07. Chị Mơ: Cấp mã + Duyệt ngoại lệ. Cả hai còn ô cũ "Quản trị danh mục".
+- **Ô cũ "Quản trị danh mục" (`wms.master_data.manage`) thực ra đang là quyền tạo / sửa / xóa kho** ở máy chủ (bảng `warehouses`, `warehouse_types`). Cài đặt dùng ô khác (`settings.warehouses.manage`) nên ẩn nút, nhưng máy chủ vẫn cho Admin, chị Linh, chị Mơ tạo / sửa / xóa kho. Thủ kho cũng đang ngầm có quyền này với kho mình giữ.
+- **Chị Nguyễn Thị Hương** (Kế toán kho + Khóa kỳ) **không có quyền xem kho**.
+- 27 ô quyền lẻ kiểu cũ còn cấp theo kho: 21 ô đã nằm trong Thủ kho (Luật 7, Minh 10, Đặng Hương 4); Dương 1, Đảng 2 chưa thuộc việc nào.
+- Mẫu quyền ở Cài đặt → Người dùng: "Quản lý kho" (18 ô kho cũ) và "Cán bộ vật tư, kho" (tạo phiếu…) — áp cho người mới sẽ cấp lại quyền thao tác **mọi kho** đã dọn ở V1-2.
+
+### 17.2 Thiết kế: giao 8 việc, theo bậc
+
+| Bậc | Việc | Phạm vi | Làm được gì | Đang giữ |
+|---|---|---|---|---|
+| Xem | Xem kho | mọi kho / từng kho | Tồn, thẻ kho, phiếu, danh mục | 35 mọi kho; Luật, Minh theo kho |
+| Đề xuất | Đề xuất mã mới | công ty | Gửi đề xuất mã | Thủ kho, Cấp mã tự có |
+| Thao tác | Thủ kho | từng kho | Nhập, xuất, chuyển, kiểm kê, lập xuất hủy | Luật, Minh, Thủy, Đặng Hương |
+| Danh mục | Cấp mã | công ty | Cấp mã, sửa / ngừng dùng, quy cách, gộp mã | Linh, Mơ |
+| Duyệt | Duyệt ngoại lệ | công ty | Xuất hủy, điều chỉnh, chênh lệch kiểm kê | Mơ (Admin luôn có) |
+| Ghi sổ | Kế toán kho | công ty | Bổ sung giá, đảo phiếu, MISA | Nguyễn Thị Hương, Thủy |
+| Ghi sổ | Khóa kỳ | một người | Khóa sổ tháng | Nguyễn Thị Hương |
+| Quản trị | Quản lý danh sách kho | công ty | Tạo / sửa / đóng kho | Admin, Linh, Mơ (qua ô cũ) |
+
+- Cấp mã, Duyệt ngoại lệ, Kế toán kho tự kèm Xem mọi kho. Thủ kho tự kèm Xem kho mình giữ và Đề xuất mã.
+- "Phân quyền kho" (màn này) luôn chỉ Admin.
+
+### 17.3 Ba cách xem
+
+1. **Theo việc**: thẻ từng việc theo bậc, thêm / bỏ người ngay trên thẻ.
+2. **Theo người**: bảng người × việc. Bấm một người → ngăn kéo:
+   - **Điền theo mẫu chức năng**: Người xem kho · Thủ kho · Chuyên viên Vật tư (như chị Linh) · Phụ trách Vật tư (như chị Mơ) · Kế toán kho (như chị Thủy) · Kế toán trưởng (như chị Nguyễn Thị Hương). Chọn "thêm vào việc đang có" hoặc "thay việc đang có".
+   - **Giống một người**: chép đúng các việc của người đó.
+   - **Bàn giao**: chuyển hết việc kho của người này sang người khác trong một lần, tùy chọn giữ Xem kho.
+   - Tick từng việc, từng kho để chỉnh riêng.
+3. **Quyền cũ cần dọn**: gom theo người + kho; gỡ ô đã nằm trong Thủ kho; "Cho làm Thủ kho" hoặc gỡ ô chưa thuộc việc nào.
+
+Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng tiếp `save_wms_owners_v1` mở rộng). Tách nhiệm giữ như V1-2.
+
+### 17.4 Câu hỏi cho chủ SP
+
+33. Đổi "Người phụ trách" thành "Phân quyền kho", giao theo 8 việc như bảng 17.2. Đồng ý?
+34. 6 mẫu chức năng + "Giống một người" + "Bàn giao" như 17.3. Đồng ý?
+35. Quản lý danh sách kho (tạo / sửa / xóa kho): chị Linh, chị Mơ đang có qua ô cũ. Đề xuất chỉ Admin. Anh muốn giữ ai?
+36. Gỡ 21 ô lẻ đã nằm trong Thủ kho (không mất thao tác nào). Dương / Đảng: anh tự bấm trên màn này. Đồng ý?
+37. Mẫu ở Cài đặt → Người dùng: phần kho chỉ còn Xem kho; việc kho khác giao ở màn này. Đồng ý?
