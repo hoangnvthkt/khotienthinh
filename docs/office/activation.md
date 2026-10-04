@@ -2,7 +2,7 @@
 
 ## Phạm vi bàn giao hiện tại
 
-Chỉ source branch `codex/vioo-office` được thay đổi. Cloud hiện tại chỉ đã chạy transaction/rollback; không có bảng Office hoặc migration history đã commit. Không thực hiện các bước triển khai dưới đây trong đợt kiểm thử này.
+Chỉ source branch `codex/vioo-office` được thay đổi. Cloud hiện tại chỉ đã chạy transaction/rollback; không có bảng Office hoặc migration history đã commit trên Cloud production trong `.env`. GitHub tự tạo Vercel Preview khi push; Supabase Preview đang lỗi foreign key của migration Finance có sẵn (xem validation). Không thực hiện các bước triển khai dưới đây trong đợt kiểm thử này.
 
 ## Database và quyền
 

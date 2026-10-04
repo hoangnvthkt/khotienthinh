@@ -1,0 +1,26 @@
+{
+  "sourceCommit": "a11444bd408131f4d5068b641b90253b0ac3bd92",
+  "checks": [
+    {
+      "name": "Supabase Preview",
+      "status": "completed",
+      "conclusion": "failure",
+      "url": "https://supabase.com/dashboard/project/csbnrhhavdxkhpfyhehi",
+      "summary": "```\nERROR: insert or update on table \"finance_internal_partners\" violates foreign key constraint \"finance_internal_partners_supplier_id_fkey\" (SQLSTATE 23503)\nKey (supplier_id)=(5ecf36bb-ab2c-42fc-874b-4950859a91d7) is not present in table \"business_partners\".\nAt statement: 36\n-- Đơn vị nội bộ: \"Công trình RICO\" là công trình của công ty, không phải NCC (chủ sản phẩm xác nhận 02/10).\ninsert into public.finance_internal_partners (supplier_id, reason)\nvalues ('5ecf36bb-ab2c-42fc-874b-4950859a91d7', 'Công trình của công ty — PO-462 là điều chuyển nội bộ RICO → DA29 (chủ sản phẩm xác nhận 02/10/2026)')\n```"
+    },
+    {
+      "name": "Vercel Preview Comments",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://vercel.com/github",
+      "summary": "💬 0 unresolved, 0 resolved. [Go to feedback](https://vercel.live/open-feedback/khotienthinh-git-codex-vioo-office-hoangnvthkts-projects.vercel.app?via=pr-comment-feedback-link)"
+    },
+    {
+      "name": "Typecheck, test and build",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/hoangnvthkt/khotienthinh/actions/runs/37202324357/job/111436375047",
+      "summary": null
+    }
+  ]
+}

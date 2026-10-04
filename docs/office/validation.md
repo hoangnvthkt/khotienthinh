@@ -2,7 +2,7 @@
 
 ## Trạng thái
 
-Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex/vioo-office`, nền `origin/main` tại `6e32def`. **Chưa áp migration, chưa cấp quyền cho tài khoản thật, chưa deploy frontend hoặc Edge Function.** Backend kiểm thử trên Supabase Cloud trong transaction rồi rollback theo chỉ dẫn của chủ dự án; không Docker/local và không sub-agent.
+Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex/vioo-office`, nền `origin/main` tại `6e32def`. **Chưa áp migration lên Cloud production trong `.env`, chưa cấp quyền cho tài khoản thật và chưa triển khai production.** Backend kiểm thử trên Supabase Cloud trong transaction rồi rollback theo chỉ dẫn của chủ dự án; không Docker/local và không sub-agent.
 
 Đây là module dùng service/RPC thật. Fixture UI chỉ phục vụ kiểm thử. Việc chưa kích hoạt database không được che bằng dữ liệu demo trong ứng dụng thật.
 
@@ -36,6 +36,14 @@ Mã nguồn P0, toàn bộ P1 và AI/OCR đã được triển khai trên `codex
 Cloud kiểm tra: lifecycle đủ 4 nhóm, duyệt đúng thứ tự, cấp số/idempotency, immutable content, recipient/receipt/ack, stale edit, templates/history, links/reverse privacy, hủy/hết hạn, quota AI, Storage metadata/RLS và notification. Kịch bản phòng ban xác nhận người đúng đơn vị được xem, người ngoài bị chặn, tag đơn vị thứ hai mới có quyền và đúng một thông báo/người. Đường query tối ưu được so sánh với quyền xem từng văn bản cho cả 7 persona thử nghiệm.
 
 Browser dùng production components/service adapter với fixtures và file blob trong bộ nhớ, không kết nối Supabase. Kích thước 1440×1050, 820×1180, 390×844 cùng WebKit iPhone 13. Kiểm tra tiêu đề/nội dung dài, bảng, xác nhận đọc, tag đơn vị, định dạng/dán an toàn, upload ảnh, hoàn tác/làm lại, lưu và xóa ảnh không mất văn bản. Đã xem ảnh desktop/tablet/mobile. **Đây là mô phỏng trình duyệt, chưa phải kiểm thử trên điện thoại vật lý.**
+
+## GitHub và preview tự động
+
+PR nháp [#95](https://github.com/hoangnvthkt/khotienthinh/pull/95) trên đúng branch, source commit `a11444b`. [GitHub CI](https://github.com/hoangnvthkt/khotienthinh/actions/runs/37202324357) đã PASS typecheck, 3.016 tests, migration/query checks và build trên Ubuntu/Node của CI.
+
+Repository tự tạo Vercel Preview khi push (SUCCESS). Tích hợp **Supabase Preview thất bại** khi dựng database mới tại migration có sẵn trên main `20261006090000_finance_k3a_payables.sql`: insert `finance_internal_partners` tham chiếu supplier chưa có trong `business_partners` (`finance_internal_partners_supplier_id_fkey`, SQLSTATE 23503). File Finance không thay đổi so với base `6e32def`. Không sửa migration Finance đã tồn tại, tạo đối tác giả hoặc bỏ constraint chỉ để làm preview xanh. Đây là giới hạn dựng preview toàn repository, không phải bằng chứng nghiệm thu Office end-to-end. [Kết quả checks](evidence/github-checks.json).
+
+Không chủ động deploy Cloud/Edge Function trong task. Trạng thái rollback sạch trong báo cáo áp dụng **Cloud production lấy từ `.env`**; không suy diễn trạng thái database preview do GitHub integration tạo. Postflight production được chạy lại sau khi PR được tạo và vẫn sạch.
 
 ## Hiệu năng đo được
 
