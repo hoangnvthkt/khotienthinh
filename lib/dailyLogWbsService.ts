@@ -94,6 +94,18 @@ export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
   };
 }
 
+/** Một mũi thi công đã báo cáo gần đây và phiếu gần nhất của mũi đó trước ngày đang ghi. */
+export interface DailyLogRecentArea {
+  code: string;
+  name: string;
+  lastDate?: string | null;
+  lastAuthorName?: string | null;
+  lastAuthorUserId?: string | null;
+  items: Array<{ taskId: string; workBoqItemId?: string | null; forecastFinishDate?: string | null; forecastChangeReason?: string | null; cumulativePercent?: number | null }>;
+  labor: Array<Omit<DailyLogLaborInput, 'workItemClientKey'> & { taskId: string }>;
+  machines: Array<Omit<DailyLogMachineInput, 'workItemClientKey'> & { taskId: string }>;
+}
+
 export interface CreateDailyLogSourceInput {
   commandId: string;
   projectId: string;
@@ -429,6 +441,15 @@ export const dailyLogWbsService = {
 
   getTodayBoard(input: { projectId: string; constructionSiteId?: string | null; date: string }): Promise<DailyLogTodayBoard> {
     return callRpc('get_daily_log_today_board_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_date: input.date,
+    });
+  },
+
+  /** Mũi đã báo cáo 30 ngày gần đây + phiếu gần nhất của từng mũi (để chọn mũi và chép phiếu). */
+  getRecentAreas(input: { projectId: string; constructionSiteId?: string | null; date: string }): Promise<DailyLogRecentArea[]> {
+    return callRpc('get_daily_log_recent_areas_v1', {
       p_project_id: input.projectId,
       p_construction_site_id: input.constructionSiteId || null,
       p_date: input.date,

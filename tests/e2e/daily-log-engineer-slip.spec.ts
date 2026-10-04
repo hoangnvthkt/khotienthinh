@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { engineerBundle } from '../daily-log/engineer-bundle';
-const workNotes = async (page: any) => {
-  await page.getByRole('button', { name: /Công tác thực hiện/ }).filter({ visible: true }).first().click();
-  return page.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({ visible: true });
-};
+// v3: công tác luôn mở ngay trên dòng hạng mục.
+const workNotes = async (page: any) => page.getByRole('textbox',{name:'Công tác thực hiện',exact:true}).filter({ visible: true }).first();
 test('duplicate area creation offers the existing slip rather than trapping an editable form', async ({page}) => {
   await page.route('**/rest/v1/rpc/*', async route => {
     const name = new URL(route.request().url()).pathname.split('/').pop();
@@ -11,16 +9,13 @@ test('duplicate area creation offers the existing slip rather than trapping an e
       body:JSON.stringify(name === 'create_daily_log_source_v2' ? {code:'23505',message:'DAILY_LOG_SOURCE_AREA_EXISTS',details:JSON.stringify({contributionId:'source-A'})} : engineerBundle)});
   });
   await page.goto('/tests/daily-log/engineer-fixture.html?workspace');
-  await page.getByRole('button',{name:'Tạo phiếu khu vực khác'}).click();
-  await page.getByLabel('Mã khu vực mới').fill('A'); await page.getByLabel('Tên khu vực mới').fill('Khu A');
-  await page.getByRole('button',{name:'Tạo phiếu',exact:true}).click();
-  await expect(page.getByLabel('Mã khu vực mới')).toBeEnabled();
+  await page.getByRole('combobox',{name:'Mũi thi công'}).fill('Khu A');
+  await page.getByRole('button',{name:'+ Tạo mũi mới "Khu A"'}).click();
   await page.getByRole('button',{name:'Mở phiếu có sẵn'}).click();
   await expect(page.getByText('Nội dung cũ', { exact: true })).toBeVisible();
 });
-test('work notes and issues are bullet lists under each item, collapsed until opened', async ({ page }) => {
+test('work notes are bullet lists on each item; issues open on demand', async ({ page }) => {
   await page.goto('/tests/daily-log/engineer-fixture.html');
-  await expect(page.getByRole('textbox',{name:'Công tác thực hiện',exact:true})).toHaveCount(0);
   const work = await workNotes(page);
   await work.fill('');
   await page.keyboard.type('Ép 3 cọc');
@@ -30,12 +25,13 @@ test('work notes and issues are bullet lists under each item, collapsed until op
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await expect(work).toHaveValue('- Ép 3 cọc\n- Nghiệm thu tim\n- ');
+  await page.getByRole('button',{name:'Ghi sự cố / vướng mắc'}).filter({ visible: true }).click();
   const issues = page.getByRole('textbox',{name:'Sự cố / vướng mắc',exact:true}).filter({ visible: true });
   await issues.click();
   await expect(issues).toHaveValue('- ');
   await expect(work).toHaveValue('- Ép 3 cọc\n- Nghiệm thu tim');
   await page.keyboard.type('Máy ép hỏng 2 giờ');
-  await expect(page.getByRole('button', { name: /2 công tác/ }).filter({ visible: true })).toBeVisible();
+  await expect(issues).toHaveValue('- Máy ép hỏng 2 giờ');
 });
 test('one quantity input derives today/cumulative and mode switch preserves the result', async ({ page }) => {
   await page.goto('/tests/daily-log/engineer-fixture.html');
@@ -43,7 +39,7 @@ test('one quantity input derives today/cumulative and mode switch preserves the 
   await expect(entry).toHaveValue('12,5');
   await entry.fill('12');
   await expect(page.getByText('52 m³', { exact: true }).first()).toBeVisible();
-  await page.getByLabel('Cách nhập khối lượng').filter({ visible: true }).selectOption('cumulative_quantity');
+  await page.getByRole('group',{name:'Cách nhập khối lượng'}).filter({ visible: true }).getByRole('button',{name:'Lũy kế',exact:true}).click();
   await expect(page.getByLabel('Khối lượng lũy kế', { exact: true }).filter({ visible: true })).toHaveValue('52');
   await expect(entry).toHaveCount(0);
 });
@@ -92,11 +88,13 @@ test('empty draft saves but cannot send; submitted slip is a report', async ({pa
   await expect(page.getByText('Đã gửi để tổng hợp').first()).toBeVisible();
   await expect(page.locator('input, textarea, select')).toHaveCount(0);
 });
-test('labor/machine + adds a line in place and the forecast date lives on the main table', async ({ page }) => {
+test('crews are typed in place on the item row and the forecast date sits beside the quantity', async ({ page }) => {
   await page.goto('/tests/daily-log/engineer-fixture.html');
-  await page.getByRole('button', { name: 'Thêm nhân công cho Bê tông móng' }).filter({ visible: true }).click();
-  await expect(page.getByLabel('Nguồn cung cấp nhân công 1').filter({ visible: true })).toBeVisible();
-  await expect(page.getByText('1 người', { exact: true }).filter({ visible: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Thêm tổ đội cho Bê tông móng' }).filter({ visible: true }).fill('Tổ anh Minh');
+  await page.getByRole('button', { name: 'Thêm "Tổ anh Minh" (gõ tay, chờ gắn hợp đồng)' }).click();
+  await expect(page.getByLabel('Số người').filter({ visible: true })).toHaveValue('1');
+  await page.getByRole('button', { name: 'Thêm 1 người' }).filter({ visible: true }).click();
+  await expect(page.getByLabel('Số người').filter({ visible: true })).toHaveValue('2');
   const date = page.getByLabel('Dự kiến hoàn thành Bê tông móng').filter({ visible: true });
   await expect(date).toHaveValue('2026-09-30');
   await expect(page.getByLabel('Lý do thay đổi ngày hoàn thành')).toHaveCount(0);
