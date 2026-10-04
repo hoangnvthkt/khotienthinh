@@ -3,9 +3,10 @@ import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClo
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
-import { financeService, type CashAccount, type CashPlan, type FinanceCash } from '../../lib/financeService';
+import { financeService, type CashAccount, type CashPlan, type FinanceCash, type FinanceSiteFunds } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, shortMoney, viDate } from './financeUi';
+import { SiteFundReview } from './SiteFundViews';
 import { ACCOUNT_KINDS, AccountDrawer, CashOpeningDrawer, EXPENSE_CATEGORIES, ExpenseDrawer, MovementDrawer, PlanDrawer, RECEIPT_CATEGORIES, ReconDrawer } from './CashDrawers';
 
 // Tài chính → Thu chi & quỹ: công ty có bao nhiêu tiền, ở tài khoản nào; tiền vào ra; 8 tuần tới có thiếu tiền không.
@@ -26,7 +27,9 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState<{ kind: 'account'; account?: CashAccount } | { kind: 'opening'; account: CashAccount } | { kind: 'recon'; account: CashAccount }
     | { kind: 'movement'; mode: 'receipt' | 'transfer' } | { kind: 'plan'; plan?: CashPlan } | { kind: 'expense' } | null>(null);
-  const load = useCallback(() => { setError(null); financeService.cash({ month: month ? `${month}-01` : undefined, accountId: accountId || undefined }).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, [month, accountId]);
+  const [site, setSite] = useState<FinanceSiteFunds | null>(null);
+  const load = useCallback(() => { setError(null); financeService.cash({ month: month ? `${month}-01` : undefined, accountId: accountId || undefined }).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e)));
+    financeService.siteFunds().then(setSite).catch(() => setSite(null)); }, [month, accountId]);
   useEffect(load, [load]);
   if (error) return <StateBox kind="error" title="Chưa tải được Thu chi & quỹ" message={error} onRetry={load} />;
   if (!data) return <StateBox kind="loading" title="Đang tải thu chi…" />;
@@ -72,6 +75,8 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
             <button type="button" disabled={busy} className={primaryBtn} onClick={async () => { if (await confirm({ title: 'Xác nhận?', targetName: `${m.code} · ${money(m.amount)} đ`, confirmText: 'Xác nhận', actionLabel: 'Xác nhận', intent: 'success', countdownSeconds: 0, warningText: 'Đã đối chiếu chứng từ; ghi vào sổ thu chi.' })) void run(() => financeService.decideCashMovement({ id: m.id, expectedRowVersion: m.rowVersion, action: 'confirm' }), 'Đã xác nhận — đã ghi sổ.'); }}><Check size={14} />Xác nhận</button></>}</li>)}
       </ul>
     </section>}
+
+    {site && <SiteFundReview data={site} onChanged={() => { load(); onChanged(); }} />}
 
     {active.length > 0 && <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <section className="min-w-0 rounded-2xl border border-border bg-card p-4 shadow-sm">

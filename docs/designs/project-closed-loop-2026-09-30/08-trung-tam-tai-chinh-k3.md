@@ -537,3 +537,32 @@ phiếu chi khác nhân công SMB 3 tỷ → thêm "Duyệt vượt ngân sách"
 xong tự ghi vốn cấp 1,185 tỷ, quỹ về 0; đảo → vốn cấp đảo, quỹ về 33,8 tỷ; cấp / thu hồi vốn tay (người khác, thu hồi vượt, ngày tương lai,
 đảo làm vốn âm bị chặn); chuyển tiền sang quỹ công trường SMB = chi của quỹ; PO-557 (SMB, vượt dự toán vật tư) → chờ duyệt vượt ngân sách,
 kế toán không duyệt được, TGĐ duyệt → người duyệt đơn duyệt → đã duyệt; Quản trị chỉ Quản trị Tài chính sửa.
+
+## 19. Tài chính đợt 3b-2 — Phân bổ tháng + Quỹ công trường (04/10/2026)
+
+Chủ SP duyệt mockup `cb-v2` + 8 câu (đều phương án a): lương theo công trường từ bảng lương đã duyệt × công ở công trường (bảng công chốt
++ chấm công), sửa số công có lý do, người khác chốt → CPL1; chi phí chung = phiếu chi khác không gắn dự án + phần lương văn phòng, chia theo
+tiền CĐT trả trong tháng → CPQL; tháng không có tiền CĐT trả thì để lại công ty; nhà máy KCT / văn phòng / dự án không có HĐ CĐT = chi phí
+chung; chỉ phân bổ từ 10/2026; CHT ghi khoản chi quỹ công trường trên điện thoại, kế toán duyệt từng khoản; khoản trả lại bổ sung hoặc nộp lại
+tiền, chi quá số giữ → công ty nợ CHT; tab Tài chính trong Dự án chỉ xem, hủy 2 bản quyết toán nháp kiểu cũ. Cập nhật mô tả 4 quyền Tài chính.
+
+Migration `20261008134400_finance_allocation_site_fund.sql`.
+
+**Phân bổ tháng** — `finance_allocation_runs` (một kỳ đang lập / chờ chốt / đã chốt mỗi tháng; đã hủy, đã đảo giữ lịch sử),
+`finance_allocation_staff` (lương gộp, số công từng dự án + văn phòng, số gợi ý, đã sửa + lý do), `finance_allocation_pool` (phiếu chi khác
+tự lấy, phần lương văn phòng, khoản thêm tay có lý do; bỏ / tính), `finance_allocation_lines` (kết quả theo dự án × lương / chi phí chung).
+`finance_allocation_build` dựng lại kỳ nháp, không ghi đè số công đã sửa. Gửi chốt (Ghi nhận) cần bảng công tháng `closed` và có phiếu lương
+`confirmed`/`paid`; chốt (Xác nhận, khác người lập) ghi `project_transactions` ngày cuối tháng (`finance_allocation:<kỳ>:<dự án>:<loại>`);
+đảo ghi dòng âm. Quỹ dự án tính phân bổ (dòng `allocation`, đảo ghi lại khoản thu ngày đảo).
+
+**Quỹ công trường** — `cash_funds.holder_user_id` (người giữ quỹ, được báo khi giao); `finance_site_expenses` (mã `QCT-…`, khoản mục,
+ảnh chứng từ trong `site/<tài khoản>/…` — chính sách lưu trữ riêng cho người giữ quỹ). Màn `/site-fund` "Quỹ công trường của tôi" (mở cho mọi
+người đăng nhập, máy chủ chỉ trả quỹ mình giữ; lối tắt ở trang Nhân viên). Kế toán duyệt / trả lại ở Thu chi & quỹ (người duyệt khác người lập
+và người giữ quỹ, chọn lại khoản mục được); duyệt = sổ thu chi trừ quỹ công trường + chi phí dự án; đảo (Xác nhận, lý do) ghi ngược cả hai.
+
+**Kiểm thử** rollback (`tools/cb2-test.mjs`, dời mốc về 01/09 và giả lập bảng công T9 chốt + bảng lương T9 duyệt + tiền CĐT T9): tháng chưa
+kết thúc / trùng kỳ bị chặn; 4 người: DA29 12,5 tr, SMB 35,1 tr lương; sửa công không lý do / dự án lạ bị chặn, làm mới giữ số đã sửa; chi phí
+chung 190,4 tr (bỏ trả nợ gốc 500 tr) chia SMB 118,4 tr / DA29 72 tr theo tiền CĐT 12,5 / 7,6 tỷ; bảng công chưa chốt không gửi được; tự chốt bị
+chặn; chốt ghi 4 dòng chi phí 30/09 + quỹ dự án; đảo về 0. Quỹ công trường: giao CHT, CHT chỉ thấy quỹ mình + được tải chứng từ, ghi 2 khoản,
+CHT không tự duyệt, duyệt → quỹ −4,5 tr (công ty nợ CHT) + chi phí CPMTC, quỹ dự án không đổi; trả lại cần lý do → CHT bổ sung gửi lại lần 2;
+đảo → về 0. Hai bản quyết toán cũ đã hủy; quyền "Xem Tài chính toàn công ty".

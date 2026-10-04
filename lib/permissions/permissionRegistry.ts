@@ -122,7 +122,7 @@ const authorizationAdminModule: PermissionModuleDefinition = {
   })),
 };
 
-// Tài chính (K3a): công nợ NCC toàn công ty. Tách nhiệm: người xác nhận luôn khác người ghi nhận (server chặn).
+// Tài chính: phải thu, phải trả, thu chi & quỹ, chi phí & ngân sách, phân bổ tháng toàn công ty. Tách nhiệm: người xác nhận luôn khác người ghi nhận (server chặn).
 const financeModule: PermissionModuleDefinition = {
   code: 'system.finance',
   label: 'Tài chính',
@@ -130,7 +130,7 @@ const financeModule: PermissionModuleDefinition = {
   legacyModuleKey: 'FINANCE',
   sortOrder: 55,
   actions: ([
-    ['view', 'Xem công nợ toàn công ty', 10],
+    ['view', 'Xem Tài chính toàn công ty', 10],
     ['record', 'Ghi nhận', 20],
     ['confirm', 'Xác nhận', 30],
     ['manage', 'Quản trị Tài chính', 40],

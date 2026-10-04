@@ -13,9 +13,9 @@ import { CostCutoverSection } from './CostCutoverSection';
 
 type AdminTab = 'general' | 'approval' | 'advance' | 'cost' | 'roles';
 const ROLE_ROWS: Array<{ key: 'view' | 'record' | 'confirm' | 'manage'; label: string; work: string }> = [
-  { key: 'view', label: 'Xem công nợ toàn công ty', work: 'Xem Phải trả, đề nghị chi, tạm ứng mọi dự án' },
-  { key: 'record', label: 'Ghi nhận', work: 'Ghi nợ phiếu nhập / bảng đối soát, lập đề nghị chi và tạm ứng, đối chiếu đầu kỳ, ghi chi ngoài, NCC hoàn tạm ứng, cấn trừ tay, lập ngân sách dự án, khai đầu kỳ quỹ dự án' },
-  { key: 'confirm', label: 'Xác nhận', work: 'Xác nhận đã chi (UNC), xác nhận chi ngoài, chốt đầu kỳ (cả đầu kỳ quỹ dự án), hủy công nợ, xác nhận hoàn / chuyển tạm ứng — luôn khác người lập' },
+  { key: 'view', label: 'Xem Tài chính toàn công ty', work: 'Xem Tổng quan, Phải thu, Phải trả, Thu chi & quỹ, Chi phí & ngân sách, quỹ dự án, phân bổ tháng mọi dự án' },
+  { key: 'record', label: 'Ghi nhận', work: 'Ghi nợ phiếu nhập / bảng đối soát, lập đề nghị chi và tạm ứng, đối chiếu đầu kỳ, ghi chi ngoài, NCC hoàn tạm ứng, cấn trừ tay, lập ngân sách dự án, khai đầu kỳ quỹ dự án, lập phân bổ tháng, duyệt / trả lại khoản chi quỹ công trường' },
+  { key: 'confirm', label: 'Xác nhận', work: 'Xác nhận đã chi (UNC), xác nhận chi ngoài, chốt đầu kỳ (cả đầu kỳ quỹ dự án), chốt / đảo phân bổ tháng, đảo khoản chi quỹ công trường, hủy công nợ, xác nhận hoàn / chuyển tạm ứng — luôn khác người lập' },
   { key: 'manage', label: 'Quản trị Tài chính', work: 'Xem Tổng quan Ban giám đốc, duyệt ngân sách dự án, sửa hạn thanh toán, ma trận duyệt, thông số tạm ứng / ngân sách / cấp vốn, mốc chi phí MISA' },
 ];
 const RULES: Array<{ group: string; items: Array<{ text: string; where?: AdminTab }> }> = [
@@ -46,6 +46,13 @@ const RULES: Array<{ group: string; items: Array<{ text: string; where?: AdminTa
     { text: 'Đơn mua (Mua hàng) vượt dự toán vật tư: người duyệt vượt ngân sách duyệt ở Tài chính trước, sau đó người duyệt đơn mới duyệt được.' },
     { text: 'Quỹ dự án: đầu kỳ 30/09 theo MISA, người lập ≠ người chốt; khoản chi làm quỹ âm thêm bước "Cấp vốn dự án", chi xong tự ghi vốn công ty cấp.', where: 'cost' },
     { text: 'Cấp vốn / thu hồi vốn tay chỉ người cấp vốn ghi, bắt buộc lý do; thu hồi không vượt số đang ứng; khoản tự ghi khi chi chỉ đảo bằng cách đảo phiếu chi.' },
+  ] },
+  { group: 'Phân bổ tháng & quỹ công trường', items: [
+    { text: 'Chỉ phân bổ tháng đã kết thúc, từ 10/2026 (trước đó MISA đã phân bổ); gửi chốt khi HR đã chốt bảng công và bảng lương tháng đã duyệt.' },
+    { text: 'Lương = lương gộp × số công ở công trường của dự án có HĐ chủ đầu tư; sửa số công bắt buộc lý do; phần văn phòng / nhà máy vào chi phí chung.' },
+    { text: 'Chi phí chung chia theo tiền chủ đầu tư trả trong tháng; tháng không có tiền CĐT trả thì để lại công ty. Kế toán lập, người khác chốt; sai thì đảo cả kỳ.' },
+    { text: 'Quỹ công trường: người giữ quỹ là một tài khoản người dùng, ghi khoản chi (không cần quyền Tài chính); người duyệt khác người lập và khác người giữ quỹ; đảo có lý do.' },
+    { text: 'Chi quá số đang giữ vẫn ghi được — quỹ âm là công ty đang nợ người giữ quỹ, lần cấp quỹ sau bù.' },
   ] },
 ];
 
@@ -341,7 +348,7 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
                 {admins.length > 0 && <span className="text-xs text-muted-foreground">+ Admin: {admins.map(u => u.name).join(', ')}</span>}
               </div></div>; })}
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">Người duyệt chi do ma trận quyết định (mục Duyệt chi & ủy quyền), không cần quyền Ghi nhận / Xác nhận.</p>
+        <p className="mt-2 text-xs text-muted-foreground">Người duyệt chi do ma trận quyết định (mục Duyệt chi & ủy quyền), không cần quyền Ghi nhận / Xác nhận. Người duyệt vượt ngân sách, người cấp vốn cài ở mục Ngân sách & quỹ dự án; người giữ quỹ công trường cài ở Thu chi & quỹ → tài khoản quỹ công trường (không cần quyền Tài chính).</p>
       </section>
       <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
         <h3 className="flex items-center gap-2 font-semibold text-foreground"><Scale size={16} className="text-teal-700" />Ràng buộc đang áp dụng</h3>
