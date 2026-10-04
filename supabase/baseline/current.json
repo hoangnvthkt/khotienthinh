@@ -218,6 +218,7 @@
     "20261004150000_authorization_contract_writes_follow_grants.sql",
     "20261004160000_authorization_room_codes_not_directly_grantable.sql",
     "20261004170000_authorization_revoke_legacy_da_admin.sql",
+    "20261004171911_office_issued_details_and_file_receipts.sql",
     "20261004180000_authorization_retire_label_only_permissions.sql",
     "20261004190000_asset_audit_sessions.sql",
     "20261005090000_procurement_m2d_proactive_orders.sql",

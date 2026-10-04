@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 const project = new URL(process.env.VITE_SUPABASE_URL).hostname.split(".")[0];
 if (!project || !process.env.SUPABASE_ACCESS_TOKEN)
   throw new Error("Load the repository .env");
-const files = [
+const args = process.argv.slice(2);
+const files = args[0] === "--existing" ? args.slice(1) : [
   "supabase/migrations/20261004085552_office_p0_document_lifecycle.sql",
-  ...process.argv.slice(2),
+  ...args,
 ];
+if (!files.length) throw new Error("Provide SQL assertions to execute");
 const chunks = files.map((file) => readFileSync(file, "utf8"));
 if (chunks.some((sql) => /^\s*(commit|rollback|begin)\s*;/im.test(sql)))
   throw new Error("Input must not control the transaction");

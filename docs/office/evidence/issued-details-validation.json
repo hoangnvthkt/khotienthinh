@@ -1,0 +1,12 @@
+{
+  "migrationSha256": "3311d5f41d6288e74244a0419e826e63a9f957cf626e13cc8eceef1cb090fb05",
+  "migration": "20261004171911_office_issued_details_and_file_receipts.sql",
+  "cloudRollback": "PASS: P0, P1, extended acceptance, issued details and private file receipts; all synthetic records rolled back",
+  "unitTests": "3056 passed, 2 skipped",
+  "ui": "CUA: mobile 390px PDF both pages, zoom, image, download count; tablet 820px and desktop 1440px no page overflow",
+  "physicalPhone": "Pending user PWA receipt and tap confirmation",
+  "typecheck": "PASS",
+  "productionBuild": "PASS; PDF viewer lazy chunk and versioned worker/font/CMap/WASM assets",
+  "pwaBuild": "PASS; checker accepts CREATE FUNCTION in cloud baseline as well as CREATE OR REPLACE",
+  "postApplyRollback": "PASS on applied Cloud schema; all P0/P1/extended/issued tests rolled back"
+}

@@ -2,6 +2,8 @@ import { unavailableOfficeAi, type OfficeAiService } from "./officeAiService";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeOfficeFilters } from "./officePresentation";
 import type {
+  OfficePeopleKind,
+  OfficePerson,
   OfficeTemplate,
   OfficeVersion,
   OfficeReport,
@@ -113,6 +115,7 @@ export function createOfficeService(
         withoutAccess: number;
         names: { name: string }[];
       }>("audience", { specs }),
+    people: (id: string, kind: OfficePeopleKind, page = 0) => query<OfficePage<OfficePerson>>("people", { id, kind, page }),
     recipients: (id: string, page = 0, filter = "all") =>
       query<OfficePage<OfficeRecipient>>("recipients", { id, page, filter }),
     activity: (id: string, page = 0) =>

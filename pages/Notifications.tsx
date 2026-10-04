@@ -1,3 +1,4 @@
+import { openNotificationImmediately } from '../lib/openNotification';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Bell, Check, CheckCheck, Clock, ExternalLink, Inbox, RefreshCw, Settings2, Trash2 } from 'lucide-react';
@@ -130,19 +131,15 @@ const Notifications: React.FC = () => {
     setTabCounts(prev => prev ? { ...prev, [key]: Math.max(prev[key] - 1, 0) } : prev);
   };
 
-  const handleOpen = async (notification: AppNotification) => {
-    if (!notification.isRead) {
+  const handleOpen = (notification: AppNotification) => {
+    openNotificationImmediately(notification, target => {
+      if (/^https?:\/\//i.test(target)) window.open(target, '_blank', 'noopener,noreferrer');
+      else navigate(target);
+    }, async () => {
       await notificationService.markRead(notification.id);
       adjustTabCount(notification);
       setNotifications(prev => prev.map(item => item.id === notification.id ? { ...item, isRead: true } : item));
-    }
-    const target = resolveNotificationPath(notification);
-    if (!target) return;
-    if (/^https?:\/\//i.test(target)) {
-      window.open(target, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    navigate(target);
+    });
   };
 
   const handleMarkRead = async (notification: AppNotification) => {

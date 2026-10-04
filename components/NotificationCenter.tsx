@@ -1,3 +1,4 @@
+import { openNotificationImmediately } from '../lib/openNotification';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -343,17 +344,12 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, enabled
         applyUnreadCount(0);
     };
 
-    const handleNotificationClick = async (n: AppNotification) => {
-        if (!n.isRead) {
-            await handleMarkRead(n.id);
-        }
-
-        const target = resolveNotificationPath(n);
-        if (target) {
+    const handleNotificationClick = (n: AppNotification) => {
+        openNotificationImmediately(n, target => {
             setIsOpen(false);
             if (/^https?:\/\//i.test(target)) window.open(target, '_blank', 'noopener,noreferrer');
             else navigate(target);
-        }
+        }, handleMarkRead);
     };
 
     // Alerts are evaluated on the server every 5 minutes; this only refreshes the list.

@@ -71,7 +71,7 @@ const verifyChatPushActionUrlMigration = () => {
     .filter((name) => name.endsWith('.sql'))
     .some((name) => {
       const sql = readFileSync(join(migrationsDir, name), 'utf8');
-      return sql.includes('create or replace function app_private.chat_v2_notify_message()') &&
+      return /create\s+(?:or\s+replace\s+)?function\s+app_private\.chat_v2_notify_message\(\)/i.test(sql) &&
         sql.includes("'/#/chat?conversation=' || new.conversation_id::text");
     });
 

@@ -3020,3 +3020,26 @@
 .office-access-grid article { border: 1px solid var(--of-border); border-radius: 12px; padding: 16px; }
 .office-access-grid p { margin: 8px 0 0; color: var(--of-muted); line-height: 1.6; }
 @media (max-width: 600px) { .office-access-panel { padding: 16px; } .office-access-actions > * { width: 100%; } }
+
+.office-people-count { display: inline-block; margin-left: 8px; color: var(--of-accent); font-size: 13px; }
+.office-person-list { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 16px; }
+.office-person-list li { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.office-person-avatar { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 50%; background: var(--of-accent-soft); color: var(--of-accent); font-size: 12px; font-weight: 600; }
+.office-person-list li > div { min-width: 0; }
+.office-person-list strong { display: block; font-size: 13px; overflow-wrap: anywhere; }
+.office-person-list small { display: block; color: var(--of-muted); font-size: 11px; margin-top: 3px; overflow-wrap: anywhere; }
+.office-context-details { margin-top: 16px; font-size: 12px; }
+.office-context-details summary { cursor: pointer; font-weight: 600; }
+.office-people-actions, .office-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.office-people-panel > .office-helper { display: block; margin: 12px 0; }
+
+@media(max-width:600px) { .office-preview-actions { width:100%; } .office-preview-actions > a { flex:1; justify-content:center; } }
+
+.office-pdf { width: 100%; min-width: 0; }
+.office-pdf-toolbar { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.office-pdf-toolbar .office-secondary { min-height: 40px; padding: 8px; }
+.office-pdf-toolbar > span { font-size: 13px; min-width: 82px; text-align: center; }
+.office-pdf-page { overflow: auto; max-height: 58dvh; padding: 8px; background: #eef1f3; border-radius: 8px; overscroll-behavior: contain; }
+.office-pdf-page canvas { display: block; background: white; margin: 0 auto; }
+.office-pdf-text { margin-top: 10px; font-size: 12px; color: #59666f; }
+.office-pdf-text p { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -82,6 +82,7 @@ export interface OfficeCatalog {
   actorName?: string;
 }
 export interface OfficeDraft {
+  effective_on?: string | null;
   require_acknowledgement: boolean;
   expires_on: string | null;
   document_group: OfficeGroup;
@@ -119,6 +120,7 @@ export interface OfficeDocument extends OfficeDraft {
   created_at: string;
   updated_at: string;
   issued_at: string | null;
+  archived_at?: string | null;
   revoked_at: string | null;
   numbered_at: string | null;
   approved_at: string | null;
@@ -141,6 +143,7 @@ export interface OfficeSummary {
   processing_status: ProcessingStatus | null;
   document_date: string;
   issued_at: string | null;
+  archived_at?: string | null;
   revoked_at: string | null;
   created_at: string;
   urgency: OfficeDraft["urgency"];
@@ -192,7 +195,11 @@ export type OfficeCapability =
   | "confirm_read"
   | "track"
   | "read";
+export type OfficePeopleKind = "recipients" | "viewers" | "followers" | "downloads";
+export interface OfficePerson { user_id: string; name: string; username: string | null; occurred_at: string | null; }
 export interface OfficeDetail {
+  issuedByName?: string | null;
+  peoplePreview?: Record<OfficePeopleKind, OfficePage<OfficePerson>> | null;
   pendingRecipientSpecs?: RecipientSpec[];
   receipt?: { read_at: string | null; acknowledged_at: string | null } | null;
   distribution?: {
@@ -267,6 +274,8 @@ export interface OfficeActivity {
   created_at: string;
 }
 export type OfficeCommand =
+  | "download"
+  | "add_watchers"
   | "confirm_read"
   | "cancel"
   | "add_recipients"

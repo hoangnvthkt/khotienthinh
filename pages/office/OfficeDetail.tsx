@@ -21,6 +21,8 @@ import {
   UserRound,
   XCircle,
 } from "lucide-react";
+import { OfficePeoplePanel } from "./OfficePeople";
+import { OfficeFilePreview } from "./OfficeFilePreview";
 import { OfficeRichTextView } from "./OfficeRichText";
 import { OfficeAssistant } from "./OfficeAssistant";
 import { OfficeLinks, OfficeVersions } from "./OfficeLibrary";
@@ -54,6 +56,7 @@ import { useOfficeCommand, OfficeAudience } from "./OfficeDraft";
 const actionLabels: Partial<Record<OfficeCommand, string>> = {
   cancel: "Hủy văn bản",
   add_recipients: "Gửi bổ sung",
+  add_watchers: "Thêm người theo dõi",
   confirm_read: "Tôi đã đọc và hiểu nội dung",
   submit: "Gửi duyệt",
   approve: "Duyệt nội dung",
@@ -69,6 +72,7 @@ const actionLabels: Partial<Record<OfficeCommand, string>> = {
   complete: "Hoàn thành xử lý",
 };
 const activityLabels: Record<string, string> = {
+  WATCHERS_ADDED: "Thêm người theo dõi",
   READ_CONFIRMED: "Xác nhận đã đọc và hiểu",
   RECIPIENTS_ADDED: "Gửi bổ sung người nhận",
   LINKS_UPDATED: "Cập nhật liên kết",
@@ -144,10 +148,9 @@ function OfficeDetailContent({
     [modal, setModal] = useState<OfficeCommand | null>(null),
     [tab, setTab] = useState("content"),
     [readError, setReadError] = useState<unknown>(null);
-  const [preview, setPreview] = useState<{
-    url: string;
-    file: OfficeAttachment;
-  } | null>(null);
+  const [preview, setPreview] = useState<OfficeAttachment | null>(null);
+  const [downloadRevision, setDownloadRevision] = useState(0);
+  const [readRevision, setReadRevision] = useState(0);
   const attemptedRead = useRef(false);
   const appliedRead = useRef(false);
   const [recipientStats, setRecipientStats] = useState(detail.recipientStats);
@@ -155,6 +158,7 @@ function OfficeDetailContent({
     try {
       await command({ command: "read", documentId: d.id });
       setReadError(null);
+      if (caps.track) setReadRevision(value => value + 1);
       if (!appliedRead.current) {
         appliedRead.current = true;
         setRecipientStats((stats) =>
@@ -196,15 +200,6 @@ function OfficeDetailContent({
       setError(e);
     } finally {
       setBusy(false);
-    }
-  }
-  async function openFile(file: OfficeAttachment) {
-    setError(null);
-    try {
-      const url = await service.fileUrl(file);
-      setPreview({ url, file });
-    } catch (e) {
-      setError(e);
     }
   }
   const workflow = detail.approvals.filter((a) => a.round === d.approval_round);
@@ -454,7 +449,7 @@ function OfficeDetailContent({
                       <button
                         key={f.id}
                         disabled={f.status !== "READY"}
-                        onClick={() => void openFile(f)}
+                        onClick={() => setPreview(f)}
                       >
                         <div className="office-file-icon">
                           <FileText size={19} />
@@ -462,7 +457,7 @@ function OfficeDetailContent({
                         <span>
                           <strong>{f.file_name}</strong>
                           <small>
-                            {(f.size_bytes / 1024 / 1024).toFixed(1)} MB
+                            {f.size_bytes < 1024 ? `${f.size_bytes} B` : f.size_bytes < 1024 * 1024 ? `${Math.ceil(f.size_bytes / 1024)} KB` : `${(f.size_bytes / 1024 / 1024).toFixed(1)} MB`}
                             {f.status === "PENDING" ? " · Chưa tải xong" : ""}
                           </small>
                         </span>
@@ -544,44 +539,44 @@ function OfficeDetailContent({
         </div>
         <aside className="office-detail-context">
           <section className="office-panel office-form-section">
-            <h2>Thông tin văn bản</h2>
+            <h2>Thông tin ban hành</h2>
             <dl className="office-meta">
               {[
-                ["Người gửi / người soạn", d.creator_name],
-                [
-                  "Hiệu lực đến",
-                  d.expires_on ? displayDate(d.expires_on) : "Không giới hạn",
-                ],
-                ["Ngày văn bản", displayDate(d.document_date)],
-                ["Đơn vị ban hành", detail.departmentName],
-                ["Công trường", detail.siteName],
-                ["Người ký", detail.signerName],
-                ["Dưới tư cách", d.signer_position],
-                ["Mức độ khẩn", URGENCY[d.urgency]],
-                ["Bảo mật", CONFIDENTIALITY[d.confidentiality]],
-                ["Dự án", detail.projectName],
-                [
-                  "Kho lưu trữ",
-                  catalog.folders.find((f) => f.id === d.archive_folder_id)
-                    ?.name,
-                ],
-                ...(d.document_group === "INCOMING"
-                  ? [
-                      ["Đơn vị gửi", d.source_organization],
-                      ["Số bên gửi", d.source_document_number],
-                      ["Ngày nhận", displayDate(d.received_date)],
-                    ]
-                  : []),
-                ...(d.document_group === "OUTGOING"
-                  ? [["Gửi tới", d.external_recipient]]
-                  : []),
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value || "—"}</dd>
-                </div>
-              ))}
+                ["Nhóm nội dung", (detail.distribution?.[0]?.specs || detail.pendingRecipientSpecs || d.recipient_specs).map(spec => spec.label || (spec.type === "company" ? "Toàn công ty" : "Nhóm người nhận")).join(" · ") || "Chưa chọn nhóm người nhận"],
+                ["Ban hành bởi", detail.issuedByName || (d.issued_at ? "Chưa xác định" : "Chưa ban hành")],
+                ["Đơn vị ban hành", detail.departmentName || "Chưa xác định"],
+                ["Ngày ban hành", d.issued_at ? displayDate(d.issued_at) : "Chưa ban hành"],
+                ["Ngày hiệu lực", d.effective_on ? displayDate(d.effective_on) : "Chưa xác định"],
+                ["Ngày hết hiệu lực", d.expires_on ? displayDate(d.expires_on) : "Chưa xác định"],
+                ["Loại văn bản", detail.typeName],
+              ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
             </dl>
+            <details className="office-context-details"><summary>Trường tùy chỉnh</summary><p className="office-helper">Chưa thiết lập trường dữ liệu tùy chỉnh.</p></details>
+          </section>
+          <section className="office-panel office-form-section">
+            <h2>Thông tin lưu trữ</h2>
+            <dl className="office-meta"><div><dt>Thư mục</dt><dd>{officeFolderPath(catalog, d.archive_folder_id)}</dd></div><div><dt>Trạng thái</dt><dd>{d.archived_at || d.status === "ARCHIVED" ? "Đã lưu trữ" : d.issued_at ? "Chờ lưu trữ" : "Chưa ban hành"}</dd></div>{d.archived_at && <div><dt>Ngày lưu trữ</dt><dd>{displayDate(d.archived_at, true)}</dd></div>}</dl>
+          </section>
+          {caps.track ? <>
+            <OfficePeoplePanel id={d.id} kind="recipients" service={service} initial={detail.peoplePreview?.recipients} />
+            <OfficePeoplePanel id={d.id} kind="followers" service={service} initial={detail.peoplePreview?.followers}>
+              <div className="office-people-actions">
+                {caps.distribute && <button className="office-secondary" onClick={() => setModal("add_watchers")}>Thêm người theo dõi</button>}
+                <button className="office-secondary" disabled={busy} onClick={() => void act("bookmark", { ...detail.bookmark, following: !detail.bookmark.following })}>{detail.bookmark.following ? "Bỏ theo dõi" : "Theo dõi"}</button>
+              </div>
+            </OfficePeoplePanel>
+            <OfficePeoplePanel id={d.id} kind="viewers" service={service} initial={detail.peoplePreview?.viewers} revision={readRevision} />
+            <OfficePeoplePanel id={d.id} kind="downloads" service={service} initial={detail.peoplePreview?.downloads} revision={downloadRevision} />
+          </> : <section className="office-panel office-form-section"><h2>Người nhận & theo dõi</h2><p className="office-helper">{detail.receipt ? "Bạn là người nhận văn bản này." : "Bạn đang xem theo quyền được cấp."} Danh sách người nhận và thống kê chi tiết chỉ dành cho người có quyền theo dõi văn bản.</p></section>}
+          <section className="office-panel office-form-section">
+            <h2>Thông tin thêm</h2>
+            <dl className="office-meta">{[
+              ["Người soạn thảo", d.creator_name], ["Ngày tạo", displayDate(d.created_at, true)], ["Ngày văn bản", displayDate(d.document_date)],
+              ["Người ký", detail.signerName], ["Chức vụ người ký", d.signer_position], ["Mức độ khẩn", URGENCY[d.urgency]], ["Bảo mật", CONFIDENTIALITY[d.confidentiality]],
+              ["Dự án", detail.projectName], ["Công trường", detail.siteName],
+              ...(d.document_group === "INCOMING" ? [["Đơn vị gửi", d.source_organization], ["Người gửi", d.source_sender], ["Số bên gửi", d.source_document_number], ["Ngày nhận", displayDate(d.received_date)]] : []),
+              ...(d.document_group === "OUTGOING" ? [["Gửi tới", d.external_recipient]] : []),
+            ].filter(([, value]) => value).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
           </section>
           <section className="office-panel office-form-section">
             <h2>Quy trình duyệt</h2>
@@ -744,38 +739,8 @@ function OfficeDetailContent({
           onSubmit={(payload) => void act(modal, payload)}
         />
       )}
-      {preview && (
-        <OfficeModal
-          title={preview.file.file_name}
-          onClose={() => setPreview(null)}
-        >
-          <div className="office-file-preview">
-            {preview.file.mime_type === "application/pdf" ? (
-              <iframe title={preview.file.file_name} src={preview.url} />
-            ) : preview.file.mime_type.startsWith("image/") ? (
-              <img src={preview.url} alt={preview.file.file_name} />
-            ) : (
-              <OfficeEmpty
-                title="Tải tệp để xem nội dung"
-                description="Định dạng này được mở bằng ứng dụng trên thiết bị."
-              />
-            )}
-            <a
-              className="office-primary"
-              href={preview.url}
-              download={preview.file.file_name}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Download size={16} />
-              Mở / tải tệp
-            </a>
-            <small>
-              Liên kết có hiệu lực 5 phút. Đóng rồi mở lại nếu hết hạn.
-            </small>
-          </div>
-        </OfficeModal>
-      )}
+      {preview && <OfficeFilePreview file={preview} service={service} onClose={() => setPreview(null)} onDownloaded={() => setDownloadRevision(value => value + 1)} />}
+
     </>
   );
 }
@@ -797,7 +762,7 @@ function OfficeActionDialog({
   onSubmit: (payload: object) => void;
 }) {
   const [reason, setReason] = useState(""),
-    [userId, setUserId] = useState(detail.document.assigned_to || ""),
+    [userId, setUserId] = useState(action === "assign" ? detail.document.assigned_to || "" : ""),
     [dueDate, setDueDate] = useState(detail.document.due_date || ""),
     [instruction, setInstruction] = useState(
       detail.document.processing_instruction || "",
@@ -814,6 +779,7 @@ function OfficeActionDialog({
   const [specs, setSpecs] = useState<RecipientSpec[]>([]);
   const needReason = ["return", "reject", "revoke", "cancel"].includes(action);
   const descriptions: Partial<Record<OfficeCommand, string>> = {
+    add_watchers: "Người được thêm có thể xem và nhận cập nhật văn bản trong phạm vi quyền Office được cấp.",
     add_recipients:
       "Thêm cá nhân, phòng ban hoặc công trường. Người nhận mới được thông báo; người đã nhận không bị gửi lặp.",
     confirm_read:
@@ -839,7 +805,7 @@ function OfficeActionDialog({
         onSubmit={(e) => {
           e.preventDefault();
           onSubmit(
-            action === "add_recipients"
+            action === "add_watchers" ? { userIds: userId ? [userId] : [] } : action === "add_recipients"
               ? { specs }
               : action === "assign"
                 ? {
@@ -863,6 +829,7 @@ function OfficeActionDialog({
               onChange={setSpecs}
             />
           )}
+          {action === "add_watchers" && <OfficeField label="Người theo dõi" required><OfficePicker service={service} kind="user" label="Chọn người theo dõi" value={userId} onChange={option => setUserId(option?.id || "")} /></OfficeField>}
           {action === "assign" && (
             <>
               <OfficeField label="Người phụ trách" required>
@@ -963,7 +930,7 @@ function OfficeActionDialog({
             }
             disabled={
               busy ||
-              (action === "assign" && !userId) ||
+              (["assign", "add_watchers"].includes(action) && !userId) ||
               (action === "add_recipients" && !specs.length)
             }
           >
@@ -1133,4 +1100,17 @@ function OfficeActivityTimeline({
       )}
     </div>
   );
+}
+
+export function officeFolderPath(catalog: OfficeCatalog, id: string | null): string {
+  if (!id) return "Chưa phân loại";
+  const names: string[] = [], seen = new Set<string>();
+  let current: string | null = id;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const folder = catalog.folders.find(item => item.id === current);
+    if (!folder) return names.length ? names.join(" › ") : "Không xác định thư mục";
+    names.unshift(folder.name); current = folder.parent_id;
+  }
+  return names.join(" › ");
 }
