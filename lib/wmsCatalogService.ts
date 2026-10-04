@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from './supabase';
+import { accessPayload, type LegacyGrant, type WmsAccess, type WmsAccessData } from './wmsAccess';
 
 // V1 Module Vật tư: Danh mục vật tư một cửa (cấp mã, sửa, ngừng dùng, cách quản lý kho) và Tồn kho đọc thẳng sổ kho.
 
@@ -121,20 +122,9 @@ export const guessInventoryMode = (name: string, unit?: string | null, category?
   category === 'DV' || ['Giờ', 'Ca', 'Lần', 'Chuyến'].includes(unit || '') || /^chi phí|ca máy|vận chuyển/i.test(name) ? 'service'
     : /bê tông thương phẩm|^base\b|dầu diezel|dầu do\b/i.test(name) ? 'use' : 'stock';
 
-// ---------- V1-2: Người phụ trách kho ----------
-export interface WmsOwnersData {
-  can: { edit: boolean };
-  warehouses: Array<{ id: string; name: string; type: string; project: string | null }>;
-  users: Array<{ id: string; name: string; role: string; assignedWarehouseId: string | null }>;
-  grants: Array<{ userId: string; code: string; scopeType: string; scopeId: string }>;
-  activity: Array<{ userId: string; warehouseId: string; n: number }>;
-  viewers: number;
-  log: Array<{ at: string; by: string | null; lines: string[] | null }>;
-}
-export interface WmsOwnersAssign { keepers: Record<string, string[]>; code: string[]; exception: string[]; accounting: string[]; closer: string | null }
-
+// ---------- Phân quyền kho (mở rộng Người phụ trách V1-2) ----------
 const OWNER_ERRORS: Record<string, string> = {
-  WMS_OWNERS_EDIT_DENIED: 'Chỉ Admin sửa được người phụ trách kho.',
+  WMS_OWNERS_EDIT_DENIED: 'Chỉ Admin sửa được phân quyền kho.',
   WMS_OWNERS_VIEW_DENIED: 'Bạn chưa có quyền xem kho.',
   WMS_OWNERS_CLOSER_NOT_ACCOUNTANT: 'Người khóa kỳ phải nằm trong danh sách Kế toán kho.',
   WMS_OWNERS_WAREHOUSE_INVALID: 'Có kho không còn hoạt động. Tải lại trang.',
@@ -146,18 +136,7 @@ export const ownersErrorMessage = (error: unknown, fallback = 'Chưa lưu đư�
   return code ? OWNER_ERRORS[code] : catalogErrorMessage(error, fallback);
 };
 
-export const wmsOwnersService = {
-  get: () => rpc<WmsOwnersData>('get_wms_owners_v1'),
-  save: (assign: WmsOwnersAssign) => rpc<{ added: number; removed: number; lines: string[] }>('save_wms_owners_v1', { p: assign }),
-};
-
-/** Đọc phân công hiện tại từ danh sách quyền. */
-export const ownersFromGrants = (d: WmsOwnersData): WmsOwnersAssign & { globalKeepers: string[] } => {
-  const of = (code: string) => [...new Set(d.grants.filter(g => g.code === code && g.scopeType === 'global').map(g => g.userId))];
-  const keepers: Record<string, string[]> = Object.fromEntries(d.warehouses.map(w => [w.id, [] as string[]]));
-  d.grants.filter(g => g.code === 'wms.transaction.keeper' && g.scopeType === 'warehouse' && keepers[g.scopeId]).forEach(g => {
-    if (!keepers[g.scopeId].includes(g.userId)) keepers[g.scopeId].push(g.userId);
-  });
-  return { keepers, code: of('wms.master_data.issue_code'), exception: of('wms.transaction.exception_approve'), accounting: of('wms.accounting.manage'),
-    closer: of('wms.accounting.close_period')[0] || null, globalKeepers: of('wms.transaction.keeper') };
+export const wmsAccessService = {
+  get: () => rpc<WmsAccessData>('get_wms_access_v1'),
+  save: (a: WmsAccess, revoke: LegacyGrant[]) => rpc<{ added: number; removed: number; lines: string[] }>('save_wms_access_v1', { p: accessPayload(a, revoke) }),
 };

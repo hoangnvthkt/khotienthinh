@@ -744,3 +744,24 @@ Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng ti
 35. Quản lý danh sách kho (tạo / sửa / xóa kho): chị Linh, chị Mơ đang có qua ô cũ. Đề xuất chỉ Admin. Anh muốn giữ ai?
 36. Gỡ 21 ô lẻ đã nằm trong Thủ kho (không mất thao tác nào). Dương / Đảng: anh tự bấm trên màn này. Đồng ý?
 37. Mẫu ở Cài đặt → Người dùng: phần kho chỉ còn Xem kho; việc kho khác giao ở màn này. Đồng ý?
+
+### Trả lời của chủ SP (04/10/2026)
+
+- 33, 34, 36, 37: đồng ý. 35: Quản lý danh sách kho **chỉ Admin**. Bắt đầu code.
+
+## 18. Phân quyền kho — đã code (04/10/2026)
+
+**Migration `20261008137300_wms_access_jobs.sql`** (sinh bằng `tools/gen_v12b.py` + `v12b_template.sql`, vá định nghĩa đang chạy trên production):
+- `app_private.wms_keeper_excluded_action`: thủ kho **không còn ngầm có** việc quản trị / ghi sổ ở kho mình giữ — Quản lý danh sách kho, Cấp mã, Duyệt ngoại lệ, Kế toán kho, Khóa kỳ, Hủy duyệt. Vá `wms_has_action` và `wms_user_has_action`. Thao tác thủ kho giữ nguyên (lập phiếu, quyết toán xuất cấp…).
+- `get_wms_access_v1` / `save_wms_access_v1`: đọc / lưu 8 việc. Lưu chỉ Admin; đối chiếu đủ cho các việc; Xem kho chỉ đổi người được thêm / bỏ; Cấp mã / Duyệt ngoại lệ / Kế toán kho tự kèm bộ Xem mọi kho; dòng quyền đã thu hồi trước đây được kích hoạt lại (bảng quyền giữ một dòng cho mỗi người + ô + phạm vi); gỡ ô lẻ kiểu cũ theo danh sách Admin chọn; bỏ hết Xem kho mà không còn việc thì gỡ luôn ô vào phân hệ Kho. Nhật ký `source = wms_owners` như V1-2.
+- Mẫu quyền ở Cài đặt → Người dùng: phần kho chỉ còn 3 ô Xem (6 mẫu).
+
+**Giao diện:** Kho vật tư → **Phân quyền kho** (đường dẫn cũ `/wms/owners`, thay màn Người phụ trách). Logic thuần ở `lib/wmsAccess.ts` (đọc việc từ ô quyền, mẫu chức năng, giống một người, bàn giao, ô lẻ cũ, dòng thay đổi), màn `components/wms/WmsAccessView.tsx`.
+
+**Đã kiểm trên production trong giao dịch hoàn tác** (`tools/v12b-test.mjs`):
+- Anh Luật: vẫn lập phiếu, quyết toán xuất cấp ở SMB; không còn sửa / xóa kho, không duyệt ngoại lệ; xem được màn, không lưu được.
+- Admin lưu bộ đã duyệt: thêm 13, gỡ 19; lưu lại lần nữa 0 / 0.
+- Sau lưu: chị Linh không còn sửa / xóa kho, vẫn Cấp mã; chị Nguyễn Thị Hương xem được kho; 6 mẫu Cài đặt chỉ còn ô Xem.
+- Bỏ một người khỏi Xem kho → gỡ bộ Xem + ô vào phân hệ. Người khóa kỳ không phải kế toán kho → bị chặn.
+
+**Script chạy sau deploy:** `.superpowers/review/work-plan/v12b-deploy-data.mjs` (đã chạy thử kèm migration, đạt): gỡ 17 ô lẻ đã nằm trong Thủ kho, gỡ quyền sửa / xóa kho của chị Linh, chị Mơ, cấp bộ Xem cho chị Nguyễn Thị Hương, bổ sung ô còn thiếu trong bộ Xem của vài người. Còn lại 3 ô lẻ của Dương / Đảng — chủ SP tự xử lý trên màn.
