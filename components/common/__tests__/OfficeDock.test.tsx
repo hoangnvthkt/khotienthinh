@@ -6,7 +6,7 @@ import { Role, type User } from '../../../types';
 import { MacOSDockLauncher } from '../MacOSDockLauncher';
 const render = (permissions: string[]) => {
  const user: User = { id: 'u', name: 'Employee', email: 'e@example.com', role: Role.EMPLOYEE, permissionGrants: permissions.map(permissionCode => ({ userId: 'u', permissionCode, scopeType: 'global', scopeId: '*', isActive: true })) };
- return renderToStaticMarkup(<StaticRouter><MacOSDockLauncher user={user} /></StaticRouter>);
+ return renderToStaticMarkup(<StaticRouter location="/office/settings"><MacOSDockLauncher user={user} /></StaticRouter>);
 };
 describe('Office application launcher', () => {
  it('shows Office with canonical access', () => expect(render(['office.module.access'])).toContain('Vioo Office'));
