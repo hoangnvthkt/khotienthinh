@@ -905,11 +905,14 @@ function OfficeDraftForm({
               <aside className="office-form-context">
                 <section className="office-panel office-form-section">
                   <h2>Phân loại & lưu trữ</h2>
+                  <OfficeField label="Ngày hiệu lực" hint="Để trống nếu văn bản chưa xác định ngày bắt đầu có hiệu lực.">
+                    <input type="date" aria-label="Ngày hiệu lực" value={draft.effective_on || ""} max={draft.expires_on || undefined} onChange={e => patch({ effective_on: e.target.value || null })} />
+                  </OfficeField>
                   <OfficeField label="Hiệu lực đến ngày">
                     <input
                       type="date"
                       aria-label="Hiệu lực đến ngày"
-                      min={draft.document_date}
+                      min={draft.effective_on || draft.document_date}
                       value={draft.expires_on || ""}
                       onChange={(e) =>
                         patch({ expires_on: e.target.value || null })

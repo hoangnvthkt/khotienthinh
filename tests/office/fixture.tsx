@@ -103,6 +103,12 @@ const now = "2026-10-04T08:00:00Z";
 const docs = new Map<string, OfficeDocument>();
 const attachmentRows = new Map<string, any[]>();
 const uploadedUrls = new Map<string, string>();
+attachmentRows.set('doc-1', [
+ { id: 'preview-pdf', document_id: 'doc-1', file_name: 'Vioo-kiem-thu.pdf', mime_type: 'application/pdf', size_bytes: 1300, bucket: 'fixture', path: 'preview.pdf', status: 'READY', created_at: '2026-10-04T08:00:00Z' },
+ { id: 'preview-image', document_id: 'doc-1', file_name: 'Vioo-hinh-anh.png', mime_type: 'image/png', size_bytes: 3000, bucket: 'fixture', path: 'preview.png', status: 'READY', created_at: '2026-10-04T08:00:00Z' },
+]);
+uploadedUrls.set('preview-pdf', new URL('./assets/preview.pdf', import.meta.url).href);
+uploadedUrls.set('preview-image', new URL('./assets/preview.png', import.meta.url).href);
 const reads = new Set<string>();
 const confirmed = new Set<string>();
 const templates: any[] = [
@@ -242,12 +248,19 @@ for (let i = 0; i < titles.length; i++) {
   } as OfficeDocument;
   docs.set(d.id, d);
 }
+const fixtureDownloads = new Set<string>();
+function fixturePeople(kind: string, page = 0, pageSize = 4) {
+ const items = kind === 'downloads' ? [...fixtureDownloads].map(user_id => ({ user_id, name: 'Nguyễn Minh An', username: 'an', occurred_at: now })) : Array.from({ length: kind === 'followers' ? 2 : kind === 'viewers' ? (reads.has('doc-1') ? 37 : 36) : 42 }, (_, i) => ({ user_id: `person-${i}`, name: ['Đặng Thị Hương', 'Nguyễn Văn Năm', 'Nguyễn Thị Hương', 'Trần Hải Nam', 'Lê Thu Hà', 'Nguyễn Minh An'][i % 6], username: `person${i}`, occurred_at: now }));
+ return { items: items.slice(page * pageSize, (page + 1) * pageSize), total: items.length };
+}
 function detail(id: string): OfficeDetail {
   const d = docs.get(id);
   if (!d) throw new Error("OFFICE_NOT_FOUND");
   const editable = ["DRAFT", "RETURNED"].includes(d.status);
   return {
-    document: d,
+    document: { ...d, effective_on: '2026-10-05' },
+    issuedByName: d.issued_at ? 'Đặng Thị Hương' : null,
+    peoplePreview: { recipients: fixturePeople('recipients'), viewers: fixturePeople('viewers'), followers: fixturePeople('followers'), downloads: fixturePeople('downloads') },
     receipt: {
       read_at: reads.has(id) ? now : null,
       acknowledged_at: confirmed.has(id) ? now : null,
@@ -342,6 +355,7 @@ const rpc = async (name: string, p: any) => {
         q === "dashboard"
       )
         throw new Error("offline");
+      if (q === "people") return { data: fixturePeople(x.kind, x.page || 0, 25), error: null };
       if (q === "templates") return { data: templates, error: null };
       if (q === "template_versions")
         return {
@@ -559,6 +573,7 @@ const rpc = async (name: string, p: any) => {
         docs.set(d.id, d);
       }
       if (!d) throw new Error("OFFICE_NOT_FOUND");
+      if (action === "download") fixtureDownloads.add("author");
       let attachment: any;
       if (action === "attachment_begin") {
         attachment = {

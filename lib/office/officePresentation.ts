@@ -133,6 +133,7 @@ export function newOfficeDraft(
   return {
     require_acknowledgement: false,
     expires_on: null,
+    effective_on: null,
     document_group: group,
     document_type_id: "",
     title: "",
