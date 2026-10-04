@@ -33,13 +33,15 @@ export const AccountDrawer: React.FC<{ data: FinanceCash; account?: CashAccount 
   const [kind, setKind] = useState<CashAccountKind>(account?.kind || 'bank'); const [name, setName] = useState(account?.name || '');
   const [bank, setBank] = useState(account?.bankName || ''); const [no, setNo] = useState(account?.accountNo || ''); const [project, setProject] = useState(account?.projectId || '');
   const [holder, setHolder] = useState(account?.holderName || ''); const [note, setNote] = useState(account?.note || ''); const [active, setActive] = useState(account?.active ?? true);
+  const [holderUser, setHolderUser] = useState(account?.holderUserId || ''); const [users, setUsers] = useState<Array<{ id: string; name: string }> | null>(null);
+  useEffect(() => { if (kind === 'site' && !users) financeService.settings().then(s => setUsers(s.users)).catch(() => setUsers([])); }, [kind, users]);
   const { busy, err, run } = useRun(onSaved);
-  const blockers = [!name.trim() && 'Nhập tên', kind === 'bank' && !no.trim() && 'Nhập số tài khoản', kind === 'site' && !project && 'Chọn dự án'].filter(Boolean) as string[];
+  const blockers = [!name.trim() && 'Nhập tên', kind === 'bank' && !no.trim() && 'Nhập số tài khoản', kind === 'site' && !project && 'Chọn dự án', kind === 'site' && !holderUser && 'Chọn người giữ quỹ'].filter(Boolean) as string[];
   return <Drawer label="Tài khoản tiền" onClose={onClose}
     header={<><p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">{account ? 'Sửa tài khoản tiền' : 'Khai tài khoản tiền'}</p>
       <h2 className={`text-lg ${ENT}`}>{name || 'Tài khoản mới'}</h2><p className="text-sm text-muted-foreground">Sau khi khai, gửi số dư đầu kỳ theo MISA 30/09 để người khác chốt.</p></>}
     footer={<Footer err={err} blockers={blockers} busy={busy} onClose={onClose} label="Lưu" icon={Save}
-      onSave={() => void run(() => financeService.saveCashAccount({ id: account?.id, name: name.trim(), kind, bankName: bank, accountNo: no, projectId: kind === 'site' ? project : null, holderName: holder, note, isActive: active }), account ? 'Đã lưu tài khoản.' : 'Đã khai tài khoản — gửi số dư đầu kỳ.')} />}>
+      onSave={() => void run(() => financeService.saveCashAccount({ id: account?.id, name: name.trim(), kind, bankName: bank, accountNo: no, projectId: kind === 'site' ? project : null, holderName: holder, holderUserId: kind === 'site' ? holderUser || null : null, note, isActive: active }), account ? 'Đã lưu tài khoản.' : 'Đã khai tài khoản — gửi số dư đầu kỳ.')} />}>
     <div className="grid gap-3 sm:grid-cols-2">
       <F label="Loại"><select value={kind} onChange={e => setKind(e.target.value as CashAccountKind)} className={`mt-1 w-full ${inputCls}`}>
         {(Object.keys(ACCOUNT_KINDS) as CashAccountKind[]).map(k => <option key={k} value={k}>{ACCOUNT_KINDS[k]}</option>)}</select></F>
@@ -48,7 +50,9 @@ export const AccountDrawer: React.FC<{ data: FinanceCash; account?: CashAccount 
         <F label="Số tài khoản"><input value={no} onChange={e => setNo(e.target.value)} className={`mt-1 w-full tabular-nums ${inputCls}`} /></F></>}
       {kind === 'site' && <><F label="Dự án"><select value={project} onChange={e => setProject(e.target.value)} className={`mt-1 w-full ${inputCls}`}><option value="">Chọn dự án…</option>
         {data.projects.map(p => <option key={p.id} value={p.id}>{p.code}</option>)}</select></F>
-        <F label="Người giữ quỹ"><input value={holder} onChange={e => setHolder(e.target.value)} placeholder="VD: CHT Nguyễn Văn An" className={`mt-1 w-full ${inputCls}`} /></F></>}
+        <F label="Người giữ quỹ" hint={`Người này ghi khoản chi ở "Quỹ công trường của tôi" (không cần quyền Tài chính)${holder && !holderUser ? ` · đang ghi tay: ${holder}` : ''}`}>
+          <select value={holderUser} onChange={e => setHolderUser(e.target.value)} disabled={!users} className={`mt-1 w-full ${inputCls}`}>
+            <option value="">{users ? 'Chọn người giữ quỹ…' : 'Đang tải…'}</option>{(users || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></F></>}
       <F label="Ghi chú" className="sm:col-span-2"><input value={note} onChange={e => setNote(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></F>
     </div>
     {account && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!active} onChange={e => setActive(!e.target.checked)} className="accent-teal-600" />Ngừng dùng (chỉ khi số dư 0 và không còn phiếu chờ)</label>}

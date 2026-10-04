@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Calculator, Check, ChevronDown, ClipboardList, FileText, HandCoins, PiggyBank, Plus, RotateCcw, Scale, Undo2, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calculator, Check, ChevronDown, ClipboardList, FileText, HandCoins, PiggyBank, Plus, RotateCcw, Scale, Undo2, Users, X } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceCost, type FinanceCostLine, type FinanceCostProject, type FinanceFundRowKind, type FinanceProjectBudget, type FinanceProjectCost } from '../../lib/financeService';
 import { Badge, StateBox, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, shortMoney, viDate } from './financeUi';
 import { BudgetDrawer, CapitalDrawer, FundOpeningDrawer, signedMoney } from './CostDrawers';
+import { AllocationView } from './AllocationView';
 
 // Tài chính → Chi phí & ngân sách: dự án đang tiêu bao nhiêu so với ngân sách, có sắp vượt không; mỗi dự án tự nuôi được bằng
 // tiền chủ đầu tư hay đang dùng vốn công ty (quỹ dự án). Số chưa biết hiện "chưa có", không hiện 0.
@@ -13,7 +14,7 @@ import { BudgetDrawer, CapitalDrawer, FundOpeningDrawer, signedMoney } from './C
 const pct = (a: number, b: number | null) => b ? Math.round((a / b) * 100) : null;
 const FUND_KIND: Record<FinanceFundRowKind, string> = {
   customer_receipt: 'Tiền CĐT trả', advance_refund: 'NCC hoàn tạm ứng', other_receipt: 'Thu khác', supplier_payment: 'Chi NCC', expense: 'Chi khác',
-  site_transfer: 'Quỹ công trường', capital: 'Công ty cấp vốn', capital_return: 'Thu hồi vốn',
+  site_transfer: 'Quỹ công trường', capital: 'Công ty cấp vốn', capital_return: 'Thu hồi vốn', allocation: 'Phân bổ tháng',
 };
 const BUDGET_STATUS: Record<FinanceProjectBudget['status'], { label: string; cls: string }> = {
   submitted: { label: 'Chờ duyệt', cls: 'border-amber-300 bg-amber-50 text-amber-800' },
@@ -45,7 +46,14 @@ const FundCell: React.FC<{ p: FinanceCostProject }> = ({ p }) => p.balance == nu
   : <><b className={p.balance < 0 ? 'font-semibold tabular-nums text-rose-700 dark:text-rose-300' : NUM}>{signedMoney(p.balance)}</b>
     <span className="block text-xs text-muted-foreground">{p.capital > 0.5 ? `công ty đang ứng ${shortMoney(p.capital)}` : p.balance < 0 ? 'cần cấp vốn' : 'tự nuôi bằng tiền CĐT'}</span></>;
 
-export const CostView: React.FC<{ initialProjectId?: string | null; onChanged: () => void }> = ({ initialProjectId, onChanged }) => {
+const ViewTabs: React.FC<{ view: 'projects' | 'allocation'; onChange: (v: 'projects' | 'allocation') => void }> = ({ view, onChange }) =>
+  <div role="tablist" aria-label="Phần" className="inline-flex rounded-xl border border-border bg-card p-1 shadow-sm">
+    {([['projects', 'Dự án & quỹ dự án', Scale], ['allocation', 'Phân bổ tháng', Users]] as const).map(([k, l, I]) => <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => onChange(k)}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${view === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}><I size={14} />{l}</button>)}
+  </div>;
+
+export const CostView: React.FC<{ initialProjectId?: string | null; initialView?: string | null; onChanged: () => void }> = ({ initialProjectId, initialView, onChanged }) => {
+  const [view, setView] = useState<'projects' | 'allocation'>(initialView === 'allocation' && !initialProjectId ? 'allocation' : 'projects');
   const toast = useToast(); const confirm = useConfirm(); const askReason = useReasonConfirm();
   const [data, setData] = useState<FinanceCost | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +63,7 @@ export const CostView: React.FC<{ initialProjectId?: string | null; onChanged: (
   const load = useCallback(() => { setError(null); financeService.cost().then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, []);
   useEffect(load, [load]);
   if (projectId) return <ProjectCost projectId={projectId} onBack={() => { setProjectId(null); load(); window.scrollTo({ top: 0 }); }} onChanged={() => { onChanged(); }} />;
+  if (view === 'allocation') return <div className="space-y-3"><ViewTabs view={view} onChange={setView} /><AllocationView onChanged={() => { load(); onChanged(); }} /></div>;
   if (error) return <StateBox kind="error" title="Chưa tải được Chi phí & ngân sách" message={error} onRetry={load} />;
   if (!data) return <StateBox kind="loading" title="Đang tải chi phí & ngân sách…" />;
   const run = async (fn: () => Promise<unknown>, msg: string) => { setBusy(true); try { await fn(); toast.success('Chi phí & ngân sách', msg); load(); onChanged(); } catch (e) { toast.error('Chưa thực hiện được', e instanceof Error ? e.message : ''); } finally { setBusy(false); } };
@@ -76,6 +85,7 @@ export const CostView: React.FC<{ initialProjectId?: string | null; onChanged: (
   if (noOpening.length) alerts.push({ tone: 'amber', title: <>{noOpening.length} dự án chưa khai đầu kỳ quỹ: {noOpening.map(p => p.code).join(', ')}</>, hint: 'Chưa có đầu kỳ thì chưa biết số dư quỹ và chưa xét được bước "Cấp vốn dự án".' });
 
   return <div className="space-y-3">
+    <ViewTabs view={view} onChange={setView} />
     <section className="grid grid-cols-2 gap-2 lg:grid-cols-4">
       <Kpi icon={Calculator} label="Ngân sách chi phí" value={withBudget.length ? shortMoney(sum(p => p.budget || 0)) : 'Chưa có'} hint={`${withBudget.length}/${ps.length} dự án có ngân sách${ps.some(p => p.missingItems > 0) ? ' · còn khoản mục chưa lập' : ''}`} tone={withBudget.length ? undefined : 'text-amber-700 dark:text-amber-300'} />
       <Kpi icon={Scale} label="Chi phí đã ghi nhận" value={shortMoney(sum(p => p.actual))} hint="theo cây khoản mục (MISA + Vioo)" />
