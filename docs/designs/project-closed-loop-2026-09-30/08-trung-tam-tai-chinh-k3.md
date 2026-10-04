@@ -465,3 +465,33 @@ quá 15 ngày, đầu kỳ, bảo lãnh); Tổng quan (phải thu quá hạn, s�
 có lý do) → hạn +30 ngày → hóa đơn → phiếu thu 10 tỷ (8 tỷ vào đợt, 2 tỷ trả trước) → tự xác nhận bị chặn → Hương xác nhận (dòng tiền
 vào) → trừ trả trước → hủy đợt đã thu bị chặn → đảo phiếu thu; đầu kỳ DA29/SMB (tự chốt bị chặn); bảo lãnh thiếu hạn bị chặn;
 Dự án sửa thẳng lịch thanh toán CĐT bị chặn, lịch NCC/thầu phụ vẫn sửa được; Tổng quan có phải thu; người không quyền bị chặn.
+
+## 17. Tài chính đợt 3a — Thu chi & quỹ (03/10/2026)
+
+Chủ SP duyệt mockup `tq-v1` + 9 câu (03/10): từ mốc 01/10 mọi khoản tiền ghi qua tài khoản tiền Vioo (MISA vẫn là sổ kế toán, nhận
+file xuất); khai tài khoản + số dư MISA 30/09 (người khác chốt); bắt buộc chọn tài khoản khi xác nhận chi / thu; phiếu chi khác duyệt
+ma trận + 3 người, gắn dự án thì ghi chi phí; chuyển tiền người lập ≠ xác nhận; tồn quỹ tối thiểu ở Quản trị (mặc định 2 tỷ);
+đối chiếu sao kê tháng, chốt khóa tháng; quỹ công trường + hoàn ứng để đợt sau; HĐ03 RICO chủ SP đã hủy.
+
+Migration `20261008134200_finance_cash_treasury.sql`.
+
+**Mô hình**
+- Tài khoản tiền = `cash_funds` mở rộng (loại tiền mặt / ngân hàng / quỹ công trường, ngân hàng, số TK, dự án, người giữ); chỉ sửa qua hàm.
+- `finance_cash_openings` (số dư 30/09, người khác chốt), `finance_cash_entries` (sổ thu chi bất biến: không sửa / xóa, không trước mốc,
+  không vào tháng đã chốt; đảo = dòng ngược chiều), `finance_cash_reconciliations` (đối chiếu sao kê theo tháng, khóa tháng khi chốt),
+  `finance_cash_movements` (thu khác, chuyển tiền), `finance_cash_plans` (khoản định kỳ cho dự báo), `finance_settings.cash_min_balance`.
+- Ghi sổ tự động khi xác nhận: đề nghị chi NCC / tạm ứng NCC / chi khác (`confirm_finance_payment_request_v1` bắt buộc `cashAccountId`),
+  chi ngoài hệ thống từ mốc, phiếu thu CĐT, NCC hoàn tạm ứng; đảo các chứng từ đó ghi đảo sổ.
+- Phiếu chi khác = `finance_payment_requests.kind = 'expense'` (mã `CK-…`, không NCC): loại chi, dự án + khoản mục chi phí;
+  xác nhận chi ghi `project_transactions` `finance_expense:<id>` nếu gắn dự án.
+- Dự báo 8 tuần (`finance_cash_forecast`): số dư hiện có + thu (đợt CĐT đã xác nhận theo hạn; đã gửi = có thể) − chi (nợ NCC theo hạn,
+  tạm ứng / chi khác đã lập chưa chi, khoản định kỳ); tuần thấp nhất, tuần đầu xuống dưới tồn quỹ tối thiểu.
+
+**Màn hình**: Tài chính → Thu chi & quỹ (5 số lớn, chờ xác nhận, dự báo, tài khoản, sổ thu chi, thu khác / chuyển tiền gần đây, khoản định kỳ);
+ô chọn tài khoản ở xác nhận chi, phiếu thu CĐT, chi ngoài, NCC hoàn tạm ứng; Đề nghị chi hiện phiếu chi khác; Quản trị (tồn quỹ tối thiểu,
+ràng buộc thu chi); Việc cần làm + Tổng quan (chưa khai tài khoản, chờ xác nhận, dự báo thiếu tiền).
+
+**Kiểm thử** rollback (`tools/cash-test.mjs`): khai TK (thiếu số TK bị chặn), đầu kỳ (tự chốt bị chặn), chi lương 480 tr qua 2 bước duyệt
+(không chọn TK bị chặn) → số dư đúng; chi điện 18 tr gắn SMB → chi phí overhead → đảo (sổ + chi phí ghi đảo); chuyển tiền / thu lãi
+(cùng TK, thiếu chứng từ, tự xác nhận bị chặn); phiếu thu CĐT bắt buộc TK; chi ngoài sau mốc bắt buộc TK, trước mốc không cần; đối chiếu
+tháng chưa hết bị chặn, chốt T9; dự báo; tồn quỹ tối thiểu chỉ Quản trị sửa; sửa thẳng danh mục quỹ / sổ thu chi bị chặn.

@@ -137,7 +137,8 @@ export const FinanceOverviewView: React.FC<{
   onOpenPayables: (projectId?: string) => void; onOpenPending: () => void; onOpenTodo: () => void;
   onOpenAdvances?: (filter: 'overdue' | 'refund' | 'active') => void;
   onOpenReceivables?: () => void;
-}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances, onOpenReceivables }) => {
+  onOpenCash?: () => void;
+}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances, onOpenReceivables, onOpenCash }) => {
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('all');
@@ -177,6 +178,9 @@ export const FinanceOverviewView: React.FC<{
   if (directPending && directPending.count > 0) alerts.push({ tone: 'amber', title: `${shortMoney(directPending.amount)} phiếu nhập trực tiếp chưa ghi nợ`, text: `${directPending.count} phiếu chờ kế toán kiểm giá + VAT${directPending.missing ? ` (${directPending.missing} phiếu thiếu giá)` : ''} — chi phí dự án đang ghi thiếu tương ứng.`, onClick: onOpenPending });
   if (openingPendingSuppliers > 0) alerts.push({ tone: 'amber', title: `${openingPendingSuppliers}/${supplierCount} NCC chưa đối chiếu đầu kỳ`, text: 'Số nợ quá hạn chỉ là tạm tính — có thể kế toán đã trả ngoài hệ thống.', onClick: () => onOpenPayables() });
   const advanceTotal = data.projects.reduce((s, p) => s + (p.advanceReceived || 0), 0);
+  const cash = data.cash;
+  if (cash && cash.accounts === 0) alerts.push({ tone: 'amber', title: 'Chưa khai tài khoản tiền', text: 'Vioo chưa biết công ty có bao nhiêu tiền — kế toán khai tài khoản + số dư MISA 30/09.', onClick: onOpenCash });
+  if (cash && cash.belowMinWeek) alerts.push({ tone: 'rose', title: `Dự báo thiếu tiền từ tuần ${viDate(cash.belowMinWeek).slice(0, 5)}`, text: `Số dư chắc chắn xuống dưới tồn quỹ tối thiểu ${shortMoney(cash.minBalance)} (thấp nhất ${shortMoney(cash.lowest || 0)}).`, onClick: onOpenCash });
   const ar = data.receivables;
   if (ar && ar.overdue > 0.5) alerts.push({ tone: 'rose', title: `${shortMoney(ar.overdue)} phải thu CĐT quá hạn`, text: 'CĐT đã xác nhận đợt thanh toán nhưng chưa trả — đôn đốc thu.', onClick: onOpenReceivables });
   if (ar && ar.unbilled && ar.unbilled > 1e9) alerts.push({ tone: 'amber', title: `${shortMoney(ar.unbilled)} sản lượng chưa đề nghị thanh toán`, text: 'Ước tính theo tiến độ Gantt × giá trị HĐ — kiểm tra để lập đợt thu.', onClick: onOpenReceivables });

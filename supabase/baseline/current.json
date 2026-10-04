@@ -249,7 +249,8 @@
     "20261008134000_finance_supplier_advances.sql",
     "20261008134100_finance_customer_receivables.sql",
     "20261008137100_wms_v1_catalog_stock.sql",
-    "20261008137200_wms_v1_2_owners.sql"
+    "20261008137200_wms_v1_2_owners.sql",
+    "20261008134200_finance_cash_treasury.sql"
   ],
   "forbidIncludeAll": true
 }

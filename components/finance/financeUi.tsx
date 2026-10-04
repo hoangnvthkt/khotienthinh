@@ -76,3 +76,18 @@ export const AttachmentPicker: React.FC<{ supplierId: string; value: FinanceAtta
 
 export const FieldError: React.FC<{ error: string | null }> = ({ error }) => error
   ? <p role="alert" className="mr-auto text-sm text-rose-700 dark:text-rose-300">{error}</p> : null;
+
+/** Chọn tài khoản tiền (tiền ra / vào từ đâu) — bắt buộc khi xác nhận chi / thu từ mốc 01/10. */
+export const CashAccountSelect: React.FC<{ value: string; onChange: (id: string) => void; label?: string; required?: boolean; hint?: string }> = ({ value, onChange, label = 'Tài khoản tiền', required = true, hint }) => {
+  const [accounts, setAccounts] = React.useState<import('../../lib/financeService').CashAccountOption[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  React.useEffect(() => { financeService.cashAccounts().then(setAccounts).catch(e => setError(e instanceof Error ? e.message : String(e))); }, []);
+  return <label className="block text-sm font-medium">{label}{required && <span className="text-rose-600"> *</span>}
+    {error ? <span className="mt-1 block text-xs text-rose-700">{error}</span>
+      : accounts && accounts.length === 0 ? <span className="mt-1 block rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">Chưa khai tài khoản tiền nào — khai ở Tài chính → Thu chi & quỹ trước.</span>
+        : <select value={value} onChange={e => onChange(e.target.value)} disabled={!accounts} className={`mt-1 w-full rounded-lg border bg-background px-2 py-1.5 text-sm ${required && !value ? 'border-amber-400' : 'border-border'}`}>
+          <option value="">{accounts ? 'Chọn tài khoản…' : 'Đang tải…'}</option>
+          {(accounts || []).map(a => <option key={a.id} value={a.id}>{a.name}{a.accountNo ? ` · ${a.accountNo}` : ''} — số dư {money(a.balance)}{a.openingConfirmed ? '' : ' (chưa chốt đầu kỳ)'}</option>)}</select>}
+    {hint && <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{hint}</span>}
+  </label>;
+};
