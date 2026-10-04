@@ -10,9 +10,10 @@ import {
   Plus,
   ShieldCheck,
   Trash2,
+  Users,
 } from "lucide-react";
 import type { OfficeService } from "../../lib/office/officeService";
-import type { OfficeCatalog, OfficeGroup } from "../../lib/office/officeTypes";
+import type { OfficeCatalog, OfficeGroup, OfficeOption } from "../../lib/office/officeTypes";
 import { OFFICE_GROUPS } from "../../lib/office/officePresentation";
 import {
   OfficeEmpty,
@@ -21,6 +22,7 @@ import {
   OfficeModal,
   OfficePicker,
 } from "./OfficeShared";
+import { officePermissionSettingsPath } from "../../lib/office/officeAdminNavigation";
 type Kind = "type" | "workflow" | "rule" | "folder";
 const tabs: Record<
   Kind,
@@ -55,12 +57,14 @@ export function OfficeSettingsPage({
   service,
   catalog,
   onSaved,
+  canManagePermissions = false,
 }: {
   service: OfficeService;
   catalog: OfficeCatalog;
   onSaved: () => void;
+  canManagePermissions?: boolean;
 }) {
-  const [kind, setKind] = useState<Kind>("type");
+  const [kind, setKind] = useState<Kind | "permissions">("type");
   const [edit, setEdit] = useState<Record<string, any> | null>(null);
   const [open, setOpen] = useState(false);
   if (!catalog.canConfigure)
@@ -78,12 +82,10 @@ export function OfficeSettingsPage({
       <div className="office-page-heading">
         <div>
           <p className="office-eyebrow">QUẢN TRỊ OFFICE</p>
-          <h1>Cấu hình văn bản</h1>
+          <h1>Cấu hình Office</h1>
           <p>Thiết lập một lần, áp dụng nhất quán trong quy trình hằng ngày.</p>
         </div>
-        <Link className="office-secondary" to="/settings/role-templates">
-          Vai trò & quyền quản trị
-        </Link>
+        <button className="office-secondary" onClick={() => setKind("permissions")}><Users size={16} />Phân quyền người dùng</button>
       </div>
       <div className="office-group-tabs">
         {(Object.entries(tabs) as [Kind, (typeof tabs)[Kind]][]).map(
@@ -98,8 +100,9 @@ export function OfficeSettingsPage({
             </button>
           ),
         )}
+        <button className={kind === "permissions" ? "is-active" : ""} onClick={() => setKind("permissions")}><Users size={16} />Phân quyền người dùng</button>
       </div>
-      <section className="office-panel">
+      {kind === "permissions" ? <OfficeUserPermissions service={service} canManagePermissions={canManagePermissions} /> : <section className="office-panel">
         <header className="office-section-heading">
           <div>
             <h2>{tabs[kind].label}</h2>
@@ -152,8 +155,8 @@ export function OfficeSettingsPage({
             />
           )}
         </div>
-      </section>
-      {open && (
+      </section>}
+      {open && kind !== "permissions" && (
         <OfficeConfigDialog
           key={`${kind}:${edit?.id || "new"}`}
           service={service}
@@ -169,6 +172,30 @@ export function OfficeSettingsPage({
       )}
     </div>
   );
+}
+export function OfficeUserPermissions({ service, canManagePermissions }: { service: OfficeService; canManagePermissions: boolean }) {
+  const [selected, setSelected] = useState<OfficeOption | null>(null);
+  return <section className="office-panel office-access-panel">
+    <header className="office-section-heading"><div><h2>Phân quyền người dùng</h2><p>Chọn người cần cấp quyền, sau đó chọn thao tác và phạm vi truy cập trong Office.</p></div></header>
+    {canManagePermissions ? <>
+      <OfficeField label="Tài khoản cần phân quyền" hint="Quyền ở các ứng dụng khác được giữ nguyên khi anh điều chỉnh Office.">
+        <OfficePicker service={service} kind="user" value={selected?.id} onChange={setSelected} label="Tìm theo tên hoặc email" />
+      </OfficeField>
+      <div className="office-access-actions">
+        {selected ? <Link className="office-primary" to={officePermissionSettingsPath(selected.id)}><ShieldCheck size={16} />Phân quyền Office cho {selected.name}</Link> : <button className="office-primary" disabled><ShieldCheck size={16} />Phân quyền Office</button>}
+        <Link className="office-secondary" to={officePermissionSettingsPath()}>Danh sách người dùng</Link>
+      </div>
+    </> : <p className="office-notice">Anh có quyền cấu hình Office. Để cấp quyền cho người dùng, cần thêm quyền quản lý phân quyền hệ thống và truy cập mục Người dùng. Liên hệ quản trị hệ thống để được cấp quyền này.</p>}
+    <div className="office-access-guide"><h3>Chọn quyền theo công việc</h3><div className="office-access-grid">
+      {[
+        ['Người nhận', 'Xem văn bản được gửi hoặc chia sẻ cho mình, phòng ban hoặc công trường.'],
+        ['Người soạn', 'Tạo văn bản, chỉnh sửa bản nháp và gửi duyệt.'],
+        ['Người duyệt', 'Phê duyệt theo tuyến được giao; không tự duyệt văn bản mình soạn.'],
+        ['Văn thư', 'Cấp số và phát hành văn bản đã đáp ứng điều kiện duyệt.'],
+        ['Quản trị cấu hình', 'Quản lý loại văn bản, tuyến duyệt, quy tắc cấp số và thư mục.'],
+      ].map(([title, description]) => <article key={title}><strong>{title}</strong><p>{description}</p></article>)}
+    </div><p className="office-text-muted">Quyền quản trị cấu hình không tự cấp quyền duyệt, phát hành hoặc xem toàn bộ văn bản. Mỗi quyền được cấp theo phạm vi riêng.</p></div>
+  </section>;
 }
 function OfficeConfigDialog({
   service,

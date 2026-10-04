@@ -679,7 +679,7 @@ function GuardedOfficeFixture() {
   const { pathname } = useLocation();
   // Exercise the app's real route authorization before entering the module.
   return canAccessRoute(routeUser, pathname)
-    ? <OfficeWorkspace service={service} />
+    ? <OfficeWorkspace service={service} canManagePermissions />
     : <Navigate to={getAuthorizedRouteFallback(routeUser, pathname)} replace />;
 }
 createRoot(document.getElementById("root")!).render(

@@ -7,6 +7,7 @@ import {
   Briefcase,
   DollarSign,
   FileSignature,
+  FileText,
   GitBranch,
   HardDrive,
   IdCard,
@@ -35,6 +36,16 @@ export interface DockModuleItem {
 }
 
 const DOCK_MODULE_DEFS: DockModuleItem[] = [
+  {
+    key: 'office.module',
+    label: 'Vioo Office',
+    shortLabel: 'OFFICE',
+    description: 'Văn bản, công văn & hồ sơ doanh nghiệp',
+    route: '/office',
+    icon: FileText,
+    gradient: 'from-teal-600 to-emerald-700',
+    glowColor: 'rgba(13, 148, 136, 0.4)',
+  },
   {
     key: 'DA',
     label: 'Dự án',

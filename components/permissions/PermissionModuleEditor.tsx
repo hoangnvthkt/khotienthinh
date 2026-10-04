@@ -18,6 +18,7 @@ interface PermissionModuleEditorProps {
   inheritedSources: readonly EffectivePermissionSource[];
   targetUserId: string;
   disabled?: boolean;
+  initialApplicationCode?: string;
   initialExpandedApplicationCodes?: readonly string[];
   initialExpandedAdvancedModuleCodes?: readonly string[];
   onChange: (grants: UserPermissionGrant[]) => void;
@@ -35,11 +36,12 @@ export const PermissionModuleEditorView: React.FC<PermissionModuleEditorProps> =
   inheritedSources,
   targetUserId,
   disabled = false,
+  initialApplicationCode,
   initialExpandedApplicationCodes = [],
   initialExpandedAdvancedModuleCodes = [],
   onChange,
 }) => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => catalog.applications.find(app => app.code === initialApplicationCode)?.label || '');
   const { entities } = usePermissionScopeEntities();
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(initialExpandedApplicationCodes),

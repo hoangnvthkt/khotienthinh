@@ -88,3 +88,12 @@ Các runner `cloud-rollback.mjs` và `cloud-postflight.mjs` chỉ dành cho tr�
 ## Ảnh từ dữ liệu giả lập
 
 [Desktop tổng quan](evidence/desktop-overview.png) · [Desktop soạn thảo](evidence/desktop-draft.png) · [Tablet chi tiết](evidence/tablet-detail.png) · [Mobile đọc](evidence/phone-reader.png) · [Mobile soạn](evidence/mobile-draft.png) · [Mobile bảng/nội dung dài](evidence/mobile-rich-document.png)
+
+## Office administration and main integration — 2026-10-04
+
+- Added Office to the application dock and templates/reports to its sidebar navigation; both use canonical access checks.
+- Office configuration now exposes a user permission tab. Authorized system grant managers can pick a person and open the existing user editor with Office expanded and filtered. Configuration-only administrators see an explanation instead of a grant editor link. Other applications' grants are retained by the existing authorization workflow.
+- No schema change or new permission grant was introduced for this UI update.
+- Synced latest main (`a965314`) into the Office branch; resolved only migration manifest metadata by preserving both branches' allowed migrations.
+- Validation: TypeScript, production build, migration manifest and Supabase query inventory passed. Full Vitest run: 3,048 passed, 2 skipped; one query-policy test timed out under concurrent build load and passed on its isolated rerun (11.52 seconds). Targeted administration tests: 12 passed.
+- Browser walkthrough: Office configuration user picker, selected-user link and responsive content at 390, 820 and 1,440 CSS pixels; no horizontal page overflow. Production editor handoff will be checked after deployment.

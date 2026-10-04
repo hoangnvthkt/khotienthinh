@@ -3011,3 +3011,12 @@
   min-width: 90px;
   color: var(--of-muted, #71767e);
 }
+
+.office-access-panel { padding: 24px; }
+.office-access-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+.office-access-actions a { white-space: normal; }
+.office-access-guide { margin-top: 28px; }
+.office-access-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; margin: 16px 0; }
+.office-access-grid article { border: 1px solid var(--of-border); border-radius: 12px; padding: 16px; }
+.office-access-grid p { margin: 8px 0 0; color: var(--of-muted); line-height: 1.6; }
+@media (max-width: 600px) { .office-access-panel { padding: 16px; } .office-access-actions > * { width: 100%; } }

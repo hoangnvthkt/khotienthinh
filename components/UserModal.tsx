@@ -22,12 +22,13 @@ interface UserModalProps {
   userToEdit?: User | null;
   warehouses: Warehouse[];
   users?: User[];
+  permissionApplicationCode?: string;
 }
 
 // The server records a reason with every change; profile-only edits get this one automatically.
 const PROFILE_EDIT_REASON = 'Cập nhật hồ sơ người dùng';
 
-const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [] }) => {
+const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthorizationSaved, userToEdit, warehouses, users = [], permissionApplicationCode }) => {
   const toast = useToast();
   const [formData, setFormData] = useState<Partial<User>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -384,6 +385,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, onAuthor
           </div>
 
           {userToEdit ? <AuthorizationEditor
+            initialApplicationCode={permissionApplicationCode}
             targetUser={userToEdit}
             directGrants={permissionGrants}
             originalDirectGrants={originalPermissionGrants}

@@ -251,7 +251,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
   // Nav items per module
   const moduleNavMap: Record<AppKey, any[]> = {
-    'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
+    'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/templates', icon: BookOpen, label: 'Mẫu văn bản' }, { to: '/office/reports', icon: BarChart3, label: 'Báo cáo' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
     'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
     // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
     WMS: [

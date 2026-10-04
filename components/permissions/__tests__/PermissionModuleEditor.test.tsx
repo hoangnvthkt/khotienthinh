@@ -69,6 +69,17 @@ const inheritedSources: EffectivePermissionSource[] = [{
 }];
 
 describe('PermissionModuleEditor', () => {
+  it('opens only Office without changing grants from other applications', () => {
+    const office = { ...assetApplication, code: 'office', label: 'Vioo Office', modules: [{ ...assetApplication.modules[0], code: 'office.module', label: 'Vioo Office' }] };
+    const grants = [{ userId: 'user-1', permissionCode: 'asset.catalog.view', scopeType: 'global' as const, scopeId: '*', isActive: true }];
+    const onChange = vi.fn();
+    const html = renderToStaticMarkup(<PermissionModuleEditorView catalog={{ ...catalog, applications: [assetApplication, office] }} grants={grants} inheritedSources={[]} targetUserId="user-1" initialApplicationCode="office" initialExpandedApplicationCodes={['office']} onChange={onChange} />);
+    expect(html).toContain('Vioo Office');
+    expect(html).not.toContain('Cấp quyền Xem cho Tài sản');
+    expect(html).toContain('aria-expanded="true"');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(grants[0].permissionCode).toBe('asset.catalog.view');
+  });
   it('shows every direct and inherited scope for the same capability', () => {
     const scopedApplication: PermissionCatalogApplication = {
       ...assetApplication,

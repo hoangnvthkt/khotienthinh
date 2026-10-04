@@ -57,6 +57,7 @@ import { getHrmSharedCatalogCapabilities } from '../lib/hrmSharedCatalogCapabili
 import { canAccessRoute } from '../lib/routeAccess';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { warehouseSiteBindingService } from '../lib/warehouseSiteBindingService';
+import { readOfficePermissionFocus } from '../lib/office/officeAdminNavigation';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -152,7 +153,7 @@ const Settings: React.FC = () => {
   });
 
   const [activeTab, setActiveTab] = useState(
-    location.pathname === '/settings/role-templates'
+    readOfficePermissionFocus(location.search) ? 'users' : location.pathname === '/settings/role-templates'
       ? 'role-templates'
       : location.pathname === '/settings/permission-health'
       ? 'permission-health'
@@ -1153,7 +1154,7 @@ const Settings: React.FC = () => {
       navigate('/settings/permission-health');
     } else if (tabId === 'hrm-master-data') {
       navigate('/settings/hrm-shared-catalog');
-    } else if (location.pathname !== '/settings') {
+    } else if (location.pathname !== '/settings' || readOfficePermissionFocus(location.search)) {
       navigate('/settings');
     }
   };
@@ -1182,6 +1183,18 @@ const Settings: React.FC = () => {
       setActiveTab('hrm-master-data');
     }
   }, [location.pathname]);
+
+  const openedOfficePermissionRequest = useRef<string | null>(null);
+  useEffect(() => {
+    const focus = readOfficePermissionFocus(location.search);
+    if (!focus || !canOpenSettingsFeature('users') || !canPerform(currentUser, 'system.authorization.manage_grants')) return;
+    setActiveTab('users');
+    if (!focus.userId || openedOfficePermissionRequest.current === location.key) return;
+    const target = users.find(candidate => candidate.id === focus.userId);
+    if (!target) return;
+    openedOfficePermissionRequest.current = location.key;
+    handleEditUser(target);
+  }, [location.key, location.search, users, currentUser]);
 
   return (
     <div className="space-y-6">
@@ -2128,6 +2141,7 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'users' && (
             <SettingsUsers
+              permissionApplicationCode={readOfficePermissionFocus(location.search) ? 'office' : undefined}
               users={users} currentUser={currentUser} warehouses={warehouses}
               isUserModalOpen={isUserModalOpen} setIsUserModalOpen={setIsUserModalOpen}
               editingUser={editingUser}

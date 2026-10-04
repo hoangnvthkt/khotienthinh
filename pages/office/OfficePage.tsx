@@ -1,4 +1,7 @@
 import React from "react";
+import { useApp } from "../../context/AppContext";
+import { canPerform } from "../../lib/permissions/permissionService";
+import { canAccessSettingsFeature } from "../../lib/settingsPermissions";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import {
   BarChart3,
@@ -30,8 +33,10 @@ const defaultService = createOfficeService(
 );
 export function OfficeWorkspace({
   service = defaultService,
+  canManagePermissions = false,
 }: {
   service?: OfficeService;
+  canManagePermissions?: boolean;
 }) {
   const catalog = useOfficeQuery(() => service.catalog(), [service]);
   const location = useLocation();
@@ -163,6 +168,7 @@ export function OfficeWorkspace({
                   service={service}
                   catalog={catalog.data}
                   onSaved={catalog.refresh}
+                  canManagePermissions={canManagePermissions}
                 />
               }
             />
@@ -176,4 +182,8 @@ export function OfficeWorkspace({
     </div>
   );
 }
-export default OfficeWorkspace;
+export default function OfficePage() {
+  const { user } = useApp();
+  const canManagePermissions = canPerform(user, "system.authorization.manage_grants") && canAccessSettingsFeature(user, "users");
+  return <OfficeWorkspace canManagePermissions={canManagePermissions} />;
+}

@@ -22,6 +22,7 @@ import { userActivityService } from '../../lib/userActivityService';
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 interface SettingsUsersProps {
+  permissionApplicationCode?: string;
   users: User[];
   currentUser: User;
   warehouses: Warehouse[];
@@ -77,6 +78,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
   onAuthorizationSaved,
   getRoleBadge,
   isSavingAccount = false,
+  permissionApplicationCode,
 }) => {
   const toast = useToast();
   
@@ -743,6 +745,7 @@ const SettingsUsers: React.FC<SettingsUsersProps> = ({
 
       {/* User Modal for Create / Edit */}
       <UserModal
+        permissionApplicationCode={permissionApplicationCode}
         isOpen={isUserModalOpen}
         onClose={() => setIsUserModalOpen(false)}
         onSave={handleSaveUser}
