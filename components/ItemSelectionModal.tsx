@@ -40,6 +40,11 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
       query: debouncedSearchTerm,
       filterWarehouseId,
       allowAllItems,
+      // Mã đã gộp: gõ mã / tên cũ vẫn ra mã giữ.
+      aliases: items.reduce<Record<string, string[]>>((m, item) => {
+        if (item.mergedIntoId) (m[item.mergedIntoId] ||= []).push(item.sku, item.name);
+        return m;
+      }, {}),
     }),
     [allowAllItems, debouncedSearchTerm, filterWarehouseId, items],
   );

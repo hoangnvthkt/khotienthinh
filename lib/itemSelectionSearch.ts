@@ -7,6 +7,8 @@ interface ItemSelectionSearchOptions {
   query: string;
   filterWarehouseId?: string;
   allowAllItems: boolean;
+  /** V1-3a: tên / mã cũ đã gộp vào mã này — gõ mã cũ vẫn ra mã giữ. */
+  aliases?: Record<string, string[]>;
 }
 
 export function getItemSelectionResults(
@@ -14,7 +16,7 @@ export function getItemSelectionResults(
   options: ItemSelectionSearchOptions,
 ): { items: InventoryItem[]; totalMatches: number } {
   const matches = items.filter(item => {
-    const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku], options.query);
+    const matchesSearch = matchesSearchQueryMultiple([item.name, item.sku, ...(options.aliases?.[item.id] || [])], options.query);
 
     if (options.allowAllItems) return matchesSearch;
     if (options.filterWarehouseId) {

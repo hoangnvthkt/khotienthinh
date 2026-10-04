@@ -765,3 +765,22 @@ Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng ti
 - Bỏ một người khỏi Xem kho → gỡ bộ Xem + ô vào phân hệ. Người khóa kỳ không phải kế toán kho → bị chặn.
 
 **Script chạy sau deploy:** `.superpowers/review/work-plan/v12b-deploy-data.mjs` (đã chạy thử kèm migration, đạt): gỡ 17 ô lẻ đã nằm trong Thủ kho, gỡ quyền sửa / xóa kho của chị Linh, chị Mơ, cấp bộ Xem cho chị Nguyễn Thị Hương, bổ sung ô còn thiếu trong bộ Xem của vài người. Còn lại 3 ô lẻ của Dương / Đảng — chủ SP tự xử lý trên màn.
+
+**Đã lên production 04/10/2026** (PR #92, main `4b874ad`): thêm 13, gỡ 19 quyền; Quản lý danh sách kho chỉ Admin; chị Nguyễn Thị Hương xem được kho.
+
+## 19. V1-3a — Gộp mã trùng, đã code (04/10/2026)
+
+**Migration `20261008137400_wms_v1_3a_catalog_merge.sql`** (sinh bằng `tools/gen_v13a.py` + `v13a_template.sql`):
+- `items.merged_into_id` (chỉ khi ngừng dùng), bảng `catalog_duplicate_dismissals` ("không phải trùng", có lý do).
+- `get_catalog_duplicates_v1`, `preview_catalog_merge_v1`, `merge_catalog_items_v1`, `dismiss_catalog_duplicate_v1`.
+- Gộp: mỗi kho một phiếu điều chỉnh (xuất mã phụ, nhập mã giữ, cùng giá bình quân của mã phụ → giữ nguyên giá trị); dòng ngân sách vật tư / kế hoạch / quy tắc kế hoạch chuyển sang mã giữ; mã phụ "Đã gộp vào …". Không sửa sổ kho hay phiếu cũ.
+- Chặn: đơn mua chưa xong, đề xuất chưa xong, phiếu kho chờ, hợp đồng nguyên tắc chưa xong, tồn âm / giá trị treo, cùng kế hoạch có cả hai mã; khác số kích thước; khác ĐVT chưa xác nhận. Chỉ người Cấp mã / Admin.
+- Thẻ kho mã giữ hiện kèm lịch sử mã đã gộp ("từ VTM008").
+- **Sửa thêm:** thủ kho và người chỉ xem một kho trước đây không mở được Danh mục vật tư, không gửi được đề xuất mã (màn chỉ nhận quyền "mọi kho"). Nay thủ kho / người xem kho bất kỳ xem được danh mục; thủ kho gửi được đề xuất mã.
+
+**Giao diện:** Danh mục vật tư thêm ô **Có thể trùng** (phân loại Trùng / Cần xem — khác chữ / Cần xem — khác ĐVT / Tự loại vì khác số), khung so sánh chọn mã giữ (`components/wms/CatalogMergePanel.tsx`, logic `lib/wmsCatalogMerge.ts`). Mã đã gộp hiện "Đã gộp → mã giữ", không mở lại được. Ô chọn vật tư: gõ mã / tên cũ ra mã giữ.
+
+**Đã kiểm trên production trong giao dịch hoàn tác** (`tools/v13a-test.mjs`):
+- Gộp Bulong móng VTM008 (83 bộ) vào VT0000155 (75 bộ) → SMB còn 158 bộ ở mã giữ; thẻ kho 4 dòng, 2 dòng "từ VTM008".
+- Ca có giá trị: 320 cuộn / 76,5 triệu chuyển nguyên vẹn sang mã giữ.
+- Đá 1x2 (3 mã), Bulong M16x50 khác ĐVT (sau khi xác nhận) gộp được; Cáp 4x25 / 4x2.5 bị chặn khác số; mã có phiếu chờ / đơn mua mở bị chặn đúng lý do; anh Luật không gộp được nhưng xem được và gửi được đề xuất mã.

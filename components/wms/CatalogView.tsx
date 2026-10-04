@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertTriangle, Boxes, CircleSlash, Hash, History, PencilLine, RefreshCw, RotateCcw, Search, Tags } from 'lucide-react';
+import { AlertTriangle, Boxes, ChevronDown, ChevronRight, CircleSlash, CopyCheck, Hash, History, PencilLine, RefreshCw, RotateCcw, Search, Tags } from 'lucide-react';
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, shortMoney } from '../finance/financeUi';
 import { useApp } from '../../context/AppContext';
@@ -14,14 +14,16 @@ import {
 } from '../../lib/wmsCatalogService';
 import type { InventoryItem, MaterialCodeRequest } from '../../types';
 import { BAD, EmptyPanel, GREY, OK, Panel, Section, Split, Stat, TEAL, Tile, WARN, dateVi, fmtQty } from './wmsUi';
+import { CatalogMergePanel, VERDICT_CLS } from './CatalogMergePanel';
+import { VERDICT_LABEL, sortGroups, suggestKeep, type DuplicatesData } from '../../lib/wmsCatalogMerge';
 
 // Danh mục vật tư (V1): một cửa cấp mã. Không có nút Xóa — chỉ Ngừng dùng. Mã đã có chứng từ chỉ sửa chính tả tên (server chặn đổi bản chất).
 
-type Queue = 'all' | 'requests' | 'mode' | 'renames' | 'retired';
+type Queue = 'all' | 'requests' | 'dupes' | 'mode' | 'renames' | 'retired';
 const MODES: InventoryMode[] = ['stock', 'use', 'service'];
 const ACTION_LABEL: Record<string, string> = {
   issue: 'cấp mã', update: 'sửa thông tin', rename: 'đổi tên', retire: 'ngừng dùng', reactivate: 'mở lại', mode: 'đổi cách quản lý kho',
-  use_existing: 'trả lời đề xuất: dùng mã này', insert: 'tạo mã', update_legacy: 'sửa',
+  use_existing: 'trả lời đề xuất: dùng mã này', insert: 'tạo mã', update_legacy: 'sửa', merge: 'gộp vào mã khác', merge_into: 'nhận mã gộp vào',
 };
 const usedOf = (u?: { ledger: number; transactions: number; purchaseOrders: number; requests: number; stockQty: number }) =>
   !!u && (Number(u.stockQty) > 0 || u.ledger > 0 || u.transactions > 0 || u.purchaseOrders > 0 || u.requests > 0);
@@ -34,7 +36,7 @@ const useCatalogLists = () => {
 };
 
 // ---------- Chi tiết một mã ----------
-const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids: string[]) => void; onBack: () => void }> = ({ itemId, canIssue, onChanged, onBack }) => {
+const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids: string[]) => void; onBack: () => void; onOpen: (id: string) => void }> = ({ itemId, canIssue, onChanged, onBack, onOpen }) => {
   const toast = useToast(); const confirm = useConfirm(); const reasonConfirm = useReasonConfirm();
   const { categoryOptions, unitOptions } = useCatalogLists();
   const [d, setD] = useState<CatalogItemDetail | null>(null);
@@ -83,14 +85,14 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
   const renamedChanged = form.name.trim() !== it.name;
   return <Panel onBack={onBack}
     head={<div><p className="text-xs text-muted-foreground">{it.sku} · tạo {dateVi(it.createdAt)}</p><h2 className={`text-lg ${it.status === 'retired' ? 'text-muted-foreground line-through' : ENT}`}>{it.name}</h2>
-      <span className="mt-1 flex flex-wrap gap-1"><Badge className={it.status === 'retired' ? GREY : OK}>{it.status === 'retired' ? 'Ngừng dùng' : 'Đang dùng'}</Badge>
+      <span className="mt-1 flex flex-wrap gap-1"><Badge className={it.status === 'retired' ? GREY : OK}>{it.mergedIntoId ? 'Đã gộp' : it.status === 'retired' ? 'Ngừng dùng' : 'Đang dùng'}</Badge>
         <Badge className={it.inventoryMode === 'stock' ? GREY : TEAL}>{INVENTORY_MODE_LABELS[it.inventoryMode]}</Badge><Badge className={GREY}>{it.category}</Badge>
         {used && <Badge className={GREY} title="Đã có sổ kho / phiếu kho / đơn mua / đề xuất">đã có chứng từ</Badge>}</span></div>}
     foot={canIssue ? <>
       {!edit && <button type="button" className={secondaryBtn} onClick={() => setEdit(true)} disabled={busy}><PencilLine size={15} />Sửa</button>}
       {it.status === 'active'
         ? <button type="button" className={secondaryBtn} disabled={busy || !!blockRetire} title={blockRetire ? `Không ngừng dùng được: ${blockRetire}` : undefined} onClick={() => void toggleStatus()}><CircleSlash size={15} />Ngừng dùng</button>
-        : <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void toggleStatus()}><RotateCcw size={15} />Mở lại</button>}
+        : !it.mergedIntoId && <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void toggleStatus()}><RotateCcw size={15} />Mở lại</button>}
       <span className="w-full text-xs text-muted-foreground sm:w-auto">{blockRetire && it.status === 'active' ? `Ngừng dùng bị khóa: ${blockRetire}. ` : ''}Không có Xóa — mã đã tạo chỉ ngừng dùng.</span>
     </> : <span className="text-xs text-muted-foreground">Chỉ người có ô quyền “Cấp mã” sửa danh mục.</span>}>
     {edit && <section className="space-y-3 rounded-xl border border-teal-300 bg-teal-50/40 p-3 dark:bg-teal-950/20">
@@ -123,7 +125,9 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
     </Section>
     {d.stock.length > 0 && <Section title="Tồn theo kho"><ul className="divide-y divide-border rounded-xl border border-border text-sm">{d.stock.map(s =>
       <li key={s.warehouseId} className="flex items-center justify-between px-3 py-1.5"><span>{s.warehouseName}</span><span><span className={NUM}>{fmtQty(Number(s.qty))}</span> <span className="text-xs text-muted-foreground">{it.unit} · {Number(s.value) > 0 ? shortMoney(Number(s.value)) : 'chưa có giá'}</span></span></li>)}</ul></Section>}
-    {it.status === 'retired' && <p className={`rounded-xl border px-3 py-2 text-sm ${GREY}`}>Ngừng dùng {dateVi(it.retiredAt)}{it.retiredReason ? ` — ${it.retiredReason}` : ''}.</p>}
+    {it.mergedIntoId ? <div className={`rounded-xl border px-3 py-2 text-sm ${TEAL}`}>Đã gộp vào mã khác {dateVi(it.retiredAt)}. Tồn và kế hoạch đã chuyển sang mã giữ; lịch sử của mã này giữ nguyên.
+        <button type="button" className="ml-1 font-semibold underline" onClick={() => onOpen(it.mergedIntoId!)}>Mở mã giữ</button></div>
+      : it.status === 'retired' && <p className={`rounded-xl border px-3 py-2 text-sm ${GREY}`}>Ngừng dùng {dateVi(it.retiredAt)}{it.retiredReason ? ` — ${it.retiredReason}` : ''}.</p>}
     <Section title={<span className="inline-flex items-center gap-1"><History size={14} />Nhật ký</span>}>
       {d.events.length === 0 ? <p className="text-xs text-muted-foreground">Chưa có thay đổi nào được ghi.</p>
         : <ul className="space-y-1.5 text-xs">{d.events.map((ev, i) => <li key={i} className="flex gap-2"><span className="w-20 shrink-0 text-muted-foreground">{dateVi(ev.at)}</span>
@@ -248,10 +252,12 @@ export const CatalogView: React.FC = () => {
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [newCode, setNewCode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dupes, setDupes] = useState<DuplicatesData | null>(null);
+  const [showAuto, setShowAuto] = useState(false);
 
   const load = useCallback(async () => {
     setState(s => (s === 'ready' ? s : 'loading'));
-    try { const [o, r] = await Promise.all([wmsCatalogService.overview(), materialCodeRequestService.list()]); setOv(o); setReqs(r); setState('ready'); }
+    try { const [o, r, dp] = await Promise.all([wmsCatalogService.overview(), materialCodeRequestService.list(), wmsCatalogService.duplicates().catch(() => null)]); setOv(o); setReqs(r); setDupes(dp); setState('ready'); }
     catch (e) { setMessage(catalogErrorMessage(e, 'Chưa tải được danh mục.')); setState('error'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -263,10 +269,15 @@ export const CatalogView: React.FC = () => {
   const modeCands = items.filter(i => i.status !== 'retired' && (i.inventoryMode || 'stock') === 'stock' && guessInventoryMode(i.name, i.unit, i.category) !== 'stock');
   const risky: CatalogRename[] = (ov?.renames || []).filter(r => r.usedBefore);
   const retired = items.filter(i => i.status === 'retired');
+  const groups = sortGroups(dupes?.groups || []);
+  const openDupes = groups.filter(g => g.verdict.v !== 'diffnum');
+  const autoDupes = groups.filter(g => g.verdict.v === 'diffnum');
+  const skuOf = (id: string) => items.find(i => i.id === id)?.sku || '';
   const today = new Date().toISOString().slice(0, 10);
   const tiles: Array<{ k: Queue; label: string; icon: React.ElementType; value: number; hint: string; tone: string; ic: string; blink?: boolean }> = [
     { k: 'all', label: 'Tất cả mã', icon: Boxes, value: items.length, hint: `${items.filter(i => qtyOf(i.id) > 0).length} mã đang có tồn`, tone: 'text-leaf-700 dark:text-leaf-300', ic: 'bg-leaf-600' },
     { k: 'requests', label: 'Đề xuất chờ cấp mã', icon: Hash, value: pending.length, hint: pending.length ? `cũ nhất ${Math.max(...pending.map(r => Math.floor((Date.parse(today) - Date.parse(String(r.createdAt).slice(0, 10))) / 864e5)))} ngày` : 'không còn', tone: 'text-rose-700 dark:text-rose-300', ic: 'bg-rose-500', blink: pending.length > 0 },
+    { k: 'dupes', label: 'Có thể trùng', icon: CopyCheck, value: openDupes.length, hint: dupes ? `${openDupes.filter(g => g.verdict.v === 'dup').length} trùng rõ · ${openDupes.filter(g => g.verdict.v !== 'dup').length} cần xem` : 'chưa tải được', tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
     { k: 'mode', label: 'Cần đặt cách quản lý', icon: Tags, value: modeCands.length, hint: 'bê tông, Base, dầu, dịch vụ…', tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
     { k: 'renames', label: 'Đổi tên khi đã có chứng từ', icon: PencilLine, value: risky.length, hint: `trên ${(ov?.renames || []).length} lần đổi tên`, tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
     { k: 'retired', label: 'Ngừng dùng', icon: CircleSlash, value: retired.length, hint: 'mở lại được', tone: 'text-slate-700 dark:text-slate-200', ic: 'bg-slate-500' },
@@ -283,7 +294,8 @@ export const CatalogView: React.FC = () => {
   const canIssue = ov.can.issueCode;
   const selReq = reqs.find(r => r.id === sel);
   const selRename = sel?.startsWith('rn:') ? (ov.renames[+sel.slice(3)] || null) : null;
-  const selItem = !selReq && !selRename && sel ? sel : null;
+  const selDup = sel?.startsWith('dup:') ? groups.find(g => g.key === sel.slice(4)) || null : null;
+  const selItem = !selReq && !selRename && !selDup && sel && !sel.startsWith('dup:') ? sel : null;
   const pickedIds = Object.keys(picked).filter(k => picked[k]);
 
   const rowBtn = (id: string, title: React.ReactNode, sub: React.ReactNode, badge?: React.ReactNode, pre?: React.ReactNode) =>
@@ -293,7 +305,7 @@ export const CatalogView: React.FC = () => {
   const itemRow = (i: InventoryItem, pre?: React.ReactNode, badge?: React.ReactNode) => rowBtn(i.id,
     <span className={i.status === 'retired' ? 'text-muted-foreground line-through' : ''}>{i.name}</span>, `${i.sku} · ${i.unit} · ${i.category}`,
     badge || <span className="flex shrink-0 flex-col items-end gap-1">{qtyOf(i.id) > 0 && <span className={`text-xs ${NUM}`}>{fmtQty(qtyOf(i.id))}</span>}
-      {(i.inventoryMode || 'stock') !== 'stock' && <Badge className={TEAL}>{INVENTORY_MODE_LABELS[i.inventoryMode || 'stock']}</Badge>}{i.status === 'retired' && <Badge className={GREY}>Ngừng dùng</Badge>}</span>, pre);
+      {(i.inventoryMode || 'stock') !== 'stock' && <Badge className={TEAL}>{INVENTORY_MODE_LABELS[i.inventoryMode || 'stock']}</Badge>}{i.status === 'retired' && <Badge className={GREY}>{i.mergedIntoId ? `Đã gộp → ${skuOf(i.mergedIntoId)}` : 'Ngừng dùng'}</Badge>}</span>, pre);
 
   const list = queue === 'all' ? box(<ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">{allList.slice(0, 200).map(i => itemRow(i))}
     {allList.length > 200 && <li className="px-3 py-2 text-center text-xs text-muted-foreground">Còn {allList.length - 200} mã — gõ để tìm.</li>}
@@ -305,6 +317,13 @@ export const CatalogView: React.FC = () => {
       <span className="w-full text-xs text-muted-foreground">{allList.length} mã</span></div>)
     : queue === 'requests' ? box(pending.length === 0 ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Không còn đề xuất chờ cấp mã.</p>
       : <ul className="divide-y divide-border">{pending.map(r => rowBtn(r.id, r.proposedName, `${r.code} · ${r.requestedByName || '—'} · ${r.proposedUnit || ''}`, <Badge className={`${BAD} overdue-blink`}>{dateVi(r.createdAt)}</Badge>))}</ul>)
+    : queue === 'dupes' ? box(!dupes ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Chưa tải được danh sách mã trùng. Bấm Làm mới.</p>
+      : <>{openDupes.length === 0 ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Không còn nhóm mã nào có thể trùng.</p>
+        : <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">{openDupes.map(g => rowBtn(`dup:${g.key}`, suggestKeep(g).name, g.items.map(i => `${i.sku} (${i.unit})`).join(' · '),
+          <span className="flex shrink-0 flex-col items-end gap-1"><Badge className={VERDICT_CLS[g.verdict.v]}>{VERDICT_LABEL[g.verdict.v]}</Badge>{g.items.some(i => i.stock.some(s => Number(s.qty) > 0)) && <span className="text-[11px] text-muted-foreground">có tồn</span>}</span>))}</ul>}
+        {autoDupes.length > 0 && <><button type="button" onClick={() => setShowAuto(v => !v)} className="flex w-full items-center gap-1 border-t border-border px-3 py-2 text-left text-xs font-semibold text-muted-foreground">{showAuto ? <ChevronDown size={14} /> : <ChevronRight size={14} />}Tự loại vì khác số ({autoDupes.length})</button>
+          {showAuto && <ul className="divide-y divide-border border-t border-border">{autoDupes.map(g => rowBtn(`dup:${g.key}`, g.items.map(i => i.name).join(' / '), g.verdict.why, <Badge className={GREY}>khác số</Badge>))}</ul>}</>}</>,
+      <p className="border-b border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">So tên sau khi bỏ dấu, hoa thường, dấu cách, “*” / “x”. Hệ thống tự phân loại; người Cấp mã quyết định gộp hay không.</p>)
     : queue === 'mode' ? box(modeCands.length === 0 ? <p className="px-4 py-12 text-center text-sm text-muted-foreground">Không còn mã cần đặt cách quản lý.</p>
       : <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">{modeCands.map(i => itemRow(i, canIssue ? <input type="checkbox" className="mt-1.5 h-4 w-4 accent-teal-600" aria-label={`Chọn ${i.name}`} checked={!!picked[i.id]}
         onChange={e => setPicked(p => ({ ...p, [i.id]: e.target.checked }))} /> : undefined, <Badge className={TEAL}>gợi ý: {INVENTORY_MODE_LABELS[guessInventoryMode(i.name, i.unit, i.category)]}</Badge>))}</ul>,
@@ -322,7 +341,9 @@ export const CatalogView: React.FC = () => {
     </div>
     <div className="scrollbar-hide flex gap-2 overflow-x-auto pb-1">{tiles.map(x => <Tile key={x.k} active={queue === x.k} onClick={() => { setQueue(x.k); setSel(null); }} icon={x.icon} label={x.label} value={x.value} hint={x.hint} tone={x.tone} ic={x.ic} blink={x.blink && queue !== x.k} />)}</div>
     <Split open={!!sel} selKey={sel} list={list}
-      detail={selItem ? <ItemDetail key={selItem} itemId={selItem} canIssue={canIssue} onChanged={changed} onBack={() => setSel(null)} />
+      detail={selItem ? <ItemDetail key={selItem} itemId={selItem} canIssue={canIssue} onChanged={changed} onBack={() => setSel(null)} onOpen={id => { setQueue('all'); setSel(id); }} />
+        : selDup ? <CatalogMergePanel key={selDup.key} group={selDup} canMerge={!!dupes?.can.merge} onBack={() => setSel(null)} onOpenItem={id => { setQueue('all'); setSel(id); }}
+          onDone={ids => { setSel(null); changed(ids); }} />
         : selReq ? <RequestDetail key={selReq.id} req={selReq} items={items} canIssue={canIssue} onDone={ids => { setSel(null); changed(ids); }} onBack={() => setSel(null)} />
         : selRename ? <Panel onBack={() => setSel(null)} head={<div><p className="text-xs text-muted-foreground">{dateVi(selRename.at)} · {selRename.by || '—'}</p><h2 className="text-lg font-bold">Đổi tên khi mã đã có chứng từ</h2></div>}>
           <div className="grid gap-2 sm:grid-cols-2"><Stat label="Tên cũ"><b>{selRename.old}</b></Stat><Stat label="Tên mới"><b className={ENT}>{selRename.new}</b></Stat></div>
@@ -330,7 +351,7 @@ export const CatalogView: React.FC = () => {
           <p className={`rounded-xl border px-3 py-2 text-sm ${WARN}`}>Mã đã có chứng từ trước lần đổi tên nên chứng từ cũ đang hiện tên mới. Từ bản này: mã đã có chứng từ chỉ được sửa chính tả; đổi kích thước hoặc thành vật tư khác bị chặn.</p>
           <button type="button" className={secondaryBtn} onClick={() => setSel(selRename.itemId)}>Mở mã {items.find(i => i.id === selRename.itemId)?.sku || ''}</button>
         </Panel>
-        : <EmptyPanel icon={Hash} title="Chọn một dòng bên trái" text={queue === 'mode' ? 'Hoặc tick nhiều mã rồi đặt cách quản lý hàng loạt.' : 'Cấp mã, sửa, ngừng dùng — làm ngay tại đây.'} />} />
+        : <EmptyPanel icon={Hash} title="Chọn một dòng bên trái" text={queue === 'mode' ? 'Hoặc tick nhiều mã rồi đặt cách quản lý hàng loạt.' : queue === 'dupes' ? 'So từng mã (ĐVT, tồn, chứng từ, kế hoạch), chọn mã giữ rồi gộp — hoặc ghi “không phải trùng”.' : 'Cấp mã, sửa, ngừng dùng — làm ngay tại đây.'} />} />
     {queue === 'mode' && canIssue && pickedIds.length > 0 && <div className="sticky bottom-3 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-teal-200 bg-card px-3 py-2.5 shadow-lg dark:border-teal-900">
       <span className="mr-auto text-sm">Đã chọn <b className={NUM}>{pickedIds.length}</b> mã</span>
       {(['use', 'service'] as InventoryMode[]).map(m => <button key={m} type="button" disabled={busy} className={m === 'use' ? primaryBtn : secondaryBtn} onClick={() => void (async () => {
