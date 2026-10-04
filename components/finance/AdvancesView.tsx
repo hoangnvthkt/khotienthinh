@@ -6,7 +6,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceAdvance, type FinanceAdvanceState, type FinanceAdvances, type FinanceAttachment } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { AttachmentPicker, ENT, Kpi, NUM, daysBetween, moneyInput, parseMoney, shortMoney, viDate } from './financeUi';
+import { AttachmentPicker, CashAccountSelect, ENT, Kpi, NUM, daysBetween, moneyInput, parseMoney, shortMoney, viDate } from './financeUi';
 import { AdvanceDrawer } from './AdvanceDrawer';
 
 // Tạm ứng NCC (Phải trả): theo dõi số đã chi, đã cấn trừ vào công nợ, NCC đã hoàn, còn lại; xử lý tạm ứng quá hạn / chờ hoàn.
@@ -38,7 +38,7 @@ export const AdvancesView: React.FC<{ initialFilter?: AdvanceFilter; supplierId?
     const [busy, setBusy] = useState(false);
     const [creating, setCreating] = useState(false);
     const top = useRef<HTMLDivElement>(null);
-    const [form, setForm] = useState<null | { kind: 'refund'; amount: string; date: string; ref: string; files: FinanceAttachment[]; reason: string }
+    const [form, setForm] = useState<null | { kind: 'refund'; amount: string; date: string; ref: string; files: FinanceAttachment[]; reason: string; cash: string }
       | { kind: 'transfer'; target: string; reason: string } | { kind: 'apply'; documentId: string; amount: string }>(null);
 
     const load = useCallback(() => { setError(null); financeService.advances(supplierId || undefined).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, [supplierId]);
@@ -153,13 +153,14 @@ export const AdvancesView: React.FC<{ initialFilter?: AdvanceFilter; supplierId?
             <label className="text-sm font-medium">Ngày nhận tiền<input type="date" max={data.today} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={`mt-1 w-full ${inputCls}`} /></label>
             <label className="text-sm font-medium">Số giấy báo có / phiếu thu<input value={form.ref} onChange={e => setForm({ ...form, ref: e.target.value })} placeholder="VD: GBC 0310-01" className={`mt-1 w-full ${inputCls}`} /></label>
           </div>
+          <CashAccountSelect value={form.cash} onChange={cash => setForm({ ...form, cash })} label="Tiền vào tài khoản" />
           <AttachmentPicker supplierId={a.supplierId} value={form.files} onChange={files => setForm({ ...form, files })} label="Giấy báo có / phiếu thu (ảnh hoặc PDF)" required />
           <label className="block text-sm font-medium">Lý do<input value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} placeholder="VD: Đơn kết thúc thiếu, NCC trả lại phần ứng dư" className={`mt-1 w-full ${inputCls}`} /></label>
           <div className="flex flex-wrap items-center justify-end gap-2"><span className="mr-auto text-xs text-muted-foreground">Người khác có quyền Xác nhận sẽ đối chiếu rồi xác nhận.</span>
             <button type="button" className={secondaryBtn} onClick={() => setForm(null)}>Thôi</button>
-            <button type="button" className={primaryBtn} disabled={busy || !(parseMoney(form.amount) > 0) || parseMoney(form.amount) > a.remaining + 0.5 || !form.ref.trim() || !form.files.length || !form.reason.trim() || !form.date}
+            <button type="button" className={primaryBtn} disabled={busy || !(parseMoney(form.amount) > 0) || parseMoney(form.amount) > a.remaining + 0.5 || !form.ref.trim() || !form.files.length || !form.reason.trim() || !form.date || !form.cash}
               onClick={() => void run(() => financeService.saveAdvanceAdjustment({ requestId: a.id, kind: 'refund', amount: parseMoney(form.amount), paymentDate: form.date, documentRef: form.ref.trim(),
-                attachments: form.files, reason: form.reason.trim() }), 'Đã ghi NCC hoàn tiền — chờ người khác xác nhận.')}>{busy ? <Loader2 size={14} className="animate-spin" /> : <HandCoins size={14} />}Gửi xác nhận</button></div>
+                attachments: form.files, reason: form.reason.trim(), cashAccountId: form.cash }), 'Đã ghi NCC hoàn tiền — chờ người khác xác nhận.')}>{busy ? <Loader2 size={14} className="animate-spin" /> : <HandCoins size={14} />}Gửi xác nhận</button></div>
         </section>}
         {form?.kind === 'transfer' && <section className="mt-4 space-y-3 rounded-2xl border border-teal-200 bg-teal-50/40 p-3 dark:border-teal-900 dark:bg-teal-950/20">
           <h3 className="font-semibold">Chuyển {money(a.remaining)} đ tạm ứng sang đơn khác</h3>
@@ -187,7 +188,7 @@ export const AdvancesView: React.FC<{ initialFilter?: AdvanceFilter; supplierId?
           <span className="w-full text-xs text-muted-foreground sm:w-auto sm:flex-1">{pending ? 'Đang có phiếu chờ xác nhận — xử lý xong mới lập tiếp.' : 'Còn tạm ứng: chờ kho nhận hàng để tự trừ, hoặc xử lý tay.'}</span>
           {a.candidates.length > 0 && <button type="button" className={secondaryBtn} onClick={() => setForm({ kind: 'apply', documentId: '', amount: '' })}>Cấn trừ tay</button>}
           {!pending && a.purchaseOrderId && <button type="button" className={secondaryBtn} onClick={() => setForm({ kind: 'transfer', target: '', reason: '' })}><ArrowRightLeft size={15} />Chuyển sang đơn khác</button>}
-          {!pending && <button type="button" className={a.state === 'refund_due' ? primaryBtn : secondaryBtn} onClick={() => setForm({ kind: 'refund', amount: moneyInput(a.remaining), date: data.today, ref: '', files: [], reason: '' })}><HandCoins size={15} />NCC hoàn tiền</button>}
+          {!pending && <button type="button" className={a.state === 'refund_due' ? primaryBtn : secondaryBtn} onClick={() => setForm({ kind: 'refund', amount: moneyInput(a.remaining), date: data.today, ref: '', files: [], reason: '', cash: '' })}><HandCoins size={15} />NCC hoàn tiền</button>}
         </div>}
       </section>;
     };

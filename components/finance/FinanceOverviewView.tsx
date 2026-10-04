@@ -3,7 +3,7 @@ import { Area, Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, Pie, PieCh
 import {
   ArrowDownRight, ArrowLeft, ArrowUpRight, CalendarClock, CheckCircle2, ChevronRight, ClipboardList, HandCoins, Landmark, PiggyBank, ShieldAlert, TrendingUp, Wallet,
 } from 'lucide-react';
-import { financeService, type FinanceOverview, type FinanceOverviewProject } from '../../lib/financeService';
+import { financeService, type FinanceCost, type FinanceOverview, type FinanceOverviewProject } from '../../lib/financeService';
 import { StateBox } from '../procurement/hub/hubUi';
 import { shortMoney, viDate } from './financeUi';
 
@@ -137,7 +137,9 @@ export const FinanceOverviewView: React.FC<{
   onOpenPayables: (projectId?: string) => void; onOpenPending: () => void; onOpenTodo: () => void;
   onOpenAdvances?: (filter: 'overdue' | 'refund' | 'active') => void;
   onOpenReceivables?: () => void;
-}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances, onOpenReceivables }) => {
+  onOpenCash?: () => void;
+  cost?: FinanceCost | null; onOpenCost?: () => void;
+}> = ({ openingPendingSuppliers, supplierCount, directPending, onOpenPayables, onOpenPending, onOpenTodo, onOpenAdvances, onOpenReceivables, onOpenCash, cost, onOpenCost }) => {
   const [data, setData] = useState<FinanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('all');
@@ -177,6 +179,18 @@ export const FinanceOverviewView: React.FC<{
   if (directPending && directPending.count > 0) alerts.push({ tone: 'amber', title: `${shortMoney(directPending.amount)} phiếu nhập trực tiếp chưa ghi nợ`, text: `${directPending.count} phiếu chờ kế toán kiểm giá + VAT${directPending.missing ? ` (${directPending.missing} phiếu thiếu giá)` : ''} — chi phí dự án đang ghi thiếu tương ứng.`, onClick: onOpenPending });
   if (openingPendingSuppliers > 0) alerts.push({ tone: 'amber', title: `${openingPendingSuppliers}/${supplierCount} NCC chưa đối chiếu đầu kỳ`, text: 'Số nợ quá hạn chỉ là tạm tính — có thể kế toán đã trả ngoài hệ thống.', onClick: () => onOpenPayables() });
   const advanceTotal = data.projects.reduce((s, p) => s + (p.advanceReceived || 0), 0);
+  const cash = data.cash;
+  if (cash && cash.accounts === 0) alerts.push({ tone: 'amber', title: 'Chưa khai tài khoản tiền', text: 'Vioo chưa biết công ty có bao nhiêu tiền — kế toán khai tài khoản + số dư MISA 30/09.', onClick: onOpenCash });
+  // Chi phí & ngân sách: vượt ngân sách, dự báo vượt, quỹ âm, vốn công ty đang ứng.
+  (cost?.projects || []).forEach(p => {
+    if (p.overItems > 0) alerts.push({ tone: 'rose', title: `${p.code}: ${p.overItems} khoản mục vượt ngân sách`, text: p.overList.slice(0, 2).map(o => `${o.item} ${shortMoney(o.used)} / ${shortMoney(o.budget)}`).join(' · '), onClick: onOpenCost });
+    if (p.eac != null && p.budget != null && !p.missingItems && p.eac > p.budget + 0.5) alerts.push({ tone: 'rose', title: `${p.code}: dự báo vượt ngân sách ${shortMoney(p.eac - p.budget)}`, text: `Dự báo khi hoàn thành ≈ ${shortMoney(p.eac)} theo tiến độ ${p.progress}%.`, onClick: onOpenCost });
+    if (p.balance != null && p.balance < -0.5) alerts.push({ tone: 'rose', title: `${p.code}: quỹ dự án âm ${shortMoney(-p.balance)}`, text: 'Dự án đang tiêu hơn tiền CĐT trả — cần cấp vốn.', onClick: onOpenCost });
+  });
+  const capital = (cost?.projects || []).reduce((s, p) => s + Math.max(p.capital, 0), 0);
+  if (capital > 0.5) alerts.push({ tone: 'amber', title: `Công ty đang ứng ${shortMoney(capital)} vốn cho dự án`, text: (cost?.projects || []).filter(p => p.capital > 0.5).map(p => `${p.code} ${shortMoney(p.capital)}`).join(' · '), onClick: onOpenCost });
+  if (cost && cost.stale.count > 0) alerts.push({ tone: 'amber', title: `${cost.stale.count} đơn mua quá hẹn giao > 30 ngày`, text: `${shortMoney(cost.stale.amount)} chưa nhận — nếu NCC không giao, Mua hàng kết thúc đơn để dự báo chi phí đúng.`, onClick: onOpenCost });
+  if (cash && cash.belowMinWeek) alerts.push({ tone: 'rose', title: `Dự báo thiếu tiền từ tuần ${viDate(cash.belowMinWeek).slice(0, 5)}`, text: `Số dư chắc chắn xuống dưới tồn quỹ tối thiểu ${shortMoney(cash.minBalance)} (thấp nhất ${shortMoney(cash.lowest || 0)}).`, onClick: onOpenCash });
   const ar = data.receivables;
   if (ar && ar.overdue > 0.5) alerts.push({ tone: 'rose', title: `${shortMoney(ar.overdue)} phải thu CĐT quá hạn`, text: 'CĐT đã xác nhận đợt thanh toán nhưng chưa trả — đôn đốc thu.', onClick: onOpenReceivables });
   if (ar && ar.unbilled && ar.unbilled > 1e9) alerts.push({ tone: 'amber', title: `${shortMoney(ar.unbilled)} sản lượng chưa đề nghị thanh toán`, text: 'Ước tính theo tiến độ Gantt × giá trị HĐ — kiểm tra để lập đợt thu.', onClick: onOpenReceivables });

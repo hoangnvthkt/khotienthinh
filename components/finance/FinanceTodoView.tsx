@@ -1,12 +1,13 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeftRight, Banknote, Building2, CalendarClock, CheckCircle2, ChevronRight, FileCheck2, FileWarning, HandCoins, RotateCcw, Scale } from 'lucide-react';
-import type { FinanceAdvances, FinanceReceivables } from '../../lib/financeService';
+import { Wallet, AlertTriangle, ArrowLeftRight, Banknote, Building2, Calculator, CalendarClock, CheckCircle2, ChevronRight, ClipboardList, FileCheck2, FileWarning, HandCoins, PiggyBank, RotateCcw, Scale } from 'lucide-react';
+import type { FinanceAdvances, FinanceCost, FinanceReceivables } from '../../lib/financeService';
 import { shortMoney } from './financeUi';
 
 // Việc cần làm của kế toán: mỗi ô là một hàng đợi, bấm để mở đúng chỗ xử lý ở Phải trả.
 
 export type TodoTarget = 'opening' | 'overdue' | 'soon' | 'issues' | 'direct' | 'statements' | 'request' | 'approved' | 'transfers'
-  | 'advance_overdue' | 'advance_refund' | 'advance_adjust' | 'receivable_overdue' | 'receivable_sent' | 'receivable_receipts' | 'receivable_opening' | 'receivable_guarantee';
+  | 'advance_overdue' | 'advance_refund' | 'advance_adjust' | 'receivable_overdue' | 'receivable_sent' | 'receivable_receipts' | 'receivable_opening' | 'receivable_guarantee' | 'cash_setup' | 'cash_confirm' | 'cash_forecast'
+  | 'cost_decide' | 'cost_over' | 'cost_fund_setup' | 'cost_fund_negative' | 'cost_stale';
 
 export const FinanceTodoView: React.FC<{
   totals: { overdue: number; overdueCount: number; soon: number; soonCount: number; issues: number; openingPendingSuppliers: number; supplierCount: number };
@@ -16,9 +17,16 @@ export const FinanceTodoView: React.FC<{
   transferCount: number;
   advances?: FinanceAdvances['totals'] | null;
   receivables?: FinanceReceivables['totals'] | null;
+  cash?: { waitingMe: number; openings: number; reconciliations: number; movements: number; accountsWithoutOpening: number; accounts: number; belowMinWeek: string | null; lowest: number | null; minBalance: number } | null;
+  cost?: FinanceCost | null;
   canRecord: boolean; canConfirm: boolean;
   onGo: (target: TodoTarget) => void;
-}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, receivables: rc, canRecord, canConfirm, onGo }) => {
+}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, receivables: rc, cash, cost, canRecord, canConfirm, onGo }) => {
+  const cp = cost?.projects || [];
+  const decide = cost ? cost.poBudget.filter(o => o.canDecide).length + cp.filter(p => p.pendingBudget?.canDecide || p.openingCanDecide).length : null;
+  const over = cp.filter(p => p.overItems > 0 || p.warnItems > 0);
+  const negative = cp.filter(p => p.balance != null && p.balance < -0.5);
+  const noOpening = cp.filter(p => p.openingStatus === 'none');
   const items: Array<{ key: TodoTarget; title: string; count: number | null; value: string; hint: string; icon: React.ElementType; urgent?: boolean; who?: string }> = [
     { key: 'opening', title: 'Đối chiếu đầu kỳ NCC', count: totals.openingPendingSuppliers, value: `${totals.openingPendingSuppliers}/${totals.supplierCount} NCC`,
       hint: 'Chốt theo sổ MISA 30/09 — làm trước để cảnh báo quá hạn đúng', icon: FileWarning, urgent: true },
@@ -31,6 +39,22 @@ export const FinanceTodoView: React.FC<{
       hint: requests?.waitingMe ? `${requests.waitingMe} chờ bạn duyệt` : 'theo ma trận duyệt chi', icon: FileCheck2, urgent: Boolean(requests?.waitingMe) },
     { key: 'approved', title: 'Đã duyệt, chờ xác nhận đã chi', count: requests?.approved ?? null, value: requests ? `${requests.approved} đề nghị` : '…',
       hint: requests ? `${shortMoney(requests.approvedAmount)} · cần UNC + file` : '', icon: Banknote, who: canConfirm ? undefined : 'Cần quyền Tài chính — Xác nhận' },
+    { key: 'cash_setup', title: 'Khai tài khoản tiền & số dư đầu kỳ', count: cash ? (cash.accounts === 0 ? 1 : cash.accountsWithoutOpening) : null,
+      value: cash ? (cash.accounts === 0 ? 'Chưa khai' : `${cash.accountsWithoutOpening} tài khoản`) : '…', hint: 'theo MISA 30/09 — cần để biết số tiền thật và dự báo', icon: Wallet, urgent: true },
+    { key: 'cash_confirm', title: 'Thu chi chờ xác nhận', count: cash ? cash.openings + cash.reconciliations + cash.movements : null,
+      value: cash ? `${cash.openings + cash.reconciliations + cash.movements} phiếu` : '…', hint: cash?.waitingMe ? `${cash.waitingMe} chờ bạn` : 'đầu kỳ, đối chiếu sao kê, thu khác, chuyển tiền', icon: Banknote },
+    { key: 'cash_forecast', title: 'Dự báo thiếu tiền', count: cash ? (cash.belowMinWeek ? 1 : 0) : null, value: cash?.belowMinWeek ? `Tuần ${cash.belowMinWeek.slice(8, 10)}/${cash.belowMinWeek.slice(5, 7)}` : 'Không',
+      hint: cash?.belowMinWeek ? `xuống dưới tồn quỹ tối thiểu ${shortMoney(cash.minBalance)}` : '', icon: AlertTriangle, urgent: true },
+    { key: 'cost_decide', title: 'Ngân sách / vượt ngân sách chờ bạn', count: decide, value: decide == null ? '…' : `${decide} việc`,
+      hint: cost ? `${cost.poBudget.length} đơn mua vượt dự toán · ${cp.filter(p => p.pendingBudget).length} ngân sách · ${cp.filter(p => p.openingCanDecide).length} đầu kỳ quỹ` : '', icon: Calculator, urgent: true },
+    { key: 'cost_over', title: 'Dự án vượt / sắp vượt ngân sách', count: cost ? over.length : null, value: cost ? `${over.length} dự án` : '…',
+      hint: over.map(p => `${p.code}: ${p.overItems ? `vượt ${p.overItems}` : ''}${p.overItems && p.warnItems ? ', ' : ''}${p.warnItems ? `≥ ${cost?.warnPercent}% ${p.warnItems}` : ''} khoản mục`).join(' · '), icon: Scale, urgent: over.some(p => p.overItems > 0) },
+    { key: 'cost_fund_setup', title: 'Khai đầu kỳ quỹ dự án', count: cost ? noOpening.length : null, value: cost ? `${noOpening.length} dự án` : '…',
+      hint: 'tiền CĐT đã trả − tiền đã chi đến 30/09 theo MISA', icon: PiggyBank, who: canRecord ? undefined : 'Cần quyền Tài chính — Ghi nhận' },
+    { key: 'cost_fund_negative', title: 'Quỹ dự án âm', count: cost ? negative.length : null, value: cost ? `${negative.length} dự án` : '…',
+      hint: cost ? `${negative.map(p => p.code).join(', ')} — ${cost.capitalProviders.join(', ') || 'người cấp vốn'} ghi cấp vốn` : '', icon: HandCoins, urgent: true },
+    { key: 'cost_stale', title: 'Đơn mua quá hẹn giao > 30 ngày', count: cost ? cost.stale.count : null, value: cost ? `${cost.stale.count} đơn` : '…',
+      hint: cost ? `${shortMoney(cost.stale.amount)} chưa nhận — nhắc Mua hàng kết thúc đơn NCC không giao` : '', icon: ClipboardList },
     { key: 'receivable_overdue', title: 'Phải thu CĐT quá hạn', count: rc ? rc.overdueCount : null, value: rc ? `${rc.overdueCount} đợt` : '…',
       hint: rc ? `${shortMoney(rc.overdue)} · CĐT đã xác nhận chưa trả — đôn đốc thu` : '', icon: AlertTriangle, urgent: true },
     { key: 'receivable_receipts', title: 'Phiếu thu CĐT chờ xác nhận', count: rc ? rc.receiptsPending : null, value: rc ? `${rc.receiptsPending} phiếu` : '…',

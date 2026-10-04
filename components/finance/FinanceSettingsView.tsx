@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CalendarClock, HandCoins, Loader2, Lock, Plus, Save, Scale, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { Calculator, CalendarClock, HandCoins, Loader2, Lock, Plus, Save, Scale, ShieldCheck, SlidersHorizontal, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceSettings } from '../../lib/financeService';
@@ -11,12 +11,12 @@ import { CostCutoverSection } from './CostCutoverSection';
 // trách nhiệm (ai đang giữ quyền nào) và các ràng buộc máy chủ đang chặn.
 // Admin / Quản trị Tài chính sửa; mỗi lần sửa bắt buộc lý do, ghi nhật ký và báo cho Admin, Quản trị Tài chính.
 
-type AdminTab = 'general' | 'approval' | 'advance' | 'roles';
+type AdminTab = 'general' | 'approval' | 'advance' | 'cost' | 'roles';
 const ROLE_ROWS: Array<{ key: 'view' | 'record' | 'confirm' | 'manage'; label: string; work: string }> = [
   { key: 'view', label: 'Xem công nợ toàn công ty', work: 'Xem Phải trả, đề nghị chi, tạm ứng mọi dự án' },
-  { key: 'record', label: 'Ghi nhận', work: 'Ghi nợ phiếu nhập / bảng đối soát, lập đề nghị chi và tạm ứng, đối chiếu đầu kỳ, ghi chi ngoài, NCC hoàn tạm ứng, cấn trừ tay' },
-  { key: 'confirm', label: 'Xác nhận', work: 'Xác nhận đã chi (UNC), xác nhận chi ngoài, chốt đầu kỳ, hủy công nợ, xác nhận hoàn / chuyển tạm ứng — luôn khác người lập' },
-  { key: 'manage', label: 'Quản trị Tài chính', work: 'Xem Tổng quan Ban giám đốc, sửa hạn thanh toán, ma trận duyệt, thông số tạm ứng, mốc chi phí MISA' },
+  { key: 'record', label: 'Ghi nhận', work: 'Ghi nợ phiếu nhập / bảng đối soát, lập đề nghị chi và tạm ứng, đối chiếu đầu kỳ, ghi chi ngoài, NCC hoàn tạm ứng, cấn trừ tay, lập ngân sách dự án, khai đầu kỳ quỹ dự án' },
+  { key: 'confirm', label: 'Xác nhận', work: 'Xác nhận đã chi (UNC), xác nhận chi ngoài, chốt đầu kỳ (cả đầu kỳ quỹ dự án), hủy công nợ, xác nhận hoàn / chuyển tạm ứng — luôn khác người lập' },
+  { key: 'manage', label: 'Quản trị Tài chính', work: 'Xem Tổng quan Ban giám đốc, duyệt ngân sách dự án, sửa hạn thanh toán, ma trận duyệt, thông số tạm ứng / ngân sách / cấp vốn, mốc chi phí MISA' },
 ];
 const RULES: Array<{ group: string; items: Array<{ text: string; where?: AdminTab }> }> = [
   { group: 'Đề nghị chi & tạm ứng', items: [
@@ -34,7 +34,45 @@ const RULES: Array<{ group: string; items: Array<{ text: string; where?: AdminTa
     { text: 'Đối chiếu đầu kỳ theo sổ MISA 30/09: người lập ≠ người chốt; số Vioo cao hơn MISA thì không chốt được.' },
     { text: 'Mọi thay đổi ghi nhật ký bất biến (không sửa, không xóa).' },
   ] },
+  { group: 'Thu chi & quỹ', items: [
+    { text: 'Từ mốc 01/10 mọi khoản chi NCC, tạm ứng, chi khác, phiếu thu CĐT, NCC hoàn tạm ứng khi xác nhận phải chọn tài khoản tiền; sổ thu chi không sửa / xóa — chỉ đảo.' },
+    { text: 'Số dư đầu kỳ tài khoản theo MISA 30/09, thu khác, chuyển tiền: người lập ≠ người xác nhận.' },
+    { text: 'Đối chiếu sao kê tháng: lệch phải giải thích, người khác chốt; chốt xong không ghi lùi ngày vào tháng đó.' },
+    { text: 'Dự báo cảnh báo khi số dư chắc chắn xuống dưới tồn quỹ tối thiểu.', where: 'general' },
+  ] },
+  { group: 'Chi phí & ngân sách', items: [
+    { text: 'Ngân sách theo cây khoản mục; vật tư luôn lấy từ dự toán vật tư. Người lập ≠ người duyệt (Quản trị Tài chính); điều chỉnh = phiên bản mới, bản cũ giữ nguyên.' },
+    { text: 'Khoản mục dùng từ ngưỡng % ngân sách (đã ghi nhận + đơn chưa nhận) thì cảnh báo; phiếu chi khác / đơn mua làm vượt 100% thì thêm bước duyệt vượt ngân sách.', where: 'cost' },
+    { text: 'Đơn mua (Mua hàng) vượt dự toán vật tư: người duyệt vượt ngân sách duyệt ở Tài chính trước, sau đó người duyệt đơn mới duyệt được.' },
+    { text: 'Quỹ dự án: đầu kỳ 30/09 theo MISA, người lập ≠ người chốt; khoản chi làm quỹ âm thêm bước "Cấp vốn dự án", chi xong tự ghi vốn công ty cấp.', where: 'cost' },
+    { text: 'Cấp vốn / thu hồi vốn tay chỉ người cấp vốn ghi, bắt buộc lý do; thu hồi không vượt số đang ứng; khoản tự ghi khi chi chỉ đảo bằng cách đảo phiếu chi.' },
+  ] },
 ];
+
+const CashMinSection: React.FC<{ data: FinanceSettings; manage: boolean; onSaved: () => void }> = ({ data, manage, onSaved }) => {
+  const toast = useToast();
+  const [edit, setEdit] = useState<{ value: string; reason: string } | null>(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
+  const save = async () => {
+    if (!edit) return; const v = parseMoney(edit.value);
+    if (!(v >= 0)) { setErr('Số tiền không hợp lệ.'); return; } if (!edit.reason.trim()) { setErr('Nhập lý do.'); return; }
+    setBusy(true); setErr(null);
+    try { await financeService.saveCashSettings({ minBalance: v, reason: edit.reason.trim(), expectedRowVersion: data.settings.rowVersion }); toast.success('Quản trị Tài chính', 'Đã đổi tồn quỹ tối thiểu.'); setEdit(null); onSaved(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  return <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <h3 className="flex items-center gap-2 font-semibold text-foreground"><Scale size={16} className="text-teal-700" />Tồn quỹ tối thiểu</h3>
+    <p className="mt-1 text-sm text-muted-foreground">Dự báo dòng tiền 8 tuần cảnh báo tuần nào số dư chắc chắn xuống dưới mức này (Thu chi & quỹ, Tổng quan, Việc cần làm).</p>
+    {edit ? <div className="mt-3 flex flex-wrap items-center gap-2">
+      <input inputMode="numeric" value={edit.value} onChange={e => setEdit({ ...edit, value: e.target.value })} onBlur={() => setEdit({ ...edit, value: moneyInput(parseMoney(edit.value) || 0) })} className={`w-44 text-right ${inputCls}`} aria-label="Tồn quỹ tối thiểu" /> đ
+      <input value={edit.reason} onChange={e => setEdit({ ...edit, reason: e.target.value })} placeholder="Lý do (bắt buộc)" className={`min-w-[14rem] flex-1 ${inputCls}`} />
+      <button type="button" disabled={busy} className={primaryBtn} onClick={() => void save()}><Save size={15} />Lưu</button>
+      <button type="button" className={secondaryBtn} onClick={() => setEdit(null)}>Thôi</button>
+      {err && <p role="alert" className="w-full text-sm text-rose-700">{err}</p>}
+    </div> : <p className="mt-2 text-sm"><b className={NUM}>{money(data.settings.cashMinBalance)} đ</b>
+      {manage && <button type="button" onClick={() => { setErr(null); setEdit({ value: moneyInput(data.settings.cashMinBalance), reason: '' }); }} className="ml-2 font-semibold text-teal-700 hover:underline">Sửa</button>}</p>}
+  </section>;
+};
 
 const AdvanceSection: React.FC<{ data: FinanceSettings; manage: boolean; userName: (id: string) => string; onSaved: () => void }> = ({ data, manage, userName, onSaved }) => {
   const toast = useToast();
@@ -87,6 +125,51 @@ const AdvanceSection: React.FC<{ data: FinanceSettings; manage: boolean; userNam
   </section>;
 };
 
+const PeoplePicker: React.FC<{ label: string; ids: string[]; users: Array<{ id: string; name: string }>; userName: (id: string) => string; onChange: (ids: string[]) => void }> = ({ label, ids, users, userName, onChange }) =>
+  <div className="flex flex-wrap items-center gap-2 text-sm"><span className="font-medium">{label}:</span>
+    {ids.map(id => <span key={id} className="inline-flex items-center gap-1 rounded-full border border-mint-200 bg-mint-50 px-2 py-0.5 text-xs font-semibold text-mint-800">{userName(id)}
+      <button type="button" aria-label={`Bỏ ${userName(id)}`} onClick={() => onChange(ids.filter(x => x !== id))}><X size={12} /></button></span>)}
+    <select value="" aria-label={`Thêm — ${label}`} onChange={e => e.target.value && onChange([...ids, e.target.value])} className={inputCls}>
+      <option value="">+ Thêm người…</option>{users.filter(u => !ids.includes(u.id)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>;
+
+const CostSettingsSection: React.FC<{ data: FinanceSettings; manage: boolean; userName: (id: string) => string; onSaved: () => void }> = ({ data, manage, userName, onSaved }) => {
+  const toast = useToast();
+  const s = data.settings;
+  const [edit, setEdit] = useState<{ warn: string; budget: string[]; capital: string[]; reason: string } | null>(null);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null);
+  const save = async () => {
+    if (!edit) return; const warn = Number(edit.warn.replace(',', '.'));
+    if (!(warn >= 50 && warn <= 100)) { setErr('Ngưỡng cảnh báo 50–100%.'); return; }
+    if (!edit.budget.length || !edit.capital.length) { setErr('Cần ít nhất một người duyệt vượt ngân sách và một người cấp vốn.'); return; }
+    if (!edit.reason.trim()) { setErr('Nhập lý do thay đổi.'); return; }
+    setBusy(true); setErr(null);
+    try { await financeService.saveCostSettings({ warnPercent: warn, budgetApproverIds: edit.budget, capitalProviderIds: edit.capital, reason: edit.reason.trim(), expectedRowVersion: s.rowVersion });
+      toast.success('Quản trị Tài chính', 'Đã lưu thông số ngân sách & quỹ dự án — áp cho đề nghị / đơn gửi sau thời điểm này.'); setEdit(null); onSaved(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  return <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+    <div className="flex flex-wrap items-center gap-2">
+      <h3 className="flex items-center gap-2 font-semibold text-foreground"><Calculator size={16} className="text-teal-700" />Ngân sách & quỹ dự án</h3>
+      <span className="text-xs text-muted-foreground">Cảnh báo khoản mục sắp vượt; ai duyệt vượt ngân sách; ai cấp vốn cho dự án khi quỹ âm.</span>
+      {manage && !edit && <button type="button" onClick={() => { setErr(null); setEdit({ warn: String(Number(s.budgetWarnPercent)), budget: s.budgetApproverIds, capital: s.capitalProviderIds, reason: '' }); }} className={`${secondaryBtn} ml-auto`}>Sửa</button>}
+    </div>
+    {!edit ? <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+      {([['Ngưỡng cảnh báo', `${Number(s.budgetWarnPercent)}% ngân sách`, 'Đã ghi nhận + đơn chưa nhận chạm ngưỡng → cảnh báo'],
+        ['Người duyệt vượt ngân sách', s.budgetApproverIds.map(userName).join(', ') || 'Chưa cài', 'Phiếu chi khác / đơn mua làm khoản mục vượt 100%'],
+        ['Người cấp vốn dự án', s.capitalProviderIds.map(userName).join(', ') || 'Chưa cài', 'Duyệt bước "Cấp vốn dự án", ghi cấp / thu hồi vốn — cần quyền Tài chính — Xem']] as const).map(([l, v, h]) =>
+        <div key={l} className="rounded-xl border border-border px-3 py-2"><dt className="text-xs text-muted-foreground">{l}</dt><dd className="font-semibold text-foreground">{v}</dd><dd className="text-xs text-muted-foreground">{h}</dd></div>)}
+    </dl> : <div className="mt-3 space-y-3">
+      <label className="block max-w-xs text-sm font-medium">Ngưỡng cảnh báo (%)<input value={edit.warn} inputMode="decimal" onChange={e => setEdit({ ...edit, warn: e.target.value })} className={`mt-1 w-full text-right ${inputCls}`} /></label>
+      <PeoplePicker label="Người duyệt vượt ngân sách" ids={edit.budget} users={data.users} userName={userName} onChange={ids => setEdit({ ...edit, budget: ids })} />
+      <PeoplePicker label="Người cấp vốn dự án" ids={edit.capital} users={data.users} userName={userName} onChange={ids => setEdit({ ...edit, capital: ids })} />
+      <input value={edit.reason} onChange={e => setEdit({ ...edit, reason: e.target.value })} placeholder="Lý do thay đổi (bắt buộc)" className={`w-full ${inputCls}`} />
+      {err && <p role="alert" className="text-sm text-rose-700">{err}</p>}
+      <div className="flex justify-end gap-2"><button type="button" onClick={() => setEdit(null)} className={secondaryBtn}>Thôi</button>
+        <button type="button" disabled={busy} onClick={() => void save()} className={primaryBtn}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Lưu</button></div>
+    </div>}
+  </section>;
+};
+
 type Tier = { max: string; steps: Array<{ label: string; approverIds: string[] }> };
 
 export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
@@ -132,8 +215,9 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
   const patchTier = (i: number, patch: Partial<Tier>) => setTiers(cur => cur!.map((t, k) => k === i ? { ...t, ...patch } : t));
 
   const TABS: Array<[AdminTab, string, React.ElementType, string]> = [
-    ['general', 'Thông số chung', SlidersHorizontal, 'Hạn thanh toán, mốc chi phí MISA'], ['approval', 'Duyệt chi & ủy quyền', ShieldCheck, `Ma trận phiên bản ${data.matrix.versionNo}`],
-    ['advance', 'Tạm ứng NCC', HandCoins, `Duyệt thêm từ ${Number(data.settings.advanceExtraPercent)}%`], ['roles', 'Trách nhiệm & ràng buộc', Users, 'Ai làm gì, máy chủ chặn gì']];
+    ['general', 'Thông số chung', SlidersHorizontal, 'Hạn thanh toán, tồn quỹ, mốc MISA'], ['approval', 'Duyệt chi & ủy quyền', ShieldCheck, `Ma trận phiên bản ${data.matrix.versionNo}`],
+    ['advance', 'Tạm ứng NCC', HandCoins, `Duyệt thêm từ ${Number(data.settings.advanceExtraPercent)}%`],
+    ['cost', 'Ngân sách & quỹ dự án', Calculator, `Cảnh báo từ ${Number(data.settings.budgetWarnPercent)}%`], ['roles', 'Trách nhiệm & ràng buộc', Users, 'Ai làm gì, máy chủ chặn gì']];
   return <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
     <nav aria-label="Mục quản trị" className="flex gap-2 overflow-x-auto lg:flex-col">
       {TABS.map(([k, l, I, h]) => <button key={k} type="button" aria-current={tab === k ? 'page' : undefined} onClick={() => { setTab(k); setFormError(null); }}
@@ -158,6 +242,7 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
         {manage && <button type="button" onClick={() => setDays({ value: String(data.settings.defaultPaymentDays), reason: '', apply: false })} className="ml-2 font-semibold text-teal-700 hover:underline">Sửa</button>}</p>}
     </section>
 
+    <CashMinSection data={data} manage={manage} onSaved={load} />
     <CostCutoverSection canManage={manage} />
     </>}
 
@@ -240,6 +325,7 @@ export const FinanceSettingsView: React.FC<{ currentUserId: string }> = ({ curre
     </>}
 
     {tab === 'advance' && <AdvanceSection data={data} manage={manage} userName={userName} onSaved={load} />}
+    {tab === 'cost' && <CostSettingsSection data={data} manage={manage} userName={userName} onSaved={load} />}
 
     {tab === 'roles' && <>
       <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
