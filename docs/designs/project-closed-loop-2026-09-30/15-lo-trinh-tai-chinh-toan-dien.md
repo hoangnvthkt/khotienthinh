@@ -1,0 +1,79 @@
+# Lộ trình Tài chính toàn diện — đủ nghiệp vụ, DỰ BÁO, dễ dùng hơn MISA (05/10/2026)
+
+Định hướng chủ SP 05/10:
+- Hoàn thiện mọi nghiệp vụ: mua hàng, nhập xuất kho, công nợ, thanh toán với NCC / CĐT / thầu phụ, thống kê, báo cáo.
+- **Quan trọng nhất là DỰ BÁO**: GĐ tài chính phải biết 1, 3, 6 tháng tới cần chuẩn bị chi bao nhiêu, cần thu bao nhiêu, để tư vấn TGĐ.
+- **Dễ dùng**: ít thao tác, gợi ý, nhập liệu nâng cao, import Excel.
+
+## 1. Vioo khác MISA ở đâu
+
+- MISA là **sổ kế toán**: ghi lại chuyện đã xảy ra theo chứng từ, phục vụ báo cáo thuế.
+- Vioo là **hệ điều hành tài chính của công ty xây dựng**:
+  - số tài chính sinh ra từ việc thật (đơn mua, kho nhận hàng, nhật ký, Gantt, nghiệm thu);
+  - mỗi số truy được về chứng từ và người làm;
+  - nhìn về phía trước: dự báo dòng tiền theo tiến độ công trường.
+- MISA vẫn giữ vai trò sổ thuế: Vioo xuất chứng từ sang MISA, không bắt kế toán nhập hai lần.
+
+## 2. Đối chiếu nghiệp vụ
+
+| Chu trình | Đã có trong Vioo | Còn thiếu | Ưu tiên |
+|---|---|---|---|
+| **Dự báo dòng tiền** | 8 tuần, chỉ từ chứng từ đã có | 1 / 3 / 6 tháng theo tiến độ Gantt, đơn mua, dự toán, HĐ thầu phụ, lương, chi định kỳ; kịch bản; nhu cầu vốn; theo dự án | **1** |
+| Tách Tài chính khỏi Dự án | Đã duyệt doc 14 | P1 menu + Tài chính dự án + quyền theo dự án; P2 bỏ tab; P3 nhập MISA, chặn ghi tay | **2** |
+| Tiền & ngân hàng | Tài khoản, đầu kỳ, sổ thu chi, đối chiếu sao kê, chuyển tiền | **Import sao kê ngân hàng (Excel) + tự khớp** phiếu thu / chi / đề nghị chi; nhắc khoản chưa khớp | 3 |
+| Mua hàng → kho → công nợ NCC | PO, nhận hàng, đối soát HĐ, nhập trực tiếp, trả hàng, công nợ, đề nghị chi, tạm ứng | Hóa đơn đầu vào + khớp 3 bên (K3c), **đọc ảnh / XML hóa đơn điện tử**, chứng từ điều chỉnh | 4 |
+| Kho | Vật tư một nguồn số, giá vốn, kiểm kê, phân quyền kho (module Vật tư) | Khóa kỳ kho cùng khóa kỳ kế toán; giá trị tồn kho trên báo cáo tài chính | 6 |
+| Phải thu CĐT | Đợt thu, phiếu thu, bảo lãnh, giữ lại, tạm ứng CĐT | Gợi ý lập đợt từ sản lượng Gantt / nghiệm thu; xuất hóa đơn đầu ra; tuổi nợ | 5 |
+| Thầu phụ | F4 (PR #103) | Lấy công từ nhật ký làm gợi ý; quyết toán HĐ; nộp TNCN đã khấu trừ | 5 |
+| Chi phí, ngân sách, giá thành | Khoản mục, ngân sách, quỹ dự án, phân bổ tháng, quỹ công trường | Giá thành công trình (dở dang / kết chuyển), lãi gộp theo tháng | 6 |
+| Lương | Phân bổ lương vào dự án | Chi lương qua sổ thu chi (1 đề nghị chi cho cả bảng lương), BHXH, TNCN | 7 |
+| Thuế | TNCN thầu phụ (theo dõi) | VAT đầu vào / đầu ra theo tháng, ước số phải nộp (đưa vào dự báo) | 7 |
+| Vay & tài sản | — | Khoản vay, lịch trả gốc lãi (đưa vào dự báo), hạn mức tín dụng; khấu hao từ module Tài sản | 3 (khoản vay) / 8 |
+| Báo cáo | Tổng quan, sức khỏe dự án, việc cần làm | Tuổi nợ phải thu / phải trả, lãi lỗ theo dự án và tháng, báo cáo quản trị cho TGĐ, xuất Excel mọi bảng | 5 |
+| Kết nối MISA | — | Xuất chứng từ (phiếu chi, UNC, phiếu thu, mua hàng) theo mẫu import MISA | chờ mẫu từ chị Hương |
+
+## 3. Nguyên tắc dễ dùng (áp mọi màn Tài chính)
+
+1. **Điền sẵn, không gõ lại**: mọi phiếu lấy sẵn từ nguồn (đơn, nhận hàng, nghiệm thu, sao kê). Kế toán chỉ kiểm và bấm.
+2. **Gợi ý có lý do**: số gợi ý (khấu trừ, hạn, khoản mục) hiện kèm vì sao; khác gợi ý mới phải ghi lý do.
+3. **Làm hàng loạt**: chọn nhiều để ghi nhận, duyệt, lập một đề nghị chi cho nhiều chứng từ, tự khớp sao kê.
+4. **Import Excel ở mọi danh mục và sổ**: đầu kỳ, kế hoạch thu chi, sao kê, ngân sách, số MISA. Có file mẫu, xem trước, báo dòng lỗi bằng tiếng Việt, chặn trùng.
+5. **Đọc chứng từ bằng AI**: ảnh hóa đơn, UNC, biên bản → điền sẵn số tiền, ngày, số chứng từ, đối tác (đã có bộ đọc OCR ở Vioo Office, dùng lại).
+6. **Hàng đợi việc**: "Việc cần làm" là điểm vào chính; mỗi ô mở thẳng đúng chỗ xử lý.
+7. **Nhập nhanh bằng bàn phím**: Enter để sang ô, gõ số kiểu "1,2 tỷ" / "350tr", tìm đối tác theo vài chữ.
+8. **Không che chưa biết bằng 0**; luôn nói thiếu điều kiện gì và ai làm.
+
+## 4. Dự báo dòng tiền 6 tháng — thiết kế (mockup `.superpowers/cost/fc-v1.html`)
+
+**Nguồn tiền vào**
+- Phải thu CĐT đã xác nhận (chắc chắn).
+- Đợt đã gửi CĐT (đã gửi).
+- Sản lượng theo Gantt × giá trị HĐ gồm VAT − giữ lại − thu hồi tạm ứng, tiền về sau thời gian CĐT duyệt + trả (theo tiến độ).
+- Sản lượng đã làm chưa đề nghị (ước tính).
+- Thu khác định kỳ.
+
+**Nguồn tiền ra**
+- Công nợ theo hạn (chắc chắn).
+- Đề nghị chi đã lập.
+- Đơn mua đã đặt chưa giao, trả theo ngày hẹn + hạn NCC (đã đặt).
+- Dự toán vật tư chưa đặt, mua theo Gantt (theo tiến độ).
+- HĐ thầu phụ còn lại theo Gantt; chưa có HĐ thì ước theo tỷ lệ nhân công (ước tính).
+- Lương (bảng lương gần nhất).
+- Chi định kỳ, khoản vay (gốc + lãi), thuế (ước).
+
+**Kết quả**
+- Thu, chi, ròng, số dư dự kiến theo tháng (6 tháng) và theo tuần (13 tuần đầu).
+- Tháng căng nhất; số tiền cần chuẩn bị thêm (so với tồn quỹ tối thiểu); theo dự án.
+- 3 kịch bản: Cơ sở / Thận trọng / Thuận lợi.
+- Mỗi dòng có độ tin cậy và bấm xem cách tính, chứng từ nguồn.
+- Gợi ý hành động cho GĐ tài chính.
+
+**Số thật 05/10** (chưa gồm tiền đang có, chi chung, thuế):
+
+| | Cơ sở | Thận trọng (CĐT trả chậm thêm 30 ngày, tiến độ chậm 20%) |
+|---|---|---|
+| Tháng căng nhất | T11/2026 | T12/2026 |
+| Lũy kế ròng tại tháng căng nhất | −15,9 tỷ | −40,3 tỷ |
+| **Cần chuẩn bị** (gồm tồn quỹ tối thiểu 2 tỷ) | **17,9 tỷ** | **42,3 tỷ** |
+
+Lý do: DA29 còn 93% khối lượng dồn vào T10–T12. Vật tư, nhân công và 17,9 tỷ đơn mua đã đặt phải chi trước, còn CĐT trả sau khoảng 45 ngày kể từ cuối tháng nghiệm thu.

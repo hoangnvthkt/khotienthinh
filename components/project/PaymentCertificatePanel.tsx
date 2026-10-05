@@ -61,8 +61,8 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
   const { user } = useApp();
   // Owner decision 2026-09-27: only System Admin records project advances.
   const canRecordAdvance = user?.role === Role.ADMIN;
-  // Chủ SP 03/10: chứng từ thanh toán với chủ đầu tư làm ở Tài chính → Phải thu; ở Dự án chỉ xem.
-  const financeOnly = contractType === 'customer';
+  // Chủ SP 03/10: chứng từ thanh toán với chủ đầu tư làm ở Tài chính → Phải thu; 05/10: HĐ thầu phụ làm ở Tài chính → Thầu phụ. Ở Dự án chỉ xem.
+  const financeOnly = contractType === 'customer' || contractType === 'subcontractor';
   const [certs, setCerts] = useState<PaymentCertificate[]>([]);
   const [advances, setAdvances] = useState<AdvancePayment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -423,7 +423,9 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
       </div>
 
       {financeOnly && <p className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
-        Đợt thu và chứng từ thanh toán với chủ đầu tư lập, gửi CĐT, ghi thu ở <a href="#/finance?section=receivables" className="underline">Tài chính → Phải thu</a>. Ở đây chỉ xem.</p>}
+        {contractType === 'subcontractor'
+          ? <>Nghiệm thu thanh toán, tạm ứng, giữ lại bảo hành của HĐ thầu phụ lập và ghi nhận ở <a href={`#/finance?section=subcontracts&subcontract=${contractId}`} className="underline">Tài chính → Phải trả → Thầu phụ</a>. Ở đây chỉ xem.</>
+          : <>Đợt thu và chứng từ thanh toán với chủ đầu tư lập, gửi CĐT, ghi thu ở <a href="#/finance?section=receivables" className="underline">Tài chính → Phải thu</a>. Ở đây chỉ xem.</>}</p>}
       {/* Advance Payments Section */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between mb-3">
@@ -436,7 +438,7 @@ const PaymentCertificatePanel: React.FC<Props> = ({ contractId, contractType, pr
               <Plus size={10} /> Thêm TU
             </button>
           ) : (
-            <span className="text-[10px] font-semibold text-slate-400">{financeOnly ? 'Ghi ở Tài chính → Phải thu' : 'Chỉ Admin được ghi tạm ứng'}</span>
+            <span className="text-[10px] font-semibold text-slate-400">{financeOnly ? (contractType === 'subcontractor' ? 'Ghi ở Tài chính → Thầu phụ' : 'Ghi ở Tài chính → Phải thu') : 'Chỉ Admin được ghi tạm ứng'}</span>
           )}
         </div>
         {showAddAdvance && canRecordAdvance && (

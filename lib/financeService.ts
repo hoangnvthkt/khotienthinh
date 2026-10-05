@@ -94,6 +94,8 @@ export interface FinancePaymentRequest {
   /** Tài khoản tiền đã chi (sổ thu chi). */
   cashEntry?: { accountName: string; date: string } | null;
   advance?: { purchaseOrderId: string | null; poNumber: string | null; contractId: string | null; contractCode: string | null; projectId: string | null;
+    /** Tạm ứng gắn HĐ thầu phụ (contractCode là số HĐ thầu phụ). */
+    subcontractId?: string | null;
     projectCode: string | null; base: number | null; percent: number | null; repayDueDate: string; offset: number } | null;
 }
 export interface FinancePaymentRequests {
@@ -134,6 +136,77 @@ export interface FinanceTransferReview {
   ledgerValue: number; suggested: number | null; flaggedAt: string; canConfirm: boolean;
 }
 export interface FinanceAttachment { name: string; path: string; size: number; type: string; uploadedAt: string }
+
+// ---------- Thầu phụ (F4) ----------
+export type SubcontractIssue = 'no_partner' | 'zero_value' | 'no_signed_date' | 'signed_future' | 'no_project' | 'status' | 'no_retention_due' | 'over_contract' | 'no_bank';
+export interface SubcontractMetrics {
+  grossValue: number | null; vatPercent: number; vatSource: 'contract' | 'default'; cumulativeNet: number; hasRounds: boolean; cumulativePercent: number | null;
+  acceptedGross: number; outstanding: number; overdue: number; retentionHeld: number; retentionDue: string | null; paid: number;
+  advanceRemaining: number; advanceRemainingOpening: number; advanceRemainingVioo: number; pitWithheld: number; cost: number;
+  recoveryPercent: number; recoveryPercentSource: 'contract' | 'auto'; retentionPercent: number; withholdPit: boolean; pitPercent: number;
+  paymentTermDays: number; paymentTermSource: 'contract' | 'default'; warrantyMonths: number | null; retentionDueDate: string | null;
+  /** todo = chưa khai đầu kỳ (chưa biết còn nợ / giữ lại / tạm ứng trước mốc). */
+  opening: 'todo' | 'submitted' | 'confirmed'; openRound: 'draft' | 'submitted' | null; issues: SubcontractIssue[];
+}
+export interface SubcontractSummary {
+  id: string; code: string; name: string | null; subcontractorName: string; partnerId: string | null; partnerName: string | null; projectId: string | null; projectCode: string | null;
+  value: number | null; status: string; signedDate: string | null; completionDate: string | null; withholdPit: boolean;
+  lastRound: { sequenceNo: number; status: SubcontractRoundStatus; periodEnd: string | null } | null; metrics: SubcontractMetrics;
+}
+export interface SubcontractCostReview {
+  id: string; projectId: string; projectCode: string; date: string; amount: number; description: string; counterparty: string | null; createdByName: string | null; createdAt: string;
+  misa: Array<{ id: string; date: string; amount: number; description: string }>;
+}
+export interface FinanceSubcontracts {
+  today: string; cutoverDate: string; can: FinanceCan; currentUserId: string;
+  totals: { contracts: number; value: number; outstanding: number; overdue: number; retentionHeld: number; advanceRemaining: number; pitWithheld: number;
+    openingsTodo: number; openingsPending: number; openingsPendingMe: number; roundsSubmitted: number; roundsWaitingMe: number; roundsDraft: number; retentionDue: number };
+  contracts: SubcontractSummary[]; reviewCosts: SubcontractCostReview[]; withoutContract: Array<{ name: string; projectCode: string; amount: number }>;
+}
+export type SubcontractRoundStatus = 'draft' | 'submitted' | 'recognized' | 'cancelled';
+export type SubcontractDeductionKind = 'material' | 'service' | 'penalty' | 'other';
+export interface SubcontractDeduction { kind: SubcontractDeductionKind; amount: number; reason: string }
+export interface SubcontractRound {
+  id: string; sequenceNo: number; kind: 'progress' | 'opening'; periodStart: string | null; periodEnd: string | null; description: string;
+  cumulativeNet: number; previousNet: number; netAmount: number; vatPercent: number; vatAmount: number; gross: number; advanceRecovery: number; retention: number;
+  pit: number; otherDeduction: number; deductions: SubcontractDeduction[]; payable: number; suggestedRecovery: number | null; suggestedRetention: number | null;
+  suggestedPit: number | null; adjustReason: string | null; overContractReason: string | null; status: SubcontractRoundStatus; submittedAt: string | null;
+  returnReason: string | null; returnedByName: string | null; recognizedDate: string | null; recognizedByName: string | null; dueDate: string | null;
+  retentionDueDate: string | null; attachments: FinanceAttachment[]; note: string | null; cancelReason: string | null; createdBy: string; createdByName: string | null;
+  createdAt: string; rowVersion: number; paid: number; outstanding: number;
+  canEdit: boolean; canSubmit: boolean; canWithdraw: boolean; canDecide: boolean; canCancel: boolean; canReverse: boolean;
+}
+export interface SubcontractOpening {
+  id: string; cutoverDate: string; cumulativeNet: number; paidTotal: number; outstanding: number; outstandingDueDate: string | null; retentionHeld: number;
+  retentionDueDate: string | null; advanceRemaining: number; note: string | null; attachments: FinanceAttachment[]; status: 'submitted' | 'confirmed' | 'rejected' | 'cancelled';
+  createdBy: string; createdByName: string | null; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null;
+  canDecide: boolean; canCancel: boolean;
+}
+export interface SubcontractDetail {
+  today: string; cutoverDate: string; can: FinanceCan; currentUserId: string;
+  contract: { id: string; code: string; name: string | null; subcontractorName: string; taxCode: string | null; scopeOfWork: string | null; projectId: string | null;
+    projectCode: string | null; partnerId: string | null; partner: { id: string; name: string; taxCode: string | null; bankName: string | null; bankAccount: string | null } | null;
+    value: number | null; status: string; signedDate: string | null; completionDate: string | null; retentionPercent: number | null; vatPercent: number | null;
+    advanceRecoveryPercent: number | null; paymentTermDays: number | null; warrantyMonths: number | null; withholdPit: boolean; pitPercent: number };
+  metrics: SubcontractMetrics;
+  budget: { item: string; budget: number | null; projected: number } | null;
+  manDays: { lines: number; people: number; lastDate: string | null };
+  rounds: SubcontractRound[]; openings: SubcontractOpening[];
+  documents: Array<{ id: string; code: string; documentNo: string; sourceType: string; documentDate: string; dueDate: string | null; recognized: number; paid: number;
+    outstanding: number; pendingExternal: number; status: string }>;
+  advances: Array<{ id: string; code: string; status: string; amount: number; offset: number; refunded: number; remaining: number; repayDueDate: string | null; paidDate: string | null }>;
+  events: FinanceEvent[]; partners: Array<{ id: string; name: string; taxCode: string | null }>;
+}
+export interface SubcontractRoundInput {
+  id?: string; expectedRowVersion?: number; subcontractId: string; periodStart?: string | null; periodEnd: string; description: string; cumulativeNet: number;
+  vatPercent?: number | null; advanceRecovery?: number | null; retention?: number | null; pit?: number | null; deductions: SubcontractDeduction[];
+  adjustReason?: string; overContractReason?: string; attachments: FinanceAttachment[]; note?: string;
+}
+export interface SubcontractRoundPreview {
+  previousNet: number; cumulativeNet: number; netAmount: number; vatPercent: number; vatAmount: number; gross: number; advanceRecovery: number; retention: number;
+  pit: number; otherDeduction: number; payable: number; suggestedRecovery: number; suggestedRetention: number; suggestedPit: number; overContract: boolean;
+  cumulativePercent: number | null; budget: { over: boolean; budget: number | null; projected: number; item: string };
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_VIEW_DENIED: 'Bạn chưa có quyền xem Tài chính. Nhờ quản trị cấp quyền "Tài chính — Xem Tài chính toàn công ty".',
@@ -288,6 +361,28 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_ALLOCATION_POOL_INVALID: 'Nhập nội dung, số tiền và lý do cho khoản chi phí chung thêm tay.',
   FINANCE_ALLOCATION_NOT_READY: 'Chưa gửi chốt được: HR chưa chốt bảng công tháng hoặc bảng lương tháng chưa duyệt.',
   FINANCE_COST_SETTINGS_INVALID: 'Ngưỡng 50–100%, cần ít nhất một người duyệt vượt ngân sách và một người cấp vốn.',
+  FINANCE_SUBCONTRACT_NOT_FOUND: 'Không tìm thấy hợp đồng thầu phụ. Tải lại.',
+  FINANCE_SUB_PARTNER_REQUIRED: 'HĐ thầu phụ chưa gắn đối tác (thầu phụ / tổ đội) — Quản trị Tài chính chọn đối tác ở "Điều khoản thanh toán" trước.',
+  FINANCE_SUB_PARTNER_LOCKED: 'HĐ đã có đợt nghiệm thu hoặc tạm ứng — không đổi đối tác được.',
+  FINANCE_SUB_PROJECT_REQUIRED: 'HĐ thầu phụ chưa gắn dự án — sửa ở module Hợp đồng trước.',
+  FINANCE_SUB_CONTRACT_STATE: 'HĐ thầu phụ chưa ký hoặc đã hủy / hết hạn — chỉ lập đợt cho HĐ Đã ký, Đang thi công hoặc Hoàn thành.',
+  FINANCE_SUB_OPENING_REQUIRED: 'Chưa chốt đầu kỳ 30/09 của HĐ này. Khai số MISA (nhập 0 nếu chưa phát sinh) và nhờ người khác chốt trước khi lập đợt.',
+  FINANCE_SUB_OPENING_EXISTS: 'HĐ đã có đầu kỳ (đang chờ chốt hoặc đã chốt).',
+  FINANCE_SUB_OPENING_HAS_ROUNDS: 'HĐ đã có đợt nghiệm thu sau mốc — đảo / hủy các đợt đó trước khi sửa đầu kỳ.',
+  FINANCE_SUB_PERIOD_INVALID: 'Chọn ngày kết thúc kỳ (ngày bắt đầu không sau ngày kết thúc).',
+  FINANCE_SUB_CUMULATIVE_INVALID: 'Lũy kế đến kỳ này phải lớn hơn lũy kế các đợt trước. Sai đợt trước thì đảo đợt đó.',
+  FINANCE_SUB_OVER_CONTRACT: 'Lũy kế vượt giá trị HĐ — ghi lý do (VD số phụ lục HĐ) mới lưu được.',
+  FINANCE_SUB_DEDUCTION_INVALID: 'Mỗi khoản khấu trừ cần loại, số tiền lớn hơn 0 và lý do.',
+  FINANCE_SUB_RECOVERY_OVER: 'Thu hồi tạm ứng lớn hơn tạm ứng còn lại của HĐ.',
+  FINANCE_SUB_ROUND_OPEN_EXISTS: 'HĐ đang có một đợt nháp / chờ ghi nhận — xử lý xong đợt đó rồi lập đợt mới.',
+  FINANCE_SUB_ATTACHMENT_REQUIRED: 'Đính kèm biên bản nghiệm thu / bảng xác nhận khối lượng trước khi gửi.',
+  FINANCE_SUB_ROUND_STALE: 'Số liệu HĐ đã đổi (đợt trước bị đảo hoặc đổi đối tác). Mở đợt, lưu lại rồi gửi.',
+  FINANCE_SUB_ROUND_NOT_LAST: 'Chỉ đảo được đợt đã ghi nhận gần nhất — đảo các đợt sau trước.',
+  FINANCE_RETENTION_NOT_DUE: 'Tiền giữ lại bảo hành chưa đến hạn (hoặc HĐ chưa có ngày hoàn thành / tháng bảo hành) — chưa lập đề nghị chi được.',
+  FINANCE_COST_REVIEW_NOT_FOUND: 'Không còn dòng chi phí ghi tay này. Tải lại.',
+  FINANCE_COST_REVIEW_DONE: 'Dòng này đã được soát xét.',
+  FINANCE_COST_REVIEW_AMOUNT: 'Số đảo phải lớn hơn 0 và không lớn hơn số tiền của dòng ghi tay.',
+  SUBCONTRACT_FINANCE_ONLY: 'Nghiệm thu thanh toán, tạm ứng, lịch thanh toán của HĐ thầu phụ lập ở Tài chính → Phải trả → Thầu phụ.',
 };
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
@@ -510,7 +605,7 @@ export interface FinanceAdvanceAdjustment {
 export interface FinanceAdvance {
   id: string; code: string; status: FinanceRequestStatus; state: FinanceAdvanceState; supplierId: string; supplierName: string;
   projectId: string | null; projectCode: string | null; purchaseOrderId: string | null; supplierContractId: string | null;
-  target: { kind: 'po' | 'contract'; no: string; status: string | null; expectedDate: string | null; base: number | null; received: number | null } | null;
+  target: { kind: 'po' | 'contract' | 'subcontract'; no: string; status: string | null; expectedDate: string | null; base: number | null; received: number | null } | null;
   amount: number; percent: number | null; base: number | null; offset: number; refunded: number; remaining: number;
   repayDueDate: string; overdue: boolean; note: string | null; createdByName: string | null; createdAt: string; rowVersion: number;
   paid: { paymentDate: string; documentRef: string; byName: string | null; attachments: FinanceAttachment[]; reversal: { reason: string; byName: string | null; at: string } | null } | null;
@@ -599,6 +694,33 @@ export const financeService = {
   },
   saveAdvanceSettings(input: { warnPercent: number; extraPercent: number; graceDays: number; extraApproverIds: string[]; expectedRowVersion: number; reason: string }) {
     return call<{ ok: boolean }>('save_finance_advance_settings_v1', { p_input: input });
+  },
+  subcontracts() { return call<FinanceSubcontracts>('get_finance_subcontracts_v1', {}); },
+  subcontract(id: string) { return call<SubcontractDetail>('get_finance_subcontract_v1', { p_subcontract_id: id }); },
+  saveSubcontractTerms(input: { subcontractId: string; partnerId?: string | null; vatPercent: number | null; retentionPercent: number | null; advanceRecoveryPercent: number | null;
+    paymentTermDays: number | null; warrantyMonths: number | null; withholdPit: boolean; pitPercent: number; reason: string }) {
+    return call<{ subcontractId: string }>('save_finance_subcontract_terms_v1', { p_input: input });
+  },
+  saveSubcontractOpening(input: { subcontractId: string; cumulativeNet: number; paidTotal: number; outstanding: number; outstandingDueDate?: string | null; retentionHeld: number;
+    retentionDueDate?: string | null; advanceRemaining: number; note?: string; attachments: FinanceAttachment[] }) {
+    return call<{ id: string }>('save_finance_subcontract_opening_v1', { p_input: input });
+  },
+  decideSubcontractOpening(input: { id: string; action: 'confirm' | 'reject' | 'cancel'; reason?: string }) {
+    return call<{ id: string; status: string }>('decide_finance_subcontract_opening_v1', { p_input: input });
+  },
+  previewSubcontractRound(input: SubcontractRoundInput) { return call<SubcontractRoundPreview>('preview_finance_subcontract_round_v1', { p_input: input }); },
+  saveSubcontractRound(input: SubcontractRoundInput) { return call<{ id: string; sequenceNo: number; payable: number; rowVersion: number }>('save_finance_subcontract_round_v1', { p_input: input }); },
+  transitionSubcontractRound(input: { id: string; expectedRowVersion: number; action: 'submit' | 'withdraw' | 'return' | 'cancel' | 'recognize' | 'reverse'; reason?: string; date?: string }) {
+    return call<{ id: string; status: SubcontractRoundStatus; payable: number; dueDate: string | null; rowVersion: number }>('transition_finance_subcontract_round_v1', { p_input: input });
+  },
+  previewSubcontractAdvance(input: { subcontractId: string; requestId?: string; amount: number }) {
+    return call<Omit<FinanceAdvancePreview, 'internal'>>('preview_finance_subcontract_advance_v1', { p_input: input });
+  },
+  saveSubcontractAdvance(input: { requestId?: string; expectedRowVersion?: number; subcontractId: string; amount: number; method: 'bank_transfer' | 'cash'; plannedDate: string; repayDueDate: string; note: string }) {
+    return call<{ requestId: string; code: string; amount: number }>('save_finance_subcontract_advance_v1', { p_input: input });
+  },
+  reviewManualCost(input: { transactionId: string; action: 'keep' | 'reverse'; amount?: number; reason: string; misaIds?: string[] }) {
+    return call<{ transactionId: string; reversed: number }>('review_finance_manual_cost_v1', { p_input: input });
   },
   receivables() { return call<FinanceReceivables>('get_finance_receivables_v1', {}); },
   customerContract(contractId: string) { return call<CustomerContractDetail>('get_finance_customer_contract_v1', { p_contract_id: contractId }); },
@@ -775,6 +897,7 @@ export const DUE_SOURCE_LABELS: Record<string, string> = {
 };
 export const SOURCE_LABELS: Record<string, string> = {
   purchase_delivery_receipt: 'Nhận hàng PO', direct_supplier_receipt: 'Nhập trực tiếp NCC', supplier_delivery_statement: 'Đối soát HĐ', opening_balance: 'Số dư đầu kỳ',
+  subcontract_round: 'Nghiệm thu thầu phụ', subcontract_retention: 'Giữ lại bảo hành thầu phụ', subcontract_opening: 'Đầu kỳ thầu phụ',
   supplier_return_credit: 'Trả hàng NCC', manual_adjustment: 'Điều chỉnh', site_direct_purchase: 'Mua nóng', purchase_order: 'PO', supplier_invoice_adjustment: 'Điều chỉnh hóa đơn',
 };
 export const METHOD_LABELS: Record<string, string> = { bank_transfer: 'Chuyển khoản', cash: 'Tiền mặt', other: 'Khác', site_cash: 'Quỹ công trường', offset: 'Bù trừ' };
@@ -808,5 +931,10 @@ export const EVENT_LABELS: Record<string, string> = {
   receipt_submit: 'Ghi phiếu thu', receipt_confirm: 'Xác nhận phiếu thu', receipt_reject: 'Từ chối phiếu thu', receipt_withdraw: 'Rút phiếu thu',
   receipt_reverse: 'Đảo phiếu thu', receipt_apply_prepayment: 'Trừ tiền trả trước vào đợt', customer_opening_submit: 'Gửi đối chiếu đầu kỳ phải thu',
   customer_opening_confirm: 'Chốt đầu kỳ phải thu', customer_opening_reject: 'Trả lại đối chiếu đầu kỳ', customer_opening_cancel: 'Hủy chốt đầu kỳ phải thu', advance_offset_failed: 'Cấn trừ tạm ứng tự động không được — cần cấn tay', advance_settings_save: 'Đổi thông số tạm ứng',
+  subcontract_terms_save: 'Khai điều khoản HĐ thầu phụ', subcontract_opening_submit: 'Gửi đầu kỳ thầu phụ', subcontract_opening_confirm: 'Chốt đầu kỳ thầu phụ',
+  subcontract_opening_reject: 'Trả lại đầu kỳ thầu phụ', subcontract_opening_cancel: 'Hủy đầu kỳ thầu phụ', subcontract_round_create: 'Lập đợt nghiệm thu thầu phụ',
+  subcontract_round_update: 'Sửa đợt nghiệm thu thầu phụ', subcontract_round_submit: 'Gửi ghi nhận đợt thầu phụ', subcontract_round_withdraw: 'Rút đợt thầu phụ về nháp',
+  subcontract_round_return: 'Trả lại đợt thầu phụ', subcontract_round_cancel: 'Hủy đợt thầu phụ', subcontract_round_recognize: 'Ghi nhận đợt thầu phụ (công nợ + chi phí)',
+  subcontract_round_reverse: 'Đảo đợt thầu phụ', cost_review_keep: 'Soát xét: chi phí ghi tay không trùng', cost_review_reverse: 'Soát xét: đảo phần trùng MISA',
   direct_receipt_post: 'Ghi nợ phiếu nhập trực tiếp', direct_receipt_return: 'Trả lại phiếu nhập cho kho', direct_receipt_cancel: 'Kho hủy phiếu nhập — hủy công nợ',
 };

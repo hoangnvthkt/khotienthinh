@@ -314,9 +314,12 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
 
   useEffect(() => { loadPermissions(); }, [loadPermissions]);
 
-  const canConfirm = canManageTab || user?.role === 'ADMIN' || projectPerms.has('confirm');
-  const canEditSchedule = canManageTab || user?.role === 'ADMIN' || projectPerms.has('edit');
-  const canDeleteSchedule = canManageTab || user?.role === 'ADMIN' || projectPerms.has('delete');
+  // Chủ SP 03/10 + 05/10: lịch / đợt thanh toán HĐ chủ đầu tư (Tài chính → Phải thu) và HĐ thầu phụ (Tài chính → Thầu phụ) lập ở Tài chính.
+  // Tab này chỉ xem (máy chủ cũng chặn ghi).
+  const financeOnly = true;
+  const canConfirm = !financeOnly && (canManageTab || user?.role === 'ADMIN' || projectPerms.has('confirm'));
+  const canEditSchedule = !financeOnly && (canManageTab || user?.role === 'ADMIN' || projectPerms.has('edit'));
+  const canDeleteSchedule = !financeOnly && (canManageTab || user?.role === 'ADMIN' || projectPerms.has('delete'));
 
   const requireSchedulePermission = async (code: ProjectPermissionCode, actionLabel: string) => {
     if (canManageTab || user?.role === 'ADMIN' || projectPerms.has(code)) return true;
@@ -589,7 +592,9 @@ const PaymentWorkbenchTab: React.FC<PaymentWorkbenchTabProps> = ({ constructionS
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">Nghiệm thu & Thanh toán</h3>
-          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-1">Kế hoạch thanh toán nhập tay theo hợp đồng, có hạng mục dự kiến và xác nhận chất lượng tổng hợp.</p>
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mt-1">Kế hoạch thanh toán theo hợp đồng, có hạng mục dự kiến và xác nhận chất lượng tổng hợp.</p>
+          <p className="mt-2 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+            Chỉ xem. Đợt thu chủ đầu tư lập ở <a href="#/finance?section=receivables" className="underline">Tài chính → Phải thu</a>; nghiệm thu thanh toán thầu phụ ở <a href="#/finance?section=subcontracts" className="underline">Tài chính → Phải trả → Thầu phụ</a>.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canEditSchedule && (

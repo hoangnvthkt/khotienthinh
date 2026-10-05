@@ -6,7 +6,7 @@ import { useApp } from '../../context/AppContext';
 const FinanceHub: React.FC = () => {
   const { user } = useApp();
   const params = new URLSearchParams(useLocation().search);
-  return <FinanceHubView currentUserId={user.id} initialSection={params.get('section')} initialSupplierId={params.get('supplier')} initialRequestId={params.get('request')} initialContractId={params.get('contract')} initialProjectId={params.get('project')} initialView={params.get('view')} />;
+  return <FinanceHubView currentUserId={user.id} initialSection={params.get('section')} initialSupplierId={params.get('supplier')} initialRequestId={params.get('request')} initialContractId={params.get('contract')} initialProjectId={params.get('project')} initialView={params.get('view')} initialSubcontractId={params.get('subcontract')} />;
 };
 
 export default FinanceHub;

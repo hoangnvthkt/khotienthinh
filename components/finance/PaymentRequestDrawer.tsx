@@ -95,13 +95,17 @@ export const PaymentRequestDrawer: React.FC<{ supplierId: string; request?: Fina
           <div className="hidden grid-cols-[1.5rem_minmax(0,1fr)_8rem_9rem] gap-x-3 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground sm:grid">
             <span /><span>Chứng từ</span><span className="text-right">Còn chi được</span><span className="text-right">Chi lần này</span></div>
           {docs.length === 0 && <p className="px-3 py-6 text-center text-sm text-muted-foreground">NCC không còn chứng từ đang nợ.</p>}
-          {docs.map(d => { const avail = available(d.id); const blocked = d.issues.includes('internal_partner') || (avail <= 0.5 && !checked[d.id]);
+          {docs.map(d => { const avail = available(d.id);
+            // Tiền giữ lại bảo hành thầu phụ chưa đến hạn (hoặc chưa có hạn) thì chưa trả được — máy chủ cũng chặn.
+            const notDue = d.sourceType === 'subcontract_retention' && (!d.dueDate || d.dueDate > (detail?.today || ''));
+            const blocked = d.issues.includes('internal_partner') || notDue || (avail <= 0.5 && !checked[d.id]);
             return <label key={d.id} className={`grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2 last:border-0 sm:grid-cols-[1.5rem_minmax(0,1fr)_8rem_9rem] ${blocked ? 'opacity-60' : ''}`}>
               <input type="checkbox" disabled={blocked} checked={!!checked[d.id]} onChange={e => setChecked(c => ({ ...c, [d.id]: e.target.checked }))} />
               <span className="min-w-0"><span className={`block truncate text-sm ${ENT}`}>{d.documentNo}</span>
                 <span className="block text-xs text-muted-foreground">{d.projectCode || 'Kho công ty'} · {SOURCE_LABELS[d.sourceType] || d.sourceType} · hạn {viDate(d.dueDate)}
                   {(reserved[d.id] || 0) > 0 && <span className="text-amber-700"> · {money(reserved[d.id])} đ đang trong đề nghị khác</span>}
-                  {d.pendingExternal > 0 && <span className="text-amber-700"> · {money(d.pendingExternal)} đ chi ngoài chờ xác nhận</span>}</span></span>
+                  {d.pendingExternal > 0 && <span className="text-amber-700"> · {money(d.pendingExternal)} đ chi ngoài chờ xác nhận</span>}
+                  {notDue && <span className="text-amber-700"> · giữ lại bảo hành {d.dueDate ? `đến ${viDate(d.dueDate)} mới trả được` : 'chưa có hạn (HĐ thiếu ngày hoàn thành / bảo hành)'}</span>}</span></span>
               <span className="col-start-2 text-xs tabular-nums text-muted-foreground sm:col-start-auto sm:text-right sm:text-sm">{money(avail)}<span className="sm:hidden"> còn chi được</span></span>
               <input inputMode="numeric" aria-label={`Số chi ${d.documentNo}`} disabled={!checked[d.id]} value={amounts[d.id] || ''}
                 onChange={e => setAmounts(a => ({ ...a, [d.id]: e.target.value }))} onBlur={() => setAmounts(a => ({ ...a, [d.id]: moneyInput(value(d.id)) }))}

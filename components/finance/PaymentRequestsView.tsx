@@ -7,6 +7,7 @@ import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } fr
 import { AttachmentPicker, CashAccountSelect, ENT, NUM, shortMoney, viDate } from './financeUi';
 import { PaymentRequestDrawer } from './PaymentRequestDrawer';
 import { AdvanceDrawer } from './AdvanceDrawer';
+import { SubcontractAdvanceDrawer } from './SubcontractDrawers';
 import { COST_CATEGORIES, EXPENSE_CATEGORIES, ExpenseDrawer } from './CashDrawers';
 
 // Bước 3–5 của Phải trả: Đề nghị chi (đang duyệt) → Chờ chi (đã duyệt) → Đã chi (có UNC, đảo được).
@@ -65,8 +66,10 @@ const PayDrawer: React.FC<{ r: FinancePaymentRequest; today: string; onClose: ()
         <li>{r.expense?.projectCode ? `Ghi chi phí dự án ${r.expense.projectCode} theo khoản mục ${COST_CATEGORIES[r.expense.costCategory || 'other'] || ''}.` : 'Chi phí chung công ty — không vào chi phí dự án.'}</li>
       </ul> : r.kind === 'advance' ? <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
         <li>Phiếu chi tạm ứng cho <b className="text-foreground">{r.advance?.projectCode || 'Kho Tổng (cấp công ty)'}</b> · {r.advance?.poNumber ? `đơn ${r.advance.poNumber}` : `HĐ ${r.advance?.contractCode}`}.</li>
-        <li>Ghi dòng tiền ra của dự án. Không ghi chi phí — chi phí ghi khi kho nhận hàng.</li>
-        <li>Công nợ của {r.advance?.poNumber ? 'đơn' : 'HĐ'} sinh ra (đã có hoặc sau này) tự trừ tạm ứng cho tới khi hết.</li>
+        {r.advance?.subcontractId ? <><li>Ghi dòng tiền ra của dự án. Không ghi chi phí — chi phí ghi khi ghi nhận đợt nghiệm thu thầu phụ.</li>
+          <li>Mỗi đợt nghiệm thu của HĐ thầu phụ thu hồi dần theo % trên HĐ cho tới khi hết.</li></>
+          : <><li>Ghi dòng tiền ra của dự án. Không ghi chi phí — chi phí ghi khi kho nhận hàng.</li>
+            <li>Công nợ của {r.advance?.poNumber ? 'đơn' : 'HĐ'} sinh ra (đã có hoặc sau này) tự trừ tạm ứng cho tới khi hết.</li></>}
       </ul> : <ul className="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">
         <li>Phiếu chi theo từng dự án: {byProject.map(([p, v]) => <b key={p} className="text-foreground">{p} {money(v)} đ </b>)}</li>
         <li>Giảm công nợ {r.lines.length} chứng từ; chứng từ chi một phần vẫn còn nợ phần còn lại.</li>
@@ -152,9 +155,9 @@ export const PaymentRequestsView: React.FC<{ stage: RequestStage; today: string;
         <p className="mt-1">{EXPENSE_CATEGORIES[r.expense.category] || r.expense.category} · nhận: <b>{r.supplierName}</b> · {r.expense.projectCode ? <>tính chi phí dự án <b>{r.expense.projectCode}</b> ({COST_CATEGORIES[r.expense.costCategory || 'other'] || r.expense.costCategory})</> : 'chi phí chung công ty'}</p>
         {r.cashEntry && <p className="mt-1 text-xs text-muted-foreground">Đã chi từ {r.cashEntry.accountName} ngày {viDate(r.cashEntry.date)}</p>}
       </section> : r.kind === 'advance' && r.advance ? <section className="mt-4 rounded-xl border border-mint-200 bg-mint-50/40 p-3 text-sm dark:border-mint-900 dark:bg-mint-950/20">
-        <h3 className="flex items-center gap-1.5 font-bold"><HandCoins size={15} className="text-teal-700" />Tạm ứng NCC — chưa có chứng từ công nợ</h3>
+        <h3 className="flex items-center gap-1.5 font-bold"><HandCoins size={15} className="text-teal-700" />{r.advance.subcontractId ? 'Tạm ứng thầu phụ' : 'Tạm ứng NCC'} — chưa có chứng từ công nợ</h3>
         <dl className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-          {([[r.advance.poNumber ? 'Đơn hàng' : 'HĐ nguyên tắc', r.advance.poNumber || r.advance.contractCode || '—'], ['Dự án', r.advance.projectCode || 'Kho Tổng'],
+          {([[r.advance.poNumber ? 'Đơn hàng' : r.advance.subcontractId ? 'HĐ thầu phụ' : 'HĐ nguyên tắc', r.advance.poNumber || r.advance.contractCode || '—'], ['Dự án', r.advance.projectCode || 'Kho Tổng'],
             ['Tỷ lệ', r.advance.percent != null ? `${Number(r.advance.percent).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% của ${shortMoney(r.advance.base || 0)}` : 'HĐ chưa có giá trị'],
             ['Hạn hoàn ứng', viDate(r.advance.repayDueDate)]] as const).map(([l, v]) =>
             <div key={l} className="rounded-lg bg-card px-2 py-1.5"><dt className="text-xs text-muted-foreground">{l}</dt><dd className="font-semibold">{v}</dd></div>)}
@@ -212,6 +215,8 @@ export const PaymentRequestsView: React.FC<{ stage: RequestStage; today: string;
     </section>
     {pay && <PayDrawer r={r} today={today} onClose={() => setPay(false)} onDone={() => { setPay(false); refresh(); }} />}
     {resubmit && (r.kind === 'expense' ? <ExpenseDrawer request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />
+      : r.kind === 'advance' && r.advance?.subcontractId ? <SubcontractAdvanceDrawer subcontractId={r.advance.subcontractId} title={`${r.supplierName} · ${r.advance.contractCode || ''}`} today={today}
+        hasBank={Boolean(r.bank?.account)} request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />
       : r.kind === 'advance' ? <AdvanceDrawer supplierId={r.supplierId} request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />
       : <PaymentRequestDrawer supplierId={r.supplierId} request={r} onClose={() => setResubmit(false)} onSaved={() => { setResubmit(false); refresh(); }} />)}
   </div>;

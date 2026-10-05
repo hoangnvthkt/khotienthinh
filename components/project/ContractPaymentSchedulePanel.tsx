@@ -168,10 +168,10 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
 
   useEffect(() => { loadPermissions(); }, [loadPermissions]);
 
-  // Chủ SP 03/10: đợt thu của HĐ chủ đầu tư lập ở Tài chính → Phải thu; ở Dự án chỉ xem (máy chủ cũng chặn).
-  const financeOnly = contractType === 'customer';
+  // Chủ SP 03/10: đợt thu của HĐ chủ đầu tư lập ở Tài chính → Phải thu; 05/10: lịch thanh toán HĐ thầu phụ theo Tài chính → Thầu phụ. Ở Dự án chỉ xem (máy chủ cũng chặn).
+  const financeOnly = contractType === 'customer' || contractType === 'subcontractor';
   const canEdit = !financeOnly && (user?.role === 'ADMIN' || projectPerms.has('edit'));
-  const canDelete = user?.role === 'ADMIN' || projectPerms.has('delete');
+  const canDelete = !financeOnly && (user?.role === 'ADMIN' || projectPerms.has('delete'));
   const canConfirm = !financeOnly && (user?.role === 'ADMIN' || projectPerms.has('confirm'));
 
   const requirePermission = async (code: ProjectPermissionCode, actionLabel: string) => {
@@ -344,7 +344,9 @@ const ContractPaymentSchedulePanel: React.FC<Props> = ({
       </div>
 
       {financeOnly && <p className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
-        Đợt thu và chứng từ thanh toán với chủ đầu tư lập, gửi CĐT, ghi thu ở <a href="#/finance?section=receivables" className="underline">Tài chính → Phải thu</a>. Ở đây chỉ xem.</p>}
+        {contractType === 'subcontractor'
+          ? <>Nghiệm thu thanh toán, tạm ứng, giữ lại bảo hành của HĐ thầu phụ lập và ghi nhận ở <a href={`#/finance?section=subcontracts&subcontract=${contractId}`} className="underline">Tài chính → Phải trả → Thầu phụ</a>. Ở đây chỉ xem.</>
+          : <>Đợt thu và chứng từ thanh toán với chủ đầu tư lập, gửi CĐT, ghi thu ở <a href="#/finance?section=receivables" className="underline">Tài chính → Phải thu</a>. Ở đây chỉ xem.</>}</p>}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         <Metric label="Giá trị HĐ" value={fmtMoney(contractValue, currency)} />
         <Metric label="Tổng kế hoạch" value={fmtMoney(metrics.totalPlan, currency)} />
