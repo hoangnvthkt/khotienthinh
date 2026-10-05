@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { canAccessRoute } from '../routeAccess';
+import { canAccessNavigationModule, canAccessRoute } from '../routeAccess';
 
 // Xuất bản Module Tài chính P1 (doc 14, chủ SP duyệt 05/10/2026). Kịch bản chạy thật: tools/p1-test.mjs (rollback, 20/20).
 
@@ -36,5 +36,13 @@ describe('Tài chính — P1 xuất bản module', () => {
     expect(view).toContain("const signedOf = (x: Row) => (x.type === 'revenue_received' ? 1 : -1) * x.amount;");
     for (const s of ['date_desc', 'date_asc', 'amount_desc', 'amount_asc']) expect(view).toContain(`'${s}'`);
     expect(sql).toContain("'poId', c.po_id");
+  });
+
+  it('Admin luôn thấy module Tài chính trên menu (máy chủ cho Admin làm mọi việc ở Tài chính)', () => {
+    const admin = { role: 'ADMIN', permissionGrants: [], effectivePermissionSources: [], authorizationSnapshot: null } as never;
+    expect(canAccessRoute(admin, '/finance/overview')).toBe(true);
+    expect(canAccessNavigationModule(admin, 'FINANCE', '/finance')).toBe(true);
+    const staff = { role: 'EMPLOYEE', permissionGrants: [], effectivePermissionSources: [], authorizationSnapshot: null } as never;
+    expect(canAccessNavigationModule(staff, 'FINANCE', '/finance')).toBe(false);
   });
 });
