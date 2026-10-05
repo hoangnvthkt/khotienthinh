@@ -157,6 +157,8 @@ export const isAuthenticatedOpenRoute = (route: string): boolean => {
   });
 };
 
+const isFinanceAdmin = (user: Pick<User, 'role'> | null | undefined) => user?.role === 'ADMIN';
+
 export const canAccessRoute = (
   user: Pick<User, 'role' | 'permissionGrants' | 'effectivePermissionSources' | 'authorizationSnapshot'> | null | undefined,
   route?: string,
@@ -197,6 +199,8 @@ export const canAccessRoute = (
 
   const moduleKey = getRouteModuleKey(pathname);
   if (!moduleKey) return false;
+  // Tài chính: máy chủ cho Admin làm mọi việc (finance_can → is_admin) nên menu / route cũng mở cho Admin, không cần cấp thêm quyền.
+  if (moduleKey === 'FINANCE' && isFinanceAdmin(user)) return true;
 
   const requirement = HRM_ROUTE_PERMISSION_REQUIREMENTS[pathname];
   if (requirement) {
@@ -229,7 +233,7 @@ export const canAccessNavigationModule = (
   user: Parameters<typeof canAccessRoute>[0],
   moduleKey: string,
   preferredRoute?: string,
-): boolean => canViewModule(user, moduleKey)
+): boolean => (canViewModule(user, moduleKey) || (moduleKey === 'FINANCE' && isFinanceAdmin(user)))
   && Boolean(getAuthorizedModuleRoute(user, moduleKey, preferredRoute));
 
 /** Choose a permitted landing after a denied route; never consult retained legacy fields. */

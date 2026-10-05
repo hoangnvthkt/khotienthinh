@@ -263,7 +263,8 @@
     "20261008172000_daily_log_reverse_flow.sql",
     "20261008172001_request_purchase_assets.sql",
     "20261008134500_finance_subcontracts.sql",
-    "20261008134600_finance_module_p1.sql"
+    "20261008134600_finance_module_p1.sql",
+    "20261008134700_finance_module_p2.sql"
   ],
   "forbidIncludeAll": true
 }
