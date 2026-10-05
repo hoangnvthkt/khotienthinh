@@ -9,6 +9,7 @@ import { formatDailyLogDate, formatDailyLogQuantity } from '../../../lib/dailyLo
 import { forecastProblem, providerName } from '../../../lib/dailyLogSlipRules';
 import { DailyLogBulletTextarea } from './DailyLogBulletTextarea';
 import { DailyLogInlineSearch, slipInputCls } from './DailyLogInlineSearch';
+import { useDailyLogPhotoViewer } from './DailyLogPhotoViewer';
 import type { DailyLogEngineerRow } from './DailyLogWorkItemTable';
 
 // Phiếu kỹ sư v3: mỗi hạng mục một khối, mọi ô chọn bằng gõ tìm ngay tại chỗ, ⊕ thêm dòng ngay dưới, ⊖ bỏ dòng.
@@ -86,6 +87,9 @@ const FooterButton: React.FC<{ onPick(): void; children: React.ReactNode }> = ({
   <button type="button" onMouseDown={event => { event.preventDefault(); onPick(); }}
     className="flex w-full items-center gap-1.5 border-t border-border px-3 py-2 text-left text-sm font-semibold text-teal-700 hover:bg-muted dark:text-teal-300"><Plus size={14} />{children}</button>;
 
+const Section: React.FC<{ icon: React.ReactNode; label: string; children: React.ReactNode; className?: string }> = ({ icon, label, children, className = '' }) =>
+  <section className={`min-w-0 ${className}`}><h4 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{icon}{label}</h4>{children}</section>;
+
 export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
   const { rows, labor, machines, tasks, workBoqItems, slipDate, disabled } = props;
   const [slots, setSlots] = useState<Array<{ key: string; after: string | null }>>([]);
@@ -93,6 +97,7 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
   const [filter, setFilter] = useState<TaskFilter>('active');
   const [openLines, setOpenLines] = useState<Set<string>>(new Set());
   const [issuesOpen, setIssuesOpen] = useState<Set<string>>(new Set());
+  const photoViewer = useDailyLogPhotoViewer();
   const flip = (set: Set<string>, key: string) => { const next = new Set(set); if (next.has(key)) next.delete(key); else next.add(key); return next; };
 
   const parentIds = useMemo(() => new Set(tasks.map(task => task.parentId).filter(Boolean) as string[]), [tasks]);
@@ -152,16 +157,16 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
     const noBasis = !row.unit || !row.plannedQuantity;
     const disabledMode = (mode: DailyLogEntryMode) => mode === 'daily_quantity' ? noBasis || row.baselineQuantityState === 'unknown' : mode === 'cumulative_quantity' ? noBasis : false;
     const current = MODES.find(mode => mode.mode === row.entryMode) || MODES[2];
-    return <div className="space-y-1">
-      <div className="flex items-center gap-1.5">
-        <span role="group" aria-label="Cách nhập khối lượng" className="inline-flex shrink-0 overflow-hidden rounded-md border border-border text-xs font-semibold">
+    return <div className="flex flex-col gap-1">
+      <span role="group" aria-label="Cách nhập khối lượng" className="inline-flex w-fit shrink-0 overflow-hidden rounded-md border border-border text-xs font-semibold">
           {MODES.map(mode => <button key={mode.mode} type="button" aria-pressed={row.entryMode === mode.mode} disabled={disabled || disabledMode(mode.mode)}
             onClick={() => props.onModeChange(row, mode.mode)}
             className={`px-2 py-1 ${row.entryMode === mode.mode ? 'bg-teal-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted disabled:opacity-40'}`}>{mode.label}</button>)}
         </span>
+      <div className="flex items-center gap-1.5">
         <input aria-label={current.placeholder} inputMode="decimal" value={row.enteredValue ?? ''} disabled={disabled} placeholder={current.placeholder}
           aria-invalid={!result.valid} onChange={event => props.onChange(row.clientKey, { enteredValue: event.target.value })}
-          className={`${slipInputCls} w-24 text-right font-semibold tabular-nums text-leaf-700 dark:text-leaf-300 ${!result.valid && String(row.enteredValue ?? '').trim() ? 'border-rose-400' : ''}`} />
+          className={`${slipInputCls} w-28 text-right font-semibold tabular-nums text-leaf-700 dark:text-leaf-300 ${!result.valid && String(row.enteredValue ?? '').trim() ? 'border-rose-400' : ''}`} />
         <span className="shrink-0 text-xs text-muted-foreground">{row.entryMode === 'percent' ? '%' : row.unit}</span>
       </div>
       {result.valid ? <p className="text-xs text-muted-foreground">Lũy kế <b className="text-foreground">{result.cumulativeQuantity != null ? formatDailyLogQuantity(result.cumulativeQuantity, row.unit) : '—'}</b>
@@ -181,10 +186,7 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
     const planned = row.scheduleFinishDate?.slice(0, 10);
     const overdue = Boolean(planned && planned < slipDate && Number(percent ?? 0) < 100);
     const changed = Boolean(row.forecastFinishDate && row.forecastFinishDate !== row.scheduleFinishDate);
-    const overdueDays = overdue ? Math.round((Date.parse(`${slipDate}T00:00:00Z`) - Date.parse(`${planned}T00:00:00Z`)) / 86_400_000) : 0;
     return <div className="space-y-1 text-xs">
-      <p className="text-muted-foreground">{planned ? <>Kế hoạch <b className="text-foreground">{formatDailyLogDate(planned)}</b></> : 'Chưa có ngày theo tiến độ'}
-        {overdue && <span className="font-semibold text-rose-700 dark:text-rose-300"> · đã qua {overdueDays} ngày</span>}</p>
       <input type="date" aria-label={`Dự kiến hoàn thành ${row.taskName}`} value={row.forecastFinishDate || ''} disabled={disabled} min={overdue ? slipDate : undefined}
         aria-invalid={problem === 'new_date_required'} onChange={event => props.onChange(row.clientKey, { forecastFinishDate: event.target.value || null })}
         className={`${slipInputCls} ${problem === 'new_date_required' ? 'border-amber-400 bg-amber-50/60 dark:bg-amber-950/20' : ''}`} />
@@ -193,6 +195,19 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
         className={`${slipInputCls} ${problem === 'reason_required' ? 'border-amber-400' : ''}`} />}
       {problem === 'new_date_required' && <p className="font-semibold text-amber-700 dark:text-amber-300">Đã quá kế hoạch: ghi ngày dự kiến xong mới.</p>}
     </div>;
+  };
+
+  const planLine = (row: DailyLogEngineerRow) => {
+    const result = derive(row);
+    const percent = result.valid ? result.cumulativePercent : previousPercent(row);
+    const planned = row.scheduleFinishDate?.slice(0, 10);
+    const overdueDays = planned && planned < slipDate && Number(percent ?? 0) < 100
+      ? Math.round((Date.parse(`${slipDate}T00:00:00Z`) - Date.parse(`${planned}T00:00:00Z`)) / 86_400_000) : 0;
+    return <p className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+      <span>{row.unit && row.plannedQuantity ? <>Khối lượng KH <b className="font-semibold tabular-nums text-foreground">{formatDailyLogQuantity(row.plannedQuantity, row.unit)}</b></> : 'Chưa có cơ sở quy đổi'}</span>
+      <span>{planned ? <>Xong theo KH <b className="font-semibold text-foreground">{formatDailyLogDate(planned)}</b></> : 'Chưa có ngày theo tiến độ'}
+        {overdueDays > 0 && <b className="font-semibold text-rose-700 dark:text-rose-300"> · đã qua {overdueDays} ngày</b>}</span>
+    </p>;
   };
 
   const laborCell = (row: DailyLogEngineerRow) => {
@@ -289,8 +304,9 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
     const list = row.attachments || [];
     return <div className="flex flex-wrap items-center gap-1.5">
       {list.map((photo, index) => <span key={`${photo.url}-${index}`} className="relative">
-        <a href={photo.url} target="_blank" rel="noreferrer" title={photo.name} className="block h-10 w-10 overflow-hidden rounded-lg border border-border bg-muted">
-          <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} loading="lazy" className="h-full w-full object-cover" /></a>
+        <button type="button" title={photo.name} onClick={() => photoViewer.open(list.map((item, i) => ({ url: item.url, name: `${row.wbsCode} ${row.taskName} · ảnh ${i + 1}` })), index)}
+          className="block h-10 w-10 overflow-hidden rounded-lg border border-border bg-muted hover:ring-2 hover:ring-teal-500/40">
+          <img src={photo.url} alt={photo.name || `Ảnh ${index + 1}`} loading="lazy" className="h-full w-full object-cover" /></button>
         {!disabled && <button type="button" aria-label={`Bỏ ảnh ${index + 1}`} onClick={() => props.onChange(row.clientKey, { attachments: list.filter((_, i) => i !== index) })}
           className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-rose-600 text-white"><X size={11} /></button>}
       </span>)}
@@ -302,34 +318,32 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
   };
 
   const slotFor = (after: string | null) => slots.filter(slot => slot.after === after).map(slot =>
-    <div key={slot.key} className="flex items-center gap-2 border-b border-border/70 bg-mint-50/40 px-3 py-2 dark:bg-mint-950/10">
+    <div key={slot.key} className="flex items-center gap-2 rounded-2xl border border-dashed border-mint-300 bg-mint-50/40 px-3 py-2.5 dark:border-mint-800 dark:bg-mint-950/10">
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-dashed border-mint-400 text-mint-700"><Plus size={14} /></span>
-      <div className="min-w-0 flex-1 xl:max-w-xl">{taskSearch(slot.key, after)}</div>
+      <div className="min-w-0 flex-1 md:max-w-xl">{taskSearch(slot.key, after)}</div>
       <RemoveLine label="Bỏ dòng trống" disabled={false} onClick={() => setSlots(current => current.filter(item => item.key !== slot.key))} />
     </div>);
 
-  return <div className="dl-v3 overflow-visible rounded-2xl border border-border bg-card shadow-sm">
-    <div className="hidden grid-cols-[2rem_minmax(0,1fr)_17rem_14rem_4.5rem] gap-3 rounded-t-2xl border-b border-border bg-muted/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground xl:grid">
-      <span>#</span><span>Hạng mục · công tác hôm nay</span><span>Làm được</span><span>Bao giờ xong</span><span className="text-right">Dòng</span>
-    </div>
+  return <div className="dl-v3 space-y-3">
     {rows.map((row, index) => {
       const lineIssues = Boolean(row.issues?.trim()) || issuesOpen.has(row.clientKey);
       return <React.Fragment key={row.clientKey}>
-        <article aria-label={`${row.wbsCode} ${row.taskName}`} className="border-b border-border/70 px-3 py-3">
-          <div className="grid items-start gap-3 xl:grid-cols-[2rem_minmax(0,1fr)_17rem_14rem_4.5rem]">
-            <span className="hidden h-7 w-7 place-items-center rounded-full bg-mint-100 text-xs font-bold text-mint-800 dark:bg-mint-950 dark:text-mint-200 xl:grid">{index + 1}</span>
-            <div className="flex min-w-0 items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-foreground"><span className="text-mint-700 dark:text-mint-300">{row.wbsCode}</span> {row.taskName}</h3>
-                <p className="text-xs text-muted-foreground">{row.unit && row.plannedQuantity ? `Kế hoạch ${formatDailyLogQuantity(row.plannedQuantity, row.unit)}` : 'Chưa có cơ sở quy đổi'}</p>
-              </div>
-              <span className="xl:hidden"><LineButtons what={row.taskName} disabled={disabled} onAdd={() => addSlot(row.clientKey)} onRemove={() => props.onRemove(row.clientKey)} /></span>
+        <article aria-label={`${row.wbsCode} ${row.taskName}`} className="rounded-2xl border border-border bg-card shadow-sm">
+          <header className="flex items-start gap-3 border-b border-border/70 px-3 py-2.5">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-mint-100 text-xs font-bold text-mint-800 dark:bg-mint-950 dark:text-mint-200">{index + 1}</span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-[15px] font-semibold leading-snug text-foreground"><span className="text-mint-700 dark:text-mint-300">{row.wbsCode}</span> {row.taskName}</h3>
+              {planLine(row)}
             </div>
-            <div>{quantity(row)}</div>
-            <div>{forecast(row)}</div>
-            <span className="hidden justify-end xl:flex"><LineButtons what={row.taskName} disabled={disabled} onAdd={() => addSlot(row.clientKey)} onRemove={() => props.onRemove(row.clientKey)} /></span>
+            <LineButtons what={row.taskName} disabled={disabled} onAdd={() => addSlot(row.clientKey)} onRemove={() => props.onRemove(row.clientKey)} />
+          </header>
+          <div className="grid gap-x-4 gap-y-3 px-3 py-3 md:grid-cols-2 xl:grid-cols-4">
+            <Section icon={<span className="h-1.5 w-1.5 rounded-full bg-leaf-500" aria-hidden />} label="Làm được">{quantity(row)}</Section>
+            <Section icon={<span className="h-1.5 w-1.5 rounded-full bg-rose-400" aria-hidden />} label="Bao giờ xong">{forecast(row)}</Section>
+            <Section icon={<Users size={12} className="text-mint-600" aria-hidden />} label="Nhân công">{laborCell(row)}</Section>
+            <Section icon={<Truck size={12} className="text-sky-600" aria-hidden />} label="Máy">{machineCell(row)}</Section>
           </div>
-          <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)_8.5rem] xl:pl-11">
+          <div className="grid gap-x-4 gap-y-3 border-t border-border/70 px-3 py-3 md:grid-cols-[minmax(0,1fr)_14rem]">
             <div className="min-w-0 space-y-1.5">
               <DailyLogBulletTextarea label="Công tác thực hiện" value={row.note} disabled={disabled} emptyText="Chưa ghi công tác."
                 placeholder="- Lắp kèo sàn deck trục 3–5" onChange={note => props.onChange(row.clientKey, { note })} />
@@ -338,18 +352,17 @@ export const DailyLogSlipRows: React.FC<DailyLogSlipRowsProps> = props => {
                 : <button type="button" disabled={disabled} onClick={() => setIssuesOpen(current => flip(current, row.clientKey))}
                   className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline dark:text-amber-300"><AlertTriangle size={12} aria-hidden />Ghi sự cố / vướng mắc</button>}
             </div>
-            <div className="min-w-0"><span className="mb-1 flex items-center gap-1 text-xs font-semibold text-muted-foreground"><Users size={12} className="text-mint-600" aria-hidden />Nhân công</span>{laborCell(row)}</div>
-            <div className="min-w-0"><span className="mb-1 flex items-center gap-1 text-xs font-semibold text-muted-foreground"><Truck size={12} className="text-sky-600" aria-hidden />Máy</span>{machineCell(row)}</div>
-            <div><span className="mb-1 flex items-center gap-1 text-xs font-semibold text-muted-foreground"><Camera size={12} className="text-teal-600" aria-hidden />Ảnh</span>{photos(row)}</div>
+            <Section icon={<Camera size={12} className="text-teal-600" aria-hidden />} label="Ảnh hạng mục">{photos(row)}</Section>
           </div>
         </article>
         {slotFor(row.clientKey)}
       </React.Fragment>;
     })}
     {slotFor(null)}
-    <div className="flex items-center gap-2 px-3 py-2.5">
+    <div className="flex items-center gap-2 rounded-2xl border border-dashed border-leaf-300 bg-card px-3 py-2.5 dark:border-leaf-800">
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-leaf-100 text-leaf-700 dark:bg-leaf-950 dark:text-leaf-300"><Plus size={14} /></span>
-      <div className="min-w-0 flex-1 xl:max-w-xl">{taskSearch('tail', rows.at(-1)?.clientKey ?? null)}</div>
+      <div className="min-w-0 flex-1 md:max-w-xl">{taskSearch('tail', rows.at(-1)?.clientKey ?? null)}</div>
     </div>
+    {photoViewer.viewer}
   </div>;
 };

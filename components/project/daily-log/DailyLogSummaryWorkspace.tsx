@@ -10,6 +10,9 @@ import { DailyLogSourcePicker } from './DailyLogSourcePicker';
 import { DailyLogDocumentHeader } from './DailyLogDocumentHeader';
 import { formatDailyLogDate, formatDailyLogTime, formatDailyLogQuantity, summarizeDailyLogPhysicalRows } from '../../../lib/dailyLogPresentation';
 import { Link } from 'react-router-dom';
+import { DayReportBody } from './DailyLogTodayBoard';
+import { useDailyLogPhotoViewer } from './DailyLogPhotoViewer';
+import type { DailyLogTodayBoard as DayBoard, TodayBoardSlip } from '../../../lib/dailyLogTodayBoard';
 
 interface Props {
   bundle: DailyLogWbsBundle;
@@ -147,6 +150,53 @@ export const buildDailyLogSummaryDraft = (bundle: DailyLogWbsBundle, selectedIds
 
 const expectedUpdatedAt = (log: DailyLog) => log.lastActionAt || log.createdAt;
 
+/** Bản tổng hợp → cùng dạng dữ liệu với Báo cáo ngày, để CHT xem đúng một bố cục. */
+const toReportBoard = (cards: DailyLogAreaCardModel[], date: string, verified: boolean): DayBoard => ({
+  date: date.slice(0, 10), missingFronts: [], summary: null, yesterday: null, days: [],
+  slips: cards.map(card => {
+    const snapshot = card.source.sourceSnapshot;
+    // Hồ sơ đã duyệt chỉ dùng bản đã lưu, không điền số liệu / ảnh mới của phiếu.
+    const live = !verified && (card.source.sourceState || 'current') === 'current';
+    const rawPhotos = snapshot && Object.hasOwn(snapshot, 'photos') ? snapshot.photos
+      : card.source.includedPhotos?.length ? card.source.includedPhotos : live ? card.contribution.photos : [];
+    const photos = Array.isArray(rawPhotos) ? rawPhotos as DailyLogPhoto[] : [];
+    const rawIssues = snapshot && Object.hasOwn(snapshot, 'issues') ? snapshot.issues : live ? card.contribution.issues : null;
+    const labor = card.resources.filter(line => line.kind === 'labor');
+    const machines = card.resources.filter(line => line.kind === 'machine');
+    const items = card.editedItems.map(item => {
+      const own = card.resources.filter(line => line.dailyLogWorkItemId && line.dailyLogWorkItemId === item.id);
+      return {
+        taskId: item.taskId, wbsCode: item.wbsCode, taskName: item.taskName, unit: item.unit,
+        plannedQuantity: item.areaPlannedQuantity ?? item.plannedQuantity ?? null,
+        dailyQuantity: item.dailyQuantityDone ?? null, cumulativeQuantity: item.cumulativeQuantityDone ?? null,
+        cumulativePercent: item.cumulativeProgressPercent, scheduleFinishDate: item.scheduleFinishDate,
+        forecastFinishDate: item.forecastFinishDate, forecastChangeReason: item.forecastChangeReason, note: item.note,
+        photos: item.attachments || [], attachmentCount: (item.attachments || []).length,
+        labor: own.filter(line => line.kind === 'labor').map(line => ({ provider: line.providerName, laborType: line.label,
+          people: Number(line.count || 0), hours: line.totalHours, manual: line.providerEntryMode === 'manual',
+          contractLinked: Boolean(line.raw?.contractItemId || line.raw?.contract_item_id) })),
+        machines: own.filter(line => line.kind === 'machine').map(line => ({ machineType: line.label, provider: line.providerName,
+          count: Number(line.count || 0), hours: line.totalHours })),
+      };
+    });
+    const sum = (list: typeof labor, pick: (line: typeof labor[number]) => number | null) => list.reduce((total, line) => total + Number(pick(line) || 0), 0);
+    const hours = (list: typeof labor) => list.some(line => line.totalHours == null) ? null : sum(list, line => line.totalHours);
+    const savedAt = snapshot && typeof snapshot.updatedAt === 'string' ? snapshot.updatedAt : null;
+    const slip: TodayBoardSlip = {
+      id: card.source.id || card.contribution.id, areaCode: card.source.workAreaCode || card.contribution.workAreaCode,
+      areaName: card.source.workAreaName || card.contribution.workAreaName, authorUserId: card.contribution.authorUserId,
+      authorName: card.source.sourceUserName || card.contribution.authorName,
+      status: card.source.sourceState === 'returned' ? 'returned' : verified ? 'included' : 'submitted',
+      submittedAt: savedAt || (verified ? null : card.contribution.submittedAt), returnReason: card.contribution.returnReason,
+      issues: typeof rawIssues === 'string' && rawIssues.trim() ? rawIssues.trim() : null,
+      photos, photoCount: photos.length, items,
+      people: sum(labor, line => line.count), laborHours: hours(labor),
+      machineCount: sum(machines, line => line.count), machineHours: hours(machines),
+    };
+    return slip;
+  }),
+});
+
 export const adjustSummaryCardProgress = (card: DailyLogAreaCardModel, itemId: string, percent: number, reason: string): DailyLogAreaCardModel => {
   if (!reason.trim()) throw new Error('Cần nhập lý do chỉnh bản sao.');
   return { ...card, source: { ...card.source, hasAdjustments: true, adjustmentReason: reason.trim() }, editedItems: card.editedItems.map(item => {
@@ -170,6 +220,9 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const [notice, setNotice] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const photoViewer = useDailyLogPhotoViewer();
+  const [returning, setReturning] = useState<string | null>(null);
+  const [returnText, setReturnText] = useState('');
   const groups = useMemo(() => {
     const items = cards.flatMap(card => card.editedItems);
     return addForecastConflicts(items, aggregateAreaWorkItems(items.map(item => ({ id: item.sourceWorkItemId || item.id || '', taskId: item.taskId, workAreaCode: item.workAreaCode, areaPlannedQuantity: item.areaPlannedQuantity ?? null, cumulativePercent: item.cumulativeProgressPercent, dailyQuantity: item.dailyQuantityDone ?? null }))))
@@ -304,6 +357,9 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const summaryAuthor = bundle.summaryLog?.summarizedByName || bundle.summaryLog?.createdBy || '';
   const publishAllowed = canReview && canPublishDailyLogSummary({log:bundle.summaryLog,canApprove:bundle.permissions.canApprove,canPublishProgress:bundle.permissions.canPublishProgress});
   const reopenUrl=`/da?${new URLSearchParams({projectId:bundle.summaryLog?.projectId || '',...(bundle.summaryLog?.constructionSiteId?{siteId:bundle.summaryLog.constructionSiteId}:{}),tab:'weekly_progress'})}`;
+  const reportBoard = useMemo(() => toReportBoard(cards, date, verified), [cards, date, verified]);
+  // Chỉ hạng mục nhiều mũi cùng báo (hoặc chưa chốt) mới cần CHT xem số chốt.
+  const sharedGroups = groups.filter(group => group.items.length > 1 || hasUnresolvedWbsDecision(group.aggregate, decisions[group.aggregate.taskId]));
   const areaCards = cards.map(card => <DailyLogAreaCard key={card.contribution.id} card={card} mode={verified?'verified':mode} busy={busy}
     canRequestChange={!verified && !periodLocked && card.source.sourceState === 'current' && (mode === 'review' ? canReview : editable)}
     returnDisabledReason={mode === 'summarize' && (dirty || metadataDirty || !bundle.summaryLog || card.source.id?.startsWith('new-source-')) ? 'Lưu tổng hợp trước khi trả phiếu để giữ chỉnh sửa.' : undefined}
@@ -351,37 +407,56 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
     <div className="daily-log-document-body space-y-5 p-4 sm:p-6">
       {report && !verified && bundle.rollout.mode==='pilot' && <p className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">{onVerifyPilot ? 'Đang chạy thử: bấm Duyệt (thí điểm) để khép ngày. Hệ thống đối chiếu số liệu với cách ghi cũ; tiến độ chính thức chưa thay đổi.' : 'Đang chạy thử: CHT chỉ đối chiếu số liệu với cách ghi cũ. Tiến độ chính thức không thay đổi và bản tổng hợp vẫn ở trạng thái chờ duyệt.'}</p>}
       {report && periodLocked && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">Kỳ tiến độ đang khóa. <Link to={reopenUrl} className="inline-flex min-h-11 items-center font-medium underline">Mở Chốt tiến độ</Link> để mở kỳ trước khi xử lý.</p>}
-      {report && <h2 className="dl-report-section-title">Tổng quan ngày</h2>}
-      {report && <p className="dl-report-intro whitespace-pre-wrap break-words">{bundle.summaryLog?.description || 'Chưa có nội dung tổng hợp'}</p>}
-      <dl className="dl-summary-metrics grid grid-cols-2 gap-3 rounded-md border border-border bg-muted/30 p-4 text-sm lg:grid-cols-5">
+      {!report && <dl className="dl-summary-metrics grid grid-cols-2 gap-3 rounded-md border border-border bg-muted/30 p-4 text-sm lg:grid-cols-5">
         {report ? <div><dt className="text-muted-foreground">Mũi thi công</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{cards.length}</dd><dd className="text-xs text-muted-foreground">{cards.length} / {bundle.contributionsForSummary.filter(source=>source.status==='submitted'||source.status==='included').length} phiếu được tổng hợp</dd></div>
           : <div><dt className="text-muted-foreground">Phiếu đã nhận / được chọn</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{bundle.contributionsForSummary.filter(source=>source.status==='submitted'||source.status==='included').length} / {cards.length}</dd><dd className="text-xs text-muted-foreground">{cards.length} khu vực</dd></div>}
         <div><dt className="text-muted-foreground">Hạng mục</dt><dd className="mt-1 text-lg font-semibold">{formatDailyLogQuantity(missingSavedCopies?null:physical.uniqueWbsCount)}</dd></div>
         <div><dt className="text-muted-foreground">Giờ công</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{formatDailyLogQuantity(missingSavedCopies?null:physical.totalLaborHours)}</dd><dd className="text-xs text-muted-foreground">{formatDailyLogQuantity(missingSavedCopies?null:physical.laborPersonEntries)} lượt người</dd></div>
         <div><dt className="text-muted-foreground">Giờ máy</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{formatDailyLogQuantity(missingSavedCopies?null:physical.totalMachineHours)}</dd><dd className="text-xs text-muted-foreground">{formatDailyLogQuantity(missingSavedCopies?null:physical.machineEntries)} lượt máy</dd></div>
         <div className={report && (verified?historicalQualityCount:reportWarningCount)===0?'dl-metric-calm':'dl-metric-attention'}><dt className="text-muted-foreground">{verified?'Cần lưu ý':report?'Cần chú ý':'Cần xử lý'}</dt><dd className="mt-1 text-lg font-semibold">{verified?historicalQualityCount:report?reportWarningCount:warningCount} mục</dd></div>
-      </dl>
+      </dl>}
       {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-100">{error}</p>}
       {notice && <p role="status" className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:bg-teal-950 dark:text-teal-100">{notice}</p>}
       {mode === 'summarize' && <details className="rounded-md border border-border p-4" open={pickerOpen} onToggle={event=>setPickerOpen(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer text-base font-semibold">Chọn phiếu để tổng hợp · {cards.length} đã chọn</summary><fieldset disabled={busy || !editable} className="mt-3 min-w-0"><DailyLogSourcePicker sources={bundle.contributionsForSummary} selectedIds={cards.map(card=>card.contribution.id)} selectionMode="multiple" onChange={selectSources} /></fieldset><p className="mt-3 text-sm text-muted-foreground">Chọn đúng phiếu cần tổng hợp. Bỏ chọn không xóa hoặc sửa phiếu gốc.</p></details>}
       {metadataForm}
       {report ? <>
-        <div className="dl-report-wbs">{wbsTable}</div>
-        <section className="dl-report-alerts space-y-3"><h2 className="dl-report-section-title">Cảnh báo và vướng mắc</h2>
-          {missingSavedCopies && <p className="rounded-md border border-border bg-muted/30 p-3 text-sm">Thiếu số liệu đã lưu của một số phiếu, nên phần tổng quan chưa đầy đủ. Hồ sơ đã duyệt được giữ nguyên, không lấy số liệu mới điền vào.</p>}
-          {warningCount > 0 && !verified && <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" />Có phiếu hoặc hạng mục chưa chốt. Trả đúng phiếu cho kỹ sư, hoặc trả bản tổng hợp cho người tổng hợp để sửa.</p>}
-          {delayedCards.map(card => <p key={card.source.id} className="dl-report-forecast-warning">{card.source.workAreaName || card.contribution.workAreaName || 'Chưa xác định khu vực'}: có hạng mục dự kiến xong muộn hơn kế hoạch.</p>)}
-          {bundle.summaryLog?.issues && <p className="dl-report-incident whitespace-pre-wrap break-words"><strong>Sự cố chung</strong><br/>{bundle.summaryLog.issues}</p>}
-          {sourceIssues.map((issue,index) => <p key={`${issue.area}-${index}`} className="dl-report-incident whitespace-pre-wrap break-words"><strong>Sự cố tại {issue.area}</strong><br/>{issue.text}</p>)}
-          {!bundle.summaryLog?.issues && !sourceIssues.length && !reportWarningCount && !missingSavedCopies && <p className="dl-report-calm">Không có sự cố hay cảnh báo trong ngày.</p>}
-          {bundle.summaryLog?.nextDayPlan && <p className="dl-report-next whitespace-pre-wrap break-words"><strong>Kế hoạch ngày sau</strong><br/>{bundle.summaryLog.nextDayPlan}</p>}
-        </section>
-        <section className="space-y-3"><h2 className="dl-report-section-title">Các mũi thi công</h2>
-          {cards.length === 0 ? <p className="rounded-md border border-dashed border-border p-6 text-sm text-muted-foreground">Chưa có phiếu nào trong bản tổng hợp.</p> : <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">{areaCards}</div>}
-        </section>
-        <section className="space-y-3"><h2 className="dl-report-section-title">Ảnh hiện trường</h2>
-          {reportPhotos.length ? <div className="dl-report-photo-grid">{reportPhotos.map(({photo,area}) => <a key={photo.url} href={photo.url} target="_blank" rel="noreferrer" className="dl-report-photo"><img src={photo.url} alt={photo.name || `Ảnh hiện trường ${area}`} loading="lazy"/><span>{photo.name || 'Ảnh hiện trường'}<small>{area}</small></span></a>)}</div> : <p className="text-sm text-muted-foreground">Ngày này chưa có ảnh hiện trường.</p>}
-        </section>
+        {missingSavedCopies && <p className="rounded-xl border border-border bg-muted/30 p-3 text-sm">Thiếu số liệu đã lưu của một số phiếu, nên báo cáo chưa đầy đủ. Hồ sơ đã duyệt được giữ nguyên, không lấy số liệu mới điền vào.</p>}
+        {warningCount > 0 && !verified && <p className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" />Có phiếu hoặc hạng mục chưa chốt. Trả đúng phiếu cho kỹ sư, hoặc trả bản tổng hợp cho người tổng hợp để sửa.</p>}
+        <DayReportBody board={reportBoard} onOpenPhotos={photoViewer.open} unknownTotals={missingSavedCopies} emptyItemsText={verified ? 'Chưa có hạng mục được lưu cho phiếu này.' : undefined} renderSlipExtra={slip => {
+          const card = cards.find(item => item.source.id === slip.id);
+          if (!card) return null;
+          const state = card.source.sourceState || 'current';
+          const canReturn = !verified && !periodLocked && state === 'current' && canReview;
+          return <>
+            {state === 'changed' && <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Kỹ sư đã gửi lại bản mới</span>}
+            {state === 'missing' && <span className="rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">Không còn phiếu gốc</span>}
+            {card.source.reviewStatus === 'change_requested' && state !== 'returned' && <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">Chờ kỹ sư sửa</span>}
+            {canReturn && returning !== slip.id && <button type="button" disabled={busy} onClick={() => { setReturning(slip.id); setReturnText(''); }}
+              className="rounded-lg border border-amber-300 bg-card px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200">Trả phiếu sửa</button>}
+            {returning === slip.id && <span className="flex basis-full flex-wrap items-center gap-2">
+              <input autoFocus value={returnText} onChange={event => setReturnText(event.target.value)} placeholder="Lý do trả phiếu (bắt buộc) — vd: bổ sung nhân công, ảnh móng"
+                aria-label={`Lý do trả phiếu ${slip.areaName || ''}`} className="min-w-0 flex-1 rounded-lg border border-amber-400 bg-background px-2 py-1.5 text-sm" />
+              <button type="button" disabled={busy || !returnText.trim()} onClick={async () => { await requestChange(slip.id, returnText.trim()); setReturning(null); }}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50">Trả phiếu</button>
+              <button type="button" onClick={() => setReturning(null)} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted">Hủy</button>
+            </span>}
+          </>;
+        }} />
+        {sharedGroups.length > 0 && <section className="space-y-2">
+          <h2 className="text-sm font-bold text-foreground">Hạng mục nhiều mũi cùng báo · số liệu chốt</h2>
+          <p className="text-xs text-muted-foreground">{sharedGroups.length} hạng mục có từ 2 mũi cùng báo. Đây là % / khối lượng người tổng hợp đã chốt để ghi tiến độ.</p>
+          <DailyLogConsolidatedWbsTable groups={sharedGroups} decisions={decisions} readOnly historical={verified} busy={busy} onDecisionChange={() => undefined} />
+        </section>}
+        {(bundle.summaryLog?.issues || bundle.summaryLog?.nextDayPlan || bundle.summaryLog?.description || (bundle.summaryLog?.photos || []).length > 0) && <section className="grid gap-2 md:grid-cols-2">
+          {bundle.summaryLog?.issues && <p className="whitespace-pre-wrap break-words rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"><b>Sự cố chung</b><br />{bundle.summaryLog.issues}</p>}
+          {bundle.summaryLog?.nextDayPlan && <p className="whitespace-pre-wrap break-words rounded-xl border border-mint-200 bg-mint-50 p-3 text-sm dark:border-mint-900 dark:bg-mint-950/30"><b className="text-mint-800 dark:text-mint-200">Kế hoạch ngày sau</b><br />{bundle.summaryLog.nextDayPlan}</p>}
+          {(bundle.summaryLog?.photos || []).length > 0 && <div className="rounded-xl border border-border bg-card p-3 text-sm md:col-span-2"><b>Ảnh của bản tổng hợp</b>
+            <div className="mt-2 flex flex-wrap gap-2">{(bundle.summaryLog?.photos || []).map((photo, index, all) => <button key={photo.url} type="button" title={photo.name || 'Ảnh tổng hợp'}
+              onClick={() => photoViewer.open(all.map((item, i) => ({ url: item.url, name: item.name || `Ảnh tổng hợp ${i + 1}` })), index)}
+              className="h-16 w-16 overflow-hidden rounded-lg border border-border bg-muted"><img src={photo.url} alt={photo.name || 'Ảnh tổng hợp'} loading="lazy" className="h-full w-full object-cover" /></button>)}</div></div>}
+          {bundle.summaryLog?.description && <details className="rounded-xl border border-border bg-card p-3 text-sm md:col-span-2"><summary className="cursor-pointer font-semibold">Nội dung tổng hợp dạng văn bản</summary>
+            <p className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">{bundle.summaryLog.description}</p></details>}
+        </section>}
         <details className="dl-report-audit"><summary>Nguồn phiếu và lịch sử duyệt</summary><div className="space-y-3 pt-3 text-sm">
           {verified && <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div><dt className="text-muted-foreground">Người duyệt</dt><dd>{bundle.summaryLog?.verifiedBy || 'Chưa xác định người duyệt'}</dd></div><div><dt className="text-muted-foreground">Thời điểm duyệt</dt><dd>{bundle.summaryLog?.verifiedAt?`${formatDailyLogDate(bundle.summaryLog.verifiedAt)} · ${formatDailyLogTime(bundle.summaryLog.verifiedAt)}`:'Chưa xác định thời điểm duyệt'}</dd></div></dl>}
           {cards.map(card => { const sourceTime=card.source.sourceSnapshot?.updatedAt || (!verified ? card.contribution.submittedAt || card.contribution.createdAt : null); return <p key={card.source.id} className="text-muted-foreground">{card.source.workAreaName || card.contribution.workAreaName} · Phiên bản phiếu {card.source.sourceVersion ?? '—'} · {formatDailyLogTime(sourceTime ? String(sourceTime) : '')} · {card.source.sourceState === 'current' ? 'Khớp phiếu kỹ sư đã gửi' : card.source.sourceState === 'changed' ? 'Kỹ sư đã gửi lại bản mới' : card.source.sourceState === 'returned' ? 'Đã trả lại kỹ sư' : 'Không còn phiếu gốc'}</p>; })}
@@ -394,5 +469,6 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
         {warningCount > 0 && <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100"><AlertTriangle size={17} className="mt-0.5 shrink-0" /><span>{sourceBlockers > 0 ? 'Có phiếu cần sửa, gửi lại hoặc thiếu nguồn. Xử lý đúng phiếu trước khi gửi. ' : ''}{unresolved > 0 ? `${unresolved} WBS chưa chốt. Có thể lưu tổng hợp để tiếp tục sau; chưa thể gửi CHT.` : ''}</span></p>}
       </>}
     </div>
+    {photoViewer.viewer}
   </section>;
 };
