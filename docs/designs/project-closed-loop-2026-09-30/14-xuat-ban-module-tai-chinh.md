@@ -82,3 +82,16 @@ Mỗi đợt: mockup trên dữ liệu thật → chủ SP duyệt → code → 
 - **Menu**: 9 mục con, mỗi mục một đường dẫn `/finance/<phần>`; link cũ `?section=` vẫn chạy. `/finance/project` mở cho người đăng nhập
   (máy chủ lọc); người chỉ xem theo dự án thấy riêng màn này. Lối tắt "Tài chính dự án" ở trang Nhân viên; link trong tab Tài chính của Dự án trỏ về đây.
 - Kiểm thử rollback `tools/p1-test.mjs` 20/20.
+
+## 6. Đã làm — P2 tách hẳn (05/10/2026, chủ SP chọn "P2 (tách hẳn)")
+
+- Dự án **không còn tab Tài chính** (và 3 tab ẩn Ngân sách / Dòng tiền / Nghiệm thu & Thanh toán). Link cũ `/da/tabs/finance|budget|cashflow|payment`
+  tự mở Tài chính → Tài chính dự án đúng phần (ngân sách → Chi phí & ngân sách, thanh toán → Phải thu, sổ → Sổ giao dịch).
+- **Chốt sản lượng thực tế** chuyển sang Dự án → Chốt tiến độ (`ActualProductionCard`, dữ liệu và cách lưu giữ nguyên; người sửa: quyền quản lý tab Chốt tiến độ hoặc tab Tài chính cũ).
+- **Bằng chứng nguồn lực** chuyển sang Dự án → Nhật ký (mục mở khi cần, không tải sẵn).
+- **Báo cáo** (tiến độ, nhật ký) bỏ cổng "dữ liệu tài chính".
+- **Điều hành**: thẻ "Tài chính dự án" lấy số từ module Tài chính (RPC `get_finance_project_summary_v1`, trả null với người không được xem → thẻ tự ẩn);
+  bỏ 4 ô Đã thu / Đã chi / Sắp thu / Sắp chi 30 ngày, rủi ro thanh toán, đối soát 3 bên, chi phí theo khối lượng, dòng tiền & công nợ, tài chính nâng cao
+  (số cũ tính ở trình duyệt, lệch với Tài chính). Giữ tiến độ, hạng mục, cảnh báo, vật tư định mức.
+- Admin luôn thấy module Tài chính trên menu (khớp máy chủ).
+- Rollback `tools/p2-test.mjs` 6/6. Còn lại P3: nhập Excel số MISA ở Tài chính, chặn ghi tay `project_transactions`, gộp module Chi phí cũ, mẫu phân quyền.

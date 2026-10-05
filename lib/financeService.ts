@@ -155,6 +155,12 @@ export interface FinanceProjectPage {
   ledgerTotal: number;
 }
 
+/** Thẻ tóm tắt Tài chính ở Dự án → Điều hành; null = người dùng không được xem tài chính dự án này. */
+export interface FinanceProjectSummary {
+  projectId: string; code: string; contracts: number; progress: number | null; contractGross: number; received: number; receivable: number; receivableOverdue: number;
+  openingTodo: boolean; cost: number; committed: number; eac: number | null; overItems: number; margin: number | null; payable: number; payableOverdue: number; fundBalance: number | null;
+}
+
 // ---------- Thầu phụ (F4) ----------
 export type SubcontractIssue = 'no_partner' | 'zero_value' | 'no_signed_date' | 'signed_future' | 'no_project' | 'status' | 'no_retention_due' | 'over_contract' | 'no_bank';
 export interface SubcontractMetrics {
@@ -715,6 +721,7 @@ export const financeService = {
     return call<{ ok: boolean }>('save_finance_advance_settings_v1', { p_input: input });
   },
   myScope() { return call<FinanceMyScope>('get_finance_my_scope_v1', {}); },
+  projectSummary(projectId: string) { return call<FinanceProjectSummary | null>('get_finance_project_summary_v1', { p_project_id: projectId }); },
   projectPage(projectId: string) { return call<FinanceProjectPage>('get_finance_project_v1', { p_project_id: projectId }); },
   subcontracts() { return call<FinanceSubcontracts>('get_finance_subcontracts_v1', {}); },
   subcontract(id: string) { return call<SubcontractDetail>('get_finance_subcontract_v1', { p_subcontract_id: id }); },

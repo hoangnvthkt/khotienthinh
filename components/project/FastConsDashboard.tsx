@@ -1379,7 +1379,7 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <ExecutiveKpiCard
           title="Tiến độ thi công"
           value={`${constructionProgressPercent}%`}
@@ -1403,38 +1403,6 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
           icon={<FileText size={17} />}
           tone="slate"
           onClick={() => openProjectTab('contract')}
-        />
-        <ExecutiveKpiCard
-          title="Đã thu"
-          value={fmtMoney(financialExecutive.received)}
-          sub={`Tiền thật đã ghi nhận`}
-          icon={<WalletCards size={17} />}
-          tone="emerald"
-          onClick={() => openProjectTab('finance', { financeTab: 'cashflow' })}
-        />
-        <ExecutiveKpiCard
-          title="Đã chi"
-          value={fmtMoney(financialExecutive.spent)}
-          sub={`Số dư ${fmtMoney(financialExecutive.cashBalance)}`}
-          icon={<Banknote size={17} />}
-          tone={financialExecutive.cashBalance >= 0 ? 'blue' : 'red'}
-          onClick={() => openProjectTab('finance', { financeTab: 'cashflow' })}
-        />
-        <ExecutiveKpiCard
-          title="Sắp thu 30 ngày"
-          value={fmtMoney(financialExecutive.upcomingReceivable30d)}
-          sub={`Quá hạn ${fmtMoney(financialExecutive.overdueReceivable)} · ${financialExecutive.overdueReceivableCount} khoản`}
-          icon={<Clock size={17} />}
-          tone={financialExecutive.overdueReceivable > 0 ? 'orange' : 'cyan'}
-          onClick={() => openProjectTab('payment', { paymentTab: financialExecutive.overdueReceivable > 0 ? 'overdue' : 'upcoming' })}
-        />
-        <ExecutiveKpiCard
-          title="Sắp chi 30 ngày"
-          value={fmtMoney(financialExecutive.upcomingPayable30d)}
-          sub={`Quá hạn ${fmtMoney(financialExecutive.overduePayable)} · ${financialExecutive.overduePayableCount} khoản`}
-          icon={<CalendarClock size={17} />}
-          tone={financialExecutive.overduePayable > 0 ? 'red' : 'violet'}
-          onClick={() => openProjectTab('payment', { paymentTab: financialExecutive.overduePayable > 0 ? 'overdue' : 'upcoming' })}
         />
       </div>
 
@@ -1460,7 +1428,7 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
                 </span>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-                Hạng mục thi công · Lối tắt hành động · Sức khỏe & Cảnh báo · Đối soát 3 bên · Chi phí & Vật tư · Dòng tiền
+                Hạng mục thi công · Lối tắt hành động · Sức khỏe & Cảnh báo · Vật tư định mức
               </p>
             </div>
           </div>
@@ -1546,31 +1514,10 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
               <ApprovalQueuePanel metrics={metrics} />
             </div>
 
-            {/* Rủi ro thanh toán */}
-            <PaymentRiskPanel metrics={metrics} />
 
-            {/* === Bảng Đối Soát 3 Bên (FastCons-style) === */}
-            <ReconciliationTable owner={metrics.owner} subcontractor={metrics.subcontractor} supplier={metrics.supplier} />
 
-            {/* Chi tiết Chi phí KL, Vật liệu định mức, Dòng tiền công nợ */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-xl bg-teal-700/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-400 flex items-center justify-center">
-                    <ShieldCheck size={15} />
-                  </div>
-                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Chi phí theo KL thi công</h3>
-                </div>
-                <MetricRow label="Chi phí dự toán KL đã thực hiện" value={metrics.constructionCost.performedBudgetCost} highlight />
-                <MetricRow label="Chi phí trả thầu phụ" value={metrics.constructionCost.subcontractPaid} />
-                <MetricRow label="Chi phí trả NCC" value={metrics.constructionCost.supplierPaid} />
-                <MetricRow label="Chi phí khác" value={metrics.constructionCost.otherCost} />
-                <MetricRow label="Tổng chi phí thực tế" value={metrics.constructionCost.totalActualCost} highlight />
-                <div className={`mt-3 text-sm font-bold ${metricTone(metrics.constructionCost.forecastProfitLoss)}`}>
-                  Dự trù lãi/lỗ: {fmtFull(metrics.constructionCost.forecastProfitLoss)}
-                </div>
-              </div>
-
+            {/* Vật liệu định mức. Chi phí, dòng tiền, công nợ, đối soát xem ở module Tài chính → Tài chính dự án (doc 14, P2). */}
+            <div className="grid grid-cols-1 gap-4">
               <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 flex items-center justify-center">
@@ -1591,34 +1538,7 @@ const FastConsDashboard: React.FC<FastConsDashboardProps> = ({ constructionSiteI
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center justify-center">
-                    <FileText size={15} />
-                  </div>
-                  <h3 className="text-xs font-bold text-zinc-800 dark:text-zinc-200">Dòng tiền và công nợ</h3>
-                </div>
-                <MetricRow label="Giá trị thu" value={metrics.cashFlow.cashIn} highlight />
-                <MetricRow label="Giá trị chi" value={metrics.cashFlow.cashOut} />
-                <MetricRow label="Số dư" value={metrics.cashFlow.balance} highlight />
-                <MetricRow label="Phải thu" value={metrics.cashFlow.receivable} />
-                <MetricRow label="Phải trả" value={metrics.cashFlow.payable} />
-                <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-100 dark:border-zinc-800 px-3 py-2 flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Khoản quá hạn</span>
-                  <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{metrics.cashFlow.overdueCount}</span>
-                </div>
-              </div>
             </div>
-
-            {/* Tài chính nâng cao */}
-            {financial && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <SummaryCard title="Chênh lệch ngân sách" value={fmtMoney(financial.budgetVariance)} sub={`${financial.budgetVariancePercent}%`} icon={<Activity size={15} />} tone={financial.budgetVariance >= 0 ? 'emerald' : 'red'} />
-                <SummaryCard title="Biên lợi nhuận HĐ" value={fmtMoney(financial.contractMargin)} sub={`${financial.contractMarginPercent}%`} icon={<CircleDollarSign size={15} />} tone={financial.contractMargin >= 0 ? 'emerald' : 'orange'} />
-                <SummaryCard title="Doanh thu xác nhận" value={fmtMoney(financial.totalCertifiedRevenue)} sub={`Đã TT ${fmtMoney(financial.totalPaidRevenue)}`} icon={<ShieldCheck size={15} />} tone="blue" />
-                <SummaryCard title="Tạm ứng còn lại" value={fmtMoney(financial.totalAdvanceOutstanding)} sub={`Giữ lại ${fmtMoney(financial.totalRetentionHeld)}`} icon={<Banknote size={15} />} tone="violet" />
-              </div>
-            )}
 
             {/* Ghi chú dữ liệu & Thiếu nguồn */}
             {(metrics.warnings.length > 0 || metrics.sourceNotes.length > 0) && (

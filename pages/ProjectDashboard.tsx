@@ -92,17 +92,37 @@ import PremiumMemberSelect, { MemberOption } from '../components/common/PremiumM
 import PremiumEntitySelect, { EntityOption } from '../components/common/PremiumEntitySelect';
 import { StatusBadge } from '../components/erp';
 import SensitiveDataGate from '../components/project/permissions/SensitiveDataGate';
+import { ActualProductionCard } from '../components/project/ActualProductionCard';
+import { ProjectFinanceSummaryCard } from '../components/finance/ProjectFinanceSummaryCard';
+import { ResourceUsageEvidencePanel } from '../components/project/finance/ResourceUsageEvidencePanel';
+import { projectFinanceHref } from '../components/finance/financeUi';
+
+// Tab Tài chính của Dự án đã chuyển sang module Tài chính (doc 14, P2): link cũ mở Tài chính → Tài chính dự án đúng phần.
+const WORKSPACE_TO_FINANCE_TAB: Record<string, string> = { overview: 'overview', budget: 'cost', payables: 'payables', receivables: 'receivables',
+    payments: 'receivables', cashflow: 'overview', ledger: 'ledger', evidence: 'overview' };
+const FinanceMovedRedirect: React.FC<{ projectId: string; workspaceTab: string }> = ({ projectId, workspaceTab }) => {
+    const navigate = useNavigate();
+    React.useEffect(() => { navigate(projectFinanceHref(projectId, WORKSPACE_TO_FINANCE_TAB[workspaceTab] || 'overview').slice(1), { replace: true }); }, [navigate, projectId, workspaceTab]);
+    return <div className="rounded-xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900">Tài chính dự án đã chuyển sang module Tài chính — đang mở…</div>;
+};
+// Bằng chứng nguồn lực (đối chiếu nhân công, máy, vật tư với nhật ký) — mở khi cần, không tải sẵn.
+const ResourceEvidenceSection: React.FC<{ projectId: string; constructionSiteId?: string }> = ({ projectId, constructionSiteId }) => {
+    const [open, setOpen] = React.useState(false);
+    return <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <button type="button" onClick={() => setOpen(v => !v)} className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left">
+            <span><b className="text-sm text-zinc-900 dark:text-zinc-100">Bằng chứng nguồn lực</b><span className="block text-xs text-zinc-500">Đối chiếu nhân công, máy, vật tư đã dùng theo nhật ký</span></span>
+            <span className="text-xs font-bold text-teal-700">{open ? 'Thu gọn' : 'Xem'}</span></button>
+        {open && <div className="border-t border-zinc-200 p-3 dark:border-zinc-800"><ResourceUsageEvidencePanel projectId={projectId} constructionSiteId={constructionSiteId} /></div>}
+    </section>;
+};
 import { useProjectSensitiveAccess } from '../hooks/project/useProjectSensitiveAccess';
 import { canViewSensitive, projectSensitiveAccessService } from '../lib/projectSensitiveAccessService';
 
-const CashFlowTab = React.lazy(() => import('./project/CashFlowTab'));
 const ContractTab = React.lazy(() => import('./project/ContractTab'));
 const GanttTab = React.lazy(() => import('./project/GanttTab'));
 const WeeklyProgressTab = React.lazy(() => import('./project/WeeklyProgressTab'));
 const WorkPlanTab = React.lazy(() => import('./project/WorkPlanTab'));
 const DailyLogTab = React.lazy(() => import('./project/DailyLogTab'));
-const ProjectFinanceWorkspace = React.lazy(() => import('./project/ProjectFinanceWorkspace'));
-const PaymentWorkbenchTab = React.lazy(() => import('./project/PaymentWorkbenchTab'));
 const SubcontractTab = React.lazy(() => import('./project/SubcontractTab'));
 const MaterialTab = React.lazy(() => import('./project/MaterialTab'));
 const ReportTab = React.lazy(() => import('./project/ReportTab'));
@@ -617,7 +637,7 @@ const ProjectDashboard: React.FC = () => {
 
     const visibleOverviewTabs = useMemo(
         () => PROJECT_TAB_PERMISSIONS.filter(tab =>
-            !isProjectFinanceLegacyTabKey(tab.key) &&
+            !isProjectFinanceLegacyTabKey(tab.key) && tab.key !== 'finance' &&
             (tab.key !== 'permissions' || user?.role === Role.ADMIN) &&
             canViewProjectTab(tab.key)
         ),
@@ -3197,7 +3217,6 @@ const ProjectDashboard: React.FC = () => {
             }
             return null;
         };
-        const projectTransactionsForScope = projectTransactions.filter(t => matchesProjectScope(t, selectedProject.id, effectiveSiteId));
         const routeParams = new URLSearchParams(location.search);
         const routeTab = routeParams.get('tab');
         const financeInitialTab: ProjectFinanceWorkspaceTab = isProjectFinanceLegacyTabKey(routeTab)
@@ -3331,39 +3350,19 @@ const ProjectDashboard: React.FC = () => {
                         </div>
                     ) : overviewTab === 'executive' ? (
                         hasSiteScope ? (
-                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
+                            <div className="space-y-3">
+                                {/* Số tài chính lấy từ module Tài chính; thẻ tự ẩn với người không được xem. */}
+                                <ProjectFinanceSummaryCard projectId={selectedProject.id} />
                                 <ExecutiveTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
-                            </SensitiveDataGate>
+                            </div>
                         ) : renderSiteRequired('Điều hành')
                     ) : overviewTab === 'org' ? (
                         <ProjectOrgTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
                     ) : overviewTab === 'permissions' ? (
                         <ProjectPermissionsTab projectId={selectedProject.id} constructionSiteId={effectiveSiteId} />
-                    ) : overviewTab === 'finance' ? (
-                        hasSiteScope ? (
-                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
-                            <ProjectFinanceWorkspace
-                                constructionSiteId={effectiveSiteId!}
-                                projectId={selectedProject.id}
-                                transactions={projectTransactionsForScope}
-                                contractValue={contractValue}
-                                canManageFinance={canManageProjectTab('finance')}
-                                canManagePayment={canManageProjectTab('payment')}
-                                initialTab={financeInitialTab}
-                            />
-                            </SensitiveDataGate>
-                        ) : renderSiteRequired('Tài chính')
-                    ) : overviewTab === 'cashflow' ? (
-                        hasSiteScope ? (
-                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
-                            <CashFlowTab
-                                constructionSiteId={effectiveSiteId!}
-                                projectId={selectedProject.id}
-                                transactions={projectTransactionsForScope}
-                                contractValue={contractValue}
-                            />
-                            </SensitiveDataGate>
-                        ) : renderSiteRequired('Dòng tiền')
+                    ) : overviewTab === 'finance' || overviewTab === 'cashflow' || overviewTab === 'payment' ? (
+                        // Chủ SP duyệt doc 14 (05/10/2026): Tài chính tách hẳn khỏi Dự án — link cũ mở Tài chính → Tài chính dự án đúng phần.
+                        <FinanceMovedRedirect projectId={selectedProject.id} workspaceTab={overviewTab === 'payment' ? 'payments' : overviewTab === 'cashflow' ? 'cashflow' : financeInitialTab} />
                     ) : overviewTab === 'contract' ? (
                         <SensitiveDataGate access={sensitiveAccess} domain="contract">
                             <ContractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('contract')} />
@@ -3373,13 +3372,18 @@ const ProjectDashboard: React.FC = () => {
                     ) : overviewTab === 'work_plan' ? (
                         <WorkPlanTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
                     ) : overviewTab === 'weekly_progress' ? (
-                        <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        <div className="space-y-3">
+                            {/* Chốt sản lượng thực tế chuyển từ tab Tài chính sang đây (doc 14 câu 3). */}
+                            {hasSiteScope && <ActualProductionCard projectId={selectedProject.id} constructionSiteId={effectiveSiteId!} contractValue={contractValue}
+                                canEdit={canManageProjectTab('weekly_progress') || canManageProjectTab('finance')} />}
+                            <WeeklyProgressTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} />
+                        </div>
                     ) : overviewTab === 'dailylog' ? (
-                        <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
-                    ) : overviewTab === 'payment' ? (
-                        hasSiteScope ? (
-                            <PaymentWorkbenchTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} canManageTab={canManageProjectTab('payment')} />
-                        ) : renderSiteRequired('Nghiệm thu & Thanh toán')
+                        <div className="space-y-3">
+                            <DailyLogTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('dailylog')} />
+                            {/* Bằng chứng nguồn lực chuyển từ tab Tài chính sang Nhật ký (doc 14 câu 4). */}
+                            <ResourceEvidenceSection projectId={selectedProject.id} constructionSiteId={effectiveSiteId || undefined} />
+                        </div>
                     ) : overviewTab === 'subcontract' ? (
                         <SubcontractTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} canManageTab={canManageProjectTab('subcontract')} isAdmin={isAdmin} />
                     ) : overviewTab === 'quality' ? (
@@ -3398,14 +3402,7 @@ const ProjectDashboard: React.FC = () => {
                         />
                     ) : overviewTab === 'report' ? (
                         hasSiteScope ? (
-                            <SensitiveDataGate access={sensitiveAccess} domain="finance">
-                            <ReportTab
-                                constructionSiteId={effectiveSiteId!}
-                                projectId={selectedProject.id}
-                                contractValue={contractValue}
-                                totalSpent={aggForRender.totalExpense}
-                            />
-                            </SensitiveDataGate>
+                            <ReportTab constructionSiteId={effectiveSiteId!} projectId={selectedProject.id} />
                         ) : renderSiteRequired('Báo cáo')
                     ) : overviewTab === 'documents' ? (
                         <DocumentsTab constructionSiteId={effectiveSiteId || undefined} projectId={selectedProject.id} uploadedBy={user?.name} canManageTab={canManageProjectTab('documents')} />
