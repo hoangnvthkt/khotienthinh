@@ -177,12 +177,14 @@ export const OrderDrawer: React.FC<{
         <Badge className={order.isHub ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200' : 'border-border bg-muted text-muted-foreground'}>
           {order.isHub ? 'Lập tại Mua hàng' : 'Lập ở dự án'}</Badge>
         {order.isGroup && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">Đơn gom {(order.sites || []).length} công trường</Badge>}
-        {order.kind === 'proactive' && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">{order.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : 'Đơn chủ động'}</Badge>}
+        {order.requestSource && <a href={`#/rq/${encodeURIComponent(order.requestSource.id)}`} className="text-xs font-semibold text-teal-700 dark:text-teal-300">Nguồn Yêu cầu · {order.requestSource.code}</a>}
+        {!order.requestSource && order.kind === 'proactive' && <Badge className="border-teal-300 bg-teal-100 text-teal-900 dark:border-teal-800 dark:bg-teal-900/50 dark:text-teal-100">{order.proactive?.purpose === 'stock' ? 'Dự trữ Kho Tổng' : 'Đơn chủ động'}</Badge>}
         {late && <Badge className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">Quá ngày giao</Badge>}</div>
       <h2 className="mt-2 text-lg font-bold text-foreground">{order.poNumber}<span className="font-medium text-muted-foreground"> · {order.vendorName || 'Chưa chọn NCC'}</span></h2>
       <p className="text-sm text-muted-foreground">{order.isGroup ? (order.sites || []).map(s => `${s.projectCode} · ${s.warehouseName}`).join(' | ')
         : [order.projectCode, order.projectName].filter(Boolean).join(' — ')}</p>
     </> : <h2 className="text-lg font-bold">Đơn hàng</h2>}>
+    {order?.requestSource?.kind === 'asset' && <p className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-200">Tài sản sẽ được tạo theo số lượng thực nhận. Sau khi nhận hàng, mở Tài sản → Cấp phát để xác nhận bàn giao cho người dùng.</p>}
     {error ? <StateBox kind="error" message={error} onRetry={load} /> : !order ? <StateBox kind="loading" title="Đang tải đơn hàng…" /> : <>
       {order.budgetApproval && order.status === 'sent' && <p className={`flex gap-2 rounded-xl border px-3 py-2.5 text-sm ${order.budgetApproval.status === 'approved' ? 'border-leaf-200 bg-leaf-50 text-leaf-900 dark:border-leaf-900 dark:bg-leaf-950/30 dark:text-leaf-100' : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100'}`}>
         <AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><b>{order.budgetApproval.status === 'approved' ? `Đã duyệt vượt ngân sách${order.budgetApproval.decidedByName ? ` (${order.budgetApproval.decidedByName})` : ''}` : 'Vượt dự toán vật tư — chờ duyệt vượt ngân sách'}:</b> sau đơn này vật tư {order.budgetApproval.projectCode || ''} dùng {money(order.budgetApproval.projected)} đ / dự toán {money(order.budgetApproval.budget)} đ.
@@ -196,7 +198,7 @@ export const OrderDrawer: React.FC<{
       {order.stage === 'ordered' && <p className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
         {order.purchaseMode === 'multiple' ? 'Đã duyệt — gửi đơn cho NCC. Khi NCC báo giao, lập đợt giao với SL, giá và VAT của đợt.'
           : 'Đã duyệt — gửi đơn cho NCC. Phiếu nhập kho (QR) đang chờ thủ kho nhận theo SL thực tế.'}</p>}
-      {order.kind === 'proactive' && order.proactive && <div className="space-y-1 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-2.5 text-sm dark:border-teal-900 dark:bg-teal-950/20">
+      {!order.requestSource && order.kind === 'proactive' && order.proactive && <div className="space-y-1 rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-2.5 text-sm dark:border-teal-900 dark:bg-teal-950/20">
         <p><span className="text-muted-foreground">Mua chủ động: </span><b className="text-foreground">{PROACTIVE_REASON_LABELS[order.proactive.reasonCode]?.label || order.proactive.reasonCode}</b>
           {order.proactive.reason && <span className="text-foreground"> — {order.proactive.reason}</span>}</p>
         {order.proactive.overBoqReason && <p className="flex gap-1.5 text-amber-800 dark:text-amber-200"><AlertTriangle size={14} className="mt-0.5 shrink-0" />

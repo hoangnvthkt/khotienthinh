@@ -241,6 +241,8 @@ export interface ActOnRequestInput {
 }
 
 export type RequestRpcErrorCode =
+  | 'REQUEST_PURCHASE_INVALID'
+  | 'REQUEST_PURCHASE_HAS_ORDERS'
   | 'REQUEST_STALE_STATE'
   | 'REQUEST_ACTION_FORBIDDEN'
   | 'REQUEST_ASSIGNMENT_NOT_ACTIVE'
@@ -465,6 +467,7 @@ const normalizeCursorPage = <T>(value: unknown, name: string): T => {
 };
 
 const REQUEST_RPC_ERROR_CODES = new Set<RequestRpcErrorCode>([
+  'REQUEST_PURCHASE_INVALID', 'REQUEST_PURCHASE_HAS_ORDERS',
   'REQUEST_STALE_STATE',
   'REQUEST_ACTION_FORBIDDEN',
   'REQUEST_ASSIGNMENT_NOT_ACTIVE',
@@ -512,6 +515,8 @@ export const mapRequestRpcError = (error: unknown): RequestRpcError => {
     ? candidate
     : 'REQUEST_NOT_FOUND_OR_FORBIDDEN';
   const localizedMessages: Partial<Record<RequestRpcErrorCode, string>> = {
+    REQUEST_PURCHASE_INVALID: 'Bảng nhu cầu chưa hợp lệ. Kiểm tra tên hàng, đơn vị, số lượng, kho nhận, ngày cần và nhóm tài sản.',
+    REQUEST_PURCHASE_HAS_ORDERS: 'Phiếu đã có đơn mua liên quan. Xử lý các đơn này trước khi thay đổi nội dung hoặc trạng thái phiếu.',
     REQUEST_APPROVER_SELF_NOT_ALLOWED: 'Bạn không thể chọn chính mình làm người duyệt.',
     REQUEST_APPROVER_INACTIVE: 'Người duyệt đã bị khóa hoặc không còn hoạt động. Vui lòng chọn người khác.',
     REQUEST_DIRECT_MANAGER_MISSING: 'Tài khoản của bạn chưa được thiết lập người quản lý trực tiếp. Vui lòng liên hệ quản trị viên.',

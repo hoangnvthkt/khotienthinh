@@ -3,11 +3,12 @@ import { Bell, FileText, Gauge, MapPin, Printer, UsersRound } from 'lucide-react
 
 export type RequestTemplateSection =
   | 'GENERAL' | 'FORM' | 'APPROVAL'
-  | 'WATCHERS' | 'PRINT' | 'NOTIFICATIONS';
+  | 'WATCHERS' | 'PRINT' | 'NOTIFICATIONS' | 'OUTPUT';
 
 const sections: Array<{ id: RequestTemplateSection; label: string; description: string; icon: React.ElementType }> = [
   { id: 'GENERAL', label: 'Thiết lập chung', description: 'Thông tin và phạm vi dùng', icon: Gauge },
   { id: 'FORM', label: 'Mẫu form đề xuất', description: 'Các trường dữ liệu tùy chỉnh', icon: FileText },
+  { id: 'OUTPUT', label: 'Kết nối đầu ra', description: 'Mua hàng và tài sản', icon: MapPin },
   { id: 'APPROVAL', label: 'Luồng phê duyệt', description: 'Khối duyệt và cách vận hành', icon: MapPin },
   { id: 'WATCHERS', label: 'Người theo dõi', description: 'Thành viên nhận thông tin', icon: UsersRound },
   { id: 'PRINT', label: 'In đề xuất', description: 'Bản in trình duyệt và DOCX', icon: Printer },

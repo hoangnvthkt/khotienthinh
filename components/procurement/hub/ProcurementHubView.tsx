@@ -1,3 +1,4 @@
+import { RequestPurchaseLines } from './RequestPurchaseLines';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Flame, Inbox, Layers, Link2, Loader2, PackageCheck,
@@ -206,7 +207,7 @@ const NeedDrawer: React.FC<{
 
     {error ? <StateBox kind="error" message={error} onRetry={load} />
       : !detail ? <StateBox kind="loading" title="Đang tải phiếu…" />
-        : external ? <ExternalSourceSnapshot detail={detail} withdrawn={withdrawn} /> : <section>
+        : external ? detail.purchaseLines?.length ? <RequestPurchaseLines detail={detail} canManage={canManage} onChanged={() => { load(); onChanged(); }} onOpenOrder={onOpenOrder} /> : <ExternalSourceSnapshot detail={detail} withdrawn={withdrawn} /> : <section>
           <div className="mb-2 flex items-baseline justify-between gap-2">
             <h3 className="font-semibold text-foreground">Vật tư cần mua</h3>
             <span className="text-xs text-muted-foreground">{missing > 0 ? `${missing}/${lines.length} dòng còn thiếu` : `Đã đặt đủ ${lines.length} dòng`}</span>
