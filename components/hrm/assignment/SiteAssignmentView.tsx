@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Building2, CalendarClock, CheckCircle2, ChevronDown, ClipboardCheck, HardHat, Hourglass,
@@ -25,11 +26,13 @@ const today = () => new Date().toLocaleDateString('sv-SE');
 
 const STAGE_STRIP: Record<SiteAssignmentStage, string> = {
   pending: 'border-l-amber-400',
+  awaiting_office: 'border-l-indigo-400',
   upcoming: 'border-l-teal-500',
   active: 'border-l-leaf-500',
   closed: 'border-l-slate-300',
 };
 const STAGE_BADGE: Record<SiteAssignmentStage, string> = {
+  awaiting_office: 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200',
   pending: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
   upcoming: 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-200',
   active: 'border-leaf-200 bg-leaf-50 text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/40 dark:text-leaf-200',
@@ -51,11 +54,12 @@ const StageBadge: React.FC<{ row: SiteAssignment; stage: SiteAssignmentStage }> 
 const StageStrip: React.FC<{ counts: Record<SiteAssignmentStage, number>; hints: Record<SiteAssignmentStage, React.ReactNode>; stage: SiteAssignmentStage | null; onStage: (s: SiteAssignmentStage | null) => void }> = ({ counts, hints, stage, onStage }) => {
   const cards: Array<{ key: SiteAssignmentStage; icon: React.ElementType; tone: string }> = [
     { key: 'pending', icon: Hourglass, tone: 'text-amber-700 dark:text-amber-300' },
+    { key: 'awaiting_office', icon: ClipboardCheck, tone: 'text-indigo-700 dark:text-indigo-300' },
     { key: 'upcoming', icon: CalendarClock, tone: 'text-teal-700 dark:text-teal-300' },
     { key: 'active', icon: HardHat, tone: 'text-leaf-700 dark:text-leaf-300' },
     { key: 'closed', icon: CheckCircle2, tone: 'text-slate-500 dark:text-slate-400' },
   ];
-  return <nav aria-label="Các bước điều động" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+  return <nav aria-label="Các bước điều động" className="grid grid-cols-2 gap-2 lg:grid-cols-5">
     {cards.map((card, index) => {
       const selected = stage === card.key;
       return <button key={card.key} type="button" aria-pressed={selected} onClick={() => onStage(selected ? null : card.key)}
@@ -90,7 +94,7 @@ const AssignmentDetail: React.FC<{
   const effects = [
     `Chấm công: ${row.siteName} là nơi chấm ${row.kind === 'concurrent' ? 'phụ (nơi chính giữ nguyên)' : 'chính'}${row.kind === 'temporary' && row.endDate ? ` đến ${dateVi(row.endDate)}, sau đó về ${row.fromSiteName || 'nơi cũ'}` : ''}.`,
     row.kind === 'concurrent' ? 'Duyệt phép, chấm công bù: vẫn theo nơi chính.' : `Duyệt phép, chấm công bù: người duyệt của ${row.siteName}.`,
-    row.kind === 'primary' && row.fromSiteName ? `${row.fromSiteName} kết thúc ngày ${dateVi(dayBefore(row.startDate))}.` : null,
+    row.kind === 'primary' && row.fromSiteName ? (row.sourceRequestId ? `${row.fromSiteName} được thay thế khi thông báo phát hành và đến ngày bắt đầu.` : `${row.fromSiteName} kết thúc ngày ${dateVi(dayBefore(row.startDate))}.`) : null,
     `Được thêm vào Tổ chức dự án ${row.projectCode || row.siteName} với quyền Xem (nếu chưa có).`,
   ].filter(Boolean) as string[];
   const steps: Array<{ label: string; at: string | null; by?: string | null; done: boolean; tone?: string }> = [
@@ -122,6 +126,15 @@ const AssignmentDetail: React.FC<{
       </p>
     </header>
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      {row.sourceRequestId && <section className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-900 dark:bg-indigo-950/30">
+        <h3 className="text-sm font-semibold">Yêu cầu → Nhân sự → Office</h3>
+        <p className="mt-1 text-sm">{row.status === 'awaiting_office' ? 'Phương án đã được duyệt. Bản nháp Office đã tự tạo; chỉ áp dụng điều động sau khi văn bản được phát hành.' : 'Phiếu được tạo từ yêu cầu đã duyệt. Sau khi duyệt HR, hệ thống tự soạn thông báo Office.'}</p>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <Link className={secondaryBtn} to={`/rq/${row.sourceRequestId}`}>Xem yêu cầu nguồn</Link>
+          {row.officeDocumentId && <Link className={primaryBtn} to={`/office/documents/${row.officeDocumentId}`}>Mở thông báo Office</Link>}
+        </div>
+      </section>}
+
       <section><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Lý do</h3><p className="mt-1 text-sm text-foreground">{row.reason}</p>
         {row.decisionNote && <p className="mt-1 text-sm text-rose-700 dark:text-rose-300">{row.status === 'rejected' ? 'Lý do từ chối' : 'Ghi chú'}: {row.decisionNote}</p>}
         {row.endedEarlyReason && <p className="mt-1 text-sm text-muted-foreground">Kết thúc sớm: {row.endedEarlyReason}</p>}
@@ -141,8 +154,8 @@ const AssignmentDetail: React.FC<{
         </li>)}</ol>
       </section>
     </div>
-    {(row.status === 'pending' || stage === 'active' || stage === 'upcoming') && <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border p-3">
-      {row.status === 'pending' && <button type="button" disabled={busy} onClick={onCancel} className={`${secondaryBtn} mr-auto`}>Hủy phiếu</button>}
+    {(row.status === 'pending' || row.status === 'awaiting_office' || stage === 'active' || stage === 'upcoming') && <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border p-3">
+      {(row.status === 'pending' || row.status === 'awaiting_office') && <button type="button" disabled={busy} onClick={onCancel} className={`${secondaryBtn} mr-auto`}>Hủy phiếu</button>}
       {row.status === 'pending' && canApprove && <>
         <button type="button" disabled={busy} onClick={onReject} className={`${secondaryBtn} text-rose-700 dark:text-rose-300`}><XCircle size={15} />Từ chối</button>
         <button type="button" disabled={busy} onClick={onApprove} className={primaryBtn}><UserCheck size={15} />Duyệt điều động</button>
@@ -432,7 +445,7 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
 
   const now = today();
   const counts = useMemo(() => {
-    const result: Record<SiteAssignmentStage, number> = { pending: 0, upcoming: 0, active: 0, closed: 0 };
+    const result: Record<SiteAssignmentStage, number> = { pending: 0, awaiting_office: 0, upcoming: 0, active: 0, closed: 0 };
     board?.assignments.forEach(row => { result[stageOf(row, now)] += 1; });
     return result;
   }, [board, now]);
@@ -446,7 +459,7 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
     .filter(row => !siteFilter || row.siteId === siteFilter)
     .filter(row => !search || matchesSearchQueryMultiple([row.code, row.employeeName, row.employeeCode, row.siteName, row.projectCode, row.reason], search))
     .sort((a, b) => {
-      const order: Record<SiteAssignmentStage, number> = { pending: 0, upcoming: 1, active: 2, closed: 3 };
+      const order: Record<SiteAssignmentStage, number> = { pending: 0, awaiting_office: 1, upcoming: 2, active: 3, closed: 4 };
       return order[stageOf(a, now)] - order[stageOf(b, now)] || a.startDate.localeCompare(b.startDate) || a.employeeName.localeCompare(b.employeeName, 'vi');
     });
   const selected = board.assignments.find(row => row.id === selectedId) || null;
@@ -454,6 +467,7 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
   const soon = board.assignments.filter(row => stageOf(row, now) === 'upcoming' && daysBetween(now, row.startDate) <= 7).length;
   const activeSites = new Set(board.assignments.filter(row => stageOf(row, now) === 'active').map(row => row.siteId)).size;
   const hints: Record<SiteAssignmentStage, React.ReactNode> = {
+    awaiting_office: 'HR đã duyệt · chưa đổi nơi làm',
     pending: pendingMine > 0 ? <span className="font-semibold text-amber-800 dark:text-amber-200">{pendingMine} chờ bạn duyệt</span> : 'phiếu mới gửi',
     upcoming: soon > 0 ? `${soon} bắt đầu trong 7 ngày` : 'đã duyệt, chưa tới ngày',
     active: `ở ${activeSites} công trường`,
@@ -476,11 +490,11 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
     const ok = await confirm({
       title: 'Duyệt điều động', targetName: `${row.code} · ${row.employeeName} → ${row.siteName}`, actionLabel: 'Duyệt', confirmText: 'Duyệt',
       intent: 'success', countdownSeconds: 0, subtitle: `${periodLabel(row)} · ${KIND_LABEL[row.kind]}`,
-      warningText: 'Trước ngày bắt đầu vẫn hủy được; sau đó chỉ kết thúc sớm hoặc gia hạn.',
+      warningText: row.sourceRequestId ? 'Hệ thống sẽ tự soạn bản nháp Office. Nơi làm việc chỉ thay đổi sau khi văn bản phát hành và đến ngày bắt đầu.' : 'Trước ngày bắt đầu vẫn hủy được; sau đó chỉ kết thúc sớm hoặc gia hạn.',
     });
     if (!ok) return;
     await act(() => siteAssignmentService.decide(row.id, true, null), 'Đã duyệt điều động',
-      `${row.employeeName} làm tại ${row.siteName} từ ${dateVi(row.startDate)}; CHT hai nơi đã được báo.`);
+      row.sourceRequestId ? 'Đã tạo bản nháp thông báo Office. Mở văn bản tại phiếu này; nơi làm việc chưa thay đổi.' : `${row.employeeName} làm tại ${row.siteName} từ ${dateVi(row.startDate)}; CHT hai nơi đã được báo.`);
   };
   const reject = async (row: SiteAssignment) => {
     const note = await reasonConfirm({ title: 'Từ chối điều động', targetName: `${row.code} · ${row.employeeName}`, reasonLabel: 'Lý do từ chối', reasonPlaceholder: 'Ví dụ: công trường đi đang thiếu người', actionLabel: 'Từ chối', intent: 'danger', minLength: 5 });
@@ -488,7 +502,7 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
     await act(() => siteAssignmentService.decide(row.id, false, note), 'Đã từ chối', `${row.code}: người lập phiếu nhận thông báo kèm lý do.`);
   };
   const cancel = async (row: SiteAssignment) => {
-    const note = await reasonConfirm({ title: row.status === 'pending' ? 'Hủy phiếu' : 'Hủy điều động', targetName: `${row.code} · ${row.employeeName}`, subtitle: 'Chưa tới ngày bắt đầu nên chưa ảnh hưởng chấm công hay duyệt phép.', reasonLabel: 'Lý do hủy', actionLabel: 'Hủy', intent: 'danger', minLength: 5 });
+    const note = await reasonConfirm({ title: row.status === 'pending' ? 'Hủy phiếu' : 'Hủy điều động', targetName: `${row.code} · ${row.employeeName}`, subtitle: row.status === 'awaiting_office' ? 'Văn bản chưa phát hành; phiếu chưa thay đổi nơi làm việc.' : 'Chưa tới ngày bắt đầu nên chưa ảnh hưởng chấm công hay duyệt phép.', reasonLabel: 'Lý do hủy', actionLabel: 'Hủy', intent: 'danger', minLength: 5 });
     if (note === null) return;
     await act(() => siteAssignmentService.cancel(row.id, note), 'Đã hủy', `${row.code} không còn hiệu lực; lịch sử được giữ.`);
   };
@@ -498,7 +512,7 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-600 to-leaf-500 text-white"><HardHat size={20} /></span>
       <div className="min-w-[220px] flex-1">
         <h2 className="text-lg font-bold text-foreground">Điều động công trường</h2>
-        <p className="text-sm text-muted-foreground">Ai làm ở công trường nào, từ ngày nào. Phiếu đã duyệt tự áp dụng vào chấm công và người duyệt phép từ ngày bắt đầu.</p>
+        <p className="text-sm text-muted-foreground">Ai làm ở công trường nào, từ ngày nào. Phiếu từ Yêu cầu cần phát hành thông báo Office trước khi áp dụng vào chấm công và duyệt phép.</p>
         <details className="mt-1 text-sm">
           <summary className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-teal-700 dark:text-teal-300">Cách làm <ChevronDown size={13} /></summary>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
@@ -558,7 +572,7 @@ const SiteAssignmentView: React.FC<{ people: AssignmentPerson[]; initialSelected
             })}</ul>}
         </section>
         <div className={selected ? '' : 'hidden lg:block'}>
-          {selected ? <AssignmentDetail row={selected} canApprove={board.can.approve} busy={busy} onBack={() => setSelectedId(null)}
+          {selected ? <AssignmentDetail row={selected} canApprove={board.can.approve && selected.canApprove !== false} busy={busy} onBack={() => setSelectedId(null)}
             onApprove={() => void approve(selected)} onReject={() => void reject(selected)} onCancel={() => void cancel(selected)} onChangeEnd={setChanging} />
             : <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">Chọn một phiếu để xem chi tiết.</div>}
         </div>

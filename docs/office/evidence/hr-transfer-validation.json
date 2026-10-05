@@ -1,0 +1,53 @@
+{
+  "verifiedAt": "2026-10-05T02:41:05.564Z",
+  "migration": "20261005021048_request_hr_office_transfer_bridge.sql",
+  "migrationSha256": "2b32fb2d8e6d230e8ae91f13f650376a7890e83d80d1e06f3b2c516d61cbc5e8",
+  "pilotSeedSha256": "f56620ff261277803a9b82392a86331e372a18a5d62fbb148a6f51763ecb9e87",
+  "tests": {
+    "vitest": {
+      "filesPassed": 622,
+      "testsPassed": 3057,
+      "testsSkipped": 2
+    },
+    "applicationTypecheck": 0,
+    "build": "passed; existing chunk-size warning",
+    "browser": {
+      "widths": [
+        390,
+        768,
+        1440
+      ],
+      "testsPassed": 3
+    },
+    "cloudRollback": [
+      "actual request and HR approval RPCs",
+      "request and HR rejection",
+      "unique downstream records and retry",
+      "unauthorized reads/approvals denied",
+      "source immutable after approval",
+      "HR approval leaves employee/site/project state unchanged",
+      "missing identity blocks Office submission",
+      "profile refresh/version audit",
+      "same-day baseline and future publication effect gates",
+      "cancel linked assignment blocks Office",
+      "legacy HR smoke passes"
+    ]
+  },
+  "limits": [
+    "Browser integration tests use fictional data; real approvals remain pending.",
+    "Publication effect trigger exercised in rollback; final signed PDF/publication workflow is outside this rollout scope.",
+    "Template initially limited to the user-authorized employee and two sites."
+  ],
+  "production": {
+    "appliedAt": "2026-10-05T02:42:48.312Z",
+    "migrationVersion": "20261005021048",
+    "requestStatus": "PENDING",
+    "approvalsExecuted": false,
+    "browserVerified": "Admin session displays pending request, correct employee/sites/date, fixed admin approver and Chấp thuận action; no approval clicked."
+  },
+  "advisors": {
+    "before": 457,
+    "after": 457,
+    "newFindings": 0
+  }
+}

@@ -3,6 +3,9 @@ import { closedLabel, dayBefore, daysBetween, periodLabel, stageOf } from '../si
 
 describe('site assignment stages', () => {
   const today = '2026-10-03';
+  it('keeps HR-approved transfers waiting for Office even after their start date', () => {
+    expect(stageOf({ status: 'awaiting_office', startDate: '2026-10-01', endDate: null }, today)).toBe('awaiting_office');
+  });
   it('puts pending, future, running and finished records in their step', () => {
     expect(stageOf({ status: 'pending', startDate: '2026-10-10', endDate: null }, today)).toBe('pending');
     expect(stageOf({ status: 'approved', startDate: '2026-10-07', endDate: null }, today)).toBe('upcoming');
