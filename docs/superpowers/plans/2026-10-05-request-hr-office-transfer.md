@@ -37,7 +37,7 @@
 - [x] Self-review schema permissions, concurrency and effect gates; no sub-agent.
 - [x] Apply only verified migration, seed actual templates and fixed admin approval route, create initial request with clear on-behalf audit.
 - [ ] Commit/push Office branch, integrate/deploy under existing authorization after checks.
-- [ ] Verify first request is pending admin and no live assignment activated. Deliver direct links; human approvals remain outstanding.
+- [x] Verify initial request was pending admin with no effects. Human user subsequently approved both gates in the app; one Office draft was automatically generated and employee remains at the origin.
 
 ## Verification notes
 
@@ -48,3 +48,5 @@
 
 - CI found Playwright files collected by Vitest; isolated that suite and reran all 3,057 unit tests successfully.
 - Cloud Preview replay revealed HR dependencies are future-dated in this repository. Reordered the CLI-created bridge after the existing migration tip; unchanged SQL, reconciled production history only.
+
+- Read-only live verification: user approved both gates; one Office DRAFT created, missing identity fields visible, employee remains at original site. Fixed rich-text viewer whitespace so multiline personnel fields remain readable.

@@ -13,4 +13,11 @@ for(const width of [390,768,1440]) test(`HR waits for Office and source links wo
  await page.goBack();
  await page.getByRole('link',{name:'Xem yêu cầu nguồn'}).click();
  await expect(page.getByRole('heading',{name:'Yêu cầu nguồn đã liên kết'})).toBeVisible();
+ await page.goto('/tests/transfer/fixture.html#/notice-preview');
+ const positions=await page.locator('.office-rich-view p').evaluate(p=>{
+  const n=p.firstChild!; const t=n.textContent!;
+  return [0,t.indexOf('Nơi đến'),t.indexOf('Bắt đầu')].map(start=>{const r=document.createRange();r.setStart(n,start);r.setEnd(n,start+1);return r.getBoundingClientRect().top;});
+ });
+ expect(positions[1]).toBeGreaterThan(positions[0]);
+ expect(positions[2]).toBeGreaterThan(positions[1]);
 });

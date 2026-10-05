@@ -18,7 +18,8 @@
         768,
         1440
       ],
-      "testsPassed": 3
+      "testsPassed": 3,
+      "includes": "Cross-module links, disabled premature HR actions, mobile overflow and rich-text newline layout."
     },
     "cloudRollback": [
       "actual request and HR approval RPCs",
@@ -36,7 +37,7 @@
     "standardTypecheck": "passed"
   },
   "limits": [
-    "Browser integration tests use fictional data; real approvals remain pending.",
+    "Fictional browser tests plus read-only verification of the real request, HR assignment and generated Office draft. Human user completed both approvals.",
     "Publication effect trigger exercised in rollback; final signed PDF/publication workflow is outside this rollout scope.",
     "Template initially limited to the user-authorized employee and two sites."
   ],
@@ -45,12 +46,26 @@
     "migrationVersion": "20261008171001",
     "requestStatus": "PENDING",
     "approvalsExecuted": false,
-    "browserVerified": "Admin session displays pending request, correct employee/sites/date, fixed admin approver and Chấp thuận action; no approval clicked."
+    "browserVerified": "Admin session displays the real draft with correct employee, sites, effective date, duties and visible missing-profile fields.",
+    "liveWorkflowVerified": {
+      "request": "APPROVED",
+      "assignment": "awaiting_office",
+      "office": "DRAFT",
+      "draftCount": 1,
+      "employeeStillAtOrigin": true,
+      "humanApprovals": "Both approvals performed by the user in the app; not by the agent.",
+      "missingFields": [
+        "CCCD",
+        "Ngày cấp CCCD",
+        "Nơi cấp CCCD"
+      ]
+    }
   },
   "advisors": {
     "before": 457,
     "after": 457,
     "newFindings": 0
   },
-  "migrationOrdering": "CLI-created migration reordered after existing HR dependency 20261008150000 and repository tip 20261008171000. Production SQL is unchanged; only its migration-history version is reconciled."
+  "migrationOrdering": "CLI-created migration reordered after existing HR dependency 20261008150000 and repository tip 20261008171000. Production SQL is unchanged; only its migration-history version is reconciled.",
+  "cloudPreview": "Blocked by pre-existing Finance seed referencing absent business partner; production bridge and live workflow verified."
 }
