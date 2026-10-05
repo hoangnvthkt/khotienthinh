@@ -1,3 +1,4 @@
+import { HR_TRANSFER_FIELDS } from "./hrTransferTemplate";
 import type { OfficeTextDocument } from "./officeContent";
 import type { OfficeSummary } from "./officeTypes";
 import {
@@ -7,6 +8,7 @@ import {
 } from "./officePresentation";
 
 export const OFFICE_TEMPLATE_FIELDS: Record<string, string> = {
+  ...HR_TRANSFER_FIELDS,
   document_number: "Số văn bản (điền khi cấp số)",
   document_date: "Ngày văn bản",
   document_title: "Tiêu đề",

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import React, { useState } from 'react';
 import { Calendar, ChevronLeft, Clock, Copy, FileSpreadsheet, FileText, Loader2, PanelRightClose, PanelRightOpen, Pencil, Printer, Table2, Trash2, User } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -173,6 +174,14 @@ export const RequestDetailPanel: React.FC<{
         {/* Column 3: Primary Content Display Area (Maximized area) */}
         <article className="min-w-0 flex-1 overflow-y-auto bg-background p-4 md:p-5 lg:p-6 space-y-4">
 
+          {detail.transfer && <section className="rounded-2xl border border-mint-200 bg-mint-50 p-4 dark:border-mint-900 dark:bg-mint-950/30">
+            <h3 className="font-semibold">Đã tạo phiếu điều động {detail.transfer.assignmentCode}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{detail.transfer.assignmentStatus === 'pending' ? 'Bước tiếp theo: duyệt điều động ở Nhân sự. Sau đó hệ thống tự soạn thông báo Office.' : detail.transfer.assignmentStatus === 'awaiting_office' ? 'HR đã duyệt. Bản nháp Office đã tạo; nơi làm việc chưa thay đổi.' : 'Xem trạng thái và văn bản tại phiếu điều động liên kết.'}</p>
+            <div className="mt-3 flex flex-wrap gap-3 text-sm font-semibold text-mint-700 dark:text-mint-300">
+              <Link className="rounded-lg border border-mint-300 px-3 py-2" to={`/hrm/assignments?id=${detail.transfer.assignmentId}`}>Mở phiếu điều động</Link>
+              {detail.transfer.officeDocumentId && <Link className="rounded-lg border border-mint-300 px-3 py-2" to={`/office/documents/${detail.transfer.officeDocumentId}`}>Mở thông báo Office</Link>}
+            </div>
+          </section>}
           {/* Hero Header Card */}
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-start gap-3">

@@ -2,8 +2,8 @@
 // One record per person per site; the server applies approved records on their start date.
 
 export type SiteAssignmentKind = 'primary' | 'concurrent' | 'temporary';
-export type SiteAssignmentStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
-export type SiteAssignmentStage = 'pending' | 'upcoming' | 'active' | 'closed';
+export type SiteAssignmentStatus = 'pending' | 'awaiting_office' | 'approved' | 'rejected' | 'cancelled';
+export type SiteAssignmentStage = 'pending' | 'awaiting_office' | 'upcoming' | 'active' | 'closed';
 
 export interface SiteAssignment {
   id: string;
@@ -30,6 +30,9 @@ export interface SiteAssignment {
   decidedAt: string | null;
   decisionNote: string | null;
   endedEarlyReason: string | null;
+  sourceRequestId?: string | null;
+  officeDocumentId?: string | null;
+  canApprove?: boolean;
 }
 
 export interface SiteSummary {
@@ -75,6 +78,7 @@ export const KIND_HINT: Record<SiteAssignmentKind, string> = {
 
 export const STAGE_LABEL: Record<SiteAssignmentStage, string> = {
   pending: 'Chờ duyệt',
+  awaiting_office: 'Chờ phát hành Office',
   upcoming: 'Sắp hiệu lực',
   active: 'Đang làm',
   closed: 'Đã kết thúc',
@@ -82,6 +86,7 @@ export const STAGE_LABEL: Record<SiteAssignmentStage, string> = {
 
 export const stageOf = (row: Pick<SiteAssignment, 'status' | 'startDate' | 'endDate'>, today: string): SiteAssignmentStage => {
   if (row.status === 'pending') return 'pending';
+  if (row.status === 'awaiting_office') return 'awaiting_office';
   if (row.status !== 'approved') return 'closed';
   if (row.endDate && row.endDate < today) return 'closed';
   return row.startDate > today ? 'upcoming' : 'active';

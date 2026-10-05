@@ -187,6 +187,7 @@ export interface RequestApprovalBlockSnapshot {
 }
 
 export interface RequestDetail extends RequestListItem {
+  transfer?: { assignmentId: string; assignmentCode: string; assignmentStatus: string; officeDocumentId: string | null } | null;
   contentRevision: number;
   currentRoundId: string | null;
   description: string;

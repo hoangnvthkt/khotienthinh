@@ -2823,6 +2823,7 @@
   overflow-x: auto;
 }
 .office-rich-view {
+  white-space: pre-wrap;
   font-size: 16px;
   line-height: 1.8;
   overflow-wrap: anywhere;
