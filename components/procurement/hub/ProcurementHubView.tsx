@@ -7,7 +7,7 @@ import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
 import { useApp } from '../../../context/AppContext';
 import {
-  PROCUREMENT_PO_STATUS_LABELS, PROCUREMENT_PROGRESS_LABELS, PROCUREMENT_SOURCE_LABELS, procurementInboxService, procurementSourceLink, urgencyOf,
+  PROCUREMENT_PO_STATUS_LABELS, PROCUREMENT_PROGRESS_LABELS, PROCUREMENT_SOURCE_LABELS, procurementInboxService, procurementSourceLink, urgencyOf, canOrderProcurementSource, isExternalProcurementSource,
   type ProcurementProactiveCandidate,
   type ProcurementInbox, type ProcurementInboxDetail, type ProcurementInboxDocument, type ProcurementInboxFilter, type ProcurementInboxLine,
   type ProcurementOrderDetail, type ProcurementOrderStage, type ProcurementProgress, type ProcurementSourceRef, type ProcurementSourceType,
@@ -21,6 +21,7 @@ import { OrdersView } from './OrdersView';
 import { ContractsView } from './ContractsView';
 import { ReceiptReconciliationView } from '../receipt/ReceiptReconciliationView';
 import { SupplyFromStockDrawer, TRANSFER_STATUS_LABELS } from './SupplyFromStockDrawer';
+import { ExternalSourceSnapshot } from './ExternalSourceSnapshot';
 import { HotPurchaseView } from '../hotPurchase/HotPurchaseView';
 import type { HotPurchasePrefill } from '../../../lib/hotPurchaseService';
 
@@ -44,6 +45,8 @@ const PROGRESS_STYLE: Record<ProcurementProgress, string> = {
   closed: 'text-slate-500 dark:text-slate-400',
 };
 const SOURCE_STYLE: Record<ProcurementSourceType, string> = {
+  request: 'bg-violet-50 text-violet-800 border-violet-200 dark:bg-violet-950/40 dark:text-violet-200 dark:border-violet-900',
+  workflow: 'bg-orange-50 text-orange-800 border-orange-200 dark:bg-orange-950/40 dark:text-orange-200 dark:border-orange-900',
   material_plan: 'bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-200 dark:border-teal-900',
   material_request: 'bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-900',
 };
@@ -117,9 +120,9 @@ const NeedDrawer: React.FC<{
   useEffect(load, [load, doc.progress, doc.closedAt]);
   // Đơn chủ động cùng dự án còn phần chưa phân bổ cho vật tư phiếu đang thiếu: gắn vào thay vì mua thêm.
   const loadCandidates = useCallback(() => {
-    if (!canManage || doc.closedAt) { setCandidates([]); return; }
+    if (!canManage || doc.closedAt || !canOrderProcurementSource(doc)) { setCandidates([]); return; }
     procurementInboxService.proactiveCandidates(doc.sourceType, doc.sourceId).then(setCandidates).catch(() => setCandidates([]));
-  }, [canManage, doc.closedAt, doc.sourceType, doc.sourceId]);
+  }, [canManage, doc.closedAt, doc.sourceType, doc.sourceId, doc.orderable, doc.intakeState]);
   useEffect(loadCandidates, [loadCandidates, doc.progress]);
   const linkCandidate = async (c: ProcurementProactiveCandidate) => {
     const qty = Math.min(c.remainingQty, c.unallocatedQty);
@@ -138,13 +141,16 @@ const NeedDrawer: React.FC<{
   const link = procurementSourceLink(doc);
   const lines = detail?.lines || [];
   const missing = lines.filter(l => l.remainingQty > 0).length;
-  const closed = Boolean(doc.closedAt);
+  const withdrawn = doc.intakeState === 'withdrawn' || detail?.intakeState === 'withdrawn';
+  const closed = Boolean(doc.closedAt) || doc.progress === 'closed' || withdrawn;
+  const external = isExternalProcurementSource(doc.sourceType);
+  const orderable = canOrderProcurementSource(doc) && (!detail || canOrderProcurementSource(detail));
 
   return <Drawer label={`Phiếu ${doc.code}`} onClose={onClose}
     header={<>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge className={SOURCE_STYLE[doc.sourceType]}>{PROCUREMENT_SOURCE_LABELS[doc.sourceType]}</Badge>
-        {closed ? <Badge className="border-border bg-muted text-muted-foreground">Đã đóng</Badge> : <UrgencyBadge date={doc.neededDate} today={today} />}
+        {closed ? <Badge className="border-border bg-muted text-muted-foreground">{withdrawn ? 'Nguồn đã thu hồi' : 'Đã đóng'}</Badge> : <UrgencyBadge date={doc.neededDate} today={today} />}
       </div>
       <h2 className="mt-2 text-lg font-bold text-foreground">{doc.code}{doc.title && <span className="font-medium text-muted-foreground"> · {doc.title}</span>}</h2>
       <p className="text-sm text-muted-foreground">{[doc.projectCode, doc.projectName].filter(Boolean).join(' — ') || 'Không gắn dự án'}</p>
@@ -160,19 +166,19 @@ const NeedDrawer: React.FC<{
       </dl>
     </>}
     footer={<>
-      {link && <a href={link} className={`${secondaryBtn} mr-auto`}><ArrowUpRight size={15} />Mở phiếu trong dự án</a>}
-      {canManage && (closed
+      {link && <a href={link} className={`${secondaryBtn} mr-auto`}><ArrowUpRight size={15} />Mở phiếu nguồn</a>}
+      {canManage && !withdrawn && (closed
         ? <button type="button" onClick={onReopen} className={secondaryBtn}><RotateCcw size={15} />Mở lại nhu cầu</button>
         : <>
           <button type="button" onClick={onCloseNeed} className={secondaryBtn}><CircleSlash size={15} />Đóng nhu cầu</button>
-          {missing > 0 && <button type="button" onClick={onOrder} className={candidates.length > 0 ? secondaryBtn : primaryBtn}><ShoppingCart size={15} />Lập đơn hàng</button>}
+          {orderable && missing > 0 && <button type="button" onClick={onOrder} className={candidates.length > 0 ? secondaryBtn : primaryBtn}><ShoppingCart size={15} />Lập đơn hàng</button>}
         </>)}
     </>}>
-    {closed && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm">
+    {closed && !withdrawn && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm">
       <b>Đã đóng — không cần mua thêm.</b> {doc.closeReason}<span className="text-muted-foreground"> · {doc.closedByName}{doc.closedAt ? `, ${dateVi(doc.closedAt)}` : ''}</span></p>}
     <section className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
       <span className="font-semibold text-foreground">Người xử lý</span>
-      {canManage
+      {canManage && !withdrawn
         ? <select aria-label="Người xử lý" value={doc.assigneeUserId || ''} disabled={saving}
           onChange={async e => { setSaving(true); try { await onAssign(e.target.value || null); } finally { setSaving(false); } }}
           className={`min-w-[12rem] ${inputCls}`}>
@@ -200,7 +206,7 @@ const NeedDrawer: React.FC<{
 
     {error ? <StateBox kind="error" message={error} onRetry={load} />
       : !detail ? <StateBox kind="loading" title="Đang tải phiếu…" />
-        : <section>
+        : external ? <ExternalSourceSnapshot detail={detail} withdrawn={withdrawn} /> : <section>
           <div className="mb-2 flex items-baseline justify-between gap-2">
             <h3 className="font-semibold text-foreground">Vật tư cần mua</h3>
             <span className="text-xs text-muted-foreground">{missing > 0 ? `${missing}/${lines.length} dòng còn thiếu` : `Đã đặt đủ ${lines.length} dòng`}</span>
@@ -216,7 +222,7 @@ const NeedDrawer: React.FC<{
               {o.poNumber || 'PO'} · {fmt(o.orderedQty)}{o.vendorName ? ` · ${o.vendorName}` : ''}</button>)}
               {(l.transfers || []).map(t => <span key={t.id} title={t.id} className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${t.status === 'CANCELLED' ? 'bg-muted text-muted-foreground line-through' : 'bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200'}`}>
                 <Truck size={11} />Chuyển kho · {fmt(t.qty)} · {t.sourceWarehouseName || 'kho gửi'} · {TRANSFER_STATUS_LABELS[t.status] || t.status}</span>)}</p>}
-            {canManage && !closed && l.remainingQty > 0 && <div className="mt-2 flex flex-wrap items-center gap-2">
+            {canManage && orderable && !closed && l.remainingQty > 0 && <div className="mt-2 flex flex-wrap items-center gap-2">
               {(l.otherStock || []).length > 0 && <button type="button" onClick={() => setSupplyLine(l)} className={secondaryBtn}>
                 <Warehouse size={15} />Cấp từ kho
                 <span className="rounded-full bg-teal-100 px-1.5 text-xs tabular-nums text-teal-800 dark:bg-teal-900/60 dark:text-teal-100">{fmt((l.otherStock || []).reduce((sum, x) => sum + x.qty, 0))}</span></button>}
@@ -241,7 +247,7 @@ const DocumentRow: React.FC<{
 }> = ({ doc, today, selectable, selected, onSelect, onOpen }) =>
   <li className={`flex items-stretch border-t border-border ${selected ? 'bg-teal-50/60 dark:bg-teal-950/20' : 'bg-card hover:bg-muted/40'}`}>
     {selectable && <label className="flex w-11 shrink-0 cursor-pointer items-center justify-center">
-      <input type="checkbox" checked={selected} onChange={onSelect} aria-label={`Chọn ${doc.code}`} className="h-4 w-4 accent-teal-600" /></label>}
+      <input type="checkbox" checked={selected} disabled={doc.intakeState === 'withdrawn'} onChange={onSelect} aria-label={`Chọn ${doc.code}`} className="h-4 w-4 accent-teal-600" /></label>}
     <button type="button" onClick={onOpen} className={`flex min-w-0 flex-1 flex-col gap-1.5 py-3 pr-3 text-left md:flex-row md:items-center md:gap-4 ${selectable ? '' : 'pl-4'}`}>
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-1.5">
@@ -252,8 +258,8 @@ const DocumentRow: React.FC<{
       </span>
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs md:w-[24rem] md:shrink-0 md:justify-end xl:w-[34rem]">
         {doc.progress === 'closed' ? <span className="truncate text-muted-foreground" title={doc.closeReason || ''}>Lý do: {doc.closeReason}</span> : <UrgencyBadge date={doc.neededDate} today={today} />}
-        <span className={`font-semibold ${PROGRESS_STYLE[doc.progress]}`}>{PROCUREMENT_PROGRESS_LABELS[doc.progress]}
-          {doc.progress !== 'closed' && <span className="font-normal text-muted-foreground"> · đủ {doc.orderedLines}/{doc.lineCount} dòng{doc.partialLines > 0 ? ` · ${doc.partialLines} dòng đặt thiếu` : ''}</span>}</span>
+        <span className={`font-semibold ${PROGRESS_STYLE[doc.progress]}`}>{doc.intakeState === 'withdrawn' ? 'Nguồn đã thu hồi' : isExternalProcurementSource(doc.sourceType) && doc.progress !== 'closed' ? 'Đã tiếp nhận · chờ đối chiếu' : PROCUREMENT_PROGRESS_LABELS[doc.progress]}
+          {isExternalProcurementSource(doc.sourceType) ? <span className="font-normal text-muted-foreground"> · {doc.lineCount} dòng nguồn</span> : doc.progress !== 'closed' && <span className="font-normal text-muted-foreground"> · đủ {doc.orderedLines}/{doc.lineCount} dòng{doc.partialLines > 0 ? ` · ${doc.partialLines} dòng đặt thiếu` : ''}</span>}</span>
         <span className={`inline-flex items-center gap-1 ${doc.assigneeName ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}`}><UserRound size={12} />{doc.assigneeName || 'Chưa giao'}</span>
       </span>
       <ChevronRight size={16} className="hidden shrink-0 text-muted-foreground md:block" />
@@ -314,11 +320,13 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const openDoc = openSnap ? docs.find(d => docKey(d) === docKey(openSnap)) || openSnap : null;
   const canManage = Boolean(inbox?.canManage);
   const selectedDocs = docs.filter(d => selected.has(docKey(d)));
-  const selectedScopes = new Set(selectedDocs.map(d => `${d.projectId}|${d.constructionSiteId}`));
-  const selectedOpen = selectedDocs.filter(d => d.progress === 'new' || d.progress === 'partial');
+  const selectedOpen = selectedDocs.filter(d => d.intakeState !== 'withdrawn' && (d.progress === 'new' || d.progress === 'partial'));
+  const selectedOrderable = selectedOpen.filter(canOrderProcurementSource);
+  const selectedReviewOnly = selectedOpen.length - selectedOrderable.length;
+  const selectedScopes = new Set(selectedOrderable.map(d => `${d.projectId}|${d.constructionSiteId}`));
   // Việc 2: phiếu của nhiều dự án → một đơn gom (mỗi phiếu cần kho nhận).
-  const selectedProjects = new Set(selectedOpen.map(d => d.projectId)).size;
-  const missingWarehouse = selectedOpen.filter(d => !d.warehouseId).length;
+  const selectedProjects = new Set(selectedOrderable.map(d => d.projectId)).size;
+  const missingWarehouse = selectedOrderable.filter(d => !d.warehouseId).length;
 
   const assign = async (keys: string[], userId: string | null) => {
     const sources = docs.filter(d => keys.includes(docKey(d))).map(refOf);
@@ -401,14 +409,14 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
             {stage !== 'intake' ? <OrdersView stage={stage} projects={inbox.projects} reloadKey={ordersReload} onOpen={setOrderId} /> : <section className="space-y-3">
               <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Nguồn đề xuất">
                 {([['', 'Tất cả nguồn', sourceTotal], ['material_plan', PROCUREMENT_SOURCE_LABELS.material_plan, inbox.sourceCounts.material_plan || 0],
-                  ['material_request', PROCUREMENT_SOURCE_LABELS.material_request, inbox.sourceCounts.material_request || 0]] as const).map(([key, label, n]) => {
+                  ['material_request', PROCUREMENT_SOURCE_LABELS.material_request, inbox.sourceCounts.material_request || 0],
+                  ['request', PROCUREMENT_SOURCE_LABELS.request, inbox.sourceCounts.request ?? '—'],
+                  ['workflow', PROCUREMENT_SOURCE_LABELS.workflow, inbox.sourceCounts.workflow ?? '—']] as const).map(([key, label, n]) => {
                   const active = filter.source === key;
                   return <button key={key || 'all'} type="button" role="tab" aria-selected={active} onClick={() => setF({ source: key })}
                     className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold transition ${active ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card text-foreground hover:border-teal-300'}`}>
                     {label}<span className={`rounded-full px-1.5 text-xs tabular-nums ${active ? 'bg-white/20' : 'bg-muted text-muted-foreground'}`}>{n}</span></button>;
                 })}
-                {['Module Đề xuất', 'Quy trình'].map(label => <span key={label} title="Sẽ kết nối ở bản sau" className="inline-flex shrink-0 cursor-default items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1.5 text-sm text-muted-foreground">
-                  {label}<span className="text-[11px]">· sắp có</span></span>)}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-sm">
@@ -438,10 +446,10 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
               {status === 'error' && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">{message}</p>}
 
               {docs.length === 0
-                ? <StateBox kind="empty" title="Không có phiếu nào khớp bộ lọc" message={filtersActive ? 'Thử bỏ bớt bộ lọc.' : 'Chưa có phiếu nhu cầu nào cần mua. Phiếu mới xuất hiện ngay khi KH vật tư hoặc đề xuất công trường được duyệt.'} />
+                ? <StateBox kind="empty" title="Không có phiếu nào khớp bộ lọc" message={filter.source === 'request' ? 'Đề xuất cấp phát thiết bị văn phòng sẽ xuất hiện sau lần duyệt cuối mới. Các phiếu đã duyệt trước khi kết nối không được nhập lại.' : filter.source === 'workflow' ? 'CT Sơn MB - Kết Cấu sẽ xuất hiện sau khi duyệt hoàn tất bước cuối. Các bước duyệt trung gian chưa chuyển sang Mua hàng.' : filtersActive ? 'Thử bỏ bớt bộ lọc.' : 'Phiếu mới xuất hiện khi nhu cầu vật tư hoặc nguồn module được duyệt hoàn tất.'} />
                 : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground">
-                    <span>{docs.length} phiếu · {groups.length} dự án{canManage && ' · tick phiếu (cả khác dự án) để lập một đơn hàng / đơn gom'}</span>
+                    <span>{docs.length} phiếu · {groups.length} nhóm{canManage && ' · chọn phiếu để phân công hoặc xử lý'}</span>
                     <button type="button" onClick={accordion.allOpen ? accordion.collapseAll : accordion.expandAll} className="rounded-lg border border-border px-2.5 py-1 font-semibold text-foreground hover:bg-muted">
                       {accordion.allOpen ? 'Thu gọn hết' : 'Mở rộng hết'}</button>
                   </div>
@@ -449,12 +457,12 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
                     const open = accordion.isOpen(g.key);
                     const overdue = g.docs.filter(d => d.progress !== 'closed' && urgencyOf(d.neededDate, inbox.today).tone === 'overdue').length;
                     const unassigned = g.docs.filter(d => !d.assigneeUserId && d.progress !== 'closed').length;
-                    const keys = g.docs.map(docKey);
-                    const allSel = canManage && keys.every(k => selected.has(k));
+                    const keys = g.docs.filter(d => d.intakeState !== 'withdrawn').map(docKey);
+                    const allSel = canManage && keys.length > 0 && keys.every(k => selected.has(k));
                     return <div key={g.key}>
                       <div className={`flex items-center border-t border-l-4 border-border ${PROJECT_TONES[i % PROJECT_TONES.length]}`}>
                         {canManage && <label className="flex w-10 shrink-0 cursor-pointer items-center justify-center self-stretch">
-                          <input type="checkbox" checked={allSel} aria-label={`Chọn tất cả phiếu ${g.label}`} className="h-4 w-4 accent-teal-600"
+                          <input type="checkbox" checked={allSel} disabled={keys.length === 0} aria-label={`Chọn tất cả phiếu ${g.label}`} className="h-4 w-4 accent-teal-600"
                             onChange={() => setSelected(cur => { const next = new Set(cur); keys.forEach(k => (allSel ? next.delete(k) : next.add(k))); return next; })} /></label>}
                         <button type="button" aria-expanded={open} onClick={() => accordion.toggle(g.key)} className={`flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 py-2.5 pr-3 text-left ${canManage ? '' : 'pl-3'}`}>
                           <ChevronRight size={16} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
@@ -480,10 +488,11 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
 
     {canManage && mode === 'orders' && stage === 'intake' && selected.size > 0 && <div className="sticky bottom-3 z-40 mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-teal-200 bg-card px-3 py-2.5 shadow-lg dark:border-teal-900">
       <span className="text-sm font-semibold">Đã chọn {selected.size} phiếu</span>
-      <button type="button" disabled={selectedOpen.length === 0 || (selectedScopes.size > 1 && missingWarehouse > 0)}
-        title={selectedOpen.length === 0 ? 'Các phiếu đã đặt đủ hoặc đã đóng' : selectedScopes.size > 1 && missingWarehouse > 0 ? 'Có phiếu chưa chọn kho nhận — đơn gom cần kho nhận của từng phiếu' : undefined}
-        onClick={() => setEditor({ sources: selectedOpen.map(refOf), order: null })} className={primaryBtn}>
+      <button type="button" disabled={selectedOrderable.length === 0 || (selectedScopes.size > 1 && missingWarehouse > 0)}
+        title={selectedOrderable.length === 0 ? 'Chưa có phiếu đủ điều kiện lập đơn; phiếu từ module cần kiểm tra quy cách và nơi nhận' : selectedScopes.size > 1 && missingWarehouse > 0 ? 'Có phiếu chưa chọn kho nhận — đơn gom cần kho nhận của từng phiếu' : undefined}
+        onClick={() => setEditor({ sources: selectedOrderable.map(refOf), order: null })} className={primaryBtn}>
         {selectedScopes.size > 1 ? <><Layers size={15} />Lập đơn gom {selectedProjects} dự án</> : <><ShoppingCart size={15} />Lập đơn hàng</>}</button>
+      {selectedReviewOnly > 0 && <p className="w-full text-xs text-amber-800 dark:text-amber-200">{selectedReviewOnly} phiếu từ module chỉ tiếp nhận và phân công; chưa đưa vào đơn mua vì cần kiểm tra quy cách và nơi nhận.</p>}
       {selectedScopes.size > 1 && <span className="text-xs text-teal-800 dark:text-teal-200">{missingWarehouse > 0 ? `${missingWarehouse} phiếu chưa có kho nhận` : 'Một NCC, một giá · mỗi đợt giao về một công trường · nợ + chi phí theo dự án nhận'}</span>}
       <span className="flex min-w-0 flex-1 items-center gap-1">
         <select aria-label="Giao cho" value={bulkAssignee} onChange={e => setBulkAssignee(e.target.value)} className={`min-w-0 flex-1 ${inputCls}`}>
@@ -498,7 +507,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
 
     {openDoc && inbox && !editor && !proactive && !orderId && <NeedDrawer doc={openDoc} today={inbox.today} canManage={canManage} assignees={inbox.assignees}
       onClose={() => setOpenSnap(null)} onAssign={userId => assign([docKey(openDoc)], userId)}
-      onOrder={() => setEditor({ sources: [refOf(openDoc)], order: null })}
+      onOrder={() => { if (canOrderProcurementSource(openDoc)) setEditor({ sources: [refOf(openDoc)], order: null }); }}
       onCloseNeed={() => void closeNeeds([openDoc])} onReopen={() => void reopenNeed(openDoc)} onOpenOrder={setOrderId} onChanged={refreshAll}
       onHotPurchase={prefill => { setOpenSnap(null); setHotPrefill(prefill); setMode('hot'); }} />}
 
