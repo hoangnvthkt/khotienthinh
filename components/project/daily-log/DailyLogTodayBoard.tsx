@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Camera, Check, ChevronLeft, ChevronRight, Clock, HardHat, Image as ImageIcon, Loader2, RefreshCw, Truck, Users,
+  AlertTriangle, Camera, FileText, Check, ChevronLeft, ChevronRight, Clock, HardHat, Image as ImageIcon, Loader2, RefreshCw, Truck, Users,
 } from 'lucide-react';
 import { dailyLogWbsService } from '../../../lib/projectService';
 import { getCachedSignedUrl, resolveStorageUrl } from '../../../lib/storageSignedUrl';
@@ -29,7 +29,7 @@ interface Props {
   onOpenPhotos: (photos: Array<{ url: string; name: string }>, index: number) => void;
 }
 
-type Photo = { url: string; name: string };
+type Photo = { url: string; name: string; fileType?: string };
 type Tab = 'front' | 'crew' | 'photo';
 
 const localDateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -59,8 +59,15 @@ const DAY_TONE: Record<string, string> = {
   empty: 'border-border bg-card',
 };
 
-const toPhotos = (list: Array<{ url: string; name?: string }> | undefined, prefix: string): Photo[] =>
-  (list || []).filter(photo => photo?.url).map((photo, index) => ({ url: photo.url, name: photo.name || `${prefix} ${index + 1}` }));
+const isImagePhoto = (photo: { url: string; name?: string; fileType?: string }) => photo.fileType
+  ? /^(image|jpe?g|png|webp|gif|heic)/i.test(photo.fileType)
+  : /\.(jpe?g|png|webp|gif|heic)(\?|$)/i.test(photo.url) || !/\.[a-z0-9]{2,5}(\?|$)/i.test(photo.url);
+/** Ảnh để xem: chú thích theo mũi / hạng mục thay cho tên file máy ảnh. */
+export const toFiles = (list: Array<{ url: string; name?: string; fileType?: string }> | undefined) => (list || []).filter(photo => photo?.url && !isImagePhoto(photo));
+export const toPhotos = (list: Array<{ url: string; name?: string; fileType?: string }> | undefined, label: string): Photo[] => {
+  const images = (list || []).filter(photo => photo?.url && isImagePhoto(photo));
+  return images.map((photo, index) => ({ url: photo.url, name: images.length > 1 ? `${label} · ảnh ${index + 1}` : label, fileType: 'image/jpeg' }));
+};
 
 function SignedThumb({ url, label, onClick, className = 'h-11 w-11' }: { url: string; label: string; onClick: () => void; className?: string }) {
   const [src, setSrc] = useState(() => getCachedSignedUrl(url));
@@ -77,11 +84,12 @@ function SignedThumb({ url, label, onClick, className = 'h-11 w-11' }: { url: st
   );
 }
 
-const Thumbs: React.FC<{ photos: Photo[]; max?: number; onOpen: Props['onOpenPhotos'] }> = ({ photos, max = 3, onOpen }) => !photos.length
+const Thumbs: React.FC<{ photos: Photo[]; files?: Array<{ url: string; name?: string }>; max?: number; onOpen: Props['onOpenPhotos'] }> = ({ photos, files = [], max = 3, onOpen }) => !photos.length && !files.length
   ? <span className="text-xs text-muted-foreground">—</span>
   : <span className="flex flex-wrap gap-1">
     {photos.slice(0, max).map((photo, index) => <SignedThumb key={`${photo.url}-${index}`} url={photo.url} label={photo.name} onClick={() => onOpen(photos, index)} />)}
     {photos.length > max && <button type="button" onClick={() => onOpen(photos, max)} className="h-11 w-11 rounded-lg bg-muted text-xs font-semibold text-muted-foreground">+{photos.length - max}</button>}
+    {files.map(file => <a key={file.url} href={file.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-xs font-semibold text-teal-700 hover:bg-muted dark:text-teal-300"><FileText size={12} aria-hidden />{file.name || 'Tệp đính kèm'}</a>)}
   </span>;
 
 const Kpi: React.FC<{ icon: React.ElementType; tone: string; label: string; value: React.ReactNode; hint: React.ReactNode; active?: boolean; wide?: boolean; onClick?: () => void }> =
@@ -144,20 +152,20 @@ const Resources: React.FC<{ item: TodayBoardItem }> = ({ item }) => {
       <Users size={11} className="text-mint-600" aria-hidden /><span className={ENT}>{line.provider || line.laborType || 'Tổ đội'}</span><span className={NUM}>{num(line.people)}</span></span>)}
     {machines.map((line, index) => <span key={`m${index}`} title={line.provider || undefined}
       className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 text-xs dark:bg-sky-950/40">
-      <Truck size={11} className="text-sky-600" aria-hidden /><span className="font-semibold text-sky-800 dark:text-sky-200">{line.machineType || 'Máy'}</span><span className={NUM}>{num(line.hours)}h</span></span>)}
+      <Truck size={11} className="text-sky-600" aria-hidden /><span className="font-semibold text-sky-800 dark:text-sky-200">{line.machineType || 'Máy'}</span><span className={NUM}>{line.hours == null ? '?' : `${num(line.hours)}h`}</span></span>)}
   </span>;
 };
 
 const slipPeople = (slip: TodayBoardSlip) => Number(slip.people || 0);
 
-const FrontTable: React.FC<{ board: Board; onlyLate: boolean; onOpenPhotos: Props['onOpenPhotos'] }> = ({ board, onlyLate, onOpenPhotos }) => {
+const FrontTable: React.FC<{ board: Board; onlyLate: boolean; onOpenPhotos: Props['onOpenPhotos']; renderSlipExtra?: (slip: TodayBoardSlip) => React.ReactNode; emptyItemsText?: string }> = ({ board, onlyLate, onOpenPhotos, renderSlipExtra, emptyItemsText = 'Chưa chọn hạng mục.' }) => {
   const groups = board.slips.map(slip => ({ slip, items: slip.items.filter(item => !onlyLate || lateDays(item, board.date) != null || needsNewForecast(item, board.date)) }))
     .filter(group => !onlyLate || group.items.length);
   if (!groups.length && !board.missingFronts.length) return <p className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">
     {onlyLate ? 'Không có hạng mục trễ trong các phiếu của ngày này.' : 'Chưa có phiếu nào trong ngày. Phiếu của kỹ sư sẽ hiện ở đây ngay khi được gửi.'}</p>;
   const head = (slip: TodayBoardSlip, count: number) => {
     const status = SLIP_STATUS[slip.status] || SLIP_STATUS.submitted;
-    const photos = toPhotos(slip.photos, `Ảnh chung ${frontName(slip)}`);
+    const photos = toPhotos(slip.photos, `${frontName(slip)} · ảnh chung`);
     return <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span className="inline-flex items-center gap-1.5 font-bold text-mint-800 dark:text-mint-200"><HardHat size={15} aria-hidden />{frontName(slip)}</span>
       <span className="text-xs text-muted-foreground">KS <span className={ENT}>{slip.authorName || 'chưa rõ'}</span>{slip.submittedAt ? <> · gửi <b className="text-foreground">{timeOf(slip.submittedAt)}</b></> : ''}</span>
@@ -168,6 +176,7 @@ const FrontTable: React.FC<{ board: Board; onlyLate: boolean; onOpenPhotos: Prop
         {photos.length > 0 && <button type="button" onClick={() => onOpenPhotos(photos, 0)} className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 font-semibold text-teal-700 hover:bg-muted dark:text-teal-300">
           <Camera size={12} aria-hidden />{slip.photoCount} ảnh chung</button>}
       </span>
+      {renderSlipExtra?.(slip)}
       {slip.issues && <span className="basis-full text-xs text-amber-800 dark:text-amber-200">Sự cố: {slip.issues}</span>}
       {slip.status === 'returned' && slip.returnReason && <span className="basis-full text-xs text-amber-800 dark:text-amber-200">Lý do trả: {slip.returnReason}</span>}
     </span>;
@@ -195,10 +204,10 @@ const FrontTable: React.FC<{ board: Board; onlyLate: boolean; onOpenPhotos: Prop
               <td className="px-3 py-2.5"><Cumulative item={item} late={late} /></td>
               <td className="px-3 py-2.5"><Finish item={item} date={board.date} /></td>
               <td className="px-3 py-2.5"><Resources item={item} /></td>
-              <td className="px-3 py-2.5"><Thumbs photos={toPhotos(item.photos, item.taskName || 'Ảnh')} onOpen={onOpenPhotos} /></td>
+              <td className="px-3 py-2.5"><Thumbs photos={toPhotos(item.photos, `${frontName(slip)} · ${[item.wbsCode, item.taskName].filter(Boolean).join(' ')}`)} files={toFiles(item.photos)} onOpen={onOpenPhotos} /></td>
             </tr>;
           })}
-          {!items.length && <tr><td colSpan={6} className="px-3 py-2.5 text-sm text-muted-foreground">Chưa chọn hạng mục.</td></tr>}
+          {!items.length && <tr><td colSpan={6} className="px-3 py-2.5 text-sm text-muted-foreground">{emptyItemsText}</td></tr>}
         </tbody>)}
       </table>
       {!onlyLate && missing}
@@ -212,7 +221,7 @@ const FrontTable: React.FC<{ board: Board; onlyLate: boolean; onOpenPhotos: Prop
             <div><span className="block text-muted-foreground">Hôm nay</span><TodayQty item={item} /></div>
             <div className="col-span-2"><span className="block text-muted-foreground">Lũy kế</span><Cumulative item={item} late={lateDays(item, board.date) != null} /></div>
           </div>
-          <div className="flex items-start justify-between gap-2"><Finish item={item} date={board.date} /><Thumbs photos={toPhotos(item.photos, item.taskName || 'Ảnh')} onOpen={onOpenPhotos} /></div>
+          <div className="flex items-start justify-between gap-2"><Finish item={item} date={board.date} /><Thumbs photos={toPhotos(item.photos, `${frontName(slip)} · ${[item.wbsCode, item.taskName].filter(Boolean).join(' ')}`)} files={toFiles(item.photos)} onOpen={onOpenPhotos} /></div>
           <Resources item={item} />
         </article>)}
       </section>)}
@@ -263,7 +272,7 @@ const CrewView: React.FC<{ board: Board }> = ({ board }) => {
 
 const PhotoView: React.FC<{ board: Board; onOpenPhotos: Props['onOpenPhotos'] }> = ({ board, onOpenPhotos }) => {
   const groups = board.slips.map(slip => {
-    const photos = [...toPhotos(slip.photos, 'Ảnh chung'), ...slip.items.flatMap(item => toPhotos(item.photos, `${item.wbsCode || ''} ${item.taskName || ''}`.trim()))];
+    const photos = [...toPhotos(slip.photos, 'Ảnh chung'), ...slip.items.flatMap(item => toPhotos(item.photos, [item.wbsCode, item.taskName].filter(Boolean).join(' ')))];
     return { slip, photos };
   }).filter(group => group.photos.length);
   if (!groups.length) return <p className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm text-muted-foreground">Chưa có ảnh hiện trường trong ngày.</p>;
@@ -280,6 +289,80 @@ const PhotoView: React.FC<{ board: Board; onOpenPhotos: Props['onOpenPhotos'] }>
   </section>)}</div>;
 };
 
+/** Thân báo cáo một ngày (ô số, cần chú ý, bảng theo mũi / tổ đội / ảnh) — dùng cho Báo cáo ngày và màn duyệt bản tổng hợp. */
+export function DayReportBody({ board, onOpenPhotos, renderSlipExtra, unknownTotals = false, emptyItemsText }: {
+  board: Board; onOpenPhotos: Props['onOpenPhotos']; renderSlipExtra?: (slip: TodayBoardSlip) => React.ReactNode;
+  /** Hồ sơ đã duyệt thiếu bản lưu: không suy ra tổng số. */
+  unknownTotals?: boolean; emptyItemsText?: string;
+}) {
+  const [showAllAttention, setShowAllAttention] = useState(false);
+  const [tab, setTab] = useState<Tab>('front');
+  const [onlyLate, setOnlyLate] = useState(false);
+  const d = useMemo(() => {
+    const sent = board.slips.filter(isSentSlip);
+    const items = sent.flatMap(slip => slip.items);
+    const { crews, machines } = resourceTotals(board);
+    return {
+      attention: buildAttention(board), fronts: reportedFronts(board).sent, sent, items, crews, machines,
+      people: sent.reduce((sum, slip) => sum + Number(slip.people || 0), 0),
+      laborHours: sent.some(slip => slip.laborHours == null) ? null : sent.reduce((sum, slip) => sum + Number(slip.laborHours || 0), 0),
+      machineCount: sent.reduce((sum, slip) => sum + Number(slip.machineCount || 0), 0),
+      machineHours: sent.some(slip => slip.machineHours == null) ? null : sent.reduce((sum, slip) => sum + Number(slip.machineHours || 0), 0),
+      late: items.filter(item => lateDays(item, board.date) != null).length,
+      noForecast: items.filter(item => needsNewForecast(item, board.date)).length,
+      withQuantity: items.filter(item => Number(item.dailyQuantity || 0) > 0).length,
+      photos: sent.reduce((sum, slip) => sum + Number(slip.photoCount || 0) + slip.items.reduce((total, item) => total + Number(item.attachmentCount || 0), 0), 0),
+      itemsWithPhotos: items.filter(item => Number(item.attachmentCount || 0) > 0).length,
+    };
+  }, [board]);
+  return <>
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+      <Kpi icon={Users} tone="bg-mint-100 text-mint-700 dark:bg-mint-950 dark:text-mint-300" label="Nhân công" active={tab === 'crew'} onClick={() => setTab('crew')}
+        value={unknownTotals ? <span className="text-sm font-semibold text-muted-foreground">Chưa xác định</span> : d.people ? <><span className="text-mint-700 dark:text-mint-300">{num(d.people)}</span> <span className="text-sm font-semibold text-muted-foreground">người</span></> : <span className="text-amber-700 dark:text-amber-300">Chưa ghi</span>}
+        hint={unknownTotals ? 'Thiếu số liệu đã lưu' : d.people ? <>{d.laborHours == null ? 'Chưa xác định' : <span className="tabular-nums">{num(d.laborHours)}</span>} giờ công · {d.crews.length} tổ đội</> : d.sent.length ? `0/${d.sent.length} phiếu ghi nhân công` : 'Chưa có phiếu gửi'} />
+      <Kpi icon={Truck} tone="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" label="Máy thi công" onClick={() => setTab('crew')}
+        value={unknownTotals ? <span className="text-sm font-semibold text-muted-foreground">Chưa xác định</span> : d.machineCount ? <><span className="text-sky-700 dark:text-sky-300">{num(d.machineCount)}</span> <span className="text-sm font-semibold text-muted-foreground">máy</span></> : <span className="text-muted-foreground">—</span>}
+        hint={unknownTotals ? 'Thiếu số liệu đã lưu' : d.machineCount ? <>{d.machineHours == null ? 'Chưa xác định' : <span className="tabular-nums">{num(d.machineHours)}</span>} giờ máy</> : 'Không phiếu nào ghi máy'} />
+      <Kpi icon={HardHat} tone="bg-leaf-100 text-leaf-700 dark:bg-leaf-950 dark:text-leaf-300" label="Hạng mục làm" active={tab === 'front' && !onlyLate} onClick={() => { setTab('front'); setOnlyLate(false); }}
+        value={unknownTotals ? <span className="text-sm font-semibold text-muted-foreground">Chưa xác định</span> : <span className="text-leaf-700 dark:text-leaf-300">{d.items.length}</span>} hint={<>{d.fronts} mũi · {d.withQuantity} có khối lượng hôm nay</>} />
+      <Kpi icon={Clock} tone="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" label="Trễ kế hoạch" active={tab === 'front' && onlyLate} onClick={() => { setTab('front'); setOnlyLate(true); }}
+        value={<span className={d.late ? 'overdue-blink text-rose-700 dark:text-rose-300' : 'text-leaf-700 dark:text-leaf-300'}>{d.late}</span>}
+        hint={d.noForecast ? <span className="text-amber-700 dark:text-amber-300">{d.noForecast} hạng mục chưa có ngày dự kiến mới</span> : 'so với ngày kết thúc kế hoạch'} />
+      <Kpi wide icon={Camera} tone="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" label="Ảnh hiện trường" active={tab === 'photo'} onClick={() => setTab('photo')}
+        value={<span className="text-teal-700 dark:text-teal-300">{d.photos}</span>} hint={`${d.itemsWithPhotos}/${d.items.length} hạng mục có ảnh riêng`} />
+    </div>
+
+    {(d.attention.length > 0 || (d.sent.length > 0 && !d.people)) && (
+      <section className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+        <h4 className="flex items-center gap-1.5 font-bold"><AlertTriangle size={16} aria-hidden />Cần chú ý</h4>
+        <ul className="mt-1.5 space-y-1">
+          {d.sent.length > 0 && !d.people && <li>Chưa phiếu nào ghi <b>nhân công</b> — chưa trả lời được "ai làm" trong ngày.</li>}
+          {(showAllAttention ? d.attention : d.attention.slice(0, 4)).map(item => <li key={item.key} className="flex items-start gap-1.5">
+            {item.tone === 'danger' ? <Clock size={14} className="mt-0.5 shrink-0 text-rose-600" aria-hidden /> : <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />}
+            <span className="min-w-0 break-words">{item.text}</span></li>)}
+        </ul>
+        {d.attention.length > 4 && <button type="button" onClick={() => setShowAllAttention(value => !value)} className="mt-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300">{showAllAttention ? 'Thu gọn' : `Xem thêm ${d.attention.length - 4} mục`}</button>}
+      </section>
+    )}
+    {d.sent.length > 0 && d.people > 0 && d.attention.length === 0 && <p className="rounded-2xl border border-leaf-200 bg-leaf-50 px-3 py-2 text-sm text-leaf-800 dark:border-leaf-900 dark:bg-leaf-950/30 dark:text-leaf-200">Không có sự cố hay hạng mục trễ trong ngày.</p>}
+
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border">
+      <div role="tablist" aria-label="Cách xem báo cáo" className="-mb-px flex max-w-full gap-1 overflow-x-auto">
+        {([['front', 'Theo mũi thi công', HardHat], ['crew', 'Theo tổ đội & máy', Users], ['photo', `Ảnh hiện trường (${d.photos})`, ImageIcon]] as const).map(([key, label, Icon]) =>
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === key ? 'border-teal-600 text-teal-700 dark:text-teal-300' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            <Icon size={15} aria-hidden />{label}</button>)}
+      </div>
+      {tab === 'front' && <button type="button" aria-pressed={onlyLate} onClick={() => setOnlyLate(value => !value)}
+        className={`mb-1 inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${onlyLate ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-border bg-card text-muted-foreground hover:bg-muted'}`}><Clock size={12} aria-hidden />Chỉ hạng mục trễ</button>}
+    </div>
+
+    {tab === 'front' && <FrontTable board={board} onlyLate={onlyLate} onOpenPhotos={onOpenPhotos} renderSlipExtra={renderSlipExtra} emptyItemsText={emptyItemsText} />}
+    {tab === 'crew' && <CrewView board={board} />}
+    {tab === 'photo' && <PhotoView board={board} onOpenPhotos={onOpenPhotos} />}
+  </>;
+}
+
 export function DailyLogTodayBoard(props: Props) {
   const today = localDateKey(new Date());
   const [date, setDate] = useState(today);
@@ -287,10 +370,6 @@ export function DailyLogTodayBoard(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
-  const [showAllAttention, setShowAllAttention] = useState(false);
-  const [tab, setTab] = useState<Tab>('front');
-  const [onlyLate, setOnlyLate] = useState(false);
-
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -304,25 +383,10 @@ export function DailyLogTodayBoard(props: Props) {
 
   const derived = useMemo(() => {
     if (!board) return null;
-    const sent = board.slips.filter(isSentSlip);
-    const items = sent.flatMap(slip => slip.items);
-    const { crews, machines } = resourceTotals(board);
     return {
-      attention: buildAttention(board),
       stage: boardStage(board),
       fronts: reportedFronts(board),
       task: buildMyTask(board, { userId: props.userId, canSubmit: props.canSubmit, canSummarize: props.canSummarize, canApprove: props.canApprove }),
-      sent, items, crews, machines,
-      people: sent.reduce((sum, slip) => sum + Number(slip.people || 0), 0),
-      laborHours: sent.reduce((sum, slip) => sum + Number(slip.laborHours || 0), 0),
-      machineCount: sent.reduce((sum, slip) => sum + Number(slip.machineCount || 0), 0),
-      machineHours: sent.reduce((sum, slip) => sum + Number(slip.machineHours || 0), 0),
-      slipsWithLabor: sent.filter(slip => Number(slip.people || 0) > 0).length,
-      late: items.filter(item => lateDays(item, board.date) != null).length,
-      noForecast: items.filter(item => needsNewForecast(item, board.date)).length,
-      withQuantity: items.filter(item => Number(item.dailyQuantity || 0) > 0).length,
-      photos: sent.reduce((sum, slip) => sum + Number(slip.photoCount || 0) + slip.items.reduce((total, item) => total + Number(item.attachmentCount || 0), 0), 0),
-      itemsWithPhotos: items.filter(item => Number(item.attachmentCount || 0) > 0).length,
     };
   }, [board, props.userId, props.canSubmit, props.canSummarize, props.canApprove]);
 
@@ -384,48 +448,7 @@ export function DailyLogTodayBoard(props: Props) {
             })}
           </ol>
 
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-            <Kpi icon={Users} tone="bg-mint-100 text-mint-700 dark:bg-mint-950 dark:text-mint-300" label="Nhân công" active={tab === 'crew'} onClick={() => setTab('crew')}
-              value={derived.people ? <><span className="text-mint-700 dark:text-mint-300">{num(derived.people)}</span> <span className="text-sm font-semibold text-muted-foreground">người</span></> : <span className="text-amber-700 dark:text-amber-300">Chưa ghi</span>}
-              hint={derived.people ? <><span className="tabular-nums">{num(derived.laborHours)}</span> giờ công · {derived.crews.length} tổ đội</> : derived.sent.length ? `0/${derived.sent.length} phiếu ghi nhân công` : 'Chưa có phiếu gửi'} />
-            <Kpi icon={Truck} tone="bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" label="Máy thi công" onClick={() => setTab('crew')}
-              value={derived.machineCount ? <><span className="text-sky-700 dark:text-sky-300">{num(derived.machineCount)}</span> <span className="text-sm font-semibold text-muted-foreground">máy</span></> : <span className="text-muted-foreground">—</span>}
-              hint={derived.machineCount ? <><span className="tabular-nums">{num(derived.machineHours)}</span> giờ máy</> : 'Không phiếu nào ghi máy'} />
-            <Kpi icon={HardHat} tone="bg-leaf-100 text-leaf-700 dark:bg-leaf-950 dark:text-leaf-300" label="Hạng mục làm" active={tab === 'front' && !onlyLate} onClick={() => { setTab('front'); setOnlyLate(false); }}
-              value={<span className="text-leaf-700 dark:text-leaf-300">{derived.items.length}</span>} hint={<>{derived.fronts.sent} mũi · {derived.withQuantity} có khối lượng hôm nay</>} />
-            <Kpi icon={Clock} tone="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300" label="Trễ kế hoạch" active={tab === 'front' && onlyLate} onClick={() => { setTab('front'); setOnlyLate(true); }}
-              value={<span className={derived.late ? 'overdue-blink text-rose-700 dark:text-rose-300' : 'text-leaf-700 dark:text-leaf-300'}>{derived.late}</span>}
-              hint={derived.noForecast ? <span className="text-amber-700 dark:text-amber-300">{derived.noForecast} hạng mục chưa có ngày dự kiến mới</span> : 'so với ngày kết thúc kế hoạch'} />
-            <Kpi wide icon={Camera} tone="bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300" label="Ảnh hiện trường" active={tab === 'photo'} onClick={() => setTab('photo')}
-              value={<span className="text-teal-700 dark:text-teal-300">{derived.photos}</span>} hint={`${derived.itemsWithPhotos}/${derived.items.length} hạng mục có ảnh riêng`} />
-          </div>
-
-          {(derived.attention.length > 0 || (derived.sent.length > 0 && !derived.people)) && (
-            <section className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-              <h4 className="flex items-center gap-1.5 font-bold"><AlertTriangle size={16} aria-hidden />Cần chú ý</h4>
-              <ul className="mt-1.5 space-y-1">
-                {derived.sent.length > 0 && !derived.people && <li>Chưa phiếu nào ghi <b>nhân công</b> — chưa trả lời được "ai làm" trong ngày.</li>}
-                {(showAllAttention ? derived.attention : derived.attention.slice(0, 4)).map(item => <li key={item.key} className="flex items-start gap-1.5">
-                  {item.tone === 'danger' ? <Clock size={14} className="mt-0.5 shrink-0 text-rose-600" aria-hidden /> : <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />}
-                  <span className="min-w-0 break-words">{item.text}</span></li>)}
-              </ul>
-              {derived.attention.length > 4 && <button type="button" onClick={() => setShowAllAttention(value => !value)} className="mt-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300">{showAllAttention ? 'Thu gọn' : `Xem thêm ${derived.attention.length - 4} mục`}</button>}
-            </section>
-          )}
-
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border">
-            <div role="tablist" aria-label="Cách xem báo cáo" className="flex flex-wrap gap-1">
-              {([['front', 'Theo mũi thi công', HardHat], ['crew', 'Theo tổ đội & máy', Users], ['photo', `Ảnh hiện trường (${derived.photos})`, ImageIcon]] as const).map(([key, label, Icon]) =>
-                <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
-                  className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold ${tab === key ? 'border-teal-600 text-teal-700 dark:text-teal-300' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-                  <Icon size={15} aria-hidden />{label}</button>)}
-            </div>
-            {tab === 'front' && <label className="flex items-center gap-1.5 pb-1 text-sm"><input type="checkbox" checked={onlyLate} onChange={event => setOnlyLate(event.target.checked)} className="h-4 w-4 accent-teal-700" />Chỉ hạng mục trễ</label>}
-          </div>
-
-          {tab === 'front' && <FrontTable board={board} onlyLate={onlyLate} onOpenPhotos={props.onOpenPhotos} />}
-          {tab === 'crew' && <CrewView board={board} />}
-          {tab === 'photo' && <PhotoView board={board} onOpenPhotos={props.onOpenPhotos} />}
+          <DayReportBody board={board} onOpenPhotos={props.onOpenPhotos} />
 
           <div>
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">7 ngày gần đây · nhân công</h4>

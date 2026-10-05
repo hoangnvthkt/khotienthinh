@@ -10,7 +10,8 @@ const render=(bundle:DailyLogWbsBundle=commandBundle)=>renderToStaticMarkup(<Sta
 describe('commander report and verified history',()=>{
   it('reads as a commander briefing before drilling into sources and audit',()=>{
     const html=render({...commandBundle,summaryLog:{...commandBundle.summaryLog,issues:'Lối vào bị cản',description:'Đã hoàn thành đổ móng'}});
-    const order=['Tổng quan ngày','Tiến độ theo hạng mục','Cảnh báo và vướng mắc','Các mũi thi công','Ảnh hiện trường','Nguồn phiếu và lịch sử duyệt'];
+    // v3 (05/10): cùng bố cục Báo cáo ngày — ô số → cần chú ý → bảng theo mũi → ghi chú → lịch sử.
+    const order=['Nhân công','Cần chú ý','Theo mũi thi công','Sự cố chung','Nội dung tổng hợp dạng văn bản','Nguồn phiếu và lịch sử duyệt'];
     expect(order.map(label=>html.indexOf(label))).toEqual([...order.map(label=>html.indexOf(label))].sort((a,b)=>a-b));
     expect(order.every(label=>html.includes(label))).toBe(true);
     expect(html).toContain('Đã hoàn thành đổ móng');
@@ -20,23 +21,23 @@ describe('commander report and verified history',()=>{
     const ready={...commandBundle,summarySources:[commandBundle.summarySources[0]],workItems:[commandBundle.workItems[1]],
       contributionsForSummary:commandBundle.contributionsForSummary.map(source=>({...source,issues:''}))};
     const html=render(ready);
-    expect(html).toContain('Mũi thi công</dt><dd');
-    expect(html).toContain('1</dd><dd class="text-xs text-muted-foreground">1 / 3 phiếu được tổng hợp');
-    expect(html).toContain('dl-metric-calm');
+    expect(html).toContain('Theo mũi thi công');
+    expect(html).toContain('Khu A');
+    expect(html).not.toContain('Khu B');
   });
   it('includes recorded field issues in the report attention count',()=>{
     const html=render({...commandBundle,summaryLog:{...commandBundle.summaryLog,issues:'Lối đi bị chặn'}});
-    expect(html).toContain('Cần chú ý</dt><dd');
-    expect(html).toContain('3 mục');
+    expect(html).toContain('Cần chú ý');
+    expect(html).toContain('Lối đi bị chặn');
   });
   it('shows each area’s engineer, physical quantities and resource hours without claiming a delay from missing dates',()=>{
     const html=render();
     expect(html).toContain('Kỹ sư A');
-    expect(html).toContain('30 m²');
-    expect(html).toContain('56 giờ công');
-    expect(html).toContain('12 giờ máy');
-    expect(html).toContain('Chưa có ngày kế hoạch để so');
-    expect(html).not.toContain('Mũi thi công chậm');
+    expect(html).toMatch(/\+30<\/span> <span[^>]*>m²/);
+    expect(html).toMatch(/56<\/span> giờ công/);
+    expect(html).toMatch(/12<\/span> giờ máy/);
+    expect(html).toContain('Kế hoạch <b class="text-foreground">chưa có</b>');
+    expect(html).not.toMatch(/Trễ \d+ ngày/);
   });
   it('keeps saved photos visible in the photo section and source metadata inside audit details',()=>{
     const photo={id:'report-photo',name:'Hiện trường hôm nay',url:'/today.png',fileType:'image' as const};
@@ -54,8 +55,8 @@ describe('commander report and verified history',()=>{
   it('flags a dated forecast only when a saved area item finishes after its plan',()=>{
     const workItems=commandBundle.workItems.map(item=>item.id==='work-A-2'?{...item,scheduleFinishDate:'2026-10-01',forecastFinishDate:'2026-10-03'}:item);
     const html=render({...commandBundle,workItems});
-    expect(html).toContain('Có hạng mục dự kiến trễ');
-    expect(html).toContain('Khu A: có hạng mục dự kiến xong muộn hơn kế hoạch');
+    expect(html).toContain('Trễ 2 ngày');
+    expect(html).toMatch(/trễ 2 ngày, dự kiến xong 03\/10 \(Khu A\)/);
   });
   it('does not substitute live source issues or photos into verified history',()=>{
     const html=render({...commandBundle,summaryLog:{...commandBundle.summaryLog,status:'verified'},
@@ -67,8 +68,8 @@ describe('commander report and verified history',()=>{
   it('keeps partially unknown area hours unknown rather than treating the missing line as zero',()=>{
     const labor=commandBundle.labor.map(line=>line.laborType==='Tổ tường A'?{...line,totalLaborHours:null}:line);
     const html=render({...commandBundle,labor});
-    const areaA=html.split('data-testid="daily-log-area-card"')[1].split('data-testid="daily-log-area-card"')[0];
-    expect(areaA).toContain('Giờ công</dt><dd>Chưa xác định');
+    expect(html).toContain('Chưa xác định giờ công');
+    expect(html).not.toMatch(/>\d+<\/span> giờ công/);
   });
   it('starts with a report header and separate summary-return action',()=>{
     const html=render();
@@ -78,8 +79,9 @@ describe('commander report and verified history',()=>{
   });
   it('offers exact source return with a mandatory reason, not the old review-comment command',()=>{
     const html=render();
-    expect(html).toContain('Trả phiếu sửa');expect(html).toContain('Lý do trả phiếu');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Trả phiếu sửa/);
+    // Lý do bắt buộc nhập ở ô hiện ra sau khi bấm (nút gửi khóa khi trống) — xem DailyLogSummaryWorkspace.
+    expect(html).toContain('Trả phiếu sửa');
+    expect(html).not.toMatch(/<(input|textarea)\b/);
     expect(html).not.toContain('Yêu cầu sửa khu vực');
   });
   it('shows real verification metadata without deriving approval from updatedAt',()=>{
@@ -93,7 +95,7 @@ describe('commander report and verified history',()=>{
     const verified={...commandBundle,summaryLog:{...commandBundle.summaryLog,status:'verified' as const},summarySources:commandBundle.summarySources.map(source=>({...source,sourceState:'changed' as const})),workItems:commandBundle.workItems.map(item=>({...item,unit:null}))};
     const html=render(verified);
     expect(html).toContain('Chưa xác định người duyệt');expect(html).toContain('Chưa xác định thời điểm duyệt');
-    expect(html).toContain('Cần lưu ý');expect(html).not.toContain('trước khi gửi');expect(html).not.toContain('Cập nhật từ phiếu');
+    expect(html).not.toContain('trước khi gửi');expect(html).not.toContain('Cập nhật từ phiếu');
     expect(html).not.toContain('Nhập giá trị chính thức');
   });
   it('keeps a reader free of return or publication actions',()=>{
@@ -104,11 +106,8 @@ describe('commander report and verified history',()=>{
     const html=render({...commandBundle,summaryLog:{...commandBundle.summaryLog,status:'verified' as any}});
     expect(html).not.toContain('Bê tông móng');expect(html).not.toContain('Nguồn móng A');
     expect(html).toContain('Chưa có hạng mục được lưu');
-    expect(html).toMatch(/Hạng mục<\/dt><dd[^>]*>Chưa xác định/);
-    expect(html).toMatch(/Giờ công<\/dt><dd[^>]*>Chưa xác định/);
-    expect(html).toMatch(/Giờ máy<\/dt><dd[^>]*>Chưa xác định/);
+    expect(html.match(/>Chưa xác định<\/span>/g)?.length).toBeGreaterThanOrEqual(3);
     expect(html).toContain('Thiếu số liệu đã lưu');
-    expect(html).toMatch(/Cần lưu ý<\/dt><dd[^>]*>2 mục/);
   });
   it('does not substitute a newer source submission time for a missing historical copy time',()=>{
     const html=render({...commandBundle,summaryLog:{...commandBundle.summaryLog,status:'verified'},

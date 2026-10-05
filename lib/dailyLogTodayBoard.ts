@@ -1,8 +1,8 @@
 // "Hôm nay tại công trường": types for get_daily_log_today_board_v1 and the
 // pure rules that turn one day's slips into what each role should see first.
 
-export interface TodayBoardLaborLine { provider?: string | null; laborType?: string | null; people: number; hours: number; manual?: boolean; contractLinked?: boolean }
-export interface TodayBoardMachineLine { machineType?: string | null; provider?: string | null; count: number; hours: number }
+export interface TodayBoardLaborLine { provider?: string | null; laborType?: string | null; people: number; hours: number | null; manual?: boolean; contractLinked?: boolean }
+export interface TodayBoardMachineLine { machineType?: string | null; provider?: string | null; count: number; hours: number | null }
 
 export interface TodayBoardItem {
   taskId?: string | null;
@@ -41,9 +41,10 @@ export interface TodayBoardSlip {
   photoCount: number;
   items: TodayBoardItem[];
   people: number;
-  laborHours: number;
+  /** null: có dòng chưa xác định số giờ. */
+  laborHours: number | null;
   machineCount: number;
-  machineHours: number;
+  machineHours: number | null;
 }
 
 export interface TodayBoardMissingFront {
