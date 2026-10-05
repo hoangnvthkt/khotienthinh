@@ -391,16 +391,6 @@ const SYSTEM_APPS = [
     moduleKey: 'TS',
   },
   {
-    key: 'EX',
-    to: '/expense',
-    label: 'Chi phí',
-    description: 'Ngân sách & Quỹ',
-    icon: Calculator,
-    gradient: 'from-teal-600 to-emerald-700',
-    shadow: 'shadow-teal-600/25',
-    moduleKey: 'EX',
-  },
-  {
     key: 'HD',
     to: '/hd/partners',
     label: 'Hợp đồng',

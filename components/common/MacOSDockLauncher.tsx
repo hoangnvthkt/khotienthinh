@@ -127,16 +127,6 @@ const DOCK_MODULE_DEFS: DockModuleItem[] = [
     glowColor: 'rgba(132, 204, 22, 0.4)',
   },
   {
-    key: 'EX',
-    label: 'Chi phí',
-    shortLabel: 'CP',
-    description: 'Ngân sách & chứng từ chi',
-    route: '/expense',
-    icon: DollarSign,
-    gradient: 'from-purple-500 to-pink-600',
-    glowColor: 'rgba(168, 85, 247, 0.4)',
-  },
-  {
     key: 'RQ',
     label: 'Yêu cầu',
     shortLabel: 'RQ',

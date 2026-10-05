@@ -65,7 +65,6 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: 'asset', label: 'Tài sản', iconName: 'Landmark', color: 'bg-rose-500', shadow: 'shadow-rose-500/30', route: '/ts/dashboard' },
   { id: 'project', label: 'Dự án', iconName: 'GitBranch', color: 'bg-orange-500', shadow: 'shadow-orange-500/30', route: '/da' },
   { id: 'project-contract', label: 'Hợp đồng dự án', iconName: 'FileText', color: 'bg-blue-700', shadow: 'shadow-blue-700/30', route: '/da/tabs/contract' },
-  { id: 'expense', label: 'Chi phí', iconName: 'BarChart3', color: 'bg-red-500', shadow: 'shadow-red-500/30', route: '/expense' },
   { id: 'contract', label: 'Hợp đồng LĐ', iconName: 'FileText', color: 'bg-sky-500', shadow: 'shadow-sky-500/30', route: '/hrm/contracts' },
   { id: 'rq-dashboard', label: 'Yêu cầu nội bộ', iconName: 'Inbox', color: 'bg-lime-600', shadow: 'shadow-lime-600/30', route: '/rq' },
   { id: 'feedback', label: 'Gửi góp ý', iconName: 'MessageSquarePlus', color: 'bg-blue-600', shadow: 'shadow-blue-600/30', route: '/feedback' },
