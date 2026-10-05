@@ -1,0 +1,20 @@
+import { expect, test } from '@playwright/test';
+for (const width of [390, 768, 1440]) test(`request purchasing and assets at ${width}px`, async ({ page }) => {
+ await page.setViewportSize({ width, height:900 });
+ await page.goto('/tests/procurement/request-assets-fixture.html');
+ const toggle=page.getByRole('switch'); await expect(toggle).toHaveAttribute('aria-checked','false'); await toggle.click(); await expect(toggle).toHaveAttribute('aria-checked','true');
+ await expect(page.getByLabel('Kho nhận dòng 1')).toHaveValue('wh1'); await expect(page.getByLabel('Ngày cần dòng 1')).toHaveValue('2026-10-10');
+ await page.getByLabel('Quy cách dòng 1').fill('RAM 32 GB');
+ await page.getByRole('button',{name:'Thêm hàng cần mua'}).click(); await expect(page.getByLabel('Tên hàng dòng 2')).toBeVisible();
+ await page.getByRole('button',{name:'Xóa dòng 2'}).click();
+ await page.getByText('1 tài sản đã nhập').click(); await expect(page.getByText('Chờ cấp phát',{exact:true})).toBeVisible();
+ await expect(page.getByRole('link',{name:'Mở cấp phát tài sản'})).toHaveAttribute('href','#/ts/assignment');
+ await page.getByRole('button',{name:'Mua 1 Cái còn thiếu'}).click();
+ await page.getByRole('button',{name:'Máy tính xách tay · MT-01 · Cái'}).click();
+ await page.getByPlaceholder('Tìm tên hoặc mã số thuế NCC…').fill('thiết bị');
+ await page.getByRole('option',{name:/Công ty Thiết bị/}).click();
+ await page.getByLabel('Đơn giá',{exact:true}).fill('15000000');
+ await page.getByRole('button',{name:'Lưu đơn nháp'}).click(); await expect(page.getByText('Đã mở đơn po-fixture')).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+ await page.screenshot({path:`/tmp/request-assets-${width}.png`,fullPage:true});
+});

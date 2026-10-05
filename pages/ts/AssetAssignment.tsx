@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useModuleData } from '../../hooks/useModuleData';
@@ -25,7 +26,8 @@ const AssetAssignment: React.FC = () => {
     const toast = useToast();
 
     const [activeTab, setActiveTab] = useState<'assign' | 'transfer' | 'history'>('assign');
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchParams] = useSearchParams();
+    const [searchTerm, setSearchTerm] = useState(() => searchParams.get('q') || '');
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [showReturnModal, setShowReturnModal] = useState(false);
     const [showTransferModal, setShowTransferModal] = useState(false);
