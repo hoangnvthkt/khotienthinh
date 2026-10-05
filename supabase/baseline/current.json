@@ -259,7 +259,8 @@
     "20261008160000_hrm_h4_timesheet_close.sql",
     "20261008171000_daily_log_v3_report.sql",
     "20261008171001_request_hr_office_transfer_bridge.sql",
-    "20261008171002_procurement_external_intake.sql"
+    "20261008171002_procurement_external_intake.sql",
+    "20261008172000_request_purchase_assets.sql"
   ],
   "forbidIncludeAll": true
 }

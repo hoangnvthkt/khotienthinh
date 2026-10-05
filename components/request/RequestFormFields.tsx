@@ -1,3 +1,5 @@
+import { PURCHASE_NEED_KEY } from '../../lib/requestPurchaseNeed';
+import { RequestPurchaseNeedEditor } from './RequestPurchaseNeedEditor';
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { User } from '../../types';
@@ -14,6 +16,7 @@ export const RequestFieldInput: React.FC<{
   users: User[];
   disabled?: boolean;
 }> = ({ field, value, onChange, users, disabled }) => {
+  if (field.key === PURCHASE_NEED_KEY) return <RequestPurchaseNeedEditor value={value} onChange={onChange} users={users} disabled={disabled} />;
   const stringValue = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
   if (field.fieldType === 'textarea') return <RequestRichTextEditor value={stringValue} onChange={onChange} disabled={disabled} minHeight={110} ariaLabel={field.label} placeholder={`Nhập ${field.label.toLowerCase()}...`} />;
   if (field.fieldType === 'select') return <select value={stringValue} onChange={event => onChange(event.target.value)} className={controlClass} disabled={disabled}><option value="">Chọn {field.label}</option>{field.options.map(option => <option key={option}>{option}</option>)}</select>;
@@ -48,7 +51,7 @@ export const RequestFormFields: React.FC<{
   users: User[];
   disabled?: boolean;
 }> = ({ fields, values, onChange, users, disabled }) => <div className="space-y-5">
-  {[...fields].sort((a, b) => a.sortOrder - b.sortOrder).map(field => <div key={field.key} className="grid min-w-0 gap-2 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-7">
+  {[...fields].sort((a, b) => a.sortOrder - b.sortOrder).map(field => <div key={field.key} className={`grid min-w-0 gap-2 ${field.key === PURCHASE_NEED_KEY ? '' : 'lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-7'}`}>
     <label className="text-sm font-semibold leading-5 text-slate-700 dark:text-slate-200" htmlFor={`request-field-${field.key}`}>{field.label}{field.required && <span className="ml-1 text-rose-500">*</span>}</label>
     <div id={`request-field-${field.key}`} className="min-w-0"><RequestFieldInput field={field} value={values[field.key]} onChange={value => onChange({ ...values, [field.key]: value })} users={users} disabled={disabled} /></div>
   </div>)}

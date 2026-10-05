@@ -1,3 +1,4 @@
+import type { RequestPurchaseLine } from './requestPurchaseService';
 import { supabase } from './supabase';
 
 export type ProcurementSourceType = 'material_request' | 'material_plan' | 'request' | 'workflow';
@@ -69,6 +70,8 @@ export interface ProcurementOtherStock {
 }
 
 export interface ProcurementInboxDetail {
+  sourceRevision?: number;
+  purchaseLines?: RequestPurchaseLine[];
   orderable?: boolean;
   intakeState?: 'received' | 'withdrawn';
   sourceSnapshot?: { columns: string[]; rows: Array<{ id: string; cells: string[] }>; notes: string | null; revision: number; withdrawnReason: string | null };
@@ -286,6 +289,7 @@ export interface ProcurementPoPayment {
   advance?: number; advanceRemaining?: number; advancePending?: number; advanceOffset?: number;
 }
 export interface ProcurementOrderDetail {
+  requestSource?: { id: string; code: string; kind: 'asset' | 'material' } | null;
   id: string; poNumber: string | null; status: string; stage: ProcurementOrderStage | 'other'; isHub: boolean; rowVersion: number;
   vendorId: string | null; vendorName: string | null; projectId: string | null; constructionSiteId: string | null;
   projectCode: string | null; projectName: string | null; targetWarehouseId: string | null; warehouseName: string | null;

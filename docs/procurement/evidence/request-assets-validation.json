@@ -1,0 +1,76 @@
+{
+  "migrationSha256": "8018eaf5d6c1cddec12bbe7cd5b6852d40a8cd1e4b30ceb13d07468a988a923f",
+  "cloudRollbackPassed": true,
+  "validatedAt": "2026-10-05T07:44:09.213754+00:00",
+  "baselineFunctions": [
+    {
+      "md5": "2f444b980ed2a26551a76459c4ca6353",
+      "signature": "get_procurement_order_v1(text)"
+    },
+    {
+      "md5": "a97b0e2e83165d4f6a7cbfc13d3ac252",
+      "signature": "list_procurement_orders_v1(jsonb)"
+    },
+    {
+      "md5": "9030bd0a19da973767a006f5d7739e17",
+      "signature": "record_asset_assignment(jsonb)"
+    },
+    {
+      "md5": "74e606339e27d3fca989e0266167fc34",
+      "signature": "receive_purchase_delivery_v1(uuid,text,text,jsonb,jsonb)"
+    },
+    {
+      "md5": "fd8177d78ea132e4a72c61d4cd411a0f",
+      "signature": "list_procurement_proactive_candidates_v1(text,text)"
+    },
+    {
+      "md5": "b040cebaff6db50578e0ba474301c0cd",
+      "signature": "app_private.prepare_planned_purchase_delivery_batch_with_wms_qr_v2(uuid,uuid,uuid)"
+    },
+    {
+      "md5": "d2ec0f845e439ef380b139865b3baf2c",
+      "signature": "app_private.procurement_bridge_get(text,text)"
+    },
+    {
+      "md5": "ed8f60e08e5fbcf39dcf6b0b64966974",
+      "signature": "app_private.finalize_purchase_receipt_v2(uuid,text,uuid)"
+    },
+    {
+      "md5": "5642003d986c5446b7cd0b2a5b81aa4b",
+      "signature": "app_private.trg_sync_wms_transaction_inventory_ledger()"
+    },
+    {
+      "md5": "94a191fadffea4f5c2baa49bb8583530",
+      "signature": "app_private.procurement_capture_source()"
+    },
+    {
+      "md5": "0c631786e998bdd56d63eddbb55f81aa",
+      "signature": "app_private.procurement_receipt_document(app_private.procurement_source_receipts)"
+    },
+    {
+      "md5": "800bfdc2f34825f3b66ea640a21eb1a1",
+      "signature": "app_private.procurement_bridge_list(jsonb)"
+    },
+    {
+      "signature": "close_procurement_po_short_v1(jsonb)",
+      "md5": "ae932783aaa317eca8b27c74d28d5e75"
+    }
+  ],
+  "checks": [
+    "Versioned switch: disabled/new version and pending old version",
+    "Final Request approval through RPC, no historical backfill",
+    "Canonical warehouse/date/category, malformed warehouse rejected",
+    "PO creation, idempotency, over-order protection, two-person PO approval",
+    "Two partial receipts create exactly two assets; retry does not duplicate",
+    "Asset receipt does not post stock/valuation twice; one AP receipt",
+    "Assignment requires business permission; assign/retry/return preserve custody",
+    "Material receipt uses original inventory and creates no assets",
+    "Private table and legacy function access denied",
+    "3064 Vitest cases passed, 2 skipped",
+    "Playwright 390/768/1440 passed",
+    "Short-close returns only unreceived balance to need; replacement order fills remainder",
+    "Application typecheck 0 diagnostics",
+    "Production build passed",
+    "Migration baseline and Supabase query audit passed"
+  ]
+}

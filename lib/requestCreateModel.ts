@@ -1,3 +1,4 @@
+import { PURCHASE_NEED_KEY, validatePurchaseNeeds } from './requestPurchaseNeed';
 import { isRichTextEmpty } from './requestRichText';
 
 export interface RequestCreateField {
@@ -45,6 +46,7 @@ export const validateRequestSubmission = ({
 
   for (const field of fields) {
     const value = formData[field.key];
+    if (field.key === PURCHASE_NEED_KEY) { errors.push(...validatePurchaseNeeds(value)); continue; }
     const isEmpty = value === null
       || value === undefined
       || (typeof value === 'string' && isRichTextEmpty(value))
