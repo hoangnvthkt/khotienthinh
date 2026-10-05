@@ -37,6 +37,8 @@ import {
     isRequestModuleWorkflowTemplate,
 } from '../../lib/workflowVisibility';
 import WorkflowInstanceDetail from './WorkflowInstanceDetail';
+import WorkflowTemplateGroupList from '../../components/workflow/WorkflowTemplateGroupList';
+import WorkflowInstanceSummaryPanel from '../../components/workflow/WorkflowInstanceSummaryPanel';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { buildWorkflowRoute } from '../../lib/workflowRoutes';
 
@@ -629,7 +631,7 @@ export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, col
 const WorkflowInstances: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { templates, instances, nodes, edges, logs, createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
+    const { templates, categories, instances, nodes, edges, logs, createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
     const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
@@ -750,6 +752,19 @@ const WorkflowInstances: React.FC = () => {
         ),
         [instances, isMaterialWorkflowInstance, isRequestModuleWorkflowInstance],
     );
+    // One pass over the tickets instead of one filter per template in the sidebar.
+    const sidebarCountByTemplate = useMemo(() => {
+        const counts = new Map<string, number>();
+        visibleListInstances.forEach(i => {
+            let matchTab: boolean;
+            if (activeTab === 'mine') matchTab = i.createdBy === user.id;
+            else if (activeTab === 'watching') matchTab = i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id) || false;
+            else matchTab = (i.status === WorkflowInstanceStatus.RUNNING && i.currentNodeId && (isWorkflowStepAssignedToUser(i, nodes.find(n => n.id === i.currentNodeId)!, user) || user.role === Role.ADMIN || templateById.get(i.templateId)?.managers?.includes(user.id))) || false;
+            const matchStatus = filterStatus === 'ALL' ? true : i.status === filterStatus;
+            if (matchTab && matchStatus) counts.set(i.templateId, (counts.get(i.templateId) || 0) + 1);
+        });
+        return counts;
+    }, [visibleListInstances, activeTab, filterStatus, templateById, nodes, user]);
     const visibleBoardInstances = useMemo(
         () => instances.filter(instance =>
             !isRequestModuleWorkflowInstance(instance)
@@ -844,6 +859,13 @@ const WorkflowInstances: React.FC = () => {
 
         return list;
     }, [visibleBoardInstances, activeTab, filterStatus, searchTerm, user, nodes, templateById]);
+    const boardRunningCountByTemplate = useMemo(() => {
+        const counts = new Map<string, number>();
+        filteredBoardInstances.forEach(i => {
+            if (i.status === WorkflowInstanceStatus.RUNNING) counts.set(i.templateId, (counts.get(i.templateId) || 0) + 1);
+        });
+        return counts;
+    }, [filteredBoardInstances]);
 
     const activeInstanceId = useMemo(() => {
         if (expandedId && filteredInstances.some(i => i.id === expandedId)) {
@@ -1600,40 +1622,39 @@ const WorkflowInstances: React.FC = () => {
                             <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider px-2 py-1 select-none">
                                 <span>Quy trình mẫu</span>
                             </div>
-                            {nonMaterialActiveTemplates.map(t => {
-                                const count = visibleListInstances.filter(i => {
-                                    let matchTab = true;
-                                    if (activeTab === 'mine') matchTab = i.createdBy === user.id;
-                                    else if (activeTab === 'watching') matchTab = i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id) || false;
-                                    else matchTab = (i.status === WorkflowInstanceStatus.RUNNING && i.currentNodeId && (isWorkflowStepAssignedToUser(i, nodes.find(n => n.id === i.currentNodeId)!, user) || user.role === Role.ADMIN || templateById.get(i.templateId)?.managers?.includes(user.id))) || false;
-                                    let matchStatus = filterStatus === 'ALL' ? true : i.status === filterStatus;
-                                    return matchTab && matchStatus && i.templateId === t.id;
-                                }).length;
-                                return (
-                                    <button
-                                        key={t.id}
-                                        onClick={() => {
-                                            setSelectedTemplateIdFilter(selectedTemplateIdFilter === t.id ? '' : t.id);
-                                        }}
-                                        className={`w-full px-3 py-2 rounded-xl text-left text-xs font-bold transition flex items-center justify-between gap-2 ${selectedTemplateIdFilter === t.id
-                                            ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-655 dark:text-white font-bold shadow-sm'
-                                            : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-400 to-indigo-500 flex items-center justify-center text-white shrink-0">
-                                                <GitBranch size={10} />
+                            <WorkflowTemplateGroupList
+                                templates={nonMaterialActiveTemplates}
+                                categories={categories}
+                                userId={user.id}
+                                selectedTemplateId={selectedTemplateIdFilter}
+                                getGroupCount={groupTemplates => groupTemplates.reduce((sum, t) => sum + (sidebarCountByTemplate.get(t.id) || 0), 0)}
+                                renderTemplate={t => {
+                                    const count = sidebarCountByTemplate.get(t.id) || 0;
+                                    return (
+                                        <button
+                                            onClick={() => {
+                                                setSelectedTemplateIdFilter(selectedTemplateIdFilter === t.id ? '' : t.id);
+                                            }}
+                                            className={`w-full px-3 py-2 rounded-xl text-left text-xs font-bold transition flex items-center justify-between gap-2 ${selectedTemplateIdFilter === t.id
+                                                ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-655 dark:text-white font-bold shadow-sm'
+                                                : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-400 to-indigo-500 flex items-center justify-center text-white shrink-0">
+                                                    <GitBranch size={10} />
+                                                </div>
+                                                <span className="truncate text-xs">{t.name}</span>
                                             </div>
-                                            <span className="truncate text-xs">{t.name}</span>
-                                        </div>
-                                        {count > 0 && (
-                                            <span className="text-[9px] opacity-65 shrink-0">
-                                                {count}
-                                            </span>
-                                        )}
-                                    </button>
-                                );
-                            })}
+                                            {count > 0 && (
+                                                <span className="text-[9px] opacity-65 shrink-0">
+                                                    {count}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                }}
+                            />
                         </div>
 
                         {/* Switch to Kanban Button */}
@@ -1869,44 +1890,48 @@ const WorkflowInstances: React.FC = () => {
                                     Chưa có quy trình nào đang hoạt động.
                                 </p>
                             ) : (
-                                boardTemplates.map(t => {
-                                    const isActive = boardTemplateId === t.id;
-                                    const runningCount = filteredBoardInstances.filter(
-                                        i => i.templateId === t.id && i.status === WorkflowInstanceStatus.RUNNING
-                                    ).length;
-                                    return (
-                                        <button
-                                            key={t.id}
-                                            type="button"
-                                            onClick={() => setBoardTemplateId(t.id)}
-                                            className="mb-0.5 flex w-full items-center gap-2 rounded px-2 py-2 text-left transition"
-                                            style={{
-                                                backgroundColor: isActive ? 'var(--wf-green-soft)' : 'transparent',
-                                                color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
-                                            }}
-                                        >
-                                            <GitBranch
-                                                size={13}
-                                                className="shrink-0"
-                                                style={{ color: isActive ? 'var(--wf-green)' : 'var(--wf-text-faint)' }}
-                                            />
-                                            <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
-                                                {t.name}
-                                            </span>
-                                            {runningCount > 0 && (
-                                                <span
-                                                    className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
-                                                    style={{
-                                                        backgroundColor: isActive ? 'var(--wf-green)' : 'var(--wf-column)',
-                                                        color: isActive ? '#ffffff' : 'var(--wf-text-muted)',
-                                                    }}
-                                                >
-                                                    {runningCount}
+                                <WorkflowTemplateGroupList
+                                    templates={boardTemplates}
+                                    categories={categories}
+                                    userId={user.id}
+                                    selectedTemplateId={boardTemplateId}
+                                    getGroupCount={groupTemplates => groupTemplates.reduce((sum, t) => sum + (boardRunningCountByTemplate.get(t.id) || 0), 0)}
+                                    renderTemplate={t => {
+                                        const isActive = boardTemplateId === t.id;
+                                        const runningCount = boardRunningCountByTemplate.get(t.id) || 0;
+                                        return (
+                                            <button
+                                                type="button"
+                                                onClick={() => setBoardTemplateId(t.id)}
+                                                className="mb-0.5 flex w-full items-center gap-2 rounded px-2 py-2 text-left transition"
+                                                style={{
+                                                    backgroundColor: isActive ? 'var(--wf-green-soft)' : 'transparent',
+                                                    color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
+                                                }}
+                                            >
+                                                <GitBranch
+                                                    size={13}
+                                                    className="shrink-0"
+                                                    style={{ color: isActive ? 'var(--wf-green)' : 'var(--wf-text-faint)' }}
+                                                />
+                                                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
+                                                    {t.name}
                                                 </span>
-                                            )}
-                                        </button>
-                                    );
-                                })
+                                                {runningCount > 0 && (
+                                                    <span
+                                                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
+                                                        style={{
+                                                            backgroundColor: isActive ? 'var(--wf-green)' : 'var(--wf-column)',
+                                                            color: isActive ? '#ffffff' : 'var(--wf-text-muted)',
+                                                        }}
+                                                    >
+                                                        {runningCount}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    }}
+                                />
                             )}
                         </nav>
 
@@ -2084,9 +2109,9 @@ const WorkflowInstances: React.FC = () => {
                                     instances={filteredBoardInstances}
                                     employees={employees}
                                     orgUnits={orgUnits}
-                                    onCardClick={async (instance) => {
-                                        await ensureInstanceFormData(instance);
-                                        navigate(buildWorkflowRoute(instance.id));
+                                    onCardClick={(instance) => {
+                                        setBoardDetailInstanceId(instance.id);
+                                        void ensureInstanceFormData(instance);
                                     }}
                                     onDragComplete={async (instanceId, action, comment, assigneeIds) => {
                                         const result = await processInstance(instanceId, action, user.id, comment, assigneeIds);
@@ -2108,58 +2133,20 @@ const WorkflowInstances: React.FC = () => {
                 </div>
             )}
 
-            {/* Board Detail Slide-over Modal */}
+            {/* Kanban quick look: summary first, full ticket behind "Xem chi tiết" */}
             {viewMode === 'board' && boardDetailInstanceId && (() => {
                 const instance = instances.find(i => i.id === boardDetailInstanceId);
                 if (!instance) return null;
-                const template = templates.find(t => t.id === instance.templateId);
-                const creator = users.find(u => u.id === instance.createdBy);
-                const statusInfo = STATUS_MAP[instance.status];
-                const StatusIcon = statusInfo.icon;
-
                 return (
-                    <div className="fixed inset-0 z-50 flex justify-end h-[100dvh] max-h-[100dvh] overflow-hidden">
-                        {/* Backdrop */}
-                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-                        {/* Panel */}
-                        <div
-                            className="relative bg-white dark:bg-slate-900 w-full max-w-2xl h-full shadow-2xl flex flex-col overflow-hidden"
-                            style={{ animation: 'slideInRight 0.3s ease-out' }}
-                        >
-                            {/* Panel Header */}
-                            <div className="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-6 py-4">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                            <button
-                                                type="button"
-                                                onClick={() => navigate(buildWorkflowRoute(instance.id))}
-                                                className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500 hover:text-emerald-600 hover:underline"
-                                                title="Mở liên kết chuẩn"
-                                            >
-                                                {instance.code}
-                                            </button>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${statusInfo.color}`}>
-                                                <StatusIcon size={10} /> {statusInfo.label}
-                                            </span>
-                                        </div>
-                                        <h3 className="font-bold text-lg text-slate-805 dark:text-white truncate">{instance.title}</h3>
-                                        <p className="text-xs text-slate-400 mt-1">Tạo bởi: {creator?.name} • Quy trình: {template?.name}</p>
-                                    </div>
-                                    <button onClick={() => setBoardDetailInstanceId(null)} className="w-8 h-8 rounded-xl bg-slate-150 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition">
-                                        <X size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                            {/* Panel Body */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                                <WorkflowInstanceDetail
-                                    instanceId={instance.id}
-                                    onBack={() => setBoardDetailInstanceId(null)}
-                                />
-                            </div>
-                        </div>
-                    </div>
+                    <WorkflowInstanceSummaryPanel
+                        instance={instance}
+                        template={templates.find(t => t.id === instance.templateId) || null}
+                        currentNode={nodes.find(n => n.id === instance.currentNodeId) || null}
+                        users={users}
+                        logs={getInstanceLogs(instance.id)}
+                        onClose={() => setBoardDetailInstanceId(null)}
+                        onOpenDetail={() => navigate(buildWorkflowRoute(instance.id))}
+                    />
                 );
             })()}
 

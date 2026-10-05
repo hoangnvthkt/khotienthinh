@@ -176,6 +176,15 @@ describe('DailyLogSummaryWorkspace', () => {
     expect(html).not.toContain('Duyệt &amp; công bố');
   });
 
+  it('lets the CHT close a pilot day with one approve button (comparison kept, progress untouched)', () => {
+    const html = renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={{ ...bundle,
+      summaryLog: { ...bundle.summaryLog!, status: 'submitted' },
+    }} mode="review" onPublish={()=>{}} onVerifyPilot={async()=>{}} />);
+    expect(html).toContain('Duyệt (thí điểm)');
+    expect(html).toContain('bấm Duyệt (thí điểm) để khép ngày');
+    expect(html).not.toContain('Đối chiếu thử nghiệm');
+  });
+
   it('keeps reader and verified summary review free of mutation actions', () => {
     for (const restricted of [
       { ...bundle, summaryLog: { ...bundle.summaryLog!, status: 'verified' as const } },

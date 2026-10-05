@@ -1,7 +1,7 @@
 // Apply only the exact Cloud rollback-tested migration; never business fixtures or grants.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-const version = '20261008172000';
+const version = '20261008172001';
 const name = 'request_purchase_assets';
 const project = new URL(process.env.VITE_SUPABASE_URL).hostname.split('.')[0];
 if (process.argv[2] !== '--apply' || process.argv[3] !== project || !process.env.SUPABASE_ACCESS_TOKEN) throw Error('Usage: node --env-file=.env scripts/procurement/apply-request-assets.mjs --apply <expected-project>');
