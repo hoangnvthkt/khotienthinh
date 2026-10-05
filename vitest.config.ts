@@ -15,6 +15,7 @@ export default defineConfig({
       '.worktrees/**',
       'tests/request/**/*.cloud.test.ts',
       'tests/e2e/**',
+      'tests/transfer/**/*.spec.ts', // Playwright suite; run with tests/transfer/playwright.config.ts
     ],
     setupFiles: ['./lib/__tests__/setupMigrationArchive.ts'],
   },

@@ -45,3 +45,6 @@
 - Full Vitest: 3,057 passed; application typecheck: 0 diagnostics; build passed. UI at 390/768/1440 px passed with fictional data.
 - Production migration and restricted pilot seed applied atomically. Initial request is PENDING.
 - Two-column exact print layout, final signatory configuration, PDF issuance acceptance, and wider template administration are follow-ups; this rollout ends at the Office draft.
+
+- CI found Playwright files collected by Vitest; isolated that suite and reran all 3,057 unit tests successfully.
+- Cloud Preview replay revealed HR dependencies are future-dated in this repository. Reordered the CLI-created bridge after the existing migration tip; unchanged SQL, reconciled production history only.

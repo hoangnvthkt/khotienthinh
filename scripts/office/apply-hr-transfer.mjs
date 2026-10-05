@@ -2,7 +2,7 @@
 // The seed is local-only personnel data; never commit it or run the rollback smoke here.
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-const version='20261005021048';
+const version='20261008171001';
 const name='request_hr_office_transfer_bridge';
 const project=new URL(process.env.VITE_SUPABASE_URL).hostname.split('.')[0];
 const [mode,expectedProject,seedPath]=process.argv.slice(2);
