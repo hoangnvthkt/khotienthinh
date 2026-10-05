@@ -3674,7 +3674,7 @@ const ProjectFinanceWorkspace: React.FC<ProjectFinanceWorkspaceProps> = ({
         </div>
         <p className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-teal-200 bg-teal-50/70 px-3 py-2 text-xs text-teal-950 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100 md:order-last">
           <span className="min-w-0 flex-1"><b>Chỉ xem.</b> Thu tiền CĐT, chi NCC / chi khác, công nợ, ngân sách, quỹ dự án và quỹ công trường ghi ở module Tài chính.</span>
-          <a href={`#/finance?section=cost${projectId ? `&project=${projectId}` : ''}`} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">Mở Tài chính dự án này →</a>
+          <a href={`#/finance/project${projectId ? `?project=${projectId}` : ''}`} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">Mở Tài chính dự án này →</a>
         </p>
         {activeTab !== 'evidence' && <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700 hover:border-teal-500 hover:text-teal-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-teal-400">
           <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} /> Tải lại

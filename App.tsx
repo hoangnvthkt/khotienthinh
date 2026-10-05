@@ -243,6 +243,7 @@ const AppRoutes: React.FC = () => {
           <Route path="da/portfolio" element={<PortfolioDashboard />} />
           <Route path="procurement" element={<ProcurementHub />} />
           <Route path="finance" element={<FinanceHub />} />
+          <Route path="finance/:section" element={<FinanceHub />} />
           <Route path="site-fund" element={<SiteFund />} />
           <Route path="procurement/legacy" element={<ProcurementWorkbench />} />
           <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, Banknote, CalendarClock, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank, Coins,
-  ArrowLeftRight, HardHat, ListTodo, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
+  ArrowLeftRight, Building2, HardHat, ListTodo, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
 } from 'lucide-react';
 import { financeService, type FinanceAdvances, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
 import { AdvancesView, type AdvanceFilter } from './AdvancesView';
 import { ReceivablesView } from './ReceivablesView';
+import { ProjectFinanceView } from './ProjectFinanceView';
 import { SubcontractsView } from './SubcontractsView';
 import { CashView } from './CashView';
 import { CostView } from './CostView';
@@ -24,7 +25,9 @@ import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financ
 // Module Tài chính: một nơi cho công nợ, chi tiền, dòng tiền toàn công ty — không phải vào từng dự án.
 // Tổng quan (Ban giám đốc), Việc cần làm (kế toán), Phải thu, Phải trả NCC (gồm tạm ứng NCC), Thu chi & quỹ, Chi phí & ngân sách (gồm quỹ dự án), Quản trị.
 
-type Section = 'auto' | 'overview' | 'todo' | 'receivables' | 'payables' | 'cash' | 'cost' | 'settings';
+type Section = 'auto' | 'overview' | 'todo' | 'receivables' | 'payables' | 'cash' | 'cost' | 'project' | 'settings';
+const SECTIONS: readonly string[] = ['overview', 'todo', 'receivables', 'cash', 'cost', 'project', 'settings'];
+const stageOf = (s?: string | null): Stage => s === 'pending' ? 'pending' : s === 'requests' ? 'request' : s === 'advances' ? 'advances' : s === 'subcontracts' ? 'subcontracts' : 'owed';
 type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid' | 'advances' | 'subcontracts';
 type Filter = 'all' | 'overdue' | 'soon' | 'issues' | 'opening';
 type Sort = 'overdue' | 'owed' | 'due' | 'name';
@@ -36,11 +39,24 @@ const OPENING_BADGE: Record<FinanceSupplierSummary['opening'], { label: string; 
   done: { label: 'Đã chốt đầu kỳ', cls: 'border-leaf-200 bg-leaf-50 text-leaf-800' },
 };
 
-export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null; initialRequestId?: string | null; initialContractId?: string | null; initialProjectId?: string | null; initialView?: string | null; initialSubcontractId?: string | null }> = ({ currentUserId, initialSection, initialSupplierId, initialRequestId, initialContractId, initialProjectId, initialView, initialSubcontractId }) => {
+export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: string | null; initialSupplierId?: string | null; initialRequestId?: string | null; initialContractId?: string | null; initialProjectId?: string | null; initialView?: string | null; initialSubcontractId?: string | null;
+  /** Đổi phần → đổi đường dẫn /finance/<phần> (menu bên tô đúng mục, nút Quay lại của trình duyệt dùng được). */
+  onSectionChange?: (section: string) => void }> = ({ currentUserId, initialSection, initialSupplierId, initialRequestId, initialContractId, initialProjectId, initialView, initialSubcontractId, onSectionChange }) => {
   // Không chỉ định phần: Ban giám đốc (Tài chính — Quản trị) vào Tổng quan, kế toán vào Việc cần làm.
-  const [section, setSection] = useState<Section>(initialSection === 'settings' || initialSection === 'overview' || initialSection === 'todo' || initialSection === 'receivables' || initialSection === 'cash' || initialSection === 'cost' ? initialSection
-    : initialSection || initialSupplierId || initialRequestId ? 'payables' : 'auto');
-  const [stage, setStage] = useState<Stage>(initialSection === 'pending' ? 'pending' : initialSection === 'requests' ? 'request' : initialSection === 'advances' ? 'advances' : initialSection === 'subcontracts' ? 'subcontracts' : 'owed');
+  const sectionOf = (s?: string | null): Section => (s && SECTIONS.includes(s) ? s as Section : s || initialSupplierId || initialRequestId ? 'payables' : 'auto');
+  const [section, setSectionState] = useState<Section>(sectionOf(initialSection));
+  const [stage, setStage] = useState<Stage>(stageOf(initialSection));
+  // Menu bên / link đổi đường dẫn → đổi phần đang xem.
+  // Đường dẫn do chính màn này đổi (bấm tab) thì không đặt lại bước của Phải trả.
+  const pushed = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialSection) return;
+    if (initialSection === pushed.current) { pushed.current = null; return; }
+    setSectionState(sectionOf(initialSection));
+    if (!SECTIONS.includes(initialSection)) setStage(stageOf(initialSection));
+  }, [initialSection]); // eslint-disable-line react-hooks/exhaustive-deps
+  const go = (key: string) => { if (!onSectionChange || key === initialSection) return; pushed.current = key; onSectionChange(key); };
+  const setSection = (s: Section) => { setSectionState(s); if (s !== 'auto') go(s); };
   const [advanceFilter, setAdvanceFilter] = useState<AdvanceFilter>('active');
   const [advances, setAdvances] = useState<FinanceAdvances['totals'] | null>(null);
   const [receivables, setReceivables] = useState<FinanceReceivables['totals'] | null>(null);
@@ -85,7 +101,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     try {
       const r = await financeService.list({ projectId: projectId || undefined, source: source || undefined });
       setData(r); setStatus('ready');
-      setSection(cur => (cur === 'auto' ? (r.can.manage ? 'overview' : 'todo') : cur));
+      setSectionState(cur => (cur === 'auto' ? (r.can.manage ? 'overview' : 'todo') : cur));
       financeService.transferReviews().then(rows => setTransferCount(rows.length)).catch(() => setTransferCount(0));
       financeService.paymentRequests('request').then(d => setRequestCounts(d.counts)).catch(() => setRequestCounts(null));
       financeService.advances().then(d => setAdvances(d.totals)).catch(() => setAdvances(null));
@@ -124,7 +140,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
   const t = data?.totals;
   const hideOnMobile = mobileDetail ? 'hidden md:block' : '';
   const openPayables = (opts: { stage?: Stage; filter?: Filter; projectId?: string; pending?: 'direct' | 'statements'; transfers?: boolean; advance?: AdvanceFilter } = {}) => {
-    setSection('payables'); setStage(opts.stage || 'owed'); setFilter(opts.filter || 'all'); setShowTransfers(Boolean(opts.transfers));
+    setSectionState('payables'); setStage(opts.stage || 'owed'); go(opts.stage === 'subcontracts' ? 'subcontracts' : 'payables'); setFilter(opts.filter || 'all'); setShowTransfers(Boolean(opts.transfers));
     if (opts.advance) { setAdvanceFilter(opts.advance); setStageKey(k => k + 1); }
     if (opts.pending) setPendingTab(opts.pending);
     if (opts.projectId !== undefined) setProjectId(opts.projectId);
@@ -154,7 +170,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
 
     <nav className={`inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm ${mobileDetail ? 'hidden md:inline-flex' : ''}`} role="tablist" aria-label="Phần">
       {([['overview', 'Tổng quan', CircleDollarSign], ['todo', 'Việc cần làm', ListTodo], ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet],
-        ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['settings', 'Quản trị', Settings2]] as const).map(([k, l, I]) =>
+        ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['project', 'Tài chính dự án', Building2], ['settings', 'Quản trị', Settings2]] as const).map(([k, l, I]) =>
         <button key={k} type="button" role="tab" aria-selected={section === k} onClick={() => { setSection(k as Section); if (k === 'cost') { setCostView(null); setCostKey(x => x + 1); } }}
           className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${section === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>
           <I size={14} />{l}</button>)}
@@ -164,6 +180,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       : status === 'error' && !data ? <StateBox kind="error" title="Chưa tải được Tài chính" message={message} onRetry={() => void load()} />
         : !data || !t ? <StateBox kind="loading" title="Đang tải công nợ…" />
           : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} />
+          : section === 'project' ? <ProjectFinanceView initialProjectId={initialProjectId} />
           : section === 'cost' ? <CostView key={costKey} initialProjectId={costKey === 0 ? initialProjectId : null} initialView={costView} onChanged={() => void load(true)} />
           : section === 'cash' ? <CashView onChanged={() => void load(true)} onOpenRequests={() => openPayables({ stage: 'request' })} />
           : section === 'receivables' ? <ReceivablesView key={rcvKey} initialContractId={initialContractId} onChanged={() => void load(true)} />
@@ -195,7 +212,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                   ? `${advances.overdueCount} quá hạn hoàn ứng · ${advances.refundDueCount} chờ hoàn` : `${advances.openCount} khoản còn lại · ${advances.approving} đang duyệt`) : 'đang tải…', Coins, true],
                 ['subcontracts', 'Thầu phụ', subs ? `${subs.contracts} HĐ` : '…', subs ? (subs.roundsWaitingMe + subs.openingsPendingMe > 0 ? `${subs.roundsWaitingMe + subs.openingsPendingMe} chờ bạn`
                   : subs.openingsTodo > 0 ? `${subs.openingsTodo} HĐ chưa chốt đầu kỳ` : subs.roundsSubmitted > 0 ? `${subs.roundsSubmitted} đợt chờ ghi nhận` : 'nghiệm thu · giữ lại · TNCN') : 'đang tải…', HardHat, true]] as const).map(([k, l, v, h, I, on], i) =>
-                <button key={k} type="button" disabled={!on} aria-current={stage === k ? 'page' : undefined} onClick={() => on && setStage(k as Stage)}
+                <button key={k} type="button" disabled={!on} aria-current={stage === k ? 'page' : undefined} onClick={() => { if (!on) return; setStage(k as Stage); go(k === 'subcontracts' ? 'subcontracts' : 'payables'); }}
                   className={`rounded-2xl border bg-card p-3 text-left transition ${stage === k ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${on ? '' : 'cursor-not-allowed opacity-50'} ${i === 0 || k === 'advances' || k === 'subcontracts' ? 'col-span-2 md:col-span-1' : ''} ${k === 'advances' || k === 'subcontracts' ? 'border-dashed' : ''}`}>
                   <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{k === 'advances' ? <HandCoins size={15} className="text-teal-700" /> : k === 'subcontracts' ? <HardHat size={15} className="text-teal-700" />
                     : <span className="grid h-5 w-5 place-items-center rounded-full bg-muted text-[11px] font-bold text-foreground">{i + 1}</span>}{l}</span>

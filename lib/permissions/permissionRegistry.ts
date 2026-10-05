@@ -127,7 +127,7 @@ const authorizationAdminModule: PermissionModuleDefinition = {
 const financeModule: PermissionModuleDefinition = {
   code: 'system.finance',
   label: 'Tài chính',
-  routes: ['/finance'],
+  routes: ['/finance', '/finance/:section'],
   legacyModuleKey: 'FINANCE',
   sortOrder: 55,
   actions: ([

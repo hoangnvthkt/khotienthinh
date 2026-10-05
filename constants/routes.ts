@@ -59,6 +59,7 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
 
   // ── TÀI CHÍNH CẤP CÔNG TY ────────────────────────────
   '/finance': 'FINANCE',
+  '/finance/:section': 'FINANCE',
 
   // ── TÀI SẢN ──────────────────────────────────────────
   '/ts/dashboard':   'TS',

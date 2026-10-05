@@ -155,7 +155,7 @@ export const CostView: React.FC<{ initialProjectId?: string | null; initialView?
 };
 
 // ---------- Một dự án ----------
-const ProjectCost: React.FC<{ projectId: string; onBack: () => void; onChanged: () => void }> = ({ projectId, onBack, onChanged }) => {
+export const ProjectCost: React.FC<{ projectId: string; onBack?: () => void; onChanged: () => void }> = ({ projectId, onBack, onChanged }) => {
   const toast = useToast(); const confirm = useConfirm(); const askReason = useReasonConfirm();
   const [data, setData] = useState<FinanceProjectCost | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +165,7 @@ const ProjectCost: React.FC<{ projectId: string; onBack: () => void; onChanged: 
   const [drawer, setDrawer] = useState<{ kind: 'budget' } | { kind: 'opening' } | { kind: 'capital'; mode: 'topup' | 'return' } | null>(null);
   const load = useCallback(() => { setError(null); financeService.projectCost(projectId).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, [projectId]);
   useEffect(load, [load]);
-  const back = <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"><ArrowLeft size={15} />Toàn công ty</button>;
+  const back = onBack ? <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"><ArrowLeft size={15} />Toàn công ty</button> : null;
   if (error) return <div className="space-y-2">{back}<StateBox kind="error" title="Chưa tải được dự án" message={error} onRetry={load} /></div>;
   if (!data) return <div className="space-y-2">{back}<StateBox kind="loading" title="Đang tải dự án…" /></div>;
   const p = data.project; const f = data.fund; const can = data.can; const warn = data.warnPercent;
