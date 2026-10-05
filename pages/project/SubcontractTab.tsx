@@ -32,11 +32,12 @@ const STATUS_CFG: Record<AcceptanceStatus, { label: string; color: string; bg: s
     paid: { label: 'Đã TT', color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200', icon: <CreditCard size={12} /> },
 };
 
-const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId, canManageTab = false, isAdmin = false }) => {
+const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, projectId, canManageTab = false }) => {
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
-    const canMutate = isAdmin;
+    // Chủ SP 05/10: nghiệm thu thanh toán HĐ thầu phụ làm ở Tài chính → Phải trả → Thầu phụ; tab này chỉ xem (máy chủ cũng chặn).
+    const canMutate = false;
     const [contracts, setContracts] = useState<SubcontractorContract[]>([]);
     const [acceptances, setAcceptances] = useState<AcceptanceRecord[]>([]);
 
@@ -300,8 +301,10 @@ const SubcontractTab: React.FC<SubcontractTabProps> = ({ constructionSiteId, pro
                                 {/* Expanded: Acceptance Records */}
                                 {isExpanded && (
                                     <div className="border-t border-slate-100">
-                                        {/* Payment summary row */}
-                                        <div className="px-5 py-3 bg-gradient-to-r from-slate-50/50 to-white grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                                        <p className="mx-5 mt-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+                                            Nghiệm thu thanh toán, tạm ứng, giữ lại, công nợ của HĐ này xem và lập ở <a href={`#/finance?section=subcontracts&subcontract=${contract.id}`} className="underline">Tài chính → Phải trả → Thầu phụ</a>. Biên bản cũ dưới đây chỉ xem.</p>
+                                        {/* Payment summary row (biên bản cũ) — ẩn khi chưa có biên bản để không hiện 0 thay cho "chưa biết" */}
+                                        <div className={`px-5 py-3 bg-gradient-to-r from-slate-50/50 to-white grid-cols-2 md:grid-cols-5 gap-3 text-xs ${stats.totalAccepted > 0 ? 'grid' : 'hidden'}`}>
                                             <div><span className="text-slate-400 block text-[10px]">Giá trị HĐ</span><span className="font-black text-slate-800">{fmt(contract.value)}</span></div>
                                             <div><span className="text-slate-400 block text-[10px]">Đã NT</span><span className="font-black text-emerald-600">{fmt(stats.totalAccepted)}</span></div>
                                             <div><span className="text-slate-400 block text-[10px]">Đã TT</span><span className="font-black text-violet-600">{fmt(stats.totalPaid)}</span></div>

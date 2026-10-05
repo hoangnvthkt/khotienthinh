@@ -261,7 +261,8 @@
     "20261008171001_request_hr_office_transfer_bridge.sql",
     "20261008171002_procurement_external_intake.sql",
     "20261008172000_daily_log_reverse_flow.sql",
-    "20261008172001_request_purchase_assets.sql"
+    "20261008172001_request_purchase_assets.sql",
+    "20261008134500_finance_subcontracts.sql"
   ],
   "forbidIncludeAll": true
 }

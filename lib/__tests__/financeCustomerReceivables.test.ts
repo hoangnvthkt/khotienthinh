@@ -41,8 +41,8 @@ describe('Phải thu chủ đầu tư', () => {
   it('Dự án chỉ xem phần CĐT: máy chủ chặn ghi ngoài hàm Tài chính, giao diện ẩn thao tác', () => {
     expect(sql).toContain("raise exception using errcode = '42501', message = 'CUSTOMER_RECEIVABLE_FINANCE_ONLY'");
     expect(sql).toContain('create trigger trg_guard_customer_receivable_schedule before insert or update or delete on public.payment_schedules');
-    expect(schedule).toContain("const financeOnly = contractType === 'customer';");
-    expect(cert).toContain("const financeOnly = contractType === 'customer';");
+    expect(schedule).toContain("const financeOnly = contractType === 'customer' || contractType === 'subcontractor';");
+    expect(cert).toContain("const financeOnly = contractType === 'customer' || contractType === 'subcontractor';");
     expect(panel).toContain('Chưa đối chiếu đầu kỳ với MISA');
   });
 });

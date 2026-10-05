@@ -63,8 +63,9 @@ describe('Authorization V2 retired view-only Rooms', () => {
     expect(material).toContain('canCreate={isAdmin}');
     expect(material).toContain('canApprove={isAdmin}');
     expect(boq).toContain('const canMutate = isAdminUser;');
-    expect(subcontract).toContain('isAdmin = false');
-    expect(subcontract).toContain('const canMutate = isAdmin;');
+    // 05/10: nghiệm thu thanh toán HĐ thầu phụ chuyển sang Tài chính → Thầu phụ; tab Nhà thầu chỉ xem với mọi người, kể cả Admin.
+    expect(subcontract).toContain('const canMutate = false;');
+    expect(subcontract).toContain('#/finance?section=subcontracts');
     expect(dashboard).toContain('isAdmin={isAdmin}');
   });
 });

@@ -70,14 +70,14 @@ export const AdvancesView: React.FC<{ initialFilter?: AdvanceFilter; supplierId?
           <div className="min-w-0"><p className="flex flex-wrap items-center gap-2"><span className={`text-lg ${ENT}`}>{a.code}</span><Badge className={STATE[a.state].cls}>{STATE[a.state].label}</Badge>
             {a.overdue && <Badge className="overdue-blink border-rose-300 bg-rose-50 text-rose-700">Quá hạn hoàn ứng {late} ngày</Badge>}</p>
             <p className={`text-sm ${ENT}`}>{a.supplierName}</p>
-            <p className="text-xs text-muted-foreground">{a.target?.kind === 'contract' ? 'HĐ nguyên tắc' : 'Đơn'} <b className="text-foreground">{a.target?.no}</b> · {a.projectCode || 'Kho Tổng (cấp công ty)'}
-              {a.percent != null && ` · ${Number(a.percent).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% giá trị ${a.target?.kind === 'contract' ? 'HĐ' : 'đơn'}`} · hạn hoàn ứng {viDate(a.repayDueDate)}</p></div>
+            <p className="text-xs text-muted-foreground">{a.target?.kind === 'contract' ? 'HĐ nguyên tắc' : a.target?.kind === 'subcontract' ? 'HĐ thầu phụ' : 'Đơn'} <b className="text-foreground">{a.target?.no}</b> · {a.projectCode || 'Kho Tổng (cấp công ty)'}
+              {a.percent != null && ` · ${Number(a.percent).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% giá trị ${a.target?.kind === 'po' ? 'đơn' : 'HĐ'}`} · hạn hoàn ứng {viDate(a.repayDueDate)}</p></div>
           <span className={`text-2xl ${NUM}`}>{money(a.amount)} đ</span>
         </div>
         {a.note && <p className="mt-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">{a.note}</p>}
 
         {a.state === 'refund_due' && <p className="mt-3 flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><b>{a.target?.kind === 'contract' ? 'Hợp đồng' : 'Đơn'} đã kết thúc mà còn tạm ứng {money(a.remaining)} đ.</b> Ghi NCC hoàn tiền (kèm giấy báo có) hoặc chuyển sang đơn khác của NCC.</span></p>}
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><b>{a.target?.kind === 'po' ? 'Đơn' : 'Hợp đồng'} đã kết thúc mà còn tạm ứng {money(a.remaining)} đ.</b> Ghi NCC hoàn tiền (kèm giấy báo có) hoặc chuyển sang đơn khác của NCC.</span></p>}
         {a.overdue && <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />NCC chưa giao đủ hàng để trừ tạm ứng — nhờ Mua hàng đôn đốc giao, hoặc thu hồi tạm ứng.</p>}
         {(a.state === 'approving' || a.state === 'to_pay') && <p className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm">

@@ -566,3 +566,36 @@ chung 190,4 tr (bỏ trả nợ gốc 500 tr) chia SMB 118,4 tr / DA29 72 tr the
 chặn; chốt ghi 4 dòng chi phí 30/09 + quỹ dự án; đảo về 0. Quỹ công trường: giao CHT, CHT chỉ thấy quỹ mình + được tải chứng từ, ghi 2 khoản,
 CHT không tự duyệt, duyệt → quỹ −4,5 tr (công ty nợ CHT) + chi phí CPMTC, quỹ dự án không đổi; trả lại cần lý do → CHT bổ sung gửi lại lần 2;
 đảo → về 0. Hai bản quyết toán cũ đã hủy; quyền "Xem Tài chính toàn công ty".
+
+## 20. Tài chính F4 — Thầu phụ (05/10/2026)
+
+Chủ SP duyệt mockup `sc-v1` + 11 câu (05/10, đều phương án a), kèm yêu cầu: luôn cảnh báo thiếu điều kiện, có modal xác nhận / trả lại / duyệt,
+thông báo thành công / lỗi bằng tiếng Việt ghi rõ nguyên nhân; kiểm thử đủ tình huống.
+
+Migration `20261008134500_finance_subcontracts.sql`. Màn: Tài chính → Phải trả → **Thầu phụ** (`components/finance/SubcontractsView.tsx`,
+`SubcontractDrawers.tsx`); link thông báo `/finance?section=subcontracts&subcontract=<id>`.
+
+**Luật**
+- Kế toán (Ghi nhận) lập đợt theo biên bản CHT/QS (bắt buộc file) → người khác có quyền Xác nhận ghi nhận → trả bằng Đề nghị chi như NCC
+  (ma trận duyệt, người thứ ba xác nhận đã chi). Trả lại / rút / hủy nháp có lý do.
+- Nhập **lũy kế đến kỳ** (trước VAT); kỳ này = lũy kế − đợt trước; lũy kế phải tăng; vượt giá trị HĐ phải ghi lý do; không bắt buộc BOQ.
+  Mỗi HĐ chỉ một đợt đang lập / chờ ghi nhận.
+- Phải trả = gồm VAT − thu hồi tạm ứng − giữ lại − TNCN − khấu trừ khác (vật tư cấp / chi hộ / phạt / khác, từng dòng có lý do).
+  Gợi ý theo HĐ (Quản trị Tài chính khai: VAT, % giữ lại, % thu hồi — trống = tạm ứng ÷ giá trị HĐ, hạn trả, tháng bảo hành, TNCN 10% cho tổ đội cá nhân).
+- Ghi nhận: chi phí dự án CPNC = giá trị kỳ này gồm VAT (`finance_subcontract_round:<id>`); chứng từ công nợ `subcontract_round`
+  (hạn = ngày ghi nhận + số ngày HĐ, mặc định công ty) + `subcontract_retention` (hạn = ngày hoàn thành + tháng bảo hành; thiếu thì chưa có hạn
+  và **không lập đề nghị chi được**). Thu hồi tạm ứng: phần tạm ứng trước mốc (đầu kỳ) trước, phần chi qua Vioo cấn trừ vào chứng từ của đợt.
+- Đảo đợt: chỉ đợt ghi nhận gần nhất, chưa chi tiền / chưa nằm trong đề nghị chi → hủy chứng từ (trả lại phần tạm ứng đã cấn trừ), dòng âm chi phí.
+- Đầu kỳ 30/09 theo MISA từng HĐ (lũy kế, đã trả, còn nợ, giữ lại, tạm ứng chưa thu hồi) — người lập ≠ người chốt, bắt buộc file, không ghi chi phí.
+  Chưa chốt đầu kỳ thì không lập đợt; màn hiện "chưa biết" thay vì 0.
+- Tạm ứng thầu phụ = đề nghị chi loại tạm ứng gắn HĐ thầu phụ (`finance_payment_requests.subcontract_id`), tổng không vượt giá trị HĐ gồm VAT.
+- Chi phí nhân công ghi tay (có thể trùng MISA) vào "cần soát xét": giữ nguyên hoặc đảo đúng phần trùng (dòng âm cùng ngày, có lý do, `finance_cost_review:<id>`).
+- Dự án chỉ xem: trigger `SUBCONTRACT_FINANCE_ONLY` chặn ghi `payment_certificates`, `payment_schedules`, `advance_payments`, `quantity_acceptances`
+  của HĐ thầu phụ và `acceptance_records`; tab Nhà thầu, Nghiệm thu & Thanh toán, chứng từ / nghiệm thu trong HĐ ẩn thao tác, trỏ sang Tài chính.
+
+**Kiểm thử** rollback trên production (`tools/sc-test.mjs`, 78/78): quyền xem, chưa đầu kỳ bị chặn, điều khoản (Quản trị, bắt buộc lý do),
+đầu kỳ (thiếu file, tự chốt, trùng), đợt (lũy kế thấp, vượt HĐ, khác gợi ý, khấu trừ thiếu lý do, đợt thứ hai khi còn đợt mở, gửi thiếu file,
+trả lại, tự ghi nhận, ngày tương lai), ghi nhận (chứng từ, hạn giữ lại, chi phí CPNC 1,1 tỷ), giữ lại chưa đến hạn bị chặn ở đề nghị chi,
+đảo khi có đề nghị chi bị chặn → rút → đảo (chi phí ròng 0, tạm ứng trả lại), tổ đội TNCN 10% + tạm ứng Vioo cấn trừ 40 tr rồi đảo trả lại,
+chặn ghi thẳng 4 bảng phía Dự án, soát xét chi phí ghi tay (giữ / đảo 1,856 tỷ / quá số / làm lại), hồi quy danh sách tạm ứng, đề nghị chi,
+chi tiết NCC, Phải trả, Tổng quan.

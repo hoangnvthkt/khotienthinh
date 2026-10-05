@@ -54,6 +54,8 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
   const confirm = useConfirm();
   const reasonConfirm = useReasonConfirm();
   const { user } = useApp();
+  // Chủ SP 05/10: nghiệm thu thanh toán HĐ thầu phụ làm ở Tài chính → Thầu phụ; ở Dự án chỉ xem (máy chủ cũng chặn).
+  const financeOnly = contractType === 'subcontractor';
   const [items, setItems] = useState<QuantityAcceptance[]>([]);
   const [periodStart, setPeriodStart] = useState(today().slice(0, 8) + '01');
   const [periodEnd, setPeriodEnd] = useState(today());
@@ -406,6 +408,8 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
 
   return (
     <div className="space-y-3 mt-3">
+      {financeOnly && <p className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-[11px] font-semibold text-teal-900 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
+        Nghiệm thu thanh toán HĐ thầu phụ lập theo biên bản ở <a href={`#/finance?section=subcontracts&subcontract=${contractId}`} className="underline">Tài chính → Phải trả → Thầu phụ</a>. Ở đây chỉ xem.</p>}
       <div className="rounded-xl border border-slate-100 bg-white overflow-hidden">
         <div className="p-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
           <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
@@ -435,7 +439,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
             </div>
             <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px]" />
             <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="px-2 py-1.5 rounded-lg border border-slate-200 text-[10px]" />
-            <button onClick={createDraft} disabled={creating} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 disabled:opacity-50">
+            <button onClick={createDraft} disabled={creating} className={`${financeOnly ? 'hidden' : 'flex'} items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 disabled:opacity-50`}>
               <Plus size={10} /> {isInternalScope ? 'Tạo nghiệm thu nội bộ' : 'Tạo từ nhật ký verified'}
             </button>
           </div>
@@ -576,7 +580,7 @@ const QuantityAcceptancePanel: React.FC<Props> = ({ contractId, contractType, pr
                     : 'Phiếu này chưa có hạng mục. Cần tạo lại sau khi nhật ký verified có liên kết task/BOQ hợp đồng.'}
                 </div>
               )}
-              {expandedId === item.id && (
+              {expandedId === item.id && !financeOnly && (
                 <div className="mt-2 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-2">
                   {(item.status === 'draft' || item.status === 'returned') && (
                     <button onClick={() => handleSetStatus(item, 'submitted')} className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-amber-600">

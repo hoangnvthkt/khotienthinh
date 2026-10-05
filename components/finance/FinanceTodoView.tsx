@@ -1,13 +1,13 @@
 import React from 'react';
-import { Wallet, AlertTriangle, ArrowLeftRight, Banknote, Building2, Calculator, CalendarClock, CheckCircle2, ChevronRight, ClipboardList, FileCheck2, FileWarning, HandCoins, PiggyBank, RotateCcw, Scale } from 'lucide-react';
-import type { FinanceAdvances, FinanceAllocation, FinanceCost, FinanceReceivables, FinanceSiteFunds } from '../../lib/financeService';
+import { Wallet, AlertTriangle, ArrowLeftRight, Banknote, Building2, Calculator, CalendarClock, CheckCircle2, ChevronRight, ClipboardList, FileCheck2, FileWarning, HandCoins, HardHat, PiggyBank, RotateCcw, Scale, ShieldCheck } from 'lucide-react';
+import type { FinanceAdvances, FinanceAllocation, FinanceCost, FinanceReceivables, FinanceSiteFunds, FinanceSubcontracts } from '../../lib/financeService';
 import { shortMoney } from './financeUi';
 
 // Việc cần làm của kế toán: mỗi ô là một hàng đợi, bấm để mở đúng chỗ xử lý ở Phải trả.
 
 export type TodoTarget = 'opening' | 'overdue' | 'soon' | 'issues' | 'direct' | 'statements' | 'request' | 'approved' | 'transfers'
   | 'advance_overdue' | 'advance_refund' | 'advance_adjust' | 'receivable_overdue' | 'receivable_sent' | 'receivable_receipts' | 'receivable_opening' | 'receivable_guarantee' | 'cash_setup' | 'cash_confirm' | 'cash_forecast'
-  | 'cost_decide' | 'cost_over' | 'cost_fund_setup' | 'cost_fund_negative' | 'cost_stale' | 'cost_allocation' | 'cash_site';
+  | 'cost_decide' | 'cost_over' | 'cost_fund_setup' | 'cost_fund_negative' | 'cost_stale' | 'cost_allocation' | 'cash_site' | 'sub_rounds' | 'sub_opening' | 'sub_review' | 'sub_retention';
 
 export const FinanceTodoView: React.FC<{
   totals: { overdue: number; overdueCount: number; soon: number; soonCount: number; issues: number; openingPendingSuppliers: number; supplierCount: number };
@@ -19,9 +19,10 @@ export const FinanceTodoView: React.FC<{
   receivables?: FinanceReceivables['totals'] | null;
   cash?: { waitingMe: number; openings: number; reconciliations: number; movements: number; accountsWithoutOpening: number; accounts: number; belowMinWeek: string | null; lowest: number | null; minBalance: number } | null;
   cost?: FinanceCost | null; allocation?: FinanceAllocation | null; site?: FinanceSiteFunds | null;
+  subcontracts?: (FinanceSubcontracts['totals'] & { reviews: number; reviewAmount: number }) | null;
   canRecord: boolean; canConfirm: boolean;
   onGo: (target: TodoTarget) => void;
-}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, receivables: rc, cash, cost, allocation: al, site, canRecord, canConfirm, onGo }) => {
+}> = ({ totals, direct, pendingStatements, requests, transferCount, advances, receivables: rc, cash, cost, allocation: al, site, subcontracts: sc, canRecord, canConfirm, onGo }) => {
   const allocDue = al ? (al.run?.status === 'submitted' && al.run.canDecide ? 'confirm' : al.can.record && al.lastClosableMonth >= al.firstMonth && (!al.run || al.run.status === 'draft') ? 'record' : null) : null;
   const sitePending = site ? site.funds.reduce((s, f) => s + f.expenses.filter(x => x.status === 'submitted' && x.canDecide).length, 0) : null;
   const cp = cost?.projects || [];
@@ -61,6 +62,14 @@ export const FinanceTodoView: React.FC<{
       hint: cost ? `${negative.map(p => p.code).join(', ')} — ${cost.capitalProviders.join(', ') || 'người cấp vốn'} ghi cấp vốn` : '', icon: HandCoins, urgent: true },
     { key: 'cost_stale', title: 'Đơn mua quá hẹn giao > 30 ngày', count: cost ? cost.stale.count : null, value: cost ? `${cost.stale.count} đơn` : '…',
       hint: cost ? `${shortMoney(cost.stale.amount)} chưa nhận — nhắc Mua hàng kết thúc đơn NCC không giao` : '', icon: ClipboardList },
+    { key: 'sub_rounds', title: 'Đợt nghiệm thu thầu phụ chờ ghi nhận', count: sc ? sc.roundsSubmitted : null, value: sc ? `${sc.roundsSubmitted} đợt` : '…',
+      hint: sc ? (sc.roundsWaitingMe ? `${sc.roundsWaitingMe} chờ bạn ghi nhận` : 'người khác người lập ghi nhận') + (sc.roundsDraft ? ` · ${sc.roundsDraft} đợt nháp` : '') : '', icon: HardHat,
+      urgent: Boolean(sc?.roundsWaitingMe), who: canConfirm ? undefined : 'Cần quyền Tài chính — Xác nhận' },
+    { key: 'sub_opening', title: 'Đầu kỳ thầu phụ theo MISA', count: sc ? sc.openingsTodo + sc.openingsPending : null, value: sc ? `${sc.openingsTodo + sc.openingsPending} HĐ` : '…',
+      hint: sc ? `${sc.openingsTodo} chưa khai · ${sc.openingsPending} chờ chốt — chưa chốt thì chưa lập đợt được` : '', icon: FileWarning, urgent: true },
+    { key: 'sub_review', title: 'Chi phí nhân công ghi tay cần soát xét', count: sc ? sc.reviews : null, value: sc ? `${sc.reviews} khoản` : '…',
+      hint: sc ? `${shortMoney(sc.reviewAmount)} — có thể trùng số MISA đã nhập` : '', icon: AlertTriangle, urgent: true },
+    { key: 'sub_retention', title: 'Giữ lại bảo hành thầu phụ đến hạn', count: sc ? sc.retentionDue : null, value: sc ? `${sc.retentionDue} khoản` : '…', hint: 'trong 30 ngày tới — kiểm bảo hành rồi lập đề nghị chi', icon: ShieldCheck },
     { key: 'receivable_overdue', title: 'Phải thu CĐT quá hạn', count: rc ? rc.overdueCount : null, value: rc ? `${rc.overdueCount} đợt` : '…',
       hint: rc ? `${shortMoney(rc.overdue)} · CĐT đã xác nhận chưa trả — đôn đốc thu` : '', icon: AlertTriangle, urgent: true },
     { key: 'receivable_receipts', title: 'Phiếu thu CĐT chờ xác nhận', count: rc ? rc.receiptsPending : null, value: rc ? `${rc.receiptsPending} phiếu` : '…',
