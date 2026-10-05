@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { financeService, type FinanceCost, type FinanceOverview, type FinanceOverviewProject } from '../../lib/financeService';
 import { StateBox } from '../procurement/hub/hubUi';
-import { shortMoney, viDate } from './financeUi';
+import { shortMoney, viDate, projectFinanceHref, type LedgerFilter } from './financeUi';
 
 // Tổng quan tài chính cho TGĐ / GĐTC: số lớn, dòng tiền, sức khỏe từng dự án; bấm dự án để xem chi tiết.
 // Số chưa có nguồn hiện "Chưa có dữ liệu", không hiện 0. Sản lượng = tiến độ Gantt × giá trị HĐ (ước tính) cho tới khi có nghiệm thu.
@@ -144,6 +144,8 @@ export const FinanceOverviewView: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>('all');
   const [proj, setProj] = useState('all');
+  // Đang xem một dự án: ô số liệu mở Tài chính dự án đúng phần / bộ lọc.
+  const openProject = (tab: string, f: LedgerFilter = {}) => { window.location.hash = projectFinanceHref(proj, tab, f).slice(1); };
   const [open, setOpenRaw] = useState<string | null>(null);
   const setOpen = (id: string | null) => { setOpenRaw(id); window.scrollTo({ top: 0 }); };
   const load = useCallback(() => { setError(null); financeService.overview().then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, []);
@@ -217,9 +219,10 @@ export const FinanceOverviewView: React.FC<{
     <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-800 via-teal-700 to-mint-600 p-4 text-white shadow-lg sm:p-5">
       <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10" /><div className="pointer-events-none absolute -bottom-20 right-40 h-48 w-48 rounded-full bg-white/5" />
       <div className="relative grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {([['Đã thu từ chủ đầu tư', t.in, ArrowDownRight, t.contract ? `${pct(t.allReceived, t.contract)}% giá trị HĐ (lũy kế)` : periodLabel, undefined],
-          ['Chi phí đã ghi nhận', t.out, ArrowUpRight, periodLabel, undefined],
-          ['Chênh lệch thu − chi', net, TrendingUp, net >= 0 ? `Dương tiền · ${periodLabel}` : `Âm tiền · ${periodLabel}`, undefined],
+        {([['Đã thu từ chủ đầu tư', t.in, ArrowDownRight, t.contract ? `${pct(t.allReceived, t.contract)}% giá trị HĐ (lũy kế)` : periodLabel,
+            proj === 'all' ? onOpenReceivables : () => openProject('ledger', { kind: 'revenue_received' })],
+          ['Chi phí đã ghi nhận', t.out, ArrowUpRight, periodLabel, proj === 'all' ? onOpenCost : () => openProject('ledger', { kind: 'expense' })],
+          ['Chênh lệch thu − chi', net, TrendingUp, net >= 0 ? `Dương tiền · ${periodLabel}` : `Âm tiền · ${periodLabel}`, proj === 'all' ? onOpenCost : () => openProject('overview')],
           ['Phải trả NCC đang nợ', t.ap, Wallet, t.overdue ? `${shortMoney(t.overdue)} quá hạn` : 'Không quá hạn', () => onOpenPayables(proj === 'all' ? undefined : proj)]] as const).map(([l, v, I, s, click]) => {
           const body = <><p className="text-[11px] font-semibold uppercase leading-tight tracking-wide text-white/80 sm:text-xs"><I size={13} className="-mt-0.5 mr-1 inline" />{l}</p>
             <p className="mt-1 text-2xl font-black tabular-nums tracking-tight sm:text-3xl">{ty(v)}</p><p className="text-xs text-white/80">{s}</p></>;
@@ -233,8 +236,9 @@ export const FinanceOverviewView: React.FC<{
         ['Còn phải thu theo HĐ', t.contracts ? ty(t.remaining) : NO_DATA, HandCoins, 'chưa trừ giữ lại bảo hành'],
         ['Tạm ứng chủ đầu tư đã nhận', t.advance != null ? ty(t.advance) : NO_DATA, PiggyBank, 'thu hồi dần qua nghiệm thu'],
         ['Sản lượng ước tính', t.est != null ? ty(t.est) : NO_DATA, ClipboardList, 'tiến độ Gantt × HĐ · chưa có nghiệm thu']] as const).map(([l, v, I, s]) =>
-        <Card key={l} className="!p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><I size={14} className="shrink-0 text-teal-700 dark:text-teal-300" /><span>{l}</span></p>
-          <p className={`mt-0.5 font-bold tabular-nums ${v === NO_DATA ? 'text-base text-muted-foreground' : 'text-xl text-leaf-700 dark:text-leaf-300'}`}>{v}</p><p className="text-xs text-muted-foreground">{s}</p></Card>)}
+        <button key={l} type="button" onClick={() => proj === 'all' ? onOpenReceivables?.() : openProject('receivables')} className="rounded-2xl text-left transition hover:shadow focus-visible:ring-2 focus-visible:ring-teal-500">
+          <Card className="!p-3 h-full hover:border-teal-300"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><I size={14} className="shrink-0 text-teal-700 dark:text-teal-300" /><span>{l}</span></p>
+          <p className={`mt-0.5 font-bold tabular-nums ${v === NO_DATA ? 'text-base text-muted-foreground' : 'text-xl text-leaf-700 dark:text-leaf-300'}`}>{v}</p><p className="text-xs text-muted-foreground">{s}</p></Card></button>)}
     </div>
 
     {alerts.length > 0 && <Card>

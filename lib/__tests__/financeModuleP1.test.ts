@@ -26,4 +26,15 @@ describe('Tài chính — P1 xuất bản module', () => {
     expect(canAccessRoute(noFinance, '/finance/project')).toBe(true);
     expect(canAccessRoute(noFinance, '/finance/payables')).toBe(false);
   });
+
+  it('mọi chỉ số bấm được: khoản mục → Sổ giao dịch đúng khoản mục; đơn mua → mở đơn; sổ 10 dòng/trang, chi −, thu +', () => {
+    const view = readFileSync('components/finance/ProjectFinanceView.tsx', 'utf8');
+    const cost = readFileSync('components/finance/CostView.tsx', 'utf8');
+    expect(cost).toContain("onClick={() => openLedger({ item: l.symbol || '__none__' })}");
+    expect(cost).toContain('href={`#/procurement?po=${encodeURIComponent(c.poId)}`}');
+    expect(view).toContain('const PAGE = 10;');
+    expect(view).toContain("const signedOf = (x: Row) => (x.type === 'revenue_received' ? 1 : -1) * x.amount;");
+    for (const s of ['date_desc', 'date_asc', 'amount_desc', 'amount_asc']) expect(view).toContain(`'${s}'`);
+    expect(sql).toContain("'poId', c.po_id");
+  });
 });

@@ -518,7 +518,7 @@ export interface FinancePoBudgetPending {
 export interface FinanceCost {
   today: string; cutoverDate: string; warnPercent: number; can: FinanceCostCan; capitalProviders: string[]; budgetApprovers: string[];
   projects: FinanceCostProject[]; poBudget: FinancePoBudgetPending[];
-  stale: { count: number; amount: number; items: Array<{ poNumber: string; projectCode: string | null; vendor: string | null; status: string; expectedDate: string | null; openNet: number; hub: boolean }> };
+  stale: { count: number; amount: number; items: Array<{ poId: string; poNumber: string; projectCode: string | null; vendor: string | null; status: string; expectedDate: string | null; openNet: number; hub: boolean }> };
 }
 export interface FinanceCostLine {
   costItemId: string | null; symbol: string | null; name: string | null; groupSymbol: string | null; groupName: string | null;
@@ -535,7 +535,7 @@ export interface FinanceProjectCost {
   project: FinanceCostProjectSummary & { id: string; code: string; name: string; contractValue: number | null; receivedAll: number };
   items: Array<{ id: string; symbol: string; name: string; groupSymbol: string; groupName: string }>;
   lines: FinanceCostLine[]; budgets: FinanceProjectBudget[];
-  commitments: Array<{ poNumber: string; vendor: string | null; status: string; expectedDate: string | null; netTotal: number; receivedNet: number; openNet: number; stale: boolean; hub: boolean }>;
+  commitments: Array<{ poId: string; poNumber: string; vendor: string | null; status: string; expectedDate: string | null; netTotal: number; receivedNet: number; openNet: number; stale: boolean; hub: boolean }>;
   fund: FinanceProjectFund & {
     pending: number;
     openingRecord: { id: string; status: 'submitted' | 'confirmed' | 'rejected' | 'cancelled'; cutoverDate: string; receivedToDate: number; spentToDate: number; balance: number;

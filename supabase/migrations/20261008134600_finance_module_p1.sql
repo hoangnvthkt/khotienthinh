@@ -110,7 +110,7 @@ begin
         'lines', coalesce((select jsonb_agg(jsonb_build_object('costItemId', l.cost_item_id, 'amount', l.amount, 'note', l.note)) from public.finance_project_budget_lines l
           where l.budget_id = b.id), '[]'::jsonb)) order by b.version_no desc)
       from public.finance_project_budgets b where b.project_id = v_p.id), '[]'::jsonb),
-    'commitments', coalesce((select jsonb_agg(jsonb_build_object('poNumber', c.po_number, 'vendor', c.vendor_name, 'status', c.status, 'expectedDate', c.expected_date,
+    'commitments', coalesce((select jsonb_agg(jsonb_build_object('poId', c.po_id, 'poNumber', c.po_number, 'vendor', c.vendor_name, 'status', c.status, 'expectedDate', c.expected_date,
         'netTotal', c.net_total, 'receivedNet', c.received_net, 'openNet', c.open_net, 'stale', c.stale, 'hub', c.hub) order by c.stale desc, c.open_net desc)
       from app_private.finance_po_commitments(v_p.id) c where c.open_net > 0.5), '[]'::jsonb),
     'fund', app_private.finance_project_fund(v_p.id) || jsonb_build_object(
@@ -263,4 +263,45 @@ begin
         and payload->>'subcontractId' = c.id order by created_at desc limit 100) e), '[]'::jsonb),
     'partners', case when app_private.finance_can('manage') then coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'taxCode', p.tax_code) order by p.name)
       from public.business_partners p where coalesce(p.is_active, true) and p.classifications && array['contractor', 'crew', 'supplier']::text[]), '[]'::jsonb) else '[]'::jsonb end);
+end $function$;
+-- Đơn mua quá hẹn (Chi phí & ngân sách toàn công ty): trả mã đơn để bấm mở đúng đơn.
+CREATE OR REPLACE FUNCTION public.get_finance_cost_v1()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare v_actor uuid := public.current_app_user_id(); v_set public.finance_settings%rowtype; v_today date := (now() at time zone 'Asia/Ho_Chi_Minh')::date;
+begin
+  if not app_private.finance_can('view') then raise exception using errcode = '42501', message = 'FINANCE_VIEW_DENIED'; end if;
+  select * into v_set from public.finance_settings where id = 1;
+  return (with s as (select x.*, app_private.finance_project_cost_summary(x.id) cs, app_private.finance_project_fund(x.id) fund from app_private.finance_cost_scope() x),
+    st as (select * from app_private.finance_po_commitments(null) c where c.stale)
+  select jsonb_build_object('today', v_today, 'cutoverDate', v_set.ap_cutover_date, 'warnPercent', v_set.budget_warn_percent,
+    'can', app_private.finance_can_flags() || jsonb_build_object('capital', v_actor = any(v_set.capital_provider_ids)),
+    'capitalProviders', (select coalesce(jsonb_agg(app_private.finance_user_name(i)), '[]'::jsonb) from unnest(v_set.capital_provider_ids) i),
+    'budgetApprovers', (select coalesce(jsonb_agg(app_private.finance_user_name(i)), '[]'::jsonb) from unnest(v_set.budget_extra_approver_ids) i),
+    'projects', coalesce((select jsonb_agg(s.cs || s.fund || jsonb_build_object('id', s.id, 'code', s.code, 'name', s.name,
+        'contractValue', (select nullif(sum(c.value), 0) from public.customer_contracts c where c.project_id = s.id and c.status <> 'cancelled'),
+        'receivedAll', coalesce((select sum(t.amount) from public.project_transactions t where t.project_id = s.id and t.type = 'revenue_received'), 0),
+        'currentBudget', (select jsonb_build_object('id', b.id, 'versionNo', b.version_no, 'decidedAt', b.decided_at) from public.finance_project_budgets b
+          where b.project_id = s.id and b.status = 'approved'),
+        'pendingBudget', (select jsonb_build_object('id', b.id, 'versionNo', b.version_no, 'createdByName', app_private.finance_user_name(b.created_by),
+            'canDecide', app_private.finance_can('manage') and b.created_by is distinct from v_actor) from public.finance_project_budgets b
+          where b.project_id = s.id and b.status = 'submitted'),
+        'openingStatus', coalesce((select o.status from public.finance_project_fund_openings o where o.project_id = s.id and o.status in ('submitted', 'confirmed')), 'none'),
+        'openingCanDecide', exists (select 1 from public.finance_project_fund_openings o where o.project_id = s.id and o.status = 'submitted'
+          and o.created_by is distinct from v_actor and app_private.finance_can('confirm')))
+      order by (s.cs->>'actual')::numeric desc, s.code) from s), '[]'::jsonb),
+    'poBudget', coalesce((select jsonb_agg(jsonb_build_object('purchaseOrderId', o.id, 'poNumber', o.po_number, 'projectId', o.project_id,
+        'projectCode', (select code from public.projects p where p.id = o.project_id), 'vendor', o.vendor_name, 'order', (o.metadata->'budgetApproval'->>'order')::numeric,
+        'budget', (o.metadata->'budgetApproval'->>'budget')::numeric, 'projected', (o.metadata->'budgetApproval'->>'projected')::numeric,
+        'requestedByName', o.metadata->'budgetApproval'->>'requestedByName', 'requestedAt', o.metadata->'budgetApproval'->>'requestedAt',
+        'approverName', o.submitted_to_name, 'createdByName', app_private.finance_user_name(nullif(o.created_by_id, '')::uuid),
+        'canDecide', v_actor = any(v_set.budget_extra_approver_ids) and o.created_by_id is distinct from v_actor::text) order by o.last_action_at)
+      from public.purchase_orders o where o.status = 'sent' and o.archived_at is null and o.metadata->'budgetApproval'->>'status' = 'pending'), '[]'::jsonb),
+    'stale', jsonb_build_object('count', (select count(*) from st), 'amount', coalesce((select sum(open_net) from st), 0),
+      'items', coalesce((select jsonb_agg(jsonb_build_object('poId', st.po_id, 'poNumber', st.po_number, 'projectCode', p.code, 'vendor', st.vendor_name, 'status', st.status,
+          'expectedDate', st.expected_date, 'openNet', st.open_net, 'hub', st.hub) order by st.expected_date)
+        from st left join public.projects p on p.id = st.project_id), '[]'::jsonb))));
 end $function$;
