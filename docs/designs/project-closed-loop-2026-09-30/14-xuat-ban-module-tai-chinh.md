@@ -69,3 +69,16 @@ Mỗi đợt: mockup trên dữ liệu thật → chủ SP duyệt → code → 
 7. **Menu Tài chính**: (a) 7 mục con trên menu bên, mỗi mục một đường dẫn; ẩn mục không có quyền.
 8. **Chặn ghi tay `project_transactions` ở máy chủ**: (a) làm ở P3 (sau khi đã có chỗ nhập MISA trong Tài chính).
 9. **Mẫu phân quyền Tài chính theo chức vụ**: (a) thêm 4 mẫu (Kế toán viên, Kế toán trưởng, GĐ tài chính, Xem theo dự án); anh tự gán ở Cài đặt → Phân quyền.
+
+## 5. Đã làm — P1 (05/10/2026, chủ SP duyệt cả 9 câu phương án a)
+
+- **Quyền xem theo dự án**: dùng lại công tắc "xem tài chính dự án" sẵn có (`project_sensitive_view_grants` domain finance, Admin bật;
+  thành viên Room Thanh toán / Nghiệm thu tự được xem) thay vì thêm quyền mới → anh Sơn, anh Việt (SMB), chị Mơ (mọi dự án) tự xem được.
+  `app_private.finance_project_visible` = Tài chính — Xem hoặc công tắc của đúng dự án. Người chỉ xem theo dự án không có nút ghi nào.
+- **Màn Tài chính dự án** (`components/finance/ProjectFinanceView.tsx`, RPC `get_finance_project_v1`, `get_finance_my_scope_v1`):
+  Tổng quan (giá trị HĐ, CĐT đã trả, phải thu, chi phí, sản lượng − chi phí tạm tính, còn phải trả, quỹ dự án, vật tư so với dự toán, cần chú ý,
+  biểu đồ theo tháng), Chi phí & ngân sách, Phải thu, Phải trả (NCC + thầu phụ), Sổ giao dịch (tìm, lọc, xuất Excel).
+  Mở 3 hàm chi tiết (chi phí dự án, HĐ CĐT, HĐ thầu phụ) cho người xem của đúng dự án.
+- **Menu**: 9 mục con, mỗi mục một đường dẫn `/finance/<phần>`; link cũ `?section=` vẫn chạy. `/finance/project` mở cho người đăng nhập
+  (máy chủ lọc); người chỉ xem theo dự án thấy riêng màn này. Lối tắt "Tài chính dự án" ở trang Nhân viên; link trong tab Tài chính của Dự án trỏ về đây.
+- Kiểm thử rollback `tools/p1-test.mjs` 20/20.

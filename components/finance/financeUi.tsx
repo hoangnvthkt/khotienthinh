@@ -88,6 +88,17 @@ export const RouteExtrasNote: React.FC<{ route?: FinanceRouteExtras | null }> = 
   </ul>;
 };
 
+/** Bộ lọc Sổ giao dịch của Tài chính dự án (khoản mục theo ký hiệu, '__none__' = chưa xếp được). */
+export type LedgerFilter = { kind?: 'revenue_received' | 'expense' | 'payment'; item?: string; month?: string };
+/** Link mở Tài chính dự án đúng phần, đúng bộ lọc (dùng ở mọi ô số liệu bấm được). */
+export const projectFinanceHref = (projectId: string, tab: string, f: LedgerFilter = {}) => {
+  const q = new URLSearchParams({ project: projectId, tab });
+  (Object.keys(f) as Array<keyof LedgerFilter>).forEach(k => { const v = f[k]; if (v) q.set(k, v); });
+  return `#/finance/project?${q.toString()}`;
+};
+/** Ô số liệu: bấm được thì có viền khi rê chuột và mũi tên, đọc được bằng bàn phím. */
+export const clickCls = (on: boolean) => on ? 'cursor-pointer text-left transition hover:border-teal-400 hover:shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500' : '';
+
 export const FieldError: React.FC<{ error: string | null }> = ({ error }) => error
   ? <p role="alert" className="mr-auto text-sm text-rose-700 dark:text-rose-300">{error}</p> : null;
 

@@ -46,6 +46,9 @@ const EmployeeDashboard: React.FC = () => {
     // Quỹ công trường mình đang giữ (CHT): lối tắt ghi khoản chi.
     const [siteFunds, setSiteFunds] = useState<FinanceSiteFund[]>([]);
     useEffect(() => { financeService.siteFunds().then(d => setSiteFunds(d.funds.filter(f => f.mine && f.active))).catch(() => setSiteFunds([])); }, []);
+    // Người chỉ được bật công tắc xem tài chính dự án (không có Tài chính — Xem): lối tắt vào Tài chính dự án.
+    const [financeProjects, setFinanceProjects] = useState<Array<{ id: string; code: string }>>([]);
+    useEffect(() => { financeService.myScope().then(s => setFinanceProjects(s.companyView ? [] : s.projects)).catch(() => setFinanceProjects([])); }, []);
 
     // ─── Derived Employee Data ───
     const employee = useMemo(() => employees.find(e => e.userId === user.id), [employees, user.id]);
@@ -633,6 +636,14 @@ const EmployeeDashboard: React.FC = () => {
                             {f.pending > 0.5 ? ` · chờ duyệt ${Math.round(f.pending).toLocaleString('vi-VN')} đ` : ''}{rejected ? ` · ${rejected} khoản bị trả lại` : ''}</span></span>
                     <span className="text-xs font-bold text-teal-700">Ghi khoản chi →</span>
                 </button>; })}
+
+            {financeProjects.length > 0 && <button type="button" onClick={() => navigate('/finance/project')}
+                className="flex w-full items-center gap-3 rounded-2xl border border-teal-200 bg-white p-4 text-left shadow-lg hover:border-teal-400 dark:border-teal-900 dark:bg-slate-800/90">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-teal-700 to-emerald-500 text-white"><WalletCards size={18} /></span>
+                <span className="min-w-0 flex-1"><b className="block text-sm text-slate-800 dark:text-slate-100">Tài chính dự án</b>
+                    <span className="block text-xs text-slate-500">{financeProjects.map(p => p.code).join(', ')} · thu, chi, công nợ, ngân sách (chỉ xem)</span></span>
+                <span className="text-xs font-bold text-teal-700">Xem →</span>
+            </button>}
 
             {/* ═══════════ QUICK LINKS ═══════════ */}
             <div className="rounded-2xl overflow-hidden bg-white dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/60 shadow-lg dark:shadow-slate-900/40 backdrop-blur-xl p-4">

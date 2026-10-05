@@ -10,7 +10,7 @@ import {
   type SubcontractRound, type SubcontractRoundStatus, type SubcontractSummary,
 } from '../../lib/financeService';
 import { Badge, StateBox, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { ENT, NUM, dueText, shortMoney, toneOf, TONE_TEXT, viDate } from './financeUi';
+import { ENT, NUM, dueText, projectFinanceHref, shortMoney, toneOf, TONE_TEXT, viDate } from './financeUi';
 import {
   CostReviewDrawer, DEDUCTION_LABELS, SubcontractAdvanceDrawer, SubcontractOpeningDrawer, SubcontractRoundDrawer, SubcontractTermsDrawer, WARN,
 } from './SubcontractDrawers';
@@ -36,9 +36,15 @@ const OPENING_BADGE = {
   confirmed: { label: 'Đã chốt đầu kỳ', cls: 'border-leaf-200 bg-leaf-50 text-leaf-800' },
 };
 const Unknown: React.FC<{ why: string }> = ({ why }) => <span className="text-sm font-semibold text-slate-500" title={why}>chưa biết</span>;
-const Kpi: React.FC<{ icon: React.ElementType; label: string; value: React.ReactNode; hint: string; tone?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300' }) =>
-  <article className="rounded-2xl border border-border bg-card p-3 shadow-sm"><span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
-    <span className={`mt-1 block text-xl font-bold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-muted-foreground">{hint}</span></article>;
+const Kpi: React.FC<{ icon: React.ElementType; label: string; value: React.ReactNode; hint: string; tone?: string; onClick?: () => void; active?: boolean; title?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300', onClick, active, title }) => {
+  const body = <><span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
+    <span className={`mt-1 block text-xl font-bold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-muted-foreground">{hint}</span></>;
+  return onClick ? <button type="button" onClick={onClick} title={title} aria-pressed={active} className={`rounded-2xl border bg-card p-3 text-left shadow-sm transition ${active ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'}`}>{body}</button>
+    : <article className="rounded-2xl border border-border bg-card p-3 shadow-sm">{body}</article>;
+};
+const scrollTo = (id: string) => setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }), 50);
+type SFilter = 'all' | 'outstanding' | 'retention' | 'advance' | 'pit' | 'todo';
+const S_LABEL: Record<SFilter, string> = { all: '', outstanding: 'Còn phải trả', retention: 'Đang giữ lại bảo hành', advance: 'Còn tạm ứng chưa thu hồi', pit: 'Có TNCN đã khấu trừ', todo: 'Chưa chốt đầu kỳ' };
 
 // ---------- Danh sách ----------
 export const SubcontractsView: React.FC<{ initialSubcontractId?: string | null; onChanged: () => void }> = ({ initialSubcontractId, onChanged }) => {
@@ -48,6 +54,8 @@ export const SubcontractsView: React.FC<{ initialSubcontractId?: string | null; 
   const [mobile, setMobile] = useState(Boolean(initialSubcontractId));
   const [review, setReview] = useState<SubcontractCostReview | null>(null);
   const [panelKey, setPanelKey] = useState(0);
+  const [sf, setSf] = useState<SFilter>('all');
+  const toggle = (k: SFilter) => setSf(cur => cur === k ? 'all' : k);
   const load = useCallback(() => {
     setError(null);
     financeService.subcontracts().then(d => { setData(d); setSel(cur => cur || d.contracts[0]?.id || null); })
@@ -57,6 +65,8 @@ export const SubcontractsView: React.FC<{ initialSubcontractId?: string | null; 
   if (error) return <StateBox kind={error.denied ? 'denied' : 'error'} title="Chưa tải được Thầu phụ" message={error.msg} onRetry={error.denied ? undefined : load} />;
   if (!data) return <StateBox kind="loading" title="Đang tải hợp đồng thầu phụ…" />;
   const t = data.totals;
+  const shown = data.contracts.filter(c => { const m = c.metrics; return sf === 'all' || (sf === 'outstanding' && m.outstanding > 0.5) || (sf === 'retention' && m.retentionHeld > 0.5)
+    || (sf === 'advance' && m.advanceRemaining > 0.5) || (sf === 'pit' && m.pitWithheld > 0.5) || (sf === 'todo' && m.opening !== 'confirmed'); });
   const todo = data.contracts.filter(c => c.metrics.opening !== 'confirmed');
   const allUnknown = data.contracts.length > 0 && todo.length === data.contracts.length;
   const withValue = data.contracts.filter(c => (c.value || 0) > 0).length;
@@ -77,12 +87,12 @@ export const SubcontractsView: React.FC<{ initialSubcontractId?: string | null; 
   const unknownHint = allUnknown ? 'chờ đầu kỳ MISA' : todo.length ? `chưa gồm ${todo.length} HĐ chưa chốt đầu kỳ` : '';
   return <div className="space-y-3">
     <section className={`grid grid-cols-2 gap-2 lg:grid-cols-5 ${mobile ? 'hidden md:grid' : ''}`}>
-      <Kpi icon={FileText} label="Giá trị HĐ (gồm VAT)" value={shortMoney(t.value)} hint={`${withValue}/${t.contracts} HĐ có giá trị · còn lại khoán`} />
-      <Kpi icon={Wallet} label="Còn phải trả" value={allUnknown ? <Unknown why="Chưa chốt đầu kỳ MISA" /> : shortMoney(t.outstanding)} hint={unknownHint || (t.overdue > 0 ? `${shortMoney(t.overdue)} quá hạn` : 'đã ghi nhận, chưa chi')}
+      <Kpi active={sf === 'all'} onClick={() => setSf('all')} title="Xem tất cả HĐ" icon={FileText} label="Giá trị HĐ (gồm VAT)" value={shortMoney(t.value)} hint={`${withValue}/${t.contracts} HĐ có giá trị · còn lại khoán`} />
+      <Kpi active={sf === (allUnknown ? 'todo' : 'outstanding')} onClick={() => toggle(allUnknown ? 'todo' : 'outstanding')} icon={Wallet} label="Còn phải trả" value={allUnknown ? <Unknown why="Chưa chốt đầu kỳ MISA" /> : shortMoney(t.outstanding)} hint={unknownHint || (t.overdue > 0 ? `${shortMoney(t.overdue)} quá hạn` : 'đã ghi nhận, chưa chi')}
         tone={t.overdue > 0 ? 'text-rose-700 dark:text-rose-300' : undefined} />
-      <Kpi icon={ShieldCheck} label="Giữ lại bảo hành" value={allUnknown ? <Unknown why="Chưa chốt đầu kỳ MISA" /> : shortMoney(t.retentionHeld)} hint={unknownHint || 'trả khi hết bảo hành'} tone="text-foreground" />
-      <Kpi icon={HandCoins} label="Tạm ứng còn thu hồi" value={allUnknown ? <Unknown why="Chưa chốt đầu kỳ MISA" /> : shortMoney(t.advanceRemaining)} hint={unknownHint || 'trừ dần qua các đợt'} tone="text-teal-700 dark:text-teal-300" />
-      <Kpi icon={Receipt} label="TNCN đã khấu trừ" value={shortMoney(t.pitWithheld)} hint="tổ đội cá nhân · công ty nộp thay" tone="text-foreground" />
+      <Kpi active={sf === (allUnknown ? 'todo' : 'retention')} onClick={() => toggle(allUnknown ? 'todo' : 'retention')} icon={ShieldCheck} label="Giữ lại bảo hành" value={allUnknown ? <Unknown why="Chưa chốt đầu kỳ MISA" /> : shortMoney(t.retentionHeld)} hint={unknownHint || 'trả khi hết bảo hành'} tone="text-foreground" />
+      <Kpi active={sf === (allUnknown ? 'todo' : 'advance')} onClick={() => toggle(allUnknown ? 'todo' : 'advance')} icon={HandCoins} label="Tạm ứng còn thu hồi" value={allUnknown ? <Unknown why="Chưa chốt đầu kỳ MISA" /> : shortMoney(t.advanceRemaining)} hint={unknownHint || 'trừ dần qua các đợt'} tone="text-teal-700 dark:text-teal-300" />
+      <Kpi active={sf === 'pit'} onClick={() => toggle('pit')} icon={Receipt} label="TNCN đã khấu trừ" value={shortMoney(t.pitWithheld)} hint="tổ đội cá nhân · công ty nộp thay" tone="text-foreground" />
     </section>
     {cards.length > 0 && <section className={`rounded-2xl border border-border bg-card p-4 shadow-sm ${mobile ? 'hidden md:block' : ''}`}>
       <h3 className="flex items-center gap-1.5 font-bold"><CalendarClock size={16} className="text-amber-600" />Cần làm</h3>
@@ -93,7 +103,10 @@ export const SubcontractsView: React.FC<{ initialSubcontractId?: string | null; 
     {data.contracts.length === 0 ? <StateBox kind="empty" title="Chưa có hợp đồng thầu phụ" message="Lập HĐ thầu phụ ở module Hợp đồng (trạng thái Đã ký / Đang thi công); nghiệm thu thanh toán làm ở đây." />
       : <div className="grid gap-4 md:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         <ul className={`h-fit overflow-hidden rounded-2xl border border-border bg-card shadow-sm ${mobile ? 'hidden md:block' : ''}`}>
-          {data.contracts.map(c => <ContractRow key={c.id} c={c} active={sel === c.id} onClick={() => open(c.id)} />)}
+          {sf !== 'all' && <li className="flex items-center gap-2 border-b border-border bg-teal-50/60 px-3 py-2 text-xs"><span className="flex-1">Đang lọc: <b>{S_LABEL[sf]}</b> · {shown.length}/{data.contracts.length} HĐ</span>
+            <button type="button" onClick={() => setSf('all')} className="font-semibold text-teal-700 hover:underline">Bỏ lọc</button></li>}
+          {shown.length === 0 && <li className="px-4 py-6 text-center text-sm text-muted-foreground">Không có HĐ nào khớp.</li>}
+          {shown.map(c => <ContractRow key={c.id} c={c} active={sel === c.id} onClick={() => open(c.id)} />)}
         </ul>
         <section className={`min-w-0 ${mobile ? '' : 'hidden md:block'}`}>
           {sel ? <SubcontractPanel key={`${sel}:${panelKey}`} id={sel} onBack={() => setMobile(false)} onChanged={() => { load(); onChanged(); }} />
@@ -232,13 +245,13 @@ export const SubcontractPanel: React.FC<{ id: string; onBack: () => void; onChan
     </section>
 
     <section className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-6">
-      <Kpi icon={ClipboardCheck} label="Lũy kế nghiệm thu" value={m.hasRounds ? shortMoney(m.cumulativeNet) : <Unknown why="Chưa chốt đầu kỳ" />} hint={m.cumulativePercent != null ? `${m.cumulativePercent}% giá trị HĐ (trước VAT)` : 'trước VAT'}
+      <Kpi onClick={() => scrollTo('sub-rounds')} title="Xem các đợt nghiệm thu" icon={ClipboardCheck} label="Lũy kế nghiệm thu" value={m.hasRounds ? shortMoney(m.cumulativeNet) : <Unknown why="Chưa chốt đầu kỳ" />} hint={m.cumulativePercent != null ? `${m.cumulativePercent}% giá trị HĐ (trước VAT)` : 'trước VAT'}
         tone={m.cumulativePercent != null && m.cumulativePercent > 100 ? 'text-amber-700 dark:text-amber-300' : undefined} />
-      <Kpi icon={Wallet} label="Còn phải trả" value={m.opening === 'confirmed' ? shortMoney(m.outstanding) : <Unknown why="Chưa chốt đầu kỳ" />} hint={m.overdue > 0 ? `${shortMoney(m.overdue)} quá hạn` : 'đã ghi nhận, chưa chi'} tone={m.overdue > 0 ? 'text-rose-700 dark:text-rose-300' : undefined} />
-      <Kpi icon={ShieldCheck} label="Giữ lại bảo hành" value={m.opening === 'confirmed' ? shortMoney(m.retentionHeld) : <Unknown why="Chưa chốt đầu kỳ" />} hint={m.retentionDue ? `hạn ${viDate(m.retentionDue)}` : m.retentionHeld > 0 ? 'chưa có hạn' : '—'} tone="text-foreground" />
-      <Kpi icon={HandCoins} label="Tạm ứng còn thu hồi" value={m.opening === 'confirmed' ? shortMoney(m.advanceRemaining) : shortMoney(m.advanceRemainingVioo)} hint={m.opening === 'confirmed' ? `trước mốc ${shortMoney(m.advanceRemainingOpening)} · qua Vioo ${shortMoney(m.advanceRemainingVioo)}` : 'chỉ phần chi qua Vioo — chưa có đầu kỳ'} tone="text-teal-700 dark:text-teal-300" />
-      <Kpi icon={Receipt} label="TNCN đã khấu trừ" value={shortMoney(m.pitWithheld)} hint="công ty nộp thay" tone="text-foreground" />
-      <Kpi icon={Coins} label="Chi phí nhân công đã ghi" value={shortMoney(m.cost)} hint={d.budget?.budget != null ? `dự án: ${shortMoney(d.budget.projected)} / ngân sách ${shortMoney(d.budget.budget)}` : 'từ các đợt ghi nhận · dự án chưa lập ngân sách CPNC'} />
+      <Kpi onClick={() => scrollTo('sub-docs')} title="Xem công nợ đang mở" icon={Wallet} label="Còn phải trả" value={m.opening === 'confirmed' ? shortMoney(m.outstanding) : <Unknown why="Chưa chốt đầu kỳ" />} hint={m.overdue > 0 ? `${shortMoney(m.overdue)} quá hạn` : 'đã ghi nhận, chưa chi'} tone={m.overdue > 0 ? 'text-rose-700 dark:text-rose-300' : undefined} />
+      <Kpi onClick={() => scrollTo('sub-docs')} title="Xem khoản giữ lại" icon={ShieldCheck} label="Giữ lại bảo hành" value={m.opening === 'confirmed' ? shortMoney(m.retentionHeld) : <Unknown why="Chưa chốt đầu kỳ" />} hint={m.retentionDue ? `hạn ${viDate(m.retentionDue)}` : m.retentionHeld > 0 ? 'chưa có hạn' : '—'} tone="text-foreground" />
+      <Kpi onClick={() => scrollTo(d.advances.length ? 'sub-advances' : 'sub-rounds')} title="Xem tạm ứng" icon={HandCoins} label="Tạm ứng còn thu hồi" value={m.opening === 'confirmed' ? shortMoney(m.advanceRemaining) : shortMoney(m.advanceRemainingVioo)} hint={m.opening === 'confirmed' ? `trước mốc ${shortMoney(m.advanceRemainingOpening)} · qua Vioo ${shortMoney(m.advanceRemainingVioo)}` : 'chỉ phần chi qua Vioo — chưa có đầu kỳ'} tone="text-teal-700 dark:text-teal-300" />
+      <Kpi onClick={() => scrollTo('sub-rounds')} title="Xem các đợt (cột TNCN)" icon={Receipt} label="TNCN đã khấu trừ" value={shortMoney(m.pitWithheld)} hint="công ty nộp thay" tone="text-foreground" />
+      <Kpi onClick={c.projectId ? () => { window.location.hash = projectFinanceHref(c.projectId!, 'ledger', { item: 'CPNC' }).slice(1); } : undefined} title="Mở Sổ giao dịch — chi phí nhân công của dự án" icon={Coins} label="Chi phí nhân công đã ghi" value={shortMoney(m.cost)} hint={d.budget?.budget != null ? `dự án: ${shortMoney(d.budget.projected)} / ngân sách ${shortMoney(d.budget.budget)}` : 'từ các đợt ghi nhận · dự án chưa lập ngân sách CPNC'} />
     </section>
 
     {opening?.status === 'submitted' && <section className={`flex flex-wrap items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${WARN}`}>
@@ -249,7 +262,7 @@ export const SubcontractPanel: React.FC<{ id: string; onBack: () => void; onChan
         : <span className="text-xs">{opening.createdBy === d.currentUserId ? 'Chờ người khác có quyền Xác nhận chốt.' : 'Cần quyền Tài chính — Xác nhận để chốt.'}</span>}
     </section>}
 
-    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+    <section id="sub-rounds" className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5"><h3 className="mr-auto font-semibold">Các đợt nghiệm thu thanh toán</h3>
         <span className="text-xs text-muted-foreground">lũy kế · kỳ này · khấu trừ · phải trả</span></div>
       {d.rounds.length === 0 ? <p className="px-4 py-6 text-center text-sm text-muted-foreground">Chưa có đợt nào. {m.opening !== 'confirmed' ? 'Chốt đầu kỳ 30/09 trước, rồi lập đợt đầu tiên theo biên bản nghiệm thu.' : 'Bấm "Lập đợt nghiệm thu" khi có biên bản.'}</p>
@@ -257,14 +270,14 @@ export const SubcontractPanel: React.FC<{ id: string; onBack: () => void; onChan
     </section>
 
     {(docs.length > 0 || d.advances.length > 0) && <section className="grid gap-3 lg:grid-cols-2">
-      {docs.length > 0 && <article className="rounded-2xl border border-border bg-card p-4 shadow-sm"><h3 className="font-semibold">Công nợ đang mở</h3>
+      {docs.length > 0 && <article id="sub-docs" className="rounded-2xl border border-border bg-card p-4 shadow-sm"><h3 className="font-semibold">Công nợ đang mở</h3>
         <ul className="mt-2 divide-y divide-border text-sm">{docs.map(x => { const tone = toneOf(x.dueDate, x.outstanding, d.today);
           return <li key={x.id} className="flex flex-wrap items-center gap-2 py-2"><span className="min-w-0 flex-1"><b className={ENT}>{x.documentNo}</b>
             <span className="block text-xs text-muted-foreground">{SOURCE_LABELS[x.sourceType] || x.sourceType} · <span className={TONE_TEXT[tone]}>{x.sourceType === 'subcontract_retention' && !x.dueDate ? 'chưa có hạn (chưa trả được)' : dueText(x.dueDate, x.outstanding, d.today)}</span>
               {x.pendingExternal > 0 ? ` · đang chờ xác nhận chi ${shortMoney(x.pendingExternal)}` : ''}</span></span>
             <span className={NUM}>{shortMoney(x.outstanding)}</span></li>; })}</ul>
         <p className="mt-1 text-xs text-muted-foreground">Trả bằng Đề nghị chi ở Phải trả → Đang nợ (chọn đối tác này). Giữ lại chưa đến hạn không chọn được.</p></article>}
-      {d.advances.length > 0 && <article className="rounded-2xl border border-border bg-card p-4 shadow-sm"><h3 className="font-semibold">Tạm ứng qua Vioo</h3>
+      {d.advances.length > 0 && <article id="sub-advances" className="rounded-2xl border border-border bg-card p-4 shadow-sm"><h3 className="font-semibold">Tạm ứng qua Vioo</h3>
         <ul className="mt-2 divide-y divide-border text-sm">{d.advances.map(a => <li key={a.id} className="flex flex-wrap items-center gap-2 py-2"><span className="min-w-0 flex-1"><b className={ENT}>{a.code}</b>
           <span className="block text-xs text-muted-foreground">{a.status === 'paid' ? `chi ${viDate(a.paidDate)} · đã thu hồi ${shortMoney(a.offset)}${a.refunded ? ` · hoàn ${shortMoney(a.refunded)}` : ''}` : 'đang duyệt / chờ chi'} · hạn hoàn {viDate(a.repayDueDate)}</span></span>
           <span className={NUM}>{a.status === 'paid' ? `còn ${shortMoney(a.remaining)}` : shortMoney(a.amount)}</span></li>)}</ul></article>}

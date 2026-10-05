@@ -14,9 +14,10 @@ import { ACCOUNT_KINDS, AccountDrawer, CashOpeningDrawer, EXPENSE_CATEGORIES, Ex
 const SOURCE: Record<string, string> = {
   payment_request: 'Đề nghị chi', customer_receipt: 'Phiếu thu CĐT', advance_refund: 'NCC hoàn tạm ứng', external_payment: 'Chi ngoài', cash_movement: 'Thu khác', cash_transfer: 'Chuyển tiền',
 };
-const Kpi: React.FC<{ icon: React.ElementType; label: string; value: string; hint: string; tone?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300' }) =>
-  <div className="rounded-2xl border border-border bg-card p-3 shadow-sm"><span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
-    <span className={`mt-1 block text-xl font-bold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-muted-foreground">{hint}</span></div>;
+const Kpi: React.FC<{ icon: React.ElementType; label: string; value: string; hint: string; tone?: string; to?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300', to }) =>
+  <button type="button" onClick={() => to && document.getElementById(to)?.scrollIntoView({ behavior: 'smooth' })} className="rounded-2xl border border-border bg-card p-3 text-left shadow-sm transition hover:border-teal-300 hover:shadow">
+    <span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
+    <span className={`mt-1 block text-xl font-bold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-muted-foreground">{hint}</span></button>;
 const ddmm = (d: string | null) => d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '—';
 
 export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => void }> = ({ onChanged, onOpenRequests }) => {
@@ -49,11 +50,11 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
       <p className="mt-1">Khai tiền mặt, các tài khoản ngân hàng, quỹ công trường; rồi gửi số dư đầu kỳ theo MISA 30/09 để người khác chốt. Sau đó mọi khoản chi NCC, phiếu thu CĐT, chi khác khi xác nhận đều chọn tài khoản → sổ thu chi và dự báo tự cập nhật.</p>
       {can.record && <button type="button" onClick={() => setDrawer({ kind: 'account' })} className={`${primaryBtn} mt-3`}><Plus size={15} />Khai tài khoản tiền</button>}
     </section> : <section className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-      <Kpi icon={Wallet} label="Tiền hiện có" value={shortMoney(f.start)} hint={f.known ? `${f.accounts} tài khoản · theo sổ Vioo` : `${data.pending.accountsWithoutOpening} tài khoản chưa chốt đầu kỳ — số chưa đủ`} tone={f.known ? undefined : 'text-amber-700 dark:text-amber-300'} />
-      <Kpi icon={ArrowDownLeft} label="Thu 30 ngày" value={shortMoney(data.flows30.in)} hint="không gồm chuyển tiền nội bộ" />
-      <Kpi icon={ArrowUpRight} label="Chi 30 ngày" value={shortMoney(data.flows30.out)} hint="NCC, tạm ứng, chi khác" tone="text-foreground" />
-      <Kpi icon={CalendarClock} label="Dự báo sau 8 tuần" value={last ? shortMoney(last.balanceSure) : '—'} hint="chỉ tính khoản chắc chắn" tone={last && last.balanceSure < f.minBalance ? 'text-rose-700 dark:text-rose-300' : undefined} />
-      <Kpi icon={AlertTriangle} label="Tuần thấp nhất" value={f.lowest != null ? shortMoney(f.lowest) : '—'} hint={`tuần ${ddmm(f.lowestWeek)} · tối thiểu ${shortMoney(f.minBalance)}`} tone={f.belowMinWeek ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'} />
+      <Kpi to="cash-accounts" icon={Wallet} label="Tiền hiện có" value={shortMoney(f.start)} hint={f.known ? `${f.accounts} tài khoản · theo sổ Vioo` : `${data.pending.accountsWithoutOpening} tài khoản chưa chốt đầu kỳ — số chưa đủ`} tone={f.known ? undefined : 'text-amber-700 dark:text-amber-300'} />
+      <Kpi to="cash-ledger" icon={ArrowDownLeft} label="Thu 30 ngày" value={shortMoney(data.flows30.in)} hint="không gồm chuyển tiền nội bộ" />
+      <Kpi to="cash-ledger" icon={ArrowUpRight} label="Chi 30 ngày" value={shortMoney(data.flows30.out)} hint="NCC, tạm ứng, chi khác" tone="text-foreground" />
+      <Kpi to="cash-forecast" icon={CalendarClock} label="Dự báo sau 8 tuần" value={last ? shortMoney(last.balanceSure) : '—'} hint="chỉ tính khoản chắc chắn" tone={last && last.balanceSure < f.minBalance ? 'text-rose-700 dark:text-rose-300' : undefined} />
+      <Kpi to="cash-forecast" icon={AlertTriangle} label="Tuần thấp nhất" value={f.lowest != null ? shortMoney(f.lowest) : '—'} hint={`tuần ${ddmm(f.lowestWeek)} · tối thiểu ${shortMoney(f.minBalance)}`} tone={f.belowMinWeek ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'} />
     </section>}
 
     {(pendOpen.length + pendRecon.length + pendMove.length) > 0 && <section className="rounded-2xl border border-amber-300 bg-card p-4 shadow-sm">
@@ -79,7 +80,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
     {site && <SiteFundReview data={site} onChanged={() => { load(); onChanged(); }} />}
 
     {active.length > 0 && <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <section className="min-w-0 rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <section id="cash-forecast" className="min-w-0 rounded-2xl border border-border bg-card p-4 shadow-sm">
         <div className="flex flex-wrap items-baseline gap-2"><h3 className="font-bold">Dự báo dòng tiền 8 tuần</h3>
           <span className="text-xs text-muted-foreground">Chi: nợ NCC theo hạn, tạm ứng / chi khác đã lập, khoản định kỳ · Thu: đợt CĐT đã xác nhận; "có thể" = đợt đã gửi chưa xác nhận</span></div>
         <div className="mt-2 h-72"><ResponsiveContainer><ComposedChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -94,7 +95,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
         {f.belowMinWeek ? <p className="mt-1 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:bg-rose-950/30 dark:text-rose-200"><b>Từ tuần {ddmm(f.belowMinWeek)} số dư chắc chắn xuống dưới mức tối thiểu {shortMoney(f.minBalance)}</b> (thấp nhất {shortMoney(f.lowest || 0)} tuần {ddmm(f.lowestWeek)}). Đẩy nhanh đợt thu CĐT hoặc giãn chi.</p>
           : <p className="mt-1 text-xs text-muted-foreground">8 tuần tới không xuống dưới tồn quỹ tối thiểu {shortMoney(f.minBalance)}.{!f.known && ' Lưu ý: còn tài khoản chưa chốt đầu kỳ nên số dư chưa đủ.'}</p>}
       </section>
-      <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <section id="cash-accounts" className="rounded-2xl border border-border bg-card p-4 shadow-sm">
         <div className="flex items-center gap-2"><h3 className="flex items-center gap-1.5 font-bold"><Landmark size={16} className="text-teal-700" />Tài khoản tiền</h3>
           {can.record && <button type="button" onClick={() => setDrawer({ kind: 'account' })} className="ml-auto text-xs font-semibold text-teal-700 hover:underline"><Plus size={12} className="mr-0.5 inline" />Khai</button>}</div>
         <ul className="mt-2 space-y-2">{data.accounts.map(a => <li key={a.id} className={`rounded-xl border border-border px-3 py-2 ${a.active ? '' : 'opacity-50'}`}>
@@ -114,7 +115,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
       </section>
     </div>}
 
-    {active.length > 0 && <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+    {active.length > 0 && <section id="cash-ledger" className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         <h3 className="mr-auto font-semibold">Sổ thu chi</h3>
         <input type="month" value={month || data.month.slice(0, 7)} onChange={e => setMonth(e.target.value)} className={inputCls} aria-label="Tháng" />

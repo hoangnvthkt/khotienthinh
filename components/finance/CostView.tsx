@@ -4,7 +4,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceCost, type FinanceCostLine, type FinanceCostProject, type FinanceFundRowKind, type FinanceProjectBudget, type FinanceProjectCost } from '../../lib/financeService';
 import { Badge, StateBox, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
-import { ENT, NUM, shortMoney, viDate } from './financeUi';
+import { ENT, NUM, clickCls, projectFinanceHref, shortMoney, viDate, type LedgerFilter } from './financeUi';
 import { BudgetDrawer, CapitalDrawer, FundOpeningDrawer, signedMoney } from './CostDrawers';
 import { AllocationView } from './AllocationView';
 
@@ -24,9 +24,12 @@ const BUDGET_STATUS: Record<FinanceProjectBudget['status'], { label: string; cls
   superseded: { label: 'Bản cũ', cls: 'border-border bg-muted text-muted-foreground' },
 };
 
-const Kpi: React.FC<{ icon: React.ElementType; label: string; value: string; hint: React.ReactNode; tone?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300' }) =>
-  <div className="rounded-2xl border border-border bg-card p-3 shadow-sm"><span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
-    <span className={`mt-1 block text-xl font-bold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-muted-foreground">{hint}</span></div>;
+const Kpi: React.FC<{ icon: React.ElementType; label: string; value: string; hint: React.ReactNode; tone?: string; onClick?: () => void; title?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300', onClick, title }) => {
+  const body = <><span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
+    <span className={`mt-1 block text-xl font-bold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-muted-foreground">{hint}</span></>;
+  return onClick ? <button type="button" onClick={onClick} title={title} className={`rounded-2xl border border-border bg-card p-3 shadow-sm ${clickCls(true)}`}>{body}</button>
+    : <article className="rounded-2xl border border-border bg-card p-3 shadow-sm">{body}</article>;
+};
 
 /** Thanh mức dùng: xanh = đã ghi nhận, nhạt = đơn chưa nhận; đỏ khi vượt. Chưa có ngân sách thì nói rõ. */
 const UsageBar: React.FC<{ budget: number | null; actual: number; committed: number; warn: number }> = ({ budget, actual, committed, warn }) => {
@@ -87,10 +90,10 @@ export const CostView: React.FC<{ initialProjectId?: string | null; initialView?
   return <div className="space-y-3">
     <ViewTabs view={view} onChange={setView} />
     <section className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-      <Kpi icon={Calculator} label="Ngân sách chi phí" value={withBudget.length ? shortMoney(sum(p => p.budget || 0)) : 'Chưa có'} hint={`${withBudget.length}/${ps.length} dự án có ngân sách${ps.some(p => p.missingItems > 0) ? ' · còn khoản mục chưa lập' : ''}`} tone={withBudget.length ? undefined : 'text-amber-700 dark:text-amber-300'} />
-      <Kpi icon={Scale} label="Chi phí đã ghi nhận" value={shortMoney(sum(p => p.actual))} hint="theo cây khoản mục (MISA + Vioo)" />
-      <Kpi icon={ClipboardList} label="Đơn mua chưa nhận" value={shortMoney(sum(p => p.committed))} hint={data.stale.count ? <span className="font-semibold text-amber-700 dark:text-amber-300">{data.stale.count} đơn quá hẹn giao &gt; 30 ngày</span> : 'cam kết, giá trước VAT'} tone="text-foreground" />
-      <Kpi icon={HandCoins} label="Vốn công ty đang ứng" value={shortMoney(sum(p => Math.max(p.capital, 0)))} hint={negative.length ? <span className="font-semibold text-rose-700">{negative.length} dự án quỹ âm</span> : 'cho các dự án (quỹ dự án)'} tone={sum(p => p.capital) > 0.5 ? 'text-amber-700 dark:text-amber-300' : undefined} />
+      <Kpi icon={Calculator} label="Ngân sách chi phí" onClick={() => setTimeout(() => document.getElementById('cost-projects')?.scrollIntoView({ behavior: 'smooth' }), 50)} title="Xem ngân sách từng dự án" value={withBudget.length ? shortMoney(sum(p => p.budget || 0)) : 'Chưa có'} hint={`${withBudget.length}/${ps.length} dự án có ngân sách${ps.some(p => p.missingItems > 0) ? ' · còn khoản mục chưa lập' : ''}`} tone={withBudget.length ? undefined : 'text-amber-700 dark:text-amber-300'} />
+      <Kpi icon={Scale} label="Chi phí đã ghi nhận" onClick={() => setTimeout(() => document.getElementById('cost-projects')?.scrollIntoView({ behavior: 'smooth' }), 50)} title="Xem chi phí từng dự án (bấm dự án để vào khoản mục)" value={shortMoney(sum(p => p.actual))} hint="theo cây khoản mục (MISA + Vioo)" />
+      <Kpi icon={ClipboardList} label="Đơn mua chưa nhận" onClick={() => { if (data.stale.count) { setShowStale(true); setTimeout(() => document.getElementById('cost-stale')?.scrollIntoView({ behavior: 'smooth' }), 50); } else setTimeout(() => document.getElementById('cost-projects')?.scrollIntoView({ behavior: 'smooth' }), 50); }} title="Xem đơn mua chưa nhận" value={shortMoney(sum(p => p.committed))} hint={data.stale.count ? <span className="font-semibold text-amber-700 dark:text-amber-300">{data.stale.count} đơn quá hẹn giao &gt; 30 ngày</span> : 'cam kết, giá trước VAT'} tone="text-foreground" />
+      <Kpi icon={HandCoins} label="Vốn công ty đang ứng" onClick={() => setTimeout(() => document.getElementById('cost-projects')?.scrollIntoView({ behavior: 'smooth' }), 50)} title="Xem quỹ từng dự án" value={shortMoney(sum(p => Math.max(p.capital, 0)))} hint={negative.length ? <span className="font-semibold text-rose-700">{negative.length} dự án quỹ âm</span> : 'cho các dự án (quỹ dự án)'} tone={sum(p => p.capital) > 0.5 ? 'text-amber-700 dark:text-amber-300' : undefined} />
     </section>
 
     {(data.poBudget.length > 0 || ps.some(p => p.pendingBudget || p.openingCanDecide)) && <section className="rounded-2xl border border-amber-300 bg-card p-4 shadow-sm">
@@ -115,18 +118,18 @@ export const CostView: React.FC<{ initialProjectId?: string | null; initialView?
         {alerts.map((a, i) => <li key={i}><button type="button" disabled={!a.projectId} onClick={() => a.projectId && setProjectId(a.projectId)}
           className={`h-full w-full rounded-xl border bg-card p-3 text-left ${a.tone === 'rose' ? 'border-rose-200 dark:border-rose-900' : 'border-amber-200 dark:border-amber-900'} ${a.projectId ? 'hover:border-teal-400' : ''}`}>
           <b className="block">{a.title}</b><span className="block text-xs text-muted-foreground">{a.hint}</span></button></li>)}
-        {data.stale.count > 0 && <li className="md:col-span-2"><div className="rounded-xl border border-amber-200 bg-card p-3 dark:border-amber-900">
+        {data.stale.count > 0 && <li id="cost-stale" className="md:col-span-2"><div className="rounded-xl border border-amber-200 bg-card p-3 dark:border-amber-900">
           <button type="button" onClick={() => setShowStale(s => !s)} className="flex w-full items-start gap-2 text-left"><span className="min-w-0 flex-1"><b className="block">{data.stale.count} đơn mua quá hẹn giao hơn 30 ngày, còn {shortMoney(data.stale.amount)} chưa nhận</b>
             <span className="block text-xs text-muted-foreground">Nếu NCC không giao nữa, Mua hàng "Kết thúc thiếu" đơn — nếu không, phần cam kết làm dự báo vượt ngân sách bị sai.</span></span>
             <ChevronDown size={16} className={`mt-0.5 shrink-0 transition ${showStale ? 'rotate-180' : ''}`} /></button>
           {showStale && <ul className="mt-2 divide-y divide-border border-t border-border text-xs">{data.stale.items.map(s => <li key={s.poNumber} className="flex flex-wrap gap-x-3 py-1.5">
-            <b className={ENT}>{s.poNumber}</b><span>{s.projectCode || '—'}</span><span className="min-w-0 flex-1 truncate text-muted-foreground">{s.vendor || '—'}</span>
+            <a href={`#/procurement?po=${encodeURIComponent(s.poId)}`} title="Mở đơn hàng ở Mua hàng" className={`${ENT} hover:underline`}>{s.poNumber}</a><span>{s.projectCode || '—'}</span><span className="min-w-0 flex-1 truncate text-muted-foreground">{s.vendor || '—'}</span>
             <span className="text-rose-700">hẹn {viDate(s.expectedDate)}</span><span className="tabular-nums">{shortMoney(s.openNet)}</span>{!s.hub && <span className="text-muted-foreground">lập ở dự án</span>}</li>)}</ul>}
         </div></li>}
       </ul>
     </section>}
 
-    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+    <section id="cost-projects" className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
       <h3 className="border-b border-border px-4 py-2.5 font-semibold">Dự án</h3>
       {ps.length === 0 ? <p className="px-4 py-6 text-center text-sm text-muted-foreground">Chưa có dự án nào có HĐ chủ đầu tư hoặc chi phí.</p> : <>
         <ul className="divide-y divide-border md:hidden">{ps.map(p => <li key={p.id}><button type="button" onClick={() => setProjectId(p.id)} className="w-full px-4 py-3 text-left">
@@ -155,17 +158,20 @@ export const CostView: React.FC<{ initialProjectId?: string | null; initialView?
 };
 
 // ---------- Một dự án ----------
-const ProjectCost: React.FC<{ projectId: string; onBack: () => void; onChanged: () => void }> = ({ projectId, onBack, onChanged }) => {
+export const ProjectCost: React.FC<{ projectId: string; onBack?: () => void; onChanged: () => void; initialTab?: 'budget' | 'fund';
+  /** Mở Sổ giao dịch đúng bộ lọc; không truyền thì chuyển sang Tài chính dự án bằng đường dẫn. */
+  onOpenLedger?: (f: LedgerFilter) => void }> = ({ projectId, onBack, onChanged, initialTab, onOpenLedger }) => {
+  const openLedger = (f: LedgerFilter) => { if (onOpenLedger) onOpenLedger(f); else window.location.hash = projectFinanceHref(projectId, 'ledger', f).slice(1); };
   const toast = useToast(); const confirm = useConfirm(); const askReason = useReasonConfirm();
   const [data, setData] = useState<FinanceProjectCost | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'budget' | 'fund'>('budget');
+  const [tab, setTab] = useState<'budget' | 'fund'>(initialTab || 'budget');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<{ commitments?: boolean; versions?: boolean }>({});
   const [drawer, setDrawer] = useState<{ kind: 'budget' } | { kind: 'opening' } | { kind: 'capital'; mode: 'topup' | 'return' } | null>(null);
   const load = useCallback(() => { setError(null); financeService.projectCost(projectId).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, [projectId]);
   useEffect(load, [load]);
-  const back = <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"><ArrowLeft size={15} />Toàn công ty</button>;
+  const back = onBack ? <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"><ArrowLeft size={15} />Toàn công ty</button> : null;
   if (error) return <div className="space-y-2">{back}<StateBox kind="error" title="Chưa tải được dự án" message={error} onRetry={load} /></div>;
   if (!data) return <div className="space-y-2">{back}<StateBox kind="loading" title="Đang tải dự án…" /></div>;
   const p = data.project; const f = data.fund; const can = data.can; const warn = data.warnPercent;
@@ -211,15 +217,17 @@ const ProjectCost: React.FC<{ projectId: string; onBack: () => void; onChanged: 
 
     {tab === 'budget' ? <>
       <section className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Kpi icon={Calculator} label="Ngân sách" value={p.budget == null ? 'Chưa có' : shortMoney(p.budget)} hint={p.missingItems ? `${p.missingItems} khoản mục có chi phí chưa lập` : current ? `phiên bản ${current.versionNo}` : 'chỉ dự toán vật tư'} tone={p.budget == null ? 'text-amber-700' : undefined} />
-        <Kpi icon={Scale} label="Đã ghi nhận" value={shortMoney(p.actual)} hint={p.budget ? `${pct(p.actual, p.budget)}% ngân sách` : 'chi phí theo khoản mục'} />
-        <Kpi icon={ClipboardList} label="Đơn chưa nhận" value={shortMoney(p.committed)} hint={`${data.commitments.length} đơn${data.commitments.some(c => c.stale) ? ` · ${data.commitments.filter(c => c.stale).length} quá hẹn` : ''}`} tone="text-foreground" />
+        <Kpi icon={Calculator} label="Ngân sách" onClick={data.budgets.length ? () => { setOpen(o => ({ ...o, versions: true })); setTimeout(() => document.getElementById('budget-versions')?.scrollIntoView({ behavior: 'smooth' }), 50); } : undefined}
+          title="Xem các phiên bản ngân sách" value={p.budget == null ? 'Chưa có' : shortMoney(p.budget)} hint={p.missingItems ? `${p.missingItems} khoản mục có chi phí chưa lập` : current ? `phiên bản ${current.versionNo}` : 'chỉ dự toán vật tư'} tone={p.budget == null ? 'text-amber-700' : undefined} />
+        <Kpi icon={Scale} label="Đã ghi nhận" onClick={() => openLedger({ kind: 'expense' })} title="Mở Sổ giao dịch — các khoản chi phí" value={shortMoney(p.actual)} hint={p.budget ? `${pct(p.actual, p.budget)}% ngân sách` : 'chi phí theo khoản mục'} />
+        <Kpi icon={ClipboardList} label="Đơn chưa nhận" onClick={data.commitments.length ? () => { setOpen(o => ({ ...o, commitments: true })); setTimeout(() => document.getElementById('cost-commitments')?.scrollIntoView({ behavior: 'smooth' }), 50); } : undefined}
+          title="Xem danh sách đơn mua chưa nhận" value={shortMoney(p.committed)} hint={`${data.commitments.length} đơn${data.commitments.some(c => c.stale) ? ` · ${data.commitments.filter(c => c.stale).length} quá hẹn` : ''}`} tone="text-foreground" />
         <Kpi icon={AlertTriangle} label="Dự báo hoàn thành" value={p.eac == null ? 'Chưa dự báo' : shortMoney(p.eac)} hint={p.eac == null ? (p.progress == null ? 'chưa có tiến độ Gantt' : `tiến độ ${p.progress}% < 20%`) : p.budget != null && !p.missingItems ? (p.eac > p.budget ? `vượt ngân sách ${shortMoney(p.eac - p.budget)}` : `trong ngân sách (còn ${shortMoney(p.budget - p.eac)})`) : `chi phí ÷ tiến độ ${p.progress}%`}
           tone={p.eac != null && p.budget != null && p.eac > p.budget ? 'text-rose-700 dark:text-rose-300' : p.eac == null ? 'text-muted-foreground' : undefined} />
       </section>
       <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <ul className="divide-y divide-border md:hidden">{data.lines.map(l => <li key={l.costItemId || 'none'} className="px-4 py-2.5 text-sm">
-          <p className="flex items-start gap-2"><span className="min-w-0 flex-1"><b>{l.name || 'Chưa xếp được khoản mục'}</b> <span className="text-xs text-muted-foreground">{l.symbol}</span></span>
+          <p className="flex items-start gap-2"><button type="button" onClick={() => openLedger({ item: l.symbol || '__none__' })} className="min-w-0 flex-1 text-left"><b className="text-teal-800 underline-offset-2 hover:underline dark:text-teal-300">{l.name || 'Chưa xếp được khoản mục'}</b> <span className="text-xs text-muted-foreground">{l.symbol}</span></button>
             <span className="text-right tabular-nums">{shortMoney(l.actual + l.committed)} / {l.budget == null ? <span className="text-amber-700">chưa có</span> : shortMoney(l.budget)}</span></p>
           <div className="mt-1"><UsageBar budget={l.budget} actual={l.actual} committed={l.committed} warn={warn} /></div></li>)}</ul>
         <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[56rem] text-sm">
@@ -229,11 +237,11 @@ const ProjectCost: React.FC<{ projectId: string; onBack: () => void; onChanged: 
             <tr className="bg-muted/20"><td colSpan={6} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.name}</td></tr>
             {g.lines.map(l => { const left = l.budget == null ? null : l.budget - l.actual - l.committed;
               return <tr key={l.costItemId || 'none'}>
-                <td className="px-3 py-2.5"><b>{l.name || 'Giao dịch chưa xếp được khoản mục'}</b> <span className="text-xs text-muted-foreground">{l.symbol}</span>
+                <td className="px-3 py-2.5"><button type="button" onClick={() => openLedger({ item: l.symbol || '__none__' })} title="Mở Sổ giao dịch của khoản mục này" className="text-left"><b className="text-teal-800 underline-offset-2 hover:underline dark:text-teal-300">{l.name || 'Giao dịch chưa xếp được khoản mục'}</b> <span className="text-xs text-muted-foreground">{l.symbol}</span></button>
                   {l.budgetSource === 'material' && <Badge className="ml-1 border-teal-200 bg-teal-50 text-teal-800">dự toán vật tư</Badge>}
                   {l.autoMapped > 0.5 && <span className="block text-[11px] text-muted-foreground">{shortMoney(l.autoMapped)} tự xếp theo loại chi phí (chưa gắn khoản mục)</span>}</td>
                 <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{l.budget == null ? <span className="text-xs text-amber-700">chưa lập</span> : shortMoney(l.budget)}</td>
-                <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{shortMoney(l.actual)}</td>
+                <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums"><button type="button" onClick={() => openLedger({ item: l.symbol || '__none__' })} className="tabular-nums hover:text-teal-700 hover:underline">{shortMoney(l.actual)}</button></td>
                 <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-muted-foreground">{l.committed > 0.5 ? shortMoney(l.committed) : '—'}</td>
                 <td className={`whitespace-nowrap px-2 py-2.5 text-right font-semibold tabular-nums ${left != null && left < -0.5 ? 'text-rose-700' : 'text-foreground'}`}>{left == null ? '—' : signedMoney(left)}</td>
                 <td className="px-3 py-2.5"><UsageBar budget={l.budget} actual={l.actual} committed={l.committed} warn={warn} /></td></tr>; })}
@@ -243,15 +251,15 @@ const ProjectCost: React.FC<{ projectId: string; onBack: () => void; onChanged: 
         </table></div>
         <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">Vật tư so với dự toán vật tư (sửa ở Dự án → Vật tư). {auto > 0.5 ? `${shortMoney(auto)} chi phí chưa gắn khoản mục được tự xếp theo loại (vật tư, nhân công, máy, chung, khác). ` : ''}Phiếu chi khác / đơn mua làm khoản mục vượt ngân sách sẽ thêm bước "Duyệt vượt ngân sách".</p>
       </section>
-      {data.commitments.length > 0 && <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      {data.commitments.length > 0 && <section id="cost-commitments" className="rounded-2xl border border-border bg-card p-4 shadow-sm">
         <button type="button" onClick={() => setOpen(o => ({ ...o, commitments: !o.commitments }))} className="flex w-full items-center gap-2 text-left">
           <h3 className="flex-1 font-semibold">Đơn mua chưa nhận ({data.commitments.length}) · {shortMoney(p.committed)}</h3><ChevronDown size={16} className={`transition ${open.commitments ? 'rotate-180' : ''}`} /></button>
         {open.commitments && <ul className="mt-2 divide-y divide-border text-sm">{data.commitments.map(c => <li key={c.poNumber} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2">
-          <b className={ENT}>{c.poNumber}</b><span className="min-w-0 flex-1 truncate text-muted-foreground">{c.vendor || '—'}{c.hub ? '' : ' · lập ở dự án'}</span>
+          <a href={`#/procurement?po=${encodeURIComponent(c.poId)}`} title="Mở đơn hàng ở Mua hàng" className={`${ENT} hover:underline`}>{c.poNumber}</a><span className="min-w-0 flex-1 truncate text-muted-foreground">{c.vendor || '—'}{c.hub ? '' : ' · lập ở dự án'}</span>
           <span className={`text-xs ${c.stale ? 'font-semibold text-rose-700' : 'text-muted-foreground'}`}>{c.expectedDate ? `${c.stale ? 'quá hẹn · ' : 'hẹn '}${viDate(c.expectedDate)}` : 'chưa hẹn ngày'}</span>
           <span className="tabular-nums">{shortMoney(c.openNet)}<span className="text-xs text-muted-foreground"> / {shortMoney(c.netTotal)}</span></span></li>)}</ul>}
       </section>}
-      {data.budgets.length > 0 && <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      {data.budgets.length > 0 && <section id="budget-versions" className="rounded-2xl border border-border bg-card p-4 shadow-sm">
         <button type="button" onClick={() => setOpen(o => ({ ...o, versions: !o.versions }))} className="flex w-full items-center gap-2 text-left">
           <h3 className="flex-1 font-semibold">Lịch sử ngân sách ({data.budgets.length} phiên bản)</h3><ChevronDown size={16} className={`transition ${open.versions ? 'rotate-180' : ''}`} /></button>
         {open.versions && <ul className="mt-2 divide-y divide-border text-sm">{data.budgets.map(b => <li key={b.id} className="py-2">

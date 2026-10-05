@@ -137,6 +137,24 @@ export interface FinanceTransferReview {
 }
 export interface FinanceAttachment { name: string; path: string; size: number; type: string; uploadedAt: string }
 
+// ---------- Tài chính dự án (P1 xuất bản module) ----------
+export interface FinanceMyScope { companyView: boolean; can: FinanceCan; projects: Array<{ id: string; code: string; name: string }> }
+export interface FinanceProjectPage {
+  today: string; cutoverDate: string; companyView: boolean; can: FinanceCan;
+  project: { id: string; code: string; name: string; status: string | null; progress: number | null };
+  cost: Omit<FinanceCostProjectSummary, keyof FinanceProjectFund>;
+  fund: { opening: number | null; openingDate: string | null; received: number; otherIn: number; spent: number; capital: number; flow: number; balance: number | null };
+  contracts: Array<{ id: string; code: string; name: string | null; customerName: string; value: number | null; vatPercent: number; endDate: string | null; status: string;
+    metrics: CustomerContractMetrics }>;
+  subcontracts: Array<{ id: string; code: string; name: string; value: number | null; status: string; metrics: SubcontractMetrics }>;
+  payables: Array<{ id: string; code: string; documentNo: string; sourceType: string; supplierId: string; supplierName: string; documentDate: string; dueDate: string | null;
+    recognized: number; paid: number; outstanding: number; pendingExternal: number }>;
+  months: Array<{ month: string; revenue: number; cost: number; paid: number }>;
+  ledger: Array<{ id: string; date: string; type: string; category: string | null; item: string | null; itemName: string | null; amount: number; description: string | null;
+    counterparty: string | null; source: string | null; invoiceNo: string | null; payment: boolean }>;
+  ledgerTotal: number;
+}
+
 // ---------- Thầu phụ (F4) ----------
 export type SubcontractIssue = 'no_partner' | 'zero_value' | 'no_signed_date' | 'signed_future' | 'no_project' | 'status' | 'no_retention_due' | 'over_contract' | 'no_bank';
 export interface SubcontractMetrics {
@@ -361,6 +379,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_ALLOCATION_POOL_INVALID: 'Nhập nội dung, số tiền và lý do cho khoản chi phí chung thêm tay.',
   FINANCE_ALLOCATION_NOT_READY: 'Chưa gửi chốt được: HR chưa chốt bảng công tháng hoặc bảng lương tháng chưa duyệt.',
   FINANCE_COST_SETTINGS_INVALID: 'Ngưỡng 50–100%, cần ít nhất một người duyệt vượt ngân sách và một người cấp vốn.',
+  FINANCE_PROJECT_VIEW_DENIED: 'Bạn chưa được bật quyền xem tài chính của dự án này. Nhờ Admin bật công tắc "Xem tài chính dự án" cho bạn.',
   FINANCE_SUBCONTRACT_NOT_FOUND: 'Không tìm thấy hợp đồng thầu phụ. Tải lại.',
   FINANCE_SUB_PARTNER_REQUIRED: 'HĐ thầu phụ chưa gắn đối tác (thầu phụ / tổ đội) — Quản trị Tài chính chọn đối tác ở "Điều khoản thanh toán" trước.',
   FINANCE_SUB_PARTNER_LOCKED: 'HĐ đã có đợt nghiệm thu hoặc tạm ứng — không đổi đối tác được.',
@@ -499,7 +518,7 @@ export interface FinancePoBudgetPending {
 export interface FinanceCost {
   today: string; cutoverDate: string; warnPercent: number; can: FinanceCostCan; capitalProviders: string[]; budgetApprovers: string[];
   projects: FinanceCostProject[]; poBudget: FinancePoBudgetPending[];
-  stale: { count: number; amount: number; items: Array<{ poNumber: string; projectCode: string | null; vendor: string | null; status: string; expectedDate: string | null; openNet: number; hub: boolean }> };
+  stale: { count: number; amount: number; items: Array<{ poId: string; poNumber: string; projectCode: string | null; vendor: string | null; status: string; expectedDate: string | null; openNet: number; hub: boolean }> };
 }
 export interface FinanceCostLine {
   costItemId: string | null; symbol: string | null; name: string | null; groupSymbol: string | null; groupName: string | null;
@@ -516,7 +535,7 @@ export interface FinanceProjectCost {
   project: FinanceCostProjectSummary & { id: string; code: string; name: string; contractValue: number | null; receivedAll: number };
   items: Array<{ id: string; symbol: string; name: string; groupSymbol: string; groupName: string }>;
   lines: FinanceCostLine[]; budgets: FinanceProjectBudget[];
-  commitments: Array<{ poNumber: string; vendor: string | null; status: string; expectedDate: string | null; netTotal: number; receivedNet: number; openNet: number; stale: boolean; hub: boolean }>;
+  commitments: Array<{ poId: string; poNumber: string; vendor: string | null; status: string; expectedDate: string | null; netTotal: number; receivedNet: number; openNet: number; stale: boolean; hub: boolean }>;
   fund: FinanceProjectFund & {
     pending: number;
     openingRecord: { id: string; status: 'submitted' | 'confirmed' | 'rejected' | 'cancelled'; cutoverDate: string; receivedToDate: number; spentToDate: number; balance: number;
@@ -695,6 +714,8 @@ export const financeService = {
   saveAdvanceSettings(input: { warnPercent: number; extraPercent: number; graceDays: number; extraApproverIds: string[]; expectedRowVersion: number; reason: string }) {
     return call<{ ok: boolean }>('save_finance_advance_settings_v1', { p_input: input });
   },
+  myScope() { return call<FinanceMyScope>('get_finance_my_scope_v1', {}); },
+  projectPage(projectId: string) { return call<FinanceProjectPage>('get_finance_project_v1', { p_project_id: projectId }); },
   subcontracts() { return call<FinanceSubcontracts>('get_finance_subcontracts_v1', {}); },
   subcontract(id: string) { return call<SubcontractDetail>('get_finance_subcontract_v1', { p_subcontract_id: id }); },
   saveSubcontractTerms(input: { subcontractId: string; partnerId?: string | null; vatPercent: number | null; retentionPercent: number | null; advanceRecoveryPercent: number | null;

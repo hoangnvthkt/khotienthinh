@@ -279,7 +279,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
     ],
     FINANCE: [
-      { to: '/finance', icon: Wallet, label: 'Tài chính công ty' },
+      { to: '/finance/overview', icon: LayoutDashboard, label: 'Tổng quan' },
+      { to: '/finance/todo', icon: ClipboardCheck, label: 'Việc cần làm' },
+      { to: '/finance/receivables', icon: Inbox, label: 'Phải thu' },
+      { to: '/finance/payables', icon: Wallet, label: 'Phải trả' },
+      { to: '/finance/subcontracts', icon: HardHat, label: 'Thầu phụ' },
+      { to: '/finance/cash', icon: Landmark, label: 'Thu chi & quỹ' },
+      { to: '/finance/cost', icon: Calculator, label: 'Chi phí & ngân sách' },
+      { to: '/finance/project', icon: Building2, label: 'Tài chính dự án' },
+      { to: '/finance/settings', icon: Settings, label: 'Quản trị' },
     ],
     TS: [
       { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
