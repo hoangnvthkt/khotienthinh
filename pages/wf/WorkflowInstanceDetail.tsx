@@ -25,7 +25,6 @@ import {
     canUserActOnWorkflowStep,
     getEffectiveStepAssigneeIds,
     getWorkflowAssigneeDisplay,
-    getWorkflowStepSelectionMode,
     resolveCurrentWorkflowAssignees,
     resolveWorkflowStepAssigneeCandidates,
 } from '../../lib/workflowAssignmentResolver';
@@ -38,14 +37,15 @@ import {
     WorkflowMentionTrigger,
 } from '../../lib/workflowCommentMentions';
 import { canSeeMaterialRequestWorkflowOnKanban, isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
-import { supabase } from '../../lib/supabase';
-import { saveAs } from 'file-saver';
-import { loadXlsx } from '../../lib/loadXlsx';
 import { TableFieldInput, FileFieldInput } from './WorkflowInstances';
+import WorkflowFilePreview from '../../components/workflow/WorkflowFilePreview';
+import WorkflowInstanceActionDialog from '../../components/workflow/WorkflowInstanceActionDialog';
+import { formatWorkflowFileSize, getWorkflowFileKind, normalizeWorkflowFiles, type WorkflowFileValue } from '../../lib/workflowFiles';
+import { downloadWorkflowFile, hasDownloadableFile, uploadWorkflowAttachment } from '../../lib/workflowFileTransfer';
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { buildWorkflowRoute } from '../../lib/workflowRoutes';
-import { approvalAdvancesStage, getWorkflowStepActionCopy, getWorkflowStepApprovalState } from '../../lib/workflowStepType';
+import { getWorkflowStepActionCopy, getWorkflowStepApprovalState } from '../../lib/workflowStepType';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
     DRAFT: 'Bản nháp',
@@ -100,214 +100,6 @@ const WorkflowCommentBody: React.FC<{
     }
     if (lastIndex < body.length) parts.push(body.slice(lastIndex));
     return <>{parts}</>;
-};
-
-// ========== Excel Table Preview ==========
-const ExcelTablePreview: React.FC<{
-    sheets: Record<string, any[][]>;
-    sheetNames: string[];
-}> = ({ sheets, sheetNames }) => {
-    const [activeSheet, setActiveSheet] = useState(sheetNames[0] || '');
-    const data = sheets[activeSheet] || [];
-    if (!data.length) return <p className="text-xs text-slate-400 italic">Không có dữ liệu</p>;
-
-    const headers = data[0] || [];
-    const rows = data.slice(1);
-
-    return (
-        <div className="mt-2 rounded-xl border border-emerald-250 dark:border-emerald-800/40 overflow-hidden bg-white dark:bg-slate-900">
-            {sheetNames.length > 1 && (
-                <div className="flex gap-0 border-b border-emerald-100 dark:border-emerald-800/30 bg-emerald-50/50 dark:bg-emerald-900/10 overflow-x-auto">
-                    {sheetNames.map(name => (
-                        <button key={name} onClick={() => setActiveSheet(name)}
-                            className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all border-b-2 ${activeSheet === name
-                                ? 'text-emerald-700 dark:text-emerald-300 border-emerald-500 bg-white dark:bg-slate-800'
-                                : 'text-slate-400 border-transparent hover:text-slate-600'
-                                }`}>
-                            <Table2 size={10} className="inline mr-1" />{name}
-                        </button>
-                    ))}
-                </div>
-            )}
-            <div className="overflow-auto max-h-[250px]" style={{ maxWidth: '100%' }}>
-                <table className="w-full text-xs text-left">
-                    <thead className="sticky top-0 z-10 bg-emerald-100 dark:bg-emerald-900/40">
-                        <tr>
-                            {headers.map((h: any, i: number) => (
-                                <th key={i} className="px-3 py-2 font-bold whitespace-nowrap border-b text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700">
-                                    {h ?? `Cột ${i + 1}`}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows.map((row: any[], ri: number) => (
-                            <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/50 dark:bg-slate-800/30'}>
-                                {headers.map((_: any, ci: number) => (
-                                    <td key={ci} className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-850 text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                                        {row[ci] ?? ''}
-                                    </td>
-                                ))}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-                <FileSpreadsheet size={10} className="inline mr-1" />
-                {rows.length} dòng × {headers.length} cột
-            </div>
-        </div>
-    );
-};
-
-// ========== File Helpers ==========
-const WORKFLOW_ATTACHMENT_BUCKET = 'workflow-attachments';
-
-const downloadFileFromBase64 = (base64: string, fileName: string, mimeType: string) => {
-    const byteChars = atob(base64);
-    const byteNumbers = new Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType || 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-};
-
-const getBase64DataUrl = (base64: string, mimeType: string) => `data:${mimeType};base64,${base64}`;
-
-const getAttachmentBucket = (file: any) => file?.storageBucket || WORKFLOW_ATTACHMENT_BUCKET;
-
-const hasDownloadableFile = (file: any) => Boolean(file?.data || file?.storagePath);
-
-const downloadWorkflowFile = async (file: any) => {
-    try {
-        if (file?.data) {
-            downloadFileFromBase64(file.data, file.fileName, file.fileType);
-            return;
-        }
-        if (file?.storagePath) {
-            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
-            if (error || !data) throw error || new Error('Không tải được file');
-            saveAs(data, file.fileName || 'attachment');
-        }
-    } catch (err) {
-        console.error('downloadWorkflowFile error:', err);
-        alert('Không tải được file đính kèm. Vui lòng thử lại.');
-    }
-};
-
-// ========== File Preview Modal ==========
-const FilePreviewModal: React.FC<{
-    file: any;
-    onClose: () => void;
-}> = ({ file, onClose }) => {
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [previewError, setPreviewError] = useState('');
-    const isImage = /^image\//i.test(file?.fileType || '');
-    const isPdf = /pdf/i.test(file?.fileType || '') || /\.pdf$/i.test(file?.fileName || '');
-    const isExcel = /\.xlsx|xls|csv$/i.test(file?.fileName || '');
-
-    useEffect(() => {
-        let objectUrl: string | null = null;
-        let cancelled = false;
-        setPreviewUrl(null);
-        setPreviewError('');
-
-        const loadPreview = async () => {
-            if (!file || (!isImage && !isPdf)) return;
-            if (file.data) {
-                setPreviewUrl(getBase64DataUrl(file.data, isPdf ? 'application/pdf' : file.fileType));
-                return;
-            }
-            if (!file.storagePath) {
-                setPreviewError('File cũ không còn dữ liệu xem trước');
-                return;
-            }
-            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
-            if (cancelled) return;
-            if (error || !data) {
-                console.error('File preview download error:', error);
-                setPreviewError('Không tải được bản xem trước');
-                return;
-            }
-            objectUrl = URL.createObjectURL(data);
-            setPreviewUrl(objectUrl);
-        };
-
-        loadPreview();
-        return () => {
-            cancelled = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [file, isImage, isPdf]);
-
-    if (!file) return null;
-
-    return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-                <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                    <Paperclip size={16} className="text-rose-400" />
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{file.fileName}</p>
-                        <p className="text-[10px] text-slate-400">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
-                    </div>
-                    <button
-                        onClick={() => downloadWorkflowFile(file)}
-                        disabled={!hasDownloadableFile(file)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-md"
-                    >
-                        <Download size={13} /> Tải về
-                    </button>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
-                        <X size={18} />
-                    </button>
-                </div>
-                <div className="flex-1 overflow-auto p-4">
-                    {isImage && previewUrl && (
-                        <div className="flex items-center justify-center">
-                            <img src={previewUrl} alt={file.fileName} className="max-w-full max-h-[70vh] rounded-lg shadow-lg" />
-                        </div>
-                    )}
-                    {isPdf && previewUrl && (
-                        <iframe
-                            src={previewUrl}
-                            className="w-full h-[70vh] rounded-lg border border-slate-200 dark:border-slate-700"
-                            title={file.fileName}
-                        />
-                    )}
-                    {(isImage || isPdf) && !previewUrl && (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                            <FileText size={48} className="mb-3 opacity-50" />
-                            <p className="text-sm font-medium">{previewError || 'Đang tải bản xem trước...'}</p>
-                        </div>
-                    )}
-                    {isExcel && file.excelData && file.sheetNames && (
-                        <ExcelTablePreview sheets={file.excelData} sheetNames={file.sheetNames} />
-                    )}
-                    {isExcel && (!file.excelData || !file.sheetNames) && (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                            <FileSpreadsheet size={48} className="mb-3 opacity-50" />
-                            <p className="text-sm font-medium">File Excel lưu trữ trong Storage</p>
-                        </div>
-                    )}
-                    {!isImage && !isPdf && !isExcel && (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                            <FileText size={48} className="mb-3 opacity-50" />
-                            <p className="text-sm font-medium">Không hỗ trợ xem trước loại tệp này</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
 };
 
 // ========== Attachment Preview inside Comments ==========
@@ -375,11 +167,9 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const [isUploading, setIsUploading] = useState(false);
     const [isSendingComment, setIsSendingComment] = useState(false);
     const [commentError, setCommentError] = useState('');
-    const [actionError, setActionError] = useState('');
-    const [actionComment, setActionComment] = useState('');
-    const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
     const [activeAction, setActiveAction] = useState<WorkflowInstanceAction | null>(null);
-    const [previewFile, setPreviewFile] = useState<any>(null);
+    const [preview, setPreview] = useState<{ files: WorkflowFileValue[]; index: number } | null>(null);
+    const [docError, setDocError] = useState('');
     const [fieldsExpanded, setFieldsExpanded] = useState(true);
     const [directLoadState, setDirectLoadState] = useState<'idle' | 'loading' | 'resolved'>('idle');
     const [copiedLink, setCopiedLink] = useState(false);
@@ -483,20 +273,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         return nextEdge ? nodes.find(node => node.id === nextEdge.targetNodeId) || null : null;
     }, [currentNode, edges, nodes]);
 
-    const revisionNode = useMemo(() => {
-        if (!currentNode) return null;
-        const previousEdge = edges.find(edge => edge.targetNodeId === currentNode.id);
-        const previous = previousEdge ? nodes.find(node => node.id === previousEdge.sourceNodeId) : null;
-        if (!previous || previous.type !== WorkflowNodeType.START) return previous || null;
-        const firstEdge = edges.find(edge => edge.sourceNodeId === previous.id);
-        return firstEdge ? nodes.find(node => node.id === firstEdge.targetNodeId) || null : null;
-    }, [currentNode, edges, nodes]);
 
     const currentStepCopy = getWorkflowStepActionCopy(currentNode);
     // "Tất cả phải duyệt": only the last pending approver moves the ticket on.
     const approvalState = getWorkflowStepApprovalState(instance, currentNode);
     const userAlreadyApproved = approvalState.requiresAll && approvalState.approved.includes(user.id);
-    const approvalAdvances = approvalAdvancesStage(approvalState, user.id);
     const userLabel = (userId: string) => users.find(item => item.id === userId)?.name || 'Người dùng';
     const canAct = useMemo(() => {
         if (!instance) return false;
@@ -525,29 +306,6 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
     const canAdministerInstance = user.role === Role.ADMIN
         || canPerform(user, 'workflow.instance.administer', { scopeType: 'global', scopeId: '*' });
-
-    const transitionTargetNode = activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? revisionNode : nextNode;
-    const transitionCandidates = useMemo(() => {
-        if (!transitionTargetNode || !instance || transitionTargetNode.type === WorkflowNodeType.END) return [];
-        return resolveWorkflowStepAssigneeCandidates({
-            node: transitionTargetNode,
-            instance,
-            users,
-            employees,
-            orgUnits,
-            logs: instanceLogs,
-        });
-    }, [transitionTargetNode, instance, users, employees, orgUnits, instanceLogs]);
-
-    const transitionSelectionMode = getWorkflowStepSelectionMode(transitionTargetNode);
-    const approvalHoldsStage = activeAction === WorkflowInstanceAction.APPROVED && !approvalAdvances;
-    const mustChooseAssignee = Boolean(
-        activeAction &&
-        activeAction !== WorkflowInstanceAction.REJECTED &&
-        !approvalHoldsStage &&
-        transitionTargetNode &&
-        transitionTargetNode.type !== WorkflowNodeType.END
-    );
 
     // ========== timing / SLA calculation ==========
     const stepTimings = useMemo(() => {
@@ -658,22 +416,6 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         return () => window.removeEventListener('focus', onFocus);
     }, [loadComments]);
 
-    useEffect(() => {
-        setSelectedAssigneeIds([]);
-        setActionError('');
-    }, [activeAction, transitionTargetNode?.id]);
-
-    const toggleAssignee = (candidateId: string) => {
-        setSelectedAssigneeIds(prev => {
-            if (transitionSelectionMode === 'single') {
-                return prev[0] === candidateId ? [] : [candidateId];
-            }
-            return prev.includes(candidateId)
-                ? prev.filter(id => id !== candidateId)
-                : [...prev, candidateId];
-        });
-    };
-
     const handleAttachmentFiles = async (files: FileList | File[] | null) => {
         if (!id || !files?.length) return;
         const remaining = workflowInstanceCommentService.maxAttachmentsPerComment - draftAttachments.length;
@@ -783,34 +525,6 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         }
     };
 
-    const runAction = async (action: WorkflowInstanceAction) => {
-        if (!id) return false;
-        const targetNode = action === WorkflowInstanceAction.REVISION_REQUESTED ? revisionNode : nextNode;
-        const holdsStage = action === WorkflowInstanceAction.APPROVED && !approvalAdvances;
-        if (action !== WorkflowInstanceAction.REJECTED && !holdsStage && targetNode && targetNode.type !== WorkflowNodeType.END && selectedAssigneeIds.length === 0) {
-            setActionError('Vui lòng chọn người nhận xử lý bước tiếp theo.');
-            return false;
-        }
-
-        setActionError('');
-        const result = await processInstance(
-            id,
-            action,
-            user.id,
-            actionComment,
-            action === WorkflowInstanceAction.REJECTED || holdsStage ? [] : selectedAssigneeIds,
-        );
-        if (!result.ok) {
-            setActionError(result.errorMessage || 'Không xử lý được phiếu. Vui lòng thử lại.');
-            return false;
-        }
-        setActionComment('');
-        setActiveAction(null);
-        setSelectedAssigneeIds([]);
-        await reloadInstance();
-        return true;
-    };
-
     const handleStartEditDescription = () => {
         if (!instance) return;
         setEditTitle(instance.title);
@@ -837,37 +551,33 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         }
     };
 
-    const handleDocUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!id || !instance || !files?.length) return;
+    const handleDocUpload = async (files: FileList | File[] | null) => {
+        const selected = Array.from(files || []);
+        if (!id || !instance || selected.length === 0) return;
         setIsUploadingDoc(true);
-        try {
-            const uploaded = [];
-            for (const file of Array.from(files)) {
-                const uploadedFile = await workflowInstanceCommentService.uploadAttachment({
-                    instanceId: id,
-                    file,
-                    draftId: crypto.randomUUID()
-                });
-                uploaded.push({
-                    id: uploadedFile.id,
-                    fileName: uploadedFile.fileName,
-                    storagePath: uploadedFile.storagePath,
-                    fileSize: uploadedFile.fileSize,
-                    mimeType: uploadedFile.mimeType
-                });
+        setDocError('');
+        const uploaded: WorkflowFileValue[] = [];
+        const failed: string[] = [];
+        for (const file of selected) {
+            try {
+                uploaded.push(await uploadWorkflowAttachment(file));
+            } catch (err) {
+                console.error('Doc upload error:', err);
+                failed.push(err instanceof Error && err.message.includes('25MB') ? err.message : `Không tải được "${file.name}".`);
             }
-            const currentAttachments = instance.formData?.attachments || [];
-            const newAttachments = [...currentAttachments, ...uploaded];
-            const updatedFormData = {
-                ...instance.formData,
-                attachments: newAttachments
-            };
-            await updateInstance(instance.id, { formData: updatedFormData });
-            await reloadInstance();
+        }
+        try {
+            if (uploaded.length > 0) {
+                await updateInstance(instance.id, {
+                    formData: { ...instance.formData, attachments: [...(instance.formData?.attachments || []), ...uploaded] },
+                });
+                await reloadInstance();
+            }
         } catch (err) {
-            console.error('Doc upload error:', err);
+            console.error('Doc save error:', err);
+            failed.push('Đã tải file lên nhưng chưa lưu được vào phiếu. Vui lòng thử lại.');
         } finally {
+            if (failed.length > 0) setDocError(failed.join(' '));
             setIsUploadingDoc(false);
         }
     };
@@ -885,12 +595,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         await reloadInstance();
     };
 
-    const handleDownloadDoc = (file: any) => {
-        downloadWorkflowFile({
-            fileName: file.fileName,
-            storagePath: file.storagePath
-        });
-    };
+    const handleDownloadDoc = (file: WorkflowFileValue) => { void downloadWorkflowFile(file); };
 
     const isDefaultWatcher = useMemo(() => (template?.defaultWatchers || []).includes(user.id), [template, user.id]);
     const isCustomWatcher = useMemo(() => (instance?.watchers || []).includes(user.id), [instance, user.id]);
@@ -1152,7 +857,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         {canAct ? (
                             <div className={`grid ${currentStepCopy.canReject ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:flex sm:items-center sm:gap-2`}>
                                 <button
-                                    onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.APPROVED); }}
+                                    onClick={() => { setActiveAction(WorkflowInstanceAction.APPROVED); }}
                                     disabled={userAlreadyApproved}
                                     title={userAlreadyApproved ? `Đang chờ: ${approvalState.pending.map(userLabel).join(', ')}` : undefined}
                                     className={`${currentStepCopy.canReject ? 'col-span-3' : 'col-span-2'} sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60`}
@@ -1163,13 +868,13 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                         : currentStepCopy.primaryLabel}</span>
                                 </button>
                                 <button
-                                    onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
+                                    onClick={() => { setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
                                     className="inline-flex items-center justify-center gap-1 rounded-xl border border-pink-300 dark:border-pink-800 text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
                                     <RotateCcw size={13} /> <span className="truncate">Yêu cầu bổ sung</span>
                                 </button>
                                 {currentStepCopy.canReject && <button
-                                    onClick={() => { setActionError(''); setSelectedAssigneeIds([]); setActionComment(''); setActiveAction(WorkflowInstanceAction.REJECTED); }}
+                                    onClick={() => { setActiveAction(WorkflowInstanceAction.REJECTED); }}
                                     className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
                                     <XCircle size={13} /> <span>Từ chối</span>
@@ -1239,12 +944,10 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                             <div className="flex items-center gap-3 text-xs font-bold">
                                 {instance.status === WorkflowInstanceStatus.RUNNING && canAdministerInstance && (
                                     <>
-                                        <button
-                                            onClick={handleStartEditDescription}
-                                            className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1"
-                                        >
-                                            Tải lên tài liệu
-                                        </button>
+                                        <label className={`flex cursor-pointer items-center gap-1 font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 ${isUploadingDoc ? 'pointer-events-none opacity-60' : ''}`}>
+                                            <Paperclip size={13} /> {isUploadingDoc ? 'Đang tải lên…' : 'Tải lên tài liệu'}
+                                            <input type="file" multiple className="hidden" disabled={isUploadingDoc} onChange={event => { void handleDocUpload(event.target.files); event.target.value = ''; }} />
+                                        </label>
                                         <span className="text-slate-300">•</span>
                                         <button
                                             onClick={handleStartEditDescription}
@@ -1270,42 +973,47 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                             )}
                         </div>
 
-                        {/* File attachments grid (Clean cards style matching screenshot) */}
-                        {instance.formData?.attachments && instance.formData.attachments.length > 0 && (
-                            <div className="pt-2">
-                                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-                                    {instance.formData.attachments.map((file: any, index: number) => {
-                                        const isPdf = /\.pdf$/i.test(file.fileName || '');
-                                        return (
-                                            <div key={file.id || index} className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-3 text-xs relative group hover:border-emerald-300 transition-all">
-                                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold uppercase ${isPdf ? 'bg-red-50 dark:bg-red-950/40 text-red-500' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-500'
-                                                    }`}>
-                                                    {isPdf ? 'PDF' : <Paperclip size={18} />}
-                                                </div>
-                                                <div className="min-w-0 flex-1 space-y-1">
-                                                    <p className="font-bold text-slate-800 dark:text-slate-200 truncate" title={file.fileName}>
-                                                        {file.fileName}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-semibold">
-                                                        <span>{formatBytes(file.fileSize)}</span>
-                                                        <span>•</span>
-                                                        <button onClick={() => setPreviewFile(file)} className="hover:text-emerald-600 font-bold">Xem trước</button>
-                                                        <span>•</span>
-                                                        <button onClick={() => handleDownloadDoc(file)} className="hover:text-emerald-600 font-bold">Tải về</button>
-                                                        {instance.status === WorkflowInstanceStatus.RUNNING && canAdministerInstance && (
-                                                            <>
-                                                                <span>•</span>
-                                                                <button onClick={() => handleDeleteDoc(file)} className="hover:text-red-500 font-bold">Xoá</button>
-                                                            </>
-                                                        )}
+                        {docError && <p className="pt-1 text-xs font-bold text-red-500">{docError}</p>}
+
+                        {/* Attached documents: several at once, previewed together */}
+                        {(() => {
+                            const documents = normalizeWorkflowFiles(instance.formData?.attachments);
+                            if (documents.length === 0) return null;
+                            const canEditDocs = instance.status === WorkflowInstanceStatus.RUNNING && canAdministerInstance;
+                            return (
+                                <div className="pt-2">
+                                    <div className="mb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Tài liệu đính kèm ({documents.length})</div>
+                                    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+                                        {documents.map((file, index) => {
+                                            const kind = getWorkflowFileKind(file);
+                                            return (
+                                                <div key={file.id || file.storagePath || index} className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 p-3 text-xs relative group hover:border-emerald-300 transition-all">
+                                                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[10px] font-bold uppercase ${kind === 'pdf' ? 'bg-red-50 dark:bg-red-950/40 text-red-500' : kind === 'image' ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-500' : kind === 'excel' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-500'}`}>
+                                                        {kind === 'pdf' ? 'PDF' : kind === 'excel' ? 'XLS' : kind === 'image' ? 'IMG' : <Paperclip size={18} />}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1 space-y-1">
+                                                        <p className="font-bold text-slate-800 dark:text-slate-200 truncate" title={file.fileName}>{file.fileName}</p>
+                                                        <div className="flex flex-wrap items-center gap-x-2 text-[10px] text-slate-400 font-semibold">
+                                                            <span>{formatWorkflowFileSize(file.fileSize)}</span>
+                                                            <span>•</span>
+                                                            <button onClick={() => setPreview({ files: documents, index })} className="hover:text-emerald-600 font-bold">Xem trước</button>
+                                                            <span>•</span>
+                                                            <button onClick={() => handleDownloadDoc(file)} className="hover:text-emerald-600 font-bold">Tải về</button>
+                                                            {canEditDocs && (
+                                                                <>
+                                                                    <span>•</span>
+                                                                    <button onClick={() => handleDeleteDoc(file)} className="hover:text-red-500 font-bold">Xoá</button>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
 
                     {/* Section 2: TRƯỜNG TUỲ CHỈNH */}
@@ -1431,33 +1139,37 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                                                     )}
 
                                                                     {/* File field rendering */}
-                                                                    {field.type === 'file' && value && typeof value === 'object' && value.fileName ? (
-                                                                        <div className="flex items-center gap-3 px-3.5 py-2.5 bg-slate-50/50 dark:bg-slate-850/50 border border-slate-200 dark:border-slate-800 rounded-xl text-xs max-w-md">
-                                                                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
-                                                                                <Paperclip size={16} />
-                                                                            </div>
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <span className="block font-semibold text-slate-800 dark:text-slate-200 truncate" title={value.fileName}>
-                                                                                    {value.fileName}
-                                                                                </span>
-                                                                                <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
-                                                                                    {(value.fileSize / 1024).toFixed(1)} KB
-                                                                                </span>
-                                                                            </div>
-                                                                            <div className="flex items-center gap-1 shrink-0">
-                                                                                <button onClick={() => setPreviewFile(value)} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước">
-                                                                                    <Eye size={14} />
-                                                                                </button>
-                                                                                {hasDownloadableFile(value) && (
-                                                                                    <button onClick={() => downloadWorkflowFile(value)} className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
-                                                                                        <Download size={14} />
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-                                                                    ) : field.type === 'file' && (
-                                                                        <span className="text-slate-300 dark:text-slate-600 font-normal italic text-xs pl-6">Chưa có tệp đính kèm</span>
-                                                                    )}
+                                                                    {field.type === 'file' && (() => {
+                                                                        const fieldFiles = normalizeWorkflowFiles(value);
+                                                                        if (fieldFiles.length === 0) {
+                                                                            return <span className="text-slate-300 dark:text-slate-600 font-normal italic text-xs pl-6">Chưa có tệp đính kèm</span>;
+                                                                        }
+                                                                        return (
+                                                                            <ul className="space-y-1.5 max-w-md">
+                                                                                {fieldFiles.map((file, fileIndex) => (
+                                                                                    <li key={file.storagePath || fileIndex} className="flex items-center gap-3 px-3.5 py-2.5 bg-slate-50/50 dark:bg-slate-850/50 border border-slate-200 dark:border-slate-800 rounded-xl text-xs">
+                                                                                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 dark:bg-rose-950/20 text-rose-500 shrink-0">
+                                                                                            <Paperclip size={16} />
+                                                                                        </div>
+                                                                                        <div className="min-w-0 flex-1">
+                                                                                            <span className="block font-semibold text-slate-800 dark:text-slate-200 truncate" title={file.fileName}>{file.fileName}</span>
+                                                                                            <span className="block text-[10px] text-slate-400 font-medium mt-0.5">{formatWorkflowFileSize(file.fileSize)}</span>
+                                                                                        </div>
+                                                                                        <div className="flex items-center gap-1 shrink-0">
+                                                                                            <button onClick={() => setPreview({ files: fieldFiles, index: fileIndex })} className="p-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-500 transition-colors" title="Xem trước" aria-label={`Xem trước ${file.fileName}`}>
+                                                                                                <Eye size={14} />
+                                                                                            </button>
+                                                                                            {hasDownloadableFile(file) && (
+                                                                                                <button onClick={() => void downloadWorkflowFile(file)} className="p-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về" aria-label={`Tải về ${file.fileName}`}>
+                                                                                                    <Download size={14} />
+                                                                                                </button>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        );
+                                                                    })()}
 
                                                                     {/* Textarea field rendering */}
                                                                     {field.type === 'textarea' && (
@@ -1488,7 +1200,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         currentUser={user}
                         users={users}
                         canEdit={canAct || canAdministerInstance}
-                        onPreviewFile={(file) => setPreviewFile(file)}
+                        onPreviewFile={(file) => setPreview({ files: [file], index: 0 })}
                     />
 
                     {/* Section 4: LIÊN KẾT */}
@@ -1778,8 +1490,8 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             </div>
 
             {/* File Preview Overlay Modal */}
-            {previewFile && (
-                <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+            {preview && (
+                <WorkflowFilePreview files={preview.files} startIndex={preview.index} onClose={() => setPreview(null)} />
             )}
             {/* Watchers Selection Modal */}
             {showWatchersModal && (
@@ -1898,111 +1610,8 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 </div>
             )}
 
-            {/* Action Dialog Modal */}
-            {activeAction && (
-                <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-                    <div className="bg-white dark:bg-slate-800 rounded-t-3xl sm:rounded-2xl p-4 sm:p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto animate-scale-in">
-                        <div className="mobile-sheet-handle sm:hidden" />
-                        <div className="flex justify-between items-center mb-3 sm:mb-4 pb-2.5 sm:pb-3 border-b border-slate-100 dark:border-slate-700">
-                            <h3 className="text-xs sm:text-sm font-black uppercase text-slate-800 dark:text-white flex items-center gap-2">
-                                {activeAction === WorkflowInstanceAction.APPROVED ? (
-                                    <><CheckCircle className="text-emerald-500 shrink-0" size={17} /> <span>{currentStepCopy.dialogTitle}</span></>
-                                ) : activeAction === WorkflowInstanceAction.REVISION_REQUESTED ? (
-                                    <><RotateCcw className="text-amber-500 shrink-0" size={17} /> <span>Yêu cầu chỉnh sửa / bổ sung</span></>
-                                ) : (
-                                    <><XCircle className="text-red-500 shrink-0" size={17} /> <span>Từ chối đề xuất</span></>
-                                )}
-                            </h3>
-                            <button onClick={() => setActiveAction(null)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 transition-colors">
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="space-y-4">
-                            {/* Assignee Selection */}
-                            {approvalHoldsStage && (
-                                <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-semibold text-sky-800 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-200">
-                                    Giai đoạn này cần tất cả cùng {currentStepCopy.isAction ? 'hoàn thành' : 'duyệt'}. Sau khi bạn xác nhận, phiếu vẫn chờ:{' '}
-                                    <strong>{approvalState.pending.filter(id => id !== user.id).map(userLabel).join(', ')}</strong>.
-                                </div>
-                            )}
-                            {activeAction !== WorkflowInstanceAction.REJECTED && !approvalHoldsStage && transitionTargetNode?.type !== WorkflowNodeType.END && (
-                                <div className="animate-fade-in">
-                                    <label className="block text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
-                                        Người nhận bước "{transitionTargetNode?.label || 'tiếp theo'}" *
-                                    </label>
-                                    {transitionCandidates.length === 0 ? (
-                                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-bold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                                            Không tìm thấy nhân sự phù hợp để chỉ định.
-                                        </div>
-                                    ) : (
-                                        <div className="grid gap-2 max-h-[180px] overflow-y-auto pr-1">
-                                            {transitionCandidates.map(candidate => {
-                                                const checked = selectedAssigneeIds.includes(candidate.id);
-                                                return (
-                                                    <button
-                                                        key={candidate.id}
-                                                        type="button"
-                                                        onClick={() => toggleAssignee(candidate.id)}
-                                                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${checked ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/30' : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800'}`}
-                                                    >
-                                                        <span className={`flex h-5 w-5 items-center justify-center rounded border text-[10px] font-black ${checked ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600'}`}>{checked ? '✓' : ''}</span>
-                                                        <span className="min-w-0">
-                                                            <span className="block truncate text-xs font-black text-slate-800 dark:text-slate-100">{candidate.name}</span>
-                                                            <span className="block truncate text-[10px] font-semibold text-slate-400">{candidate.sublabel || candidate.role}</span>
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                    <div className="mt-2 text-[10px] font-semibold text-slate-400">
-                                        {transitionSelectionMode === 'multiple' ? 'Chọn một hoặc nhiều người nhận' : 'Chỉ được chọn một người nhận'}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Comment Textarea */}
-                            <div>
-                                <label className="block text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
-                                    Ý kiến / Ghi chú xử lý
-                                </label>
-                                <textarea
-                                    value={actionComment}
-                                    onChange={event => setActionComment(event.target.value)}
-                                    placeholder="Ý kiến phê duyệt hoặc lý do từ chối/yêu cầu bổ sung..."
-                                    rows={3}
-                                    className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-850 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300"
-                                />
-                            </div>
-
-                            {actionError && (
-                                <div className="rounded-lg bg-red-50 dark:bg-red-950/20 px-3 py-2 text-xs font-bold text-red-650 dark:text-red-300">
-                                    {actionError}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex gap-2.5 mt-5 pt-3 border-t border-slate-100 dark:border-slate-700">
-                            <button
-                                onClick={() => setActiveAction(null)}
-                                className="flex-1 min-h-[42px] py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-700 transition"
-                            >
-                                Hủy
-                            </button>
-                            <button
-                                disabled={mustChooseAssignee && selectedAssigneeIds.length === 0}
-                                onClick={async () => {
-                                    const ok = await runAction(activeAction);
-                                    if (ok) setActiveAction(null);
-                                }}
-                                className="flex-1 min-h-[42px] py-2.5 bg-indigo-500 hover:bg-indigo-650 disabled:opacity-50 text-white rounded-xl font-bold text-xs transition"
-                            >
-                                Xác nhận xử lý
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {activeAction && id && (
+                <WorkflowInstanceActionDialog instanceId={id} action={activeAction} onClose={() => setActiveAction(null)} onDone={reloadInstance} />
             )}
 
             {/* Edit details and custom fields Modal */}

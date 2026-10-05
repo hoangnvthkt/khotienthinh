@@ -1,4 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { normalizeWorkflowFiles } from '../lib/workflowFiles';
+import { getWorkflowInstanceInsight } from '../lib/workflowInstanceInsight';
+import { WaitingForYouBadge, WorkflowWaitChip } from './workflow/WorkflowInstanceVisuals';
 import { useWorkflow } from '../context/WorkflowContext';
 import { useApp } from '../context/AppContext';
 import {
@@ -18,7 +21,7 @@ import {
     resolveWorkflowStepAssigneeCandidates,
 } from '../lib/workflowAssignmentResolver';
 import { canPerform } from '../lib/permissions/permissionService';
-import { approvalAdvancesStage, getWorkflowStepApprovalState, isWorkflowActionStep } from '../lib/workflowStepType';
+import { approvalAdvancesStage, getWorkflowStepActionCopy, getWorkflowStepApprovalState, isWorkflowActionStep } from '../lib/workflowStepType';
 
 // Left accent stripe per instance status. Base keeps the card body neutral and
 // reserves strong colour for the deadline state (see resolveCardTone below).
@@ -58,10 +61,14 @@ interface KanbanBoardProps {
     employees?: Employee[];
     orgUnits?: OrgUnit[];
     onCardClick: (instance: WorkflowInstance) => void;
+    /** True when the signed-in user can act on the ticket's current step. */
+    isWaitingForMe?: (instance: WorkflowInstance) => boolean;
+    /** Approve / reject straight from a card that is waiting on the user. */
+    onQuickAction?: (instance: WorkflowInstance, action: WorkflowInstanceAction) => void;
     onDragComplete: (instanceId: string, action: WorkflowInstanceAction, comment: string, assigneeIds?: string[]) => void;
 }
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employees = [], orgUnits = [], onCardClick, onDragComplete }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employees = [], orgUnits = [], onCardClick, isWaitingForMe, onQuickAction, onDragComplete }) => {
     const { templates, nodes, edges, logs, getInstanceLogs, processInstance, reopenInstance } = useWorkflow();
     const { user, users } = useApp();
     const canReopenWorkflowInstance = user.role === Role.ADMIN
@@ -183,11 +190,12 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
             if (typeof value === 'string') return value.trim() || null;
             if (typeof value === 'number') return String(value);
             if (typeof value === 'boolean') return value ? 'Có' : 'Không';
-            if (Array.isArray(value)) return value.length ? `${value.length} dòng` : null;
+            if (Array.isArray(value)) {
+                if (normalizeWorkflowFiles(value).length > 0) return '[FILE]';
+                return value.length ? `${value.length} dòng` : null;
+            }
             if (typeof value === 'object') {
-                const fileName = (value as { fileName?: string }).fileName;
-                if (fileName) return '[FILE]';
-                return null;
+                return normalizeWorkflowFiles(value).length > 0 ? '[FILE]' : null;
             }
             return null;
         };
@@ -419,7 +427,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
     const getColumnAccent = (colId: string) => {
         if (colId === '__COMPLETED__') return 'var(--wf-green)';
         if (colId === '__REJECTED__') return 'var(--wf-overdue)';
-        return 'var(--wf-border-strong)';
+        return 'var(--wf-green-soft)';
     };
 
     const formatTimeAgo = (dateStr: string) => {
@@ -535,7 +543,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                     return (
                         <div
                             key={col.id}
-                            className="wf-surface flex shrink-0 flex-col overflow-hidden rounded-lg border"
+                            className={`wf-surface shrink-0 flex-col overflow-hidden rounded-xl border sm:flex ${colInstances.length === 0 && !isVirtual ? 'hidden' : 'flex'}`}
                             style={{
                                 width: '308px',
                                 maxHeight: '100%',
@@ -601,6 +609,12 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                     </span>
                                 </div>
 
+                                {stats && stats.avatarUsers.length > 0 && (
+                                    <p className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--wf-text-muted)' }} title={stats.avatarUsers.map(a => a.name).join(', ')}>
+                                        Duyệt: {stats.avatarUsers.slice(0, 2).map(a => a.name).join(', ')}{stats.avatarUsers.length > 2 ? ` +${stats.avatarUsers.length - 2}` : ''}
+                                    </p>
+                                )}
+
                                 {/* Stats row: assigned / total · overdue count — step SLA on the right */}
                                 <div
                                     className="mt-1 flex items-center justify-between text-[10px]"
@@ -656,10 +670,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                     const isDragging = draggedInstanceId === instance.id;
                                     const instanceLogs = getInstanceLogs(instance.id);
                                     const lastLog = instanceLogs[instanceLogs.length - 1];
-                                    const hasFiles = Object.keys(instance.formData || {}).some(k => {
-                                        const v = instance.formData[k];
-                                        return v && typeof v === 'object' && v.fileName;
-                                    });
+                                    const hasFiles = Object.values(instance.formData || {}).some(v => normalizeWorkflowFiles(v).length > 0);
                                     const sla = !isVirtual ? getSlaInfo(instance, col as WorkflowNode) : null;
                                     const currentAssignees = resolveCurrentWorkflowAssignees(
                                         instance,
@@ -671,6 +682,15 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                     const isUnassigned = !isVirtual && isRunning && currentAssignees.length === 0;
                                     const tone = resolveCardTone(sla, isUnassigned);
                                     const metaSummary = buildMetaSummary(instance);
+                                    const waiting = isRunning && !isVirtual && Boolean(isWaitingForMe?.(instance));
+                                    const insight = getWorkflowInstanceInsight(
+                                        instance,
+                                        actionableColumns,
+                                        lastLog ? Date.parse(lastLog.createdAt) : undefined,
+                                        Date.now(),
+                                    );
+                                    const needsAttention = isRunning && (insight.overdue || insight.stale);
+                                    const stepCopy = getWorkflowStepActionCopy(isVirtual ? null : col as WorkflowNode);
                                     const canDragCard = isRunning
                                         || ((instance.status === WorkflowInstanceStatus.COMPLETED
                                             || instance.status === WorkflowInstanceStatus.REJECTED)
@@ -683,13 +703,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                             onDragStart={e => handleDragStart(e, instance.id)}
                                             onDragEnd={handleDragEnd}
                                             onClick={() => onCardClick(instance)}
-                                            className={`wf-card wf-surface group cursor-pointer rounded-md border ${isDragging ? 'wf-card-dragging' : ''}`}
+                                            className={`wf-card wf-surface group cursor-pointer rounded-xl border ${isDragging ? 'wf-card-dragging' : ''}`}
                                             style={{
                                                 borderColor: tone === 'overdue'
                                                     ? 'var(--wf-overdue)'
                                                     : tone === 'urgent'
                                                         ? 'var(--wf-urgent)'
-                                                        : 'var(--wf-border)',
+                                                        : waiting ? '#fcd34d' : 'var(--wf-border)',
                                                 borderLeftWidth: CARD_STRIPE_WIDTH[tone],
                                                 borderLeftColor: tone === 'overdue'
                                                     ? 'var(--wf-overdue)'
@@ -715,11 +735,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                                         >
                                                             {instance.title}
                                                         </h4>
-                                                        <span
-                                                            className="mt-0.5 block font-mono text-[9px]"
-                                                            style={{ color: 'var(--wf-text-faint)' }}
-                                                        >
-                                                            {instance.code}
+                                                        <span className="mt-0.5 flex items-center gap-1.5">
+                                                            <span className="font-mono text-[10px] font-semibold" style={{ color: 'var(--wf-green-text)' }}>
+                                                                {instance.code}
+                                                            </span>
+                                                            {waiting && <WaitingForYouBadge short />}
                                                         </span>
                                                     </div>
                                                     {hasFiles && (
@@ -787,6 +807,29 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                                     </div>
                                                 )}
 
+                                                {waiting && onQuickAction && (
+                                                    <div className="mt-2 flex gap-1.5" onClick={e => e.stopPropagation()} draggable={false}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onQuickAction(instance, WorkflowInstanceAction.APPROVED)}
+                                                            className="flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-white transition"
+                                                            style={{ backgroundColor: 'var(--wf-green)' }}
+                                                        >
+                                                            ✓ {stepCopy.isAction ? 'Hoàn thành' : 'Duyệt'}
+                                                        </button>
+                                                        {stepCopy.canReject && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onQuickAction(instance, WorkflowInstanceAction.REJECTED)}
+                                                                className="rounded-lg border px-2 py-1 text-xs font-semibold transition hover:bg-rose-50"
+                                                                style={{ borderColor: 'var(--wf-overdue)', color: 'var(--wf-overdue-text)', backgroundColor: 'var(--wf-surface)' }}
+                                                            >
+                                                                Từ chối
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+
                                                 {/* Footer: assignee left, deadline right */}
                                                 <div
                                                     className="mt-1.5 flex items-center justify-between gap-2 border-t pt-1.5"
@@ -830,7 +873,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ templateId, instances, employ
                                                         )}
                                                     </span>
 
-                                                    {sla ? (
+                                                    {needsAttention ? (
+                                                        <WorkflowWaitChip insight={insight} status={instance.status} />
+                                                    ) : sla ? (
                                                         <span
                                                             className="flex shrink-0 items-center gap-1 text-[10px] font-semibold"
                                                             style={{

@@ -74,7 +74,7 @@ const WorkflowTemplateGroupList: React.FC<Props> = ({ templates, categories, use
                             draggable
                             onDragStart={event => { event.dataTransfer.effectAllowed = 'move'; setDraggingKey(group.key); }}
                             onDragEnd={endDrag}
-                            className="group/header flex items-center gap-1 rounded-md px-1 py-1 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                            className="group/header flex items-center gap-1 rounded-md px-1 py-1 hover:bg-[var(--wf-side-hover)]"
                         >
                             <button
                                 type="button"
@@ -84,7 +84,7 @@ const WorkflowTemplateGroupList: React.FC<Props> = ({ templates, categories, use
                                     if (event.key === 'ArrowUp' && index > 0) { event.preventDefault(); moveTo(group.key, index - 1); }
                                     if (event.key === 'ArrowDown' && index < groups.length - 1) { event.preventDefault(); moveTo(group.key, index + 1); }
                                 }}
-                                className="shrink-0 cursor-grab rounded p-0.5 text-slate-300 opacity-0 transition hover:text-slate-500 focus:opacity-100 group-hover/header:opacity-100 active:cursor-grabbing"
+                                className="shrink-0 cursor-grab rounded p-0.5 text-[var(--wf-side-muted)] opacity-0 transition hover:text-[var(--wf-side-text)] focus:opacity-100 group-hover/header:opacity-100 active:cursor-grabbing"
                             >
                                 <GripVertical size={12} />
                             </button>
@@ -94,10 +94,10 @@ const WorkflowTemplateGroupList: React.FC<Props> = ({ templates, categories, use
                                 onClick={() => update({ ...prefs, collapsed: toggleCollapsedGroup(prefs.collapsed, group.key) })}
                                 className="flex min-w-0 flex-1 items-center gap-1 text-left"
                             >
-                                {collapsed ? <ChevronRight size={12} className="shrink-0 text-slate-400" /> : <ChevronDown size={12} className="shrink-0 text-slate-400" />}
-                                <span className="truncate text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{group.name}</span>
+                                {collapsed ? <ChevronRight size={12} className="shrink-0 text-[var(--wf-side-heading)]" /> : <ChevronDown size={12} className="shrink-0 text-[var(--wf-side-heading)]" />}
+                                <span className="truncate text-[11px] font-bold uppercase tracking-wide text-[var(--wf-side-heading)]">{group.name}</span>
                                 {holdsSelected && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" title="Đang chọn quy trình trong nhóm này" />}
-                                <span className="ml-auto shrink-0 text-[9px] font-semibold text-slate-400">
+                                <span className="ml-auto shrink-0 text-[10px] font-semibold text-[var(--wf-side-muted)]">
                                     {count > 0 ? `${count} · ` : ''}{group.templates.length} mẫu
                                 </span>
                             </button>

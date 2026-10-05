@@ -742,35 +742,48 @@ button:not(:disabled):active,
    Chỉ áp dụng trong phạm vi .wf-base, không ảnh hưởng accent teal toàn app.
    ========================================================================== */
 .wf-base {
-  --wf-green: #4caf50;
-  --wf-green-hover: #43a047;
-  --wf-green-dark: #388e3c;
-  --wf-green-soft: #e8f5e9;
-  --wf-green-text: #2e7d32;
+  /* Mint nhẹ (đồng bộ Mua hàng nhưng dịu hơn): nút chính mint-600, nền nhạt mint-50. */
+  --wf-green: #2ea592;
+  --wf-green-hover: #268576;
+  --wf-green-dark: #206a5f;
+  --wf-green-soft: #effbf8;
+  --wf-green-text: #268576;
 
   --wf-surface: #ffffff;
-  --wf-canvas: #f5f6f7;
-  --wf-column: #f0f1f3;
-  --wf-border: #e3e5e8;
-  --wf-border-strong: #d0d4d9;
+  --wf-canvas: #f6f8f9;
+  --wf-column: #eef2f4;
+  --wf-border: #e3e8eb;
+  --wf-border-strong: #cfd6db;
 
-  --wf-text: #1f2329;
-  --wf-text-muted: #646a73;
-  --wf-text-faint: #8f959e;
+  --wf-text: #1f2933;
+  --wf-text-muted: #5d6874;
+  --wf-text-faint: #8a949e;
 
-  --wf-overdue: #e74c3c;
-  --wf-overdue-soft: #fdecea;
-  --wf-overdue-text: #c0392b;
+  --wf-overdue: #e5566b;
+  --wf-overdue-soft: #fdeef0;
+  --wf-overdue-text: #be3a4e;
   --wf-urgent: #d97706;
   --wf-urgent-soft: #fef3c7;
+
+  /* Cột trái: nền xanh ngọc nhạt, chữ đậm để tương phản rõ. */
+  --wf-side-bg: #e8f3f0;
+  --wf-side-border: #cbe2dc;
+  --wf-side-text: #16302b;
+  --wf-side-muted: #3f5f58;
+  --wf-side-heading: #1d6b5e;
+  --wf-side-hover: #d6eae5;
+  --wf-side-active-bg: #ffffff;
+  --wf-side-active-text: #17574d;
+  --wf-side-badge-bg: #ffffff;
+  --wf-side-badge-text: #3f5f58;
 }
 
 .dark .wf-base {
-  --wf-green: #4caf50;
-  --wf-green-hover: #56b95a;
-  --wf-green-dark: #2e7d32;
-  --wf-green-soft: rgba(76, 175, 80, 0.14);
-  --wf-green-text: #81c784;
+  --wf-green: #3cbfaa;
+  --wf-green-hover: #52cbb5;
+  --wf-green-dark: #2ea592;
+  --wf-green-soft: rgba(60, 191, 170, 0.14);
+  --wf-green-text: #78d8c5;
 
   --wf-surface: #26282c;
   --wf-canvas: #1a1c1f;
@@ -782,11 +795,37 @@ button:not(:disabled):active,
   --wf-text-muted: #a3a8af;
   --wf-text-faint: #7f858d;
 
-  --wf-overdue: #e74c3c;
-  --wf-overdue-soft: rgba(231, 76, 60, 0.16);
-  --wf-overdue-text: #f08b80;
+  --wf-overdue: #ef6b7d;
+  --wf-overdue-soft: rgba(239, 107, 125, 0.16);
+  --wf-overdue-text: #f4a1ac;
   --wf-urgent: #f0a020;
   --wf-urgent-soft: rgba(240, 160, 32, 0.16);
+
+  --wf-side-bg: #14262a;
+  --wf-side-border: #213a3f;
+  --wf-side-text: #e3f1ee;
+  --wf-side-muted: #a5c4be;
+  --wf-side-heading: #78d8c5;
+  --wf-side-hover: #1d3639;
+  --wf-side-active-bg: #1f4a47;
+  --wf-side-active-text: #d9f5ef;
+  --wf-side-badge-bg: #1f3a3d;
+  --wf-side-badge-text: #a5c4be;
+}
+
+/* Hàng chip cuộn ngang trên điện thoại: ẩn thanh cuộn. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Trạng thái "đang chờ" (chờ bạn duyệt, đứng yên, quá hạn): nhấp nháy chậm và nhẹ để thu hút chú ý.
+   Tắt khi người dùng chọn giảm chuyển động. */
+@keyframes wfSoftPulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent); }
+  50% { opacity: 0.62; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 14%, transparent); }
+}
+.wf-pulse { animation: wfSoftPulse 2.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .wf-pulse { animation: none; }
 }
 
 /* Dark-mode global overrides above use !important on .bg-white/.bg-slate-*;

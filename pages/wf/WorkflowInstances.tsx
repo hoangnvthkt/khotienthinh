@@ -37,6 +37,27 @@ import {
     isRequestModuleWorkflowTemplate,
 } from '../../lib/workflowVisibility';
 import WorkflowInstanceDetail from './WorkflowInstanceDetail';
+import WorkflowSidebar from '../../components/workflow/WorkflowSidebar';
+import WorkflowInstanceRow, { btnPrimary } from '../../components/workflow/WorkflowInstanceRow';
+import WorkflowKpiStrip, { type WorkflowKpiValues } from '../../components/workflow/WorkflowKpiStrip';
+import WorkflowInstanceActionDialog from '../../components/workflow/WorkflowInstanceActionDialog';
+import { WfBadge } from '../../components/workflow/WorkflowInstanceVisuals';
+import {
+    buildWorkSteps,
+    countWorkflowFiles,
+    getWorkflowInstanceInsight,
+    getWorkflowMetaParts,
+    type WorkflowInstanceInsight,
+} from '../../lib/workflowInstanceInsight';
+import WorkflowFilePreview from '../../components/workflow/WorkflowFilePreview';
+import {
+    formatWorkflowFileSize,
+    getWorkflowFileKind,
+    normalizeWorkflowFiles,
+    packWorkflowFiles,
+    type WorkflowFileValue,
+} from '../../lib/workflowFiles';
+import { downloadWorkflowFile, hasDownloadableFile, uploadWorkflowAttachment } from '../../lib/workflowFileTransfer';
 import WorkflowTemplateGroupList from '../../components/workflow/WorkflowTemplateGroupList';
 import WorkflowInstanceSummaryPanel from '../../components/workflow/WorkflowInstanceSummaryPanel';
 import { canPerform } from '../../lib/permissions/permissionService';
@@ -58,308 +79,6 @@ const ACTION_MAP: Record<WorkflowInstanceAction, { label: string; color: string 
     REOPENED: { label: 'Mở lại', color: 'text-purple-600' },
 };
 
-// ========== Excel Table Preview ==========
-const ExcelTablePreview: React.FC<{
-    sheets: Record<string, any[][]>;
-    sheetNames: string[];
-    editable?: boolean;
-    onDataChange?: (sheets: Record<string, any[][]>, sheetNames: string[]) => void;
-}> = ({ sheets, sheetNames, editable = false, onDataChange }) => {
-    const [activeSheet, setActiveSheet] = useState(sheetNames[0] || '');
-    const [localSheets, setLocalSheets] = useState<Record<string, any[][]>>(() =>
-        JSON.parse(JSON.stringify(sheets))
-    );
-    const [changedCells, setChangedCells] = useState<Set<string>>(new Set());
-
-    const data = localSheets[activeSheet] || [];
-    if (!data.length) return <p className="text-xs text-slate-400 italic">Không có dữ liệu</p>;
-
-    const headers = data[0] || [];
-    const rows = data.slice(1);
-
-    const handleCellChange = (rowIdx: number, colIdx: number, value: string) => {
-        const newSheets = JSON.parse(JSON.stringify(localSheets));
-        const sheetData = newSheets[activeSheet];
-        if (!sheetData || !sheetData[rowIdx + 1]) return;
-        sheetData[rowIdx + 1][colIdx] = value;
-        setLocalSheets(newSheets);
-        setChangedCells(prev => new Set(prev).add(`${activeSheet}_${rowIdx}_${colIdx}`));
-        onDataChange?.(newSheets, sheetNames);
-    };
-
-    const isCellChanged = (rowIdx: number, colIdx: number) =>
-        changedCells.has(`${activeSheet}_${rowIdx}_${colIdx}`);
-
-    return (
-        <div className={`mt-2 rounded-xl border overflow-hidden bg-white dark:bg-slate-900 ${editable
-            ? 'border-amber-300 dark:border-amber-700 shadow-md shadow-amber-100/50 dark:shadow-amber-900/20'
-            : 'border-emerald-200 dark:border-emerald-800/40'
-            }`}>
-            {/* Sheet tabs */}
-            {sheetNames.length > 1 && (
-                <div className={`flex gap-0 border-b overflow-x-auto ${editable ? 'border-amber-200 dark:border-amber-800/30 bg-amber-50/50 dark:bg-amber-900/10' : 'border-emerald-100 dark:border-emerald-800/30 bg-emerald-50/50 dark:bg-emerald-900/10'
-                    }`}>
-                    {sheetNames.map(name => (
-                        <button key={name} onClick={() => setActiveSheet(name)}
-                            className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all border-b-2 ${activeSheet === name
-                                ? (editable ? 'text-amber-700 dark:text-amber-300 border-amber-500 bg-white dark:bg-slate-800' : 'text-emerald-700 dark:text-emerald-300 border-emerald-500 bg-white dark:bg-slate-800')
-                                : 'text-slate-400 border-transparent hover:text-slate-600'
-                                }`}>
-                            <Table2 size={10} className="inline mr-1" />{name}
-                        </button>
-                    ))}
-                </div>
-            )}
-            {/* Editable banner */}
-            {editable && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/30">
-                    <Edit2 size={11} className="text-amber-500" />
-                    <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                        Chế độ chỉnh sửa — click vào ô để nhập dữ liệu
-                    </span>
-                    {changedCells.size > 0 && (
-                        <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-700 dark:text-amber-200 px-1.5 py-0.5 rounded-full font-bold ml-auto">
-                            {changedCells.size} ô đã sửa
-                        </span>
-                    )}
-                </div>
-            )}
-            {/* Table */}
-            <div className="overflow-auto max-h-[350px]" style={{ maxWidth: '100%' }}>
-                <table className="w-full text-xs">
-                    <thead className="sticky top-0 z-10">
-                        <tr className={editable ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-emerald-100 dark:bg-emerald-900/40'}>
-                            {headers.map((h: any, i: number) => (
-                                <th key={i} className={`px-3 py-2 text-left font-bold whitespace-nowrap border-b ${editable
-                                    ? 'text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                                    : 'text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
-                                    }`}>
-                                    {h ?? `Col ${i + 1}`}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows.map((row: any[], ri: number) => (
-                            <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/50 dark:bg-slate-800/30'}>
-                                {headers.map((_: any, ci: number) => (
-                                    <td key={ci} className={`border-b border-slate-100 dark:border-slate-800 ${editable && isCellChanged(ri, ci)
-                                        ? 'bg-amber-50 dark:bg-amber-900/20'
-                                        : ''
-                                        } ${editable ? 'p-0' : 'px-3 py-1.5'}`}>
-                                        {editable ? (
-                                            <input
-                                                type="text"
-                                                value={row[ci] ?? ''}
-                                                onChange={e => handleCellChange(ri, ci, e.target.value)}
-                                                className={`w-full px-2 py-1.5 text-xs bg-transparent outline-none text-slate-700 dark:text-slate-300 ${isCellChanged(ri, ci)
-                                                    ? 'font-bold text-amber-700 dark:text-amber-300'
-                                                    : ''
-                                                    }`}
-                                                style={{ minWidth: '80px' }}
-                                            />
-                                        ) : (
-                                            <span className="text-slate-700 dark:text-slate-300 whitespace-nowrap">{row[ci] ?? ''}</span>
-                                        )}
-                                    </td>
-                                ))}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            <div className={`px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800 ${editable ? 'bg-amber-50/50 dark:bg-amber-900/10' : 'bg-slate-50 dark:bg-slate-800/50'
-                }`}>
-                <FileSpreadsheet size={10} className="inline mr-1" />
-                {rows.length} dòng × {headers.length} cột
-                {sheetNames.length > 1 && ` • ${sheetNames.length} sheet`}
-                {editable && changedCells.size > 0 && (
-                    <span className="ml-2 text-amber-500 font-bold">• {changedCells.size} thay đổi</span>
-                )}
-            </div>
-        </div>
-    );
-};
-
-// ========== File Download Helper ==========
-const WORKFLOW_ATTACHMENT_BUCKET = 'workflow-attachments';
-
-const downloadFileFromBase64 = (base64: string, fileName: string, mimeType: string) => {
-    const byteChars = atob(base64);
-    const byteNumbers = new Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType || 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-};
-
-const getBase64DataUrl = (base64: string, mimeType: string) => `data:${mimeType};base64,${base64}`;
-
-const sanitizeStorageFileName = (name: string) =>
-    name.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z0-9._-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 120) || 'attachment';
-
-const getAttachmentBucket = (file: any) => file?.storageBucket || WORKFLOW_ATTACHMENT_BUCKET;
-
-const hasDownloadableFile = (file: any) => Boolean(file?.data || file?.storagePath);
-
-const uploadWorkflowAttachment = async (file: File) => {
-    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const storagePath = `${new Date().getFullYear()}/${id}-${sanitizeStorageFileName(file.name)}`;
-    const { error } = await supabase.storage.from(WORKFLOW_ATTACHMENT_BUCKET).upload(storagePath, file, {
-        contentType: file.type || 'application/octet-stream',
-        upsert: false,
-    });
-    if (error) throw error;
-
-    return {
-        fileName: file.name,
-        fileType: file.type || 'application/octet-stream',
-        fileSize: file.size,
-        storageBucket: WORKFLOW_ATTACHMENT_BUCKET,
-        storagePath,
-    };
-};
-
-const downloadWorkflowFile = async (file: any) => {
-    try {
-        if (file?.data) {
-            downloadFileFromBase64(file.data, file.fileName, file.fileType);
-            return;
-        }
-
-        if (file?.storagePath) {
-            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
-            if (error || !data) throw error || new Error('Không tải được file');
-            saveAs(data, file.fileName || 'attachment');
-        }
-    } catch (err) {
-        console.error('downloadWorkflowFile error:', err);
-        alert('Không tải được file đính kèm. Vui lòng thử lại.');
-    }
-};
-
-// ========== File Preview Modal ==========
-const FilePreviewModal: React.FC<{
-    file: any;
-    onClose: () => void;
-}> = ({ file, onClose }) => {
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [previewError, setPreviewError] = useState('');
-    const isImage = /^image\//i.test(file?.fileType || '');
-    const isPdf = /pdf/i.test(file?.fileType || '') || /\.pdf$/i.test(file?.fileName || '');
-    const isExcel = /\.(xlsx|xls|csv)$/i.test(file?.fileName || '');
-
-    useEffect(() => {
-        let objectUrl: string | null = null;
-        let cancelled = false;
-        setPreviewUrl(null);
-        setPreviewError('');
-
-        const loadPreview = async () => {
-            if (!file || (!isImage && !isPdf)) return;
-            if (file.data) {
-                setPreviewUrl(getBase64DataUrl(file.data, isPdf ? 'application/pdf' : file.fileType));
-                return;
-            }
-            if (!file.storagePath) {
-                setPreviewError('File cũ chỉ còn thông tin đính kèm, không còn dữ liệu xem trước');
-                return;
-            }
-
-            const { data, error } = await supabase.storage.from(getAttachmentBucket(file)).download(file.storagePath);
-            if (cancelled) return;
-            if (error || !data) {
-                console.error('File preview download error:', error);
-                setPreviewError('Không tải được bản xem trước');
-                return;
-            }
-            objectUrl = URL.createObjectURL(data);
-            setPreviewUrl(objectUrl);
-        };
-
-        loadPreview();
-        return () => {
-            cancelled = true;
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [file, isImage, isPdf]);
-
-    if (!file) return null;
-
-    return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                    <Paperclip size={16} className="text-rose-400" />
-                    <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{file.fileName}</p>
-                        <p className="text-xs font-medium text-slate-450 dark:text-slate-500">{file.fileType} • {(file.fileSize / 1024).toFixed(1)} KB</p>
-                    </div>
-                    <button
-                        onClick={() => downloadWorkflowFile(file)}
-                        disabled={!hasDownloadableFile(file)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition shadow-md"
-                    >
-                        <Download size={13} /> Tải về
-                    </button>
-                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors">
-                        <X size={18} />
-                    </button>
-                </div>
-                {/* Content */}
-                <div className="flex-1 overflow-auto p-4">
-                    {isImage && previewUrl && (
-                        <div className="flex items-center justify-center">
-                            <img src={previewUrl} alt={file.fileName} className="max-w-full max-h-[70vh] rounded-lg shadow-lg" />
-                        </div>
-                    )}
-                    {isPdf && previewUrl && (
-                        <iframe
-                            src={previewUrl}
-                            className="w-full h-[70vh] rounded-lg border border-slate-200 dark:border-slate-700"
-                            title={file.fileName}
-                        />
-                    )}
-                    {(isImage || isPdf) && !previewUrl && (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                            <FileText size={48} className="mb-3 opacity-50" />
-                            <p className="text-sm font-medium">{previewError || 'Đang tải bản xem trước...'}</p>
-                        </div>
-                    )}
-                    {isExcel && file.excelData && file.sheetNames && (
-                        <ExcelTablePreview sheets={file.excelData} sheetNames={file.sheetNames} />
-                    )}
-                    {isExcel && (!file.excelData || !file.sheetNames) && (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                            <FileSpreadsheet size={48} className="mb-3 opacity-50" />
-                            <p className="text-sm font-medium">File Excel đã được lưu trong Storage</p>
-                            <p className="text-xs mt-1">Nhấn "Tải về" để mở và chỉnh sửa trên máy tính</p>
-                        </div>
-                    )}
-                    {!isImage && !isPdf && !isExcel && (
-                        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                            <FileText size={48} className="mb-3 opacity-50" />
-                            <p className="text-sm font-medium">Không thể xem trước loại file này</p>
-                            <p className="text-xs mt-1">Nhấn "Tải về" để mở trên máy tính</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
 // ========== File Field Input ==========
 export const FileFieldInput: React.FC<{
     fieldName: string;
@@ -369,155 +88,99 @@ export const FileFieldInput: React.FC<{
 }> = ({ fieldName, value, onChange, disabled }) => {
     const fileRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState(false);
-    const [showPreview, setShowPreview] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
+    const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+    const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+    const [error, setError] = useState('');
+    const files = useMemo(() => normalizeWorkflowFiles(value), [value]);
+    const isUploading = progress !== null;
 
-    const isExcelFile = (name: string) => /\.(xlsx|xls|csv)$/i.test(name);
-
-    const parseExcel = useCallback(async (buffer: ArrayBuffer, fileName: string) => {
-        try {
-            const XLSX = await loadXlsx();
-            const wb = XLSX.read(buffer, { type: 'array' });
-            const sheetNames = wb.SheetNames;
-            const excelData: Record<string, any[][]> = {};
-            sheetNames.forEach(name => {
-                excelData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
-            });
-            return { excelData, sheetNames };
-        } catch (err) {
-            console.error('Error parsing Excel:', err);
-            return null;
-        }
-    }, []);
-
-    const handleFile = useCallback(async (file: File) => {
-        setIsUploading(true);
-        try {
-            const fileData: any = await uploadWorkflowAttachment(file);
-            if (isExcelFile(file.name)) {
-                const buffer = await file.arrayBuffer();
-                const parsed = await parseExcel(buffer, file.name);
-                if (parsed) {
-                    fileData.sheetNames = parsed.sheetNames;
-                }
+    const addFiles = useCallback(async (selected: FileList | File[] | null) => {
+        const incoming = Array.from(selected || []);
+        if (incoming.length === 0 || disabled || isUploading) return;
+        setError('');
+        setProgress({ done: 0, total: incoming.length });
+        const uploaded: WorkflowFileValue[] = [];
+        const failed: string[] = [];
+        for (const file of incoming) {
+            try {
+                uploaded.push(await uploadWorkflowAttachment(file));
+            } catch (err) {
+                console.error('Workflow attachment upload error:', err);
+                failed.push(err instanceof Error && err.message.includes('25MB') ? err.message : `Không tải được "${file.name}".`);
             }
-
-            onChange(fileData);
-        } catch (err) {
-            console.error('Workflow attachment upload error:', err);
-            alert('Không upload được file đính kèm. Vui lòng thử lại.');
-        } finally {
-            setIsUploading(false);
+            setProgress(current => current && { ...current, done: current.done + 1 });
         }
-    }, [onChange, parseExcel]);
+        if (uploaded.length > 0) onChange(packWorkflowFiles([...files, ...uploaded]));
+        if (failed.length > 0) setError(failed.join(' '));
+        setProgress(null);
+    }, [disabled, files, isUploading, onChange]);
 
-    const handleDrop = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        setDragOver(false);
-        const file = e.dataTransfer.files[0];
-        if (file && !disabled && !isUploading) handleFile(file);
-    }, [disabled, handleFile, isUploading]);
+    const removeFile = (index: number) => onChange(packWorkflowFiles(files.filter((_, itemIndex) => itemIndex !== index)));
 
-    // If disabled and has value, show preview only
-    if (disabled && value && typeof value === 'object' && value.fileName) {
-        return (
-            <div>
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-sm">
-                    <Paperclip size={14} className="text-rose-400" />
-                    <span className="font-medium text-slate-700 dark:text-slate-300 flex-1 truncate">{value.fileName}</span>
-                    <span className="text-xs text-slate-400 shrink-0">({(value.fileSize / 1024).toFixed(1)} KB)</span>
-                    <button onClick={() => setShowPreview(true)}
-                        className="p-1 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
-                        <Eye size={14} />
-                    </button>
-                    {hasDownloadableFile(value) && (
-                        <button onClick={() => downloadWorkflowFile(value)}
-                            className="p-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
-                            <Download size={14} />
-                        </button>
-                    )}
-                </div>
-                {value.excelData && value.sheetNames && (
-                    <ExcelTablePreview sheets={value.excelData} sheetNames={value.sheetNames} />
-                )}
-                {showPreview && <FilePreviewModal file={value} onClose={() => setShowPreview(false)} />}
-            </div>
-        );
-    }
+    if (disabled && files.length === 0) return null;
 
     return (
-        <div>
+        <div className="space-y-2">
             <input
                 ref={fileRef}
                 type="file"
+                multiple
                 className="hidden"
                 disabled={disabled || isUploading}
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-                accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"
+                onChange={e => { void addFiles(e.target.files); e.target.value = ''; }}
+                accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp,.txt"
             />
-            {/* Upload zone */}
-            {!value || typeof value !== 'object' ? (
-                <div
-                    onClick={() => !disabled && !isUploading && fileRef.current?.click()}
-                    onDragOver={e => { e.preventDefault(); !disabled && !isUploading && setDragOver(true); }}
-                    onDragLeave={() => setDragOver(false)}
-                    onDrop={handleDrop}
-                    className={`flex flex-col items-center gap-3 px-6 py-8 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${dragOver
-                        ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10'
-                        : 'border-slate-200 dark:border-slate-600 hover:border-emerald-300 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/5'
-                        } ${disabled || isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                    <Upload size={24} className={dragOver ? 'text-emerald-500' : 'text-slate-400'} />
-                    <span className="text-sm text-slate-500 text-center">
-                        <span className="font-bold text-emerald-600">{isUploading ? 'Đang tải file...' : 'Chọn file'}</span>{!isUploading && ' hoặc kéo thả vào đây'}
-                        <br /><span className="text-xs text-slate-400">Excel, PDF, Word, Ảnh (tối đa 5MB)</span>
-                    </span>
-                </div>
-            ) : (
-                <div>
-                    <div className="flex items-center gap-3 px-5 py-3.5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800/30 rounded-2xl">
-                        {isExcelFile(value.fileName) ? (
-                            <FileSpreadsheet size={16} className="text-emerald-600 shrink-0" />
-                        ) : (
-                            <Paperclip size={16} className="text-rose-400 shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                            <p className="text-base font-bold text-slate-750 dark:text-slate-300 truncate">{value.fileName}</p>
-                            <p className="text-xs font-medium text-slate-450 dark:text-slate-500">{(value.fileSize / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <div className="flex gap-1 shrink-0">
-                            <button onClick={() => setShowPreview(true)}
-                                className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-800/30 text-blue-500 transition-colors" title="Xem trước">
-                                <Eye size={14} />
-                            </button>
-                            {hasDownloadableFile(value) && (
-                                <button onClick={() => downloadWorkflowFile(value)}
-                                    className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Tải về">
-                                    <Download size={14} />
+            {files.length > 0 && (
+                <ul className="space-y-1.5">
+                    {files.map((file, index) => (
+                        <li key={`${file.storagePath || file.fileName}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-700 dark:bg-slate-800/50">
+                            {getWorkflowFileKind(file) === 'excel' ? <FileSpreadsheet size={16} className="shrink-0 text-emerald-600" /> : <Paperclip size={16} className="shrink-0 text-rose-400" />}
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-bold text-slate-700 dark:text-slate-200" title={file.fileName}>{file.fileName}</p>
+                                <p className="text-[11px] font-medium text-slate-400">{formatWorkflowFileSize(file.fileSize)}</p>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                                <button type="button" onClick={() => setPreviewIndex(index)} className="rounded-lg p-1.5 text-blue-500 transition-colors hover:bg-blue-100 dark:hover:bg-blue-800/30" title="Xem trước" aria-label={`Xem trước ${file.fileName}`}>
+                                    <Eye size={14} />
                                 </button>
-                            )}
-                            {!disabled && (
-                                <>
-                                    <button onClick={() => fileRef.current?.click()}
-                                        className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-800/30 text-emerald-500 transition-colors" title="Chọn file khác">
-                                        <Upload size={14} />
+                                {hasDownloadableFile(file) && (
+                                    <button type="button" onClick={() => void downloadWorkflowFile(file)} className="rounded-lg p-1.5 text-emerald-500 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-800/30" title="Tải về" aria-label={`Tải về ${file.fileName}`}>
+                                        <Download size={14} />
                                     </button>
-                                    <button onClick={() => onChange('')}
-                                        className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-800/30 text-red-400 transition-colors" title="Xoá file">
+                                )}
+                                {!disabled && (
+                                    <button type="button" onClick={() => removeFile(index)} className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-100 dark:hover:bg-red-800/30" title="Xoá file" aria-label={`Xoá ${file.fileName}`}>
                                         <X size={14} />
                                     </button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                    {/* Excel preview */}
-                    {value.excelData && value.sheetNames && (
-                        <ExcelTablePreview sheets={value.excelData} sheetNames={value.sheetNames} />
-                    )}
+                                )}
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {!disabled && (
+                <div
+                    onClick={() => !isUploading && fileRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); if (!isUploading) setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={e => { e.preventDefault(); setDragOver(false); void addFiles(e.dataTransfer.files); }}
+                    className={`flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed transition-all ${files.length > 0 ? 'px-4 py-3' : 'px-6 py-8'} ${dragOver
+                        ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10'
+                        : 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 dark:border-slate-600 dark:hover:bg-emerald-900/5'
+                        } ${isUploading ? 'cursor-not-allowed opacity-60' : ''}`}
+                >
+                    <Upload size={files.length > 0 ? 18 : 24} className={dragOver ? 'text-emerald-500' : 'text-slate-400'} />
+                    <span className="text-center text-sm text-slate-500">
+                        <span className="font-bold text-emerald-600">
+                            {isUploading ? `Đang tải ${progress!.done}/${progress!.total} file...` : files.length > 0 ? 'Thêm file' : 'Chọn nhiều file'}
+                        </span>
+                        {!isUploading && ' hoặc kéo thả vào đây'}
+                        {files.length === 0 && <><br /><span className="text-xs text-slate-400">Excel, PDF, Word, Ảnh · mỗi file tối đa 25MB</span></>}
+                    </span>
                 </div>
             )}
-            {showPreview && value && typeof value === 'object' && (
-                <FilePreviewModal file={value} onClose={() => setShowPreview(false)} />
-            )}
+            {error && <p className="text-xs font-bold text-red-500">{error}</p>}
+            {previewIndex !== null && <WorkflowFilePreview files={files} startIndex={previewIndex} onClose={() => setPreviewIndex(null)} />}
         </div>
     );
 };
@@ -634,13 +297,14 @@ const WorkflowInstances: React.FC = () => {
     const { templates, categories, instances, nodes, edges, logs, createInstance, createDraft, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, getPrintTemplates, updateInstanceWatchers } = useWorkflow();
     const { user, users, employees, orgUnits } = useApp();
     const { celebrate, showToast: celebrationToast } = useCelebration();
-    const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('mine');
+    const [activeTab, setActiveTab] = useState<'mine' | 'pending' | 'watching'>('pending');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
-    const [showBoardFilters, setShowBoardFilters] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
     const [boardTemplateId, setBoardTemplateId] = useState<string>('');
-    const [boardDetailInstanceId, setBoardDetailInstanceId] = useState<string | null>(null);
+    const [quickViewId, setQuickViewId] = useState<string | null>(null);
+    const [pendingAction, setPendingAction] = useState<{ instanceId: string; action: WorkflowInstanceAction } | null>(null);
+    const navTouchedRef = useRef(false);
     const [searchParams, setSearchParams] = useSearchParams();
     const targetInstanceId = useMemo(() => {
         return searchParams.get('id') || searchParams.get('wf') || searchParams.get('instanceId');
@@ -656,7 +320,6 @@ const WorkflowInstances: React.FC = () => {
     }, [navigate, targetInstanceId]);
 
     // File preview state
-    const [previewFile, setPreviewFile] = useState<any>(null);
 
     // Create form state
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -715,7 +378,7 @@ const WorkflowInstances: React.FC = () => {
     const [reopenComment, setReopenComment] = useState('');
 
     useEffect(() => {
-        const hasActiveOverlay = showCreateModal || !!editingInstance || !!boardDetailInstanceId || !!cancelConfirmId || !!reopenInstanceId;
+        const hasActiveOverlay = showCreateModal || !!editingInstance || !!quickViewId || !!cancelConfirmId || !!reopenInstanceId;
         if (hasActiveOverlay) {
             const originalOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
@@ -723,7 +386,7 @@ const WorkflowInstances: React.FC = () => {
                 document.body.style.overflow = originalOverflow;
             };
         }
-    }, [showCreateModal, editingInstance, boardDetailInstanceId, cancelConfirmId, reopenInstanceId]);
+    }, [showCreateModal, editingInstance, quickViewId, cancelConfirmId, reopenInstanceId]);
 
     // Step data editing state
     const [stepFormData, setStepFormData] = useState<Record<string, any>>({});
@@ -826,46 +489,13 @@ const WorkflowInstances: React.FC = () => {
         return list;
     }, [visibleListInstances, activeTab, filterStatus, searchTerm, user, nodes, templates, selectedTemplateIdFilter]);
 
-    // Board toolbar drives the same predicates as the list view, but over the
-    // board's own visibility set (which may include material-request workflows).
-    const filteredBoardInstances = useMemo(() => {
-        let list = visibleBoardInstances;
-
-        if (activeTab === 'mine') {
-            list = list.filter(i => i.createdBy === user.id);
-        } else if (activeTab === 'watching') {
-            list = list.filter(i => {
-                if (i.watchers?.includes(user.id)) return true;
-                return templateById.get(i.templateId)?.defaultWatchers?.includes(user.id) || false;
-            });
-        } else {
-            list = list.filter(i => {
-                if (i.status !== WorkflowInstanceStatus.RUNNING || !i.currentNodeId) return false;
-                const currentNode = nodes.find(n => n.id === i.currentNodeId);
-                if (!currentNode) return false;
-                if (isWorkflowStepAssignedToUser(i, currentNode, user)) return true;
-                if (user.role === Role.ADMIN) return true;
-                return templateById.get(i.templateId)?.managers?.includes(user.id) || false;
-            });
-        }
-
-        if (filterStatus !== 'ALL') {
-            list = list.filter(i => i.status === filterStatus);
-        }
-
-        if (searchTerm) {
-            list = list.filter(i => matchesSearchQueryMultiple([i.code, i.title], searchTerm));
-        }
-
-        return list;
-    }, [visibleBoardInstances, activeTab, filterStatus, searchTerm, user, nodes, templateById]);
     const boardRunningCountByTemplate = useMemo(() => {
         const counts = new Map<string, number>();
-        filteredBoardInstances.forEach(i => {
+        visibleBoardInstances.forEach(i => {
             if (i.status === WorkflowInstanceStatus.RUNNING) counts.set(i.templateId, (counts.get(i.templateId) || 0) + 1);
         });
         return counts;
-    }, [filteredBoardInstances]);
+    }, [visibleBoardInstances]);
 
     const activeInstanceId = useMemo(() => {
         if (expandedId && filteredInstances.some(i => i.id === expandedId)) {
@@ -1098,7 +728,8 @@ const WorkflowInstances: React.FC = () => {
             if (instance.formData) {
                 Object.entries(instance.formData).forEach(([key, value]) => {
                     if (typeof value === 'object' && value !== null) {
-                        if ((value as any).fileName) data[key] = (value as any).fileName;
+                        const attached = normalizeWorkflowFiles(value);
+                        if (attached.length > 0) data[key] = attached.map(file => file.fileName).join(', ');
                     } else {
                         data[key] = String(value ?? '');
                     }
@@ -1379,6 +1010,120 @@ const WorkflowInstances: React.FC = () => {
         });
     };
 
+    // ===== Workspace data: step insight, who is waiting on me, sidebar counts, KPIs =====
+    const workStepsByTemplate = useMemo(() => buildWorkSteps(nodes, edges), [nodes, edges]);
+    const lastActivityById = useMemo(() => {
+        const latest = new Map<string, number>();
+        logs.forEach(log => {
+            const at = Date.parse(log.createdAt);
+            if (at > (latest.get(log.instanceId) || 0)) latest.set(log.instanceId, at);
+        });
+        return latest;
+    }, [logs]);
+    const insightById = useMemo(() => {
+        const now = Date.now();
+        const result = new Map<string, WorkflowInstanceInsight>();
+        instances.forEach(instance => result.set(
+            instance.id,
+            getWorkflowInstanceInsight(instance, workStepsByTemplate.get(instance.templateId) || [], lastActivityById.get(instance.id), now),
+        ));
+        return result;
+    }, [instances, workStepsByTemplate, lastActivityById]);
+    const waitingForMeIds = useMemo(
+        () => new Set(visibleBoardInstances.filter(i => i.status === WorkflowInstanceStatus.RUNNING && canActOnInstance(i)).map(i => i.id)),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [visibleBoardInstances, nodes, edges, templates, user, logs],
+    );
+    const navCounts = useMemo(() => ({
+        pending: visibleListInstances.filter(i => waitingForMeIds.has(i.id)).length,
+        mine: visibleListInstances.filter(i => i.createdBy === user.id).length,
+        watching: visibleListInstances.filter(i => i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id)).length,
+    }), [visibleListInstances, waitingForMeIds, user.id, templateById]);
+    const kpiValues = useMemo<WorkflowKpiValues>(() => {
+        const running = visibleListInstances.filter(i => i.status === WorkflowInstanceStatus.RUNNING);
+        return {
+            waitingForMe: navCounts.pending,
+            needsAttention: running.filter(i => insightById.get(i.id)?.overdue || insightById.get(i.id)?.stale).length,
+            running: running.length,
+            completed: visibleListInstances.filter(i => i.status === WorkflowInstanceStatus.COMPLETED).length,
+            runningTemplates: new Set(running.map(i => i.templateId)).size,
+        };
+    }, [visibleListInstances, navCounts.pending, insightById]);
+    // Waiting-on-me first, then past SLA, then whoever has waited longest.
+    const sortedInstances = useMemo(() => filteredInstances.slice().sort((a, b) => {
+        const ia = insightById.get(a.id)!;
+        const ib = insightById.get(b.id)!;
+        return Number(waitingForMeIds.has(b.id)) - Number(waitingForMeIds.has(a.id))
+            || Number(ib.overdue) - Number(ia.overdue)
+            || (b.status === WorkflowInstanceStatus.RUNNING ? ib.sinceHours : 0) - (a.status === WorkflowInstanceStatus.RUNNING ? ia.sinceHours : 0);
+    }), [filteredInstances, insightById, waitingForMeIds]);
+    // The board shows every ticket of the chosen workflow so the whole flow is visible; the ones
+    // waiting on you are highlighted instead of hiding the rest.
+    const boardInstances = useMemo(
+        () => searchTerm ? visibleBoardInstances.filter(i => matchesSearchQueryMultiple([i.code, i.title], searchTerm)) : visibleBoardInstances,
+        [visibleBoardInstances, searchTerm],
+    );
+    const boardSummary = useMemo(() => {
+        const ofTemplate = boardInstances.filter(i => i.templateId === boardTemplateId);
+        return {
+            total: ofTemplate.filter(i => i.status !== WorkflowInstanceStatus.CANCELLED).length,
+            waitingForMe: ofTemplate.filter(i => waitingForMeIds.has(i.id)).length,
+            needsAttention: ofTemplate.filter(i => insightById.get(i.id)?.overdue || insightById.get(i.id)?.stale).length,
+        };
+    }, [boardInstances, boardTemplateId, waitingForMeIds, insightById]);
+
+    const pageTitle = viewMode === 'board'
+        ? boardTemplates.find(t => t.id === boardTemplateId)?.name || 'Quy trình duyệt'
+        : selectedTemplateIdFilter
+            ? templateById.get(selectedTemplateIdFilter)?.name || 'Quy trình duyệt'
+            : activeTab === 'pending' ? 'Chờ tôi duyệt' : activeTab === 'mine' ? 'Phiếu của tôi' : 'Đang theo dõi';
+
+    const goToNav = (id: 'pending' | 'mine' | 'watching') => {
+        navTouchedRef.current = true;
+        setActiveTab(id);
+        setViewMode('list');
+        setExpandedId(null);
+        setSelectedTemplateIdFilter('');
+    };
+    const selectSidebarTemplate = (templateId: string, fromSelect = false) => {
+        if (viewMode === 'board') {
+            if (templateId) setBoardTemplateId(templateId);
+            return;
+        }
+        setExpandedId(null);
+        setSelectedTemplateIdFilter(fromSelect || selectedTemplateIdFilter !== templateId ? templateId : '');
+    };
+    const openQuickView = (instance: WorkflowInstance) => {
+        if (instance.status === WorkflowInstanceStatus.DRAFT) {
+            void openEditModal(instance);
+            return;
+        }
+        setQuickViewId(instance.id);
+        void ensureInstanceFormData(instance);
+    };
+    const handleActionDone = (instanceId: string, action: WorkflowInstanceAction) => {
+        const title = instances.find(i => i.id === instanceId)?.title || '';
+        if (action === WorkflowInstanceAction.APPROVED) celebrate({ variant: 'approve', title: '✅ Đã Duyệt Thành Công!', subtitle: title, confetti: true });
+        else if (action === WorkflowInstanceAction.REJECTED) celebrationToast({ type: 'warning', title: 'Phiếu đã bị từ chối', message: title });
+        else celebrationToast({ type: 'info', title: 'Yêu cầu chỉnh sửa đã gửi', message: title });
+        setQuickViewId(null);
+    };
+
+    // Open on "Chờ tôi duyệt" when something waits; otherwise on the user's own tickets.
+    useEffect(() => {
+        if (navTouchedRef.current || targetInstanceId || instances.length === 0) return;
+        navTouchedRef.current = true;
+        if (navCounts.pending === 0) setActiveTab('mine');
+    }, [instances.length, navCounts.pending, targetInstanceId]);
+    // Switching to the board needs a workflow: prefer the one picked in the sidebar, else the busiest.
+    useEffect(() => {
+        if (viewMode !== 'board' || boardTemplateId || boardTemplates.length === 0) return;
+        const busiest = boardTemplates
+            .map(t => ({ id: t.id, count: boardRunningCountByTemplate.get(t.id) || 0 }))
+            .sort((a, b) => b.count - a.count)[0];
+        setBoardTemplateId(boardTemplates.some(t => t.id === selectedTemplateIdFilter) ? selectedTemplateIdFilter : busiest.id);
+    }, [viewMode, boardTemplateId, boardTemplates, boardRunningCountByTemplate, selectedTemplateIdFilter]);
+
     useEffect(() => {
         if (!targetInstanceId) return;
         const target = instances.find(instance => instance.id === targetInstanceId);
@@ -1497,7 +1242,7 @@ const WorkflowInstances: React.FC = () => {
     );
 
     return (
-        <div className="relative flex h-full w-full select-none overflow-hidden bg-slate-100 dark:bg-slate-955">
+        <div className="wf-base relative flex h-full w-full select-none overflow-hidden bg-[var(--wf-canvas)]">
             {/* Toast Notification */}
             {submitMessage && (
                 <div className={`fixed top-6 right-6 z-[60] px-5 py-3.5 rounded-xl shadow-2xl font-bold text-sm flex items-center gap-2 animate-fade-in-down ${submitMessage.type === 'success'
@@ -1512,643 +1257,210 @@ const WorkflowInstances: React.FC = () => {
                 </div>
             )}
 
-            {/* ==================== LIST VIEW (3-PANEL WORKSPACE) ==================== */}
-            {viewMode === 'list' && (
-                <>
-                    {/* PANEL 1: Workflow Categories & Status Sidebar (Width: 260px) */}
-                    <aside className="hidden md:flex w-[260px] bg-slate-50 border-r border-slate-200 dark:bg-[#2b2d31] dark:border-slate-800 flex-col h-full shrink-0">
-                        {/* Sidebar Header */}
-                        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <GitBranch className="text-accent shrink-0" size={18} />
-                                <span className="text-sm font-black text-slate-800 dark:text-white truncate">Quy trình duyệt</span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={openCreateModal}
-                                disabled={nonMaterialActiveTemplates.length === 0}
-                                title="Tạo phiếu mới"
-                                className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white hover:bg-emerald-600 transition disabled:opacity-50"
-                            >
-                                <Plus size={16} />
-                            </button>
-                        </div>
+            {/* ==================== WORKSPACE: sidebar + (danh sách | Kanban) ==================== */}
+            <WorkflowSidebar
+                activeNav={viewMode === 'list' ? activeTab : null}
+                counts={navCounts}
+                onNav={goToNav}
+                onCreate={openCreateModal}
+                createDisabled={nonMaterialActiveTemplates.length === 0}
+                templates={viewMode === 'board' ? boardTemplates : nonMaterialActiveTemplates}
+                categories={categories}
+                userId={user.id}
+                selectedTemplateId={viewMode === 'board' ? boardTemplateId : selectedTemplateIdFilter}
+                onSelectTemplate={selectSidebarTemplate}
+                getTemplateCount={templateId => (viewMode === 'board' ? boardRunningCountByTemplate : sidebarCountByTemplate).get(templateId) || 0}
+            />
 
-                        {/* Workflow Tabs */}
-                        <div className="p-3 shrink-0 space-y-1">
-                            {([
-                                { id: 'mine', label: 'Quy trình của tôi', icon: FileText },
-                                { id: 'pending', label: 'Chờ tôi duyệt', icon: Inbox },
-                                { id: 'watching', label: 'Theo dõi', icon: Eye },
-                            ] as { id: string; label: string; icon: any }[]).map(tab => {
-                                const Icon = tab.icon;
-                                const isActive = activeTab === tab.id;
-                                const count = tab.id === 'pending'
-                                    ? visibleListInstances.filter(canActOnInstance).length
-                                    : tab.id === 'watching'
-                                        ? visibleListInstances.filter(i => i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id)).length
-                                        : 0;
-
-                                return (
-                                    <button
-                                        key={tab.id}
-                                        onClick={() => { setActiveTab(tab.id as any); setExpandedId(null); }}
-                                        className={`flex items-center justify-between w-full px-3 py-2 rounded-xl text-xs font-bold transition select-none ${isActive
-                                            ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-650 dark:text-white font-black'
-                                            : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <Icon size={14} className="shrink-0" />
-                                            <span className="truncate">{tab.label}</span>
-                                        </div>
-                                        {count > 0 && (
-                                            <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[9px] font-black shrink-0">
-                                                {count}
-                                            </span>
-                                        )}
-                                    </button>
-                                );
-                            })}
-                        </div>
-
-                        {/* Status Filters */}
-                        <div className="px-3 pb-3 border-b border-slate-200 dark:border-slate-800 shrink-0 space-y-1">
-                            <p className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider px-2 py-1 select-none">Trạng thái</p>
-                            <button
-                                onClick={() => setFilterStatus('ALL')}
-                                className={`w-full px-3 py-1.5 rounded-lg text-left text-[11px] font-bold transition flex items-center justify-between ${filterStatus === 'ALL'
-                                    ? 'bg-slate-200/60 dark:bg-slate-800 text-slate-900 dark:text-white'
-                                    : 'text-slate-555 hover:bg-slate-100 dark:hover:bg-slate-800/40 hover:text-slate-800 dark:hover:text-slate-300'
-                                    }`}
-                            >
-                                <span>Tất cả</span>
-                                <span className="text-[9px] opacity-60">({
-                                    visibleListInstances.filter(i => {
-                                        let matchTab = true;
-                                        if (activeTab === 'mine') matchTab = i.createdBy === user.id;
-                                        else if (activeTab === 'watching') matchTab = i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id) || false;
-                                        else matchTab = (i.status === WorkflowInstanceStatus.RUNNING && i.currentNodeId && (isWorkflowStepAssignedToUser(i, nodes.find(n => n.id === i.currentNodeId)!, user) || user.role === Role.ADMIN || templateById.get(i.templateId)?.managers?.includes(user.id))) || false;
-                                        return matchTab;
-                                    }).length
-                                })</span>
-                            </button>
-                            {Object.entries(STATUS_MAP).map(([s, config]) => {
-                                const count = visibleListInstances.filter(i => {
-                                    let matchTab = true;
-                                    if (activeTab === 'mine') matchTab = i.createdBy === user.id;
-                                    else if (activeTab === 'watching') matchTab = i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id) || false;
-                                    else matchTab = (i.status === WorkflowInstanceStatus.RUNNING && i.currentNodeId && (isWorkflowStepAssignedToUser(i, nodes.find(n => n.id === i.currentNodeId)!, user) || user.role === Role.ADMIN || templateById.get(i.templateId)?.managers?.includes(user.id))) || false;
-                                    return matchTab && i.status === s;
-                                }).length;
-                                return (
-                                    <button
-                                        key={s}
-                                        onClick={() => setFilterStatus(s)}
-                                        className={`w-full px-3 py-1.5 rounded-lg text-left text-[11px] font-bold transition flex items-center justify-between ${filterStatus === s
-                                            ? 'bg-slate-200/60 dark:bg-slate-800 text-slate-900 dark:text-white'
-                                            : 'text-slate-555 hover:bg-slate-100 dark:hover:bg-slate-800/40 hover:text-slate-800 dark:hover:text-slate-300'
-                                            }`}
-                                    >
-                                        <span className="truncate">{config.label}</span>
-                                        {count > 0 && <span className="text-[9px] opacity-60">({count})</span>}
-                                    </button>
-                                );
-                            })}
-                        </div>
-
-                        {/* Templates List */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-                            <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider px-2 py-1 select-none">
-                                <span>Quy trình mẫu</span>
-                            </div>
-                            <WorkflowTemplateGroupList
-                                templates={nonMaterialActiveTemplates}
-                                categories={categories}
-                                userId={user.id}
-                                selectedTemplateId={selectedTemplateIdFilter}
-                                getGroupCount={groupTemplates => groupTemplates.reduce((sum, t) => sum + (sidebarCountByTemplate.get(t.id) || 0), 0)}
-                                renderTemplate={t => {
-                                    const count = sidebarCountByTemplate.get(t.id) || 0;
-                                    return (
-                                        <button
-                                            onClick={() => {
-                                                setSelectedTemplateIdFilter(selectedTemplateIdFilter === t.id ? '' : t.id);
-                                            }}
-                                            className={`w-full px-3 py-2 rounded-xl text-left text-xs font-bold transition flex items-center justify-between gap-2 ${selectedTemplateIdFilter === t.id
-                                                ? 'bg-indigo-50 dark:bg-[#35373c] text-indigo-655 dark:text-white font-bold shadow-sm'
-                                                : 'text-slate-600 dark:text-[#949ba4] hover:bg-slate-200/60 dark:hover:bg-[#2e3035] hover:text-slate-900 dark:hover:text-[#dbdee1]'
-                                                }`}
-                                        >
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-400 to-indigo-500 flex items-center justify-center text-white shrink-0">
-                                                    <GitBranch size={10} />
-                                                </div>
-                                                <span className="truncate text-xs">{t.name}</span>
-                                            </div>
-                                            {count > 0 && (
-                                                <span className="text-[9px] opacity-65 shrink-0">
-                                                    {count}
-                                                </span>
-                                            )}
-                                        </button>
-                                    );
-                                }}
-                            />
-                        </div>
-
-                        {/* Switch to Kanban Button */}
-                        <div className="p-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
-                            <button
-                                onClick={() => setViewMode('board')}
-                                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-355 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl text-xs font-bold transition"
-                            >
-                                <LayoutGrid size={13} /> Chuyển sang Kanban Board
-                            </button>
-                        </div>
-                    </aside>
-
-                    {/* If no activeInstanceId is selected, show PANEL 2 (Master list) as flex-1 */}
-                    {!activeInstanceId ? (
-                        <section className="flex-1 bg-white dark:bg-[#1e1f22] flex flex-col h-full overflow-hidden">
-                            {/* Mobile Top Header & Tabs (Hidden on desktop) */}
-                            <div className="md:hidden border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-[#2b2d31]">
-                                <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800">
-                                    <div className="flex items-center gap-2">
-                                        <GitBranch className="text-accent shrink-0" size={18} />
-                                        <span className="text-sm font-black text-slate-800 dark:text-white">Quy trình duyệt</span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={openCreateModal}
-                                        disabled={nonMaterialActiveTemplates.length === 0}
-                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-accent text-white text-xs font-bold shadow-sm shadow-emerald-600/20 disabled:opacity-50"
-                                    >
-                                        <Plus size={14} /> <span>Tạo phiếu</span>
-                                    </button>
-                                </div>
-
-                                {/* Mobile Tabs */}
-                                <div className="flex overflow-x-auto no-scrollbar gap-1.5 px-3 py-2 bg-slate-50/80 dark:bg-slate-900/50">
-                                    {([
-                                        { id: 'mine', label: 'Của tôi', icon: FileText },
-                                        { id: 'pending', label: 'Chờ tôi duyệt', icon: Inbox },
-                                        { id: 'watching', label: 'Theo dõi', icon: Eye },
-                                    ] as { id: string; label: string; icon: any }[]).map(tab => {
-                                        const Icon = tab.icon;
-                                        const isActive = activeTab === tab.id;
-                                        const count = tab.id === 'pending'
-                                            ? visibleListInstances.filter(canActOnInstance).length
-                                            : tab.id === 'watching'
-                                                ? visibleListInstances.filter(i => i.watchers?.includes(user.id) || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id)).length
-                                                : 0;
-
-                                        return (
-                                            <button
-                                                key={tab.id}
-                                                onClick={() => { setActiveTab(tab.id as any); setExpandedId(null); }}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition active:scale-95 ${
-                                                    isActive
-                                                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
-                                                        : 'bg-white text-slate-600 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300'
-                                                }`}
-                                            >
-                                                <Icon size={13} />
-                                                <span>{tab.label}</span>
-                                                {count > 0 && (
-                                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
-                                                        isActive ? 'bg-white text-emerald-700' : 'bg-red-500 text-white'
-                                                    }`}>
-                                                        {count}
-                                                    </span>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {/* Search Panel */}
-                            <div className="p-3 sm:p-4 shrink-0 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                <div className="flex h-10 w-full sm:w-80 md:w-96 items-center gap-2.5 rounded-xl bg-slate-100 dark:bg-[#313338] px-3.5 text-slate-500 dark:text-slate-400">
-                                    <Search size={16} className="shrink-0" />
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--wf-canvas)]">
+                {viewMode === 'list' && activeInstanceId ? (
+                    <div className="h-full w-full select-text overflow-y-auto bg-white px-3.5 py-3 dark:bg-[#313338] sm:px-6 sm:py-4">
+                        <WorkflowInstanceDetail
+                            instanceId={activeInstanceId}
+                            onBack={() => { setExpandedId(null); setSearchParams({}, { replace: true }); }}
+                        />
+                    </div>
+                ) : (
+                    <>
+                        <header className="shrink-0 space-y-3 border-b border-[var(--wf-border)] bg-white px-4 py-3 dark:bg-slate-900 md:px-6">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h1 className="mr-auto min-w-0 truncate text-lg font-bold text-slate-900 dark:text-white">{pageTitle}</h1>
+                                <label className="relative w-full sm:w-48 xl:w-64">
+                                    <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                                     <input
                                         value={searchTerm}
                                         onChange={event => setSearchTerm(event.target.value)}
-                                        placeholder="Tìm theo mã hoặc tiêu đề..."
-                                        className="h-full min-w-0 flex-1 bg-transparent text-xs font-bold text-slate-850 dark:text-[#dbdee1] outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                                        placeholder="Tìm mã hoặc tiêu đề…"
+                                        className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-mint-400 focus:bg-white focus:ring-2 focus:ring-mint-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                                     />
-                                </div>
-                                <div className="text-xs font-bold text-slate-400 self-end sm:self-auto">
-                                    {filteredInstances.length} phiếu
-                                </div>
-                            </div>
-
-                            {/* Instance Cards List */}
-                            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5 sm:space-y-3 bg-slate-50/50 dark:bg-slate-900/10">
-                                {filteredInstances.map(instance => {
-                                    const template = templates.find(t => t.id === instance.templateId);
-                                    const creator = users.find(u => u.id === instance.createdBy);
-                                    const statusInfo = STATUS_MAP[instance.status];
-                                    const StatusIcon = statusInfo.icon;
-                                    const canAct = canActOnInstance(instance);
-                                    const currentNode = nodes.find(n => n.id === instance.currentNodeId);
-                                    const currentAssignees = resolveCurrentWorkflowAssignees(instance, currentNode, users);
-                                    const currentAssigneeDisplay = getWorkflowAssigneeDisplay(currentAssignees);
-
-                                    return (
-                                        <div
-                                            key={instance.id}
-                                            onClick={() => instance.status === WorkflowInstanceStatus.DRAFT
-                                                ? void openEditModal(instance)
-                                                : setExpandedId(instance.id)}
-                                            className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border bg-white hover:bg-slate-50/50 dark:bg-[#1e1f22] dark:hover:bg-[#2e3035] border-slate-200 dark:border-slate-800 transition-all shadow-sm hover:shadow duration-200 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 select-none active:scale-[0.99]"
-                                        >
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-1.5 sm:gap-2 mb-1.5 flex-wrap">
-                                                    <button
-                                                        type="button"
-                                                        onClick={event => { event.stopPropagation(); navigate(buildWorkflowRoute(instance.id)); }}
-                                                        className="font-mono text-[10px] font-bold bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500 shrink-0 hover:text-emerald-600 hover:underline"
-                                                        title="Mở liên kết chuẩn"
-                                                    >
-                                                        {instance.code}
-                                                    </button>
-                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 shrink-0 ${statusInfo.color}`}>
-                                                        <StatusIcon size={10} /> {statusInfo.label}
-                                                    </span>
-                                                    {canAct && (
-                                                        <span className="text-[10px] font-bold text-amber-650 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded animate-pulse flex items-center gap-1 shrink-0">
-                                                            <AlertCircle size={10} /> Cần duyệt
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <h3 className="font-bold text-sm text-slate-800 dark:text-white leading-snug mb-1 line-clamp-2">{instance.title}</h3>
-                                                <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold truncate">{template?.name}</p>
-                                            </div>
-
-                                            <div className="flex flex-col sm:flex-row md:flex-col items-start sm:items-center md:items-end justify-between md:justify-center gap-1.5 sm:gap-2 shrink-0 md:text-right border-t md:border-t-0 pt-2.5 md:pt-0 border-slate-100 dark:border-slate-800">
-                                                <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
-                                                    <div className="text-xs text-slate-500 dark:text-slate-400 font-bold flex items-center gap-1.5">
-                                                        <User size={12} className="text-slate-400 shrink-0" /> <span className="truncate max-w-[120px]">{creator?.name}</span>
-                                                    </div>
-                                                    <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1.5">
-                                                        <Clock size={11} className="text-slate-450 shrink-0" /> {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(instance.createdAt))}
-                                                    </div>
-                                                </div>
-                                                {currentNode && instance.status === WorkflowInstanceStatus.RUNNING && (
-                                                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                                                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-600 dark:text-sky-400" title="Người đang xử lý bước hiện tại">
-                                                            <div className="flex -space-x-1.5 shrink-0">
-                                                                {currentAssigneeDisplay.visibleAssignees.length > 0 ? currentAssigneeDisplay.visibleAssignees.map(assignee => (
-                                                                    <div key={assignee.id} className="h-5 w-5 rounded-full border-2 border-white dark:border-slate-800 bg-sky-600 text-white flex items-center justify-center text-[8px] font-black uppercase overflow-hidden">
-                                                                        {assignee.avatar
-                                                                            ? <img src={assignee.avatar} alt={assignee.name} className="h-full w-full object-cover" />
-                                                                            : assignee.name.slice(0, 2)}
-                                                                    </div>
-                                                                )) : (
-                                                                    <div className="h-5 w-5 rounded-full bg-slate-300 dark:bg-slate-700 text-white flex items-center justify-center">
-                                                                        <User size={10} />
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <span className="max-w-[180px] truncate">Xử lý: {currentAssigneeDisplay.label}</span>
-                                                        </div>
-                                                        <div className="text-[11px] font-black text-indigo-500 dark:text-indigo-400">
-                                                            · Bước: {currentNode.label}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-
-                                {filteredInstances.length === 0 && (
-                                    <div className="text-center py-20 opacity-60">
-                                        <Inbox className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                                        <p className="text-xs text-slate-500 font-bold">Không tìm thấy quy trình nào</p>
-                                    </div>
-                                )}
-                            </div>
-                        </section>
-                    ) : (
-                        /* If activeInstanceId is selected, show PANEL 3 (Detail view) as flex-1 */
-                        <main className="flex-1 bg-white dark:bg-[#313338] flex flex-col h-full overflow-hidden relative">
-                            <div className="w-full h-full overflow-y-auto px-3.5 py-3 sm:px-6 sm:py-4 select-text">
-                                <WorkflowInstanceDetail
-                                    instanceId={activeInstanceId}
-                                    onBack={() => { setExpandedId(null); setSearchParams({}, { replace: true }); }}
-                                />
-                            </div>
-                        </main>
-                    )}
-                </>
-            )}
-
-            {/* ==================== KANBAN BOARD VIEW (Base layout) ==================== */}
-            {viewMode === 'board' && (
-                <div className="wf-base flex h-full w-full overflow-hidden">
-                    {/* PANEL 1: Base-style workflow tree.
-                        Flat list — WorkflowTemplate has no department/category field,
-                        so grouping by department would need a schema change first. */}
-                    <aside
-                        className="wf-surface hidden w-[248px] shrink-0 flex-col border-r md:flex"
-                        style={{ borderColor: 'var(--wf-border)' }}
-                    >
-                        <div
-                            className="flex h-14 shrink-0 items-center justify-between border-b px-4"
-                            style={{ borderColor: 'var(--wf-border)' }}
-                        >
-                            <span
-                                className="truncate text-[13px] font-semibold"
-                                style={{ color: 'var(--wf-text)' }}
-                            >
-                                Quy trình
-                            </span>
-                            <button
-                                type="button"
-                                onClick={openCreateModal}
-                                disabled={nonMaterialActiveTemplates.length === 0}
-                                title="Tạo nhiệm vụ mới"
-                                className="flex h-6 w-6 items-center justify-center rounded text-white transition disabled:opacity-40"
-                                style={{ backgroundColor: 'var(--wf-green)' }}
-                            >
-                                <Plus size={14} />
-                            </button>
-                        </div>
-
-                        <nav className="wf-scroll flex-1 overflow-y-auto px-2 py-2">
-                            <p
-                                className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wide"
-                                style={{ color: 'var(--wf-text-faint)' }}
-                            >
-                                Danh sách quy trình
-                            </p>
-                            {boardTemplates.length === 0 ? (
-                                <p className="px-2 py-3 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
-                                    Chưa có quy trình nào đang hoạt động.
-                                </p>
-                            ) : (
-                                <WorkflowTemplateGroupList
-                                    templates={boardTemplates}
-                                    categories={categories}
-                                    userId={user.id}
-                                    selectedTemplateId={boardTemplateId}
-                                    getGroupCount={groupTemplates => groupTemplates.reduce((sum, t) => sum + (boardRunningCountByTemplate.get(t.id) || 0), 0)}
-                                    renderTemplate={t => {
-                                        const isActive = boardTemplateId === t.id;
-                                        const runningCount = boardRunningCountByTemplate.get(t.id) || 0;
-                                        return (
-                                            <button
-                                                type="button"
-                                                onClick={() => setBoardTemplateId(t.id)}
-                                                className="mb-0.5 flex w-full items-center gap-2 rounded px-2 py-2 text-left transition"
-                                                style={{
-                                                    backgroundColor: isActive ? 'var(--wf-green-soft)' : 'transparent',
-                                                    color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
-                                                }}
-                                            >
-                                                <GitBranch
-                                                    size={13}
-                                                    className="shrink-0"
-                                                    style={{ color: isActive ? 'var(--wf-green)' : 'var(--wf-text-faint)' }}
-                                                />
-                                                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">
-                                                    {t.name}
-                                                </span>
-                                                {runningCount > 0 && (
-                                                    <span
-                                                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
-                                                        style={{
-                                                            backgroundColor: isActive ? 'var(--wf-green)' : 'var(--wf-column)',
-                                                            color: isActive ? '#ffffff' : 'var(--wf-text-muted)',
-                                                        }}
-                                                    >
-                                                        {runningCount}
-                                                    </span>
-                                                )}
-                                            </button>
-                                        );
-                                    }}
-                                />
-                            )}
-                        </nav>
-
-                        <div className="border-t px-2 py-2" style={{ borderColor: 'var(--wf-border)' }}>
-                            <button
-                                type="button"
-                                onClick={() => setViewMode('list')}
-                                className="flex w-full items-center gap-2 rounded px-2 py-2 text-[12px] font-medium transition"
-                                style={{ color: 'var(--wf-text-muted)' }}
-                            >
-                                <List size={13} /> Xem dạng danh sách
-                            </button>
-                        </div>
-                    </aside>
-
-                    {/* PANEL 2: Toolbar + board */}
-                    <div className="wf-canvas flex min-w-0 flex-1 flex-col overflow-hidden">
-                        <div
-                            className="wf-surface shrink-0 border-b px-5 pt-4"
-                            style={{ borderColor: 'var(--wf-border)' }}
-                        >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                                <div className="flex min-w-0 items-center gap-2">
-                                    <h1
-                                        className="truncate text-[17px] font-semibold"
-                                        style={{ color: 'var(--wf-text)' }}
-                                    >
-                                        {boardTemplates.find(t => t.id === boardTemplateId)?.name || 'Quy trình duyệt'}
-                                    </h1>
-                                    <span
-                                        className="shrink-0 text-[12px] tabular-nums"
-                                        style={{ color: 'var(--wf-text-faint)' }}
-                                    >
-                                        {boardTemplateId
-                                            ? `${filteredBoardInstances.filter(i => i.templateId === boardTemplateId).length} nhiệm vụ`
-                                            : `${boardTemplates.length} quy trình`}
-                                    </span>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    <div className="relative">
-                                        <Search
-                                            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
-                                            style={{ color: 'var(--wf-text-faint)' }}
-                                        />
-                                        <input
-                                            type="text"
-                                            placeholder="Tìm nhiệm vụ..."
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                            className="w-[190px] rounded border py-1.5 pl-8 pr-3 text-[12.5px] outline-none"
-                                            style={{
-                                                borderColor: 'var(--wf-border-strong)',
-                                                backgroundColor: 'var(--wf-surface)',
-                                                color: 'var(--wf-text)',
-                                            }}
-                                        />
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowBoardFilters(v => !v)}
-                                        className="flex items-center gap-1.5 rounded border px-3 py-1.5 text-[12.5px] font-medium transition"
-                                        style={{
-                                            borderColor: showBoardFilters ? 'var(--wf-green)' : 'var(--wf-border-strong)',
-                                            color: showBoardFilters ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
-                                        }}
-                                    >
-                                        <SlidersHorizontal size={13} /> Bộ lọc
-                                        {filterStatus !== 'ALL' && (
-                                            <span
-                                                className="h-1.5 w-1.5 rounded-full"
-                                                style={{ backgroundColor: 'var(--wf-green)' }}
-                                            />
-                                        )}
-                                    </button>
-                                    <button
-                                        onClick={openCreateModal}
-                                        disabled={nonMaterialActiveTemplates.length === 0}
-                                        className="flex items-center gap-1.5 rounded px-3.5 py-1.5 text-[12.5px] font-semibold text-white transition disabled:opacity-50"
-                                        style={{ backgroundColor: 'var(--wf-green)' }}
-                                    >
-                                        <Plus size={14} /> Tạo nhiệm vụ
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Flat underline tabs, Base style */}
-                            <div className="mt-3 flex gap-5">
-                                {([
-                                    { id: 'pending' as const, label: 'Chờ tôi duyệt', count: visibleBoardInstances.filter(canActOnInstance).length },
-                                    { id: 'mine' as const, label: 'Nhiệm vụ của tôi', count: 0 },
-                                    {
-                                        id: 'watching' as const,
-                                        label: 'Theo dõi',
-                                        count: visibleBoardInstances.filter(i =>
-                                            i.watchers?.includes(user.id)
-                                            || templateById.get(i.templateId)?.defaultWatchers?.includes(user.id)
-                                        ).length,
-                                    },
-                                ]).map(tab => {
-                                    const isActive = activeTab === tab.id;
-                                    return (
+                                </label>
+                                <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800" role="group" aria-label="Kiểu hiển thị">
+                                    {([
+                                        { id: 'list' as const, icon: <List size={14} />, label: 'Danh sách' },
+                                        { id: 'board' as const, icon: <LayoutGrid size={14} />, label: 'Kanban' },
+                                    ]).map(item => (
                                         <button
-                                            key={tab.id}
+                                            key={item.id}
                                             type="button"
-                                            onClick={() => setActiveTab(tab.id)}
-                                            className="relative flex items-center gap-1.5 pb-2.5 text-[13px] transition"
-                                            style={{
-                                                color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
-                                                fontWeight: isActive ? 600 : 500,
-                                            }}
+                                            aria-pressed={viewMode === item.id}
+                                            onClick={() => setViewMode(item.id)}
+                                            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-semibold transition ${viewMode === item.id ? 'bg-white text-mint-800 shadow-sm dark:bg-slate-900 dark:text-mint-300' : 'text-slate-500'}`}
                                         >
-                                            {tab.label}
-                                            {tab.count > 0 && (
-                                                <span
-                                                    className="rounded-full px-1.5 text-[10px] font-semibold tabular-nums"
-                                                    style={{
-                                                        backgroundColor: isActive ? 'var(--wf-green-soft)' : 'var(--wf-column)',
-                                                        color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
-                                                    }}
-                                                >
-                                                    {tab.count}
-                                                </span>
-                                            )}
-                                            {isActive && (
-                                                <span
-                                                    className="absolute inset-x-0 bottom-0 h-0.5 rounded-t"
-                                                    style={{ backgroundColor: 'var(--wf-green)' }}
-                                                />
-                                            )}
+                                            {item.icon}{item.label}
                                         </button>
-                                    );
-                                })}
+                                    ))}
+                                </div>
+                                <button type="button" onClick={openCreateModal} disabled={nonMaterialActiveTemplates.length === 0} className={`${btnPrimary} disabled:opacity-50`}>
+                                    <Plus size={15} />Tạo phiếu
+                                </button>
                             </div>
 
-                            {showBoardFilters && (
-                                <div
-                                    className="flex flex-wrap items-center gap-2 border-t py-2.5"
-                                    style={{ borderColor: 'var(--wf-border)' }}
+                            {/* Phone navigation: the sidebar is hidden below lg */}
+                            <div className="no-scrollbar flex gap-1.5 overflow-x-auto lg:hidden">
+                                {([
+                                    { id: 'pending' as const, label: 'Chờ tôi duyệt' },
+                                    { id: 'mine' as const, label: 'Của tôi' },
+                                    { id: 'watching' as const, label: 'Theo dõi' },
+                                ]).map(item => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => goToNav(item.id)}
+                                        className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${viewMode === 'list' && activeTab === item.id ? 'border-mint-300 bg-mint-50 text-mint-800' : 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300'}`}
+                                    >
+                                        {item.label} {navCounts[item.id]}
+                                    </button>
+                                ))}
+                                <select
+                                    value={viewMode === 'board' ? boardTemplateId : selectedTemplateIdFilter}
+                                    onChange={event => selectSidebarTemplate(event.target.value, true)}
+                                    aria-label="Chọn quy trình"
+                                    className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                                 >
-                                    <span className="text-[11px] font-medium" style={{ color: 'var(--wf-text-faint)' }}>
-                                        Trạng thái
-                                    </span>
-                                    {[
-                                        { id: 'ALL', label: 'Tất cả' },
-                                        { id: 'RUNNING', label: 'Đang xử lý' },
-                                        { id: 'COMPLETED', label: 'Hoàn thành' },
-                                        { id: 'REJECTED', label: 'Từ chối' },
-                                    ].map(s => {
-                                        const isActive = filterStatus === s.id;
-                                        return (
+                                    {viewMode === 'list' && <option value="">Mọi quy trình</option>}
+                                    {(viewMode === 'board' ? boardTemplates : nonMaterialActiveTemplates).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                </select>
+                            </div>
+                        </header>
+
+                        <div className="wf-scroll min-h-0 flex-1 overflow-y-auto">
+                            {viewMode === 'list' ? (
+                                <div className="mx-auto max-w-7xl space-y-3 px-4 py-4 md:px-6">
+                                    <WorkflowKpiStrip values={kpiValues} onWaitingClick={() => goToNav('pending')} />
+
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        {(['ALL', ...Object.keys(STATUS_MAP)] as string[]).map(status => (
                                             <button
-                                                key={s.id}
+                                                key={status}
                                                 type="button"
-                                                onClick={() => setFilterStatus(s.id)}
-                                                className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition"
-                                                style={{
-                                                    borderColor: isActive ? 'var(--wf-green)' : 'var(--wf-border-strong)',
-                                                    backgroundColor: isActive ? 'var(--wf-green-soft)' : 'transparent',
-                                                    color: isActive ? 'var(--wf-green-text)' : 'var(--wf-text-muted)',
-                                                }}
+                                                onClick={() => setFilterStatus(status)}
+                                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${filterStatus === status ? 'border-mint-300 bg-mint-50 text-mint-800' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}
                                             >
-                                                {s.label}
+                                                {status === 'ALL' ? 'Tất cả' : STATUS_MAP[status as WorkflowInstanceStatus].label}
                                             </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                                        ))}
+                                        <span className="ml-auto text-xs text-slate-400">{sortedInstances.length} phiếu · ưu tiên: chờ bạn → quá hạn → lâu nhất</span>
+                                    </div>
 
-                        <div className="wf-scroll flex-1 overflow-auto px-4 py-3">
-                            {boardTemplateId ? (
-                                <KanbanBoard
-                                    templateId={boardTemplateId}
-                                    instances={filteredBoardInstances}
-                                    employees={employees}
-                                    orgUnits={orgUnits}
-                                    onCardClick={(instance) => {
-                                        setBoardDetailInstanceId(instance.id);
-                                        void ensureInstanceFormData(instance);
-                                    }}
-                                    onDragComplete={async (instanceId, action, comment, assigneeIds) => {
-                                        const result = await processInstance(instanceId, action, user.id, comment, assigneeIds);
-                                        if (!result.ok) showToast('error', result.errorMessage || 'Không xử lý được phiếu.');
-                                    }}
-                                />
+                                    {sortedInstances.length === 0 ? (
+                                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900">
+                                            <Inbox size={26} className="mx-auto text-slate-300" />
+                                            <p className="mt-3 font-semibold text-slate-700 dark:text-slate-200">{activeTab === 'pending' && !searchTerm && filterStatus === 'ALL' ? 'Bạn không còn phiếu nào chờ duyệt' : 'Không có phiếu khớp bộ lọc'}</p>
+                                            <p className="mt-1 text-sm text-slate-400">Phiếu mới cần bạn xử lý sẽ hiện ở đây.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {sortedInstances.map(instance => {
+                                                const template = templateById.get(instance.templateId);
+                                                const insight = insightById.get(instance.id)!;
+                                                return (
+                                                    <WorkflowInstanceRow
+                                                        key={instance.id}
+                                                        instance={instance}
+                                                        templateName={template?.name || ''}
+                                                        insight={insight}
+                                                        users={users}
+                                                        creatorName={users.find(u => u.id === instance.createdBy)?.name || 'N/A'}
+                                                        metaLine={getWorkflowMetaParts(instance.formData, template?.customFields, 1)[0] || ''}
+                                                        fileCount={countWorkflowFiles(instance.formData)}
+                                                        waitingForMe={waitingForMeIds.has(instance.id)}
+                                                        onOpen={() => openQuickView(instance)}
+                                                        onAction={action => setPendingAction({ instanceId: instance.id, action })}
+                                                        onOpenCanonical={() => navigate(buildWorkflowRoute(instance.id))}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
-                                <div
-                                    className="flex h-full flex-col items-center justify-center gap-2"
-                                    style={{ color: 'var(--wf-text-faint)' }}
-                                >
-                                    <LayoutGrid size={40} className="opacity-40" />
-                                    <p className="text-[13px] font-medium">Chọn một quy trình ở cột bên trái</p>
-                                    <p className="text-[12px]">Mỗi cột trên bảng là một giai đoạn xử lý</p>
+                                <div className="flex h-full flex-col px-4 py-4 md:px-6">
+                                    {boardTemplateId ? (
+                                        <>
+                                            <p className="mb-3 flex shrink-0 flex-wrap items-center gap-2 text-xs text-slate-500">
+                                                <span className="font-semibold text-slate-700 dark:text-slate-200">{boardSummary.total} phiếu</span>
+                                                <WfBadge className="border-amber-200 bg-amber-50 text-amber-700">{boardSummary.waitingForMe} chờ bạn duyệt</WfBadge>
+                                                <WfBadge className="border-rose-200 bg-rose-50 text-rose-700">{boardSummary.needsAttention} cần chú ý</WfBadge>
+                                                <span className="hidden text-slate-400 sm:inline">Kéo thả thẻ sang cột kế tiếp để duyệt · bấm thẻ để xem nhanh</span>
+                                            </p>
+                                            <div className="min-h-0 flex-1">
+                                                <KanbanBoard
+                                                    templateId={boardTemplateId}
+                                                    instances={boardInstances}
+                                                    employees={employees}
+                                                    orgUnits={orgUnits}
+                                                    isWaitingForMe={instance => waitingForMeIds.has(instance.id)}
+                                                    onQuickAction={(instance, action) => setPendingAction({ instanceId: instance.id, action })}
+                                                    onCardClick={instance => openQuickView(instance)}
+                                                    onDragComplete={async (instanceId, action, comment, assigneeIds) => {
+                                                        const result = await processInstance(instanceId, action, user.id, comment, assigneeIds);
+                                                        if (!result.ok) showToast('error', result.errorMessage || 'Không xử lý được phiếu.');
+                                                    }}
+                                                />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
+                                            <LayoutGrid size={40} className="opacity-40" />
+                                            <p className="text-[13px] font-medium">Chọn một quy trình ở cột bên trái</p>
+                                            <p className="text-[12px]">Mỗi cột trên bảng là một giai đoạn xử lý</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
-                    </div>
-                </div>
-            )}
+                    </>
+                )}
+            </main>
 
-            {/* Kanban quick look: summary first, full ticket behind "Xem chi tiết" */}
-            {viewMode === 'board' && boardDetailInstanceId && (() => {
-                const instance = instances.find(i => i.id === boardDetailInstanceId);
-                if (!instance) return null;
+            {/* Quick look from the list or the board: summary first, full ticket behind "Xem chi tiết" */}
+            {quickViewId && (() => {
+                const instance = instances.find(i => i.id === quickViewId);
+                const insight = instance ? insightById.get(instance.id) : undefined;
+                if (!instance || !insight) return null;
                 return (
                     <WorkflowInstanceSummaryPanel
                         instance={instance}
-                        template={templates.find(t => t.id === instance.templateId) || null}
-                        currentNode={nodes.find(n => n.id === instance.currentNodeId) || null}
+                        template={templateById.get(instance.templateId) || null}
+                        insight={insight}
                         users={users}
                         logs={getInstanceLogs(instance.id)}
-                        onClose={() => setBoardDetailInstanceId(null)}
+                        waitingForMe={waitingForMeIds.has(instance.id)}
+                        onClose={() => setQuickViewId(null)}
                         onOpenDetail={() => navigate(buildWorkflowRoute(instance.id))}
+                        onAction={action => setPendingAction({ instanceId: instance.id, action })}
                     />
                 );
             })()}
+
+            {pendingAction && (
+                <WorkflowInstanceActionDialog
+                    instanceId={pendingAction.instanceId}
+                    action={pendingAction.action}
+                    onClose={() => setPendingAction(null)}
+                    onDone={() => handleActionDone(pendingAction.instanceId, pendingAction.action)}
+                />
+            )}
 
             {/* Shared Create Instance Modal */}
             {showCreateModal && (
@@ -2494,9 +1806,6 @@ const WorkflowInstances: React.FC = () => {
             })()}
 
             {/* Shared File Preview Modal */}
-            {previewFile && (
-                <FilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
-            )}
         </div>
     );
 };
