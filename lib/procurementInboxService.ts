@@ -1,9 +1,17 @@
 import { supabase } from './supabase';
 
-export type ProcurementSourceType = 'material_request' | 'material_plan';
+export type ProcurementSourceType = 'material_request' | 'material_plan' | 'request' | 'workflow';
+
+/** External approvals are received for review; they cannot create purchasing commitments yet. */
+export const isExternalProcurementSource = (sourceType: ProcurementSourceType): boolean => sourceType === 'request' || sourceType === 'workflow';
+export const canOrderProcurementSource = (source: { sourceType: ProcurementSourceType; orderable?: boolean; intakeState?: 'received' | 'withdrawn' }): boolean =>
+  !isExternalProcurementSource(source.sourceType) && source.orderable !== false && source.intakeState !== 'withdrawn';
 export type ProcurementProgress = 'new' | 'partial' | 'ordered' | 'received' | 'closed';
 
 export interface ProcurementInboxDocument {
+  orderable?: boolean;
+  intakeState?: 'received' | 'withdrawn';
+  sourceRevision?: number;
   sourceType: ProcurementSourceType;
   sourceId: string;
   code: string;
@@ -61,6 +69,9 @@ export interface ProcurementOtherStock {
 }
 
 export interface ProcurementInboxDetail {
+  orderable?: boolean;
+  intakeState?: 'received' | 'withdrawn';
+  sourceSnapshot?: { columns: string[]; rows: Array<{ id: string; cells: string[] }>; notes: string | null; revision: number; withdrawnReason: string | null };
   sourceType: ProcurementSourceType; sourceId: string; code: string; title: string | null;
   projectId: string | null; projectCode: string | null; projectName: string | null;
   warehouseId: string | null; warehouseName: string | null; neededDate: string | null;
@@ -80,6 +91,8 @@ export interface ProcurementInboxFilter {
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
+  PROCUREMENT_SOURCE_REVIEW_REQUIRED: 'Phiếu đã được tiếp nhận. Kiểm tra quy cách và nơi nhận trước khi chuyển sang bước mua/cấp phát.',
+  PROCUREMENT_SOURCE_WITHDRAWN: 'Phiếu nguồn đã mở lại hoặc hủy. Chờ nguồn được duyệt lại để tiếp tục xử lý.',
   PROCUREMENT_VIEW_DENIED: 'Bạn chưa có quyền vào Mua hàng. Nhờ quản trị cấp quyền "Mua hàng — Xem".',
   PROCUREMENT_MANAGE_DENIED: 'Bạn chưa có quyền phân công trong Mua hàng.',
   PROCUREMENT_ASSIGNEE_INVALID: 'Người được chọn không thuộc phòng Mua hàng.',
@@ -336,6 +349,8 @@ export const PROCUREMENT_PO_STATUS_LABELS: Record<string, string> = {
 
 /** Where the source document lives in its project. */
 export const procurementSourceLink = (doc: Pick<ProcurementInboxDocument, 'sourceType' | 'sourceId' | 'projectId' | 'constructionSiteId' | 'periodType' | 'periodStart'>): string | null => {
+  if (doc.sourceType === 'request') return `#/rq/${encodeURIComponent(doc.sourceId)}`;
+  if (doc.sourceType === 'workflow') return `#/wf/${encodeURIComponent(doc.sourceId)}`;
   if (!doc.projectId) return null;
   const params = new URLSearchParams({ projectId: doc.projectId, ...(doc.constructionSiteId ? { siteId: doc.constructionSiteId } : {}) });
   if (doc.sourceType === 'material_request') { params.set('tab', 'material'); params.set('materialTab', 'request'); params.set('requestId', doc.sourceId); }
@@ -344,6 +359,8 @@ export const procurementSourceLink = (doc: Pick<ProcurementInboxDocument, 'sourc
 };
 
 export const PROCUREMENT_SOURCE_LABELS: Record<ProcurementSourceType, string> = {
+  request: 'Module Đề xuất',
+  workflow: 'Module Quy trình',
   material_plan: 'KH vật tư',
   material_request: 'Đề xuất công trường',
 };

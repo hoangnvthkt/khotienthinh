@@ -51,3 +51,22 @@ describe('procurement inbox errors', () => {
     await expect(procurementInboxService.list({})).rejects.toMatchObject({ code: 'PROCUREMENT_VIEW_DENIED' });
   });
 });
+
+describe('external module intake', () => {
+  it('links requests and workflows without a project', () => {
+    const source = { sourceId: 'source-id', projectId: null, constructionSiteId: null, periodType: null, periodStart: null };
+    expect(procurementSourceLink({ ...source, sourceType: 'request' })).toBe('#/rq/source-id');
+    expect(procurementSourceLink({ ...source, sourceType: 'workflow' })).toBe('#/wf/source-id');
+  });
+  it('never treats external snapshots or withdrawn demand as orderable', async () => {
+    const { canOrderProcurementSource } = await import('../procurementInboxService');
+    expect(canOrderProcurementSource({ sourceType: 'request', orderable: true })).toBe(false);
+    expect(canOrderProcurementSource({ sourceType: 'workflow' })).toBe(false);
+    expect(canOrderProcurementSource({ sourceType: 'material_request', intakeState: 'withdrawn' })).toBe(false);
+    expect(canOrderProcurementSource({ sourceType: 'material_plan' })).toBe(true);
+  });
+  it('explains why external data cannot silently become a purchase order', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'PROCUREMENT_SOURCE_REVIEW_REQUIRED' } });
+    await expect(procurementInboxService.saveOrder({ vendorId: 'vendor', vatRate: 0, items: [] })).rejects.toThrow('quy cách và nơi nhận');
+  });
+});

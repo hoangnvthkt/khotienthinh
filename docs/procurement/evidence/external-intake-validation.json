@@ -1,0 +1,63 @@
+{
+  "migration": "supabase/migrations/20261008171002_procurement_external_intake.sql",
+  "migrationSha256": "91f577daffc44fb40c4573624deffe2d97600df3b4986e6ed388c9065ef15c22",
+  "baselineFunctions": [
+    {
+      "signature": "assign_procurement_inbox_v1(jsonb)",
+      "md5": "2b1b84d009ca07e96bc493b1c2832ea8"
+    },
+    {
+      "signature": "close_procurement_need_v1(jsonb)",
+      "md5": "9b5b3cf7512fb142649931361da21f1b"
+    },
+    {
+      "signature": "get_procurement_inbox_document_v1(text,text)",
+      "md5": "04c3481f85932a5c84844a1f0022341f"
+    },
+    {
+      "signature": "list_procurement_inbox_v1(jsonb)",
+      "md5": "320c02b270e061668c3a231831826a44"
+    },
+    {
+      "signature": "save_procurement_hub_po_v1(jsonb)",
+      "md5": "595d80c4eb074a2adf1e19fa000540dc"
+    }
+  ],
+  "validation": {
+    "cloud": "Rollback smoke passed using real request and workflow approval RPCs on synthetic records only",
+    "unit": "3060 passed, 2 skipped",
+    "ui": "4 Playwright checks passed at 390, 768, 1440 px",
+    "types": "Application typecheck 0 diagnostics; npm run lint passed",
+    "build": "Vite build passed",
+    "migrationBaseline": "passed",
+    "queryInventory": "passed",
+    "securityAdvisors": {
+      "before": 457,
+      "after": 452,
+      "new": 0
+    }
+  },
+  "scope": {
+    "request": "Đề xuất cấp phát thiết bị văn phòng",
+    "workflow": "CT Sơn MB - Kết Cấu",
+    "historicalBackfill": false,
+    "automaticPurchaseOrders": false
+  },
+  "production": {
+    "version": "20261008171002",
+    "migrationSha256": "91f577daffc44fb40c4573624deffe2d97600df3b4986e6ed388c9065ef15c22",
+    "appliedAt": "2026-10-05T04:24:12.292Z",
+    "result": [
+      {
+        "source_type": "request",
+        "template_id": "444f2d55-63fd-4dee-836f-698ff6a10b26",
+        "enabled_at": "2026-10-05 04:24:12.184502+00"
+      },
+      {
+        "source_type": "workflow",
+        "template_id": "5bdb1593-765b-4013-b458-0c05f155631b",
+        "enabled_at": "2026-10-05 04:24:12.184502+00"
+      }
+    ]
+  }
+}
