@@ -1,3 +1,4 @@
+import { supabase } from "../../lib/supabase";
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -417,6 +418,20 @@ function OfficeDetailContent({
             </div>
             {tab === "content" ? (
               <div className="office-document-body">
+                {d.source_assignment_id && <div className="office-document-summary">
+                  <p>Thông báo được tự soạn từ phương án Nhân sự đã duyệt. Hồ sơ còn thiếu được ghi rõ bên dưới; hãy bổ sung hồ sơ rồi làm mới trước khi gửi duyệt.</p>
+                  <div className="office-inline-actions">
+                    <Link className="office-secondary" to={`/hrm/assignments?id=${d.source_assignment_id}`}>Xem điều động nguồn</Link>
+                    {d.status === "DRAFT" && caps.edit && <button className="office-secondary" disabled={busy} onClick={async () => {
+                      setBusy(true); setError(null);
+                      try {
+                        const result = await supabase.rpc("refresh_hr_transfer_office_draft", {p_document_id:d.id});
+                        if (result.error) throw result.error;
+                        refresh(); setSuccess("Đã làm mới thông tin từ hồ sơ nhân sự.");
+                      } catch (e) { setError(e); } finally { setBusy(false); }
+                    }}>Làm mới từ hồ sơ Nhân sự</button>}
+                  </div>
+                </div>}
                 {d.summary && (
                   <p className="office-document-summary">{d.summary}</p>
                 )}

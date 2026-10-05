@@ -110,6 +110,7 @@ export interface OfficeDraft {
   watcher_ids: string[];
 }
 export interface OfficeDocument extends OfficeDraft {
+  source_assignment_id?: string | null;
   id: string;
   status: OfficeStatus;
   processing_status: ProcessingStatus | null;

@@ -1,0 +1,71 @@
+{
+  "verifiedAt": "2026-10-05T02:41:05.564Z",
+  "migration": "20261008171001_request_hr_office_transfer_bridge.sql",
+  "migrationSha256": "2b32fb2d8e6d230e8ae91f13f650376a7890e83d80d1e06f3b2c516d61cbc5e8",
+  "pilotSeedSha256": "f56620ff261277803a9b82392a86331e372a18a5d62fbb148a6f51763ecb9e87",
+  "tests": {
+    "vitest": {
+      "filesPassed": 622,
+      "testsPassed": 3057,
+      "testsSkipped": 2,
+      "rerunAfterPlaywrightIsolation": true
+    },
+    "applicationTypecheck": 0,
+    "build": "passed; existing chunk-size warning",
+    "browser": {
+      "widths": [
+        390,
+        768,
+        1440
+      ],
+      "testsPassed": 3,
+      "includes": "Cross-module links, disabled premature HR actions, mobile overflow and rich-text newline layout."
+    },
+    "cloudRollback": [
+      "actual request and HR approval RPCs",
+      "request and HR rejection",
+      "unique downstream records and retry",
+      "unauthorized reads/approvals denied",
+      "source immutable after approval",
+      "HR approval leaves employee/site/project state unchanged",
+      "missing identity blocks Office submission",
+      "profile refresh/version audit",
+      "same-day baseline and future publication effect gates",
+      "cancel linked assignment blocks Office",
+      "legacy HR smoke passes"
+    ],
+    "standardTypecheck": "passed"
+  },
+  "limits": [
+    "Fictional browser tests plus read-only verification of the real request, HR assignment and generated Office draft. Human user completed both approvals.",
+    "Publication effect trigger exercised in rollback; final signed PDF/publication workflow is outside this rollout scope.",
+    "Template initially limited to the user-authorized employee and two sites."
+  ],
+  "production": {
+    "appliedAt": "2026-10-05T02:42:48.312Z",
+    "migrationVersion": "20261008171001",
+    "requestStatus": "PENDING",
+    "approvalsExecuted": false,
+    "browserVerified": "Admin session displays the real draft with correct employee, sites, effective date, duties and visible missing-profile fields.",
+    "liveWorkflowVerified": {
+      "request": "APPROVED",
+      "assignment": "awaiting_office",
+      "office": "DRAFT",
+      "draftCount": 1,
+      "employeeStillAtOrigin": true,
+      "humanApprovals": "Both approvals performed by the user in the app; not by the agent.",
+      "missingFields": [
+        "CCCD",
+        "Ngày cấp CCCD",
+        "Nơi cấp CCCD"
+      ]
+    }
+  },
+  "advisors": {
+    "before": 457,
+    "after": 457,
+    "newFindings": 0
+  },
+  "migrationOrdering": "CLI-created migration reordered after existing HR dependency 20261008150000 and repository tip 20261008171000. Production SQL is unchanged; only its migration-history version is reconciled.",
+  "cloudPreview": "Blocked by pre-existing Finance seed referencing absent business partner; production bridge and live workflow verified."
+}
