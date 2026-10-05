@@ -251,6 +251,9 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [printTemplates, setPrintTemplates] = useState<WorkflowPrintTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const inflightRefreshRef = useRef<Promise<void> | null>(null);
+    // Tickets opened directly may sit outside the latest-300 catalog; a later catalog
+    // refresh must not drop them (or their logs) from under an open detail screen.
+    const onDemandInstanceIdsRef = useRef(new Set<string>());
 
     const refreshData = useCallback(async () => {
         if (inflightRefreshRef.current) return inflightRefreshRef.current;
@@ -274,15 +277,17 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             const inactiveTemplateIds = new Set((tRes.data || []).filter((template: any) => template.is_active === false).map((template: any) => template.id));
             setNodes(prev => [...prev.filter(n => inactiveTemplateIds.has(n.templateId)), ...nodeRows.map(mapNodeFromDB)]);
             setEdges(prev => [...prev.filter(e => inactiveTemplateIds.has(e.templateId)), ...edgeRows.map(mapEdgeFromDB)]);
-            if (iRes.data) setInstances(iRes.data.map(mapInstanceFromDB));
-            if (iRes.data && iRes.data.length > 0) {
-                const instanceIds = iRes.data.map((i: any) => i.id);
-                const logData = await loadWorkflowRowsByIds('workflow_instance_logs', WORKFLOW_LOG_SELECT, 'instance_id', instanceIds);
-                logData.sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)) || String(left.id).localeCompare(String(right.id)));
-                setLogs(logData.map(mapLogFromDB));
-            } else {
-                setLogs([]);
+            const listedIds = new Set<string>((iRes.data || []).map((i: any) => i.id));
+            const keepOnDemand = (instanceId: string) => onDemandInstanceIdsRef.current.has(instanceId) && !listedIds.has(instanceId);
+            if (iRes.data) {
+                const listed = iRes.data.map(mapInstanceFromDB);
+                setInstances(prev => [...listed, ...prev.filter(item => keepOnDemand(item.id))]);
             }
+            const logData = listedIds.size > 0
+                ? await loadWorkflowRowsByIds('workflow_instance_logs', WORKFLOW_LOG_SELECT, 'instance_id', Array.from(listedIds))
+                : [];
+            setLogs(prev => [...prev.filter(item => keepOnDemand(item.instanceId)), ...logData.map(mapLogFromDB)]
+                .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)) || left.id.localeCompare(right.id)));
             if (ptRes.data) setPrintTemplates(ptRes.data.map(mapPrintTemplateFromDB));
         })();
         inflightRefreshRef.current = refreshTask;
@@ -769,6 +774,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             }
 
             const loadedInstance = mapInstanceFromDB(instanceRow);
+            onDemandInstanceIdsRef.current.add(loadedInstance.id);
             const loadedTemplate = templateRes.data ? mapTemplateFromDB(templateRes.data) : null;
             const loadedNodes = (nodeRes.data || []).map(mapNodeFromDB);
             const loadedEdges = (edgeRes.data || []).map(mapEdgeFromDB);

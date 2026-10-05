@@ -4,8 +4,9 @@ import {
     ArrowLeft, CheckCircle, Clock, FileText, GitBranch, Image as ImageIcon,
     MessageSquare, Paperclip, RefreshCcw, RotateCcw, Send, User, X, XCircle,
     AlertCircle, Calendar, Download, Eye, Table2, FileSpreadsheet, ChevronRight, ChevronDown, Check,
-    Search, Edit2, Bookmark, AtSign, Copy
+    Search, Edit2, Bookmark, AtSign, Copy, Loader2
 } from 'lucide-react';
+import { getClipboardFiles } from '../../lib/clipboardFiles';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -398,21 +399,30 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     const [isSavingEdit, setIsSavingEdit] = useState(false);
 
     const instance = useMemo(() => instances.find(item => item.id === id), [instances, id]);
+    const instancesRef = useRef(instances);
+    instancesRef.current = instances;
 
+    // Opened from the list: show the cached row at once and refresh just this ticket.
+    // Direct links wait for this ticket only — the catalog refresh runs in the background (App).
     useEffect(() => {
         let active = true;
         if (!id) {
             setDirectLoadState('resolved');
             return () => { active = false; };
         }
-        setDirectLoadState('loading');
-        refreshData()
-            .then(() => loadInstanceById(id))
+        setDirectLoadState(instancesRef.current.some(item => item.id === id) ? 'resolved' : 'loading');
+        loadInstanceById(id)
             .catch(error => console.error('Direct workflow instance load error:', error))
             .finally(() => {
                 if (active) setDirectLoadState('resolved');
             });
         return () => { active = false; };
+    }, [id, loadInstanceById]);
+    // After an edit or action: wait only for this ticket; the list catches up in the background.
+    const reloadInstance = useCallback(async () => {
+        if (!id) return;
+        refreshData().catch(error => console.warn('Workflow catalog refresh failed:', error));
+        await loadInstanceById(id);
     }, [id, loadInstanceById, refreshData]);
     const template = useMemo(() => templates.find(item => item.id === instance?.templateId), [templates, instance?.templateId]);
     const currentNode = useMemo(() => nodes.find(node => node.id === instance?.currentNodeId), [nodes, instance?.currentNodeId]);
@@ -635,10 +645,6 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
     }, [id]);
 
     useEffect(() => {
-        refreshData().catch(console.error);
-    }, [refreshData]);
-
-    useEffect(() => {
         if (!instance) return;
         if (Object.keys(instance.formData || {}).length === 0) {
             loadInstanceFormData(instance.id).catch(console.error);
@@ -668,7 +674,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         });
     };
 
-    const handleAttachmentFiles = async (files: FileList | null) => {
+    const handleAttachmentFiles = async (files: FileList | File[] | null) => {
         if (!id || !files?.length) return;
         const remaining = workflowInstanceCommentService.maxAttachmentsPerComment - draftAttachments.length;
         const selectedFiles = Array.from(files).slice(0, Math.max(remaining, 0));
@@ -801,7 +807,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         setActionComment('');
         setActiveAction(null);
         setSelectedAssigneeIds([]);
-        await refreshData();
+        await reloadInstance();
         return true;
     };
 
@@ -823,7 +829,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
             };
             await updateInstance(instance.id, { title: editTitle, formData: updatedFormData });
             setShowEditModal(false);
-            await refreshData();
+            await reloadInstance();
         } catch (err) {
             console.error('Error saving edits:', err);
         } finally {
@@ -858,7 +864,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 attachments: newAttachments
             };
             await updateInstance(instance.id, { formData: updatedFormData });
-            await refreshData();
+            await reloadInstance();
         } catch (err) {
             console.error('Doc upload error:', err);
         } finally {
@@ -876,7 +882,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
         };
         await updateInstance(instance.id, { formData: updatedFormData });
         workflowInstanceCommentService.removeAttachments([fileToDelete.storagePath]).catch(console.error);
-        await refreshData();
+        await reloadInstance();
     };
 
     const handleDownloadDoc = (file: any) => {
@@ -1169,7 +1175,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                     <XCircle size={13} /> <span>Từ chối</span>
                                 </button>}
                                 <button
-                                    onClick={() => refreshData()}
+                                    onClick={() => void reloadInstance()}
                                     className="inline-flex items-center justify-center p-2.5 sm:p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[42px] sm:min-h-0"
                                     title="Làm mới dữ liệu"
                                 >
@@ -1179,7 +1185,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                         ) : (
                             <div className="flex justify-end">
                                 <button
-                                    onClick={() => refreshData()}
+                                    onClick={() => void reloadInstance()}
                                     className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
                                     title="Làm mới dữ liệu"
                                 >
@@ -1515,7 +1521,13 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                     onChange={handleCommentBodyChange}
                                     onKeyDown={handleCommentKeyDown}
                                     onBlur={() => window.setTimeout(() => setMentionTrigger(null), 120)}
-                                    placeholder="Viết thảo luận của bạn... Dùng @ để nhắc nhân viên"
+                                    onPaste={event => {
+                                        const pastedFiles = getClipboardFiles(event.clipboardData);
+                                        if (pastedFiles.length === 0) return;
+                                        event.preventDefault();
+                                        void handleAttachmentFiles(pastedFiles);
+                                    }}
+                                    placeholder="Viết thảo luận của bạn... Dùng @ để nhắc nhân viên, dán ảnh/file bằng Ctrl+V"
                                     rows={3}
                                     className="w-full resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 dark:text-slate-200"
                                 />
@@ -1558,6 +1570,24 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                     </div>
                                 )}
                             </div>
+                            {(draftAttachments.length > 0 || isUploading) && (
+                                <div className="flex flex-wrap gap-2">
+                                    {draftAttachments.map(attachment => (
+                                        <div key={attachment.id} className="flex max-w-[16rem] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                            {attachment.kind === 'image' ? <ImageIcon size={13} className="shrink-0 text-emerald-600" /> : <Paperclip size={13} className="shrink-0 text-slate-400" />}
+                                            <span className="min-w-0 flex-1 truncate" title={attachment.fileName}>{attachment.fileName}</span>
+                                            <button type="button" onClick={() => removeDraftAttachment(attachment)} aria-label={`Bỏ ${attachment.fileName}`} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                                                <X size={13} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {isUploading && (
+                                        <div className="flex items-center gap-2 rounded-xl border border-dashed border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:text-emerald-300">
+                                            <Loader2 size={13} className="animate-spin" /> Đang tải file lên…
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                             {commentError && <div className="text-xs font-bold text-red-500">{commentError}</div>}
                             <div className="flex justify-end">
                                 <button
@@ -1583,6 +1613,11 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                         <p className="font-semibold text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
                                             <WorkflowCommentBody body={comment.body} mentions={comment.mentions} />
                                         </p>
+                                        {comment.attachments.length > 0 && (
+                                            <div className="grid grid-cols-2 gap-2 pt-1 md:grid-cols-3">
+                                                {comment.attachments.map(attachment => <AttachmentPreview key={attachment.id} attachment={attachment} />)}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
