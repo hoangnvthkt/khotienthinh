@@ -2494,7 +2494,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     }, [constructionSiteId, effectiveId, logs, projectId, summaryWbsBundle, summaryDate, summaryDescription, summaryIssues, summaryLogId, summaryNextPlan, summaryPhotos, summaryWeather, user?.id, user?.name, user?.username]);
 
     const submitWbsSummary = useCallback(async (expectedUpdatedAt: string) => {
-        if (!(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
+        // Owner 05/10: whoever may summarize may also send the summary to the CHT.
+        if (!hasDailyLogAction(DAILY_LOG_ACTION.summarize)
+            && !(await requireDailyLogAction(DAILY_LOG_ACTION.submit, 'gửi bản tổng hợp'))) return;
         const summaryApprover = summaryApprovers.find(staff => staff.userId === summaryApproverUserId);
         if (!summaryApprover) {
             toast.warning('Chưa chọn CHT duyệt', 'Vui lòng chọn người có quyền duyệt trong Room Nhật ký công trường.');
@@ -2519,7 +2521,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         } finally {
             setSummarySaving(false);
         }
-    }, [reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast]);
+    }, [hasDailyLogAction, reloadDailyLogRecords, requireDailyLogAction, summaryApproverUserId, summaryApprovers, summaryDescription, summaryLogId, summaryPhotos.length, toast]);
 
     const publishWbsSummary = useCallback(async () => {
         const log = reviewWbsBundle?.summaryLog;
@@ -3527,6 +3529,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             }
                         }}
                         onPublish={publishWbsSummary}
+                        onVerifyPilot={async () => {
+                            // Pilot: the CHT closes the day; official progress stays untouched.
+                            if (!(await handleStatusChange(viewingLog, 'verified'))) return;
+                            toast.success('Đã duyệt bản tổng hợp', 'Chế độ thí điểm: tiến độ chính thức chưa thay đổi.');
+                            setViewLogId(null);
+                        }}
                     /> : undefined}
                     busy={reviewWbsBusy || busyLogIds.has(viewingLog.id)}
                     onClose={() => {if(!reviewWbsBusy)setViewLogId(null);}}

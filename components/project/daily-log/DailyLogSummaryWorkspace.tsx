@@ -18,6 +18,8 @@ interface Props {
   onSaved?: (receipt?: DailyLogWorkSaveReceipt) => void | Promise<void>;
   onSubmit?: (receipt: DailyLogWorkSaveReceipt) => void | Promise<void>;
   onPublish?: () => void | Promise<void>;
+  /** Pilot only: CHT approves the summary (closes the day) without publishing official progress. */
+  onVerifyPilot?: () => Promise<void>;
   onReturnAll?: () => void | Promise<void>;
   onClose?: () => void;
   onBusyChange?: (busy: boolean) => void;
@@ -156,7 +158,7 @@ export const adjustSummaryCardProgress = (card: DailyLogAreaCardModel, itemId: s
   }) };
 };
 
-export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensureSummaryLog, onSaved, onSubmit, onPublish, onReturnAll, onClose = () => {}, onBusyChange, metadataForm, metadataDirty=false, canSendSummary=true, sendDisabledReason }) => {
+export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensureSummaryLog, onSaved, onSubmit, onPublish, onVerifyPilot, onReturnAll, onClose = () => {}, onBusyChange, metadataForm, metadataDirty=false, canSendSummary=true, sendDisabledReason }) => {
   const initial = useMemo(() => buildDailyLogSummaryDraft(bundle), [bundle]);
   const [cards, setCards] = useState(initial.cards);
   const [pickerOpen, setPickerOpen] = useState(initial.cards.length === 0);
@@ -185,6 +187,7 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
     + cards.flatMap(card => card.editedItems).filter(item => !item.unit?.trim()).length
     + groups.filter(group => !decisions[group.aggregate.taskId]).length;
   const report = mode !== 'summarize';
+  const pilot = bundle.rollout.mode === 'pilot';
   const periodLocked = bundle.periodState?.isLocked === true;
   const canReview = mode === 'review' && !verified && bundle.rollout.enabled && bundle.summaryLog?.status === 'submitted' && bundle.permissions.canApprove;
   const canSubmit = bundle.rollout.enabled && bundle.permissions.canSummarize && canSendSummary && sourceBlockers === 0 && unresolved === 0 && cards.length > 0 && groups.length > 0;
@@ -252,7 +255,11 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
   const publish = async () => {
     if (busyRef.current || !onPublish || !canReview || periodLocked || sourceBlockers || unresolved) return;
     setWorking(true,'primary'); setError(null);
-    try { await onPublish(); }
+    try {
+      await onPublish();
+      // Pilot: the comparison above is kept as evidence; approving closes the day.
+      if (pilot && onVerifyPilot) await onVerifyPilot();
+    }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Không thể công bố tiến độ.'); }
     finally { setWorking(false); }
   };
@@ -340,9 +347,9 @@ export const DailyLogSummaryWorkspace: React.FC<Props> = ({ bundle, mode, ensure
       statusTone={verified?'verified':bundle.summaryLog?.status==='rejected'?'returned':'pending'}
       busyAction={busyAction} onClose={onClose} closeDisabled={busy}
       secondaryAction={canReview && onReturnAll?{label:'Trả bản tổng hợp',tone:'return',disabled:busy,onClick:returnSummary}:undefined}
-      primaryAction={publishAllowed && !periodLocked && onPublish?{label:bundle.rollout.mode==='pilot'?'Đối chiếu thử nghiệm':'Duyệt & công bố',tone:bundle.rollout.mode==='pilot'?undefined:'approve',disabled:busy || Boolean(sourceBlockers || unresolved),disabledReason:sourceBlockers || unresolved?'Có phiếu hoặc quyết định chưa hoàn thiện. Trả đúng phiếu hoặc bản tổng hợp để sửa.':undefined,onClick:publish}:undefined}/>}
+      primaryAction={publishAllowed && !periodLocked && onPublish?{label:pilot?(onVerifyPilot?'Duyệt (thí điểm)':'Đối chiếu thử nghiệm'):'Duyệt & công bố',tone:pilot && !onVerifyPilot?undefined:'approve',disabled:busy || Boolean(sourceBlockers || unresolved),disabledReason:sourceBlockers || unresolved?'Có phiếu hoặc quyết định chưa hoàn thiện. Trả đúng phiếu hoặc bản tổng hợp để sửa.':undefined,onClick:publish}:undefined}/>}
     <div className="daily-log-document-body space-y-5 p-4 sm:p-6">
-      {report && !verified && bundle.rollout.mode==='pilot' && <p className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">Đang chạy thử: CHT chỉ đối chiếu số liệu với cách ghi cũ. Tiến độ chính thức không thay đổi và bản tổng hợp vẫn ở trạng thái chờ duyệt.</p>}
+      {report && !verified && bundle.rollout.mode==='pilot' && <p className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">{onVerifyPilot ? 'Đang chạy thử: bấm Duyệt (thí điểm) để khép ngày. Hệ thống đối chiếu số liệu với cách ghi cũ; tiến độ chính thức chưa thay đổi.' : 'Đang chạy thử: CHT chỉ đối chiếu số liệu với cách ghi cũ. Tiến độ chính thức không thay đổi và bản tổng hợp vẫn ở trạng thái chờ duyệt.'}</p>}
       {report && periodLocked && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">Kỳ tiến độ đang khóa. <Link to={reopenUrl} className="inline-flex min-h-11 items-center font-medium underline">Mở Chốt tiến độ</Link> để mở kỳ trước khi xử lý.</p>}
       {report && <h2 className="dl-report-section-title">Tổng quan ngày</h2>}
       {report && <p className="dl-report-intro whitespace-pre-wrap break-words">{bundle.summaryLog?.description || 'Chưa có nội dung tổng hợp'}</p>}
