@@ -12,6 +12,7 @@ interface ItemSelectionModalProps {
   filterWarehouseId?: string; // ID kho để lọc vật tư (cho xuất/chuyển/hủy)
   allowAllItems?: boolean;    // true = hiển thị tất cả vật tư (cho nhập kho/đề xuất nhu cầu)
   showStockQuantities?: boolean;
+  items?: InventoryItem[];    // Danh mục riêng (mặc định lấy từ kho dữ liệu chung)
 }
 
 const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
@@ -21,9 +22,11 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
   onOpenScanner,
   filterWarehouseId,
   allowAllItems = false,
-  showStockQuantities = true
+  showStockQuantities = true,
+  items: itemsProp,
 }) => {
-  const { items, warehouses } = useApp();
+  const { items: appItems, warehouses } = useApp();
+  const items = itemsProp ?? appItems;
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
