@@ -157,7 +157,15 @@ export function newOfficeDraft(
     workflow_id: null,
     recipient_specs: [],
     watcher_ids: [],
+    proposed_sequence: null,
   };
+}
+/** Tách mẫu sổ "{sequence}/{year}/{code}-TT" thành phần trước / sau ô số. */
+export function officeNumberParts(format: string, code: string, year: number) {
+  const fill = (part: string) =>
+    part.replaceAll("{year}", String(year)).replaceAll("{code}", code);
+  const [before, after = ""] = format.split("{sequence}");
+  return { prefix: fill(before), suffix: fill(after) };
 }
 export function editableDraft(document: OfficeDraft): OfficeDraft {
   const keys = Object.keys(newOfficeDraft()) as (keyof OfficeDraft)[];
@@ -192,6 +200,8 @@ export function officeError(error: unknown): string {
     OFFICE_NOT_FOUND: "Không tìm thấy văn bản hoặc bạn chưa có quyền truy cập.",
     OFFICE_DENIED:
       "Bạn chưa có quyền thực hiện thao tác này hoặc trạng thái văn bản đã thay đổi.",
+    OFFICE_NUMBER_TAKEN:
+      "Số văn bản đã được dùng cho văn bản khác. Mở bản nháp, chọn số trống rồi cấp số lại.",
     OFFICE_RECIPIENT_REQUIRED:
       "Chọn ít nhất một người nhận có tài khoản hoạt động.",
     OFFICE_RECIPIENT_INELIGIBLE:

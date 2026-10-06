@@ -347,6 +347,18 @@ const options = {
 const rpc = async (name: string, p: any) => {
   await new Promise((r) => setTimeout(r, 80));
   try {
+    if (name === "office_number_suggestion_v1") {
+      const taken = p.p_sequence === 235;
+      return {
+        data: {
+          requiresNumber: true, year: 2026, code: "TB", format: "{sequence}/{year}/{code}-TT",
+          ruleName: "Sổ Tiến Thịnh", next: 236, taken,
+          takenNumber: taken ? "235/2026/TB-TT" : null,
+          takenTitle: taken ? "QĐ SỐ 235 – Điều động nhân sự" : null,
+        },
+        error: null,
+      };
+    }
     if (name === "office_query") {
       const q = p.p_query,
         x = p.p_params;
@@ -616,7 +628,7 @@ const rpc = async (name: string, p: any) => {
       if (action === "reject") d.status = "REJECTED";
       if (action === "issue_number") {
         d.status = "APPROVED";
-        d.document_number = "236/2026/TB-TT";
+        d.document_number = `${d.proposed_sequence || 236}/2026/TB-TT`;
         d.numbered_at = now;
       }
       if (action === "publish") {

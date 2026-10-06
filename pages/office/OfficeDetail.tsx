@@ -39,6 +39,7 @@ import {
   CONFIDENTIALITY,
   displayDate,
   OFFICE_GROUPS,
+  officeNumberParts,
   processingLabel,
   URGENCY,
 } from "../../lib/office/officePresentation";
@@ -142,6 +143,14 @@ function OfficeDetailContent({
 }) {
   const d = detail.document,
     caps = detail.capabilities;
+  const proposedNumber =
+    !d.document_number && d.proposed_sequence
+      ? d.number_format && d.number_code
+        ? (({ prefix, suffix }) => `${prefix}${d.proposed_sequence}${suffix}`)(
+            officeNumberParts(d.number_format, d.number_code, new Date().getFullYear()),
+          )
+        : String(d.proposed_sequence)
+      : null;
   const command = useOfficeCommand(service);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
@@ -255,7 +264,9 @@ function OfficeDetailContent({
                 d.source_document_number ||
                 (d.document_group === "INCOMING"
                   ? "Văn bản đến"
-                  : "Chưa cấp số")}
+                  : proposedNumber
+                    ? `Số dự kiến ${proposedNumber}`
+                    : "Chưa cấp số")}
             </span>
             <OfficeBadge status={d.status} group={d.document_group} />
             {d.revoked_at && d.status !== "REVOKED" && (
@@ -644,7 +655,10 @@ function OfficeDetailContent({
                 <strong>
                   {d.document_group === "INCOMING"
                     ? d.source_document_number || "Không có số bên gửi"
-                    : d.document_number || "Chưa cấp số"}
+                    : d.document_number ||
+                      (proposedNumber
+                        ? `Dự kiến ${proposedNumber}`
+                        : "Chưa cấp số")}
                 </strong>
                 <small>
                   {d.document_group === "INCOMING"
@@ -804,7 +818,7 @@ function OfficeActionDialog({
     publish:
       "Phát hành sẽ chốt người nhận và khóa nội dung, người ký, số và tệp đính kèm. Người nhận sẽ được thông báo.",
     issue_number:
-      "Số được cấp tự động trong sổ văn bản. Số đã cấp được giữ vĩnh viễn; nội dung sẽ được khóa.",
+      "Cấp đúng số người soạn đã chọn; nếu để trống thì cấp số tiếp theo trong sổ. Số đã cấp được giữ vĩnh viễn; nội dung sẽ được khóa.",
     archive: "Văn bản vẫn có thể tra cứu và người nhận vẫn giữ quyền xem.",
     revoke:
       "Người nhận sẽ được thông báo thu hồi. Số văn bản được giữ trong lịch sử.",

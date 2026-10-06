@@ -108,6 +108,19 @@ export interface OfficeDraft {
   workflow_id: string | null;
   recipient_specs: RecipientSpec[];
   watcher_ids: string[];
+  /** Phần số người soạn chọn; chỉ chính thức khi Cấp số. */
+  proposed_sequence?: number | null;
+}
+export interface OfficeNumberSuggestion {
+  requiresNumber: boolean;
+  year?: number;
+  code?: string;
+  format?: string;
+  ruleName?: string;
+  next?: number;
+  taken?: boolean;
+  takenNumber?: string | null;
+  takenTitle?: string | null;
 }
 export interface OfficeDocument extends OfficeDraft {
   source_assignment_id?: string | null;
@@ -115,6 +128,8 @@ export interface OfficeDocument extends OfficeDraft {
   status: OfficeStatus;
   processing_status: ProcessingStatus | null;
   document_number: string | null;
+  number_format?: string | null;
+  number_code?: string | null;
   version: number;
   creator_name: string;
   created_by: string;
