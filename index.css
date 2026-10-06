@@ -886,9 +886,10 @@ button:not(:disabled):active,
 }
 
 /* Quá hạn: nhấp nháy nhẹ để thu hút chú ý (tắt khi người dùng giảm chuyển động). */
+/* Chỉ opacity: animate box-shadow trên nhiều phần tử làm Safari/iPhone sập (xem AGENTS.md). */
 @keyframes overdueBlink {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
-  50% { opacity: 0.55; box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.18); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 .overdue-blink { animation: overdueBlink 1.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
