@@ -6,6 +6,10 @@ import { AttachmentPicker, ENT, FieldError, RouteExtrasNote, moneyInput, parseMo
 
 // Các form của Thu chi & quỹ. Máy chủ kiểm tra mọi số, quyền và tách nhiệm; ở đây chỉ gợi ý.
 
+/** Nguồn của một dòng sổ thu chi. */
+export const CASH_SOURCE: Record<string, string> = {
+  payment_request: 'Đề nghị chi', customer_receipt: 'Phiếu thu CĐT', advance_refund: 'NCC hoàn tạm ứng', external_payment: 'Chi ngoài', cash_movement: 'Thu khác', cash_transfer: 'Chuyển tiền',
+};
 export const EXPENSE_CATEGORIES: Record<string, string> = {
   salary: 'Lương', tax: 'Thuế', insurance: 'Bảo hiểm', office: 'Chi phí văn phòng', utilities: 'Điện, nước', interest: 'Lãi vay', loan_repay: 'Trả nợ vay',
   staff_advance: 'Tạm ứng nhân viên', bank_fee: 'Phí ngân hàng', other: 'Chi khác',
@@ -76,10 +80,12 @@ export const CashOpeningDrawer: React.FC<{ account: CashAccount; onClose: () => 
 };
 
 // ---------- Thu khác / chuyển tiền ----------
-export const MovementDrawer: React.FC<{ data: FinanceCash; kind: 'receipt' | 'transfer'; onClose: () => void; onSaved: (m: string) => void }> = ({ data, kind, onClose, onSaved }) => {
-  const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [amount, setAmount] = useState(''); const [date, setDate] = useState(data.today);
-  const [cat, setCat] = useState(kind === 'receipt' ? 'interest' : 'transfer'); const [ref, setRef] = useState(''); const [party, setParty] = useState('');
-  const [desc, setDesc] = useState(''); const [files, setFiles] = useState<FinanceAttachment[]>([]); const { busy, err, run } = useRun(onSaved);
+/** Điền sẵn từ một dòng sao kê ngân hàng (Thu chi & quỹ → Sao kê). */
+export type MovementPrefill = { toAccountId?: string; amount?: number; date?: string; documentRef?: string; counterparty?: string; description?: string; attachments?: FinanceAttachment[] };
+export const MovementDrawer: React.FC<{ data: FinanceCash; kind: 'receipt' | 'transfer'; prefill?: MovementPrefill; onClose: () => void; onSaved: (m: string) => void }> = ({ data, kind, prefill, onClose, onSaved }) => {
+  const [from, setFrom] = useState(''); const [to, setTo] = useState(prefill?.toAccountId || ''); const [amount, setAmount] = useState(prefill?.amount ? moneyInput(prefill.amount) : ''); const [date, setDate] = useState(prefill?.date || data.today);
+  const [cat, setCat] = useState(kind === 'receipt' ? 'interest' : 'transfer'); const [ref, setRef] = useState(prefill?.documentRef || ''); const [party, setParty] = useState(prefill?.counterparty || '');
+  const [desc, setDesc] = useState(prefill?.description || ''); const [files, setFiles] = useState<FinanceAttachment[]>(prefill?.attachments || []); const { busy, err, run } = useRun(onSaved);
   const amt = parseMoney(amount) || 0;
   const blockers = [!(amt > 0) && 'Nhập số tiền', !to && 'Chọn tài khoản nhận', kind === 'transfer' && !from && 'Chọn tài khoản chuyển', kind === 'transfer' && from && from === to && 'Hai tài khoản phải khác nhau',
     !desc.trim() && 'Nhập nội dung', kind === 'receipt' && !files.length && 'Đính chứng từ', date < data.cutoverDate && 'Trước mốc 01/10'].filter(Boolean) as string[];
@@ -151,12 +157,13 @@ export const PlanDrawer: React.FC<{ data: FinanceCash; plan?: CashPlan | null; o
 };
 
 // ---------- Phiếu chi khác (đề nghị chi loại expense) ----------
-export const ExpenseDrawer: React.FC<{ projects?: Array<{ id: string; code: string | null }>; request?: FinancePaymentRequest | null; onClose: () => void; onSaved: (m: string) => void }> = ({ projects: given, request, onClose, onSaved }) => {
+export const ExpenseDrawer: React.FC<{ projects?: Array<{ id: string; code: string | null }>; request?: FinancePaymentRequest | null; prefill?: { amount?: number; date?: string; counterparty?: string; note?: string; category?: string };
+  onClose: () => void; onSaved: (m: string) => void }> = ({ projects: given, request, prefill, onClose, onSaved }) => {
   const [projects, setProjects] = useState(given || []);
   useEffect(() => { if (!given) financeService.cash().then(d => setProjects(d.projects)).catch(() => undefined); }, [given]);
-  const [cat, setCat] = useState(request?.expense?.category || 'salary'); const [party, setParty] = useState(request?.supplierName || '');
-  const [amount, setAmount] = useState(request ? moneyInput(request.amount) : ''); const [date, setDate] = useState(request?.plannedDate || new Date().toISOString().slice(0, 10));
-  const [method, setMethod] = useState<'bank_transfer' | 'cash'>(request?.method || 'bank_transfer'); const [note, setNote] = useState(request?.note || '');
+  const [cat, setCat] = useState(request?.expense?.category || prefill?.category || 'salary'); const [party, setParty] = useState(request?.supplierName || prefill?.counterparty || '');
+  const [amount, setAmount] = useState(request ? moneyInput(request.amount) : prefill?.amount ? moneyInput(prefill.amount) : ''); const [date, setDate] = useState(request?.plannedDate || prefill?.date || new Date().toISOString().slice(0, 10));
+  const [method, setMethod] = useState<'bank_transfer' | 'cash'>(request?.method || 'bank_transfer'); const [note, setNote] = useState(request?.note || prefill?.note || '');
   const [project, setProject] = useState(request?.expense?.projectId || ''); const [cost, setCost] = useState(request?.expense?.costCategory || 'overhead');
   const [preview, setPreview] = useState<{ route: FinanceRoutePreview['route']; canRecord: boolean } | null>(null);
   const { busy, err, run } = useRun(onSaved); const amt = parseMoney(amount) || 0;

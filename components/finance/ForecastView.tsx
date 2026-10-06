@@ -299,7 +299,7 @@ export const ForecastView: React.FC<{ projectId?: string | null }> = ({ projectI
       <p className="mt-1 text-xs text-muted-foreground">Thuế phải nộp, thu hồi bảo lãnh, góp vốn, mua tài sản… Khoản lặp hằng tháng (thuê văn phòng, điện nước) khai ở <a href="#/finance/cash" className="font-semibold text-teal-700 hover:underline">Thu chi & quỹ → Khoản định kỳ</a>.</p>
       {data.items.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">Chưa có khoản dự kiến.</p>
         : <ul className="mt-2 divide-y divide-border text-sm">{data.items.map(it => <li key={it.id} className="flex flex-wrap items-center gap-2 py-2">
-          <span className="w-20 tabular-nums text-muted-foreground">{viDate(it.expectedDate)}</span>
+          <span className="w-24 shrink-0 whitespace-nowrap tabular-nums text-muted-foreground">{viDate(it.expectedDate)}</span>
           <span className="min-w-0 flex-1"><b>{it.name}</b> <Badge className={CONF[it.confidence].cls}>{CONF[it.confidence].label}</Badge>
             <span className="block text-xs text-muted-foreground">{ITEM_CATEGORIES[it.category] || it.category}{it.projectCode ? ` · ${it.projectCode}` : ' · chung công ty'}{it.note ? ` · ${it.note}` : ''}</span></span>
           <span className={`font-semibold tabular-nums ${it.direction === 'in' ? 'text-leaf-700' : 'text-rose-700'}`}>{it.direction === 'in' ? '+' : '−'}{money(it.amount)}</span>
