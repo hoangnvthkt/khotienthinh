@@ -94,3 +94,17 @@ Lý do: DA29 còn 93% khối lượng dồn vào T10–T12. Vật tư, nhân cô
 - **Số thật 06/10** (Cơ sở, chưa gồm tiền đang có vì tài khoản chưa chốt đầu kỳ): tháng căng nhất T11/2026, cần chuẩn bị khoảng 11,6 tỷ (gồm tồn tối thiểu 2 tỷ);
   Thận trọng ≈ 39 tỷ. Thu 6 tháng 120,8 tỷ / chi 80,4 tỷ.
 - Rollback `tools/forecast-test.mjs` 43/43 (quyền 4 vai, tổng thu khớp HĐ SMB 35,49 tỷ / DA29 85,29 tỷ, kịch bản dời đúng chiều, giả định, vay một lần / chia đều, khoản dự kiến + import lỗi dòng nào, bỏ khoản).
+
+## 6. Đã làm — Sao kê ngân hàng + tự khớp (06/10/2026, ưu tiên 3)
+
+- **Màn**: Thu chi & quỹ → tài khoản ngân hàng → **Sao kê ngân hàng**. Nhập file Excel sao kê tải từ internet banking (đọc được cột của Vietcombank, BIDV,
+  VietinBank, Techcombank, MB, ACB…: Ngày, Ghi nợ / Ghi có hoặc Số tiền + Loại, Nội dung, Số tham chiếu, Đối ứng, Số dư; tự bỏ dòng tiêu đề, số dư đầu, tổng cộng).
+  File được lưu làm chứng từ. Dòng đã nhập trước tự bỏ (cùng ngày, chiều, số tiền, số tham chiếu, nội dung).
+- **Tự khớp** với sổ thu chi: cùng tài khoản, cùng chiều, cùng số tiền, lệch ngày ≤ 5; số chứng từ Vioo (DNC-…, PT-…) xuất hiện trong nội dung được ưu tiên;
+  nhiều ứng viên ngang nhau thì để kế toán chọn. Một dòng sổ chỉ khớp một dòng sao kê.
+- **Dòng chưa khớp**: gợi ý tối đa 5 dòng sổ gần số tiền / ngày → bấm khớp (lệch tiền phải ghi lý do); hoặc **Ghi phiếu thu khác** / **Lập phiếu chi khác** điền sẵn từ dòng
+  sao kê (phiếu thu tự đính file sao kê); hoặc **Bỏ qua** có lý do. Danh sách **sổ chưa thấy trên sao kê** trong kỳ đã nhập; so số dư cuối sao kê với sổ cùng ngày.
+- Huỷ cả file (quyền Xác nhận, có lý do) — sổ thu chi không đổi, nhật ký giữ đủ dòng đã xoá.
+- Máy chủ: `20261008135000_finance_bank_statement.sql` (bảng `finance_bank_statements`, `finance_bank_statement_lines`; RPC nhập / xem / khớp / huỷ).
+  Rollback `tools/bank-test.mjs` 31/31; đọc file `lib/bankStatementImport.ts` 5 test.
+- Còn lại của mục "Tiền & ngân hàng": khoản vay đã làm cùng Dự báo; nhắc dòng chưa khớp ở Việc cần làm (đợt sau).

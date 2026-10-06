@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import type { BankStatementRow } from './bankStatementImport';
 
 // Module Tài chính (K3a): công nợ NCC toàn công ty. Mọi ghi chép đi qua RPC; server kiểm quyền và tách nhiệm.
 
@@ -418,10 +419,21 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_FORECAST_SETTINGS_INVALID: 'Giả định ngoài khoảng cho phép (số ngày 0–180, % nhân công 0–100, VAT vật tư 0–20%).',
   FINANCE_LOAN_INVALID: 'Khoản vay cần bên cho vay, dư nợ, ngày đáo hạn, lãi suất 0–100%/năm và ngày trả 1–28.',
   FINANCE_FORECAST_ITEM_INVALID: 'Khoản dự kiến cần nội dung, Thu/Chi, số tiền lớn hơn 0, ngày dự kiến và dự án đúng mã',
+  FINANCE_BANK_ACCOUNT_ONLY: 'Sao kê chỉ nhập cho tài khoản ngân hàng (không phải tiền mặt / quỹ công trường).',
+  FINANCE_BANK_EMPTY: 'File không có dòng giao dịch nào (cần cột Ngày và Ghi nợ / Ghi có hoặc Số tiền).',
+  FINANCE_BANK_TOO_MANY: 'Mỗi lần nhập tối đa 5.000 dòng — tách file theo tháng.',
+  FINANCE_BANK_ROWS_INVALID: 'Có dòng thiếu ngày hoặc số tiền',
+  FINANCE_BANK_LINE_NOT_FOUND: 'Không còn dòng sao kê này. Tải lại.',
+  FINANCE_BANK_LINE_STATE: 'Dòng sao kê đã đổi trạng thái (người khác vừa khớp / bỏ qua). Tải lại.',
+  FINANCE_BANK_ENTRY_MISMATCH: 'Dòng sổ phải cùng tài khoản và cùng chiều thu / chi với dòng sao kê.',
+  FINANCE_BANK_ENTRY_TAKEN: 'Dòng sổ này đã khớp với một dòng sao kê khác.',
+  FINANCE_BANK_AMOUNT_DIFF_REASON: 'Số tiền sao kê khác sổ — ghi lý do lệch (VD ngân hàng trừ phí).',
+  FINANCE_BANK_STATEMENT_NOT_FOUND: 'Không còn lô sao kê này. Tải lại.',
+  FINANCE_BANK_STATEMENT_CANCELLED: 'Lô sao kê này đã được huỷ trước đó.',
   PROJECT_TRANSACTION_FINANCE_ONLY: 'Sổ giao dịch dự án chỉ ghi qua Tài chính (nhập số MISA, đề nghị chi, phiếu chi khác, phiếu thu). Không thêm / sửa / xoá tay được nữa.',
 };
 // Mã lỗi có kèm chi tiết từ máy chủ (dòng nào, ngày nào) — nối vào thông báo.
-const DETAIL_CODES = new Set(['FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID']);
+const DETAIL_CODES = new Set(['FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID', 'FINANCE_BANK_ROWS_INVALID']);
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
@@ -434,6 +446,26 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
   }
   return data as T;
 };
+
+// ---------- Sao kê ngân hàng ----------
+export interface BankBookEntry { id: string; date: string; code: string | null; sourceType: string; description: string | null; counterparty: string | null; amount?: number; direction?: 'in' | 'out' }
+export interface BankLine {
+  id: string; statementId: string; row: number; date: string; direction: 'in' | 'out'; amount: number; description: string | null; reference: string | null; counterparty: string | null;
+  balance: number | null; status: 'unmatched' | 'matched' | 'ignored'; matchKind: 'auto' | 'manual' | null; note: string | null; entry: BankBookEntry | null; candidates: BankBookEntry[] | null;
+}
+export interface FinanceBankStatement {
+  account: { id: string; name: string; kind: CashAccountKind; bankName: string | null; accountNo: string | null };
+  can: { record: boolean; confirm: boolean };
+  period: { from: string | null; to: string | null };
+  /** Số dư cuối của sao kê gần nhất so với sổ Vioo cùng ngày. */
+  statementBalance: { date: string; balance: number; book: number } | null;
+  counts: { total: number; matched: number; unmatched: number; ignored: number; unmatchedIn: number; unmatchedOut: number };
+  statements: Array<{ id: string; fileName: string | null; filePath: string | null; from: string | null; to: string | null; lines: number; duplicates: number; closingBalance: number | null;
+    createdAt: string; createdBy: string | null; cancelledAt: string | null; cancelledBy: string | null; cancelReason: string | null }>;
+  lines: BankLine[];
+  /** Dòng sổ trong kỳ sao kê nhưng không thấy trên sao kê. */
+  bookOnly: Array<BankBookEntry & { amount: number; direction: 'in' | 'out' }>;
+}
 
 // ---------- Dự báo dòng tiền ----------
 export type ForecastScenario = 'base' | 'safe' | 'good';
@@ -806,6 +838,14 @@ export const financeService = {
   saveSubcontractAdvance(input: { requestId?: string; expectedRowVersion?: number; subcontractId: string; amount: number; method: 'bank_transfer' | 'cash'; plannedDate: string; repayDueDate: string; note: string }) {
     return call<{ requestId: string; code: string; amount: number }>('save_finance_subcontract_advance_v1', { p_input: input });
   },
+  bankStatement(accountId: string) { return call<FinanceBankStatement>('get_finance_bank_statement_v1', { p_input: { accountId } }); },
+  importBankStatement(input: { accountId: string; fileName: string; filePath?: string | null; rows: BankStatementRow[] }) {
+    return call<{ statementId: string; inserted: number; duplicates: number; matched: number }>('import_finance_bank_statement_v1', { p_input: input });
+  },
+  decideBankLine(input: { action: 'match' | 'unmatch' | 'ignore' | 'unignore'; lineId: string; entryId?: string; reason?: string } | { action: 'rematch'; accountId: string }) {
+    return call<{ lineId?: string; action?: string; matched?: number }>('decide_finance_bank_line_v1', { p_input: input });
+  },
+  cancelBankStatement(input: { statementId: string; reason: string }) { return call<{ statementId: string; removed: number }>('cancel_finance_bank_statement_v1', { p_input: input }); },
   forecast(input: { scenario: ForecastScenario; projectId?: string | null; extraDelayDays?: number }) { return call<FinanceForecast>('get_finance_forecast_v1', { p_input: input }); },
   saveForecastSettings(input: Partial<Omit<ForecastParams, 'delayDays' | 'slipPercent' | 'minBalance'>> & { reason: string }) {
     return call<{ ok: boolean }>('save_finance_forecast_settings_v1', { p_input: input });

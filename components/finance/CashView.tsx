@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClock, Check, ClipboardCheck, FileText, Landmark, Pencil, Plus, RotateCcw, Send, Undo2, Wallet, X } from 'lucide-react';
+import { FileSpreadsheet, AlertTriangle, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClock, Check, ClipboardCheck, FileText, Landmark, Pencil, Plus, RotateCcw, Send, Undo2, Wallet, X } from 'lucide-react';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
@@ -7,13 +7,11 @@ import { financeService, type CashAccount, type CashPlan, type FinanceCash, type
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, shortMoney, viDate } from './financeUi';
 import { SiteFundReview } from './SiteFundViews';
-import { ACCOUNT_KINDS, AccountDrawer, CashOpeningDrawer, EXPENSE_CATEGORIES, ExpenseDrawer, MovementDrawer, PlanDrawer, RECEIPT_CATEGORIES, ReconDrawer } from './CashDrawers';
+import { ACCOUNT_KINDS, AccountDrawer, CASH_SOURCE, CashOpeningDrawer, EXPENSE_CATEGORIES, ExpenseDrawer, MovementDrawer, PlanDrawer, RECEIPT_CATEGORIES, ReconDrawer } from './CashDrawers';
+import { BankStatementDrawer } from './BankStatementDrawer';
 
 // Tài chính → Thu chi & quỹ: công ty có bao nhiêu tiền, ở tài khoản nào; tiền vào ra; 8 tuần tới có thiếu tiền không.
 
-const SOURCE: Record<string, string> = {
-  payment_request: 'Đề nghị chi', customer_receipt: 'Phiếu thu CĐT', advance_refund: 'NCC hoàn tạm ứng', external_payment: 'Chi ngoài', cash_movement: 'Thu khác', cash_transfer: 'Chuyển tiền',
-};
 const Kpi: React.FC<{ icon: React.ElementType; label: string; value: string; hint: string; tone?: string; to?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300', to }) =>
   <button type="button" onClick={() => to && document.getElementById(to)?.scrollIntoView({ behavior: 'smooth' })} className="rounded-2xl border border-border bg-card p-3 text-left shadow-sm transition hover:border-teal-300 hover:shadow">
     <span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
@@ -27,7 +25,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
   const [month, setMonth] = useState(''); const [accountId, setAccountId] = useState('');
   const [busy, setBusy] = useState(false);
   const [drawer, setDrawer] = useState<{ kind: 'account'; account?: CashAccount } | { kind: 'opening'; account: CashAccount } | { kind: 'recon'; account: CashAccount }
-    | { kind: 'movement'; mode: 'receipt' | 'transfer' } | { kind: 'plan'; plan?: CashPlan } | { kind: 'expense' } | null>(null);
+    | { kind: 'movement'; mode: 'receipt' | 'transfer' } | { kind: 'plan'; plan?: CashPlan } | { kind: 'expense' } | { kind: 'bank'; accountId: string } | null>(null);
   const [site, setSite] = useState<FinanceSiteFunds | null>(null);
   const load = useCallback(() => { setError(null); financeService.cash({ month: month ? `${month}-01` : undefined, accountId: accountId || undefined }).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e)));
     financeService.siteFunds().then(setSite).catch(() => setSite(null)); }, [month, accountId]);
@@ -111,6 +109,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
             {(!a.opening || a.opening.status === 'rejected' || a.opening.status === 'cancelled') && <button type="button" onClick={() => setDrawer({ kind: 'opening', account: a })} className="text-teal-700 hover:underline">Gửi số dư đầu kỳ</button>}
             {a.opening?.status === 'confirmed' && a.lastRecon?.status !== 'submitted' && <button type="button" onClick={() => setDrawer({ kind: 'recon', account: a })} className="text-teal-700 hover:underline"><ClipboardCheck size={12} className="mr-0.5 inline" />Đối chiếu sao kê</button>}
             <button type="button" onClick={() => setDrawer({ kind: 'account', account: a })} className="text-muted-foreground hover:underline"><Pencil size={11} className="mr-0.5 inline" />Sửa</button></p>}
+          {a.kind === 'bank' && <p className="mt-1 text-xs font-semibold"><button type="button" onClick={() => setDrawer({ kind: 'bank', accountId: a.id })} className="text-teal-700 hover:underline"><FileSpreadsheet size={12} className="mr-0.5 inline" />Sao kê ngân hàng</button></p>}
         </li>)}</ul>
       </section>
     </div>}
@@ -126,7 +125,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
       </div>
       {data.entries.length === 0 ? <p className="px-4 py-6 text-center text-sm text-muted-foreground">Chưa có khoản tiền vào / ra trong tháng này. Khoản chi NCC, phiếu thu CĐT, chi khác khi được xác nhận sẽ tự ghi vào đây.</p>
         : <><ul className="divide-y divide-border md:hidden">{data.entries.map(e => <li key={e.id} className={`px-4 py-2.5 text-sm ${e.reversed ? 'opacity-60' : ''}`}>
-          <p className="flex items-start gap-2"><span className="min-w-0 flex-1"><b>{SOURCE[e.sourceType] || e.sourceType}</b> {e.reversalOf && <Badge className="border-border bg-muted text-muted-foreground">đảo</Badge>}</span>
+          <p className="flex items-start gap-2"><span className="min-w-0 flex-1"><b>{CASH_SOURCE[e.sourceType] || e.sourceType}</b> {e.reversalOf && <Badge className="border-border bg-muted text-muted-foreground">đảo</Badge>}</span>
             <span className={`whitespace-nowrap font-semibold tabular-nums ${e.direction === 'in' ? 'text-leaf-700' : 'text-foreground'}`}>{e.direction === 'in' ? '+' : '−'}{money(e.amount)}</span></p>
           <p className="text-xs text-muted-foreground">{viDate(e.date)} · {e.accountName} · {e.description}</p></li>)}</ul>
         <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[52rem] text-sm">
@@ -138,7 +137,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
             <td className="px-2 py-2 text-muted-foreground">{e.counterparty || '—'}</td>
             <td className={`whitespace-nowrap px-2 py-2 text-right ${NUM}`}>{e.direction === 'in' ? money(e.amount) : ''}</td>
             <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{e.direction === 'out' ? money(e.amount) : ''}</td>
-            <td className="px-3 py-2"><Badge className="border-border bg-muted text-muted-foreground">{SOURCE[e.sourceType] || e.sourceType}</Badge>{e.reversalOf && <Badge className="ml-1 border-amber-300 bg-amber-50 text-amber-800">đảo</Badge>}</td></tr>)}</tbody></table></div></>}
+            <td className="px-3 py-2"><Badge className="border-border bg-muted text-muted-foreground">{CASH_SOURCE[e.sourceType] || e.sourceType}</Badge>{e.reversalOf && <Badge className="ml-1 border-amber-300 bg-amber-50 text-amber-800">đảo</Badge>}</td></tr>)}</tbody></table></div></>}
       <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">Sổ không sửa / xóa được: ghi nhầm thì đảo chứng từ gốc (đề nghị chi, phiếu thu, thu khác, chuyển tiền). Phiếu chi khác đang duyệt xem ở <button type="button" onClick={onOpenRequests} className="font-semibold text-teal-700 hover:underline">Phải trả → Đề nghị chi</button>.</p>
     </section>}
 
@@ -166,6 +165,7 @@ export const CashView: React.FC<{ onChanged: () => void; onOpenRequests: () => v
     {drawer?.kind === 'recon' && <ReconDrawer data={data} account={drawer.account} onClose={() => setDrawer(null)} onSaved={done} />}
     {drawer?.kind === 'movement' && <MovementDrawer data={data} kind={drawer.mode} onClose={() => setDrawer(null)} onSaved={done} />}
     {drawer?.kind === 'plan' && <PlanDrawer data={data} plan={drawer.plan} onClose={() => setDrawer(null)} onSaved={done} />}
+    {drawer?.kind === 'bank' && <BankStatementDrawer cash={data} accountId={drawer.accountId} onClose={() => setDrawer(null)} onChanged={() => { load(); onChanged(); }} />}
     {drawer?.kind === 'expense' && <ExpenseDrawer projects={data.projects} onClose={() => setDrawer(null)} onSaved={done} />}
   </div>;
 };
