@@ -274,7 +274,8 @@
     "20261009090000_project_material_request_catalog.sql",
     "20261008138100_project_plan_versions.sql",
     "20261009100000_office_manual_document_number.sql",
-    "20261008138000_center_dot0_foundation.sql"
+    "20261008138000_center_dot0_foundation.sql",
+    "20261008138001_center_dot0_work_items.sql"
   ],
   "forbidIncludeAll": true
 }

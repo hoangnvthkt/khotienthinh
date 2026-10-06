@@ -1,0 +1,70 @@
+import React, { Suspense } from 'react';
+import { ArrowLeft, ArrowUpRight } from 'lucide-react';
+import { StateBox } from '../procurement/hub/hubUi';
+import { CENTER_MODULES, type RendererId } from '../../lib/center/centerRegistry';
+import type { DrillTarget } from '../../lib/center/drill';
+import { dueInfo, type WorkItem, type WorkItemKind } from '../../lib/center/workItemsService';
+
+export type RendererComponent = React.ComponentType<{ renderer: RendererId; props: Record<string, string> }>;
+
+const KIND_LABEL: Record<WorkItemKind, string> = {
+  approve: 'Chờ bạn duyệt',
+  do: 'Cần bạn làm',
+  confirm: 'Chờ bạn xác nhận',
+  read: 'Cần xác nhận đã đọc',
+  wait: 'Đang chờ người khác',
+  watch: 'Đang theo dõi',
+};
+
+// Tab hồ sơ trong vùng làm việc: đầu tab theo mockup (nhãn module · mã · tiêu đề · "Mở ở màn … ↗"),
+// thân là view thật của module khi đã nhúng được, không thì dẫn thẳng sang màn module đúng hồ sơ.
+const WorkItemTab: React.FC<{
+  item: WorkItem;
+  target: DrillTarget;
+  now: Date;
+  onNavigate: (path: string) => void;
+  onBack?: () => void;
+  Renderer: RendererComponent;
+}> = ({ item, target, now, onNavigate, onBack, Renderer }) => {
+  const module = CENTER_MODULES[item.module];
+  const route = target.kind === 'tab' ? target.route : target.path;
+  const due = dueInfo(item.dueAt, now);
+  return (
+    <div className={`vcc-page vcc-mod-${item.module}`}>
+      {onBack && (
+        <button type="button" className="vcc-link vcc-mobile-only mb-2" onClick={onBack}><ArrowLeft size={13} /> Việc của tôi</button>
+      )}
+      <div className="vcc-detail-head">
+        <span className="vcc-badge vcc-badge-m">{module.label}</span>
+        <span className="vcc-badge">{KIND_LABEL[item.kind]}</span>
+        <h1><span className="vcc-ent text-[15px]">{item.code}</span> · {item.title}</h1>
+        <button type="button" className={`vcc-link ml-auto${target.kind === 'route' ? ' vcc-desktop-only' : ''}`} onClick={() => onNavigate(route)}>
+          Mở ở màn {module.label} <ArrowUpRight size={13} />
+        </button>
+      </div>
+      <p className="vcc-muted mb-3 mt-0.5">
+        {item.who && <span className="vcc-who">{item.who}</span>}
+        {item.who && item.meta && ' · '}
+        {item.meta}
+        {due && <>{(item.who || item.meta) && ' · '}<span className="vcc-due" data-tone={due.tone} style={{ marginLeft: 0, fontSize: 'inherit' }}>{due.tone === 'normal' ? `hạn ${due.label}` : due.label}</span></>}
+      </p>
+      {target.kind === 'tab' ? (
+        <div className="vcc-embed">
+          <Suspense fallback={<StateBox kind="loading" title="Đang mở hồ sơ…" />}>
+            <Renderer renderer={target.renderer} props={target.props} />
+          </Suspense>
+        </div>
+      ) : (
+        <section className="vcc-card p-4">
+          <p className="m-0 font-medium">Hồ sơ này xử lý ở màn {module.label}.</p>
+          <p className="vcc-muted mt-1 mb-3 text-[12.5px]">Trung tâm điều hành mở đúng hồ sơ cho bạn; thao tác duyệt / sửa vẫn làm ở màn {module.label} như hiện nay.</p>
+          <button type="button" className="vcc-btn" data-pri="true" onClick={() => onNavigate(route)}>
+            Mở ở màn {module.label} <ArrowUpRight size={14} />
+          </button>
+        </section>
+      )}
+    </div>
+  );
+};
+
+export default WorkItemTab;
