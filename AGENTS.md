@@ -6,6 +6,8 @@
 
 ## UI/UX bắt buộc khi task chạm tới giao diện
 
+- **Trước khi làm bất kỳ màn hình nào, đọc `docs/ui/VIOO-UI-UX.md`** và áp dụng mặc định, không chờ người dùng nhắc. Đây là style chủ sản phẩm đã duyệt, rút từ Mua hàng, Tài chính, Quy trình: bộ component dùng lại, màu FastCons xanh, bố cục header → dải bước/KPI → lọc → danh sách nhóm → ngăn chi tiết, trạng thái, microcopy, mobile.
+
 - Không chỉ đảm bảo đúng chức năng. Phải tư duy đồng thời như Product Designer, người dùng thực tế và Frontend Engineer.
 - Thiết kế theo công việc người dùng cần hoàn thành, không theo cấu trúc database hay góc nhìn developer. Trước khi code, xác định người dùng là ai, mục tiêu khi vào màn hình, thông tin cần thấy đầu tiên, action chính và các thao tác có thể rút gọn.
 - Giao diện phải dễ hiểu, dễ dùng, đẹp, hiện đại, chuyên nghiệp và phù hợp sử dụng hằng ngày. Chú ý layout, visual hierarchy, màu sắc, typography, icon, spacing, button, card, table, form, trạng thái và microcopy.
@@ -14,3 +16,10 @@
 - Sau khi implement, walkthrough như người dùng lần đầu trên desktop, tablet và mobile phù hợp với scope. Kiểm tra họ có hiểu màn hình trong vài giây, biết bước tiếp theo và không gặp thao tác thừa hoặc gây bối rối.
 - Functional correctness là bắt buộc nhưng chưa đủ. Giao diện khó hiểu, thiếu thẩm mỹ, không nhất quán hoặc thao tác rườm rà chưa được coi là hoàn thành.
 - Không redesign ngoài scope. Nếu UX hiện tại có vấn đề rõ ràng, cải thiện trong phạm vi an toàn hoặc ghi nhận thành follow-up.
+
+## Tương thích trình duyệt (bài học sự cố, bắt buộc)
+
+- Animation lặp vô hạn chỉ được đổi `opacity`/`transform`. Không animate `box-shadow`, `filter`, `background`, kích thước, không dùng `color-mix(currentColor)` trong keyframes. Sự cố 06/10/2026 (PR #117): nhấp nháy bằng box-shadow trên ~40 nhãn làm Safari máy tính và mọi trình duyệt trên iPhone sập trang Quy trình.
+- Trên iPhone mọi trình duyệt đều là WebKit; Chrome máy tính chạy được không chứng minh điện thoại chạy được. Màn có trên điện thoại phải được test bằng Playwright WebKit (`mobile-safari`); màn nhiều phần tử động phải đo CPU khi trang đứng yên ≈ 0–2%.
+- Thư viện mới phải chạy trên Safari iOS đời cũ. Xem PDF dùng iframe blob URL của trình duyệt (không dùng pdf.js).
+- Chi tiết và cách tái hiện lỗi WebKit với dữ liệu thật: `docs/ui/VIOO-UI-UX.md` mục 6.
