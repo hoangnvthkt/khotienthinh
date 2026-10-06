@@ -266,6 +266,7 @@
     "20261008134600_finance_module_p1.sql",
     "20261008134700_finance_module_p2.sql",
     "20261008134800_finance_module_p3.sql",
+    "20261008134900_finance_forecast.sql",
     "20261008137500_wms_document_date.sql"
   ],
   "forbidIncludeAll": true
