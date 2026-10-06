@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, Package, RotateCcw, Save, Send, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, Package, RotateCcw, Save, Send, ShieldCheck, Trash2, Undo2 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import {
@@ -196,8 +196,14 @@ const MaterialPlanPanel: React.FC<{
     await projectMaterialPlanService.transition({ planId: saved.planId, expectedRowVersion: saved.rowVersion, action: 'submit', recipientUserId: approverId || null });
     toast.success('Đã gửi CHT duyệt', periodLabel); await load();
   });
-  const onTransition = (plan: MaterialPlan, action: 'approve' | 'return' | 'withdraw' | 'delete') => run(action, async () => {
+  const onTransition = (plan: MaterialPlan, action: 'approve' | 'return' | 'withdraw' | 'delete' | 'keep') => run(action, async () => {
     let reason: string | undefined;
+    if (action === 'keep') {
+      const value = await reasonConfirm({ title: 'Giữ nguyên kế hoạch vật tư', targetName: periodLabel, reasonLabel: 'Lý do giữ nguyên',
+        warningText: plan.needsReviewReason || 'Kế hoạch thi công của kỳ đã đổi.', reasonPlaceholder: 'Ví dụ: thay đổi không làm đổi nhu cầu vật tư của kỳ',
+        actionLabel: 'Giữ nguyên', cancelLabel: 'Hủy', intent: 'warning', countdownSeconds: 0, minLength: 5 });
+      if (!value) return; reason = value;
+    }
     if (action === 'return') {
       const value = await reasonConfirm({ title: 'Trả lại kế hoạch vật tư', targetName: periodLabel, reasonLabel: 'Lý do trả lại',
         reasonPlaceholder: 'Ví dụ: thép D16 đề nghị nhiều hơn KL tuần…', actionLabel: 'Trả lại', cancelLabel: 'Hủy', intent: 'warning', countdownSeconds: 0 });
@@ -207,7 +213,7 @@ const MaterialPlanPanel: React.FC<{
     if (action === 'approve' && !(await confirm({ title: 'Duyệt kế hoạch vật tư?', targetName: periodLabel,
       warningText: `${plan.lines.filter(l => l.requestedQty > 0).length} vật tư có SL đề nghị sẽ thành nhu cầu chính thức của kỳ.`, actionLabel: 'Duyệt', intent: 'success' }))) return;
     await projectMaterialPlanService.transition({ planId: plan.id, expectedRowVersion: plan.rowVersion, action, reason });
-    toast.success({ approve: 'Đã duyệt kế hoạch vật tư', return: 'Đã trả lại người lập', withdraw: 'Đã rút về để sửa', delete: 'Đã xóa bản nháp' }[action], periodLabel);
+    toast.success({ approve: 'Đã duyệt kế hoạch vật tư', return: 'Đã trả lại người lập', withdraw: 'Đã rút về để sửa', delete: 'Đã xóa bản nháp', keep: 'Đã giữ nguyên kế hoạch vật tư' }[action], periodLabel);
     await load();
   });
   const onRevise = (plan: MaterialPlan) => run('revise', async () => {
@@ -235,9 +241,11 @@ const MaterialPlanPanel: React.FC<{
     };
   };
 
+  const me = board.currentUserId;
   const planSection = (plan: MaterialPlan, mode: 'edit' | 'review' | 'approved') => {
     const s = summary(plan);
-    const staleWork = plan.workPlanStatus === 'superseded';
+    const staleWork = plan.workPlanStatus === 'superseded' && !plan.needsReviewAt;
+    const isSelf = Boolean(me && (plan.createdBy === me || plan.submittedBy === me));
     return <section className={`space-y-3 rounded-2xl border bg-card p-4 shadow-sm md:p-5 ${mode === 'edit' ? 'border-teal-200 dark:border-teal-900' : mode === 'review' ? 'border-amber-200 dark:border-amber-900' : 'border-border'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -246,6 +254,12 @@ const MaterialPlanPanel: React.FC<{
         </div>
         <span className="text-xs text-muted-foreground">Từ kế hoạch thi công {board.workPlan?.code}{plan.approvedByName ? ` · ${plan.approvedByName} duyệt ${plan.approvedAt ? new Date(plan.approvedAt).toLocaleDateString('vi-VN') : ''}` : ''}</span>
       </div>
+      {plan.needsReviewAt && <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100 md:flex-row md:items-center md:justify-between">
+        <span className="flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 shrink-0" /><span><strong>Cần tính lại kế hoạch vật tư.</strong> {plan.needsReviewReason}</span></span>
+        {mode === 'approved' && permissions?.canEdit && !open && <span className="flex shrink-0 flex-wrap gap-2">
+          <button type="button" onClick={() => onRevise(plan)} disabled={Boolean(busy)} className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50">Tạo bản điều chỉnh</button>
+          <button type="button" onClick={() => onTransition(plan, 'keep')} disabled={Boolean(busy)} className="rounded-lg border border-amber-400 bg-white/80 px-3 py-1.5 text-xs font-semibold hover:bg-white disabled:opacity-50 dark:bg-transparent">Giữ nguyên — ghi lý do</button>
+        </span>}</div>}
       {staleWork && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
         Kế hoạch thi công của kỳ đã được điều chỉnh sau khi lập kế hoạch vật tư này. {mode === 'approved' ? 'Tạo bản điều chỉnh để tính lại nhu cầu.' : 'Xóa nháp và lập lại để lấy nhu cầu mới.'}</div>}
       {plan.status === 'returned' && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -287,25 +301,26 @@ const MaterialPlanPanel: React.FC<{
       <div className="flex flex-col gap-2 border-t border-border pt-3 md:flex-row md:items-center md:justify-between">
         <span className="text-xs text-muted-foreground">
           {mode === 'edit' ? <>{dirty ? 'Có thay đổi chưa lưu. ' : ''}{missingReasons > 0 && <span className="font-semibold text-rose-600">{missingReasons} dòng vượt BOQ chưa có lý do. </span>}{invalidCount > 0 && <span className="font-semibold text-rose-600">{invalidCount} ô SL chưa hợp lệ.</span>}</>
-            : mode === 'review' ? (permissions?.canApprove ? 'Kiểm tra SL đề nghị và các dòng vượt BOQ rồi duyệt.' : 'Đang chờ CHT duyệt.') : 'Kế hoạch vật tư chính thức của kỳ.'}
+            : mode === 'review' ? (isSelf ? <span className="inline-flex items-center gap-1"><ShieldCheck size={13} className="text-teal-600" />Bạn là người lập / gửi — cần CHT khác duyệt.</span>
+              : permissions?.canApprove ? 'Kiểm tra SL đề nghị và các dòng vượt BOQ rồi duyệt.' : 'Đang chờ CHT duyệt.') : 'Kế hoạch vật tư chính thức của kỳ.'}
         </span>
         <div className="flex flex-wrap items-center gap-2">
           {mode === 'edit' && <>
             {plan.status === 'draft' && <button type="button" onClick={() => onTransition(plan, 'delete')} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-rose-950/40">{busyIcon('delete') || <Trash2 size={15} />}Xóa nháp</button>}
             {permissions?.canSubmit && board.approvers.length > 0 && <label className="flex items-center gap-1.5 text-xs text-muted-foreground">Người duyệt
               <select value={approverId} onChange={event => setApproverId(event.target.value)} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground">
-                <option value="">Tất cả CHT có quyền</option>{board.approvers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
+                <option value="">Tất cả CHT có quyền</option>{board.approvers.filter(a => a.id !== me).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}
             <button type="button" onClick={onSave} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busyIcon('save') || <Save size={15} />}Lưu nháp</button>
             {permissions?.canSubmit && <button type="button" onClick={onSubmit} disabled={Boolean(busy) || invalidCount > 0} className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50">{busyIcon('submit') || <Send size={15} />}Gửi CHT duyệt</button>}
           </>}
           {mode === 'review' && <>
-            {permissions?.canSubmit && <button type="button" onClick={() => onTransition(plan, 'withdraw')} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted disabled:opacity-50">{busyIcon('withdraw') || <Undo2 size={15} />}Rút về sửa</button>}
-            {permissions?.canApprove && <>
+            {plan.submittedBy === me && <button type="button" onClick={() => onTransition(plan, 'withdraw')} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted disabled:opacity-50">{busyIcon('withdraw') || <Undo2 size={15} />}Rút về sửa</button>}
+            {permissions?.canApprove && !isSelf && <>
               <button type="button" onClick={() => onTransition(plan, 'return')} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:text-amber-200">{busyIcon('return') || <Undo2 size={15} />}Trả lại</button>
               <button type="button" onClick={() => onTransition(plan, 'approve')} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{busyIcon('approve') || <CheckCircle2 size={15} />}Duyệt</button>
             </>}
           </>}
-          {mode === 'approved' && permissions?.canEdit && !open && <button type="button" onClick={() => onRevise(plan)} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busyIcon('revise') || <RotateCcw size={13} />}Tạo bản điều chỉnh</button>}
+          {mode === 'approved' && permissions?.canEdit && !open && !plan.needsReviewAt && <button type="button" onClick={() => onRevise(plan)} disabled={Boolean(busy)} className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50">{busyIcon('revise') || <RotateCcw size={13} />}Tạo bản điều chỉnh</button>}
         </div>
       </div>
     </section>;

@@ -38,12 +38,16 @@ export interface MaterialPlan {
   submittedAt: string | null; submittedByName: string | null; approvedAt: string | null; approvedByName: string | null;
   returnedAt: string | null; returnedByName: string | null; returnReason: string | null;
   workPlanRevisionNo: number | null; workPlanStatus: WorkPlanStatus | null;
+  createdBy: string | null; submittedBy: string | null;
+  /** KH thi công của kỳ đã đổi bản sau khi lập KH vật tư này — cần tính lại. */
+  needsReviewAt: string | null; needsReviewReason: string | null;
   lines: MaterialPlanLine[];
   gaps: MaterialPlanGap[];
 }
 
 export interface MaterialPlanBoard {
   periodType: WorkPlanPeriodType; periodStart: string; periodEnd: string;
+  currentUserId: string | null;
   workPlan: { id: string; code: string; revisionNo: number; approvedAt: string; lineCount: number } | null;
   workPlanPending: boolean;
   approved: MaterialPlan | null;
@@ -73,12 +77,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   MATERIAL_PLAN_OVER_BOQ_REASON_REQUIRED: 'Có vật tư vượt BOQ chưa ghi lý do. Nhập lý do ở các dòng tô đỏ.',
   MATERIAL_PLAN_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại để người lập biết cần sửa gì.',
   MATERIAL_PLAN_REVISION_REASON_REQUIRED: 'Nhập lý do điều chỉnh.',
-  MATERIAL_PLAN_APPROVER_INVALID: 'Người được chọn chưa có quyền duyệt kế hoạch vật tư.',
+  MATERIAL_PLAN_APPROVER_INVALID: 'Người được chọn chưa có quyền duyệt kế hoạch vật tư, hoặc là người lập.',
+  MATERIAL_PLAN_SELF_APPROVAL_DENIED: 'Người lập hoặc người gửi không tự duyệt / trả lại kế hoạch vật tư của mình.',
+  MATERIAL_PLAN_NOT_FLAGGED: 'Kế hoạch vật tư không còn ở trạng thái cần tính lại. Tải lại.',
+  MATERIAL_PLAN_KEEP_REASON_REQUIRED: 'Ghi lý do giữ nguyên kế hoạch vật tư.',
   ROW_VERSION_CONFLICT: 'Kế hoạch vừa được người khác cập nhật. Tải lại rồi thử lại.',
 };
 
 export const mapMaterialPlanError = (error: { message?: string; code?: string; details?: string } | null): Error => {
-  const code = Object.keys(ERROR_MESSAGES).find(key => error?.message?.includes(key));
+  const code = Object.keys(ERROR_MESSAGES).sort((a, b) => b.length - a.length).find(key => error?.message?.includes(key));
   const detail = code === 'MATERIAL_PLAN_OVER_BOQ_REASON_REQUIRED' && error?.details ? ` (${error.details})` : '';
   const mapped = new Error(code ? ERROR_MESSAGES[code] + detail : 'Không thực hiện được thao tác với kế hoạch vật tư. Thử lại sau.');
   (mapped as Error & { code?: string }).code = code || error?.code;
@@ -105,7 +112,7 @@ export const projectMaterialPlanService = {
     lines: Array<{ id: string; requestedQty: number; neededDate: string | null; overReason: string | null; note: string | null }> }) {
     return call<{ planId: string; rowVersion: number }>('save_project_material_plan_v1', { p_input: input });
   },
-  transition(input: { planId: string; expectedRowVersion: number; action: 'submit' | 'withdraw' | 'approve' | 'return' | 'delete'; reason?: string; recipientUserId?: string | null }) {
+  transition(input: { planId: string; expectedRowVersion: number; action: 'submit' | 'withdraw' | 'approve' | 'return' | 'delete' | 'keep'; reason?: string; recipientUserId?: string | null }) {
     return call<{ planId: string; rowVersion?: number; deleted?: boolean }>('transition_project_material_plan_v1', { p_input: input });
   },
   revise(input: { planId: string; reason: string }) {

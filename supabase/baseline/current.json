@@ -271,7 +271,8 @@
     "20261008135100_finance_k3c_invoices.sql",
     "20261008135200_finance_reports.sql",
     "20261008137500_wms_document_date.sql",
-    "20261009090000_project_material_request_catalog.sql"
+    "20261009090000_project_material_request_catalog.sql",
+    "20261008138100_project_plan_versions.sql"
   ],
   "forbidIncludeAll": true
 }
