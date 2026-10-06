@@ -72,7 +72,6 @@ const ShiftManagement = React.lazy(() => import('./pages/hrm/ShiftManagement'));
 const EmployeeRanking = React.lazy(() => import('./pages/hrm/EmployeeRanking'));
 
 // Expense pages
-const BudgetDashboard = React.lazy(() => import('./pages/expense/BudgetDashboard'));
 
 // Workflow pages
 const WorkflowInstances = React.lazy(() => import('./pages/wf/WorkflowInstances'));
@@ -226,7 +225,8 @@ const AppRoutes: React.FC = () => {
           <Route path="hrm" element={<Navigate to="/my-profile" replace />} />
           <Route path="hrm/employees" element={<Employees />} />
           <Route path="hrm/dashboard" element={<HrmDashboard />} />
-          <Route path="expense" element={<BudgetDashboard />} />
+          {/* Module Chi phí cũ đã gộp vào Tài chính → Chi phí & ngân sách (doc 14 câu 6). */}
+          <Route path="expense" element={<Navigate to="/finance/cost" replace />} />
           <Route path="hrm/attendance" element={<Attendance />} />
           <Route path="hrm/shifts" element={<ShiftManagement />} />
           <Route path="hrm/leave" element={<LeaveManagement />} />
@@ -380,11 +380,6 @@ const AppDataWarmup: React.FC = () => {
 
     if (pathname.startsWith('/ts')) {
       loadModuleData('ts').catch(err => console.warn('Asset lazy load failed:', err));
-      return;
-    }
-
-    if (pathname.startsWith('/expense')) {
-      loadModuleData('ex').catch(err => console.warn('Expense lazy load failed:', err));
       return;
     }
 

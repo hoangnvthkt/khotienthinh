@@ -62,6 +62,8 @@ interface BuildImportInput {
   createdBy?: string | null;
   now?: string;
   idFactory?: () => string;
+  /** Ô ngày trống → để trống (máy chủ báo "Ngày không hợp lệ") thay vì lấy ngày hôm nay. Dùng cho nhập MISA ở Tài chính. */
+  strictDate?: boolean;
 }
 
 export interface ProjectTransactionImportResult {
@@ -149,6 +151,35 @@ const isTotalRow = (row: Record<string, unknown>) =>
   });
 
 import { loadXlsx } from './loadXlsx';
+
+const HEADER_KEYWORDS = ['thành tiền', 'thanh tien', 'đơn giá', 'don gia', 'số tiền', 'so tien', 'amount', 'số lượng', 'so luong', 'tên hàng', 'ten hang', 'stt',
+  'hạng mục', 'mô tả', 'nội dung', 'diễn giải', 'dien giai', 'mã khoản mục', 'ma khoan muc', 'khoản mục chi phí', 'khoan muc chi phi', 'cost_item', 'cost item', 'ngày', 'ngay'];
+
+/** Đọc sheet đầu của file Excel MISA / file mẫu: tự tìm dòng tiêu đề (file MISA có vài dòng tên công ty, kỳ báo cáo ở trên), bỏ dòng trống. */
+export const readTransactionImportRows = async (data: ArrayBuffer): Promise<Record<string, unknown>[]> => {
+  const XLSX = await loadXlsx();
+  const wb = XLSX.read(new Uint8Array(data), { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rawRows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  let headerRowIdx = -1;
+  for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+    const row = rawRows[r];
+    if (!row || row.length < 2) continue;
+    const texts = row.map(c => String(c || '').toLowerCase().trim());
+    if (texts.filter(t => HEADER_KEYWORDS.some(kw => t.includes(kw))).length >= 2) { headerRowIdx = r; break; }
+  }
+  if (headerRowIdx < 0) return XLSX.utils.sheet_to_json(ws) as Record<string, unknown>[];
+  const headerCols = rawRows[headerRowIdx].map(c => String(c || '').trim());
+  const rows: Record<string, unknown>[] = [];
+  for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
+    const rawRow = rawRows[r];
+    if (!rawRow || rawRow.every(c => !c && c !== 0)) continue;
+    const obj: Record<string, unknown> = {};
+    headerCols.forEach((col, i) => { if (col) obj[col] = rawRow[i] ?? ''; });
+    rows.push(obj);
+  }
+  return rows;
+};
 
 export interface ProjectTransactionImportPreviewItem {
   rowNumber: number;
@@ -250,7 +281,7 @@ export const parseProjectTransactionImportPreviewRows = (
         category,
         amount,
         description: lookup(findCol(row, ['nội dung', 'noi dung', 'mô tả', 'mo ta', 'description', 'diễn giải', 'dien giai', 'ghi chú', 'ghi chu', 'note'])),
-        date: parseDate(findCol(row, ['ngày', 'ngay', 'date', 'ngày giao dịch', 'ngay giao dich'])),
+        date: (() => { const raw = findCol(row, ['ngày', 'ngay', 'date', 'ngày giao dịch', 'ngay giao dich']); return input.strictDate && !lookup(raw) ? '' : parseDate(raw); })(),
         source: 'import' as ProjectTxSource,
         sourceRef: lookup(findCol(row, ['mã tham chiếu', 'ma tham chieu', 'source_ref', 'source ref', 'tham chiếu', 'tham chieu'])) || undefined,
         ...(costItem ? getContractCostItemSnapshot(costItem) : clearContractCostItemSnapshot()),

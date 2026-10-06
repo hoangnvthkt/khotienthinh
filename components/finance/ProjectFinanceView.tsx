@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowDownUp, ArrowLeft, Banknote, BarChart3, Building2, ChevronDown, ChevronLeft, ChevronRight, Coins, Download, FileText, HandCoins, HardHat, PiggyBank, ReceiptText, Scale, Search, TrendingUp, Wallet, X,
+  AlertTriangle, ArrowDownUp, ArrowLeft, Banknote, BarChart3, Building2, ChevronDown, ChevronLeft, ChevronRight, Coins, Download, FileSpreadsheet, FileText, HandCoins, HardHat, PiggyBank, ReceiptText, Scale, Search, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useToast } from '../../context/ToastContext';
@@ -9,6 +9,7 @@ import { SOURCE_LABELS, financeService, type FinanceMyScope, type FinanceProject
 import { loadXlsx } from '../../lib/loadXlsx';
 import { Badge, StateBox, inputCls, money, secondaryBtn } from '../procurement/hub/hubUi';
 import { ProjectCost } from './CostView';
+import { MisaImportDrawer } from './MisaImport';
 import { CustomerContractPanel } from './CustomerContractPanel';
 import { SubcontractPanel } from './SubcontractsView';
 import { ENT, NUM, clickCls, dueText, shortMoney, toneOf, TONE_TEXT, viDate, type LedgerFilter } from './financeUi';
@@ -82,7 +83,7 @@ export const ProjectFinanceView: React.FC<{ initialProjectId?: string | null; st
       : tab === 'cost' ? <ProjectCost key={`${data.project.id}:${reloadKey}:${costTab}`} projectId={data.project.id} initialTab={costTab} onOpenLedger={openLedger} onChanged={() => setReloadKey(k => k + 1)} />
       : tab === 'receivables' ? <Receivables d={data} onChanged={() => setReloadKey(k => k + 1)} />
       : tab === 'payables' ? <Payables d={data} filter={payFilter} setFilter={setPayFilter} onChanged={() => setReloadKey(k => k + 1)} />
-      : <Ledger d={data} filter={ledgerFilter} setFilter={setLedgerFilter} />}
+      : <Ledger d={data} filter={ledgerFilter} setFilter={setLedgerFilter} onImported={() => setReloadKey(k => k + 1)} />}
     {standalone && <p className="text-xs text-muted-foreground">Số liệu chỉ xem. Thu chi, công nợ, ngân sách do kế toán ghi ở module Tài chính.</p>}
   </div>;
 };
@@ -203,7 +204,8 @@ const TYPE_LABEL: Record<string, string> = { revenue_received: 'Thu CĐT', expen
 type Sort = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc';
 const PAGE = 10;
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${money(Math.abs(n))}`;
-const Ledger: React.FC<{ d: FinanceProjectPage; filter: LedgerFilter; setFilter: (f: LedgerFilter) => void }> = ({ d, filter, setFilter }) => {
+const Ledger: React.FC<{ d: FinanceProjectPage; filter: LedgerFilter; setFilter: (f: LedgerFilter) => void; onImported: () => void }> = ({ d, filter, setFilter, onImported }) => {
+  const [misa, setMisa] = useState(false);
   const toast = useToast();
   const [q, setQ] = useState(''); const [sort, setSort] = useState<Sort>('date_desc'); const [page, setPage] = useState(1);
   const months = useMemo(() => [...new Set(d.ledger.map(x => x.date.slice(0, 7)))].sort().reverse(), [d]);
@@ -247,7 +249,9 @@ const Ledger: React.FC<{ d: FinanceProjectPage; filter: LedgerFilter; setFilter:
       <label className="inline-flex items-center gap-1 text-sm"><ArrowDownUp size={14} className="text-muted-foreground" /><select value={sort} onChange={e => setSort(e.target.value as Sort)} aria-label="Sắp xếp" className={inputCls}>
         <option value="date_desc">Ngày mới → cũ</option><option value="date_asc">Ngày cũ → mới</option><option value="amount_desc">Số tiền lớn → nhỏ</option><option value="amount_asc">Số tiền nhỏ → lớn</option></select></label>
       <button type="button" onClick={() => void exportXlsx()} disabled={!rows.length} className={secondaryBtn}><Download size={15} />Xuất Excel</button>
+      {d.can.record && <button type="button" onClick={() => setMisa(true)} title="Nhập chi phí từ file Excel sổ chi tiết MISA" className={secondaryBtn}><FileSpreadsheet size={15} />Nhập số MISA</button>}
     </div>
+    {misa && <MisaImportDrawer projectId={d.project.id} projectLabel={`${d.project.code} · ${d.project.name}`} onClose={() => setMisa(false)} onSaved={() => { setMisa(false); onImported(); }} />}
     <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-1.5 text-xs">
       {chips.map(c => <button key={c.k} type="button" onClick={() => setFilter({ ...filter, [c.k]: undefined })} className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 font-semibold text-teal-800">{c.l}<X size={12} /></button>)}
       {chips.length > 1 && <button type="button" onClick={() => setFilter({})} className="font-semibold text-teal-700 hover:underline">Xóa lọc</button>}

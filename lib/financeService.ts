@@ -408,18 +408,46 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_COST_REVIEW_DONE: 'Dòng này đã được soát xét.',
   FINANCE_COST_REVIEW_AMOUNT: 'Số đảo phải lớn hơn 0 và không lớn hơn số tiền của dòng ghi tay.',
   SUBCONTRACT_FINANCE_ONLY: 'Nghiệm thu thanh toán, tạm ứng, lịch thanh toán của HĐ thầu phụ lập ở Tài chính → Phải trả → Thầu phụ.',
+  FINANCE_MISA_EMPTY: 'File không có dòng chi phí nào để nhập.',
+  FINANCE_MISA_TOO_MANY: 'Mỗi lần nhập tối đa 3.000 dòng — tách file theo tháng rồi nhập từng phần.',
+  FINANCE_MISA_ROWS_INVALID: 'Có dòng không nhập được (trùng, vật tư sau mốc chi phí, tháng đã khoá sổ hoặc thiếu khoản mục). Bấm "Kiểm tra lại" rồi bỏ các dòng đó',
+  FINANCE_MISA_BATCH_NOT_FOUND: 'Không còn lô nhập này. Tải lại.',
+  FINANCE_MISA_BATCH_CANCELLED: 'Lô này đã được huỷ trước đó.',
+  PROJECT_TRANSACTION_FINANCE_ONLY: 'Sổ giao dịch dự án chỉ ghi qua Tài chính (nhập số MISA, đề nghị chi, phiếu chi khác, phiếu thu). Không thêm / sửa / xoá tay được nữa.',
 };
+// Mã lỗi có kèm chi tiết từ máy chủ (dòng nào, ngày nào) — nối vào thông báo.
+const DETAIL_CODES = new Set(['FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED']);
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
   if (error) {
     const code = Object.keys(ERROR_MESSAGES).find(key => error.message?.includes(key));
-    const mapped = new Error(code ? ERROR_MESSAGES[code] : 'Không thực hiện được. Thử lại sau.');
+    const detail = code && DETAIL_CODES.has(code) && error.details ? `: ${error.details}` : '';
+    const mapped = new Error(code ? `${ERROR_MESSAGES[code]}${detail}` : 'Không thực hiện được. Thử lại sau.');
     (mapped as Error & { code?: string }).code = code || error.code;
     throw mapped;
   }
   return data as T;
 };
+
+// ---------- Nhập số MISA (P3) ----------
+export interface FinanceMisaRowInput {
+  row: number; date: string; amount: number; costItemId: string | null; category: string; description: string;
+  invoiceNo?: string | null; invoiceDate?: string | null; partnerId?: string | null; partnerName?: string | null;
+}
+export type FinanceMisaRowStatus = 'ok' | 'bad_date' | 'bad_amount' | 'no_cost_item' | 'after_cutover' | 'period_locked' | 'duplicate' | 'duplicate_in_file';
+export interface FinanceMisaRowCheck { row: number; status: FinanceMisaRowStatus; message: string | null; amount: number | null; symbol: string | null; category: string }
+export interface FinanceMisaBatch {
+  id: string; fileName: string | null; rows: number; total: number; byItem: Array<{ symbol: string; name: string; count: number; amount: number }>;
+  createdAt: string; createdBy: string | null; from: string | null; to: string | null;
+  cancelledAt: string | null; cancelledBy: string | null; cancelReason: string | null;
+}
+export interface FinanceMisaImports {
+  projectId: string; code: string; cutoverDate: string | null; canRecord: boolean; canCancel: boolean;
+  /** Số đã nhập ở sổ Dự án trước khi chuyển sang Tài chính (không theo lô). */
+  legacy: { count: number; total: number; from: string | null; to: string | null };
+  batches: FinanceMisaBatch[];
+}
 
 export const FINANCE_BUCKET = 'finance-attachments';
 const safeName = (name: string) => name.trim().replace(/[^a-zA-Z0-9._-]+/g, '_') || 'file';
@@ -746,6 +774,16 @@ export const financeService = {
   },
   saveSubcontractAdvance(input: { requestId?: string; expectedRowVersion?: number; subcontractId: string; amount: number; method: 'bank_transfer' | 'cash'; plannedDate: string; repayDueDate: string; note: string }) {
     return call<{ requestId: string; code: string; amount: number }>('save_finance_subcontract_advance_v1', { p_input: input });
+  },
+  misaImports(projectId: string) { return call<FinanceMisaImports>('get_finance_misa_imports_v1', { p_project_id: projectId }); },
+  previewMisaImport(projectId: string, rows: FinanceMisaRowInput[]) {
+    return call<{ projectId: string; cutoverDate: string | null; rows: FinanceMisaRowCheck[] }>('preview_finance_misa_import_v1', { p_project_id: projectId, p_rows: rows });
+  },
+  importMisa(input: { projectId: string; fileName: string; rows: FinanceMisaRowInput[] }) {
+    return call<{ batchId: string; inserted: number; total: number }>('import_finance_misa_costs_v1', { p_input: input });
+  },
+  cancelMisaImport(input: { batchId: string; reason: string }) {
+    return call<{ batchId: string; removed: number; total: number }>('cancel_finance_misa_import_v1', { p_input: input });
   },
   reviewManualCost(input: { transactionId: string; action: 'keep' | 'reverse'; amount?: number; reason: string; misaIds?: string[] }) {
     return call<{ transactionId: string; reversed: number }>('review_finance_manual_cost_v1', { p_input: input });

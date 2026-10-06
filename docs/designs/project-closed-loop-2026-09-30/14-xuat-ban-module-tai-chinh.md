@@ -95,3 +95,20 @@ Mỗi đợt: mockup trên dữ liệu thật → chủ SP duyệt → code → 
   (số cũ tính ở trình duyệt, lệch với Tài chính). Giữ tiến độ, hạng mục, cảnh báo, vật tư định mức.
 - Admin luôn thấy module Tài chính trên menu (khớp máy chủ).
 - Rollback `tools/p2-test.mjs` 6/6. Còn lại P3: nhập Excel số MISA ở Tài chính, chặn ghi tay `project_transactions`, gộp module Chi phí cũ, mẫu phân quyền.
+
+## 7. Đã làm — P3 (05/10/2026, câu 5, 6, 8, 9 phương án a)
+
+- **Nhập số MISA ở Tài chính** (quyền Ghi nhận): nút "Nhập số MISA" ở Chi phí & ngân sách của dự án và ở Sổ giao dịch (Tài chính dự án).
+  Đọc file Excel sổ chi tiết MISA (tự tìm dòng tiêu đề, bỏ dòng tổng và khoản thu) → máy chủ kiểm từng dòng (`preview_finance_misa_import_v1`):
+  vật tư từ mốc chi phí (Vioo ghi khi nhận hàng), trùng chứng từ đã nhập / trùng trong file, tháng đã khoá sổ, thiếu khoản mục, ngày / số tiền sai.
+  Dòng thiếu khoản mục gán một lần cho tất cả hoặc từng dòng; máy chủ kiểm lại. Nhập theo lô (`import_finance_misa_costs_v1`, bảng `finance_misa_import_batches`,
+  `source_ref = misa:<lô>:<dòng>`). Kế toán trưởng (quyền Xác nhận) **huỷ cả lô** khi nhập nhầm, cần lý do; các dòng đã xoá lưu đủ trong nhật ký Tài chính.
+  944 + 124 dòng đã nhập ở sổ Dự án trước đây hiện là "nhập ở sổ Dự án cũ" (không theo lô).
+- **Máy chủ chặn ghi tay sổ giao dịch dự án** (`PROJECT_TRANSACTION_FINANCE_ONLY`): thêm / sửa / xoá thẳng từ trình duyệt bị chặn; ghi qua hàm (Tài chính, Mua hàng, Kho,
+  quỹ công trường) vẫn chạy. Ngoại lệ: chốt đầu kỳ vật tư ở Dự án → Vật tư (dòng `opening_balance:<id>:materials` của đúng bản đầu kỳ đã lưu).
+  Gỡ nút "+ Giao dịch / Import / Mẫu / Ngân sách" còn sót ở đầu trang Dự án và khối số tài chính cũ không còn dùng.
+- **Module Chi phí cũ** (`/expense`, 2 danh mục thử + 1 phiếu chi thử) ẩn khỏi menu, Dock, trang chủ, thanh dưới; link cũ mở Tài chính → Chi phí & ngân sách. Dữ liệu cũ giữ nguyên.
+- **Mẫu phân quyền** (Cài đặt → Phân quyền, sửa mẫu không đổi người đã áp): "Kế toán" thêm Tài chính xem + ghi nhận; "Kế toán trưởng / Tài chính" thêm xem + ghi nhận + xác nhận;
+  mẫu mới **"Giám đốc tài chính"** = Kế toán trưởng + Quản trị Tài chính (gợi ý cho chức vụ Giám đốc tài chính). "Xem theo dự án" không cần mẫu: dùng công tắc
+  "Xem tài chính dự án" ở từng dự án (P1).
+- Rollback `tools/p3-test.mjs` 50/50.

@@ -56,7 +56,6 @@ const MODULE_CONFIG = [
   { key: 'FINANCE' as const, icon: Wallet, label: 'Tài chính', shortLabel: 'TC', route: '/finance', gradient: 'from-teal-600 to-emerald-600', shadow: 'shadow-teal-600/25' },
   { key: 'TS' as const, icon: Landmark, label: 'Tài sản', shortLabel: 'TS', route: '/ts/dashboard', gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
   { key: 'RQ' as const, icon: Inbox, label: 'Yêu cầu', shortLabel: 'RQ', route: '/rq', gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
-  { key: 'EX' as const, icon: Calculator, label: 'Chi phí', shortLabel: 'CP', route: '/expense', gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
   { key: 'STORAGE' as const, icon: HardDrive, label: 'Kho dữ liệu', shortLabel: 'DL', route: '/storage', gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' },
   { key: 'KB' as const, icon: BookOpen, label: 'Kho Kiến Thức', shortLabel: 'KT', route: '/knowledge-base', gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-600/25' },
   { key: 'AI' as const, icon: Bot, label: 'Trợ lý AI', shortLabel: 'AI', route: '/ai', gradient: 'from-fuchsia-500 to-rose-600', shadow: 'shadow-fuchsia-500/25' },
@@ -122,7 +121,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     if (p.startsWith('/finance')) return 'FINANCE';
     if (p.startsWith('/ts')) return 'TS';
     if (p.startsWith('/rq')) return 'RQ';
-    if (p.startsWith('/expense')) return 'EX';
     if (p.startsWith('/storage')) return 'STORAGE';
     if (p.startsWith('/knowledge-base')) return 'KB';
     if (p.startsWith('/ai')) return 'AI';
@@ -301,9 +299,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
       { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
       { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
       { to: '/rq/templates', icon: Settings, label: 'Mẫu yêu cầu' },
-    ],
-    EX: [
-      { to: '/expense', icon: BarChart3, label: 'Kế hoạch chi phí' },
     ],
     STORAGE: [
       { to: '/storage', icon: HardDrive, label: 'Kho dữ liệu' },

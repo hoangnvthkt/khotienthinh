@@ -140,18 +140,6 @@ const ALL_MODULE_DEFS: ModuleAppDefinition[] = [
     badgeTone: 'emerald',
   },
   {
-    key: 'EX',
-    label: 'Chi phí',
-    shortLabel: 'CP',
-    description: 'Ngân sách & chứng từ chi',
-    route: '/expense',
-    icon: DollarSign,
-    gradient: 'from-purple-500 to-pink-600',
-    glowColor: 'rgba(168, 85, 247, 0.4)',
-    strokeColor: '#a855f7',
-    badgeTone: 'purple',
-  },
-  {
     key: 'RQ',
     label: 'Yêu cầu',
     shortLabel: 'RQ',

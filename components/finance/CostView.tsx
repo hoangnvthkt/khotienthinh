@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ArrowLeft, Calculator, Check, ChevronDown, ClipboardList, FileText, HandCoins, PiggyBank, Plus, RotateCcw, Scale, Undo2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Calculator, Check, ChevronDown, ClipboardList, FileSpreadsheet, FileText, HandCoins, PiggyBank, Plus, RotateCcw, Scale, Undo2, Users, X } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { financeService, type FinanceCost, type FinanceCostLine, type FinanceCostProject, type FinanceFundRowKind, type FinanceProjectBudget, type FinanceProjectCost } from '../../lib/financeService';
 import { Badge, StateBox, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, clickCls, projectFinanceHref, shortMoney, viDate, type LedgerFilter } from './financeUi';
+import { MisaImportDrawer, MisaImportHistory } from './MisaImport';
 import { BudgetDrawer, CapitalDrawer, FundOpeningDrawer, signedMoney } from './CostDrawers';
 import { AllocationView } from './AllocationView';
 
@@ -168,7 +169,8 @@ export const ProjectCost: React.FC<{ projectId: string; onBack?: () => void; onC
   const [tab, setTab] = useState<'budget' | 'fund'>(initialTab || 'budget');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<{ commitments?: boolean; versions?: boolean }>({});
-  const [drawer, setDrawer] = useState<{ kind: 'budget' } | { kind: 'opening' } | { kind: 'capital'; mode: 'topup' | 'return' } | null>(null);
+  const [drawer, setDrawer] = useState<{ kind: 'budget' } | { kind: 'opening' } | { kind: 'capital'; mode: 'topup' | 'return' } | { kind: 'misa' } | null>(null);
+  const [misaKey, setMisaKey] = useState(0);
   const load = useCallback(() => { setError(null); financeService.projectCost(projectId).then(setData).catch(e => setError(e instanceof Error ? e.message : String(e))); }, [projectId]);
   useEffect(load, [load]);
   const back = onBack ? <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-sm font-semibold text-teal-700 hover:underline"><ArrowLeft size={15} />Toàn công ty</button> : null;
@@ -191,6 +193,7 @@ export const ProjectCost: React.FC<{ projectId: string; onBack?: () => void; onC
     <div className="flex flex-wrap items-start gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="min-w-0 flex-1"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Chi phí & ngân sách · dự án</p><h2 className={`text-lg ${ENT}`}>{p.code} · {p.name}</h2>
         <p className="text-sm text-muted-foreground">{p.contractValue ? `HĐ ${shortMoney(p.contractValue)}` : 'Chưa khai HĐ chủ đầu tư'} · tiến độ {p.progress == null ? 'chưa có' : `${p.progress}%`} · {current ? `ngân sách phiên bản ${current.versionNo} (duyệt ${viDate(current.decidedAt)} bởi ${current.decidedByName})` : 'chưa có ngân sách đã duyệt — chỉ có dự toán vật tư'}</p></div>
+      {can.record && tab === 'budget' && <button type="button" onClick={() => setDrawer({ kind: 'misa' })} title="Nhập chi phí từ file Excel sổ chi tiết MISA" className={secondaryBtn}><FileSpreadsheet size={15} />Nhập số MISA</button>}
       {can.record && tab === 'budget' && <button type="button" onClick={() => setDrawer({ kind: 'budget' })} disabled={Boolean(pending)} title={pending ? 'Đang có bản chờ duyệt' : undefined} className={primaryBtn}><Calculator size={15} />{current ? 'Điều chỉnh ngân sách' : 'Lập ngân sách'}</button>}
       {can.capital && tab === 'fund' && <><button type="button" onClick={() => setDrawer({ kind: 'capital', mode: 'return' })} disabled={f.capital <= 0.5} className={secondaryBtn}><Undo2 size={15} />Thu hồi vốn</button>
         <button type="button" onClick={() => setDrawer({ kind: 'capital', mode: 'topup' })} className={primaryBtn}><HandCoins size={15} />Cấp vốn</button></>}
@@ -259,6 +262,7 @@ export const ProjectCost: React.FC<{ projectId: string; onBack?: () => void; onC
           <span className={`text-xs ${c.stale ? 'font-semibold text-rose-700' : 'text-muted-foreground'}`}>{c.expectedDate ? `${c.stale ? 'quá hẹn · ' : 'hẹn '}${viDate(c.expectedDate)}` : 'chưa hẹn ngày'}</span>
           <span className="tabular-nums">{shortMoney(c.openNet)}<span className="text-xs text-muted-foreground"> / {shortMoney(c.netTotal)}</span></span></li>)}</ul>}
       </section>}
+      <MisaImportHistory projectId={projectId} reloadKey={misaKey} onChanged={() => { load(); onChanged(); }} />
       {data.budgets.length > 0 && <section id="budget-versions" className="rounded-2xl border border-border bg-card p-4 shadow-sm">
         <button type="button" onClick={() => setOpen(o => ({ ...o, versions: !o.versions }))} className="flex w-full items-center gap-2 text-left">
           <h3 className="flex-1 font-semibold">Lịch sử ngân sách ({data.budgets.length} phiên bản)</h3><ChevronDown size={16} className={`transition ${open.versions ? 'rotate-180' : ''}`} /></button>
@@ -317,5 +321,7 @@ export const ProjectCost: React.FC<{ projectId: string; onBack?: () => void; onC
     {drawer?.kind === 'budget' && <BudgetDrawer data={data} onClose={() => setDrawer(null)} onSaved={done} />}
     {drawer?.kind === 'opening' && <FundOpeningDrawer data={data} onClose={() => setDrawer(null)} onSaved={done} />}
     {drawer?.kind === 'capital' && <CapitalDrawer data={data} kind={drawer.mode} onClose={() => setDrawer(null)} onSaved={done} />}
+    {drawer?.kind === 'misa' && <MisaImportDrawer projectId={projectId} projectLabel={`${p.code} · ${p.name}`} onClose={() => setDrawer(null)}
+      onSaved={() => { setDrawer(null); setMisaKey(k => k + 1); load(); onChanged(); }} />}
   </div>;
 };

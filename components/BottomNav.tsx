@@ -40,7 +40,6 @@ const BASE_NAV_ITEMS: NavItem[] = [
   { key: 'TS', to: '/ts/dashboard', iconName: 'Landmark', label: 'Tài sản', shortLabel: 'TS', matchPrefix: '/ts', color: 'text-rose-500' },
   { key: 'WF', to: '/wf', iconName: 'GitBranch', label: 'Quy trình', shortLabel: 'QT', matchPrefix: '/wf', color: 'text-violet-500' },
   { key: 'RQ', to: '/rq', iconName: 'Inbox', label: 'Yêu cầu', shortLabel: 'RQ', matchPrefix: '/rq', color: 'text-cyan-500' },
-  { key: 'EX', to: '/expense', iconName: 'DollarSign', label: 'Chi phí', shortLabel: 'CP', matchPrefix: '/expense', color: 'text-blue-500' },
   { key: 'OPS', to: '/operations', iconName: 'ArrowLeftRight', label: 'Phiếu kho', shortLabel: 'PK', matchPrefix: '/operations', color: 'text-sky-500' },
   { key: 'PAY', to: '/hrm/payroll', iconName: 'DollarSign', label: 'Bảng lương', shortLabel: 'BL', matchPrefix: '/hrm/payroll', color: 'text-green-500' },
   { key: 'CHECKIN', to: '/hrm/checkin', iconName: 'MapPin', label: 'Chấm công', shortLabel: 'CC', matchPrefix: '/hrm/checkin', color: 'text-emerald-500' },
