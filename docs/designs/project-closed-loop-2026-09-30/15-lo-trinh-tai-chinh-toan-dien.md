@@ -108,3 +108,19 @@ Lý do: DA29 còn 93% khối lượng dồn vào T10–T12. Vật tư, nhân cô
 - Máy chủ: `20261008135000_finance_bank_statement.sql` (bảng `finance_bank_statements`, `finance_bank_statement_lines`; RPC nhập / xem / khớp / huỷ).
   Rollback `tools/bank-test.mjs` 31/31; đọc file `lib/bankStatementImport.ts` 5 test.
 - Còn lại của mục "Tiền & ngân hàng": khoản vay đã làm cùng Dự báo; nhắc dòng chưa khớp ở Việc cần làm (đợt sau).
+
+## 7. Đã làm — K3c hóa đơn đầu vào + khớp 3 bên (06/10/2026, theo quyết định 8 doc 08 duyệt 01/10)
+
+- **Màn**: Tài chính → Phải trả → bước **Hóa đơn NCC**: chờ duyệt lệch, chờ hàng, đã ghi, chứng từ chưa có hóa đơn (theo NCC), trả lại / đã đảo.
+  Màn chi tiết NCC ghi rõ từng chứng từ đã có hóa đơn nào / còn bao nhiêu chưa có.
+- **Ghi hóa đơn**: nhập tay hoặc **đọc file XML hóa đơn điện tử** (NĐ 123 / TT 78: ký hiệu, số, ngày, tiền hàng, VAT, tổng, thuế suất; tìm NCC theo MST,
+  danh mục trùng MST thì ưu tiên NCC đang có chứng từ; file XML tự đính kèm). Chọn chứng từ nhận hàng / bảng đối soát mà hóa đơn thanh toán (tự chọn theo tổng tiền).
+  Tính ngay: theo nhận hàng, lệch, dung sai (0,5% hoặc 50.000 đ, lấy số lớn hơn).
+  - Khớp / lệch trong dung sai → ghi ngay; lệch dương thành chứng từ "điều chỉnh theo hóa đơn" (tăng nợ), lệch âm giảm trừ vào chứng từ đã gắn; chi phí dự án điều chỉnh theo.
+  - Vượt dung sai → ghi lý do, người khác (quyền Xác nhận) duyệt / trả lại; chưa duyệt thì chưa đổi công nợ.
+  - Không chọn chứng từ → "Chờ hàng" (hóa đơn đến trước hàng), khớp sau.
+  - Đảo hóa đơn (Xác nhận, lý do): gỡ điều chỉnh nếu phần điều chỉnh chưa trả / chưa đề nghị chi.
+- **HĐ NCC "bắt buộc hóa đơn trước khi chi"** (cờ đã có ở điều khoản HĐ) giờ chặn thật: đề nghị chi chứng từ chưa có hóa đơn đã ghi bị chặn (`FINANCE_CONTRACT_NEEDS_INVOICE`).
+- Khoá 3 hàm ghi hóa đơn kiểu cũ (tab Tài chính dự án đã gỡ); bảng hóa đơn chỉ đọc theo quyền Tài chính.
+- Máy chủ: `20261008135100_finance_k3c_invoices.sql` (sinh bằng `tools/gen_k3c.py` từ `k3c_template.sql` + vá 2 hàm đang chạy). Rollback `tools/k3c-test.mjs` 43/43.
+- Chưa làm: xuất chứng từ mua hàng sang MISA (chờ mẫu import từ chị Hương); báo Mua hàng ngay trên đơn PO khi hóa đơn lệch (hiện thấy ở Tài chính).

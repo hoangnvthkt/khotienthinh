@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Banknote, CalendarClock, CalendarRange, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank, Coins,
+  AlertTriangle, Banknote, CalendarClock, CalendarRange, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank, Coins, ReceiptText,
   ArrowLeftRight, Building2, HardHat, ListTodo, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
 } from 'lucide-react';
 import { financeService, type FinanceAdvances, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
@@ -8,9 +8,10 @@ import { AdvancesView, type AdvanceFilter } from './AdvancesView';
 import { ReceivablesView } from './ReceivablesView';
 import { ProjectFinanceView } from './ProjectFinanceView';
 import { SubcontractsView } from './SubcontractsView';
+import { InvoicesView } from './InvoicesView';
 import { CashView } from './CashView';
 import { CostView } from './CostView';
-import type { FinanceAllocation, FinanceCost, FinanceReceivables, FinanceSiteFunds, FinanceSubcontracts } from '../../lib/financeService';
+import type { FinanceAllocation, FinanceCost, FinanceInvoices, FinanceReceivables, FinanceSiteFunds, FinanceSubcontracts } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
 import { ForecastView } from './ForecastView';
@@ -28,8 +29,8 @@ import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financ
 
 type Section = 'auto' | 'overview' | 'forecast' | 'todo' | 'receivables' | 'payables' | 'cash' | 'cost' | 'project' | 'settings';
 const SECTIONS: readonly string[] = ['overview', 'forecast', 'todo', 'receivables', 'cash', 'cost', 'project', 'settings'];
-const stageOf = (s?: string | null): Stage => s === 'pending' ? 'pending' : s === 'requests' ? 'request' : s === 'advances' ? 'advances' : s === 'subcontracts' ? 'subcontracts' : 'owed';
-type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid' | 'advances' | 'subcontracts';
+const stageOf = (s?: string | null): Stage => s === 'invoices' ? 'invoices' : s === 'pending' ? 'pending' : s === 'requests' ? 'request' : s === 'advances' ? 'advances' : s === 'subcontracts' ? 'subcontracts' : 'owed';
+type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid' | 'advances' | 'subcontracts' | 'invoices';
 type Filter = 'all' | 'overdue' | 'soon' | 'issues' | 'opening';
 type Sort = 'overdue' | 'owed' | 'due' | 'name';
 
@@ -61,6 +62,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
   const [advanceFilter, setAdvanceFilter] = useState<AdvanceFilter>('active');
   const [advances, setAdvances] = useState<FinanceAdvances['totals'] | null>(null);
   const [receivables, setReceivables] = useState<FinanceReceivables['totals'] | null>(null);
+  const [inv, setInv] = useState<FinanceInvoices['counts'] | null>(null);
   const [subs, setSubs] = useState<(FinanceSubcontracts['totals'] & { reviews: number; reviewAmount: number }) | null>(null);
   const [rcvKey, setRcvKey] = useState(0);
   const [cashPending, setCashPending] = useState<{ waitingMe: number; openings: number; reconciliations: number; movements: number; accountsWithoutOpening: number; accounts: number; belowMinWeek: string | null; lowest: number | null; minBalance: number } | null>(null);
@@ -107,6 +109,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
       financeService.paymentRequests('request').then(d => setRequestCounts(d.counts)).catch(() => setRequestCounts(null));
       financeService.advances().then(d => setAdvances(d.totals)).catch(() => setAdvances(null));
       financeService.receivables().then(d => setReceivables(d.totals)).catch(() => setReceivables(null));
+      financeService.invoices({}).then(d => setInv(d.counts)).catch(() => setInv(null));
       financeService.subcontracts().then(d => setSubs({ ...d.totals, reviews: d.reviewCosts.length, reviewAmount: d.reviewCosts.reduce((a, x) => a + x.amount, 0) })).catch(() => setSubs(null));
       financeService.cash().then(d => setCashPending({ ...d.pending, accounts: d.forecast.accounts, belowMinWeek: d.forecast.belowMinWeek, lowest: d.forecast.lowest, minBalance: d.forecast.minBalance })).catch(() => setCashPending(null));
       financeService.cost().then(setCost).catch(() => setCost(null));
@@ -203,7 +206,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
               <button type="button" onClick={() => setFilter('opening')} className={`${secondaryBtn} bg-card`}><ClipboardCheck size={15} />Xem NCC cần đối chiếu</button>
             </p>}
 
-            <nav aria-label="Các bước công nợ" className={`grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7 ${mobileDetail ? 'hidden md:grid' : ''}`}>
+            <nav aria-label="Các bước công nợ" className={`grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8 ${mobileDetail ? 'hidden md:grid' : ''}`}>
               {([['pending', 'Chờ ghi nợ', direct ? String(data.pendingStatements.count + direct.count) : '…',
                   direct ? `${direct.count} phiếu nhập trực tiếp · ${data.pendingStatements.count} bảng đối soát` : 'đang đếm…', Inbox, true],
                 ['owed', 'Đang nợ', String(t.docCount), `${shortMoney(t.owed)} · ${t.supplierCount} NCC`, Banknote, true],
@@ -213,16 +216,19 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
                 ['advances', 'Tạm ứng NCC', advances ? shortMoney(advances.remaining) : '…', advances ? (advances.overdueCount + advances.refundDueCount > 0
                   ? `${advances.overdueCount} quá hạn hoàn ứng · ${advances.refundDueCount} chờ hoàn` : `${advances.openCount} khoản còn lại · ${advances.approving} đang duyệt`) : 'đang tải…', Coins, true],
                 ['subcontracts', 'Thầu phụ', subs ? `${subs.contracts} HĐ` : '…', subs ? (subs.roundsWaitingMe + subs.openingsPendingMe > 0 ? `${subs.roundsWaitingMe + subs.openingsPendingMe} chờ bạn`
-                  : subs.openingsTodo > 0 ? `${subs.openingsTodo} HĐ chưa chốt đầu kỳ` : subs.roundsSubmitted > 0 ? `${subs.roundsSubmitted} đợt chờ ghi nhận` : 'nghiệm thu · giữ lại · TNCN') : 'đang tải…', HardHat, true]] as const).map(([k, l, v, h, I, on], i) =>
+                  : subs.openingsTodo > 0 ? `${subs.openingsTodo} HĐ chưa chốt đầu kỳ` : subs.roundsSubmitted > 0 ? `${subs.roundsSubmitted} đợt chờ ghi nhận` : 'nghiệm thu · giữ lại · TNCN') : 'đang tải…', HardHat, true],
+                ['invoices', 'Hóa đơn NCC', inv ? String(inv.pendingApproval + inv.awaitingGoods) : '…', inv ? (inv.pendingApproval ? `${inv.pendingApproval} chờ duyệt lệch` : `${inv.docsWithout} chứng từ chưa có HĐ`) : 'đang tải…', ReceiptText, true]] as const).map(([k, l, v, h, I, on], i) =>
                 <button key={k} type="button" disabled={!on} aria-current={stage === k ? 'page' : undefined} onClick={() => { if (!on) return; setStage(k as Stage); go(k === 'subcontracts' ? 'subcontracts' : 'payables'); }}
-                  className={`rounded-2xl border bg-card p-3 text-left transition ${stage === k ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${on ? '' : 'cursor-not-allowed opacity-50'} ${i === 0 || k === 'advances' || k === 'subcontracts' ? 'col-span-2 md:col-span-1' : ''} ${k === 'advances' || k === 'subcontracts' ? 'border-dashed' : ''}`}>
+                  className={`rounded-2xl border bg-card p-3 text-left transition ${stage === k ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-border hover:border-teal-300'} ${on ? '' : 'cursor-not-allowed opacity-50'} ${i === 0 || k === 'advances' || k === 'subcontracts' ? 'col-span-2 md:col-span-1' : ''} ${k === 'advances' || k === 'subcontracts' || k === 'invoices' ? 'border-dashed' : ''}`}>
                   <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{k === 'advances' ? <HandCoins size={15} className="text-teal-700" /> : k === 'subcontracts' ? <HardHat size={15} className="text-teal-700" />
+                    : k === 'invoices' ? <FileWarning size={15} className="text-teal-700" />
                     : <span className="grid h-5 w-5 place-items-center rounded-full bg-muted text-[11px] font-bold text-foreground">{i + 1}</span>}{l}</span>
                   <span className="mt-1.5 flex items-center gap-2"><I size={17} className="text-teal-700" /><span className={`text-2xl font-bold tabular-nums ${k === 'pending' && Number(v) > 0 ? 'text-amber-700' : ''}`}>{v}</span></span>
                   <span className={`block text-xs ${(k === 'request' && requestCounts?.waitingMe) || (k === 'subcontracts' && subs && subs.roundsWaitingMe + subs.openingsPendingMe > 0) || (k === 'advances' && advances && advances.overdueCount + advances.refundDueCount > 0) ? 'font-semibold text-amber-700' : 'text-muted-foreground'}`}>{h}</span></button>)}
             </nav>
 
-            {stage === 'subcontracts' ? <SubcontractsView key={`sub:${stageKey}`} initialSubcontractId={initialSubcontractId} onChanged={() => void load(true)} />
+            {stage === 'invoices' ? <InvoicesView key={`inv:${stageKey}`} onChanged={() => { void load(true); financeService.invoices({}).then(d => setInv(d.counts)).catch(() => undefined); }} />
+              : stage === 'subcontracts' ? <SubcontractsView key={`sub:${stageKey}`} initialSubcontractId={initialSubcontractId} onChanged={() => void load(true)} />
               : stage === 'advances' ? <AdvancesView key={`adv:${stageKey}`} initialFilter={advanceFilter} onChanged={() => void load(true)} onOpenRequests={() => setStage('request')} />
               : stage === 'request' || stage === 'approved' || stage === 'paid'
               ? <PaymentRequestsView key={`${stage}:${stageKey}`} stage={stage} today={today} initialRequestId={initialRequestId} onChanged={() => { void load(true); setStageKey(k => k + 1); }} />
