@@ -376,3 +376,21 @@ test("mã văn bản: gợi ý số in mờ, báo trùng và chọn số trống
   await number.fill("12a");
   await expect(number).toHaveValue("12");
 });
+test("trình xem PDF hiển thị trang, không báo lỗi", async ({ page }) => {
+  // Giả lập trình duyệt chưa có tính năng JS mới (Safari iOS < 18.4, Chrome cũ)
+  await page.addInitScript(() => {
+    delete (Map.prototype as any).getOrInsertComputed;
+    delete (Map.prototype as any).getOrInsert;
+    delete (WeakMap.prototype as any).getOrInsertComputed;
+    delete (WeakMap.prototype as any).getOrInsert;
+    delete (globalThis as any).Iterator;
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`${base}#/office/documents/doc-1`);
+  await page.getByText("Vioo-kiem-thu.pdf").first().click();
+  await expect(page.getByRole("status").filter({ hasText: "Trang 1 /" })).toBeVisible();
+  await expect(page.getByRole("img", { name: /Vioo-kiem-thu\.pdf, trang 1/ })).toBeVisible();
+  await expect(page.locator(".office-pdf .office-error")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
