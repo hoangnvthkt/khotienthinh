@@ -2,25 +2,30 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
-import TodayView, { type CenterPerson } from './TodayView';
+import TodayView, { type CenterPerson, type TodayState } from './TodayView';
 import WorkItemTab, { type RendererComponent } from './WorkItemTab';
-import { resolveDrillTarget, type DrillTarget } from '../../lib/center/drill';
+import { resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
+import type { CenterModuleKey } from '../../lib/center/centerRegistry';
 import type { WorkItem } from '../../lib/center/workItemsService';
+import { fetchCenterToday, fetchSiteWeather, type CenterToday, type SiteWeather } from '../../lib/center/centerTodayService';
+import type { WeatherSlot } from '../../lib/center/todayWidgets';
 import './center.css';
 
 type MobilePane = 'inbox' | 'today' | 'assistant';
 
 const INBOX_HIDDEN_KEY = 'vcc_inbox_hidden';
 const INBOX_WIDTH_KEY = 'vcc_inbox_w';
+const PROJECT_KEY = 'vcc_project';
 const INBOX_MIN = 260;
 const INBOX_MAX = 460;
+const FOCUS_REFRESH_MS = 60_000;
 const readStorage = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const writeStorage = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* chỉ là tiện ích */ } };
 const clampWidth = (value: number) => Math.min(INBOX_MAX, Math.max(INBOX_MIN, value));
 
 const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: false };
 
-interface OpenTab extends CenterWorkTab { item: WorkItem; target: DrillTarget }
+interface OpenTab extends CenterWorkTab { item: WorkItem | null; module: CenterModuleKey; target: ItemDrillTarget }
 
 // View thật của module tải lười: chỉ khi mở hồ sơ đầu tiên.
 const LazyRenderer: RendererComponent = React.lazy(() => import('./CenterRenderers'));
@@ -33,6 +38,9 @@ const personInitials = (name: string) => {
 };
 /** Công ty: như header điện thoại của app — chữ đầu của hai từ đầu. */
 const companyInitials = (name: string) => wordsOf(name).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'V';
+
+export type LoadToday = (projectId: string | null) => Promise<CenterToday>;
+export type LoadWeather = (site: { id: string; latitude: number; longitude: number }, now: Date) => Promise<SiteWeather | null>;
 
 export interface CenterShellProps {
   person: CenterPerson & { title?: string | null; avatar?: string | null };
@@ -48,6 +56,10 @@ export interface CenterShellProps {
   now?: Date;
   /** Nguồn việc (mặc định RPC vcc_my_work_items_v1); fixture kiểm thử truyền dữ liệu mẫu. */
   loadWorkItems?: LoadWorkItems;
+  /** Số liệu Hôm nay (mặc định RPC vcc_my_center_v1). */
+  loadToday?: LoadToday;
+  /** Thời tiết công trường (mặc định Open-Meteo, cache 30 phút). */
+  loadWeather?: LoadWeather;
   /** View nhúng cho tab hồ sơ (mặc định tải lười CenterRenderers). */
   Renderer?: RendererComponent;
 }
@@ -56,7 +68,8 @@ export interface CenterShellProps {
 // Rail module bên trái là Sidebar sẵn có của Layout.
 const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate, now = new Date(),
-  loadWorkItems, Renderer = LazyRenderer,
+  loadWorkItems, loadToday = fetchCenterToday, loadWeather = (site, at) => fetchSiteWeather(site.id, site.latitude, site.longitude, at),
+  Renderer = LazyRenderer,
 }) => {
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
   const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
@@ -66,7 +79,54 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTab, setActiveTab] = useState(TODAY_TAB.id);
   const [mineCount, setMineCount] = useState<number | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY));
+  const [today, setToday] = useState<TodayState>({ status: 'loading' });
+  const [weather, setWeather] = useState<WeatherSlot>(null);
+  const [todayAttempt, setTodayAttempt] = useState(0);
   const workBody = useRef<HTMLDivElement>(null);
+  const todaySeq = useRef(0);
+  const lastFocusRefresh = useRef(0);
+
+  // Số liệu Hôm nay: tải theo dự án đang chọn; làm mới khi quay lại cửa sổ (≤ 1 lần/phút).
+  useEffect(() => {
+    const seq = ++todaySeq.current;
+    setToday(current => (current.status === 'ready' ? current : { status: 'loading' }));
+    loadToday(projectId).then(data => {
+      if (todaySeq.current !== seq) return;
+      setToday({ status: 'ready', data });
+    }).catch(error => {
+      if (todaySeq.current !== seq) return;
+      console.warn('Center today failed:', error);
+      setToday({ status: 'error', message: 'Kiểm tra mạng rồi thử lại. Việc của tôi và các module vẫn dùng bình thường.' });
+    });
+  }, [loadToday, projectId, todayAttempt]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      const at = Date.now();
+      if (at - lastFocusRefresh.current < FOCUS_REFRESH_MS) return;
+      lastFocusRefresh.current = at;
+      setTodayAttempt(value => value + 1);
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, []);
+
+  // Thời tiết công trường của dự án đang xem; không có tọa độ hoặc lỗi → ẩn, không báo đỏ.
+  const site = today.status === 'ready' ? today.data.project?.site : null;
+  const siteKey = site && site.latitude != null && site.longitude != null ? `${site.id}:${site.latitude}:${site.longitude}` : null;
+  useEffect(() => {
+    if (!siteKey || !site || site.latitude == null || site.longitude == null) { setWeather(null); return; }
+    let alive = true;
+    setWeather('loading');
+    loadWeather({ id: site.id, latitude: site.latitude, longitude: site.longitude }, now)
+      .then(result => { if (alive) setWeather(result); })
+      .catch(() => { if (alive) setWeather(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteKey, loadWeather]);
 
   const toggleInbox = () => setInboxHidden(value => { writeStorage(INBOX_HIDDEN_KEY, String(!value)); return !value; });
 
@@ -90,14 +150,24 @@ const CenterShell: React.FC<CenterShellProps> = ({
     target.addEventListener('pointercancel', stop);
   };
 
-  const openItem = useCallback((item: WorkItem) => {
-    const id = workItemKey(item);
-    setOpenTabs(current => current.some(tab => tab.id === id)
-      ? current
-      : [...current, { id, title: item.code, closable: true, item, target: resolveDrillTarget(item) }]);
-    setActiveTab(id);
+  const openTab = useCallback((tab: OpenTab) => {
+    setOpenTabs(current => current.some(existing => existing.id === tab.id) ? current : [...current, tab]);
+    setActiveTab(tab.id);
     setMobilePane('today');
   }, []);
+
+  const openItem = useCallback((item: WorkItem) => {
+    openTab({ id: workItemKey(item), title: item.code, closable: true, item, module: item.module, target: resolveDrillTarget(item) });
+  }, [openTab]);
+
+  // Đích từ widget: route → sang module; tab → mở view nhúng; inbox → về cột việc.
+  const onDrill = useCallback((target: DrillTarget) => {
+    if (target.kind === 'route') { onNavigate(target.path); return; }
+    if (target.kind === 'inbox') { setInboxHidden(false); writeStorage(INBOX_HIDDEN_KEY, 'false'); setMobilePane('inbox'); return; }
+    const module: CenterModuleKey = target.renderer === 'request' ? 'request' : target.renderer === 'finance' ? 'finance'
+      : target.renderer === 'site_assignment' ? 'hrm' : 'procurement';
+    openTab({ id: `drill:${target.renderer}:${JSON.stringify(target.props)}`, title: target.title, closable: true, item: null, module, target });
+  }, [onNavigate, openTab]);
 
   const closeTab = (id: string) => {
     setOpenTabs(current => {
@@ -107,6 +177,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
       return next;
     });
   };
+
+  const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id); setProjectId(id); };
 
   useEffect(() => { workBody.current?.scrollTo({ top: 0 }); }, [activeTab]);
 
@@ -164,7 +236,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
           hidden={inboxHidden}
           load={loadWorkItems}
           now={now}
-          activeItemKey={current?.id || null}
+          activeItemKey={current?.item ? current.id : null}
           onOpen={openItem}
           onMineCount={onMineCount}
           resizer={(
@@ -185,6 +257,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
               <WorkItemTab
                 key={current.id}
                 item={current.item}
+                title={current.title}
+                module={current.module}
                 target={current.target}
                 now={now}
                 onNavigate={onNavigate}
@@ -192,7 +266,18 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 Renderer={Renderer}
               />
             ) : (
-              <TodayView person={person} now={now} canOpenRoute={canOpenRoute} onNavigate={onNavigate} />
+              <TodayView
+                person={person}
+                now={now}
+                canOpenRoute={canOpenRoute}
+                onNavigate={onNavigate}
+                onDrill={onDrill}
+                today={today}
+                weather={weather}
+                mineCount={mineCount}
+                onSelectProject={selectProject}
+                onRetry={() => setTodayAttempt(value => value + 1)}
+              />
             )}
           </div>
         </section>

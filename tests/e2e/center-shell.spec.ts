@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 // Khung Trung tâm điều hành (PR-A) + Việc của tôi (PR-B) trên fixture: desktop 1440, tablet 820, iPhone (WebKit).
 const base = "/tests/center/fixture.html";
 const shots = ".center-test-results";
-const WIDGETS = ["Dự án", "Nhân sự", "Công việc", "Hành chính", "Mua hàng & Kho", "Tài chính dự án"];
+const WIDGETS = ["Dự án · SMB-2026", "Nhân sự", "Công việc", "Hành chính", "Mua hàng & Kho", "Tài chính dự án"];
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/*.supabase.co/**", (route) => route.abort());
@@ -18,15 +18,35 @@ const expectCalmPage = async (page: Page) => {
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 };
 
+const stat = (page: Page, widget: string, key: string) => page.locator(`[data-widget="${widget}"] [data-stat="${key}"]`);
+
 const expectToday = async (page: Page) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
-  await expect(page.getByText("Thứ Tư, 07/10/2026")).toBeVisible();
+  await expect(page.getByText("Thứ Tư, 07/10/2026 · 9 việc chờ bạn · 14 ngày tới hạn hợp đồng SMB-2026")).toBeVisible();
   for (const name of WIDGETS) await expect(page.getByRole("heading", { level: 3, name, exact: true })).toBeVisible();
+  // Số thật của mockup, mỗi số là một nút mở đúng nơi; thiếu quyền thì khóa kèm lý do, không hiện 0.
+  await expect(stat(page, "project", "construction")).toContainText("3/5 mũi đã gửi phiếu · 39 công");
+  await expect(stat(page, "project", "supply")).toContainText("6 PO · 5,36 tỷ · PO-116 09/10");
+  await expect(stat(page, "project", "progress")).toContainText("81% · hạn HĐ 21/10 · 7 việc trễ");
+  await expect(stat(page, "hrm", "attendance")).toContainText("Vào 07:52 · chưa chấm ra");
+  await expect(stat(page, "hrm", "team")).toContainText("21/28 đã chấm công · 6 điều động hiệu lực");
+  await expect(stat(page, "work", "assigned")).toContainText("3 đang làm · 1 trễ hạn");
+  await expect(stat(page, "office", "documents")).toContainText("1 cần xác nhận đã đọc · TB-12/2026");
+  await expect(stat(page, "office", "weather")).toContainText("29° · Mưa rào · hạn chế đổ bê tông");
+  await expect(stat(page, "supply", "requests")).toContainText("4 chờ duyệt (Phòng vật tư duyệt) · 29 đang cung ứng");
+  const lockedOrders = stat(page, "supply", "orders").locator("[data-locked]");
+  await expect(lockedOrders).toHaveText(/Cần quyền xem đơn hàng/);
+  await expect(lockedOrders).toHaveAttribute("title", /quyền/);
+  await expect(stat(page, "finance", "contract")).toContainText("105,84 tỷ");
+  await expect(stat(page, "finance", "received")).toContainText("chưa khai đầu kỳ");
+  await expect(page.getByText("Lịch: không có chuyến xe hôm nay")).toBeVisible();
+  await stat(page, "project", "progress").getByRole("button").click();
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb&tab=gantt");
   const locked = page.getByRole("button", { name: "Mở Mua hàng" });
   await expect(locked).toBeDisabled();
   await expect(locked).toHaveAttribute("title", "Bạn chưa có quyền vào module này");
   await page.getByRole("button", { name: "Mở Dự án" }).click();
-  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da");
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb");
 };
 
 const inboxOf = (page: Page) => page.getByRole("complementary", { name: "Việc của tôi" });
@@ -90,8 +110,19 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
 
   await page.getByRole("button", { name: "Ẩn Việc của tôi" }).click();
   await expect(inbox).toBeHidden();
-  await page.getByRole("button", { name: "Hiện Việc của tôi" }).click();
+  // "Chờ bạn: 3 việc của dự án" đưa về cột việc thay vì rời Center.
+  await stat(page, "project", "waiting").getByRole("button").click();
   await expect(inbox).toBeVisible();
+
+  // Đổi dự án → tải lại số liệu; dự án không có nhật ký / Work → khóa kèm lý do.
+  await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("da29");
+  await expect(page.getByRole("heading", { level: 3, name: "Dự án · DA29", exact: true })).toBeVisible();
+  await expect(stat(page, "project", "construction").locator("[data-locked]")).toHaveText(/Cần quyền xem nhật ký/);
+  await expect(stat(page, "project", "progress")).toContainText("Chưa có tiến độ");
+  await expect(stat(page, "work", "assigned").locator("[data-locked]")).toHaveText(/Vioo Work chưa bật/);
+  await expect(page.getByRole("heading", { level: 3, name: "Tài chính dự án", exact: true })).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("smb");
+  await expect(page.getByRole("heading", { level: 3, name: "Dự án · SMB-2026", exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Trợ lý" }).click();
   await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
@@ -99,6 +130,19 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/desktop-dark.png` });
+});
+
+test("desktop: no project / today error", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(`${base}?today=loner`);
+  await expect(page.getByText("Bạn chưa thuộc dự án nào.")).toBeVisible();
+  await expect(page.getByText("Tài khoản chưa gắn với hồ sơ nhân viên.")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Tài chính dự án", exact: true })).toHaveCount(0);
+  await expect(stat(page, "office", "weather")).toContainText("Chưa chọn dự án");
+  await page.goto(`${base}?today=error`);
+  await expect(page.getByRole("alert")).toContainText("Chưa đọc được số liệu hôm nay");
+  await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
+  await expectCalmPage(page);
 });
 
 test("desktop: empty and error states of the inbox", async ({ page }, info) => {

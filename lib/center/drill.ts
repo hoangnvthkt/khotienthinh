@@ -1,12 +1,14 @@
 import { buildRequestRoute } from '../requestRoutes';
-import { CENTER_MODULES, type RendererId } from './centerRegistry';
+import { CENTER_MODULES, type CenterModuleKey, type RendererId } from './centerRegistry';
 import type { WorkItem } from './workItemsService';
 
 // Hợp đồng drill-down (kế hoạch 07 mục 3): mỗi việc mở đúng hồ sơ — nhúng view thật khi
 // module đã tách được (tab), còn lại mở màn module với đúng id / bộ lọc (route). Không có ngõ cụt.
-export type DrillTarget =
+export type ItemDrillTarget =
   | { kind: 'tab'; renderer: RendererId; props: Record<string, string>; title: string; route: string }
   | { kind: 'route'; path: string; title: string };
+/** Widget còn có đích "Việc của tôi" (lọc theo module) — mở cột việc thay vì rời Center. */
+export type DrillTarget = ItemDrillTarget | { kind: 'inbox'; title: string; module?: CenterModuleKey };
 
 const str = (value: unknown): string | null => (typeof value === 'string' && value ? value : typeof value === 'number' ? String(value) : null);
 
@@ -49,10 +51,10 @@ export const moduleRouteFor = (item: WorkItem): string => {
   }
 };
 
-export const resolveDrillTarget = (item: WorkItem): DrillTarget => {
+export const resolveDrillTarget = (item: WorkItem): ItemDrillTarget => {
   const ref = item.ref;
   const route = moduleRouteFor(item);
-  const tab = (renderer: RendererId, props: Record<string, string>): DrillTarget => ({ kind: 'tab', renderer, props, title: item.code, route });
+  const tab = (renderer: RendererId, props: Record<string, string>): ItemDrillTarget => ({ kind: 'tab', renderer, props, title: item.code, route });
   switch (item.source) {
     case 'rq': return tab('request', { requestId: str(ref.requestId) || item.id });
     case 'po':

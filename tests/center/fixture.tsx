@@ -1,11 +1,13 @@
 // Dữ liệu minh họa, chỉ dùng cho kiểm thử giao diện. Không gọi Supabase.
-// ?theme=dark để xem nền tối; ?inbox=empty|error để xem trạng thái rỗng / lỗi của Việc của tôi.
+// ?theme=dark để xem nền tối; ?inbox=empty|error để xem trạng thái rỗng / lỗi của Việc của tôi;
+// ?today=loner|error để xem Hôm nay khi không thuộc dự án nào / lỗi.
 // Cột 64px bên trái chỉ giả lập thanh bên (Sidebar) có sẵn của app.
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, LayoutDashboard, Package, PanelsTopLeft, ShoppingCart, Wallet } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
+import type { CenterToday, SiteWeather } from '../../lib/center/centerTodayService';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
@@ -48,6 +50,61 @@ const loadWorkItems = (tab: InboxTab): Promise<WorkItemsPage> => new Promise((re
   resolve({ tab, generatedAt: NOW.toISOString(), total: items.length, truncatedSources: [], items });
 }, 60));
 
+// Hôm nay: số thật SMB-2026 trong mockup v1.1; DA29 để thử đổi dự án.
+const TODAY: Record<string, CenterToday> = {
+  smb: {
+    generatedAt: NOW.toISOString(), today: '2026-10-07',
+    project: { id: 'smb', code: 'SMB-2026', name: 'Nhà máy Sơn Miền Bắc', status: 'active', endDate: '2026-10-21', source: 'assignment',
+      site: { id: 'site-smb', name: 'Sơn Miền Bắc', latitude: 20.93, longitude: 106.05 } },
+    projectOptions: [{ id: 'smb', code: 'SMB-2026', name: 'Nhà máy Sơn Miền Bắc', waiting: 3 }, { id: 'da29', code: 'DA29', name: 'Dự án 29', waiting: 0 }],
+    widgets: {
+      project: {
+        construction: { state: 'ready', slips: 3, fronts: 5, people: 39, summaryStatus: 'submitted' },
+        supply: { state: 'ready', count: 6, amount: 5_360_000_000, nextPo: { poId: 'po-116', poNumber: 'PO-116', expectedDate: '2026-10-09' } },
+        progress: { state: 'ready', mode: 'gantt_weighted', percent: 81, total: 332, done: 170, inProgress: 13, overdue: 7, notStarted: 142, endDate: '2026-10-21' },
+        waiting: 3,
+      },
+      hrm: { state: 'ready', attendance: { checkIn: '07:52', checkOut: null, locationName: 'Công trường Sơn Miền Bắc', status: 'present' },
+        leave: { availableDays: 6, pendingDays: 0, year: 2026 }, timesheet: { workDays: 4, month: 10, year: 2026, periodStatus: null },
+        team: { state: 'ready', total: 28, present: 21, assignments: 6 } },
+      work: { workEnabled: true, assigned: { active: 3, overdue: 1, nearest: { code: 'VW-2026-001203', taskCode: 'VW-2026-001203', dueAt: at(0, 18) } },
+        created: { open: 3, awaitingReview: 0 },
+        requests: { pending: 1, returned: 0, latest: { id: 'rq-61', code: 'RQ-2026-000061', title: 'Bổ sung 2 kỹ sư', status: 'PENDING', waitingOn: 'Nguyễn Thị Mơ' } } },
+      office: { documents: { state: 'ready', count: 1, first: { id: 'tb-12', documentNumber: 'TB-12/2026', title: 'Quy định an toàn thi công mùa mưa' } },
+        nextTrip: { id: 'b1', code: 'XE-2026-012', status: 'ASSIGNED', pickupAt: at(1, 7), destination: 'Văn phòng Hưng Yên', vehicle: '29A-123.45' } },
+      supply: { requests: { state: 'ready', pending: 4, supplying: 29, waitingStep: 'Phòng vật tư duyệt' }, orders: { state: 'denied' },
+        warehouse: { id: 'wh-smb', name: 'Kho SMB', canView: false } },
+      finance: { projectId: 'smb', contractGross: 105_840_000_000, received: 0, receivable: 0, receivableOverdue: 0, openingTodo: true,
+        cost: 12_300_000_000, committed: null, eac: 85_700_000_000, payable: 1_100_000_000, payableOverdue: 0, fundBalance: null, progress: 81 },
+    },
+  },
+  da29: {
+    generatedAt: NOW.toISOString(), today: '2026-10-07',
+    project: { id: 'da29', code: 'DA29', name: 'Dự án 29', status: 'active', endDate: null, source: 'selected', site: null },
+    projectOptions: [{ id: 'smb', code: 'SMB-2026', name: 'Nhà máy Sơn Miền Bắc', waiting: 3 }, { id: 'da29', code: 'DA29', name: 'Dự án 29', waiting: 0 }],
+    widgets: {
+      project: { construction: { state: 'denied' }, supply: { state: 'ready', count: 0, amount: 0, nextPo: null }, progress: { state: 'empty' }, waiting: 0 },
+      hrm: { state: 'ready', attendance: null, leave: null, timesheet: { workDays: 4, month: 10, year: 2026, periodStatus: 'reviewing' }, team: { state: 'empty' } },
+      work: { workEnabled: false, assigned: null, created: null, requests: { pending: 0, returned: 0, latest: null } },
+      office: { documents: { state: 'ready', count: 0, first: null }, nextTrip: null },
+      supply: { requests: { state: 'ready', pending: 0, supplying: 0, waitingStep: null }, orders: { state: 'ready', open: 0, openAmount: 0, awaitingApproval: 0 }, warehouse: null },
+      finance: null,
+    },
+  },
+};
+const LONER: CenterToday = {
+  generatedAt: NOW.toISOString(), today: '2026-10-07', project: null, projectOptions: [],
+  widgets: { project: null, hrm: { state: 'empty' }, work: { workEnabled: false, assigned: null, created: null, requests: { pending: 0, returned: 0, latest: null } },
+    office: { documents: { state: 'denied' }, nextTrip: null }, supply: null, finance: null },
+};
+const loadToday = (projectId: string | null): Promise<CenterToday> => new Promise((resolve, reject) => setTimeout(() => {
+  const mode = params.get('today');
+  if (mode === 'error') return reject(new Error('fixture error'));
+  if (mode === 'loner') return resolve(LONER);
+  resolve(TODAY[projectId || ''] || TODAY.smb);
+}, 60));
+const loadWeather = async (): Promise<SiteWeather | null> => ({ temperature: 29, label: 'Mưa rào', humidity: 84, rainChance: 70, concreteWarning: true, fetchedAt: NOW.toISOString() });
+
 const StubRenderer: React.FC<{ renderer: string; props: Record<string, string> }> = ({ renderer, props }) => (
   <div className="vcc-card p-4" data-testid="stub-renderer">View nhúng: <b>{renderer}</b> · {JSON.stringify(props)}</div>
 );
@@ -80,6 +137,8 @@ const Fixture: React.FC = () => {
           onNavigate={setLastRoute}
           now={NOW}
           loadWorkItems={loadWorkItems}
+          loadToday={loadToday}
+          loadWeather={loadWeather}
           Renderer={StubRenderer}
         />
       </main>

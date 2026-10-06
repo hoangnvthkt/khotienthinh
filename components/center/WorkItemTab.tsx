@@ -1,8 +1,8 @@
 import React, { Suspense } from 'react';
 import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
-import { CENTER_MODULES, type RendererId } from '../../lib/center/centerRegistry';
-import type { DrillTarget } from '../../lib/center/drill';
+import { CENTER_MODULES, type CenterModuleKey, type RendererId } from '../../lib/center/centerRegistry';
+import type { ItemDrillTarget } from '../../lib/center/drill';
 import { dueInfo, type WorkItem, type WorkItemKind } from '../../lib/center/workItemsService';
 
 export type RendererComponent = React.ComponentType<{ renderer: RendererId; props: Record<string, string> }>;
@@ -19,35 +19,40 @@ const KIND_LABEL: Record<WorkItemKind, string> = {
 // Tab hồ sơ trong vùng làm việc: đầu tab theo mockup (nhãn module · mã · tiêu đề · "Mở ở màn … ↗"),
 // thân là view thật của module khi đã nhúng được, không thì dẫn thẳng sang màn module đúng hồ sơ.
 const WorkItemTab: React.FC<{
-  item: WorkItem;
-  target: DrillTarget;
+  item?: WorkItem | null;
+  title: string;
+  module: CenterModuleKey;
+  target: ItemDrillTarget;
   now: Date;
   onNavigate: (path: string) => void;
   onBack?: () => void;
   Renderer: RendererComponent;
-}> = ({ item, target, now, onNavigate, onBack, Renderer }) => {
-  const module = CENTER_MODULES[item.module];
+}> = ({ item, title, module: moduleKey, target, now, onNavigate, onBack, Renderer }) => {
+  const module = CENTER_MODULES[moduleKey];
   const route = target.kind === 'tab' ? target.route : target.path;
-  const due = dueInfo(item.dueAt, now);
+  const due = item ? dueInfo(item.dueAt, now) : null;
   return (
-    <div className={`vcc-page vcc-mod-${item.module}`}>
+    <div className={`vcc-page vcc-mod-${moduleKey}`}>
       {onBack && (
         <button type="button" className="vcc-link vcc-mobile-only mb-2" onClick={onBack}><ArrowLeft size={13} /> Việc của tôi</button>
       )}
       <div className="vcc-detail-head">
         <span className="vcc-badge vcc-badge-m">{module.label}</span>
-        <span className="vcc-badge">{KIND_LABEL[item.kind]}</span>
-        <h1><span className="vcc-ent text-[15px]">{item.code}</span> · {item.title}</h1>
+        {item && <span className="vcc-badge">{KIND_LABEL[item.kind]}</span>}
+        <h1>{item ? <><span className="vcc-ent text-[15px]">{item.code}</span> · {item.title}</> : title}</h1>
         <button type="button" className={`vcc-link ml-auto${target.kind === 'route' ? ' vcc-desktop-only' : ''}`} onClick={() => onNavigate(route)}>
           Mở ở màn {module.label} <ArrowUpRight size={13} />
         </button>
       </div>
-      <p className="vcc-muted mb-3 mt-0.5">
-        {item.who && <span className="vcc-who">{item.who}</span>}
-        {item.who && item.meta && ' · '}
-        {item.meta}
-        {due && <>{(item.who || item.meta) && ' · '}<span className="vcc-due" data-tone={due.tone} style={{ marginLeft: 0, fontSize: 'inherit' }}>{due.tone === 'normal' ? `hạn ${due.label}` : due.label}</span></>}
-      </p>
+      {item && (
+        <p className="vcc-muted mb-3 mt-0.5">
+          {item.who && <span className="vcc-who">{item.who}</span>}
+          {item.who && item.meta && ' · '}
+          {item.meta}
+          {due && <>{(item.who || item.meta) && ' · '}<span className="vcc-due" data-tone={due.tone} style={{ marginLeft: 0, fontSize: 'inherit' }}>{due.tone === 'normal' ? `hạn ${due.label}` : due.label}</span></>}
+        </p>
+      )}
+      {!item && <div className="mb-3" />}
       {target.kind === 'tab' ? (
         <div className="vcc-embed">
           <Suspense fallback={<StateBox kind="loading" title="Đang mở hồ sơ…" />}>
