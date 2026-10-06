@@ -784,3 +784,26 @@ Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng ti
 - Gộp Bulong móng VTM008 (83 bộ) vào VT0000155 (75 bộ) → SMB còn 158 bộ ở mã giữ; thẻ kho 4 dòng, 2 dòng "từ VTM008".
 - Ca có giá trị: 320 cuộn / 76,5 triệu chuyển nguyên vẹn sang mã giữ.
 - Đá 1x2 (3 mã), Bulong M16x50 khác ĐVT (sau khi xác nhận) gộp được; Cáp 4x25 / 4x2.5 bị chặn khác số; mã có phiếu chờ / đơn mua mở bị chặn đúng lý do; anh Luật không gộp được nhưng xem được và gửi được đề xuất mã.
+
+**Đã lên production 04/10/2026** (PR #94).
+
+## 20. Ngày chứng từ + lưu vết nhập–xuất thẳng + đảo 4 phiếu bê tông (06/10/2026)
+
+**Hiện trạng chủ SP hỏi:**
+- PO-607 (HĐ nguyên tắc Hợp Thành, nhập–xuất thẳng) ghi đúng là không đổi tồn, nhưng **không để lại dòng nào trong sổ kho**. 7,5 m3 thấy trong thẻ kho là phiếu nhập tay cũ NK20260921-00526 (anh Luật nhập 13/09, ngày chứng từ 08/09) — cùng lô với PO-607. Thêm 3 phiếu nhập tay bê tông tường rào (12/09, 14/09, 20/09) → tồn ảo 23,5 m3.
+- Ngày ghi sổ đã theo ngày thực tế, nhưng số phiếu lấy ngày bấm lưu: 229 phiếu số lệch ngày; 362 / 764 dòng sổ ghi lùi ngày.
+
+**Chủ SP quyết:** đảo 4 phiếu nhập tay; nhập–xuất thẳng vẫn không lưu kho nhưng phải có lịch sử vật tư; làm gói "Ngày chứng từ" trước V1-3b.
+
+**Migration `20261008137500_wms_document_date.sql`** (sinh bằng `tools/gen_vnd.py` + `vnd_template.sql`):
+- Số phiếu mới theo ngày chứng từ (`next_inventory_ledger_code(direction, date)`); phiếu cũ giữ số.
+- `set_wms_document_date_v1`: thủ kho của kho trên phiếu, Kế toán kho, Admin sửa ngày chứng từ; phiếu đã ghi sổ cần lý do, sổ kho dời theo; không ngày tương lai; không tạo âm tồn quá khứ; nhật ký `wms_document_date_events`.
+- `post_inventory_ledger_entry`: phiếu xuất ghi lùi ngày không được tạo tồn âm mới trong quá khứ (dữ liệu cũ đang âm không bị khóa).
+- Nhập–xuất thẳng: sổ kho ghi "nhập mua" + "xuất dùng thẳng" cùng ngày, cùng giá; bỏ qua dịch vụ ("Không qua kho"); bổ sung cho phiếu đã nhận (PO-607). Chi phí dự án vẫn chỉ tính từ đơn mua / công nợ.
+- Thẻ kho trả thêm ngày nhập liệu và loại nghiệp vụ.
+
+**Giao diện:** chi tiết phiếu ghi "Ngày chứng từ" + nút "Sửa ngày"; thẻ kho hiện "nhập liệu dd/mm" khi khác ngày chứng từ và nhãn "Xuất dùng thẳng".
+
+**Đảo 4 phiếu nhập tay** (`.superpowers/review/work-plan/vnd-reverse-data.mjs`, chạy sau deploy): mỗi phiếu một phiếu điều chỉnh âm cùng ngày, cùng giá; phiếu gốc "Đã hủy" để kế toán không ghi công nợ (4 phiếu chưa ghi công nợ / chi phí). Tồn bê tông M250 SMB về 0.
+
+**Đã kiểm trên production trong giao dịch hoàn tác** (`tools/vnd-test.mjs`): PO-607 có NK + XK (M250 7,5, M350 100; bỏ dòng bơm); anh Luật sửa ngày PO-607 về 08/09 (thiếu lý do / ngày tương lai bị chặn); dời phiếu nhập tháng 7 làm âm tồn → chặn; phiếu xuất ghi lùi trước khi hàng về → chặn; xuất hôm nay bình thường; đảo 4 phiếu → tồn 0, số phiếu đảo XK20260908…, kế toán hết phiếu chờ.

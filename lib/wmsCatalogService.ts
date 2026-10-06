@@ -50,7 +50,9 @@ export interface StockOverview {
 export interface ItemCard {
   entries: Array<{ date: string; code: string; type: string; qtyIn: number; qtyOut: number; unitPrice: number; amount: number; description: string | null;
     /** V1-3a: dòng của mã cũ đã gộp vào mã này. */
-    fromSku?: string | null }>;
+    fromSku?: string | null;
+    /** Ngày nhập liệu (khác ngày chứng từ khi ghi lùi ngày) và loại nghiệp vụ (vd. direct_consumption). */
+    enteredAt?: string | null; event?: string | null }>;
   otherWarehouses: Array<{ warehouseId: string; warehouseName: string; qty: number }>;
 }
 
@@ -78,6 +80,12 @@ const ERRORS: Record<string, string> = {
   MERGE_ITEM_NOT_ACTIVE: 'Có mã đã ngừng dùng hoặc đã gộp. Tải lại.',
   MERGE_NOTHING: 'Chọn ít nhất hai mã.',
   items_merged_retired_check: 'Mã đã gộp vào mã khác nên không mở lại được.',
+  WMS_DOC_DATE_DENIED: 'Chỉ thủ kho của kho trên phiếu, Kế toán kho hoặc Admin sửa được ngày chứng từ.',
+  WMS_DOC_NOT_FOUND: 'Không tìm thấy phiếu kho.',
+  WMS_DOC_DATE_STATE: 'Phiếu đã hủy / từ chối — không sửa ngày.',
+  WMS_DOC_DATE_INVALID: 'Ngày chứng từ không hợp lệ.',
+  WMS_DOC_DATE_FUTURE: 'Ngày chứng từ không được sau hôm nay.',
+  WMS_DOC_DATE_REASON: 'Phiếu đã ghi sổ — cần ghi lý do sửa ngày.',
 };
 
 /** Đổi lỗi server (mã lỗi ở đầu thông báo) thành câu tiếng Việt. */
@@ -85,7 +93,7 @@ export const catalogErrorMessage = (error: unknown, fallback = 'Chưa thực hi�
   const raw = String((error as any)?.message || error || '');
   const dup = raw.match(/ITEM_NAME_DUPLICATE:(\S+)/);
   if (dup) return `Tên trùng với mã ${dup[1]} đã có (so sau khi bỏ dấu, khoảng trắng). Dùng mã đó hoặc ghi rõ khác biệt.`;
-  const merge = raw.match(/MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED): (.+)/);
+  const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK): (.+)/);
   if (merge) return merge[1];
   const code = Object.keys(ERRORS).find(k => raw.includes(k));
   return code ? ERRORS[code] : raw && !/^[A-Z0-9_:\s]+$/.test(raw) ? raw : fallback;
@@ -117,6 +125,9 @@ export const wmsCatalogService = {
   merge: (input: { keepId: string; mergeIds: string[]; unitConfirmed: boolean; note?: string }) =>
     rpc<{ keepId: string; mergedIds: string[]; transactions: string[]; warehouses: number; budgetLines: number }>('merge_catalog_items_v1', { p: input }),
   dismissDuplicate: (input: { itemIds: string[]; reason: string }) => rpc<{ itemIds: string[] }>('dismiss_catalog_duplicate_v1', { p: input }),
+  // Ngày chứng từ: sửa ngày phiếu (phiếu đã ghi sổ thì sổ kho dời theo, bắt buộc lý do).
+  setDocumentDate: (input: { transactionId: string; date: string; reason?: string }) =>
+    rpc<{ transactionId: string; date: string; posted: boolean }>('set_wms_document_date_v1', { p: input }),
 };
 
 // --- So trùng phía giao diện (giống app_private.catalog_name_key) ---

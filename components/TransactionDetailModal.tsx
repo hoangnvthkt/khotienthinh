@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Calendar, User, Package, MapPin, Truck, ArrowRight, CheckCircle, Loader2, AlertTriangle, Paperclip, ExternalLink, Download } from 'lucide-react';
 import { Transaction, TransactionStatus, TransactionType, WmsTransactionAttachment } from '../types';
 import { useApp } from '../context/AppContext';
-import { canApproveWmsTransaction, canReceiveWmsTransaction, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
+import { canApproveWmsTransaction, canReceiveWmsTransaction, canSetWmsDocumentDate, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
+import { catalogErrorMessage, wmsCatalogService } from '../lib/wmsCatalogService';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -41,6 +42,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, { quantity: string; reason: string }>>({});
   const [processing, setProcessing] = useState(false);
   const [voucherDate, setVoucherDate] = useState('');
+  // Ngày chứng từ của phiếu đã duyệt / đã ghi sổ (sổ kho dời theo, cần lý do).
+  const [docDateEdit, setDocDateEdit] = useState<{ date: string; reason: string } | null>(null);
+  const [savingDocDate, setSavingDocDate] = useState(false);
   const [voucherNote, setVoucherNote] = useState('');
   const [savingVoucher, setSavingVoucher] = useState(false);
   const [attachmentDrafts, setAttachmentDrafts] = useState<File[]>([]);
@@ -96,6 +100,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const isApproved = transaction.status === TransactionStatus.APPROVED;
   const canApprove = isPending && canApproveWmsTransaction(user, transaction);
   const canEditVoucher = canEditTransactionVoucher(transaction, user.id, canApprove);
+  const canSetDocDate = !canEditVoucher && canSetWmsDocumentDate(user, transaction);
   const canReceive = isApproved
     && (transaction.type === TransactionType.IMPORT || transaction.type === TransactionType.TRANSFER)
     && canReceiveWmsTransaction(user, transaction);
@@ -395,6 +400,27 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     }
   };
 
+  const handleSaveDocDate = async () => {
+    if (!docDateEdit?.date) return;
+    const posted = transaction.status === TransactionStatus.COMPLETED;
+    if (posted && !docDateEdit.reason.trim()) { toast.warning('Cần lý do', 'Phiếu đã ghi sổ — ghi lý do sửa ngày chứng từ.'); return; }
+    setSavingDocDate(true);
+    try {
+      const r = await wmsCatalogService.setDocumentDate({ transactionId: transaction.id, date: docDateEdit.date, reason: docDateEdit.reason.trim() || undefined });
+      const updated = { ...transaction, date: r.date };
+      setLocalTransaction(updated);
+      onUpdated?.(updated);
+      setDocDateEdit(null);
+      void refreshWmsRecords({ transactionIds: [transaction.id] }).catch(() => undefined);
+      toast.success('Đã sửa ngày chứng từ', posted ? 'Sổ kho và thẻ kho đã dời theo ngày mới. Số phiếu giữ nguyên.' : 'Khi duyệt, phiếu ghi sổ theo ngày này.');
+    } catch (err: any) {
+      logApiError('transactionDetail.setDocumentDate', err);
+      toast.error('Chưa sửa được ngày', catalogErrorMessage(err, 'Không sửa được ngày chứng từ.'));
+    } finally {
+      setSavingDocDate(false);
+    }
+  };
+
   const getStatusInfo = (status: TransactionStatus) => {
     switch (status) {
       case TransactionStatus.COMPLETED: return { label: 'Đã phê duyệt', color: 'bg-green-100 text-green-700 border-green-200' };
@@ -461,18 +487,18 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           )}
           {canEditVoucher && variant === 'panel' && !showVoucherEdit && (
             <button type="button" onClick={() => setShowVoucherEdit(true)} className="text-xs font-bold text-indigo-600 hover:underline">
-              Chỉnh ngày tạo / ghi chú phiếu
+              Chỉnh ngày chứng từ / ghi chú phiếu
             </button>
           )}
           {canEditVoucher && (variant !== 'panel' || showVoucherEdit) && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Chỉnh phiếu</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-500">Có thể chỉnh ngày tạo và ghi chú khi phiếu đang chờ duyệt.</p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-500">Có thể chỉnh ngày chứng từ và ghi chú khi phiếu đang chờ duyệt.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-[180px_minmax(0,1fr)] gap-3 items-end">
                 <label className="space-y-1">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày tạo</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ngày chứng từ</span>
                   <input
                     type="date"
                     value={voucherDate}
@@ -509,8 +535,21 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               <div className="flex items-start gap-3">
                 <Calendar size={18} className="text-slate-400 mt-0.5" />
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Ngày tạo</p>
-                  <p className="text-sm font-medium text-slate-700">{new Date(transaction.date).toLocaleString('vi-VN')}</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Ngày chứng từ</p>
+                  <p className="text-sm font-medium text-slate-700">{new Date(transaction.date).toLocaleDateString('vi-VN')}
+                    {canSetDocDate && !docDateEdit && <button type="button" className="ml-2 text-xs font-bold text-teal-700 hover:underline"
+                      onClick={() => setDocDateEdit({ date: transaction.date.slice(0, 10), reason: '' })}>Sửa ngày</button>}</p>
+                  {docDateEdit && <div className="mt-2 space-y-2 rounded-lg border border-teal-200 bg-teal-50/60 p-2">
+                    <input type="date" value={docDateEdit.date} max={new Date().toISOString().slice(0, 10)} aria-label="Ngày chứng từ"
+                      onChange={e => setDocDateEdit(d => d && ({ ...d, date: e.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700" />
+                    {transaction.status === TransactionStatus.COMPLETED && <input value={docDateEdit.reason} placeholder="Lý do (bắt buộc) — vd. ngày hàng về thực tế" aria-label="Lý do sửa ngày"
+                      onChange={e => setDocDateEdit(d => d && ({ ...d, reason: e.target.value }))} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700" />}
+                    <p className="text-[11px] text-slate-500">{transaction.status === TransactionStatus.COMPLETED ? 'Sổ kho dời theo ngày mới; số phiếu giữ nguyên. Không cho ngày làm âm tồn trong quá khứ.' : 'Phiếu sẽ ghi sổ theo ngày này khi hoàn tất.'}</p>
+                    <div className="flex justify-end gap-2">
+                      <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600" onClick={() => setDocDateEdit(null)} disabled={savingDocDate}>Hủy</button>
+                      <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-leaf-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-leaf-700 disabled:opacity-60" onClick={() => void handleSaveDocDate()} disabled={savingDocDate || !docDateEdit.date}>
+                        {savingDocDate && <Loader2 size={12} className="animate-spin" />}Lưu ngày</button></div>
+                  </div>}
                 </div>
               </div>
               <div className="flex items-start gap-3">

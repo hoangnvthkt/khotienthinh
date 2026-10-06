@@ -1,4 +1,4 @@
-import { MaterialRequest, MaterialRequestFulfillmentMode, RequestStatus, Role, Transaction, TransactionType, User, Warehouse } from '../types';
+import { MaterialRequest, MaterialRequestFulfillmentMode, RequestStatus, Role, Transaction, TransactionStatus, TransactionType, User, Warehouse } from '../types';
 import { evaluateCapability } from './permissions/authorizationEvaluator';
 import { canPerform, getUserAuthorizationSnapshot } from './permissions/permissionService';
 
@@ -71,6 +71,12 @@ export const isWarehouseKeeperFor = (user: User, warehouseId?: string): boolean 
 export const canApproveWmsException = (user: User, warehouseId?: string): boolean =>
   isAdmin(user) || hasExplicitWmsGrant(user, EXCEPTION_CODE, 'global', '*')
   || (!!warehouseId && hasExplicitWmsGrant(user, EXCEPTION_CODE, 'warehouse', warehouseId));
+
+/** Sửa ngày chứng từ (kể cả phiếu đã ghi sổ): thủ kho của kho trên phiếu, Kế toán kho, Admin (khớp set_wms_document_date_v1). */
+export const canSetWmsDocumentDate = (user: User, tx: Transaction): boolean =>
+  tx.status !== TransactionStatus.CANCELLED && String(tx.status) !== 'REJECTED'
+  && (isAdmin(user) || hasExplicitWmsGrant(user, 'wms.accounting.manage', 'global', '*')
+    || isWarehouseKeeperFor(user, tx.sourceWarehouseId) || isWarehouseKeeperFor(user, tx.targetWarehouseId));
 
 const isExceptionTransaction = (tx: Transaction): boolean =>
   tx.type === TransactionType.LIQUIDATION || String(tx.type) === 'ADJUSTMENT';
