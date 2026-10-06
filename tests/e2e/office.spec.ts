@@ -76,8 +76,7 @@ for (const [label, width, height] of [
       "Chưa đọc",
     );
     await page.getByRole("link", { name: "Tạo văn bản", exact: true }).click();
-    await page.getByRole("button", { name: /Thông báo Phổ biến/ }).click();
-    await page.getByRole("button", { name: /Thông báo TB/ }).click();
+    await page.getByLabel("Loại văn bản").selectOption({ label: "Thông báo (TB)" });
     await page.getByLabel("Tiêu đề văn bản").fill("Thông báo mới từ UI test");
     await page
       .getByRole("textbox", { name: "Nội dung văn bản" })
@@ -259,7 +258,7 @@ test("mobile rich editor, template variables and report remain usable", async ({
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${base}#/office/new?group=ANNOUNCEMENT`);
-  await page.getByRole("button", { name: /Thông báo TB/ }).click();
+  await page.getByLabel("Loại văn bản").selectOption({ label: "Thông báo (TB)" });
   await page.getByLabel("Tiêu đề văn bản").fill("Thông báo định dạng");
   await page
     .getByRole("button", { name: "Chọn mẫu văn bản", exact: true })
@@ -285,6 +284,7 @@ test("mobile rich editor, template variables and report remain usable", async ({
     .click();
   await expect(editor.locator("table")).toHaveCount(1);
   await editor.locator("td").first().fill("Thông tin");
+  await page.locator("summary", { hasText: "Thông tin thêm" }).click();
   await page.getByLabel("Yêu cầu người nhận xác nhận đã đọc và hiểu").check();
   await page.getByRole("button", { name: "Lưu nháp", exact: true }).click();
   await expect(
@@ -359,4 +359,20 @@ test("late department tagging and version comparison are accessible", async ({
   await expect(page.locator(".office-version-preview")).toContainText(
     "Thay đổi: Tiêu đề",
   );
+});
+test("mã văn bản: gợi ý số in mờ, báo trùng và chọn số trống", async ({ page }) => {
+  await page.goto(`${base}#/office/new?group=ANNOUNCEMENT`);
+  await page.getByLabel("Loại văn bản").selectOption({ label: "Thông báo (TB)" });
+  const number = page.getByLabel("Số văn bản");
+  await expect(number).toHaveAttribute("placeholder", "236");
+  await expect(page.locator(".office-number")).toContainText("/2026/TB-TT");
+  await expect(page.getByText("Để trống sẽ cấp số tiếp theo")).toBeVisible();
+  await number.fill("235");
+  await expect(page.getByRole("alert")).toContainText("QĐ SỐ 235");
+  await expect(page.getByRole("button", { name: "Lưu & gửi duyệt" })).toBeDisabled();
+  await page.getByRole("button", { name: "Dùng số 236" }).click();
+  await expect(number).toHaveValue("236");
+  await expect(page.getByText("Mã dự kiến")).toContainText("236/2026/TB-TT");
+  await number.fill("12a");
+  await expect(number).toHaveValue("12");
 });

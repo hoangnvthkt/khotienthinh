@@ -16,6 +16,7 @@ import type {
   OfficeCatalog,
   OfficeCommandInput,
   OfficeCommandResult,
+  OfficeNumberSuggestion,
   OfficeDashboard,
   OfficeDetail,
   OfficeFilters,
@@ -120,6 +121,20 @@ export function createOfficeService(
       query<OfficePage<OfficeRecipient>>("recipients", { id, page, filter }),
     activity: (id: string, page = 0) =>
       query<OfficeActivity[]>("activity", { id, page }),
+    async numberSuggestion(
+      typeId: string,
+      sequence?: number | null,
+      documentId?: string | null,
+    ): Promise<OfficeNumberSuggestion> {
+      const { data, error } = await client.rpc("office_number_suggestion_v1", {
+        p_document_type_id: typeId,
+        p_sequence: sequence ?? null,
+        p_document_id: documentId ?? null,
+      });
+      if (error) throw error;
+      if (!data) throw new Error("OFFICE_EMPTY_RESPONSE");
+      return data as OfficeNumberSuggestion;
+    },
     async command(input: OfficeCommandInput): Promise<OfficeCommandResult> {
       const { data, error } = await client.rpc("office_command", {
         p_command: input.command,

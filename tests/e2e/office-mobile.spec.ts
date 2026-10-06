@@ -52,7 +52,7 @@ test("phone composing supports formatting, safe paste and saved content", async 
   page,
 }) => {
   await page.goto(`${base}#/office/new?group=ANNOUNCEMENT`);
-  await page.getByRole("button", { name: /Thông báo TB/ }).click();
+  await page.getByLabel("Loại văn bản").selectOption({ label: "Thông báo (TB)" });
   await page.getByLabel("Tiêu đề văn bản").fill("Thông báo từ điện thoại");
   const editor = page.getByRole("textbox", {
     name: "Nội dung văn bản",
@@ -121,7 +121,7 @@ test("pasted formatting is preserved without executable HTML", async ({
   page,
 }) => {
   await page.goto(`${base}#/office/new?group=ANNOUNCEMENT`);
-  await page.getByRole("button", { name: /Thông báo TB/ }).click();
+  await page.getByLabel("Loại văn bản").selectOption({ label: "Thông báo (TB)" });
   await page.getByLabel("Tiêu đề văn bản").fill("Văn bản dán từ tài liệu");
   const editor = page.getByRole("textbox", {
     name: "Nội dung văn bản",
@@ -170,7 +170,7 @@ test("an inline image is saved once, stays private through the adapter and rende
   page,
 }) => {
   await page.goto(`${base}#/office/new?group=ANNOUNCEMENT`);
-  await page.getByRole("button", { name: /Thông báo TB/ }).click();
+  await page.getByLabel("Loại văn bản").selectOption({ label: "Thông báo (TB)" });
   await page.getByLabel("Tiêu đề văn bản").fill("Thông báo có ảnh");
   await page
     .getByRole("textbox", { name: "Nội dung văn bản" })

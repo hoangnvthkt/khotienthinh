@@ -6,16 +6,12 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
   ChevronDown,
   FileText,
+  Lock,
   Paperclip,
   Save,
-  Search,
   Send,
-  ShieldCheck,
   Trash2,
   UploadCloud,
   Camera,
@@ -34,6 +30,7 @@ import type {
   OfficeDetail,
   OfficeDraft,
   OfficeGroup,
+  OfficeNumberSuggestion,
   RecipientSpec,
 } from "../../lib/office/officeTypes";
 import {
@@ -41,6 +38,7 @@ import {
   editableDraft,
   officeFileMime,
   newOfficeDraft,
+  officeNumberParts,
   OFFICE_GROUPS,
   URGENCY,
 } from "../../lib/office/officePresentation";
@@ -52,7 +50,7 @@ import {
   OfficePicker,
   useOfficeQuery,
 } from "./OfficeShared";
-import { groupIcons } from "./OfficeList";
+import { officeFolderPath } from "./OfficeDetail";
 export function useOfficeCommand(service: OfficeService) {
   const attempts = useRef(new Map<string, string>());
   return async (input: Omit<OfficeCommandInput, "key">) => {
@@ -220,9 +218,7 @@ function OfficeDraftForm({
   const [draft, setDraft] = useState<OfficeDraft>(() =>
     existing ? editableDraft(existing.document) : newOfficeDraft(initialGroup),
   );
-  const [step, setStep] = useState(existing ? 3 : initialGroup ? 2 : 1),
-    [typeSearch, setTypeSearch] = useState(""),
-    [busy, setBusy] = useState(false),
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(null),
     [progress, setProgress] = useState("");
   const [files, setFiles] = useState<PendingFile[]>([]);
@@ -417,695 +413,594 @@ function OfficeDraftForm({
       setBusy(false);
     }
   }
+  const roots = catalog.folders.filter((f) => f.is_active && !f.parent_id);
+  const chosenFolder = catalog.folders.find(
+    (f) => f.id === draft.archive_folder_id,
+  );
+  const rootId = chosenFolder?.parent_id || chosenFolder?.id || roots[0]?.id || "";
+  const subFolders = catalog.folders.filter(
+    (f) => f.is_active && f.parent_id === rootId,
+  );
+  const rule = catalog.rules.find((r) => r.id === type?.numbering_rule_id);
+  const numbered =
+    !!type?.requires_number && draft.document_group !== "INCOMING";
+  const typeOptions = catalog.types.filter(
+    (t) => t.is_active && t.groups.includes(draft.document_group),
+  );
+  const [numberTaken, setNumberTaken] = useState(false);
   return (
     <div className="office-content office-draft">
-      <div className="office-page-heading">
-        <div>
-          <p className="office-eyebrow">
-            {existing ? "CHỈNH SỬA BẢN NHÁP" : "SOẠN / TIẾP NHẬN"}
-          </p>
+      <form
+        ref={formRef}
+        className="office-panel office-compose"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save(false);
+        }}
+      >
+        <header className="office-compose-head">
           <h1>{existing ? "Chỉnh sửa văn bản" : "Tạo văn bản"}</h1>
-          <p>
-            Chọn đúng nghiệp vụ, nội dung và người nhận. Bạn có thể lưu nháp bất
-            cứ lúc nào.
-          </p>
-        </div>
-      </div>
-      <ol className="office-steps">
-        {["Nghiệp vụ", "Loại văn bản", "Nội dung & gửi nhận"].map(
-          (label, i) => (
-            <li
-              key={label}
-              className={
-                step === i + 1 ? "is-active" : step > i + 1 ? "is-done" : ""
-              }
-            >
-              <button
-                disabled={busy || !!existing || i + 1 > step}
-                onClick={() => setStep(i + 1)}
-              >
-                <span>{step > i + 1 ? <Check size={15} /> : i + 1}</span>
-                {label}
-              </button>
-            </li>
-          ),
-        )}
-      </ol>
-      {step === 1 && (
-        <section className="office-wizard-panel">
-          <h2>Bạn cần tạo văn bản gì?</h2>
-          <p>Chọn nghiệp vụ phù hợp với công việc đang thực hiện.</p>
-          <div className="office-business-grid">
-            {(Object.keys(OFFICE_GROUPS) as OfficeGroup[]).map((key) => {
-              const Icon = groupIcons[key];
-              const g = OFFICE_GROUPS[key];
-              return (
-                <button
-                  key={key}
-                  onClick={() => {
-                    patch({ ...newOfficeDraft(key) });
-                    setStep(2);
-                  }}
-                >
-                  <Icon size={27} />
-                  <h3>{g.label}</h3>
-                  <p>{g.description}</p>
-                  <ArrowRight size={18} />
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-      {step === 2 && (
-        <section className="office-wizard-panel">
-          <h2>
-            Chọn loại {OFFICE_GROUPS[draft.document_group].label.toLowerCase()}
-          </h2>
-          <p>Quy tắc cấp số và tuyến duyệt được gợi ý theo loại văn bản.</p>
-          <div className="office-search">
-            <Search size={17} />
+          <span className="office-compose-badge">
+            {type?.name || OFFICE_GROUPS[draft.document_group].label}
+          </span>
+        </header>
+        <fieldset disabled={busy}>
+          <OfficeField label="Tiêu đề văn bản" required>
             <input
-              aria-label="Tìm loại văn bản"
-              placeholder="Tìm tên hoặc mã loại văn bản…"
-              value={typeSearch}
-              onChange={(e) => setTypeSearch(e.target.value)}
+              autoFocus
+              aria-label="Tiêu đề văn bản"
+              required
+              maxLength={500}
+              placeholder="Gõ tên tiêu đề của văn bản"
+              value={draft.title}
+              onChange={(e) => patch({ title: e.target.value })}
+            />
+          </OfficeField>
+          <div className="office-form-grid is-three">
+            <OfficeField label="Loại văn bản" required>
+              <select
+                aria-label="Loại văn bản"
+                required
+                value={draft.document_type_id}
+                onChange={(e) => {
+                  const t = catalog.types.find((x) => x.id === e.target.value);
+                  patch({
+                    document_type_id: e.target.value,
+                    workflow_id: t?.workflow_id || null,
+                    archive_folder_id:
+                      t?.archive_folder_id || draft.archive_folder_id,
+                    proposed_sequence: null,
+                  });
+                }}
+              >
+                <option value="">-- Chọn loại văn bản --</option>
+                {typeOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.code})
+                  </option>
+                ))}
+              </select>
+            </OfficeField>
+            <OfficeField label="Nghiệp vụ" required>
+              <select
+                aria-label="Nghiệp vụ"
+                disabled={!!existing}
+                value={draft.document_group}
+                onChange={(e) => {
+                  const group = e.target.value as OfficeGroup;
+                  patch({
+                    document_group: group,
+                    received_date:
+                      group === "INCOMING"
+                        ? draft.received_date || draft.document_date
+                        : null,
+                    ...(type && !type.groups.includes(group)
+                      ? { document_type_id: "", workflow_id: null, proposed_sequence: null }
+                      : {}),
+                  });
+                }}
+              >
+                {(Object.keys(OFFICE_GROUPS) as OfficeGroup[]).map((g) => (
+                  <option key={g} value={g}>
+                    {OFFICE_GROUPS[g].label}
+                  </option>
+                ))}
+              </select>
+            </OfficeField>
+            <OfficeField label="Thư mục">
+              <select
+                aria-label="Thư mục"
+                value={chosenFolder?.parent_id ? chosenFolder.id : ""}
+                onChange={(e) =>
+                  patch({ archive_folder_id: e.target.value || rootId || null })
+                }
+              >
+                <option value="">-- Vui lòng chọn --</option>
+                {subFolders.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </OfficeField>
+          </div>
+          <div className="office-form-grid is-three">
+            <OfficeField label="Kho lưu trữ" required>
+              {roots.length > 1 ? (
+                <select
+                  aria-label="Kho lưu trữ"
+                  required
+                  value={rootId}
+                  onChange={(e) =>
+                    patch({ archive_folder_id: e.target.value || null })
+                  }
+                >
+                  {roots.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="office-locked" aria-label="Kho lưu trữ">
+                  <Lock size={13} />
+                  {officeFolderPath(catalog, draft.archive_folder_id || rootId)}
+                </span>
+              )}
+            </OfficeField>
+            <OfficeField label="Sổ văn bản">
+              <span className="office-locked" aria-label="Sổ văn bản">
+                <Lock size={13} />
+                {draft.document_group === "INCOMING"
+                  ? "Giữ số của đơn vị gửi"
+                  : rule?.name || (type ? "Không cấp số" : "Theo loại văn bản")}
+              </span>
+            </OfficeField>
+            <OfficeField label="Ngày văn bản" required>
+              <input
+                aria-label="Ngày văn bản"
+                type="date"
+                required
+                value={draft.document_date}
+                onChange={(e) => patch({ document_date: e.target.value })}
+              />
+            </OfficeField>
+          </div>
+          {numbered && type && (
+            <OfficeNumberField
+              service={service}
+              typeId={type.id}
+              typeCode={type.code}
+              ruleFormat={rule?.format}
+              documentId={existing?.document.id}
+              value={draft.proposed_sequence ?? null}
+              onChange={(proposed_sequence) => patch({ proposed_sequence })}
+              onTakenChange={setNumberTaken}
+            />
+          )}
+          {draft.document_group === "INCOMING" && (
+            <div className="office-incoming-fields">
+              <h3>Thông tin tiếp nhận</h3>
+              <div className="office-form-grid">
+                <OfficeField label="Đơn vị gửi" required>
+                  <input
+                    aria-label="Đơn vị gửi"
+                    value={draft.source_organization || ""}
+                    onChange={(e) =>
+                      patch({ source_organization: e.target.value })
+                    }
+                  />
+                </OfficeField>
+                <OfficeField label="Số văn bản bên gửi">
+                  <input
+                    aria-label="Số văn bản bên gửi"
+                    value={draft.source_document_number || ""}
+                    onChange={(e) =>
+                      patch({ source_document_number: e.target.value })
+                    }
+                  />
+                </OfficeField>
+                <OfficeField label="Ngày nhận" required>
+                  <input
+                    aria-label="Ngày nhận"
+                    type="date"
+                    value={draft.received_date || ""}
+                    onChange={(e) =>
+                      patch({ received_date: e.target.value || null })
+                    }
+                  />
+                </OfficeField>
+                <OfficeField label="Người gửi">
+                  <input
+                    aria-label="Người gửi"
+                    value={draft.source_sender || ""}
+                    onChange={(e) => patch({ source_sender: e.target.value })}
+                  />
+                </OfficeField>
+              </div>
+            </div>
+          )}
+          {draft.document_group === "OUTGOING" && (
+            <OfficeField label="Đơn vị / đối tác nhận văn bản" required>
+              <input
+                aria-label="Đơn vị nhận văn bản đi"
+                placeholder="Chủ đầu tư, khách hàng, cơ quan…"
+                value={draft.external_recipient || ""}
+                onChange={(e) => patch({ external_recipient: e.target.value })}
+              />
+            </OfficeField>
+          )}
+          <OfficeField label="Gửi từ" hint="Đơn vị ban hành — văn bản được gửi dưới tư cách đơn vị này.">
+            <OfficePicker
+              service={service}
+              kind="department"
+              value={draft.issuer_department_id}
+              onChange={(o) =>
+                patch({ issuer_department_id: o?.id || null, workflow_id: null })
+              }
+              label="Chọn đơn vị ban hành"
+            />
+          </OfficeField>
+          <OfficeField label="Người theo dõi">
+            <OfficePicker
+              service={service}
+              kind="user"
+              label="Thêm người theo dõi"
+              onChange={(o) => {
+                if (o && !draft.watcher_ids.includes(o.id))
+                  patch({ watcher_ids: [...draft.watcher_ids, o.id] });
+              }}
+            />
+            {draft.watcher_ids.map((id) => (
+              <div className="office-inline-picker" key={id}>
+                <OfficePicker
+                  service={service}
+                  kind="user"
+                  label="Người theo dõi đã chọn"
+                  value={id}
+                  onChange={(o) =>
+                    patch({
+                      watcher_ids: draft.watcher_ids
+                        .map((x) => (x === id ? o?.id || "" : x))
+                        .filter(Boolean),
+                    })
+                  }
+                />
+              </div>
+            ))}
+          </OfficeField>
+          <OfficeField label="Người nhận" required>
+            <OfficeAudience
+              service={service}
+              value={draft.recipient_specs}
+              onChange={(recipient_specs) => patch({ recipient_specs })}
+              disabled={busy}
+            />
+          </OfficeField>
+          {draft.document_group !== "INCOMING" && type?.requires_approval && (
+            <OfficeField label="Tuyến duyệt" required>
+              <select
+                aria-label="Tuyến duyệt"
+                value={draft.workflow_id || ""}
+                onChange={(e) => patch({ workflow_id: e.target.value || null })}
+              >
+                <option value="">Chọn tuyến duyệt</option>
+                {workflows.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              {!workflows.length && (
+                <p className="office-helper">
+                  Chưa có tuyến duyệt phù hợp. Bạn có thể lưu nháp
+                  {catalog.canConfigure && (
+                    <>
+                      {" "}
+                      và <Link to="/office/settings">cấu hình tuyến duyệt</Link>
+                    </>
+                  )}
+                  .
+                </p>
+              )}
+              {chosenWorkflow && (
+                <ol className="office-approval-preview">
+                  {chosenWorkflow.steps.map((s, i) => (
+                    <li key={i}>
+                      <span>{i + 1}</span>
+                      <div>
+                        <strong>{s.label}</strong>
+                        <small>
+                          {chosenWorkflow.stepNames?.[s.userId] ||
+                            "Người duyệt được cấu hình"}
+                        </small>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </OfficeField>
+          )}
+          <div className="office-inline-actions office-composer-tools">
+            <button
+              type="button"
+              className="office-secondary"
+              onClick={() => setTemplateOpen(true)}
+            >
+              <FileText size={16} />
+              Chọn mẫu văn bản
+            </button>
+            <OfficeAssistant
+              service={service}
+              documentId={saved.current?.id}
+              attachments={attachments}
+              editable
+              onApply={patch}
             />
           </div>
-          <div className="office-type-grid">
-            {catalog.types
-              .filter(
-                (t) =>
-                  t.is_active &&
-                  t.groups.includes(draft.document_group) &&
-                  `${t.name} ${t.code}`
-                    .toLocaleLowerCase()
-                    .includes(typeSearch.toLocaleLowerCase()),
-              )
-              .map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    patch({
-                      document_type_id: t.id,
-                      workflow_id: t.workflow_id,
-                      archive_folder_id: t.archive_folder_id,
-                    });
-                    setStep(3);
-                  }}
-                >
-                  <FileText size={20} />
-                  <span>
-                    <strong>{t.name}</strong>
-                    <small>
-                      {t.code}
-                      {t.requires_approval &&
-                      draft.document_group !== "INCOMING"
-                        ? " · Cần phê duyệt"
-                        : ""}
-                    </small>
-                  </span>
-                  <ArrowRight size={17} />
+          <OfficeField label="Nội dung">
+            <OfficeRichTextEditor
+              images={attachments.filter(
+                (f) => f.mime_type.startsWith("image/") && f.status === "READY",
+              )}
+              onImageUpload={uploadInlineImage}
+              label="Nội dung văn bản"
+              value={draft.content}
+              onChange={(content) => patch({ content })}
+              placeholder="Nhập nội dung văn bản…"
+              disabled={busy}
+            />
+          </OfficeField>
+          <OfficeField
+            label={
+              draft.document_group === "INCOMING"
+                ? "Tệp gốc & đính kèm"
+                : "Tệp đính kèm"
+            }
+            required={draft.document_group === "INCOMING"}
+          >
+            <div
+              className="office-upload"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (!busy) addFiles(e.dataTransfer.files);
+              }}
+            >
+              <UploadCloud size={25} />
+              <p>
+                Kéo tệp vào đây hoặc{" "}
+                <button type="button" onClick={() => fileInput.current?.click()}>
+                  chọn tệp
                 </button>
+              </p>
+              <small>PDF, Word, Excel, ảnh · Tối đa 50 MB/tệp</small>
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                hidden
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.txt,.csv"
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+            <label className="office-secondary office-scan-button">
+              <Camera size={17} />
+              Chụp bản giấy
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <div className="office-file-list">
+              {attachments.map((f) => (
+                <div key={f.id}>
+                  <Paperclip size={16} />
+                  <span>{f.file_name}</span>
+                  <small>{f.status === "PENDING" ? "Chưa tải xong" : ""}</small>
+                  <button
+                    type="button"
+                    aria-label={`Bỏ ${f.file_name}`}
+                    onClick={() => void removeAttachment(f)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               ))}
-          </div>
-        </section>
-      )}
-      {step === 3 && (
-        <form
-          ref={formRef}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save(false);
-          }}
-        >
-          <fieldset disabled={busy}>
-            <div className="office-form-layout">
-              <div className="office-form-main">
-                <section className="office-panel office-form-section">
-                  <header>
-                    <div>
-                      <h2>Thông tin văn bản</h2>
-                      <p>
-                        {OFFICE_GROUPS[draft.document_group].label} ·{" "}
-                        {type?.name}
-                      </p>
-                    </div>
-                    {!existing && (
-                      <button
-                        type="button"
-                        className="office-text-button"
-                        onClick={() => setStep(2)}
-                      >
-                        Đổi loại
-                      </button>
-                    )}
-                  </header>
-                  <OfficeField label="Tiêu đề" required>
-                    <input
-                      autoFocus
-                      aria-label="Tiêu đề văn bản"
-                      required
-                      maxLength={500}
-                      placeholder="Ví dụ: Thông báo lịch nghỉ lễ Quốc khánh"
-                      value={draft.title}
-                      onChange={(e) => patch({ title: e.target.value })}
-                    />
-                  </OfficeField>
-                  <div className="office-form-grid">
-                    <OfficeField label="Ngày văn bản" required>
-                      <input
-                        aria-label="Ngày văn bản"
-                        type="date"
-                        required
-                        value={draft.document_date}
-                        onChange={(e) =>
-                          patch({ document_date: e.target.value })
-                        }
-                      />
-                    </OfficeField>
-                    <OfficeField label="Đơn vị ban hành">
-                      <OfficePicker
-                        service={service}
-                        kind="department"
-                        value={draft.issuer_department_id}
-                        onChange={(o) =>
-                          patch({
-                            issuer_department_id: o?.id || null,
-                            workflow_id: null,
-                          })
-                        }
-                        label="Chọn đơn vị ban hành"
-                      />
-                    </OfficeField>
-                  </div>
-                  <OfficeField label="Công trường">
-                    <OfficePicker
-                      service={service}
-                      kind="site"
-                      value={draft.construction_site_id}
-                      onChange={(o) =>
-                        patch({ construction_site_id: o?.id || null })
-                      }
-                      label="Chọn công trường"
-                    />
-                  </OfficeField>
-                  <p className="office-helper">
-                    Người soạn / gửi:{" "}
-                    {existing?.document.creator_name ||
-                      catalog.actorName ||
-                      "Tài khoản hiện tại"}
-                  </p>
-                  {draft.document_group === "INCOMING" && (
-                    <div className="office-incoming-fields">
-                      <h3>Thông tin tiếp nhận</h3>
-                      <div className="office-form-grid">
-                        <OfficeField label="Đơn vị gửi" required>
-                          <input
-                            aria-label="Đơn vị gửi"
-                            value={draft.source_organization || ""}
-                            onChange={(e) =>
-                              patch({ source_organization: e.target.value })
-                            }
-                          />
-                        </OfficeField>
-                        <OfficeField label="Số văn bản bên gửi">
-                          <input
-                            aria-label="Số văn bản bên gửi"
-                            value={draft.source_document_number || ""}
-                            onChange={(e) =>
-                              patch({ source_document_number: e.target.value })
-                            }
-                          />
-                        </OfficeField>
-                        <OfficeField label="Ngày nhận" required>
-                          <input
-                            aria-label="Ngày nhận"
-                            type="date"
-                            value={draft.received_date || ""}
-                            onChange={(e) =>
-                              patch({ received_date: e.target.value || null })
-                            }
-                          />
-                        </OfficeField>
-                        <OfficeField label="Người gửi">
-                          <input
-                            aria-label="Người gửi"
-                            value={draft.source_sender || ""}
-                            onChange={(e) =>
-                              patch({ source_sender: e.target.value })
-                            }
-                          />
-                        </OfficeField>
-                      </div>
-                    </div>
-                  )}
-                  {draft.document_group === "OUTGOING" && (
-                    <OfficeField label="Đơn vị / đối tác nhận văn bản" required>
-                      <input
-                        aria-label="Đơn vị nhận văn bản đi"
-                        placeholder="Chủ đầu tư, khách hàng, cơ quan…"
-                        value={draft.external_recipient || ""}
-                        onChange={(e) =>
-                          patch({ external_recipient: e.target.value })
-                        }
-                      />
-                    </OfficeField>
-                  )}
-                  <div className="office-inline-actions office-composer-tools">
+              {files.map((item, i) => (
+                <div key={i}>
+                  <Paperclip size={16} />
+                  <span>{item.file.name}</span>
+                  <small>
+                    {item.done
+                      ? "Đã tải"
+                      : `${(item.file.size / 1024 / 1024).toFixed(1)} MB`}
+                  </small>
+                  {!item.reservation && (
                     <button
                       type="button"
-                      className="office-secondary"
-                      onClick={() => setTemplateOpen(true)}
+                      aria-label={`Bỏ ${item.file.name}`}
+                      onClick={() =>
+                        setFiles((old) => old.filter((_, n) => i !== n))
+                      }
                     >
-                      <FileText size={16} />
-                      Chọn mẫu văn bản
+                      <X size={15} />
                     </button>
-                    <OfficeAssistant
-                      service={service}
-                      documentId={saved.current?.id}
-                      attachments={attachments}
-                      editable
-                      onApply={patch}
-                    />
-                  </div>
-                  <OfficeField label="Nội dung">
-                    <OfficeRichTextEditor
-                      images={attachments.filter(
-                        (f) =>
-                          f.mime_type.startsWith("image/") &&
-                          f.status === "READY",
-                      )}
-                      onImageUpload={uploadInlineImage}
-                      label="Nội dung văn bản"
-                      value={draft.content}
-                      onChange={(content) => patch({ content })}
-                      placeholder="Nhập nội dung văn bản…"
-                      disabled={busy}
-                    />
-                  </OfficeField>
-                  <OfficeField
-                    label={
-                      draft.document_group === "INCOMING"
-                        ? "Tệp gốc & đính kèm"
-                        : "Tệp đính kèm"
-                    }
-                    required={draft.document_group === "INCOMING"}
-                  >
-                    <div
-                      className="office-upload"
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        if (!busy) addFiles(e.dataTransfer.files);
-                      }}
-                    >
-                      <UploadCloud size={25} />
-                      <p>
-                        Kéo tệp vào đây hoặc{" "}
-                        <button
-                          type="button"
-                          onClick={() => fileInput.current?.click()}
-                        >
-                          chọn tệp
-                        </button>
-                      </p>
-                      <small>PDF, Word, Excel, ảnh · Tối đa 50 MB/tệp</small>
-                      <input
-                        ref={fileInput}
-                        type="file"
-                        multiple
-                        hidden
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.webp,.txt,.csv"
-                        onChange={(e) => {
-                          if (e.target.files) addFiles(e.target.files);
-                          e.target.value = "";
-                        }}
-                      />
-                    </div>
-                    <label className="office-secondary office-scan-button">
-                      <Camera size={17} />
-                      Chụp bản giấy
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        hidden
-                        onChange={(e) => {
-                          if (e.target.files) addFiles(e.target.files);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-                    <p className="office-helper">
-                      Chụp đủ các trang, giữ rõ chữ và kiểm tra tệp trước khi
-                      đăng ký tiếp nhận.
-                    </p>
-                    <div className="office-file-list">
-                      {attachments.map((f) => (
-                        <div key={f.id}>
-                          <Paperclip size={16} />
-                          <span>{f.file_name}</span>
-                          <small>
-                            {f.status === "PENDING" ? "Chưa tải xong" : ""}
-                          </small>
-                          <button
-                            type="button"
-                            aria-label={`Bỏ ${f.file_name}`}
-                            onClick={() => void removeAttachment(f)}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      ))}
-                      {files.map((item, i) => (
-                        <div key={i}>
-                          <Paperclip size={16} />
-                          <span>{item.file.name}</span>
-                          <small>
-                            {item.done
-                              ? "Đã tải"
-                              : `${(item.file.size / 1024 / 1024).toFixed(1)} MB`}
-                          </small>
-                          {!item.reservation && (
-                            <button
-                              type="button"
-                              aria-label={`Bỏ ${item.file.name}`}
-                              onClick={() =>
-                                setFiles((old) => old.filter((_, n) => i !== n))
-                              }
-                            >
-                              <X size={15} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </OfficeField>
-                </section>
-                <section className="office-panel office-form-section">
-                  <header>
-                    <div>
-                      <h2>Người nhận</h2>
-                      <p>
-                        Chọn cá nhân hoặc cả đơn vị để tránh nhập từng người.
-                      </p>
-                    </div>
-                  </header>
-                  <OfficeAudience
-                    service={service}
-                    value={draft.recipient_specs}
-                    onChange={(recipient_specs) => patch({ recipient_specs })}
-                    disabled={busy}
-                  />
-                </section>
-                <details className="office-panel office-form-section">
-                  <summary>
-                    Thông tin bổ sung <ChevronDown size={17} />
-                  </summary>
-                  <div className="office-form-grid">
-                    <OfficeField label="Người ký">
-                      <OfficePicker
-                        service={service}
-                        kind="user"
-                        value={draft.signer_user_id}
-                        onChange={(o) =>
-                          patch({ signer_user_id: o?.id || null })
-                        }
-                        label="Chọn người ký"
-                      />
-                    </OfficeField>
-                    <OfficeField label="Chức danh người ký">
-                      <input
-                        aria-label="Chức danh người ký"
-                        placeholder="Ví dụ: Tổng Giám đốc"
-                        value={draft.signer_position || ""}
-                        onChange={(e) =>
-                          patch({ signer_position: e.target.value })
-                        }
-                      />
-                    </OfficeField>
-                    <OfficeField label="Dự án liên quan">
-                      <OfficePicker
-                        service={service}
-                        kind="project"
-                        value={draft.project_id}
-                        onChange={(o) =>
-                          patch({
-                            project_id: o?.id || null,
-                            construction_site_id: null,
-                            workflow_id: null,
-                          })
-                        }
-                        label="Chọn dự án"
-                      />
-                    </OfficeField>
-
-                    <OfficeField label="Trích yếu">
-                      <textarea
-                        aria-label="Trích yếu"
-                        maxLength={2000}
-                        value={draft.summary}
-                        onChange={(e) => patch({ summary: e.target.value })}
-                      />
-                    </OfficeField>
-                    <OfficeField label="Người theo dõi">
-                      <OfficePicker
-                        service={service}
-                        kind="user"
-                        label="Thêm người theo dõi"
-                        onChange={(o) => {
-                          if (o && !draft.watcher_ids.includes(o.id))
-                            patch({
-                              watcher_ids: [...draft.watcher_ids, o.id],
-                            });
-                        }}
-                      />
-                      {draft.watcher_ids.map((id) => (
-                        <div className="office-inline-picker" key={id}>
-                          <OfficePicker
-                            service={service}
-                            kind="user"
-                            label="Người theo dõi đã chọn"
-                            value={id}
-                            onChange={(o) =>
-                              patch({
-                                watcher_ids: draft.watcher_ids
-                                  .map((x) => (x === id ? o?.id || "" : x))
-                                  .filter(Boolean),
-                              })
-                            }
-                          />
-                        </div>
-                      ))}
-                    </OfficeField>
-                  </div>
-                </details>
-              </div>
-              <aside className="office-form-context">
-                <section className="office-panel office-form-section">
-                  <h2>Phân loại & lưu trữ</h2>
-                  <OfficeField label="Ngày hiệu lực" hint="Để trống nếu văn bản chưa xác định ngày bắt đầu có hiệu lực.">
-                    <input type="date" aria-label="Ngày hiệu lực" value={draft.effective_on || ""} max={draft.expires_on || undefined} onChange={e => patch({ effective_on: e.target.value || null })} />
-                  </OfficeField>
-                  <OfficeField label="Hiệu lực đến ngày">
-                    <input
-                      type="date"
-                      aria-label="Hiệu lực đến ngày"
-                      min={draft.effective_on || draft.document_date}
-                      value={draft.expires_on || ""}
-                      onChange={(e) =>
-                        patch({ expires_on: e.target.value || null })
-                      }
-                    />
-                    <small>
-                      Để trống nếu văn bản không có ngày hết hiệu lực.
-                    </small>
-                  </OfficeField>
-                  <label className="office-check-label">
-                    <input
-                      type="checkbox"
-                      checked={draft.require_acknowledgement}
-                      onChange={(e) =>
-                        patch({ require_acknowledgement: e.target.checked })
-                      }
-                    />
-                    Yêu cầu người nhận xác nhận đã đọc và hiểu
-                  </label>
-                  <OfficeField label="Mức độ khẩn">
-                    <select
-                      aria-label="Mức độ khẩn"
-                      value={draft.urgency}
-                      onChange={(e) =>
-                        patch({
-                          urgency: e.target.value as OfficeDraft["urgency"],
-                        })
-                      }
-                    >
-                      {Object.entries(URGENCY).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </OfficeField>
-                  <OfficeField label="Bảo mật">
-                    <select
-                      aria-label="Bảo mật"
-                      value={draft.confidentiality}
-                      onChange={(e) =>
-                        patch({
-                          confidentiality: e.target
-                            .value as OfficeDraft["confidentiality"],
-                        })
-                      }
-                    >
-                      {Object.entries(CONFIDENTIALITY).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </OfficeField>
-                  <OfficeField label="Kho lưu trữ">
-                    <select
-                      aria-label="Kho lưu trữ"
-                      value={draft.archive_folder_id || ""}
-                      onChange={(e) =>
-                        patch({ archive_folder_id: e.target.value || null })
-                      }
-                    >
-                      <option value="">Chọn kho lưu trữ</option>
-                      {catalog.folders
-                        .filter((f) => f.is_active)
-                        .map((f) => (
-                          <option key={f.id} value={f.id}>
-                            {f.parent_id ? "↳ " : ""}
-                            {f.name}
-                          </option>
-                        ))}
-                    </select>
-                  </OfficeField>
-                </section>
-                <section className="office-panel office-form-section">
-                  <h2>
-                    {draft.document_group === "INCOMING"
-                      ? "Tiếp nhận & xử lý"
-                      : "Quy trình phê duyệt"}
-                  </h2>
-                  {draft.document_group === "INCOMING" ? (
-                    <p className="office-helper">
-                      Sau khi đăng ký và phân phối, bạn có thể giao người phụ
-                      trách cùng hạn xử lý tại trang chi tiết.
-                    </p>
-                  ) : type?.requires_approval ? (
-                    <>
-                      <OfficeField label="Tuyến duyệt" required>
-                        <select
-                          aria-label="Tuyến duyệt"
-                          value={draft.workflow_id || ""}
-                          onChange={(e) =>
-                            patch({ workflow_id: e.target.value || null })
-                          }
-                        >
-                          <option value="">Chọn tuyến duyệt</option>
-                          {workflows.map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {w.name}
-                            </option>
-                          ))}
-                        </select>
-                      </OfficeField>
-                      {!workflows.length && (
-                        <p className="office-helper">
-                          Chưa có tuyến duyệt phù hợp. Bạn có thể lưu nháp
-                          {catalog.canConfigure && (
-                            <>
-                              {" "}
-                              và{" "}
-                              <Link to="/office/settings">
-                                cấu hình tuyến duyệt
-                              </Link>
-                            </>
-                          )}
-                          .
-                        </p>
-                      )}
-                      {chosenWorkflow && (
-                        <ol className="office-approval-preview">
-                          {chosenWorkflow.steps.map((s, i) => (
-                            <li key={i}>
-                              <span>{i + 1}</span>
-                              <div>
-                                <strong>{s.label}</strong>
-                                <small>
-                                  {chosenWorkflow.stepNames?.[s.userId] ||
-                                    "Người duyệt được cấu hình"}
-                                </small>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </>
-                  ) : (
-                    <p className="office-helper">
-                      Loại văn bản này không yêu cầu phê duyệt nội dung.
-                    </p>
                   )}
-                  <div className="office-note">
-                    <ShieldCheck size={18} />
-                    <p>
-                      {draft.document_group === "INCOMING"
-                        ? "Số bên gửi được giữ nguyên. Văn bản đến có trạng thái xử lý riêng."
-                        : type?.requires_number
-                          ? "Số văn bản được cấp sau khi duyệt xong. Phát hành là một bước riêng."
-                          : "Văn bản chỉ được gửi tới người nhận khi người có quyền bấm phát hành."}
-                    </p>
-                  </div>
-                </section>
-              </aside>
+                </div>
+              ))}
             </div>
-          </fieldset>
-          {error && <OfficeError error={error} />}
-          {progress && (
-            <p className="office-save-status" role="status">
-              {progress}
-            </p>
-          )}
-          <footer className="office-form-footer">
-            <span>
-              {saved.current
-                ? "Bản nháp đã được lưu trên hệ thống."
-                : "Bản nháp chỉ hiển thị với người được cấp quyền."}
-            </span>
-            <div>
-              <button
-                className="office-secondary"
-                disabled={busy}
-                type="submit"
-              >
-                <Save size={16} />
-                Lưu nháp
-              </button>
-              <button
-                className="office-primary"
-                disabled={
-                  busy || !draft.title.trim() || !draft.document_type_id
+          </OfficeField>
+          <details className="office-compose-more">
+            <summary>
+              Thông tin thêm
+              <small>Người ký, dự án, công trường, trích yếu, hiệu lực, mức độ khẩn, bảo mật</small>
+              <ChevronDown size={17} />
+            </summary>
+            <div className="office-form-grid">
+              <OfficeField label="Người ký">
+                <OfficePicker
+                  service={service}
+                  kind="user"
+                  value={draft.signer_user_id}
+                  onChange={(o) => patch({ signer_user_id: o?.id || null })}
+                  label="Chọn người ký"
+                />
+              </OfficeField>
+              <OfficeField label="Chức danh người ký">
+                <input
+                  aria-label="Chức danh người ký"
+                  placeholder="Ví dụ: Tổng Giám đốc"
+                  value={draft.signer_position || ""}
+                  onChange={(e) => patch({ signer_position: e.target.value })}
+                />
+              </OfficeField>
+              <OfficeField label="Dự án liên quan">
+                <OfficePicker
+                  service={service}
+                  kind="project"
+                  value={draft.project_id}
+                  onChange={(o) =>
+                    patch({
+                      project_id: o?.id || null,
+                      construction_site_id: null,
+                      workflow_id: null,
+                    })
+                  }
+                  label="Chọn dự án"
+                />
+              </OfficeField>
+              <OfficeField label="Công trường">
+                <OfficePicker
+                  service={service}
+                  kind="site"
+                  value={draft.construction_site_id}
+                  onChange={(o) => patch({ construction_site_id: o?.id || null })}
+                  label="Chọn công trường"
+                />
+              </OfficeField>
+              <OfficeField label="Ngày hiệu lực" hint="Để trống nếu chưa xác định ngày bắt đầu có hiệu lực.">
+                <input
+                  type="date"
+                  aria-label="Ngày hiệu lực"
+                  value={draft.effective_on || ""}
+                  max={draft.expires_on || undefined}
+                  onChange={(e) => patch({ effective_on: e.target.value || null })}
+                />
+              </OfficeField>
+              <OfficeField label="Hiệu lực đến ngày" hint="Để trống nếu văn bản không có ngày hết hiệu lực.">
+                <input
+                  type="date"
+                  aria-label="Hiệu lực đến ngày"
+                  min={draft.effective_on || draft.document_date}
+                  value={draft.expires_on || ""}
+                  onChange={(e) => patch({ expires_on: e.target.value || null })}
+                />
+              </OfficeField>
+              <OfficeField label="Mức độ khẩn">
+                <select
+                  aria-label="Mức độ khẩn"
+                  value={draft.urgency}
+                  onChange={(e) =>
+                    patch({ urgency: e.target.value as OfficeDraft["urgency"] })
+                  }
+                >
+                  {Object.entries(URGENCY).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </OfficeField>
+              <OfficeField label="Bảo mật">
+                <select
+                  aria-label="Bảo mật"
+                  value={draft.confidentiality}
+                  onChange={(e) =>
+                    patch({
+                      confidentiality: e.target
+                        .value as OfficeDraft["confidentiality"],
+                    })
+                  }
+                >
+                  {Object.entries(CONFIDENTIALITY).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </OfficeField>
+            </div>
+            <OfficeField label="Trích yếu">
+              <textarea
+                aria-label="Trích yếu"
+                maxLength={2000}
+                value={draft.summary}
+                onChange={(e) => patch({ summary: e.target.value })}
+              />
+            </OfficeField>
+            <label className="office-check-label">
+              <input
+                type="checkbox"
+                checked={draft.require_acknowledgement}
+                onChange={(e) =>
+                  patch({ require_acknowledgement: e.target.checked })
                 }
-                type="button"
-                onClick={() => void save(true)}
-              >
-                <Send size={16} />
-                {draft.document_group === "INCOMING"
-                  ? "Lưu & đăng ký tiếp nhận"
-                  : "Lưu & gửi duyệt"}
-              </button>
-            </div>
-          </footer>
-        </form>
-      )}
-      {templateOpen && step === 3 && (
+              />
+              Yêu cầu người nhận xác nhận đã đọc và hiểu
+            </label>
+          </details>
+        </fieldset>
+        {error && <OfficeError error={error} />}
+        {progress && (
+          <p className="office-save-status" role="status">
+            {progress}
+          </p>
+        )}
+        <footer className="office-form-footer">
+          <span>
+            {draft.document_group === "INCOMING"
+              ? "Số bên gửi được giữ nguyên. Văn bản đến có trạng thái xử lý riêng."
+              : numbered
+                ? "Số văn bản chỉ chính thức khi người có quyền bấm Cấp số sau khi duyệt."
+                : saved.current
+                  ? "Bản nháp đã được lưu trên hệ thống."
+                  : "Bản nháp chỉ hiển thị với người được cấp quyền."}
+          </span>
+          <div>
+            <button className="office-secondary" disabled={busy} type="submit">
+              <Save size={16} />
+              Lưu nháp
+            </button>
+            <button
+              className="office-primary"
+              disabled={
+                busy ||
+                !draft.title.trim() ||
+                !draft.document_type_id ||
+                (numbered && numberTaken)
+              }
+              type="button"
+              onClick={() => void save(true)}
+            >
+              <Send size={16} />
+              {draft.document_group === "INCOMING"
+                ? "Lưu & đăng ký tiếp nhận"
+                : "Lưu & gửi duyệt"}
+            </button>
+          </div>
+        </footer>
+      </form>
+      {templateOpen && (
         <OfficeTemplateChooser
           service={service}
           draft={draft}
@@ -1116,6 +1011,116 @@ function OfficeDraftForm({
             setTemplateOpen(false);
           }}
         />
+      )}
+    </div>
+  );
+}
+function OfficeNumberField({
+  service,
+  typeId,
+  typeCode,
+  ruleFormat,
+  documentId,
+  value,
+  onChange,
+  onTakenChange,
+}: {
+  service: OfficeService;
+  typeId: string;
+  typeCode: string;
+  ruleFormat?: string;
+  documentId?: string;
+  value: number | null;
+  onChange: (value: number | null) => void;
+  onTakenChange: (taken: boolean) => void;
+}) {
+  const [suggestion, setSuggestion] = useState<OfficeNumberSuggestion | null>(
+    null,
+  );
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(
+      () => {
+        service
+          .numberSuggestion(typeId, value, documentId)
+          .then((s) => {
+            if (cancelled) return;
+            setSuggestion(s);
+            setFailed(false);
+            onTakenChange(!!s.taken);
+          })
+          .catch(() => {
+            if (cancelled) return;
+            setFailed(true);
+            onTakenChange(false);
+          });
+      },
+      value ? 300 : 0,
+    );
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // onTakenChange là setState ổn định của form cha
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service, typeId, value, documentId]);
+  const year = suggestion?.year ?? new Date().getFullYear();
+  const parts = officeNumberParts(
+    suggestion?.format || ruleFormat || "{sequence}",
+    typeCode,
+    year,
+  );
+  const next = suggestion?.next;
+  const full = (n: number) => `${parts.prefix}${n}${parts.suffix}`;
+  return (
+    <div className="office-field">
+      <span className="office-field-label">
+        Mã văn bản<span aria-hidden="true"> *</span>
+        <small className="office-number-aside">Số chính thức khi Cấp số</small>
+      </span>
+      <div className="office-number">
+        {parts.prefix && <span className="office-number-seg">{parts.prefix}</span>}
+        <input
+          aria-label="Số văn bản"
+          inputMode="numeric"
+          maxLength={6}
+          placeholder={next ? String(next) : "…"}
+          value={value ?? ""}
+          onChange={(e) => {
+            const digits = e.target.value.replace(/\D/g, "");
+            onChange(digits ? Math.min(999999, Number(digits)) || null : null);
+          }}
+        />
+        <span className="office-number-seg">{parts.suffix}</span>
+      </div>
+      {failed ? (
+        <small>
+          Chưa lấy được số gợi ý. Bạn vẫn lưu được; nếu để trống, hệ thống cấp
+          số tiếp theo trong sổ khi Cấp số.
+        </small>
+      ) : suggestion?.taken && value ? (
+        <p className="office-number-msg is-taken" role="alert">
+          Số <strong>{suggestion.takenNumber || full(value)}</strong> đã dùng
+          {suggestion.takenTitle ? ` cho "${suggestion.takenTitle}"` : " cho văn bản khác"}
+          .{next ? <> Số trống tiếp theo là <strong>{next}</strong>.</> : null}
+          {next && (
+            <button type="button" onClick={() => onChange(next)}>
+              Dùng số {next}
+            </button>
+          )}
+        </p>
+      ) : value ? (
+        <small>
+          Mã dự kiến <strong>{full(value)}</strong>.
+        </small>
+      ) : next ? (
+        <small>
+          Để trống sẽ cấp số tiếp theo trong sổ khi Cấp số (hiện là{" "}
+          <strong>{full(next)}</strong>).
+        </small>
+      ) : (
+        <small>Đang lấy số gợi ý…</small>
       )}
     </div>
   );

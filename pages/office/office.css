@@ -3044,3 +3044,155 @@
 .office-pdf-page canvas { display: block; background: white; margin: 0 auto; }
 .office-pdf-text { margin-top: 10px; font-size: 12px; color: #59666f; }
 .office-pdf-text p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Tạo văn bản: một form theo mẫu duyệt 06/10/2026 */
+.office-compose {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 28px 32px;
+}
+.office-compose > fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.office-compose-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 18px;
+  margin-bottom: 22px;
+  border-bottom: 1px dashed var(--of-border);
+}
+.office-compose-head h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.office-compose-badge {
+  background: #d9534f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.office-form-grid.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+.office-form-grid.is-three > .office-field {
+  margin-bottom: 0;
+}
+.office-locked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--of-border);
+  border-radius: 8px;
+  background: #f1f3f4;
+  color: var(--of-muted);
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.office-locked svg {
+  flex: none;
+  color: #2f9e44;
+}
+.office-field-label .office-number-aside {
+  float: right;
+  font-weight: 400;
+}
+.office-number {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--of-border);
+  border-radius: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.office-field .office-number input {
+  width: 92px;
+  border: 0;
+  border-bottom: 2px solid #f0b5a8;
+  border-radius: 0;
+  padding: 4px;
+  text-align: center;
+  font-family: inherit;
+  font-weight: 700;
+  color: #b4412f;
+  background: transparent;
+}
+.office-field .office-number input::placeholder {
+  color: #c2c7cc;
+  font-weight: 600;
+}
+.office-field .office-number input:focus {
+  outline: none;
+  border-bottom-color: var(--of-accent);
+}
+.office-number-seg {
+  background: #f1f3f4;
+  border-radius: 4px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+.office-number-msg.is-taken {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #fff4ed;
+  color: #c2410c;
+  font-size: 12px;
+}
+.office-number-msg button {
+  margin-left: 6px;
+  color: var(--of-accent);
+  font-weight: 650;
+  text-decoration: underline;
+}
+.office-compose-more {
+  margin-top: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--of-border);
+  border-radius: 10px;
+}
+.office-compose-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  list-style: none;
+  cursor: pointer;
+  font-weight: 650;
+}
+.office-compose-more > summary small {
+  flex: 1;
+  font-weight: 400;
+  color: var(--of-muted);
+  font-size: 12px;
+}
+.office-compose-more[open] > summary {
+  margin-bottom: 18px;
+}
+@media (max-width: 760px) {
+  .office-compose {
+    padding: 18px 16px;
+  }
+  .office-form-grid.is-three {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 18px;
+  }
+  .office-compose-more > summary small {
+    display: none;
+  }
+}
