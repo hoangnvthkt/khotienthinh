@@ -6,7 +6,7 @@ Người đọc: phiên Claude Code mới. Đọc hết file này (10 phút) là
 
 - Chủ sản phẩm (anh Hoàng, xưng "anh", gọi agent là "em") đã **duyệt**: đánh giá khả thi 06/10 (7 đề xuất), mockup v1.1 "Hôm nay + Việc của tôi", kế hoạch đợt 0. Chưa nói "bắt đầu code" cho PR-A → **hỏi một câu rồi làm**, hoặc làm nếu anh đã bảo trong lời nhắn mở phiên.
 - Nhánh làm việc: `feature/command-center-dot0`, worktree `/Users/admin/khotienthinh/.worktrees/command-center` (nền `origin/main` dd48d506 = PR #118). Commit `7dbc8838` đã push (docs + mockup). **Không đụng root checkout** `/Users/admin/khotienthinh` (nhánh `feature/refactor-du-an-t9-1`, lệch main, có Dự án V2/Mua hàng V2 không có trên prod).
-- Việc kế tiếp: **PR-A** (mục 5). Sau đó PR-B → F theo [07-ke-hoach-trien-khai-dot-0.md](07-ke-hoach-trien-khai-dot-0.md).
+- **07/10: PR-A code xong — PR hoangnvthkt/khotienthinh#119** (commit d4c5acb7), chờ chủ SP duyệt deploy migration `20261008138000` + merge. Việc kế tiếp: **PR-B** (cuối mục 5). Sau đó C → F theo [07-ke-hoach-trien-khai-dot-0.md](07-ke-hoach-trien-khai-dot-0.md).
 - Sổ việc chủ SP (memory `owner-task-ledger.md`) tự nạp qua MEMORY.md; đầu phiên đọc, cuối lượt nhắc "việc anh còn treo" một dòng.
 
 ## 1. Thứ tự đọc
@@ -66,6 +66,18 @@ Mục tiêu: `/center` mở được cho người trong rollout, có khung 3 c�
    - `pages/center/CenterPage.tsx` + `components/center/{CenterShell,InboxPanel,WorkTabs,TodayView}.tsx` + `lib/center/{centerService,centerRegistry,drill}.ts` — khung theo `mockups/cc-v1-hom-nay.html` (CSS biến màu module, dark theo `dark:` của app). Tab "Hôm nay" hiện StateBox "Đang xây dựng đợt 0" + lịch; Việc của tôi hiện StateBox empty với lời dẫn.
 3. Kiểm chứng trước khi xin duyệt: `npm run lint`, `npm test` (thêm vitest contract cho ROUTE_CHROME và registry), smoke rollback trên Cloud (`--expected-ref ftciqmqhmfvjtwoycswe`, không commit), Playwright chụp 1440/820/390 nền sáng + tối gửi chủ SP, `document.getAnimations().length` trên `/center` = 0.
 4. Báo cáo cuối lượt: đã làm / đã kiểm / chưa kiểm được; câu hỏi đánh số; việc anh còn treo.
+
+**PR-A đã làm (07/10, #119) — khác/bổ sung so với spec trên:**
+- Module key route là `center.module` (theo mẫu Office/Work), không phải `CENTER`; `canAccessRoute('/center')` kiểm `center.module.access` (global), máy chủ kiểm thêm hạn bật.
+- `get_center_access_v1()` trả thêm `reason` (`no_permission` | `not_in_rollout`) để màn chặn nói đúng lý do. Sửa dòng rollout phải đổi `reason` hoặc đặt `app.center_rollout_reason`; xóa bắt buộc GUC này.
+- Khung theo route ở `lib/routeChrome.ts` (`ROUTE_CHROME`, `getRouteChrome`); Layout truyền `{ openSidebar }` qua `useOutletContext` cho màn có header riêng. Rail = Sidebar app có sẵn.
+- Chuông thông báo ở header Center chỉ trên điện thoại (máy tính đã có ở rail; tránh 2 kênh realtime).
+- Ẩn/hiện cột việc lưu `localStorage` (`vcc_inbox_hidden`) tới khi PR-E dùng `center_user_layouts`. Chưa có co giãn cột (PR-B).
+- "Hôm nay": 6 thẻ nhóm widget với "Sắp có: …" (`preview` trong `lib/center/centerRegistry.ts`) + nút mở module theo quyền (🔒 khi thiếu). PR-C thay phần thân bằng số thật.
+- Style ở `components/center/center.css` (`.vcc`, đặt lại token app nên `StateBox` dùng được); test `lib/center/__tests__/centerRegistry.test.ts` khóa màu sáng/tối từng module và cấm animation.
+- Fixture `tests/center/fixture.html?theme=dark` + `npx playwright test -c tests/center/playwright.config.ts` (desktop 1440, tablet 820, iPhone WebKit; ảnh ở `.center-test-results/`).
+- Kiểm Cloud: `node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/20261008138000_center_dot0_foundation.sql --smoke supabase/tests/center_dot0_smoke.sql` (nạp `.env` của root trước). Worktree dùng `node_modules` symlink về root.
+- Sau deploy: làm mới `dbPermissionCatalog.json`, bỏ 2 mã `center.*` khỏi `FRONTEND_AHEAD_OF_DB`.
 
 PR-B tiếp theo: RPC `vcc_my_work_items_v1(p_tab)` theo bảng mục 4 của kế hoạch (CTE từng nguồn, `limit 200`, trả `total`), `InboxPanel` nhóm theo module, mở tab chi tiết cho các view nhúng được, deep link cho phần còn lại.
 
