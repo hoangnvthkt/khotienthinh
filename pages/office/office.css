@@ -1677,8 +1677,10 @@
 }
 .office-file-preview iframe {
   width: 100%;
-  height: 60vh;
-  border: 0;
+  height: 70vh;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
 }
 .office-file-preview img {
   max-height: 65vh;
@@ -3036,14 +3038,6 @@
 
 @media(max-width:600px) { .office-preview-actions { width:100%; } .office-preview-actions > a { flex:1; justify-content:center; } }
 
-.office-pdf { width: 100%; min-width: 0; }
-.office-pdf-toolbar { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.office-pdf-toolbar .office-secondary { min-height: 40px; padding: 8px; }
-.office-pdf-toolbar > span { font-size: 13px; min-width: 82px; text-align: center; }
-.office-pdf-page { overflow: auto; max-height: 58dvh; padding: 8px; background: #eef1f3; border-radius: 8px; overscroll-behavior: contain; }
-.office-pdf-page canvas { display: block; background: white; margin: 0 auto; }
-.office-pdf-text { margin-top: 10px; font-size: 12px; color: #59666f; }
-.office-pdf-text p { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Tạo văn bản: một form theo mẫu duyệt 06/10/2026 */
 .office-compose {
