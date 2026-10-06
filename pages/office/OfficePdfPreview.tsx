@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
-import { getDocument, GlobalWorkerOptions, version, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// Bản legacy kèm polyfill (Iterator, Map.getOrInsertComputed…): bản thường của pdfjs 6
+// chỉ chạy trên trình duyệt rất mới, Safari iOS < 18.4 và Chrome cũ báo lỗi.
+import { getDocument, GlobalWorkerOptions, version } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { OfficeError } from './OfficeShared';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
