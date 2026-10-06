@@ -279,6 +279,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     FINANCE: [
       { to: '/finance/overview', icon: LayoutDashboard, label: 'Tổng quan' },
       { to: '/finance/forecast', icon: CalendarRange, label: 'Dự báo dòng tiền' },
+      { to: '/finance/reports', icon: BarChart3, label: 'Báo cáo' },
       { to: '/finance/todo', icon: ClipboardCheck, label: 'Việc cần làm' },
       { to: '/finance/receivables', icon: Inbox, label: 'Phải thu' },
       { to: '/finance/payables', icon: Wallet, label: 'Phải trả' },

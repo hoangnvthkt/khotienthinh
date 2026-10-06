@@ -28,6 +28,8 @@ export interface FinanceDocument {
   issues: FinanceIssue[]; createdAt: string;
   provenance: Record<string, string | number | null> | null;
   pendingAdjustment: { id: string; kind: 'cancel'; reason: string; createdBy: string; createdByName: string | null; createdAt: string } | null;
+  /** K3c: phần đã có hóa đơn (đã ghi + chờ duyệt) và các hóa đơn đã gắn. */
+  invoiced?: number; invoices?: Array<{ id: string; number: string; status: 'posted' | 'pending_approval'; amount: number }>;
 }
 export interface FinancePayment {
   id: string; code: string; status: 'submitted' | 'paid' | 'cancelled' | 'reversed' | string; rowVersion: number; external: boolean;
@@ -419,6 +421,18 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_FORECAST_SETTINGS_INVALID: 'Giả định ngoài khoảng cho phép (số ngày 0–180, % nhân công 0–100, VAT vật tư 0–20%).',
   FINANCE_LOAN_INVALID: 'Khoản vay cần bên cho vay, dư nợ, ngày đáo hạn, lãi suất 0–100%/năm và ngày trả 1–28.',
   FINANCE_FORECAST_ITEM_INVALID: 'Khoản dự kiến cần nội dung, Thu/Chi, số tiền lớn hơn 0, ngày dự kiến và dự án đúng mã',
+  FINANCE_INVOICE_FILE_REQUIRED: 'Đính kèm hóa đơn (file PDF / XML / ảnh).',
+  FINANCE_INVOICE_HEADER_INVALID: 'Nhập số hóa đơn và ngày hóa đơn (không sau hôm nay).',
+  FINANCE_INVOICE_AMOUNT_INVALID: 'Tiền hàng + VAT phải bằng tổng tiền hóa đơn, tổng lớn hơn 0.',
+  FINANCE_INVOICE_DUPLICATE: 'Hóa đơn này (cùng NCC, ký hiệu, số) đã ghi rồi',
+  FINANCE_INVOICE_OVER_DOCUMENT: 'Số tiền gắn vào chứng từ lớn hơn phần chứng từ chưa có hóa đơn',
+  FINANCE_INVOICE_VARIANCE_REASON: 'Hóa đơn lệch quá dung sai (0,5% hoặc 50.000 đ) — ghi lý do để gửi duyệt.',
+  FINANCE_INVOICE_STATE: 'Hóa đơn đã đổi trạng thái. Tải lại.',
+  FINANCE_INVOICE_NOT_OWNER: 'Chỉ người lập sửa được hóa đơn đang chờ duyệt.',
+  FINANCE_INVOICE_NOT_FOUND: 'Không còn hóa đơn này. Tải lại.',
+  FINANCE_INVOICE_ADJUSTMENT_PAID: 'Phần chênh lệch của hóa đơn đã trả / đang đề nghị chi — đảo đề nghị chi trước rồi mới đảo hóa đơn.',
+  FINANCE_INVOICE_CREDIT_OVER: 'Hóa đơn thấp hơn công nợ nhưng phần chưa trả không đủ để giảm',
+  FINANCE_CONTRACT_NEEDS_INVOICE: 'Hợp đồng NCC bắt buộc có hóa đơn trước khi chi — ghi hóa đơn cho chứng từ',
   FINANCE_BANK_ACCOUNT_ONLY: 'Sao kê chỉ nhập cho tài khoản ngân hàng (không phải tiền mặt / quỹ công trường).',
   FINANCE_BANK_EMPTY: 'File không có dòng giao dịch nào (cần cột Ngày và Ghi nợ / Ghi có hoặc Số tiền).',
   FINANCE_BANK_TOO_MANY: 'Mỗi lần nhập tối đa 5.000 dòng — tách file theo tháng.',
@@ -433,7 +447,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROJECT_TRANSACTION_FINANCE_ONLY: 'Sổ giao dịch dự án chỉ ghi qua Tài chính (nhập số MISA, đề nghị chi, phiếu chi khác, phiếu thu). Không thêm / sửa / xoá tay được nữa.',
 };
 // Mã lỗi có kèm chi tiết từ máy chủ (dòng nào, ngày nào) — nối vào thông báo.
-const DETAIL_CODES = new Set(['FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID', 'FINANCE_BANK_ROWS_INVALID']);
+const DETAIL_CODES = new Set(['FINANCE_INVOICE_DUPLICATE', 'FINANCE_INVOICE_OVER_DOCUMENT', 'FINANCE_INVOICE_CREDIT_OVER', 'FINANCE_CONTRACT_NEEDS_INVOICE', 'FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID', 'FINANCE_BANK_ROWS_INVALID']);
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
@@ -446,6 +460,40 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
   }
   return data as T;
 };
+
+// ---------- Báo cáo ----------
+type AgingBuckets = { notDue: number; d30: number; d60: number; d90: number; over90: number; noDue: number };
+export interface FinanceReports {
+  today: string; months: string[];
+  ap: Array<AgingBuckets & { supplierId: string; supplierName: string; projectId: string | null; projectCode: string | null; docs: number; outstanding: number; pending: number; oldestDue: string | null }>;
+  ar: Array<AgingBuckets & { contractId: string; contractCode: string; customerName: string | null; projectId: string | null; projectCode: string | null; outstanding: number;
+    sent: number; retention: number; opening: string | null; oldestDue: string | null }>;
+  pl: Array<{ projectId: string; code: string; name: string; status: string | null; contractNet: number | null; progress: number | null; outputNet: number | null; acceptedNet: number;
+    received: number; cost: number; committed: number; eac: number | null; budget: number | null; byCategory: Record<string, number> }>;
+  plMonths: Array<{ projectId: string; month: string; accepted: number; cost: number; cashIn: number }>;
+}
+
+// ---------- Hóa đơn đầu vào (K3c) ----------
+export type InvoiceStatus = 'awaiting_goods' | 'pending_approval' | 'posted' | 'rejected' | 'reversed';
+export interface FinanceInvoice {
+  id: string; supplierId: string; supplierName: string; number: string; symbol: string | null; date: string; net: number; vat: number; gross: number; vatPercent: number | null;
+  status: InvoiceStatus; expected: number | null; variance: number | null; tolerance: number | null; reason: string | null; attachments: FinanceAttachment[]; source: 'manual' | 'xml';
+  rowVersion: number; createdBy: string | null; createdByName: string | null; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null;
+  reversedByName: string | null; reversedAt: string | null; reversalReason: string | null; adjustmentCode: string | null; canDecide: boolean; canEdit: boolean;
+  documents: Array<{ id: string; code: string; documentNo: string | null; projectCode: string | null; amount: number; recognized: number; variance: number | null; sourceType: string }>;
+}
+export interface InvoiceDocument { id: string; code: string; documentNo: string | null; sourceType: string; projectCode: string | null; contractCode: string | null; documentDate: string | null;
+  recognized: number; outstanding: number; invoiced: number; remaining: number; requireInvoice: boolean; poNumber: string | null }
+export interface FinanceInvoices {
+  can: { record: boolean; confirm: boolean }; tolerance: { percent: number; min: number };
+  counts: { pendingApproval: number; awaitingGoods: number; posted: number; docsWithout: number; docsWithoutAmount: number; requiredMissing: number };
+  invoices: FinanceInvoice[]; documents: InvoiceDocument[] | null;
+  suppliers: Array<{ id: string; name: string; taxCode: string | null; docs: number; remaining: number }>;
+}
+export interface InvoiceInput {
+  id?: string; expectedRowVersion?: number; supplierId?: string; invoiceNumber: string; invoiceSymbol?: string | null; invoiceDate: string; netAmount: number; vatAmount: number; grossAmount: number;
+  vatPercent?: number | null; attachments: FinanceAttachment[]; lines: Array<{ documentId: string; amount: number }>; reason?: string | null; source?: 'manual' | 'xml';
+}
 
 // ---------- Sao kê ngân hàng ----------
 export interface BankBookEntry { id: string; date: string; code: string | null; sourceType: string; description: string | null; counterparty: string | null; amount?: number; direction?: 'in' | 'out' }
@@ -838,6 +886,13 @@ export const financeService = {
   saveSubcontractAdvance(input: { requestId?: string; expectedRowVersion?: number; subcontractId: string; amount: number; method: 'bank_transfer' | 'cash'; plannedDate: string; repayDueDate: string; note: string }) {
     return call<{ requestId: string; code: string; amount: number }>('save_finance_subcontract_advance_v1', { p_input: input });
   },
+  reports() { return call<FinanceReports>('get_finance_reports_v1', { p_input: {} }); },
+  invoices(filter: { supplierId?: string | null; withReversed?: boolean } = {}) { return call<FinanceInvoices>('get_finance_invoices_v1', { p_filter: filter }); },
+  saveInvoice(input: InvoiceInput) { return call<{ id: string; status: InvoiceStatus; expected: number; variance: number | null; tolerance: number | null }>('save_finance_invoice_v1', { p_input: input }); },
+  decideInvoice(input: { id: string; expectedRowVersion: number; action: 'approve' | 'reject' | 'reverse'; reason?: string }) {
+    return call<{ id: string; action: string }>('decide_finance_invoice_v1', { p_input: input });
+  },
+  findSupplierByTax(taxCode: string) { return call<Array<{ id: string; name: string; taxCode: string }> | null>('find_finance_supplier_by_tax_v1', { p_tax: taxCode }); },
   bankStatement(accountId: string) { return call<FinanceBankStatement>('get_finance_bank_statement_v1', { p_input: { accountId } }); },
   importBankStatement(input: { accountId: string; fileName: string; filePath?: string | null; rows: BankStatementRow[] }) {
     return call<{ statementId: string; inserted: number; duplicates: number; matched: number }>('import_finance_bank_statement_v1', { p_input: input });
