@@ -16,6 +16,7 @@ import { useOfflineSync } from '../hooks/useOfflineSync';
 import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-react';
 import { Role } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { getRouteChrome, type LayoutOutletContext } from '../lib/routeChrome';
 
 import MacOSDockLauncher from './common/MacOSDockLauncher';
 import FloatingChatBubble from './common/FloatingChatBubble';
@@ -63,8 +64,8 @@ const Layout: React.FC = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const isWorkRoute = pathname === '/work' || pathname.startsWith('/work/');
-  const isFullBleedRoute = isWorkRoute || pathname === '/chat' || pathname.startsWith('/rq') || pathname === '/wf';
+  const chrome = getRouteChrome(pathname);
+  const outletContext: LayoutOutletContext = { openSidebar: () => setSidebarOpen(true) };
 
   const lastActivityRef = useRef<number>(Date.now());
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -229,7 +230,7 @@ const Layout: React.FC = () => {
 
       <div className={`flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${!isSidebarPinned ? 'lg:pl-16' : ''}`}>
         {/* Mobile Header */}
-        <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-[50] glass-panel border-b-0 m-2 mt-[calc(0.5rem+env(safe-area-inset-top,0px))] rounded-2xl">
+        {!chrome.hideMobileHeader && <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-[50] glass-panel border-b-0 m-2 mt-[calc(0.5rem+env(safe-area-inset-top,0px))] rounded-2xl">
           <div className="flex items-center gap-3">
             {appSettings.logo ? (
               <img src={appSettings.logo} alt="Logo" className="w-8 h-8 object-contain rounded" />
@@ -256,9 +257,9 @@ const Layout: React.FC = () => {
               <Menu size={20} />
             </button>
           </div>
-        </header>
+        </header>}
 
-        <main data-work-scroll-host={isWorkRoute ? true : undefined} className={isFullBleedRoute ? "flex-1 min-h-0 overflow-auto relative" : "flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-8 pb-24 lg:pb-8 transparent"}>
+        <main data-work-scroll-host={chrome.workScrollHost ? true : undefined} className={chrome.fullBleed ? "flex-1 min-h-0 overflow-auto relative" : "flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-8 pb-24 lg:pb-8 transparent"}>
           {isLoading || isRefreshing ? (
             <div className="h-full w-full flex flex-col items-center justify-center relative overflow-hidden">
               {/* Background animated particles */}
@@ -378,25 +379,25 @@ const Layout: React.FC = () => {
               `}</style>
             </div>
           ) : (
-            isFullBleedRoute ? (
+            chrome.fullBleed ? (
               <React.Suspense fallback={<LoadingSpinner />}>
-                <Outlet />
+                <Outlet context={outletContext} />
               </React.Suspense>
             ) : (
               <div className="w-full max-w-full overflow-x-hidden">
                 <React.Suspense fallback={<LoadingSpinner />}>
-                  <Outlet />
+                  <Outlet context={outletContext} />
                 </React.Suspense>
               </div>
             )
           )}
         </main>
-        <BottomNav />
+        {!chrome.hideBottomNav && <BottomNav />}
         <PWAInstallPrompt />
       </div>
-      <QuickActionFab />
-      {user && <MacOSDockLauncher user={user} isEnabled={isMacOSDockEnabled} />}
-      {user && <FloatingChatBubble user={user} />}
+      {!chrome.hideFab && <QuickActionFab />}
+      {user && !chrome.hideDock && <MacOSDockLauncher user={user} isEnabled={isMacOSDockEnabled} />}
+      {user && !chrome.hideChatBubble && <FloatingChatBubble user={user} />}
       <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncNow} />
       {/* Easter Eggs & Dino Pet */}
       {(() => {

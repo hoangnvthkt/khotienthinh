@@ -82,6 +82,9 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   // ── VIOO OFFICE ──────────────────────────────────────
   ...Object.fromEntries(OFFICE_ROUTES.map(route => [route, 'office.module'])),
 
+  // ── TRUNG TÂM ĐIỀU HÀNH ─────────────────────────────
+  '/center': 'center.module',
+
   // ── VIOO WORK ────────────────────────────────────────
   '/work': 'work.module',
   '/work/my': 'work.module',

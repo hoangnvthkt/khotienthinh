@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Trung tâm điều hành · UI test fixture</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Như index.html: các token ngữ nghĩa để StateBox (bg-card, border-border…) hiển thị đúng như app.
+      tailwind.config = {
+        darkMode: "class",
+        theme: { extend: {
+          fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+          colors: {
+            background: "var(--background)", foreground: "var(--foreground)", card: "var(--card)",
+            "card-foreground": "var(--card-foreground)", "muted-foreground": "var(--muted-foreground)",
+            border: "var(--border)", muted: "var(--muted)",
+          },
+        } },
+      };
+    </script>
+  </head>
+  <body class="font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="./fixture.tsx"></script>
+  </body>
+</html>

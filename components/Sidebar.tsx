@@ -9,7 +9,8 @@ import {
   MessageSquarePlus,
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarCheck, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
-  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet
+  IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet,
+  PanelsTopLeft
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -27,6 +28,8 @@ import {
   getAuthorizedModuleRoute,
 } from '../lib/routeAccess';
 import { getHrmNavigationItems } from '../lib/hrmNavigation';
+import { CENTER_ROUTE } from '../lib/center/centerPermissions';
+import { useCenterAccess } from '../lib/center/centerService';
 import { useAuth } from '../context/AuthContext';
 import {
   canAccessVehicleApprovalQueue,
@@ -98,6 +101,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const canUseChat = isChatEnabled && canAccessRoute(user, '/chat');
   const chatV2Unread = useChatV2UnreadCount(canUseChat && isChatV2Enabled ? user?.id : undefined);
   const chatUnread = isChatV2Enabled ? chatV2Unread : totalUnread;
+  // Trung tâm điều hành chỉ hiện khi máy chủ báo đã bật cho người này (thí điểm theo người).
+  const { state: centerAccess } = useCenterAccess(user?.id, canAccessRoute(user, CENTER_ROUTE));
+  const showCenter = centerAccess.status === 'enabled';
 
   const handleLogout = async () => {
     try {
@@ -540,6 +546,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 </div>
 
                 <div className="border-t border-white/10 dark:border-slate-700/50 pt-2 mt-1 space-y-0.5">
+                  {showCenter && (
+                    <NavLink to={CENTER_ROUTE} onClick={toggle}
+                      className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
+                        ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                      <PanelsTopLeft className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
+                      <span className="font-bold text-sm">Trung tâm điều hành</span>
+                    </NavLink>
+                  )}
                   <NavLink to="/" end onClick={toggle}
                     className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-xl transition-all group ${isActive
                       ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
@@ -680,6 +695,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
           {/* ====== VIEW: HOME (default) ====== */}
           {view === 'home' && (
             <>
+              {showCenter && (
+                <NavLink to={CENTER_ROUTE} title={collapsed ? 'Trung tâm điều hành' : undefined}
+                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                    ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
+                  <PanelsTopLeft className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
+                  {!collapsed && <span className="font-bold text-sm">Trung tâm điều hành</span>}
+                </NavLink>
+              )}
               <NavLink to="/" end title={collapsed ? 'Hôm nay' : undefined}
                 className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                   ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'

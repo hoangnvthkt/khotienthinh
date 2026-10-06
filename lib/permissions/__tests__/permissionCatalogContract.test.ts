@@ -7,6 +7,9 @@ import dbCatalog from './fixtures/dbPermissionCatalog.json';
 const FRONTEND_AHEAD_OF_DB = new Set([
   'system.vehicle_booking.view',
   'system.vehicle_booking.manage',
+  // Trung tâm điều hành — migration 20261008138000_center_dot0_foundation.
+  'center.module.access',
+  'center.layout.manage',
 ]);
 
 const dbCodes = new Map(dbCatalog.actions.map(action => [action.permissionCode, action.scopeTypes]));
