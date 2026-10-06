@@ -124,3 +124,15 @@ Lý do: DA29 còn 93% khối lượng dồn vào T10–T12. Vật tư, nhân cô
 - Khoá 3 hàm ghi hóa đơn kiểu cũ (tab Tài chính dự án đã gỡ); bảng hóa đơn chỉ đọc theo quyền Tài chính.
 - Máy chủ: `20261008135100_finance_k3c_invoices.sql` (sinh bằng `tools/gen_k3c.py` từ `k3c_template.sql` + vá 2 hàm đang chạy). Rollback `tools/k3c-test.mjs` 43/43.
 - Chưa làm: xuất chứng từ mua hàng sang MISA (chờ mẫu import từ chị Hương); báo Mua hàng ngay trên đơn PO khi hóa đơn lệch (hiện thấy ở Tài chính).
+
+## 8. Đã làm — Báo cáo (06/10/2026)
+
+- **Màn**: Tài chính → **Báo cáo** (`/finance/reports`, quyền Tài chính — Xem), 3 tab, mỗi bảng xuất Excel đúng bộ lọc:
+  - **Tuổi nợ phải trả**: theo NCC hoặc theo dự án; nhóm chưa đến hạn / 1–30 / 31–60 / 61–90 / > 90 ngày / chưa có hạn, thanh màu tuổi nợ, đang đề nghị chi,
+    ngày quá hạn cũ nhất; ô tổng / quá hạn / > 90 / chưa có hạn bấm để lọc; bấm NCC mở đúng NCC ở Phải trả.
+  - **Tuổi nợ phải thu**: theo HĐ CĐT, cùng nhóm tuổi; cột chờ CĐT xác nhận + giữ lại bảo hành; cảnh báo HĐ chưa đối chiếu đầu kỳ; bấm mở đúng HĐ.
+  - **Lãi lỗ dự án** (chưa VAT): giá trị HĐ, tiến độ, doanh thu theo sản lượng và đã nghiệm thu (nhắc phần chưa đề nghị), chi phí, lãi gộp tạm tính,
+    chi phí dự báo khi xong, lãi dự kiến khi xong; biểu đồ 12 tháng (doanh thu nghiệm thu, chi phí, CĐT trả) toàn công ty hoặc từng dự án; chi phí theo loại.
+- Máy chủ: `20261008135200_finance_reports.sql` (`get_finance_reports_v1`, cùng nguồn số với Phải trả / Phải thu / Chi phí & ngân sách). Rollback `tools/reports-test.mjs` 11/11.
+- Số thật 06/10: phải trả 1,49 tỷ (quá hạn 348 tr); SMB doanh thu theo sản lượng 86,8 tỷ nhưng đã nghiệm thu 34,6 tỷ — cần lập đợt đề nghị; lãi gộp tạm tính cao
+  vì chi phí MISA mới nhập đến 31/07 (SMB) / 19/08 (DA29).

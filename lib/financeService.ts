@@ -461,6 +461,18 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
   return data as T;
 };
 
+// ---------- Báo cáo ----------
+type AgingBuckets = { notDue: number; d30: number; d60: number; d90: number; over90: number; noDue: number };
+export interface FinanceReports {
+  today: string; months: string[];
+  ap: Array<AgingBuckets & { supplierId: string; supplierName: string; projectId: string | null; projectCode: string | null; docs: number; outstanding: number; pending: number; oldestDue: string | null }>;
+  ar: Array<AgingBuckets & { contractId: string; contractCode: string; customerName: string | null; projectId: string | null; projectCode: string | null; outstanding: number;
+    sent: number; retention: number; opening: string | null; oldestDue: string | null }>;
+  pl: Array<{ projectId: string; code: string; name: string; status: string | null; contractNet: number | null; progress: number | null; outputNet: number | null; acceptedNet: number;
+    received: number; cost: number; committed: number; eac: number | null; budget: number | null; byCategory: Record<string, number> }>;
+  plMonths: Array<{ projectId: string; month: string; accepted: number; cost: number; cashIn: number }>;
+}
+
 // ---------- Hóa đơn đầu vào (K3c) ----------
 export type InvoiceStatus = 'awaiting_goods' | 'pending_approval' | 'posted' | 'rejected' | 'reversed';
 export interface FinanceInvoice {
@@ -874,6 +886,7 @@ export const financeService = {
   saveSubcontractAdvance(input: { requestId?: string; expectedRowVersion?: number; subcontractId: string; amount: number; method: 'bank_transfer' | 'cash'; plannedDate: string; repayDueDate: string; note: string }) {
     return call<{ requestId: string; code: string; amount: number }>('save_finance_subcontract_advance_v1', { p_input: input });
   },
+  reports() { return call<FinanceReports>('get_finance_reports_v1', { p_input: {} }); },
   invoices(filter: { supplierId?: string | null; withReversed?: boolean } = {}) { return call<FinanceInvoices>('get_finance_invoices_v1', { p_filter: filter }); },
   saveInvoice(input: InvoiceInput) { return call<{ id: string; status: InvoiceStatus; expected: number; variance: number | null; tolerance: number | null }>('save_finance_invoice_v1', { p_input: input }); },
   decideInvoice(input: { id: string; expectedRowVersion: number; action: 'approve' | 'reject' | 'reverse'; reason?: string }) {

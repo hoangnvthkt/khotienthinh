@@ -269,6 +269,7 @@
     "20261008134900_finance_forecast.sql",
     "20261008135000_finance_bank_statement.sql",
     "20261008135100_finance_k3c_invoices.sql",
+    "20261008135200_finance_reports.sql",
     "20261008137500_wms_document_date.sql"
   ],
   "forbidIncludeAll": true
