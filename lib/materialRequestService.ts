@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import {
+  InventoryItem,
   MaterialRequest,
   MaterialRequestEvent,
   MaterialRequestFulfillmentBatch,
@@ -364,6 +365,34 @@ export const materialRequestService = {
       onHandQty: Number(row.on_hand_qty || 0),
       reservedQty: Number(row.reserved_qty || 0),
       availableQty: Number(row.available_qty || 0),
+    }));
+  },
+
+  /** Danh mục vật tư theo quyền phòng "Đề xuất vật tư" của dự án (không cần quyền kho). */
+  async getProjectCatalog(projectId: string, constructionSiteId?: string | null): Promise<InventoryItem[]> {
+    if (!projectId) return [];
+    const { data, error } = await supabase.rpc('list_project_material_request_catalog_v1', {
+      p_project_id: projectId,
+      p_construction_site_id: constructionSiteId || null,
+    });
+    if (error) throw error;
+    return (data || []).map((row: any): InventoryItem => ({
+      id: row.id,
+      sku: row.sku,
+      name: row.name,
+      category: row.category,
+      unit: row.unit,
+      purchaseUnit: row.purchase_unit ?? undefined,
+      purchaseConversionFactor: Number(row.purchase_conversion_factor ?? 1),
+      defaultLeadTimeDays: row.default_lead_time_days ?? 7,
+      status: row.status === 'retired' ? 'retired' : 'active',
+      inventoryMode: row.inventory_mode || 'stock',
+      mergedIntoId: row.merged_into_id ?? null,
+      // Danh mục này không chứa giá và tồn kho; không dùng để hiển thị các số đó.
+      priceIn: 0,
+      priceOut: 0,
+      minStock: 0,
+      stockByWarehouse: {},
     }));
   },
 

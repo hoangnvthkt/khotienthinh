@@ -329,7 +329,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     onSaved,
     onDeleted,
 }) => {
-    const { items, warehouses, user, users, employees, orgUnits, requests, transactions, addRequest, updateRequestStatus, removeRequest, refreshWmsRecords, addTransaction, updateTransactionStatus } = useApp();
+    const { items: appItems, warehouses, user, users, employees, orgUnits, requests, transactions, addRequest, updateRequestStatus, removeRequest, refreshWmsRecords, addTransaction, updateTransactionStatus } = useApp();
     const { getStockSummary, getOnHandStock } = useReservedStock();
     const toast = useToast();
     const confirm = useConfirm();
@@ -393,6 +393,23 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const effectiveProjectId = projectId || request?.projectId || null;
     const effectiveConstructionSiteId = constructionSiteId || request?.constructionSiteId || null;
     const projectStockWarehouseId = stockPreviewWarehouseId || sourceWarehouseId || siteWarehouseId;
+
+    // Người chỉ có quyền phòng Đề xuất vật tư không đọc được bảng kho: lấy danh mục theo quyền dự án.
+    const [projectCatalog, setProjectCatalog] = useState<InventoryItem[]>([]);
+    const [isProjectCatalogLoading, setProjectCatalogLoading] = useState(false);
+    const needsProjectCatalog = isOpen && isProjectRequest && !!effectiveProjectId && appItems.length === 0;
+    useEffect(() => {
+        if (!needsProjectCatalog || !effectiveProjectId) return;
+        let cancelled = false;
+        setProjectCatalogLoading(true);
+        materialRequestService.getProjectCatalog(effectiveProjectId, effectiveConstructionSiteId)
+            .then(rows => { if (!cancelled) setProjectCatalog(rows); })
+            .catch(err => logApiError('requestModal.projectCatalog', err))
+            .finally(() => { if (!cancelled) setProjectCatalogLoading(false); });
+        return () => { cancelled = true; };
+    }, [needsProjectCatalog, effectiveProjectId, effectiveConstructionSiteId]);
+    const items = appItems.length > 0 ? appItems : projectCatalog;
+    const isUsingProjectCatalog = appItems.length === 0 && projectCatalog.length > 0;
 
     useEffect(() => {
         let cancelled = false;
@@ -915,7 +932,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
     }, [isOpen, request?.id]);
 
     const handleAddItem = () => {
-        if (items.length === 0) return;
+        if (items.length === 0) {
+            if (isProjectCatalogLoading) {
+                toast.warning('Đang tải danh mục vật tư', 'Vui lòng đợi giây lát rồi bấm lại.');
+            } else {
+                toast.warning('Chưa có danh mục vật tư', 'Không tải được danh mục vật tư của dự án. Hãy tải lại trang; nếu vẫn lỗi, báo quản trị để kiểm tra quyền.');
+            }
+            return;
+        }
         if (!isProjectRequest && !sourceWarehouseId) {
             toast.warning('Thiếu kho cung cấp', 'Vui lòng chọn kho cung cấp trước khi chọn vật tư.');
             return;
@@ -4261,7 +4285,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 onOpenScanner={() => setScannerOpen(true)}
                 filterWarehouseId={isProjectRequest && !canSeeAvailability ? undefined : isProjectRequest ? stockPreviewWarehouseId : sourceWarehouseId}
                 allowAllItems={isProjectRequest}
-                showStockQuantities={canSeeAvailability}
+                showStockQuantities={canSeeAvailability && !isUsingProjectCatalog}
+                items={items}
             />
 
             {isScannerOpen && (
