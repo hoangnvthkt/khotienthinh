@@ -77,3 +77,20 @@
 | **Cần chuẩn bị** (gồm tồn quỹ tối thiểu 2 tỷ) | **17,9 tỷ** | **42,3 tỷ** |
 
 Lý do: DA29 còn 93% khối lượng dồn vào T10–T12. Vật tư, nhân công và 17,9 tỷ đơn mua đã đặt phải chi trước, còn CĐT trả sau khoảng 45 ngày kể từ cuối tháng nghiệm thu.
+
+## 5. Đã làm — Dự báo dòng tiền (06/10/2026, 8 câu phương án a)
+
+- **Màn**: Tài chính → **Dự báo dòng tiền** (`/finance/forecast`, Quản trị Tài chính + Admin) và Tài chính dự án → tab **Dự báo** (người xem tài chính của dự án đó).
+  Chọn kịch bản Cơ sở / Thận trọng / Thuận lợi, xem 1 / 3 / 6 tháng hoặc 13 tuần. Ô số: tiền đang có, thu, chi, tháng căng nhất, cần chuẩn bị thêm — bấm được.
+  Gợi ý cho GĐ tài chính (số cần chuẩn bị, nếu CĐT trả sớm 30 ngày thì cần bao nhiêu — tính lại thật, đơn quá hẹn, nhân công ước). Biểu đồ thu / chi / số dư,
+  bảng theo nguồn × tháng (bấm dòng xem cách tính + mở nguồn), theo dự án, giả định, khoản vay, khoản dự kiến (thêm tay / import Excel / bỏ có lý do), xuất Excel.
+- **Máy chủ** (`20261008134900_finance_forecast.sql`): `get_finance_forecast_v1` tính từng dòng tiền theo ngày rồi gộp tháng / tuần.
+  Tiền vào: đợt CĐT đã xác nhận (chắc chắn), đã gửi, phần đã làm chưa đề nghị (ước tính), sản lượng tương lai theo Gantt (theo kế hoạch) — tổng tiền còn phải thu của HĐ
+  = giá trị gồm VAT × (1 − giữ lại) − đã thu − đang chờ, chia theo sản lượng (không lệ thuộc các đợt cũ chưa tách tạm ứng).
+  Tiền ra: công nợ theo hạn, tạm ứng / chi khác đã lập, đơn mua chưa giao (quá hẹn > 30 ngày tách dòng), vật tư dự toán chưa đặt, thầu phụ còn lại, nhân công ước theo %,
+  lương (bảng lương gần nhất), khoản định kỳ, lãi + gốc vay, khoản dự kiến.
+  Giả định ở `finance_settings` (CĐT duyệt 15 ngày + hạn HĐ, trả NCC 30 ngày, nhân công 11,1%, VAT vật tư 8%, Thận trọng +30 ngày & chậm 20%, Thuận lợi sớm 15 ngày).
+  Bảng mới `finance_loans`, `finance_forecast_items`. Danh sách "còn thiếu dữ liệu" trả kèm nơi khai.
+- **Số thật 06/10** (Cơ sở, chưa gồm tiền đang có vì tài khoản chưa chốt đầu kỳ): tháng căng nhất T11/2026, cần chuẩn bị khoảng 11,6 tỷ (gồm tồn tối thiểu 2 tỷ);
+  Thận trọng ≈ 39 tỷ. Thu 6 tháng 120,8 tỷ / chi 80,4 tỷ.
+- Rollback `tools/forecast-test.mjs` 43/43 (quyền 4 vai, tổng thu khớp HĐ SMB 35,49 tỷ / DA29 85,29 tỷ, kịch bản dời đúng chiều, giả định, vay một lần / chia đều, khoản dự kiến + import lỗi dòng nào, bỏ khoản).

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowDownUp, ArrowLeft, Banknote, BarChart3, Building2, ChevronDown, ChevronLeft, ChevronRight, Coins, Download, FileSpreadsheet, FileText, HandCoins, HardHat, PiggyBank, ReceiptText, Scale, Search, TrendingUp, Wallet, X,
+  AlertTriangle, ArrowDownUp, CalendarRange, ArrowLeft, Banknote, BarChart3, Building2, ChevronDown, ChevronLeft, ChevronRight, Coins, Download, FileSpreadsheet, FileText, HandCoins, HardHat, PiggyBank, ReceiptText, Scale, Search, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useToast } from '../../context/ToastContext';
@@ -10,6 +10,7 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import { Badge, StateBox, inputCls, money, secondaryBtn } from '../procurement/hub/hubUi';
 import { ProjectCost } from './CostView';
 import { MisaImportDrawer } from './MisaImport';
+import { ForecastView } from './ForecastView';
 import { CustomerContractPanel } from './CustomerContractPanel';
 import { SubcontractPanel } from './SubcontractsView';
 import { ENT, NUM, clickCls, dueText, shortMoney, toneOf, TONE_TEXT, viDate, type LedgerFilter } from './financeUi';
@@ -17,9 +18,9 @@ import { ENT, NUM, clickCls, dueText, shortMoney, toneOf, TONE_TEXT, viDate, typ
 // Tài chính dự án: một trang cho một dự án — thay tab Tài chính trong Module Dự án (chủ SP duyệt doc 14, 05/10/2026).
 // Người có Tài chính — Xem thấy mọi dự án; người được Admin bật công tắc "xem tài chính dự án" chỉ thấy dự án được bật, chỉ đọc.
 
-type Tab = 'overview' | 'cost' | 'receivables' | 'payables' | 'ledger';
+type Tab = 'overview' | 'cost' | 'receivables' | 'payables' | 'ledger' | 'forecast';
 const TABS: Array<[Tab, string, React.ElementType]> = [['overview', 'Tổng quan', BarChart3], ['cost', 'Chi phí & ngân sách', Scale],
-  ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet], ['ledger', 'Sổ giao dịch', ReceiptText]];
+  ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet], ['ledger', 'Sổ giao dịch', ReceiptText], ['forecast', 'Dự báo', CalendarRange]];
 const Unknown: React.FC<{ why: string }> = ({ why }) => <span className="font-semibold text-slate-500" title={why}>chưa biết</span>;
 const Kpi: React.FC<{ icon: React.ElementType; label: string; value: React.ReactNode; hint: React.ReactNode; tone?: string; onClick?: () => void; title?: string }> = ({ icon: I, label, value, hint, tone = 'text-leaf-700 dark:text-leaf-300', onClick, title }) => {
   const body = <><span className="flex items-start gap-1.5 text-xs font-semibold uppercase leading-tight tracking-wide text-muted-foreground"><I size={14} className="shrink-0 text-teal-700" />{label}</span>
@@ -82,6 +83,7 @@ export const ProjectFinanceView: React.FC<{ initialProjectId?: string | null; st
       : tab === 'overview' ? <Overview d={data} onGo={go} onLedger={openLedger} />
       : tab === 'cost' ? <ProjectCost key={`${data.project.id}:${reloadKey}:${costTab}`} projectId={data.project.id} initialTab={costTab} onOpenLedger={openLedger} onChanged={() => setReloadKey(k => k + 1)} />
       : tab === 'receivables' ? <Receivables d={data} onChanged={() => setReloadKey(k => k + 1)} />
+      : tab === 'forecast' ? <ForecastView key={data.project.id} projectId={data.project.id} />
       : tab === 'payables' ? <Payables d={data} filter={payFilter} setFilter={setPayFilter} onChanged={() => setReloadKey(k => k + 1)} />
       : <Ledger d={data} filter={ledgerFilter} setFilter={setLedgerFilter} onImported={() => setReloadKey(k => k + 1)} />}
     {standalone && <p className="text-xs text-muted-foreground">Số liệu chỉ xem. Thu chi, công nợ, ngân sách do kế toán ghi ở module Tài chính.</p>}
