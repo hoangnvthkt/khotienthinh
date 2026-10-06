@@ -818,10 +818,12 @@ button:not(:disabled):active,
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 /* Trạng thái "đang chờ" (chờ bạn duyệt, đứng yên, quá hạn): nhấp nháy chậm và nhẹ để thu hút chú ý.
-   Tắt khi người dùng chọn giảm chuyển động. */
+   Tắt khi người dùng chọn giảm chuyển động.
+   Chỉ đổi opacity (GPU xử lý): bản cũ animate box-shadow + color-mix(currentColor) bắt trình duyệt
+   vẽ lại mọi nhãn ở từng khung hình — 40 nhãn ăn ~25% CPU và làm Safari/iPhone sập trang /wf. */
 @keyframes wfSoftPulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent); }
-  50% { opacity: 0.62; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 14%, transparent); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 .wf-pulse { animation: wfSoftPulse 2.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {

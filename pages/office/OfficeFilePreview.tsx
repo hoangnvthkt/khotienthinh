@@ -1,10 +1,8 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, ExternalLink } from 'lucide-react';
 import type { OfficeAttachment } from '../../lib/office/officeTypes';
 import type { OfficeService } from '../../lib/office/officeService';
 import { OfficeEmpty, OfficeError, OfficeModal } from './OfficeShared';
-
-const OfficePdfPreview = lazy(() => import('./OfficePdfPreview'));
 
 export function OfficeFilePreview({ file, service, onClose, onDownloaded }: {
   file: OfficeAttachment; service: OfficeService; onClose: () => void; onDownloaded: () => void;
@@ -42,8 +40,9 @@ export function OfficeFilePreview({ file, service, onClose, onDownloaded }: {
         <a className="office-secondary" href={url} target="_blank" rel="noreferrer"><ExternalLink size={16} />Mở toàn màn hình</a>
         <a className="office-primary" href={url} download={file.file_name} onClick={() => void recordDownload()}><Download size={16} />Tải tệp</a>
       </div>
-      {file.mime_type === 'application/pdf' ? <Suspense fallback={<p role="status">Đang mở trình xem PDF…</p>}><OfficePdfPreview title={file.file_name} url={url} /></Suspense> : file.mime_type.startsWith('image/') ? <img src={url} alt={file.file_name} onError={() => setError(new Error('Không hiển thị được ảnh. Vui lòng thử tải lại.'))} /> : <OfficeEmpty title="Tải tệp để xem nội dung" description="Định dạng này được mở bằng ứng dụng trên thiết bị." />}
-      <small>PDF/ảnh mở ngay tại đây. Có thể chuyển trang, phóng to hoặc tải tệp để lưu trên thiết bị.</small>
+      {/* Trình xem PDF sẵn có của trình duyệt (như module Quy trình): chạy được cả trên máy đời cũ. */}
+      {file.mime_type === 'application/pdf' ? <iframe src={url} title={file.file_name} /> : file.mime_type.startsWith('image/') ? <img src={url} alt={file.file_name} onError={() => setError(new Error('Không hiển thị được ảnh. Vui lòng thử tải lại.'))} /> : <OfficeEmpty title="Tải tệp để xem nội dung" description="Định dạng này được mở bằng ứng dụng trên thiết bị." />}
+      <small>{file.mime_type === 'application/pdf' ? 'Nếu PDF không cuộn được hết trang, bấm "Mở toàn màn hình" hoặc tải tệp về máy.' : 'Có thể mở toàn màn hình hoặc tải tệp để lưu trên thiết bị.'}</small>
     </>}
     {recordError && <p role="status">Đã bắt đầu tải tệp, nhưng chưa ghi nhận được lịch sử tải. <button className="office-secondary" onClick={() => void recordDownload()}>Ghi nhận lại</button></p>}
   </div></OfficeModal>;
