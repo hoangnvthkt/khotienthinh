@@ -204,7 +204,10 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
                   <Badge className="ml-2 border-border bg-muted text-muted-foreground">{SOURCE_LABELS[d.sourceType] || d.sourceType}</Badge>
                   {d.issues.length > 0 && <Badge className="ml-1 border-amber-300 bg-amber-50 text-amber-800">Cần xử lý</Badge>}
                   {d.pendingExternal > 0 && <Badge className="ml-1 border-amber-300 bg-amber-50 text-amber-800">Chi chờ xác nhận</Badge>}
-                  <span className="block text-xs text-muted-foreground">Ghi nợ {viDate(d.documentDate)} · hạn {viDate(d.dueDate)}{d.paid > 0 ? ` · đã trả ${money(d.paid)} đ` : ''}</span>
+                  <span className="block text-xs text-muted-foreground">Ghi nợ {viDate(d.documentDate)} · hạn {viDate(d.dueDate)}{d.paid > 0 ? ` · đã trả ${money(d.paid)} đ` : ''}
+                    {!d.sourceType.startsWith('subcontract') && d.sourceType !== 'supplier_invoice_adjustment' && (d.invoices && d.invoices.length
+                      ? ` · HĐ ${d.invoices.map(x => x.number + (x.status === 'pending_approval' ? ' (chờ duyệt)' : '')).join(', ')}${(d.invoiced || 0) < d.recognized - 0.5 ? ` · còn ${money(d.recognized - (d.invoiced || 0))} đ chưa có HĐ` : ''}`
+                      : ' · chưa có hóa đơn')}</span>
                 </span>
                 <span className={`pl-5 text-xs font-semibold md:pl-0 ${TONE_TEXT[tone]} ${tone === 'overdue' ? 'overdue-blink' : ''}`}>{dueText(d.dueDate, d.outstanding, today)}</span>
                 <span className={`ml-auto whitespace-nowrap text-right md:w-32 ${NUM}`}>{money(d.outstanding)} đ</span>
