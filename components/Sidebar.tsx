@@ -3,7 +3,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
-  LayoutDashboard, Bell, Package, ArrowLeftRight, ClipboardCheck,
+  LayoutDashboard, CalendarRange, Bell, Package, ArrowLeftRight, ClipboardCheck,
   History, Settings, LogOut, FileText, Sun, Moon,
   Users, Briefcase, FileSpreadsheet, GitBranch, Workflow, BarChart3, MessageCircle,
   MessageSquarePlus,
@@ -278,6 +278,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     ],
     FINANCE: [
       { to: '/finance/overview', icon: LayoutDashboard, label: 'Tổng quan' },
+      { to: '/finance/forecast', icon: CalendarRange, label: 'Dự báo dòng tiền' },
       { to: '/finance/todo', icon: ClipboardCheck, label: 'Việc cần làm' },
       { to: '/finance/receivables', icon: Inbox, label: 'Phải thu' },
       { to: '/finance/payables', icon: Wallet, label: 'Phải trả' },

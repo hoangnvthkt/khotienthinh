@@ -413,10 +413,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_MISA_ROWS_INVALID: 'Có dòng không nhập được (trùng, vật tư sau mốc chi phí, tháng đã khoá sổ hoặc thiếu khoản mục). Bấm "Kiểm tra lại" rồi bỏ các dòng đó',
   FINANCE_MISA_BATCH_NOT_FOUND: 'Không còn lô nhập này. Tải lại.',
   FINANCE_MISA_BATCH_CANCELLED: 'Lô này đã được huỷ trước đó.',
+  FINANCE_FORECAST_DENIED: 'Dự báo toàn công ty dành cho Quản trị Tài chính và Admin. Dự báo từng dự án xem ở Tài chính dự án → Dự báo.',
+  FINANCE_FORECAST_SCENARIO: 'Kịch bản dự báo không hợp lệ.',
+  FINANCE_FORECAST_SETTINGS_INVALID: 'Giả định ngoài khoảng cho phép (số ngày 0–180, % nhân công 0–100, VAT vật tư 0–20%).',
+  FINANCE_LOAN_INVALID: 'Khoản vay cần bên cho vay, dư nợ, ngày đáo hạn, lãi suất 0–100%/năm và ngày trả 1–28.',
+  FINANCE_FORECAST_ITEM_INVALID: 'Khoản dự kiến cần nội dung, Thu/Chi, số tiền lớn hơn 0, ngày dự kiến và dự án đúng mã',
   PROJECT_TRANSACTION_FINANCE_ONLY: 'Sổ giao dịch dự án chỉ ghi qua Tài chính (nhập số MISA, đề nghị chi, phiếu chi khác, phiếu thu). Không thêm / sửa / xoá tay được nữa.',
 };
 // Mã lỗi có kèm chi tiết từ máy chủ (dòng nào, ngày nào) — nối vào thông báo.
-const DETAIL_CODES = new Set(['FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED']);
+const DETAIL_CODES = new Set(['FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID']);
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
@@ -429,6 +434,32 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
   }
   return data as T;
 };
+
+// ---------- Dự báo dòng tiền ----------
+export type ForecastScenario = 'base' | 'safe' | 'good';
+export type ForecastConf = 'sure' | 'sent' | 'plan' | 'est';
+export interface ForecastParams { approvalDays: number; payDays: number; laborPercent: number; materialVatPercent: number; safeDelayDays: number; safeSlipPercent: number;
+  goodEarlyDays: number; delayDays: number; slipPercent: number; minBalance: number }
+export interface ForecastRow { key: string; source: string; dir: 'in' | 'out'; conf: ForecastConf; projectId: string | null; projectCode: string | null;
+  /** 6 tháng từ tháng này. */
+  months: number[];
+  /** 13 tuần từ tuần này. */
+  weeks: number[]; beyond: number; count: number }
+export interface ForecastLoan { id: string; lender: string; contractNo: string | null; projectId: string | null; outstanding: number; interestRate: number;
+  repayKind: 'bullet' | 'monthly'; maturityDate: string; payDay: number; note: string | null; active: boolean }
+export interface ForecastItem { id: string; direction: 'in' | 'out'; name: string; category: string; projectId: string | null; projectCode: string | null; amount: number;
+  expectedDate: string; confidence: 'sure' | 'plan' | 'est'; note: string | null }
+export interface ForecastItemInput { id?: string; row?: number; direction: 'in' | 'out'; name: string; category?: string; projectId?: string | null; amount: number;
+  expectedDate: string; confidence: 'sure' | 'plan' | 'est'; note?: string | null }
+export interface FinanceForecast {
+  today: string; scenario: ForecastScenario; projectId: string | null; companyView: boolean; months: string[]; weeks: string[]; params: ForecastParams;
+  /** Chỉ khi xem toàn công ty. known = mọi tài khoản tiền đã chốt đầu kỳ. */
+  cash: { start: number; known: boolean; accounts: number } | null;
+  rows: ForecastRow[];
+  missing: Array<{ code: string; text: string; target: string; projectId?: string | null }>;
+  can: { manage: boolean; record: boolean };
+  loans: ForecastLoan[] | null; items: ForecastItem[]; projects: Array<{ id: string; code: string; name: string }>;
+}
 
 // ---------- Nhập số MISA (P3) ----------
 export interface FinanceMisaRowInput {
@@ -775,6 +806,13 @@ export const financeService = {
   saveSubcontractAdvance(input: { requestId?: string; expectedRowVersion?: number; subcontractId: string; amount: number; method: 'bank_transfer' | 'cash'; plannedDate: string; repayDueDate: string; note: string }) {
     return call<{ requestId: string; code: string; amount: number }>('save_finance_subcontract_advance_v1', { p_input: input });
   },
+  forecast(input: { scenario: ForecastScenario; projectId?: string | null; extraDelayDays?: number }) { return call<FinanceForecast>('get_finance_forecast_v1', { p_input: input }); },
+  saveForecastSettings(input: Partial<Omit<ForecastParams, 'delayDays' | 'slipPercent' | 'minBalance'>> & { reason: string }) {
+    return call<{ ok: boolean }>('save_finance_forecast_settings_v1', { p_input: input });
+  },
+  saveLoan(input: Omit<ForecastLoan, 'id'> & { id?: string }) { return call<{ id: string }>('save_finance_loan_v1', { p_input: input }); },
+  saveForecastItems(input: ForecastItemInput | { rows: ForecastItemInput[] }) { return call<{ saved: number; batchId: string | null }>('save_finance_forecast_items_v1', { p_input: input }); },
+  cancelForecastItem(input: { id: string; reason: string }) { return call<{ ok: boolean }>('cancel_finance_forecast_item_v1', { p_input: input }); },
   misaImports(projectId: string) { return call<FinanceMisaImports>('get_finance_misa_imports_v1', { p_project_id: projectId }); },
   previewMisaImport(projectId: string, rows: FinanceMisaRowInput[]) {
     return call<{ projectId: string; cutoverDate: string | null; rows: FinanceMisaRowCheck[] }>('preview_finance_misa_import_v1', { p_project_id: projectId, p_rows: rows });

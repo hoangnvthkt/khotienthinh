@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Banknote, CalendarClock, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank, Coins,
+  AlertTriangle, Banknote, CalendarClock, CalendarRange, CircleDollarSign, ClipboardCheck, FileCheck2, FileWarning, HandCoins, Inbox, PiggyBank, Coins,
   ArrowLeftRight, Building2, HardHat, ListTodo, RefreshCw, Scale, Search, Settings2, Truck, Wallet,
 } from 'lucide-react';
 import { financeService, type FinanceAdvances, type FinancePayablesList, type FinanceSupplierSummary } from '../../lib/financeService';
@@ -13,6 +13,7 @@ import { CostView } from './CostView';
 import type { FinanceAllocation, FinanceCost, FinanceReceivables, FinanceSiteFunds, FinanceSubcontracts } from '../../lib/financeService';
 import { Badge, StateBox, inputCls, secondaryBtn } from '../procurement/hub/hubUi';
 import { FinanceSettingsView } from './FinanceSettingsView';
+import { ForecastView } from './ForecastView';
 import { DirectReceiptsView } from './DirectReceiptsView';
 import { PaymentRequestsView } from './PaymentRequestsView';
 import { PendingStatementsView } from './PendingStatementsView';
@@ -25,8 +26,8 @@ import { ENT, Kpi, NUM, TONE_BAR, TONE_TEXT, shortMoney, viDate } from './financ
 // Module Tài chính: một nơi cho công nợ, chi tiền, dòng tiền toàn công ty — không phải vào từng dự án.
 // Tổng quan (Ban giám đốc), Việc cần làm (kế toán), Phải thu, Phải trả NCC (gồm tạm ứng NCC), Thu chi & quỹ, Chi phí & ngân sách (gồm quỹ dự án), Quản trị.
 
-type Section = 'auto' | 'overview' | 'todo' | 'receivables' | 'payables' | 'cash' | 'cost' | 'project' | 'settings';
-const SECTIONS: readonly string[] = ['overview', 'todo', 'receivables', 'cash', 'cost', 'project', 'settings'];
+type Section = 'auto' | 'overview' | 'forecast' | 'todo' | 'receivables' | 'payables' | 'cash' | 'cost' | 'project' | 'settings';
+const SECTIONS: readonly string[] = ['overview', 'forecast', 'todo', 'receivables', 'cash', 'cost', 'project', 'settings'];
 const stageOf = (s?: string | null): Stage => s === 'pending' ? 'pending' : s === 'requests' ? 'request' : s === 'advances' ? 'advances' : s === 'subcontracts' ? 'subcontracts' : 'owed';
 type Stage = 'pending' | 'owed' | 'request' | 'approved' | 'paid' | 'advances' | 'subcontracts';
 type Filter = 'all' | 'overdue' | 'soon' | 'issues' | 'opening';
@@ -169,7 +170,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     </header>
 
     <nav className={`inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 shadow-sm ${mobileDetail ? 'hidden md:inline-flex' : ''}`} role="tablist" aria-label="Phần">
-      {([['overview', 'Tổng quan', CircleDollarSign], ['todo', 'Việc cần làm', ListTodo], ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet],
+      {([['overview', 'Tổng quan', CircleDollarSign], ['forecast', 'Dự báo dòng tiền', CalendarRange], ['todo', 'Việc cần làm', ListTodo], ['receivables', 'Phải thu', HandCoins], ['payables', 'Phải trả', Wallet],
         ['cash', 'Thu chi & quỹ', PiggyBank], ['cost', 'Chi phí & ngân sách', Scale], ['project', 'Tài chính dự án', Building2], ['settings', 'Quản trị', Settings2]] as const).map(([k, l, I]) =>
         <button key={k} type="button" role="tab" aria-selected={section === k} onClick={() => { setSection(k as Section); if (k === 'cost') { setCostView(null); setCostKey(x => x + 1); } }}
           className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${section === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -179,6 +180,7 @@ export const FinanceHubView: React.FC<{ currentUserId: string; initialSection?: 
     {status === 'denied' ? <StateBox kind="denied" message={message} />
       : status === 'error' && !data ? <StateBox kind="error" title="Chưa tải được Tài chính" message={message} onRetry={() => void load()} />
         : !data || !t ? <StateBox kind="loading" title="Đang tải công nợ…" />
+          : section === 'forecast' ? <ForecastView />
           : section === 'settings' ? <FinanceSettingsView currentUserId={currentUserId} />
           : section === 'project' ? <ProjectFinanceView initialProjectId={initialProjectId} />
           : section === 'cost' ? <CostView key={costKey} initialProjectId={costKey === 0 ? initialProjectId : null} initialView={costView} onChanged={() => void load(true)} />
