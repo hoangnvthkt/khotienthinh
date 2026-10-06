@@ -1,0 +1,26 @@
+{
+  "asOf": "2026-09-29",
+  "scope": "initial feasibility audit; not exhaustive action inventory",
+  "handoffCandidates": 148,
+  "repositoryAddedRows": 26,
+  "totalRows": 174,
+  "byAuditStatus": {
+    "STATIC_TRACE": 31,
+    "GAP_CONFIRMED_FROM_SOURCE": 9,
+    "UNVERIFIED": 132,
+    "SERVICE_TRACE_UI_ENTRY_ONLY": 2
+  },
+  "byReadiness": {
+    "planned": 165,
+    "blocked": 9
+  },
+  "byKind": {
+    "query": 11,
+    "draft": 2,
+    "command": 29,
+    "unclassified": 132
+  },
+  "centerImplementedActions": 0,
+  "productionActionDenominator": null,
+  "coveragePercent": null
+}
