@@ -94,6 +94,18 @@ export interface DailyLogDocumentBundle extends DailyLogWbsBundle {
   };
 }
 
+export interface DailyLogCalendarDay {
+  date: string;
+  sent: number;
+  returned: number;
+  myDrafts: number;
+  people: number;
+  summaryId?: string | null;
+  summaryStatus?: 'draft' | 'submitted' | 'verified' | 'rejected' | string | null;
+  submittedToUserId?: string | null;
+  hasIssue: boolean;
+}
+
 /** Một mũi thi công đã báo cáo gần đây và phiếu gần nhất của mũi đó trước ngày đang ghi. */
 export interface DailyLogRecentArea {
   code: string;
@@ -444,6 +456,16 @@ export const dailyLogWbsService = {
       p_project_id: input.projectId,
       p_construction_site_id: input.constructionSiteId || null,
       p_date: input.date,
+    });
+  },
+
+  /** Lịch tháng: phiếu / bản tổng hợp theo ngày để trang Nhật ký chỉ còn cuốn lịch. */
+  getCalendar(input: { projectId: string; constructionSiteId?: string | null; from: string; to: string }): Promise<DailyLogCalendarDay[]> {
+    return callRpc('get_daily_log_calendar_v1', {
+      p_project_id: input.projectId,
+      p_construction_site_id: input.constructionSiteId || null,
+      p_from: input.from,
+      p_to: input.to,
     });
   },
 

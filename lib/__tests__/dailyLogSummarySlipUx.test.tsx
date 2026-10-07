@@ -5,6 +5,8 @@ import { DailyLogSummaryWorkspace, buildDailyLogSummaryDraft, adjustSummaryCardP
 import { DailyLogAreaCard } from '../../components/project/daily-log/DailyLogAreaCard';
 import { summaryBundle } from '../../tests/daily-log/summary-bundle';
 
+// Ô tìm kiếm của Báo cáo ngày (chủ SP 07/10) không phải ô nhập liệu của phiếu.
+const withoutSearch=(html:string)=>html.replace(/<input[^>]*aria-label="Tìm trong báo cáo ngày"[^>]*>/g,'');
 describe('source-slip-driven consolidation',()=>{
   it('uses only persisted selection on open, not every received source',()=>{
     expect(buildDailyLogSummaryDraft(summaryBundle).cards.map(card=>card.contribution.id)).toEqual(['source-A','source-B']);
@@ -77,7 +79,7 @@ describe('source-slip-driven consolidation',()=>{
   it('shows a resolved result neutrally with collapsed reasoning, and report mode without disabled forms',()=>{
     const resolved={...summaryBundle,decisions:[{dailyLogId:'summary-1',taskId:'task-1',officialCumulativePercent:30,aggregationMethod:'manual_override' as const,dailyQuantityMethod:'manual_override' as const,resolutionReason:'Chốt phạm vi móng',includedSourceWorkItemIds:['work-A-1','work-B-1'],sourceFingerprint:''}]};
     const html=renderToStaticMarkup(<DailyLogSummaryWorkspace bundle={resolved} mode="review" />);
-    expect(html).not.toMatch(/<(input|select|textarea)\b/);
+    expect(withoutSearch(html)).not.toMatch(/<(input|select|textarea)\b/);
     expect(html).toContain('30 %');expect(html).toContain('Chốt phạm vi móng');expect(html).toContain('Đã chốt số liệu');
     expect(html).not.toMatch(/<details[^>]*open=""/);
   });

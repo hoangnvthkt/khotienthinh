@@ -1,3 +1,4 @@
+import type { DailyLogCalendarDay } from './dailyLogWbsService';
 // "Hôm nay tại công trường": types for get_daily_log_today_board_v1 and the
 // pure rules that turn one day's slips into what each role should see first.
 
@@ -257,4 +258,28 @@ export const buildMyTask = (board: DailyLogTodayBoard, input: {
 export const formatShortDate = (value: string) => {
   const [, month, day] = value.slice(0, 10).split('-');
   return `${day}/${month}`;
+};
+
+
+export type CalendarDayState = 'verified' | 'awaiting_approval' | 'awaiting_summary' | 'returned' | 'draft' | 'empty';
+export interface CalendarDayRole { userId?: string | null; canSubmit: boolean; canSummarize: boolean; canApprove: boolean }
+
+/** Trạng thái chung của một ngày trên lịch (màu ô). */
+export const calendarDayState = (day: DailyLogCalendarDay | undefined): CalendarDayState => {
+  if (!day) return 'empty';
+  if (day.summaryStatus === 'verified') return 'verified';
+  if (day.summaryStatus === 'submitted') return 'awaiting_approval';
+  if (day.returned > 0 || day.summaryStatus === 'rejected') return 'returned';
+  if (day.sent > 0) return 'awaiting_summary';
+  if (day.myDrafts > 0) return 'draft';
+  return 'empty';
+};
+
+/** Việc của người đang xem trong ngày đó (nhãn trên ô lịch, nút ở đầu lịch). */
+export const calendarDayTask = (day: DailyLogCalendarDay | undefined, role: CalendarDayRole): 'approve' | 'summarize' | 'draft' | null => {
+  if (!day) return null;
+  if (role.canApprove && day.summaryStatus === 'submitted' && (!day.submittedToUserId || day.submittedToUserId === role.userId)) return 'approve';
+  if (role.canSummarize && day.sent > 0 && (!day.summaryStatus || day.summaryStatus === 'draft' || day.summaryStatus === 'rejected')) return 'summarize';
+  if (role.canSubmit && day.myDrafts > 0) return 'draft';
+  return null;
 };
