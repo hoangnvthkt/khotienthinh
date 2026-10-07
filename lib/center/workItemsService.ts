@@ -1,3 +1,4 @@
+import { civilOf } from './civilDate';
 import { supabase } from '../supabase';
 import type { CenterModuleKey } from './centerRegistry';
 
@@ -81,6 +82,25 @@ export const fetchWorkItems = async (tab: InboxTab): Promise<WorkItemsPage> => {
   const { data, error } = await supabase.rpc('vcc_my_work_items_v1', { p_tab: tab });
   if (error) throw error;
   return parseWorkItemsPage(data, tab);
+};
+
+// Mã người đọc được. Vài nguồn không có số chứng từ (phiếu kho chỉ có id máy kiểu "tx-po-delivery-<hex>") —
+// không bao giờ hiện id máy: đổi thành ký hiệu loại phiếu + ngày, nguồn khác thì tên loại hồ sơ.
+const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|[0-9a-f]{12,}|^tx-/i;
+const WMS_TYPE_CODE: Record<string, string> = { IMPORT: 'PNK', EXPORT: 'PXK', TRANSFER: 'PCK', ADJUSTMENT: 'PĐC', LIQUIDATION: 'PTL' };
+const SOURCE_FALLBACK: Partial<Record<WorkItemSource, string>> = {
+  wms_tx: 'Phiếu kho', stock_count: 'Kiểm kê', daily_slip: 'Phiếu kỹ sư', makeup: 'Bù công', leave: 'Nghỉ phép', timesheet: 'Bảng công',
+  profile_change: 'Hồ sơ NV', vehicle: 'Đặt xe', reconciliation: 'Đối chiếu', po_delivery: 'Đợt giao', fin_site_expense: 'Chi quỹ', fin_fund_opening: 'Mở quỹ',
+};
+export const isMachineCode = (code: string | null | undefined): boolean => !code || MACHINE_ID.test(code.trim());
+
+export const displayCode = (item: Pick<WorkItem, 'source' | 'code' | 'dueAt' | 'ref'>): string => {
+  if (!isMachineCode(item.code)) return item.code;
+  const day = civilOf(item.dueAt);
+  const ddmm = day ? `${day.slice(8, 10)}/${day.slice(5, 7)}` : '';
+  const type = typeof item.ref?.type === 'string' ? WMS_TYPE_CODE[item.ref.type] : undefined;
+  const label = (item.source === 'wms_tx' && type) || SOURCE_FALLBACK[item.source] || 'Hồ sơ';
+  return ddmm ? `${label} ${ddmm}` : label;
 };
 
 /** Hạn: quá hạn → âm; "còn N giờ" khi dưới 1 ngày. Trả null khi không có hạn. */

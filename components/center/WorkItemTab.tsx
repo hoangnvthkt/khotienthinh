@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_MODULES, type CenterModuleKey, type RendererId } from '../../lib/center/centerRegistry';
 import type { ItemDrillTarget } from '../../lib/center/drill';
-import { dueInfo, type WorkItem, type WorkItemKind } from '../../lib/center/workItemsService';
+import { displayCode, dueInfo, type WorkItem, type WorkItemKind } from '../../lib/center/workItemsService';
 
 export type RendererComponent = React.ComponentType<{ renderer: RendererId; props: Record<string, string>; onExit?: (path: string) => void }>;
 
@@ -39,7 +39,7 @@ const WorkItemTab: React.FC<{
       <div className="vcc-detail-head">
         <span className="vcc-badge vcc-badge-m">{module.label}</span>
         {item && <span className="vcc-badge">{KIND_LABEL[item.kind]}</span>}
-        <h1>{item ? <><span className="vcc-ent text-[15px]">{item.code}</span> · {item.title}</> : title}</h1>
+        <h1>{item ? <><span className="vcc-ent text-[15px]">{displayCode(item)}</span> · {item.title}</> : title}</h1>
         <button type="button" className={`vcc-link ml-auto${target.kind === 'route' ? ' vcc-desktop-only' : ''}`} onClick={() => onNavigate(route)}>
           Mở ở màn {module.label} <ArrowUpRight size={13} />
         </button>

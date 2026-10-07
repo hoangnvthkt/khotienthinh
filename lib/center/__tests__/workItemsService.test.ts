@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dueInfo, parseWorkItem, parseWorkItemsPage, sortWorkItems, type WorkItem } from '../workItemsService';
+import { displayCode, dueInfo, parseWorkItem, parseWorkItemsPage, sortWorkItems, type WorkItem } from '../workItemsService';
 
 const NOW = new Date(2026, 9, 7, 8, 30);
 const at = (y: number, m: number, d: number, h = 17, mi = 0) => new Date(y, m - 1, d, h, mi).toISOString();
@@ -49,5 +49,17 @@ describe('ordering', () => {
   it('puts the nearest deadline first and undated items last', () => {
     expect(sortWorkItems([item('C', null), item('B', at(2026, 10, 9)), item('A', at(2026, 10, 8)), item('D', null)]).map(i => i.code))
       .toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('never shows machine ids as the item code', () => {
+    const tx = { source: 'wms_tx' as const, code: 'tx-po-delivery-495f3ef0d17c4df8bbe95c702cff44a3', dueAt: '2026-07-31T03:00:00Z', ref: { type: 'IMPORT' } };
+    expect(displayCode(tx)).toBe('PNK 31/07');
+    expect(displayCode({ ...tx, ref: { type: 'TRANSFER' } })).toBe('PCK 31/07');
+    expect(displayCode({ ...tx, ref: {}, dueAt: null })).toBe('Phiếu kho');
+    expect(displayCode({ source: 'leave', code: '0b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3', dueAt: '2026-10-08', ref: {} })).toBe('Nghỉ phép 08/10');
+    // Mã chứng từ thật giữ nguyên.
+    for (const code of ['PO-116', 'MR-2026-2688', 'RQ-2026-000061', 'VW-2026-001203', 'NK 05/10', 'Bù công 03/10', 'TB-12/2026']) {
+      expect(displayCode({ source: 'po', code, dueAt: null, ref: {} })).toBe(code);
+    }
   });
 });
