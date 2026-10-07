@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
@@ -101,7 +101,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [resizing, setResizing] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
-  const [activeTab, setActiveTab] = useState(TODAY_TAB.id);
+  const [activeTab, setActiveTabState] = useState(TODAY_TAB.id);
   const [mineCount, setMineCount] = useState<number | null>(null);
   const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY));
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
@@ -123,7 +123,19 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [layoutRecord, setLayoutRecord] = useState<CenterLayoutRecord | 'loading' | 'error'>('loading');
   const [draft, setDraft] = useState<CenterLayout | null>(null);
   const [layoutStatus, setLayoutStatus] = useState<TodayCustomize['status']>('idle');
-  const workBody = useRef<HTMLDivElement>(null);
+  // Mỗi tab một vùng cuộn; nhớ vị trí cuộn để quay lại tab đúng chỗ đang xem.
+  const panels = useRef(new Map<string, HTMLDivElement>());
+  const scrollTops = useRef(new Map<string, number>());
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  // Đổi tab: ghi vị trí cuộn của tab đang rời ngay lúc này (sự kiện scroll có thể chưa kịp tới).
+  const setActiveTab = useCallback((id: string) => {
+    const leaving = activeTabRef.current;
+    const panel = panels.current.get(leaving);
+    // Vùng làm việc đang ẩn (điện thoại ở tab Việc) thì trình duyệt đã xóa vị trí cuộn — giữ số đã ghi.
+    if (panel && leaving !== id && panel.getClientRects().length > 0) scrollTops.current.set(leaving, panel.scrollTop);
+    setActiveTabState(id);
+  }, []);
   const todaySeq = useRef(0);
   const lastFocusRefresh = useRef(0);
 
@@ -185,7 +197,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     setOpenTabs(current => current.some(existing => existing.id === tab.id) ? current : [...current, tab]);
     setActiveTab(tab.id);
     setMobilePane('today');
-  }, []);
+  }, [setActiveTab]);
 
   const openItem = useCallback((item: WorkItem) => {
     openTab({ id: workItemKey(item), title: displayCode(item), closable: true, item, module: item.module, target: resolveDrillTarget(item) });
@@ -201,12 +213,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, [onNavigate, openTab]);
 
   const closeTab = (id: string) => {
-    setOpenTabs(current => {
-      const index = current.findIndex(tab => tab.id === id);
-      const next = current.filter(tab => tab.id !== id);
-      if (activeTab === id) setActiveTab(index > 0 ? next[index - 1].id : TODAY_TAB.id);
-      return next;
-    });
+    const index = openTabs.findIndex(tab => tab.id === id);
+    const next = openTabs.filter(tab => tab.id !== id);
+    if (activeTab === id) setActiveTab(index > 0 ? next[index - 1].id : TODAY_TAB.id);
+    setOpenTabs(next);
+    scrollTops.current.delete(id);
   };
 
   const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id); setProjectId(id); };
@@ -277,7 +288,19 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, [onDrill, openTab]);
   const onModalDone = useCallback(() => { setInboxRefresh(value => value + 1); setTodayAttempt(value => value + 1); }, []);
 
-  useEffect(() => { workBody.current?.scrollTo({ top: 0 }); }, [activeTab]);
+  // Khôi phục khi đổi tab và khi điện thoại quay lại vùng làm việc.
+  useLayoutEffect(() => {
+    const panel = panels.current.get(activeTab);
+    if (panel && panel.getClientRects().length > 0) panel.scrollTop = scrollTops.current.get(activeTab) || 0;
+  }, [activeTab, mobilePane]);
+  const panelProps = (id: string) => ({
+    className: 'vcc-scroll',
+    role: 'tabpanel',
+    hidden: id !== activeTab,
+    'data-tab-panel': id,
+    ref: (element: HTMLDivElement | null) => { if (element) panels.current.set(id, element); else panels.current.delete(id); },
+    onScroll: (event: React.UIEvent<HTMLDivElement>) => { scrollTops.current.set(id, event.currentTarget.scrollTop); },
+  });
 
   const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...openTabs];
   const current = openTabs.find(tab => tab.id === activeTab);
@@ -287,7 +310,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   // Hồ sơ mở từ Việc của tôi → quay về cột việc; tab mở từ nút nhanh → quay về Hôm nay (tab vẫn giữ).
   const leaveRecord = useCallback(() => {
     if (current?.item) setMobilePane('inbox'); else setActiveTab(TODAY_TAB.id);
-  }, [current]);
+  }, [current, setActiveTab]);
   const back = useBackLayers(layerDepth, () => {
     if (modal) setModal(null);
     else if (folder) setFolderCloseRequest(value => value + 1);
@@ -374,40 +397,42 @@ const CenterShell: React.FC<CenterShellProps> = ({
         />
         <section className="vcc-work" aria-label="Vùng làm việc">
           <WorkTabs tabs={tabs} activeId={activeTab} onSelect={setActiveTab} onClose={closeTab} />
-          <div className="vcc-scroll" ref={workBody}>
-            {current ? (
+          {/* Mọi tab đang mở đều được giữ (chỉ ẩn tab không xem): form điền dở, bộ lọc, vị trí cuộn còn nguyên khi
+              chuyển qua lại; đóng tab (✕) mới bỏ. */}
+          <div {...panelProps(TODAY_TAB.id)}>
+            <TodayView
+              person={person}
+              now={now}
+              canOpenRoute={canOpenRoute}
+              onNavigate={onNavigate}
+              onAction={onAction}
+              onOpenFolder={onOpenFolder}
+              actionsFor={actionsFor}
+              today={today}
+              dueDays={dueDays}
+              dueRange={dueRange}
+              onDueRange={applyDueRange}
+              mineCount={mineCount}
+              onSelectProject={selectProject}
+              customize={customize}
+              onRetry={() => setTodayAttempt(value => value + 1)}
+            />
+          </div>
+          {openTabs.map(tab => (
+            <div key={tab.id} {...panelProps(tab.id)}>
               <WorkItemTab
-                key={current.id}
-                item={current.item}
-                title={current.title}
-                module={current.module}
-                target={current.target}
+                item={tab.item}
+                title={tab.title}
+                module={tab.module}
+                target={tab.target}
                 now={now}
                 onNavigate={onNavigate}
                 onBack={leaveRecord}
-                backLabel={current.item ? 'Việc của tôi' : 'Hôm nay'}
+                backLabel={tab.item ? 'Việc của tôi' : 'Hôm nay'}
                 Renderer={Renderer}
               />
-            ) : (
-              <TodayView
-                person={person}
-                now={now}
-                canOpenRoute={canOpenRoute}
-                onNavigate={onNavigate}
-                onAction={onAction}
-                onOpenFolder={onOpenFolder}
-                actionsFor={actionsFor}
-                today={today}
-                dueDays={dueDays}
-                dueRange={dueRange}
-                onDueRange={applyDueRange}
-                mineCount={mineCount}
-                onSelectProject={selectProject}
-                customize={customize}
-                onRetry={() => setTodayAttempt(value => value + 1)}
-              />
-            )}
-          </div>
+            </div>
+          ))}
         </section>
         <aside className="vcc-ai" data-open={assistantOpen} aria-label="Trợ lý Vioo">
           <div className="flex items-center gap-2 border-b border-[color:var(--vcc-border)] px-4 py-2.5">

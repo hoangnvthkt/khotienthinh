@@ -39,7 +39,7 @@ const expectToday = async (page: Page) => {
   // Bấm nút là làm ngay, không rời Center: mở thêm một tab cạnh "Hôm nay" chạy đúng màn của module.
   await tiles(page, "project").filter({ hasText: "Tạo nhật ký" }).click();
   await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Nhật ký" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog"}');
+  await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog"}');
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "");
   await page.getByRole("button", { name: "Đóng Nhật ký" }).click();
   await expect(page.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
@@ -51,6 +51,8 @@ const expectToday = async (page: Page) => {
 };
 
 const inboxOf = (page: Page) => page.getByRole("complementary", { name: "Việc của tôi" });
+// Mọi tab đang mở đều nằm trong trang (tab ẩn giữ trạng thái) → chỉ đọc tab đang xem.
+const shownRecord = (page: Page) => page.locator('[data-tab-panel]:not([hidden]) [data-testid="stub-renderer"]');
 
 const expectInboxLoaded = async (page: Page) => {
   const inbox = inboxOf(page);
@@ -95,13 +97,13 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   // Mở hồ sơ → tab có ✕; view nhúng cho Yêu cầu; hồ sơ chưa nhúng → nút mở màn module.
   await inbox.getByRole("button", { name: /RQ-2026-000061/ }).click();
   await expect(page.getByRole("tab", { name: "RQ-2026-000061" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("stub-renderer")).toContainText('request · {"requestId":"rq-61"}');
+  await expect(shownRecord(page)).toContainText('request · {"requestId":"rq-61"}');
   // Hồ sơ chưa tách view → trang module chạy ngay trong tab, đúng id (không qua bước "Mở ở màn …").
   await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toHaveAttribute("aria-current", "true");
   await inbox.getByRole("button", { name: /NK 05\/10/ }).click();
   await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "RQ-2026-000061", "NK 05/10"]);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("NK 05/10 · Nhật ký 05/10 · Sơn Miền Bắc");
-  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510"}');
+  await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510"}');
   await expect(page.getByText("Hồ sơ này xử lý ở màn")).toHaveCount(0);
   await page.getByRole("button", { name: "Mở ở màn Dự án" }).click();
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510");
@@ -109,9 +111,9 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await page.screenshot({ path: `${shots}/desktop-record.png` });
   // Phiếu quy trình và sự cố an toàn cũng mở ngay trong tab.
   await inbox.getByRole("button", { name: /WF-2026-031/ }).click();
-  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/wf/0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10"}');
+  await expect(shownRecord(page)).toContainText('route · {"path":"/wf/0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10"}');
   await inbox.getByRole("button", { name: /SAFE-0007/ }).click();
-  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/da?projectId=smb&tab=safety&safetyView=issues&safetyId=sc-7"}');
+  await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=safety&safetyView=issues&safetyId=sc-7"}');
   await page.getByRole("button", { name: "Đóng SAFE-0007" }).click();
   await page.getByRole("button", { name: "Đóng WF-2026-031" }).click();
   await page.getByRole("button", { name: "Đóng NK 05/10" }).click();
@@ -191,7 +193,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await workFolder.getByRole("button", { name: /Tạo công việc/ }).click();
   await expect(workFolder).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Vioo Work" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/work/my?create=1"}');
+  await expect(shownRecord(page)).toContainText('route · {"path":"/work/my?create=1"}');
   await page.getByRole("button", { name: "Đóng Vioo Work" }).click();
 
   await page.getByRole("button", { name: "Trợ lý" }).click();
@@ -200,6 +202,38 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/desktop-dark.png` });
+});
+
+test("tabs keep their state: a half-filled form and the scroll position survive switching tabs", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  await page.goto(base);
+  const inbox = inboxOf(page);
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  const nav = page.getByRole("tablist", { name: "Chọn vùng" });
+  const toInbox = async () => { if (info.project.name !== "desktop") await nav.getByRole("tab", { name: /^Việc/ }).click(); };
+  await inbox.getByRole("button", { name: "Mở", exact: true }).click();
+  await inbox.getByRole("button", { name: /RQ-2026-000061/ }).click();
+  await shownRecord(page).getByRole("textbox", { name: "Ghi chú nháp" }).fill("Đang viết dở ý kiến duyệt");
+  const panel = page.locator('[data-tab-panel]:not([hidden])');
+  await panel.evaluate(element => { element.scrollTop = 400; });
+  // Sang hồ sơ khác, sang Hôm nay, rồi quay lại: chữ đang gõ và chỗ đang đọc vẫn còn.
+  await toInbox();
+  await inbox.getByRole("button", { name: /NK 05\/10/ }).click();
+  await expect(shownRecord(page)).toContainText("dailyLogId=dl-0510");
+  await expect(shownRecord(page).getByRole("textbox", { name: "Ghi chú nháp" })).toHaveValue("");
+  await workTabs.getByRole("tab", { name: "Hôm nay" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
+  await workTabs.getByRole("tab", { name: "RQ-2026-000061" }).click();
+  await expect(shownRecord(page).getByRole("textbox", { name: "Ghi chú nháp" })).toHaveValue("Đang viết dở ý kiến duyệt");
+  // Trình duyệt có thể neo cuộn lệch 1px.
+  expect(Math.abs(await page.locator('[data-tab-panel]:not([hidden])').evaluate(element => element.scrollTop) - 400)).toBeLessThanOrEqual(2);
+  // Đóng tab (✕) mới bỏ nội dung; mở lại là bản mới.
+  await page.getByRole("button", { name: "Đóng RQ-2026-000061" }).click();
+  await toInbox();
+  await inbox.getByRole("button", { name: /RQ-2026-000061/ }).click();
+  await expect(shownRecord(page).getByRole("textbox", { name: "Ghi chú nháp" })).toHaveValue("");
+  await expect(page.locator('[data-tab-panel]')).toHaveCount(3);
+  await expectCalmPage(page);
 });
 
 test("desktop: customise widgets — reorder, hide, restore, saved for the account", async ({ page }, info) => {
