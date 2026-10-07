@@ -30,6 +30,7 @@ import {
 import { getHrmNavigationItems } from '../lib/hrmNavigation';
 import { CENTER_ROUTE } from '../lib/center/centerPermissions';
 import { useCenterAccess } from '../lib/center/centerService';
+import { useMineWorkItems } from '../lib/center/workItemsStore';
 import { useAuth } from '../context/AuthContext';
 import {
   canAccessVehicleApprovalQueue,
@@ -104,6 +105,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   // Trung tâm điều hành chỉ hiện khi máy chủ báo đã bật cho người này (thí điểm theo người).
   const { state: centerAccess } = useCenterAccess(user?.id, canAccessRoute(user, CENTER_ROUTE));
   const showCenter = centerAccess.status === 'enabled';
+  const centerMine = useMineWorkItems(showCenter);
+  const centerBadge = centerMine && centerMine.total > 0 ? (centerMine.total > 99 ? '99+' : String(centerMine.total)) : null;
 
   const handleLogout = async () => {
     try {
@@ -553,6 +556,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                       <PanelsTopLeft className="w-5 h-5 mr-3 transition-transform group-hover:scale-110" />
                       <span className="font-bold text-sm">Trung tâm điều hành</span>
+                      {centerBadge && (
+                        <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-teal-600 px-1.5 text-[10px] font-black text-white" title="Việc chờ bạn">{centerBadge}</span>
+                      )}
                     </NavLink>
                   )}
                   <NavLink to="/" end onClick={toggle}
@@ -697,11 +703,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
             <>
               {showCenter && (
                 <NavLink to={CENTER_ROUTE} title={collapsed ? 'Trung tâm điều hành' : undefined}
-                  className={({ isActive }) => `flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
+                  className={({ isActive }) => `relative flex items-center ${collapsed ? 'justify-center' : ''} ${collapsed ? 'px-2' : 'px-4'} py-2.5 rounded-xl transition-all group ${isActive
                     ? 'bg-accent/90 text-white shadow-lg shadow-blue-500/20 border border-white/20'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white/40 dark:hover:bg-slate-800/50'}`}>
                   <PanelsTopLeft className={`w-5 h-5 ${collapsed ? '' : 'mr-3'} transition-transform group-hover:scale-110`} />
                   {!collapsed && <span className="font-bold text-sm">Trung tâm điều hành</span>}
+                  {centerBadge && (
+                    <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full bg-teal-600 px-1.5 text-[10px] font-black text-white ${collapsed ? 'absolute -right-1 -top-1 ring-2 ring-white dark:ring-slate-900' : 'ml-auto'}`} title="Việc chờ bạn">{centerBadge}</span>
+                  )}
                 </NavLink>
               )}
               <NavLink to="/" end title={collapsed ? 'Hôm nay' : undefined}

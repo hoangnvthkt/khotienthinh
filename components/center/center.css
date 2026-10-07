@@ -214,3 +214,12 @@ button.vcc-stat-v svg { opacity: .6; flex: none; }
 @media (max-width: 1023px) { .vcc-fold { max-height: 88vh; } .vcc-fold-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .vcc-fold-acts { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .vcc-fold, .vcc-fold-backdrop { transition: none; } }
+
+/* Tùy chỉnh ô (Hôm nay) */
+.vcc-grid[data-editing="true"] .vcc-widget { outline: 1px dashed var(--mc); outline-offset: 2px; }
+.vcc-wedit { display: inline-flex; gap: 2px; flex: none; }
+.vcc-wedit button { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--vcc-fg2); border: 1px solid var(--vcc-border); background: var(--vcc-card); }
+.vcc-wedit button:hover:not(:disabled) { color: var(--mc); border-color: var(--mc); }
+.vcc-wedit button:disabled { opacity: .35; cursor: not-allowed; }
+.vcc-link:disabled { color: var(--vcc-muted); cursor: not-allowed; text-decoration: none; }
+.vcc-danger-text { color: var(--vcc-danger); font-weight: 600; }

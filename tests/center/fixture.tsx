@@ -1,6 +1,7 @@
 // Dữ liệu minh họa, chỉ dùng cho kiểm thử giao diện. Không gọi Supabase.
 // ?theme=dark để xem nền tối; ?inbox=empty|error để xem trạng thái rỗng / lỗi của Việc của tôi;
-// ?today=loner|error để xem Hôm nay khi không thuộc dự án nào / lỗi.
+// ?today=loner|error để xem Hôm nay khi không thuộc dự án nào / lỗi; ?layout=locked khi chưa có quyền tùy chỉnh.
+// Bố cục "lưu máy chủ" giả lập bằng sessionStorage để tải lại trang vẫn còn.
 // Cột 64px bên trái chỉ giả lập thanh bên (Sidebar) có sẵn của app.
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -9,6 +10,7 @@ import CenterShell from '../../components/center/CenterShell';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import type { CenterToday, SiteWeather } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
+import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
@@ -129,6 +131,19 @@ const loadActions = (projectId: string | null): Promise<CenterActionFlags> => ne
   resolve(ACTIONS[projectId || ''] || ACTIONS.smb);
 }, 40));
 
+const LAYOUT_KEY = 'fixture_center_layout';
+let layoutVersion = 0;
+const loadLayout = (): Promise<CenterLayoutRecord> => new Promise(resolve => setTimeout(() => {
+  let layout: CenterLayout | null = null;
+  try { layout = parseCenterLayout(JSON.parse(sessionStorage.getItem(LAYOUT_KEY) || 'null')); } catch { layout = null; }
+  resolve({ layout, version: layoutVersion, canManage: params.get('layout') !== 'locked' });
+}, 30));
+const saveLayout = (layout: CenterLayout): Promise<number> => new Promise(resolve => setTimeout(() => {
+  sessionStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  layoutVersion += 1;
+  resolve(layoutVersion);
+}, 30));
+
 const StubModalHost: React.FC<{ modal: CenterModal; onClose: () => void; onDone: () => void }> = ({ modal, onClose, onDone }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-label={`Form ${modal}`}>
     <div className="vcc-card w-full max-w-sm p-4" data-testid="stub-modal">
@@ -176,6 +191,8 @@ const Fixture: React.FC = () => {
           loadToday={loadToday}
           loadWeather={loadWeather}
           loadActions={loadActions}
+          loadLayout={loadLayout}
+          saveLayout={saveLayout}
           Renderer={StubRenderer}
           ModalHost={StubModalHost}
         />

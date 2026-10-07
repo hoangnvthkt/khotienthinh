@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
-import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayState } from './TodayView';
+import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
 import ActionFolder from './ActionFolder';
 import WorkItemTab, { type RendererComponent } from './WorkItemTab';
 import { resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
@@ -12,6 +12,10 @@ import type { WidgetView } from '../../lib/center/todayWidgets';
 import type { WorkItem } from '../../lib/center/workItemsService';
 import { fetchCenterToday, fetchSiteWeather, type CenterToday, type SiteWeather } from '../../lib/center/centerTodayService';
 import type { WeatherSlot } from '../../lib/center/todayWidgets';
+import {
+  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, saveCenterLayout, sameLayout, showWidget,
+  type CenterLayout, type CenterLayoutRecord,
+} from '../../lib/center/centerLayout';
 import './center.css';
 
 type MobilePane = 'inbox' | 'today' | 'assistant';
@@ -47,6 +51,8 @@ const companyInitials = (name: string) => wordsOf(name).slice(0, 2).map(word => 
 export type LoadToday = (projectId: string | null) => Promise<CenterToday>;
 export type LoadWeather = (site: { id: string; latitude: number; longitude: number }, now: Date) => Promise<SiteWeather | null>;
 export type LoadActions = (projectId: string | null) => Promise<CenterActionFlags>;
+export type LoadLayout = () => Promise<CenterLayoutRecord>;
+export type SaveLayout = (layout: CenterLayout) => Promise<number>;
 
 export interface CenterShellProps {
   person: CenterPerson & { title?: string | null; avatar?: string | null };
@@ -72,6 +78,9 @@ export interface CenterShellProps {
   Renderer?: RendererComponent;
   /** Form modal thật của module (mặc định tải lười CenterModals). */
   ModalHost?: ModalHostComponent;
+  /** Bố cục ô của người dùng (mặc định get/save_center_layout_v1). */
+  loadLayout?: LoadLayout;
+  saveLayout?: SaveLayout;
 }
 
 // Khung 3 vùng theo mockup v1.1: Việc của tôi · vùng làm việc có tab · Trợ lý (thu gọn).
@@ -80,6 +89,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate, now = new Date(),
   loadWorkItems, loadToday = fetchCenterToday, loadWeather = (site, at) => fetchSiteWeather(site.id, site.latitude, site.longitude, at),
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout,
 }) => {
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
   const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
@@ -97,6 +107,9 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [folder, setFolder] = useState<{ view: WidgetView; anchor: HTMLElement } | null>(null);
   const [modal, setModal] = useState<CenterModal | null>(null);
   const [inboxRefresh, setInboxRefresh] = useState(0);
+  const [layoutRecord, setLayoutRecord] = useState<CenterLayoutRecord | 'loading' | 'error'>('loading');
+  const [draft, setDraft] = useState<CenterLayout | null>(null);
+  const [layoutStatus, setLayoutStatus] = useState<TodayCustomize['status']>('idle');
   const workBody = useRef<HTMLDivElement>(null);
   const todaySeq = useRef(0);
   const lastFocusRefresh = useRef(0);
@@ -197,6 +210,46 @@ const CenterShell: React.FC<CenterShellProps> = ({
   };
 
   const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id); setProjectId(id); };
+
+  // Bố cục ô: đã lưu (máy chủ) → dùng; chưa lưu → mặc định theo quyền máy chủ. Sửa trên bản nháp, "Xong" mới lưu.
+  useEffect(() => {
+    let alive = true;
+    loadLayout()
+      .then(record => { if (alive) setLayoutRecord(record); })
+      .catch(error => { console.warn('Center layout failed:', error); if (alive) setLayoutRecord('error'); });
+    return () => { alive = false; };
+  }, [loadLayout]);
+  const todayData = today.status === 'ready' ? today.data : null;
+  const savedLayout = typeof layoutRecord === 'object' ? layoutRecord.layout : null;
+  const baseLayout = savedLayout || defaultCenterLayout(actionFlags, todayData);
+  const effectiveLayout = draft || baseLayout;
+  const canManageLayout = typeof layoutRecord === 'object' && layoutRecord.canManage;
+  const finishEditing = useCallback(() => {
+    if (!draft) return;
+    if (sameLayout(draft, baseLayout)) { setDraft(null); setLayoutStatus('idle'); return; }
+    // Về đúng mặc định → lưu bố cục rỗng để sau này mặc định theo quyền vẫn tự cập nhật.
+    const backToDefault = sameLayout(draft, defaultCenterLayout(actionFlags, todayData));
+    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] } } : draft;
+    setLayoutStatus('saving');
+    saveLayout(toSave).then(version => {
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: backToDefault ? null : draft, version } : current));
+      setDraft(null);
+      setLayoutStatus('saved');
+    }).catch(error => { console.warn('Center layout save failed:', error); setLayoutStatus('error'); });
+  }, [draft, baseLayout, actionFlags, todayData, saveLayout]);
+  const customize: TodayCustomize = {
+    layout: effectiveLayout,
+    editing: draft !== null,
+    canManage: canManageLayout,
+    lockReason: layoutRecord === 'loading' ? 'Đang tải bố cục' : layoutRecord === 'error' ? 'Chưa tải được bố cục, thử lại sau'
+      : 'Cần quyền "Tùy chỉnh bố cục của tôi" — nhờ quản trị cấp',
+    status: layoutStatus,
+    onToggle: () => { if (draft) finishEditing(); else { setDraft(baseLayout); setLayoutStatus('idle'); } },
+    onMove: (id, direction) => setDraft(current => moveWidget(current || baseLayout, id, direction)),
+    onHide: id => setDraft(current => hideWidget(current || baseLayout, id)),
+    onShow: id => setDraft(current => showWidget(current || baseLayout, id)),
+    onReset: () => setDraft(defaultCenterLayout(actionFlags, todayData)),
+  };
 
   // Thao tác nhanh: nút theo cờ máy chủ; mở form modal thật hoặc đích drill-down.
   const todayProject = today.status === 'ready' ? today.data.project : null;
@@ -307,6 +360,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 weather={weather}
                 mineCount={mineCount}
                 onSelectProject={selectProject}
+                customize={customize}
                 onRetry={() => setTodayAttempt(value => value + 1)}
               />
             )}

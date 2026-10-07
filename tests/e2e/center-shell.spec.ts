@@ -167,10 +167,64 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await page.screenshot({ path: `${shots}/desktop-dark.png` });
 });
 
+test("desktop: customise widgets — reorder, hide, restore, saved for the account", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(base);
+  const grid = page.locator(".vcc-grid");
+  const order = () => grid.locator("[data-widget]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-widget")));
+  await expect(grid.locator("[data-widget]")).toHaveCount(6);
+  // Mặc định theo quyền: thuộc dự án, không phải kế toán / Mua hàng → Dự án trước.
+  expect(await order()).toEqual(["project", "hrm", "work", "office", "supply", "finance"]);
+
+  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await expect(grid).toHaveAttribute("data-editing", "true");
+  // Đang tùy chỉnh thì bấm ô không bung thư mục.
+  await grid.locator('[data-widget="hrm"] .vcc-whead h3').click();
+  await expect(page.getByRole("dialog", { name: "Nhân sự" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Đưa Dự án · SMB-2026 xuống sau" }).click();
+  await page.getByRole("button", { name: "Ẩn Hành chính" }).click();
+  expect(await order()).toEqual(["hrm", "project", "work", "supply", "finance"]);
+  const hidden = page.getByLabel("Ô đã ẩn");
+  await expect(hidden.getByRole("button")).toHaveText([/Hành chính/]);
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/desktop-customise.png` });
+  await page.getByRole("button", { name: "Xong" }).click();
+  await expect(page.getByText("Đã lưu bố cục")).toBeVisible();
+  await expect(page.getByText("1 ô đang ẩn ·")).toBeVisible();
+
+  // Tải lại: bố cục đã lưu (máy chủ giả lập) vẫn giữ.
+  await page.reload();
+  await expect(grid.locator("[data-widget]")).toHaveCount(5);
+  expect(await order()).toEqual(["hrm", "project", "work", "supply", "finance"]);
+
+  // Thêm lại ô đã ẩn và về mặc định.
+  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByLabel("Ô đã ẩn").getByRole("button", { name: /Hành chính/ }).click();
+  await expect(grid.locator("[data-widget]")).toHaveCount(6);
+  await page.getByRole("button", { name: "Về mặc định" }).click();
+  expect(await order()).toEqual(["project", "hrm", "work", "office", "supply", "finance"]);
+  await page.getByRole("button", { name: "Xong" }).click();
+  await expect(page.getByText("Đã lưu bố cục")).toBeVisible();
+});
+
+test("desktop: customise is locked without the layout permission", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(`${base}?layout=locked`);
+  const button = page.getByRole("button", { name: "Tùy chỉnh" });
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveAttribute("title", /Tùy chỉnh bố cục của tôi/);
+});
+
 test("desktop: no project / today error", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop");
   await page.goto(`${base}?today=loner`);
+  // Không thuộc dự án → mặc định chỉ Nhân sự, Công việc, Hành chính; ô theo dự án vào "Ô đã ẩn".
+  await expect(page.locator(".vcc-grid [data-widget]")).toHaveCount(3);
+  await expect(page.getByText("2 ô đang ẩn ·")).toBeVisible();
+  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByLabel("Ô đã ẩn").getByRole("button", { name: /Dự án/ }).click();
   await expect(page.getByText("Bạn chưa thuộc dự án nào.")).toBeVisible();
+  await page.getByRole("button", { name: "Xong" }).click();
   await expect(page.getByText("Tài khoản chưa gắn với hồ sơ nhân viên.")).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Tài chính dự án", exact: true })).toHaveCount(0);
   await expect(stat(page, "office", "weather")).toContainText("Chưa chọn dự án");

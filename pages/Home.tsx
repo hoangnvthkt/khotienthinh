@@ -55,6 +55,12 @@ import { canUseModule, resolveHomeCapabilities } from '../lib/homeCapabilities';
 import { isProjectOwnedWorkflowTemplate, isRequestModuleWorkflowTemplate } from '../lib/workflowVisibility';
 import { canViewModule } from '../lib/permissions/permissionService';
 import { canAccessRoute } from '../lib/routeAccess';
+import { CENTER_ROUTE } from '../lib/center/centerPermissions';
+import { useCenterAccess } from '../lib/center/centerService';
+import { useMineWorkItems } from '../lib/center/workItemsStore';
+import { CENTER_MODULES } from '../lib/center/centerRegistry';
+import { moduleRouteFor } from '../lib/center/drill';
+import { dueInfo, sortWorkItems } from '../lib/center/workItemsService';
 import {
   MaterialRequest,
   RequestStatus,
@@ -748,8 +754,14 @@ const Home: React.FC = () => {
     return assets.filter(a => a.assignedToUserId === user.id);
   }, [assets, user.id]);
 
+  // ─── Trung tâm điều hành (thí điểm): một nguồn "Việc chờ bạn" cho Home, Sidebar và Center ───
+  const { state: centerAccess } = useCenterAccess(user.id, canAccessRoute(user, CENTER_ROUTE));
+  const centerEnabled = centerAccess.status === 'enabled';
+  const centerMine = useMineWorkItems(centerEnabled);
+  const centerItems = useMemo(() => (centerMine ? sortWorkItems(centerMine.items) : []), [centerMine]);
+
   // ─── Total Combined Todos ───
-  const totalTodos = actionItems.length;
+  const totalTodos = centerEnabled && centerMine ? centerMine.total : actionItems.length;
 
   // Helpers
   const fmtDate = (d?: string) => {
@@ -1019,8 +1031,49 @@ const Home: React.FC = () => {
         ))}
       </div>
 
+      {/* ═══════════ 3b. TRUNG TÂM ĐIỀU HÀNH: VIỆC CHỜ BẠN (một nguồn với Center) ═══════════ */}
+      {centerEnabled && centerMine && (
+        <SectionCard
+          id="todo-section"
+          title="Việc chờ bạn"
+          icon={<ClipboardList size={14} />}
+          count={centerMine.total}
+          action={{ label: 'Mở Trung tâm điều hành', onClick: () => navigate(CENTER_ROUTE) }}
+        >
+          {centerItems.length === 0 ? (
+            <p className="text-sm text-slate-400 px-1">Không còn việc chờ bạn. Việc mới sẽ tự hiện ở đây.</p>
+          ) : (
+            <div className="space-y-2">
+              {centerItems.slice(0, 6).map(item => {
+                const due = dueInfo(item.dueAt, nowDate);
+                return (
+                  <button
+                    key={`${item.source}:${item.id}`}
+                    onClick={() => navigate(moduleRouteFor(item))}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 hover:bg-teal-50 dark:hover:bg-teal-500/10 hover:shadow-md group text-left border border-transparent hover:border-teal-200 dark:hover:border-teal-500/20 cursor-pointer"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-slate-800 dark:text-white truncate">{item.title}</div>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-[9px] font-mono font-bold text-teal-600 bg-teal-500/10 px-1.5 py-0.5 rounded">{item.code}</span>
+                        <span className="text-[9px] text-slate-400">{CENTER_MODULES[item.module].label}{item.who ? ` · ${item.who}` : ''}</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {due && <div className={`text-[9px] font-bold ${due.tone === 'hot' ? 'text-rose-500' : due.tone === 'soon' ? 'text-amber-600' : 'text-slate-400'}`}>{due.label}</div>}
+                      <ChevronRight size={14} className="text-slate-300 dark:text-slate-600 mt-1 ml-auto group-hover:text-teal-500 transition-colors" />
+                    </div>
+                  </button>
+                );
+              })}
+              {centerMine.total > 6 && <p className="text-[11px] text-slate-400 px-1">Còn {centerMine.total - 6} việc nữa trong Trung tâm điều hành.</p>}
+            </div>
+          )}
+        </SectionCard>
+      )}
+
       {/* ═══════════ 4. TODO: WORKFLOW TASKS ═══════════ */}
-      {workflowTodos.length > 0 && (
+      {!centerEnabled && workflowTodos.length > 0 && (
         <SectionCard
           id="todo-section"
           title="Quy trình chờ duyệt"
@@ -1058,7 +1111,7 @@ const Home: React.FC = () => {
       )}
 
       {/* ═══════════ 5. TODO: REQUEST APPROVALS ═══════════ */}
-      {rqTodos.length > 0 && (
+      {!centerEnabled && rqTodos.length > 0 && (
         <SectionCard
           title="Yêu cầu cần duyệt"
           icon={<Inbox size={14} />}
@@ -1095,7 +1148,7 @@ const Home: React.FC = () => {
       )}
 
       {/* ═══════════ 6. TODO: WMS / KHO & CẤP VẬT TƯ ═══════════ */}
-      {wmsTodos.length > 0 && (
+      {!centerEnabled && wmsTodos.length > 0 && (
         <SectionCard
           title="Phiếu kho & Cấp vật tư chờ xử lý"
           icon={<Warehouse size={14} />}
