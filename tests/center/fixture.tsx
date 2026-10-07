@@ -1,5 +1,5 @@
 // Dữ liệu minh họa, chỉ dùng cho kiểm thử giao diện. Không gọi Supabase.
-// ?theme=dark để xem nền tối; ?inbox=empty|error để xem trạng thái rỗng / lỗi của Việc của tôi;
+// ?theme=dark để xem nền tối; ?inbox=empty|error|many để xem trạng thái rỗng / lỗi / 200 việc của Việc của tôi;
 // ?today=loner|error để xem Hôm nay khi không thuộc dự án nào / lỗi; ?layout=locked khi chưa có quyền tùy chỉnh.
 // Bố cục "lưu máy chủ" giả lập bằng sessionStorage để tải lại trang vẫn còn.
 // Cột 64px bên trái chỉ giả lập thanh bên (Sidebar) có sẵn của app.
@@ -49,7 +49,11 @@ const ITEMS: Record<InboxTab, WorkItem[]> = {
 const loadWorkItems = (tab: InboxTab): Promise<WorkItemsPage> => new Promise((resolve, reject) => setTimeout(() => {
   const mode = params.get('inbox');
   if (mode === 'error') return reject(new Error('fixture error'));
-  const items = mode === 'empty' ? [] : ITEMS[tab];
+  const many = (): WorkItem[] => Array.from({ length: 200 }, (_, index) => {
+    const base = ITEMS.mine[index % ITEMS.mine.length];
+    return { ...base, id: `${base.id}-${index}`, code: `${base.code}-${index}`, dueAt: at((index % 9) - 2) };
+  });
+  const items = mode === 'empty' ? [] : mode === 'many' && tab === 'mine' ? many() : ITEMS[tab];
   resolve({ tab, generatedAt: NOW.toISOString(), total: items.length, truncatedSources: [], items });
 }, 60));
 

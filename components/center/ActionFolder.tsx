@@ -36,7 +36,9 @@ const ActionFolder: React.FC<{
   onClose: () => void;
   onDrill: (target: DrillTarget) => void;
   onAction: (action: WidgetAction) => void;
-}> = ({ view, icon: Icon, actions, anchor, onClose, onDrill, onAction }) => {
+  /** Tăng để yêu cầu thu lại từ bên ngoài (nút Back). */
+  closeRequest?: number;
+}> = ({ view, icon: Icon, actions, anchor, onClose, onDrill, onAction, closeRequest = 0 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const closing = useRef(false);
@@ -79,6 +81,11 @@ const ActionFolder: React.FC<{
       if (event.target === panel && event.propertyName === 'transform') { window.clearTimeout(timer); onClose(); }
     }, { once: true });
   }, [anchor, onClose]);
+
+  const initialCloseRequest = useRef(closeRequest);
+  useEffect(() => {
+    if (closeRequest !== initialCloseRequest.current) requestClose();
+  }, [closeRequest, requestClose]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); requestClose(); } };

@@ -294,3 +294,47 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/${tag}-viec-dark.png` });
 });
+
+test("Back closes the open layer instead of leaving the Center", async ({ page }, info) => {
+  await page.goto(base);
+  const inbox = inboxOf(page);
+  await expect(inbox.getByRole("tab", { name: "Chờ tôi 9" })).toBeVisible();
+  const startLength = await page.evaluate(() => history.length);
+  const back = () => page.evaluate(() => history.back());
+
+  if (info.project.name === "desktop") {
+    // Thư mục thao tác: Back thu lại, vẫn ở Center.
+    await page.locator('[data-widget="project"] .vcc-whead h3').click();
+    const folder = page.getByRole("dialog", { name: "Dự án · SMB-2026" });
+    await expect(folder).toBeVisible();
+    await back();
+    await expect(folder).toHaveCount(0);
+    await expect(page.getByText("Trung tâm điều hành", { exact: true })).toBeVisible();
+    // Đóng bằng Esc thì mốc lịch sử được gỡ: không còn lần Back "chết".
+    await page.locator('[data-widget="hrm"] .vcc-whead h3').click();
+    await expect(page.getByRole("dialog", { name: "Nhân sự" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Nhân sự" })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => history.length)).toBeGreaterThanOrEqual(startLength);
+    expect(await page.evaluate(() => (history.state || {}).vccLayer ?? null)).toBeNull();
+    return;
+  }
+
+  // Điện thoại / máy tính bảng: mở hồ sơ từ danh sách → Back về danh sách.
+  await inbox.getByRole("button", { name: /RQ-2026-000061/ }).click();
+  await expect(inbox).toBeHidden();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("RQ-2026-000061");
+  await back();
+  await expect(inbox).toBeVisible();
+  await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toBeVisible();
+  // Thư mục thao tác trên điện thoại: Back thu lại.
+  const nav = page.getByRole("tablist", { name: "Chọn vùng" });
+  await nav.getByRole("tab", { name: "Hồ sơ" }).click();
+  await page.getByRole("button", { name: "Đóng RQ-2026-000061" }).click();
+  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
+  const folder = page.getByRole("dialog", { name: "Nhân sự" });
+  await expect(folder).toBeVisible();
+  await back();
+  await expect(folder).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
+});

@@ -112,7 +112,16 @@ Mục tiêu: `/center` mở được cho người trong rollout, có khung 3 c�
 - Lưu ý: Quy trình chung (wf) chưa có trong RPC (đợt 1) → người đã bật Center tạm không thấy việc wf trên Home; vào /wf như cũ. Cần nói khi bật thí điểm.
 - Kiểm: vitest `centerLayout.test.ts`, `workItemsStore.test.ts`; Playwright tùy chỉnh (đổi thứ tự, ẩn, thêm lại, về mặc định, tải lại vẫn giữ, khóa khi thiếu quyền, người không dự án).
 
-PR-F tiếp theo: mobile/WebKit/UAT — đo CPU WebKit khi đứng yên, bật rollout nhóm SMB-2026 (chủ SP chạy), hướng dẫn 1 trang (kế hoạch 07 mục 6).
+**PR-F đã làm (07/10, nhánh `feature/command-center-dot0-f` chồng lên PR-E) — điện thoại, WebKit, hiệu năng, bật thí điểm, UAT:**
+- Nút Back: `lib/center/useBackLayers.ts` — mỗi lớp đang mở (hồ sơ mở từ danh sách trên điện thoại, thư mục thao tác, form) đẩy một mốc `history.pushState` cùng URL; Back đóng lớp trên cùng (thư mục thu lại có hiệu ứng qua `closeRequest`); đóng bằng nút trên màn → `history.go(-n)` gỡ mốc; rời Center khi còn lớp → `navigate(route, { replace: true })` (CenterShell `onNavigate(route, options)`).
+- Hiệu năng: migration `20261008138004_center_dot0_perf.sql` thay khối "Phiếu kho" của `vcc_my_work_items_v1`: `wms_has_action` gọi một lần cho mỗi bộ (việc, kho nguồn, kho đích, tôi lập?, tôi được giao?) thay vì từng phiếu. Đo trên 28 người SMB-2026 (rollback): Chờ tôi p95 1,2 s → 0,44 s; Hôm nay 1,4 s → 0,65 s; kết quả cũ = mới 28/28 ở cả 3 tab. Gỡ: `center_dot0_perf_rollback.sql`. Số đo: `evidence/2026-10-07-dot0-do-luong.md`.
+- WebKit: `tests/e2e/center-idle.spec.ts` (project `webkit-idle`, chạy riêng): chặn cứng 0 animation / timer / rAF / đổi DOM trong 10 s đứng yên; CPU so với trang trống < 5 điểm (đo được +1,7…+2,8). Fixture `?inbox=many` = 200 việc.
+- Bật thí điểm: `supabase/operations/center_dot0_pilot.sql` (Tổ chức dự án SMB-2026 + điều động H2 hôm nay; mục 3 thêm người theo email; cấp `center.module.access` + `center.layout.manage` trực tiếp nếu chưa có; bật 30 ngày; kiểm mọi người vào được; in danh sách) — **mặc định ROLLBACK**, đổi dòng cuối thành COMMIT khi đúng. Diễn tập 07/10: 28 người, 28 dòng audit. Tắt: `center_dot0_pilot_off.sql` (đặt hết hạn, giữ lịch sử, mặc định ROLLBACK).
+- Tài liệu: `huong-dan-trung-tam-dieu-hanh.md` (1 trang cho người thí điểm), `uat-dot-0.md` (kịch bản 6 vai + phần chung).
+
+**Thứ tự triển khai đợt 0 (chủ SP):** merge #119 → đổi base #120…#124 về main lần lượt (em làm) → `prod-push --include-all` dry-run kiểm "Would push" đủ `20261008138000` … `20261008138004` → `--apply` → em làm mới `dbPermissionCatalog.json` + bỏ `center.*` khỏi `FRONTEND_AHEAD_OF_DB` → chủ SP chạy `center_dot0_pilot.sql` (diễn tập rồi COMMIT) → UAT theo `uat-dot-0.md`.
+
+Đợt 1 (theo tài liệu 06): vỏ `vcc_prepare / vcc_execute / vcc_operations` (bản tóm tắt trước khi bấm + biên nhận), Quy trình chung vào "Việc của tôi", tách form Work / nhật ký / đề xuất vật tư để mở trong Center.
 
 ## 6. Câu hỏi còn mở với chủ SP (không chặn PR-A)
 

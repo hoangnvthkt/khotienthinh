@@ -277,7 +277,8 @@
     "20261008138000_center_dot0_foundation.sql",
     "20261008138001_center_dot0_work_items.sql",
     "20261008138002_center_dot0_today.sql",
-    "20261008138003_center_dot0_actions.sql"
+    "20261008138003_center_dot0_actions.sql",
+    "20261008138004_center_dot0_perf.sql"
   ],
   "forbidIncludeAll": true
 }
