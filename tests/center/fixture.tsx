@@ -160,8 +160,12 @@ const StubModalHost: React.FC<{ modal: CenterModal; onClose: () => void; onDone:
   </div>
 );
 
+// Bản thử không có Supabase: chỗ màn xử lý thật của module sẽ hiện (cùng đường dẫn / id như bản thật).
 const StubRenderer: React.FC<{ renderer: string; props: Record<string, string> }> = ({ renderer, props }) => (
-  <div className="vcc-card p-4" data-testid="stub-renderer">View nhúng: <b>{renderer}</b> · {JSON.stringify(props)}</div>
+  <div className="vcc-card p-4" data-testid="stub-renderer">
+    <div>View nhúng: <b>{renderer}</b> · {JSON.stringify(props)}</div>
+    <div className="mt-1 text-xs vcc-muted">Bản thử dùng dữ liệu minh họa — trên app thật, màn xử lý của module (duyệt / từ chối / sửa) hiện ngay tại đây.</div>
+  </div>
 );
 
 const FakeRail: React.FC = () => (

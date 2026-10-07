@@ -104,6 +104,8 @@
 .vcc-ghead[aria-expanded="false"] .vcc-chev { transform: rotate(-90deg); }
 .vcc-modname { color: var(--mc); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .vcc-modname::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--mc); flex: none; }
+.vcc-gurgent { margin-left: auto; color: var(--vcc-danger); font-size: 11px; font-weight: 600; }
+.vcc-gurgent + .vcc-gcount { margin-left: 8px; }
 .vcc-gcount { margin-left: auto; color: var(--vcc-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .vcc-row { display: block; width: 100%; text-align: left; padding: 8px 14px 9px 30px; border-left: 2px solid transparent; }
 .vcc-row:hover { background: var(--vcc-hover); }
@@ -132,10 +134,10 @@
 .vcc-mnav button[aria-selected="true"] { color: var(--vcc-accent); }
 
 /* Lưới widget theo bề rộng vùng làm việc (cột việc / Trợ lý mở làm vùng hẹp lại), không theo màn hình. */
-@container (max-width: 1000px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 1240px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 600px) { .vcc-grid { grid-template-columns: 1fr; } }
 @supports not (container-type: inline-size) {
-  @media (max-width: 1200px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 1440px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .vcc-grid { grid-template-columns: 1fr; } }
 }
 @media (max-width: 1023px) {
@@ -163,14 +165,16 @@
 .vcc-wlink:hover:not(:disabled) { background: var(--mcs); color: var(--mc); }
 /* Nút thao tác nhanh trong ô: cùng style "Truy cập nhanh" ở Home — ô vuông gradient bo 16px, bóng màu, chữ đậm xám.
    Hover chỉ đổi nền + transform (hữu hạn, docs/ui/VIOO-UI-UX.md mục 6). */
-.vcc-qa { display: grid; gap: 6px 4px; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
+.vcc-qa { display: grid; gap: 6px 2px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .vcc-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px; border-radius: 12px; text-align: center; min-width: 0;
   color: #475569; font-size: 11px; font-weight: 700; line-height: 1.25; }
 .dark .vcc-tile { color: #cbd5e1; }
 .vcc-tile:hover:not(:disabled) { background: var(--vcc-hover); }
 .vcc-tile:active:not(:disabled) .vcc-appicon { transform: scale(.94); }
 .vcc-tile:hover:not(:disabled) .vcc-appicon { transform: scale(1.08); }
-.vcc-tile[data-locked-more="true"] { color: var(--vcc-muted); }
+.vcc-tile[data-more="true"] { color: var(--vcc-muted); }
+.vcc-tile[data-more="true"] .vcc-appicon { color: #475569; }
+.dark .vcc-tile[data-more="true"] .vcc-appicon { color: #e2e8f0; }
 .vcc-tile-label { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .vcc-appicon { width: 44px; height: 44px; border-radius: 16px; display: grid; place-items: center; color: #fff; flex: none; transition: transform .2s ease; }
 .vcc-appicon[data-size="row"] { width: 32px; height: 32px; border-radius: 10px; }
@@ -197,6 +201,10 @@
 .vcc-act:hover:not(:disabled) { background: var(--vcc-hover); }
 .vcc-act:hover:not(:disabled) .vcc-appicon { transform: scale(1.06); }
 .vcc-act:disabled { background: var(--vcc-card2); color: var(--vcc-muted); cursor: not-allowed; }
+.vcc-act[data-picking="true"]:disabled .vcc-appicon { opacity: .55; }
+.vcc-act[aria-pressed="true"] { border-color: var(--vcc-steel); background: var(--vcc-steel-s); }
+.vcc-pick { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--vcc-border); display: grid; place-items: center; flex: none; color: #fff; }
+.vcc-act[aria-pressed="true"] .vcc-pick { background: var(--vcc-steel); border-color: var(--vcc-steel); }
 .vcc-fold-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--vcc-border); }
 @media (max-width: 1023px) { .vcc-fold { max-height: 88vh; } .vcc-fold-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .vcc-fold-acts { grid-template-columns: 1fr; } }

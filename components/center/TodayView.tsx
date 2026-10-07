@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, Car, ClipboardCheck, ClipboardList,
-  EyeOff, FileBarChart, FileText, Flame, GitBranch, IdCard, Inbox, LineChart, ListChecks, Lock, Mail, MapPin, NotebookPen, Package, PackageCheck,
+  EyeOff, MoreHorizontal, FileBarChart, FileText, Flame, GitBranch, IdCard, Inbox, LineChart, ListChecks, Lock, Mail, MapPin, NotebookPen, Package, PackageCheck,
   Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet,
 } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
@@ -10,7 +10,7 @@ import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/cent
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { WidgetAction } from '../../lib/center/centerActions';
 import { buildTodaySummary, buildTodayWidgets, ddmm, type WeatherSlot, type WidgetView } from '../../lib/center/todayWidgets';
-import { applyCenterLayout, type CenterLayout } from '../../lib/center/centerLayout';
+import { applyCenterLayout, pinnedActionsOf, type CenterLayout } from '../../lib/center/centerLayout';
 
 /** Tùy chỉnh ô (mockup v1.1: "Tùy chỉnh" → ↑ ↓ ✕ trên từng ô, "Ô đã ẩn" để thêm lại, "Xong"). */
 export interface TodayCustomize {
@@ -86,11 +86,13 @@ export const ACTION_STYLES: Record<string, { icon: LucideIcon; gradient: string;
   project_finance: { icon: LineChart, gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
   payment_request: { icon: Receipt, gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
 };
-const LOCKED_STYLE = { icon: Lock, gradient: 'from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700', shadow: 'shadow-slate-400/20' };
+export const LOCKED_STYLE = { icon: Lock, gradient: 'from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700', shadow: 'shadow-slate-400/20' };
 const FALLBACK_STYLE = { icon: ArrowUpRight, gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' };
 
+export const actionStyle = (action: WidgetAction) => (action.enabled ? ACTION_STYLES[action.key] || FALLBACK_STYLE : LOCKED_STYLE);
+
 /** Ô vuông biểu tượng gradient như app ở Home. */
-const AppIcon: React.FC<{ style: { icon: LucideIcon; gradient: string; shadow: string }; size?: 'tile' | 'row' }> = ({ style, size = 'tile' }) => {
+export const AppIcon: React.FC<{ style: { icon: LucideIcon; gradient: string; shadow: string }; size?: 'tile' | 'row' }> = ({ style, size = 'tile' }) => {
   const Icon = style.icon;
   return (
     <span className={`vcc-appicon bg-gradient-to-br ${style.gradient} shadow-md ${style.shadow}`} data-size={size}>
@@ -102,7 +104,7 @@ const AppIcon: React.FC<{ style: { icon: LucideIcon; gradient: string; shadow: s
 /** Nút thao tác nhanh: bấm là làm ngay (mở form thật hoặc đúng màn của module).
  *  tile = biểu tượng app trong ô; row = dòng trong thư mục, kèm lý do khi bị khóa. */
 export const QuickAction: React.FC<{ action: WidgetAction; onAction: (action: WidgetAction) => void; variant?: 'tile' | 'row' }> = ({ action, onAction, variant = 'tile' }) => {
-  const style = action.enabled ? ACTION_STYLES[action.key] || FALLBACK_STYLE : LOCKED_STYLE;
+  const style = actionStyle(action);
   const common = {
     type: 'button' as const,
     disabled: !action.enabled,
@@ -125,11 +127,13 @@ export const QuickAction: React.FC<{ action: WidgetAction; onAction: (action: Wi
   );
 };
 
-/** Ô "🔒 N chưa có quyền": mở thư mục để đọc lý do. */
-const LockedMore: React.FC<{ count: number; onOpen: () => void }> = ({ count, onOpen }) => (
-  <button type="button" className="vcc-tile" data-locked-more="true" onClick={onOpen} aria-haspopup="dialog" title="Xem thao tác bạn chưa có quyền và lý do">
-    <AppIcon style={LOCKED_STYLE} />
-    <span className="vcc-tile-label">{count} chưa có quyền</span>
+const MORE_STYLE = { icon: MoreHorizontal, gradient: 'from-slate-200 to-slate-300 dark:from-slate-600 dark:to-slate-700', shadow: 'shadow-slate-400/20' };
+
+/** Ô "…": còn nút không hiện trên ô (vượt 4 nút hoặc chưa có quyền) → mở thư mục đủ thao tác. */
+const MoreTile: React.FC<{ count: number; onOpen: () => void }> = ({ count, onOpen }) => (
+  <button type="button" className="vcc-tile" data-more="true" onClick={onOpen} aria-haspopup="dialog" aria-label={`Xem thêm ${count} thao tác`} title={`Xem thêm ${count} thao tác`}>
+    <AppIcon style={MORE_STYLE} />
+    <span className="vcc-tile-label">Xem thêm</span>
   </button>
 );
 
@@ -142,10 +146,12 @@ const WidgetCard: React.FC<{
   onNavigate: (route: string) => void;
   onAction: (action: WidgetAction) => void;
   onOpenFolder: (view: WidgetView, anchor: HTMLElement) => void;
+  /** Nút nhanh người dùng đã chọn cho ô này (undefined = mặc định 4 nút đầu). */
+  pinned?: string[];
   header?: React.ReactNode;
   /** Chế độ tùy chỉnh: ô không bung thư mục, hiện ↑ ↓ ✕. */
   edit?: { first: boolean; last: boolean; onMove: (direction: -1 | 1) => void; onHide: () => void };
-}> = ({ view, actions, canOpenRoute, onNavigate, onAction, onOpenFolder, header, edit }) => {
+}> = ({ view, actions, canOpenRoute, onNavigate, onAction, onOpenFolder, pinned, header, edit }) => {
   const Icon = WIDGET_ICONS[view.id];
   const allowed = canOpenRoute(view.route);
   const ref = useRef<HTMLElement>(null);
@@ -158,8 +164,8 @@ const WidgetCard: React.FC<{
     if (edit || event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
   };
-  const enabled = actions?.filter(action => action.enabled) || [];
-  const locked = actions ? actions.length - enabled.length : 0;
+  const shown = actions ? pinnedActionsOf(actions, pinned) : [];
+  const more = actions ? actions.length - shown.length : 0;
   return (
     <section
       ref={ref}
@@ -207,8 +213,8 @@ const WidgetCard: React.FC<{
           <p className="m-0 text-[12.5px] vcc-muted">Đang kiểm tra quyền…</p>
         ) : (
           <div className="vcc-qa" role="group" aria-label={`Thao tác nhanh ${view.title}`}>
-            {enabled.map(action => <QuickAction key={action.key} action={action} onAction={onAction} />)}
-            {locked > 0 && <LockedMore count={locked} onOpen={open} />}
+            {shown.map(action => <QuickAction key={action.key} action={action} onAction={onAction} />)}
+            {more > 0 && <MoreTile count={more} onOpen={open} />}
           </div>
         )}
       </div>
@@ -270,7 +276,7 @@ const TodayView: React.FC<{
         <CalendarDays size={13} />
         <span className="min-w-0 flex-1">{editing
           ? 'Dùng ↑ ↓ để đổi thứ tự, mắt gạch để ẩn ô. Bấm "Xong" để lưu cho tài khoản của bạn.'
-          : 'Bấm một nút để làm ngay; bấm vào nền ô để xem đủ thao tác của nhóm. Nút hiện theo quyền của bạn.'}</span>
+          : 'Bấm một nút để làm ngay; "Xem thêm" hoặc nền ô mở đủ thao tác và cho chọn nút hiện trên ô. Nút theo quyền của bạn.'}</span>
         {!editing && hiddenViews.length > 0 && <span>{hiddenViews.length} ô đang ẩn ·</span>}
         {customize.status === 'saving' && <span role="status">Đang lưu bố cục…</span>}
         {customize.status === 'saved' && !editing && <span role="status">Đã lưu bố cục</span>}
@@ -318,6 +324,7 @@ const TodayView: React.FC<{
             onNavigate={onNavigate}
             onAction={onAction}
             onOpenFolder={onOpenFolder}
+            pinned={customize.layout.pinned?.[view.id]}
             header={view.id === 'project' && data && data.projectOptions.length > 1 ? (
               <select
                 className="vcc-select"

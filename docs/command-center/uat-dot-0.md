@@ -7,8 +7,10 @@ Chạy sau khi deploy `20261008138000` … `20261008138004` và bật thí đi�
 - [ ] Thanh bên trái có "Trung tâm điều hành" kèm số việc chờ; người ngoài danh sách thí điểm **không** thấy mục này, gõ `/center` thì bị chặn.
 - [ ] Mở `/center`: thấy lời chào, ngày, "N việc chờ bạn · M ngày tới hạn hợp đồng" (khi có dự án).
 - [ ] Số "Chờ tôi" ở cột trái = số cạnh mục ở thanh bên = số "Việc chờ bạn" trên Home.
-- [ ] Ô "Hôm nay" chỉ có nút thao tác nhanh (không có số liệu việc). Bấm 3 nút bất kỳ → mở ngay form / đúng màn (Xin nghỉ phép, Tạo đề xuất mở form tại chỗ).
-- [ ] Bấm "🔒 N chưa có quyền" hoặc nền ô → bung thư mục đủ nút, nút khóa ghi lý do; bấm ra ngoài → thu về chỗ cũ.
+- [ ] Việc của tôi: nhóm mặc định thu gọn, có số việc và "N gấp"; bấm nhóm để mở.
+- [ ] Bấm một việc của **mỗi loại** đang có (nghỉ phép, chấm công bù, nhật ký, kế hoạch, đề xuất vật tư, phiếu kho, văn bản, Vioo Work, đặt xe, bảng công…) → màn xử lý mở **ngay trong tab**, đúng hồ sơ; duyệt / từ chối được tại chỗ; bấm qua lại trong màn đó không rời Center. Ghi lại loại nào hiển thị chật / lỗi.
+- [ ] Ô "Hôm nay" chỉ có nút thao tác nhanh, tối đa 4 nút. Bấm 3 nút bất kỳ → mở ngay form / đúng màn (Xin nghỉ phép, Tạo đề xuất mở form tại chỗ).
+- [ ] Bấm "… Xem thêm" hoặc nền ô → bung thư mục đủ nút, nút khóa ghi lý do; bấm ra ngoài → thu về chỗ cũ. "Chọn nút trên ô" → đổi nút, Lưu; tải lại trang vẫn giữ.
 - [ ] Tùy chỉnh: ẩn 1 ô, đổi thứ tự, Xong; tải lại trang vẫn giữ; "Về mặc định" trả lại.
 - [ ] Điện thoại: bấm một việc → mở hồ sơ; nút Back của máy về lại danh sách (không rời Center); thanh 3 nút đáy không che nội dung cuối.
 - [ ] Sáng / tối đều đọc rõ; không có gì nhấp nháy liên tục; iPhone không bị "A problem repeatedly occurred".

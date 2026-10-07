@@ -109,6 +109,9 @@ test("WebKit idle: 200 việc trong Chờ tôi", async ({ page }) => {
   await page.goto(`${base}?inbox=many`);
   await expect(page.getByRole("tab", { name: "Chờ tôi 200" })).toBeVisible();
   record("inbox-200-render-ms", Date.now() - started);
+  // Nhóm mặc định thu gọn: mở hết để đo khi cả 200 dòng hiện.
+  await page.getByRole("complementary", { name: "Việc của tôi" }).getByRole("button", { name: "Mở", exact: true }).click();
+  await expect(page.locator(".vcc-inbox .vcc-row")).toHaveCount(200);
   await page.locator(".vcc-inbox .vcc-scroll").evaluate(node => node.scrollTo({ top: node.scrollHeight }));
   await measureIdle(page, "inbox-200");
 });

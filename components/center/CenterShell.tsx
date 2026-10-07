@@ -14,7 +14,7 @@ import { useBackLayers, useNarrowViewport } from '../../lib/center/useBackLayers
 import { fetchCenterToday, fetchSiteWeather, type CenterToday, type SiteWeather } from '../../lib/center/centerTodayService';
 import type { WeatherSlot } from '../../lib/center/todayWidgets';
 import {
-  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, saveCenterLayout, sameLayout, showWidget,
+  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget, withPinnedActions,
   type CenterLayout, type CenterLayoutRecord,
 } from '../../lib/center/centerLayout';
 import './center.css';
@@ -230,7 +230,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, [loadLayout]);
   const todayData = today.status === 'ready' ? today.data : null;
   const savedLayout = typeof layoutRecord === 'object' ? layoutRecord.layout : null;
-  const baseLayout = savedLayout || defaultCenterLayout(actionFlags, todayData);
+  const baseLayout = resolveCenterLayout(savedLayout, defaultCenterLayout(actionFlags, todayData));
   const effectiveLayout = draft || baseLayout;
   const canManageLayout = typeof layoutRecord === 'object' && layoutRecord.canManage;
   const finishEditing = useCallback(() => {
@@ -238,14 +238,21 @@ const CenterShell: React.FC<CenterShellProps> = ({
     if (sameLayout(draft, baseLayout)) { setDraft(null); setLayoutStatus('idle'); return; }
     // Về đúng mặc định → lưu bố cục rỗng để sau này mặc định theo quyền vẫn tự cập nhật.
     const backToDefault = sameLayout(draft, defaultCenterLayout(actionFlags, todayData));
-    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] } } : draft;
+    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] }, ...(draft.pinned ? { pinned: draft.pinned } : {}) } : draft;
     setLayoutStatus('saving');
     saveLayout(toSave).then(version => {
-      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: backToDefault ? null : draft, version } : current));
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: toSave, version } : current));
       setDraft(null);
       setLayoutStatus('saved');
     }).catch(error => { console.warn('Center layout save failed:', error); setLayoutStatus('error'); });
   }, [draft, baseLayout, actionFlags, todayData, saveLayout]);
+  // Chọn nút nhanh của một ô (trong thư mục thao tác): lưu ngay, không qua chế độ Tùy chỉnh.
+  const savePinned = useCallback((id: CenterWidgetId, keys: string[]): Promise<void> => {
+    const next = withPinnedActions(savedLayout, id, keys);
+    return saveLayout(next).then(version => {
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: next, version } : current));
+    });
+  }, [savedLayout, saveLayout]);
   const customize: TodayCustomize = {
     layout: effectiveLayout,
     editing: draft !== null,
@@ -408,6 +415,9 @@ const CenterShell: React.FC<CenterShellProps> = ({
           closeRequest={folderCloseRequest}
           onDrill={onDrill}
           onAction={onAction}
+          shownKeys={pinnedActionsOf(actionsFor(folder.view.id) || [], effectiveLayout.pinned?.[folder.view.id]).map(action => action.key)}
+          pinLock={canManageLayout ? null : customize.lockReason || null}
+          onSavePinned={keys => savePinned(folder.view.id, keys)}
         />
       )}
       {modal && (

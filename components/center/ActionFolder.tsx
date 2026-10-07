@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowUpRight, X } from 'lucide-react';
+import { ArrowUpRight, Check, Lock, Pin, X } from 'lucide-react';
 import type { WidgetView } from '../../lib/center/todayWidgets';
 import type { WidgetAction } from '../../lib/center/centerActions';
 import type { DrillTarget } from '../../lib/center/drill';
-import { QuickAction } from './TodayView';
+import { AppIcon, QuickAction, actionStyle } from './TodayView';
+import { MAX_PINNED_ACTIONS } from '../../lib/center/centerLayout';
 
 // "Thư mục" thao tác của một ô Hôm nay: bung ra từ đúng vị trí ô (kiểu nhóm ứng dụng iPhone) bằng
 // transform + opacity (FLIP, hữu hạn, ~0,3 s), bấm ra ngoài / Esc thì thu về chỗ cũ rồi mới gỡ khỏi DOM.
@@ -38,7 +39,12 @@ const ActionFolder: React.FC<{
   onAction: (action: WidgetAction) => void;
   /** Tăng để yêu cầu thu lại từ bên ngoài (nút Back). */
   closeRequest?: number;
-}> = ({ view, icon: Icon, actions, anchor, onClose, onDrill, onAction, closeRequest = 0 }) => {
+  /** Nút đang hiện trên ô (đã chọn hoặc mặc định). */
+  shownKeys: string[];
+  /** Chọn nút trên ô: null = được chọn; chuỗi = lý do khóa. */
+  pinLock: string | null;
+  onSavePinned: (keys: string[]) => Promise<void>;
+}> = ({ view, icon: Icon, actions, anchor, onClose, onDrill, onAction, closeRequest = 0, shownKeys, pinLock, onSavePinned }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const closing = useRef(false);
@@ -96,6 +102,23 @@ const ActionFolder: React.FC<{
   const run = (fn: () => void) => { fn(); requestClose(); };
   const enabledCount = actions?.filter(action => action.enabled).length ?? 0;
 
+  // Chọn nút hiện trên ô (tối đa 4), lưu cho tài khoản.
+  const [picking, setPicking] = useState<string[] | null>(null);
+  const [pinStatus, setPinStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const togglePick = (key: string) => setPicking(current => {
+    if (!current) return current;
+    if (current.includes(key)) return current.filter(item => item !== key);
+    return current.length >= MAX_PINNED_ACTIONS ? current : [...current, key];
+  });
+  const savePick = () => {
+    if (!picking) return;
+    setPinStatus('saving');
+    onSavePinned(picking).then(() => { setPicking(null); setPinStatus('idle'); }).catch(error => {
+      console.warn('Center pinned actions save failed:', error);
+      setPinStatus('error');
+    });
+  };
+
   return (
     <div className="vcc-fold-layer" data-open={open}>
       <div className="vcc-fold-backdrop" data-open={open} onClick={requestClose} aria-hidden="true" />
@@ -115,6 +138,17 @@ const ActionFolder: React.FC<{
             <h2 id={`vcc-fold-${view.id}`} className="vcc-fold-title vcc-ellipsis">{view.title}</h2>
             <div className="text-xs vcc-muted vcc-ellipsis">{view.sub}</div>
           </div>
+          {actions && !picking && (
+            <button
+              type="button"
+              className="vcc-iconbtn"
+              onClick={() => { setPicking(shownKeys); setPinStatus('idle'); }}
+              disabled={!!pinLock}
+              title={pinLock || `Chọn tối đa ${MAX_PINNED_ACTIONS} nút hiện trên ô`}
+            >
+              {pinLock ? <Lock size={13} /> : <Pin size={13} />} <span className="text-xs">Chọn nút trên ô</span>
+            </button>
+          )}
           <button type="button" className="vcc-iconbtn" onClick={requestClose} aria-label="Đóng"><X size={15} /></button>
         </header>
         <div className="vcc-fold-body">
@@ -123,21 +157,65 @@ const ActionFolder: React.FC<{
             <p className="m-0 text-[12.5px] vcc-muted">Đang kiểm tra quyền…</p>
           ) : (
             <>
-              <div className="vcc-fold-section">{enabledCount}/{actions.length} thao tác theo quyền của bạn</div>
-              <div className="vcc-fold-acts" role="group" aria-label={`Thao tác ${view.title}`}>
-                {actions.map(action => (
-                  <QuickAction key={action.key} action={action} variant="row" onAction={picked => run(() => onAction(picked))} />
-                ))}
-              </div>
+              {picking ? (
+                <>
+                  <div className="vcc-fold-section">Chọn nút hiện trên ô · đã chọn {picking.length}/{MAX_PINNED_ACTIONS}</div>
+                  <div className="vcc-fold-acts" role="group" aria-label={`Chọn nút trên ô ${view.title}`}>
+                    {actions.map(action => {
+                      const on = picking.includes(action.key);
+                      const full = !on && picking.length >= MAX_PINNED_ACTIONS;
+                      return (
+                        <button
+                          key={action.key}
+                          type="button"
+                          className="vcc-act"
+                          data-picking="true"
+                          aria-pressed={on}
+                          disabled={!action.enabled || full}
+                          title={!action.enabled ? action.lockReason : full ? `Đã đủ ${MAX_PINNED_ACTIONS} nút — bỏ bớt một nút trước` : undefined}
+                          onClick={() => togglePick(action.key)}
+                        >
+                          <AppIcon style={actionStyle(action)} size="row" />
+                          <span className="vcc-act-text"><span className="vcc-ellipsis">{action.label}</span></span>
+                          <span className="vcc-pick" aria-hidden="true">{on && <Check size={13} />}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="vcc-fold-section">{enabledCount}/{actions.length} thao tác theo quyền của bạn</div>
+                  <div className="vcc-fold-acts" role="group" aria-label={`Thao tác ${view.title}`}>
+                    {actions.map(action => (
+                      <QuickAction key={action.key} action={action} variant="row" onAction={picked => run(() => onAction(picked))} />
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
-        <footer className="vcc-fold-foot">
-          <span className="text-xs vcc-muted">Bấm ra ngoài hoặc Esc để thu lại.</span>
-          <button type="button" className="vcc-link" onClick={() => run(() => onDrill({ kind: 'route', path: view.route, title: view.routeLabel }))}>
-            {view.routeLabel} <ArrowUpRight size={13} />
-          </button>
-        </footer>
+        {picking ? (
+          <footer className="vcc-fold-foot">
+            {pinStatus === 'error'
+              ? <span className="text-xs vcc-danger-text" role="alert">Chưa lưu được — thử lại</span>
+              : <span className="text-xs vcc-muted">Nút hiện trên ô theo thứ tự bạn chọn.</span>}
+            <span className="flex gap-2">
+              <button type="button" className="vcc-btn" onClick={() => setPicking(null)} disabled={pinStatus === 'saving'}>Hủy</button>
+              <button type="button" className="vcc-btn" data-pri="true" onClick={savePick} disabled={pinStatus === 'saving'}>
+                {pinStatus === 'saving' ? 'Đang lưu…' : 'Lưu'}
+              </button>
+            </span>
+          </footer>
+        ) : (
+          <footer className="vcc-fold-foot">
+            <span className="text-xs vcc-muted">Bấm ra ngoài hoặc Esc để thu lại.</span>
+            <button type="button" className="vcc-link" onClick={() => run(() => onDrill({ kind: 'route', path: view.route, title: view.routeLabel }))}>
+              {view.routeLabel} <ArrowUpRight size={13} />
+            </button>
+          </footer>
+        )}
       </div>
     </div>
   );

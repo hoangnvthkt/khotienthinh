@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyCenterLayout, defaultCenterLayout, fullOrder, hideWidget, moveWidget, parseCenterLayout, sameLayout, showWidget, type CenterLayout,
+  applyCenterLayout, defaultCenterLayout, fullOrder, hideWidget, moveWidget, parseCenterLayout, pinnedActionsOf, resolveCenterLayout, sameLayout, showWidget,
+  withPinnedActions, type CenterLayout,
 } from '../centerLayout';
 import { parseCenterActionFlags } from '../centerActions';
 import { parseCenterToday } from '../centerTodayService';
@@ -47,5 +48,24 @@ describe('Center layout', () => {
     const applied = applyCenterLayout(views.filter(v => v.id !== 'finance'), { widgets: { order: ['finance', 'hrm'], hidden: ['finance'] } });
     expect(applied.visible.map(v => v.id)).toEqual(['hrm', 'project', 'work', 'office', 'supply']);
     expect(applied.hidden).toEqual([]);
+  });
+
+  it('keeps chosen quick actions per widget, at most 4, alongside the default order', () => {
+    expect(parseCenterLayout({ pinned: { hrm: ['leave', 'checkin', 'leave', 7, 'a', 'b', 'c'], bogus: ['x'] } }))
+      .toEqual({ widgets: { order: [], hidden: [] }, pinned: { hrm: ['leave', 'checkin', 'a', 'b'] } });
+    const saved = withPinnedActions(null, 'hrm', ['leave', 'timesheet']);
+    expect(saved).toEqual({ widgets: { order: [], hidden: [] }, pinned: { hrm: ['leave', 'timesheet'] } });
+    const fallback = defaultCenterLayout(null, withProject);
+    // Thứ tự ô vẫn theo mặc định; nút đã chọn giữ khi đổi thứ tự / ẩn ô.
+    expect(resolveCenterLayout(saved, fallback)).toEqual({ widgets: fallback.widgets, pinned: { hrm: ['leave', 'timesheet'] } });
+    expect(moveWidget(resolveCenterLayout(saved, fallback), 'hrm', -1).pinned).toEqual({ hrm: ['leave', 'timesheet'] });
+    expect(hideWidget(resolveCenterLayout(saved, fallback), 'office').pinned).toEqual({ hrm: ['leave', 'timesheet'] });
+  });
+
+  it('shows chosen quick actions that are still allowed, else the first 4 allowed', () => {
+    const actions = ['a', 'b', 'c', 'd', 'e', 'f'].map((key, index) => ({ key, enabled: index !== 1 }));
+    expect(pinnedActionsOf(actions, undefined).map(a => a.key)).toEqual(['a', 'c', 'd', 'e']);
+    expect(pinnedActionsOf(actions, ['f', 'b', 'a']).map(a => a.key)).toEqual(['f', 'a']);
+    expect(pinnedActionsOf(actions, []).map(a => a.key)).toEqual([]);
   });
 });

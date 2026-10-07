@@ -8,15 +8,16 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 
 | Vùng | Để làm gì |
 |---|---|
-| **Việc của tôi** (cột trái) | **Chờ tôi**: việc bạn cần duyệt / làm / xác nhận. **Tôi gửi**: hồ sơ bạn lập đang chờ người khác. **Theo dõi**: hồ sơ bạn được thêm vào theo dõi. Việc gom theo module (Dự án, Yêu cầu, Mua hàng, Nhân sự, Office…), bấm tên nhóm để gập / mở. Hạn đỏ = quá hạn hoặc trong hôm nay, cam = sắp tới. |
-| **Vùng làm việc** (giữa) | Tab **Hôm nay** luôn ở đầu. Bấm một việc → mở thành tab riêng (có ✕ để đóng). Yêu cầu, đơn hàng, đề nghị chi, điều động mở ngay tại đây; hồ sơ khác có nút **Mở ở màn … ↗** đưa tới đúng hồ sơ trong module. |
+| **Việc của tôi** (cột trái) | **Chờ tôi**: việc bạn cần duyệt / làm / xác nhận. **Tôi gửi**: hồ sơ bạn lập đang chờ người khác. **Theo dõi**: hồ sơ bạn được thêm vào theo dõi. Việc gom theo module (Dự án, Yêu cầu, Mua hàng, Nhân sự, Office…), mặc định thu gọn — đầu nhóm có số việc và "N gấp"; bấm tên nhóm để mở. Hạn đỏ = quá hạn hoặc trong hôm nay, cam = sắp tới. |
+| **Vùng làm việc** (giữa) | Tab **Hôm nay** luôn ở đầu. Bấm một việc → mở thành tab riêng (có ✕ để đóng) với **màn xử lý của module ngay tại chỗ** (duyệt / từ chối / sửa như ở module). Nút **Mở ở màn … ↗** góc trên chỉ khi muốn sang hẳn module. |
 | **Trợ lý** (phải) | Đang chuẩn bị, chưa dùng được. |
 
 ## Tab "Hôm nay"
 
 - 6 ô theo nhóm: **Dự án · Nhân sự · Công việc · Hành chính · Mua hàng & Kho · Tài chính dự án** (ô Tài chính chỉ hiện khi bạn được xem tài chính dự án). Việc đang chờ bạn nằm ở cột **Việc của tôi**, nên ô chỉ có **nút thao tác nhanh**.
-- **Bấm một nút là làm ngay**: chấm công, xin nghỉ phép, tạo đề xuất, lập đề xuất vật tư, tạo nhật ký, đặt xe, soạn văn bản, mua nóng… Ô chỉ hiện nút bạn được phép dùng.
-- Nút **🔒 N chưa có quyền** (hoặc bấm vào nền ô) → ô bung ra đủ các nút của nhóm, nút bị khóa ghi rõ lý do. Bấm ra ngoài hoặc Esc để thu lại.
+- **Bấm một nút là làm ngay**: chấm công, xin nghỉ phép, tạo đề xuất, lập đề xuất vật tư, tạo nhật ký, đặt xe, soạn văn bản, mua nóng… Mỗi ô hiện **tối đa 4 nút** bạn được phép dùng.
+- Nút **… Xem thêm** (hoặc bấm vào nền ô) → ô bung ra đủ các nút của nhóm, nút bị khóa ghi rõ lý do. Bấm ra ngoài hoặc Esc để thu lại.
+- Trong ô đã bung, **Chọn nút trên ô** → tích tối đa 4 nút bạn hay dùng → **Lưu**. Nút hiện trên ô theo thứ tự bạn tích.
 - Mũi tên **↗** ở góc ô mở màn đầy đủ của module.
 - **Xin nghỉ phép** và **Tạo đề xuất** mở form ngay trên Trung tâm điều hành; gửi xong, danh sách việc tự cập nhật.
 - Ô **Dự án** chọn sẵn công trường bạn đang được điều động; thuộc nhiều dự án thì đổi ở góc ô.

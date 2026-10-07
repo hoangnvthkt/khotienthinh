@@ -1,10 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "../e2e",
-  testMatch: /center-(shell|idle)\.spec\.ts/,
+  testMatch: /center-(shell|idle|embed)\.spec\.ts/,
   workers: 1,
   projects: [
-    { name: "desktop", use: { browserName: "chromium", viewport: { width: 1440, height: 900 } }, testMatch: /center-shell\.spec\.ts/ },
+    { name: "desktop", use: { browserName: "chromium", viewport: { width: 1440, height: 900 } }, testMatch: /center-(shell|embed)\.spec\.ts/ },
     { name: "tablet", use: { browserName: "chromium", viewport: { width: 820, height: 1180 } }, testMatch: /center-shell\.spec\.ts/ },
     { name: "mobile-safari", use: { ...devices["iPhone 13"], browserName: "webkit" }, testMatch: /center-shell\.spec\.ts/ },
     // Đo CPU WebKit khi đứng yên: chạy riêng, tuần tự (npx playwright test -c tests/center/playwright.config.ts --project webkit-idle).

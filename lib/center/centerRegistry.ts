@@ -23,7 +23,8 @@ export const CENTER_MODULES: Record<CenterModuleKey, { label: string; route: str
 };
 
 /** View module đã tách được (props-driven) để nhúng vào tab của Center. Còn lại mở bằng deep link. */
-export type RendererId = 'request' | 'procurement' | 'finance' | 'site_assignment';
+/** route = màn thật của module chạy ngay trong tab (CenterRenderers › RouteRenderer). */
+export type RendererId = 'request' | 'procurement' | 'finance' | 'site_assignment' | 'route';
 
 export type CenterWidgetId = 'project' | 'hrm' | 'work' | 'office' | 'supply' | 'finance';
 

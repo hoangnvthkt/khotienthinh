@@ -51,6 +51,12 @@ export const moduleRouteFor = (item: WorkItem): string => {
   }
 };
 
+/** Màn module chạy được ngay trong tab Center (khớp EMBED_ROUTES ở components/center/CenterRenderers.tsx). */
+const EMBEDDABLE = [/^\/hrm\/(leave|attendance|timesheet|employees)(\?|$)/, /^\/da(\?|$)/, /^\/(requests|operations|audit)(\?|$)/,
+  /^\/finance(\/[\w-]+)?(\?|$)/, /^\/office\//, /^\/work\/tasks\/[^/?]+(\?|$)/, /^\/booking\/vehicle(\/|$)/];
+export const isEmbeddableRoute = (path: string): boolean => EMBEDDABLE.some(pattern => pattern.test(path));
+
+/** Bấm việc → mở ngay màn xử lý trong tab: view đã tách, không thì trang module chạy trong tab. */
 export const resolveDrillTarget = (item: WorkItem): ItemDrillTarget => {
   const ref = item.ref;
   const route = moduleRouteFor(item);
@@ -61,11 +67,11 @@ export const resolveDrillTarget = (item: WorkItem): ItemDrillTarget => {
     case 'po_delivery':
     case 'reconciliation': {
       const poId = str(ref.poId);
-      return poId ? tab('procurement', { initialOrderId: poId }) : { kind: 'route', path: route, title: item.code };
+      return tab('procurement', poId ? { initialOrderId: poId } : {});
     }
     case 'hot': return tab('procurement', { initialHotPurchaseId: str(ref.hotPurchaseId) || item.id });
     case 'fin_payment': return tab('finance', { initialSection: 'requests', initialRequestId: str(ref.requestId) || item.id });
     case 'site_assignment': return tab('site_assignment', { initialSelectedId: str(ref.assignmentId) || item.id });
-    default: return { kind: 'route', path: route, title: item.code };
+    default: return isEmbeddableRoute(route) ? tab('route', { path: route }) : { kind: 'route', path: route, title: item.code };
   }
 };
