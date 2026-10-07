@@ -105,7 +105,14 @@ Mục tiêu: `/center` mở được cho người trong rollout, có khung 3 c�
 - Chưa làm: form Work (`WorkCreateDrawer` dính service/scopes của WorkPage → đi route `create=1`), form nhật ký / đề xuất vật tư / mua nóng mở trong tab-route của module; `OfficeDetailHost`; thẻ biên nhận sau khi gửi (đợt 1 vỏ prepare/execute).
 - Kiểm: smoke 3 vai, vitest `centerActions.test.ts` (mọi nút có đích hợp lệ; khóa có lý do; với cờ rỗng chỉ "Đặt xe" mở), Playwright (bung/thu thư mục bằng backdrop + Esc, nút khóa, mở form giả, "Tạo công việc" → route; iPhone), `getAnimations()` = 0 sau khi thư mục đứng yên.
 
-PR-E tiếp theo: tùy chỉnh widget (ẩn/hiện/sắp xếp, mặc định theo mẫu quyền, lưu `center_user_layouts`) + Sidebar badge / Home đọc `vcc_my_work_items_v1` — kế hoạch 07 mục 6.
+**PR-E đã làm (07/10, nhánh `feature/command-center-dot0-e` chồng lên PR-D) — tùy chỉnh ô + một nguồn "Việc chờ bạn":** không có migration mới (dùng `center_user_layouts` + `get/save_center_layout_v1` của PR-A).
+- `lib/center/centerLayout.ts`: bố cục `{ widgets: { order, hidden } }`; parse fail-closed (rỗng → dùng mặc định); `defaultCenterLayout(flags, today)` theo **cờ máy chủ** thay cho đọc mẫu quyền trực tiếp: lập đề nghị chi → Tài chính trước; xem Cần mua → Mua hàng & Kho trước; thuộc dự án → Dự án trước; không dự án → Nhân sự, Công việc, Hành chính và ẩn 3 ô theo dự án. `moveWidget/hideWidget/showWidget/applyCenterLayout`.
+- TodayView: nút "Tùy chỉnh" (khóa 🔒 kèm lý do nếu thiếu `center.layout.manage`) → viền gạch, ↑ ↓ ẩn trên từng ô, thẻ "Ô đã ẩn: + …", "Về mặc định", "Xong" (lưu; về đúng mặc định thì lưu bố cục rỗng để mặc định theo quyền vẫn tự cập nhật). Đang tùy chỉnh thì bấm ô không bung thư mục. Ngoài chế độ sửa có dòng "N ô đang ẩn".
+- `lib/center/workItemsStore.ts`: `loadWorkItemsShared('mine')` gom lời gọi trùng, nhớ 60 s, `force` khi làm mới; `useMineWorkItems(enabled)`. Dùng ở InboxPanel, **badge Sidebar** cạnh "Trung tâm điều hành" (99+), **Home**: người đã bật Center thấy thẻ "Việc chờ bạn" (6 việc đầu, mở đúng màn module, "Mở Trung tâm điều hành") thay cho 3 thẻ tính trên trình duyệt (Quy trình / Yêu cầu / Phiếu kho), số "Cần xử lý" cũng lấy từ RPC. Người chưa bật Center: Home giữ nguyên như cũ.
+- Lưu ý: Quy trình chung (wf) chưa có trong RPC (đợt 1) → người đã bật Center tạm không thấy việc wf trên Home; vào /wf như cũ. Cần nói khi bật thí điểm.
+- Kiểm: vitest `centerLayout.test.ts`, `workItemsStore.test.ts`; Playwright tùy chỉnh (đổi thứ tự, ẩn, thêm lại, về mặc định, tải lại vẫn giữ, khóa khi thiếu quyền, người không dự án).
+
+PR-F tiếp theo: mobile/WebKit/UAT — đo CPU WebKit khi đứng yên, bật rollout nhóm SMB-2026 (chủ SP chạy), hướng dẫn 1 trang (kế hoạch 07 mục 6).
 
 ## 6. Câu hỏi còn mở với chủ SP (không chặn PR-A)
 

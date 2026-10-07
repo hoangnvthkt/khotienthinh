@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronsDownUp, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_MODULE_KEYS, CENTER_MODULES, type CenterModuleKey } from '../../lib/center/centerRegistry';
-import { dueInfo, fetchWorkItems, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
+import { dueInfo, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
+import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
 
-export type LoadWorkItems = (tab: InboxTab) => Promise<WorkItemsPage>;
+export type LoadWorkItems = (tab: InboxTab, options?: { force?: boolean }) => Promise<WorkItemsPage>;
 
 type TabState =
   | { status: 'idle' }
@@ -40,7 +41,7 @@ const InboxPanel: React.FC<{
   resizer?: React.ReactNode;
   /** Tăng để tải lại tab đang xem (sau khi gửi form từ Center). */
   refreshToken?: number;
-}> = ({ hidden, load = fetchWorkItems, now = new Date(), activeItemKey, onOpen, onMineCount, resizer, refreshToken = 0 }) => {
+}> = ({ hidden, load = loadWorkItemsShared, now = new Date(), activeItemKey, onOpen, onMineCount, resizer, refreshToken = 0 }) => {
   const [tab, setTab] = useState<InboxTab>('mine');
   const [states, setStates] = useState<Record<InboxTab, TabState>>({ mine: { status: 'idle' }, sent: { status: 'idle' }, watch: { status: 'idle' } });
   const [closed, setClosed] = useState<Set<string>>(new Set());
@@ -49,10 +50,10 @@ const InboxPanel: React.FC<{
   const tabRef = useRef(tab);
   tabRef.current = tab;
 
-  const loadTab = useCallback((target: InboxTab) => {
+  const loadTab = useCallback((target: InboxTab, force = false) => {
     const seq = ++requestSeq.current[target];
     setStates(current => ({ ...current, [target]: { status: 'loading', page: 'page' in current[target] ? current[target].page : undefined } }));
-    load(target).then(page => {
+    load(target, { force }).then(page => {
       if (requestSeq.current[target] !== seq) return;
       setStates(current => ({ ...current, [target]: { status: 'ready', page } }));
     }).catch(error => {
@@ -63,7 +64,7 @@ const InboxPanel: React.FC<{
   }, [load]);
 
   useEffect(() => { loadTab('mine'); }, [loadTab]);
-  useEffect(() => { if (refreshToken > 0) loadTab(tabRef.current); }, [refreshToken, loadTab]);
+  useEffect(() => { if (refreshToken > 0) loadTab(tabRef.current, true); }, [refreshToken, loadTab]);
   useEffect(() => { if (states[tab].status === 'idle') loadTab(tab); }, [tab, states, loadTab]);
 
   useEffect(() => {
@@ -72,7 +73,7 @@ const InboxPanel: React.FC<{
       const at = Date.now();
       if (at - lastFocusRefresh.current < FOCUS_REFRESH_MS) return;
       lastFocusRefresh.current = at;
-      loadTab(tabRef.current);
+      loadTab(tabRef.current, true);
     };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
@@ -122,7 +123,7 @@ const InboxPanel: React.FC<{
           );
         })}
         <div className="vcc-tabtools">
-          <button type="button" className="vcc-tabtool" onClick={() => loadTab(tab)} disabled={state.status === 'loading'} aria-label="Làm mới" title="Làm mới">
+          <button type="button" className="vcc-tabtool" onClick={() => loadTab(tab, true)} disabled={state.status === 'loading'} aria-label="Làm mới" title="Làm mới">
             <RefreshCw size={13} className={state.status === 'loading' ? 'animate-spin' : undefined} />
           </button>
           {groups.length > 1 && (
