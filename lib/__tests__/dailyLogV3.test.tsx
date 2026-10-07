@@ -121,3 +121,34 @@ describe('Nhật ký v3 — phiếu kỹ sư nhập tại dòng', () => {
     expect(html).toContain('Chép từ phiếu 26/09');
   });
 });
+
+describe('Nhật ký — trang lịch (07/10)', () => {
+  const day = (input: Partial<import('../dailyLogWbsService').DailyLogCalendarDay>) => ({ date: '2026-10-01', sent: 0, returned: 0, myDrafts: 0, people: 0, hasIssue: false, ...input });
+  const role = { userId: 'cht', canSubmit: true, canSummarize: true, canApprove: true };
+  it('tô màu ngày theo trạng thái', async () => {
+    const { calendarDayState } = await import('../dailyLogTodayBoard');
+    expect(calendarDayState(undefined)).toBe('empty');
+    expect(calendarDayState(day({ sent: 3 }))).toBe('awaiting_summary');
+    expect(calendarDayState(day({ sent: 3, summaryStatus: 'submitted' }))).toBe('awaiting_approval');
+    expect(calendarDayState(day({ sent: 3, summaryStatus: 'verified' }))).toBe('verified');
+    expect(calendarDayState(day({ sent: 2, returned: 1 }))).toBe('returned');
+    expect(calendarDayState(day({ myDrafts: 1 }))).toBe('draft');
+  });
+  it('chỉ hiện "Chờ bạn duyệt" cho đúng CHT được gửi, "Chờ tổng hợp" cho người tổng hợp', async () => {
+    const { calendarDayTask } = await import('../dailyLogTodayBoard');
+    expect(calendarDayTask(day({ sent: 3, summaryStatus: 'submitted', submittedToUserId: 'cht' }), role)).toBe('approve');
+    expect(calendarDayTask(day({ sent: 3, summaryStatus: 'submitted', submittedToUserId: 'other' }), role)).toBeNull();
+    expect(calendarDayTask(day({ sent: 3, summaryStatus: 'submitted' }), { ...role, canApprove: false })).toBeNull();
+    expect(calendarDayTask(day({ sent: 3 }), role)).toBe('summarize');
+    expect(calendarDayTask(day({ sent: 3, summaryStatus: 'rejected' }), role)).toBe('summarize');
+    expect(calendarDayTask(day({ sent: 3 }), { ...role, canSummarize: false })).toBeNull();
+    expect(calendarDayTask(day({ myDrafts: 1 }), role)).toBe('draft');
+  });
+  it('hàm lịch giữ quyền xem, nháp riêng tác giả, giới hạn khoảng ngày', () => {
+    const sql = readFileSync(join(process.cwd(), 'supabase/migrations/20261009110000_daily_log_calendar.sql'), 'utf8');
+    expect(sql).toContain("message = 'DAILY_LOG_VIEW_REQUIRED'");
+    expect(sql).toContain("(c.status <> 'draft' or c.author_user_id = v_actor)");
+    expect(sql).toContain('p_to - p_from > 62');
+    expect(sql).toContain('revoke all on function public.get_daily_log_calendar_v1(text, text, date, date) from public, anon;');
+  });
+});

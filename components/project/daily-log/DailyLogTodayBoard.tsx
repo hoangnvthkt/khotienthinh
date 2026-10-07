@@ -27,6 +27,8 @@ interface Props {
   onSummarize: (date: string) => void;
   onReview: (dailyLogId: string) => void;
   onOpenPhotos: (photos: Array<{ url: string; name: string }>, index: number) => void;
+  /** Mở từ ô lịch: một ngày cố định, không có thanh chuyển ngày và dải 7 ngày. */
+  fixedDate?: string;
 }
 
 type Photo = { url: string; name: string; fileType?: string };
@@ -365,7 +367,8 @@ export function DayReportBody({ board, onOpenPhotos, renderSlipExtra, unknownTot
 
 export function DailyLogTodayBoard(props: Props) {
   const today = localDateKey(new Date());
-  const [date, setDate] = useState(today);
+  const [stateDate, setDate] = useState(today);
+  const date = props.fixedDate || stateDate;
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -406,7 +409,7 @@ export function DailyLogTodayBoard(props: Props) {
 
   return (
     <section aria-label="Báo cáo ngày" className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!props.fixedDate && <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1">
           <button type="button" onClick={() => setDate(shiftDate(date, -1))} aria-label="Ngày trước" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"><ChevronLeft size={18} /></button>
           <h3 className="text-lg font-bold text-foreground first-letter:uppercase">{date === today ? 'Hôm nay, ' : ''}<span className="text-mint-700 dark:text-mint-300">{dayLabel}</span></h3>
@@ -414,7 +417,7 @@ export function DailyLogTodayBoard(props: Props) {
           {date !== today && <button type="button" onClick={() => setDate(today)} className="ml-1 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold hover:bg-muted">Về hôm nay</button>}
           {board?.summary?.weather && <Badge className="ml-1 border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{WEATHER_LABELS[board.summary.weather] || board.summary.weather}</Badge>}
         </div>
-      </div>
+      </div>}
 
       {loading && !board && <div className="flex items-center gap-2 rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground"><Loader2 size={16} className="animate-spin" aria-hidden />Đang tải báo cáo ngày…</div>}
       {error && (
@@ -426,13 +429,13 @@ export function DailyLogTodayBoard(props: Props) {
 
       {board && derived && (
         <div className={`space-y-4 ${loading ? 'opacity-60' : ''}`}>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-mint-200 bg-mint-50 px-4 py-3 dark:border-mint-900 dark:bg-mint-950/30">
+          {!props.fixedDate && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-mint-200 bg-mint-50 px-4 py-3 dark:border-mint-900 dark:bg-mint-950/30">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">{derived.task.title}</p>
               <p className="text-sm text-muted-foreground">{derived.task.detail}</p>
             </div>
             {derived.task.action && <button type="button" onClick={runTask} className="inline-flex items-center gap-1.5 rounded-lg bg-leaf-600 px-4 py-2 text-sm font-semibold text-white hover:bg-leaf-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf-600">{derived.task.actionLabel}</button>}
-          </div>
+          </div>}
 
           <ol className="grid grid-cols-2 gap-2 md:grid-cols-4" aria-label="Tiến trình trong ngày">
             {steps.map((step, index) => {
@@ -450,7 +453,7 @@ export function DailyLogTodayBoard(props: Props) {
 
           <DayReportBody board={board} onOpenPhotos={props.onOpenPhotos} />
 
-          <div>
+          {!props.fixedDate && <div>
             <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">7 ngày gần đây · nhân công</h4>
             <div className="grid grid-cols-7 gap-1.5">
               {board.days.map(day => {
@@ -466,7 +469,7 @@ export function DailyLogTodayBoard(props: Props) {
               })}
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">Xanh: đã duyệt · Vàng: đang chờ · Đỏ: có sự cố · Trắng: chưa có phiếu</p>
-          </div>
+          </div>}
         </div>
       )}
     </section>

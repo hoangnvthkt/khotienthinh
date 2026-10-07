@@ -52,6 +52,25 @@ import {
 } from '../../lib/dailyLogWorkflow';
 import { computeDailyLogMonthStats } from '../../lib/dailyLogMonthStats';
 import { DailyLogTodayBoard } from '../../components/project/daily-log/DailyLogTodayBoard';
+import { Drawer } from '../../components/procurement/hub/hubUi';
+import { calendarDayState, calendarDayTask, type CalendarDayState } from '../../lib/dailyLogTodayBoard';
+import type { DailyLogCalendarDay } from '../../lib/dailyLogWbsService';
+
+// Ô lịch (chủ SP 07/10): màu theo trạng thái ngày, nhãn theo việc của người xem.
+const DAY_STATE_CELL: Record<CalendarDayState, string> = {
+    verified: 'bg-leaf-50/70 dark:bg-leaf-950/20',
+    awaiting_approval: 'bg-amber-50/80 dark:bg-amber-950/20',
+    returned: 'bg-rose-50/70 dark:bg-rose-950/20',
+    awaiting_summary: 'bg-mint-50/80 dark:bg-mint-950/20',
+    draft: 'bg-slate-50 dark:bg-slate-900/40',
+    empty: 'bg-white dark:bg-zinc-900',
+};
+const DAY_STATE_BAR: Record<CalendarDayState, string> = {
+    verified: 'bg-leaf-500', awaiting_approval: 'bg-amber-400', returned: 'bg-rose-400', awaiting_summary: 'bg-mint-500', draft: 'bg-slate-300', empty: 'bg-transparent',
+};
+const DAY_STATE_LABEL: Record<CalendarDayState, string> = {
+    verified: 'Đã duyệt', awaiting_approval: 'Chờ CHT duyệt', returned: 'Có phiếu bị trả', awaiting_summary: 'Chờ tổng hợp', draft: 'Đang ghi phiếu', empty: '',
+};
 
 interface DailyLogTabProps {
     constructionSiteId?: string;
@@ -1140,7 +1159,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [filterWeather, setFilterWeather] = useState<string>('all');
     const [showAdvanced, setShowAdvanced] = useState(false);
-    const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+    const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
+    const [dayPanel, setDayPanel] = useState<string | null>(null);
+    const [calendarDays, setCalendarDays] = useState<DailyLogCalendarDay[]>([]);
     const [calendarMonth, setCalendarMonth] = useState(monthKeyFromDate(new Date()));
     const [dayLogPicker, setDayLogPicker] = useState<{ date: string; logs: DailyLog[] } | null>(null);
     const [viewLogId, setViewLogId] = useState<string | null>(null);
@@ -1411,6 +1432,12 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     };
 
     const handleCalendarDayClick = (date: string, dayLogs: DailyLog[]) => {
+        // Ngày theo quy trình mới: mở bảng của ngày (báo cáo + ghi / tổng hợp / duyệt).
+        if (todayBoardEnabled && workflowCutoverDate && date >= workflowCutoverDate) {
+            setDayLogPicker(null);
+            setDayPanel(date);
+            return;
+        }
         if (dayLogs.length === 0) {
             openCreateForDate(date);
             return;
@@ -2350,6 +2377,28 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         () => splitDailyLogDaysByCutover(dayRows, workflowCutoverDate), [dayRows, workflowCutoverDate]);
     const [showLegacyDays, setShowLegacyDays] = useState(false);
     const calendarCells = useMemo(() => buildCalendarCells(calendarMonth), [calendarMonth]);
+    const boardProjectId = (projectId || effectiveId) as string | undefined;
+    useEffect(() => {
+        if (!todayBoardEnabled || !boardProjectId || !calendarCells.length) { setCalendarDays([]); return; }
+        let active = true;
+        dailyLogWbsService.getCalendar({ projectId: boardProjectId, constructionSiteId: constructionSiteId || null,
+            from: calendarCells[0].date, to: calendarCells[calendarCells.length - 1].date })
+            .then(days => { if (active) setCalendarDays(Array.isArray(days) ? days : []); })
+            .catch(() => { if (active) setCalendarDays([]); });
+        return () => { active = false; };
+    }, [todayBoardEnabled, boardProjectId, constructionSiteId, calendarCells, logs]);
+    const calendarByDate = useMemo(() => new Map(calendarDays.map(day => [day.date.slice(0, 10), day])), [calendarDays]);
+    const dayRole = {
+        userId: user?.id,
+        canSubmit: hasDailyLogAction(DAILY_LOG_ACTION.submit),
+        canSummarize: hasDailyLogAction(DAILY_LOG_ACTION.summarize),
+        canApprove: hasDailyLogAction(DAILY_LOG_ACTION.approve),
+    };
+    const isWorkflowDay = (date: string) => todayBoardEnabled && Boolean(workflowCutoverDate) && date >= (workflowCutoverDate || '');
+    const myDayTasks = calendarDays.map(day => ({ date: day.date.slice(0, 10), task: calendarDayTask(day, dayRole) }));
+    const approveDays = myDayTasks.filter(item => item.task === 'approve').map(item => item.date);
+    const summarizeDays = myDayTasks.filter(item => item.task === 'summarize').map(item => item.date);
+    const panelDay = dayPanel ? calendarByDate.get(dayPanel) : undefined;
     const calendarTitle = useMemo(() => {
         const [year, month] = calendarMonth.split('-').map(Number);
         return new Date(year, month - 1, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' });
@@ -2704,72 +2753,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
     return (
         <div className="space-y-6">
-            {/* AI Analysis */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <h3 className="text-sm font-black text-slate-700 dark:text-white">Nhật ký công trường</h3>
-                <div className="flex items-center gap-2 flex-wrap">
-                    <a
-                        href={buildDailyLogReportLink()}
-                        className="flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-700 transition-colors hover:bg-teal-100"
-                    >
-                        <BarChart3 size={13} /> Xem báo cáo nhật ký
-                    </a>
-                    <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
-                </div>
-            </div>
-            {todayBoardEnabled && (projectId || effectiveId) ? (
-                <DailyLogTodayBoard
-                    projectId={(projectId || effectiveId) as string}
-                    constructionSiteId={constructionSiteId || null}
-                    userId={user?.id}
-                    canSubmit={hasDailyLogAction(DAILY_LOG_ACTION.submit)}
-                    canSummarize={hasDailyLogAction(DAILY_LOG_ACTION.summarize)}
-                    canApprove={hasDailyLogAction(DAILY_LOG_ACTION.approve)}
-                    refreshKey={logs}
-                    onCreate={openCreateForDate}
-                    onSummarize={date => { openSummaryForDate(date).catch(console.error); }}
-                    onReview={id => setViewLogId(id)}
-                    onOpenPhotos={(photos, index) => { setGalleryAttachments(photos); setGalleryIndex(index); }}
-                />
-            ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-                {/* Tổng nhật ký */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><FileSpreadsheet size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Ngày có nhật ký</div>
-                    <div className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-100 leading-none tracking-tight">{stats.daysWithLogs}</div>
-                    <div className="text-[10px] text-teal-700 dark:text-teal-400 font-medium mt-2 flex items-center gap-1 truncate">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teal-600 shrink-0" /> Tháng này: {stats.monthDays} ngày
-                    </div>
-                </div>
-
-                {/* Nhân công trung bình */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><Users size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Nhân công TB/ngày</div>
-                    <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.avgWorkers ?? '—'}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">{stats.avgWorkers === null ? 'Tháng này chưa ghi nhân công' : `Tháng này · ${stats.workerDays} ngày có số liệu`}</div>
-                </div>
-
-                {/* Ngày mưa */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><CloudRain size={11} className="text-teal-700 dark:text-teal-400 shrink-0" /> Ngày mưa</div>
-                    <div className="text-2xl sm:text-3xl font-bold text-teal-700 dark:text-teal-400 leading-none tracking-tight">{stats.rainyDays}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Tháng này</div>
-                </div>
-
-                {/* Vấn đề sự cố */}
-                <div className="bg-white dark:bg-zinc-900 rounded-2xl p-3.5 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-sm transition-shadow min-w-0">
-                    <div className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-1.5 truncate"><AlertTriangle size={11} className="text-red-500 shrink-0" /> Ngày có sự cố</div>
-                    <div className={`text-2xl sm:text-3xl font-bold leading-none tracking-tight ${stats.issueDays > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100'}`}>{stats.issueDays}</div>
-                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-2 truncate">Tháng này · cả trong phiếu</div>
-                </div>
-            </div>
-            )}
-
             {/* Log List */}
             <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
                     <h3 className="text-sm font-black text-slate-700 flex items-center gap-2">
-                        <Calendar size={16} className="text-teal-500" /> {todayBoardEnabled ? 'Lịch sử nhật ký' : 'Nhật ký công trường'}
+                        <Calendar size={16} className="text-teal-500" /> Nhật ký công trường
                     </h3>
                     <div className="flex items-center gap-2 flex-wrap justify-end">
                         <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
@@ -2812,6 +2800,19 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 {availableMonths.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         )}
+                        {approveDays.length > 0 && <button type="button" onClick={() => setDayPanel(approveDays[0])}
+                            className="overdue-blink inline-flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 hover:bg-amber-100">
+                            <CheckCircle2 size={13} /> Chờ bạn duyệt · {approveDays.length}
+                        </button>}
+                        {summarizeDays.length > 0 && <button type="button" onClick={() => setDayPanel(summarizeDays[0])}
+                            className="inline-flex items-center gap-1 rounded-xl border border-mint-300 bg-mint-50 px-3 py-1.5 text-[11px] font-bold text-mint-800 hover:bg-mint-100">
+                            <FileSpreadsheet size={13} /> Chờ tổng hợp · {summarizeDays.length}
+                        </button>}
+                        <a href={buildDailyLogReportLink()} title="Xem báo cáo nhật ký"
+                            className="inline-flex h-8 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[11px] font-bold text-slate-600 hover:bg-muted">
+                            <BarChart3 size={13} className="text-teal-600" /> Báo cáo
+                        </a>
+                        <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
                         <button onClick={() => { if (!ensureDailyLogAction(DAILY_LOG_ACTION.create, 'ghi nhật ký')) return; resetForm(); setShowForm(true); }}
                             disabled={!pbacLoaded || !hasDailyLogAction(DAILY_LOG_ACTION.create)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
@@ -2988,17 +2989,39 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 const primaryLog = dayLogs[0];
                                 const totalWorkers = dayLogs.reduce((sum, log) => sum + (log.workerCount || 0), 0);
                                 const isToday = cell.date === toDateKey(new Date());
+                                const workflow = isWorkflowDay(cell.date);
+                                const info = workflow ? calendarByDate.get(cell.date) : undefined;
+                                const state = workflow ? calendarDayState(info) : 'empty';
+                                const task = workflow ? calendarDayTask(info, dayRole) : null;
+                                const future = cell.date > toDateKey(new Date());
                                 return (
                                     <button
                                         key={cell.date}
                                         onClick={() => handleCalendarDayClick(cell.date, dayLogs)}
-                                        className={`min-h-[72px] sm:min-h-[92px] border-r border-b border-zinc-200 dark:border-zinc-800 p-2 text-left transition-colors hover:bg-teal-50/50 dark:hover:bg-teal-950/20 focus:outline-none ${cell.inMonth ? 'bg-white dark:bg-zinc-900' : 'bg-zinc-50/40 dark:bg-zinc-950/40'} ${isToday ? 'ring-2 ring-inset ring-teal-500 dark:ring-teal-400' : ''}`}
+                                        title={workflow && DAY_STATE_LABEL[state] ? DAY_STATE_LABEL[state] : undefined}
+                                        className={`group relative flex flex-col justify-start min-h-[76px] sm:min-h-[104px] border-r border-b border-zinc-200 dark:border-zinc-800 p-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 hover:z-10 hover:shadow-lg motion-safe:hover:-translate-y-0.5 ${!cell.inMonth ? 'bg-zinc-50/40 dark:bg-zinc-950/40' : workflow ? DAY_STATE_CELL[state] : 'bg-white dark:bg-zinc-900'} ${isToday ? 'ring-2 ring-inset ring-teal-500 dark:ring-teal-400' : ''}`}
                                     >
+                                        {workflow && state !== 'empty' && <span className={`absolute inset-x-0 top-0 h-1 ${DAY_STATE_BAR[state]}`} aria-hidden />}
                                         <div className="flex items-start justify-between gap-1">
-                                            <span className={`text-xs font-bold ${cell.inMonth ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-300 dark:text-zinc-600'}`}>{cell.day}</span>
+                                            <span className={`grid h-6 min-w-6 place-items-center rounded-full px-1 text-xs font-bold ${isToday ? 'bg-teal-600 text-white' : cell.inMonth ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-300 dark:text-zinc-600'}`}>{cell.day}</span>
                                             {primaryLog && <span className="text-sm leading-none" title={WEATHER[primaryLog.weather]?.label}>{WEATHER[primaryLog.weather]?.emoji}</span>}
                                         </div>
-                                        {dayLogs.length > 0 && (
+                                        {workflow && info ? (
+                                            <div className="mt-1.5 space-y-1">
+                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
+                                                    {info.people > 0 && <span className="inline-flex items-center gap-0.5 text-mint-700 dark:text-mint-300"><Users size={10} /> <b className="tabular-nums text-leaf-700 dark:text-leaf-300">{info.people}</b></span>}
+                                                    {info.sent > 0 && <span><b className="tabular-nums text-leaf-700 dark:text-leaf-300">{info.sent}</b><span className="hidden sm:inline"> phiếu</span></span>}
+                                                    {info.hasIssue && <span className="text-amber-700" title="Có sự cố"><AlertTriangle size={10} className="inline" /></span>}
+                                                </div>
+                                                {task && <span className={`sm:hidden inline-block h-2.5 w-2.5 rounded-full ${task === 'approve' ? 'overdue-blink bg-amber-500' : task === 'summarize' ? 'bg-mint-600' : 'bg-slate-400'}`} aria-label={task === 'approve' ? 'Chờ bạn duyệt' : task === 'summarize' ? 'Chờ tổng hợp' : 'Phiếu nháp của bạn'} />}
+                                                {task === 'approve' ? <span className="overdue-blink hidden sm:inline-flex rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">Chờ bạn duyệt</span>
+                                                    : task === 'summarize' ? <span className="hidden sm:inline-flex rounded-full bg-mint-600 px-1.5 py-0.5 text-[10px] font-bold text-white">Chờ tổng hợp</span>
+                                                    : task === 'draft' ? <span className="hidden sm:inline-flex rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">Phiếu nháp của bạn</span>
+                                                    : state !== 'empty' && <span className={`hidden sm:inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${state === 'verified' ? 'bg-leaf-100 text-leaf-800' : state === 'returned' ? 'bg-rose-100 text-rose-700' : state === 'awaiting_approval' ? 'bg-amber-100 text-amber-800' : 'bg-mint-100 text-mint-800'}`}>{state === 'verified' ? '✓ ' : ''}{DAY_STATE_LABEL[state]}</span>}
+                                            </div>
+                                        ) : workflow ? (
+                                            !future && cell.inMonth && <span className="mt-2 hidden text-[10px] font-semibold text-teal-700 opacity-0 transition group-hover:opacity-100 sm:inline-flex">+ Ghi nhật ký</span>
+                                        ) : dayLogs.length > 0 && (
                                             <div className="mt-2 space-y-1">
                                                 <div className="flex items-center gap-1">
                                                     {dayLogs.slice(0, 4).map(log => (
@@ -3016,6 +3039,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                 );
                             })}
                         </div>
+                        {todayBoardEnabled && <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                            {(['awaiting_summary', 'awaiting_approval', 'verified', 'returned'] as const).map(state => <span key={state} className="inline-flex items-center gap-1.5">
+                                <span className={`h-2.5 w-2.5 rounded-full ${DAY_STATE_BAR[state]}`} />{DAY_STATE_LABEL[state]}</span>)}
+                            <span>· Bấm vào một ngày để ghi phiếu, tổng hợp hoặc duyệt.</span>
+                        </div>}
                     </div>
                 ) : dayRows.length === 0 ? (
                     <div className="p-12 text-center">
@@ -3988,6 +4016,34 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* Lightbox Component Overlay */}
+            {dayPanel && boardProjectId && !showForm && !viewLogId && !summaryDate && <Drawer wide label={`Nhật ký ngày ${formatViDate(dayPanel)}`} onClose={() => setDayPanel(null)}
+                header={<div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Nhật ký công trường</p>
+                    <h3 className="text-lg font-bold capitalize text-foreground">{new Date(`${dayPanel}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</h3>
+                    <div className="flex flex-wrap gap-2">
+                        {dayRole.canSubmit && dayPanel <= toDateKey(new Date()) && <button type="button" onClick={() => openCreateForDate(dayPanel)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold hover:bg-muted"><Plus size={15} className="text-teal-600" />{panelDay?.myDrafts ? 'Mở phiếu nháp' : 'Ghi phiếu'}</button>}
+                        {dayRole.canSummarize && (panelDay?.sent || 0) > 0 && panelDay?.summaryStatus !== 'submitted' && panelDay?.summaryStatus !== 'verified' && <button type="button" onClick={() => { openSummaryForDate(dayPanel).catch(console.error); }}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-mint-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-mint-700"><FileSpreadsheet size={15} />{panelDay?.summaryId ? 'Mở bản tổng hợp' : 'Tổng hợp ngày'}</button>}
+                        {panelDay?.summaryId && (panelDay.summaryStatus === 'submitted' || panelDay.summaryStatus === 'verified') && <button type="button" onClick={() => setViewLogId(panelDay.summaryId!)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${calendarDayTask(panelDay, dayRole) === 'approve' ? 'bg-leaf-600 text-white hover:bg-leaf-700' : 'border border-border bg-card hover:bg-muted'}`}>
+                            <CheckCircle2 size={15} />{calendarDayTask(panelDay, dayRole) === 'approve' ? 'Xem & duyệt' : 'Xem bản tổng hợp'}</button>}
+                    </div>
+                </div>}>
+                <DailyLogTodayBoard fixedDate={dayPanel}
+                    projectId={boardProjectId}
+                    constructionSiteId={constructionSiteId || null}
+                    userId={user?.id}
+                    canSubmit={dayRole.canSubmit}
+                    canSummarize={dayRole.canSummarize}
+                    canApprove={dayRole.canApprove}
+                    refreshKey={logs}
+                    onCreate={openCreateForDate}
+                    onSummarize={date => { openSummaryForDate(date).catch(console.error); }}
+                    onReview={id => setViewLogId(id)}
+                    onOpenPhotos={(photos, index) => { setGalleryAttachments(photos); setGalleryIndex(index); }}
+                />
+            </Drawer>}
             {galleryAttachments && galleryAttachments.length > 0 && (
                 <SafetyImageGalleryModal
                     attachments={galleryAttachments}
