@@ -1,10 +1,29 @@
 // Danh mục của Trung tâm điều hành. Màu từng module nằm ở components/center/center.css
 // (--c-<module>, --c-<module>-s), có bản sáng và tối — mockup v1.1 đã duyệt:
-// Dự án chàm · Nhân sự tím · Công việc/Office teal · Mua hàng lục · Tài chính cyan · Kho cam.
+// Dự án chàm · Yêu cầu cyan · Quy trình xanh dương · Công việc/Office teal · Mua hàng lục · Vật tư cam · Nhân sự tím · Tài chính cyan đậm · Đặt xe sky.
 
-export type CenterModuleKey = 'project' | 'hrm' | 'work' | 'office' | 'procurement' | 'finance' | 'warehouse';
+export type CenterModuleKey =
+  | 'project' | 'request' | 'workflow' | 'work' | 'procurement' | 'warehouse' | 'hrm' | 'finance' | 'office' | 'vehicle';
 
-export const CENTER_MODULE_KEYS: readonly CenterModuleKey[] = ['project', 'hrm', 'work', 'office', 'procurement', 'finance', 'warehouse'];
+/** Thứ tự nhóm trong "Việc của tôi" (theo rail module của mockup). */
+export const CENTER_MODULE_KEYS: readonly CenterModuleKey[] =
+  ['project', 'request', 'workflow', 'work', 'procurement', 'warehouse', 'hrm', 'finance', 'office', 'vehicle'];
+
+export const CENTER_MODULES: Record<CenterModuleKey, { label: string; route: string }> = {
+  project: { label: 'Dự án', route: '/da' },
+  request: { label: 'Yêu cầu', route: '/rq' },
+  workflow: { label: 'Quy trình', route: '/wf' },
+  work: { label: 'Vioo Work', route: '/work' },
+  procurement: { label: 'Mua hàng', route: '/procurement' },
+  warehouse: { label: 'Vật tư', route: '/operations' },
+  hrm: { label: 'Nhân sự', route: '/my-profile' },
+  finance: { label: 'Tài chính', route: '/finance' },
+  office: { label: 'Office', route: '/office' },
+  vehicle: { label: 'Đặt xe', route: '/booking/vehicle' },
+};
+
+/** View module đã tách được (props-driven) để nhúng vào tab của Center. Còn lại mở bằng deep link. */
+export type RendererId = 'request' | 'procurement' | 'finance' | 'site_assignment';
 
 export type CenterWidgetId = 'project' | 'hrm' | 'work' | 'office' | 'supply' | 'finance';
 
