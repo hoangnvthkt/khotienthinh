@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Inbox, LayoutDashboard, LayoutGrid, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
@@ -11,8 +11,9 @@ import { buildWidgetActions, fetchCenterActions, type CenterActionFlags, type Ce
 import type { WidgetView } from '../../lib/center/todayWidgets';
 import type { WorkItem } from '../../lib/center/workItemsService';
 import { useBackLayers, useNarrowViewport } from '../../lib/center/useBackLayers';
-import { fetchCenterToday, fetchSiteWeather, type CenterToday, type SiteWeather } from '../../lib/center/centerTodayService';
-import type { WeatherSlot } from '../../lib/center/todayWidgets';
+import { fetchCenterToday, type CenterToday } from '../../lib/center/centerTodayService';
+import { civilOf, type CivilRange } from '../../lib/center/civilDate';
+import type { WorkItem as InboxWorkItem } from '../../lib/center/workItemsService';
 import {
   defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget, withPinnedActions,
   type CenterLayout, type CenterLayoutRecord,
@@ -50,7 +51,6 @@ const personInitials = (name: string) => {
 const companyInitials = (name: string) => wordsOf(name).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'V';
 
 export type LoadToday = (projectId: string | null) => Promise<CenterToday>;
-export type LoadWeather = (site: { id: string; latitude: number; longitude: number }, now: Date) => Promise<SiteWeather | null>;
 export type LoadActions = (projectId: string | null) => Promise<CenterActionFlags>;
 export type LoadLayout = () => Promise<CenterLayoutRecord>;
 export type SaveLayout = (layout: CenterLayout) => Promise<number>;
@@ -72,8 +72,6 @@ export interface CenterShellProps {
   loadWorkItems?: LoadWorkItems;
   /** Số liệu Hôm nay (mặc định RPC vcc_my_center_v1). */
   loadToday?: LoadToday;
-  /** Thời tiết công trường (mặc định Open-Meteo, cache 30 phút). */
-  loadWeather?: LoadWeather;
   /** Cờ "được bấm gì" cho thao tác nhanh (mặc định RPC vcc_my_actions_v1). */
   loadActions?: LoadActions;
   /** View nhúng cho tab hồ sơ (mặc định tải lười CenterRenderers). */
@@ -87,14 +85,20 @@ export interface CenterShellProps {
   onExitCenter?: (options?: { replace?: boolean }) => void;
 }
 
+// Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
+// lại mãi (sự cố 07/10: hàm thời tiết mặc định tạo mới mỗi lần vẽ → vẽ lại vô hạn → treo app khi bật thật).
+
 // Khung 3 vùng theo mockup v1.1: Việc của tôi · vùng làm việc có tab · Trợ lý (thu gọn).
 // Rail module bên trái là Sidebar sẵn có của Layout.
 const CenterShell: React.FC<CenterShellProps> = ({
-  person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now = new Date(),
-  loadWorkItems, loadToday = fetchCenterToday, loadWeather = (site, at) => fetchSiteWeather(site.id, site.latitude, site.longitude, at),
+  person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now: nowProp,
+  loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, onExitCenter,
 }) => {
+  // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
+  const [mountedAt] = useState(() => new Date());
+  const now = nowProp ?? mountedAt;
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
   const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
   const [inboxWidth, setInboxWidth] = useState(() => clampWidth(Number(readStorage(INBOX_WIDTH_KEY)) || 340));
@@ -105,7 +109,9 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [mineCount, setMineCount] = useState<number | null>(null);
   const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY));
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
-  const [weather, setWeather] = useState<WeatherSlot>(null);
+  // Lọc Việc của tôi theo hạn (ô Lịch ở Hôm nay); hạn của các việc Chờ tôi để chấm trên lịch.
+  const [dueRange, setDueRange] = useState<CivilRange | null>(null);
+  const [mineItems, setMineItems] = useState<InboxWorkItem[]>([]);
   const [todayAttempt, setTodayAttempt] = useState(0);
   const [actionFlags, setActionFlags] = useState<CenterActionFlags | null>(null);
   const [folder, setFolder] = useState<{ view: WidgetView; anchor: HTMLElement } | null>(null);
@@ -156,19 +162,6 @@ const CenterShell: React.FC<CenterShellProps> = ({
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, []);
 
-  // Thời tiết công trường của dự án đang xem; không có tọa độ hoặc lỗi → ẩn, không báo đỏ.
-  const site = today.status === 'ready' ? today.data.project?.site : null;
-  const siteKey = site && site.latitude != null && site.longitude != null ? `${site.id}:${site.latitude}:${site.longitude}` : null;
-  useEffect(() => {
-    if (!siteKey || !site || site.latitude == null || site.longitude == null) { setWeather(null); return; }
-    let alive = true;
-    setWeather('loading');
-    loadWeather({ id: site.id, latitude: site.latitude, longitude: site.longitude }, now)
-      .then(result => { if (alive) setWeather(result); })
-      .catch(() => { if (alive) setWeather(null); });
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteKey, loadWeather]);
 
   const toggleInbox = () => setInboxHidden(value => { writeStorage(INBOX_HIDDEN_KEY, String(!value)); return !value; });
 
@@ -293,6 +286,16 @@ const CenterShell: React.FC<CenterShellProps> = ({
   });
   backRef.current = back;
   const onMineCount = useCallback((count: number | null) => setMineCount(count), []);
+  const onMineItems = useCallback((items: InboxWorkItem[]) => setMineItems(items), []);
+  const dueDays = useMemo(() => mineItems.map(item => civilOf(item.dueAt)).filter((day): day is string => !!day), [mineItems]);
+  // Chọn ngày ở ô Lịch → hiện Việc của tôi đã lọc (điện thoại: chuyển sang tab Việc; máy tính: mở lại cột nếu đang ẩn).
+  const applyDueRange = useCallback((range: CivilRange | null) => {
+    setDueRange(range);
+    if (!range) return;
+    setInboxHidden(false);
+    writeStorage(INBOX_HIDDEN_KEY, 'false');
+    setMobilePane('inbox');
+  }, []);
 
   return (
     <div className="vcc" data-pane={mobilePane}>
@@ -332,7 +335,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
             <LayoutGrid size={15} /> <span className="vcc-desktop-only">Giao diện cũ</span>
           </button>
         )}
-        <button type="button" className="vcc-iconbtn" onClick={onToggleTheme} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'} title={isDark ? 'Nền sáng' : 'Nền tối'}>
+        {/* Máy tính: nút sáng / tối nằm ở rail trái của giao diện Trung tâm điều hành. */}
+        <button type="button" className="vcc-iconbtn vcc-mobile-only" onClick={onToggleTheme} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'} title={isDark ? 'Nền sáng' : 'Nền tối'}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </button>
         <button type="button" className="vcc-iconbtn vcc-desktop-only" onClick={() => setAssistantOpen(open => !open)} aria-pressed={assistantOpen}>
@@ -358,6 +362,9 @@ const CenterShell: React.FC<CenterShellProps> = ({
           activeItemKey={current?.item ? current.id : null}
           onOpen={openItem}
           onMineCount={onMineCount}
+          onMineItems={onMineItems}
+          dueRange={dueRange}
+          onClearDueRange={() => setDueRange(null)}
           refreshToken={inboxRefresh}
           resizer={(
             <div
@@ -395,7 +402,9 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 onOpenFolder={onOpenFolder}
                 actionsFor={actionsFor}
                 today={today}
-                weather={weather}
+                dueDays={dueDays}
+                dueRange={dueRange}
+                onDueRange={applyDueRange}
                 mineCount={mineCount}
                 onSelectProject={selectProject}
                 customize={customize}

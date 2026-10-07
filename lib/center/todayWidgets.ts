@@ -1,6 +1,6 @@
 import { CENTER_WIDGET_GROUPS, type CenterModuleKey, type CenterWidgetId } from './centerRegistry';
 import type { DrillTarget } from './drill';
-import type { CenterToday, SiteWeather } from './centerTodayService';
+import type { CenterToday } from './centerTodayService';
 
 // Dựng ô số liệu của "Hôm nay" từ payload vcc_my_center_v1. Hợp đồng drill-down (kế hoạch 07 mục 3):
 // không con số nào đứng một mình — mỗi Stat có target mở đúng danh sách / hồ sơ; ô chưa có dữ liệu
@@ -31,11 +31,8 @@ export interface WidgetView {
   empty?: { text: string; target: DrillTarget };
 }
 
-export type WeatherSlot = 'loading' | SiteWeather | null;
-
 export interface TodayContext {
   now: Date;
-  weather: WeatherSlot;
   mineCount: number | null;
 }
 
@@ -196,16 +193,6 @@ export const buildTodayWidgets = (today: CenterToday, ctx: TodayContext): Widget
     base.stats.push({ key: 'trip', label: 'Xe', target: route(trip ? '/booking/vehicle/my' : '/booking/vehicle', 'Đặt xe'),
       value: trip ? `${ddmm(trip.pickupAt)} ${hhmm(trip.pickupAt)} · ${TRIP_STATUS[trip.status] || trip.status}${trip.vehicle ? ` · xe ${trip.vehicle}` : ''}` : 'Không có chuyến sắp tới',
       tone: trip ? 'num' : 'muted', hint: trip?.destination || undefined });
-    const site = project?.site;
-    const weatherTarget: DrillTarget = site?.latitude != null && site?.longitude != null && pid
-      ? route(query('/da', { projectId: pid }), 'Dự án') : route('/hrm/assignments', 'Công trường');
-    const weather = ctx.weather;
-    base.stats.push({ key: 'weather', label: 'Thời tiết công trường', target: weatherTarget,
-      value: !project ? 'Chưa chọn dự án' : !site || site.latitude == null || site.longitude == null ? 'Chưa khai tọa độ công trường'
-        : weather === 'loading' ? 'Đang lấy thời tiết…' : weather === null ? 'Không lấy được thời tiết'
-        : `${weather.temperature}° · ${weather.label}${weather.concreteWarning ? ' · hạn chế đổ bê tông' : ''}`,
-      tone: weather && weather !== 'loading' && weather.concreteWarning ? 'warn' : !project || !site || weather === null || weather === 'loading' ? 'muted' : 'num',
-      hint: weather && weather !== 'loading' && weather.humidity != null ? `${site?.name || ''} · độ ẩm ${weather.humidity}%${weather.rainChance != null ? ` · mưa ${weather.rainChance}%` : ''}` : site?.name });
     views.push(base);
   }
 

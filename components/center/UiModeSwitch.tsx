@@ -18,10 +18,21 @@ export const useUiModeSwitch = (setMode: (mode: UiMode) => void) => {
 
 /**
  * Công tắc "Trung tâm điều hành" (mặc định tắt = giao diện hiện tại).
- * row = dòng có nhãn trong khối người dùng của thanh bên; icon = nút vuông (thanh bên thu gọn, header điện thoại).
+ * row = dòng có nhãn trong khối người dùng của thanh bên; icon = nút vuông (thanh bên thu gọn, header điện thoại);
+ * rail = công tắc nhỏ có chú thích ở góc dưới rail của giao diện Trung tâm điều hành.
  */
-const UiModeSwitch: React.FC<{ active: boolean; onChange: (next: boolean) => void; variant?: 'row' | 'icon'; isDark?: boolean }> = ({ active, onChange, variant = 'row', isDark }) => {
+const UiModeSwitch: React.FC<{ active: boolean; onChange: (next: boolean) => void; variant?: 'row' | 'icon' | 'rail'; isDark?: boolean }> = ({ active, onChange, variant = 'row', isDark }) => {
   const label = active ? 'Đang dùng Trung tâm điều hành — bấm để về giao diện hiện tại' : 'Chuyển sang giao diện Trung tâm điều hành';
+  if (variant === 'rail') {
+    return (
+      <button type="button" role="switch" aria-checked={active} aria-label="Giao diện Trung tâm điều hành" title={label} onClick={() => onChange(!active)} className="vcc-rail-switch">
+        <span aria-hidden="true" className={`relative block h-5 w-9 rounded-full transition-colors ${active ? 'bg-teal-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+          <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${active ? 'translate-x-4' : ''}`} />
+        </span>
+        <span className="vcc-rail-label">{active ? 'Giao diện mới' : 'Giao diện cũ'}</span>
+      </button>
+    );
+  }
   if (variant === 'icon') {
     return (
       <button

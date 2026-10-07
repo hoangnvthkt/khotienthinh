@@ -20,6 +20,7 @@ import { getRouteChrome, type LayoutOutletContext } from '../lib/routeChrome';
 import { useCenterUi } from '../lib/center/centerMode';
 import { CENTER_ROUTE } from '../lib/center/centerPermissions';
 import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
+import CenterRail from './center/CenterRail';
 
 import MacOSDockLauncher from './common/MacOSDockLauncher';
 import FloatingChatBubble from './common/FloatingChatBubble';
@@ -224,7 +225,9 @@ const Layout: React.FC = () => {
         </div>
       )}
 
+      {centerUi.active && <CenterRail onExitCenter={() => exitCenter()} />}
       <Sidebar
+        hideOnDesktop={centerUi.active}
         isOpen={sidebarOpen}
         toggle={() => setSidebarOpen(!sidebarOpen)}
         collapsed={isSidebarPinned ? false : sidebarCollapsed}
@@ -238,7 +241,7 @@ const Layout: React.FC = () => {
         onTogglePin={toggleSidebarPin}
       />
 
-      <div className={`flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${!isSidebarPinned ? 'lg:pl-16' : ''}`}>
+      <div className={`flex-1 flex flex-col h-[100dvh] min-h-[100dvh] overflow-hidden relative transition-[padding] duration-300 ease-[cubic-bezier(0.2,0,0,1)] ${!isSidebarPinned && !centerUi.active ? 'lg:pl-16' : ''}`}>
         {/* Mobile Header */}
         {!chrome.hideMobileHeader && <header className="lg:hidden h-16 flex items-center justify-between px-4 shrink-0 z-[50] glass-panel border-b-0 m-2 mt-[calc(0.5rem+env(safe-area-inset-top,0px))] rounded-2xl">
           <div className="flex items-center gap-3">

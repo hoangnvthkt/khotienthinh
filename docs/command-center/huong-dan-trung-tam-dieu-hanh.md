@@ -2,7 +2,7 @@
 
 Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**: thấy việc đang chờ mình ở mọi module, số liệu hôm nay của dự án, và mở đúng hồ sơ hoặc form chỉ bằng một lần bấm. Mọi thao tác vẫn chạy bằng chức năng sẵn có của từng module, theo đúng quyền của bạn.
 
-**Bật / tắt:** mặc định bạn vẫn dùng giao diện hiện tại. Bật công tắc **Trung tâm điều hành** ở khối tài khoản trên thanh bên trái (điện thoại: nút ô vuông cạnh nút sáng/tối trên đầu trang) → lời chào hiện lên rồi vào Trung tâm điều hành; từ đó trang chủ của bạn là Trung tâm điều hành và thanh bên có mục kèm số việc chờ. Muốn quay lại: nút **Giao diện cũ** trên đầu Trung tâm điều hành (hoặc tắt công tắc). Công tắc chỉ hiện với người đang thí điểm; lựa chọn nhớ theo từng máy.
+**Bật / tắt:** mặc định bạn vẫn dùng giao diện hiện tại. Bật công tắc **Trung tâm điều hành** ở khối tài khoản trên thanh bên trái (điện thoại: nút ô vuông cạnh nút sáng/tối trên đầu trang) → lời chào hiện lên rồi vào Trung tâm điều hành; từ đó trang chủ của bạn là Trung tâm điều hành và thanh bên có mục kèm số việc chờ. Khi bật, thanh bên trái trên máy tính thành **rail gọn**: biểu tượng + tên từng app, Trung tâm đứng đầu kèm số việc chờ, công tắc giao diện ở góc dưới bên trái. Muốn quay lại: tắt công tắc đó, hoặc nút **Giao diện cũ** trên đầu Trung tâm điều hành. Công tắc chỉ hiện với người đang thí điểm; lựa chọn nhớ theo từng máy.
 
 ## Màn hình có 3 vùng
 
@@ -14,6 +14,7 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 
 ## Tab "Hôm nay"
 
+- **Lịch** (góc phải trên): số việc tới hạn hôm nay / quá hạn; ô **Xem việc theo hạn…** mở lịch — bấm một ngày, hoặc ngày đầu rồi ngày cuối (có nút nhanh Hôm nay / Tuần này / 7 ngày tới; ngày có chấm đỏ là có việc tới hạn) → **Xem việc**: cột Việc của tôi chỉ còn việc có hạn trong khoảng đó, bấm **Bỏ lọc** để xem hết. Dùng được bằng bàn phím: mũi tên đổi ngày / tuần, PageUp / PageDown đổi tháng.
 - 6 ô theo nhóm: **Dự án · Nhân sự · Công việc · Hành chính · Mua hàng & Kho · Tài chính dự án** (ô Tài chính chỉ hiện khi bạn được xem tài chính dự án). Việc đang chờ bạn nằm ở cột **Việc của tôi**, nên ô chỉ có **nút thao tác nhanh**.
 - **Bấm một nút là làm ngay**: chấm công, xin nghỉ phép, tạo đề xuất, lập đề xuất vật tư, tạo nhật ký, đặt xe, soạn văn bản, mua nóng… Mỗi ô hiện **tối đa 4 nút** bạn được phép dùng.
 - Nút **… Xem thêm** (hoặc bấm vào nền ô) → ô bung ra đủ các nút của nhóm, nút bị khóa ghi rõ lý do. Bấm ra ngoài hoặc Esc để thu lại.

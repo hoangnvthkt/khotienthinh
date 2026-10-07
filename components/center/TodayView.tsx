@@ -9,7 +9,9 @@ import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { WidgetAction } from '../../lib/center/centerActions';
-import { buildTodaySummary, buildTodayWidgets, ddmm, type WeatherSlot, type WidgetView } from '../../lib/center/todayWidgets';
+import { buildTodaySummary, buildTodayWidgets, ddmm, type WidgetView } from '../../lib/center/todayWidgets';
+import { civilOf, toCivil, type CivilDate, type CivilRange } from '../../lib/center/civilDate';
+import DueDateField from './DueDateField';
 import { applyCenterLayout, pinnedActionsOf, type CenterLayout } from '../../lib/center/centerLayout';
 
 /** Tùy chỉnh ô (mockup v1.1: "Tùy chỉnh" → ↑ ↓ ✕ trên từng ô, "Ô đã ẩn" để thêm lại, "Xong"). */
@@ -231,24 +233,26 @@ const TodayView: React.FC<{
   onOpenFolder: (view: WidgetView, anchor: HTMLElement) => void;
   actionsFor: (id: CenterWidgetId) => WidgetAction[] | null;
   today: TodayState;
-  weather: WeatherSlot;
   mineCount: number | null;
+  /** Hạn (ngày dân sự) của các việc Chờ tôi — chấm trên lịch. */
+  dueDays: CivilDate[];
+  dueRange: CivilRange | null;
+  onDueRange: (range: CivilRange | null) => void;
   onSelectProject: (projectId: string) => void;
   onRetry: () => void;
   customize: TodayCustomize;
-}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, weather, mineCount, onSelectProject, onRetry, customize }) => {
+}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, mineCount, dueDays, dueRange, onDueRange, onSelectProject, onRetry, customize }) => {
   const weekday = WEEKDAYS[now.getDay()];
   const data = today.status === 'ready' ? today.data : null;
-  const ctx = { now, weather, mineCount };
+  const ctx = { now, mineCount };
   const { visible: views, hidden: hiddenViews } = applyCenterLayout(data ? buildTodayWidgets(data, ctx) : [], customize.layout);
   const editing = customize.editing;
   const summary = buildTodaySummary(data, ctx);
   const trip = data?.widgets.office.nextTrip;
   const tripToday = trip && ddmm(trip.pickupAt) === `${pad(now.getDate())}/${pad(now.getMonth() + 1)}` ? trip : null;
-  const site = data?.project?.site;
-  const weatherText = weather && weather !== 'loading'
-    ? `${weather.temperature}° · ${weather.label}${weather.concreteWarning ? ' · hạn chế đổ bê tông' : ''}`
-    : weather === 'loading' ? 'Đang lấy thời tiết…' : site && site.latitude != null ? 'Không lấy được thời tiết' : null;
+  const todayCivil = civilOf(now) || toCivil(now);
+  const dueToday = dueDays.filter(day => day === todayCivil).length;
+  const overdue = dueDays.filter(day => day < todayCivil).length;
 
   return (
     <div className="vcc-page">
@@ -257,7 +261,7 @@ const TodayView: React.FC<{
           <h1 className="m-0 text-[22px] font-semibold leading-tight"><Greeting person={person} /></h1>
           <p className="mt-1 vcc-muted">{weekday}, {pad(now.getDate())}/{pad(now.getMonth() + 1)}/{now.getFullYear()}{summary ? ` · ${summary}` : ''}</p>
         </div>
-        <div className="vcc-card vcc-cal" aria-label="Lịch hôm nay">
+        <div className="vcc-card vcc-cal" role="group" aria-label="Lịch">
           <div className="text-center leading-tight">
             <div className="text-[11px] font-medium vcc-muted">TH {now.getMonth() + 1}</div>
             <div className="text-[26px] font-semibold tabular-nums">{pad(now.getDate())}</div>
@@ -265,9 +269,12 @@ const TodayView: React.FC<{
           </div>
           <div className="vcc-cal-sep" />
           <div className="min-w-0 text-xs">
-            {weatherText ? <div className="font-semibold text-[13px]">{weatherText}</div> : <div className="font-semibold text-[13px] vcc-muted">Thời tiết công trường</div>}
-            <div className="vcc-muted vcc-ellipsis">{site ? `${site.name}${weather && weather !== 'loading' && weather.humidity != null ? ` · độ ẩm ${weather.humidity}%` : ''}` : 'Chưa chọn dự án / công trường'}</div>
-            <div className="vcc-muted vcc-ellipsis">{tripToday ? `Lịch: ${ddmm(tripToday.pickupAt)} ${new Date(tripToday.pickupAt).toTimeString().slice(0, 5)} xe đi ${tripToday.destination}` : 'Lịch: không có chuyến xe hôm nay'}</div>
+            <div className="font-semibold text-[13px]">
+              {dueToday > 0 ? `${dueToday} việc tới hạn hôm nay` : 'Hôm nay không có việc tới hạn'}
+              {overdue > 0 && <span className="vcc-danger-text"> · {overdue} quá hạn</span>}
+            </div>
+            <DueDateField today={todayCivil} dueDays={dueDays} value={dueRange} onChange={onDueRange} />
+            <div className="mt-1 vcc-muted vcc-ellipsis">{tripToday ? `Lịch: ${ddmm(tripToday.pickupAt)} ${new Date(tripToday.pickupAt).toTimeString().slice(0, 5)} xe đi ${tripToday.destination}` : 'Lịch: không có chuyến xe hôm nay'}</div>
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTodaySummary, buildTodayWidgets, daysUntil, ddmm, moneyShort } from '../todayWidgets';
-import { parseCenterToday, parseWeather, weatherLabel, type CenterToday } from '../centerTodayService';
+import { parseCenterToday, type CenterToday } from '../centerTodayService';
 import { getRouteModuleKey, isAuthenticatedOpenRoute, normalizeRoutePath } from '../../routeAccess';
 
 const NOW = new Date(2026, 9, 7, 8, 30);
@@ -29,7 +29,7 @@ const DENIED: CenterToday = parseCenterToday({
     supply: { requests: { state: 'denied' }, orders: { state: 'denied' }, warehouse: null }, finance: null },
 });
 
-const ctx = { now: NOW, weather: null, mineCount: 9 };
+const ctx = { now: NOW, mineCount: 9 };
 
 describe('Today widgets (drill-down contract)', () => {
   it('gives every stat a target that the app can open', () => {
@@ -49,7 +49,7 @@ describe('Today widgets (drill-down contract)', () => {
   });
 
   it('reads the approved numbers the way the mockup shows them', () => {
-    const views = buildTodayWidgets(FULL, { ...ctx, weather: { temperature: 29, label: 'Mưa rào', humidity: 84, rainChance: 70, concreteWarning: true, fetchedAt: '' } });
+    const views = buildTodayWidgets(FULL, ctx);
     const stat = (id: string, key: string) => views.find(v => v.id === id)!.stats.find(s => s.key === key)!;
     expect(views.map(v => v.id)).toEqual(['project', 'hrm', 'work', 'office', 'supply', 'finance']);
     expect(stat('project', 'construction').value).toBe('3/5 mũi đã gửi phiếu · 39 công');
@@ -61,7 +61,7 @@ describe('Today widgets (drill-down contract)', () => {
     expect(stat('work', 'assigned')).toMatchObject({ value: '3 đang làm · 1 trễ hạn', tone: 'danger' });
     expect(stat('work', 'requests').value).toBe('1 đang chờ · RQ-61 đang ở HR');
     expect(stat('office', 'documents')).toMatchObject({ value: '1 cần xác nhận đã đọc · TB-12/2026', target: { kind: 'route', path: '/office/documents/d' } });
-    expect(stat('office', 'weather')).toMatchObject({ value: '29° · Mưa rào · hạn chế đổ bê tông', tone: 'warn' });
+    expect(views.find(v => v.id === 'office')!.stats.some(s => s.key === 'weather')).toBe(false);
     expect(stat('supply', 'requests').value).toBe('4 chờ duyệt (Phòng vật tư duyệt) · 29 đang cung ứng');
     expect(stat('supply', 'orders')).toMatchObject({ locked: expect.stringContaining('quyền'), value: 'Cần quyền xem đơn hàng' });
     expect(stat('supply', 'warehouse')).toMatchObject({ locked: expect.any(String) });
@@ -84,7 +84,6 @@ describe('Today widgets (drill-down contract)', () => {
     expect(views.find(v => v.id === 'project')!.empty).toMatchObject({ target: { kind: 'route', path: '/da' } });
     expect(views.find(v => v.id === 'hrm')!.empty?.text).toContain('hồ sơ nhân viên');
     expect(views.find(v => v.id === 'supply')!.empty).toBeTruthy();
-    expect(views.find(v => v.id === 'office')!.stats.find(s => s.key === 'weather')!.value).toBe('Chưa chọn dự án');
   });
 
   it('summarises waiting work and the contract deadline', () => {
@@ -102,15 +101,6 @@ describe('Today helpers', () => {
     expect(moneyShort(null)).toBe('—');
     expect(ddmm('2026-10-21')).toBe('21/10');
     expect(ddmm('bad')).toBeNull();
-  });
-
-  it('maps WMO weather codes and flags concrete risk', () => {
-    expect(weatherLabel(0)).toBe('Trời quang');
-    expect(weatherLabel(81)).toBe('Mưa rào');
-    expect(parseWeather({ current: { temperature_2m: 28.6, weather_code: 3, relative_humidity_2m: 80 }, daily: { precipitation_probability_max: [20] } }, 't'))
-      .toEqual({ temperature: 29, label: 'Nhiều mây', humidity: 80, rainChance: 20, concreteWarning: false, fetchedAt: 't' });
-    expect(parseWeather({ current: { temperature_2m: 30, weather_code: 95 } }, 't')?.concreteWarning).toBe(true);
-    expect(parseWeather({}, 't')).toBeNull();
   });
 
   it('parses the payload fail-closed', () => {

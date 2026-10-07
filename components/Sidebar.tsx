@@ -48,6 +48,8 @@ interface SidebarProps {
   setCollapsed: (v: boolean) => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  /** Giao diện Trung tâm điều hành: máy tính dùng rail riêng, thanh bên này chỉ còn là menu kéo ra trên điện thoại. */
+  hideOnDesktop?: boolean;
 }
 
 const MODULE_CONFIG = [
@@ -71,6 +73,22 @@ const MODULE_CONFIG = [
 ] as const;
 
 type AppKey = typeof MODULE_CONFIG[number]['key'];
+export type NavigationModule = typeof MODULE_CONFIG[number];
+/** Toàn bộ app của thanh bên (bản thử của rail dùng để vẽ đúng biểu tượng / màu). */
+export const SIDEBAR_MODULES: readonly NavigationModule[] = MODULE_CONFIG;
+
+/** App người dùng được vào, theo thứ tự đã kéo thả ở thanh bên (dùng chung cho rail của Trung tâm điều hành). */
+export const navigationModulesFor = (user: Parameters<typeof canAccessNavigationModule>[0]): NavigationModule[] => {
+  const allowed = MODULE_CONFIG.filter(m => {
+    if (m.key === 'work.module' && !isViooWorkEnabled) return false;
+    return canAccessNavigationModule(user, m.key, m.route);
+  });
+  let order: string[] = [];
+  try { order = JSON.parse(localStorage.getItem('sidebar_module_order') || '[]'); } catch { order = []; }
+  if (!Array.isArray(order) || order.length === 0) return allowed;
+  const rank = (key: string) => { const index = order.indexOf(key); return index < 0 ? order.length : index; };
+  return [...allowed].sort((a, b) => rank(a.key) - rank(b.key));
+};
 
 const HRM_NAV_ICONS: Record<string, LucideIcon> = {
   '/employee-dashboard': LayoutDashboard,
@@ -93,7 +111,7 @@ const HRM_NAV_ICONS: Record<string, LucideIcon> = {
 // Sidebar states: 'home' | 'apps' | AppKey
 type SidebarView = 'home' | 'apps' | AppKey;
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed, isPinned = false, onTogglePin }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed, isPinned = false, onTogglePin, hideOnDesktop = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, users, warehouses, transactions, requests, appSettings, items, realtimeStatus, lastRealtimeEvent, connectionError } = useApp();
@@ -420,7 +438,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 : (isPinned
                     ? 'translate-x-0 w-64 lg:static lg:z-auto'
                     : 'translate-x-0 w-64 shadow-2xl'))
-        } flex flex-col`}
+        } flex flex-col${hideOnDesktop ? ' lg:hidden' : ''}`}
       >
 
         {/* Logo & Pin Button */}

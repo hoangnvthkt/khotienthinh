@@ -78,7 +78,6 @@ const measureIdle = async (page: Page, label: string) => {
 test.beforeEach(async ({ page }) => {
   await installProbe(page);
   await page.route("**/*.supabase.co/**", route => route.abort());
-  await page.route("**/api.open-meteo.com/**", route => route.abort());
 });
 
 test("WebKit idle: baseline (blank page, same browser)", async ({ page }) => {
