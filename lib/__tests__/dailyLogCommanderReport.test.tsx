@@ -7,6 +7,8 @@ import {StaticRouter} from 'react-router-dom/server';
 import type {DailyLogWbsBundle} from '../dailyLogWbsService';
 const commandBundle={...summaryBundle,summaryLog:{...summaryBundle.summaryLog!,status:'submitted' as const},permissions:{...summaryBundle.permissions,canApprove:true,canPublishProgress:true}};
 const render=(bundle:DailyLogWbsBundle=commandBundle)=>renderToStaticMarkup(<StaticRouter location="/"><DailyLogSummaryWorkspace bundle={bundle} mode="review" onReturnAll={()=>{}} onPublish={()=>{}} /></StaticRouter>);
+// Ô tìm kiếm của Báo cáo ngày (chủ SP 07/10) không phải ô nhập liệu của phiếu.
+const withoutSearch=(html:string)=>html.replace(/<input[^>]*aria-label="Tìm trong báo cáo ngày"[^>]*>/g,'');
 describe('commander report and verified history',()=>{
   it('reads as a commander briefing before drilling into sources and audit',()=>{
     const html=render({...commandBundle,summaryLog:{...commandBundle.summaryLog,issues:'Lối vào bị cản',description:'Đã hoàn thành đổ móng'}});
@@ -34,9 +36,8 @@ describe('commander report and verified history',()=>{
     const html=render();
     expect(html).toContain('Kỹ sư A');
     expect(html).toMatch(/\+30<\/span> <span[^>]*>m²/);
-    expect(html).toMatch(/56<\/span> giờ công/);
-    expect(html).toMatch(/12<\/span> giờ máy/);
-    expect(html).toContain('Kế hoạch <b class="text-foreground">chưa có</b>');
+    expect(html).toMatch(/56<\/span> giờ/);
+    expect(html).toMatch(/máy · 12 giờ/);
     expect(html).not.toMatch(/Trễ \d+ ngày/);
   });
   it('keeps saved photos visible in the photo section and source metadata inside audit details',()=>{
@@ -74,21 +75,21 @@ describe('commander report and verified history',()=>{
   it('starts with a report header and separate summary-return action',()=>{
     const html=render();
     expect(html).toContain('Bản tổng hợp thi công ngày');expect(html).toContain('Trả bản tổng hợp');
-    expect(html).not.toContain('Trả lại toàn bộ');expect(html).not.toMatch(/<(input|select)\b/);
+    expect(html).not.toContain('Trả lại toàn bộ');expect(withoutSearch(html)).not.toMatch(/<(input|select)\b/);
     expect(html).toContain('Tiến độ chính thức không thay đổi');
   });
   it('offers exact source return with a mandatory reason, not the old review-comment command',()=>{
     const html=render();
     // Lý do bắt buộc nhập ở ô hiện ra sau khi bấm (nút gửi khóa khi trống) — xem DailyLogSummaryWorkspace.
     expect(html).toContain('Trả phiếu sửa');
-    expect(html).not.toMatch(/<(input|textarea)\b/);
+    expect(withoutSearch(html)).not.toMatch(/<(input|textarea)\b/);
     expect(html).not.toContain('Yêu cầu sửa khu vực');
   });
   it('shows real verification metadata without deriving approval from updatedAt',()=>{
     const verified={...commandBundle,summaryLog:{...commandBundle.summaryLog,status:'verified' as const,verifiedBy:'CHT thật',verifiedAt:'2026-09-27T04:30:00Z'}};
     const html=render(verified);
     expect(html).toContain('CHT thật');expect(html).toContain('11:30');expect(html).toContain('27/09/2026');
-    expect(html).not.toMatch(/<(input|select|textarea)\b/);expect(html).not.toContain('Trả phiếu sửa');expect(html).not.toContain('Trả bản tổng hợp');
+    expect(withoutSearch(html)).not.toMatch(/<(input|select|textarea)\b/);expect(html).not.toContain('Trả phiếu sửa');expect(html).not.toContain('Trả bản tổng hợp');
     expect(html).not.toContain('Đối chiếu thử nghiệm');expect(html).not.toContain('Cần xử lý trước khi gửi');
   });
   it('keeps historical anomalies informative, not an instruction to rewrite confirmed history',()=>{

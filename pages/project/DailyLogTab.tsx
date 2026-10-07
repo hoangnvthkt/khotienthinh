@@ -52,7 +52,6 @@ import {
 } from '../../lib/dailyLogWorkflow';
 import { computeDailyLogMonthStats } from '../../lib/dailyLogMonthStats';
 import { DailyLogTodayBoard } from '../../components/project/daily-log/DailyLogTodayBoard';
-import { Drawer } from '../../components/procurement/hub/hubUi';
 import { calendarDayState, calendarDayTask, type CalendarDayState } from '../../lib/dailyLogTodayBoard';
 import type { DailyLogCalendarDay } from '../../lib/dailyLogWbsService';
 
@@ -4016,8 +4015,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* Lightbox Component Overlay */}
-            {dayPanel && boardProjectId && !showForm && !viewLogId && !summaryDate && <Drawer wide label={`Nhật ký ngày ${formatViDate(dayPanel)}`} onClose={() => setDayPanel(null)}
-                header={<div className="space-y-2">
+            {dayPanel && boardProjectId && !showForm && !viewLogId && !summaryDate && <div role="dialog" aria-modal="true" aria-label={`Nhật ký ngày ${formatViDate(dayPanel)}`}
+                className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-2 backdrop-blur-[2px] sm:p-4"
+                onClick={event => { if (event.target === event.currentTarget) setDayPanel(null); }}
+                onKeyDown={event => { if (event.key === 'Escape') setDayPanel(null); }}>
+              <div className="flex h-[94dvh] w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl">
+                <header className="flex items-start gap-3 border-b border-border bg-card px-4 py-3 md:px-6">
+                <div className="min-w-0 flex-1 space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Nhật ký công trường</p>
                     <h3 className="text-lg font-bold capitalize text-foreground">{new Date(`${dayPanel}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</h3>
                     <div className="flex flex-wrap gap-2">
@@ -4029,7 +4033,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ${calendarDayTask(panelDay, dayRole) === 'approve' ? 'bg-leaf-600 text-white hover:bg-leaf-700' : 'border border-border bg-card hover:bg-muted'}`}>
                             <CheckCircle2 size={15} />{calendarDayTask(panelDay, dayRole) === 'approve' ? 'Xem & duyệt' : 'Xem bản tổng hợp'}</button>}
                     </div>
-                </div>}>
+                </div>
+                <button type="button" autoFocus onClick={() => setDayPanel(null)} aria-label="Đóng" className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><X size={18} /></button>
+                </header>
+                <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
                 <DailyLogTodayBoard fixedDate={dayPanel}
                     projectId={boardProjectId}
                     constructionSiteId={constructionSiteId || null}
@@ -4043,7 +4050,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                     onReview={id => setViewLogId(id)}
                     onOpenPhotos={(photos, index) => { setGalleryAttachments(photos); setGalleryIndex(index); }}
                 />
-            </Drawer>}
+                </div>
+              </div>
+            </div>}
             {galleryAttachments && galleryAttachments.length > 0 && (
                 <SafetyImageGalleryModal
                     attachments={galleryAttachments}
