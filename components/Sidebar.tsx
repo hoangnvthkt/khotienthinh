@@ -29,7 +29,8 @@ import {
 } from '../lib/routeAccess';
 import { getHrmNavigationItems } from '../lib/hrmNavigation';
 import { CENTER_ROUTE } from '../lib/center/centerPermissions';
-import { useCenterAccess } from '../lib/center/centerService';
+import { useCenterUi } from '../lib/center/centerMode';
+import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
 import { useMineWorkItems } from '../lib/center/workItemsStore';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -102,9 +103,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const canUseChat = isChatEnabled && canAccessRoute(user, '/chat');
   const chatV2Unread = useChatV2UnreadCount(canUseChat && isChatV2Enabled ? user?.id : undefined);
   const chatUnread = isChatV2Enabled ? chatV2Unread : totalUnread;
-  // Trung tâm điều hành chỉ hiện khi máy chủ báo đã bật cho người này (thí điểm theo người).
-  const { state: centerAccess } = useCenterAccess(user?.id, canAccessRoute(user, CENTER_ROUTE));
-  const showCenter = centerAccess.status === 'enabled';
+  // Trung tâm điều hành: công tắc chỉ hiện khi máy chủ báo đã bật cho người này (thí điểm theo người);
+  // mục + số việc chỉ hiện khi người đó chọn giao diện Trung tâm điều hành (mặc định: giao diện hiện tại).
+  const centerUi = useCenterUi(user);
+  const showCenter = centerUi.active;
+  const { enterCenter, exitCenter } = useUiModeSwitch(centerUi.setMode);
+  const switchUi = (next: boolean) => { if (isOpen) toggle(); if (next) enterCenter(); else exitCenter(); };
   const centerMine = useMineWorkItems(showCenter);
   const centerBadge = centerMine && centerMine.total > 0 ? (centerMine.total > 99 ? '99+' : String(centerMine.total)) : null;
 
@@ -491,6 +495,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
                 <LogOut size={13} /> Đăng xuất
               </button>
             </div>
+            {centerUi.available && <UiModeSwitch active={centerUi.active} onChange={switchUi} isDark={isDark} />}
           </div>
         ) : (
           <div className="flex flex-col items-center py-3 border-b border-white/20 dark:border-white/5 shrink-0 gap-2">
@@ -504,6 +509,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
             <div className={`hidden lg:flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${isDark ? 'bg-slate-800/50 border-white/10' : 'bg-white/50 border-white/60'}`}>
               <NotificationCenter userId={user?.id} mode="desktop" />
             </div>
+            {centerUi.available && <UiModeSwitch variant="icon" active={centerUi.active} onChange={switchUi} isDark={isDark} />}
             <button onClick={() => void handleLogout()}
               className="flex items-center justify-center w-9 h-9 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all" title="Đăng xuất">
               <LogOut size={14} />

@@ -386,3 +386,31 @@ test("desktop: choosing quick actions is locked without the layout permission", 
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute("title", /Tùy chỉnh bố cục của tôi/);
 });
+
+test("switch: current interface ↔ Command Center with a greeting and a calm transition", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  const tag = info.project.name;
+  await page.goto(`${base}?ui=classic`);
+  const toggle = page.getByRole("switch", { name: "Giao diện Trung tâm điều hành" });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await page.screenshot({ path: `${shots}/${tag}-switch-off.png` });
+  await toggle.click();
+  // Lời chào hiện lên rồi tự mờ đi; Trung tâm điều hành hiện ra sau đó.
+  const intro = page.getByRole("status").filter({ hasText: "Chào mừng đến Trung tâm điều hành" });
+  await expect(intro).toBeVisible();
+  await expect(intro.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: `${shots}/${tag}-intro.png` });
+  await expect(intro).toHaveCount(0, { timeout: 4000 });
+  await expect(page.getByText("Trung tâm điều hành", { exact: true })).toBeVisible();
+  await expectCalmPage(page);
+  // Về giao diện hiện tại.
+  await page.getByRole("button", { name: "Về giao diện hiện tại" }).click();
+  await expect(page.getByTestId("fake-classic")).toBeVisible();
+
+  // Bấm vào lời chào để bỏ qua.
+  await page.getByRole("switch", { name: "Giao diện Trung tâm điều hành" }).click();
+  await expect(intro).toBeVisible();
+  await intro.click();
+  await expect(intro).toHaveCount(0, { timeout: 1500 });
+});

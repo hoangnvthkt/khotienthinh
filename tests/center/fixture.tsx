@@ -7,6 +7,8 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, LayoutDashboard, Package, PanelsTopLeft, ShoppingCart, Wallet } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
+import CenterEntrance from '../../components/center/CenterIntro';
+import UiModeSwitch from '../../components/center/UiModeSwitch';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import type { CenterToday, SiteWeather } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
@@ -14,6 +16,7 @@ import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '.
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
+const PERSON = { fullName: 'Phạm Ngọc Sơn', gender: 'Nam', title: 'Chỉ huy trưởng · SMB-2026' };
 const DENIED_ROUTES = new Set(['/procurement']);
 const NOW = new Date(2026, 9, 7, 8, 30);
 const at = (days: number, hour = 17) => new Date(2026, 9, 7 + days, hour, 0).toISOString();
@@ -177,33 +180,52 @@ const FakeRail: React.FC = () => (
   </nav>
 );
 
+// Giả lập "giao diện hiện tại" để thử công tắc + lời chào (?ui=classic mở ở giao diện hiện tại; ?intro=1 chạy lời chào).
+const FakeClassic: React.FC<{ onEnter: () => void }> = ({ onEnter }) => (
+  <div className="mx-auto max-w-md p-6" data-testid="fake-classic">
+    <h1 className="text-xl font-black text-slate-800 dark:text-white">Trang chủ (giao diện hiện tại)</h1>
+    <p className="mt-1 text-sm text-slate-500">Bản thử: chỗ này là Home hiện có. Công tắc nằm ở khối tài khoản của thanh bên trái.</p>
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+      <UiModeSwitch active={false} onChange={next => { if (next) onEnter(); }} />
+    </div>
+  </div>
+);
+
 const Fixture: React.FC = () => {
   const [dark, setDark] = useState(params.get('theme') === 'dark');
   const [lastRoute, setLastRoute] = useState('');
+  const [ui, setUi] = useState<'center' | 'classic'>(params.get('ui') === 'classic' ? 'classic' : 'center');
+  const [intro, setIntro] = useState(params.get('intro') === '1');
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
+  if (ui === 'classic') {
+    return <FakeClassic onEnter={() => { setIntro(true); setUi('center'); }} />;
+  }
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden" data-last-route={lastRoute}>
       <FakeRail />
       <main className="min-w-0 flex-1">
-        <CenterShell
-          person={{ fullName: 'Phạm Ngọc Sơn', gender: 'Nam', title: 'Chỉ huy trưởng · SMB-2026' }}
-          company={{ name: 'Tiến Thịnh' }}
-          isDark={dark}
-          onToggleTheme={() => setDark(value => !value)}
-          onOpenMenu={() => setLastRoute('menu')}
-          mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
-          canOpenRoute={route => !DENIED_ROUTES.has(route)}
-          onNavigate={setLastRoute}
-          now={NOW}
-          loadWorkItems={loadWorkItems}
-          loadToday={loadToday}
-          loadWeather={loadWeather}
-          loadActions={loadActions}
-          loadLayout={loadLayout}
-          saveLayout={saveLayout}
-          Renderer={StubRenderer}
-          ModalHost={StubModalHost}
-        />
+        <CenterEntrance play={intro} person={PERSON} now={NOW} onDone={() => setIntro(false)}>
+          <CenterShell
+            person={PERSON}
+            company={{ name: 'Tiến Thịnh' }}
+            isDark={dark}
+            onToggleTheme={() => setDark(value => !value)}
+            onOpenMenu={() => setLastRoute('menu')}
+            mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
+            canOpenRoute={route => !DENIED_ROUTES.has(route)}
+            onNavigate={setLastRoute}
+            now={NOW}
+            loadWorkItems={loadWorkItems}
+            loadToday={loadToday}
+            loadWeather={loadWeather}
+            loadActions={loadActions}
+            loadLayout={loadLayout}
+            saveLayout={saveLayout}
+            Renderer={StubRenderer}
+            ModalHost={StubModalHost}
+            onExitCenter={() => setUi('classic')}
+          />
+        </CenterEntrance>
       </main>
     </div>
   );

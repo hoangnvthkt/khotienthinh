@@ -218,3 +218,26 @@
 .vcc-wedit button:disabled { opacity: .35; cursor: not-allowed; }
 .vcc-link:disabled { color: var(--vcc-muted); cursor: not-allowed; text-decoration: none; }
 .vcc-danger-text { color: var(--vcc-danger); font-weight: 600; }
+
+/* Lời chào khi vừa bật giao diện Trung tâm điều hành (CenterIntro): transition opacity / transform, chạy một lần. */
+.vcc-reveal { height: 100%; min-height: 0; }
+.vcc-reveal[data-state] { transition: opacity .5s ease, transform .6s cubic-bezier(.2, .8, .2, 1); }
+.vcc-reveal[data-state="hidden"] { opacity: 0; transform: scale(.985); }
+.vcc-intro { --vcc-who: #7c3aed; position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 24px;
+  background: #ffffff; color: #1a1a1a; transition: opacity .5s ease; cursor: pointer; }
+.dark .vcc-intro { --vcc-who: #c4b5fd; background: #1b1b1b; color: #ededed; }
+.vcc-intro[data-phase="out"] { opacity: 0; pointer-events: none; }
+.vcc-intro-inner { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; max-width: 520px; }
+.vcc-intro-inner > * { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .7s cubic-bezier(.2, .8, .2, 1); }
+.vcc-intro[data-phase="in"] .vcc-intro-inner > *, .vcc-intro[data-phase="out"] .vcc-intro-inner > * { opacity: 1; transform: none; }
+.vcc-intro-inner > :nth-child(2) { transition-delay: .08s; }
+.vcc-intro-inner > :nth-child(3) { transition-delay: .18s; }
+.vcc-intro-inner > :nth-child(4) { transition-delay: .26s; }
+.vcc-intro-mark { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; color: #fff; margin-bottom: 6px; }
+.vcc-intro-hi { margin: 0; font-size: 30px; line-height: 1.2; font-weight: 600; letter-spacing: -.01em; }
+.vcc-intro-hi .vcc-who { color: var(--vcc-who); font-weight: 600; }
+.vcc-intro-sub { margin: 0; font-size: 15px; color: #525252; }
+.dark .vcc-intro-sub { color: #b5b5b5; }
+.vcc-intro-date { margin: 0; font-size: 12.5px; color: #8a8a8a; }
+@media (max-width: 480px) { .vcc-intro-hi { font-size: 25px; } .vcc-intro-sub { font-size: 14px; } }
+@media (prefers-reduced-motion: reduce) { .vcc-reveal[data-state], .vcc-intro, .vcc-intro-inner > * { transition: none; } }

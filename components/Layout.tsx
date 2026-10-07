@@ -17,6 +17,9 @@ import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-
 import { Role } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { getRouteChrome, type LayoutOutletContext } from '../lib/routeChrome';
+import { useCenterUi } from '../lib/center/centerMode';
+import { CENTER_ROUTE } from '../lib/center/centerPermissions';
+import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
 
 import MacOSDockLauncher from './common/MacOSDockLauncher';
 import FloatingChatBubble from './common/FloatingChatBubble';
@@ -66,6 +69,13 @@ const Layout: React.FC = () => {
 
   const chrome = getRouteChrome(pathname);
   const outletContext: LayoutOutletContext = { openSidebar: () => setSidebarOpen(true) };
+
+  // Giao diện Trung tâm điều hành (người tự bật): trang chính "/" là Trung tâm điều hành.
+  const centerUi = useCenterUi(user);
+  const { enterCenter, exitCenter } = useUiModeSwitch(centerUi.setMode);
+  useEffect(() => {
+    if (centerUi.active && pathname === '/') navigate(CENTER_ROUTE, { replace: true });
+  }, [centerUi.active, pathname, navigate]);
 
   const lastActivityRef = useRef<number>(Date.now());
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -243,6 +253,9 @@ const Layout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {centerUi.available && (
+              <UiModeSwitch variant="icon" active={centerUi.active} isDark={isDark} onChange={next => (next ? enterCenter() : exitCenter())} />
+            )}
             {/* Dark Mode Toggle */}
             <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors">
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
