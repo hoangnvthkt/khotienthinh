@@ -236,7 +236,6 @@ const Fixture: React.FC = () => {
             saveLayout={saveLayout}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
-            onExitCenter={() => setUi('classic')}
           />
         </CenterEntrance>
       </main>

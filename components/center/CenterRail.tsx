@@ -52,9 +52,9 @@ export const CenterRailView: React.FC<{
   const here = firstSegment(pathname);
   return (
     <nav className="vcc-rail hidden lg:flex" aria-label="Ứng dụng">
-      <div className="vcc-rail-logo" title={company.name}>
+      <NavLink to={CENTER_ROUTE} className="vcc-rail-logo" title="Về Trung tâm điều hành" aria-label={`${company.name} — về Trung tâm điều hành`}>
         {company.logo ? <img src={company.logo} alt="" /> : <span>{initials(company.name)}</span>}
-      </div>
+      </NavLink>
       <div className="vcc-rail-scroll">
         <RailItem to={CENTER_ROUTE} label="Trung tâm" icon={PanelsTopLeft} gradient="from-teal-500 to-cyan-600" shadow="shadow-teal-500/25"
           active={here === CENTER_ROUTE} badge={badge} />
