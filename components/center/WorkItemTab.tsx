@@ -74,4 +74,5 @@ const WorkItemTab: React.FC<{
   );
 };
 
-export default WorkItemTab;
+// memo: mọi tab đang mở đều được giữ trong vùng làm việc — tab ẩn không vẽ lại khi Center cập nhật.
+export default React.memo(WorkItemTab);

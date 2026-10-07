@@ -177,6 +177,10 @@ const StubRenderer: React.FC<{ renderer: string; props: Record<string, string> }
   <div className="vcc-card p-4" data-testid="stub-renderer">
     <div>View nhúng: <b>{renderer}</b> · {JSON.stringify(props)}</div>
     <div className="mt-1 text-xs vcc-muted">Bản thử dùng dữ liệu minh họa — trên app thật, màn xử lý của module (duyệt / từ chối / sửa) hiện ngay tại đây.</div>
+    <label className="mt-3 block text-xs vcc-muted">Ghi chú nháp (thử giữ form khi đổi tab)
+      <textarea className="mt-1 block w-full rounded border p-2 text-sm" aria-label="Ghi chú nháp" rows={2} />
+    </label>
+    <div style={{ height: 1600 }} aria-hidden="true" />
   </div>
 );
 
