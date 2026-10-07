@@ -33,9 +33,11 @@ interface FloatingChatBubbleProps {
   user?: User | null;
   /** Giao diện Trung tâm điều hành: máy tính có rail trái 84px → đặt bong bóng sang phải rail, không che công tắc. */
   railOffset?: boolean;
+  /** Ở /center trên điện thoại: nâng lên trên thanh 3 tab đáy (kể cả vùng an toàn iPhone). */
+  aboveCenterNav?: boolean;
 }
 
-export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user, railOffset = false }) => {
+export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user, railOffset = false, aboveCenterNav = false }) => {
   const leftClass = railOffset ? 'left-3 sm:left-5 lg:left-[100px]' : 'left-3 sm:left-5';
   const navigate = useNavigate();
   const { users, employees } = useApp();
@@ -287,7 +289,7 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user, ra
       />
 
       {/* FLOATING CHAT BUBBLE BUTTON - BOTTOM LEFT CORNER */}
-      <div className={`fixed ${leftClass} bottom-[56px] lg:bottom-5 z-[80] flex flex-col items-start gap-2 select-none`}>
+      <div className={`fixed ${leftClass} bottom-[56px] lg:bottom-5 z-[80] flex flex-col items-start gap-2 select-none${aboveCenterNav ? ' vcc-chat-above-nav' : ''}`}>
         <button
           onClick={() => {
             const next = !isOpen;
@@ -320,7 +322,7 @@ export const FloatingChatBubble: React.FC<FloatingChatBubbleProps> = ({ user, ra
       {/* CHAT POPOVER DRAWER - PRESERVES DOM & SCROLL POSITION ON CLOSE/OPEN */}
       <div
         style={{ display: isOpen ? 'flex' : 'none' }}
-        className={`fixed ${leftClass} bottom-[116px] lg:bottom-22 z-[85] h-[520px] max-h-[calc(100vh-140px)] w-[calc(100vw-1.5rem)] sm:w-[440px] max-w-[440px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/95 shadow-[0_25px_60px_rgba(0,0,0,0.75)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200`}
+        className={`fixed ${leftClass} bottom-[116px] lg:bottom-22 z-[85]${aboveCenterNav ? ' vcc-chat-panel-above-nav' : ''} h-[520px] max-h-[calc(100vh-140px)] w-[calc(100vw-1.5rem)] sm:w-[440px] max-w-[440px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/95 shadow-[0_25px_60px_rgba(0,0,0,0.75)] backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-200`}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-800/80 bg-gradient-to-r from-slate-900 via-rose-950 to-indigo-950 px-4 py-3">

@@ -10,7 +10,7 @@ describe('route chrome', () => {
       hideBottomNav: true,
       hideFab: true,
       hideDock: true,
-      hideChatBubble: true,
+      hideChatBubble: false,
     });
   });
 
