@@ -1,9 +1,9 @@
 import React, { useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarCheck, CalendarDays, CalendarRange, Car, ClipboardCheck, ClipboardList, Contact, EyeOff,
-  FileBarChart, FilePlus, FileText, Fingerprint, Flame, History, Inbox, LineChart, ListChecks, ListPlus, Lock, NotebookPen, Package, PackageCheck,
-  PenLine, Plane, Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet, Workflow,
+  ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, Car, ClipboardCheck, ClipboardList,
+  EyeOff, FileBarChart, FileText, Flame, GitBranch, IdCard, Inbox, LineChart, ListChecks, Lock, Mail, MapPin, NotebookPen, Package, PackageCheck,
+  Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet,
 } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
@@ -58,35 +58,65 @@ const Greeting: React.FC<{ person: CenterPerson }> = ({ person }) => {
     : <>Xin chào, <span className="vcc-who">{person.fullName}</span></>;
 };
 
-/** Biểu tượng của từng nút thao tác nhanh (khóa theo key trong buildWidgetActions). */
-export const ACTION_ICONS: Record<string, LucideIcon> = {
-  material_request: Package, daily_log: NotebookPen, work_plan: CalendarRange, daily_report: FileBarChart,
-  checkin: Fingerprint, leave: Plane, makeup: History, timesheet: CalendarCheck, assignment: Truck,
-  request: FilePlus, workflow: Workflow, po: ShoppingCart, task: ListPlus,
-  booking: Car, compose: PenLine, incoming: Inbox, directory: Contact,
-  hot: Flame, inbox: ListChecks, receive: PackageCheck, count: ClipboardList,
-  site_fund: Wallet, project_finance: LineChart, payment_request: Receipt,
+/** Biểu tượng + màu của từng nút thao tác nhanh — cùng style "Truy cập nhanh" ở Home (gradient, bóng màu,
+ *  chữ đậm xám); thao tác trùng app ở Home thì dùng đúng biểu tượng và màu của app đó (key theo buildWidgetActions). */
+export const ACTION_STYLES: Record<string, { icon: LucideIcon; gradient: string; shadow: string }> = {
+  material_request: { icon: Package, gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25' },
+  daily_log: { icon: NotebookPen, gradient: 'from-indigo-500 to-blue-600', shadow: 'shadow-indigo-500/25' },
+  work_plan: { icon: CalendarRange, gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
+  daily_report: { icon: FileBarChart, gradient: 'from-violet-500 to-indigo-600', shadow: 'shadow-violet-500/25' },
+  checkin: { icon: MapPin, gradient: 'from-emerald-500 to-green-600', shadow: 'shadow-emerald-500/25' },
+  leave: { icon: CalendarOff, gradient: 'from-violet-500 to-purple-600', shadow: 'shadow-violet-500/25' },
+  makeup: { icon: CalendarClock, gradient: 'from-emerald-500 to-teal-600', shadow: 'shadow-emerald-500/25' },
+  timesheet: { icon: CalendarCheck, gradient: 'from-teal-500 to-cyan-600', shadow: 'shadow-teal-500/25' },
+  assignment: { icon: Truck, gradient: 'from-purple-500 to-pink-600', shadow: 'shadow-purple-500/25' },
+  request: { icon: Inbox, gradient: 'from-cyan-500 to-sky-600', shadow: 'shadow-cyan-500/25' },
+  workflow: { icon: GitBranch, gradient: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-500/25' },
+  po: { icon: ShoppingCart, gradient: 'from-emerald-600 to-teal-700', shadow: 'shadow-emerald-600/25' },
+  task: { icon: ClipboardList, gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
+  booking: { icon: Car, gradient: 'from-sky-500 to-blue-600', shadow: 'shadow-sky-500/25' },
+  compose: { icon: FileText, gradient: 'from-teal-600 to-emerald-700', shadow: 'shadow-teal-600/25' },
+  incoming: { icon: Mail, gradient: 'from-cyan-600 to-teal-700', shadow: 'shadow-cyan-600/25' },
+  directory: { icon: IdCard, gradient: 'from-fuchsia-500 to-purple-600', shadow: 'shadow-fuchsia-500/25' },
+  hot: { icon: Flame, gradient: 'from-rose-500 to-orange-500', shadow: 'shadow-rose-500/25' },
+  inbox: { icon: ListChecks, gradient: 'from-lime-500 to-emerald-600', shadow: 'shadow-lime-500/25' },
+  receive: { icon: PackageCheck, gradient: 'from-amber-500 to-orange-600', shadow: 'shadow-amber-500/25' },
+  count: { icon: ClipboardCheck, gradient: 'from-amber-600 to-yellow-600', shadow: 'shadow-amber-600/25' },
+  site_fund: { icon: Wallet, gradient: 'from-teal-600 to-emerald-600', shadow: 'shadow-teal-600/25' },
+  project_finance: { icon: LineChart, gradient: 'from-blue-600 to-cyan-700', shadow: 'shadow-blue-600/25' },
+  payment_request: { icon: Receipt, gradient: 'from-rose-500 to-pink-600', shadow: 'shadow-rose-500/25' },
+};
+const LOCKED_STYLE = { icon: Lock, gradient: 'from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700', shadow: 'shadow-slate-400/20' };
+const FALLBACK_STYLE = { icon: ArrowUpRight, gradient: 'from-slate-600 to-slate-800', shadow: 'shadow-slate-600/25' };
+
+/** Ô vuông biểu tượng gradient như app ở Home. */
+const AppIcon: React.FC<{ style: { icon: LucideIcon; gradient: string; shadow: string }; size?: 'tile' | 'row' }> = ({ style, size = 'tile' }) => {
+  const Icon = style.icon;
+  return (
+    <span className={`vcc-appicon bg-gradient-to-br ${style.gradient} shadow-md ${style.shadow}`} data-size={size}>
+      <Icon size={size === 'tile' ? 20 : 16} />
+    </span>
+  );
 };
 
 /** Nút thao tác nhanh: bấm là làm ngay (mở form thật hoặc đúng màn của module).
- *  tile = biểu tượng kiểu app iPhone trong ô; row = dòng trong thư mục, kèm lý do khi bị khóa. */
+ *  tile = biểu tượng app trong ô; row = dòng trong thư mục, kèm lý do khi bị khóa. */
 export const QuickAction: React.FC<{ action: WidgetAction; onAction: (action: WidgetAction) => void; variant?: 'tile' | 'row' }> = ({ action, onAction, variant = 'tile' }) => {
-  const Icon = action.enabled ? ACTION_ICONS[action.key] || ArrowUpRight : Lock;
+  const style = action.enabled ? ACTION_STYLES[action.key] || FALLBACK_STYLE : LOCKED_STYLE;
   const common = {
     type: 'button' as const,
-    'data-pri': action.primary && action.enabled ? 'true' : undefined,
     disabled: !action.enabled,
     title: action.enabled ? action.label : action.lockReason,
     onClick: () => onAction(action),
   };
   return variant === 'tile' ? (
     <button {...common} className="vcc-tile">
-      <span className="vcc-tile-ic"><Icon size={19} /></span>
+      <AppIcon style={style} />
       <span className="vcc-tile-label">{action.label}</span>
     </button>
   ) : (
     <button {...common} className="vcc-act">
-      <Icon size={action.enabled ? 15 : 14} />
+      <AppIcon style={style} size="row" />
       <span className="vcc-act-text">
         <span className="vcc-ellipsis">{action.label}</span>
         {!action.enabled && action.lockReason && <span className="vcc-act-why">{action.lockReason}</span>}
@@ -94,6 +124,14 @@ export const QuickAction: React.FC<{ action: WidgetAction; onAction: (action: Wi
     </button>
   );
 };
+
+/** Ô "🔒 N chưa có quyền": mở thư mục để đọc lý do. */
+const LockedMore: React.FC<{ count: number; onOpen: () => void }> = ({ count, onOpen }) => (
+  <button type="button" className="vcc-tile" data-locked-more="true" onClick={onOpen} aria-haspopup="dialog" title="Xem thao tác bạn chưa có quyền và lý do">
+    <AppIcon style={LOCKED_STYLE} />
+    <span className="vcc-tile-label">{count} chưa có quyền</span>
+  </button>
+);
 
 // Ô = nhóm nút thao tác nhanh (việc cần làm đã ở cột "Việc của tôi"). Bấm nút → làm ngay; bấm nền ô hoặc
 // "N chưa có quyền" → bung thư mục đầy đủ từ đúng vị trí ô (kèm lý do của nút bị khóa).
@@ -170,13 +208,7 @@ const WidgetCard: React.FC<{
         ) : (
           <div className="vcc-qa" role="group" aria-label={`Thao tác nhanh ${view.title}`}>
             {enabled.map(action => <QuickAction key={action.key} action={action} onAction={onAction} />)}
-            {locked > 0 && (
-              <button type="button" className="vcc-tile" data-locked-more="true" onClick={open} aria-haspopup="dialog"
-                title="Xem thao tác bạn chưa có quyền và lý do">
-                <span className="vcc-tile-ic"><Lock size={17} /></span>
-                <span className="vcc-tile-label">{locked} chưa có quyền</span>
-              </button>
-            )}
+            {locked > 0 && <LockedMore count={locked} onOpen={open} />}
           </div>
         )}
       </div>

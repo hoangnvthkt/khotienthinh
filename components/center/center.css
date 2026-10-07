@@ -161,17 +161,19 @@
 .vcc-widget[data-folder="true"]:focus-visible { outline: 2px solid var(--mc); outline-offset: 2px; }
 .vcc-wlink { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--vcc-muted); flex: none; }
 .vcc-wlink:hover:not(:disabled) { background: var(--mcs); color: var(--mc); }
-/* Nút thao tác nhanh trong ô: biểu tượng kiểu app iPhone, bấm là làm ngay */
+/* Nút thao tác nhanh trong ô: cùng style "Truy cập nhanh" ở Home — ô vuông gradient bo 16px, bóng màu, chữ đậm xám.
+   Hover chỉ đổi nền + transform (hữu hạn, docs/ui/VIOO-UI-UX.md mục 6). */
 .vcc-qa { display: grid; gap: 6px 4px; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); }
-.vcc-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px 6px; border-radius: 12px; text-align: center;
-  color: var(--vcc-fg2); font-size: 12px; font-weight: 500; line-height: 1.25; min-width: 0; }
+.vcc-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px; border-radius: 12px; text-align: center; min-width: 0;
+  color: #475569; font-size: 11px; font-weight: 700; line-height: 1.25; }
+.dark .vcc-tile { color: #cbd5e1; }
 .vcc-tile:hover:not(:disabled) { background: var(--vcc-hover); }
-.vcc-tile-ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--mcs); color: var(--mc); flex: none; }
-.vcc-tile[data-pri="true"] .vcc-tile-ic { background: var(--mc); color: #fff; }
-.dark .vcc-tile[data-pri="true"] .vcc-tile-ic { color: #111; }
+.vcc-tile:active:not(:disabled) .vcc-appicon { transform: scale(.94); }
+.vcc-tile:hover:not(:disabled) .vcc-appicon { transform: scale(1.08); }
 .vcc-tile[data-locked-more="true"] { color: var(--vcc-muted); }
-.vcc-tile[data-locked-more="true"] .vcc-tile-ic { background: var(--vcc-card2); color: var(--vcc-muted); border: 1px dashed var(--vcc-border); }
 .vcc-tile-label { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.vcc-appicon { width: 44px; height: 44px; border-radius: 16px; display: grid; place-items: center; color: #fff; flex: none; transition: transform .2s ease; }
+.vcc-appicon[data-size="row"] { width: 32px; height: 32px; border-radius: 10px; }
 
 /* Thư mục thao tác (bung từ ô, kiểu nhóm ứng dụng iPhone) — chỉ animate transform / opacity, hữu hạn */
 .vcc-fold-layer { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 12px; }
@@ -187,16 +189,14 @@
 .vcc-fold-body { padding: 10px 14px 14px; overflow-y: auto; min-height: 0; }
 .vcc-fold-section { margin: 2px 0 8px; font-size: 12px; font-weight: 600; color: var(--vcc-fg2); }
 .vcc-fold-acts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-.vcc-fold-acts .vcc-act { min-height: 46px; font-size: 13px; }
-.vcc-act { min-height: 40px; padding: 6px 10px; border-radius: 10px; border: 1px solid transparent; background: var(--mcs); color: var(--mc); font-weight: 600; font-size: 12.5px;
-  display: inline-flex; align-items: center; gap: 8px; text-align: left; min-width: 0; }
+.vcc-act { min-height: 48px; padding: 7px 10px; border-radius: 12px; border: 1px solid var(--vcc-border); background: var(--vcc-card); color: #334155;
+  font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 10px; text-align: left; min-width: 0; }
+.dark .vcc-act { color: #e2e8f0; }
 .vcc-act-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.vcc-act-why { font-size: 11px; font-weight: 500; line-height: 1.3; margin-top: 1px; white-space: normal; }
-.vcc-act:hover:not(:disabled) { border-color: var(--mc); }
-.vcc-act[data-pri="true"] { background: var(--mc); color: #fff; }
-.dark .vcc-act[data-pri="true"] { color: #111; }
-.vcc-act:disabled { background: var(--vcc-card2); color: var(--vcc-muted); border-color: var(--vcc-border); cursor: not-allowed; }
-.vcc-act svg { flex: none; opacity: .75; }
+.vcc-act-why { font-size: 11px; font-weight: 500; line-height: 1.3; margin-top: 1px; white-space: normal; color: var(--vcc-muted); }
+.vcc-act:hover:not(:disabled) { background: var(--vcc-hover); }
+.vcc-act:hover:not(:disabled) .vcc-appicon { transform: scale(1.06); }
+.vcc-act:disabled { background: var(--vcc-card2); color: var(--vcc-muted); cursor: not-allowed; }
 .vcc-fold-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--vcc-border); }
 @media (max-width: 1023px) { .vcc-fold { max-height: 88vh; } .vcc-fold-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .vcc-fold-acts { grid-template-columns: 1fr; } }
