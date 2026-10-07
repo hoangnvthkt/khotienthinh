@@ -111,6 +111,140 @@ const HRM_NAV_ICONS: Record<string, LucideIcon> = {
 // Sidebar states: 'home' | 'apps' | AppKey
 type SidebarView = 'home' | 'apps' | AppKey;
 
+export interface ModuleNavItem { to: string; icon: LucideIcon; label: string; badge?: number | null; badgeColor?: string; roles?: string[] }
+
+/** Chức năng bên trong từng app (theo quyền), dùng chung cho thanh bên và rail của Trung tâm điều hành. */
+export const useModuleNavigation = () => {
+  const { user, users, transactions } = useApp();
+  const pendingTxCount = useMemo(() => {
+    if (user.role === Role.ADMIN) return transactions.filter(t => t.status === TransactionStatus.PENDING).length;
+    if (isWarehouseKeeper(user)) {
+      return transactions.filter(t => t.status === TransactionStatus.PENDING && canApproveWmsTransaction(user, t)).length
+        + transactions.filter(t => t.status === TransactionStatus.APPROVED && canReceiveWmsTransaction(user, t)).length;
+    }
+    if (user.assignedWarehouseId) {
+      return transactions.filter(t => t.requesterId === user.id && t.status === TransactionStatus.PENDING).length
+        + transactions.filter(t => t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED).length;
+    }
+    return 0;
+  }, [transactions, user]);
+
+  // Nav items per module
+  const moduleNavMap: Record<AppKey, any[]> = useMemo(() => ({
+    'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/templates', icon: BookOpen, label: 'Mẫu văn bản' }, { to: '/office/reports', icon: BarChart3, label: 'Báo cáo' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
+    'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
+    // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
+    WMS: [
+      { to: '/inventory', icon: Package, label: 'Tồn kho' },
+      { to: '/operations', icon: ArrowLeftRight, label: 'Phiếu kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
+      { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
+      { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
+      { to: '/reports', icon: History, label: 'Báo cáo' },
+      { to: '/wms/owners', icon: Users, label: 'Phân quyền kho' },
+    ],
+    HRM: getHrmNavigationItems(user).map(item => ({
+      ...item,
+      icon: HRM_NAV_ICONS[item.to],
+    })),
+    WF: [
+      { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
+      { to: '/wf', icon: GitBranch, label: 'Quy trình' },
+      { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình' },
+    ],
+    DA: [
+      { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
+      { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
+    ],
+    PROCUREMENT: [
+      { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
+    ],
+    FINANCE: [
+      { to: '/finance/overview', icon: LayoutDashboard, label: 'Tổng quan' },
+      { to: '/finance/forecast', icon: CalendarRange, label: 'Dự báo dòng tiền' },
+      { to: '/finance/reports', icon: BarChart3, label: 'Báo cáo' },
+      { to: '/finance/todo', icon: ClipboardCheck, label: 'Việc cần làm' },
+      { to: '/finance/receivables', icon: Inbox, label: 'Phải thu' },
+      { to: '/finance/payables', icon: Wallet, label: 'Phải trả' },
+      { to: '/finance/subcontracts', icon: HardHat, label: 'Thầu phụ' },
+      { to: '/finance/cash', icon: Landmark, label: 'Thu chi & quỹ' },
+      { to: '/finance/cost', icon: Calculator, label: 'Chi phí & ngân sách' },
+      { to: '/finance/project', icon: Building2, label: 'Tài chính dự án' },
+      { to: '/finance/settings', icon: Settings, label: 'Quản trị' },
+    ],
+    TS: [
+      { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
+      { to: '/ts/catalog', icon: Landmark, label: 'Danh mục tài sản' },
+      { to: '/ts/assignment', icon: Repeat, label: 'Cấp phát / Thu hồi' },
+      { to: '/ts/maintenance', icon: Wrench, label: 'Bảo trì / Sửa chữa' },
+      { to: '/ts/audit', icon: ClipboardCheck, label: 'Kiểm kê TS' },
+      { to: '/ts/reports', icon: History, label: 'Báo cáo TS' },
+    ],
+    RQ: [
+      { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
+      { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
+      { to: '/rq/templates', icon: Settings, label: 'Mẫu yêu cầu' },
+    ],
+    STORAGE: [
+      { to: '/storage', icon: HardDrive, label: 'Kho dữ liệu' },
+    ],
+    KB: [
+      { to: '/knowledge-base', icon: BookOpen, label: 'Kho Kiến Thức' },
+    ],
+    AI: [
+      { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
+      { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
+      { to: '/ai/reports', icon: FileText, label: 'Báo cáo AI' },
+    ],
+    EP: [
+      { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
+    ],
+    HD: [
+      { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
+      { to: '/hd/partners', icon: Handshake, label: 'Đối tác' },
+      { to: '/hd/contract-types', icon: Settings2, label: 'Loại HĐ & Mẫu' },
+      { to: '/hd/customer', icon: Users, label: 'HĐ Nhận thầu' },
+      { to: '/hd/supplier', icon: Building2, label: 'HĐ Nhà cung cấp' },
+      { to: '/hd/subcontractor', icon: HardHat, label: 'HĐ Thầu phụ' },
+    ],
+    TENDER_AI: [
+      { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
+      { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
+    ],
+    VEHICLE_BOOKING: [
+      { to: '/booking/vehicle', icon: Car, label: 'Tạo đơn đặt xe' },
+      { to: '/booking/vehicle/my', icon: Inbox, label: 'Yêu cầu của tôi' },
+      { to: '/booking/vehicle/approvals', icon: ClipboardCheck, label: 'Chờ phê duyệt' },
+      { to: '/booking/vehicle/dispatch', icon: LayoutDashboard, label: 'Bảng điều phối' },
+      { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến của tôi' },
+      { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao xe tự lái' },
+      { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý xe' },
+      { to: '/booking/vehicle/drivers', icon: Users, label: 'Quản lý tài xế' },
+      { to: '/booking/vehicle/reports', icon: BarChart3, label: 'Dashboard & Báo cáo KPI' },
+      { to: '/booking/vehicle/issues', icon: MessageSquarePlus, label: 'Phản ánh' },
+      { to: '/booking/vehicle/audit', icon: History, label: 'Lịch sử vận hành' },
+      { to: '/booking/vehicle/settings', icon: Settings, label: 'Cấu hình' },
+    ],
+  }), [pendingTxCount, user]);
+
+  return useCallback((key: AppKey): ModuleNavItem[] => (moduleNavMap[key] || []).filter((item: any) => {
+    if (item.to === '/work/settings' && !canConfigureWork(user)) return false;
+    // Role filter (e.g., Admin-only items)
+    if (item.roles && !item.roles.includes(user.role)) return false;
+    if (key === 'VEHICLE_BOOKING') {
+      if (item.to === '/booking/vehicle/approvals' && !canAccessVehicleApprovalQueue(user, users)) return false;
+      if (item.to === '/booking/vehicle/dispatch' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.dispatch'])) return false;
+      if (item.to === '/booking/vehicle/handover' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.handover', 'booking.vehicle.dispatch'])) return false;
+      if (item.to === '/booking/vehicle/fleet' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.manage_fleet'])) return false;
+      if (item.to === '/booking/vehicle/drivers' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.manage_authorizations'])) return false;
+      if (item.to === '/booking/vehicle/settings' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.admin'])) return false;
+      if (item.to === '/booking/vehicle/reports' && !canViewVehicleReports(user)) return false;
+      if (item.to === '/booking/vehicle/issues' && !canViewSensitiveVehicleIssues(user)) return false;
+      if (item.to === '/booking/vehicle/audit' && !canViewVehicleAudit(user)) return false;
+    }
+    return canAccessRoute(user, item.to);
+  }), [moduleNavMap, user, users]);
+};
+
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollapsed, isPinned = false, onTogglePin, hideOnDesktop = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -238,19 +372,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
   const activeModule = isModuleView ? MODULE_CONFIG.find(m => m.key === view) : null;
   const isModuleAllowed = activeModule ? userModules.some(m => m.key === activeModule.key) : false;
 
-  const pendingTxCount = useMemo(() => {
-    if (user.role === Role.ADMIN) return transactions.filter(t => t.status === TransactionStatus.PENDING).length;
-    if (isWarehouseKeeper(user)) {
-      return transactions.filter(t => t.status === TransactionStatus.PENDING && canApproveWmsTransaction(user, t)).length
-        + transactions.filter(t => t.status === TransactionStatus.APPROVED && canReceiveWmsTransaction(user, t)).length;
-    }
-    if (user.assignedWarehouseId) {
-      return transactions.filter(t => t.requesterId === user.id && t.status === TransactionStatus.PENDING).length
-        + transactions.filter(t => t.targetWarehouseId === user.assignedWarehouseId && t.status === TransactionStatus.APPROVED).length;
-    }
-    return 0;
-  }, [transactions, user]);
-
   const pendingReqCount = useMemo(() => {
     if (user.role === Role.ADMIN) return requests.filter(r => r.status === RequestStatus.PENDING).length;
     if (isWarehouseKeeper(user)) {
@@ -278,121 +399,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
     }).length;
   }, [items]);
 
-  // Nav items per module
-  const moduleNavMap: Record<AppKey, any[]> = {
-    'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/templates', icon: BookOpen, label: 'Mẫu văn bản' }, { to: '/office/reports', icon: BarChart3, label: 'Báo cáo' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
-    'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
-    // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
-    WMS: [
-      { to: '/inventory', icon: Package, label: 'Tồn kho' },
-      { to: '/operations', icon: ArrowLeftRight, label: 'Phiếu kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
-      { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
-      { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
-      { to: '/reports', icon: History, label: 'Báo cáo' },
-      { to: '/wms/owners', icon: Users, label: 'Phân quyền kho' },
-    ],
-    HRM: getHrmNavigationItems(user).map(item => ({
-      ...item,
-      icon: HRM_NAV_ICONS[item.to],
-    })),
-    WF: [
-      { to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' },
-      { to: '/wf', icon: GitBranch, label: 'Quy trình' },
-      { to: '/wf/templates', icon: Workflow, label: 'Mẫu quy trình' },
-    ],
-    DA: [
-      { to: '/da', icon: BarChart3, label: 'Tổng quan DA' },
-      { to: '/da/portfolio', icon: Layers, label: 'Đa dự án' },
-    ],
-    PROCUREMENT: [
-      { to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' },
-    ],
-    FINANCE: [
-      { to: '/finance/overview', icon: LayoutDashboard, label: 'Tổng quan' },
-      { to: '/finance/forecast', icon: CalendarRange, label: 'Dự báo dòng tiền' },
-      { to: '/finance/reports', icon: BarChart3, label: 'Báo cáo' },
-      { to: '/finance/todo', icon: ClipboardCheck, label: 'Việc cần làm' },
-      { to: '/finance/receivables', icon: Inbox, label: 'Phải thu' },
-      { to: '/finance/payables', icon: Wallet, label: 'Phải trả' },
-      { to: '/finance/subcontracts', icon: HardHat, label: 'Thầu phụ' },
-      { to: '/finance/cash', icon: Landmark, label: 'Thu chi & quỹ' },
-      { to: '/finance/cost', icon: Calculator, label: 'Chi phí & ngân sách' },
-      { to: '/finance/project', icon: Building2, label: 'Tài chính dự án' },
-      { to: '/finance/settings', icon: Settings, label: 'Quản trị' },
-    ],
-    TS: [
-      { to: '/ts/dashboard', icon: LayoutDashboard, label: 'Dashboard TS' },
-      { to: '/ts/catalog', icon: Landmark, label: 'Danh mục tài sản' },
-      { to: '/ts/assignment', icon: Repeat, label: 'Cấp phát / Thu hồi' },
-      { to: '/ts/maintenance', icon: Wrench, label: 'Bảo trì / Sửa chữa' },
-      { to: '/ts/audit', icon: ClipboardCheck, label: 'Kiểm kê TS' },
-      { to: '/ts/reports', icon: History, label: 'Báo cáo TS' },
-    ],
-    RQ: [
-      { to: '/rq/dashboard', icon: BarChart3, label: 'Dashboard RQ' },
-      { to: '/rq', icon: Inbox, label: 'Phiếu yêu cầu' },
-      { to: '/rq/templates', icon: Settings, label: 'Mẫu yêu cầu' },
-    ],
-    STORAGE: [
-      { to: '/storage', icon: HardDrive, label: 'Kho dữ liệu' },
-    ],
-    KB: [
-      { to: '/knowledge-base', icon: BookOpen, label: 'Kho Kiến Thức' },
-    ],
-    AI: [
-      { to: '/ai', icon: Bot, label: 'Trợ lý AI' },
-      { to: '/ai/executive', icon: BarChart3, label: 'Ban Giám Đốc' },
-      { to: '/ai/reports', icon: FileText, label: 'Báo cáo AI' },
-    ],
-    EP: [
-      { to: '/ep', icon: IdCard, label: 'Tra cứu nhân viên' },
-    ],
-    HD: [
-      { to: '/hd/overview', icon: FileSignature, label: 'Tổng quan HĐ' },
-      { to: '/hd/partners', icon: Handshake, label: 'Đối tác' },
-      { to: '/hd/contract-types', icon: Settings2, label: 'Loại HĐ & Mẫu' },
-      { to: '/hd/customer', icon: Users, label: 'HĐ Nhận thầu' },
-      { to: '/hd/supplier', icon: Building2, label: 'HĐ Nhà cung cấp' },
-      { to: '/hd/subcontractor', icon: HardHat, label: 'HĐ Thầu phụ' },
-    ],
-    TENDER_AI: [
-      { to: '/tender-ai/boq', icon: FileSpreadsheet, label: 'AI BOQ CĐT' },
-      { to: '/tender-ai/cost-library', icon: Calculator, label: 'Dự toán nội bộ' },
-    ],
-    VEHICLE_BOOKING: [
-      { to: '/booking/vehicle', icon: Car, label: 'Tạo đơn đặt xe' },
-      { to: '/booking/vehicle/my', icon: Inbox, label: 'Yêu cầu của tôi' },
-      { to: '/booking/vehicle/approvals', icon: ClipboardCheck, label: 'Chờ phê duyệt' },
-      { to: '/booking/vehicle/dispatch', icon: LayoutDashboard, label: 'Bảng điều phối' },
-      { to: '/booking/vehicle/trips', icon: Calendar, label: 'Chuyến của tôi' },
-      { to: '/booking/vehicle/handover', icon: Repeat, label: 'Bàn giao xe tự lái' },
-      { to: '/booking/vehicle/fleet', icon: Wrench, label: 'Quản lý xe' },
-      { to: '/booking/vehicle/drivers', icon: Users, label: 'Quản lý tài xế' },
-      { to: '/booking/vehicle/reports', icon: BarChart3, label: 'Dashboard & Báo cáo KPI' },
-      { to: '/booking/vehicle/issues', icon: MessageSquarePlus, label: 'Phản ánh' },
-      { to: '/booking/vehicle/audit', icon: History, label: 'Lịch sử vận hành' },
-      { to: '/booking/vehicle/settings', icon: Settings, label: 'Cấu hình' },
-    ],
-  };
-
-  const currentNavItems = (isModuleView && isModuleAllowed && activeModule) ? moduleNavMap[activeModule.key] || [] : [];
-  const filteredNavItems = currentNavItems.filter((item: any) => {
-    if (item.to === '/work/settings' && !canConfigureWork(user)) return false;
-    // Role filter (e.g., Admin-only items)
-    if (item.roles && !item.roles.includes(user.role)) return false;
-    if (activeModule?.key === 'VEHICLE_BOOKING') {
-      if (item.to === '/booking/vehicle/approvals' && !canAccessVehicleApprovalQueue(user, users)) return false;
-      if (item.to === '/booking/vehicle/dispatch' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.dispatch'])) return false;
-      if (item.to === '/booking/vehicle/handover' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.handover', 'booking.vehicle.dispatch'])) return false;
-      if (item.to === '/booking/vehicle/fleet' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.manage_fleet'])) return false;
-      if (item.to === '/booking/vehicle/drivers' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.manage_authorizations'])) return false;
-      if (item.to === '/booking/vehicle/settings' && !hasActiveVehicleBookingGrant(user, ['booking.vehicle.admin'])) return false;
-      if (item.to === '/booking/vehicle/reports' && !canViewVehicleReports(user)) return false;
-      if (item.to === '/booking/vehicle/issues' && !canViewSensitiveVehicleIssues(user)) return false;
-      if (item.to === '/booking/vehicle/audit' && !canViewVehicleAudit(user)) return false;
-    }
-    return canAccessRoute(user, item.to);
-  });
+  // Chức năng của app đang mở (dùng chung với rail của Trung tâm điều hành).
+  const navFor = useModuleNavigation();
+  const filteredNavItems = (isModuleView && isModuleAllowed && activeModule) ? navFor(activeModule.key) : [];
   const assignedWh = warehouses.find(w => w.id === user.assignedWarehouseId);
 
   const sidebarBg = isDark ? 'border-r border-[#2D3135]/60 bg-[#101214]/95 backdrop-blur-xl' : 'glass-panel border-r border-white/20';

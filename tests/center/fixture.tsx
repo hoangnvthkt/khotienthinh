@@ -5,10 +5,10 @@
 // Cột 64px bên trái chỉ giả lập thanh bên (Sidebar) có sẵn của app.
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BarChart3, Bell, Briefcase, FileText, LayoutDashboard, Package, PanelsTopLeft, ShoppingCart, Wallet } from 'lucide-react';
+import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, Package, ShoppingCart } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import { CenterRailView } from '../../components/center/CenterRail';
-import { SIDEBAR_MODULES } from '../../components/Sidebar';
+import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
 import CenterEntrance from '../../components/center/CenterIntro';
 import UiModeSwitch from '../../components/center/UiModeSwitch';
@@ -176,22 +176,35 @@ const StubRenderer: React.FC<{ renderer: string; props: Record<string, string> }
 // Rail thật của giao diện Trung tâm điều hành (CenterRailView), app mẫu theo thứ tự mockup.
 const RAIL_KEYS = ['DA', 'RQ', 'WF', 'work.module', 'PROCUREMENT', 'WMS', 'HRM', 'FINANCE', 'office.module', 'VEHICLE_BOOKING'];
 const RAIL_MODULES = RAIL_KEYS.map(key => SIDEBAR_MODULES.find(module => module.key === key)!).filter(Boolean);
-const FixtureRail: React.FC<{ dark: boolean; onToggleTheme: () => void; onExit: () => void }> = ({ dark, onToggleTheme, onExit }) => (
-  <CenterRailView
-    pathname="/center"
-    company={{ name: 'Tiến Thịnh' }}
-    modules={RAIL_MODULES}
-    badge="9"
-    avatar="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'><rect width='34' height='34' fill='%23e7f0f3'/><text x='17' y='22' font-size='12' text-anchor='middle' fill='%232e6f80' font-family='sans-serif'>PS</text></svg>"
-    userName="Phạm Ngọc Sơn"
-    isDark={dark}
-    notifications={<button type="button" aria-label="Thông báo"><Bell size={16} /></button>}
-    onToggleTheme={onToggleTheme}
-    onProfile={() => undefined}
-    onSettings={() => undefined}
-    onExitCenter={onExit}
-  />
-);
+// Chức năng mẫu bên trong app (app thật lấy từ useModuleNavigation của thanh bên, theo quyền).
+const RAIL_NAV: Record<string, ModuleNavItem[]> = {
+  WF: [{ to: '/wf/dashboard', icon: LayoutDashboard, label: 'Dashboard QT' }, { to: '/wf', icon: GitBranch, label: 'Quy trình' }, { to: '/wf/templates', icon: FileText, label: 'Mẫu quy trình' }],
+  DA: [{ to: '/da', icon: BarChart3, label: 'Tổng quan DA' }, { to: '/da/portfolio', icon: Briefcase, label: 'Đa dự án' }],
+  WMS: [{ to: '/inventory', icon: Package, label: 'Tồn kho' }, { to: '/operations', icon: ShoppingCart, label: 'Phiếu kho', badge: 3 }, { to: '/audit', icon: FileText, label: 'Kiểm kê' }],
+  PROCUREMENT: [{ to: '/procurement', icon: ShoppingCart, label: 'Mua hàng công ty' }],
+};
+const FixtureRail: React.FC<{ dark: boolean; onToggleTheme: () => void; onExit: () => void; onNavigate: (to: string) => void }> = ({ dark, onToggleTheme, onExit, onNavigate }) => {
+  const [order, setOrder] = useState(RAIL_KEYS);
+  return (
+    <CenterRailView
+      pathname="/center"
+      company={{ name: 'Tiến Thịnh' }}
+      modules={order.map(key => RAIL_MODULES.find(module => module.key === key)!).filter(Boolean)}
+      navFor={key => RAIL_NAV[key] || [{ to: RAIL_MODULES.find(module => module.key === key)?.route || '/', icon: LayoutDashboard, label: 'Tổng quan' }]}
+      onReorder={keys => setOrder(keys)}
+      badge="9"
+      avatar="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'><rect width='34' height='34' fill='%23e7f0f3'/><text x='17' y='22' font-size='12' text-anchor='middle' fill='%232e6f80' font-family='sans-serif'>PS</text></svg>"
+      userName="Phạm Ngọc Sơn"
+      isDark={dark}
+      notifications={<button type="button" aria-label="Thông báo"><Bell size={16} /></button>}
+      onNavigate={onNavigate}
+      onToggleTheme={onToggleTheme}
+      onProfile={() => undefined}
+      onSettings={() => undefined}
+      onExitCenter={onExit}
+    />
+  );
+};
 
 // ?defaults=1: dùng giá trị mặc định của CenterShell cho giờ (như app thật) — bắt lỗi vẽ lại mãi.
 // Giả lập "giao diện hiện tại" để thử công tắc + lời chào (?ui=classic mở ở giao diện hiện tại; ?intro=1 chạy lời chào).
@@ -216,7 +229,7 @@ const Fixture: React.FC = () => {
   }
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden" data-last-route={lastRoute}>
-      <FixtureRail dark={dark} onToggleTheme={() => setDark(value => !value)} onExit={() => setUi('classic')} />
+      <FixtureRail dark={dark} onToggleTheme={() => setDark(value => !value)} onExit={() => setUi('classic')} onNavigate={setLastRoute} />
       <main className="min-w-0 flex-1">
         <CenterEntrance play={intro} person={PERSON} now={NOW} onDone={() => setIntro(false)}>
           <CenterShell

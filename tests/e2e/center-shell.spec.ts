@@ -489,3 +489,33 @@ test("calendar date range filters my work by due date", async ({ page }, info) =
   await bar.getByRole("button", { name: "Bỏ lọc theo hạn" }).click();
   await expect(bar).toHaveCount(0);
 });
+
+// Rail của giao diện mới: bấm app → bung bảng chức năng bên trong; app một chức năng mở thẳng; kéo thả đổi chỗ app.
+test("rail: app opens its functions, single-function app navigates, apps can be dragged", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(base);
+  const rail = page.getByRole("navigation", { name: "Ứng dụng" });
+  const apps = () => rail.locator("button.vcc-rail-item .vcc-rail-label").allTextContents();
+  expect((await apps()).slice(0, 3)).toEqual(["Dự án", "Yêu cầu", "Quy trình"]);
+
+  await rail.getByRole("button", { name: /^Quy trình/ }).click();
+  const flyout = page.getByRole("dialog", { name: "Quy trình" });
+  await expect(flyout).toBeVisible();
+  await expect(flyout.getByRole("link")).toHaveText(["Dashboard QT", "Quy trình", "Mẫu quy trình"]);
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/desktop-rail-flyout.png` });
+  await page.mouse.click(900, 500);
+  await expect(flyout).toHaveCount(0);
+  await rail.getByRole("button", { name: /^Vật tư/ }).click();
+  await expect(page.getByRole("dialog", { name: "Vật tư" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Vật tư" })).toHaveCount(0);
+
+  // Mua hàng chỉ có một chức năng → mở thẳng.
+  await rail.getByRole("button", { name: /^Mua hàng/ }).click();
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/procurement");
+
+  // Kéo "Quy trình" lên trước "Dự án".
+  await rail.getByRole("button", { name: /^Quy trình/ }).dragTo(rail.getByRole("button", { name: /^Dự án/ }));
+  expect((await apps()).slice(0, 3)).toEqual(["Quy trình", "Dự án", "Yêu cầu"]);
+});

@@ -34,7 +34,8 @@ export const ROUTE_CHROME: ReadonlyArray<{ match: (pathname: string) => boolean;
   // Trung tâm điều hành có header, cột việc và thanh 3 tab đáy riêng.
   {
     match: pathname => pathname === '/center',
-    chrome: { fullBleed: true, hideMobileHeader: true, hideBottomNav: true, hideFab: true, hideDock: true, hideChatBubble: true },
+    // Bong bóng Chat vẫn hiện (chủ SP 07/10); máy tính đặt sau rail, điện thoại ở trên thanh 3 tab.
+    chrome: { fullBleed: true, hideMobileHeader: true, hideBottomNav: true, hideFab: true, hideDock: true, hideChatBubble: false },
   },
   { match: isWorkRoute, chrome: { fullBleed: true, workScrollHost: true } },
   { match: pathname => pathname === '/chat' || pathname.startsWith('/rq') || pathname === '/wf', chrome: { fullBleed: true } },
