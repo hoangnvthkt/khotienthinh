@@ -24,12 +24,12 @@ const RequestRenderer: React.FC<{ requestId: string }> = ({ requestId }) => {
   );
 };
 
-const ProcurementRenderer: React.FC<{ initialOrderId?: string; initialHotPurchaseId?: string }> = ({ initialOrderId, initialHotPurchaseId }) => {
+const ProcurementRenderer: React.FC<{ initialOrderId?: string; initialHotPurchaseId?: string; initialMode?: string }> = ({ initialOrderId, initialHotPurchaseId, initialMode }) => {
   const { user } = useApp();
   // Hub Mua hàng đọc tên vật tư / kho từ AppContext; màn /procurement được Layout nạp sẵn, ở Center tự nạp.
   useModuleData('wms-core');
   useModuleData('admin');
-  return <ProcurementHubView currentUserId={user.id} initialOrderId={initialOrderId || null} initialHotPurchaseId={initialHotPurchaseId || null} />;
+  return <ProcurementHubView currentUserId={user.id} initialOrderId={initialOrderId || null} initialHotPurchaseId={initialHotPurchaseId || null} initialMode={initialMode || null} />;
 };
 
 const FinanceRenderer: React.FC<{ initialSection?: string; initialRequestId?: string }> = ({ initialSection, initialRequestId }) => {
@@ -50,7 +50,7 @@ const SiteAssignmentRenderer: React.FC<{ initialSelectedId?: string }> = ({ init
 export const RendererHost: React.FC<{ renderer: RendererId; props: Record<string, string> }> = ({ renderer, props }) => {
   switch (renderer) {
     case 'request': return <RequestRenderer requestId={props.requestId} />;
-    case 'procurement': return <ProcurementRenderer initialOrderId={props.initialOrderId} initialHotPurchaseId={props.initialHotPurchaseId} />;
+    case 'procurement': return <ProcurementRenderer initialOrderId={props.initialOrderId} initialHotPurchaseId={props.initialHotPurchaseId} initialMode={props.initialMode} />;
     case 'finance': return <FinanceRenderer initialSection={props.initialSection} initialRequestId={props.initialRequestId} />;
     case 'site_assignment': return <SiteAssignmentRenderer initialSelectedId={props.initialSelectedId} />;
     default: return null;

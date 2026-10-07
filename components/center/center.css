@@ -144,7 +144,7 @@
 .vcc-mnav button[aria-selected="true"] { color: var(--vcc-accent); }
 
 /* Lưới widget theo bề rộng vùng làm việc (cột việc / Trợ lý mở làm vùng hẹp lại), không theo màn hình. */
-@container (max-width: 1040px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 1000px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 600px) { .vcc-grid { grid-template-columns: 1fr; } }
 @supports not (container-type: inline-size) {
   @media (max-width: 1200px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -179,3 +179,38 @@ button.vcc-stat-v svg { opacity: .6; flex: none; }
 .vcc-cal { display: flex; align-items: center; gap: 14px; padding: 10px 14px; max-width: 100%; }
 .vcc-cal-sep { width: 1px; height: 38px; background: var(--vcc-border); flex: none; }
 .vcc-select { height: 28px; max-width: 150px; flex: none; border: 1px solid var(--vcc-border); border-radius: 6px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 12px; padding: 0 6px; }
+
+/* Ô bấm được để bung thư mục thao tác */
+.vcc-widget[data-folder="true"] { cursor: pointer; }
+.vcc-widget[data-folder="true"]:hover { border-color: var(--mc); }
+.vcc-widget[data-folder="true"]:focus-visible { outline: 2px solid var(--mc); outline-offset: 2px; }
+.vcc-wfoot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+.vcc-chip[data-more="true"] { color: var(--vcc-fg2); background: var(--vcc-card2); border-color: var(--vcc-border); }
+
+/* Thư mục thao tác (bung từ ô, kiểu nhóm ứng dụng iPhone) — chỉ animate transform / opacity, hữu hạn */
+.vcc-fold-layer { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.vcc-fold-backdrop { position: absolute; inset: 0; background: rgba(20, 20, 15, .42); opacity: 0; transition: opacity .22s ease; }
+.vcc-fold-backdrop[data-open="true"] { opacity: 1; }
+.dark .vcc-fold-backdrop { background: rgba(0, 0, 0, .62); }
+.vcc-fold { position: relative; width: min(720px, 100%); max-height: min(86vh, 780px); display: flex; flex-direction: column; background: var(--vcc-card);
+  border: 1px solid var(--vcc-border); border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, .28); transform-origin: center; will-change: transform, opacity;
+  transition: transform var(--vcc-fold-ms, 280ms) cubic-bezier(.2, .8, .2, 1), opacity .22s ease; outline: none; }
+.vcc-fold-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--vcc-border); }
+.vcc-fold-head .vcc-wicon { width: 32px; height: 32px; border-radius: 9px; }
+.vcc-fold-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--mc); }
+.vcc-fold-body { padding: 10px 14px 14px; overflow-y: auto; min-height: 0; }
+.vcc-fold-stats .vcc-stat { font-size: 13px; padding: 7px 0; }
+.vcc-fold-section { margin: 12px 0 8px; font-size: 12px; font-weight: 600; color: var(--vcc-fg2); }
+.vcc-fold-acts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.vcc-act { height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid transparent; background: var(--mcs); color: var(--mc); font-weight: 600; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 6px; text-align: left; min-width: 0; }
+.vcc-act > span { flex: 1; }
+.vcc-act:hover:not(:disabled) { border-color: var(--mc); }
+.vcc-act[data-pri="true"] { background: var(--mc); color: #fff; }
+.dark .vcc-act[data-pri="true"] { color: #111; }
+.vcc-act:disabled { background: var(--vcc-card2); color: var(--vcc-muted); border-color: var(--vcc-border); cursor: not-allowed; }
+.vcc-act svg { flex: none; opacity: .75; }
+.vcc-fold-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--vcc-border); }
+@media (max-width: 1023px) { .vcc-fold { max-height: 88vh; } .vcc-fold-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .vcc-fold-acts { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .vcc-fold, .vcc-fold-backdrop { transition: none; } }

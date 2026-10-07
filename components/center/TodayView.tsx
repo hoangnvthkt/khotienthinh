@@ -1,13 +1,14 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowUpRight, BarChart3, CalendarDays, ClipboardCheck, FileText, Lock, ShoppingCart, Users, Wallet } from 'lucide-react';
+import { ArrowUpRight, BarChart3, CalendarDays, ChevronRight, ClipboardCheck, FileText, Lock, ShoppingCart, Users, Wallet } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
 import type { DrillTarget } from '../../lib/center/drill';
 import type { CenterToday } from '../../lib/center/centerTodayService';
+import type { WidgetAction } from '../../lib/center/centerActions';
 import { buildTodaySummary, buildTodayWidgets, ddmm, type Stat, type WeatherSlot, type WidgetView } from '../../lib/center/todayWidgets';
 
-const WIDGET_ICONS: Record<CenterWidgetId, LucideIcon> = {
+export const WIDGET_ICONS: Record<CenterWidgetId, LucideIcon> = {
   project: BarChart3,
   hrm: Users,
   work: ClipboardCheck,
@@ -49,17 +50,42 @@ export const DrillLink: React.FC<{ stat: Stat; onDrill: (target: DrillTarget) =>
   </button>
 );
 
+// Bấm vào ô (không phải vào số / nút / ô chọn) → bung thư mục thao tác từ đúng vị trí ô.
 const WidgetCard: React.FC<{
   view: WidgetView;
+  actions: WidgetAction[] | null;
   canOpenRoute: (route: string) => boolean;
   onNavigate: (route: string) => void;
   onDrill: (target: DrillTarget) => void;
+  onOpenFolder: (view: WidgetView, anchor: HTMLElement) => void;
   header?: React.ReactNode;
-}> = ({ view, canOpenRoute, onNavigate, onDrill, header }) => {
+}> = ({ view, actions, canOpenRoute, onNavigate, onDrill, onOpenFolder, header }) => {
   const Icon = WIDGET_ICONS[view.id];
   const allowed = canOpenRoute(view.route);
+  const ref = useRef<HTMLElement>(null);
+  const open = () => { if (ref.current) onOpenFolder(view, ref.current); };
+  const onClick = (event: React.MouseEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('button, select, a, [data-locked]')) return;
+    open();
+  };
+  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+  };
+  const enabledCount = actions?.filter(action => action.enabled).length;
   return (
-    <section className={`vcc-card vcc-widget vcc-mod-${view.module}`} aria-labelledby={`vcc-w-${view.id}`} data-widget={view.id}>
+    <section
+      ref={ref}
+      className={`vcc-card vcc-widget vcc-mod-${view.module}`}
+      aria-labelledby={`vcc-w-${view.id}`}
+      data-widget={view.id}
+      data-folder="true"
+      tabIndex={0}
+      aria-haspopup="dialog"
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+      title="Bấm để mở thao tác của nhóm này"
+    >
       <header className="vcc-whead">
         <span className="vcc-wicon"><Icon size={14} /></span>
         <div className="min-w-0 flex-1">
@@ -87,15 +113,20 @@ const WidgetCard: React.FC<{
             ))}
           </div>
         )}
-        {allowed ? (
-          <button type="button" className="vcc-chip" onClick={() => onNavigate(view.route)}>
-            {view.routeLabel} <ArrowUpRight size={13} />
+        <div className="vcc-wfoot">
+          <button type="button" className="vcc-chip" data-more="true" onClick={open} aria-haspopup="dialog" aria-label={`Thao tác ${view.title}`}>
+            Thao tác{enabledCount !== undefined ? ` · ${enabledCount}` : ''} <ChevronRight size={13} />
           </button>
-        ) : (
-          <button type="button" className="vcc-chip" disabled title="Bạn chưa có quyền vào module này">
-            {view.routeLabel} <Lock size={12} />
-          </button>
-        )}
+          {allowed ? (
+            <button type="button" className="vcc-chip" onClick={() => onNavigate(view.route)}>
+              {view.routeLabel} <ArrowUpRight size={13} />
+            </button>
+          ) : (
+            <button type="button" className="vcc-chip" disabled title="Bạn chưa có quyền vào module này">
+              {view.routeLabel} <Lock size={12} />
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -107,12 +138,14 @@ const TodayView: React.FC<{
   canOpenRoute: (route: string) => boolean;
   onNavigate: (route: string) => void;
   onDrill: (target: DrillTarget) => void;
+  onOpenFolder: (view: WidgetView, anchor: HTMLElement) => void;
+  actionsFor: (id: CenterWidgetId) => WidgetAction[] | null;
   today: TodayState;
   weather: WeatherSlot;
   mineCount: number | null;
   onSelectProject: (projectId: string) => void;
   onRetry: () => void;
-}> = ({ person, now, canOpenRoute, onNavigate, onDrill, today, weather, mineCount, onSelectProject, onRetry }) => {
+}> = ({ person, now, canOpenRoute, onNavigate, onDrill, onOpenFolder, actionsFor, today, weather, mineCount, onSelectProject, onRetry }) => {
   const weekday = WEEKDAYS[now.getDay()];
   const data = today.status === 'ready' ? today.data : null;
   const ctx = { now, weather, mineCount };
@@ -148,7 +181,7 @@ const TodayView: React.FC<{
       </div>
 
       <div className="mt-4 flex items-center gap-2 text-xs vcc-muted">
-        <CalendarDays size={13} /> Số liệu đọc từ từng module theo quyền của bạn. Bấm vào số để mở đúng danh sách hoặc hồ sơ.
+        <CalendarDays size={13} /> Bấm vào số để mở đúng danh sách; bấm vào ô để bung thao tác của nhóm. Số liệu và nút theo quyền của bạn.
       </div>
 
       {today.status === 'error' && (
@@ -172,9 +205,11 @@ const TodayView: React.FC<{
           <WidgetCard
             key={view.id}
             view={view}
+            actions={actionsFor(view.id)}
             canOpenRoute={canOpenRoute}
             onNavigate={onNavigate}
             onDrill={onDrill}
+            onOpenFolder={onOpenFolder}
             header={view.id === 'project' && data && data.projectOptions.length > 1 ? (
               <select
                 className="vcc-select"

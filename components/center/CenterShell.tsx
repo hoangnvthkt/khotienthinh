@@ -2,10 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
-import TodayView, { type CenterPerson, type TodayState } from './TodayView';
+import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayState } from './TodayView';
+import ActionFolder from './ActionFolder';
 import WorkItemTab, { type RendererComponent } from './WorkItemTab';
 import { resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
-import type { CenterModuleKey } from '../../lib/center/centerRegistry';
+import type { CenterModuleKey, CenterWidgetId } from '../../lib/center/centerRegistry';
+import { buildWidgetActions, fetchCenterActions, type CenterActionFlags, type CenterModal, type WidgetAction } from '../../lib/center/centerActions';
+import type { WidgetView } from '../../lib/center/todayWidgets';
 import type { WorkItem } from '../../lib/center/workItemsService';
 import { fetchCenterToday, fetchSiteWeather, type CenterToday, type SiteWeather } from '../../lib/center/centerTodayService';
 import type { WeatherSlot } from '../../lib/center/todayWidgets';
@@ -27,8 +30,10 @@ const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: fal
 
 interface OpenTab extends CenterWorkTab { item: WorkItem | null; module: CenterModuleKey; target: ItemDrillTarget }
 
-// View thật của module tải lười: chỉ khi mở hồ sơ đầu tiên.
+// View thật của module tải lười: chỉ khi mở hồ sơ đầu tiên. Form modal (đề xuất, nghỉ phép) cũng tải lười.
 const LazyRenderer: RendererComponent = React.lazy(() => import('./CenterRenderers'));
+export type ModalHostComponent = React.ComponentType<{ modal: CenterModal; onClose: () => void; onDone: () => void }>;
+const LazyModalHost: ModalHostComponent = React.lazy(() => import('./CenterModals'));
 
 const wordsOf = (name: string) => name.trim().split(/\s+/).filter(word => /\p{L}/u.test(word));
 /** Người: chữ đầu của họ và tên ("Phạm Ngọc Sơn" → PS). */
@@ -41,6 +46,7 @@ const companyInitials = (name: string) => wordsOf(name).slice(0, 2).map(word => 
 
 export type LoadToday = (projectId: string | null) => Promise<CenterToday>;
 export type LoadWeather = (site: { id: string; latitude: number; longitude: number }, now: Date) => Promise<SiteWeather | null>;
+export type LoadActions = (projectId: string | null) => Promise<CenterActionFlags>;
 
 export interface CenterShellProps {
   person: CenterPerson & { title?: string | null; avatar?: string | null };
@@ -60,8 +66,12 @@ export interface CenterShellProps {
   loadToday?: LoadToday;
   /** Thời tiết công trường (mặc định Open-Meteo, cache 30 phút). */
   loadWeather?: LoadWeather;
+  /** Cờ "được bấm gì" cho thao tác nhanh (mặc định RPC vcc_my_actions_v1). */
+  loadActions?: LoadActions;
   /** View nhúng cho tab hồ sơ (mặc định tải lười CenterRenderers). */
   Renderer?: RendererComponent;
+  /** Form modal thật của module (mặc định tải lười CenterModals). */
+  ModalHost?: ModalHostComponent;
 }
 
 // Khung 3 vùng theo mockup v1.1: Việc của tôi · vùng làm việc có tab · Trợ lý (thu gọn).
@@ -69,7 +79,7 @@ export interface CenterShellProps {
 const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate, now = new Date(),
   loadWorkItems, loadToday = fetchCenterToday, loadWeather = (site, at) => fetchSiteWeather(site.id, site.latitude, site.longitude, at),
-  Renderer = LazyRenderer,
+  loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
 }) => {
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
   const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
@@ -83,6 +93,10 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
   const [weather, setWeather] = useState<WeatherSlot>(null);
   const [todayAttempt, setTodayAttempt] = useState(0);
+  const [actionFlags, setActionFlags] = useState<CenterActionFlags | null>(null);
+  const [folder, setFolder] = useState<{ view: WidgetView; anchor: HTMLElement } | null>(null);
+  const [modal, setModal] = useState<CenterModal | null>(null);
+  const [inboxRefresh, setInboxRefresh] = useState(0);
   const workBody = useRef<HTMLDivElement>(null);
   const todaySeq = useRef(0);
   const lastFocusRefresh = useRef(0);
@@ -94,12 +108,16 @@ const CenterShell: React.FC<CenterShellProps> = ({
     loadToday(projectId).then(data => {
       if (todaySeq.current !== seq) return;
       setToday({ status: 'ready', data });
+      // Cờ thao tác theo dự án máy chủ đã chọn (có thể khác projectId đã lưu).
+      loadActions(data.project?.id || null)
+        .then(flags => { if (todaySeq.current === seq) setActionFlags(flags); })
+        .catch(error => { console.warn('Center actions failed:', error); if (todaySeq.current === seq) setActionFlags(null); });
     }).catch(error => {
       if (todaySeq.current !== seq) return;
       console.warn('Center today failed:', error);
       setToday({ status: 'error', message: 'Kiểm tra mạng rồi thử lại. Việc của tôi và các module vẫn dùng bình thường.' });
     });
-  }, [loadToday, projectId, todayAttempt]);
+  }, [loadToday, loadActions, projectId, todayAttempt]);
 
   useEffect(() => {
     const refresh = () => {
@@ -180,6 +198,16 @@ const CenterShell: React.FC<CenterShellProps> = ({
 
   const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id); setProjectId(id); };
 
+  // Thao tác nhanh: nút theo cờ máy chủ; mở form modal thật hoặc đích drill-down.
+  const todayProject = today.status === 'ready' ? today.data.project : null;
+  const actionsFor = useCallback((id: CenterWidgetId): WidgetAction[] | null =>
+    actionFlags ? buildWidgetActions(id, actionFlags, todayProject, now) : null, [actionFlags, todayProject, now]);
+  const onOpenFolder = useCallback((view: WidgetView, anchor: HTMLElement) => setFolder({ view, anchor }), []);
+  const onAction = useCallback((action: WidgetAction) => {
+    if (action.target.kind === 'modal') setModal(action.target.modal); else onDrill(action.target);
+  }, [onDrill]);
+  const onModalDone = useCallback(() => { setInboxRefresh(value => value + 1); setTodayAttempt(value => value + 1); }, []);
+
   useEffect(() => { workBody.current?.scrollTo({ top: 0 }); }, [activeTab]);
 
   const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...openTabs];
@@ -239,6 +267,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
           activeItemKey={current?.item ? current.id : null}
           onOpen={openItem}
           onMineCount={onMineCount}
+          refreshToken={inboxRefresh}
           resizer={(
             <div
               className="vcc-resizer vcc-desktop-only"
@@ -272,6 +301,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 canOpenRoute={canOpenRoute}
                 onNavigate={onNavigate}
                 onDrill={onDrill}
+                onOpenFolder={onOpenFolder}
+                actionsFor={actionsFor}
                 today={today}
                 weather={weather}
                 mineCount={mineCount}
@@ -293,6 +324,24 @@ const CenterShell: React.FC<CenterShellProps> = ({
           </div>
         </aside>
       </div>
+
+      {folder && (
+        <ActionFolder
+          key={folder.view.id}
+          view={folder.view}
+          icon={WIDGET_ICONS[folder.view.id]}
+          actions={actionsFor(folder.view.id)}
+          anchor={folder.anchor}
+          onClose={() => setFolder(null)}
+          onDrill={onDrill}
+          onAction={onAction}
+        />
+      )}
+      {modal && (
+        <React.Suspense fallback={null}>
+          <ModalHost modal={modal} onClose={() => setModal(null)} onDone={onModalDone} />
+        </React.Suspense>
+      )}
 
       <nav className="vcc-mnav" role="tablist" aria-label="Chọn vùng">
         <button type="button" role="tab" aria-selected={mobilePane === 'inbox'} onClick={() => setMobilePane('inbox')}>
