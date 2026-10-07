@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import RouteRenderer from './EmbeddedRoute';
 import { useApp, type AppModule } from '../../context/AppContext';
+import { useWorkflow } from '../../context/WorkflowContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { useRequestDetail } from '../../hooks/useRequestDetail';
 import { RequestDetailPanel } from '../request/RequestDetailPanel';
@@ -62,9 +63,15 @@ const FinanceHub = React.lazy(() => import('../../pages/finance/FinanceHub'));
 const OfficePage = React.lazy(() => import('../../pages/office/OfficePage'));
 const WorkPage = React.lazy(() => import('../../pages/work/WorkPage'));
 const VehicleBookingLayout = React.lazy(() => import('../../pages/booking/VehicleBookingLayout'));
+const CheckIn = React.lazy(() => import('../../pages/hrm/CheckIn'));
+const SiteFund = React.lazy(() => import('../../pages/finance/SiteFund'));
+const EmployeeDirectory = React.lazy(() => import('../../pages/ep/EmployeeDirectory'));
+const WorkflowInstances = React.lazy(() => import('../../pages/wf/WorkflowInstances'));
+const WorkflowInstanceDetail = React.lazy(() => import('../../pages/wf/WorkflowInstanceDetail'));
 
-/** Trang nhúng được + dữ liệu module App nạp sẵn theo đường dẫn (giống App.tsx khi mở màn đó). */
-const EMBED_ROUTES: { path: string; Page: React.ComponentType; data: AppModule[] }[] = [
+/** Trang nhúng được + dữ liệu module App nạp sẵn theo đường dẫn (giống App.tsx khi mở màn đó).
+ *  workflow = nạp danh mục mẫu / bước Quy trình như App làm khi mở /wf. */
+const EMBED_ROUTES: { path: string; Page: React.ComponentType; data: AppModule[]; workflow?: boolean }[] = [
   { path: '/hrm/leave', Page: LeaveManagement, data: ['hrm'] },
   { path: '/hrm/attendance', Page: Attendance, data: ['hrm'] },
   { path: '/hrm/timesheet', Page: TimesheetClose, data: ['hrm'] },
@@ -78,20 +85,30 @@ const EMBED_ROUTES: { path: string; Page: React.ComponentType; data: AppModule[]
   { path: '/office/*', Page: OfficePage, data: [] },
   { path: '/work/tasks/:taskCode', Page: WorkPage, data: [] },
   { path: '/booking/vehicle/*', Page: VehicleBookingLayout, data: [] },
+  { path: '/hrm/checkin', Page: CheckIn, data: [] },
+  { path: '/site-fund', Page: SiteFund, data: [] },
+  { path: '/ep', Page: EmployeeDirectory, data: ['hrm'] },
+  { path: '/work/my', Page: WorkPage, data: [] },
+  { path: '/wf', Page: WorkflowInstances, data: ['workflow-people'], workflow: true },
+  { path: '/wf/:instanceId', Page: WorkflowInstanceDetail, data: ['workflow-people'], workflow: true },
 ];
 
-const EmbeddedPage: React.FC<{ Page: React.ComponentType; data: AppModule[] }> = ({ Page, data }) => {
+const EmbeddedPage: React.FC<{ Page: React.ComponentType; data: AppModule[]; workflow?: boolean }> = ({ Page, data, workflow = false }) => {
   const { loadModuleData } = useApp();
+  const { refreshData: refreshWorkflowData } = useWorkflow();
   const key = data.join(',');
   useEffect(() => {
     key.split(',').filter(Boolean).forEach(module => {
       loadModuleData(module as AppModule).catch(error => console.warn('Center embed data failed:', error));
     });
   }, [key, loadModuleData]);
+  useEffect(() => {
+    if (workflow) refreshWorkflowData().catch(error => console.warn('Center embed workflow data failed:', error));
+  }, [workflow, refreshWorkflowData]);
   return <Page />;
 };
 
-const EMBED_ELEMENTS = EMBED_ROUTES.map(({ path, Page, data }) => ({ path, element: <EmbeddedPage Page={Page} data={data} /> }));
+const EMBED_ELEMENTS = EMBED_ROUTES.map(({ path, Page, data, workflow }) => ({ path, element: <EmbeddedPage Page={Page} data={data} workflow={workflow} /> }));
 
 export const RendererHost: React.FC<{ renderer: RendererId; props: Record<string, string>; onExit?: (path: string) => void }> = ({ renderer, props, onExit }) => {
   switch (renderer) {

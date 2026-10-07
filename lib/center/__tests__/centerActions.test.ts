@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildWidgetActions, parseCenterActionFlags, type CenterActionFlags } from '../centerActions';
 import { CENTER_WIDGET_GROUPS } from '../centerRegistry';
 import type { CenterProject } from '../centerTodayService';
+import { isEmbeddableRoute } from '../drill';
 import { getRouteModuleKey, isAuthenticatedOpenRoute, normalizeRoutePath } from '../../routeAccess';
 
 const NOW = new Date(2026, 9, 7, 8, 30);
@@ -54,6 +55,26 @@ describe('quick actions (kế hoạch 07 mục 5)', () => {
     expect(by('project', 'work_plan').target).toMatchObject({ kind: 'route', path: '/da?projectId=smb&tab=work_plan&period=week&start=2026-10-05' });
     expect(by('hrm', 'makeup').target).toMatchObject({ kind: 'route', path: '/hrm/attendance?tab=proposals' });
     expect(by('finance', 'payment_request').target).toMatchObject({ kind: 'tab', renderer: 'finance', props: { initialSection: 'requests' } });
+  });
+
+  // Chủ SP 07/10: bấm nút nhanh chỉ mở thêm một tab cạnh "Hôm nay", không rời Center.
+  it('opens every page button inside a Center tab', () => {
+    for (const group of CENTER_WIDGET_GROUPS) {
+      for (const action of buildWidgetActions(group.id, ALL, PROJECT, NOW)) {
+        if (action.target.kind === 'route') expect(isEmbeddableRoute(action.target.path), `${group.id}.${action.key} → ${action.target.path}`).toBe(true);
+      }
+    }
+  });
+
+  it('puts "Lập đơn hàng" under Mua hàng & Kho, not Công việc', () => {
+    const keys = (id: Parameters<typeof buildWidgetActions>[0]) => buildWidgetActions(id, ALL, PROJECT, NOW).map(action => action.key);
+    expect(keys('work')).not.toContain('po');
+    expect(keys('supply')).toEqual(['hot', 'inbox', 'po', 'receive', 'count']);
+    // Không cần chọn dự án: chỉ cần quyền lập đơn hàng (cờ work.po).
+    const noProject = buildWidgetActions('supply', ALL, null, NOW).find(action => action.key === 'po')!;
+    expect(noProject.enabled).toBe(true);
+    expect(noProject.target).toMatchObject({ kind: 'tab', renderer: 'procurement', props: { initialMode: 'orders' } });
+    expect(buildWidgetActions('supply', NONE, PROJECT, NOW).find(action => action.key === 'po')?.lockReason).toBe('Chỉ Mua hàng lập đơn hàng');
   });
 
   it('parses flags fail-closed', () => {

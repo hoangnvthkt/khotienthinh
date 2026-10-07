@@ -1,4 +1,5 @@
 import { buildRequestRoute } from '../requestRoutes';
+import { buildWorkflowRoute } from '../workflowRoutes';
 import { CENTER_MODULES, type CenterModuleKey, type RendererId } from './centerRegistry';
 import type { WorkItem } from './workItemsService';
 
@@ -47,14 +48,25 @@ export const moduleRouteFor = (item: WorkItem): string => {
     case 'office': return `/office/documents/${encodeURIComponent(str(ref.documentId) || item.id)}`;
     case 'work': return `/work/tasks/${encodeURIComponent(str(ref.taskCode) || item.code)}`;
     case 'vehicle': return '/booking/vehicle/approvals';
+    case 'wf': return buildWorkflowRoute(str(ref.instanceId) || item.id);
+    case 'safety': return query('/da', { projectId: str(ref.projectId), tab: 'safety', safetyView: 'issues', safetyId: str(ref.safetyId) || item.id });
     default: return CENTER_MODULES[item.module].route;
   }
 };
 
 /** Màn module chạy được ngay trong tab Center (khớp EMBED_ROUTES ở components/center/CenterRenderers.tsx). */
-const EMBEDDABLE = [/^\/hrm\/(leave|attendance|timesheet|employees)(\?|$)/, /^\/da(\?|$)/, /^\/(requests|operations|audit)(\?|$)/,
-  /^\/finance(\/[\w-]+)?(\?|$)/, /^\/office\//, /^\/work\/tasks\/[^/?]+(\?|$)/, /^\/booking\/vehicle(\/|$)/];
+const EMBEDDABLE = [/^\/hrm\/(leave|attendance|timesheet|employees|checkin)(\?|$)/, /^\/da(\?|$)/, /^\/(requests|operations|audit|site-fund|ep)(\?|$)/,
+  /^\/finance(\/[\w-]+)?(\?|$)/, /^\/office\//, /^\/work\/(my|tasks\/[^/?]+)(\?|$)/, /^\/booking\/vehicle(\/|\?|$)/,
+  /^\/wf(\/[0-9a-f-]{36})?(\?|$)/i];
 export const isEmbeddableRoute = (path: string): boolean => EMBEDDABLE.some(pattern => pattern.test(path));
+
+/** Module của một màn (màu + nhãn đầu tab khi thao tác nhanh mở màn đó trong tab). */
+const ROUTE_MODULES: ReadonlyArray<[RegExp, CenterModuleKey]> = [
+  [/^\/da(\/|\?|$)/, 'project'], [/^\/(hrm|my-profile|ep)(\/|\?|$)/, 'hrm'], [/^\/wf(\/|\?|$)/, 'workflow'], [/^\/rq(\/|\?|$)/, 'request'],
+  [/^\/work(\/|\?|$)/, 'work'], [/^\/procurement(\/|\?|$)/, 'procurement'], [/^\/(requests|operations|audit)(\/|\?|$)/, 'warehouse'],
+  [/^\/(finance|site-fund)(\/|\?|$)/, 'finance'], [/^\/office(\/|\?|$)/, 'office'], [/^\/booking(\/|\?|$)/, 'vehicle'],
+];
+export const moduleForRoute = (path: string): CenterModuleKey => ROUTE_MODULES.find(([pattern]) => pattern.test(path))?.[1] || 'work';
 
 /** Bấm việc → mở ngay màn xử lý trong tab: view đã tách, không thì trang module chạy trong tab. */
 export const resolveDrillTarget = (item: WorkItem): ItemDrillTarget => {

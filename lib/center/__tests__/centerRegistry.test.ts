@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CENTER_MODULE_KEYS, CENTER_WIDGET_GROUPS } from '../centerRegistry';
+import { CENTER_MODULE_KEYS, CENTER_WIDGET_GROUPS, INBOX_GROUPS, inboxGroupOf } from '../centerRegistry';
 import { parseCenterAccess } from '../centerService';
 import { getRouteModuleKey, isAuthenticatedOpenRoute } from '../../routeAccess';
 
@@ -22,6 +22,15 @@ describe('Command Center registry', () => {
     expect(block('.vcc')).toContain(`--c-${key}: var(--vcc-steel);`);
     expect(block('.vcc')).toContain(`--c-${key}-s: var(--vcc-steel-s);`);
     expect(css).toContain(`.vcc-mod-${key} {`);
+  });
+
+  // Chủ SP 07/10: cột việc có nhóm Công việc (đề xuất + quy trình + Vioo Work) và Dự án, hai nhóm này luôn hiện.
+  it('puts every module in exactly one inbox group, with Dự án and Công việc pinned first', () => {
+    expect(INBOX_GROUPS.flatMap(group => group.modules).sort()).toEqual([...CENTER_MODULE_KEYS].sort());
+    expect(INBOX_GROUPS.filter(group => group.pinned).map(group => group.label)).toEqual(['Dự án', 'Công việc']);
+    expect(['request', 'workflow', 'work'].map(module => inboxGroupOf(module as never))).toEqual(['work', 'work', 'work']);
+    expect(inboxGroupOf('project')).toBe('project');
+    for (const group of INBOX_GROUPS) expect(css).toContain(`.vcc-mod-${group.key} {`);
   });
 
   it('defines the steel token for light and dark', () => {

@@ -26,15 +26,17 @@ const WorkItemTab: React.FC<{
   now: Date;
   onNavigate: (path: string) => void;
   onBack?: () => void;
+  /** Điện thoại: nút quay lại ghi nơi sẽ về (Việc của tôi / Hôm nay). */
+  backLabel?: string;
   Renderer: RendererComponent;
-}> = ({ item, title, module: moduleKey, target, now, onNavigate, onBack, Renderer }) => {
+}> = ({ item, title, module: moduleKey, target, now, onNavigate, onBack, backLabel = 'Việc của tôi', Renderer }) => {
   const module = CENTER_MODULES[moduleKey];
   const route = target.kind === 'tab' ? target.route : target.path;
   const due = item ? dueInfo(item.dueAt, now) : null;
   return (
     <div className={`vcc-page vcc-mod-${moduleKey}`}>
       {onBack && (
-        <button type="button" className="vcc-link vcc-mobile-only mb-2" onClick={onBack}><ArrowLeft size={13} /> Việc của tôi</button>
+        <button type="button" className="vcc-link vcc-mobile-only mb-2" onClick={onBack}><ArrowLeft size={13} /> {backLabel}</button>
       )}
       <div className="vcc-detail-head">
         <span className="vcc-badge vcc-badge-m">{module.label}</span>

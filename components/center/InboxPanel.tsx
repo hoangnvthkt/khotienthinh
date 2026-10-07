@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronsDownUp, ChevronsUpDown, RefreshCw, X } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
-import { CENTER_MODULE_KEYS, CENTER_MODULES, type CenterModuleKey } from '../../lib/center/centerRegistry';
-import { displayCode, dueInfo, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
+import { INBOX_GROUPS, inboxGroupOf, type InboxGroupKey } from '../../lib/center/centerRegistry';
+import { SOURCE_LABEL, displayCode, dueInfo, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
 import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
 import { civilOf, formatCivilRange, inCivilRange, type CivilRange } from '../../lib/center/civilDate';
 
@@ -20,6 +20,13 @@ const TABS: ReadonlyArray<{ id: InboxTab; label: string }> = [
   { id: 'watch', label: 'Theo dõi' },
 ];
 
+/** Nhóm ghim (Dự án, Công việc) đang trống ở tab này. */
+const GROUP_EMPTY: Record<InboxTab, string> = {
+  mine: 'Không có việc nào chờ bạn ở đây.',
+  sent: 'Không có hồ sơ bạn gửi đang chờ ở đây.',
+  watch: 'Không có hồ sơ bạn theo dõi ở đây.',
+};
+
 const EMPTY_COPY: Record<InboxTab, { title: string; message: string }> = {
   mine: { title: 'Không còn việc chờ bạn', message: 'Việc mới sẽ hiện ở đây khi có người gửi tới bạn.' },
   sent: { title: 'Bạn chưa gửi hồ sơ nào đang chờ', message: 'Hồ sơ bạn lập mà người khác đang duyệt sẽ hiện ở đây.' },
@@ -30,8 +37,9 @@ const FOCUS_REFRESH_MS = 60_000;
 
 export const workItemKey = (item: Pick<WorkItem, 'source' | 'id'>) => `${item.source}:${item.id}`;
 
-// Cột "Việc của tôi": 3 tab, nhóm theo module (gập/mở), dòng việc mở hồ sơ. Tab "Chờ tôi" tải ngay,
-// hai tab kia tải khi bấm; làm mới khi quay lại cửa sổ (tối đa 1 lần/phút) hoặc bấm nút.
+// Cột "Việc của tôi": 3 tab, nhóm theo INBOX_GROUPS (gập/mở), dòng việc mở hồ sơ. "Chờ tôi" tải ngay và tự làm mới
+// khi quay lại cửa sổ (tối đa 1 lần/phút) hoặc sau khi gửi form; "Tôi gửi" / "Theo dõi" không tải ngầm — chỉ tải
+// (mới) mỗi lần người dùng bấm vào tab hoặc bấm làm mới (chủ SP 07/10).
 const InboxPanel: React.FC<{
   hidden: boolean;
   load?: LoadWorkItems;
@@ -45,19 +53,17 @@ const InboxPanel: React.FC<{
   dueRange?: CivilRange | null;
   onClearDueRange?: () => void;
   resizer?: React.ReactNode;
-  /** Tăng để tải lại tab đang xem (sau khi gửi form từ Center). */
+  /** Tăng để tải lại "Chờ tôi" (sau khi gửi form từ Center). */
   refreshToken?: number;
 }> = ({ hidden, load = loadWorkItemsShared, now: nowProp, activeItemKey, onOpen, onMineCount, onMineItems, dueRange = null, onClearDueRange, resizer, refreshToken = 0 }) => {
   const [mountedAt] = useState(() => new Date());
   const now = nowProp ?? mountedAt;
   const [tab, setTab] = useState<InboxTab>('mine');
   const [states, setStates] = useState<Record<InboxTab, TabState>>({ mine: { status: 'idle' }, sent: { status: 'idle' }, watch: { status: 'idle' } });
-  // Mặc định mọi nhóm thu gọn (chủ SP 07/10): thấy ngay có việc ở module nào, bấm nhóm để mở.
+  // Mặc định mọi nhóm thu gọn (chủ SP 07/10): thấy ngay có việc ở nhóm nào, bấm nhóm để mở.
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const requestSeq = useRef<Record<InboxTab, number>>({ mine: 0, sent: 0, watch: 0 });
   const lastFocusRefresh = useRef(0);
-  const tabRef = useRef(tab);
-  tabRef.current = tab;
 
   const loadTab = useCallback((target: InboxTab, force = false) => {
     const seq = ++requestSeq.current[target];
@@ -73,8 +79,12 @@ const InboxPanel: React.FC<{
   }, [load]);
 
   useEffect(() => { loadTab('mine'); }, [loadTab]);
-  useEffect(() => { if (refreshToken > 0) loadTab(tabRef.current, true); }, [refreshToken, loadTab]);
-  useEffect(() => { if (states[tab].status === 'idle') loadTab(tab); }, [tab, states, loadTab]);
+  useEffect(() => { if (refreshToken > 0) loadTab('mine', true); }, [refreshToken, loadTab]);
+  // Bấm tab: "Chờ tôi" dùng bản chung (≤ 60 giây), hai tab kia luôn tải mới.
+  const selectTab = (target: InboxTab) => {
+    setTab(target);
+    loadTab(target, target !== 'mine');
+  };
 
   useEffect(() => {
     const refresh = () => {
@@ -82,7 +92,7 @@ const InboxPanel: React.FC<{
       const at = Date.now();
       if (at - lastFocusRefresh.current < FOCUS_REFRESH_MS) return;
       lastFocusRefresh.current = at;
-      loadTab(tabRef.current, true);
+      loadTab('mine', true);
     };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
@@ -97,19 +107,26 @@ const InboxPanel: React.FC<{
 
   const state = states[tab];
   const page = 'page' in state ? state.page : undefined;
+  // Nhóm ghim luôn có mặt khi tab có việc (trừ lúc lọc theo hạn: chỉ hiện nhóm có việc khớp).
   const groups = useMemo(() => {
-    const byModule = new Map<CenterModuleKey, WorkItem[]>();
-    (page?.items || [])
+    if (!page || page.items.length === 0) return [];
+    const byGroup = new Map<InboxGroupKey, WorkItem[]>();
+    page.items
       .filter(item => !dueRange || inCivilRange(civilOf(item.dueAt), dueRange))
-      .forEach(item => byModule.set(item.module, [...(byModule.get(item.module) || []), item]));
-    return CENTER_MODULE_KEYS.filter(key => byModule.has(key)).map(key => ({ key, items: sortWorkItems(byModule.get(key)!) }));
+      .forEach(item => {
+        const key = inboxGroupOf(item.module);
+        byGroup.set(key, [...(byGroup.get(key) || []), item]);
+      });
+    return INBOX_GROUPS.filter(group => byGroup.has(group.key) || (group.pinned && !dueRange))
+      .map(group => ({ ...group, items: sortWorkItems(byGroup.get(group.key) || []) }));
   }, [page, dueRange]);
+  const matched = groups.reduce((sum, group) => sum + group.items.length, 0);
 
-  const groupKey = (module: CenterModuleKey) => `${tab}:${module}`;
+  const groupKey = (key: InboxGroupKey) => `${tab}:${key}`;
   const anyOpen = groups.some(group => opened.has(groupKey(group.key)));
-  const toggleGroup = (module: CenterModuleKey) => setOpened(current => {
+  const toggleGroup = (group: InboxGroupKey) => setOpened(current => {
     const next = new Set(current);
-    const key = groupKey(module);
+    const key = groupKey(group);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
@@ -130,7 +147,7 @@ const InboxPanel: React.FC<{
         {TABS.map(item => {
           const count = countOf(item.id);
           return (
-            <button key={item.id} type="button" role="tab" className="vcc-tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)}>
+            <button key={item.id} type="button" role="tab" className="vcc-tab" aria-selected={tab === item.id} onClick={() => selectTab(item.id)}>
               {item.label}{count !== null && <span className="vcc-tabcount"> {count}</span>}
             </button>
           );
@@ -156,7 +173,7 @@ const InboxPanel: React.FC<{
         {dueRange && page && (
           <div className="vcc-filterbar" role="status">
             <CalendarDays size={13} />
-            <span className="min-w-0 flex-1">Hạn {formatCivilRange(dueRange)} · {groups.reduce((sum, group) => sum + group.items.length, 0)} việc</span>
+            <span className="min-w-0 flex-1">Hạn {formatCivilRange(dueRange)} · {matched} việc</span>
             {onClearDueRange && (
               <button type="button" className="vcc-tabtool" onClick={onClearDueRange} aria-label="Bỏ lọc theo hạn"><X size={13} /> Bỏ lọc</button>
             )}
@@ -174,20 +191,29 @@ const InboxPanel: React.FC<{
           const open = !!dueRange || opened.has(groupKey(group.key));
           const urgent = group.items.filter(item => dueInfo(item.dueAt, now)?.tone === 'hot').length;
           return (
-            <section key={group.key} className={`vcc-group vcc-mod-${group.key}`} data-open={open || undefined}>
+            <section key={group.key} className={`vcc-group vcc-mod-${group.key}`} data-open={open || undefined} data-empty={group.items.length === 0 || undefined}>
               <button type="button" className="vcc-ghead" aria-expanded={open} onClick={() => toggleGroup(group.key)}>
                 <span className="vcc-chev"><ChevronDown size={12} /></span>
-                <span className="vcc-modname">{CENTER_MODULES[group.key].label}</span>
+                <span className="vcc-modname">{group.label}</span>
                 {urgent > 0 && <span className="vcc-gurgent" title="Quá hạn hoặc hết hạn trong hôm nay">{urgent} gấp</span>}
                 <span className="vcc-gcount"> {group.items.length}</span>
               </button>
-              {open && <div className="vcc-grows">{group.items.map(item => {
+              {open && group.items.length === 0 && (
+                <div className="vcc-gempty">
+                  {GROUP_EMPTY[tab]}
+                  {group.covers && <span className="vcc-gempty-covers">Gồm {group.covers.charAt(0).toLowerCase()}{group.covers.slice(1)}</span>}
+                </div>
+              )}
+              {open && group.items.length > 0 && <div className="vcc-grows">{group.items.map(item => {
                 const key = workItemKey(item);
                 const due = dueInfo(item.dueAt, now);
+                // Nhóm gom nhiều loại hồ sơ (Dự án, Công việc): ghi loại cạnh mã cho dễ nhận.
+                const kindLabel = group.modules.length > 1 || group.pinned ? SOURCE_LABEL[item.source] : undefined;
                 return (
                   <button key={key} type="button" className="vcc-row" aria-current={activeItemKey === key} onClick={() => onOpen(item)}>
                     <div className="vcc-row-top">
                       <span className="vcc-ent">{displayCode(item)}</span>
+                      {kindLabel && <span className="vcc-src">{kindLabel}</span>}
                       {due && <span className="vcc-due" data-tone={due.tone}>{due.label}</span>}
                     </div>
                     <div className="vcc-row-title">{item.title}</div>

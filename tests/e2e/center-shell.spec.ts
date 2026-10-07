@@ -23,21 +23,26 @@ const tiles = (page: Page, widget: string) => page.locator(`[data-widget="${widg
 
 const expectToday = async (page: Page) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
-  await expect(page.getByText("Thứ Tư, 07/10/2026 · 9 việc chờ bạn · 14 ngày tới hạn hợp đồng SMB-2026")).toBeVisible();
+  await expect(page.getByText("Thứ Tư, 07/10/2026 · 11 việc chờ bạn · 14 ngày tới hạn hợp đồng SMB-2026")).toBeVisible();
   for (const name of WIDGETS) await expect(page.getByRole("heading", { level: 3, name, exact: true })).toBeVisible();
   // Tối đa 4 nút được phép; còn nút khác (thêm / chưa có quyền) → "Xem thêm".
   await expect(tiles(page, "project")).toHaveText(["Lập đề xuất vật tư", "Tạo nhật ký", "Báo cáo ngày", "Xem thêm"]);
   await expect(tiles(page, "hrm")).toHaveText(["Chấm công", "Xin nghỉ phép", "Chấm công bù", "Bảng công của tôi", "Xem thêm"]);
   await expect(tiles(page, "work")).toHaveText(["Tạo đề xuất", "Tạo công việc", "Xem thêm"]);
   await expect(tiles(page, "office")).toHaveText(["Đặt xe", "Soạn văn bản", "Văn bản đến", "Tra cứu nhân viên"]);
-  await expect(tiles(page, "supply")).toHaveText(["Mua nóng / CCDC", "Xem thêm"]);
+  // "Lập đơn hàng" thuộc Mua hàng & Kho, không thuộc Công việc (chủ SP 07/10).
+  await expect(tiles(page, "supply")).toHaveText(["Mua nóng / CCDC", "Lập đơn hàng", "Xem thêm"]);
   await expect(tiles(page, "finance")).toHaveText(["Chi quỹ công trường", "Tài chính dự án", "Xem thêm"]);
   // Ô không còn số liệu công việc.
   await expect(page.locator(".vcc-grid .vcc-stat")).toHaveCount(0);
   await expect(page.getByText("Lịch: không có chuyến xe hôm nay")).toBeVisible();
-  // Bấm nút là làm ngay, không qua bước trung gian.
+  // Bấm nút là làm ngay, không rời Center: mở thêm một tab cạnh "Hôm nay" chạy đúng màn của module.
   await tiles(page, "project").filter({ hasText: "Tạo nhật ký" }).click();
-  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb&tab=dailylog");
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Nhật ký" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog"}');
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "");
+  await page.getByRole("button", { name: "Đóng Nhật ký" }).click();
+  await expect(page.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
   const locked = page.getByRole("button", { name: "Mở Mua hàng" });
   await expect(locked).toBeDisabled();
   await expect(locked).toHaveAttribute("title", "Bạn chưa có quyền vào module này");
@@ -49,13 +54,17 @@ const inboxOf = (page: Page) => page.getByRole("complementary", { name: "Việc 
 
 const expectInboxLoaded = async (page: Page) => {
   const inbox = inboxOf(page);
-  await expect(inbox.getByRole("tab", { name: "Chờ tôi 9" })).toBeVisible();
-  // Nhóm theo module, đúng thứ tự rail, mặc định thu gọn; đếm theo nhóm + số việc gấp (quá hạn / hết hạn hôm nay).
-  await expect(inbox.getByRole("button", { expanded: false })).toHaveText([/^Dự án\s*3 gấp\s*3$/, /^Yêu cầu\s*1$/, /^Vioo Work\s*1 gấp\s*1$/, /^Mua hàng\s*1 gấp\s*1$/, /^Nhân sự\s*2$/, /^Office\s*1$/]);
+  await expect(inbox.getByRole("tab", { name: "Chờ tôi 11" })).toBeVisible();
+  // Nhóm: Dự án (đề xuất vật tư, nhật ký, kế hoạch, an toàn) · Công việc (đề xuất, quy trình, Vioo Work) · module khác;
+  // mặc định thu gọn; đếm theo nhóm + số việc gấp (quá hạn / hết hạn hôm nay).
+  await expect(inbox.getByRole("button", { expanded: false })).toHaveText([/^Dự án\s*3 gấp\s*4$/, /^Công việc\s*1 gấp\s*3$/, /^Mua hàng\s*1 gấp\s*1$/, /^Nhân sự\s*2$/, /^Office\s*1$/]);
   await expect(inbox.getByRole("button", { name: /MR-2026-2688/ })).toHaveCount(0);
-  // "Mở" mở mọi nhóm; dòng có mã, hạn, tiêu đề, người gửi.
+  // "Mở" mở mọi nhóm; dòng có mã, loại hồ sơ, hạn, tiêu đề, người gửi.
   await inbox.getByRole("button", { name: "Mở", exact: true }).click();
-  await expect(inbox.getByRole("button", { expanded: true })).toHaveCount(6);
+  await expect(inbox.getByRole("button", { expanded: true })).toHaveCount(5);
+  await expect(inbox.getByRole("button", { name: /SAFE-0007/ })).toContainText("An toàn");
+  await expect(inbox.getByRole("button", { name: /WF-2026-031/ })).toContainText("Quy trình");
+  await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toContainText("Đề xuất");
   const row = inbox.getByRole("button", { name: /MR-2026-2688/ });
   await expect(row).toContainText("còn 5 giờ");
   await expect(row).toContainText("Thép D16 + D10 móng nhà xưởng 3");
@@ -79,9 +88,9 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await inbox.getByRole("button", { name: /Nhân sự\s*2/ }).click();
   await expect(inbox.getByRole("button", { name: /NP-2026-041/ })).toBeHidden();
   await inbox.getByRole("button", { name: "Gọn" }).click();
-  await expect(inbox.getByRole("button", { expanded: false })).toHaveCount(6);
+  await expect(inbox.getByRole("button", { expanded: false })).toHaveCount(5);
   await inbox.getByRole("button", { name: "Mở" }).click();
-  await expect(inbox.getByRole("button", { expanded: true })).toHaveCount(6);
+  await expect(inbox.getByRole("button", { expanded: true })).toHaveCount(5);
 
   // Mở hồ sơ → tab có ✕; view nhúng cho Yêu cầu; hồ sơ chưa nhúng → nút mở màn module.
   await inbox.getByRole("button", { name: /RQ-2026-000061/ }).click();
@@ -98,20 +107,41 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510");
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/desktop-record.png` });
+  // Phiếu quy trình và sự cố an toàn cũng mở ngay trong tab.
+  await inbox.getByRole("button", { name: /WF-2026-031/ }).click();
+  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/wf/0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10"}');
+  await inbox.getByRole("button", { name: /SAFE-0007/ }).click();
+  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/da?projectId=smb&tab=safety&safetyView=issues&safetyId=sc-7"}');
+  await page.getByRole("button", { name: "Đóng SAFE-0007" }).click();
+  await page.getByRole("button", { name: "Đóng WF-2026-031" }).click();
   await page.getByRole("button", { name: "Đóng NK 05/10" }).click();
   await expect(page.getByRole("tab", { name: "RQ-2026-000061" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "Đóng RQ-2026-000061" }).click();
   await expect(page.getByRole("tab", { name: "Hôm nay" })).toHaveAttribute("aria-selected", "true");
 
-  // Tab Tôi gửi / Theo dõi tải khi bấm.
+  // Tôi gửi / Theo dõi không tải ngầm (kể cả khi quay lại cửa sổ); chỉ tải — và tải mới — mỗi lần bấm vào tab.
+  const loads = () => page.evaluate(() => (window as unknown as { __vccLoads: Record<string, number> }).__vccLoads);
+  expect(await loads()).toMatchObject({ sent: 0, watch: 0 });
+  await expect(inbox.getByRole("tab", { name: "Tôi gửi", exact: true })).toBeVisible();
   await inbox.getByRole("tab", { name: "Tôi gửi" }).click();
-  await expect(inbox.getByRole("tab", { name: "Tôi gửi 3" })).toHaveAttribute("aria-selected", "true");
+  await expect(inbox.getByRole("tab", { name: "Tôi gửi 4" })).toHaveAttribute("aria-selected", "true");
   await inbox.getByRole("button", { name: "Mở", exact: true }).click();
   await expect(inbox.getByRole("button", { name: /QCT-SMB-10/ })).toContainText("Chờ kế toán duyệt");
+  await expect(inbox.getByRole("button", { name: /WF-2026-029/ })).toContainText("Đang ở bước Bảo vệ xác nhận");
   await inbox.getByRole("tab", { name: "Theo dõi" }).click();
   await inbox.getByRole("button", { name: "Mở", exact: true }).click();
   await expect(inbox.getByRole("button", { name: /SA-2026-007/ })).toBeVisible();
-  await inbox.getByRole("tab", { name: "Chờ tôi 9" }).click();
+  // Nhóm ghim Dự án / Công việc vẫn có mặt khi trống và nói rõ nhóm gồm gì.
+  await expect(inbox.getByRole("button", { name: /^Dự án\s*0$/ })).toBeVisible();
+  await expect(inbox.getByText("Không có hồ sơ bạn theo dõi ở đây.").first()).toBeVisible();
+  await expect(inbox.getByText("Gồm đề xuất, phiếu quy trình, Vioo Work.")).toBeVisible();
+  expect(await loads()).toMatchObject({ sent: 1, watch: 1 });
+  await inbox.getByRole("tab", { name: "Chờ tôi 11" }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await inbox.getByRole("tab", { name: "Tôi gửi 4" }).click();
+  await expect.poll(async () => (await loads()).sent).toBe(2);
+  expect((await loads()).watch).toBe(1);
+  await inbox.getByRole("tab", { name: "Chờ tôi 11" }).click();
 
   await page.getByRole("button", { name: "Ẩn Việc của tôi" }).click();
   await expect(inbox).toBeHidden();
@@ -157,9 +187,12 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await page.keyboard.press("Escape");
   await expect(workFolder).toHaveCount(0);
   await page.locator('[data-widget="work"] .vcc-whead h3').click();
+  await expect(workFolder.getByRole("button", { name: /Lập đơn hàng/ })).toHaveCount(0);
   await workFolder.getByRole("button", { name: /Tạo công việc/ }).click();
-  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/work/my?create=1");
   await expect(workFolder).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Vioo Work" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("stub-renderer")).toContainText('route · {"path":"/work/my?create=1"}');
+  await page.getByRole("button", { name: "Đóng Vioo Work" }).click();
 
   await page.getByRole("button", { name: "Trợ lý" }).click();
   await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
@@ -257,7 +290,7 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await expect(nav).toBeVisible();
   const inbox = inboxOf(page);
   await expectInboxLoaded(page);
-  await expect(nav.getByRole("tab", { name: "Việc 9" })).toHaveAttribute("aria-selected", "true");
+  await expect(nav.getByRole("tab", { name: "Việc 11" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("button", { name: "Ẩn Việc của tôi" })).toBeHidden();
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/${tag}-viec.png` });
@@ -293,7 +326,7 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await page.getByRole("button", { name: "Mở menu ứng dụng" }).click();
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "menu");
 
-  await nav.getByRole("tab", { name: "Việc 9" }).click();
+  await nav.getByRole("tab", { name: "Việc 11" }).click();
   await page.getByRole("button", { name: "Chuyển nền tối" }).click();
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/${tag}-viec-dark.png` });
@@ -302,7 +335,7 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
 test("Back closes the open layer instead of leaving the Center", async ({ page }, info) => {
   await page.goto(base);
   const inbox = inboxOf(page);
-  await expect(inbox.getByRole("tab", { name: "Chờ tôi 9" })).toBeVisible();
+  await expect(inbox.getByRole("tab", { name: "Chờ tôi 11" })).toBeVisible();
   const startLength = await page.evaluate(() => history.length);
   const back = () => page.evaluate(() => history.back());
 
@@ -325,7 +358,7 @@ test("Back closes the open layer instead of leaving the Center", async ({ page }
   }
 
   // Điện thoại / máy tính bảng: mở hồ sơ từ danh sách → Back về danh sách.
-  await inbox.getByRole("button", { name: /^Yêu cầu/ }).click();
+  await inbox.getByRole("button", { name: /^Công việc/ }).click();
   await inbox.getByRole("button", { name: /RQ-2026-000061/ }).click();
   await expect(inbox).toBeHidden();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("RQ-2026-000061");

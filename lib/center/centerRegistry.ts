@@ -22,6 +22,33 @@ export const CENTER_MODULES: Record<CenterModuleKey, { label: string; route: str
   vehicle: { label: 'Đặt xe', route: '/booking/vehicle' },
 };
 
+/** Nhóm của cột "Việc của tôi" (chủ SP 07/10): Công việc gom Đề xuất + Quy trình + Vioo Work; Dự án gom đề xuất vật tư,
+ *  nhật ký, kế hoạch, an toàn. Hai nhóm ghim luôn hiện (kể cả 0 việc) để người dùng thấy rõ đã hết việc ở đó. */
+export type InboxGroupKey = 'project' | 'work' | 'procurement' | 'warehouse' | 'hrm' | 'finance' | 'office' | 'vehicle';
+
+export interface InboxGroup {
+  key: InboxGroupKey;
+  label: string;
+  modules: readonly CenterModuleKey[];
+  pinned?: boolean;
+  /** Nhóm ghim: nói nhóm gồm gì khi đang trống. */
+  covers?: string;
+}
+
+export const INBOX_GROUPS: readonly InboxGroup[] = [
+  { key: 'project', label: 'Dự án', modules: ['project'], pinned: true, covers: 'Đề xuất vật tư, nhật ký công trường, kế hoạch, an toàn.' },
+  { key: 'work', label: 'Công việc', modules: ['request', 'workflow', 'work'], pinned: true, covers: 'Đề xuất, phiếu quy trình, Vioo Work.' },
+  { key: 'procurement', label: 'Mua hàng', modules: ['procurement'] },
+  { key: 'warehouse', label: 'Vật tư', modules: ['warehouse'] },
+  { key: 'hrm', label: 'Nhân sự', modules: ['hrm'] },
+  { key: 'finance', label: 'Tài chính', modules: ['finance'] },
+  { key: 'office', label: 'Office', modules: ['office'] },
+  { key: 'vehicle', label: 'Đặt xe', modules: ['vehicle'] },
+];
+
+export const inboxGroupOf = (module: CenterModuleKey): InboxGroupKey =>
+  INBOX_GROUPS.find(group => group.modules.includes(module))?.key || 'work';
+
 /** View module đã tách được (props-driven) để nhúng vào tab của Center. Còn lại mở bằng deep link. */
 /** route = màn thật của module chạy ngay trong tab (CenterRenderers › RouteRenderer). */
 export type RendererId = 'request' | 'procurement' | 'finance' | 'site_assignment' | 'route';
@@ -46,7 +73,7 @@ export const CENTER_WIDGET_GROUPS: readonly CenterWidgetGroup[] = [
     preview: 'Thi công hôm nay, vật tư đang về, tiến độ, việc chờ bạn.' },
   { id: 'hrm', label: 'Nhân sự', hint: 'Chấm công, nghỉ phép, bảng công', module: 'hrm', route: '/my-profile', routeLabel: 'Mở Nhân sự',
     preview: 'Chấm công hôm nay, phép còn lại, công tháng, đội công trường.' },
-  { id: 'work', label: 'Công việc', hint: 'Đề xuất, quy trình, đơn hàng, việc', module: 'work', route: '/rq', routeLabel: 'Mở Yêu cầu',
+  { id: 'work', label: 'Công việc', hint: 'Đề xuất, quy trình, việc', module: 'work', route: '/rq', routeLabel: 'Mở Yêu cầu',
     preview: 'Việc đang làm, phiếu bạn đã gửi, yêu cầu đang xử lý.' },
   { id: 'office', label: 'Hành chính', hint: 'Văn bản, xe, thông tin', module: 'office', route: '/office', routeLabel: 'Mở Office',
     preview: 'Văn bản cần xác nhận, chuyến xe, thời tiết công trường.' },
