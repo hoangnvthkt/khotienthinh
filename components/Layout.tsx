@@ -413,7 +413,7 @@ const Layout: React.FC = () => {
       </div>
       {!chrome.hideFab && <QuickActionFab />}
       {user && !chrome.hideDock && <MacOSDockLauncher user={user} isEnabled={isMacOSDockEnabled} />}
-      {user && !chrome.hideChatBubble && <FloatingChatBubble user={user} />}
+      {user && !chrome.hideChatBubble && <FloatingChatBubble user={user} railOffset={centerUi.active} />}
       <OfflineIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} onSync={syncNow} />
       {/* Easter Eggs & Dino Pet */}
       {(() => {

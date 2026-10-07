@@ -404,8 +404,14 @@ test("switch: current interface ↔ Command Center with a greeting and a calm tr
   await expect(intro).toHaveCount(0, { timeout: 4000 });
   await expect(page.getByText("Trung tâm điều hành", { exact: true })).toBeVisible();
   await expectCalmPage(page);
-  // Về giao diện hiện tại.
-  await page.getByRole("button", { name: "Về giao diện hiện tại" }).click();
+  // Không còn nút "Giao diện cũ" trên đầu Center: tắt bằng công tắc (máy tính: góc dưới rail; điện thoại: menu ☰).
+  await expect(page.getByRole("button", { name: /Giao diện cũ|Về giao diện hiện tại/ })).toHaveCount(0);
+  if (tag !== "desktop") return;
+  const railSwitch = page.getByRole("navigation", { name: "Ứng dụng" }).getByRole("switch", { name: "Giao diện Trung tâm điều hành" });
+  await expect(railSwitch).toHaveAttribute("aria-checked", "true");
+  // Logo đầu rail về Trung tâm điều hành.
+  await expect(page.getByRole("link", { name: /về Trung tâm điều hành/ })).toHaveAttribute("href", "/center");
+  await railSwitch.click();
   await expect(page.getByTestId("fake-classic")).toBeVisible();
 
   // Bấm vào lời chào để bỏ qua.

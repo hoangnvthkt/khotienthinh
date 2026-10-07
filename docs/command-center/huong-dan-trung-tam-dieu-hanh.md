@@ -2,7 +2,7 @@
 
 Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**: thấy việc đang chờ mình ở mọi module, số liệu hôm nay của dự án, và mở đúng hồ sơ hoặc form chỉ bằng một lần bấm. Mọi thao tác vẫn chạy bằng chức năng sẵn có của từng module, theo đúng quyền của bạn.
 
-**Bật / tắt:** mặc định bạn vẫn dùng giao diện hiện tại. Bật công tắc **Trung tâm điều hành** ở khối tài khoản trên thanh bên trái (điện thoại: nút ô vuông cạnh nút sáng/tối trên đầu trang) → lời chào hiện lên rồi vào Trung tâm điều hành; từ đó trang chủ của bạn là Trung tâm điều hành và thanh bên có mục kèm số việc chờ. Khi bật, thanh bên trái trên máy tính thành **rail gọn**: biểu tượng + tên từng app, Trung tâm đứng đầu kèm số việc chờ, công tắc giao diện ở góc dưới bên trái. Muốn quay lại: tắt công tắc đó, hoặc nút **Giao diện cũ** trên đầu Trung tâm điều hành. Công tắc chỉ hiện với người đang thí điểm; lựa chọn nhớ theo từng máy.
+**Bật / tắt:** mặc định bạn vẫn dùng giao diện hiện tại. Bật công tắc **Trung tâm điều hành** ở khối tài khoản trên thanh bên trái (điện thoại: nút ô vuông cạnh nút sáng/tối trên đầu trang) → lời chào hiện lên rồi vào Trung tâm điều hành; từ đó trang chủ của bạn là Trung tâm điều hành và thanh bên có mục kèm số việc chờ. Khi bật, thanh bên trái trên máy tính thành **rail gọn**: biểu tượng + tên từng app, Trung tâm đứng đầu kèm số việc chờ, công tắc giao diện ở góc dưới bên trái. Bấm logo trên đầu rail để về Trung tâm điều hành. Muốn quay lại giao diện cũ: tắt công tắc đó (điện thoại: ☰ → công tắc trong khối tài khoản). Công tắc chỉ hiện với người đang thí điểm; lựa chọn nhớ theo từng máy.
 
 ## Màn hình có 3 vùng
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Inbox, LayoutDashboard, LayoutGrid, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
+import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
 import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
@@ -48,7 +48,6 @@ const personInitials = (name: string) => {
   return ((words[0]?.[0] || '') + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase() || '?';
 };
 /** Công ty: như header điện thoại của app — chữ đầu của hai từ đầu. */
-const companyInitials = (name: string) => wordsOf(name).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'V';
 
 export type LoadToday = (projectId: string | null) => Promise<CenterToday>;
 export type LoadActions = (projectId: string | null) => Promise<CenterActionFlags>;
@@ -81,8 +80,6 @@ export interface CenterShellProps {
   /** Bố cục ô của người dùng (mặc định get/save_center_layout_v1). */
   loadLayout?: LoadLayout;
   saveLayout?: SaveLayout;
-  /** Về giao diện hiện tại (tắt giao diện Trung tâm điều hành). */
-  onExitCenter?: (options?: { replace?: boolean }) => void;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -94,7 +91,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now: nowProp,
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
-  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, onExitCenter,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
@@ -316,25 +313,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
           {inboxHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
         <div className="vcc-brand">
-          <div className="vcc-logo" aria-hidden="true">
-            {company.logo ? <img src={company.logo} alt="" /> : companyInitials(company.name)}
-          </div>
           <div className="min-w-0">
             <div className="vcc-title vcc-ellipsis">Trung tâm điều hành</div>
             <div className="text-xs vcc-muted vcc-ellipsis">{company.name}</div>
           </div>
         </div>
-        {onExitCenter && (
-          <button
-            type="button"
-            className="vcc-iconbtn"
-            onClick={() => onExitCenter(backRef.current?.consumeForNavigation() ? { replace: true } : undefined)}
-            aria-label="Về giao diện hiện tại"
-            title="Tắt Trung tâm điều hành, về giao diện hiện tại"
-          >
-            <LayoutGrid size={15} /> <span className="vcc-desktop-only">Giao diện cũ</span>
-          </button>
-        )}
         {/* Máy tính: nút sáng / tối nằm ở rail trái của giao diện Trung tâm điều hành. */}
         <button type="button" className="vcc-iconbtn vcc-mobile-only" onClick={onToggleTheme} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'} title={isDark ? 'Nền sáng' : 'Nền tối'}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />}

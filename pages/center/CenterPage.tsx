@@ -6,8 +6,6 @@ import { useTheme } from '../../context/ThemeContext';
 import NotificationCenter from '../../components/NotificationCenter';
 import CenterShell from '../../components/center/CenterShell';
 import CenterEntrance from '../../components/center/CenterIntro';
-import { useUiModeSwitch } from '../../components/center/UiModeSwitch';
-import { useUiMode } from '../../lib/center/centerMode';
 import { StateBox } from '../../components/procurement/hub/hubUi';
 import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
@@ -39,8 +37,6 @@ const CenterPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const outlet = useOutletContext<LayoutOutletContext | undefined>();
-  const [, setUiMode] = useUiMode(user?.id);
-  const { exitCenter } = useUiModeSwitch(setUiMode);
   // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
   const playIntro = (location.state as { vccIntro?: boolean } | null)?.vccIntro === true;
   const { state, retry } = useCenterAccess(user?.id, canAccessRoute(user, CENTER_ROUTE));
@@ -80,7 +76,6 @@ const CenterPage: React.FC = () => {
         mobileNotifications={<NotificationCenter userId={user.id} mode="mobile" />}
         canOpenRoute={route => canAccessRoute(user, route)}
         onNavigate={(route, options) => navigate(route, options)}
-        onExitCenter={exitCenter}
       />
     </CenterEntrance>
   );
