@@ -4,7 +4,9 @@ Chạy sau khi deploy `20261008138000` … `20261008138004` và bật thí đi�
 
 ## Chung cho mọi vai
 
-- [ ] Thanh bên trái có "Trung tâm điều hành" kèm số việc chờ; người ngoài danh sách thí điểm **không** thấy mục này, gõ `/center` thì bị chặn.
+- [ ] Mới đăng nhập: vẫn là giao diện hiện tại (Home như cũ, thanh bên không có mục Center). Người thí điểm thấy công tắc "Trung tâm điều hành" ở khối tài khoản (điện thoại: nút cạnh sáng/tối).
+- [ ] Bật công tắc → lời chào "Chào anh/chị …" hiện mượt rồi mờ dần vào Center (bấm để bỏ qua); tải lại trang không chạy lại lời chào; trang chủ "/" giờ mở Center; thanh bên có mục kèm số việc chờ.
+- [ ] "Giao diện cũ" → về Home cũ, công tắc tắt; người ngoài danh sách thí điểm **không** thấy công tắc, gõ `/center` thì bị chặn.
 - [ ] Mở `/center`: thấy lời chào, ngày, "N việc chờ bạn · M ngày tới hạn hợp đồng" (khi có dự án).
 - [ ] Số "Chờ tôi" ở cột trái = số cạnh mục ở thanh bên = số "Việc chờ bạn" trên Home.
 - [ ] Việc của tôi: nhóm mặc định thu gọn, có số việc và "N gấp"; bấm nhóm để mở.

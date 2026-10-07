@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
+import { Inbox, LayoutDashboard, LayoutGrid, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
 import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
@@ -83,6 +83,8 @@ export interface CenterShellProps {
   /** Bố cục ô của người dùng (mặc định get/save_center_layout_v1). */
   loadLayout?: LoadLayout;
   saveLayout?: SaveLayout;
+  /** Về giao diện hiện tại (tắt giao diện Trung tâm điều hành). */
+  onExitCenter?: (options?: { replace?: boolean }) => void;
 }
 
 // Khung 3 vùng theo mockup v1.1: Việc của tôi · vùng làm việc có tab · Trợ lý (thu gọn).
@@ -91,7 +93,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now = new Date(),
   loadWorkItems, loadToday = fetchCenterToday, loadWeather = (site, at) => fetchSiteWeather(site.id, site.latitude, site.longitude, at),
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
-  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, onExitCenter,
 }) => {
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
   const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
@@ -319,6 +321,17 @@ const CenterShell: React.FC<CenterShellProps> = ({
             <div className="text-xs vcc-muted vcc-ellipsis">{company.name}</div>
           </div>
         </div>
+        {onExitCenter && (
+          <button
+            type="button"
+            className="vcc-iconbtn"
+            onClick={() => onExitCenter(backRef.current?.consumeForNavigation() ? { replace: true } : undefined)}
+            aria-label="Về giao diện hiện tại"
+            title="Tắt Trung tâm điều hành, về giao diện hiện tại"
+          >
+            <LayoutGrid size={15} /> <span className="vcc-desktop-only">Giao diện cũ</span>
+          </button>
+        )}
         <button type="button" className="vcc-iconbtn" onClick={onToggleTheme} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'} title={isDark ? 'Nền sáng' : 'Nền tối'}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </button>

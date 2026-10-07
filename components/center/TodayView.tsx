@@ -50,7 +50,7 @@ export type TodayState =
   | { status: 'ready'; data: CenterToday };
 
 /** "Chào anh Sơn" khi biết giới tính; không thì "Xin chào, Phạm Ngọc Sơn". */
-const Greeting: React.FC<{ person: CenterPerson }> = ({ person }) => {
+export const Greeting: React.FC<{ person: CenterPerson }> = ({ person }) => {
   const honorific = person.gender === 'Nam' ? 'anh' : person.gender === 'Nữ' ? 'chị' : null;
   const givenName = person.fullName.trim().split(/\s+/).pop() || person.fullName;
   return honorific

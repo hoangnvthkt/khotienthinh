@@ -1,10 +1,13 @@
 import React from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import NotificationCenter from '../../components/NotificationCenter';
 import CenterShell from '../../components/center/CenterShell';
+import CenterEntrance from '../../components/center/CenterIntro';
+import { useUiModeSwitch } from '../../components/center/UiModeSwitch';
+import { useUiMode } from '../../lib/center/centerMode';
 import { StateBox } from '../../components/procurement/hub/hubUi';
 import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
@@ -34,7 +37,12 @@ const CenterPage: React.FC = () => {
   const { user, employees, appSettings } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const outlet = useOutletContext<LayoutOutletContext | undefined>();
+  const [, setUiMode] = useUiMode(user?.id);
+  const { exitCenter } = useUiModeSwitch(setUiMode);
+  // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
+  const playIntro = (location.state as { vccIntro?: boolean } | null)?.vccIntro === true;
   const { state, retry } = useCenterAccess(user?.id, canAccessRoute(user, CENTER_ROUTE));
   const goHome = () => navigate('/');
 
@@ -48,29 +56,33 @@ const CenterPage: React.FC = () => {
     return (
       <Gate onOpenMenu={outlet?.openSidebar} onHome={goHome}>
         {state.reason === 'not_in_rollout'
-          ? <StateBox kind="denied" title="Trung tâm điều hành đang thí điểm" message="Chưa bật cho tài khoản của bạn. Khi được bật, mục này sẽ hiện ở thanh bên trái." />
+          ? <StateBox kind="denied" title="Trung tâm điều hành đang thí điểm" message="Chưa bật cho tài khoản của bạn. Khi được bật, công tắc “Trung tâm điều hành” sẽ hiện ở thanh bên trái." />
           : <StateBox kind="denied" title="Bạn chưa có quyền vào Trung tâm điều hành" message="Nhờ quản trị cấp quyền “Truy cập Trung tâm điều hành”." />}
       </Gate>
     );
   }
 
   const employee = employees.find(row => row.userId === user.id);
+  const person = {
+    fullName: employee?.fullName || user.name,
+    gender: employee?.gender,
+    title: employee?.title || user.position,
+    avatar: user.avatar,
+  };
   return (
-    <CenterShell
-      person={{
-        fullName: employee?.fullName || user.name,
-        gender: employee?.gender,
-        title: employee?.title || user.position,
-        avatar: user.avatar,
-      }}
-      company={{ name: appSettings.name, logo: appSettings.logo }}
-      isDark={isDark}
-      onToggleTheme={toggleTheme}
-      onOpenMenu={outlet?.openSidebar}
-      mobileNotifications={<NotificationCenter userId={user.id} mode="mobile" />}
-      canOpenRoute={route => canAccessRoute(user, route)}
-      onNavigate={(route, options) => navigate(route, options)}
-    />
+    <CenterEntrance play={playIntro} person={person} onDone={() => navigate(location.pathname + location.search, { replace: true, state: null })}>
+      <CenterShell
+        person={person}
+        company={{ name: appSettings.name, logo: appSettings.logo }}
+        isDark={isDark}
+        onToggleTheme={toggleTheme}
+        onOpenMenu={outlet?.openSidebar}
+        mobileNotifications={<NotificationCenter userId={user.id} mode="mobile" />}
+        canOpenRoute={route => canAccessRoute(user, route)}
+        onNavigate={(route, options) => navigate(route, options)}
+        onExitCenter={exitCenter}
+      />
+    </CenterEntrance>
   );
 };
 

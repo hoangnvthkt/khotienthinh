@@ -2,7 +2,7 @@
 
 Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**: thấy việc đang chờ mình ở mọi module, số liệu hôm nay của dự án, và mở đúng hồ sơ hoặc form chỉ bằng một lần bấm. Mọi thao tác vẫn chạy bằng chức năng sẵn có của từng module, theo đúng quyền của bạn.
 
-**Mở:** thanh bên trái → **Trung tâm điều hành** (số bên cạnh = việc đang chờ bạn). Mục này chỉ hiện với người đang thí điểm.
+**Bật / tắt:** mặc định bạn vẫn dùng giao diện hiện tại. Bật công tắc **Trung tâm điều hành** ở khối tài khoản trên thanh bên trái (điện thoại: nút ô vuông cạnh nút sáng/tối trên đầu trang) → lời chào hiện lên rồi vào Trung tâm điều hành; từ đó trang chủ của bạn là Trung tâm điều hành và thanh bên có mục kèm số việc chờ. Muốn quay lại: nút **Giao diện cũ** trên đầu Trung tâm điều hành (hoặc tắt công tắc). Công tắc chỉ hiện với người đang thí điểm; lựa chọn nhớ theo từng máy.
 
 ## Màn hình có 3 vùng
 

@@ -56,7 +56,7 @@ import { isProjectOwnedWorkflowTemplate, isRequestModuleWorkflowTemplate } from 
 import { canViewModule } from '../lib/permissions/permissionService';
 import { canAccessRoute } from '../lib/routeAccess';
 import { CENTER_ROUTE } from '../lib/center/centerPermissions';
-import { useCenterAccess } from '../lib/center/centerService';
+import { useCenterUi } from '../lib/center/centerMode';
 import { useMineWorkItems } from '../lib/center/workItemsStore';
 import { CENTER_MODULES } from '../lib/center/centerRegistry';
 import { moduleRouteFor } from '../lib/center/drill';
@@ -755,8 +755,8 @@ const Home: React.FC = () => {
   }, [assets, user.id]);
 
   // ─── Trung tâm điều hành (thí điểm): một nguồn "Việc chờ bạn" cho Home, Sidebar và Center ───
-  const { state: centerAccess } = useCenterAccess(user.id, canAccessRoute(user, CENTER_ROUTE));
-  const centerEnabled = centerAccess.status === 'enabled';
+  // Chỉ khi người dùng chọn giao diện Trung tâm điều hành; mặc định Home giữ nguyên giao diện hiện tại.
+  const centerEnabled = useCenterUi(user).active;
   const centerMine = useMineWorkItems(centerEnabled);
   const centerItems = useMemo(() => (centerMine ? sortWorkItems(centerMine.items) : []), [centerMine]);
 
