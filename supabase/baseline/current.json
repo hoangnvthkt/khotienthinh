@@ -275,7 +275,8 @@
     "20261008138100_project_plan_versions.sql",
     "20261009100000_office_manual_document_number.sql",
     "20261008138000_center_dot0_foundation.sql",
-    "20261008138001_center_dot0_work_items.sql"
+    "20261008138001_center_dot0_work_items.sql",
+    "20261008138002_center_dot0_today.sql"
   ],
   "forbidIncludeAll": true
 }

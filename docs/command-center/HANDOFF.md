@@ -88,7 +88,16 @@ Mục tiêu: `/center` mở được cho người trong rollout, có khung 3 c�
 - Kiểm: smoke `supabase/tests/center_dot0_work_items_smoke.sql` (4 vai, dữ liệu mẫu chèn với `session_replication_role = replica`), vitest `lib/center/__tests__/{drill,workItemsService}.test.ts` (mọi nguồn có đích hợp lệ), Playwright 3 khổ với dữ liệu mẫu trong `tests/center/fixture.tsx` (`?inbox=empty|error`).
 - Chưa đo được p95 trên tài khoản thật 80 người (chỉ đo với persona mẫu); đo sau deploy bằng tài khoản CHT.
 
-PR-C tiếp theo: `vcc_my_center_v1` + 6 widget đọc + `DrillLink` + lịch/thời tiết (xem kế hoạch 07 mục 5).
+**PR-C đã làm (07/10, nhánh `feature/command-center-dot0-c` chồng lên PR-B) — "Hôm nay":**
+- Migration `20261008138002_center_dot0_today.sql`: `vcc_my_center_v1(p_project_id)` → `{today, project{…, source, site{lat,lon}}, projectOptions[{id,code,name,waiting}], widgets{project, hrm, work, office, supply, finance}}`. Gọi qua `center_actor_v1`; gọi lại `vcc_my_work_items_v1('mine')` để đếm việc theo dự án.
+- Dự án mặc định (chủ SP duyệt 07/10): điều động H2 hôm nay (`hrm_employee_primary_site_on` → `hrm_site_project_id`) → dự án có nhiều việc chờ nhất → dự án đầu tiên tôi thuộc (project_staff / employees.construction_site_id; Admin thấy mọi dự án đang chạy). `p_project_id` không trong danh sách → bỏ qua.
+- Cổng quyền từng ô: nhật ký = chính `get_daily_log_today_board_v1` (42501 → `denied`); PO / đề xuất = `procurement_can('view')` hoặc Room `material_po`/`material_request` view (`current_actor_has_effective_room_action`); đội công trường = CHT (`hrm_is_site_leader`) / HR; Tài chính = `get_finance_project_summary_v1` (null → ẩn widget); kho = `wms_has_action('wms.inventory.view')`; Work = `work.module.access`; Office = `office_filtered` unread + require_acknowledgement. Tiến độ tính như màn Dự án (việc lá, trọng số chi phí/ngày × thời gian hoặc thời gian × nguồn lực; manual → `manual_progress_percent`).
+- Trình duyệt: `lib/center/centerTodayService.ts` (parse fail-closed; thời tiết Open-Meteo cache 30 phút `vcc_weather_<siteId>`, lỗi → ẩn), `lib/center/todayWidgets.ts` (`buildTodayWidgets` → mỗi Stat có `target` route/tab/inbox; thiếu quyền → `locked` + lý do, không in 0; `buildTodaySummary`), `TodayView` (DrillLink, lịch + thời tiết + chuyến xe hôm nay, chọn dự án khi >1, dòng giải thích vì sao chọn dự án), `CenterShell` (nạp theo dự án, nhớ `vcc_project`, làm mới khi quay lại ≤1 lần/phút, `onDrill`: route / tab nhúng / về cột việc).
+- Chưa làm (ghi để PR sau): nút thao tác nhanh trong widget (PR-D); route có bộ lọc `/procurement?project&status`, Gantt `filter=not_started` (màn module chưa đọc query → tạm mở tab/trang không lọc); "MR lệch đơn vị", dòng chưa có nguồn (`list_material_request_supply_v1` tính toàn bộ, nặng); widget Tài chính toàn công ty cho TGĐ (câu hỏi mở 2).
+- Kiểm: smoke `supabase/tests/center_dot0_today_smoke.sql` (member/assigned/loner/nocenter), vitest `todayWidgets.test.ts` (mọi Stat có đích mở được; không in 0 khi bị từ chối), Playwright (số đúng mockup, bấm số → route, khóa kèm lý do, đổi dự án, không dự án, lỗi).
+- Kiểm "đếm dòng khớp" giữa Stat và danh sách module (DD-01…) chưa chạy được trên fixture — làm sau deploy với tài khoản thật.
+
+PR-D tiếp theo: thao tác nhanh trong widget (tách `LeaveRequestForm`, `OfficeDetailHost`, portal cho `RequestCreateDialog`/`RequestModal`) — kế hoạch 07 mục 5–6.
 
 ## 6. Câu hỏi còn mở với chủ SP (không chặn PR-A)
 
