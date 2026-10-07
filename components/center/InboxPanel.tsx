@@ -44,7 +44,8 @@ const InboxPanel: React.FC<{
 }> = ({ hidden, load = loadWorkItemsShared, now = new Date(), activeItemKey, onOpen, onMineCount, resizer, refreshToken = 0 }) => {
   const [tab, setTab] = useState<InboxTab>('mine');
   const [states, setStates] = useState<Record<InboxTab, TabState>>({ mine: { status: 'idle' }, sent: { status: 'idle' }, watch: { status: 'idle' } });
-  const [closed, setClosed] = useState<Set<string>>(new Set());
+  // Mặc định mọi nhóm thu gọn (chủ SP 07/10): thấy ngay có việc ở module nào, bấm nhóm để mở.
+  const [opened, setOpened] = useState<Set<string>>(new Set());
   const requestSeq = useRef<Record<InboxTab, number>>({ mine: 0, sent: 0, watch: 0 });
   const lastFocusRefresh = useRef(0);
   const tabRef = useRef(tab);
@@ -93,16 +94,16 @@ const InboxPanel: React.FC<{
   }, [page]);
 
   const groupKey = (module: CenterModuleKey) => `${tab}:${module}`;
-  const anyOpen = groups.some(group => !closed.has(groupKey(group.key)));
-  const toggleGroup = (module: CenterModuleKey) => setClosed(current => {
+  const anyOpen = groups.some(group => opened.has(groupKey(group.key)));
+  const toggleGroup = (module: CenterModuleKey) => setOpened(current => {
     const next = new Set(current);
     const key = groupKey(module);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
-  const foldAll = () => setClosed(current => {
+  const foldAll = () => setOpened(current => {
     const next = new Set(current);
-    groups.forEach(group => { if (anyOpen) next.add(groupKey(group.key)); else next.delete(groupKey(group.key)); });
+    groups.forEach(group => { if (anyOpen) next.delete(groupKey(group.key)); else next.add(groupKey(group.key)); });
     return next;
   });
 
@@ -145,12 +146,14 @@ const InboxPanel: React.FC<{
         )}
         {state.status === 'error' && page && <div className="vcc-note" role="alert">{state.message}</div>}
         {groups.map(group => {
-          const open = !closed.has(groupKey(group.key));
+          const open = opened.has(groupKey(group.key));
+          const urgent = group.items.filter(item => dueInfo(item.dueAt, now)?.tone === 'hot').length;
           return (
             <section key={group.key} className={`vcc-mod-${group.key}`}>
               <button type="button" className="vcc-ghead" aria-expanded={open} onClick={() => toggleGroup(group.key)}>
                 <span className="vcc-chev"><ChevronDown size={12} /></span>
                 <span className="vcc-modname">{CENTER_MODULES[group.key].label}</span>
+                {urgent > 0 && <span className="vcc-gurgent" title="Quá hạn hoặc hết hạn trong hôm nay">{urgent} gấp</span>}
                 <span className="vcc-gcount"> {group.items.length}</span>
               </button>
               {open && group.items.map(item => {

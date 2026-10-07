@@ -10,10 +10,11 @@ import type { CenterModuleKey, CenterWidgetId } from '../../lib/center/centerReg
 import { buildWidgetActions, fetchCenterActions, type CenterActionFlags, type CenterModal, type WidgetAction } from '../../lib/center/centerActions';
 import type { WidgetView } from '../../lib/center/todayWidgets';
 import type { WorkItem } from '../../lib/center/workItemsService';
+import { useBackLayers, useNarrowViewport } from '../../lib/center/useBackLayers';
 import { fetchCenterToday, fetchSiteWeather, type CenterToday, type SiteWeather } from '../../lib/center/centerTodayService';
 import type { WeatherSlot } from '../../lib/center/todayWidgets';
 import {
-  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, saveCenterLayout, sameLayout, showWidget,
+  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget, withPinnedActions,
   type CenterLayout, type CenterLayoutRecord,
 } from '../../lib/center/centerLayout';
 import './center.css';
@@ -64,7 +65,8 @@ export interface CenterShellProps {
   /** Chuông thông báo cho điện thoại; trên máy tính chuông nằm ở thanh bên trái. */
   mobileNotifications?: React.ReactNode;
   canOpenRoute: (route: string) => boolean;
-  onNavigate: (route: string) => void;
+  /** replace = thay mục lịch sử hiện tại (khi rời Center lúc đang mở thư mục / hồ sơ). */
+  onNavigate: (route: string, options?: { replace?: boolean }) => void;
   now?: Date;
   /** Nguồn việc (mặc định RPC vcc_my_work_items_v1); fixture kiểm thử truyền dữ liệu mẫu. */
   loadWorkItems?: LoadWorkItems;
@@ -86,7 +88,7 @@ export interface CenterShellProps {
 // Khung 3 vùng theo mockup v1.1: Việc của tôi · vùng làm việc có tab · Trợ lý (thu gọn).
 // Rail module bên trái là Sidebar sẵn có của Layout.
 const CenterShell: React.FC<CenterShellProps> = ({
-  person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate, now = new Date(),
+  person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now = new Date(),
   loadWorkItems, loadToday = fetchCenterToday, loadWeather = (site, at) => fetchSiteWeather(site.id, site.latitude, site.longitude, at),
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout,
@@ -106,6 +108,13 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [actionFlags, setActionFlags] = useState<CenterActionFlags | null>(null);
   const [folder, setFolder] = useState<{ view: WidgetView; anchor: HTMLElement } | null>(null);
   const [modal, setModal] = useState<CenterModal | null>(null);
+  const [folderCloseRequest, setFolderCloseRequest] = useState(0);
+  const narrow = useNarrowViewport();
+  const backRef = useRef<{ consumeForNavigation: () => boolean } | null>(null);
+  // Rời Center: nếu đang có lớp (thư mục / hồ sơ) thì thay mốc lịch sử thay vì chồng thêm.
+  const onNavigate = useCallback((route: string) => {
+    navigateTo(route, backRef.current?.consumeForNavigation() ? { replace: true } : undefined);
+  }, [navigateTo]);
   const [inboxRefresh, setInboxRefresh] = useState(0);
   const [layoutRecord, setLayoutRecord] = useState<CenterLayoutRecord | 'loading' | 'error'>('loading');
   const [draft, setDraft] = useState<CenterLayout | null>(null);
@@ -221,7 +230,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, [loadLayout]);
   const todayData = today.status === 'ready' ? today.data : null;
   const savedLayout = typeof layoutRecord === 'object' ? layoutRecord.layout : null;
-  const baseLayout = savedLayout || defaultCenterLayout(actionFlags, todayData);
+  const baseLayout = resolveCenterLayout(savedLayout, defaultCenterLayout(actionFlags, todayData));
   const effectiveLayout = draft || baseLayout;
   const canManageLayout = typeof layoutRecord === 'object' && layoutRecord.canManage;
   const finishEditing = useCallback(() => {
@@ -229,14 +238,21 @@ const CenterShell: React.FC<CenterShellProps> = ({
     if (sameLayout(draft, baseLayout)) { setDraft(null); setLayoutStatus('idle'); return; }
     // Về đúng mặc định → lưu bố cục rỗng để sau này mặc định theo quyền vẫn tự cập nhật.
     const backToDefault = sameLayout(draft, defaultCenterLayout(actionFlags, todayData));
-    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] } } : draft;
+    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] }, ...(draft.pinned ? { pinned: draft.pinned } : {}) } : draft;
     setLayoutStatus('saving');
     saveLayout(toSave).then(version => {
-      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: backToDefault ? null : draft, version } : current));
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: toSave, version } : current));
       setDraft(null);
       setLayoutStatus('saved');
     }).catch(error => { console.warn('Center layout save failed:', error); setLayoutStatus('error'); });
   }, [draft, baseLayout, actionFlags, todayData, saveLayout]);
+  // Chọn nút nhanh của một ô (trong thư mục thao tác): lưu ngay, không qua chế độ Tùy chỉnh.
+  const savePinned = useCallback((id: CenterWidgetId, keys: string[]): Promise<void> => {
+    const next = withPinnedActions(savedLayout, id, keys);
+    return saveLayout(next).then(version => {
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: next, version } : current));
+    });
+  }, [savedLayout, saveLayout]);
   const customize: TodayCustomize = {
     layout: effectiveLayout,
     editing: draft !== null,
@@ -265,6 +281,15 @@ const CenterShell: React.FC<CenterShellProps> = ({
 
   const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...openTabs];
   const current = openTabs.find(tab => tab.id === activeTab);
+  // Lớp đang mở, từ dưới lên: hồ sơ mở trên điện thoại → thư mục thao tác → form.
+  const mobileRecord = narrow && mobilePane === 'today' && !!current;
+  const layerDepth = (mobileRecord ? 1 : 0) + (folder ? 1 : 0) + (modal ? 1 : 0);
+  const back = useBackLayers(layerDepth, () => {
+    if (modal) setModal(null);
+    else if (folder) setFolderCloseRequest(value => value + 1);
+    else if (mobileRecord) setMobilePane('inbox');
+  });
+  backRef.current = back;
   const onMineCount = useCallback((count: number | null) => setMineCount(count), []);
 
   return (
@@ -353,7 +378,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 now={now}
                 canOpenRoute={canOpenRoute}
                 onNavigate={onNavigate}
-                onDrill={onDrill}
+                onAction={onAction}
                 onOpenFolder={onOpenFolder}
                 actionsFor={actionsFor}
                 today={today}
@@ -387,8 +412,12 @@ const CenterShell: React.FC<CenterShellProps> = ({
           actions={actionsFor(folder.view.id)}
           anchor={folder.anchor}
           onClose={() => setFolder(null)}
+          closeRequest={folderCloseRequest}
           onDrill={onDrill}
           onAction={onAction}
+          shownKeys={pinnedActionsOf(actionsFor(folder.view.id) || [], effectiveLayout.pinned?.[folder.view.id]).map(action => action.key)}
+          pinLock={canManageLayout ? null : customize.lockReason || null}
+          onSavePinned={keys => savePinned(folder.view.id, keys)}
         />
       )}
       {modal && (

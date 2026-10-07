@@ -5,16 +5,13 @@
   --vcc-bg: #ffffff; --vcc-card: #ffffff; --vcc-card2: #f7f7f7; --vcc-border: #e5e5e5;
   --vcc-fg: #1a1a1a; --vcc-fg2: #444444; --vcc-muted: #737373; --vcc-hover: #f2f2f2;
   --vcc-accent: #1f8a70; --vcc-accent-soft: #e8f3ee; --vcc-who: #7c3aed; --vcc-danger: #b42318; --vcc-warn: #b45309; --vcc-num: #2f7a2a;
-  --c-project: #4f46e5; --c-project-s: #eef2ff;
-  --c-request: #0891b2; --c-request-s: #e3f5f9;
-  --c-workflow: #2563eb; --c-workflow-s: #e8effd;
-  --c-vehicle: #0284c7; --c-vehicle-s: #e4f2fb;
-  --c-hrm: #9333ea; --c-hrm-s: #f5ecff;
-  --c-work: #0d9488; --c-work-s: #e6f7f4;
-  --c-office: #0f766e; --c-office-s: #e4f3f1;
-  --c-procurement: #059669; --c-procurement-s: #e6f6ef;
-  --c-finance: #0e7490; --c-finance-s: #e3f3f7;
-  --c-warehouse: #d97706; --c-warehouse-s: #fdf1e0;
+  /* Mọi nhóm / module cùng một màu xanh thép (chủ SP 07/10): màu chỉ để đọc nhóm, không để phân biệt. */
+  --vcc-steel: #2e6f80; --vcc-steel-s: #e7f0f3;
+  --c-project: var(--vcc-steel); --c-project-s: var(--vcc-steel-s); --c-request: var(--vcc-steel); --c-request-s: var(--vcc-steel-s);
+  --c-workflow: var(--vcc-steel); --c-workflow-s: var(--vcc-steel-s); --c-vehicle: var(--vcc-steel); --c-vehicle-s: var(--vcc-steel-s);
+  --c-hrm: var(--vcc-steel); --c-hrm-s: var(--vcc-steel-s); --c-work: var(--vcc-steel); --c-work-s: var(--vcc-steel-s);
+  --c-office: var(--vcc-steel); --c-office-s: var(--vcc-steel-s); --c-procurement: var(--vcc-steel); --c-procurement-s: var(--vcc-steel-s);
+  --c-finance: var(--vcc-steel); --c-finance-s: var(--vcc-steel-s); --c-warehouse: var(--vcc-steel); --c-warehouse-s: var(--vcc-steel-s);
   --background: var(--vcc-bg); --foreground: var(--vcc-fg); --card: var(--vcc-card); --card-foreground: var(--vcc-fg);
   --border: var(--vcc-border); --muted: var(--vcc-hover); --muted-foreground: var(--vcc-muted);
   display: flex; flex-direction: column; height: 100%; min-height: 0;
@@ -24,16 +21,7 @@
   --vcc-bg: #1b1b1b; --vcc-card: #222222; --vcc-card2: #2a2a2a; --vcc-border: #353535;
   --vcc-fg: #ededed; --vcc-fg2: #c8c8c8; --vcc-muted: #9a9a9a; --vcc-hover: #2f2f2f;
   --vcc-accent: #5cc3a3; --vcc-accent-soft: #213229; --vcc-who: #c4b5fd; --vcc-danger: #f08c8c; --vcc-warn: #e9a23b; --vcc-num: #8fd27f;
-  --c-project: #a5b4fc; --c-project-s: #2a2d4d;
-  --c-request: #67e8f9; --c-request-s: #133a44;
-  --c-workflow: #93c5fd; --c-workflow-s: #1d2f4d;
-  --c-vehicle: #7dd3fc; --c-vehicle-s: #163449;
-  --c-hrm: #d8b4fe; --c-hrm-s: #3a2a4d;
-  --c-work: #5eead4; --c-work-s: #163b36;
-  --c-office: #7dd3c8; --c-office-s: #173a35;
-  --c-procurement: #6ee7b7; --c-procurement-s: #153b2c;
-  --c-finance: #67e8f9; --c-finance-s: #143a44;
-  --c-warehouse: #fcd34d; --c-warehouse-s: #3f3115;
+  --vcc-steel: #8cc5d3; --vcc-steel-s: #1c3238;
 }
 :where(.vcc) button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 :where(.vcc) button:disabled { cursor: not-allowed; }
@@ -116,6 +104,8 @@
 .vcc-ghead[aria-expanded="false"] .vcc-chev { transform: rotate(-90deg); }
 .vcc-modname { color: var(--mc); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .vcc-modname::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--mc); flex: none; }
+.vcc-gurgent { margin-left: auto; color: var(--vcc-danger); font-size: 11px; font-weight: 600; }
+.vcc-gurgent + .vcc-gcount { margin-left: 8px; }
 .vcc-gcount { margin-left: auto; color: var(--vcc-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .vcc-row { display: block; width: 100%; text-align: left; padding: 8px 14px 9px 30px; border-left: 2px solid transparent; }
 .vcc-row:hover { background: var(--vcc-hover); }
@@ -144,10 +134,10 @@
 .vcc-mnav button[aria-selected="true"] { color: var(--vcc-accent); }
 
 /* Lưới widget theo bề rộng vùng làm việc (cột việc / Trợ lý mở làm vùng hẹp lại), không theo màn hình. */
-@container (max-width: 1000px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 1240px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (max-width: 600px) { .vcc-grid { grid-template-columns: 1fr; } }
 @supports not (container-type: inline-size) {
-  @media (max-width: 1200px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 1440px) { .vcc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 700px) { .vcc-grid { grid-template-columns: 1fr; } }
 }
 @media (max-width: 1023px) {
@@ -162,20 +152,7 @@
 }
 @media (min-width: 1024px) { .vcc-mobile-only { display: none !important; } }
 
-/* Hôm nay: ô số liệu bấm được, lịch, chọn dự án */
-.vcc-stat { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--vcc-border); font-size: 12.5px; }
-.vcc-stat:last-of-type { border-bottom: 0; }
-.vcc-stat-k { color: var(--vcc-muted); flex: none; max-width: 42%; padding-top: 1px; }
-.vcc-stat-val { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; text-align: right; }
-.vcc-stat-v { font-weight: 500; color: var(--vcc-fg); text-align: right; display: inline-flex; align-items: center; gap: 3px; line-height: 1.35; }
-.vcc-stat-v[data-tone="num"] { color: var(--vcc-num); font-weight: 600; font-variant-numeric: tabular-nums; }
-.vcc-stat-v[data-tone="warn"] { color: var(--vcc-warn); font-weight: 600; }
-.vcc-stat-v[data-tone="danger"] { color: var(--vcc-danger); font-weight: 600; }
-.vcc-stat-v[data-tone="muted"] { color: var(--vcc-muted); font-weight: 500; }
-button.vcc-stat-v:hover { text-decoration: underline; }
-button.vcc-stat-v svg { opacity: .6; flex: none; }
-.vcc-stat-v[data-locked="true"] { cursor: not-allowed; }
-.vcc-stat-hint { font-size: 11px; color: var(--vcc-muted); }
+/* Hôm nay: lịch, chọn dự án */
 .vcc-cal { display: flex; align-items: center; gap: 14px; padding: 10px 14px; max-width: 100%; }
 .vcc-cal-sep { width: 1px; height: 38px; background: var(--vcc-border); flex: none; }
 .vcc-select { height: 28px; max-width: 150px; flex: none; border: 1px solid var(--vcc-border); border-radius: 6px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 12px; padding: 0 6px; }
@@ -184,32 +161,50 @@ button.vcc-stat-v svg { opacity: .6; flex: none; }
 .vcc-widget[data-folder="true"] { cursor: pointer; }
 .vcc-widget[data-folder="true"]:hover { border-color: var(--mc); }
 .vcc-widget[data-folder="true"]:focus-visible { outline: 2px solid var(--mc); outline-offset: 2px; }
-.vcc-wfoot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
-.vcc-chip[data-more="true"] { color: var(--vcc-fg2); background: var(--vcc-card2); border-color: var(--vcc-border); }
+.vcc-wlink { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--vcc-muted); flex: none; }
+.vcc-wlink:hover:not(:disabled) { background: var(--mcs); color: var(--mc); }
+/* Nút thao tác nhanh trong ô: cùng style "Truy cập nhanh" ở Home — ô vuông gradient bo 16px, bóng màu, chữ đậm xám.
+   Hover chỉ đổi nền + transform (hữu hạn, docs/ui/VIOO-UI-UX.md mục 6). */
+.vcc-qa { display: grid; gap: 6px 2px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.vcc-tile { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px; border-radius: 12px; text-align: center; min-width: 0;
+  color: #475569; font-size: 11px; font-weight: 700; line-height: 1.25; }
+.dark .vcc-tile { color: #cbd5e1; }
+.vcc-tile:hover:not(:disabled) { background: var(--vcc-hover); }
+.vcc-tile:active:not(:disabled) .vcc-appicon { transform: scale(.94); }
+.vcc-tile:hover:not(:disabled) .vcc-appicon { transform: scale(1.08); }
+.vcc-tile[data-more="true"] { color: var(--vcc-muted); }
+.vcc-tile[data-more="true"] .vcc-appicon { color: #475569; }
+.dark .vcc-tile[data-more="true"] .vcc-appicon { color: #e2e8f0; }
+.vcc-tile-label { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.vcc-appicon { width: 44px; height: 44px; border-radius: 16px; display: grid; place-items: center; color: #fff; flex: none; transition: transform .2s ease; }
+.vcc-appicon[data-size="row"] { width: 32px; height: 32px; border-radius: 10px; }
 
 /* Thư mục thao tác (bung từ ô, kiểu nhóm ứng dụng iPhone) — chỉ animate transform / opacity, hữu hạn */
 .vcc-fold-layer { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 12px; }
 .vcc-fold-backdrop { position: absolute; inset: 0; background: rgba(20, 20, 15, .42); opacity: 0; transition: opacity .22s ease; }
 .vcc-fold-backdrop[data-open="true"] { opacity: 1; }
 .dark .vcc-fold-backdrop { background: rgba(0, 0, 0, .62); }
-.vcc-fold { position: relative; width: min(720px, 100%); max-height: min(86vh, 780px); display: flex; flex-direction: column; background: var(--vcc-card);
+.vcc-fold { position: relative; width: min(560px, 100%); max-height: min(86vh, 780px); display: flex; flex-direction: column; background: var(--vcc-card);
   border: 1px solid var(--vcc-border); border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, .28); transform-origin: center; will-change: transform, opacity;
   transition: transform var(--vcc-fold-ms, 280ms) cubic-bezier(.2, .8, .2, 1), opacity .22s ease; outline: none; }
 .vcc-fold-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--vcc-border); }
 .vcc-fold-head .vcc-wicon { width: 32px; height: 32px; border-radius: 9px; }
 .vcc-fold-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--mc); }
 .vcc-fold-body { padding: 10px 14px 14px; overflow-y: auto; min-height: 0; }
-.vcc-fold-stats .vcc-stat { font-size: 13px; padding: 7px 0; }
-.vcc-fold-section { margin: 12px 0 8px; font-size: 12px; font-weight: 600; color: var(--vcc-fg2); }
-.vcc-fold-acts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-.vcc-act { height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid transparent; background: var(--mcs); color: var(--mc); font-weight: 600; font-size: 13px;
-  display: inline-flex; align-items: center; gap: 6px; text-align: left; min-width: 0; }
-.vcc-act > span { flex: 1; }
-.vcc-act:hover:not(:disabled) { border-color: var(--mc); }
-.vcc-act[data-pri="true"] { background: var(--mc); color: #fff; }
-.dark .vcc-act[data-pri="true"] { color: #111; }
-.vcc-act:disabled { background: var(--vcc-card2); color: var(--vcc-muted); border-color: var(--vcc-border); cursor: not-allowed; }
-.vcc-act svg { flex: none; opacity: .75; }
+.vcc-fold-section { margin: 2px 0 8px; font-size: 12px; font-weight: 600; color: var(--vcc-fg2); }
+.vcc-fold-acts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.vcc-act { min-height: 48px; padding: 7px 10px; border-radius: 12px; border: 1px solid var(--vcc-border); background: var(--vcc-card); color: #334155;
+  font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; gap: 10px; text-align: left; min-width: 0; }
+.dark .vcc-act { color: #e2e8f0; }
+.vcc-act-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.vcc-act-why { font-size: 11px; font-weight: 500; line-height: 1.3; margin-top: 1px; white-space: normal; color: var(--vcc-muted); }
+.vcc-act:hover:not(:disabled) { background: var(--vcc-hover); }
+.vcc-act:hover:not(:disabled) .vcc-appicon { transform: scale(1.06); }
+.vcc-act:disabled { background: var(--vcc-card2); color: var(--vcc-muted); cursor: not-allowed; }
+.vcc-act[data-picking="true"]:disabled .vcc-appicon { opacity: .55; }
+.vcc-act[aria-pressed="true"] { border-color: var(--vcc-steel); background: var(--vcc-steel-s); }
+.vcc-pick { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--vcc-border); display: grid; place-items: center; flex: none; color: #fff; }
+.vcc-act[aria-pressed="true"] .vcc-pick { background: var(--vcc-steel); border-color: var(--vcc-steel); }
 .vcc-fold-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--vcc-border); }
 @media (max-width: 1023px) { .vcc-fold { max-height: 88vh; } .vcc-fold-acts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .vcc-fold-acts { grid-template-columns: 1fr; } }

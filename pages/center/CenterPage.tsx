@@ -69,7 +69,7 @@ const CenterPage: React.FC = () => {
       onOpenMenu={outlet?.openSidebar}
       mobileNotifications={<NotificationCenter userId={user.id} mode="mobile" />}
       canOpenRoute={route => canAccessRoute(user, route)}
-      onNavigate={route => navigate(route)}
+      onNavigate={(route, options) => navigate(route, options)}
     />
   );
 };

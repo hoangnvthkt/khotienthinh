@@ -5,7 +5,7 @@ import { CENTER_MODULES, type CenterModuleKey, type RendererId } from '../../lib
 import type { ItemDrillTarget } from '../../lib/center/drill';
 import { dueInfo, type WorkItem, type WorkItemKind } from '../../lib/center/workItemsService';
 
-export type RendererComponent = React.ComponentType<{ renderer: RendererId; props: Record<string, string> }>;
+export type RendererComponent = React.ComponentType<{ renderer: RendererId; props: Record<string, string>; onExit?: (path: string) => void }>;
 
 const KIND_LABEL: Record<WorkItemKind, string> = {
   approve: 'Chờ bạn duyệt',
@@ -17,7 +17,7 @@ const KIND_LABEL: Record<WorkItemKind, string> = {
 };
 
 // Tab hồ sơ trong vùng làm việc: đầu tab theo mockup (nhãn module · mã · tiêu đề · "Mở ở màn … ↗"),
-// thân là view thật của module khi đã nhúng được, không thì dẫn thẳng sang màn module đúng hồ sơ.
+// thân là màn xử lý thật của module mở ngay tại chỗ (view đã tách hoặc trang module chạy trong tab).
 const WorkItemTab: React.FC<{
   item?: WorkItem | null;
   title: string;
@@ -56,7 +56,7 @@ const WorkItemTab: React.FC<{
       {target.kind === 'tab' ? (
         <div className="vcc-embed">
           <Suspense fallback={<StateBox kind="loading" title="Đang mở hồ sơ…" />}>
-            <Renderer renderer={target.renderer} props={target.props} />
+            <Renderer renderer={target.renderer} props={target.props} onExit={onNavigate} />
           </Suspense>
         </div>
       ) : (
