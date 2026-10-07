@@ -10,7 +10,7 @@ export type InboxTab = 'mine' | 'sent' | 'watch';
 export type WorkItemSource =
   | 'rq' | 'mr' | 'wms_tx' | 'daily_log' | 'daily_slip' | 'work_plan' | 'po' | 'po_delivery' | 'hot'
   | 'fin_payment' | 'fin_site_expense' | 'fin_fund_opening' | 'leave' | 'makeup' | 'site_assignment'
-  | 'timesheet' | 'profile_change' | 'office' | 'work' | 'vehicle' | 'stock_count' | 'reconciliation';
+  | 'timesheet' | 'profile_change' | 'office' | 'work' | 'vehicle' | 'stock_count' | 'reconciliation' | 'wf' | 'safety';
 
 /** approve: duyệt · do: làm / sửa · confirm: xác nhận · read: đọc & xác nhận · wait: tôi gửi, chờ người khác · watch: theo dõi */
 export type WorkItemKind = 'approve' | 'do' | 'confirm' | 'read' | 'wait' | 'watch';
@@ -91,7 +91,14 @@ const WMS_TYPE_CODE: Record<string, string> = { IMPORT: 'PNK', EXPORT: 'PXK', TR
 const SOURCE_FALLBACK: Partial<Record<WorkItemSource, string>> = {
   wms_tx: 'Phiếu kho', stock_count: 'Kiểm kê', daily_slip: 'Phiếu kỹ sư', makeup: 'Bù công', leave: 'Nghỉ phép', timesheet: 'Bảng công',
   profile_change: 'Hồ sơ NV', vehicle: 'Đặt xe', reconciliation: 'Đối chiếu', po_delivery: 'Đợt giao', fin_site_expense: 'Chi quỹ', fin_fund_opening: 'Mở quỹ',
+  wf: 'Phiếu quy trình', safety: 'Sự cố an toàn',
 };
+/** Loại hồ sơ, ghi cạnh mã trong nhóm gom nhiều loại (Dự án, Công việc). */
+export const SOURCE_LABEL: Partial<Record<WorkItemSource, string>> = {
+  rq: 'Đề xuất', wf: 'Quy trình', work: 'Vioo Work',
+  mr: 'Đề xuất vật tư', daily_log: 'Nhật ký', daily_slip: 'Phiếu kỹ sư', work_plan: 'Kế hoạch', safety: 'An toàn',
+};
+
 export const isMachineCode = (code: string | null | undefined): boolean => !code || MACHINE_ID.test(code.trim());
 
 export const displayCode = (item: Pick<WorkItem, 'source' | 'code' | 'dueAt' | 'ref'>): string => {

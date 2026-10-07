@@ -92,7 +92,7 @@ test("WebKit idle: baseline (blank page, same browser)", async ({ page }) => {
 test("WebKit idle: Việc của tôi, Hôm nay, thư mục thao tác", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto(base);
-  await expect(page.getByRole("tab", { name: "Chờ tôi 9" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Chờ tôi 11" })).toBeVisible();
   await measureIdle(page, "inbox");
   await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: "Hôm nay" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");

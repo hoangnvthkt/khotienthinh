@@ -121,7 +121,6 @@ export const buildWidgetActions = (
       return [
         act('request', 'Tạo đề xuất', !!f?.request, modal('request', 'Tạo đề xuất'), 'Chưa có quyền tạo yêu cầu', true),
         act('workflow', 'Tạo phiếu quy trình', !!f?.workflow, route('/wf', 'Quy trình'), 'Chưa có quyền tạo phiếu quy trình'),
-        act('po', 'Lập đơn hàng', !!f?.po, tab('procurement', {}, 'Mua hàng', '/procurement'), 'Chỉ Mua hàng lập đơn hàng'),
         act('task', 'Tạo công việc', !!f?.task, route(query('/work/my', { create: '1' }), 'Vioo Work'), 'Vioo Work chưa bật hoặc chưa có quyền tạo việc'),
       ];
     }
@@ -137,9 +136,11 @@ export const buildWidgetActions = (
     case 'supply': {
       const f = flags?.supply;
       const reason = !pid ? NO_PROJECT : 'Chưa có quyền này';
+      // Lập đơn hàng thuộc Mua hàng & Kho (chủ SP 07/10); cờ vẫn là work.po của vcc_my_actions_v1, không cần dự án.
       return [
         act('hot', 'Mua nóng / CCDC', !!pid && !!f?.hot, tab('procurement', { initialMode: 'hot' }, 'Mua nóng', query('/procurement', { mode: 'hot' })), !pid ? NO_PROJECT : 'Cần quyền Mua nóng ở dự án này', true),
         act('inbox', 'Xem Cần mua', !!f?.inbox, tab('procurement', {}, 'Cần mua', '/procurement'), 'Chỉ Mua hàng xem Cần mua'),
+        act('po', 'Lập đơn hàng', !!flags?.work.po, tab('procurement', { initialMode: 'orders' }, 'Lập đơn hàng', '/procurement'), 'Chỉ Mua hàng lập đơn hàng'),
         act('receive', 'Nhận hàng', !!pid && !!f?.receive, route('/operations', 'Phiếu kho'), !pid ? NO_PROJECT : 'Cần việc Thủ kho ở kho công trường'),
         act('count', 'Kiểm kê', !!pid && !!f?.count, route('/audit', 'Kiểm kê'), !pid ? NO_PROJECT : 'Cần việc Thủ kho ở kho công trường'),
       ].map(item => ({ ...item, lockReason: item.enabled ? undefined : item.lockReason || reason }));

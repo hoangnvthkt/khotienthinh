@@ -37,12 +37,15 @@ const ITEMS: Record<InboxTab, WorkItem[]> = {
     item({ source: 'rq', module: 'request', kind: 'approve', id: 'rq-61', code: 'RQ-2026-000061', title: 'Bổ sung 2 kỹ sư hoàn thiện từ 13/10', who: 'Nguyễn Thị Mơ lập', meta: 'Nhu cầu nhân sự', dueAt: at(2), ref: { requestId: 'rq-61' } }),
     item({ source: 'leave', module: 'hrm', kind: 'approve', id: 'np-41', code: 'NP-2026-041', title: 'Trần Văn Hải nghỉ phép năm 2 ngày 08/10–09/10', who: 'Trần Văn Hải gửi', meta: 'Việc gia đình', dueAt: at(1), ref: { requestId: 'np-41' } }),
     item({ source: 'makeup', module: 'hrm', kind: 'approve', id: 'cc-03', code: 'Bù công 03/10', title: 'Phạm Văn Đức đề nghị chấm công bù 03/10', who: 'Phạm Văn Đức gửi', meta: 'Quên chấm ra · 17:30', dueAt: at(3), ref: { proposalId: 'cc-03' } }),
+    item({ source: 'safety', module: 'project', kind: 'confirm', id: 'sc-7', code: 'SAFE-0007', title: 'Lan can mép sàn tầng 2 xưởng 2', who: 'Trần Văn Bình báo đã khắc phục', meta: 'An toàn · mức cao · SMB-2026', dueAt: at(1), ref: { safetyId: 'sc-7', projectId: 'smb' } }),
+    item({ source: 'wf', module: 'workflow', kind: 'approve', id: '0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10', code: 'WF-2026-031', title: 'Xin xe chở vật tư đi Bắc Ninh 09/10', who: 'Nguyễn Thị Mơ lập', meta: 'Xin xe công trường · Trưởng phòng duyệt', dueAt: at(1, 9), ref: { instanceId: '0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10' } }),
     item({ source: 'work', module: 'work', kind: 'do', id: 'wk-1203', code: 'VW-2026-001203', title: 'Gửi biên bản nghiệm thu móng A3 cho CĐT', who: 'Nguyễn Thị Mơ giao', meta: 'Đang làm · quan trọng', dueAt: at(0, 18), ref: { taskCode: 'VW-2026-001203' } }),
     item({ source: 'po', module: 'procurement', kind: 'approve', id: 'po-116', code: 'PO-116', title: 'Kết cấu thép 568 · 1,3 tỷ', who: 'Nguyễn Thị Mơ lập', meta: '8 dòng · SMB-2026', dueAt: at(-2), ref: { poId: 'po-116' } }),
     item({ source: 'office', module: 'office', kind: 'read', id: 'tb-12', code: 'TB-12/2026', title: 'Quy định an toàn thi công mùa mưa', who: 'Ban TGĐ phát hành', meta: 'Yêu cầu xác nhận đã đọc', dueAt: at(1), ref: { documentId: 'tb-12' } }),
   ],
   sent: [
     item({ source: 'fin_site_expense', module: 'finance', kind: 'wait', id: 'qct-10', code: 'QCT-SMB-10', title: 'Đề nghị cấp vốn quỹ công trường · 150 tr', who: 'Chờ kế toán duyệt', meta: 'SMB-2026 · Quỹ công trường SMB', dueAt: at(4) }),
+    item({ source: 'wf', module: 'workflow', kind: 'wait', id: '5c2d1e0a-7b9f-4c3e-8a21-6d4b3f2e1a09', code: 'WF-2026-029', title: 'Xuất vật tư ra ngoài nhà máy SMB', who: 'Đang ở bước Bảo vệ xác nhận', meta: 'QT Xuất vật tư, hàng hóa ra ngoài nhà máy', ref: { instanceId: '5c2d1e0a-7b9f-4c3e-8a21-6d4b3f2e1a09' } }),
     item({ source: 'rq', module: 'request', kind: 'wait', id: 'rq-62', code: 'RQ-2026-000062', title: 'Xin cấp máy cắt sắt cho mũi 2', who: 'Nguyễn Thị Mơ lập', meta: 'Mua sắm thiết bị', ref: { requestId: 'rq-62' } }),
     item({ source: 'hot', module: 'procurement', kind: 'wait', id: 'mn-3', code: 'MN-2026-003', title: 'Thuê máy cắt sắt · 850.000 đ', who: 'Chờ duyệt', meta: 'SMB-2026 · đã mua', ref: { hotPurchaseId: 'mn-3' } }),
   ],
@@ -52,7 +55,11 @@ const ITEMS: Record<InboxTab, WorkItem[]> = {
   ],
 };
 
+// Số lần tải từng tab — kiểm thử "Tôi gửi / Theo dõi chỉ tải khi bấm".
+const loads: Record<InboxTab, number> = { mine: 0, sent: 0, watch: 0 };
+(window as unknown as { __vccLoads: typeof loads }).__vccLoads = loads;
 const loadWorkItems = (tab: InboxTab): Promise<WorkItemsPage> => new Promise((resolve, reject) => setTimeout(() => {
+  loads[tab] += 1;
   const mode = params.get('inbox');
   if (mode === 'error') return reject(new Error('fixture error'));
   const many = (): WorkItem[] => Array.from({ length: 200 }, (_, index) => {
@@ -122,7 +129,7 @@ const ACTIONS: Record<string, CenterActionFlags> = {
   smb: { projectId: 'smb', employee: true,
     project: { materialRequest: true, dailyLog: true, dailyReport: true, workPlan: false },
     hrm: { checkin: true, leave: true, makeup: true, timesheet: true, assignment: false },
-    work: { request: true, workflow: false, po: false, task: true },
+    work: { request: true, workflow: false, po: true, task: true },
     office: { compose: true, incoming: true, booking: true, directory: true },
     supply: { hot: true, inbox: false, receive: false, count: false, warehouseId: 'wh-smb' },
     finance: { siteFund: true, projectFinance: true, paymentRequest: false } },

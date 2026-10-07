@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isEmbeddableRoute, moduleRouteFor, resolveDrillTarget } from '../drill';
+import { isEmbeddableRoute, moduleForRoute, moduleRouteFor, resolveDrillTarget } from '../drill';
 import { CENTER_MODULES } from '../centerRegistry';
 import type { WorkItem, WorkItemSource } from '../workItemsService';
 import { getRouteModuleKey, isAuthenticatedOpenRoute, normalizeRoutePath } from '../../routeAccess';
@@ -34,6 +34,8 @@ const SAMPLES: Array<[WorkItem, 'tab', string]> = [
   [base('work', 'work', { taskCode: 'VW-2026-000001' }), 'tab', '/work/tasks/VW-2026-000001'],
   [base('vehicle', 'vehicle', { bookingId: 'b' }), 'tab', '/booking/vehicle/approvals'],
   [base('stock_count', 'warehouse', { countId: 'c' }), 'tab', '/audit'],
+  [base('wf', 'workflow', { instanceId: '0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10' }), 'tab', '/wf/0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10'],
+  [base('safety', 'project', { safetyId: 'sc-1', projectId: 'p1' }), 'tab', '/da?projectId=p1&tab=safety&safetyView=issues&safetyId=sc-1'],
 ];
 
 describe('Command Center drill-down', () => {
@@ -66,9 +68,26 @@ describe('Command Center drill-down', () => {
     expect(isEmbeddableRoute('/hrm/leave?request=1')).toBe(true);
     expect(isEmbeddableRoute('/work/tasks/VW-1')).toBe(true);
     expect(isEmbeddableRoute('/booking/vehicle/approvals')).toBe(true);
+    expect(isEmbeddableRoute('/wf')).toBe(true);
+    expect(isEmbeddableRoute('/wf/0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10')).toBe(true);
+    expect(isEmbeddableRoute('/wf/dashboard')).toBe(false);
+    expect(isEmbeddableRoute('/hrm/checkin')).toBe(true);
+    expect(isEmbeddableRoute('/work/my?create=1')).toBe(true);
     expect(isEmbeddableRoute('/hrm/payroll')).toBe(false);
     expect(isEmbeddableRoute('/dashboard')).toBe(false);
     expect(isEmbeddableRoute('/da/portfolio')).toBe(false);
+  });
+
+  it('colours a quick-action tab by the module of its page', () => {
+    expect(moduleForRoute('/da?projectId=p1&tab=dailylog')).toBe('project');
+    expect(moduleForRoute('/hrm/checkin')).toBe('hrm');
+    expect(moduleForRoute('/ep')).toBe('hrm');
+    expect(moduleForRoute('/wf')).toBe('workflow');
+    expect(moduleForRoute('/work/my?create=1')).toBe('work');
+    expect(moduleForRoute('/site-fund')).toBe('finance');
+    expect(moduleForRoute('/operations')).toBe('warehouse');
+    expect(moduleForRoute('/office/new')).toBe('office');
+    expect(moduleForRoute('/booking/vehicle')).toBe('vehicle');
   });
 
   it('encodes ids in paths', () => {

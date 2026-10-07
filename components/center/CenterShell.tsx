@@ -5,7 +5,7 @@ import WorkTabs, { type CenterWorkTab } from './WorkTabs';
 import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
 import ActionFolder from './ActionFolder';
 import WorkItemTab, { type RendererComponent } from './WorkItemTab';
-import { resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
+import { isEmbeddableRoute, moduleForRoute, resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
 import type { CenterModuleKey, CenterWidgetId } from '../../lib/center/centerRegistry';
 import { buildWidgetActions, fetchCenterActions, type CenterActionFlags, type CenterModal, type WidgetAction } from '../../lib/center/centerActions';
 import type { WidgetView } from '../../lib/center/todayWidgets';
@@ -263,9 +263,18 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const actionsFor = useCallback((id: CenterWidgetId): WidgetAction[] | null =>
     actionFlags ? buildWidgetActions(id, actionFlags, todayProject, now) : null, [actionFlags, todayProject, now]);
   const onOpenFolder = useCallback((view: WidgetView, anchor: HTMLElement) => setFolder({ view, anchor }), []);
+  // Nút nhanh không rời Center (chủ SP 07/10): form → modal; màn module → mở thêm một tab cạnh "Hôm nay".
+  // Chỉ màn chưa chạy được trong tab mới chuyển hẳn sang module.
   const onAction = useCallback((action: WidgetAction) => {
-    if (action.target.kind === 'modal') setModal(action.target.modal); else onDrill(action.target);
-  }, [onDrill]);
+    const target = action.target;
+    if (target.kind === 'modal') { setModal(target.modal); return; }
+    if (target.kind === 'route' && isEmbeddableRoute(target.path)) {
+      openTab({ id: `route:${target.path}`, title: target.title, closable: true, item: null, module: moduleForRoute(target.path),
+        target: { kind: 'tab', renderer: 'route', props: { path: target.path }, title: target.title, route: target.path } });
+      return;
+    }
+    onDrill(target);
+  }, [onDrill, openTab]);
   const onModalDone = useCallback(() => { setInboxRefresh(value => value + 1); setTodayAttempt(value => value + 1); }, []);
 
   useEffect(() => { workBody.current?.scrollTo({ top: 0 }); }, [activeTab]);
@@ -275,10 +284,14 @@ const CenterShell: React.FC<CenterShellProps> = ({
   // Lớp đang mở, từ dưới lên: hồ sơ mở trên điện thoại → thư mục thao tác → form.
   const mobileRecord = narrow && mobilePane === 'today' && !!current;
   const layerDepth = (mobileRecord ? 1 : 0) + (folder ? 1 : 0) + (modal ? 1 : 0);
+  // Hồ sơ mở từ Việc của tôi → quay về cột việc; tab mở từ nút nhanh → quay về Hôm nay (tab vẫn giữ).
+  const leaveRecord = useCallback(() => {
+    if (current?.item) setMobilePane('inbox'); else setActiveTab(TODAY_TAB.id);
+  }, [current]);
   const back = useBackLayers(layerDepth, () => {
     if (modal) setModal(null);
     else if (folder) setFolderCloseRequest(value => value + 1);
-    else if (mobileRecord) setMobilePane('inbox');
+    else if (mobileRecord) leaveRecord();
   });
   backRef.current = back;
   const onMineCount = useCallback((count: number | null) => setMineCount(count), []);
@@ -371,7 +384,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 target={current.target}
                 now={now}
                 onNavigate={onNavigate}
-                onBack={() => setMobilePane('inbox')}
+                onBack={leaveRecord}
+                backLabel={current.item ? 'Việc của tôi' : 'Hôm nay'}
                 Renderer={Renderer}
               />
             ) : (
