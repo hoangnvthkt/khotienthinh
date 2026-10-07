@@ -88,12 +88,15 @@ const Attendance: React.FC = () => {
 
   // Tab: 'timesheet' | 'proposals'
   // Check-in sends people here (?tab=proposals) when they are outside the allowed area.
+  // Trung tâm điều hành gửi người duyệt tới đúng đơn (?tab=proposals&proposal=<id>): chỉ mở danh sách, không mở form tạo.
   const [searchParams] = useSearchParams();
+  const reviewProposalId = searchParams.get('proposal');
   const openProposals = searchParams.get('tab') === 'proposals';
+  const openProposalForm = openProposals && !reviewProposalId;
   const [activeTab, setActiveTab] = useState<'summary' | 'timesheet' | 'proposals' | 'devices'>(openProposals ? 'proposals' : 'timesheet');
 
   // Proposal state
-  const [showProposalForm, setShowProposalForm] = useState(openProposals);
+  const [showProposalForm, setShowProposalForm] = useState(openProposalForm);
   const [pTargetEmployeeId, setPTargetEmployeeId] = useState('');
   const [pDate, setPDate] = useState('');
   const [pCheckIn, setPCheckIn] = useState('');
@@ -696,10 +699,16 @@ const Attendance: React.FC = () => {
 
   // Arriving from Check-in: the form opens for the person, dated today.
   React.useEffect(() => {
-    if (!openProposals || !currentEmployee) return;
+    if (!openProposalForm || !currentEmployee) return;
     setPTargetEmployeeId(prev => prev || currentEmployee.id);
     setPDate(prev => prev || new Date().toLocaleDateString('sv-SE'));
-  }, [openProposals, currentEmployee]);
+  }, [openProposalForm, currentEmployee]);
+
+  // Đơn cần duyệt (từ Trung tâm điều hành): cuộn tới và tô viền.
+  React.useEffect(() => {
+    if (!reviewProposalId || activeTab !== 'proposals') return;
+    document.querySelector(`[data-proposal-id="${CSS.escape(reviewProposalId)}"]`)?.scrollIntoView({ block: 'center' });
+  }, [reviewProposalId, activeTab, filteredProposals.length]);
 
   const resetProposalForm = () => {
     setShowProposalForm(false);
@@ -1285,7 +1294,8 @@ const Attendance: React.FC = () => {
                   const isSelf = p.proposerEmployeeId === p.targetEmployeeId;
 
                   return (
-                    <div key={p.id} className="p-4 hover:bg-muted/50 transition">
+                    <div key={p.id} data-proposal-id={p.id}
+                      className={`p-4 hover:bg-muted/50 transition ${p.id === reviewProposalId ? 'ring-2 ring-inset ring-teal-500 bg-teal-50/60 dark:bg-teal-950/30' : ''}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">

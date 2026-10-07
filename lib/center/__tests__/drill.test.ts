@@ -26,7 +26,7 @@ const SAMPLES: Array<[WorkItem, 'tab', string]> = [
   [base('fin_site_expense', 'finance', { expenseId: 'x' }), 'tab', '/finance/cash'],
   [base('fin_fund_opening', 'finance', { openingId: 'o' }), 'tab', '/finance/project'],
   [base('leave', 'hrm', { requestId: 'np-1' }), 'tab', '/hrm/leave?request=np-1'],
-  [base('makeup', 'hrm', { proposalId: 'a' }), 'tab', '/hrm/attendance?tab=proposals'],
+  [base('makeup', 'hrm', { proposalId: 'a' }), 'tab', '/hrm/attendance?tab=proposals&proposal=a'],
   [base('site_assignment', 'hrm', { assignmentId: 'sa-1' }), 'tab', '/hrm/assignments?id=sa-1'],
   [base('timesheet', 'hrm', { year: 2026, month: 10 }), 'tab', '/hrm/timesheet?year=2026&month=10'],
   [base('profile_change', 'hrm', { changeId: 'c' }), 'tab', '/hrm/employees'],

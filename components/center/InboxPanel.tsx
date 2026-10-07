@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronDown, ChevronsDownUp, ChevronsUpDown, RefreshCw, X } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_MODULE_KEYS, CENTER_MODULES, type CenterModuleKey } from '../../lib/center/centerRegistry';
-import { dueInfo, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
+import { displayCode, dueInfo, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
 import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
 import { civilOf, formatCivilRange, inCivilRange, type CivilRange } from '../../lib/center/civilDate';
 
@@ -174,20 +174,20 @@ const InboxPanel: React.FC<{
           const open = !!dueRange || opened.has(groupKey(group.key));
           const urgent = group.items.filter(item => dueInfo(item.dueAt, now)?.tone === 'hot').length;
           return (
-            <section key={group.key} className={`vcc-mod-${group.key}`}>
+            <section key={group.key} className={`vcc-group vcc-mod-${group.key}`} data-open={open || undefined}>
               <button type="button" className="vcc-ghead" aria-expanded={open} onClick={() => toggleGroup(group.key)}>
                 <span className="vcc-chev"><ChevronDown size={12} /></span>
                 <span className="vcc-modname">{CENTER_MODULES[group.key].label}</span>
                 {urgent > 0 && <span className="vcc-gurgent" title="Quá hạn hoặc hết hạn trong hôm nay">{urgent} gấp</span>}
                 <span className="vcc-gcount"> {group.items.length}</span>
               </button>
-              {open && group.items.map(item => {
+              {open && <div className="vcc-grows">{group.items.map(item => {
                 const key = workItemKey(item);
                 const due = dueInfo(item.dueAt, now);
                 return (
                   <button key={key} type="button" className="vcc-row" aria-current={activeItemKey === key} onClick={() => onOpen(item)}>
                     <div className="vcc-row-top">
-                      <span className="vcc-ent">{item.code}</span>
+                      <span className="vcc-ent">{displayCode(item)}</span>
                       {due && <span className="vcc-due" data-tone={due.tone}>{due.label}</span>}
                     </div>
                     <div className="vcc-row-title">{item.title}</div>
@@ -200,7 +200,7 @@ const InboxPanel: React.FC<{
                     )}
                   </button>
                 );
-              })}
+              })}</div>}
             </section>
           );
         })}

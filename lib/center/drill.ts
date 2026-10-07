@@ -40,7 +40,7 @@ export const moduleRouteFor = (item: WorkItem): string => {
     case 'fin_site_expense': return '/finance/cash';
     case 'fin_fund_opening': return '/finance/project';
     case 'leave': return query('/hrm/leave', { request: str(ref.requestId) || item.id });
-    case 'makeup': return query('/hrm/attendance', { tab: 'proposals' });
+    case 'makeup': return query('/hrm/attendance', { tab: 'proposals', proposal: str(ref.proposalId) || item.id });
     case 'site_assignment': return query('/hrm/assignments', { id: str(ref.assignmentId) || item.id });
     case 'timesheet': return query('/hrm/timesheet', { year: str(ref.year), month: str(ref.month) });
     case 'profile_change': return '/hrm/employees';

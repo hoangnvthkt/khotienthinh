@@ -9,11 +9,10 @@ import { resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../.
 import type { CenterModuleKey, CenterWidgetId } from '../../lib/center/centerRegistry';
 import { buildWidgetActions, fetchCenterActions, type CenterActionFlags, type CenterModal, type WidgetAction } from '../../lib/center/centerActions';
 import type { WidgetView } from '../../lib/center/todayWidgets';
-import type { WorkItem } from '../../lib/center/workItemsService';
+import { displayCode, type WorkItem } from '../../lib/center/workItemsService';
 import { useBackLayers, useNarrowViewport } from '../../lib/center/useBackLayers';
 import { fetchCenterToday, type CenterToday } from '../../lib/center/centerTodayService';
 import { civilOf, type CivilRange } from '../../lib/center/civilDate';
-import type { WorkItem as InboxWorkItem } from '../../lib/center/workItemsService';
 import {
   defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget, withPinnedActions,
   type CenterLayout, type CenterLayoutRecord,
@@ -108,7 +107,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
   // Lọc Việc của tôi theo hạn (ô Lịch ở Hôm nay); hạn của các việc Chờ tôi để chấm trên lịch.
   const [dueRange, setDueRange] = useState<CivilRange | null>(null);
-  const [mineItems, setMineItems] = useState<InboxWorkItem[]>([]);
+  const [mineItems, setMineItems] = useState<WorkItem[]>([]);
   const [todayAttempt, setTodayAttempt] = useState(0);
   const [actionFlags, setActionFlags] = useState<CenterActionFlags | null>(null);
   const [folder, setFolder] = useState<{ view: WidgetView; anchor: HTMLElement } | null>(null);
@@ -189,7 +188,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, []);
 
   const openItem = useCallback((item: WorkItem) => {
-    openTab({ id: workItemKey(item), title: item.code, closable: true, item, module: item.module, target: resolveDrillTarget(item) });
+    openTab({ id: workItemKey(item), title: displayCode(item), closable: true, item, module: item.module, target: resolveDrillTarget(item) });
   }, [openTab]);
 
   // Đích từ widget: route → sang module; tab → mở view nhúng; inbox → về cột việc.
@@ -283,7 +282,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   });
   backRef.current = back;
   const onMineCount = useCallback((count: number | null) => setMineCount(count), []);
-  const onMineItems = useCallback((items: InboxWorkItem[]) => setMineItems(items), []);
+  const onMineItems = useCallback((items: WorkItem[]) => setMineItems(items), []);
   const dueDays = useMemo(() => mineItems.map(item => civilOf(item.dueAt)).filter((day): day is string => !!day), [mineItems]);
   // Chọn ngày ở ô Lịch → hiện Việc của tôi đã lọc (điện thoại: chuyển sang tab Việc; máy tính: mở lại cột nếu đang ẩn).
   const applyDueRange = useCallback((range: CivilRange | null) => {

@@ -60,7 +60,7 @@ import { useCenterUi } from '../lib/center/centerMode';
 import { useMineWorkItems } from '../lib/center/workItemsStore';
 import { CENTER_MODULES } from '../lib/center/centerRegistry';
 import { moduleRouteFor } from '../lib/center/drill';
-import { dueInfo, sortWorkItems } from '../lib/center/workItemsService';
+import { displayCode, dueInfo, sortWorkItems } from '../lib/center/workItemsService';
 import {
   MaterialRequest,
   RequestStatus,
@@ -1055,7 +1055,7 @@ const Home: React.FC = () => {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold text-slate-800 dark:text-white truncate">{item.title}</div>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-[9px] font-mono font-bold text-teal-600 bg-teal-500/10 px-1.5 py-0.5 rounded">{item.code}</span>
+                        <span className="text-[9px] font-mono font-bold text-teal-600 bg-teal-500/10 px-1.5 py-0.5 rounded">{displayCode(item)}</span>
                         <span className="text-[9px] text-slate-400">{CENTER_MODULES[item.module].label}{item.who ? ` · ${item.who}` : ''}</span>
                       </div>
                     </div>

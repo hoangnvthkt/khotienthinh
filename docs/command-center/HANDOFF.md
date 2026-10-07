@@ -130,6 +130,8 @@ Mục tiêu: `/center` mở được cho người trong rollout, có khung 3 c�
 
 **07/10 chiều (sau #126):** bỏ logo ở header Center (logo đầu rail là link về `/center`), bỏ nút "Giao diện cũ" (`onExitCenter` gỡ khỏi CenterShell; tắt bằng công tắc rail / menu ☰ trên điện thoại), `FloatingChatBubble railOffset` → `lg:left-[100px]` khi giao diện mới để không che công tắc rail.
 
+**07/10 tối:** (1) `displayCode(item)` (`workItemsService`) — không bao giờ hiện id máy (UUID, chuỗi hex ≥ 12, `tx-…`): phiếu kho → `PNK/PXK/PCK/PĐC/PTL dd/mm`, nguồn khác → tên loại hồ sơ + ngày; dùng ở cột việc, tên tab, tiêu đề hồ sơ, Home. Gốc: `transactions` không có số phiếu (RPC trả `t.id`). (2) Duyệt bù công: `/hrm/attendance?tab=proposals` mở form TẠO (dành cho màn Chấm công ngoài vùng) → Center dùng `&proposal=<id>`: Attendance chỉ mở danh sách, cuộn + tô viền đúng đơn. (3) Việc của tôi: mỗi nhóm là khối riêng (`.vcc-group`), tên nhóm in hoa đen 13.5px/800, mỗi việc là thẻ hơi nổi (`.vcc-grows .vcc-row`).
+
 **Thứ tự triển khai đợt 0 (chủ SP):** merge #119 → đổi base #120…#124 về main lần lượt (em làm) → `prod-push --include-all` dry-run kiểm "Would push" đủ `20261008138000` … `20261008138004` → `--apply` → em làm mới `dbPermissionCatalog.json` + bỏ `center.*` khỏi `FRONTEND_AHEAD_OF_DB` → chủ SP chạy `center_dot0_pilot.sql` (diễn tập rồi COMMIT) → UAT theo `uat-dot-0.md`.
 
 Đợt 1 (theo tài liệu 06): vỏ `vcc_prepare / vcc_execute / vcc_operations` (bản tóm tắt trước khi bấm + biên nhận), Quy trình chung vào "Việc của tôi", tách form Work / nhật ký / đề xuất vật tư để mở trong Center.
