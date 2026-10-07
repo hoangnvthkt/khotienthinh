@@ -6,6 +6,8 @@ Chạy sau khi deploy `20261008138000` … `20261008138004` và bật thí đi�
 
 - [ ] Mới đăng nhập: vẫn là giao diện hiện tại (Home như cũ, thanh bên không có mục Center). Người thí điểm thấy công tắc "Trung tâm điều hành" ở khối tài khoản (điện thoại: nút cạnh sáng/tối).
 - [ ] Bật công tắc → lời chào "Chào anh/chị …" hiện mượt rồi mờ dần vào Center (bấm để bỏ qua); tải lại trang không chạy lại lời chào; trang chủ "/" giờ mở Center; thanh bên có mục kèm số việc chờ.
+- [ ] Đang ở giao diện mới: máy tính có rail gọn (biểu tượng + tên app, số việc chờ ở Trung tâm, công tắc góc dưới trái); vào module khác rail vẫn giữ; không treo / đơ khi mở Center (sự cố 07/10).
+- [ ] Lịch: số việc tới hạn hôm nay đúng; chọn một ngày và một khoảng ngày → cột việc lọc đúng (đếm khớp); Bỏ lọc; trên iPhone lịch vừa màn hình.
 - [ ] "Giao diện cũ" → về Home cũ, công tắc tắt; người ngoài danh sách thí điểm **không** thấy công tắc, gõ `/center` thì bị chặn.
 - [ ] Mở `/center`: thấy lời chào, ngày, "N việc chờ bạn · M ngày tới hạn hợp đồng" (khi có dự án).
 - [ ] Số "Chờ tôi" ở cột trái = số cạnh mục ở thanh bên = số "Việc chờ bạn" trên Home.

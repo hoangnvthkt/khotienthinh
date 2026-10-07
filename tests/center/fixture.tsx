@@ -7,10 +7,13 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, LayoutDashboard, Package, PanelsTopLeft, ShoppingCart, Wallet } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
+import { CenterRailView } from '../../components/center/CenterRail';
+import { SIDEBAR_MODULES } from '../../components/Sidebar';
+import { MemoryRouter } from 'react-router-dom';
 import CenterEntrance from '../../components/center/CenterIntro';
 import UiModeSwitch from '../../components/center/UiModeSwitch';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
-import type { CenterToday, SiteWeather } from '../../lib/center/centerTodayService';
+import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
 import '../../index.css';
@@ -113,7 +116,6 @@ const loadToday = (projectId: string | null): Promise<CenterToday> => new Promis
   if (mode === 'loner') return resolve(LONER);
   resolve(TODAY[projectId || ''] || TODAY.smb);
 }, 60));
-const loadWeather = async (): Promise<SiteWeather | null> => ({ temperature: 29, label: 'Mưa rào', humidity: 84, rainChance: 70, concreteWarning: true, fetchedAt: NOW.toISOString() });
 
 // Cờ thao tác theo dự án: SMB nhiều quyền, DA29 gần như không.
 const ACTIONS: Record<string, CenterActionFlags> = {
@@ -171,15 +173,27 @@ const StubRenderer: React.FC<{ renderer: string; props: Record<string, string> }
   </div>
 );
 
-const FakeRail: React.FC = () => (
-  <nav className="hidden lg:flex w-16 flex-none flex-col items-center gap-2 border-r border-slate-200 bg-white/70 py-4 text-slate-500 dark:border-slate-800 dark:bg-[#1c1f22]" aria-label="Thanh bên của app">
-    <span className="mb-2 grid h-9 w-9 place-items-center rounded-xl bg-teal-700 text-[11px] font-bold text-white">TT</span>
-    {[PanelsTopLeft, LayoutDashboard, BarChart3, Briefcase, ShoppingCart, Package, Wallet, FileText].map((Icon, index) => (
-      <span key={index} className={`grid h-10 w-10 place-items-center rounded-xl ${index === 0 ? 'bg-teal-700 text-white' : ''}`}><Icon size={18} /></span>
-    ))}
-  </nav>
+// Rail thật của giao diện Trung tâm điều hành (CenterRailView), app mẫu theo thứ tự mockup.
+const RAIL_KEYS = ['DA', 'RQ', 'WF', 'work.module', 'PROCUREMENT', 'WMS', 'HRM', 'FINANCE', 'office.module', 'VEHICLE_BOOKING'];
+const RAIL_MODULES = RAIL_KEYS.map(key => SIDEBAR_MODULES.find(module => module.key === key)!).filter(Boolean);
+const FixtureRail: React.FC<{ dark: boolean; onToggleTheme: () => void; onExit: () => void }> = ({ dark, onToggleTheme, onExit }) => (
+  <CenterRailView
+    pathname="/center"
+    company={{ name: 'Tiến Thịnh' }}
+    modules={RAIL_MODULES}
+    badge="9"
+    avatar="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 34 34'><rect width='34' height='34' fill='%23e7f0f3'/><text x='17' y='22' font-size='12' text-anchor='middle' fill='%232e6f80' font-family='sans-serif'>PS</text></svg>"
+    userName="Phạm Ngọc Sơn"
+    isDark={dark}
+    notifications={<button type="button" aria-label="Thông báo"><Bell size={16} /></button>}
+    onToggleTheme={onToggleTheme}
+    onProfile={() => undefined}
+    onSettings={() => undefined}
+    onExitCenter={onExit}
+  />
 );
 
+// ?defaults=1: dùng giá trị mặc định của CenterShell cho giờ (như app thật) — bắt lỗi vẽ lại mãi.
 // Giả lập "giao diện hiện tại" để thử công tắc + lời chào (?ui=classic mở ở giao diện hiện tại; ?intro=1 chạy lời chào).
 const FakeClassic: React.FC<{ onEnter: () => void }> = ({ onEnter }) => (
   <div className="mx-auto max-w-md p-6" data-testid="fake-classic">
@@ -202,7 +216,7 @@ const Fixture: React.FC = () => {
   }
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden" data-last-route={lastRoute}>
-      <FakeRail />
+      <FixtureRail dark={dark} onToggleTheme={() => setDark(value => !value)} onExit={() => setUi('classic')} />
       <main className="min-w-0 flex-1">
         <CenterEntrance play={intro} person={PERSON} now={NOW} onDone={() => setIntro(false)}>
           <CenterShell
@@ -214,10 +228,9 @@ const Fixture: React.FC = () => {
             mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
             canOpenRoute={route => !DENIED_ROUTES.has(route)}
             onNavigate={setLastRoute}
-            now={NOW}
+            now={params.get('defaults') === '1' ? undefined : NOW}
             loadWorkItems={loadWorkItems}
             loadToday={loadToday}
-            loadWeather={loadWeather}
             loadActions={loadActions}
             loadLayout={loadLayout}
             saveLayout={saveLayout}
@@ -231,4 +244,4 @@ const Fixture: React.FC = () => {
   );
 };
 
-createRoot(document.getElementById('root')!).render(<Fixture />);
+createRoot(document.getElementById('root')!).render(<MemoryRouter initialEntries={['/center']}><Fixture /></MemoryRouter>);

@@ -229,7 +229,7 @@ test("desktop: no project / today error", async ({ page }, info) => {
   await page.getByRole("button", { name: "Xong" }).click();
   await expect(page.getByText("Tài khoản chưa gắn với hồ sơ nhân viên.")).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Tài chính dự án", exact: true })).toHaveCount(0);
-  await expect(page.getByText("Chưa chọn dự án / công trường")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Lịch" })).toBeVisible();
   await expect(tiles(page, "hrm")).toHaveText(["Xem thêm"]);
   await page.goto(`${base}?today=error`);
   await expect(page.getByRole("alert")).toContainText("Chưa đọc được số liệu hôm nay");
@@ -413,4 +413,73 @@ test("switch: current interface ↔ Command Center with a greeting and a calm tr
   await expect(intro).toBeVisible();
   await intro.click();
   await expect(intro).toHaveCount(0, { timeout: 1500 });
+});
+
+// Sự cố 07/10: giá trị mặc định của props tạo mới mỗi lần vẽ (hàm thời tiết) → effect chạy lại mãi → app treo.
+// Dùng giá trị mặc định như CenterPage thật: trang phải dừng hẳn, không còn thay đổi DOM.
+test("default props settle (no render loop)", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  await page.goto(`${base}?defaults=1`);
+  if (info.project.name !== "desktop") await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: "Hôm nay" }).click();
+  await expect(page.getByRole("group", { name: "Lịch" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Lịch" })).toContainText("việc tới hạn hôm nay");
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => undefined))));
+  const mutations = await page.evaluate(() => new Promise<number>(resolve => {
+    let count = 0;
+    const observer = new MutationObserver(list => { count += list.length; });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    setTimeout(() => { observer.disconnect(); resolve(count); }, 1500);
+  }));
+  expect(mutations).toBe(0);
+});
+
+// Lịch (Popover + Calendar, mode="range"): tuần bắt đầu Thứ Hai, bàn phím của lưới ngày, chọn khoảng → lọc Việc của tôi theo hạn.
+test("calendar date range filters my work by due date", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  const tag = info.project.name;
+  await page.goto(base);
+  const nav = page.getByRole("tablist", { name: "Chọn vùng" });
+  if (tag !== "desktop") await nav.getByRole("tab", { name: "Hôm nay" }).click();
+  const card = page.getByRole("group", { name: "Lịch" });
+  await expect(card).toContainText("việc tới hạn hôm nay");
+  await card.getByRole("button", { name: /Chọn ngày hoặc khoảng ngày/ }).click();
+  const pop = page.getByRole("dialog", { name: "Chọn ngày" });
+  await expect(pop).toBeVisible();
+  // Tuần bắt đầu Thứ Hai (locale vi).
+  const weekdays = await pop.locator(".rdp-weekday").allTextContents();
+  expect(weekdays[0].toLowerCase()).toMatch(/^(t2|th 2|thứ 2|thứ hai)/);
+  // Ngày có việc tới hạn có chấm.
+  await expect(pop.locator(".vcc-day-due").first()).toBeVisible();
+  // Bàn phím: focus đang ở hôm nay (07/10) → → = 08/10; ↓ = 15/10; PageDown sang tháng 11, PageUp về tháng 10.
+  await expect(pop.locator(".rdp-month_caption")).toHaveText("Tháng 10/2026");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", /8.*10.*2026|2026.*10.*8|08\/10/i);
+  await page.keyboard.press("PageDown");
+  await expect(pop.locator(".rdp-month_caption")).toHaveText("Tháng 11/2026");
+  await page.keyboard.press("PageUp");
+  await expect(pop.locator(".rdp-month_caption")).toHaveText("Tháng 10/2026");
+  // Chọn khoảng 07/10 → 09/10: hai đầu range_start / range_end, giữa range_middle.
+  await pop.locator('[data-day="2026-10-07"] button').click();
+  await pop.locator('[data-day="2026-10-09"] button').click();
+  await expect(pop.locator('[data-day="2026-10-07"]')).toHaveClass(/rdp-range_start/);
+  await expect(pop.locator('[data-day="2026-10-08"]')).toHaveClass(/rdp-range_middle/);
+  await expect(pop.locator('[data-day="2026-10-09"]')).toHaveClass(/rdp-range_end/);
+  await expect(pop).toContainText("07/10 – 09/10/2026");
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-calendar.png` });
+  await pop.getByRole("button", { name: "Xem việc" }).click();
+  await expect(pop).toHaveCount(0);
+  const inbox = inboxOf(page);
+  await expect(inbox).toBeVisible();
+  const bar = inbox.getByRole("status").filter({ hasText: "Hạn 07/10 – 09/10/2026" });
+  await expect(bar).toBeVisible();
+  // Chỉ còn việc có hạn trong 07–09/10 (giờ Việt Nam); việc không có hạn / ngoài khoảng bị ẩn.
+  await expect(inbox.getByRole("button", { name: /MR-2026-2688/ })).toBeVisible();
+  await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toBeVisible();
+  await expect(inbox.getByRole("button", { name: /PO-116/ })).toHaveCount(0);
+  await expect(inbox.getByRole("button", { name: /Bù công 03\/10/ })).toHaveCount(0);
+  await page.screenshot({ path: `${shots}/${tag}-calendar-filter.png` });
+  await bar.getByRole("button", { name: "Bỏ lọc theo hạn" }).click();
+  await expect(bar).toHaveCount(0);
 });

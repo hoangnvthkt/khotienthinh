@@ -153,7 +153,9 @@
 @media (min-width: 1024px) { .vcc-mobile-only { display: none !important; } }
 
 /* Hôm nay: lịch, chọn dự án */
-.vcc-cal { display: flex; align-items: center; gap: 14px; padding: 10px 14px; max-width: 100%; }
+.vcc-cal { display: flex; align-items: center; gap: 14px; padding: 10px 14px; max-width: 100%; width: 340px; }
+.vcc-cal > .min-w-0 { flex: 1; }
+@media (max-width: 480px) { .vcc-cal { width: 100%; } }
 .vcc-cal-sep { width: 1px; height: 38px; background: var(--vcc-border); flex: none; }
 .vcc-select { height: 28px; max-width: 150px; flex: none; border: 1px solid var(--vcc-border); border-radius: 6px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 12px; padding: 0 6px; }
 
@@ -241,3 +243,70 @@
 .vcc-intro-date { margin: 0; font-size: 12.5px; color: #8a8a8a; }
 @media (max-width: 480px) { .vcc-intro-hi { font-size: 25px; } .vcc-intro-sub { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .vcc-reveal[data-state], .vcc-intro, .vcc-intro-inner > * { transition: none; } }
+
+/* Lịch ở đầu Hôm nay: ô chọn ngày (Popover + Calendar, react-day-picker) lọc Việc của tôi theo hạn */
+.vcc-duefield { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.vcc-datefield { height: 30px; min-width: 0; flex: 1; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 8px;
+  border: 1px solid var(--vcc-border); background: var(--vcc-card); color: var(--vcc-fg); font-size: 12.5px; text-align: left; }
+.vcc-datefield:hover { border-color: var(--vcc-steel); }
+.vcc-datefield[data-state="open"] { border-color: var(--vcc-steel); box-shadow: 0 0 0 3px var(--vcc-steel-s); }
+.vcc-datefield > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vcc-datefield-ph { color: var(--vcc-muted); }
+.vcc-datefield-v { font-weight: 600; color: var(--vcc-steel); }
+.vcc-datefield-x { height: 30px; min-width: 30px; padding: 0; }
+.vcc-popover { z-index: 70; background: var(--vcc-card); color: var(--vcc-fg); border: 1px solid var(--vcc-border); border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .18); outline: none; max-width: calc(100vw - 24px); }
+.vcc-popover-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--vcc-border); flex-wrap: wrap; }
+.vcc-popover-foot .vcc-btn { height: 30px; padding: 0 12px; font-size: 12.5px; }
+.vcc-popover-foot .vcc-btn:disabled { opacity: .5; cursor: not-allowed; }
+.vcc-preset { height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--vcc-border); font-size: 12px; font-weight: 500; color: var(--vcc-fg2); }
+.vcc-preset:hover { border-color: var(--vcc-steel); color: var(--vcc-steel); }
+.vcc-calendar { --rdp-accent-color: var(--vcc-steel); --rdp-accent-background-color: var(--vcc-steel-s);
+  --rdp-day-height: 38px; --rdp-day-width: 38px; --rdp-day_button-height: 36px; --rdp-day_button-width: 36px;
+  --rdp-day_button-border-radius: 10px; --rdp-today-color: var(--vcc-steel); --rdp-range_start-color: #fff; --rdp-range_end-color: #fff;
+  --rdp-nav-height: 36px; --rdp-nav_button-height: 32px; --rdp-nav_button-width: 32px; padding: 8px 12px 10px; font-size: 13px; }
+.dark .vcc-calendar { --rdp-range_start-color: #111; --rdp-range_end-color: #111; }
+.vcc-calendar .rdp-month_caption { font-weight: 600; text-transform: capitalize; }
+.vcc-calendar .rdp-weekday { font-size: 11px; font-weight: 600; color: var(--vcc-muted); text-transform: capitalize; }
+.vcc-calendar .rdp-outside { opacity: .4; }
+.vcc-calendar .rdp-today:not(.rdp-selected) .rdp-day_button { font-weight: 700; }
+.vcc-calendar .rdp-day_button:focus-visible { outline: 2px solid var(--vcc-steel); outline-offset: 1px; }
+/* Ngày có việc tới hạn: chấm nhỏ dưới số */
+.vcc-calendar .vcc-day-due { position: relative; }
+.vcc-calendar .vcc-day-due::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--vcc-danger); pointer-events: none; }
+.vcc-calendar .rdp-range_start.vcc-day-due::after, .vcc-calendar .rdp-range_end.vcc-day-due::after { background: currentColor; }
+/* Thanh "đang lọc theo hạn" ở Việc của tôi */
+.vcc-filterbar { display: flex; align-items: center; gap: 6px; margin: 8px 10px 2px; padding: 4px 4px 4px 10px; border-radius: 8px; background: var(--vcc-steel-s); color: var(--vcc-steel); font-size: 12px; font-weight: 600; }
+.vcc-filterbar .vcc-tabtool { color: var(--vcc-steel); }
+/* index.css ép ô bảng ≥ 80px trên điện thoại (cho bảng dữ liệu) — lưới ngày của lịch không theo luật đó. */
+.vcc-calendar table td, .vcc-calendar table th { min-width: 0 !important; white-space: nowrap !important; word-break: normal !important; }
+.vcc-popover .vcc-btn[data-pri="true"] { background: var(--vcc-steel); }
+
+/* Rail trái của giao diện Trung tâm điều hành (Layout, máy tính). Nằm ngoài .vcc nên tự khai báo màu sáng / tối. */
+.vcc-rail { --rail-bg: #ffffff; --rail-border: #e5e5e5; --rail-fg: #475569; --rail-muted: #8a8a8a; --rail-hover: #f2f4f5; --rail-active: #e7f0f3; --rail-steel: #2e6f80;
+  width: 84px; flex: none; height: 100dvh; flex-direction: column; align-items: stretch; background: var(--rail-bg); border-right: 1px solid var(--rail-border); }
+.dark .vcc-rail { --rail-bg: #1b1b1b; --rail-border: #353535; --rail-fg: #cbd5e1; --rail-muted: #9a9a9a; --rail-hover: #262626; --rail-active: #1c3238; --rail-steel: #8cc5d3; }
+.vcc-rail-logo { height: 56px; flex: none; display: grid; place-items: center; border-bottom: 1px solid var(--rail-border); }
+.vcc-rail-logo img { width: 34px; height: 34px; object-fit: contain; border-radius: 8px; }
+.vcc-rail-logo span { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: #1a1a1a; color: #fff; font-weight: 700; font-size: 11px; }
+.vcc-rail-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 8px 6px; display: flex; flex-direction: column; gap: 2px; }
+.vcc-rail-scroll::-webkit-scrollbar { display: none; }
+.vcc-rail-sep { height: 1px; margin: 4px 10px; background: var(--rail-border); flex: none; }
+.vcc-rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 2px 6px; border-radius: 12px; color: var(--rail-fg); text-decoration: none; flex: none; }
+.vcc-rail-item:hover { background: var(--rail-hover); }
+.vcc-rail-item[data-active] { background: var(--rail-active); }
+.vcc-rail-item[data-active] .vcc-rail-label { color: var(--rail-steel); }
+.vcc-rail-item:focus-visible, .vcc-rail-tool:focus-visible, .vcc-rail-switch:focus-visible, .vcc-rail-avatar:focus-visible { outline: 2px solid var(--rail-steel); outline-offset: 1px; }
+.vcc-rail-icon { position: relative; width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; color: #fff; flex: none; transition: transform .2s ease; }
+.vcc-rail-item:hover .vcc-rail-icon { transform: scale(1.06); }
+.vcc-rail-badge { position: absolute; top: -6px; right: -9px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #0d9488; color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--rail-bg); }
+.vcc-rail-label { font-size: 10.5px; font-weight: 700; line-height: 1.2; text-align: center; color: var(--rail-fg); max-width: 76px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.vcc-rail-foot { flex: none; border-top: 1px solid var(--rail-border); padding: 8px 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.vcc-rail-tool { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--rail-fg); }
+button.vcc-rail-tool:hover { background: var(--rail-hover); }
+.vcc-rail-avatar { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; border: 2px solid var(--rail-border); }
+.vcc-rail-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.vcc-rail-switch { align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px 6px 0; border-top: 1px dashed var(--rail-border); margin-top: 2px; }
+.vcc-rail-switch .vcc-rail-label { font-size: 9.5px; font-weight: 600; color: var(--rail-muted); text-align: left; }
