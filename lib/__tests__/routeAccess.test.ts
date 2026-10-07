@@ -86,6 +86,16 @@ describe('Office route access', () => {
   });
 });
 
+describe('Command Center route access', () => {
+  it('opens /center only with explicit Center access, admin included', () => {
+    expect(getRouteModuleKey('/center')).toBe('center.module');
+    expect(canAccessRoute(user(['center.module.access']), '/center')).toBe(true);
+    expect(canAccessRoute(user(['center.layout.manage']), '/center')).toBe(false);
+    expect(canAccessRoute(user([]), '/center')).toBe(false);
+    expect(canAccessRoute(persona(Role.ADMIN, []), '/center')).toBe(false);
+  });
+});
+
 describe('chat route access', () => {
   it('maps the chat route to the CHAT module', () => {
     expect(getRouteModuleKey('/chat')).toBe('CHAT');

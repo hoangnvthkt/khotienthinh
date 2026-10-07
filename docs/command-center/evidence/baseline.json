@@ -1,0 +1,89 @@
+{
+  "asOf": "2026-09-29",
+  "head": "63ff0b4a8caad211062f2ba5b06bf069011229bd",
+  "workingTree": "dirty before audit; application files preserved",
+  "sourcePromptEqualsZip": true,
+  "inputs": {
+    "zipSha256": "1722423d51ae203d618bdaba696c797d9e74111b5e218476426ff5119707c527",
+    "files": [
+      {
+        "path": "vioo-command-center-handoff/ACCEPTANCE_TESTS.md",
+        "sha256": "fbdee8e4f720582cbf1e57ac24e54986cdce17471436a26c56be159366ea54b1",
+        "bytes": 8722
+      },
+      {
+        "path": "vioo-command-center-handoff/CAPABILITY_INVENTORY_TEMPLATE.csv",
+        "sha256": "b7a1b9d1b485aeb8ddb764011bc05a4c9323c0280cc1dc610168fb3c7c5b3654",
+        "bytes": 9232
+      },
+      {
+        "path": "vioo-command-center-handoff/CODEX_PROMPT.md",
+        "sha256": "02c118c74610af13daa58493541c466a0730c627f7f1e5dd4bf7ee4176846249",
+        "bytes": 15404
+      },
+      {
+        "path": "vioo-command-center-handoff/CONTRACTS.example.ts",
+        "sha256": "2a67a80859ea963cd4bd4d043fa99b6ab7db0d6774de250f21c4a46938e22f88",
+        "bytes": 4954
+      },
+      {
+        "path": "vioo-command-center-handoff/DEMO_GUIDE.md",
+        "sha256": "f11ac630dd3b65580b4d799cbee7d67b04956454f9114b1f4ad7a75fc1798df7",
+        "bytes": 4353
+      },
+      {
+        "path": "vioo-command-center-handoff/DEMO_QA.md",
+        "sha256": "f791375a580cf303833e4cf0e6d34c64ab3e665aea9654484c7ff2bcdbf88f67",
+        "bytes": 2290
+      },
+      {
+        "path": "vioo-command-center-handoff/README.md",
+        "sha256": "b03f24e6513e0c390693e55aa4b1b84bdc3ef250e6d4b544ced4da307cf594ad",
+        "bytes": 1856
+      },
+      {
+        "path": "vioo-command-center-handoff/VIOO_COMMAND_CENTER_SPEC.md",
+        "sha256": "3d430503c0cdc71c00529298aade9e7742ac8d25ad336248c05ec7a34fce2845",
+        "bytes": 48886
+      }
+    ]
+  },
+  "versions": {
+    "react": "18.2.0",
+    "react-router-dom": "6.30.6",
+    "vite": "6.4.1",
+    "typescript": "5.8.3",
+    "@supabase/supabase-js": "2.98.0",
+    "vitest": "4.1.8",
+    "@playwright/test": "1.60.0"
+  },
+  "counts": {
+    "routeDeclarations": 102,
+    "pageTsxFiles": 163,
+    "activeMigrations": 137,
+    "edgeFunctions": 11
+  },
+  "cloudQueriesRun": false,
+  "productionMutations": false,
+  "demoBrowserReview": false,
+  "checks": [
+    {
+      "command": "npm run lint",
+      "exitCode": 2,
+      "result": "pre-existing prototype Next/Cloudflare references included by tsconfig; see audit"
+    },
+    {
+      "command": "npm test -- lib/__tests__/authorizationEvaluator.test.ts lib/__tests__/requestRuntimeService.test.ts lib/__tests__/requestApprovalDomain.test.ts lib/__tests__/requestActionAvailability.test.ts lib/__tests__/assetAssignmentService.test.ts lib/__tests__/workWorkspaceManagement.test.ts lib/__tests__/projectV2CommandService.test.ts",
+      "exitCode": 0,
+      "filesPassed": 13,
+      "testsPassed": 80,
+      "limitations": "unit/mock/static; not Cloud/RLS/concurrency/UAT"
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "seconds": 8.13,
+      "warning": "chunks >500 kB; build does not typecheck"
+    }
+  ]
+}

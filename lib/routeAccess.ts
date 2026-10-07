@@ -11,6 +11,7 @@ import { getPermissionModulesByLegacyKey } from './permissions/permissionRegistr
 import { PermissionScope } from './permissions/permissionTypes';
 import { isViooWorkEnabled } from './featureFlags';
 import { canConfigureWork } from './work/workConfigurationAccess';
+import { CENTER_ROUTE } from './center/centerPermissions';
 
 const AUTHENTICATED_OPEN_ROUTE_PATTERNS = [
   '/',
@@ -173,6 +174,8 @@ export const canAccessRoute = (
       && canPerform(user, 'office.module.access', GLOBAL_SCOPE)
       && (pathname !== '/office/settings' || canPerform(user, 'office.configuration.manage', GLOBAL_SCOPE));
   }
+  // Quyền ở đây chỉ mở route; máy chủ còn kiểm thời hạn bật theo người (get_center_access_v1).
+  if (pathname === CENTER_ROUTE) return canPerform(user, 'center.module.access', GLOBAL_SCOPE);
   if (isWorkRoute(pathname)) {
     return isViooWorkEnabled
       && getRouteModuleKey(pathname) === 'work.module'

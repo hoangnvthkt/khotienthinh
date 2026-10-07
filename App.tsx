@@ -175,6 +175,7 @@ const WorkflowLegacyInstanceRedirect: React.FC = () => {
 };
 
 const OfficePage = React.lazy(() => import('./pages/office/OfficePage'));
+const CenterPage = React.lazy(() => import('./pages/center/CenterPage'));
 const WorkPage = React.lazy(() => import('./pages/work/WorkPage'));
 const WorkHome = React.lazy(() => import('./pages/work/WorkHome'));
 const WorkSpacePage = React.lazy(() => import('./pages/work/WorkSpacePage'));
@@ -187,6 +188,7 @@ const AppRoutes: React.FC = () => {
       <Routes>
         <Route path="/" element={<SubModuleGuard><Layout /></SubModuleGuard>}>
           <Route index element={<Home />} />
+          <Route path="center" element={<CenterPage />} />
           <Route path="office/*" element={<OfficePage />} />
           <Route path="work" element={<WorkHome />} />
           <Route path="work/my" element={<WorkPage />} />

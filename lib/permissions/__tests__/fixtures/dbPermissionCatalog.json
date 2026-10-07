@@ -286,6 +286,18 @@
       ]
     },
     {
+      "permissionCode": "center.layout.manage",
+      "scopeTypes": [
+        "own"
+      ]
+    },
+    {
+      "permissionCode": "center.module.access",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "contract.cost_library.manage",
       "scopeTypes": [
         "global"

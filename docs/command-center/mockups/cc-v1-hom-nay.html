@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vioo · Trung tâm điều hành — mockup đợt 0 (v1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ffffff;--card:#ffffff;--card2:#f7f7f7;--border:#e5e5e5;--fg:#1a1a1a;--fg2:#444444;--muted:#737373;--hover:#f2f2f2;--accent:#1f8a70;--accent-fg:#ffffff;--accent-soft:#e8f3ee;--num:#2f7a2a;--warn:#b45309;--warn-soft:#fdf3e3;--danger:#b42318;--danger-soft:#fdecec;--shadow:0 1px 2px rgba(20,20,15,.05)}
+[data-theme=dark]{--bg:#1b1b1b;--card:#222222;--card2:#2a2a2a;--border:#353535;--fg:#ededed;--fg2:#c8c8c8;--muted:#9a9a9a;--hover:#2f2f2f;--accent:#5cc3a3;--accent-fg:#112019;--accent-soft:#213229;--num:#8fd27f;--warn:#e9a23b;--warn-soft:#3a2d16;--danger:#f08c8c;--danger-soft:#3b2220;--shadow:none}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+a{color:inherit}
+.app{display:flex;height:100dvh;overflow:hidden}
+.rail{width:56px;flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;border-right:1px solid var(--border);background:var(--card)}
+.rail button{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.02em}
+.rail button:hover{background:var(--hover)}.rail button.on{background:var(--accent-soft);color:var(--accent)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+header.top{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--card);flex:none}
+.iconbtn{height:32px;min-width:32px;padding:0 9px;border-radius:8px;border:1px solid var(--border);display:inline-flex;align-items:center;gap:6px;color:var(--fg2);background:var(--card)}
+.iconbtn:hover{background:var(--hover)}
+.search{display:none;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--border);color:var(--muted);min-width:260px;background:var(--card2)}
+@media(min-width:1200px){.search{display:flex}}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:600;font-size:12px}
+.body{display:flex;flex:1;min-height:0}
+.inbox{width:var(--inbox-w,340px);flex:none;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--card);min-height:0;position:relative}
+.inbox.collapsed{width:0;border:0;overflow:hidden}
+.resizer{position:absolute;top:0;right:-3px;width:6px;height:100%;cursor:col-resize}
+.resizer:hover{background:var(--accent-soft)}
+.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--border)}
+.tab{padding:8px 9px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}.tab.on{color:var(--fg);border-color:var(--accent)}
+.tab .c{color:var(--muted);font-weight:500;margin-left:4px}
+.ghead{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 12px;color:var(--fg2);font-weight:600;font-size:12px}
+.ghead:hover{background:var(--hover)}.ghead .chev{transition:transform .15s;color:var(--muted);font-size:10px}.ghead.closed .chev{transform:rotate(-90deg)}
+.ghead .c{margin-left:auto;color:var(--muted);font-weight:500}
+.row{display:block;width:100%;text-align:left;padding:8px 14px 9px 30px;border-left:2px solid transparent}
+.row:hover{background:var(--hover)}.row.active{background:var(--accent-soft);border-left-color:var(--accent)}
+.row .t{font-weight:500;color:var(--fg);line-height:1.35}.row .m{font-size:12px;color:var(--muted);margin-top:2px}
+.ent{color:var(--accent);font-weight:600}.num{color:var(--num);font-weight:600;font-variant-numeric:tabular-nums}
+.due{font-size:11px;color:var(--muted)}.due.hot{color:var(--danger);font-weight:600}
+.work{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+.wtabs{display:flex;align-items:flex-end;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--border);background:var(--bg);overflow-x:auto;scrollbar-width:none}
+.wtab{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px 8px 0 0;color:var(--muted);font-weight:500;white-space:nowrap;border:1px solid transparent;border-bottom:0}
+.wtab.on{background:var(--card);color:var(--fg);border-color:var(--border)}.wtab .x{color:var(--muted);font-size:11px;padding:2px 4px;border-radius:4px}.wtab .x:hover{background:var(--hover);color:var(--danger)}
+.wbody{flex:1;overflow-y:auto;min-height:0}
+.page{max-width:1180px;margin:0 auto;padding:18px 18px 28px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow)}
+.card h3{margin:0;font-size:13px;font-weight:600}
+.widget{display:flex;flex-direction:column}
+.whead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
+.whead .ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font-size:12px}
+.whead .more{margin-left:auto;color:var(--muted);padding:2px 6px;border-radius:6px}.whead .more:hover{background:var(--hover)}
+.wbodyc{padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px;flex:1}
+.stat{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--border);font-size:12.5px}.stat:last-of-type{border-bottom:0}
+.stat .k{color:var(--muted)}.stat .v{font-weight:500}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:6px}
+.chip{height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);font-weight:500;font-size:12.5px;display:inline-flex;align-items:center;gap:6px;color:var(--fg2)}
+.chip:hover{border-color:var(--accent);color:var(--accent)}.chip.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}.chip.pri:hover{opacity:.92;color:var(--accent-fg)}
+.chip.lock{opacity:.55;cursor:not-allowed}
+.btn{height:34px;padding:0 14px;border-radius:8px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card)}
+.btn:hover{background:var(--hover)}.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}.btn.pri:hover{opacity:.92;background:var(--accent)}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;border:1px solid var(--border);color:var(--fg2);background:var(--card2)}
+.badge.ok{color:var(--num);border-color:transparent;background:var(--accent-soft)}.badge.warn{color:var(--warn);background:var(--warn-soft);border-color:transparent}.badge.danger{color:var(--danger);background:var(--danger-soft);border-color:transparent}
+.steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.step{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px;color:var(--muted)}
+.step.cur{border-color:var(--accent);color:var(--accent);font-weight:600}.step.done{color:var(--fg2);background:var(--card2)}
+.field{display:flex;flex-direction:column;gap:4px}.field label{font-size:12px;color:var(--muted);font-weight:500}
+.input{height:34px;border:1px solid var(--border);border-radius:8px;padding:0 10px;background:var(--card);color:var(--fg);font:inherit}textarea.input{height:auto;padding:8px 10px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th{font-weight:500;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}td{padding:8px 10px;border-bottom:1px solid var(--border)}tr:last-child td{border-bottom:0}
+.footer{position:sticky;bottom:0;display:flex;align-items:center;gap:8px;padding:10px 0;margin:14px -18px -28px;padding-left:18px;padding-right:18px;background:var(--bg);border-top:1px solid var(--border)}
+.cal{min-width:220px}
+.mnav{display:none;flex:none;border-top:1px solid var(--border);background:var(--card);padding-bottom:env(safe-area-inset-bottom)}
+.mnav button{flex:1;padding:8px 0;font-size:11px;color:var(--muted);font-weight:500}.mnav button.on{color:var(--accent)}
+.pane-ai{width:320px;flex:none;border-left:1px solid var(--border);background:var(--card);display:none;flex-direction:column}.pane-ai.show{display:flex}
+.blink{animation:bl 1.6s ease-in-out infinite}@keyframes bl{50%{opacity:.45}}
+@media(prefers-reduced-motion:reduce){.blink{animation:none}}
+@media(max-width:1023px){.hide-sm,#btnInbox{display:none!important}header.top{gap:6px;padding:8px 10px}.iconbtn{padding:0 7px}.rail{display:none}.inbox,.work,.pane-ai{display:none!important;width:100%!important}.inbox.show,.work.show{display:flex!important}.pane-ai.show{display:flex!important}.resizer{display:none}.mnav{display:flex}.footer{margin:14px -14px -28px;padding-left:14px;padding-right:14px}.page{padding:14px}}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:1200px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.edit .widget{outline:1px dashed var(--accent);outline-offset:2px}
+.modal{position:fixed;inset:0;z-index:50;display:none;place-items:center;background:rgba(20,20,15,.45);padding:16px}.modal.show{display:grid}
+.modal .box{width:100%;max-width:440px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px}
+.muted{color:var(--muted)}.small{font-size:12px}
+:root{--c-da:#4f46e5;--c-da-s:#eef2ff;--c-ns:#9333ea;--c-ns-s:#f5ecff;--c-wk:#0d9488;--c-wk-s:#e6f7f4;--c-of:#0f766e;--c-of-s:#e4f3f1;--c-mh:#059669;--c-mh-s:#e6f6ef;--c-tc:#0e7490;--c-tc-s:#e3f3f7;--c-rq:#0891b2;--c-rq-s:#e3f5f9;--c-qt:#2563eb;--c-qt-s:#e8effd;--c-xe:#0284c7;--c-xe-s:#e4f2fb;--c-kho:#d97706;--c-kho-s:#fdf1e0;--who:#7c3aed}
+[data-theme=dark]{--c-da:#a5b4fc;--c-da-s:#2a2d4d;--c-ns:#d8b4fe;--c-ns-s:#3a2a4d;--c-wk:#5eead4;--c-wk-s:#163b36;--c-of:#7dd3c8;--c-of-s:#173a35;--c-mh:#6ee7b7;--c-mh-s:#153b2c;--c-tc:#67e8f9;--c-tc-s:#143a44;--c-rq:#67e8f9;--c-rq-s:#133a44;--c-qt:#93c5fd;--c-qt-s:#1d2f4d;--c-xe:#7dd3fc;--c-xe-s:#163449;--c-kho:#fcd34d;--c-kho-s:#3f3115;--who:#c4b5fd}
+.who{color:var(--who);font-weight:600}
+.mod{color:var(--mc);font-weight:600}.mod::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--mc);margin-right:6px;vertical-align:1px}
+.whead .ic{background:var(--mcs);color:var(--mc)}.whead h3{color:var(--mc)}
+.chip{color:var(--mc,var(--fg2));border-color:color-mix(in srgb,var(--mc,var(--border)) 35%,var(--border));background:var(--mcs,var(--card2))}.chip:hover{border-color:var(--mc)}
+.chip.pri{background:var(--mc,var(--accent));border-color:var(--mc,var(--accent));color:#fff}[data-theme=dark] .chip.pri{color:#111}
+.chip.lock{color:var(--muted);background:var(--card2);border-color:var(--border)}
+.badge.m{color:var(--mc);background:var(--mcs);border-color:transparent}
+.row.active{background:var(--mcs,var(--accent-soft));border-left-color:var(--mc,var(--accent))}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <nav class="rail" id="rail"></nav>
+  <div class="main">
+    <header class="top">
+      <button class="iconbtn" id="btnInbox" title="Ẩn / hiện Việc của tôi">☰</button>
+      <div style="min-width:0;flex:1;display:flex;align-items:center;gap:10px">
+        <div style="width:30px;height:30px;border-radius:8px;background:var(--fg);color:var(--bg);display:grid;place-items:center;font-weight:700;font-size:11px" title="Logo công ty">TT</div>
+        <div style="min-width:0"><div style="font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Trung tâm điều hành</div><div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Công ty Tiến Thịnh · Vioo</div></div>
+      </div>
+      <div class="search">🔍 <span>Tìm hồ sơ, người, vật tư…</span><span style="margin-left:auto;font-size:11px;border:1px solid var(--border);border-radius:4px;padding:0 4px">⌘K</span></div>
+      <button class="iconbtn" id="btnTheme" title="Sáng / tối">◐</button>
+      <button class="iconbtn" id="btnAi" title="Trợ lý (đợt 3)">✦ <span class="hide-sm">Trợ lý</span></button>
+      <button class="iconbtn" title="Thông báo">🔔 <span class="num">3</span></button>
+      <div style="display:flex;align-items:center;gap:8px;padding-left:4px"><div class="hide-sm" style="text-align:right;line-height:1.2"><div class="who">Phạm Ngọc Sơn</div><div class="small muted">Chỉ huy trưởng · SMB-2026</div></div><div class="avatar">PS</div></div>
+    </header>
+    <div class="body">
+      <aside class="inbox show" id="inbox">
+        <div class="tabs" id="inboxTabs"><button class="tab on" data-tab="mine">Chờ tôi<span class="c" id="cMine">7</span></button><button class="tab" data-tab="sent">Tôi gửi<span class="c">3</span></button><button class="tab" data-tab="watch">Theo dõi<span class="c">3</span></button>
+          <button class="small muted" style="margin-left:auto;padding:0 8px;white-space:nowrap" id="btnFold" title="Thu gọn / mở tất cả nhóm">⇅ Gọn</button></div>
+        <div style="flex:1;overflow-y:auto;min-height:0" id="inboxList"></div>
+        <div class="small muted" style="padding:8px 12px;border-top:1px solid var(--border)">Từ phân công thật của từng module. Thông báo không tính là việc.</div>
+        <div class="resizer" id="resizer"></div>
+      </aside>
+      <section class="work" id="work"><div class="wtabs" id="wtabs"></div><div class="wbody" id="wbody"></div></section>
+      <aside class="pane-ai" id="ai">
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--border)"><b>Trợ lý Vioo</b><span class="badge">Đợt 3</span><button class="small muted" style="margin-left:auto" onclick="toggleAi()">Đóng</button></div>
+        <div style="flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px">
+          <div class="card" style="padding:10px 12px;background:var(--card2)">Chào anh Sơn. Hôm nay có <b>7 việc chờ anh</b>; đề xuất thép <span class="ent">MR-2688</span> còn 5 giờ.</div>
+          <div class="small muted">Trợ lý chỉ chuẩn bị: tra số, điền sẵn phiếu, mở bản tóm tắt. Nút Gửi / Duyệt luôn do anh bấm.</div>
+          <button class="chip">Thép D16 còn bao nhiêu trong kho SMB?</button><button class="chip">Lập đề xuất xi măng 20 tấn tuần sau</button><button class="chip">Mũi nào chưa gửi nhật ký hôm nay?</button>
+        </div>
+        <div style="padding:10px 14px;border-top:1px solid var(--border)"><div class="input" style="display:flex;align-items:center;color:var(--muted)">Hỏi hoặc nhờ chuẩn bị…</div></div>
+      </aside>
+    </div>
+    <nav class="mnav" id="mnav"><button class="on" data-p="inbox">📥<br>Việc <span id="cMineM">7</span></button><button data-p="work">▦<br>Hôm nay</button><button data-p="ai">✦<br>Trợ lý</button></nav>
+  </div>
+</div>
+<div class="modal" id="modal"><div class="box"><h3 id="mTitle" style="margin:0 0 4px;font-size:15px">Xác nhận</h3><div id="mTarget" class="small"></div><div id="mWarn" class="small" style="margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--warn-soft);color:var(--warn)"></div><div id="mReasonWrap" style="display:none;margin-top:10px" class="field"><label>Lý do (bắt buộc)</label><textarea class="input" id="mReason" rows="2"></textarea></div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn" onclick="closeModal()">Để sau</button><button class="btn pri" id="mOk">Xác nhận</button></div></div></div>
+
+<script>
+// ====== Quyền của người dùng mẫu (CHT SMB) — nút trong widget bật/tắt theo đây ======
+const PERM = { project:true, hrm_self:true, hrm_manage:false, work:true, request:true, wf:true, po_create:false, procurement_view:true, wms:false, finance_company:false, finance_project:true, office:true, booking:true, admin:false };
+const MODULES = [['TT','Trung tâm điều hành',true],['DA','Dự án'],['RQ','Yêu cầu'],['QT','Quy trình'],['WK','Vioo Work'],['MH','Mua hàng'],['KHO','Vật tư'],['NS','Nhân sự'],['TC','Tài chính'],['OF','Office'],['XE','Đặt xe']];
+// ====== Việc của tôi (số thật 06/10 + phiếu minh họa) ======
+const ITEMS = [
+ {id:'mr2688',tab:'mine',mod:'Dự án',code:'MR-2026-2688',title:'Thép D16 + D10 móng nhà xưởng 3',who:'Nguyễn Chấp Việt lập',due:'còn 5 giờ',hot:true,meta:'4 dòng · cần 09/10',step:['Lập','CHT duyệt','Phòng vật tư duyệt','Đang cung ứng','Hoàn tất'],cur:1,
+  lines:[['Thép D16 SD390','12','tấn','3,2 tấn','8,8 tấn'],['Thép D10 SD390','8','tấn','0','8 tấn'],['Dây thép buộc 1 ly','200','kg','45 kg','155 kg'],['Que hàn 3,2 ly','50','kg','20 kg','30 kg']],
+  preview:{what:'Duyệt bước Chỉ huy trưởng',record:'MR-2026-2688 · 4 dòng · 20,25 tấn thép + phụ',scope:'SMB-2026 · Kho Sơn Miền Bắc',next:'Chuyển sang Phòng vật tư duyệt → <span class="who">Nguyễn Thị Mơ</span> (24 giờ)',effect:'Chưa đặt mua, chưa giữ tồn. Sau khi phòng vật tư duyệt, dòng thiếu sang Cần mua.',ver:'Nội dung rev 2 · sửa lần cuối 05/10 16:20',btn:'Duyệt bước CHT',ret:'Trả lại người lập'}},
+ {id:'dl0510',tab:'mine',mod:'Dự án',code:'Tổng hợp 05/10',title:'Bản tổng hợp nhật ký ngày 05/10',who:'Lê Văn Tùng tổng hợp',due:'hôm nay',meta:'5 phiếu kỹ sư · 3 mũi · 41 công',step:['Phiếu kỹ sư','Tổng hợp','CHT duyệt','Công bố tiến độ'],cur:2,
+  preview:{what:'Duyệt bản tổng hợp và công bố tiến độ 05/10',record:'5 phiếu nguồn · 41 công · 2 máy',scope:'SMB-2026 · 05/10/2026',next:'Hoàn tất ngày 05/10; khối lượng vào chốt tiến độ tuần',effect:'Ghi tiến độ 3 công tác. Không sửa được phiếu nguồn sau công bố.',ver:'Bản tổng hợp v2 · phiếu nguồn không đổi',btn:'Duyệt & công bố',ret:'Trả lại người tổng hợp'}},
+ {id:'wp41',tab:'mine',mod:'Dự án',code:'KH tuần 06–12/10',title:'Kế hoạch tuần 06–12/10 (14 công tác)',who:'Lê Văn Tùng gửi',due:'hôm nay',meta:'3 mũi · cần 2 máy xúc',step:['Lập','CHT duyệt','Đang thực hiện'],cur:1,
+  preview:{what:'Duyệt kế hoạch tuần',record:'14 công tác · 6 có vật tư, 8 chờ PO về',scope:'SMB-2026 · tuần 06–12/10',next:'Kế hoạch có hiệu lực; báo 3 kỹ sư mũi',effect:'Không tạo đề xuất vật tư tự động. 8 công tác chờ PO-116, PO-145.',ver:'row_version 3',btn:'Duyệt kế hoạch',ret:'Trả lại'}},
+ {id:'np41',tab:'mine',mod:'Nhân sự',code:'NP-2026-041',title:'Trần Văn Hải nghỉ phép 2 ngày 08–09/10',who:'Trần Văn Hải gửi',due:'trước 07/10',meta:'Phép năm · còn 6 ngày',step:['Gửi đơn','CHT duyệt','HR ghi sổ'],cur:1,
+  preview:{what:'Duyệt đơn nghỉ phép bước 1/1',record:'NP-2026-041 · phép năm · 2 ngày',scope:'Nhân sự · SMB-2026',next:'Đơn hoàn tất; sổ phép −2; bảng công 08–09/10 ghi P',effect:'Phép còn 6 → 4 ngày. Mũi hoàn thiện nhà 1 thiếu 1 người 2 ngày.',ver:'Bước 1 · người duyệt lấy từ công trường chấm công',btn:'Duyệt đơn',ret:'Từ chối'}},
+ {id:'cc03',tab:'mine',mod:'Nhân sự',code:'Bù công 03/10',title:'Phạm Văn Đức đề nghị chấm công bù 03/10',who:'Phạm Văn Đức gửi',due:'trước chốt công 10/10',meta:'Quên chấm ra · 17:30',step:['Gửi','CHT duyệt'],cur:1,
+  preview:{what:'Duyệt đề nghị chấm công bù',record:'03/10 · ra 17:30 · quên chấm',scope:'Nhân sự · công trường Sơn Miền Bắc',next:'Ghi vào bảng công tháng 10 (chưa chốt)',effect:'Công 03/10 = 1.',ver:'Đề nghị chưa bị sửa',btn:'Duyệt',ret:'Từ chối'}},
+ {id:'wk12',tab:'mine',mod:'Vioo Work',code:'WK-1203',title:'Gửi biên bản nghiệm thu móng A3 cho CĐT',who:'Nguyễn Thị Mơ giao',due:'07/10',meta:'2 tệp · 1 bình luận mới',step:['Nhận việc','Đang làm','Nộp kết quả','Duyệt kết quả'],cur:1,
+  preview:{what:'Nộp kết quả công việc',record:'WK-1203 · biên bản đã ký (PDF)',scope:'Vioo Work · SMB-2026',next:'Người kiểm tra: <span class="who">Nguyễn Thị Mơ</span>',effect:'Việc chuyển "Chờ duyệt kết quả".',ver:'lock_version 4',btn:'Nộp kết quả',ret:'Báo bị chặn'}},
+ {id:'of12',tab:'mine',mod:'Office',code:'TB-12/2026',title:'Quy định an toàn thi công mùa mưa',who:'Ban TGĐ phát hành 05/10',due:'trước 08/10',meta:'Yêu cầu xác nhận · 28 người nhận',step:['Phát hành','Đã đọc','Xác nhận'],cur:1,
+  preview:{what:'Xác nhận đã đọc văn bản',record:'TB-12/2026 · 3 trang · 1 PDF',scope:'Office · gửi theo công trường Sơn Miền Bắc',next:'Văn thư thấy anh đã xác nhận',effect:'Không thay đổi gì khác.',ver:'Bản phát hành v1',btn:'Xác nhận đã đọc',ret:null}},
+ {id:'sf01',tab:'sent',mod:'Tài chính',code:'QCT-SMB-10',title:'Đề nghị cấp vốn quỹ công trường 150 tr',who:'Anh gửi 04/10',due:'kế toán',meta:'Chờ Tài chính — Ghi nhận xác nhận',step:['Gửi','Kế toán duyệt','Chuyển tiền'],cur:1,preview:{what:'Theo dõi',record:'QCT-SMB-10 · 150.000.000 đ',scope:'Tài chính · quỹ công trường SMB',next:'Kế toán xác nhận → chuyển khoản',effect:'—',ver:'—',btn:null,ret:'Rút đề nghị'}},
+ {id:'rq61',tab:'sent',mod:'Yêu cầu',code:'RQ-2026-000061',title:'Bổ sung 2 kỹ sư hoàn thiện từ 13/10',who:'Anh gửi 05/10',due:'HR',meta:'Mẫu "Nhu cầu nhân sự" · nối Điều động',step:['Gửi','Trưởng phòng duyệt','HR lập điều động'],cur:1,preview:{what:'Theo dõi',record:'RQ-2026-000061',scope:'Yêu cầu → Nhân sự',next:'Sau duyệt tự tạo phiếu điều động + thông báo Office',effect:'—',ver:'—',btn:null,ret:'Rút yêu cầu'}},
+ {id:'mn03',tab:'sent',mod:'Mua hàng',code:'MN-2026-003',title:'Thuê máy cắt sắt 850.000 đ (đã mua)',who:'Anh ghi 03/10',due:'kế toán',meta:'Dưới ngưỡng 5 tr · có ảnh hóa đơn',step:['Mua','Nhận','Kế toán ghi nợ','Đề nghị chi'],cur:2,preview:{what:'Theo dõi',record:'MN-2026-003 · 850.000 đ',scope:'Mua hàng · SMB-2026',next:'Kế toán ghi công nợ NCC',effect:'—',ver:'—',btn:null,ret:null}},
+ {id:'sa07',tab:'watch',mod:'Nhân sự',code:'SA-2026-007',title:'Nguyễn Văn Nam đến SMB từ 08/10 (chính)',who:'HR lập',due:'08/10',meta:'1 phiếu khác chờ Office phát hành',step:['Lập','HR Manage duyệt','Office phát hành','Hiệu lực'],cur:1,preview:{what:'Theo dõi (CHT nơi đến)',record:'SA-2026-007',scope:'Nhân sự · công trường Sơn Miền Bắc',next:'HR Manage duyệt → tự vào Tổ chức dự án với quyền Xem',effect:'—',ver:'—',btn:null,ret:null}},
+ {id:'po116',tab:'watch',mod:'Mua hàng',code:'PO-116',title:'Kết cấu thép 568 · 1,30 tỷ · đang giao',who:'Nguyễn Thị Mơ phụ trách',due:'tuần này',meta:'Phục vụ 8 công tác tuần 06–12/10',step:['Đã duyệt','Đang giao','Kho nhận','Đối chiếu'],cur:1,preview:{what:'Theo dõi',record:'PO-116 · 1.297.038.361 đ',scope:'Mua hàng · về Kho Sơn Miền Bắc',next:'Thủ kho nhận một bước',effect:'—',ver:'—',btn:null,ret:null}},
+ {id:'mr2671',tab:'watch',mod:'Dự án',code:'MR-2026-2671',title:'Thép D10: nhận 795,62 / 13.956 cây — lệch đơn vị',who:'Đang cung ứng từ 16/06',due:'cần xử lý',hot:true,meta:'Nhận theo kg, đề xuất theo cây',step:['Đã duyệt','Đang cung ứng','Hoàn tất'],cur:1,preview:{what:'Kết thúc đề xuất (CHT hoặc người lập)',record:'MR-2026-2671 · dòng D10 còn thiếu theo quy đổi',scope:'SMB-2026',next:'Dòng thiếu rời Cần mua; PO đang chờ vẫn giao',effect:'Hàng về sau thành tồn kho công trường.',ver:'—',btn:'Kết thúc đề xuất',ret:null}},
+];
+// ====== Thao tác nhanh (mở tab form) ======
+const ACTIONS = {
+ mr_new:{mod:'Dự án',title:'Lập đề xuất vật tư',fields:[['Dự án / công trường','SMB-2026 · Kho Sơn Miền Bắc'],['Ngày cần','09/10/2026'],['Dòng vật tư','Thép D16 SD390 · 12 tấn (tồn 3,2) · Thép D10 · 8 tấn'],['Lý do','Đổ móng nhà xưởng 3 theo kế hoạch tuần 06–12/10']],
+   preview:{what:'Gửi đề xuất vật tư',record:'Đề xuất mới · 2 dòng · 20 tấn thép',scope:'SMB-2026 · Kho Sơn Miền Bắc',next:'CHT duyệt (anh) → Phòng vật tư duyệt',effect:'Chưa đặt mua. Tồn kho hiển thị là số sống của Kho SMB.',ver:'Nháp lưu 1 phút trước',btn:'Gửi đề xuất',ret:null}},
+ dl_new:{mod:'Dự án',title:'Tạo nhật ký thi công',fields:[['Ngày','06/10/2026'],['Mũi thi công','Xây trát nhà xưởng 2'],['Công việc / khối lượng','Xây tường trục 3–5 · 42 m²'],['Nhân công / máy','18 công · 0 máy'],['Ảnh','3 ảnh hiện trường']],
+   preview:{what:'Gửi phiếu kỹ sư cho người tổng hợp',record:'Phiếu 06/10 · mũi Xây trát nhà xưởng 2',scope:'SMB-2026',next:'Người tổng hợp: Lê Văn Tùng',effect:'Phiếu khóa sửa sau khi được tổng hợp.',ver:'Phiếu mới',btn:'Gửi phiếu',ret:null}},
+ wp_new:{mod:'Dự án',title:'Lập kế hoạch tuần',fields:[['Tuần','13–19/10/2026'],['Công tác','Chọn từ Gantt (142 việc chưa bắt đầu)'],['Người duyệt','Phạm Ngọc Sơn (CHT)']],preview:{what:'Gửi duyệt kế hoạch tuần',record:'Tuần 13–19/10 · 0 công tác đã chọn',scope:'SMB-2026',next:'CHT duyệt',effect:'—',ver:'Nháp',btn:'Gửi duyệt',ret:null}},
+ checkin:{mod:'Nhân sự',title:'Chấm công',fields:[['Vị trí','Công trường Sơn Miền Bắc · cách 38 m'],['Ảnh','Chụp ảnh tại chỗ'],['Thời điểm','Máy chủ ghi lúc bấm']],preview:{what:'Chấm công ra',record:'06/10 · ra',scope:'Nhân sự · GPS + ảnh + passkey',next:'Bảng công tháng 10',effect:'Máy chủ tự tính giờ và khoảng cách.',ver:'—',btn:'Chấm công ra',ret:null}},
+ leave:{mod:'Nhân sự',title:'Xin nghỉ phép',fields:[['Loại','Phép năm (còn 6 ngày)'],['Từ – đến','10/10/2026 – 10/10/2026 · cả ngày'],['Lý do','Việc gia đình']],
+   preview:{what:'Gửi đơn nghỉ phép',record:'Phép năm · 1 ngày · 10/10',scope:'Nhân sự',next:'Người duyệt bước 1: <span class="who">Nguyễn Thị Mơ</span> (quản lý trực tiếp) → HR',effect:'Phép còn lại 6 → 5 sau khi duyệt. Không trùng đơn khác.',ver:'Xem trước tính bởi máy chủ',btn:'Gửi đơn',ret:null}},
+ makeup:{mod:'Nhân sự',title:'Chấm công bù',fields:[['Ngày','05/10/2026'],['Thiếu','Chấm ra'],['Lý do','Hết pin điện thoại']],preview:{what:'Gửi đề nghị chấm công bù',record:'05/10 · ra 17:40',scope:'Nhân sự',next:'Người duyệt: quản lý công trường',effect:'—',ver:'—',btn:'Gửi đề nghị',ret:null}},
+ timesheet:{mod:'Nhân sự',title:'Bảng công của tôi',fields:[['Tháng 10/2026','4 công · 0 phép · 0 muộn'],['Trạng thái kỳ','Đang chạy — HR rà soát từ 01/11']],preview:null},
+ rq_new:{mod:'Yêu cầu',title:'Tạo đề xuất (Yêu cầu)',fields:[['Mẫu','Nhu cầu nhân sự · Mua sắm thiết bị · Tạm ứng · Khác'],['Tiêu đề',''],['Nội dung','Theo mẫu đã chọn'],['Người duyệt','Theo mẫu (tự điền)']],preview:{what:'Gửi yêu cầu',record:'Yêu cầu mới',scope:'Yêu cầu',next:'Khối duyệt 1 theo mẫu',effect:'—',ver:'Nháp',btn:'Gửi yêu cầu',ret:null}},
+ wf_new:{mod:'Quy trình',title:'Tạo phiếu quy trình',fields:[['Mẫu quy trình','Chọn trong 12 mẫu đang dùng'],['Nội dung','Theo mẫu']],preview:{what:'Gửi phiếu',record:'Phiếu mới',scope:'Quy trình',next:'Bước 1 theo mẫu',effect:'—',ver:'Nháp',btn:'Gửi phiếu',ret:null}},
+ po_new:{mod:'Mua hàng',title:'Lập đơn hàng',fields:[['Nguồn','Cần mua của SMB-2026 (4 dòng)'],['NCC','—']],preview:{what:'Lập đơn hàng nháp',record:'PO mới',scope:'Mua hàng',next:'Gửi duyệt',effect:'—',ver:'Nháp',btn:'Lưu nháp',ret:null}},
+ wk_new:{mod:'Vioo Work',title:'Tạo công việc',fields:[['Tiêu đề','Chuẩn bị hồ sơ nghiệm thu móng A4'],['Người thực hiện','Lê Văn Tùng, Nguyễn Chấp Việt'],['Hạn','10/10/2026'],['Người kiểm tra','Phạm Ngọc Sơn']],
+   preview:{what:'Giao công việc',record:'Việc mới · 2 người thực hiện',scope:'Vioo Work · SMB-2026',next:'Người nhận xác nhận đã nhận việc',effect:'Người nhận hợp lệ: 2/2 (máy chủ kiểm quyền).',ver:'Fingerprint người nhận a1f3',btn:'Giao việc',ret:null}},
+ booking:{mod:'Đặt xe',title:'Đặt xe',fields:[['Ngày giờ','08/10/2026 · 07:00'],['Lộ trình','SMB → Văn phòng Hưng Yên → SMB'],['Số người','2'],['Mục đích','Họp CĐT']],preview:{what:'Gửi yêu cầu đặt xe',record:'Chuyến 08/10 · 2 người',scope:'Đặt xe',next:'Người duyệt: Trưởng phòng HC',effect:'—',ver:'Tuyến duyệt do máy chủ xác định',btn:'Gửi yêu cầu',ret:null}},
+ office_new:{mod:'Office',title:'Soạn văn bản',fields:[['Loại','Tờ trình (TTr)'],['Tiêu đề',''],['Người nhận','Ban TGĐ'],['Tuyến duyệt','Duyệt văn bản — Đặng Thị Hương']],preview:{what:'Trình duyệt văn bản',record:'Tờ trình mới · nháp v1',scope:'Office',next:'Đặng Thị Hương duyệt → cấp số → phát hành',effect:'—',ver:'Nháp v1',btn:'Trình duyệt',ret:null}},
+ office_in:{mod:'Office',title:'Văn bản đến cần xử lý',fields:[['Đến tôi','1 văn bản yêu cầu xác nhận đã đọc'],['Đã đọc tuần này','3']],preview:null},
+ cash_site:{mod:'Tài chính',title:'Chi quỹ công trường',fields:[['Quỹ','SMB-2026 · số dư: chờ cấp 150 tr'],['Khoản chi','—'],['Ảnh hóa đơn','Bắt buộc']],preview:{what:'Gửi khoản chi quỹ công trường',record:'Khoản chi mới',scope:'Tài chính · quỹ công trường SMB',next:'Kế toán duyệt (Tài chính — Ghi nhận)',effect:'Chi phí dự án ghi khi kế toán duyệt.',ver:'—',btn:'Gửi khoản chi',ret:null}},
+ hot:{mod:'Mua hàng',title:'Mua nóng / CCDC',fields:[['Dự án','SMB-2026'],['Tổng tiền (gồm VAT)','—  (ngưỡng duyệt trước: 5.000.000 đ)'],['Nguồn tiền','Quỹ công trường']],preview:{what:'Ghi phiếu mua nóng',record:'Phiếu mới',scope:'Mua hàng · SMB-2026',next:'≥ 5 tr → CHT duyệt trước khi mua; < 5 tr → mua trước báo sau',effect:'—',ver:'—',btn:'Lưu phiếu',ret:null}},
+};
+// ====== Widget theo nhóm nghiệp vụ ======
+const WIDGETS = [
+ {id:'project',mod:'Dự án',title:'Dự án · SMB-2026',ic:'▦',sub:'Hôm nay ở công trường',stats:[['Thi công hôm nay','<span class="num">3/5</span> mũi đã gửi phiếu · 39 công'],['Vật tư đang về','<span class="num">6</span> PO · 5,36 tỷ · <span class="ent">PO-116</span> tuần này'],['Tiến độ','<span class="num">81%</span> · hạn HĐ 21/10 · <span style="color:var(--danger)">142 việc chưa bắt đầu</span>'],['Chờ anh','<span class="num">3</span> việc: đề xuất thép, tổng hợp 05/10, KH tuần']],
+  acts:[['Lập đề xuất vật tư','mr_new','pri',PERM.project],['Tạo nhật ký','dl_new','',PERM.project],['Kế hoạch tuần','wp_new','',PERM.project],['Báo cáo ngày','open:dl0510','',PERM.project],['Mở Dự án ↗','link','',true]]},
+ {id:'hrm',mod:'Nhân sự',title:'Nhân sự',ic:'◉',sub:'Của tôi và đội công trường',stats:[['Chấm công hôm nay','Vào <span class="num">07:52</span> · chưa chấm ra'],['Phép năm còn','<span class="num">6</span> ngày'],['Công tháng 10','<span class="num">4</span> công · kỳ đang chạy'],['Đội công trường','21/28 đã chấm công · <span class="num">6</span> điều động hiệu lực']],
+  acts:[['Chấm công','checkin','pri',PERM.hrm_self],['Xin nghỉ phép','leave','',PERM.hrm_self],['Chấm công bù','makeup','',PERM.hrm_self],['Bảng công của tôi','timesheet','',PERM.hrm_self],['Điều động','link','',PERM.hrm_manage]]},
+ {id:'work',mod:'Vioo Work',title:'Công việc',ic:'✓',sub:'Đề xuất, quy trình, đơn hàng, việc',stats:[['Việc của tôi','<span class="num">3</span> đang làm · 1 hạn 07/10'],['Tôi gửi','<span class="num">3</span> phiếu đang chờ người khác'],['Yêu cầu','<span class="ent">RQ-000061</span> đang ở HR']],
+  acts:[['Tạo đề xuất','rq_new','pri',PERM.request],['Tạo phiếu quy trình','wf_new','',PERM.wf],['Lập đơn hàng','po_new','',PERM.po_create],['Tạo công việc','wk_new','',PERM.work]]},
+ {id:'info',mod:'Office',title:'Hành chính',ic:'✉',sub:'Văn bản, xe, thông tin',stats:[['Văn bản','<span class="num">1</span> cần xác nhận đã đọc · <span class="ent">TB-12/2026</span>'],['Xe','Chuyến 08/10 đã duyệt · xe 29A-123.45'],['Thời tiết công trường','Mưa rào chiều · hạn chế đổ bê tông']],
+  acts:[['Đặt xe','booking','pri',PERM.booking],['Soạn văn bản','office_new','',PERM.office],['Văn bản đến','office_in','',PERM.office],['Tra cứu nhân viên','link','',true]]},
+ {id:'supply',mod:'Mua hàng',title:'Mua hàng & Kho',ic:'▣',sub:'Theo quyền: xem Mua hàng, không thao tác kho',stats:[['Cần mua của SMB','<span class="num">4</span> đề xuất chờ Phòng vật tư · 29 đang cung ứng'],['Đang treo','<span class="ent">MR-2671</span> lệch đơn vị cây/kg'],['Kho SMB','Tồn & phiếu kho: cần quyền Vật tư']],
+  acts:[['Mua nóng / CCDC','hot','pri',PERM.project],['Xem Cần mua','link','',PERM.procurement_view],['Nhận hàng','lock','',PERM.wms],['Kiểm kê','lock','',PERM.wms]]},
+ {id:'finance',mod:'Tài chính',title:'Tài chính dự án',ic:'₫',sub:'Chỉ dự án được bật công tắc xem',stats:[['HĐ chủ đầu tư','<span class="num">105,84 tỷ</span>'],['Sản lượng ước (81%)','<span class="num">≈ 85,7 tỷ</span> <span class="badge">ước tính</span>'],['Đã thu CĐT','<span style="color:var(--warn)">chưa khai đầu kỳ</span>'],['Quỹ công trường','<span style="color:var(--warn)">chờ cấp 150 tr</span>']],
+  acts:[['Chi quỹ công trường','cash_site','pri',PERM.finance_project],['Tài chính dự án ↗','link','',PERM.finance_project],['Đề nghị chi','lock','',PERM.finance_company]]},
+];
+// ====== state ======
+const MC={'Dự án':'da','Nhân sự':'ns','Vioo Work':'wk','Office':'of','Mua hàng':'mh','Tài chính':'tc','Yêu cầu':'rq','Quy trình':'qt','Đặt xe':'xe','Vật tư':'kho'};
+const mstyle=m=>{const k=MC[m]||'wk';return `--mc:var(--c-${k});--mcs:var(--c-${k}-s)`};
+const whoHtml=w=>w.replace(/^(.+?)( lập| gửi| tổng hợp| giao| phụ trách| phát hành.*| ghi.*| đang cung ứng.*)$/i,'<span class="who">$1</span>$2').replace(/^Anh /,'<span class="who">Anh</span> ').replace(/^HR lập/,'<span class="who">HR</span> lập');
+let S={tab:'mine',open:['today'],active:'today',done:{},rec:{},closed:{},edit:false,hidden:{},order:WIDGETS.map(w=>w.id),form:{}};
+const $=s=>document.querySelector(s);
+try{const t=localStorage.getItem('cc-theme');if(t)document.documentElement.dataset.theme=t;}catch{}
+const RAILC={DA:'da',RQ:'rq',QT:'qt',WK:'wk',MH:'mh',KHO:'kho',NS:'ns',TC:'tc',OF:'of',XE:'xe'};
+function renderRail(){$('#rail').innerHTML=MODULES.map(([k,t,on])=>`<button class="${on?'on':''}" title="${t}" style="${RAILC[k]?`color:var(--c-${RAILC[k]})`:''}">${k}</button>`).join('')+`<button style="margin-top:auto" title="Cài đặt">⚙</button>`;}
+function renderInbox(){
+  const list=ITEMS.filter(i=>i.tab===S.tab&&!S.done[i.id]);const g={};list.forEach(i=>(g[i.mod]=g[i.mod]||[]).push(i));
+  let h='';for(const [mod,items] of Object.entries(g)){const closed=S.closed[S.tab+mod];
+    h+=`<button class="ghead ${closed?'closed':''}" style="${mstyle(mod)}" onclick="toggleGroup('${S.tab+mod}')"><span class="chev">▼</span><span class="mod">${mod}</span><span class="c">${items.length}</span></button>`;
+    if(!closed)for(const i of items)h+=`<button class="row ${S.active===i.id?'active':''}" style="${mstyle(i.mod)}" onclick="openItem('${i.id}')"><div style="display:flex;gap:8px;align-items:baseline"><span class="ent small">${i.code}</span><span class="due ${i.hot?'hot blink':''}" style="margin-left:auto">${i.due}</span></div><div class="t">${i.title}</div><div class="m">${whoHtml(i.who)} · ${i.meta}</div></button>`;}
+  if(!list.length)h='<div class="muted" style="padding:28px 14px;text-align:center">Không còn việc chờ anh ở đây.</div>';
+  $('#inboxList').innerHTML=h;const n=ITEMS.filter(i=>i.tab==='mine'&&!S.done[i.id]).length;$('#cMine').textContent=n;$('#cMineM').textContent=n;
+  document.querySelectorAll('#inboxTabs .tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
+}
+function toggleGroup(k){S.closed[k]=!S.closed[k];renderInbox();}
+function foldAll(){const anyOpen=ITEMS.some(i=>i.tab===S.tab&&!S.closed[S.tab+i.mod]);ITEMS.filter(i=>i.tab===S.tab).forEach(i=>S.closed[S.tab+i.mod]=anyOpen);$('#btnFold').textContent=anyOpen?'⇅ Mở':'⇅ Gọn';renderInbox();}
+function tabTitle(id){if(id==='today')return 'Hôm nay';if(id.startsWith('act:'))return ACTIONS[id.slice(4)].title;return ITEMS.find(x=>x.id===id).code;}
+function renderTabs(){$('#wtabs').innerHTML=S.open.map(id=>`<button class="wtab ${S.active===id?'on':''}" onclick="activate('${id}')">${tabTitle(id)}${id!=='today'?`<span class="x" onclick="event.stopPropagation();closeTab('${id}')">✕</span>`:''}</button>`).join('');}
+function renderToday(){
+  const widgets=S.order.filter(id=>!S.hidden[id]).map(id=>WIDGETS.find(w=>w.id===id));
+  const hidden=S.order.filter(id=>S.hidden[id]).map(id=>WIDGETS.find(w=>w.id===id));
+  return `<div class="page ${S.edit?'edit':''}">
+   <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;justify-content:space-between">
+    <div><h1 style="margin:0;font-size:20px;font-weight:600">Chào anh <span class="who">Sơn</span></h1><div class="muted" style="margin-top:2px">Thứ Ba, 06/10/2026 · <b style="color:var(--fg2)">7 việc</b> chờ anh, 1 việc còn 5 giờ · 15 ngày tới hạn hợp đồng SMB-2026</div></div>
+    <div class="card cal" style="display:flex;gap:14px;padding:10px 14px;align-items:center">
+      <div style="text-align:center;min-width:44px"><div class="small muted" style="text-transform:uppercase;letter-spacing:.04em">Th 10</div><div style="font-size:24px;font-weight:600;line-height:1">06</div><div class="small muted">Thứ Ba</div></div>
+      <div style="width:1px;height:38px;background:var(--border)"></div>
+      <div><div style="font-weight:600">🌦 29° · Mưa rào chiều</div><div class="small muted">Hưng Yên · Sơn Miền Bắc · độ ẩm 84%</div><div class="small muted">Lịch: 14:00 họp CĐT · 16:00 giao ban</div></div>
+    </div>
+   </div>
+   <div style="display:flex;align-items:center;gap:8px;margin:16px 0 10px"><span class="small muted">Thao tác nhanh theo quyền của anh. Vào module để dùng đầy đủ.</span><button class="small" style="margin-left:auto;color:var(--accent);font-weight:600" onclick="S.edit=!S.edit;renderWork()">${S.edit?'Xong':'Tùy chỉnh'}</button></div>
+   <div class="grid">${widgets.map((w,ix)=>`<section class="card widget" style="${mstyle(w.mod)}"><div class="whead"><span class="ic">${w.ic}</span><div><h3>${w.title}</h3><div class="small muted">${w.sub}</div></div>
+      ${S.edit?`<span style="margin-left:auto;display:flex;gap:2px"><button class="more" title="Lên" onclick="moveW('${w.id}',-1)">↑</button><button class="more" title="Xuống" onclick="moveW('${w.id}',1)">↓</button><button class="more" title="Ẩn" onclick="S.hidden['${w.id}']=true;renderWork()">✕</button></span>`:`<button class="more" title="Tùy chỉnh ô này" onclick="S.edit=true;renderWork()">⋯</button>`}</div>
+      <div class="wbodyc"><div>${w.stats.map(([k,v])=>`<div class="stat"><span class="k">${k}</span><span class="v" style="text-align:right">${v}</span></div>`).join('')}</div>
+      <div class="acts">${w.acts.map(([l,a,cls,ok])=>ok?`<button class="chip ${cls}" onclick="doAct('${a}')">${l}</button>`:`<button class="chip lock" title="Cần quyền tương ứng trong module" disabled>${l} 🔒</button>`).join('')}</div></div></section>`).join('')}
+   ${S.edit&&hidden.length?`<div class="card" style="padding:10px 12px;margin-top:12px"><span class="small muted">Ô đã ẩn:</span> ${hidden.map(w=>`<button class="chip" onclick="S.hidden['${w.id}']=false;renderWork()">+ ${w.title}</button>`).join(' ')}</div>`:''}
+   </div>
+   <p class="small muted" style="margin-top:14px">Số dự án, PO, nhân sự, Gantt lấy từ production 06/10 và 04/10; chấm công, nhật ký hôm nay, thời tiết, lịch là minh họa. Ô chưa có dữ liệu ghi rõ "chưa khai", không hiện 0.</p>
+  </div>`;
+}
+function moveW(id,d){const i=S.order.indexOf(id);const j=i+d;if(j<0||j>=S.order.length)return;[S.order[i],S.order[j]]=[S.order[j],S.order[i]];renderWork();}
+function previewCard(p,rec){ if(rec)return `<section class="card" style="padding:14px;border-color:var(--accent)"><div style="display:flex;align-items:center;gap:8px"><span class="badge ok">Đã thực hiện</span><b>${rec.what}</b><span class="small muted" style="margin-left:auto">${rec.at}</span></div><div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-top:10px"><div><div class="small muted">Biên nhận</div><div class="ent">${rec.op}</div></div><div><div class="small muted">Bước hiện tại</div><div>${rec.now}</div></div><div style="grid-column:1/-1"><div class="small muted">Kết quả thật từ máy chủ</div><div>${rec.effect}</div></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn" onclick="activate('today')">Về Hôm nay</button><button class="btn">Mở ở màn module ↗</button></div></section>`;
+  if(!p)return '';
+  return `<section class="card" style="padding:14px"><div style="display:flex;align-items:center;gap:8px"><h3>Bản tóm tắt trước khi bấm</h3><span class="badge" style="margin-left:auto">Máy chủ dựng · hiệu lực 5 phút</span></div>
+   <div style="display:grid;gap:10px 18px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:10px">
+   <div><div class="small muted">Làm gì</div><div style="font-weight:600">${p.what}</div></div><div><div class="small muted">Với hồ sơ</div><div>${p.record}</div></div><div><div class="small muted">Phạm vi</div><div>${p.scope}</div></div><div><div class="small muted">Sau khi bấm</div><div>${p.next}</div></div>
+   <div style="grid-column:1/-1"><div class="small muted">Tác động</div><div>${p.effect}</div></div><div style="grid-column:1/-1" class="small muted">Phiên bản đã kiểm: ${p.ver}. Nếu hồ sơ đổi sau lúc này, nút sẽ yêu cầu xem lại.</div></div></section>`;}
+function footer(key,p,rec){ if(rec||!p||!(p.btn||p.ret))return '';return `<div class="footer"><span class="small muted">Một lần bấm = một lệnh có biên nhận. Bấm lặp không tạo lệnh thứ hai.</span><span style="margin-left:auto"></span>${p.ret?`<button class="btn" onclick="ask('${key}',true)">${p.ret}</button>`:''}${p.btn?`<button class="btn pri" onclick="ask('${key}',false)">${p.btn}</button>`:''}</div>`;}
+function renderDetail(i){const rec=S.rec[i.id];
+  const steps=i.step.map((s,k)=>`<span class="step ${k<i.cur?'done':k===i.cur?'cur':''}">${k+1}. ${s}</span>`).join('<span class="muted small">›</span>');
+  const lines=i.lines?`<section class="card" style="overflow:hidden"><table><thead><tr><th>Vật tư</th><th style="text-align:right">Cần</th><th>ĐV</th><th style="text-align:right">Tồn Kho SMB</th><th style="text-align:right">Phải mua</th></tr></thead><tbody>${i.lines.map(l=>`<tr><td style="font-weight:500">${l[0]}</td><td class="num" style="text-align:right">${l[1]}</td><td>${l[2]}</td><td style="text-align:right">${l[3]}</td><td class="num" style="text-align:right">${l[4]}</td></tr>`).join('')}</tbody></table></section>`:'';
+  return `<div class="page"><button class="small" style="color:var(--accent);font-weight:600;margin-bottom:8px;display:none" id="backBtn" onclick="showPane('inbox')">← Việc của tôi</button>
+   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline"><span class="badge m" style="${mstyle(i.mod)}">${i.mod}</span><h1 style="margin:0;font-size:17px;font-weight:600"><span class="ent">${i.code}</span> · ${i.title}</h1><a class="small" style="margin-left:auto;color:var(--accent);font-weight:600;text-decoration:none" href="#">Mở ở màn ${i.mod} ↗</a></div>
+   <div class="muted" style="margin:2px 0 12px">${whoHtml(i.who)} · ${i.meta}</div><div class="steps">${steps}</div>
+   <div style="display:flex;flex-direction:column;gap:12px;margin-top:14px">${lines}${previewCard(i.preview,rec)}
+   <section class="card" style="padding:14px"><h3>Trao đổi & lịch sử</h3><div style="margin-top:8px"><span class="ent">05/10 16:20</span> ${i.who.replace(/ (gửi|lập|tổng hợp|giao|phụ trách|phát hành.*)$/,'')} — gửi bước ${i.step[i.cur]}.</div><div class="small muted" style="margin-top:4px">Bình luận gắn vào hồ sơ thật; người ở màn module cũng thấy.</div></section></div>${footer(i.id,i.preview,rec)}</div>`;}
+function renderForm(key){const a=ACTIONS[key];const rec=S.rec['act:'+key];
+  return `<div class="page"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:baseline"><span class="badge m" style="${mstyle(a.mod)}">${a.mod}</span><h1 style="margin:0;font-size:17px;font-weight:600">${a.title}</h1><a class="small" style="margin-left:auto;color:var(--accent);font-weight:600;text-decoration:none" href="#">Mở đầy đủ trong ${a.mod} ↗</a></div>
+   <div class="muted" style="margin:2px 0 14px">Form thật của module, điền sẵn những gì hệ thống biết. Anh kiểm tra rồi bấm.</div>
+   <div style="display:flex;flex-direction:column;gap:12px"><section class="card" style="padding:14px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">${a.fields.map(([l,v])=>`<div class="field"><label>${l}</label><input class="input" value="${v.replace(/"/g,'&quot;')}" ${a.preview?'':'readonly'}></div>`).join('')}</section>
+   ${previewCard(a.preview,rec)}</div>${footer('act:'+key,a.preview,rec)}</div>`;}
+function renderWork(){renderTabs();const id=S.active;$('#wbody').innerHTML=id==='today'?renderToday():id.startsWith('act:')?renderForm(id.slice(4)):renderDetail(ITEMS.find(x=>x.id===id));$('#wbody').scrollTop=0;if(window.innerWidth<1024){const b=$('#backBtn');if(b)b.style.display='inline';}}
+function openTab(id){if(!S.open.includes(id))S.open.push(id);S.active=id;renderInbox();renderWork();showPane('work');}
+function openItem(id){const i=ITEMS.find(x=>x.id===id);if(i&&i.tab!==S.tab)S.tab=i.tab;openTab(id);}
+function doAct(a){if(a==='link'||a==='lock')return;if(a.startsWith('open:'))return openItem(a.slice(5));openTab('act:'+a);}
+function activate(id){S.active=id;renderInbox();renderWork();}
+function closeTab(id){S.open=S.open.filter(x=>x!==id);if(S.active===id)S.active='today';renderInbox();renderWork();}
+function showPane(p){if(window.innerWidth>=1024)return;['inbox','work','ai'].forEach(k=>$('#'+k).classList.toggle('show',k===p));document.querySelectorAll('#mnav button').forEach(b=>b.classList.toggle('on',b.dataset.p===p));}
+function toggleAi(){const a=$('#ai');if(window.innerWidth<1024)return showPane('ai');a.classList.toggle('show');}
+let M={};
+function ask(key,isRet){const src=key.startsWith('act:')?ACTIONS[key.slice(4)]:ITEMS.find(x=>x.id===key);const p=src.preview;M={key,isRet,src};
+  $('#mTitle').textContent=isRet?p.ret:p.btn;$('#mTarget').innerHTML=`<span class="ent">${src.code||src.title}</span> · ${src.code?src.title:p.record}`;
+  $('#mWarn').innerHTML=isRet?'Hồ sơ quay về người lập, giữ nguyên nội dung và lịch sử. Lý do sẽ hiện cho người lập.':p.next+'. Không hoàn tác bằng nút; muốn đổi phải dùng luồng ngược của module.';
+  $('#mReasonWrap').style.display=isRet?'flex':'none';$('#mOk').onclick=confirmNow;$('#modal').classList.add('show');}
+function closeModal(){$('#modal').classList.remove('show');}
+function confirmNow(){if(M.isRet&&!$('#mReason').value.trim()){$('#mReason').focus();return;}const p=M.src.preview;const op='OP-'+Math.random().toString(16).slice(2,6).toUpperCase();const at=new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})+' hôm nay';
+  S.rec[M.key]=M.isRet?{what:p.ret,op,at,now:(M.src.step?M.src.step[0]:'Nháp')+' (người lập sửa)',effect:'Đã trả lại kèm lý do. Người lập nhận thông báo.'}:{what:p.what,op,at,now:M.src.step?(M.src.step[M.src.cur+1]||'Hoàn tất'):p.next,effect:p.effect};
+  if(!M.key.startsWith('act:'))S.done[M.key]=true;closeModal();renderInbox();renderWork();}
+// header / inbox controls
+$('#btnTheme').onclick=()=>{const d=document.documentElement;d.dataset.theme=d.dataset.theme==='dark'?'light':'dark';try{localStorage.setItem('cc-theme',d.dataset.theme)}catch{}};
+$('#btnInbox').onclick=()=>$('#inbox').classList.toggle('collapsed');
+$('#btnAi').onclick=toggleAi;$('#btnFold').onclick=foldAll;
+document.querySelectorAll('#inboxTabs .tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;renderInbox();});
+document.querySelectorAll('#mnav button').forEach(b=>b.onclick=()=>showPane(b.dataset.p));
+(()=>{const r=$('#resizer'),box=$('#inbox');let sx,sw;r.onpointerdown=e=>{sx=e.clientX;sw=box.getBoundingClientRect().width;r.setPointerCapture(e.pointerId);r.onpointermove=ev=>{const w=Math.min(460,Math.max(260,sw+ev.clientX-sx));box.style.setProperty('--inbox-w',w+'px');};r.onpointerup=()=>{r.onpointermove=null;};};})();
+renderRail();renderInbox();renderWork();
+</script>
+</body>
+</html>
