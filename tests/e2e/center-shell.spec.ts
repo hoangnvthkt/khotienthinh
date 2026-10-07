@@ -124,6 +124,41 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("smb");
   await expect(page.getByRole("heading", { level: 3, name: "Dự án · SMB-2026", exact: true })).toBeVisible();
 
+  // Bấm vào ô → thư mục thao tác bung ra từ ô (transform/opacity, hữu hạn); nút theo quyền; bấm ngoài / Esc thu lại.
+  await expect(page.locator('[data-widget="project"]').getByRole("button", { name: "Thao tác Dự án · SMB-2026" })).toHaveText(/Thao tác · 3/);
+  await page.locator('[data-widget="project"] .vcc-whead h3').click();
+  const folder = page.getByRole("dialog", { name: "Dự án · SMB-2026" });
+  await expect(folder).toBeVisible();
+  await expect(folder.getByRole("group", { name: "Thao tác Dự án · SMB-2026" }).getByRole("button")).toHaveText([/Lập đề xuất vật tư/, /Tạo nhật ký/, /Kế hoạch tuần/, /Báo cáo ngày/]);
+  const lockedPlan = folder.getByRole("button", { name: /Kế hoạch tuần/ });
+  await expect(lockedPlan).toBeDisabled();
+  await expect(lockedPlan).toHaveAttribute("title", /Tổ chức dự án/);
+  await expect(folder).toContainText("3/4 theo quyền của bạn");
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/desktop-folder.png` });
+  await page.locator(".vcc-fold-backdrop").click({ position: { x: 20, y: 20 } });
+  await expect(folder).toHaveCount(0);
+  await expectCalmPage(page);
+
+  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
+  const hrmFolder = page.getByRole("dialog", { name: "Nhân sự" });
+  await expect(hrmFolder).toBeVisible();
+  await hrmFolder.getByRole("button", { name: /Xin nghỉ phép/ }).click();
+  await expect(hrmFolder).toHaveCount(0);
+  await expect(page.getByTestId("stub-modal")).toContainText("Form thật: leave");
+  await page.getByTestId("stub-modal").getByRole("button", { name: "Gửi" }).click();
+  await expect(page.getByTestId("stub-modal")).toHaveCount(0);
+
+  await page.locator('[data-widget="work"] .vcc-whead h3').click();
+  const workFolder = page.getByRole("dialog", { name: "Công việc" });
+  await expect(workFolder).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(workFolder).toHaveCount(0);
+  await page.locator('[data-widget="work"] .vcc-whead h3').click();
+  await workFolder.getByRole("button", { name: /Tạo công việc/ }).click();
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/work/my?create=1");
+  await expect(workFolder).toHaveCount(0);
+
   await page.getByRole("button", { name: "Trợ lý" }).click();
   await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
   await page.getByRole("button", { name: "Chuyển nền tối" }).click();
@@ -185,6 +220,15 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await expectToday(page);
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/${tag}-hom-nay.png`, fullPage: true });
+
+  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
+  const folder = page.getByRole("dialog", { name: "Nhân sự" });
+  await expect(folder).toBeVisible();
+  await expect(folder.getByRole("button", { name: /Điều động/ })).toBeDisabled();
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-folder.png` });
+  await page.keyboard.press("Escape");
+  await expect(folder).toHaveCount(0);
 
   await nav.getByRole("tab", { name: "Trợ lý" }).click();
   await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();

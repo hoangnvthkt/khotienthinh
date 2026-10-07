@@ -8,6 +8,7 @@ import { BarChart3, Bell, Briefcase, FileText, LayoutDashboard, Package, PanelsT
 import CenterShell from '../../components/center/CenterShell';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import type { CenterToday, SiteWeather } from '../../lib/center/centerTodayService';
+import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
@@ -105,6 +106,41 @@ const loadToday = (projectId: string | null): Promise<CenterToday> => new Promis
 }, 60));
 const loadWeather = async (): Promise<SiteWeather | null> => ({ temperature: 29, label: 'Mưa rào', humidity: 84, rainChance: 70, concreteWarning: true, fetchedAt: NOW.toISOString() });
 
+// Cờ thao tác theo dự án: SMB nhiều quyền, DA29 gần như không.
+const ACTIONS: Record<string, CenterActionFlags> = {
+  smb: { projectId: 'smb', employee: true,
+    project: { materialRequest: true, dailyLog: true, dailyReport: true, workPlan: false },
+    hrm: { checkin: true, leave: true, makeup: true, timesheet: true, assignment: false },
+    work: { request: true, workflow: false, po: false, task: true },
+    office: { compose: true, incoming: true, booking: true, directory: true },
+    supply: { hot: true, inbox: false, receive: false, count: false, warehouseId: 'wh-smb' },
+    finance: { siteFund: true, projectFinance: true, paymentRequest: false } },
+  da29: { projectId: 'da29', employee: true,
+    project: { materialRequest: false, dailyLog: false, dailyReport: false, workPlan: false },
+    hrm: { checkin: true, leave: true, makeup: true, timesheet: true, assignment: false },
+    work: { request: true, workflow: false, po: false, task: false },
+    office: { compose: true, incoming: true, booking: true, directory: true },
+    supply: { hot: false, inbox: false, receive: false, count: false, warehouseId: null },
+    finance: null },
+};
+const loadActions = (projectId: string | null): Promise<CenterActionFlags> => new Promise(resolve => setTimeout(() => {
+  if (params.get('today') === 'loner') return resolve({ projectId: null, employee: false, project: null, hrm: { checkin: false, leave: false, makeup: false, timesheet: false, assignment: false },
+    work: { request: false, workflow: false, po: false, task: false }, office: { compose: false, incoming: false, booking: true, directory: false }, supply: null, finance: null });
+  resolve(ACTIONS[projectId || ''] || ACTIONS.smb);
+}, 40));
+
+const StubModalHost: React.FC<{ modal: CenterModal; onClose: () => void; onDone: () => void }> = ({ modal, onClose, onDone }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-label={`Form ${modal}`}>
+    <div className="vcc-card w-full max-w-sm p-4" data-testid="stub-modal">
+      <p className="m-0 font-semibold">Form thật: <b>{modal}</b> (fixture)</p>
+      <div className="mt-3 flex gap-2">
+        <button type="button" className="vcc-btn" onClick={onClose}>Đóng</button>
+        <button type="button" className="vcc-btn" data-pri="true" onClick={() => { onDone(); onClose(); }}>Gửi</button>
+      </div>
+    </div>
+  </div>
+);
+
 const StubRenderer: React.FC<{ renderer: string; props: Record<string, string> }> = ({ renderer, props }) => (
   <div className="vcc-card p-4" data-testid="stub-renderer">View nhúng: <b>{renderer}</b> · {JSON.stringify(props)}</div>
 );
@@ -139,7 +175,9 @@ const Fixture: React.FC = () => {
           loadWorkItems={loadWorkItems}
           loadToday={loadToday}
           loadWeather={loadWeather}
+          loadActions={loadActions}
           Renderer={StubRenderer}
+          ModalHost={StubModalHost}
         />
       </main>
     </div>

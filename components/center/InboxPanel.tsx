@@ -38,7 +38,9 @@ const InboxPanel: React.FC<{
   onOpen: (item: WorkItem) => void;
   onMineCount?: (count: number | null) => void;
   resizer?: React.ReactNode;
-}> = ({ hidden, load = fetchWorkItems, now = new Date(), activeItemKey, onOpen, onMineCount, resizer }) => {
+  /** Tăng để tải lại tab đang xem (sau khi gửi form từ Center). */
+  refreshToken?: number;
+}> = ({ hidden, load = fetchWorkItems, now = new Date(), activeItemKey, onOpen, onMineCount, resizer, refreshToken = 0 }) => {
   const [tab, setTab] = useState<InboxTab>('mine');
   const [states, setStates] = useState<Record<InboxTab, TabState>>({ mine: { status: 'idle' }, sent: { status: 'idle' }, watch: { status: 'idle' } });
   const [closed, setClosed] = useState<Set<string>>(new Set());
@@ -61,6 +63,7 @@ const InboxPanel: React.FC<{
   }, [load]);
 
   useEffect(() => { loadTab('mine'); }, [loadTab]);
+  useEffect(() => { if (refreshToken > 0) loadTab(tabRef.current); }, [refreshToken, loadTab]);
   useEffect(() => { if (states[tab].status === 'idle') loadTab(tab); }, [tab, states, loadTab]);
 
   useEffect(() => {
