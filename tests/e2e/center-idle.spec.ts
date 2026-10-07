@@ -98,7 +98,7 @@ test("WebKit idle: Việc của tôi, Hôm nay, thư mục thao tác", async ({ 
   await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: "Hôm nay" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
   await measureIdle(page, "today");
-  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
+  await page.locator('[data-widget="hrm"] .vcc-whead h3').click();
   await expect(page.getByRole("dialog", { name: "Nhân sự" })).toBeVisible();
   await measureIdle(page, "folder-open");
 });

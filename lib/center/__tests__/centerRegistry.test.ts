@@ -17,12 +17,18 @@ describe('Command Center registry', () => {
     expect(Boolean(getRouteModuleKey(route)) || isAuthenticatedOpenRoute(route)).toBe(true);
   });
 
-  it.each([...CENTER_MODULE_KEYS])('defines light and dark colours for %s', key => {
-    for (const selector of ['.vcc', '.dark .vcc']) {
-      expect(block(selector)).toContain(`--c-${key}:`);
-      expect(block(selector)).toContain(`--c-${key}-s:`);
-    }
+  // Mọi module cùng một màu xanh thép (chủ SP 07/10); nền tối đổi --vcc-steel nên module ăn theo.
+  it.each([...CENTER_MODULE_KEYS])('colours %s with the shared steel token in light and dark', key => {
+    expect(block('.vcc')).toContain(`--c-${key}: var(--vcc-steel);`);
+    expect(block('.vcc')).toContain(`--c-${key}-s: var(--vcc-steel-s);`);
     expect(css).toContain(`.vcc-mod-${key} {`);
+  });
+
+  it('defines the steel token for light and dark', () => {
+    for (const selector of ['.vcc', '.dark .vcc']) {
+      expect(block(selector)).toMatch(/--vcc-steel: #[0-9a-f]{6};/);
+      expect(block(selector)).toMatch(/--vcc-steel-s: #[0-9a-f]{6};/);
+    }
   });
 
   it('never loops an animation (WebKit rule, docs/ui/VIOO-UI-UX.md §6)', () => {

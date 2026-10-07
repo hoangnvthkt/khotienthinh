@@ -7,8 +7,8 @@ Chạy sau khi deploy `20261008138000` … `20261008138004` và bật thí đi�
 - [ ] Thanh bên trái có "Trung tâm điều hành" kèm số việc chờ; người ngoài danh sách thí điểm **không** thấy mục này, gõ `/center` thì bị chặn.
 - [ ] Mở `/center`: thấy lời chào, ngày, "N việc chờ bạn · M ngày tới hạn hợp đồng" (khi có dự án).
 - [ ] Số "Chờ tôi" ở cột trái = số cạnh mục ở thanh bên = số "Việc chờ bạn" trên Home.
-- [ ] Bấm 3 con số bất kỳ trong các ô → mở đúng danh sách / hồ sơ; đếm số dòng khớp con số (DD-01…).
-- [ ] Bấm vào một ô → bung thư mục thao tác; bấm ra ngoài → thu về chỗ cũ; nút 🔒 có lý do khi rê chuột.
+- [ ] Ô "Hôm nay" chỉ có nút thao tác nhanh (không có số liệu việc). Bấm 3 nút bất kỳ → mở ngay form / đúng màn (Xin nghỉ phép, Tạo đề xuất mở form tại chỗ).
+- [ ] Bấm "🔒 N chưa có quyền" hoặc nền ô → bung thư mục đủ nút, nút khóa ghi lý do; bấm ra ngoài → thu về chỗ cũ.
 - [ ] Tùy chỉnh: ẩn 1 ô, đổi thứ tự, Xong; tải lại trang vẫn giữ; "Về mặc định" trả lại.
 - [ ] Điện thoại: bấm một việc → mở hồ sơ; nút Back của máy về lại danh sách (không rời Center); thanh 3 nút đáy không che nội dung cuối.
 - [ ] Sáng / tối đều đọc rõ; không có gì nhấp nháy liên tục; iPhone không bị "A problem repeatedly occurred".

@@ -14,9 +14,10 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 
 ## Tab "Hôm nay"
 
-- 6 ô theo nhóm việc: **Dự án · Nhân sự · Công việc · Hành chính · Mua hàng & Kho · Tài chính dự án** (ô Tài chính chỉ hiện khi bạn được xem tài chính dự án).
-- **Bấm vào con số** → mở đúng danh sách / hồ sơ tạo ra số đó. Số có 🔒 nghĩa là bạn chưa có quyền xem phần này (rê chuột để xem lý do).
-- **Bấm vào ô** (hoặc nút **Thao tác**) → ô bung ra các nút chức năng của nhóm: lập đề xuất vật tư, tạo nhật ký, xin nghỉ phép, tạo đề xuất, đặt xe, soạn văn bản, mua nóng… Nút 🔒 là việc bạn chưa được phép làm. Bấm ra ngoài hoặc Esc để thu lại.
+- 6 ô theo nhóm: **Dự án · Nhân sự · Công việc · Hành chính · Mua hàng & Kho · Tài chính dự án** (ô Tài chính chỉ hiện khi bạn được xem tài chính dự án). Việc đang chờ bạn nằm ở cột **Việc của tôi**, nên ô chỉ có **nút thao tác nhanh**.
+- **Bấm một nút là làm ngay**: chấm công, xin nghỉ phép, tạo đề xuất, lập đề xuất vật tư, tạo nhật ký, đặt xe, soạn văn bản, mua nóng… Ô chỉ hiện nút bạn được phép dùng.
+- Nút **🔒 N chưa có quyền** (hoặc bấm vào nền ô) → ô bung ra đủ các nút của nhóm, nút bị khóa ghi rõ lý do. Bấm ra ngoài hoặc Esc để thu lại.
+- Mũi tên **↗** ở góc ô mở màn đầy đủ của module.
 - **Xin nghỉ phép** và **Tạo đề xuất** mở form ngay trên Trung tâm điều hành; gửi xong, danh sách việc tự cập nhật.
 - Ô **Dự án** chọn sẵn công trường bạn đang được điều động; thuộc nhiều dự án thì đổi ở góc ô.
 - **Tùy chỉnh** (phía trên các ô): đổi thứ tự (↑ ↓), ẩn ô ít dùng, thêm lại ở "Ô đã ẩn", **Xong** để lưu cho tài khoản của bạn.

@@ -18,30 +18,25 @@ const expectCalmPage = async (page: Page) => {
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 };
 
-const stat = (page: Page, widget: string, key: string) => page.locator(`[data-widget="${widget}"] [data-stat="${key}"]`);
+// Ô Hôm nay = nút thao tác nhanh (việc chờ đã ở cột Việc của tôi): bấm là làm ngay; nút chưa có quyền gom vào "N chưa có quyền".
+const tiles = (page: Page, widget: string) => page.locator(`[data-widget="${widget}"]`).getByRole("group", { name: /^Thao tác nhanh/ }).getByRole("button");
 
 const expectToday = async (page: Page) => {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chào anh Sơn");
   await expect(page.getByText("Thứ Tư, 07/10/2026 · 9 việc chờ bạn · 14 ngày tới hạn hợp đồng SMB-2026")).toBeVisible();
   for (const name of WIDGETS) await expect(page.getByRole("heading", { level: 3, name, exact: true })).toBeVisible();
-  // Số thật của mockup, mỗi số là một nút mở đúng nơi; thiếu quyền thì khóa kèm lý do, không hiện 0.
-  await expect(stat(page, "project", "construction")).toContainText("3/5 mũi đã gửi phiếu · 39 công");
-  await expect(stat(page, "project", "supply")).toContainText("6 PO · 5,36 tỷ · PO-116 09/10");
-  await expect(stat(page, "project", "progress")).toContainText("81% · hạn HĐ 21/10 · 7 việc trễ");
-  await expect(stat(page, "hrm", "attendance")).toContainText("Vào 07:52 · chưa chấm ra");
-  await expect(stat(page, "hrm", "team")).toContainText("21/28 đã chấm công · 6 điều động hiệu lực");
-  await expect(stat(page, "work", "assigned")).toContainText("3 đang làm · 1 trễ hạn");
-  await expect(stat(page, "office", "documents")).toContainText("1 cần xác nhận đã đọc · TB-12/2026");
-  await expect(stat(page, "office", "weather")).toContainText("29° · Mưa rào · hạn chế đổ bê tông");
-  await expect(stat(page, "supply", "requests")).toContainText("4 chờ duyệt (Phòng vật tư duyệt) · 29 đang cung ứng");
-  const lockedOrders = stat(page, "supply", "orders").locator("[data-locked]");
-  await expect(lockedOrders).toHaveText(/Cần quyền xem đơn hàng/);
-  await expect(lockedOrders).toHaveAttribute("title", /quyền/);
-  await expect(stat(page, "finance", "contract")).toContainText("105,84 tỷ");
-  await expect(stat(page, "finance", "received")).toContainText("chưa khai đầu kỳ");
+  await expect(tiles(page, "project")).toHaveText(["Lập đề xuất vật tư", "Tạo nhật ký", "Báo cáo ngày", "1 chưa có quyền"]);
+  await expect(tiles(page, "hrm")).toHaveText(["Chấm công", "Xin nghỉ phép", "Chấm công bù", "Bảng công của tôi", "1 chưa có quyền"]);
+  await expect(tiles(page, "work")).toHaveText(["Tạo đề xuất", "Tạo công việc", "2 chưa có quyền"]);
+  await expect(tiles(page, "office")).toHaveText(["Đặt xe", "Soạn văn bản", "Văn bản đến", "Tra cứu nhân viên"]);
+  await expect(tiles(page, "supply")).toHaveText(["Mua nóng / CCDC", "3 chưa có quyền"]);
+  await expect(tiles(page, "finance")).toHaveText(["Chi quỹ công trường", "Tài chính dự án", "1 chưa có quyền"]);
+  // Ô không còn số liệu công việc.
+  await expect(page.locator(".vcc-grid .vcc-stat")).toHaveCount(0);
   await expect(page.getByText("Lịch: không có chuyến xe hôm nay")).toBeVisible();
-  await stat(page, "project", "progress").getByRole("button").click();
-  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb&tab=gantt");
+  // Bấm nút là làm ngay, không qua bước trung gian.
+  await tiles(page, "project").filter({ hasText: "Tạo nhật ký" }).click();
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb&tab=dailylog");
   const locked = page.getByRole("button", { name: "Mở Mua hàng" });
   await expect(locked).toBeDisabled();
   await expect(locked).toHaveAttribute("title", "Bạn chưa có quyền vào module này");
@@ -110,22 +105,20 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
 
   await page.getByRole("button", { name: "Ẩn Việc của tôi" }).click();
   await expect(inbox).toBeHidden();
-  // "Chờ bạn: 3 việc của dự án" đưa về cột việc thay vì rời Center.
-  await stat(page, "project", "waiting").getByRole("button").click();
+  await page.getByRole("button", { name: "Hiện Việc của tôi" }).click();
   await expect(inbox).toBeVisible();
 
-  // Đổi dự án → tải lại số liệu; dự án không có nhật ký / Work → khóa kèm lý do.
+  // Đổi dự án → nút theo quyền ở dự án mới; không có quyền nào thì chỉ còn "N thao tác chưa có quyền".
   await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("da29");
   await expect(page.getByRole("heading", { level: 3, name: "Dự án · DA29", exact: true })).toBeVisible();
-  await expect(stat(page, "project", "construction").locator("[data-locked]")).toHaveText(/Cần quyền xem nhật ký/);
-  await expect(stat(page, "project", "progress")).toContainText("Chưa có tiến độ");
-  await expect(stat(page, "work", "assigned").locator("[data-locked]")).toHaveText(/Vioo Work chưa bật/);
+  await expect(tiles(page, "project")).toHaveText(["4 chưa có quyền"]);
+  await expect(tiles(page, "work")).toHaveText(["Tạo đề xuất", "3 chưa có quyền"]);
   await expect(page.getByRole("heading", { level: 3, name: "Tài chính dự án", exact: true })).toHaveCount(0);
   await page.getByRole("combobox", { name: "Chọn dự án" }).selectOption("smb");
   await expect(page.getByRole("heading", { level: 3, name: "Dự án · SMB-2026", exact: true })).toBeVisible();
 
-  // Bấm vào ô → thư mục thao tác bung ra từ ô (transform/opacity, hữu hạn); nút theo quyền; bấm ngoài / Esc thu lại.
-  await expect(page.locator('[data-widget="project"]').getByRole("button", { name: "Thao tác Dự án · SMB-2026" })).toHaveText(/Thao tác · 3/);
+  // Bấm nền ô → thư mục đủ thao tác bung ra từ ô (transform/opacity, hữu hạn), nút khóa kèm lý do; bấm ngoài / Esc thu lại.
+  await expect(page.getByRole("button", { name: /Thao tác/ })).toHaveCount(0);
   await page.locator('[data-widget="project"] .vcc-whead h3').click();
   const folder = page.getByRole("dialog", { name: "Dự án · SMB-2026" });
   await expect(folder).toBeVisible();
@@ -133,18 +126,17 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   const lockedPlan = folder.getByRole("button", { name: /Kế hoạch tuần/ });
   await expect(lockedPlan).toBeDisabled();
   await expect(lockedPlan).toHaveAttribute("title", /Tổ chức dự án/);
-  await expect(folder).toContainText("3/4 theo quyền của bạn");
+  await expect(lockedPlan).toContainText("Chưa có quyền này trong Tổ chức dự án");
+  await expect(folder).toContainText("3/4 thao tác theo quyền của bạn");
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/desktop-folder.png` });
   await page.locator(".vcc-fold-backdrop").click({ position: { x: 20, y: 20 } });
   await expect(folder).toHaveCount(0);
   await expectCalmPage(page);
 
-  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
-  const hrmFolder = page.getByRole("dialog", { name: "Nhân sự" });
-  await expect(hrmFolder).toBeVisible();
-  await hrmFolder.getByRole("button", { name: /Xin nghỉ phép/ }).click();
-  await expect(hrmFolder).toHaveCount(0);
+  // Nút trong ô mở form thật ngay.
+  await tiles(page, "hrm").filter({ hasText: "Xin nghỉ phép" }).click();
+  await expect(page.getByRole("dialog", { name: "Nhân sự" })).toHaveCount(0);
   await expect(page.getByTestId("stub-modal")).toContainText("Form thật: leave");
   await page.getByTestId("stub-modal").getByRole("button", { name: "Gửi" }).click();
   await expect(page.getByTestId("stub-modal")).toHaveCount(0);
@@ -227,7 +219,8 @@ test("desktop: no project / today error", async ({ page }, info) => {
   await page.getByRole("button", { name: "Xong" }).click();
   await expect(page.getByText("Tài khoản chưa gắn với hồ sơ nhân viên.")).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Tài chính dự án", exact: true })).toHaveCount(0);
-  await expect(stat(page, "office", "weather")).toContainText("Chưa chọn dự án");
+  await expect(page.getByText("Chưa chọn dự án / công trường")).toBeVisible();
+  await expect(tiles(page, "hrm")).toHaveText(["5 chưa có quyền"]);
   await page.goto(`${base}?today=error`);
   await expect(page.getByRole("alert")).toContainText("Chưa đọc được số liệu hôm nay");
   await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
@@ -275,10 +268,11 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/${tag}-hom-nay.png`, fullPage: true });
 
-  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
+  await tiles(page, "hrm").filter({ hasText: "chưa có quyền" }).click();
   const folder = page.getByRole("dialog", { name: "Nhân sự" });
   await expect(folder).toBeVisible();
   await expect(folder.getByRole("button", { name: /Điều động/ })).toBeDisabled();
+  await expect(folder.getByRole("button", { name: /Điều động/ })).toContainText("Chỉ HR / HR Manage lập điều động");
   await expectCalmPage(page);
   await page.screenshot({ path: `${shots}/${tag}-folder.png` });
   await page.keyboard.press("Escape");
@@ -331,7 +325,7 @@ test("Back closes the open layer instead of leaving the Center", async ({ page }
   const nav = page.getByRole("tablist", { name: "Chọn vùng" });
   await nav.getByRole("tab", { name: "Hồ sơ" }).click();
   await page.getByRole("button", { name: "Đóng RQ-2026-000061" }).click();
-  await page.locator('[data-widget="hrm"]').getByRole("button", { name: /Thao tác/ }).click();
+  await tiles(page, "hrm").filter({ hasText: "chưa có quyền" }).click();
   const folder = page.getByRole("dialog", { name: "Nhân sự" });
   await expect(folder).toBeVisible();
   await back();

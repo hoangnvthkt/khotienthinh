@@ -43,7 +43,7 @@ export interface CenterWidgetGroup {
 export const CENTER_WIDGET_GROUPS: readonly CenterWidgetGroup[] = [
   { id: 'project', label: 'Dự án', hint: 'Hôm nay ở công trường', module: 'project', route: '/da', routeLabel: 'Mở Dự án',
     preview: 'Thi công hôm nay, vật tư đang về, tiến độ, việc chờ bạn.' },
-  { id: 'hrm', label: 'Nhân sự', hint: 'Của tôi và đội công trường', module: 'hrm', route: '/my-profile', routeLabel: 'Mở Nhân sự',
+  { id: 'hrm', label: 'Nhân sự', hint: 'Chấm công, nghỉ phép, bảng công', module: 'hrm', route: '/my-profile', routeLabel: 'Mở Nhân sự',
     preview: 'Chấm công hôm nay, phép còn lại, công tháng, đội công trường.' },
   { id: 'work', label: 'Công việc', hint: 'Đề xuất, quy trình, đơn hàng, việc', module: 'work', route: '/rq', routeLabel: 'Mở Yêu cầu',
     preview: 'Việc đang làm, phiếu bạn đã gửi, yêu cầu đang xử lý.' },

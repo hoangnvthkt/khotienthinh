@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowUpRight, Lock, X } from 'lucide-react';
+import { ArrowUpRight, X } from 'lucide-react';
 import type { WidgetView } from '../../lib/center/todayWidgets';
 import type { WidgetAction } from '../../lib/center/centerActions';
 import type { DrillTarget } from '../../lib/center/drill';
-import { DrillLink } from './TodayView';
+import { QuickAction } from './TodayView';
 
 // "Thư mục" thao tác của một ô Hôm nay: bung ra từ đúng vị trí ô (kiểu nhóm ứng dụng iPhone) bằng
 // transform + opacity (FLIP, hữu hạn, ~0,3 s), bấm ra ngoài / Esc thì thu về chỗ cũ rồi mới gỡ khỏi DOM.
@@ -118,45 +118,18 @@ const ActionFolder: React.FC<{
           <button type="button" className="vcc-iconbtn" onClick={requestClose} aria-label="Đóng"><X size={15} /></button>
         </header>
         <div className="vcc-fold-body">
-          {view.empty ? (
-            <p className="m-0 text-[12.5px] vcc-muted">{view.empty.text}</p>
-          ) : (
-            <div className="vcc-fold-stats">
-              {view.stats.map(stat => (
-                <div key={stat.key} className="vcc-stat" data-stat={stat.key}>
-                  <span className="vcc-stat-k">{stat.label}</span>
-                  <span className="vcc-stat-val">
-                    <DrillLink stat={stat} onDrill={target => run(() => onDrill(target))} />
-                    {stat.hint && <span className="vcc-stat-hint">{stat.hint}</span>}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="vcc-fold-section">
-            <span>Thao tác</span>
-            {actions && <span className="vcc-muted"> · {enabledCount}/{actions.length} theo quyền của bạn</span>}
-          </div>
+          {view.empty && <p className="mt-0 mb-3 text-[12.5px] vcc-muted">{view.empty.text}</p>}
           {actions === null ? (
             <p className="m-0 text-[12.5px] vcc-muted">Đang kiểm tra quyền…</p>
           ) : (
-            <div className="vcc-fold-acts" role="group" aria-label={`Thao tác ${view.title}`}>
-              {actions.map(action => (
-                <button
-                  key={action.key}
-                  type="button"
-                  className="vcc-act"
-                  data-pri={action.primary && action.enabled ? 'true' : undefined}
-                  disabled={!action.enabled}
-                  title={action.enabled ? `Mở ${action.target.title}` : action.lockReason}
-                  onClick={() => run(() => onAction(action))}
-                >
-                  {!action.enabled && <Lock size={12} />}
-                  <span className="vcc-ellipsis">{action.label}</span>
-                  {action.enabled && <ArrowUpRight size={12} />}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="vcc-fold-section">{enabledCount}/{actions.length} thao tác theo quyền của bạn</div>
+              <div className="vcc-fold-acts" role="group" aria-label={`Thao tác ${view.title}`}>
+                {actions.map(action => (
+                  <QuickAction key={action.key} action={action} variant="row" onAction={picked => run(() => onAction(picked))} />
+                ))}
+              </div>
+            </>
           )}
         </div>
         <footer className="vcc-fold-foot">

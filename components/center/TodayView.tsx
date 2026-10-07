@@ -1,12 +1,15 @@
 import React, { useRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarDays, ChevronRight, ClipboardCheck, EyeOff, FileText, Lock, Plus, RotateCcw, ShoppingCart, Users, Wallet } from 'lucide-react';
+import {
+  ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarCheck, CalendarDays, CalendarRange, Car, ClipboardCheck, ClipboardList, Contact, EyeOff,
+  FileBarChart, FilePlus, FileText, Fingerprint, Flame, History, Inbox, LineChart, ListChecks, ListPlus, Lock, NotebookPen, Package, PackageCheck,
+  PenLine, Plane, Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet, Workflow,
+} from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
-import type { DrillTarget } from '../../lib/center/drill';
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { WidgetAction } from '../../lib/center/centerActions';
-import { buildTodaySummary, buildTodayWidgets, ddmm, type Stat, type WeatherSlot, type WidgetView } from '../../lib/center/todayWidgets';
+import { buildTodaySummary, buildTodayWidgets, ddmm, type WeatherSlot, type WidgetView } from '../../lib/center/todayWidgets';
 import { applyCenterLayout, type CenterLayout } from '../../lib/center/centerLayout';
 
 /** Tùy chỉnh ô (mockup v1.1: "Tùy chỉnh" → ↑ ↓ ✕ trên từng ô, "Ô đã ẩn" để thêm lại, "Xong"). */
@@ -55,42 +58,70 @@ const Greeting: React.FC<{ person: CenterPerson }> = ({ person }) => {
     : <>Xin chào, <span className="vcc-who">{person.fullName}</span></>;
 };
 
-/** Con số bấm được: mở đúng danh sách / hồ sơ. Khóa khi thiếu quyền, kèm lý do. */
-export const DrillLink: React.FC<{ stat: Stat; onDrill: (target: DrillTarget) => void }> = ({ stat, onDrill }) => stat.locked ? (
-  <span className="vcc-stat-v" data-tone="muted" data-locked="true" title={stat.locked}>
-    <Lock size={11} /> {stat.value}
-  </span>
-) : (
-  <button type="button" className="vcc-stat-v" data-tone={stat.tone || 'num'} onClick={() => onDrill(stat.target)} title={`Mở ${stat.target.title}`}>
-    {stat.value} <ArrowUpRight size={11} />
-  </button>
-);
+/** Biểu tượng của từng nút thao tác nhanh (khóa theo key trong buildWidgetActions). */
+export const ACTION_ICONS: Record<string, LucideIcon> = {
+  material_request: Package, daily_log: NotebookPen, work_plan: CalendarRange, daily_report: FileBarChart,
+  checkin: Fingerprint, leave: Plane, makeup: History, timesheet: CalendarCheck, assignment: Truck,
+  request: FilePlus, workflow: Workflow, po: ShoppingCart, task: ListPlus,
+  booking: Car, compose: PenLine, incoming: Inbox, directory: Contact,
+  hot: Flame, inbox: ListChecks, receive: PackageCheck, count: ClipboardList,
+  site_fund: Wallet, project_finance: LineChart, payment_request: Receipt,
+};
 
-// Bấm vào ô (không phải vào số / nút / ô chọn) → bung thư mục thao tác từ đúng vị trí ô.
+/** Nút thao tác nhanh: bấm là làm ngay (mở form thật hoặc đúng màn của module).
+ *  tile = biểu tượng kiểu app iPhone trong ô; row = dòng trong thư mục, kèm lý do khi bị khóa. */
+export const QuickAction: React.FC<{ action: WidgetAction; onAction: (action: WidgetAction) => void; variant?: 'tile' | 'row' }> = ({ action, onAction, variant = 'tile' }) => {
+  const Icon = action.enabled ? ACTION_ICONS[action.key] || ArrowUpRight : Lock;
+  const common = {
+    type: 'button' as const,
+    'data-pri': action.primary && action.enabled ? 'true' : undefined,
+    disabled: !action.enabled,
+    title: action.enabled ? action.label : action.lockReason,
+    onClick: () => onAction(action),
+  };
+  return variant === 'tile' ? (
+    <button {...common} className="vcc-tile">
+      <span className="vcc-tile-ic"><Icon size={19} /></span>
+      <span className="vcc-tile-label">{action.label}</span>
+    </button>
+  ) : (
+    <button {...common} className="vcc-act">
+      <Icon size={action.enabled ? 15 : 14} />
+      <span className="vcc-act-text">
+        <span className="vcc-ellipsis">{action.label}</span>
+        {!action.enabled && action.lockReason && <span className="vcc-act-why">{action.lockReason}</span>}
+      </span>
+    </button>
+  );
+};
+
+// Ô = nhóm nút thao tác nhanh (việc cần làm đã ở cột "Việc của tôi"). Bấm nút → làm ngay; bấm nền ô hoặc
+// "N chưa có quyền" → bung thư mục đầy đủ từ đúng vị trí ô (kèm lý do của nút bị khóa).
 const WidgetCard: React.FC<{
   view: WidgetView;
   actions: WidgetAction[] | null;
   canOpenRoute: (route: string) => boolean;
   onNavigate: (route: string) => void;
-  onDrill: (target: DrillTarget) => void;
+  onAction: (action: WidgetAction) => void;
   onOpenFolder: (view: WidgetView, anchor: HTMLElement) => void;
   header?: React.ReactNode;
   /** Chế độ tùy chỉnh: ô không bung thư mục, hiện ↑ ↓ ✕. */
   edit?: { first: boolean; last: boolean; onMove: (direction: -1 | 1) => void; onHide: () => void };
-}> = ({ view, actions, canOpenRoute, onNavigate, onDrill, onOpenFolder, header, edit }) => {
+}> = ({ view, actions, canOpenRoute, onNavigate, onAction, onOpenFolder, header, edit }) => {
   const Icon = WIDGET_ICONS[view.id];
   const allowed = canOpenRoute(view.route);
   const ref = useRef<HTMLElement>(null);
   const open = () => { if (ref.current) onOpenFolder(view, ref.current); };
   const onClick = (event: React.MouseEvent<HTMLElement>) => {
-    if (edit || (event.target as HTMLElement).closest('button, select, a, [data-locked]')) return;
+    if (edit || (event.target as HTMLElement).closest('button, select, a')) return;
     open();
   };
   const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
     if (edit || event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
   };
-  const enabledCount = actions?.filter(action => action.enabled).length;
+  const enabled = actions?.filter(action => action.enabled) || [];
+  const locked = actions ? actions.length - enabled.length : 0;
   return (
     <section
       ref={ref}
@@ -103,7 +134,6 @@ const WidgetCard: React.FC<{
       aria-haspopup={edit ? undefined : 'dialog'}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      title={edit ? undefined : 'Bấm để mở thao tác của nhóm này'}
     >
       <header className="vcc-whead">
         <span className="vcc-wicon"><Icon size={14} /></span>
@@ -117,41 +147,38 @@ const WidgetCard: React.FC<{
             <button type="button" onClick={() => edit.onMove(1)} disabled={edit.last} aria-label={`Đưa ${view.title} xuống sau`} title="Xuống sau"><ArrowDown size={13} /></button>
             <button type="button" onClick={edit.onHide} aria-label={`Ẩn ${view.title}`} title="Ẩn ô này"><EyeOff size={13} /></button>
           </span>
-        ) : header}
+        ) : (
+          <>
+            {header}
+            <button
+              type="button"
+              className="vcc-wlink"
+              onClick={() => onNavigate(view.route)}
+              disabled={!allowed}
+              aria-label={view.routeLabel}
+              title={allowed ? view.routeLabel : 'Bạn chưa có quyền vào module này'}
+            >
+              {allowed ? <ArrowUpRight size={15} /> : <Lock size={13} />}
+            </button>
+          </>
+        )}
       </header>
       <div className="vcc-wbody">
-        {view.empty ? (
-          <div>
-            <p className="m-0 text-[12.5px] vcc-muted">{view.empty.text}</p>
-            <button type="button" className="vcc-link mt-2" onClick={() => onDrill(view.empty!.target)}>Mở {view.empty.target.title} <ArrowUpRight size={12} /></button>
-          </div>
+        {view.empty && <p className="m-0 text-[12.5px] vcc-muted">{view.empty.text}</p>}
+        {actions === null ? (
+          <p className="m-0 text-[12.5px] vcc-muted">Đang kiểm tra quyền…</p>
         ) : (
-          <div>
-            {view.stats.map(stat => (
-              <div key={stat.key} className="vcc-stat" data-stat={stat.key}>
-                <span className="vcc-stat-k">{stat.label}</span>
-                <span className="vcc-stat-val">
-                  <DrillLink stat={stat} onDrill={onDrill} />
-                  {stat.hint && <span className="vcc-stat-hint">{stat.hint}</span>}
-                </span>
-              </div>
-            ))}
+          <div className="vcc-qa" role="group" aria-label={`Thao tác nhanh ${view.title}`}>
+            {enabled.map(action => <QuickAction key={action.key} action={action} onAction={onAction} />)}
+            {locked > 0 && (
+              <button type="button" className="vcc-tile" data-locked-more="true" onClick={open} aria-haspopup="dialog"
+                title="Xem thao tác bạn chưa có quyền và lý do">
+                <span className="vcc-tile-ic"><Lock size={17} /></span>
+                <span className="vcc-tile-label">{locked} chưa có quyền</span>
+              </button>
+            )}
           </div>
         )}
-        <div className="vcc-wfoot">
-          <button type="button" className="vcc-chip" data-more="true" onClick={open} aria-haspopup="dialog" aria-label={`Thao tác ${view.title}`}>
-            Thao tác{enabledCount !== undefined ? ` · ${enabledCount}` : ''} <ChevronRight size={13} />
-          </button>
-          {allowed ? (
-            <button type="button" className="vcc-chip" onClick={() => onNavigate(view.route)}>
-              {view.routeLabel} <ArrowUpRight size={13} />
-            </button>
-          ) : (
-            <button type="button" className="vcc-chip" disabled title="Bạn chưa có quyền vào module này">
-              {view.routeLabel} <Lock size={12} />
-            </button>
-          )}
-        </div>
       </div>
     </section>
   );
@@ -162,7 +189,7 @@ const TodayView: React.FC<{
   now: Date;
   canOpenRoute: (route: string) => boolean;
   onNavigate: (route: string) => void;
-  onDrill: (target: DrillTarget) => void;
+  onAction: (action: WidgetAction) => void;
   onOpenFolder: (view: WidgetView, anchor: HTMLElement) => void;
   actionsFor: (id: CenterWidgetId) => WidgetAction[] | null;
   today: TodayState;
@@ -171,7 +198,7 @@ const TodayView: React.FC<{
   onSelectProject: (projectId: string) => void;
   onRetry: () => void;
   customize: TodayCustomize;
-}> = ({ person, now, canOpenRoute, onNavigate, onDrill, onOpenFolder, actionsFor, today, weather, mineCount, onSelectProject, onRetry, customize }) => {
+}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, weather, mineCount, onSelectProject, onRetry, customize }) => {
   const weekday = WEEKDAYS[now.getDay()];
   const data = today.status === 'ready' ? today.data : null;
   const ctx = { now, weather, mineCount };
@@ -211,7 +238,7 @@ const TodayView: React.FC<{
         <CalendarDays size={13} />
         <span className="min-w-0 flex-1">{editing
           ? 'Dùng ↑ ↓ để đổi thứ tự, mắt gạch để ẩn ô. Bấm "Xong" để lưu cho tài khoản của bạn.'
-          : 'Bấm vào số để mở đúng danh sách; bấm vào ô để bung thao tác của nhóm. Số liệu và nút theo quyền của bạn.'}</span>
+          : 'Bấm một nút để làm ngay; bấm vào nền ô để xem đủ thao tác của nhóm. Nút hiện theo quyền của bạn.'}</span>
         {!editing && hiddenViews.length > 0 && <span>{hiddenViews.length} ô đang ẩn ·</span>}
         {customize.status === 'saving' && <span role="status">Đang lưu bố cục…</span>}
         {customize.status === 'saved' && !editing && <span role="status">Đã lưu bố cục</span>}
@@ -244,7 +271,7 @@ const TodayView: React.FC<{
                 <span className="vcc-wicon"><Icon size={14} /></span>
                 <div className="min-w-0"><h3 className="vcc-wname">{group.label}</h3><div className="text-xs vcc-muted">{group.hint}</div></div>
               </header>
-              <div className="vcc-wbody"><p className="m-0 text-[12.5px] vcc-muted">Đang đọc số liệu…</p></div>
+              <div className="vcc-wbody"><p className="m-0 text-[12.5px] vcc-muted">Đang tải thao tác…</p></div>
             </section>
           );
         })}
@@ -257,7 +284,7 @@ const TodayView: React.FC<{
             actions={actionsFor(view.id)}
             canOpenRoute={canOpenRoute}
             onNavigate={onNavigate}
-            onDrill={onDrill}
+            onAction={onAction}
             onOpenFolder={onOpenFolder}
             header={view.id === 'project' && data && data.projectOptions.length > 1 ? (
               <select
@@ -267,7 +294,7 @@ const TodayView: React.FC<{
                 onChange={event => onSelectProject(event.target.value)}
               >
                 {data.projectOptions.map(option => (
-                  <option key={option.id} value={option.id}>{option.code}{option.waiting > 0 ? ` · ${option.waiting} việc` : ''}</option>
+                  <option key={option.id} value={option.id}>{option.code}</option>
                 ))}
               </select>
             ) : undefined}
