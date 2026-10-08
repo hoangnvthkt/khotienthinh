@@ -5,6 +5,8 @@ import {
   procurementContractService, type ContractDetail, type ContractOrder, type ContractSummary,
 } from '../../../lib/procurementContractService';
 import type { Warehouse } from '../../../types';
+import { backdateHint, vnToday } from '../../../lib/businessDate';
+import { procurementInboxService } from '../../../lib/procurementInboxService';
 import { fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 
@@ -38,6 +40,8 @@ export const ContractOrderEditor: React.FC<{
   const [loadError, setLoadError] = useState<string | null>(null);
   const [warehouseId, setWarehouseId] = useState(order?.targetWarehouseId || '');
   const [date, setDate] = useState(order?.expectedDeliveryDate || today());
+  const [orderDate, setOrderDate] = useState(order?.orderDate || vnToday());
+  const [orderDateTouched, setOrderDateTouched] = useState(false);
   const [mode, setMode] = useState<Mode>(order?.fulfillmentMode || 'RECEIVE_TO_STOCK');
   const [multiple, setMultiple] = useState(order?.purchaseMode === 'multiple');
   const [note, setNote] = useState(order?.note || '');
@@ -110,6 +114,7 @@ export const ContractOrderEditor: React.FC<{
       targetWarehouseId: warehouseId, expectedDeliveryDate: date || null, fulfillmentMode: mode, purchaseMode: multiple ? 'multiple' : 'single',
       vatRate: vat ?? undefined, note: note.trim(), items: rows.map(x => ({ lineId: x.lineId, itemId: x.itemId, qty: parseQty(x.qty) || 0,
         unitPrice: x.contractPrice == null ? parseQty(x.price) : undefined })) });
+    if (orderDateTouched) { await procurementInboxService.setOrderDate(r.purchaseOrderId, orderDate); setOrderDateTouched(false); }
     const next = { id: r.purchaseOrderId, rowVersion: r.rowVersion };
     setSaved(next);
     return { ...r, next };
@@ -158,7 +163,10 @@ export const ContractOrderEditor: React.FC<{
         <select value={warehouseId} disabled={!c} onChange={e => setWarehouseId(e.target.value)} className={`mt-1 w-full ${inputCls}`}>
           <option value="">Chọn kho…</option>
           {whOptions.map(w => <option key={w.id} value={w.id}>{w.name}{w.type === 'GENERAL' ? ' (hàng tồn công ty)' : ''}</option>)}</select></label>
-      <label className={label}>Ngày cần giao<input type="date" value={date} onChange={e => setDate(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
+      <label className={label}>Ngày đặt hàng
+                  <input type="date" value={orderDate} max={vnToday()} onChange={e => { setOrderDate(e.target.value); setOrderDateTouched(true); }} className={`mt-1 w-full ${inputCls}`} />
+                  {backdateHint(orderDate) && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">{backdateHint(orderDate)}</span>}</label>
+      <label className={label}>Ngày cần giao <span className="font-normal">(giá HĐ lấy theo ngày này)</span><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
     </div>
     {loadError ? <StateBox kind="error" message={loadError} /> : !cid ? <StateBox kind="empty" title="Chọn hợp đồng để gọi hàng" message={choices.length ? 'Chỉ hiện HĐ còn hiệu lực bạn được gọi hàng.' : 'Chưa có HĐ nào bạn được gọi hàng. Nhờ Mua hàng khai HĐ hoặc cấp quyền.'} />
       : !c ? <StateBox kind="loading" title="Đang tải bảng giá HĐ…" /> : <>

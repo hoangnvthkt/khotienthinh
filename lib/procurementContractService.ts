@@ -34,7 +34,7 @@ export interface ContractDeliveryLine {
 }
 export interface ContractOrderItem { lineId: string; itemId: string; name: string; unit: string; qty: number; unitPrice: number; priceSource?: 'contract' | 'manual'; receivedQty?: number }
 export interface ContractOrder {
-  id: string; poNumber: string; status: string; totalAmount: number; vatRate: number; expectedDeliveryDate: string | null;
+  id: string; poNumber: string; status: string; totalAmount: number; vatRate: number; expectedDeliveryDate: string | null; orderDate?: string | null;
   fulfillmentMode: 'RECEIVE_TO_STOCK' | 'DIRECT_CONSUMPTION'; warehouseName: string | null; projectCode: string | null; rowVersion: number;
   createdById: string | null; createdByName: string | null; submittedToName: string | null; returnReason: string | null; lines: number;
   items: ContractOrderItem[]; targetWarehouseId: string | null; note: string | null; purchaseMode: 'single' | 'multiple'; receivedValue: number;

@@ -5,6 +5,7 @@ import { Transaction, TransactionStatus, TransactionType, WmsTransactionAttachme
 import { useApp } from '../context/AppContext';
 import { canApproveWmsTransaction, canReceiveWmsTransaction, canSetWmsDocumentDate, isFulfillmentBatchTransaction } from '../lib/wmsPermissions';
 import { catalogErrorMessage, wmsCatalogService } from '../lib/wmsCatalogService';
+import { backdateHint, vnToday } from '../lib/businessDate';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
@@ -44,6 +45,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [voucherDate, setVoucherDate] = useState('');
   // Ngày chứng từ của phiếu đã duyệt / đã ghi sổ (sổ kho dời theo, cần lý do).
   const [docDateEdit, setDocDateEdit] = useState<{ date: string; reason: string } | null>(null);
+  // Ngày nghiệp vụ: ngày hàng về thực tế khi nhận hàng theo đơn mua (phiếu kho, công nợ, kỳ đối soát theo ngày này).
+  const [arrivalDate, setArrivalDate] = useState(vnToday);
   const [savingDocDate, setSavingDocDate] = useState(false);
   const [voucherNote, setVoucherNote] = useState('');
   const [savingVoucher, setSavingVoucher] = useState(false);
@@ -215,6 +218,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             nextAttachments = uploadResult.attachments;
           }
 
+          if (!arrivalDate) throw new Error('Chọn ngày hàng về thực tế.');
+          if (arrivalDate !== latestTransaction.date.slice(0, 10)) {
+            await wmsCatalogService.setDocumentDate({ transactionId: latestTransaction.id, date: arrivalDate });
+          }
           const result = await purchaseReceiptService.receiveInOneStep({
             deliveryBatchId,
             wmsTransactionId: latestTransaction.id,
@@ -354,7 +361,7 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     const stocksIn = (isPoDeliveryTx && actionMode === 'approval') || mergesImportSteps || actionMode === 'receipt';
     if (stocksIn) {
       const ok = await confirm({ title: `${primaryActionLabel}?`, confirmText: primaryActionLabel, targetName: transaction.note || transaction.id,
-        warningText: `${transaction.items.length} dòng sẽ cộng vào tồn ${targetWh?.name || 'kho nhận'} ngay${isPoDeliveryTx ? '; PO và công nợ tạm tính cập nhật theo SL thực nhận' : ''}. Kiểm tra SL thực nhận trước khi đồng ý.`,
+        warningText: `${transaction.items.length} dòng sẽ cộng vào tồn ${targetWh?.name || 'kho nhận'}${isPoDeliveryTx && actionMode === 'approval' ? ` theo ngày hàng về ${arrivalDate.split('-').reverse().join('/')}` : ' ngay'}${isPoDeliveryTx ? '; PO và công nợ tạm tính cập nhật theo SL thực nhận' : ''}. Kiểm tra SL thực nhận trước khi đồng ý.`,
         actionLabel: 'Đồng ý', cancelLabel: 'Xem lại', intent: 'success', countdownSeconds: 0 });
       if (!ok) return;
     }
@@ -761,8 +768,15 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
           {canApprove && isQualityApprovalTx && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-2">
               <div className="flex items-center gap-2 text-sm font-black text-indigo-700">
-                <Paperclip size={16} /> Chứng từ thực nhận
+                <Paperclip size={16} /> {isPoDeliveryTx ? "Ngày về & chứng từ thực nhận" : "Chứng từ thực nhận"}
               </div>
+              {isPoDeliveryTx && <label className="block max-w-xs space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Ngày hàng về thực tế *</span>
+                <input type="date" value={arrivalDate} max={vnToday()} onChange={event => setArrivalDate(event.target.value)} disabled={processing} aria-label="Ngày hàng về thực tế"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400" />
+                <span className="block text-[11px] font-semibold text-slate-500">Phiếu nhập kho, công nợ và kỳ đối soát ghi theo ngày này.</span>
+                {backdateHint(arrivalDate) && <span className="block text-[11px] font-bold text-amber-700">{backdateHint(arrivalDate)}</span>}
+              </label>}
               <p className="text-[11px] font-semibold text-slate-500">Có thể đính kèm phiếu cân, biên bản giao nhận hoặc ảnh chất lượng trước khi {isPoDeliveryTx ? 'nhận hàng' : 'Duyệt SL/CL'}.</p>
               <input
                 type="file"

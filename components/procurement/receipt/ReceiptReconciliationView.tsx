@@ -11,6 +11,7 @@ import {
   type ReconDecision, type ReconItem, type ReconList, type ReconRemainder, type ReconSide, type ReconStage,
 } from '../../../lib/receiptReconciliationService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
+import { backdateHint } from '../../../lib/businessDate';
 import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../hub/hubUi';
 
 // Đối chiếu nhận hàng tồn đọng: Mua hàng và thủ kho cùng chốt đợt giao treo, thủ kho ghi sổ theo ngày hàng về.
@@ -421,7 +422,8 @@ const ReconEditor: React.FC<{ item: ReconItem; currentUserId?: string | null; on
       <aside className="space-y-3 text-sm">
         {decision !== 'none' && <label className="block"><span className="text-xs font-semibold text-muted-foreground">Ngày hàng về thực tế *</span>
           <input type="date" value={arrival} max={today()} disabled={locked} onChange={e => setArrival(e.target.value)} className={`${inputCls} mt-1 w-full`} />
-          {arrivalBeforeOrder && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">Trước ngày đặt PO ({dateVi(item.orderDate)}) — kiểm tra lại.</span>}</label>}
+          {arrivalBeforeOrder && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">Trước ngày đặt PO ({dateVi(item.orderDate)}) — kiểm tra lại.</span>}
+          {!locked && backdateHint(arrival) && <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">{backdateHint(arrival)}</span>}</label>}
         {(needReason || reason) && <label className="block"><span className="text-xs font-semibold text-muted-foreground">Lý do {needReason ? '*' : ''}</span>
           {!locked && decision && decision !== 'full' && <span className="mt-1 flex flex-wrap gap-1">{REASONS[decision].map(x =>
             <button key={x} type="button" onClick={() => setReason(x)} className="rounded-full border border-border px-2 py-0.5 text-xs hover:bg-muted">{x}</button>)}</span>}
