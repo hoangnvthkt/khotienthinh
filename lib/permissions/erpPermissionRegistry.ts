@@ -170,6 +170,9 @@ export const ERP_PERMISSION_APPLICATIONS: readonly PermissionApplicationDefiniti
       module('wms.master_data', 'Danh mục kho', 'WMS', [], 40, actions('wms.master_data', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Quản trị danh mục', 10, ['global', 'warehouse']],
         ['issue_code', 'Cấp mã', 20, ['global']],
+        // Nhạy cảm (chủ SP 08/10/2026): tạo mã thẳng không qua đề xuất; sửa mã bắt buộc lý do, ghi lịch sử.
+        ['create_item', 'Tạo mã vật tư', 30, ['global']],
+        ['edit_item', 'Sửa mã vật tư', 40, ['global']],
       ])),
       module('wms.accounting', 'Kế toán kho', 'WMS', [], 45, actions('wms.accounting', 'WMS', undefined, WMS_SCOPE, [
         ['manage', 'Kế toán kho', 10, ['global']],

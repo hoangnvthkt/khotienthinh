@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { AlertTriangle, Boxes, ChevronDown, ChevronRight, CircleSlash, CopyCheck, Hash, History, PencilLine, RefreshCw, RotateCcw, Search, Tags } from 'lucide-react';
+import { AlertTriangle, Boxes, Plus, ChevronDown, ChevronRight, CircleSlash, CopyCheck, Hash, History, PencilLine, RefreshCw, RotateCcw, Search, Tags } from 'lucide-react';
 import { Badge, Drawer, StateBox, inputCls, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, shortMoney } from '../finance/financeUi';
 import { useApp } from '../../context/AppContext';
@@ -9,12 +9,13 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { materialCodeRequestService } from '../../lib/materialCodeRequestService';
 import {
-  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, catalogNameKey, foldVi, guessInventoryMode, similarCatalogItems, wmsCatalogService,
+  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, changedFields, catalogNameKey, foldVi, guessInventoryMode, similarCatalogItems, wmsCatalogService,
   type CatalogItemDetail, type CatalogOverview, type CatalogRename, type InventoryMode,
 } from '../../lib/wmsCatalogService';
 import type { InventoryItem, MaterialCodeRequest } from '../../types';
 import { BAD, EmptyPanel, GREY, OK, Panel, Section, Split, Stat, TEAL, Tile, WARN, dateVi, fmtQty } from './wmsUi';
 import { CatalogMergePanel, VERDICT_CLS } from './CatalogMergePanel';
+import { QuickCreateItemDialog } from './QuickCreateItemDialog';
 import { VERDICT_LABEL, sortGroups, suggestKeep, type DuplicatesData } from '../../lib/wmsCatalogMerge';
 
 // Danh mục vật tư (V1): một cửa cấp mã. Không có nút Xóa — chỉ Ngừng dùng. Mã đã có chứng từ chỉ sửa chính tả tên (server chặn đổi bản chất).
@@ -36,7 +37,7 @@ const useCatalogLists = () => {
 };
 
 // ---------- Chi tiết một mã ----------
-const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids: string[]) => void; onBack: () => void; onOpen: (id: string) => void }> = ({ itemId, canIssue, onChanged, onBack, onOpen }) => {
+const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; canEdit: boolean; onChanged: (ids: string[]) => void; onBack: () => void; onOpen: (id: string) => void }> = ({ itemId, canIssue, canEdit, onChanged, onBack, onOpen }) => {
   const toast = useToast(); const confirm = useConfirm(); const reasonConfirm = useReasonConfirm();
   const { categoryOptions, unitOptions } = useCatalogLists();
   const [d, setD] = useState<CatalogItemDetail | null>(null);
@@ -63,7 +64,7 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
   };
   const saveEdit = async () => {
     const renamed = form.name.trim() !== it.name;
-    if (used && renamed && !form.reason.trim()) { toast.warning('Cần lý do', 'Mã đã có chứng từ — ghi lý do sửa tên.'); return; }
+    if (!form.reason.trim()) { toast.warning('Cần lý do', 'Mọi lần sửa mã đều ghi lịch sử — ghi lý do sửa.'); return; }
     const ok = await run(() => wmsCatalogService.update({ itemId: it.id, name: form.name.trim(), unit: form.unit, category: form.category,
       purchaseUnit: form.purchaseUnit || null, purchaseConversionFactor: Number(form.factor.replace(',', '.')) || 1, minStock: Number(form.minStock) || 0, reason: form.reason.trim() || undefined }),
       `${it.sku}${renamed ? `: “${it.name}” → “${form.name.trim()}”` : ''}`);
@@ -88,13 +89,13 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
       <span className="mt-1 flex flex-wrap gap-1"><Badge className={it.status === 'retired' ? GREY : OK}>{it.mergedIntoId ? 'Đã gộp' : it.status === 'retired' ? 'Ngừng dùng' : 'Đang dùng'}</Badge>
         <Badge className={it.inventoryMode === 'stock' ? GREY : TEAL}>{INVENTORY_MODE_LABELS[it.inventoryMode]}</Badge><Badge className={GREY}>{it.category}</Badge>
         {used && <Badge className={GREY} title="Đã có sổ kho / phiếu kho / đơn mua / đề xuất">đã có chứng từ</Badge>}</span></div>}
-    foot={canIssue ? <>
-      {!edit && <button type="button" className={secondaryBtn} onClick={() => setEdit(true)} disabled={busy}><PencilLine size={15} />Sửa</button>}
-      {it.status === 'active'
+    foot={canIssue || canEdit ? <>
+      {canEdit && !edit && <button type="button" className={secondaryBtn} onClick={() => setEdit(true)} disabled={busy}><PencilLine size={15} />Sửa</button>}
+      {canIssue && (it.status === 'active'
         ? <button type="button" className={secondaryBtn} disabled={busy || !!blockRetire} title={blockRetire ? `Không ngừng dùng được: ${blockRetire}` : undefined} onClick={() => void toggleStatus()}><CircleSlash size={15} />Ngừng dùng</button>
-        : !it.mergedIntoId && <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void toggleStatus()}><RotateCcw size={15} />Mở lại</button>}
-      <span className="w-full text-xs text-muted-foreground sm:w-auto">{blockRetire && it.status === 'active' ? `Ngừng dùng bị khóa: ${blockRetire}. ` : ''}Không có Xóa — mã đã tạo chỉ ngừng dùng.</span>
-    </> : <span className="text-xs text-muted-foreground">Chỉ người có ô quyền “Cấp mã” sửa danh mục.</span>}>
+        : !it.mergedIntoId && <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void toggleStatus()}><RotateCcw size={15} />Mở lại</button>)}
+      <span className="w-full text-xs text-muted-foreground sm:w-auto">{canIssue && blockRetire && it.status === 'active' ? `Ngừng dùng bị khóa: ${blockRetire}. ` : ''}{canEdit ? 'Mọi lần sửa ghi lịch sử. ' : ''}Không có Xóa — mã đã tạo chỉ ngừng dùng.</span>
+    </> : <span className="text-xs text-muted-foreground">Sửa mã cần ô quyền nhạy cảm “Sửa mã vật tư”.</span>}>
     {edit && <section className="space-y-3 rounded-xl border border-teal-300 bg-teal-50/40 p-3 dark:bg-teal-950/20">
       <label className="block text-sm font-medium">Tên vật tư<input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={`mt-1 w-full ${inputCls}`} /></label>
       {used && renamedChanged && <p className={`rounded-lg border px-3 py-2 text-xs ${WARN}`}><b>Mã đã có chứng từ</b> — chỉ sửa chính tả / ghi rõ thêm, giữ nguyên bản chất. Đổi kích thước hoặc thành vật tư khác sẽ bị chặn: hãy đề xuất mã mới.</p>}
@@ -104,10 +105,10 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
         <label className="text-sm font-medium">ĐV mua<select value={form.purchaseUnit} onChange={e => setForm(f => ({ ...f, purchaseUnit: e.target.value }))} className={`mt-1 w-full ${inputCls}`}><option value="">(như ĐVT kho)</option>{unitOptions.map(u => <option key={u}>{u}</option>)}</select></label>
         <label className="text-sm font-medium">1 ĐV mua = ? ĐVT kho<input inputMode="decimal" disabled={!form.purchaseUnit} value={form.factor} onChange={e => setForm(f => ({ ...f, factor: e.target.value }))} className={`mt-1 w-full text-right ${inputCls}`} /></label>
         <label className="text-sm font-medium">Tồn tối thiểu<input inputMode="numeric" value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: e.target.value }))} className={`mt-1 w-full text-right ${inputCls}`} /></label>
-        <label className="text-sm font-medium">Lý do {used && renamedChanged && <span className="text-rose-700">*</span>}<input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="VD: sửa chính tả" className={`mt-1 w-full ${inputCls}`} /></label>
+        <label className="text-sm font-medium">Lý do sửa <span className="text-rose-700">*</span><input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="VD: sửa chính tả, NCC đổi quy cách đóng gói" className={`mt-1 w-full ${inputCls}`} /></label>
       </div>
       <div className="flex justify-end gap-2"><button type="button" className={secondaryBtn} onClick={() => { setEdit(false); void load(); }} disabled={busy}>Hủy</button>
-        <button type="button" className={primaryBtn} onClick={() => void saveEdit()} disabled={busy || !form.name.trim()}>Lưu</button></div>
+        <button type="button" className={primaryBtn} onClick={() => void saveEdit()} disabled={busy || !form.name.trim() || !form.reason.trim()} title={!form.reason.trim() ? 'Ghi lý do sửa' : undefined}>Lưu</button></div>
     </section>}
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
       <Stat label="ĐVT kho"><b>{it.unit}</b></Stat>
@@ -132,7 +133,7 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; onChanged: (ids:
       {d.events.length === 0 ? <p className="text-xs text-muted-foreground">Chưa có thay đổi nào được ghi.</p>
         : <ul className="space-y-1.5 text-xs">{d.events.map((ev, i) => <li key={i} className="flex gap-2"><span className="w-20 shrink-0 text-muted-foreground">{dateVi(ev.at)}</span>
           <span className="min-w-0"><span className={ENT}>{ev.by || '—'}</span> {ACTION_LABEL[ev.action] || (ev.fields?.length ? `sửa ${ev.fields.join(', ')}` : ev.action)}
-            {ev.before?.name && ev.after?.name && ev.before.name !== ev.after.name && <span className="block text-muted-foreground">“{ev.before.name}” → “{ev.after.name}”</span>}
+            {ev.before && ev.after && changedFields(ev.before, ev.after).map(c => <span key={c.label} className="block text-muted-foreground">{c.label}: “{c.from}” → “{c.to}”</span>)}
             {ev.reason && <span className="block text-muted-foreground">Lý do: {ev.reason}</span>}</span></li>)}</ul>}
     </Section>
   </Panel>;
@@ -251,13 +252,21 @@ export const CatalogView: React.FC = () => {
   const [onlyStock, setOnlyStock] = useState(false);
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [newCode, setNewCode] = useState(false);
+  const [quickCreate, setQuickCreate] = useState(false);
+  /** Hai ô quyền nhạy cảm: Tạo mã vật tư (không qua đề xuất), Sửa mã vật tư (ghi lịch sử). */
+  const [canCreate, setCanCreate] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dupes, setDupes] = useState<DuplicatesData | null>(null);
   const [showAuto, setShowAuto] = useState(false);
 
   const load = useCallback(async () => {
     setState(s => (s === 'ready' ? s : 'loading'));
-    try { const [o, r, dp] = await Promise.all([wmsCatalogService.overview(), materialCodeRequestService.list(), wmsCatalogService.duplicates().catch(() => null)]); setOv(o); setReqs(r); setDupes(dp); setState('ready'); }
+    try {
+      const [o, r, dp, co] = await Promise.all([wmsCatalogService.overview(), materialCodeRequestService.list(), wmsCatalogService.duplicates().catch(() => null),
+        wmsCatalogService.createOptions().catch(() => null)]);
+      setOv(o); setReqs(r); setDupes(dp); setCanCreate(Boolean(co?.canCreate)); setCanEdit(Boolean(co?.canEdit)); setState('ready');
+    }
     catch (e) { setMessage(catalogErrorMessage(e, 'Chưa tải được danh mục.')); setState('error'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -335,13 +344,14 @@ export const CatalogView: React.FC = () => {
 
   return <div className="space-y-3">
     <div className="flex flex-wrap items-center gap-2">
-      <p className="mr-auto text-sm text-muted-foreground">Một cửa cấp mã. Không xóa mã — chỉ <b>Ngừng dùng</b>.{!canIssue && ' Bạn có thể đề xuất mã mới; người có quyền Cấp mã xử lý.'}</p>
-      {ov.can.request && <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => setNewCode(true)}><Hash size={15} />Đề xuất mã mới</button>}
+      <p className="mr-auto text-sm text-muted-foreground">Một cửa cấp mã. Không xóa mã — chỉ <b>Ngừng dùng</b>.{canCreate ? ' Thiếu mã thì tạo ngay, không cần đề xuất.' : ' Bạn có thể đề xuất mã mới; người có quyền Cấp mã xử lý.'}</p>
+      {canCreate ? <button type="button" className={primaryBtn} onClick={() => setQuickCreate(true)}><Plus size={15} />Tạo mã mới</button>
+        : ov.can.request && <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => setNewCode(true)}><Hash size={15} />Đề xuất mã mới</button>}
       <button type="button" className={`${secondaryBtn} bg-card`} onClick={() => void load()}><RefreshCw size={15} />Làm mới</button>
     </div>
     <div className="scrollbar-hide flex gap-2 overflow-x-auto pb-1">{tiles.map(x => <Tile key={x.k} active={queue === x.k} onClick={() => { setQueue(x.k); setSel(null); }} icon={x.icon} label={x.label} value={x.value} hint={x.hint} tone={x.tone} ic={x.ic} blink={x.blink && queue !== x.k} />)}</div>
     <Split open={!!sel} selKey={sel} list={list}
-      detail={selItem ? <ItemDetail key={selItem} itemId={selItem} canIssue={canIssue} onChanged={changed} onBack={() => setSel(null)} onOpen={id => { setQueue('all'); setSel(id); }} />
+      detail={selItem ? <ItemDetail key={selItem} itemId={selItem} canIssue={canIssue} canEdit={canEdit} onChanged={changed} onBack={() => setSel(null)} onOpen={id => { setQueue('all'); setSel(id); }} />
         : selDup ? <CatalogMergePanel key={selDup.key} group={selDup} canMerge={!!dupes?.can.merge} onBack={() => setSel(null)} onOpenItem={id => { setQueue('all'); setSel(id); }}
           onDone={ids => { setSel(null); changed(ids); }} />
         : selReq ? <RequestDetail key={selReq.id} req={selReq} items={items} canIssue={canIssue} onDone={ids => { setSel(null); changed(ids); }} onBack={() => setSel(null)} />
@@ -365,5 +375,10 @@ export const CatalogView: React.FC = () => {
       })()}>Đặt “{INVENTORY_MODE_LABELS[m]}”</button>)}
     </div>}
     {newCode && <NewCodeDrawer onClose={() => setNewCode(false)} onCreated={changed} />}
+    {quickCreate && <QuickCreateItemDialog initialName={search.trim()}
+      findSimilar={name => similarCatalogItems(items.filter(i => i.status !== 'retired'), name, 5).map(s => s.item)}
+      useExistingLabel="Mở mã này" onUseExisting={item => { setQuickCreate(false); setQueue('all'); setSel(item.id); }}
+      onClose={() => setQuickCreate(false)}
+      onCreated={item => { setQuickCreate(false); changed([item.id]); setQueue('all'); setSel(item.id); }} />}
   </div>;
 };

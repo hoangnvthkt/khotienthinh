@@ -167,7 +167,7 @@ export const OrderEditor: React.FC<{
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
   };
 
-  return <Drawer wide label={order ? `Sửa ${order.poNumber}` : 'Lập đơn hàng'} onClose={onClose}
+  return <Drawer xl label={order ? `Sửa ${order.poNumber}` : 'Lập đơn hàng'} onClose={onClose}
     header={<>
       <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">{order ? `Sửa đơn ${order.poNumber}` : 'Lập đơn hàng'}</p>
       <h2 className="mt-1 text-lg font-bold text-foreground">{!project ? 'Đang tải…' : isGroup ? <>Đơn gom {groupProjects.length} dự án <span className="font-medium text-muted-foreground">· {groupProjects.join(', ')}</span></>
