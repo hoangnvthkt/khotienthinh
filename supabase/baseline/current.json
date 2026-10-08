@@ -283,7 +283,8 @@
     "20261009110000_daily_log_calendar.sql",
     "20261009123000_procurement_line_assignments.sql",
     "20261009140000_workflow_handlers_follow_after_step.sql",
-    "20261008137600_procurement_business_dates.sql"
+    "20261008137600_procurement_business_dates.sql",
+    "20261008137700_procurement_hub_delivery_prepare.sql"
   ],
   "forbidIncludeAll": true
 }
