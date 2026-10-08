@@ -44,6 +44,8 @@ interface WorkflowContextType {
     deleteTemplate: (id: string) => Promise<void>;
     cloneTemplate: (sourceTemplateId: string, name: string, categoryId: string | null) => Promise<WorkflowCloneResult>;
     setTemplateCategory: (templateId: string, categoryId: string | null) => Promise<void>;
+    /** Người xử lý có tiếp tục theo dõi phiếu sau khi qua bước của mình không. */
+    setTemplateHandlersFollow: (templateId: string, enabled: boolean) => Promise<void>;
     moveTemplatesToCategory: (templateIds: string[], categoryId: string | null) => Promise<number>;
 
     // Catalog groups
@@ -85,7 +87,7 @@ const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined
 const WORKFLOW_INSTANCE_LIST_SELECT = 'id, template_id, code, title, created_by, current_node_id, status, form_data, watchers, step_assignees, step_approvals, created_at, updated_at';
 const WORKFLOW_INSTANCE_LIST_LIMIT = 300;
 const WORKFLOW_TEMPLATE_LEGACY_SELECT = 'id,name,description,created_by,is_active,custom_fields,managers,default_watchers,created_at,updated_at';
-const WORKFLOW_TEMPLATE_SELECT = `${WORKFLOW_TEMPLATE_LEGACY_SELECT},owner_subject_type,owner_project_id,cloned_from_template_id,category_id`;
+const WORKFLOW_TEMPLATE_SELECT = `${WORKFLOW_TEMPLATE_LEGACY_SELECT},owner_subject_type,owner_project_id,cloned_from_template_id,category_id,handlers_follow_after_step`;
 const WORKFLOW_TEMPLATE_CATEGORY_SELECT = 'id,name,sort_order';
 const WORKFLOW_TEMPLATE_CATEGORY_LIMIT = 200;
 let workflowTemplateOwnershipColumnsAvailable = true;
@@ -161,6 +163,7 @@ const mapTemplateFromDB = (row: any): WorkflowTemplate => ({
     ownerSubjectType: row.owner_subject_type ?? null,
     ownerProjectId: row.owner_project_id ?? null,
     clonedFromTemplateId: row.cloned_from_template_id ?? null,
+    handlersFollowAfterStep: row.handlers_follow_after_step !== false,
 });
 
 const mapCategoryFromDB = (row: any): WorkflowTemplateCategory => ({
@@ -532,6 +535,15 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             const updated = mapTemplateFromDB(row);
             setTemplates(prev => prev.map(t => t.id === templateId ? updated : t));
         }
+    };
+
+    const setTemplateHandlersFollow = async (templateId: string, enabled: boolean) => {
+        const { error } = await supabase.rpc('set_workflow_template_handlers_follow', {
+            p_template_id: templateId,
+            p_enabled: enabled,
+        });
+        if (error) throw error;
+        setTemplates(prev => prev.map(t => t.id === templateId ? { ...t, handlersFollowAfterStep: enabled } : t));
     };
 
     const moveTemplatesToCategory = async (templateIds: string[], categoryId: string | null): Promise<number> => {
@@ -1211,7 +1223,7 @@ export const WorkflowProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const value: WorkflowContextType = {
         templates, categories, nodes, edges, instances, logs, printTemplates, isLoading,
-        createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory, moveTemplatesToCategory,
+        createTemplate, updateTemplate, deleteTemplate, cloneTemplate, setTemplateCategory, setTemplateHandlersFollow, moveTemplatesToCategory,
         saveCategory, deleteCategory, reorderCategories,
         saveNodesAndEdges, getTemplateNodes, getTemplateEdges, loadTemplateStructures,
         createInstance, createDraft, loadInstanceById, loadInstanceFormData, updateInstance, submitDraft, deleteDraft, cancelInstance, processInstance, reopenInstance, getInstanceLogs, updateInstanceWatchers,

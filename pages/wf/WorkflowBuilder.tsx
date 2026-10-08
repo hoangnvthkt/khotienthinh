@@ -31,6 +31,7 @@ import {
     type WorkflowStepAssigneeKind,
 } from '../../lib/workflowAssignmentResolver';
 import { isMaterialRequestWorkflowTemplate } from '../../lib/workflowVisibility';
+import { buildWorkflowFieldName, findDuplicateWorkflowFieldLabels } from '../../lib/workflowFieldNames';
 import {
     buildUserNameById,
     describeAssignmentTargets,
@@ -410,7 +411,7 @@ export const StepAssigneeEditor: React.FC<StepAssigneeEditorProps> = ({
 const WorkflowBuilder: React.FC = () => {
     const { id: templateId } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { templates, instances, nodes, edges, getTemplateNodes, getTemplateEdges, loadTemplateStructures, updateTemplate, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
+    const { templates, instances, nodes, edges, getTemplateNodes, getTemplateEdges, loadTemplateStructures, updateTemplate, setTemplateHandlersFollow, uploadPrintTemplate, deletePrintTemplate, getPrintTemplates, refreshData } = useWorkflow();
     const { users, employees, orgUnits, user, loadModuleData, moduleLoadState, moduleLoadErrors } = useApp();
     const toast = useToast();
 
@@ -680,6 +681,25 @@ const WorkflowBuilder: React.FC = () => {
         }
     };
 
+    const [savingFollow, setSavingFollow] = useState(false);
+    const toggleHandlersFollow = async () => {
+        if (!template || !canConfigureTemplate || savingFollow) return;
+        const next = template.handlersFollowAfterStep === false;
+        setSavingFollow(true);
+        try {
+            await setTemplateHandlersFollow(template.id, next);
+            toast.success(
+                next ? 'Đã bật theo dõi sau khi qua bước' : 'Đã tắt theo dõi sau khi qua bước',
+                next ? 'Người xử lý tiếp tục thấy phiếu tới khi hoàn thành.' : 'Qua bước là người xử lý không thấy phiếu nữa, trừ khi được gắn theo dõi hoặc @nhắc tên.',
+            );
+        } catch (error) {
+            console.error('Toggle handlers follow failed:', error);
+            toast.error('Chưa đổi được cài đặt', getApiErrorMessage(error, 'Bạn cần quyền sửa quy trình này.'));
+        } finally {
+            setSavingFollow(false);
+        }
+    };
+
     const updateTemplateUserList = async (key: 'managers' | 'defaultWatchers', userIds: string[]) => {
         if (!template || !canConfigureTemplate) return;
         await updateTemplate({ ...template, [key]: userIds });
@@ -820,7 +840,7 @@ const WorkflowBuilder: React.FC = () => {
         } else {
             const field: WorkflowCustomField = {
                 id: generateId(),
-                name: newFieldLabel.trim().toLowerCase().replace(/[^a-z0-9\u00C0-\u024F\u1E00-\u1EFF]/g, '_').replace(/_+/g, '_'),
+                name: buildWorkflowFieldName(newFieldLabel, customFields),
                 label: newFieldLabel.trim(),
                 type: newFieldType,
                 required: newFieldRequired,
@@ -1016,6 +1036,14 @@ const WorkflowBuilder: React.FC = () => {
                 `Quy trình đang bật nên mỗi giai đoạn phải có người xử lý. Còn thiếu ở: ${pendingIssues.map(item => `"${item.label}"`).join(', ')}.`,
             );
             openStepAssignee(pendingIssues[0].stepId);
+            return;
+        }
+        const duplicateFields = findDuplicateWorkflowFieldLabels(customFields);
+        if (duplicateFields.length > 0) {
+            toast.error(
+                'Chưa lưu được',
+                `Các trường ${duplicateFields.map(label => `"${label}"`).join(', ')} đang dùng chung chỗ lưu dữ liệu nên sẽ xoá dữ liệu của nhau. Hãy xoá rồi thêm lại một trường.`,
+            );
             return;
         }
         setIsSaving(true);
@@ -1396,6 +1424,30 @@ const WorkflowBuilder: React.FC = () => {
                         <span className="shrink-0 text-[13px]" style={{ color: 'var(--wf-text-muted)' }}>
                             Theo phân quyền hệ thống
                         </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-3 px-5 py-3.5">
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-medium" style={{ color: 'var(--wf-text)' }}>
+                                Người xử lý tiếp tục theo dõi sau khi qua bước
+                            </p>
+                            <p className="mt-0.5 text-[12px]" style={{ color: 'var(--wf-text-faint)' }}>
+                                {template.handlersFollowAfterStep === false
+                                    ? 'Đang tắt: duyệt xong bước của mình là không thấy phiếu và không nhận thông báo các bước sau nữa. Người tạo phiếu, người được gắn theo dõi hoặc được @nhắc tên trong bình luận vẫn theo dõi.'
+                                    : 'Đang bật: người đã duyệt hoặc hoàn thành bước vẫn thấy phiếu và nhận thông báo từ đầu tới khi hoàn thành.'}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={template.handlersFollowAfterStep !== false}
+                            aria-label="Người xử lý tiếp tục theo dõi sau khi qua bước"
+                            onClick={() => void toggleHandlersFollow()}
+                            disabled={!canConfigureTemplate || savingFollow}
+                            className="relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                            style={{ backgroundColor: template.handlersFollowAfterStep !== false ? 'var(--wf-green)' : 'var(--wf-border-strong)' }}
+                        >
+                            <span className={`absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${template.handlersFollowAfterStep !== false ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
                     </div>
                     <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-3.5">
                         <div className="min-w-0">

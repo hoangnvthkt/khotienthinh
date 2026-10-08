@@ -752,6 +752,7 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                 {field.type === 'table' && (
                     <TableFieldInput
                         fieldName={field.name}
+                        fieldLabel={field.label}
                         columns={field.options || []}
                         value={data[field.name]}
                         onChange={(val: string[][]) => onChange(field.name, val)}
