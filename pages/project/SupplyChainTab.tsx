@@ -3491,7 +3491,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
         }
         const links = poRequestLinks.filter(link => link.purchaseOrderId === po.id);
         if (links.length === 0) {
-            void updatePoStatus(po.id, 'in_transit');
+            // 08/10/2026: đơn không đi từ phiếu đề xuất (đơn chủ động) lập đợt giao ở Mua hàng. Trước đây nút này chỉ đổi trạng thái
+            // sang "Đang giao" mà không tạo đợt nào (sự cố PO-143).
+            toast.info('Lập đợt giao ở Mua hàng', `${po.poNumber || 'Đơn này'} không đi từ phiếu đề xuất: vào Mua hàng → Đơn mua, mở đơn và bấm "Giao bù phần thiếu" / "Lập đợt giao".`);
             return;
         }
 
