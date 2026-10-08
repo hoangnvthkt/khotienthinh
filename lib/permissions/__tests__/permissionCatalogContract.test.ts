@@ -7,8 +7,6 @@ import dbCatalog from './fixtures/dbPermissionCatalog.json';
 const FRONTEND_AHEAD_OF_DB = new Set([
   'system.vehicle_booking.view',
   'system.vehicle_booking.manage',
-  // Ngày nghiệp vụ (migration 20261008137600) — gỡ sau khi deploy và refresh fixture.
-  'system.procurement.backdate',
 ]);
 
 const dbCodes = new Map(dbCatalog.actions.map(action => [action.permissionCode, action.scopeTypes]));
