@@ -33,14 +33,23 @@ export interface ProcurementInboxDocument {
   partialLines: number;
   receivedLines: number;
   progress: ProcurementProgress;
+  /** Người điều phối: dòng chưa giao riêng thuộc người này. */
   assigneeUserId: string | null;
   assigneeName: string | null;
+  /** Người mua theo dòng (đã tính dòng theo người điều phối); chỉ phiếu có dòng vật tư. */
+  lineAssignees?: ProcurementLineAssignee[];
+  /** Số dòng còn thiếu chưa có ai mua (không giao riêng, phiếu chưa có điều phối). */
+  unassignedOpenLines?: number;
+  /** Có ít nhất một dòng được giao riêng. */
+  splitByLine?: boolean;
   periodType: 'month' | 'week' | null;
   periodStart: string | null;
   closedAt: string | null;
   closeReason: string | null;
   closedByName: string | null;
 }
+
+export interface ProcurementLineAssignee { userId: string; name: string | null; lines: number; openLines: number }
 
 export interface ProcurementInbox {
   today: string;
@@ -58,6 +67,9 @@ export interface ProcurementInboxLine {
   /** Set when the item is bought in another unit: stock qty = purchase qty × purchaseFactor. */
   purchaseUnit: string | null; purchaseFactor: number | null;
   orders: Array<{ id: string; poNumber: string | null; status: string; vendorName: string | null; expectedDeliveryDate: string | null; orderedQty: number }>;
+  /** Người được giao riêng dòng này; null = theo người điều phối của phiếu. */
+  assigneeUserId?: string | null;
+  assigneeName?: string | null;
   /** Đề xuất công trường: tồn khả dụng ở kho khác (Cấp từ kho) và phiếu chuyển đã lập cho dòng. */
   otherStock?: ProcurementOtherStock[];
   transfers?: Array<{ id: string; status: string; qty: number; sourceWarehouseName: string | null }>;
@@ -98,11 +110,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_SOURCE_WITHDRAWN: 'Phiếu nguồn đã mở lại hoặc hủy. Chờ nguồn được duyệt lại để tiếp tục xử lý.',
   PROCUREMENT_VIEW_DENIED: 'Bạn chưa có quyền vào Mua hàng. Nhờ quản trị cấp quyền "Mua hàng — Xem".',
   PROCUREMENT_MANAGE_DENIED: 'Bạn chưa có quyền phân công trong Mua hàng.',
+  PROCUREMENT_LINE_TAKEN: 'Có dòng vừa được người khác nhận. Tải lại để xem ai đang mua.',
+  PROCUREMENT_LINE_NOT_FOUND: 'Dòng vật tư không còn trong phiếu. Tải lại phiếu.',
+  PROCUREMENT_LINES_REQUIRED: 'Chọn ít nhất một dòng vật tư.',
   PROCUREMENT_ASSIGNEE_INVALID: 'Người được chọn không thuộc phòng Mua hàng.',
   PROCUREMENT_SOURCE_NOT_FOUND: 'Phiếu nhu cầu không còn trong danh sách. Tải lại.',
   PROCUREMENT_SOURCES_REQUIRED: 'Chọn ít nhất một phiếu.',
   PROCUREMENT_CLOSE_REASON_REQUIRED: 'Nhập lý do đóng nhu cầu.',
-  PROCUREMENT_NEED_CLOSED: 'Có phiếu nhu cầu đã đóng. Mở lại phiếu trước khi lập đơn.',
+  PROCUREMENT_NEED_CLOSED: 'Có phiếu nhu cầu đã đóng. Mở lại phiếu trước khi lập đơn hoặc giao việc.',
   PROCUREMENT_PO_ITEMS_REQUIRED: 'Đơn hàng chưa có vật tư nào có SL đặt lớn hơn 0.',
   PROCUREMENT_PO_QTY_INVALID: 'SL đặt phải lớn hơn 0.',
   PROCUREMENT_PO_PRICE_INVALID: 'Đơn giá không hợp lệ.',
@@ -181,6 +196,10 @@ export const procurementInboxService = {
   },
   assign(input: { sources: Array<{ sourceType: ProcurementSourceType; sourceId: string }>; assigneeUserId: string | null; note?: string }) {
     return call<{ assigned: number }>('assign_procurement_inbox_v1', { p_input: input });
+  },
+  /** Giao dòng cho một người (assigneeUserId), tự nhận (claim) hoặc trả về người điều phối (assigneeUserId null). */
+  assignLines(input: { sourceType: ProcurementSourceType; sourceId: string; lineIds: string[]; assigneeUserId?: string | null; claim?: boolean }) {
+    return call<{ assigned: number; assigneeUserId: string | null }>('assign_procurement_inbox_lines_v1', { p_input: input });
   },
   close(input: { sources: ProcurementSourceRef[]; action: 'close' | 'reopen'; reason?: string }) {
     return call<{ changed: number; endedRequests?: number }>('close_procurement_need_v1', { p_input: input });

@@ -2,7 +2,7 @@ import { RequestPurchaseLines } from './RequestPurchaseLines';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowUpRight, Boxes, CalendarClock, ChevronRight, CircleSlash, FilePlus2, FileText, Flame, Inbox, Layers, Link2, Loader2, PackageCheck,
-  RefreshCw, RotateCcw, Search, ShoppingCart, Stamp, Truck, UserRound, Warehouse,
+  Hand, RefreshCw, RotateCcw, Search, ShoppingCart, Stamp, Truck, UserRound, Warehouse,
 } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
@@ -25,6 +25,7 @@ import { SupplyFromStockDrawer, TRANSFER_STATUS_LABELS } from './SupplyFromStock
 import { ExternalSourceSnapshot } from './ExternalSourceSnapshot';
 import { HotPurchaseView } from '../hotPurchase/HotPurchaseView';
 import type { HotPurchasePrefill } from '../../../lib/hotPurchaseService';
+import { docBuyers, givenName, lineKey, lineOwner, openLineOwners } from '../../../lib/procurementLineAssignment';
 
 // Mua hàng hub: one place where the procurement team receives every purchase need
 // (KH vật tư, đề xuất công trường, later other modules), turns it into orders that
@@ -100,12 +101,12 @@ const StageStrip: React.FC<{ inbox: ProcurementInbox; stage: Stage; onStage: (s:
 // ---------------------------------------------------------------------------
 // Need document drawer
 // ---------------------------------------------------------------------------
-const NeedDrawer: React.FC<{
-  doc: ProcurementInboxDocument; today: string; canManage: boolean; assignees: ProcurementInbox['assignees'];
-  onClose: () => void; onAssign: (userId: string | null) => Promise<void>; onOrder: () => void;
+export const NeedDrawer: React.FC<{
+  doc: ProcurementInboxDocument; today: string; canManage: boolean; assignees: ProcurementInbox['assignees']; currentUserId: string;
+  onClose: () => void; onAssign: (userId: string | null) => Promise<void>; onOrder: (lineKeys?: string[]) => void;
   onCloseNeed: () => void; onReopen: () => void; onOpenOrder: (id: string) => void; onChanged: () => void;
   onHotPurchase: (prefill: HotPurchasePrefill) => void;
-}> = ({ doc, today, canManage, assignees, onClose, onAssign, onOrder, onCloseNeed, onReopen, onOpenOrder, onChanged, onHotPurchase }) => {
+}> = ({ doc, today, canManage, assignees, currentUserId, onClose, onAssign, onOrder, onCloseNeed, onReopen, onOpenOrder, onChanged, onHotPurchase }) => {
   const toast = useToast();
   const confirm = useConfirm();
   const [detail, setDetail] = useState<ProcurementInboxDetail | null>(null);
@@ -114,8 +115,12 @@ const NeedDrawer: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [supplyLine, setSupplyLine] = useState<ProcurementInboxLine | null>(null);
+  // Giao việc theo dòng: tick dòng → giao / nhận / lập đơn đúng các dòng đó.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [pickAssignee, setPickAssignee] = useState('');
+  const [lineBusy, setLineBusy] = useState(false);
   const load = useCallback(() => {
-    setError(null); setDetail(null);
+    setError(null); setDetail(null); setPicked(new Set());
     procurementInboxService.get(doc.sourceType, doc.sourceId).then(setDetail).catch(e => setError(e instanceof Error ? e.message : String(e)));
   }, [doc.sourceType, doc.sourceId]);
   useEffect(load, [load, doc.progress, doc.closedAt]);
@@ -146,6 +151,31 @@ const NeedDrawer: React.FC<{
   const closed = Boolean(doc.closedAt) || doc.progress === 'closed' || withdrawn;
   const external = isExternalProcurementSource(doc.sourceType);
   const orderable = canOrderProcurementSource(doc) && (!detail || canOrderProcurementSource(detail));
+  // Mỗi dòng một người mua; dòng chưa giao riêng thuộc người điều phối (người xử lý của phiếu).
+  const lineTools = canManage && orderable && !closed && !external;
+  const split = lines.some(l => l.assigneeUserId);
+  const ownerOf = (l: ProcurementInboxLine) => lineOwner(l, detail || { assignment: null });
+  const openLines = lines.filter(l => l.remainingQty > 0);
+  const owners = detail ? openLineOwners(detail) : [];
+  const mineOpen = openLines.filter(l => ownerOf(l).userId === currentUserId);
+  const orderableForMe = split ? openLines.filter(l => { const o = ownerOf(l).userId; return !o || o === currentUserId; }).length : openLines.length;
+  const shownLines = split ? [...lines].sort((a, b) => Number(ownerOf(b).userId === currentUserId) - Number(ownerOf(a).userId === currentUserId)) : lines;
+  const pickedLines = openLines.filter(l => picked.has(l.lineId));
+  const takenByOthers = pickedLines.filter(l => l.assigneeUserId && l.assigneeUserId !== currentUserId).length;
+  const allPicked = openLines.length > 0 && pickedLines.length === openLines.length;
+  const togglePick = (id: string) => setPicked(cur => { const next = new Set(cur); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const assignLines = async (lineIds: string[], opts: { assigneeUserId?: string | null; claim?: boolean }) => {
+    setLineBusy(true);
+    try {
+      const r = await procurementInboxService.assignLines({ sourceType: doc.sourceType, sourceId: doc.sourceId, lineIds, ...opts });
+      const to = opts.claim ? currentUserId : opts.assigneeUserId || null;
+      const name = assignees.find(a => a.id === to)?.name;
+      toast.success(opts.claim ? `Bạn đã nhận ${r.assigned} dòng` : to ? `Đã giao ${r.assigned} dòng cho ${name || 'người được chọn'}` : `Đã trả ${r.assigned} dòng về người điều phối`,
+        to && to !== currentUserId ? 'Người nhận đã được thông báo.' : opts.claim ? 'Các dòng này hiện trong Việc của tôi.' : undefined);
+      setPickAssignee('');
+      load(); onChanged();
+    } catch (e) { toast.error('Chưa giao được', e instanceof Error ? e.message : ''); } finally { setLineBusy(false); }
+  };
 
   return <Drawer label={`Phiếu ${doc.code}`} onClose={onClose}
     header={<>
@@ -166,19 +196,38 @@ const NeedDrawer: React.FC<{
           <dd className="truncate font-medium text-foreground">{value}</dd></div>)}
       </dl>
     </>}
-    footer={<>
+    footer={lineTools && pickedLines.length > 0 ? <>
+      <span className="mr-auto flex items-center gap-2 text-sm font-semibold">Đã chọn {pickedLines.length} dòng
+        <button type="button" onClick={() => setPicked(new Set())} className="rounded-lg px-2 py-1 text-sm font-normal text-muted-foreground hover:bg-muted">Bỏ chọn</button></span>
+      <span className="flex min-w-0 flex-1 basis-full items-center gap-1 sm:basis-auto sm:flex-none">
+        <select aria-label="Giao dòng đã chọn cho" value={pickAssignee} onChange={e => setPickAssignee(e.target.value)} disabled={lineBusy} className={`min-w-0 flex-1 sm:w-44 ${inputCls}`}>
+          <option value="">Giao cho…</option>
+          {assignees.map(a => <option key={a.id} value={a.id}>{a.name}{a.id === currentUserId ? ' (tôi)' : ''}</option>)}
+          {pickedLines.some(l => l.assigneeUserId) && <option value="__coordinator">↩ Trả về người điều phối</option>}
+        </select>
+        <button type="button" disabled={!pickAssignee || lineBusy} className={secondaryBtn}
+          onClick={() => void assignLines(pickedLines.map(l => l.lineId), { assigneeUserId: pickAssignee === '__coordinator' ? null : pickAssignee })}>Giao</button>
+      </span>
+      <button type="button" disabled={lineBusy || takenByOthers > 0 || pickedLines.every(l => l.assigneeUserId === currentUserId)}
+        title={takenByOthers > 0 ? 'Có dòng đã giao cho người khác — dùng "Giao cho…" nếu cần chuyển người' : pickedLines.every(l => l.assigneeUserId === currentUserId) ? 'Các dòng này đã là của bạn' : 'Nhận các dòng này về mình mua'}
+        onClick={() => void assignLines(pickedLines.map(l => l.lineId), { claim: true })} className={secondaryBtn}><Hand size={15} />Nhận</button>
+      <button type="button" disabled={lineBusy} onClick={() => onOrder(pickedLines.map(l => lineKey(doc, l.lineId)))} className={primaryBtn}>
+        {lineBusy ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />}Lập đơn {pickedLines.length} dòng</button>
+    </> : <>
       {link && <a href={link} className={`${secondaryBtn} mr-auto`}><ArrowUpRight size={15} />Mở phiếu nguồn</a>}
       {canManage && !withdrawn && (closed
         ? <button type="button" onClick={onReopen} className={secondaryBtn}><RotateCcw size={15} />Mở lại nhu cầu</button>
         : <>
           <button type="button" onClick={onCloseNeed} className={secondaryBtn}><CircleSlash size={15} />Đóng nhu cầu</button>
-          {orderable && missing > 0 && <button type="button" onClick={onOrder} className={candidates.length > 0 ? secondaryBtn : primaryBtn}><ShoppingCart size={15} />Lập đơn hàng</button>}
+          {orderable && missing > 0 && <button type="button" onClick={() => onOrder()} disabled={orderableForMe === 0}
+            title={orderableForMe === 0 ? 'Các dòng còn thiếu đều do người khác mua. Tick dòng nếu cần lập đơn thay.' : split && orderableForMe < openLines.length ? 'Chỉ gồm dòng của bạn và dòng chưa có người mua' : undefined}
+            className={candidates.length > 0 ? secondaryBtn : primaryBtn}><ShoppingCart size={15} />{split && orderableForMe < openLines.length ? `Lập đơn ${orderableForMe} dòng của tôi` : 'Lập đơn hàng'}</button>}
         </>)}
     </>}>
     {closed && !withdrawn && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm">
       <b>Đã đóng — không cần mua thêm.</b> {doc.closeReason}<span className="text-muted-foreground"> · {doc.closedByName}{doc.closedAt ? `, ${dateVi(doc.closedAt)}` : ''}</span></p>}
     <section className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
-      <span className="font-semibold text-foreground">Người xử lý</span>
+      <span className="font-semibold text-foreground" title="Người điều phối phiếu: mua các dòng chưa giao riêng cho ai">Người xử lý</span>
       {canManage && !withdrawn
         ? <select aria-label="Người xử lý" value={doc.assigneeUserId || ''} disabled={saving}
           onChange={async e => { setSaving(true); try { await onAssign(e.target.value || null); } finally { setSaving(false); } }}
@@ -189,6 +238,15 @@ const NeedDrawer: React.FC<{
         : <span className="text-muted-foreground">{doc.assigneeName || 'Chưa giao'}</span>}
       {saving && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
       {detail?.assignment?.assignedAt && <span className="text-xs text-muted-foreground">từ {dateVi(detail.assignment.assignedAt)}</span>}
+      {!external && openLines.length > 0 && (split || owners.some(o => !o.userId)) && <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-border pt-2 text-xs">
+        <span className="text-muted-foreground">Đang mua {openLines.length} dòng còn thiếu:</span>
+        {owners.map(o => o.userId
+          ? <span key={o.userId} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${o.userId === currentUserId ? 'bg-teal-100 text-teal-900 dark:bg-teal-900/50 dark:text-teal-100' : 'bg-muted text-foreground'}`}>
+            <UserRound size={11} />{o.userId === currentUserId ? 'Bạn' : o.name || '—'} · {o.count}</span>
+          : <span key="none" className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+            <AlertTriangle size={11} />Chưa có người mua · {o.count}</span>)}
+        {split && <span className="w-full text-muted-foreground">Dòng chưa giao riêng thuộc người xử lý.</span>}
+      </div>}
     </section>
 
     {candidates.length > 0 && <section className="space-y-2 rounded-xl border border-teal-200 bg-teal-50/60 p-3 dark:border-teal-900 dark:bg-teal-950/20">
@@ -208,14 +266,38 @@ const NeedDrawer: React.FC<{
     {error ? <StateBox kind="error" message={error} onRetry={load} />
       : !detail ? <StateBox kind="loading" title="Đang tải phiếu…" />
         : external ? detail.purchaseLines?.length ? <RequestPurchaseLines detail={detail} canManage={canManage} onChanged={() => { load(); onChanged(); }} onOpenOrder={onOpenOrder} /> : <ExternalSourceSnapshot detail={detail} withdrawn={withdrawn} /> : <section>
-          <div className="mb-2 flex items-baseline justify-between gap-2">
-            <h3 className="font-semibold text-foreground">Vật tư cần mua</h3>
-            <span className="text-xs text-muted-foreground">{missing > 0 ? `${missing}/${lines.length} dòng còn thiếu` : `Đã đặt đủ ${lines.length} dòng`}</span>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              {lineTools && openLines.length > 1 && <input type="checkbox" checked={allPicked} aria-label="Chọn mọi dòng còn thiếu" className="h-4 w-4 accent-teal-600"
+                onChange={() => setPicked(allPicked ? new Set() : new Set(openLines.map(l => l.lineId)))} />}
+              <h3 className="font-semibold text-foreground">Vật tư cần mua</h3>
+            </span>
+            <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {lineTools && split && mineOpen.length > 0 && mineOpen.length < openLines.length && <button type="button" onClick={() => setPicked(new Set(mineOpen.map(l => l.lineId)))}
+                className="rounded-lg border border-border px-2 py-1 font-semibold text-teal-700 hover:bg-muted dark:text-teal-300">Chọn dòng của tôi ({mineOpen.length})</button>}
+              {lineTools && openLines.length > 1 && pickedLines.length === 0 && <span className="hidden sm:inline">Tick dòng để chia cho người mua</span>}
+              <span>{missing > 0 ? `${missing}/${lines.length} dòng còn thiếu` : `Đã đặt đủ ${lines.length} dòng`}</span>
+            </span>
           </div>
-          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">{lines.map(l => <li key={l.lineId} className="px-3 py-2.5">
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">{shownLines.map(l => {
+            const owner = ownerOf(l);
+            const mine = owner.userId === currentUserId;
+            const canPick = lineTools && l.remainingQty > 0;
+            return <li key={l.lineId} className={`relative flex gap-2.5 px-3 py-2.5 ${picked.has(l.lineId) ? 'bg-teal-50/60 dark:bg-teal-950/20' : split && owner.userId && !mine ? 'bg-muted/30' : ''}`}>
+            {split && mine && <span aria-hidden className="absolute inset-y-0 left-0 w-1 bg-teal-500" />}
+            {canPick && <input type="checkbox" checked={picked.has(l.lineId)} onChange={() => togglePick(l.lineId)} aria-label={`Chọn ${l.itemName}`} className="mt-1 h-4 w-4 shrink-0 accent-teal-600" />}
+            <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <p className="font-medium text-foreground">{l.itemName}<span className="ml-2 text-xs font-normal text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></p>
-              <span className={`shrink-0 text-sm font-semibold ${l.remainingQty > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{l.remainingQty > 0 ? `Thiếu ${fmt(l.remainingQty)}` : 'Đã đặt đủ'}</span>
+              <span className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className={`text-sm font-semibold ${l.remainingQty > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{l.remainingQty > 0 ? `Thiếu ${fmt(l.remainingQty)}` : 'Đã đặt đủ'}</span>
+                {!external && (owner.userId
+                  ? <span className={`inline-flex items-center gap-1 text-xs ${mine ? 'font-semibold text-teal-700 dark:text-teal-300' : 'text-muted-foreground'}`} title={owner.explicit ? 'Được giao riêng dòng này' : 'Theo người xử lý của phiếu'}>
+                    <UserRound size={11} />{mine ? 'Bạn mua' : owner.name || '—'}</span>
+                  : l.remainingQty > 0 && <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300"><UserRound size={11} />Chưa có người mua</span>)}
+                {canPick && !owner.userId && <button type="button" disabled={lineBusy} onClick={() => void assignLines([l.lineId], { claim: true })}
+                  className="text-xs font-semibold text-teal-700 hover:underline disabled:opacity-50 dark:text-teal-300">Nhận dòng này</button>}
+              </span>
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">Cần {fmt(l.needQty)} · đã đặt/cấp {fmt(l.orderedQty) || 0} · đã nhận {fmt(l.receivedQty) || 0} · tồn kho nhận {l.stockQty == null ? '—' : fmt(l.stockQty)}</p>
             {(l.orders.length > 0 || (l.transfers || []).length > 0) && <p className="mt-1 flex flex-wrap gap-1">{l.orders.map(o => <button key={o.id} type="button" onClick={() => onOpenOrder(o.id)}
@@ -233,7 +315,9 @@ const NeedDrawer: React.FC<{
                 <Flame size={15} />Mua nóng</button>}
               {(l.otherStock || []).length > 0 && <span className="text-xs text-muted-foreground">{(l.otherStock || []).length} kho khác còn hàng</span>}
             </div>}
-          </li>)}</ul>
+            </div>
+          </li>;
+          })}</ul>
         </section>}
     {supplyLine && <SupplyFromStockDrawer doc={doc} line={supplyLine} onClose={() => setSupplyLine(null)}
       onDone={() => { setSupplyLine(null); load(); onChanged(); }} />}
@@ -243,9 +327,21 @@ const NeedDrawer: React.FC<{
 // ---------------------------------------------------------------------------
 // Intake list
 // ---------------------------------------------------------------------------
-const DocumentRow: React.FC<{
-  doc: ProcurementInboxDocument; today: string; selectable: boolean; selected: boolean; onSelect: () => void; onOpen: () => void;
-}> = ({ doc, today, selectable, selected, onSelect, onOpen }) =>
+// Người mua của phiếu: một người như cũ; phiếu đã chia theo dòng thì hiện từng người + số dòng còn thiếu.
+const DocBuyers: React.FC<{ doc: ProcurementInboxDocument; currentUserId: string }> = ({ doc, currentUserId }) => {
+  const buyers = docBuyers(doc);
+  if (!buyers) return <span className={`inline-flex items-center gap-1 ${doc.assigneeName ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}`}><UserRound size={12} />{doc.assigneeName || 'Chưa giao'}</span>;
+  const label = (p: { userId: string; name: string | null }) => (p.userId === currentUserId ? 'Bạn' : givenName(p.name));
+  return <span className="inline-flex min-w-0 items-center gap-1 text-foreground" title={buyers.people.map(p => `${p.name || '—'}: ${p.count} dòng`).concat(buyers.unassigned ? [`Chưa có người mua: ${buyers.unassigned} dòng`] : []).join('\n')}>
+    <UserRound size={12} className="shrink-0" />
+    <span className="truncate">{buyers.people.map(p => `${label(p)} ${p.count}`).join(' · ')}</span>
+    {buyers.unassigned > 0 && <span className="shrink-0 font-semibold text-amber-700 dark:text-amber-300">{buyers.people.length ? '· ' : ''}{buyers.unassigned} chưa giao</span>}
+  </span>;
+};
+
+export const DocumentRow: React.FC<{
+  doc: ProcurementInboxDocument; today: string; currentUserId: string; selectable: boolean; selected: boolean; onSelect: () => void; onOpen: () => void;
+}> = ({ doc, today, currentUserId, selectable, selected, onSelect, onOpen }) =>
   <li className={`flex items-stretch border-t border-border ${selected ? 'bg-teal-50/60 dark:bg-teal-950/20' : 'bg-card hover:bg-muted/40'}`}>
     {selectable && <label className="flex w-11 shrink-0 cursor-pointer items-center justify-center">
       <input type="checkbox" checked={selected} disabled={doc.intakeState === 'withdrawn'} onChange={onSelect} aria-label={`Chọn ${doc.code}`} className="h-4 w-4 accent-teal-600" /></label>}
@@ -261,7 +357,7 @@ const DocumentRow: React.FC<{
         {doc.progress === 'closed' ? <span className="truncate text-muted-foreground" title={doc.closeReason || ''}>Lý do: {doc.closeReason}</span> : <UrgencyBadge date={doc.neededDate} today={today} />}
         <span className={`font-semibold ${PROGRESS_STYLE[doc.progress]}`}>{doc.intakeState === 'withdrawn' ? 'Nguồn đã thu hồi' : isExternalProcurementSource(doc.sourceType) && doc.progress !== 'closed' ? 'Đã tiếp nhận · chờ đối chiếu' : PROCUREMENT_PROGRESS_LABELS[doc.progress]}
           {isExternalProcurementSource(doc.sourceType) ? <span className="font-normal text-muted-foreground"> · {doc.lineCount} dòng nguồn</span> : doc.progress !== 'closed' && <span className="font-normal text-muted-foreground"> · đủ {doc.orderedLines}/{doc.lineCount} dòng{doc.partialLines > 0 ? ` · ${doc.partialLines} dòng đặt thiếu` : ''}</span>}</span>
-        <span className={`inline-flex items-center gap-1 ${doc.assigneeName ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}`}><UserRound size={12} />{doc.assigneeName || 'Chưa giao'}</span>
+        <DocBuyers doc={doc} currentUserId={currentUserId} />
       </span>
       <ChevronRight size={16} className="hidden shrink-0 text-muted-foreground md:block" />
     </button>
@@ -285,7 +381,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [openSnap, setOpenSnap] = useState<ProcurementInboxDocument | null>(null);
-  const [editor, setEditor] = useState<{ sources: ProcurementSourceRef[]; order: ProcurementOrderDetail | null } | null>(null);
+  const [editor, setEditor] = useState<{ sources: ProcurementSourceRef[]; order: ProcurementOrderDetail | null; lineKeys?: string[] } | null>(null);
   const [proactive, setProactive] = useState<{ order: ProcurementOrderDetail | null } | null>(null);
   const [orderId, setOrderId] = useState<string | null>(initialOrderId);
   const [ordersReload, setOrdersReload] = useState(0);
@@ -457,7 +553,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
                   {groups.map((g, i) => {
                     const open = accordion.isOpen(g.key);
                     const overdue = g.docs.filter(d => d.progress !== 'closed' && urgencyOf(d.neededDate, inbox.today).tone === 'overdue').length;
-                    const unassigned = g.docs.filter(d => !d.assigneeUserId && d.progress !== 'closed').length;
+                    const unassigned = g.docs.filter(d => d.progress !== 'closed' && (d.unassignedOpenLines != null ? d.unassignedOpenLines > 0 && (d.progress === 'new' || d.progress === 'partial') : !d.assigneeUserId)).length;
                     const keys = g.docs.filter(d => d.intakeState !== 'withdrawn').map(docKey);
                     const allSel = canManage && keys.length > 0 && keys.every(k => selected.has(k));
                     return <div key={g.key}>
@@ -477,7 +573,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
                           </span>
                         </button>
                       </div>
-                      {open && <ul>{g.docs.map(d => { const k = docKey(d); return <DocumentRow key={k} doc={d} today={inbox.today} selectable={canManage} selected={selected.has(k)}
+                      {open && <ul>{g.docs.map(d => { const k = docKey(d); return <DocumentRow key={k} doc={d} today={inbox.today} currentUserId={currentUserId} selectable={canManage} selected={selected.has(k)}
                         onSelect={() => setSelected(cur => { const next = new Set(cur); if (next.has(k)) next.delete(k); else next.add(k); return next; })}
                         onOpen={() => setOpenSnap(d)} />; })}</ul>}
                     </div>;
@@ -506,13 +602,13 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
       <button type="button" onClick={() => setSelected(new Set())} className="rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted">Bỏ chọn</button>
     </div>}
 
-    {openDoc && inbox && !editor && !proactive && !orderId && <NeedDrawer doc={openDoc} today={inbox.today} canManage={canManage} assignees={inbox.assignees}
+    {openDoc && inbox && !editor && !proactive && !orderId && <NeedDrawer doc={openDoc} today={inbox.today} canManage={canManage} assignees={inbox.assignees} currentUserId={currentUserId}
       onClose={() => setOpenSnap(null)} onAssign={userId => assign([docKey(openDoc)], userId)}
-      onOrder={() => { if (canOrderProcurementSource(openDoc)) setEditor({ sources: [refOf(openDoc)], order: null }); }}
+      onOrder={lineKeys => { if (canOrderProcurementSource(openDoc)) setEditor({ sources: [refOf(openDoc)], order: null, lineKeys }); }}
       onCloseNeed={() => void closeNeeds([openDoc])} onReopen={() => void reopenNeed(openDoc)} onOpenOrder={setOrderId} onChanged={refreshAll}
       onHotPurchase={prefill => { setOpenSnap(null); setHotPrefill(prefill); setMode('hot'); }} />}
 
-    {editor && <OrderEditor sources={editor.sources} order={editor.order} onClose={() => setEditor(null)}
+    {editor && <OrderEditor sources={editor.sources} order={editor.order} lineKeys={editor.lineKeys} currentUserId={currentUserId} onClose={() => setEditor(null)}
       onSaved={(id, poNumber) => {
         toast.success(editor.order ? `Đã lưu ${poNumber}` : `Đã lập đơn nháp ${poNumber}`, 'Chọn người duyệt rồi bấm Gửi duyệt.');
         setEditor(null); setSelected(new Set()); setOpenSnap(null); setOrderId(id); refreshAll();

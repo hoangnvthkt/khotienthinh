@@ -4,6 +4,7 @@ import {
   procurementInboxService,
   type ProcurementInboxDetail, type ProcurementOrderDetail, type ProcurementSourceRef,
 } from '../../../lib/procurementInboxService';
+import { splitLinesForOrder } from '../../../lib/procurementLineAssignment';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
@@ -29,7 +30,7 @@ const purchaseQtyOf = (item: Item, stockQty: number) => {
   return typed == null ? autoPurchase(item, stockQty) : typed;
 };
 
-const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetail | null): Item[] => {
+const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetail | null, include?: ReadonlySet<string>): Item[] => {
   const mine = new Map<string, { qty: number; price: number }>();
   order?.lines.forEach(line => line.allocations.forEach(a => mine.set(`${a.sourceType}:${a.sourceId}:${a.lineId}`, { qty: a.qty, price: line.unitPrice })));
   const ownLine = new Map((order?.lines || []).map(line => [line.itemId, line]));
@@ -38,6 +39,7 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
     if (!line.itemId) return;
     const key = `${doc.sourceType}:${doc.sourceId}:${line.lineId}`;
     const own = mine.get(key);
+    if (!own && include && !include.has(key)) return;
     const orderedElsewhere = Math.max(0, line.orderedQty - (own?.qty || 0));
     const available = Math.max(0, line.needQty - orderedElsewhere);
     if (!own && available <= 0) return;
@@ -60,9 +62,12 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
 export const OrderEditor: React.FC<{
   sources: ProcurementSourceRef[];
   order?: ProcurementOrderDetail | null;
+  /** Dòng đã tick trong phiếu (`sourceType:sourceId:lineId`). Không truyền = mọi dòng còn thiếu trừ dòng người khác phụ trách. */
+  lineKeys?: string[];
+  currentUserId?: string;
   onClose: () => void;
   onSaved: (purchaseOrderId: string, poNumber: string) => void;
-}> = ({ sources, order = null, onClose, onSaved }) => {
+}> = ({ sources, order = null, lineKeys, currentUserId = '', onClose, onSaved }) => {
   const [docs, setDocs] = useState<ProcurementInboxDetail[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -73,6 +78,7 @@ export const OrderEditor: React.FC<{
   const [mode, setMode] = useState<'single' | 'multiple'>(order?.purchaseMode || 'single');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<Array<{ name: string | null; count: number }>>([]);
 
   const sourceKey = sources.map(s => `${s.sourceType}:${s.sourceId}`).join(',');
   useEffect(() => {
@@ -80,7 +86,8 @@ export const OrderEditor: React.FC<{
     Promise.all(sources.map(s => procurementInboxService.get(s.sourceType, s.sourceId)))
       .then(result => {
         if (!alive) return;
-        setDocs(result); setItems(buildItems(result, order));
+        const split = order ? null : splitLinesForOrder(result, currentUserId, lineKeys ? new Set(lineKeys) : undefined);
+        setDocs(result); setItems(buildItems(result, order, split?.include)); setSkipped(split?.skipped || []);
         if (!order) {
           const dates = result.map(d => d.neededDate).filter((d): d is string => Boolean(d)).sort();
           const today = new Date().toISOString().slice(0, 10);
@@ -184,8 +191,12 @@ export const OrderEditor: React.FC<{
 
             {!isGroup && <DeliveryModePicker value={mode} onChange={setMode} />}
 
+            {skipped.length > 0 && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
+              Không đưa vào đơn {skipped.reduce((s, x) => s + x.count, 0)} dòng do người khác mua: <b className="text-foreground">{skipped.map(x => `${x.name || '—'} (${x.count})`).join(', ')}</b>.
+              Cần đặt luôn thì tick các dòng đó trong phiếu rồi bấm Lập đơn.</p>}
+
             {items.length === 0
-              ? <StateBox kind="empty" title="Các phiếu đã đặt đủ" message="Không còn dòng nhu cầu nào cần đặt thêm." />
+              ? <StateBox kind="empty" title={skipped.length ? 'Không còn dòng nào của bạn' : 'Các phiếu đã đặt đủ'} message={skipped.length ? 'Các dòng còn thiếu đều do người khác mua.' : 'Không còn dòng nhu cầu nào cần đặt thêm.'} />
               : <section className="space-y-3">
                 <div className="flex items-baseline justify-between"><h3 className="font-semibold text-foreground">Vật tư đặt mua</h3>
                   <span className="text-xs text-muted-foreground">{items.length} vật tư · SL gợi ý = phần còn thiếu của phiếu</span></div>
