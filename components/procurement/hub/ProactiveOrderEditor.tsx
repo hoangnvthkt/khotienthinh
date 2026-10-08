@@ -11,6 +11,8 @@ import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
 import PoExcelImport from './PoExcelImport';
 import type { ImportedPoLine } from '../../../lib/procurementExcelImport';
+import { QuickCreateItemDialog } from '../../wms/QuickCreateItemDialog';
+import { wmsCatalogService } from '../../../lib/wmsCatalogService';
 
 // Đơn chủ động: Mua hàng tự lập PO khi chưa có phiếu nhu cầu (chốt giá, hàng đặt dài ngày, bù tồn…).
 // Vẫn gửi duyệt như đơn thường. Vượt hoặc ngoài BOQ dự án thì phải ghi lý do. Nhu cầu đến sau
@@ -83,6 +85,11 @@ export const ProactiveOrderEditor: React.FC<{
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Vật tư chưa có trong danh mục: tạo mã ngay tại đây (null = đóng hộp thoại).
+  const [createName, setCreateName] = useState<string | null>(null);
+  // Ô quyền nhạy cảm "Tạo mã vật tư": không có thì không hiện nút tạo.
+  const [canCreateItem, setCanCreateItem] = useState(false);
+  useEffect(() => { wmsCatalogService.createOptions().then(o => setCanCreateItem(o.canCreate)).catch(() => setCanCreateItem(false)); }, []);
 
   useEffect(() => {
     procurementInboxService.proactiveOptions().then(r => { setProjects(r.projects); setStockWarehouses(r.stockWarehouses || []); })
@@ -180,7 +187,7 @@ export const ProactiveOrderEditor: React.FC<{
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
   };
 
-  return <Drawer wide label={order ? `Sửa đơn chủ động ${order.poNumber}` : 'Lập đơn chủ động'} onClose={onClose}
+  return <Drawer xl label={order ? `Sửa đơn chủ động ${order.poNumber}` : 'Lập đơn chủ động'} onClose={onClose}
     header={<>
       <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">{order ? `Sửa đơn chủ động ${order.poNumber}` : 'Đơn chủ động'}</p>
       <h2 className="mt-1 text-lg font-bold text-foreground">{order ? [order.projectCode, order.projectName].filter(Boolean).join(' — ') : 'Lập đơn khi chưa có phiếu nhu cầu'}</h2>
@@ -268,7 +275,8 @@ export const ProactiveOrderEditor: React.FC<{
                   })}
                   onImport={importLines} />
               </div>
-              <div className="relative">
+              <div className="flex gap-2">
+              <div className="relative min-w-0 flex-1">
                 <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input ref={searchRef} value={query} disabled={!scopeReady} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
                   onChange={e => { setQuery(e.target.value); setSearchOpen(true); }} aria-label="Thêm vật tư"
@@ -276,7 +284,7 @@ export const ProactiveOrderEditor: React.FC<{
                   className={`w-full pl-8 ${inputCls}`} />
                 {searchOpen && scopeReady && (!stock || query.trim()) && <ul role="listbox" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
                   {results == null && <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"><Loader2 size={14} className="animate-spin" />Đang tìm vật tư…</li>}
-                  {results?.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{query ? 'Không tìm thấy vật tư. Đề xuất cấp mã ở Vật tư → Đề xuất cấp mã.' : 'Dự án chưa có BOQ vật tư — gõ tên để tìm trong danh mục.'}</li>}
+                  {results?.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{query ? (canCreateItem ? 'Không tìm thấy vật tư trong danh mục.' : 'Không tìm thấy vật tư. Gửi Đề xuất mã mới ở Vật tư → Danh mục, hoặc nhờ người có quyền Tạo mã vật tư.') : 'Dự án chưa có BOQ vật tư — gõ tên để tìm trong danh mục.'}</li>}
                   {results?.map(item => {
                     const added = lines.some(l => l.itemId === item.id);
                     return <li key={item.id}><button type="button" role="option" aria-selected={added} disabled={added} onMouseDown={e => e.preventDefault()} onClick={() => addItem(item)}
@@ -287,7 +295,15 @@ export const ProactiveOrderEditor: React.FC<{
                         ? <>BOQ <b className="text-leaf-700 dark:text-leaf-300">{fmt(item.boqQty, 3)}</b> · đã đặt {fmt(item.orderedQty, 3)}</>
                         : 'Ngoài BOQ'}</span></button></li>;
                   })}
+                  {canCreateItem && results != null && query.trim() && <li className="border-t border-border"><button type="button" onMouseDown={e => e.preventDefault()}
+                    onClick={() => { setCreateName(query.trim()); setSearchOpen(false); }}
+                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-teal-700 hover:bg-muted dark:text-teal-300">
+                    <Plus size={15} />Tạo vật tư mới “{query.trim()}”</button></li>}
                 </ul>}
+              </div>
+              {canCreateItem && <button type="button" disabled={!scopeReady} onClick={() => { setCreateName(query.trim()); setSearchOpen(false); }}
+                title={scopeReady ? 'Vật tư chưa có trong danh mục? Tạo mã mới ngay' : 'Chọn dự án trước'} aria-label="Tạo vật tư mới"
+                className={`${secondaryBtn} shrink-0 bg-card`}><Plus size={15} /><span className="hidden sm:inline">Vật tư mới</span></button>}
               </div>
 
               {lines.length === 0
@@ -359,6 +375,15 @@ export const ProactiveOrderEditor: React.FC<{
             </section>
             {stock && <p className="text-xs text-muted-foreground">Đơn dự trữ: công nợ NCC ghi cấp công ty (module Tài chính, nhóm "Kho công ty"); chi phí vào dự án khi chuyển kho sang kho công trường, theo giá vốn sổ kho.</p>}
           </>}
+    {createName !== null && <QuickCreateItemDialog<ProcurementCatalogItem> initialName={createName}
+      findSimilar={name => procurementInboxService.searchItems(stock ? null : projectId, name)}
+      useExistingLabel="Thêm vào đơn" onUseExisting={item => { addItem(item); setCreateName(null); }}
+      onClose={() => setCreateName(null)}
+      onCreated={item => {
+        addItem({ id: item.id, name: item.name, sku: item.sku, unit: item.unit, purchaseUnit: item.purchaseUnit,
+          purchaseFactor: item.purchaseConversionFactor, inBoq: false, boqQty: 0, orderedQty: 0 });
+        setCreateName(null);
+      }} />}
   </Drawer>;
 };
 

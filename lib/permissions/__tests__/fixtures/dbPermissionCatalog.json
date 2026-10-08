@@ -2754,6 +2754,18 @@
       ]
     },
     {
+      "permissionCode": "wms.master_data.create_item",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
+      "permissionCode": "wms.master_data.edit_item",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "wms.master_data.issue_code",
       "scopeTypes": [
         "global"

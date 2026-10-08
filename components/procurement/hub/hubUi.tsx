@@ -53,14 +53,15 @@ export const PoPaymentChip: React.FC<{ payment?: ProcurementPoPayment | null }> 
 };
 
 /** Right-hand drawer on desktop, full screen on phones. Escape closes. */
-export const Drawer: React.FC<{ label: string; wide?: boolean; onClose: () => void; header: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }> = ({ label, wide, onClose, header, footer, children }) => {
+/** `xl`: ngăn lập đơn — gần toàn màn hình trên máy tính để bảng vật tư, đơn giá, thành tiền không bị chật. */
+export const Drawer: React.FC<{ label: string; wide?: boolean; xl?: boolean; onClose: () => void; header: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }> = ({ label, wide, xl, onClose, header, footer, children }) => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={label}>
     <button type="button" aria-label="Đóng" onClick={onClose} className="absolute inset-0 bg-slate-950/40" />
-    <aside className={`relative flex h-full w-full flex-col bg-background shadow-2xl ${wide ? 'max-w-5xl' : 'max-w-3xl'}`}>
+    <aside className={`relative flex h-full w-full flex-col bg-background shadow-2xl ${xl ? 'max-w-[1400px]' : wide ? 'max-w-5xl' : 'max-w-3xl'}`}>
       <header className="flex items-start gap-3 border-b border-border px-4 py-4 md:px-6">
         <div className="min-w-0 flex-1">{header}</div>
         <button type="button" onClick={onClose} aria-label="Đóng" className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><X size={18} /></button>

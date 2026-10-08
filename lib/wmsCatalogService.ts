@@ -30,6 +30,8 @@ export interface CatalogOverview {
   openPoItems: string[];
   renames: CatalogRename[];
 }
+/** Form "Tạo vật tư mới": quyền và danh sách nhóm, đơn vị tính. */
+export interface CatalogCreateOptions { canCreate: boolean; canEdit: boolean; canIssueCode: boolean; categories: string[]; units: string[] }
 export interface CatalogItemDetail {
   item: CatalogItem;
   usage: CatalogUsage;
@@ -58,11 +60,13 @@ export interface ItemCard {
 
 const ERRORS: Record<string, string> = {
   CATALOG_ISSUE_DENIED: 'Bạn chưa có ô quyền "Cấp mã". Nhờ Admin cấp ở Cài đặt → Người dùng → Kho vật tư.',
+  CATALOG_CREATE_DENIED: 'Bạn chưa có ô quyền nhạy cảm "Tạo mã vật tư". Nhờ Admin cấp, hoặc gửi Đề xuất mã mới ở Vật tư → Danh mục.',
+  CATALOG_EDIT_DENIED: 'Bạn chưa có ô quyền nhạy cảm "Sửa mã vật tư". Nhờ Admin cấp.',
   CATALOG_VIEW_DENIED: 'Bạn chưa có quyền xem danh mục vật tư.',
   CATALOG_FIELDS_REQUIRED: 'Cần đủ tên, đơn vị tính và nhóm vật tư.',
   CATALOG_MODE_INVALID: 'Cách quản lý kho không hợp lệ.',
   CATALOG_FACTOR_INVALID: 'Hệ số quy đổi phải lớn hơn 0.',
-  CATALOG_REASON_REQUIRED: 'Cần ghi lý do.',
+  CATALOG_REASON_REQUIRED: 'Cần ghi lý do — mọi lần sửa mã đều được ghi lịch sử.',
   CATALOG_ITEMS_REQUIRED: 'Chưa chọn mã nào.',
   CATALOG_ACTION_INVALID: 'Thao tác không hợp lệ.',
   CODE_REQUEST_NOT_FOUND: 'Không tìm thấy đề xuất cấp mã.',
@@ -109,6 +113,7 @@ const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> =>
 export const wmsCatalogService = {
   overview: () => rpc<CatalogOverview>('get_catalog_overview_v1'),
   item: (itemId: string) => rpc<CatalogItemDetail>('get_catalog_item_v1', { p_item_id: itemId }),
+  createOptions: () => rpc<CatalogCreateOptions>('get_catalog_create_options_v1'),
   issue: (input: { requestId?: string; name: string; unit: string; category: string; purchaseUnit?: string | null; purchaseConversionFactor?: number; minStock?: number; inventoryMode: InventoryMode; reason?: string }) =>
     rpc<CatalogItem>('issue_material_code_v1', { p: input }),
   resolveRequest: (input: { requestId: string; action: 'use_existing' | 'reject'; itemId?: string; reason?: string }) =>
@@ -129,6 +134,14 @@ export const wmsCatalogService = {
   setDocumentDate: (input: { transactionId: string; date: string; reason?: string }) =>
     rpc<{ transactionId: string; date: string; posted: boolean }>('set_wms_document_date_v1', { p: input }),
 };
+
+// Nhật ký sửa mã: liệt kê từng trường đổi, trước → sau.
+const FIELD_LABELS: Array<[string, string]> = [['name', 'Tên'], ['unit', 'ĐVT kho'], ['category', 'Nhóm'], ['purchaseUnit', 'ĐV mua'],
+  ['purchaseConversionFactor', 'Hệ số quy đổi'], ['minStock', 'Tồn tối thiểu'], ['inventoryMode', 'Cách quản lý kho'], ['status', 'Trạng thái']];
+const fieldText = (k: string, v: unknown) => v == null || v === '' ? '—' : k === 'inventoryMode' ? INVENTORY_MODE_LABELS[v as InventoryMode] || String(v) : String(v);
+export const changedFields = (before: Record<string, unknown>, after: Record<string, unknown>) => FIELD_LABELS
+  .filter(([k]) => k in after && String(before[k] ?? '') !== String(after[k] ?? ''))
+  .map(([k, label]) => ({ label, from: fieldText(k, before[k]), to: fieldText(k, after[k]) }));
 
 // --- So trùng phía giao diện (giống app_private.catalog_name_key) ---
 export const foldVi = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
