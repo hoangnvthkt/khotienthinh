@@ -4399,7 +4399,7 @@ export type CustomFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select'
 export type ProjectWorkflowSubjectType = 'material_request' | 'custom_material_request';
 export type ProjectWorkflowSubjectStatus = 'RUNNING' | 'RETURNED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
 export type WorkflowStepAssignmentStatus = 'PENDING' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'SKIPPED';
-export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback';
+export type ProjectWorkflowAction = 'approve' | 'return' | 'reject' | 'resubmit' | 'reassign' | 'rollback' | 'move_step';
 export type WorkflowParticipantRole = 'ADMIN' | 'WATCHER' | 'CREATOR' | 'ASSIGNEE';
 // ANY_ONE: one assignee approving advances the stage. ALL: every assignee must approve.
 export type WorkflowApprovalPolicy = 'ANY_ONE' | 'ALL';

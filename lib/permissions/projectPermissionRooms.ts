@@ -9,6 +9,7 @@ export const PROJECT_ROOM_ACTION_CODES = [
   'publish_progress',
   'view_available_stock',
   'view_resource_evidence',
+  'manage',
 ] as const;
 
 export type ProjectRoomActionCode = typeof PROJECT_ROOM_ACTION_CODES[number];
@@ -75,7 +76,7 @@ const defineRoom = (
 export const PROJECT_PERMISSION_ROOMS = Object.freeze([
   defineRoom('daily_log', 'daily_log', 'Nhật ký công trường', 'Lập, kiểm tra và duyệt nhật ký.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve', 'publish_progress'], ['verify', 'approve'], 10, { publish_progress: ['approve'] }),
   defineRoom('material_planning', 'material', 'Kế hoạch & BOQ vật tư', 'Quản lý kế hoạch và BOQ vật tư.', ['view', 'edit', 'delete'], [], 20),
-  defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'confirm', 'approve', 'view_available_stock'], [], 30),
+  defineRoom('material_request', 'material', 'Đề xuất vật tư', 'Gửi, duyệt và xác nhận cấp vật tư.', ['view', 'edit', 'delete', 'submit', 'confirm', 'approve', 'view_available_stock', 'manage'], [], 30),
   defineRoom('material_po', 'material', 'Đơn hàng PO', 'Tạo, gửi duyệt, duyệt và xác nhận nhận hàng.', ['view', 'edit', 'delete', 'submit', 'approve', 'confirm'], [], 40),
   defineRoom('gantt', 'progress', 'Tiến độ Gantt', 'Quản lý hạng mục và tiến độ thi công.', ['view', 'edit', 'delete'], [], 70, { edit: ['view'], delete: ['view'] }),
   defineRoom('work_plan', 'progress', 'Kế hoạch tháng/tuần', 'Lập, gửi duyệt và duyệt kế hoạch tháng, kế hoạch tuần.', ['view', 'edit', 'delete', 'submit', 'verify', 'approve'], [], 75, { edit: ['view'], delete: ['view'], submit: ['view'], verify: ['view'], approve: ['view'] }),
@@ -105,6 +106,7 @@ const GENERIC_ROOM_ACTION_LABELS: Record<ProjectRoomActionCode, string> = {
   publish_progress: 'Công bố tiến độ ngày',
   view_available_stock: 'Xem tồn khả dụng',
   view_resource_evidence: 'Xem bằng chứng nguồn lực',
+  manage: 'Quản trị',
 };
 
 export const getProjectPermissionRoomActionLabel = (
@@ -118,6 +120,7 @@ export const getProjectPermissionRoomActionLabel = (
     if (actionCode === 'verify') return 'Duyệt KH tuần';
     if (actionCode === 'approve') return 'Duyệt KH tháng';
   }
+  if (roomCode === 'material_request' && actionCode === 'manage') return 'Quản trị quy trình duyệt';
   if (roomCode === 'weekly_progress') {
     if (actionCode === 'edit') return 'Sửa/Nhập liệu';
     if (actionCode === 'confirm') return 'Chốt/Mở chốt';

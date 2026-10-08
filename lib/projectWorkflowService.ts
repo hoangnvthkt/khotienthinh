@@ -818,6 +818,9 @@ export const projectWorkflowService = {
         comment: input.comment || '',
       });
     }
+    if (input.action === 'move_step') {
+      throw new Error('Chuyển bước cần chọn bước đích: dùng moveMaterialRequestWorkflowStep.');
+    }
     if (input.action === 'rollback') {
       return this.rollbackCompletedMaterialRequestWorkflow({
         requestId: input.requestId,
@@ -833,6 +836,25 @@ export const projectWorkflowService = {
       newAssigneeUserIds: reassignUserIds,
       comment: input.comment || '',
     });
+  },
+
+  async moveMaterialRequestWorkflowStep(input: {
+    requestId: string;
+    targetTemplateNodeId: string;
+    assigneeUserIds: string[];
+    comment: string;
+  }): Promise<ProjectWorkflowSubject> {
+    const assigneeIds = Array.from(new Set((input.assigneeUserIds || []).filter(Boolean)));
+    const { data, error } = await supabase.rpc('admin_move_project_workflow_step', {
+      p_subject_type: 'material_request',
+      p_subject_id: input.requestId,
+      p_target_template_node_id: input.targetTemplateNodeId,
+      p_assignee_user_ids: assigneeIds,
+      p_comment: input.comment,
+    });
+    if (error) throw error;
+    const subject = Array.isArray(data) ? data[0] : data;
+    return this.getSubjectByMaterialRequestId(subject?.subject_id || input.requestId) as Promise<ProjectWorkflowSubject>;
   },
 
   async returnMaterialRequestWorkflow(input: {

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw, RotateCcw, Send, Undo2, UserRound, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCcw, RotateCcw, Route, Send, Undo2, UserRound, X, XCircle } from 'lucide-react';
 import {
   Employee,
   OrgUnit,
@@ -27,6 +27,8 @@ interface Props {
   currentNode?: WorkflowNode | null;
   nextNode?: WorkflowNode | null;
   returnTargetNode?: WorkflowNode | null;
+  /** Các bước có thể chọn khi quản trị chuyển bước (action = move_step). */
+  moveTargets?: WorkflowNode[];
   requesterUserId?: string | null;
   documentName: string;
   completionHandoff?: {
@@ -49,6 +51,7 @@ const actionTitle: Record<ProjectWorkflowAction, string> = {
   resubmit: 'Gửi lại phiếu',
   reassign: 'Đổi người xử lý',
   rollback: 'Rollback về bước duyệt cuối',
+  move_step: 'Quản trị: chuyển bước',
 };
 
 const actionIcon: Record<ProjectWorkflowAction, React.ReactNode> = {
@@ -58,9 +61,10 @@ const actionIcon: Record<ProjectWorkflowAction, React.ReactNode> = {
   resubmit: <Send size={18} />,
   reassign: <UserRound size={18} />,
   rollback: <Undo2 size={18} />,
+  move_step: <Route size={18} />,
 };
 
-const requiresComment = (action: ProjectWorkflowAction) => action === 'return' || action === 'reject' || action === 'rollback';
+const requiresComment = (action: ProjectWorkflowAction) => action === 'return' || action === 'reject' || action === 'rollback' || action === 'move_step';
 
 const ProjectWorkflowActionDialog: React.FC<Props> = ({
   action,
@@ -71,6 +75,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   currentNode,
   nextNode,
   returnTargetNode,
+  moveTargets = [],
   requesterUserId,
   documentName,
   completionHandoff,
@@ -89,12 +94,14 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   const [roomRecipientUserIds, setRoomRecipientUserIds] = useState<string[] | null>(null);
   const [loadingRoomRecipients, setLoadingRoomRecipients] = useState(false);
 
+  const [moveNodeId, setMoveNodeId] = useState('');
   const targetNode = useMemo(() => {
+    if (action === 'move_step') return moveTargets.find(node => node.id === moveNodeId) || null;
     if (action === 'approve') return nextNode || null;
     if (action === 'resubmit') return returnTargetNode || currentNode || null;
     if (action === 'reassign') return currentNode || null;
     return null;
-  }, [action, currentNode, nextNode, returnTargetNode]);
+  }, [action, currentNode, moveNodeId, moveTargets, nextNode, returnTargetNode]);
 
   const isCompletionHandoff = action === 'approve'
     && targetNode?.type === WorkflowNodeType.END
@@ -113,7 +120,8 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   const needsAssignee = (action === 'approve' && !!targetNode && targetNode.type !== WorkflowNodeType.END)
     || isCompletionHandoff
     || action === 'resubmit'
-    || action === 'reassign';
+    || action === 'reassign'
+    || (action === 'move_step' && !!targetNode);
   const resolvedRecipientAction = isCompletionHandoff
     ? completionHandoff?.recipientAction || recipientAction
     : recipientAction;
@@ -126,6 +134,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     if (action === 'reject') return 'Phiếu sẽ kết thúc ở trạng thái từ chối.';
     if (action === 'resubmit') return `Phiếu sẽ gửi lại vào bước "${targetNode?.label || 'đã trả lại'}".`;
     if (action === 'rollback') return 'Phiếu hoàn thành sẽ quay lại bước duyệt cuối khi toàn bộ chứng từ downstream đã được reverse.';
+    if (action === 'move_step') return 'Bạn đang dùng quyền quản trị để đưa phiếu tới bước bất kỳ, tiến hoặc lùi, không cần người đang xử lý duyệt.';
     return 'Người xử lý hiện tại sẽ được thay bằng người mới trong cùng bước.';
   })();
 
@@ -137,6 +146,9 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
     if (action === 'reject') return 'Sau khi xác nhận, phiếu bị từ chối và không còn người xử lý pending.';
     if (action === 'resubmit') return `Sau khi xác nhận, phiếu quay lại "${targetNode?.label || 'bước đã trả'}" với pool xử lý được chọn.`;
     if (action === 'rollback') return 'Sau khi xác nhận, phiếu hoàn thành quay về bước duyệt cuối nếu dependency downstream đã sạch.';
+    if (action === 'move_step') return targetNode
+      ? `Sau khi xác nhận, phiếu chuyển tới "${targetNode.label}", người xử lý cũ bị gỡ và người được chọn nhận việc. Lịch sử ghi rõ là quản trị chuyển bước.`
+      : 'Chọn bước đích để xem kết quả.';
     return `Sau khi xác nhận, pool xử lý của bước "${targetNode?.label || currentNode?.label || 'hiện tại'}" được thay bằng người được chọn.`;
   })();
 
@@ -191,6 +203,10 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
 
   const submit = async () => {
     const trimmed = comment.trim();
+    if (action === 'move_step' && !targetNode) {
+      setError('Vui lòng chọn bước đích.');
+      return;
+    }
     if (requiresComment(action) && !trimmed) {
       setError('Vui lòng nhập lý do.');
       return;
@@ -282,6 +298,37 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
               <button type="button" onClick={() => void loadDependencies()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1 hover:bg-red-100">
                 <RefreshCcw size={12} /> Thử lại
               </button>
+            </div>
+          )}
+
+          {action === 'move_step' && (
+            <div>
+              <label className="mb-1.5 block text-[10px] font-black uppercase text-slate-400">Chuyển tới bước</label>
+              <div className="space-y-1.5">
+                {moveTargets.map((node, index) => {
+                  const isCurrent = node.id === subject.currentNodeId && subject.status === 'RUNNING';
+                  const selected = node.id === moveNodeId;
+                  return (
+                    <button
+                      key={node.id}
+                      type="button"
+                      disabled={submitting || isCurrent}
+                      onClick={() => { setMoveNodeId(node.id); setAssigneeUserIds([]); setError(null); }}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-xs font-bold transition-colors disabled:cursor-not-allowed ${
+                        selected
+                          ? 'border-indigo-400 bg-indigo-50 text-indigo-800'
+                          : isCurrent
+                            ? 'border-slate-100 bg-slate-50 text-slate-400'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${selected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{index + 1}</span>
+                      <span className="min-w-0 flex-1 truncate">{node.label}</span>
+                      {isCurrent && <span className="shrink-0 text-[10px] font-black uppercase">Đang ở đây</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 

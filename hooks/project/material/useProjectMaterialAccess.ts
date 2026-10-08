@@ -31,6 +31,7 @@ export interface ProjectMaterialAccessState {
     canSubmitProjectRequest: boolean;
     canApproveProjectRequest: boolean;
     canViewAvailableStock: boolean;
+    canManageRequestWorkflow: boolean;
     canCreateMaterialRequest: boolean;
     canEditOwnMaterialRequest: boolean;
     canDeleteMaterialRequest: boolean;
@@ -246,6 +247,7 @@ export const useProjectMaterialAccess = ({
     const canSubmitProjectRequest = materialCapabilities.canSubmitMaterialRequest;
     const canApproveProjectRequest = materialCapabilities.canApproveMaterialRequest;
     const canViewAvailableStock = materialCapabilities.canViewAvailableStock;
+    const canManageRequestWorkflow = materialCapabilities.canManageWorkflow;
     const canCreateMaterialRequest = materialCapabilities.canCreateMaterialRequest;
 
     return {
@@ -263,6 +265,7 @@ export const useProjectMaterialAccess = ({
         canSubmitProjectRequest,
         canApproveProjectRequest,
         canViewAvailableStock,
+        canManageRequestWorkflow,
         canCreateMaterialRequest,
         canEditOwnMaterialRequest: materialCapabilities.canEditOwnMaterialRequest,
         canDeleteMaterialRequest: materialCapabilities.canDeleteMaterialRequest,
