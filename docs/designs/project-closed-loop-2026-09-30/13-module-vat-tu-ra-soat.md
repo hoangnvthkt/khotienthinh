@@ -807,3 +807,28 @@ Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng ti
 **Đảo 4 phiếu nhập tay** (`.superpowers/review/work-plan/vnd-reverse-data.mjs`, chạy sau deploy): mỗi phiếu một phiếu điều chỉnh âm cùng ngày, cùng giá; phiếu gốc "Đã hủy" để kế toán không ghi công nợ (4 phiếu chưa ghi công nợ / chi phí). Tồn bê tông M250 SMB về 0.
 
 **Đã kiểm trên production trong giao dịch hoàn tác** (`tools/vnd-test.mjs`): PO-607 có NK + XK (M250 7,5, M350 100; bỏ dòng bơm); anh Luật sửa ngày PO-607 về 08/09 (thiếu lý do / ngày tương lai bị chặn); dời phiếu nhập tháng 7 làm âm tồn → chặn; phiếu xuất ghi lùi trước khi hàng về → chặn; xuất hôm nay bình thường; đảo 4 phiếu → tồn 0, số phiếu đảo XK20260908…, kế toán hết phiếu chờ.
+
+**Đã lên production 06/10/2026** (PR #109).
+
+## 21. Ngày nghiệp vụ trong Mua hàng + sửa lỗi "nhận 1 bước ép Đã nhận đủ" (08/10/2026)
+
+**Sự cố PO-143:** nhận 1 bước ở Vật tư → Nhập xuất trong lúc đợt 1 đang đối chiếu. Kho đúng (NK20260926-00655, 351/107/2/1, ngày 26/09) nhưng:
+- Hàm `finalize_material_po_receipt` luôn đặt đơn "Đã nhận đủ" sau mỗi đợt, kể cả về thiếu — lỗi hệ thống, cùng lỗi ở PO-038, PO-145, PO-268.
+- Công nợ ghi ngày 07/10 (ngày bấm) thay vì 26/09; phiếu đối chiếu vẫn treo — nếu Ghi sổ nữa sẽ cộng trùng số đã nhận.
+
+**Chủ SP quyết:** A. công nợ theo ngày hàng về; B. lùi tối đa 7 ngày, quá 7 ngày cần quyền "Nhập dữ liệu quá khứ"; C. 4 đơn còn chờ NCC giao.
+
+**Migration `20261008137600_procurement_business_dates.sql`** (sinh bằng `tools/gen_vbd.py` + `vbd_template.sql`):
+- Ô quyền `system.procurement.backdate` "Nhập dữ liệu quá khứ"; `app_private.assert_business_date`: không ngày tương lai, lùi quá 7 ngày cần quyền (Admin luôn có). Áp ở: sửa ngày chứng từ kho, sửa ngày phiếu chờ duyệt, ngày hàng về ở đối chiếu, ngày đặt hàng.
+- `set_purchase_order_order_date_v1`: ngày đặt hàng (cùng quyền lập / sửa đơn).
+- Nhận hàng: công nợ, chi phí dự án, phiếu giao theo HĐ (kỳ đối soát) theo ngày hàng về (ngày chứng từ phiếu nhập); ngày giao xong của đơn theo ngày hàng về.
+- Sửa ngày phiếu nhận hàng kéo theo công nợ, chi phí dự án, phiếu giao theo HĐ; chặn nếu phiếu giao đã nằm trong bảng đối soát đã chốt.
+- Nhận 1 bước không còn ép "Đã nhận đủ"; chặn nhận 1 bước khi đợt đang đối chiếu.
+
+**Giao diện:** ô "Ngày đặt hàng" ở 3 màn lập đơn (chỉ gửi khi đổi); ô "Ngày hàng về thực tế" khi nhận hàng ở Nhập xuất; gợi ý "Lùi N ngày — cần quyền" ở các ô ngày; lỗi nghiệp vụ hiện đúng câu tiếng Việt.
+
+**Sửa dữ liệu** (`.superpowers/review/work-plan/vbd-data.mjs`, chạy sau deploy): PO-143/038/145/268 về "Về một phần"; PO-143 công nợ + chi phí ngày 26/09, phiếu đối chiếu treo → Hủy.
+
+**Đã kiểm trên production trong giao dịch hoàn tác** (`tools/vbd-test.mjs`): anh Luật lùi 10 ngày bị chặn, 3 ngày được; Admin lùi 30 ngày được; ngày tương lai bị chặn; sửa ngày PO-609 dời phiếu giao HĐ sang 08/09; phiếu đã nằm trong bảng đối soát chốt bị chặn; ngày đặt hàng PO-607 về 05/09; nhận 1 bước PO-143 khi đối chiếu mở bị chặn; sửa dữ liệu 4 đơn đúng.
+
+**Lưu ý nhập bù theo HĐ:** PO-607/609/611/612 đã nằm trong bảng đối soát tháng 10 đã ghi sổ (DCHD-202610-…). Muốn dời về tháng 9: kế toán đảo bảng đối soát → sửa ngày từng phiếu nhận → lập lại bảng đối soát tháng 9.

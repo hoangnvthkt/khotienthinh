@@ -240,6 +240,10 @@ export const procurementInboxService = {
   searchItems(projectId: string | null, search?: string) {
     return call<ProcurementCatalogItem[]>('search_procurement_items_v1', { p_project_id: projectId, p_search: search || null });
   },
+  /** Ngày nghiệp vụ: ngày đặt hàng của đơn (lùi quá 7 ngày cần quyền Nhập dữ liệu quá khứ). */
+  setOrderDate(purchaseOrderId: string, orderDate: string) {
+    return call<{ purchaseOrderId: string; orderDate: string }>('set_purchase_order_order_date_v1', { p: { purchaseOrderId, orderDate } });
+  },
   saveProactiveOrder(input: ProcurementProactiveSaveInput) {
     return call<{ purchaseOrderId: string; poNumber: string; rowVersion: number; totalAmount: number; lines: number; overBoq: number }>('save_procurement_proactive_po_v1', { p_input: input });
   },

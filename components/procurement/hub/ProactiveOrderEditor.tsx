@@ -7,6 +7,7 @@ import {
 } from '../../../lib/procurementInboxService';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
 
 // Đơn chủ động: Mua hàng tự lập PO khi chưa có phiếu nhu cầu (chốt giá, hàng đặt dài ngày, bù tồn…).
@@ -63,6 +64,8 @@ export const ProactiveOrderEditor: React.FC<{
   const [warehouseId, setWarehouseId] = useState(order?.targetWarehouseId || '');
   const [vendor, setVendor] = useState<VendorValue>(order?.vendorId ? { id: order.vendorId, name: order.vendorName || '' } : null);
   const [expected, setExpected] = useState(order?.expectedDeliveryDate || '');
+  const [orderDate, setOrderDate] = useState(order?.orderDate || vnToday());
+  const [orderDateTouched, setOrderDateTouched] = useState(false);
   const [vat, setVat] = useState(String(order?.vatRate ?? 10));
   const [mode, setMode] = useState<'single' | 'multiple'>(order?.purchaseMode || 'single');
   const [note, setNote] = useState(order?.note || '');
@@ -149,6 +152,7 @@ export const ProactiveOrderEditor: React.FC<{
           };
         }),
       });
+      if (orderDateTouched) await procurementInboxService.setOrderDate(result.purchaseOrderId, orderDate);
       onSaved(result.purchaseOrderId, result.poNumber);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
   };
@@ -198,7 +202,10 @@ export const ProactiveOrderEditor: React.FC<{
                 </select>
               </label></>}
               <VendorPicker value={vendor} onChange={setVendor} autoFocus={false} />
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <label className="text-xs font-semibold text-muted-foreground">Ngày đặt hàng
+                  <input type="date" value={orderDate} max={vnToday()} onChange={e => { setOrderDate(e.target.value); setOrderDateTouched(true); }} className={`mt-1 w-full ${inputCls}`} />
+                  {backdateHint(orderDate) && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">{backdateHint(orderDate)}</span>}</label>
                 <label className="text-xs font-semibold text-muted-foreground">Ngày cần giao
                   <input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
                 <VatPicker value={vat} onChange={setVat} />

@@ -7,6 +7,7 @@ import {
 import { splitLinesForOrder } from '../../../lib/procurementLineAssignment';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
 
 // Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu. Mỗi vật tư là một dòng đơn hàng; SL đặt phân về
@@ -73,6 +74,8 @@ export const OrderEditor: React.FC<{
   const [items, setItems] = useState<Item[]>([]);
   const [vendor, setVendor] = useState<{ id: string; name: string } | null>(order?.vendorId ? { id: order.vendorId, name: order.vendorName || '' } : null);
   const [expected, setExpected] = useState(order?.expectedDeliveryDate || '');
+  const [orderDate, setOrderDate] = useState(order?.orderDate || vnToday());
+  const [orderDateTouched, setOrderDateTouched] = useState(false);
   const [vat, setVat] = useState(String(order?.vatRate ?? 10));
   const [note, setNote] = useState(order?.note || '');
   const [mode, setMode] = useState<'single' | 'multiple'>(order?.purchaseMode || 'single');
@@ -159,6 +162,7 @@ export const OrderEditor: React.FC<{
         purchaseOrderId: order?.id, expectedRowVersion: order?.rowVersion, vendorId: vendor.id, purchaseMode: mode,
         expectedDeliveryDate: expected || null, vatRate, note: note.trim(), items: payload,
       });
+      if (orderDateTouched) await procurementInboxService.setOrderDate(result.purchaseOrderId, orderDate);
       onSaved(result.purchaseOrderId, result.poNumber);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
   };
@@ -180,8 +184,11 @@ export const OrderEditor: React.FC<{
           : <>
             {isGroup && <p className="rounded-xl border border-teal-200 bg-teal-50/70 px-3 py-2.5 text-sm text-teal-950 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
               <b>Đơn gom nhiều dự án:</b> một NCC, một đơn giá mỗi vật tư. Sau khi duyệt, mỗi đợt giao chọn <b>một công trường</b>; thủ kho công trường đó nhận, công nợ NCC và chi phí ghi cho dự án của công trường.</p>}
-            <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <VendorPicker value={vendor} onChange={setVendor} />
+              <label className="text-xs font-semibold text-muted-foreground">Ngày đặt hàng
+                  <input type="date" value={orderDate} max={vnToday()} onChange={e => { setOrderDate(e.target.value); setOrderDateTouched(true); }} className={`mt-1 w-full ${inputCls}`} />
+                  {backdateHint(orderDate) && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">{backdateHint(orderDate)}</span>}</label>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground" htmlFor="po-expected">Ngày cần giao</label>
                 <input id="po-expected" type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`mt-1 w-full ${inputCls}`} />

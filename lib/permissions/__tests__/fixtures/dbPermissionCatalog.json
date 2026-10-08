@@ -2624,6 +2624,12 @@
       ]
     },
     {
+      "permissionCode": "system.procurement.backdate",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "system.procurement.manage",
       "scopeTypes": [
         "global"

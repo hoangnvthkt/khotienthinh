@@ -281,7 +281,8 @@
     "20261008138004_center_dot0_perf.sql",
     "20261008138005_center_sidebar_work_project.sql",
     "20261009110000_daily_log_calendar.sql",
-    "20261009123000_procurement_line_assignments.sql"
+    "20261009123000_procurement_line_assignments.sql",
+    "20261008137600_procurement_business_dates.sql"
   ],
   "forbidIncludeAll": true
 }

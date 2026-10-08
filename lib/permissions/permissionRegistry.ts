@@ -95,7 +95,15 @@ const systemModules: readonly PermissionModuleDefinition[] = moduleSortOrder
     routes: routesByLegacyModule[moduleKey],
     legacyModuleKey: moduleKey,
     sortOrder: (index + 1) * 10,
-    actions: baseActions(moduleKey),
+    actions: moduleKey === 'PROCUREMENT' ? [...baseActions(moduleKey), {
+      // Ngày nghiệp vụ (08/10/2026): ghi ngày đặt hàng / hàng về / chứng từ kho lùi quá 7 ngày. Cấp khi nhập bù lịch sử, gỡ khi xong.
+      action: 'backdate',
+      label: 'Nhập dữ liệu quá khứ',
+      permissionCode: 'system.procurement.backdate',
+      legacyModuleKey: moduleKey,
+      scopeTypes: ['global'],
+      sortOrder: 90,
+    } as PermissionActionDefinition] : baseActions(moduleKey),
   }));
 
 // Server-enforced authorization administration. No routes: /settings stays
