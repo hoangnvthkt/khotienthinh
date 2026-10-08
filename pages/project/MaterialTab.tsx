@@ -223,6 +223,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [workflowBoardSearch, setWorkflowBoardSearch] = useState('');
     const [hideEmptyWorkflowLanes, setHideEmptyWorkflowLanes] = useState(false);
     const [startWorkflowRequest, setStartWorkflowRequest] = useState<MaterialRequest | null>(null);
+    const [adminMoveTransition, setAdminMoveTransition] = useState<{ request: MaterialRequest; subject: ProjectWorkflowSubject; targets: WorkflowNode[]; initialNodeId: string } | null>(null);
     const [workflowActionTransition, setWorkflowActionTransition] = useState<{ request: MaterialRequest; subject: ProjectWorkflowSubject; nextNode: WorkflowNode } | null>(null);
     const [submissionTransition, setSubmissionTransition] = useState<{
         request: MaterialRequest;
@@ -999,7 +1000,25 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         toast.warning('Cần duyệt vượt BOQ', 'Phiếu có vật tư vượt KL dự toán. Chỉ admin hoặc thủ kho tổng được duyệt qua bước tạo đợt cấp.');
     };
 
-    const canMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => {
+    // Quyền Quản trị quy trình duyệt: thả phiếu vào cột bước bất kỳ, không cần là người đang xử lý.
+    const getAdminMoveOptions = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId) => {
+        if (!canManageRequestWorkflow || !toStage.startsWith('workflow:')) return null;
+        const subject = getRequestWorkflowSubject(request);
+        if (!subject || (subject.status !== 'RUNNING' && subject.status !== 'RETURNED')) return null;
+        const runtime = requestWorkflowRuntimeContexts[subject.id];
+        const targets = (runtime?.nodes || [])
+            .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END && node.templateNodeId)
+            .sort((a, b) => a.positionY - b.positionY)
+            .map(node => runtimeNodeToWorkflowNode(node))
+            .filter((node): node is WorkflowNode => Boolean(node));
+        const target = targets.find(node => getMaterialRequestWorkflowLaneId(node.label) === toStage);
+        return target ? { subject, targets, initialNodeId: target.id } : null;
+    };
+
+    const canMoveMaterialRequest = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) =>
+        canMoveMaterialRequestNormally(request, toStage, fromStage) || Boolean(getAdminMoveOptions(request, toStage));
+
+    const canMoveMaterialRequestNormally = (request: MaterialRequest, toStage: MaterialRequestKanbanLaneId, fromStage: MaterialRequestKanbanLaneId) => {
         const dynamicSubject = getRequestWorkflowSubject(request);
         if (toStage.startsWith('workflow:')) {
             if (fromStage === 'draft') {
@@ -1333,6 +1352,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         if (!canMoveMaterialRequest(request, toStage, fromStage)) {
             toast.warning('Không thể chuyển bước', 'Bạn không có quyền hoặc bước này không cho phép kéo thả.');
             return;
+        }
+        if (!canMoveMaterialRequestNormally(request, toStage, fromStage)) {
+            const adminMove = getAdminMoveOptions(request, toStage);
+            if (adminMove) {
+                setAdminMoveTransition({ request, ...adminMove });
+                return;
+            }
         }
         const dynamicSubject = getRequestWorkflowSubject(request);
         if (fromStage === 'draft' && toStage.startsWith('workflow:')) {
@@ -3417,6 +3443,46 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                 metadata: { source: 'kanban_start_dynamic' },
                             });
                             setStartWorkflowRequest(null);
+                        }}
+                    />
+                </React.Suspense>
+            )}
+
+            {adminMoveTransition && (
+                <React.Suspense fallback={<LazyPanelFallback label="Đang mở chuyển bước..." />}>
+                    <ProjectWorkflowActionDialog
+                        action="move_step"
+                        subject={adminMoveTransition.subject}
+                        users={users}
+                        employees={employees}
+                        orgUnits={orgUnits}
+                        currentNode={adminMoveTransition.subject.currentNode}
+                        moveTargets={adminMoveTransition.targets}
+                        initialMoveNodeId={adminMoveTransition.initialNodeId}
+                        requesterUserId={adminMoveTransition.request.requesterId}
+                        documentName={adminMoveTransition.request.code}
+                        recipientRoomCode="material_request"
+                        recipientAction="approve"
+                        onCancel={() => setAdminMoveTransition(null)}
+                        onConfirm={async context => {
+                            const targetNode = context.nextNode;
+                            const assigneeUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+                            if (!targetNode) throw new Error('Chưa chọn bước đích.');
+                            await performDynamicRequestTransition({
+                                request: adminMoveTransition.request,
+                                action: 'STEP_MOVED',
+                                target: {
+                                    userId: assigneeUserIds[0] || '',
+                                    userIds: assigneeUserIds,
+                                    name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
+                                    names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                                    permissionCode: getWorkflowNodePermissionCodes(targetNode.id)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
+                                    note: context.comment,
+                                },
+                                note: context.comment,
+                                metadata: { source: 'kanban_admin_move', targetTemplateNodeId: targetNode.id },
+                            });
+                            setAdminMoveTransition(null);
                         }}
                     />
                 </React.Suspense>

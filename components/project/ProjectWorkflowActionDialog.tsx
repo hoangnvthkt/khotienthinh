@@ -29,6 +29,8 @@ interface Props {
   returnTargetNode?: WorkflowNode | null;
   /** Các bước có thể chọn khi quản trị chuyển bước (action = move_step). */
   moveTargets?: WorkflowNode[];
+  /** Bước đích chọn sẵn (vd. cột được thả phiếu vào trên Kanban). */
+  initialMoveNodeId?: string;
   requesterUserId?: string | null;
   documentName: string;
   completionHandoff?: {
@@ -76,6 +78,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   nextNode,
   returnTargetNode,
   moveTargets = [],
+  initialMoveNodeId = '',
   requesterUserId,
   documentName,
   completionHandoff,
@@ -94,7 +97,7 @@ const ProjectWorkflowActionDialog: React.FC<Props> = ({
   const [roomRecipientUserIds, setRoomRecipientUserIds] = useState<string[] | null>(null);
   const [loadingRoomRecipients, setLoadingRoomRecipients] = useState(false);
 
-  const [moveNodeId, setMoveNodeId] = useState('');
+  const [moveNodeId, setMoveNodeId] = useState(initialMoveNodeId);
   const targetNode = useMemo(() => {
     if (action === 'move_step') return moveTargets.find(node => node.id === moveNodeId) || null;
     if (action === 'approve') return nextNode || null;
