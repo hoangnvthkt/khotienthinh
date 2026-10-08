@@ -709,7 +709,7 @@ const WorkPlanTab: React.FC<WorkPlanTabProps> = ({ projectId, constructionSiteId
     <div>
       <h2 className="flex items-center gap-2 text-lg font-bold text-foreground"><CalendarRange size={20} className="text-teal-600" />{view === 'work' ? 'Kế hoạch thi công' : 'Kế hoạch vật tư'}</h2>
       <p className="text-xs text-muted-foreground">{view === 'work' ? 'Mỗi kỳ có bản gốc và các bản điều chỉnh. Số thực hiện lấy tự động từ Nhật ký và Chốt tiến độ.'
-        : 'Tính nhu cầu vật tư từ kế hoạch thi công đã duyệt, đối chiếu tồn kho và BOQ, gửi CHT duyệt.'}</p>
+        : 'Tính nhu cầu vật tư từ kế hoạch thi công đã duyệt, đối chiếu tồn kho và BOQ. Tuần: đề nghị mua gửi CHT duyệt rồi sang Mua hàng. Tháng: dự báo.'}</p>
     </div>
     <div className="flex flex-wrap items-center gap-2">
       <div className="inline-flex rounded-xl border border-teal-200 bg-teal-50 p-1 dark:border-teal-900 dark:bg-teal-950/40" role="tablist" aria-label="Loại kế hoạch">

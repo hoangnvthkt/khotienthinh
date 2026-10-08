@@ -236,7 +236,8 @@ export const useProjectMaterialAccess = ({
     const canManagePo = materialAccess.po.canManage;
 
     const visibleMaterialTabs = useMemo(
-        () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => materialAccess[tab.key as ProjectMaterialTabKey].canView),
+        // Chủ SP 08/10/2026: ẩn màn cũ Vật tư → Kế hoạch; KH vật tư lập ở tab Kế hoạch → Vật tư.
+        () => PROJECT_MATERIAL_TAB_PERMISSIONS.filter(tab => tab.key !== 'planning' && materialAccess[tab.key as ProjectMaterialTabKey].canView),
         [materialAccess],
     );
     const canEditProjectBoq = materialCapabilities.canEditBoq;

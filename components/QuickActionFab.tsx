@@ -56,7 +56,7 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: 'new-request', label: 'Tạo yêu cầu vật tư', iconName: 'ClipboardCheck', color: 'bg-amber-500', shadow: 'shadow-amber-500/30', route: '/requests' },
   { id: 'project-material-request', label: 'Đề xuất vật tư DA', iconName: 'ClipboardCheck', color: 'bg-orange-500', shadow: 'shadow-orange-500/30', route: '/da/tabs/material/request' },
   { id: 'project-po', label: 'Đơn hàng PO', iconName: 'ShoppingCart', color: 'bg-cyan-600', shadow: 'shadow-cyan-600/30', route: '/da/tabs/material/po' },
-  { id: 'material-planning', label: 'Kế hoạch vật tư', iconName: 'Calendar', color: 'bg-indigo-600', shadow: 'shadow-indigo-600/30', route: '/da/tabs/material/planning' },
+  { id: 'material-planning', label: 'Kế hoạch vật tư', iconName: 'Calendar', color: 'bg-indigo-600', shadow: 'shadow-indigo-600/30', route: '/da/tabs/work_plan' },
   { id: 'material-boq', label: 'BOQ vật tư', iconName: 'FileText', color: 'bg-sky-600', shadow: 'shadow-sky-600/30', route: '/da/tabs/material/boq' },
   { id: 'new-workflow', label: 'Tạo quy trình mới', iconName: 'Briefcase', color: 'bg-violet-500', shadow: 'shadow-violet-500/30', route: '/wf' },
   { id: 'new-employee', label: 'Thêm nhân viên', iconName: 'Users', color: 'bg-teal-500', shadow: 'shadow-teal-500/30', route: '/hrm/employees' },

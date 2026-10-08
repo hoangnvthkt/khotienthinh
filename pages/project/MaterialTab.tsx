@@ -180,6 +180,12 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
     }, [activeSubTab, materialAccess, visibleMaterialTabs]);
 
+    // Màn cũ Vật tư → Kế hoạch đã ẩn (chủ SP 08/10/2026): liên kết cũ chuyển sang Kế hoạch → Vật tư (tuần).
+    useEffect(() => {
+        if (activeSubTab !== 'planning' || !projectId) return;
+        window.location.hash = `#/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'material', period: 'week' }).toString()}`;
+    }, [activeSubTab, constructionSiteId, projectId]);
+
     useEffect(() => {
         const materialTab = getValidMaterialTab(new URLSearchParams(location.search).get('materialTab'));
         if (!materialTab) return;
