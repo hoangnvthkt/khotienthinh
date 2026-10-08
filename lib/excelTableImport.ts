@@ -1,4 +1,4 @@
-// Excel cho trường "Bảng" của Quy trình: tải mẫu và nhập file thông minh.
+// Nhập bảng từ Excel thông minh, dùng chung: trường "Bảng" của Quy trình, nhập vật tư Mua hàng.
 // Phần đọc làm việc trên ma trận ô (đã đọc từ file) để kiểm thử được mà không cần file thật.
 
 export const MAX_IMPORT_ROWS = 1000;
@@ -33,15 +33,17 @@ const matchScore = (target: string, source: string): number => {
   return 0;
 };
 
-const mapHeaderRow = (row: unknown[], targets: string[]) => {
+/** Mỗi cột đích có thể có nhiều tên gọi (tên chính + từ đồng nghĩa), đã chuẩn hoá. */
+const mapHeaderRow = (row: unknown[], targets: string[][]) => {
   const sources = row.map(normalizeHeader);
   const used = new Set<number>();
   const mapping: Array<number | null> = targets.map(() => null);
+  const best = (names: string[], source: string) => Math.max(0, ...names.map(name => matchScore(name, source)));
   // Khớp chính xác trước, rồi mới tới khớp gần đúng, để một cột nguồn không bị hai cột đích giành.
   for (const level of [2, 1]) {
-    targets.forEach((target, ti) => {
+    targets.forEach((names, ti) => {
       if (mapping[ti] !== null) return;
-      const si = sources.findIndex((source, index) => !used.has(index) && matchScore(target, source) === level);
+      const si = sources.findIndex((source, index) => !used.has(index) && best(names, source) === level);
       if (si >= 0) { mapping[ti] = si; used.add(si); }
     });
   }
@@ -50,6 +52,8 @@ const mapHeaderRow = (row: unknown[], targets: string[]) => {
 
 export interface TableImportResult {
   rows: string[][];
+  /** Giá trị gốc của cùng các ô (số, ngày…) để bên dùng tự đọc số chính xác. */
+  rawRows: unknown[][];
   /** Tên cột trong file tương ứng từng cột của bảng; null = file không có cột này. */
   sourceHeaders: Array<string | null>;
   /** Cột trong file không dùng tới (STT, cột thừa…). */
@@ -60,8 +64,9 @@ export interface TableImportResult {
   truncated: boolean;
 }
 
-export const parseTableMatrix = (matrix: unknown[][], columns: string[]): TableImportResult => {
-  const targets = columns.map(normalizeHeader);
+/** aliases[i]: các tên gọi khác của columns[i] (VD "ĐVT", "Đơn vị" cho "Đơn vị tính"). */
+export const parseTableMatrix = (matrix: unknown[][], columns: string[], aliases: string[][] = []): TableImportResult => {
+  const targets = columns.map((column, index) => [column, ...(aliases[index] || [])].map(normalizeHeader).filter(Boolean));
   let headerIndex = -1;
   let best = { mapping: [] as Array<number | null>, matched: 0 };
   matrix.slice(0, HEADER_SCAN_ROWS).forEach((row, index) => {
@@ -75,6 +80,7 @@ export const parseTableMatrix = (matrix: unknown[][], columns: string[]): TableI
   const body = byPosition ? matrix : matrix.slice(headerIndex + 1);
 
   const rows: string[][] = [];
+  const rawRows: unknown[][] = [];
   let skippedEmpty = 0;
   let truncated = false;
   for (const raw of body) {
@@ -82,11 +88,13 @@ export const parseTableMatrix = (matrix: unknown[][], columns: string[]): TableI
     if (row.every(cell => cell === '')) { skippedEmpty += 1; continue; }
     if (rows.length >= MAX_IMPORT_ROWS) { truncated = true; break; }
     rows.push(row);
+    rawRows.push(mapping.map(source => (source === null ? null : (raw || [])[source] ?? null)));
   }
 
   const usedSources = new Set(mapping.filter((index): index is number => index !== null));
   return {
     rows,
+    rawRows,
     sourceHeaders: byPosition ? columns.map(() => null) : mapping.map(index => (index === null ? null : cellText(header[index]) || null)),
     ignoredHeaders: byPosition ? [] : header.map(cellText).filter((text, index) => text && !usedSources.has(index)),
     byPosition,
@@ -101,3 +109,24 @@ export const isTableEmpty = (rows: string[][] | null | undefined) =>
 
 export const tableTemplateFileName = (label: string) =>
   `Mau_${normalizeHeader(label).replace(/ /g, '_') || 'bang'}.xlsx`;
+
+/** Số trong Excel: số thật giữ nguyên; chữ thì hiểu cả "1.234,5" (VN) lẫn "1,234.5" (EN); "1.500" = 1500. */
+export const parseLooseNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  let text = String(value).replace(/[\s\u00a0đĐ₫]|vnd|VND/g, '').trim();
+  if (!text) return null;
+  const lastDot = text.lastIndexOf('.');
+  const lastComma = text.lastIndexOf(',');
+  if (lastDot >= 0 && lastComma >= 0) {
+    // Dấu xuất hiện sau cùng là dấu thập phân.
+    text = lastComma > lastDot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '');
+  } else if (lastComma >= 0 || lastDot >= 0) {
+    const sep = lastComma >= 0 ? ',' : '.';
+    const parts = text.split(sep);
+    const thousands = parts.length > 2 || (parts[1]?.length === 3 && parts[0] !== '0' && parts[0] !== '-0');
+    text = thousands ? parts.join('') : parts.join('.');
+  }
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+};
