@@ -141,6 +141,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         canDeleteBoq,
         canApproveProjectRequest,
         canViewAvailableStock,
+        canManageRequestWorkflow,
         canCreateMaterialRequest,
         canEditOwnMaterialRequest,
         canDeleteMaterialRequest,
@@ -1211,7 +1212,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     const performDynamicRequestTransition = async (params: {
         request: MaterialRequest;
-        action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'RESUBMITTED' | 'REASSIGNED' | 'ROLLED_BACK';
+        action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'REJECTED' | 'RESUBMITTED' | 'REASSIGNED' | 'ROLLED_BACK' | 'STEP_MOVED';
         target?: ProjectSubmissionTarget | null;
         note?: string | null;
         templateId?: string | null;
@@ -1255,6 +1256,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     requestId: params.request.id,
                     newAssigneeUserIds: targetUserIds,
                     comment: params.note || params.target.note || '',
+                });
+            } else if (params.action === 'STEP_MOVED') {
+                const targetTemplateNodeId = String(params.metadata?.targetTemplateNodeId || '');
+                if (!targetTemplateNodeId) throw new Error('Chưa chọn bước đích.');
+                if (targetUserIds.length === 0) throw new Error('Chưa chọn người xử lý ở bước đích.');
+                subject = await projectWorkflowService.moveMaterialRequestWorkflowStep({
+                    requestId: params.request.id,
+                    targetTemplateNodeId,
+                    assigneeUserIds: targetUserIds,
+                    comment: params.note || '',
                 });
             } else if (params.action === 'ROLLED_BACK') {
                 subject = await projectWorkflowService.rollbackCompletedMaterialRequestWorkflow({
@@ -1537,6 +1548,34 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         }
         if (context.action === 'reassign' && !canReassignProjectWorkflow(request)) {
             toast.warning('Không thể đổi người xử lý', 'Bạn không phải người đang xử lý hoặc quản trị workflow này.');
+            return;
+        }
+        if (context.action === 'move_step') {
+            if (!canManageRequestWorkflow) {
+                toast.warning('Không thể chuyển bước', 'Bạn cần quyền Quản trị quy trình duyệt trong room Đề xuất vật tư.');
+                return;
+            }
+            const targetNode = context.nextNode;
+            const assigneeUserIds = context.assigneeUserIds || (context.assigneeUserId ? [context.assigneeUserId] : []);
+            if (!targetNode) {
+                toast.warning('Không thể chuyển bước', 'Chưa chọn bước đích.');
+                return;
+            }
+            await performDynamicRequestTransition({
+                request,
+                action: 'STEP_MOVED',
+                target: {
+                    userId: assigneeUserIds[0] || '',
+                    userIds: assigneeUserIds,
+                    name: userById.get(assigneeUserIds[0] || '')?.name || assigneeUserIds[0] || '',
+                    names: assigneeUserIds.map(id => userById.get(id)?.name || id),
+                    permissionCode: getWorkflowNodePermissionCodes(targetNode.id)[0] || MATERIAL_REQUEST_APPROVE_PERMISSION,
+                    note: context.comment,
+                },
+                note: context.comment,
+                metadata: { source: 'request_modal_panel', targetTemplateNodeId: targetNode.id },
+            });
+            closeWorkflowRequestModal();
             return;
         }
         if (context.action === 'rollback' && !canManageProjectWorkflow(request)) {
@@ -3321,6 +3360,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         initialAction={requestModalInitialAction}
                         canProcessProjectWorkflow={selectedRequestLive ? canActOnProjectRequest(selectedRequestLive) : false}
                         canManageProjectWorkflow={selectedRequestLive ? canManageProjectWorkflow(selectedRequestLive) : false}
+                        canMoveWorkflowStep={canManageRequestWorkflow}
                         canEditProjectRequest={canEditOwnMaterialRequest}
                         canDeleteProjectRequest={canDeleteMaterialRequest}
                         canSubmitProjectRequest={canSubmitMaterialRequest}

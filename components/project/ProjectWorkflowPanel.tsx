@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, GitBranch, RotateCcw, Send, Undo2, UserRound, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, GitBranch, RotateCcw, Route, Send, Undo2, UserRound, XCircle } from 'lucide-react';
 import {
   Employee,
   OrgUnit,
@@ -31,6 +31,8 @@ interface Props {
   canReassign?: boolean;
   canResubmit?: boolean;
   canRollback?: boolean;
+  /** Quyền quản trị quy trình: chuyển phiếu tới bất kỳ bước nào. */
+  canMoveStep?: boolean;
   completionHandoff?: {
     required: boolean;
     eligiblePermissionCodes: string[];
@@ -90,6 +92,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
   canReassign = false,
   canResubmit = false,
   canRollback = false,
+  canMoveStep = false,
   completionHandoff,
   recipientRoomCode,
   recipientAction,
@@ -130,6 +133,16 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
     && allowReassign;
   const shouldShowResubmit = subject.status === 'RETURNED' && canResubmit;
   const shouldShowRollback = subject.status === 'COMPLETED' && canRollback;
+  const moveTargets = useMemo(() => nodes
+    .filter(node => node.type !== WorkflowNodeType.START && node.type !== WorkflowNodeType.END)
+    .filter(node => {
+      const flag = (node.config as Record<string, unknown> | undefined)?.__templateRemoved;
+      return flag !== true && flag !== 'true';
+    })
+    .sort((a, b) => a.positionY - b.positionY), [nodes]);
+  const shouldShowMoveStep = (subject.status === 'RUNNING' || subject.status === 'RETURNED')
+    && canMoveStep
+    && moveTargets.length > 0;
   const targetLabel = nextNode?.type === WorkflowNodeType.END
     ? completionHandoff?.actionLabel || 'Hoàn tất phê duyệt'
     : nextNode?.label
@@ -175,7 +188,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
         </span>
       </div>
 
-      {(canShowRunningActions || shouldShowReassign || shouldShowResubmit || shouldShowRollback) && (
+      {(canShowRunningActions || shouldShowReassign || shouldShowResubmit || shouldShowRollback || shouldShowMoveStep) && (
         <div className="flex flex-wrap gap-2">
           {shouldShowReturn && (
             <button
@@ -193,6 +206,16 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
               className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-50"
             >
               <XCircle size={14} /> Từ chối
+            </button>
+          )}
+          {shouldShowMoveStep && (
+            <button
+              disabled={disabled}
+              onClick={() => setActiveAction('move_step')}
+              title="Quyền quản trị: chuyển phiếu tới bất kỳ bước nào trong quy trình"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            >
+              <Route size={14} /> Chuyển bước
             </button>
           )}
           {shouldShowReassign && (
@@ -251,6 +274,7 @@ const ProjectWorkflowPanel: React.FC<Props> = ({
           currentNode={currentNode}
           nextNode={nextNode}
           returnTargetNode={returnTargetNode}
+          moveTargets={moveTargets}
           requesterUserId={requesterUserId}
           documentName={documentName}
           completionHandoff={completionHandoff}

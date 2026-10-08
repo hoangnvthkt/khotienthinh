@@ -154,6 +154,7 @@ interface RequestModalProps {
     initialAction?: 'createFulfillmentBatch';
     canProcessProjectWorkflow?: boolean;
     canManageProjectWorkflow?: boolean;
+    canMoveWorkflowStep?: boolean;
     canEditProjectRequest?: boolean;
     canDeleteProjectRequest?: boolean;
     canSubmitProjectRequest?: boolean;
@@ -314,6 +315,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     initialAction,
     canProcessProjectWorkflow = false,
     canManageProjectWorkflow = false,
+    canMoveWorkflowStep = false,
     canEditProjectRequest = false,
     canDeleteProjectRequest = false,
     canSubmitProjectRequest = false,
@@ -2952,6 +2954,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                             canReassign={canReviewProjectWorkflow || canManageProjectWorkflow}
                             canResubmit={isDynamicReturnedDraft && request.requesterId === user.id && canSubmitProjectRequest}
                             canRollback={canManageProjectWorkflow}
+                            canMoveStep={canMoveWorkflowStep}
                             completionHandoff={{
                                 required: true,
                                 eligiblePermissionCodes: ['approve'],
