@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, Download, FileSpreadsheet, Loader2, Upload, X } from 'lucide-react';
 import { loadXlsx } from '../../lib/loadXlsx';
-import { isTableEmpty, parseTableMatrix, tableTemplateFileName, type TableImportResult } from '../../lib/workflowTableExcel';
+import { isTableEmpty, parseTableMatrix, tableTemplateFileName, type TableImportResult } from '../../lib/excelTableImport';
 import { btnPrimary, btnSoft } from './WorkflowInstanceRow';
 
 const PREVIEW_ROWS = 5;

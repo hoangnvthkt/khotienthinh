@@ -54,6 +54,7 @@ service-account*.json
 /test-results/
 /playwright-report/
 /.office-test-results/
+/.procurement-test-results/
 /.center-test-results/
 
 .office-run-logs/

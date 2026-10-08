@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isTableEmpty, normalizeHeader, parseTableMatrix, tableTemplateFileName } from '../workflowTableExcel';
+import { isTableEmpty, normalizeHeader, parseLooseNumber, parseTableMatrix, tableTemplateFileName } from '../excelTableImport';
 
 const COLUMNS = ['Họ và tên', 'Ngày tháng năm sinh', 'Vị trí công việc', 'Phòng ban'];
 
@@ -39,5 +39,23 @@ describe('workflow table Excel import', () => {
     expect(isTableEmpty([['', '']])).toBe(true);
     expect(isTableEmpty([['', 'x']])).toBe(false);
     expect(tableTemplateFileName('Thông tin chi tiết')).toBe('Mau_thong_tin_chi_tiet.xlsx');
+  });
+
+  it('matches columns by alias and keeps raw cell values', () => {
+    const result = parseTableMatrix([['Mã VT', 'Tên hàng', 'ĐVT', 'KL', 'ĐG'], ['T10', 'Thép D10', 'kg', 2.5, 18500]],
+      ['Mã vật tư', 'Tên vật tư', 'Đơn vị tính', 'Số lượng', 'Đơn giá'],
+      [['mã vt', 'mã hàng'], ['tên hàng'], ['đvt'], ['kl', 'khối lượng'], ['đg']]);
+    expect(result.sourceHeaders).toEqual(['Mã VT', 'Tên hàng', 'ĐVT', 'KL', 'ĐG']);
+    expect(result.rawRows).toEqual([['T10', 'Thép D10', 'kg', 2.5, 18500]]);
+  });
+
+  it('reads Vietnamese and English number formats', () => {
+    expect(parseLooseNumber(2.5)).toBe(2.5);
+    expect(parseLooseNumber('1.234,5')).toBe(1234.5);
+    expect(parseLooseNumber('1,234.5')).toBe(1234.5);
+    expect(parseLooseNumber('18.500 đ')).toBe(18500);
+    expect(parseLooseNumber('2,5')).toBe(2.5);
+    expect(parseLooseNumber('0.5')).toBe(0.5);
+    expect(parseLooseNumber('abc')).toBeNull();
   });
 });

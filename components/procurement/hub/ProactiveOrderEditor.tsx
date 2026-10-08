@@ -9,6 +9,8 @@ import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPla
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
+import PoExcelImport from './PoExcelImport';
+import type { ImportedPoLine } from '../../../lib/procurementExcelImport';
 
 // Đơn chủ động: Mua hàng tự lập PO khi chưa có phiếu nhu cầu (chốt giá, hàng đặt dài ngày, bù tồn…).
 // Vẫn gửi duyệt như đơn thường. Vượt hoặc ngoài BOQ dự án thì phải ghi lý do. Nhu cầu đến sau
@@ -34,6 +36,8 @@ const boqLabel = (l: Pick<Line, 'boq' | 'unit'>, qty: number) => {
     : status === 'over' ? `Vượt BOQ ${fmt(l.boq.orderedQty + qty - l.boq.boqQty, 3)} ${l.unit || ''}`
       : `Trong BOQ · còn ${fmt(left - qty, 3)} ${l.unit || ''}`;
 };
+
+const priceCell = (text: string) => { const p = parseQty(text); return p == null || Number.isNaN(p) ? '' : p; };
 
 const purchaseQtyOf = (l: Line, stock: number) => {
   if (!l.altUnit) return stock;
@@ -109,6 +113,25 @@ export const ProactiveOrderEditor: React.FC<{
     setQuery(''); setSearchOpen(false);
   };
   const patch = (key: string, p: Partial<Line>) => setLines(cur => cur.map(l => l.key === key ? { ...l, ...p } : l));
+  /** Từ Excel: vật tư mới thì thêm dòng, vật tư đã có thì cập nhật SL, đơn giá (và quy cách nếu file có). */
+  const importLines = (imported: ImportedPoLine[]) => setLines(cur => {
+    const next = [...cur];
+    imported.forEach(({ item, spec, stockQty, altUnit, price }) => {
+      const values = {
+        // Đơn giá trong file đi theo ĐVT trong file → cách tính đơn vị của dòng phải theo file.
+        stockQty: qtyInput(stockQty), price: price == null ? '' : qtyInput(price), purchaseQty: '', altUnit,
+        ...(altUnit ? { purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1 } : {}),
+      };
+      const at = next.findIndex(l => l.itemId === item.id);
+      if (at >= 0) { next[at] = { ...next[at], ...values, ...(spec ? { spec } : {}) }; return; }
+      next.push({
+        key: item.id, itemId: item.id, name: item.name, spec, sku: item.sku, unit: item.unit,
+        purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1,
+        allocatedQty: 0, boq: { inBoq: item.inBoq, boqQty: item.boqQty, orderedQty: item.orderedQty }, ...values,
+      });
+    });
+    return next;
+  });
 
   const totals = useMemo(() => {
     let subtotal = 0; let invalid = 0; let unpriced = 0; let overBoq = 0; let belowAllocated = 0;
@@ -231,9 +254,19 @@ export const ProactiveOrderEditor: React.FC<{
             <DeliveryModePicker value={mode} onChange={setMode} />
 
             <section className="space-y-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="font-semibold text-foreground">Vật tư đặt mua</h3>
-                <span className="text-xs text-muted-foreground">SL theo đơn vị kho · đơn giá theo đơn vị mua</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold text-foreground">Vật tư đặt mua</h3>
+                  <span className="text-xs text-muted-foreground">SL theo đơn vị kho · đơn giá theo đơn vị mua</span>
+                </div>
+                <PoExcelImport projectId={stock ? null : projectId || null} disabled={!scopeReady} existingItemIds={lines.map(l => l.itemId)}
+                  templateRows={lines.map(l => {
+                    const qty = parseQty(l.stockQty);
+                    const alt = l.altUnit && l.purchaseUnit;
+                    return [l.sku || '', l.name, l.spec, alt ? l.purchaseUnit : l.unit || '',
+                      qty == null || Number.isNaN(qty) ? '' : alt ? purchaseQtyOf(l, qty) : qty, priceCell(l.price)];
+                  })}
+                  onImport={importLines} />
               </div>
               <div className="relative">
                 <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
