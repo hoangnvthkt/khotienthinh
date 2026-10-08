@@ -4488,6 +4488,8 @@ export interface WorkflowTemplate {
   ownerSubjectType?: 'material_request' | null;
   ownerProjectId?: string | null;
   clonedFromTemplateId?: string | null;
+  /** Mặc định true: người xử lý tiếp tục theo dõi phiếu sau khi qua bước. false: qua bước là thôi, trừ khi được theo dõi/@nhắc. */
+  handlersFollowAfterStep?: boolean;
 }
 
 export interface WorkflowTemplateCategory {

@@ -50,6 +50,7 @@ import {
     type WorkflowInstanceInsight,
 } from '../../lib/workflowInstanceInsight';
 import WorkflowFilePreview from '../../components/workflow/WorkflowFilePreview';
+import WorkflowTableExcel from '../../components/workflow/WorkflowTableExcel';
 import {
     formatWorkflowFileSize,
     getWorkflowFileKind,
@@ -188,13 +189,15 @@ export const FileFieldInput: React.FC<{
 // ========== Table Field Input ==========
 interface TableFieldInputProps {
     fieldName: string;
+    /** Tên hiển thị của trường, dùng đặt tên file mẫu Excel. */
+    fieldLabel?: string;
     columns: string[];
     value: string[][] | null | undefined;
     onChange: (val: string[][]) => void;
     disabled?: boolean;
 }
 
-export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, columns, value, onChange, disabled = false }) => {
+export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, fieldLabel, columns, value, onChange, disabled = false }) => {
     // Ensure value is initialized with at least one row if empty
     const rows = React.useMemo(() => {
         if (Array.isArray(value) && value.length > 0) return value;
@@ -274,14 +277,17 @@ export const TableFieldInput: React.FC<TableFieldInputProps> = ({ fieldName, col
                 </table>
             </div>
             {!disabled && (
-                <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                    <button
-                        type="button"
-                        onClick={addRow}
-                        className="inline-flex items-center gap-1.5 px-6 py-2.5 bg-accent hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition shadow-sm"
-                    >
-                        <Plus size={13} /> Thêm dòng
-                    </button>
+                <div className="p-2 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={addRow}
+                            className="inline-flex items-center gap-1.5 px-6 py-2.5 bg-accent hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition shadow-sm"
+                        >
+                            <Plus size={13} /> Thêm dòng
+                        </button>
+                        <WorkflowTableExcel label={fieldLabel || fieldName} columns={columns} rows={rows} onImport={onChange} />
+                    </div>
                     <span className="text-[10px] text-slate-400 font-medium">
                         Tổng cộng: {rows.length} dòng
                     </span>
@@ -1223,6 +1229,7 @@ const WorkflowInstances: React.FC = () => {
                 {field.type === 'table' && (
                     <TableFieldInput
                         fieldName={field.name}
+                        fieldLabel={field.label}
                         columns={field.options || []}
                         value={data[field.name]}
                         onChange={(val: string[][]) => onChange(field.name, val)}
