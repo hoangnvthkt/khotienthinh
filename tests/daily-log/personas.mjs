@@ -14,8 +14,8 @@ export async function loginPersonas() {
   for (const person of personas) {
     const profile = existing.find(row => row.email === person.email);
     if (profile && profile.id !== person.id) throw new Error('Unexpected persona ownership; refusing to overwrite');
-    if (!profile) await query(`insert into public.users(id,name,email,username,role,allowed_modules,admin_modules,allowed_sub_modules,admin_sub_modules)
-      values ('${person.id}','DL TEST ${person.name}','${person.email}','dl_wbs_${person.key}_20260925','EMPLOYEE',null,null,null,null)`, false);
+    if (!profile) await query(`insert into public.users(id,name,email,username,role)
+      values ('${person.id}','DL TEST ${person.name}','${person.email}','dl_wbs_${person.key}_20260925','EMPLOYEE')`, false);
   }
   const listed = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (listed.error) throw listed.error;

@@ -73,7 +73,6 @@ export interface UserAccountLifecyclePreview {
   operationAction?: UserAccountLifecycleAction | null;
   hasAuthIdentity: boolean;
   directGrants: number;
-  legacyModules: number;
   projectStaffAssignments: number;
   responsibilitySlots: number;
   runtimeAssignments: number;

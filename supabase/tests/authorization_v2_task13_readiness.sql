@@ -1,3 +1,5 @@
+-- PRE-DROP ONLY: applied 2026-10-09 (20261009170000_authorization_task13_drop_legacy_columns) removed the
+-- columns this script inspects. After the drop use supabase/tests/authorization_task13_drop_legacy_columns_smoke.sql.
 -- Authorization V2 / Task 13 readiness inventory.
 -- Read-only: this script must not create, update, or drop any persistent object.
 
