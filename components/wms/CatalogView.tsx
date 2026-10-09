@@ -9,7 +9,7 @@ import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useModuleData } from '../../hooks/useModuleData';
 import { materialCodeRequestService } from '../../lib/materialCodeRequestService';
 import {
-  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, changedFields, catalogNameKey, foldVi, guessInventoryMode, similarCatalogItems, wmsCatalogService,
+  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, catalogSkuProblem, changedFields, catalogNameKey, foldVi, guessInventoryMode, similarCatalogItems, wmsCatalogService,
   type CatalogItemDetail, type CatalogOverview, type CatalogRename, type InventoryMode,
 } from '../../lib/wmsCatalogService';
 import type { InventoryItem, MaterialCodeRequest } from '../../types';
@@ -139,18 +139,25 @@ const ItemDetail: React.FC<{ itemId: string; canIssue: boolean; canEdit: boolean
   </Panel>;
 };
 
+// Mã người cấp tự nhập: trùng mọi mã đã có (kể cả ngừng dùng), không phân biệt hoa thường; gợi ý VT + 7 số tiếp theo.
+const skuTakenIn = (items: InventoryItem[], sku: string) => items.find(i => (i.sku || '').toUpperCase() === sku.trim().toUpperCase())?.sku;
+const nextVtSku = (items: InventoryItem[]) =>
+  `VT${String(items.reduce((m, i) => Math.max(m, /^VT\d{7}$/.test(i.sku || '') ? Number(i.sku.slice(2)) : 0), 0) + 1).padStart(7, '0')}`;
+
 // ---------- Xử lý đề xuất cấp mã ----------
 const RequestDetail: React.FC<{ req: MaterialCodeRequest; items: InventoryItem[]; canIssue: boolean; onDone: (ids: string[]) => void; onBack: () => void }> = ({ req, items, canIssue, onDone, onBack }) => {
   const toast = useToast(); const reasonConfirm = useReasonConfirm();
   const { categoryOptions, unitOptions } = useCatalogLists();
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState(() => ({ name: req.proposedName, unit: unitOptions.find(u => foldVi(u) === foldVi(String(req.proposedUnit || '').split(' ')[0])) || '',
+  const [form, setForm] = useState(() => ({ sku: '', name: req.proposedName, unit: unitOptions.find(u => foldVi(u) === foldVi(String(req.proposedUnit || '').split(' ')[0])) || '',
     category: req.proposedCategory && categoryOptions.includes(req.proposedCategory) ? req.proposedCategory : '', purchaseUnit: '', factor: '1',
     mode: guessInventoryMode(req.proposedName, req.proposedUnit, req.proposedCategory) as InventoryMode }));
   const active = items.filter(i => i.status !== 'retired');
   const sims = similarCatalogItems(active, req.proposedName, 5);
   const exact = active.find(i => catalogNameKey(i.name) === catalogNameKey(form.name));
   const pending = req.status === 'pending';
+  const nextSku = nextVtSku(items);
+  const skuProblem = catalogSkuProblem(form.sku, sku => skuTakenIn(items, sku));
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
     try { const r = await fn() as { id?: string } | null; toast.success('Đã xử lý đề xuất', ok); onDone(r?.id ? [r.id] : []); }
@@ -169,9 +176,9 @@ const RequestDetail: React.FC<{ req: MaterialCodeRequest; items: InventoryItem[]
     foot={!pending ? <span className="text-xs text-muted-foreground">{req.status === 'rejected' ? `Lý do: ${req.rejectionReason || '—'}` : `${req.approvedByName || ''} · ${dateVi(req.approvedAt)}`}</span>
       : canIssue ? <>
         <button type="button" className={secondaryBtn} disabled={busy} onClick={() => void reject()}>Từ chối</button>
-        <button type="button" className={primaryBtn} disabled={busy || !form.name.trim() || !form.unit || !form.category || !!exact} title={exact ? `Trùng tên ${exact.sku}` : undefined}
-          onClick={() => void act(() => wmsCatalogService.issue({ requestId: req.id, name: form.name.trim(), unit: form.unit, category: form.category, purchaseUnit: form.purchaseUnit || null,
-            purchaseConversionFactor: Number(form.factor.replace(',', '.')) || 1, inventoryMode: form.mode }), `Đã cấp mã cho “${form.name.trim()}”`)}><Hash size={15} />Cấp mã</button></>
+        <button type="button" className={primaryBtn} disabled={busy || !!skuProblem || !form.name.trim() || !form.unit || !form.category || !!exact} title={skuProblem || (exact ? `Trùng tên ${exact.sku}` : undefined)}
+          onClick={() => void act(() => wmsCatalogService.issue({ requestId: req.id, sku: form.sku.trim(), name: form.name.trim(), unit: form.unit, category: form.category, purchaseUnit: form.purchaseUnit || null,
+            purchaseConversionFactor: Number(form.factor.replace(',', '.')) || 1, inventoryMode: form.mode }), `Đã cấp mã ${form.sku.trim()} cho “${form.name.trim()}”`)}><Hash size={15} />Cấp mã</button></>
       : <span className="text-xs text-muted-foreground">Chỉ người có ô quyền “Cấp mã” xử lý đề xuất.</span>}>
     {(req.proposedSpecification || req.reason) && <Stat label="Quy cách / lý do">{[req.proposedSpecification, req.reason].filter(Boolean).join(' — ')}</Stat>}
     <section className={`rounded-xl border p-3 text-sm ${sims.length ? 'border-amber-300 bg-amber-50/70 dark:bg-amber-950/30' : 'border-border'}`}>
@@ -182,7 +189,11 @@ const RequestDetail: React.FC<{ req: MaterialCodeRequest; items: InventoryItem[]
           onClick={() => void act(() => wmsCatalogService.resolveRequest({ requestId: req.id, action: 'use_existing', itemId: item.id }), `Trả lời ${req.requestedByName || ''}: dùng ${item.sku}`)}>Dùng mã này</button>}</li>)}</ul>}
     </section>
     {pending && canIssue && <section className="space-y-3 rounded-xl border border-border p-3">
-      <h3 className="text-sm font-bold">Cấp mã mới <span className="font-normal text-muted-foreground">— mã tự sinh VT + số tiếp theo</span></h3>
+      <h3 className="text-sm font-bold">Cấp mã mới</h3>
+      <div><label className="block text-sm font-medium">Mã vật tư<input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value.replace(/\s/g, '') }))} placeholder={`VD: ${nextSku}`}
+        autoCapitalize="characters" spellCheck={false} aria-invalid={!!(form.sku.trim() && skuProblem)} className={`mt-1 w-full font-mono sm:max-w-[14rem] ${inputCls} ${form.sku.trim() && skuProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
+        {form.sku.trim() && skuProblem ? <span className="mt-1 block text-xs font-semibold text-rose-700">{skuProblem}</span>
+          : form.sku.trim() !== nextSku && <button type="button" onClick={() => setForm(f => ({ ...f, sku: nextSku }))} className="mt-1 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">Dùng mã gợi ý {nextSku}</button>}</div>
       <label className="block text-sm font-medium">Tên chuẩn<input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={`mt-1 w-full ${inputCls}`} />
         {exact && <span className="mt-1 block text-xs font-semibold text-rose-700">Trùng tên với {exact.sku} · {exact.name} (so sau khi bỏ dấu, khoảng trắng).</span>}</label>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -375,7 +386,7 @@ export const CatalogView: React.FC = () => {
       })()}>Đặt “{INVENTORY_MODE_LABELS[m]}”</button>)}
     </div>}
     {newCode && <NewCodeDrawer onClose={() => setNewCode(false)} onCreated={changed} />}
-    {quickCreate && <QuickCreateItemDialog initialName={search.trim()}
+    {quickCreate && <QuickCreateItemDialog initialName={search.trim()} isSkuTaken={sku => skuTakenIn(items, sku)}
       findSimilar={name => similarCatalogItems(items.filter(i => i.status !== 'retired'), name, 5).map(s => s.item)}
       useExistingLabel="Mở mã này" onUseExisting={item => { setQuickCreate(false); setQueue('all'); setSel(item.id); }}
       onClose={() => setQuickCreate(false)}

@@ -17,10 +17,10 @@ const fold = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
 procurementInboxService.proactiveOptions = async () => ({ projects: [{ id: 'p1', code: 'CT-01', name: 'Nhà xưởng Yên Phong', status: 'active', warehouses: [{ id: 'w1', name: 'Kho Nhà xưởng Yên Phong' }] }], stockWarehouses: [] });
 procurementInboxService.searchItems = async (_p, q) => catalog.filter(i => !q || fold(`${i.sku} ${i.name}`).includes(fold(q).trim().split(/\s+/)[0]));
 procurementInboxService.vendors = async () => [{ id: 'v1', name: 'Công ty CP Kim khí Thăng Long', taxCode: '0109990002', recentOrders: 3 }];
-wmsCatalogService.createOptions = async () => ({ canCreate: true, canEdit: true, canIssueCode: false, categories: ['Sắt thép', 'Vật tư phụ', 'Điện nước'], units: ['Cây', 'Cuộn', 'Cái', 'Kg', 'Tấn', 'm3'] });
+wmsCatalogService.createOptions = async () => ({ canCreate: true, canEdit: true, canIssueCode: false, nextSku: 'VT0002101', categories: ['Sắt thép', 'Vật tư phụ', 'Điện nước'], units: ['Cây', 'Cuộn', 'Cái', 'Kg', 'Tấn', 'm3'] });
 let n = 2101;
 wmsCatalogService.issue = async input => {
-  const item: CatalogItem = { id: `new-${n}`, sku: `VT000${n++}`, name: input.name, unit: input.unit, category: input.category, purchaseUnit: input.purchaseUnit || null,
+  const item: CatalogItem = { id: `new-${n}`, sku: input.sku || `VT000${n++}`, name: input.name, unit: input.unit, category: input.category, purchaseUnit: input.purchaseUnit || null,
     purchaseConversionFactor: input.purchaseConversionFactor || 1, minStock: 0, accountingCode: null, status: 'active', inventoryMode: input.inventoryMode, retiredAt: null, retiredReason: null, createdAt: null };
   catalog.push({ id: item.id, name: item.name, sku: item.sku, unit: item.unit, purchaseUnit: item.purchaseUnit, purchaseFactor: item.purchaseConversionFactor, inBoq: false, boqQty: 0, orderedQty: 0 });
   return item;

@@ -3,19 +3,21 @@ import { AlertTriangle, Hash, Loader2, X } from 'lucide-react';
 import { StateBox, inputCls, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { useToast } from '../../context/ToastContext';
 import {
-  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, catalogNameKey, guessInventoryMode, wmsCatalogService,
+  INVENTORY_MODE_HINTS, INVENTORY_MODE_LABELS, catalogErrorMessage, catalogNameKey, catalogSkuProblem, guessInventoryMode, wmsCatalogService,
   type CatalogCreateOptions, type CatalogItem, type InventoryMode,
 } from '../../lib/wmsCatalogService';
 
-// Tạo vật tư mới ngay, không qua bước đề xuất mã (chủ SP 08/10/2026): ô quyền nhạy cảm "Tạo mã vật tư" (Admin luôn có).
+// Tạo vật tư mới ngay, không qua bước đề xuất mã (chủ SP 08/10/2026); người tạo tự nhập mã, có gợi ý VT + số tiếp theo (09/10): ô quyền nhạy cảm "Tạo mã vật tư" (Admin luôn có).
 // Dùng ở Danh mục vật tư và ô "Thêm vật tư" của đơn chủ động. Hộp thoại giữa màn hình, nằm trên ngăn đang mở:
 // Esc chỉ đóng hộp thoại, không đóng ngăn bên dưới.
 
 export interface SimilarItem { id: string; sku: string | null; name: string; unit: string | null }
 const MODES: InventoryMode[] = ['stock', 'use', 'service'];
 
-export function QuickCreateItemDialog<T extends SimilarItem>({ initialName = '', findSimilar, useExistingLabel = 'Dùng mã này', onUseExisting, onClose, onCreated }: {
+export function QuickCreateItemDialog<T extends SimilarItem>({ initialName = '', isSkuTaken, findSimilar, useExistingLabel = 'Dùng mã này', onUseExisting, onClose, onCreated }: {
   initialName?: string;
+  /** Kiểm tra trùng mã ngay khi gõ (nếu màn có sẵn danh mục); trả mã đã có. Server luôn kiểm tra lại. */
+  isSkuTaken?: (sku: string) => string | null | undefined;
   /** Mã gần giống theo tên đang gõ (từ 3 ký tự). */
   findSimilar?: (name: string) => Promise<T[]> | T[];
   useExistingLabel?: string;
@@ -26,7 +28,7 @@ export function QuickCreateItemDialog<T extends SimilarItem>({ initialName = '',
   const toast = useToast();
   const [opts, setOpts] = useState<CatalogCreateOptions | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [f, setF] = useState({ name: initialName.trim(), category: '', unit: '', altUnit: false, purchaseUnit: '', factor: '1' });
+  const [f, setF] = useState({ sku: '', name: initialName.trim(), category: '', unit: '', altUnit: false, purchaseUnit: '', factor: '1' });
   const [mode, setMode] = useState<InventoryMode | null>(null);
   const [similar, setSimilar] = useState<T[]>([]);
   const [busy, setBusy] = useState(false);
@@ -52,14 +54,16 @@ export function QuickCreateItemDialog<T extends SimilarItem>({ initialName = '',
   const exact = similar.find(s => catalogNameKey(s.name) === catalogNameKey(f.name));
   const effectiveMode = mode || guessInventoryMode(f.name, f.unit, f.category);
   const factor = Number(f.factor.replace(',', '.'));
-  const missing = !f.name.trim() ? 'Nhập tên vật tư' : !f.category ? 'Chọn nhóm' : !f.unit ? 'Chọn đơn vị tính kho'
+  const skuProblem = catalogSkuProblem(f.sku, isSkuTaken);
+  const skuShown = f.sku.trim() ? skuProblem : '';
+  const missing = skuProblem ? skuProblem : !f.name.trim() ? 'Nhập tên vật tư' : !f.category ? 'Chọn nhóm' : !f.unit ? 'Chọn đơn vị tính kho'
     : f.altUnit && !f.purchaseUnit ? 'Chọn đơn vị mua' : f.altUnit && !(factor > 0) ? 'Hệ số quy đổi phải lớn hơn 0' : exact ? `Đã có mã ${exact.sku || ''} trùng tên` : '';
 
   const submit = async () => {
     if (missing) { setError(missing); return; }
     setBusy(true); setError('');
     try {
-      const item = await wmsCatalogService.issue({ name: f.name.trim(), category: f.category, unit: f.unit, inventoryMode: effectiveMode,
+      const item = await wmsCatalogService.issue({ sku: f.sku.trim(), name: f.name.trim(), category: f.category, unit: f.unit, inventoryMode: effectiveMode,
         purchaseUnit: f.altUnit ? f.purchaseUnit : null, purchaseConversionFactor: f.altUnit ? factor : 1, reason: 'Tạo nhanh, không qua đề xuất mã' });
       toast.success(`Đã tạo mã ${item.sku}`, `“${item.name}” dùng được ngay ở mọi màn.`);
       onCreated(item);
@@ -73,7 +77,7 @@ export function QuickCreateItemDialog<T extends SimilarItem>({ initialName = '',
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">Danh mục vật tư</p>
           <h2 className="text-lg font-bold text-foreground">Tạo vật tư mới</h2>
-          <p className="text-sm text-muted-foreground">Mã tự sinh VT + số tiếp theo, dùng được ngay. Không cần chờ duyệt đề xuất.</p>
+          <p className="text-sm text-muted-foreground">Tự đặt mã cho vật tư, dùng được ngay. Không cần chờ duyệt đề xuất.</p>
         </div>
         <button type="button" onClick={onClose} aria-label="Đóng" className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><X size={18} /></button>
       </header>
@@ -82,9 +86,20 @@ export function QuickCreateItemDialog<T extends SimilarItem>({ initialName = '',
           : !opts ? <StateBox kind="loading" title="Đang tải nhóm, đơn vị…" />
           : !opts.canCreate ? <StateBox kind="denied" message='Tạo mã cần ô quyền nhạy cảm "Tạo mã vật tư" — nhờ Admin cấp. Bạn vẫn gửi được Đề xuất mã mới ở Vật tư → Danh mục.' />
           : <>
+            <div className="grid gap-3 sm:grid-cols-[11rem_1fr]">
+            <div>
+              <label className="block text-sm font-medium">Mã vật tư
+                <input autoFocus value={f.sku} onChange={e => setF(x => ({ ...x, sku: e.target.value.replace(/\s/g, '') }))} placeholder={opts.nextSku ? `VD: ${opts.nextSku}` : 'VD: VT0001234'}
+                  autoCapitalize="characters" spellCheck={false} aria-invalid={!!skuShown}
+                  className={`mt-1 w-full font-mono ${inputCls} ${skuShown ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
+              {skuShown ? <p className="mt-1 text-xs font-semibold text-rose-700 dark:text-rose-300">{skuShown}</p>
+                : opts.nextSku && f.sku.trim() !== opts.nextSku && <button type="button" onClick={() => setF(x => ({ ...x, sku: opts.nextSku! }))}
+                  className="mt-1 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">Dùng mã gợi ý {opts.nextSku}</button>}
+            </div>
             <label className="block text-sm font-medium">Tên vật tư
-              <input autoFocus value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} placeholder="VD: Thép hình chấn U250x250x10"
+              <input value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} placeholder="VD: Thép hình chấn U250x250x10"
                 className={`mt-1 w-full ${inputCls} ${exact ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
+            </div>
             {similar.length > 0 && <section className={`rounded-xl border p-3 text-sm ${exact ? 'border-rose-300 bg-rose-50/80 dark:bg-rose-950/30' : 'border-amber-300 bg-amber-50/70 dark:bg-amber-950/30'}`}>
               <p className={`flex items-center gap-1.5 font-semibold ${exact ? 'text-rose-800 dark:text-rose-200' : 'text-amber-900 dark:text-amber-200'}`}><AlertTriangle size={14} />
                 {exact ? 'Đã có mã trùng tên — dùng mã đó, không tạo mới' : 'Có thể đã có — kiểm tra trước khi tạo'}</p>
