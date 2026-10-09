@@ -123,6 +123,24 @@ describe('PermissionModuleEditor', () => {
     expect(html).not.toContain('type="checkbox"');
   });
 
+  it('names the module of every retained grant instead of a bare "Xem"', () => {
+    const grant = (permissionCode: string) => ({
+      userId: 'user-1', permissionCode, scopeType: 'global' as const, scopeId: '*', isActive: true,
+    });
+    const html = renderToStaticMarkup(
+      <RetainedPermissionGrantNotice grants={[
+        grant('system.chat.view'), grant('system.procurement.view'), grant('system.procurement.manage'),
+        grant('system.finance.record'),
+      ]} />,
+    );
+
+    expect(html).toContain('4 quyền · 3 module');
+    expect(html).toContain('Tin nhắn');
+    expect(html).toContain('Mua hàng');
+    expect(html).toContain('Quản trị');
+    expect(html).toContain('Đổi ở Tài chính → Cài đặt');
+  });
+
   it('renders a compact collapsed Module card with a separate disclosure control', () => {
     const html = renderToStaticMarkup(
       <PermissionModuleCard
