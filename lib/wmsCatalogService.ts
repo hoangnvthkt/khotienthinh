@@ -31,7 +31,7 @@ export interface CatalogOverview {
   renames: CatalogRename[];
 }
 /** Form "Tạo vật tư mới": quyền và danh sách nhóm, đơn vị tính. */
-export interface CatalogCreateOptions { canCreate: boolean; canEdit: boolean; canIssueCode: boolean; categories: string[]; units: string[] }
+export interface CatalogCreateOptions { canCreate: boolean; canEdit: boolean; canIssueCode: boolean; nextSku?: string; categories: string[]; units: string[] }
 export interface CatalogItemDetail {
   item: CatalogItem;
   usage: CatalogUsage;
@@ -87,9 +87,20 @@ const ERRORS: Record<string, string> = {
   WMS_DOC_DATE_DENIED: 'Chỉ thủ kho của kho trên phiếu, Kế toán kho hoặc Admin sửa được ngày chứng từ.',
   WMS_DOC_NOT_FOUND: 'Không tìm thấy phiếu kho.',
   WMS_DOC_DATE_STATE: 'Phiếu đã hủy / từ chối — không sửa ngày.',
+  CATALOG_SKU_INVALID: 'Mã vật tư 2–30 ký tự, chỉ gồm chữ không dấu, số và . _ - (không có khoảng trắng).',
   WMS_DOC_DATE_INVALID: 'Ngày chứng từ không hợp lệ.',
   WMS_DOC_DATE_FUTURE: 'Ngày chứng từ không được sau hôm nay.',
   WMS_DOC_DATE_REASON: 'Phiếu đã ghi sổ — cần ghi lý do sửa ngày.',
+};
+
+/** Mã vật tư người tạo tự nhập: 2–30 ký tự chữ không dấu, số, . _ - (khớp kiểm tra ở issue_material_code_v1). */
+export const CATALOG_SKU_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{1,29}$/;
+export const catalogSkuProblem = (sku: string, taken?: (sku: string) => string | null | undefined): string => {
+  const v = sku.trim();
+  if (!v) return 'Nhập mã vật tư';
+  if (!CATALOG_SKU_PATTERN.test(v)) return 'Mã 2–30 ký tự, chỉ chữ không dấu, số và . _ -';
+  const hit = taken?.(v);
+  return hit ? `Mã ${hit} đã có trong danh mục` : '';
 };
 
 /** Đổi lỗi server (mã lỗi ở đầu thông báo) thành câu tiếng Việt. */
@@ -97,6 +108,8 @@ export const catalogErrorMessage = (error: unknown, fallback = 'Chưa thực hi�
   const raw = String((error as any)?.message || error || '');
   const dup = raw.match(/ITEM_NAME_DUPLICATE:(\S+)/);
   if (dup) return `Tên trùng với mã ${dup[1]} đã có (so sau khi bỏ dấu, khoảng trắng). Dùng mã đó hoặc ghi rõ khác biệt.`;
+  const skuDup = raw.match(/ITEM_SKU_DUPLICATE:(\S+)/);
+  if (skuDup) return `Mã ${skuDup[1]} đã có trong danh mục — chọn mã khác.`;
   const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK): (.+)/);
   if (merge) return merge[1];
   const code = Object.keys(ERRORS).find(k => raw.includes(k));
@@ -114,7 +127,7 @@ export const wmsCatalogService = {
   overview: () => rpc<CatalogOverview>('get_catalog_overview_v1'),
   item: (itemId: string) => rpc<CatalogItemDetail>('get_catalog_item_v1', { p_item_id: itemId }),
   createOptions: () => rpc<CatalogCreateOptions>('get_catalog_create_options_v1'),
-  issue: (input: { requestId?: string; name: string; unit: string; category: string; purchaseUnit?: string | null; purchaseConversionFactor?: number; minStock?: number; inventoryMode: InventoryMode; reason?: string }) =>
+  issue: (input: { requestId?: string; sku?: string; name: string; unit: string; category: string; purchaseUnit?: string | null; purchaseConversionFactor?: number; minStock?: number; inventoryMode: InventoryMode; reason?: string }) =>
     rpc<CatalogItem>('issue_material_code_v1', { p: input }),
   resolveRequest: (input: { requestId: string; action: 'use_existing' | 'reject'; itemId?: string; reason?: string }) =>
     rpc<{ requestId: string; action: string }>('resolve_material_code_request_v1', { p: input }),
