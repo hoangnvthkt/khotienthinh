@@ -45,7 +45,7 @@ Phần lớn sinh ra ngày 10/09 khi chuyển 4 cột quyền cũ sang quyền m
 
 Cần chủ sản phẩm xem riêng: `system.settings.view` mở **Cài đặt, Người dùng, Hoạt động hệ thống** cho người không phải Admin.
 
-## B. Không còn tác dụng, đề xuất THU HỒI (106 quyền, chờ duyệt)
+## B. Không còn tác dụng, ĐÃ THU HỒI 09/10 (chủ sản phẩm duyệt) (106 quyền, chờ duyệt)
 
 | Module | Quyền | Mã | Số người | Vì sao |
 |---|---|---|---:|---|
@@ -67,3 +67,9 @@ Cần chủ sản phẩm xem riêng: `system.settings.view` mở **Cài đặt, 
 | Yêu cầu | Quản trị | `system.rq.manage` | 1 | màn đã có quyền theo module mới; máy chủ không dùng |
 
 Cách thu hồi khi được duyệt: một migration sao lưu các dòng vào bảng snapshot, đặt `is_active = false`, ghi `revoked_reason`, kèm smoke "không ai mất màn nào". Smoke chạy `canViewRoute` trước/sau, hoặc đối chiếu `resolve_effective_permission_sources` trong giao dịch rollback.
+
+## Kết quả thu hồi nhóm B (09/10/2026)
+
+- Migration `20261009200000_revoke_dead_system_grants`: sao lưu 106 dòng vào `app_private.revoked_dead_system_grants_20261009`, đặt `is_active = false` kèm `revoked_at` và `revoked_reason`, ghi `permission_audit_events.dead_system_grants_revoked` theo từng người. Migration tự dừng nếu còn hàm SQL hoặc mẫu quyền nào dùng các mã này.
+- Trước khi apply: lấy snapshot quyền (`resolve_authorization_snapshot`) của 88 người đang hoạt động trước và sau, trong giao dịch rollback, rồi chạy đúng hàm giao diện `canAccessRoute`, `canManageRoute`, `canAccessNavigationModule` trên mọi route và module. Kết quả: **không ai mất màn, quyền quản trị màn hay mục menu nào**. Chỉ khác ở nhãn module trong danh sách Người dùng (Cài đặt): 6 người không còn nhãn Tài sản / Ngân sách / Hợp đồng, những module họ vốn không mở được.
+- Rollback: `supabase/operations/revoke_dead_system_grants_rollback.sql`.

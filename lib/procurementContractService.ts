@@ -22,6 +22,8 @@ export interface ContractPriceLine {
   id: string; lineNo: number; itemId: string; sku: string | null; name: string; unit: string | null;
   unitPrice: number; vatRate: number; quantityLimit: number | null; amountLimit: number | null;
   effectiveFrom: string | null; effectiveTo: string | null; note: string | null; used: boolean;
+  /** Quy cách của dòng giá — một mã nhiều quy cách, mỗi quy cách một giá. */
+  specification?: string | null;
 }
 
 export type PriceSource = 'statement' | 'contract' | 'note' | 'missing';
@@ -32,7 +34,8 @@ export interface ContractDeliveryLine {
   priceSource: PriceSource; amount: number | null; wmsReady: boolean; statementId: string | null; statementCode: string | null; statementStatus: string | null;
   stockState: StockState; warehouseName: string | null; contractPrice: number | null;
 }
-export interface ContractOrderItem { lineId: string; itemId: string; name: string; unit: string; qty: number; unitPrice: number; priceSource?: 'contract' | 'manual'; receivedQty?: number }
+export interface ContractOrderItem { lineId: string; itemId: string; name: string; unit: string; qty: number; unitPrice: number; priceSource?: 'contract' | 'manual'; receivedQty?: number;
+  specification?: string | null; contractLineId?: string | null }
 export interface ContractOrder {
   id: string; poNumber: string; status: string; totalAmount: number; vatRate: number; expectedDeliveryDate: string | null; orderDate?: string | null;
   fulfillmentMode: 'RECEIVE_TO_STOCK' | 'DIRECT_CONSUMPTION'; warehouseName: string | null; projectCode: string | null; rowVersion: number;
@@ -66,7 +69,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_CONTRACT_ITEM_INVALID: 'Vật tư không tồn tại trong danh mục.',
   PROCUREMENT_CONTRACT_LINE_INVALID: 'Dòng giá không còn. Tải lại.',
   PROCUREMENT_CONTRACT_DATE_INVALID: 'Ngày hết hiệu lực phải sau ngày bắt đầu.',
-  PROCUREMENT_CONTRACT_PRICE_OVERLAP: 'Có hai đơn giá của cùng vật tư cùng hiệu lực một ngày. Đặt ngày hết hiệu lực cho giá cũ.',
+  PROCUREMENT_CONTRACT_PRICE_OVERLAP: 'Có hai đơn giá của cùng vật tư, cùng quy cách, cùng hiệu lực một ngày. Ghi quy cách khác nhau hoặc đặt ngày hết hiệu lực cho giá cũ.',
   PROCUREMENT_PO_PRICE_INVALID: 'Đơn giá, VAT hoặc hạn mức không hợp lệ.',
   PROCUREMENT_PO_PRICE_MISSING: 'Còn dòng chưa có đơn giá — nhập đơn giá trước khi gửi / chốt.',
   PROCUREMENT_PO_SCOPE_MIXED: 'Một bảng đối soát chỉ gồm phiếu giao của cùng một dự án/công trường.',
@@ -95,6 +98,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_PO_ITEMS_REQUIRED: 'Thêm ít nhất một vật tư.',
   PROCUREMENT_PO_QTY_INVALID: 'Số lượng phải lớn hơn 0.',
   PROCUREMENT_PO_DUPLICATE_LINE: 'Mỗi vật tư chỉ một dòng.',
+  PROCUREMENT_PO_DUPLICATE_SPEC: 'Có hai dòng cùng mã vật tư cùng quy cách. Ghi quy cách khác nhau cho từng dòng.',
   PROCUREMENT_PO_NOT_EDITABLE: 'Đơn đã gửi — không sửa được nữa.',
   PROCUREMENT_PO_SUBMIT_DENIED: 'Chỉ người lập gửi / xóa được đơn nháp này.',
   PROCUREMENT_PO_DELETE_DENIED: 'Đơn đã từng gửi nên không xóa được.',
@@ -132,7 +136,7 @@ export const procurementContractService = {
     return call<ContractDetail>('get_procurement_contract_v1', { p_contract_id: id });
   },
   savePrices(input: { contractId: string; deleteIds?: string[]; lines: Array<{ id?: string; itemId: string; unitPrice: number; vatRate: number;
-    quantityLimit?: number | null; amountLimit?: number | null; effectiveFrom?: string | null; effectiveTo?: string | null; note?: string }> }) {
+    quantityLimit?: number | null; amountLimit?: number | null; effectiveFrom?: string | null; effectiveTo?: string | null; note?: string; specification?: string }> }) {
     return call<{ saved: number }>('save_procurement_contract_lines_v1', { p_input: input });
   },
   saveStatement(input: { contractId: string; month: string; statementId?: string; note?: string; lines: Array<{ deliveryLineId: string; unitPrice: number; vatRate: number; reason?: string }> }) {
@@ -153,7 +157,7 @@ export interface ContractInput {
 export interface ContractOrderInput {
   purchaseOrderId?: string; expectedRowVersion?: number; contractId: string; targetWarehouseId: string; expectedDeliveryDate?: string | null;
   fulfillmentMode: 'RECEIVE_TO_STOCK' | 'DIRECT_CONSUMPTION'; purchaseMode?: 'single' | 'multiple'; vatRate?: number; note?: string;
-  items: Array<{ lineId?: string; itemId: string; qty: number; unitPrice?: number | null; note?: string }>;
+  items: Array<{ lineId?: string; itemId: string; qty: number; unitPrice?: number | null; note?: string; specification?: string; contractLineId?: string | null }>;
 }
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {

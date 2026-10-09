@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Plus, Send, Trash2, Truck } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import {
-  procurementContractService, type ContractDetail, type ContractOrder, type ContractSummary,
+  procurementContractService, type ContractDetail, type ContractOrder, type ContractPriceLine, type ContractSummary,
 } from '../../../lib/procurementContractService';
 import type { Warehouse } from '../../../types';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { procurementInboxService } from '../../../lib/procurementInboxService';
+import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 
@@ -18,12 +19,18 @@ const MODES: Array<[Mode, string, string]> = [
   ['RECEIVE_TO_STOCK', 'Nhập lưu kho', 'Thủ kho nhận → tồn kho tăng, xuất dần khi dùng'],
   ['DIRECT_CONSUMPTION', 'Nhập–xuất thẳng', 'Thủ kho nhận 1 lần → ghi nhập và dùng ngay, tồn kho không đổi'],
 ];
-interface Row { lineId?: string; itemId: string; name: string; unit: string; qty: string; price: string; contractPrice: number | null; vatRate: number }
+// Một mã nhiều quy cách (chủ SP 09/10): mỗi dòng giá HĐ là một quy cách + một giá; gọi hàng chọn đúng dòng giá.
+interface Row { key: string; lineId?: string; itemId: string; name: string; unit: string; spec: string; contractLineId: string | null;
+  qty: string; price: string; contractPrice: number | null; vatRate: number }
+let rowSeq = 0;
+const newRowKey = () => `r${++rowSeq}`;
 const today = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
-const priceAt = (c: ContractDetail, itemId: string, date: string) => c.priceLines
-  .filter(l => l.itemId === itemId && (!l.effectiveFrom || l.effectiveFrom <= date) && (!l.effectiveTo || l.effectiveTo >= date))
-  .sort((a, b) => (b.effectiveFrom || '').localeCompare(a.effectiveFrom || ''))[0] || null;
+const effectiveAt = (l: ContractPriceLine, date: string) => (!l.effectiveFrom || l.effectiveFrom <= date) && (!l.effectiveTo || l.effectiveTo >= date);
+/** Giá HĐ của mã tại ngày. Có quy cách → đúng dòng quy cách đó; không → ưu tiên dòng không ghi quy cách (như máy chủ). */
+const priceAt = (c: ContractDetail, itemId: string, date: string, spec?: string) => c.priceLines
+  .filter(l => l.itemId === itemId && effectiveAt(l, date) && (spec === undefined || specKey(l.specification) === specKey(spec)))
+  .sort((a, b) => Number(!a.specification) === Number(!b.specification) ? (b.effectiveFrom || '').localeCompare(a.effectiveFrom || '') : a.specification ? 1 : -1)[0] || null;
 
 export const ContractOrderEditor: React.FC<{
   contracts: ContractSummary[];
@@ -60,7 +67,8 @@ export const ContractOrderEditor: React.FC<{
     procurementContractService.get(cid).then(detail => {
       setC(detail);
       if (order) {
-        setRows(order.items.map(it => ({ lineId: it.lineId, itemId: it.itemId, name: it.name, unit: it.unit, qty: qtyInput(it.qty),
+        setRows(order.items.map(it => ({ key: newRowKey(), lineId: it.lineId, itemId: it.itemId, name: it.name, unit: it.unit, spec: it.specification || '',
+          contractLineId: it.priceSource === 'contract' ? it.contractLineId || null : null, qty: qtyInput(it.qty),
           price: qtyInput(it.unitPrice), contractPrice: it.priceSource === 'contract' ? it.unitPrice : null, vatRate: order.vatRate })));
       } else {
         setRows([]);
@@ -79,25 +87,30 @@ export const ContractOrderEditor: React.FC<{
     : w.type === 'SITE' || (w.type === 'GENERAL' && c?.isBuyer))), [warehouses, c]);
   useEffect(() => { if (!warehouseId && whOptions.length === 1) setWarehouseId(whOptions[0].id); }, [whOptions, warehouseId]);
 
-  // Bảng giá áp tại ngày giao.
+  // Bảng giá áp tại ngày giao: mỗi mã + quy cách một ô.
   const priced = useMemo(() => {
     if (!c) return [];
     const seen = new Set<string>();
-    return c.priceLines.filter(l => { if (seen.has(l.itemId)) return false; seen.add(l.itemId); return true; })
-      .map(l => ({ line: l, at: priceAt(c, l.itemId, date) })).filter(x => x.at);
+    return c.priceLines.filter(l => { const k = `${l.itemId}|${specKey(l.specification)}`; if (seen.has(k)) return false; seen.add(k); return true; })
+      .map(l => ({ line: l, at: priceAt(c, l.itemId, date, l.specification || '') })).filter(x => x.at);
   }, [c, date]);
-  // Đổi ngày giao → giá HĐ theo ngày mới.
+  // Đổi ngày giao → giá HĐ theo ngày mới, giữ đúng quy cách của dòng.
   useEffect(() => {
     if (!c) return;
-    setRows(cur => cur.map(r => { const p = priceAt(c, r.itemId, date); return p ? { ...r, price: qtyInput(p.unitPrice), contractPrice: p.unitPrice, vatRate: p.vatRate } : { ...r, contractPrice: null }; }));
+    setRows(cur => cur.map(r => {
+      const p = r.contractLineId || r.contractPrice != null ? priceAt(c, r.itemId, date, r.spec) : priceAt(c, r.itemId, date, r.spec.trim() ? r.spec : undefined);
+      return p ? { ...r, contractLineId: p.id, price: qtyInput(p.unitPrice), contractPrice: p.unitPrice, vatRate: p.vatRate } : { ...r, contractLineId: null, contractPrice: null };
+    }));
   }, [c, date]);
 
-  const addItem = (it: { itemId: string; name: string; unit: string | null }) => {
-    if (!c || rows.some(r => r.itemId === it.itemId)) return;
-    const p = priceAt(c, it.itemId, date);
-    setRows(cur => [...cur, { itemId: it.itemId, name: it.name, unit: it.unit || '', qty: '', price: p ? qtyInput(p.unitPrice) : '',
-      contractPrice: p ? p.unitPrice : null, vatRate: p ? p.vatRate : (cur[0]?.vatRate ?? 8) }]);
+  /** Thêm dòng từ ô bảng giá (đúng dòng giá) hoặc từ ô tìm vật tư (giá HĐ mặc định của mã nếu có, không thì giá tạm). */
+  const addItem = (it: { itemId: string; name: string; unit: string | null }, line?: ContractPriceLine) => {
+    if (!c) return;
+    const p = line || priceAt(c, it.itemId, date);
+    setRows(cur => [...cur, { key: newRowKey(), itemId: it.itemId, name: it.name, unit: it.unit || '', spec: p?.specification || '', contractLineId: p ? p.id : null,
+      qty: '', price: p ? qtyInput(p.unitPrice) : '', contractPrice: p ? p.unitPrice : null, vatRate: p ? p.vatRate : (cur[0]?.vatRate ?? 8) }]);
   };
+  const specProblems = useMemo(() => duplicateItemSpecProblems(rows.map(r => ({ key: r.key, itemId: r.itemId, specification: r.spec }))), [rows]);
   const patch = (i: number, p: Partial<Row>) => setRows(cur => cur.map((r, j) => j === i ? { ...r, ...p } : r));
   const vats = Array.from(new Set(rows.map(r => r.vatRate)));
   const total = rows.reduce((s, r) => s + (parseQty(r.qty) || 0) * (parseQty(r.price) || 0), 0);
@@ -110,10 +123,11 @@ export const ContractOrderEditor: React.FC<{
     const bad = rows.find(r => !(parseQty(r.qty)! > 0) || !(parseQty(r.price)! > 0));
     if (bad) throw new Error(`Nhập số lượng${bad.contractPrice == null ? ' và giá tạm' : ''} cho ${bad.name}.`);
     if (vats.length > 1) throw new Error('Các vật tư có VAT khác nhau — tách thành đơn riêng theo từng mức VAT.');
+    if (specProblems.size) throw new Error('Có vật tư nhiều dòng chưa ghi quy cách khác nhau (ô viền đỏ).');
     const r = await procurementContractService.saveOrder({ purchaseOrderId: saved?.id, expectedRowVersion: saved?.rowVersion, contractId: c.id,
       targetWarehouseId: warehouseId, expectedDeliveryDate: date || null, fulfillmentMode: mode, purchaseMode: multiple ? 'multiple' : 'single',
-      vatRate: vat ?? undefined, note: note.trim(), items: rows.map(x => ({ lineId: x.lineId, itemId: x.itemId, qty: parseQty(x.qty) || 0,
-        unitPrice: x.contractPrice == null ? parseQty(x.price) : undefined })) });
+      vatRate: vat ?? undefined, note: note.trim(), items: rows.map(x => ({ lineId: x.lineId, itemId: x.itemId, qty: parseQty(x.qty) || 0, specification: x.spec.trim() || undefined,
+        contractLineId: x.contractPrice != null ? x.contractLineId : null, unitPrice: x.contractPrice == null ? parseQty(x.price) : undefined })) });
     if (orderDateTouched) { await procurementInboxService.setOrderDate(r.purchaseOrderId, orderDate); setOrderDateTouched(false); }
     const next = { id: r.purchaseOrderId, rowVersion: r.rowVersion };
     setSaved(next);
@@ -182,8 +196,14 @@ export const ContractOrderEditor: React.FC<{
           <h3 className="font-semibold text-foreground">Vật tư</h3>
           {rows.length === 0 && <p className="rounded-xl border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Chọn vật tư từ bảng giá HĐ bên dưới.</p>}
           <ul className="space-y-2">{rows.map((r, i) => { const qty = parseQty(r.qty) || 0; const price = parseQty(r.price) || 0;
-            return <li key={r.itemId} className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
-              <span className="min-w-[10rem] flex-1 font-medium text-foreground">{r.name}</span>
+            const specProblem = specProblems.get(r.key);
+            return <li key={r.key} className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+              <span className="min-w-[10rem] flex-1"><span className="font-medium text-foreground">{r.name}</span>
+                {r.contractPrice != null
+                  ? r.spec && <span className="block text-xs text-muted-foreground">{r.spec}</span>
+                  : <input aria-label={`Quy cách ${r.name}`} value={r.spec} onChange={e => patch(i, { spec: e.target.value })} maxLength={160} placeholder="Quy cách (nếu có)"
+                    aria-invalid={Boolean(specProblem)} className={`mt-1 block w-full max-w-xs py-1 text-xs ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />}
+                {specProblem && <span className="block text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}</span>
               <input aria-label={`SL ${r.name}`} inputMode="decimal" value={r.qty} onChange={e => patch(i, { qty: e.target.value })} placeholder="SL" className={`w-24 text-right tabular-nums ${inputCls}`} />
               <span className="w-10 text-muted-foreground">{r.unit}</span>
               {r.contractPrice != null
@@ -202,10 +222,10 @@ export const ContractOrderEditor: React.FC<{
           <h3 className="text-sm font-semibold text-foreground">Bảng giá HĐ tại {date ? date.split('-').reverse().join('/') : 'hôm nay'}</h3>
           {priced.length === 0 ? <p className="rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
             HĐ chưa có giá hiệu lực ở ngày này.{c.isBuyer ? ' Thêm vật tư bằng ô tìm kiếm (giá tạm) hoặc khai bảng giá HĐ.' : ' Nhờ Mua hàng khai bảng giá HĐ.'}</p>
-            : <div className="flex flex-wrap gap-1.5">{priced.map(({ line, at }) => { const on = rows.some(r => r.itemId === line.itemId);
-              return <button key={line.itemId} type="button" disabled={on} onClick={() => addItem({ itemId: line.itemId, name: line.name, unit: line.unit })}
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${on ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card text-foreground hover:border-teal-300'}`}>
-                {!on && <Plus size={12} />}{line.name} · {money(at!.unitPrice)}/{line.unit}</button>; })}</div>}
+            : <div className="flex flex-wrap gap-1.5">{priced.map(({ line, at }) => { const on = rows.some(r => r.contractLineId === at!.id);
+              return <button key={at!.id} type="button" disabled={on} onClick={() => addItem({ itemId: line.itemId, name: line.name, unit: line.unit }, at!)}
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-left text-xs font-semibold ${on ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card text-foreground hover:border-teal-300'}`}>
+                {!on && <Plus size={12} className="shrink-0" />}<span>{line.name}{at!.specification && <span className="font-normal opacity-80"> — {at!.specification}</span>} · {money(at!.unitPrice)}/{line.unit}</span></button>; })}</div>}
           {c.isBuyer && <div className="relative max-w-md">
             <Plus size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Vật tư khác (chưa có giá HĐ, nhập giá tạm)…" className={`w-full pl-8 ${inputCls}`} />

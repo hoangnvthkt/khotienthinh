@@ -7,13 +7,15 @@ const supplyChainTab = readFileSync(join(process.cwd(), 'pages/project/SupplyCha
 const descriptionFields = readFileSync(join(process.cwd(), 'components/material/MaterialCommercialDescriptionFields.tsx'), 'utf8');
 
 describe('material commercial description fields', () => {
-  it('shows only a fixed material code and an editable material name', () => {
+  // Chủ SP 09/10/2026: một mã nhiều quy cách — dòng đề xuất ghi quy cách (bắt buộc khi cùng mã có từ 2 dòng).
+  it('shows a fixed material code, an editable material name and an optional specification', () => {
     expect(descriptionFields).toContain('Mã vật tư');
     expect(descriptionFields).toContain('readOnly');
     expect(descriptionFields).toContain('Tên vật tư');
     expect(descriptionFields).not.toContain('Danh mục:');
     expect(descriptionFields).not.toContain('Quy cách / mô tả');
-    expect(descriptionFields).not.toContain('onSpecificationChange');
+    expect(descriptionFields).toContain('{onSpecificationChange && (');
+    expect(descriptionFields).toContain('specificationProblem');
   });
 });
 
@@ -22,7 +24,8 @@ describe('material commercial description UI wiring', () => {
     expect(requestModal).toContain('getMaterialDocumentLineKey(row, index)');
     expect(requestModal).toContain('<MaterialCommercialDescriptionFields');
     expect(requestModal).toContain("handleUpdateItem(primary.index, 'itemNameSnapshot'");
-    expect(requestModal).not.toContain("onSpecificationChange={value => handleUpdateItem(primary.index, 'specification'");
+    expect(requestModal).toContain("onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}");
+    expect(requestModal).toContain('duplicateItemSpecProblems(reqItems.map(');
     expect(requestModal).not.toContain("? `sku:${sku.toLowerCase()}`");
   });
 

@@ -63,6 +63,8 @@ export interface ProcurementInbox {
 
 export interface ProcurementInboxLine {
   lineId: string; itemId: string | null; itemName: string; sku: string | null; unit: string | null;
+  /** Quy cách người đề xuất ghi cho dòng (một mã nhiều quy cách). */
+  specification?: string | null;
   needQty: number; orderedQty: number; receivedQty: number; remainingQty: number; stockQty: number | null;
   /** Set when the item is bought in another unit: stock qty = purchase qty × purchaseFactor. */
   purchaseUnit: string | null; purchaseFactor: number | null;
@@ -134,6 +136,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_EXCESS_OVER: 'SL gán lớn hơn phần thừa đang có ở công trường.',
   PROCUREMENT_EXCESS_TARGET_INVALID: 'Chỉ gán phần thừa cho dòng đề xuất đang chờ cung ứng, cùng vật tư, cùng dự án của công trường.',
   PROCUREMENT_PO_DUPLICATE_LINE: 'Một dòng nhu cầu bị chọn hai lần.',
+  PROCUREMENT_PO_DUPLICATE_SPEC: 'Có hai dòng cùng mã vật tư cùng quy cách. Ghi quy cách khác nhau cho từng dòng hoặc gộp lại.',
   PROCUREMENT_PO_WAREHOUSE_INVALID: 'Kho nhận không hợp lệ.',
   PROCUREMENT_PO_NOT_FOUND: 'Đơn hàng không còn tồn tại. Tải lại.',
   PROCUREMENT_PO_NOT_EDITABLE: 'Chỉ người lập được sửa đơn nháp hoặc bị trả lại.',
@@ -366,7 +369,7 @@ export const committedDeliveryAmount = (deliveries: ProcurementDelivery[], excep
 export interface ProcurementOrderSaveInput {
   purchaseOrderId?: string; purchaseMode?: 'single' | 'multiple'; expectedRowVersion?: number; vendorId: string; targetWarehouseId?: string | null;
   expectedDeliveryDate?: string | null; vatRate: number; note?: string;
-  items: Array<{ itemId: string; unitPrice: number; note?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
+  items: Array<{ itemId: string; unitPrice: number; note?: string; specification?: string; purchaseQty?: number; purchaseUnit?: string; allocations: Array<ProcurementSourceRef & { lineId: string; qty: number }> }>;
 }
 
 export const PROCUREMENT_PO_STATUS_LABELS: Record<string, string> = {
@@ -440,7 +443,7 @@ export interface ProcurementProactiveSaveInput {
 export interface ProcurementProactiveCandidate {
   needLineId: string; itemId: string; itemName: string; unit: string | null; remainingQty: number;
   purchaseOrderId: string; poNumber: string | null; status: string; vendorName: string | null; expectedDeliveryDate: string | null;
-  poLineId: string; lineStockQty: number; unallocatedQty: number; reasonCode: ProcurementProactiveReason | null;
+  poLineId: string; poLineSpecification?: string | null; lineStockQty: number; unallocatedQty: number; reasonCode: ProcurementProactiveReason | null;
 }
 /** BOQ status of a quantity about to be ordered: within, over the remaining BOQ, or an item outside the project BOQ. */
 export const boqStatusOf = (item: Pick<ProcurementCatalogItem, 'inBoq' | 'boqQty' | 'orderedQty'>, qty: number): ProcurementBoqSnapshot['status'] =>
