@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { GripVertical, Moon, PanelsTopLeft, Settings, Sun, X } from 'lucide-react';
+import { GripVertical, Moon, PanelsTopLeft, Search, Settings, Sun, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -11,6 +11,7 @@ import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useMineWorkItems } from '../../lib/center/workItemsStore';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
+import { openGlobalSearch, searchShortcutLabel } from '../../lib/search/openGlobalSearch';
 import './center.css';
 
 // Rail trái của giao diện Trung tâm điều hành (máy tính): cột hẹp, mỗi app = biểu tượng gradient như ở Home + tên
@@ -163,6 +164,9 @@ export const CenterRailView: React.FC<{
         })}
       </div>
       <div className="vcc-rail-foot">
+        <button type="button" className="vcc-rail-tool" onClick={() => openGlobalSearch()} title={`Tìm kiếm (${searchShortcutLabel()})`} aria-label="Tìm kiếm">
+          <Search size={16} />
+        </button>
         {onSettings && (
           <button type="button" className="vcc-rail-tool" onClick={onSettings} title="Cài đặt" aria-label="Cài đặt"><Settings size={16} /></button>
         )}

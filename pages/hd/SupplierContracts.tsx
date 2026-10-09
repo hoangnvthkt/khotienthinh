@@ -49,6 +49,7 @@ import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
 import { removeSupplierContractDeepLink } from '../../lib/projectContractAggregation';
 import { getSupabaseOrderColumns, getSupabaseProjection } from '../../lib/supabaseProjections';
 import { fetchAllSupabaseRows } from '../../lib/supabaseCompleteRead';
+import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCurrency = (v: number, currency = 'VND') =>
@@ -129,6 +130,7 @@ const SupplierContracts: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  useSearchParamPrefill(setSearchTerm);
   const [filterStatus, setFilterStatus] = useState('');
 
   // Modal states

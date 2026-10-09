@@ -249,11 +249,3 @@ export const buildTodayWidgets = (today: CenterToday, ctx: TodayContext): Widget
 };
 
 /** Dòng tóm tắt dưới lời chào: việc chờ + hạn hợp đồng của dự án đang xem. */
-export const buildTodaySummary = (today: CenterToday | null, ctx: TodayContext): string => {
-  const parts: string[] = [];
-  if (ctx.mineCount !== null) parts.push(ctx.mineCount > 0 ? `${ctx.mineCount} việc chờ bạn` : 'không có việc chờ bạn');
-  const project = today?.project;
-  const days = daysUntil(project?.endDate, ctx.now);
-  if (project && days !== null) parts.push(days < 0 ? `quá hạn hợp đồng ${project.code} ${-days} ngày` : days === 0 ? `hôm nay hết hạn hợp đồng ${project.code}` : `${days} ngày tới hạn hợp đồng ${project.code}`);
-  return parts.join(' · ');
-};

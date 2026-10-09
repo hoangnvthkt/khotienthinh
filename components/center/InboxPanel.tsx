@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronsDownUp, ChevronsUpDown, RefreshCw, X } from 'lucide-react';
+import { ChevronDown, ChevronsDownUp, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { INBOX_GROUPS, inboxGroupOf, type InboxGroupKey } from '../../lib/center/centerRegistry';
 import { SOURCE_LABEL, displayCode, dueInfo, sortWorkItems, type InboxTab, type WorkItem, type WorkItemsPage } from '../../lib/center/workItemsService';
 import { loadWorkItemsShared } from '../../lib/center/workItemsStore';
-import { civilOf, formatCivilRange, inCivilRange, type CivilRange } from '../../lib/center/civilDate';
 
 export type LoadWorkItems = (tab: InboxTab, options?: { force?: boolean }) => Promise<WorkItemsPage>;
 
@@ -48,14 +47,11 @@ const InboxPanel: React.FC<{
   onOpen: (item: WorkItem) => void;
   onMineCount?: (count: number | null) => void;
   /** Việc Chờ tôi đã tải (để chấm hạn trên lịch). */
-  onMineItems?: (items: WorkItem[]) => void;
   /** Lọc theo hạn (ô Lịch ở Hôm nay); việc không có hạn bị ẩn khi đang lọc. */
-  dueRange?: CivilRange | null;
-  onClearDueRange?: () => void;
   resizer?: React.ReactNode;
   /** Tăng để tải lại "Chờ tôi" (sau khi gửi form từ Center). */
   refreshToken?: number;
-}> = ({ hidden, load = loadWorkItemsShared, now: nowProp, activeItemKey, onOpen, onMineCount, onMineItems, dueRange = null, onClearDueRange, resizer, refreshToken = 0 }) => {
+}> = ({ hidden, load = loadWorkItemsShared, now: nowProp, activeItemKey, onOpen, onMineCount, resizer, refreshToken = 0 }) => {
   const [mountedAt] = useState(() => new Date());
   const now = nowProp ?? mountedAt;
   const [tab, setTab] = useState<InboxTab>('mine');
@@ -103,24 +99,21 @@ const InboxPanel: React.FC<{
   const mineCount = 'page' in mineState && mineState.page ? mineState.page.total : null;
   useEffect(() => { onMineCount?.(mineCount); }, [mineCount, onMineCount]);
   const minePage = 'page' in mineState ? mineState.page : undefined;
-  useEffect(() => { onMineItems?.(minePage?.items || []); }, [minePage, onMineItems]);
 
   const state = states[tab];
   const page = 'page' in state ? state.page : undefined;
-  // Nhóm ghim luôn có mặt khi tab có việc (trừ lúc lọc theo hạn: chỉ hiện nhóm có việc khớp).
+  // Nhóm ghim luôn có mặt khi tab có việc.
   const groups = useMemo(() => {
     if (!page || page.items.length === 0) return [];
     const byGroup = new Map<InboxGroupKey, WorkItem[]>();
     page.items
-      .filter(item => !dueRange || inCivilRange(civilOf(item.dueAt), dueRange))
       .forEach(item => {
         const key = inboxGroupOf(item.module);
         byGroup.set(key, [...(byGroup.get(key) || []), item]);
       });
-    return INBOX_GROUPS.filter(group => byGroup.has(group.key) || (group.pinned && !dueRange))
+    return INBOX_GROUPS.filter(group => byGroup.has(group.key) || group.pinned)
       .map(group => ({ ...group, items: sortWorkItems(byGroup.get(group.key) || []) }));
-  }, [page, dueRange]);
-  const matched = groups.reduce((sum, group) => sum + group.items.length, 0);
+  }, [page]);
 
   const groupKey = (key: InboxGroupKey) => `${tab}:${key}`;
   const anyOpen = groups.some(group => opened.has(groupKey(group.key)));
@@ -170,25 +163,12 @@ const InboxPanel: React.FC<{
         {state.status === 'loading' && !page && (
           <div className="p-3"><StateBox kind="loading" title="Đang gom việc từ các module…" /></div>
         )}
-        {dueRange && page && (
-          <div className="vcc-filterbar" role="status">
-            <CalendarDays size={13} />
-            <span className="min-w-0 flex-1">Hạn {formatCivilRange(dueRange)} · {matched} việc</span>
-            {onClearDueRange && (
-              <button type="button" className="vcc-tabtool" onClick={onClearDueRange} aria-label="Bỏ lọc theo hạn"><X size={13} /> Bỏ lọc</button>
-            )}
-          </div>
-        )}
         {page && page.items.length === 0 && (
           <div className="p-3"><StateBox kind="empty" title={EMPTY_COPY[tab].title} message={EMPTY_COPY[tab].message} /></div>
         )}
-        {dueRange && page && page.items.length > 0 && groups.length === 0 && (
-          <div className="p-3"><StateBox kind="empty" title="Không có việc tới hạn trong khoảng này" message="Chọn ngày khác ở ô Lịch, hoặc bỏ lọc để xem hết." /></div>
-        )}
         {state.status === 'error' && page && <div className="vcc-note" role="alert">{state.message}</div>}
         {groups.map(group => {
-          // Đang lọc theo hạn: hiện hết các việc lọc được.
-          const open = !!dueRange || opened.has(groupKey(group.key));
+          const open = opened.has(groupKey(group.key));
           const urgent = group.items.filter(item => dueInfo(item.dueAt, now)?.tone === 'hot').length;
           return (
             <section key={group.key} className={`vcc-group vcc-mod-${group.key}`} data-open={open || undefined} data-empty={group.items.length === 0 || undefined}>

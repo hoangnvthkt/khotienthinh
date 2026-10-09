@@ -10,7 +10,7 @@ import {
   Landmark, Repeat, Wrench, ChevronsLeft, ChevronsRight, AppWindow, ArrowLeft, Inbox, Layers, HardDrive,
   Calendar, CalendarCheck, CalendarOff, DollarSign, FileSignature, MapPin, Bot, FolderOpen, GripVertical, BookOpen, Clock,
   IdCard, Award, Trophy, Globe, Building2, HardHat, Handshake, Settings2, Calculator, ShoppingCart, Activity, Pin, Car, User, Wallet,
-  PanelsTopLeft
+  PanelsTopLeft, Search
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import NotificationCenter from './NotificationCenter';
@@ -33,6 +33,7 @@ import { useCenterUi } from '../lib/center/centerMode';
 import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
 import { useMineWorkItems } from '../lib/center/workItemsStore';
 import { useAuth } from '../context/AuthContext';
+import { openGlobalSearch, searchShortcutLabel } from '../lib/search/openGlobalSearch';
 import {
   canAccessVehicleApprovalQueue,
   canViewSensitiveVehicleIssues,
@@ -546,6 +547,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle, collapsed, setCollaps
 
         {/* ==================== NAVIGATION ==================== */}
         <nav className="px-2 py-2 flex-1 overflow-y-auto space-y-0.5">
+          {/* Tìm kiếm toàn hệ thống — luôn thấy, không cần nhớ phím tắt */}
+          <button
+            type="button"
+            onClick={() => { if (isOpen) toggle(); openGlobalSearch(); }}
+            title={collapsed ? `Tìm kiếm (${searchShortcutLabel()})` : 'Tìm chức năng, thao tác, hồ sơ'}
+            aria-label="Tìm kiếm"
+            className={`mb-1.5 w-full flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-3'} py-2 rounded-xl border transition-colors ${isDark
+              ? 'border-white/10 bg-slate-800/40 text-slate-400 hover:bg-slate-800/70 hover:text-white'
+              : 'border-white/60 bg-white/60 text-slate-500 hover:bg-white hover:text-slate-900'}`}
+          >
+            <Search className="w-5 h-5 shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 truncate text-left text-sm font-medium">Tìm kiếm…</span>
+                <kbd className="hidden lg:inline rounded-md border border-slate-200 bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{searchShortcutLabel()}</kbd>
+              </>
+            )}
+          </button>
 
           {/* ====== MOBILE FLAT VIEW — show everything at once ====== */}
           <div className="lg:hidden">

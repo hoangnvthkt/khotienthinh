@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { canAccessRoute } from '../lib/routeAccess';
+import { openGlobalSearch } from '../lib/search/openGlobalSearch';
 import {
   Plus, Package, Users, ArrowLeftRight, ClipboardCheck,
   Search, Briefcase, DollarSign, Settings, GripVertical,
@@ -136,7 +137,7 @@ const QuickActionFab: React.FC = () => {
 
   const openSearch = () => {
     setIsOpen(false);
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+    openGlobalSearch();
   };
 
   const handleAction = (action: ActionDef) => {

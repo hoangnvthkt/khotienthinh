@@ -9,6 +9,7 @@ import {
   ThumbsUp, ThumbsDown, Zap
 } from 'lucide-react';
 import { AVAILABLE_AI_MODELS, DEFAULT_AI_MODEL } from '../lib/aiConfig';
+import { useSearchParamPrefill } from '../hooks/useSearchParamPrefill';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 
@@ -106,6 +107,8 @@ const AiAssistant: React.FC = () => {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [input, setInput] = useState('');
+  // Mở từ Tìm kiếm toàn hệ thống: điền sẵn câu hỏi, người dùng tự bấm gửi.
+  useSearchParamPrefill(setInput);
   const [loading, setLoading] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [expandedSql, setExpandedSql] = useState<string | null>(null);

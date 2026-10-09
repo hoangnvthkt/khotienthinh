@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { INVENTORY_MODE_LABELS, catalogErrorMessage, foldVi, wmsCatalogService, type ItemCard, type StockOverview, type StockRow } from '../../lib/wmsCatalogService';
 import { BAD, EmptyPanel, GREY, Panel, Section, Split, Stat, TEAL, Tile, WARN, dateVi, daysBetween, fmtQty } from './wmsUi';
+import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
 
 // Tồn kho (V1): số lấy thẳng từ sổ kho, không từ bản sao trong danh mục. Bấm một dòng → thẻ kho, kho khác, cảnh báo kèm cách xử lý.
 
@@ -38,6 +39,7 @@ export const WmsStockView: React.FC = () => {
   const [scope, setScope] = useState('all');
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
+  useSearchParamPrefill(setSearch);
   const [category, setCategory] = useState('');
   const [sel, setSel] = useState<string | null>(null);
   const [card, setCard] = useState<{ key: string; data: ItemCard | null; error?: string } | null>(null);
