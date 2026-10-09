@@ -46,3 +46,30 @@ export const buildPurchaseOrderLineDescription = (
     specification: resolveMaterialLineSpecification(requestLine),
   };
 };
+
+/** So sánh quy cách: bỏ khoảng trắng thừa, không phân biệt hoa thường (khớp lower(btrim()) ở máy chủ). */
+export const specKey = (value?: string | null): string => clean(value).replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * Một mã nhiều quy cách (chủ SP 09/10/2026): mã có từ 2 dòng trong chứng từ thì mỗi dòng phải ghi quy cách,
+ * và các quy cách khác nhau. Trả về lineId → câu báo lỗi cho các dòng chưa đạt.
+ */
+export const duplicateItemSpecProblems = (
+  lines: ReadonlyArray<{ key: string; itemId?: string | null; specification?: string | null }>,
+): Map<string, string> => {
+  const byItem = new Map<string, Array<{ key: string; spec: string }>>();
+  lines.forEach(line => {
+    const itemId = clean(line.itemId);
+    if (!itemId) return;
+    byItem.set(itemId, [...(byItem.get(itemId) || []), { key: line.key, spec: specKey(line.specification) }]);
+  });
+  const problems = new Map<string, string>();
+  byItem.forEach(group => {
+    if (group.length < 2) return;
+    group.forEach(row => {
+      if (!row.spec) problems.set(row.key, 'Mã này có nhiều dòng — ghi quy cách để phân biệt');
+      else if (group.filter(other => other.spec === row.spec).length > 1) problems.set(row.key, 'Trùng quy cách với dòng khác cùng mã');
+    });
+  });
+  return problems;
+};

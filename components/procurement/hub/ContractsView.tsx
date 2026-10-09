@@ -154,16 +154,16 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
 // ---------------------------------------------------------------------------
 // Bảng giá HĐ
 // ---------------------------------------------------------------------------
-interface PriceRow { id?: string; itemId: string; name: string; unit: string | null; unitPrice: string; vatRate: string; quantityLimit: string; amountLimit: string; effectiveFrom: string; effectiveTo: string; used: boolean }
+interface PriceRow { id?: string; itemId: string; name: string; unit: string | null; spec: string; unitPrice: string; vatRate: string; quantityLimit: string; amountLimit: string; effectiveFrom: string; effectiveTo: string; used: boolean }
 
 const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCancel: () => void }> = ({ contract, onDone, onCancel }) => {
   const toast = useToast();
   const [rows, setRows] = useState<PriceRow[]>(() => {
-    const base = contract.priceLines.map(l => ({ id: l.id, itemId: l.itemId, name: l.name, unit: l.unit, unitPrice: qtyInput(l.unitPrice), vatRate: qtyInput(l.vatRate),
+    const base = contract.priceLines.map(l => ({ id: l.id, itemId: l.itemId, name: l.name, unit: l.unit, spec: l.specification || '', unitPrice: qtyInput(l.unitPrice), vatRate: qtyInput(l.vatRate),
       quantityLimit: qtyInput(l.quantityLimit), amountLimit: qtyInput(l.amountLimit), effectiveFrom: l.effectiveFrom || '', effectiveTo: l.effectiveTo || '', used: l.used }));
     // Delivered items without a price yet are proposed first.
     const priced = new Set(base.map(r => r.itemId));
-    const missing = contract.usage.filter(u => !priced.has(u.itemId)).map(u => ({ itemId: u.itemId, name: u.name, unit: u.unit, unitPrice: '', vatRate: '8',
+    const missing = contract.usage.filter(u => !priced.has(u.itemId)).map(u => ({ itemId: u.itemId, name: u.name, unit: u.unit, spec: '', unitPrice: '', vatRate: '8',
       quantityLimit: '', amountLimit: '', effectiveFrom: contract.signedDate || '', effectiveTo: '', used: false }));
     return [...base, ...missing];
   });
@@ -186,7 +186,7 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
     setSaving(true);
     try {
       await procurementContractService.savePrices({ contractId: contract.id, deleteIds: deleted, lines: active.map(r => ({
-        id: r.id, itemId: r.itemId, unitPrice: parseQty(r.unitPrice) || 0, vatRate: parseQty(r.vatRate) || 0,
+        id: r.id, itemId: r.itemId, specification: r.spec.trim(), unitPrice: parseQty(r.unitPrice) || 0, vatRate: parseQty(r.vatRate) || 0,
         quantityLimit: parseQty(r.quantityLimit), amountLimit: parseQty(r.amountLimit), effectiveFrom: r.effectiveFrom || null, effectiveTo: r.effectiveTo || null })) });
       toast.success('Đã lưu bảng giá HĐ', 'Phiếu giao chưa đối soát tự áp giá theo ngày giao.');
       onDone();
@@ -194,14 +194,19 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
   };
 
   return <section className="space-y-3 rounded-2xl border border-teal-200 bg-card p-4 dark:border-teal-900">
-    <p className="text-sm text-muted-foreground">Đổi giá giữa chừng: đặt <b>ngày hết hiệu lực</b> cho giá cũ và thêm dòng giá mới với <b>ngày bắt đầu</b>. Dòng giá đã dùng cho phiếu giao không xóa được.</p>
+    <p className="text-sm text-muted-foreground">Đổi giá giữa chừng: đặt <b>ngày hết hiệu lực</b> cho giá cũ và thêm dòng giá mới với <b>ngày bắt đầu</b>. Một mã nhiều loại giá (VD tôn mái / tôn biên 13 sóng): bấm <b>+ Quy cách khác</b> và ghi quy cách cho từng dòng. Dòng giá đã dùng cho phiếu giao không xóa được.</p>
     <div className="overflow-x-auto">
       <table className="w-full min-w-[58rem] text-sm">
         <thead className="text-xs text-muted-foreground"><tr>
           <th className="px-2 py-1 text-left font-semibold">Vật tư</th><th className="px-2 py-1 text-right font-semibold">Đơn giá</th><th className="px-2 py-1 text-right font-semibold">VAT %</th>
           <th className="px-2 py-1 text-right font-semibold">Hạn mức SL</th><th className="px-2 py-1 text-left font-semibold">Hiệu lực từ</th><th className="px-2 py-1 text-left font-semibold">đến</th><th /></tr></thead>
         <tbody>{rows.map((r, i) => <tr key={r.id || `${r.itemId}-${i}`} className="border-t border-border">
-          <td className="min-w-[14rem] px-2 py-1.5"><span className="font-medium text-foreground">{r.name}</span> <span className="text-xs text-muted-foreground">{r.unit}</span></td>
+          <td className="min-w-[16rem] px-2 py-1.5"><span className="font-medium text-foreground">{r.name}</span> <span className="text-xs text-muted-foreground">{r.unit}</span>
+            <input value={r.spec} onChange={e => patch(i, { spec: e.target.value })} maxLength={160} placeholder="Quy cách (nếu có nhiều loại giá)" aria-label={`Quy cách ${r.name}`}
+              className={`mt-1 block w-full py-1 text-xs ${inputCls}`} />
+            <button type="button" onClick={() => setRows(cur => [...cur.slice(0, i + 1), { itemId: r.itemId, name: r.name, unit: r.unit, spec: '', unitPrice: '', vatRate: r.vatRate,
+              quantityLimit: '', amountLimit: '', effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, used: false }, ...cur.slice(i + 1)])}
+              className="mt-0.5 text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">+ Quy cách khác</button></td>
           <td className="px-2 py-1.5 text-right"><input inputMode="decimal" value={r.unitPrice} onChange={e => patch(i, { unitPrice: e.target.value })} placeholder="Chưa có giá" aria-label={`Đơn giá ${r.name}`} className={`w-28 text-right tabular-nums ${inputCls}`} /></td>
           <td className="px-2 py-1.5 text-right"><input inputMode="decimal" value={r.vatRate} onChange={e => patch(i, { vatRate: e.target.value })} aria-label={`VAT ${r.name}`} className={`w-14 text-right ${inputCls}`} /></td>
           <td className="px-2 py-1.5 text-right"><input inputMode="decimal" value={r.quantityLimit} onChange={e => patch(i, { quantityLimit: e.target.value })} placeholder="—" aria-label={`Hạn mức ${r.name}`} className={`w-24 text-right ${inputCls}`} /></td>
@@ -215,7 +220,7 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
       <Plus size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Thêm vật tư vào bảng giá…" className={`w-full pl-8 ${inputCls}`} />
       {found.length > 0 && <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">{found.map(f => <li key={f.id}>
-        <button type="button" onClick={() => { setRows(cur => [...cur, { itemId: f.id, name: f.name, unit: f.unit, unitPrice: '', vatRate: '8', quantityLimit: '', amountLimit: '', effectiveFrom: '', effectiveTo: '', used: false }]); setSearch(''); }}
+        <button type="button" onClick={() => { setRows(cur => [...cur, { itemId: f.id, name: f.name, unit: f.unit, spec: '', unitPrice: '', vatRate: '8', quantityLimit: '', amountLimit: '', effectiveFrom: '', effectiveTo: '', used: false }]); setSearch(''); }}
           className="flex w-full justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"><span>{f.name}</span><span className="text-xs text-muted-foreground">{[f.sku, f.unit].filter(Boolean).join(' · ')}</span></button></li>)}</ul>}
     </div>
     <div className="flex items-center justify-end gap-2">
@@ -414,7 +419,7 @@ const ContractDrawer: React.FC<{ contractId: string; contracts: ContractSummary[
             ? `Đã nhận ${c.usage.length} vật tư theo HĐ này nhưng chưa có giá. Bấm "Khai bảng giá" — danh sách vật tư đã nhận được điền sẵn, chỉ cần nhập giá.`
             : 'Khai đơn giá từng vật tư để gọi hàng tự tính tiền và theo dõi hạn mức.'} />
           : <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">{c.priceLines.map(l => <li key={l.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-            <span className="min-w-0 flex-1 font-medium text-foreground">{l.name}</span>
+            <span className="min-w-0 flex-1"><span className="font-medium text-foreground">{l.name}</span>{l.specification && <span className="ml-1.5 text-xs text-muted-foreground">— {l.specification}</span>}</span>
             <span className="tabular-nums">{money(l.unitPrice)} đ/{l.unit} · VAT {fmt(l.vatRate)}%</span>
             <span className="text-xs text-muted-foreground">{l.effectiveFrom || l.effectiveTo ? `Hiệu lực ${l.effectiveFrom ? dateVi(l.effectiveFrom) : '…'} – ${l.effectiveTo ? dateVi(l.effectiveTo) : 'nay'}` : 'Hiệu lực cả HĐ'}</span>
             {l.quantityLimit ? <span className="text-xs text-muted-foreground">hạn mức {fmt(l.quantityLimit)} {l.unit}</span> : null}
