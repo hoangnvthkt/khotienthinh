@@ -11,6 +11,7 @@ import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
 import PoExcelImport from './PoExcelImport';
 import type { ImportedPoLine } from '../../../lib/procurementExcelImport';
+import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { QuickCreateItemDialog } from '../../wms/QuickCreateItemDialog';
 import { wmsCatalogService } from '../../../lib/wmsCatalogService';
 
@@ -47,15 +48,36 @@ const purchaseQtyOf = (l: Line, stock: number) => {
   return typed == null ? Math.round(stock / l.factor * 1000) / 1000 : typed;
 };
 
-const fromOrder = (order: ProcurementOrderDetail): Line[] => order.lines.map(l => {
+let lineSeq = 0;
+/** Mỗi dòng một khóa riêng: một mã có thể nhiều dòng (mỗi dòng một quy cách, một giá). */
+const newLineKey = (itemId: string) => `${itemId}#${++lineSeq}`;
+
+/** BOQ của mã cộng dồn các dòng cùng mã đứng trước trong đơn (một mã nhiều quy cách). */
+const withPriorSameItem = (lines: Line[]): Line[] => {
+  const seen = new Map<string, number>();
+  return lines.map(l => {
+    const prior = seen.get(l.itemId) || 0;
+    const stock = parseQty(l.stockQty);
+    seen.set(l.itemId, prior + (stock != null && !Number.isNaN(stock) && stock > 0 ? stock : 0));
+    return prior ? { ...l, boq: { ...l.boq, orderedQty: l.boq.orderedQty + prior } } : l;
+  });
+};
+
+const fromOrder = (order: ProcurementOrderDetail): Line[] => {
+  // Máy chủ lưu "đã đặt trước" của dòng sau đã gồm các dòng cùng mã đứng trước — trừ ra để còn số ngoài đơn này.
+  const prior = new Map<string, number>();
+  return order.lines.map(l => {
   const alt = Boolean(l.stockUnit && l.unit && l.unit !== l.stockUnit);
+  const before = prior.get(l.itemId) || 0;
+  prior.set(l.itemId, before + (l.stockQty || 0));
   return {
     key: l.lineId, lineId: l.lineId, itemId: l.itemId, name: l.name, spec: l.specification || '', sku: l.sku, unit: l.stockUnit || l.unit,
     altUnit: alt, purchaseUnit: alt ? l.unit || '' : '', factor: l.factor || 1, purchaseQty: alt ? qtyInput(l.qty) : '',
     stockQty: qtyInput(l.stockQty), price: qtyInput(l.unitPrice), allocatedQty: l.allocatedQty,
-    boq: { inBoq: l.boq ? l.boq.status !== 'outside' : true, boqQty: l.boq?.boqQty ?? 0, orderedQty: l.boq?.orderedBefore ?? 0 },
+    boq: { inBoq: l.boq ? l.boq.status !== 'outside' : true, boqQty: l.boq?.boqQty ?? 0, orderedQty: Math.max(0, (l.boq?.orderedBefore ?? 0) - before) },
   };
-});
+  });
+};
 
 export const ProactiveOrderEditor: React.FC<{
   order?: ProcurementOrderDetail | null;
@@ -111,8 +133,9 @@ export const ProactiveOrderEditor: React.FC<{
   }, [query, searchOpen, projectId, stock, scopeReady]);
 
   const addItem = (item: ProcurementCatalogItem) => {
-    setLines(cur => cur.some(l => l.itemId === item.id) ? cur : [...cur, {
-      key: item.id, itemId: item.id, name: item.name, spec: '', sku: item.sku, unit: item.unit,
+    // Mã đã có trong đơn vẫn thêm được dòng nữa — ghi quy cách khác để đặt giá riêng.
+    setLines(cur => [...cur, {
+      key: newLineKey(item.id), itemId: item.id, name: item.name, spec: '', sku: item.sku, unit: item.unit,
       altUnit: Boolean(item.purchaseUnit), purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1,
       purchaseQty: '', stockQty: '', price: '', allocatedQty: 0,
       boq: { inBoq: item.inBoq, boqQty: item.boqQty, orderedQty: item.orderedQty },
@@ -129,10 +152,11 @@ export const ProactiveOrderEditor: React.FC<{
         stockQty: qtyInput(stockQty), price: price == null ? '' : qtyInput(price), purchaseQty: '', altUnit,
         ...(altUnit ? { purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1 } : {}),
       };
-      const at = next.findIndex(l => l.itemId === item.id);
+      // File có quy cách → khớp đúng dòng cùng mã + quy cách, khác quy cách thì thêm dòng mới.
+      const at = next.findIndex(l => l.itemId === item.id && (!spec || specKey(l.spec) === specKey(spec)));
       if (at >= 0) { next[at] = { ...next[at], ...values, ...(spec ? { spec } : {}) }; return; }
       next.push({
-        key: item.id, itemId: item.id, name: item.name, spec, sku: item.sku, unit: item.unit,
+        key: newLineKey(item.id), itemId: item.id, name: item.name, spec, sku: item.sku, unit: item.unit,
         purchaseUnit: item.purchaseUnit || '', factor: item.purchaseFactor && item.purchaseFactor > 0 ? item.purchaseFactor : 1,
         allocatedQty: 0, boq: { inBoq: item.inBoq, boqQty: item.boqQty, orderedQty: item.orderedQty }, ...values,
       });
@@ -140,9 +164,11 @@ export const ProactiveOrderEditor: React.FC<{
     return next;
   });
 
+  const boqLines = useMemo(() => withPriorSameItem(lines), [lines]);
+  const specProblems = useMemo(() => duplicateItemSpecProblems(lines.map(l => ({ key: l.key, itemId: l.itemId, specification: l.spec }))), [lines]);
   const totals = useMemo(() => {
     let subtotal = 0; let invalid = 0; let unpriced = 0; let overBoq = 0; let belowAllocated = 0;
-    lines.forEach(l => {
+    boqLines.forEach(l => {
       const stock = parseQty(l.stockQty);
       const price = parseQty(l.price);
       if (stock == null || Number.isNaN(stock) || stock <= 0) { invalid += 1; return; }
@@ -154,7 +180,7 @@ export const ProactiveOrderEditor: React.FC<{
     });
     const vatRate = parseQty(vat) ?? 0;
     return { subtotal, vatAmount: subtotal * (Number.isNaN(vatRate) ? 0 : vatRate) / 100, invalid, unpriced, overBoq, belowAllocated };
-  }, [lines, vat, purpose]);
+  }, [boqLines, vat, purpose]);
 
   const save = async () => {
     setError(null);
@@ -164,6 +190,7 @@ export const ProactiveOrderEditor: React.FC<{
     if (reasonCode === 'other' && !reason.trim()) { setError('Chọn "Khác" thì ghi rõ lý do.'); return; }
     if (!lines.length) { setError('Thêm ít nhất một vật tư.'); return; }
     if (totals.invalid) { setError('Còn SL hoặc đơn giá chưa hợp lệ (ô viền đỏ).'); return; }
+    if (specProblems.size) { setError('Có vật tư nhiều dòng chưa ghi quy cách khác nhau (ô viền đỏ).'); return; }
     if (totals.belowAllocated) { setError('Có dòng nhỏ hơn phần đã gắn nhu cầu. Gỡ gắn ở đơn trước rồi mới giảm SL.'); return; }
     if (totals.overBoq && !overReason.trim()) { setError('Có vật tư vượt hoặc ngoài BOQ — ghi lý do mua vượt.'); return; }
     const vatRate = parseQty(vat);
@@ -286,12 +313,13 @@ export const ProactiveOrderEditor: React.FC<{
                   {results == null && <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"><Loader2 size={14} className="animate-spin" />Đang tìm vật tư…</li>}
                   {results?.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{query ? (canCreateItem ? 'Không tìm thấy vật tư trong danh mục.' : 'Không tìm thấy vật tư. Gửi Đề xuất mã mới ở Vật tư → Danh mục, hoặc nhờ người có quyền Tạo mã vật tư.') : 'Dự án chưa có BOQ vật tư — gõ tên để tìm trong danh mục.'}</li>}
                   {results?.map(item => {
-                    const added = lines.some(l => l.itemId === item.id);
-                    return <li key={item.id}><button type="button" role="option" aria-selected={added} disabled={added} onMouseDown={e => e.preventDefault()} onClick={() => addItem(item)}
-                      className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50">
+                    const added = lines.filter(l => l.itemId === item.id).length;
+                    return <li key={item.id}><button type="button" role="option" aria-selected={false} onMouseDown={e => e.preventDefault()} onClick={() => addItem(item)}
+                      title={added ? 'Thêm một dòng nữa của mã này — ghi quy cách khác để đặt giá riêng' : undefined}
+                      className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-2 text-left text-sm hover:bg-muted">
                       <span className="min-w-0"><span className="font-medium text-mint-700 dark:text-mint-300">{item.name}</span>
                         <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span></span>
-                      <span className="text-xs text-muted-foreground">{added ? 'Đã thêm' : stock ? (item.unit || '') : item.inBoq
+                      <span className="text-xs text-muted-foreground">{added ? <b className="text-teal-700 dark:text-teal-300">Đã có {added} dòng · thêm quy cách khác</b> : stock ? (item.unit || '') : item.inBoq
                         ? <>BOQ <b className="text-leaf-700 dark:text-leaf-300">{fmt(item.boqQty, 3)}</b> · đã đặt {fmt(item.orderedQty, 3)}</>
                         : 'Ngoài BOQ'}</span></button></li>;
                   })}
@@ -309,7 +337,8 @@ export const ProactiveOrderEditor: React.FC<{
               {lines.length === 0
                 ? <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
                   {scopeReady ? 'Chưa có vật tư. Bấm ô tìm ở trên để thêm.' : 'Chọn dự án nhận hàng rồi thêm vật tư.'}</p>
-                : <ul className="space-y-3">{lines.map((l, i) => {
+                : <ul className="space-y-3">{boqLines.map((l, i) => {
+                  const specProblem = specProblems.get(l.key);
                   const stock = parseQty(l.stockQty);
                   const stockBad = stock == null || Number.isNaN(stock) || stock <= 0;
                   const price = parseQty(l.price);
@@ -323,9 +352,10 @@ export const ProactiveOrderEditor: React.FC<{
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
                       <span className="flex min-w-0 flex-1 basis-[calc(100%-2.5rem)] flex-wrap items-center gap-x-2 gap-y-1 md:basis-auto">
                         <span className="font-semibold text-mint-700 dark:text-mint-300">{l.name}</span>
-                        <input value={l.spec} onChange={e => patch(l.key, { spec: e.target.value })} maxLength={160} aria-label={`Quy cách ${l.name}`}
-                          placeholder="Quy cách / cấu hình (VD KT 30x30)" title="Chỉ hiển thị trên đơn và mẫu in — kho vẫn theo mã vật tư gốc"
-                          className={`min-w-[10rem] flex-1 py-1 text-xs md:max-w-[16rem] ${inputCls}`} />
+                        <input value={l.spec} onChange={e => patch(l.key, { spec: e.target.value })} maxLength={160} aria-label={`Quy cách ${l.name}`} aria-invalid={Boolean(specProblem)}
+                          placeholder="Quy cách / cấu hình (VD KT 30x30)" title="Hiển thị trên đơn và mẫu in; mỗi quy cách một giá — kho vẫn theo mã vật tư gốc"
+                          className={`min-w-[10rem] flex-1 py-1 text-xs md:max-w-[16rem] ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />
+                        {specProblem && <span className="w-full text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}
                         <span className="w-full text-xs text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></span>
                       {purpose === 'project' && <Badge className={BOQ_TONE[status]}>{boqLabel(l, stockBad ? 0 : stock as number)}</Badge>}
                       <button type="button" disabled={l.allocatedQty > 0} title={l.allocatedQty > 0 ? 'Dòng đã gắn nhu cầu — gỡ gắn ở đơn trước' : 'Bỏ vật tư'}

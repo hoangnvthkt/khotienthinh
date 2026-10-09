@@ -289,6 +289,7 @@ export const NeedDrawer: React.FC<{
             <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <p className="font-medium text-foreground">{l.itemName}<span className="ml-2 text-xs font-normal text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></p>
+              {l.specification && <p className="text-xs text-muted-foreground">Quy cách: <span className="font-medium text-foreground">{l.specification}</span></p>}
               <span className="flex shrink-0 flex-col items-end gap-0.5">
                 <span className={`text-sm font-semibold ${l.remainingQty > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{l.remainingQty > 0 ? `Thiếu ${fmt(l.remainingQty)}` : 'Đã đặt đủ'}</span>
                 {!external && (owner.userId

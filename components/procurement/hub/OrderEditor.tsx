@@ -5,18 +5,22 @@ import {
   type ProcurementInboxDetail, type ProcurementOrderDetail, type ProcurementSourceRef,
 } from '../../../lib/procurementInboxService';
 import { splitLinesForOrder } from '../../../lib/procurementLineAssignment';
+import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
 
-// Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu. Mỗi vật tư là một dòng đơn hàng; SL đặt phân về
-// từng dòng nhu cầu để theo dõi còn thiếu. Phiếu của nhiều dự án → đơn gom: một NCC, một giá,
-// mỗi đợt giao về một công trường, nợ + chi phí theo dự án nhận (việc 2).
+// Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu. Mỗi mã + quy cách là một dòng đơn hàng (một mã nhiều
+// quy cách, mỗi quy cách một giá — chủ SP 09/10); người mua tách thêm dòng được. SL đặt phân về từng dòng nhu cầu
+// để theo dõi còn thiếu. Phiếu của nhiều dự án → đơn gom: một NCC, mỗi đợt giao về một công trường, nợ + chi phí
+// theo dự án nhận (việc 2).
 
 interface Row { key: string; sourceType: ProcurementSourceRef['sourceType']; sourceId: string; code: string; lineId: string; needQty: number; orderedElsewhere: number; available: number; qty: string;
   projectCode: string | null; warehouseName: string | null }
 interface Item {
+  /** Dòng đơn: mã + quy cách (hoặc dòng của đơn đang sửa, hoặc dòng người mua tách ra). */
+  key: string; specification: string;
   itemId: string; name: string; sku: string | null; unit: string | null;
   /** Buy in another unit than the stock unit (e.g. kg vs cây); quantity can be typed by hand. */
   altUnit: boolean; purchaseUnit: string; factor: number; purchaseQty: string;
@@ -32,9 +36,10 @@ const purchaseQtyOf = (item: Item, stockQty: number) => {
 };
 
 const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetail | null, include?: ReadonlySet<string>): Item[] => {
-  const mine = new Map<string, { qty: number; price: number }>();
-  order?.lines.forEach(line => line.allocations.forEach(a => mine.set(`${a.sourceType}:${a.sourceId}:${a.lineId}`, { qty: a.qty, price: line.unitPrice })));
-  const ownLine = new Map((order?.lines || []).map(line => [line.itemId, line]));
+  const mine = new Map<string, { qty: number; price: number; poLineId: string }>();
+  order?.lines.forEach(line => line.allocations.forEach(a => mine.set(`${a.sourceType}:${a.sourceId}:${a.lineId}`, { qty: a.qty, price: line.unitPrice, poLineId: line.lineId })));
+  const ownLineById = new Map((order?.lines || []).map(line => [line.lineId, line]));
+  const ownLineByItem = new Map((order?.lines || []).map(line => [line.itemId, line]));
   const byItem = new Map<string, Item>();
   docs.forEach(doc => doc.lines.forEach(line => {
     if (!line.itemId) return;
@@ -44,9 +49,11 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
     const orderedElsewhere = Math.max(0, line.orderedQty - (own?.qty || 0));
     const available = Math.max(0, line.needQty - orderedElsewhere);
     if (!own && available <= 0) return;
-    const prev = ownLine.get(line.itemId);
+    const prev = own ? ownLineById.get(own.poLineId) : ownLineByItem.get(line.itemId);
     const prevAlt = Boolean(prev && prev.stockUnit && prev.unit && prev.unit !== prev.stockUnit);
-    const item = byItem.get(line.itemId) || { itemId: line.itemId, name: line.itemName, sku: line.sku, unit: line.unit,
+    const spec = own ? prev?.specification || '' : line.specification || '';
+    const groupKey = own ? `po:${own.poLineId}` : `${line.itemId}|${specKey(spec)}`;
+    const item = byItem.get(groupKey) || { key: groupKey, specification: spec.trim(), itemId: line.itemId, name: line.itemName, sku: line.sku, unit: line.unit,
       altUnit: prevAlt || Boolean(line.purchaseUnit),
       purchaseUnit: (prevAlt ? prev?.unit : line.purchaseUnit) || '',
       factor: prevAlt && prev ? prev.factor : line.purchaseFactor && line.purchaseFactor > 0 ? line.purchaseFactor : 1,
@@ -55,9 +62,9 @@ const buildItems = (docs: ProcurementInboxDetail[], order: ProcurementOrderDetai
     item.rows.push({ key, sourceType: doc.sourceType, sourceId: doc.sourceId, code: doc.code, lineId: line.lineId,
       needQty: line.needQty, orderedElsewhere, available, qty: qtyInput(own ? own.qty : available),
       projectCode: doc.projectCode, warehouseName: doc.warehouseName });
-    byItem.set(line.itemId, item);
+    byItem.set(groupKey, item);
   }));
-  return Array.from(byItem.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  return Array.from(byItem.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi') || a.specification.localeCompare(b.specification, 'vi'));
 };
 
 export const OrderEditor: React.FC<{
@@ -136,20 +143,31 @@ export const OrderEditor: React.FC<{
     return { subtotal, vatAmount: subtotal * (Number.isNaN(vatRate) ? 0 : vatRate) / 100, invalid, over, lines, unpriced };
   }, [items, vat]);
 
-  const setRowQty = (itemId: string, key: string, qty: string) =>
-    setItems(cur => cur.map(i => i.itemId !== itemId ? i : { ...i, rows: i.rows.map(r => r.key === key ? { ...r, qty } : r) }));
-  const setPrice = (itemId: string, price: string) => setItems(cur => cur.map(i => i.itemId === itemId ? { ...i, price } : i));
-  const patchItem = (itemId: string, patch: Partial<Item>) => setItems(cur => cur.map(i => i.itemId === itemId ? { ...i, ...patch } : i));
+  const setRowQty = (itemKey: string, key: string, qty: string) =>
+    setItems(cur => cur.map(i => i.key !== itemKey ? i : { ...i, rows: i.rows.map(r => r.key === key ? { ...r, qty } : r) }));
+  const setPrice = (itemKey: string, price: string) => setItems(cur => cur.map(i => i.key === itemKey ? { ...i, price } : i));
+  const patchItem = (itemKey: string, patch: Partial<Item>) => setItems(cur => cur.map(i => i.key === itemKey ? { ...i, ...patch } : i));
+  // Tách một dòng nhu cầu ra dòng đơn riêng (quy cách + giá riêng), đặt ngay dưới dòng gốc.
+  const splitRow = (itemKey: string, rowKey: string) => setItems(cur => cur.flatMap(i => {
+    if (i.key !== itemKey || i.rows.length < 2) return [i];
+    const row = i.rows.find(r => r.key === rowKey);
+    if (!row) return [i];
+    return [{ ...i, rows: i.rows.filter(r => r.key !== rowKey) },
+      { ...i, key: `${i.key}#${rowKey}`, specification: '', price: '', purchaseQty: '', rows: [row] }];
+  }));
+  const specProblems = useMemo(() => duplicateItemSpecProblems(
+    items.filter(i => i.rows.some(r => (parseQty(r.qty) || 0) > 0)).map(i => ({ key: i.key, itemId: i.itemId, specification: i.specification }))), [items]);
 
   const save = async () => {
     setError(null);
     if (!vendor) { setError('Chọn nhà cung cấp.'); return; }
     if (totals.invalid) { setError('Còn số lượng hoặc đơn giá chưa hợp lệ (ô tô đỏ).'); return; }
+    if (specProblems.size) { setError('Có mã vật tư nhiều dòng chưa ghi quy cách khác nhau (ô tô đỏ).'); return; }
     if (!totals.lines) { setError('Nhập SL đặt cho ít nhất một vật tư.'); return; }
     const vatRate = parseQty(vat);
     if (vatRate == null || Number.isNaN(vatRate) || vatRate < 0 || vatRate > 100) { setError('Thuế VAT phải từ 0 đến 100%.'); return; }
     const payload = items.map(item => ({
-      itemId: item.itemId, unitPrice: parseQty(item.price) || 0,
+      itemId: item.itemId, unitPrice: parseQty(item.price) || 0, specification: item.specification.trim() || undefined,
       ...(item.altUnit ? {
         purchaseUnit: item.purchaseUnit.trim() || undefined,
         purchaseQty: purchaseQtyOf(item, item.rows.reduce((sum, r) => sum + Math.max(0, parseQty(r.qty) || 0), 0)),
@@ -183,7 +201,7 @@ export const OrderEditor: React.FC<{
       : !docs ? <StateBox kind="loading" title="Đang tải phiếu nhu cầu…" />
           : <>
             {isGroup && <p className="rounded-xl border border-teal-200 bg-teal-50/70 px-3 py-2.5 text-sm text-teal-950 dark:border-teal-900 dark:bg-teal-950/30 dark:text-teal-100">
-              <b>Đơn gom nhiều dự án:</b> một NCC, một đơn giá mỗi vật tư. Sau khi duyệt, mỗi đợt giao chọn <b>một công trường</b>; thủ kho công trường đó nhận, công nợ NCC và chi phí ghi cho dự án của công trường.</p>}
+              <b>Đơn gom nhiều dự án:</b> một NCC, một đơn giá mỗi dòng. Sau khi duyệt, mỗi đợt giao chọn <b>một công trường</b>; thủ kho công trường đó nhận, công nợ NCC và chi phí ghi cho dự án của công trường.</p>}
             <section className="grid gap-3 rounded-2xl border border-border bg-card p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <VendorPicker value={vendor} onChange={setVendor} />
               <label className="text-xs font-semibold text-muted-foreground">Ngày đặt hàng
@@ -206,7 +224,7 @@ export const OrderEditor: React.FC<{
               ? <StateBox kind="empty" title={skipped.length ? 'Không còn dòng nào của bạn' : 'Các phiếu đã đặt đủ'} message={skipped.length ? 'Các dòng còn thiếu đều do người khác mua.' : 'Không còn dòng nhu cầu nào cần đặt thêm.'} />
               : <section className="space-y-3">
                 <div className="flex items-baseline justify-between"><h3 className="font-semibold text-foreground">Vật tư đặt mua</h3>
-                  <span className="text-xs text-muted-foreground">{items.length} vật tư · SL gợi ý = phần còn thiếu của phiếu</span></div>
+                  <span className="text-xs text-muted-foreground">{items.length} dòng · SL gợi ý = phần còn thiếu của phiếu · cùng mã khác quy cách tách dòng, giá riêng</span></div>
                 {items.map((item, i) => {
                   const price = parseQty(item.price);
                   const stockQty = item.rows.reduce((s, r) => s + Math.max(0, parseQty(r.qty) || 0), 0);
@@ -214,13 +232,18 @@ export const OrderEditor: React.FC<{
                   const typed = item.altUnit && item.purchaseQty.trim() !== '';
                   const unitLabel = item.altUnit ? item.purchaseUnit || '?' : item.unit || '';
                   const priceBad = qty > 0 && price != null && (Number.isNaN(price) || price < 0);
-                  return <div key={item.itemId} className="overflow-hidden rounded-2xl border border-border bg-card">
+                  const specProblem = specProblems.get(item.key);
+                  return <div key={item.key} className="overflow-hidden rounded-2xl border border-border bg-card">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l-4 border-l-teal-500 bg-teal-50/60 px-3 py-2.5 dark:bg-teal-950/20">
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
                       <span className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] md:basis-auto"><span className="font-semibold text-foreground">{item.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span></span>
+                        <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span>
+                        <input value={item.specification} onChange={e => patchItem(item.key, { specification: e.target.value })} maxLength={160}
+                          placeholder="Quy cách / cấu hình (VD loại 1, tôn biên 13 sóng)" aria-label={`Quy cách ${item.name}`} aria-invalid={Boolean(specProblem)}
+                          className={`mt-1 block w-full max-w-md text-sm ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />
+                        {specProblem && <span className="mt-0.5 block text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}</span>
                       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">Đơn giá{unitLabel ? ` / ${unitLabel}` : ''}
-                        <input inputMode="decimal" value={item.price} onChange={e => setPrice(item.itemId, e.target.value)} placeholder="0"
+                        <input inputMode="decimal" value={item.price} onChange={e => setPrice(item.key, e.target.value)} placeholder="0"
                           aria-label={`Đơn giá ${item.name}`} aria-invalid={priceBad}
                           className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
                       <span className="ml-auto w-32 text-right text-sm font-semibold tabular-nums text-foreground">{price && price > 0 && qty > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
@@ -229,18 +252,18 @@ export const OrderEditor: React.FC<{
                       ? <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-amber-50/50 px-3 py-2 pl-11 text-xs text-muted-foreground dark:bg-amber-950/10">
                         <label className="flex items-center gap-1.5">SL mua
                           <input inputMode="decimal" value={typed ? item.purchaseQty : qtyInput(autoPurchase(item, stockQty))}
-                            onChange={e => patchItem(item.itemId, { purchaseQty: e.target.value })} aria-label={`SL mua ${item.name}`}
+                            onChange={e => patchItem(item.key, { purchaseQty: e.target.value })} aria-label={`SL mua ${item.name}`}
                             className={`w-24 text-right tabular-nums ${inputCls} ${typed ? 'border-amber-400' : ''}`} />
-                          <input value={item.purchaseUnit} onChange={e => patchItem(item.itemId, { purchaseUnit: e.target.value })} aria-label={`Đơn vị mua ${item.name}`}
+                          <input value={item.purchaseUnit} onChange={e => patchItem(item.key, { purchaseUnit: e.target.value })} aria-label={`Đơn vị mua ${item.name}`}
                             placeholder="ĐV mua" className={`w-16 ${inputCls}`} /></label>
                         <span aria-hidden>⇄</span>
                         <span>SL kho <b className="text-foreground tabular-nums">{fmt(stockQty, 3)} {item.unit}</b></span>
                         {qty > 0 && stockQty > 0 && <span>· 1 {item.purchaseUnit || 'ĐV mua'} = {fmt(stockQty / qty, 4)} {item.unit}</span>}
-                        {typed ? <button type="button" onClick={() => patchItem(item.itemId, { purchaseQty: '' })} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">Tự quy đổi</button>
+                        {typed ? <button type="button" onClick={() => patchItem(item.key, { purchaseQty: '' })} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">Tự quy đổi</button>
                           : <span className="italic">tự quy đổi theo hệ số vật tư — sửa được</span>}
-                        {!item.purchaseUnit && <button type="button" onClick={() => patchItem(item.itemId, { altUnit: false, purchaseQty: '' })} className="ml-auto text-muted-foreground hover:underline">Bỏ</button>}
+                        {!item.purchaseUnit && <button type="button" onClick={() => patchItem(item.key, { altUnit: false, purchaseQty: '' })} className="ml-auto text-muted-foreground hover:underline">Bỏ</button>}
                       </div>
-                      : <div className="px-3 pt-1.5 pl-11"><button type="button" onClick={() => patchItem(item.itemId, { altUnit: true, factor: 1 })}
+                      : <div className="px-3 pt-1.5 pl-11"><button type="button" onClick={() => patchItem(item.key, { altUnit: true, factor: 1 })}
                         className="text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">+ Mua theo đơn vị khác (VD kg ↔ cây)</button></div>}
                     <ul className="divide-y divide-border">{item.rows.map(row => {
                       const q = parseQty(row.qty);
@@ -251,10 +274,12 @@ export const OrderEditor: React.FC<{
                           {isGroup && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{row.projectCode} · {row.warehouseName || 'chưa có kho'}</span>}</span>
                         <span className="text-xs text-muted-foreground">Cần {fmt(row.needQty)}{row.orderedElsewhere > 0 ? ` · đã đặt đơn khác ${fmt(row.orderedElsewhere)}` : ''} · còn {fmt(row.available)}</span>
                         <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">{item.altUnit ? 'SL kho' : 'SL đặt'}
-                          <input inputMode="decimal" value={row.qty} onChange={e => setRowQty(item.itemId, row.key, e.target.value)}
+                          <input inputMode="decimal" value={row.qty} onChange={e => setRowQty(item.key, row.key, e.target.value)}
                             aria-label={`SL đặt ${item.name} cho ${row.code}`} aria-invalid={bad}
                             className={`w-24 text-right tabular-nums ${inputCls} ${bad ? 'border-rose-400 ring-2 ring-rose-400/30' : over ? 'border-amber-400' : ''}`} />
                           <span className="w-10">{item.unit}</span></label>
+                        {item.rows.length > 1 && <button type="button" onClick={() => splitRow(item.key, row.key)} title="Tách dòng nhu cầu này thành dòng đơn riêng — quy cách và giá riêng"
+                          className="text-xs font-semibold text-teal-700 hover:underline dark:text-teal-300">Tách dòng</button>}
                         {over && <span className="w-full text-right text-xs text-amber-700 dark:text-amber-300">Vượt phần còn thiếu {fmt((q || 0) - row.available)} {item.unit}</span>}
                       </li>;
                     })}</ul>

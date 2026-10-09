@@ -49,7 +49,7 @@ import { getMaterialIssueDraftQty } from '../lib/materialRequestIssueDraft';
 import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { BoqSummaryStrip } from './erp';
 import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
-import { getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
+import { duplicateItemSpecProblems, getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
 import { MaterialRequestSupplyPanel } from './project/material/MaterialRequestSupplyPanel';
 
 const ScannerModal = React.lazy(() => import('./ScannerModal'));
@@ -1291,7 +1291,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     itemNameSnapshot: i.itemNameSnapshot || getLineInventory(i.itemId)?.name || snapshot.budget?.itemName || undefined,
                     unitSnapshot: i.unitSnapshot || getLineInventory(i.itemId)?.unit || snapshot.budget?.unit || undefined,
                     skuSnapshot: i.skuSnapshot || getLineInventory(i.itemId)?.sku || undefined,
-                    specification: i.specification || undefined,
+                    specification: i.specification?.trim() || undefined,
                     manualReason: i.manualReason || undefined,
                     materialGroupKey: i.materialGroupKey || undefined,
                     materialGroupSource: i.materialGroupSource || undefined,
@@ -1304,6 +1304,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
             ],
         };
     };
+
+    const specProblems = duplicateItemSpecProblems(reqItems.map(line => ({ key: line.lineId, itemId: line.itemId, specification: line.specification })));
 
     const validateDraftForm = async () => {
         if (isProjectRequest && !requestTitle.trim()) {
@@ -1319,6 +1321,13 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (invalidQtyLine) {
             const item = items.find(i => i.id === invalidQtyLine.itemId);
             toast.warning('Thiếu khối lượng đề xuất', `${item?.name || invalidQtyLine.itemNameSnapshot || invalidQtyLine.itemId} cần nhập số lượng lớn hơn 0.`);
+            return false;
+        }
+
+        const specProblemLine = reqItems.find(line => specProblems.has(line.lineId));
+        if (specProblemLine) {
+            const item = items.find(i => i.id === specProblemLine.itemId);
+            toast.warning('Thiếu quy cách', `${item?.name || specProblemLine.itemNameSnapshot || specProblemLine.itemId} có nhiều dòng — ghi quy cách khác nhau cho từng dòng để Mua hàng đặt đúng loại.`);
             return false;
         }
 
@@ -3206,6 +3215,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                 sku={group.sku}
                                                                 name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
                                                                 onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
+                                                                specification={(primaryRow as RequestLineDraft).specification || ''}
+                                                                onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                                specificationProblem={specProblems.get((primaryRow as RequestLineDraft).lineId)}
                                                             />
                                                         )}
                                                         {!hasMultipleSources && isProjectRequest && (
@@ -3462,6 +3474,9 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     sku={group.sku}
                                                     name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
                                                     onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
+                                                    specification={(primaryRow as RequestLineDraft).specification || ''}
+                                                    onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                    specificationProblem={specProblems.get((primaryRow as RequestLineDraft).lineId)}
                                                 />
                                             )}
                                             {!hasMultipleSources && isProjectRequest && (primaryRow.workBoqItemName || primaryRow.materialBudgetItemName || !primaryRow.materialBudgetItemId || budgetSnapshot.overBudgetQty > 0) && (
