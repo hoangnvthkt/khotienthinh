@@ -865,6 +865,15 @@ Chỉ sửa frontend, không có migration.
 - **Mốc T0 quan sát Task 13: 02/10/2026** (apply bước 1). Theo runbook, xóa cột sớm nhất **09/10/2026**, sau khi backup + diễn tập khôi phục và dependency query rỗng.
 - Rollback: `supabase/operations/authorization_task13_stop_reading_legacy_modules_rollback.sql`.
 
+### Room dự án — người rời dự án không còn chặn việc lưu quyền (09/10, chủ sản phẩm báo lỗi và cho phép apply)
+
+- Báo lỗi: áp mẫu "Thủ kho công trường" ở dự án Tiến Thịnh báo "Dữ liệu liên quan không hợp lệ…" (23503 `Room members must be active staff in the selected project scope`).
+- Nguyên nhân: rời dự án / khóa tài khoản đặt `project_staff.end_date` nhưng không đóng thành viên Room. 17 dòng Room còn hoạt động của 2 người đã rời (Tiến Thịnh, Thú nhồi bông GĐ2); mỗi lần lưu, payload gửi lại họ và bị chặn. Lỗi thứ hai lộ ra sau đó: Room theo công trường chỉ đếm người giữ quyền bắt buộc (duyệt/xác nhận) cùng phạm vi, trong khi lúc chạy (`alert_room_recipient_ids`, `project_user_has_room_action`) thành viên toàn dự án vẫn nhận việc của công trường.
+- Migration `20261009180000_project_room_close_departed_members` (apply 02:42 UTC): hàm `close_project_room_memberships_for_staff` + trigger `trg_project_staff_close_room_memberships` (rời dự án → đóng mọi Room, ghi `permission_audit_events.project_room_member_departed`); dọn 17 dòng cũ (đã đo trước: không Room nào mất người giữ quyền bắt buộc); `apply_project_room_template` chỉ giữ thành viên khác còn đang làm; kiểm tra người giữ quyền bắt buộc tính cả thành viên toàn dự án.
+- Giao diện: hai lỗi trên có câu tiếng Việt nói rõ cần làm gì.
+- Kiểm tra: tái hiện trước sửa (7 lượt 23503 ở Tiến Thịnh); sau apply, áp mẫu cho từng nhân sự đang làm (76 người, đúng phạm vi công trường như giao diện, giao dịch rollback): 6 dự án thật đều đạt, chỉ "G3 BOQ project" (dự án thử) bị chặn đúng vì Room chưa có người duyệt. Smoke `project_room_close_departed_members_smoke.sql` PASS.
+- Rollback: `supabase/operations/project_room_close_departed_members_rollback.sql` (không mở lại 17 dòng đã đóng).
+
 ### Task 13 — bước cuối: xóa 4 cột legacy (09/10, chủ sản phẩm cho phép apply)
 
 - Migration `20261009170000_authorization_task13_drop_legacy_columns`, apply Cloud main **2026-10-09 02:26 UTC** (T0 = 02/10, đủ 7 ngày).
