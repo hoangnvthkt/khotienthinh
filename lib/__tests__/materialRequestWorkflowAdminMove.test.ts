@@ -25,7 +25,7 @@ describe('material request workflow admin move step', () => {
 
   it('guards the RPC with the manage room action and a mandatory reason', () => {
     const sql = readFileSync(
-      'supabase/migrations/20261009160000_material_request_workflow_admin_move_step.sql',
+      'supabase/migrations/20261008105659_material_request_workflow_admin_move_step.sql',
       'utf8',
     );
     expect(sql).toContain("'material_request', 'manage'");
