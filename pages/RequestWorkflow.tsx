@@ -40,6 +40,7 @@ import { EmptyState, NextActionCard, PageHeader, StatusBadge } from '../componen
 import Pagination from '../components/Pagination';
 import { isPerf02RequestPagingEnabled } from '../lib/featureFlags';
 import { materialRequestService } from '../lib/materialRequestService';
+import { useSearchParamPrefill } from '../hooks/useSearchParamPrefill';
 
 const RequestModal = React.lazy(() => import('../components/RequestModal'));
 
@@ -81,6 +82,7 @@ const RequestWorkflow: React.FC = () => {
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  useSearchParamPrefill(setSearchTerm);
 
   const [isModalOpen, setModalOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<MaterialRequest | undefined>(undefined);

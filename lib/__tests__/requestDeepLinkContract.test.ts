@@ -14,14 +14,16 @@ describe('request deep links', () => {
   it('uses the canonical route from home and global search results', () => {
     const home = readFileSync('pages/Home.tsx', 'utf8');
     const commandPalette = readFileSync('components/CommandPalette.tsx', 'utf8');
+    const searchPresentation = readFileSync('lib/search/recordPresentation.ts', 'utf8');
 
     expect(home).toContain("import { buildRequestRoute } from '../lib/requestRoutes';");
     expect(home).toContain("import { useRequestList } from '../hooks/useRequestList';");
     expect(home).not.toContain('/rq?requestId=');
     expect(home).not.toContain("../context/RequestContext");
-    expect(commandPalette).toContain("import { buildRequestRoute } from '../lib/requestRoutes';");
-    expect(commandPalette).toContain("import { useRequestList } from '../hooks/useRequestList';");
-    expect(commandPalette).toContain('route: buildRequestRoute(rq.id)');
+    // Tìm kiếm toàn hệ thống: phiếu RQ do máy chủ tìm (search_global_v1), mở bằng route chuẩn.
+    expect(searchPresentation).toContain("import { buildRequestRoute } from '../requestRoutes';");
+    expect(searchPresentation).toContain("case 'rq':\n      return { route: buildRequestRoute(id), related };");
+    expect(commandPalette).not.toContain('/rq?requestId=');
     expect(commandPalette).not.toContain("../context/RequestContext");
   });
 

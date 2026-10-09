@@ -152,15 +152,18 @@
 @media (min-width: 1024px) { .vcc-mobile-only { display: none !important; } }
 
 /* Hôm nay: lịch, chọn dự án */
-.vcc-cal { display: flex; align-items: center; gap: 14px; padding: 10px 14px; max-width: 100%; width: 340px; }
-.vcc-cal > .min-w-0 { flex: 1; }
-@media (max-width: 480px) { .vcc-cal { width: 100%; } }
-.vcc-cal-sep { width: 1px; height: 38px; background: var(--vcc-border); flex: none; }
 .vcc-select { height: 28px; max-width: 150px; flex: none; border: 1px solid var(--vcc-border); border-radius: 6px; background: var(--vcc-card); color: var(--vcc-fg); font: inherit; font-size: 12px; padding: 0 6px; }
 
 /* Ô bấm được để bung thư mục thao tác */
 .vcc-widget[data-folder="true"] { cursor: pointer; }
-.vcc-widget[data-folder="true"]:hover { border-color: var(--mc); }
+/* Ô module: bỏ viền, nổi khối (chủ SP 09/10). Hover nhấc nhẹ — transition ngắn, không lặp. */
+.vcc-widget { border-color: transparent; box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .07);
+  transition: box-shadow .18s ease, transform .18s ease; }
+.vcc-widget .vcc-whead { border-bottom-color: rgba(15, 23, 42, .06); }
+.dark .vcc-widget { box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 28px rgba(0, 0, 0, .35); }
+.dark .vcc-widget .vcc-whead { border-bottom-color: rgba(255, 255, 255, .06); }
+.vcc-widget[data-folder="true"]:hover { box-shadow: 0 2px 4px rgba(15, 23, 42, .06), 0 14px 32px rgba(15, 23, 42, .11); transform: translateY(-1px); }
+.dark .vcc-widget[data-folder="true"]:hover { box-shadow: 0 2px 4px rgba(0, 0, 0, .35), 0 16px 36px rgba(0, 0, 0, .45); }
 .vcc-widget[data-folder="true"]:focus-visible { outline: 2px solid var(--mc); outline-offset: 2px; }
 .vcc-wlink { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--vcc-muted); flex: none; }
 .vcc-wlink:hover:not(:disabled) { background: var(--mcs); color: var(--mc); }
@@ -243,23 +246,7 @@
 @media (max-width: 480px) { .vcc-intro-hi { font-size: 25px; } .vcc-intro-sub { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .vcc-reveal[data-state], .vcc-intro, .vcc-intro-inner > * { transition: none; } }
 
-/* Lịch ở đầu Hôm nay: ô chọn ngày (Popover + Calendar, react-day-picker) lọc Việc của tôi theo hạn */
-.vcc-duefield { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
-.vcc-datefield { height: 30px; min-width: 0; flex: 1; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 8px;
-  border: 1px solid var(--vcc-border); background: var(--vcc-card); color: var(--vcc-fg); font-size: 12.5px; text-align: left; }
-.vcc-datefield:hover { border-color: var(--vcc-steel); }
-.vcc-datefield[data-state="open"] { border-color: var(--vcc-steel); box-shadow: 0 0 0 3px var(--vcc-steel-s); }
-.vcc-datefield > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.vcc-datefield-ph { color: var(--vcc-muted); }
-.vcc-datefield-v { font-weight: 600; color: var(--vcc-steel); }
-.vcc-datefield-x { height: 30px; min-width: 30px; padding: 0; }
-.vcc-popover { z-index: 70; background: var(--vcc-card); color: var(--vcc-fg); border: 1px solid var(--vcc-border); border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, .18); outline: none; max-width: calc(100vw - 24px); }
-.vcc-popover-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--vcc-border); flex-wrap: wrap; }
-.vcc-popover-foot .vcc-btn { height: 30px; padding: 0 12px; font-size: 12.5px; }
-.vcc-popover-foot .vcc-btn:disabled { opacity: .5; cursor: not-allowed; }
-.vcc-preset { height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--vcc-border); font-size: 12px; font-weight: 500; color: var(--vcc-fg2); }
-.vcc-preset:hover { border-color: var(--vcc-steel); color: var(--vcc-steel); }
+/* Lịch react-day-picker (ui/calendar) */
 .vcc-calendar { --rdp-accent-color: var(--vcc-steel); --rdp-accent-background-color: var(--vcc-steel-s);
   --rdp-day-height: 38px; --rdp-day-width: 38px; --rdp-day_button-height: 36px; --rdp-day_button-width: 36px;
   --rdp-day_button-border-radius: 10px; --rdp-today-color: var(--vcc-steel); --rdp-range_start-color: #fff; --rdp-range_end-color: #fff;
@@ -270,16 +257,8 @@
 .vcc-calendar .rdp-outside { opacity: .4; }
 .vcc-calendar .rdp-today:not(.rdp-selected) .rdp-day_button { font-weight: 700; }
 .vcc-calendar .rdp-day_button:focus-visible { outline: 2px solid var(--vcc-steel); outline-offset: 1px; }
-/* Ngày có việc tới hạn: chấm nhỏ dưới số */
-.vcc-calendar .vcc-day-due { position: relative; }
-.vcc-calendar .vcc-day-due::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--vcc-danger); pointer-events: none; }
-.vcc-calendar .rdp-range_start.vcc-day-due::after, .vcc-calendar .rdp-range_end.vcc-day-due::after { background: currentColor; }
-/* Thanh "đang lọc theo hạn" ở Việc của tôi */
-.vcc-filterbar { display: flex; align-items: center; gap: 6px; margin: 8px 10px 2px; padding: 4px 4px 4px 10px; border-radius: 8px; background: var(--vcc-steel-s); color: var(--vcc-steel); font-size: 12px; font-weight: 600; }
-.vcc-filterbar .vcc-tabtool { color: var(--vcc-steel); }
 /* index.css ép ô bảng ≥ 80px trên điện thoại (cho bảng dữ liệu) — lưới ngày của lịch không theo luật đó. */
 .vcc-calendar table td, .vcc-calendar table th { min-width: 0 !important; white-space: nowrap !important; word-break: normal !important; }
-.vcc-popover .vcc-btn[data-pri="true"] { background: var(--vcc-steel); }
 
 /* Rail trái của giao diện Trung tâm điều hành (Layout, máy tính). Nằm ngoài .vcc nên tự khai báo màu sáng / tối. */
 .vcc-rail { --rail-bg: #ffffff; --rail-border: #e5e5e5; --rail-fg: #475569; --rail-muted: #8a8a8a; --rail-hover: #f2f4f5; --rail-active: #e7f0f3; --rail-steel: #2e6f80;
@@ -362,4 +341,71 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 @media (max-width: 1023px) {
   .vcc-chat-above-nav { bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important; }
   .vcc-chat-panel-above-nav { bottom: calc(128px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+
+/* Đầu trang Hôm nay (chủ SP 09/10): lời chào · Tìm kiếm toàn hệ thống ở giữa · lịch tháng. */
+.vcc-hero { display: grid; grid-template-columns: max-content minmax(260px, 1fr) auto; align-items: start; gap: 24px; }
+.vcc-hero-hi { padding-top: 12px; white-space: nowrap; }
+.vcc-hero-search { padding-top: 4px; justify-self: center; width: 100%; max-width: 560px; }
+.vcc-hero-cal { justify-self: end; }
+@container (max-width: 860px) {
+  .vcc-hero { grid-template-columns: minmax(0, 1fr) auto; }
+  .vcc-hero-search { grid-column: 1; grid-row: 2; }
+  .vcc-hero-cal { grid-column: 2; grid-row: 1 / span 2; }
+}
+@container (max-width: 640px) {
+  .vcc-hero { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .vcc-hero-search, .vcc-hero-cal { grid-column: 1; grid-row: auto; }
+  .vcc-hero-hi { padding-top: 0; white-space: normal; }
+  .vcc-hero-cal { justify-self: stretch; }
+}
+
+/* Ô tìm kiếm: nổi khối, viền chuyển màu nhẹ; ánh sáng lướt qua 2 lần khi mở trang (hữu hạn, chỉ transform). */
+.vcc-search { position: relative; isolation: isolate; overflow: hidden; width: 100%; height: 54px; display: flex; align-items: center; gap: 12px;
+  padding: 0 12px 0 14px; border-radius: 16px; border: 1px solid transparent; text-align: left; color: var(--vcc-muted);
+  background: linear-gradient(var(--vcc-card), var(--vcc-card)) padding-box, linear-gradient(120deg, #5eead4, #60a5fa 55%, #a78bfa) border-box;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 10px 30px rgba(37, 99, 235, .12); transition: box-shadow .2s ease, transform .2s ease; }
+.vcc-search:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(15, 23, 42, .07), 0 16px 40px rgba(37, 99, 235, .18); }
+.vcc-search:focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(96, 165, 250, .3), 0 16px 40px rgba(37, 99, 235, .18); }
+.dark .vcc-search { box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .45); }
+.vcc-search::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; transform: translateX(-120%);
+  background: linear-gradient(105deg, transparent 30%, rgba(96, 165, 250, .16) 50%, transparent 70%);
+  animation: vcc-search-sheen 1.5s ease-in-out .8s 2 backwards; }
+@keyframes vcc-search-sheen { from { transform: translateX(-120%); } to { transform: translateX(120%); } }
+.vcc-search-icon { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #14b8a6, #3b82f6); box-shadow: 0 4px 12px rgba(59, 130, 246, .3); }
+.vcc-search-text { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vcc-search-kbd { flex: none; font: inherit; font-size: 11px; font-weight: 600; color: var(--vcc-muted); padding: 2px 7px; border-radius: 6px;
+  border: 1px solid var(--vcc-border); background: var(--vcc-card2); }
+@media (max-width: 640px) { .vcc-search-kbd { display: none; } }
+@media (prefers-reduced-motion: reduce) { .vcc-search::after { animation: none; } .vcc-search, .vcc-widget { transition: none; } }
+
+/* Lịch tháng (theo mẫu chủ SP 09/10): khối nổi, tiêu đề trái, mũi tên phải, hôm nay tô đặc. Không lọc việc. */
+.vcc-monthcal { --cal-accent: #2f6fed; position: relative; width: 300px; max-width: 100%; border-radius: 18px; background: var(--vcc-card);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 10px 30px rgba(15, 23, 42, .08); }
+.dark .vcc-monthcal { --cal-accent: #3b82f6; box-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 12px 32px rgba(0, 0, 0, .45); }
+.vcc-monthcal .vcc-calendar { --rdp-day-height: 34px; --rdp-day-width: 38px; --rdp-nav-height: 40px; --rdp-accent-color: var(--cal-accent);
+  padding: 12px 12px 12px; font-size: 13.5px; }
+.vcc-monthcal .rdp-months, .vcc-monthcal .rdp-month { max-width: 100%; }
+.vcc-monthcal .rdp-month_caption { height: 40px; padding-left: 6px; font-size: 15px; font-weight: 700; }
+.vcc-monthcal .rdp-nav { height: 40px; right: 8px; }
+.vcc-monthcal .rdp-button_previous, .vcc-monthcal .rdp-button_next { border-radius: 8px; color: var(--vcc-muted); }
+.vcc-monthcal .rdp-button_previous:hover, .vcc-monthcal .rdp-button_next:hover { background: var(--vcc-hover); color: var(--vcc-fg); }
+.vcc-monthcal .rdp-chevron { fill: currentColor; width: 14px; height: 14px; }
+.vcc-monthcal .rdp-weekday { font-size: 11.5px; font-weight: 600; color: var(--vcc-muted); padding: 4px 0 6px; }
+.vcc-monthcal .rdp-day { color: var(--vcc-fg2); text-align: center; }
+.vcc-monthcal .rdp-day { position: relative; z-index: 0; font-weight: 500; }
+/* Lịch chỉ để xem (không có nút ngày) → tô hôm nay bằng lớp nền dưới số. */
+.vcc-monthcal .rdp-today { color: #fff; font-weight: 700; }
+.vcc-monthcal .rdp-today::before { content: ""; position: absolute; left: 50%; top: 50%; width: 34px; height: 32px; transform: translate(-50%, -50%);
+  z-index: -1; border-radius: 10px; background: var(--cal-accent);
+  box-shadow: 0 4px 12px rgba(47, 111, 237, .35); }
+.vcc-monthcal[data-away] .vcc-calendar { padding-bottom: 42px; }
+.vcc-monthcal-today { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); height: 26px; padding: 0 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: var(--cal-accent); background: var(--vcc-card2); }
+@container (max-width: 640px) {
+  .vcc-monthcal { width: 100%; }
+  .vcc-monthcal .rdp-months, .vcc-monthcal .rdp-month { max-width: none; width: 100%; }
+  /* index.css biến mọi bảng trên điện thoại thành khối cuộn ngang — lưới ngày phải là bảng thật, giãn đủ rộng. */
+  .vcc-monthcal .rdp-month_grid { display: table !important; width: 100% !important; table-layout: fixed; }
 }

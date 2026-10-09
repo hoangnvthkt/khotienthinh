@@ -9,9 +9,9 @@ import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { WidgetAction } from '../../lib/center/centerActions';
-import { buildTodaySummary, buildTodayWidgets, ddmm, type WidgetView } from '../../lib/center/todayWidgets';
-import { civilOf, toCivil, type CivilDate, type CivilRange } from '../../lib/center/civilDate';
-import DueDateField from './DueDateField';
+import { buildTodayWidgets, type WidgetView } from '../../lib/center/todayWidgets';
+import MonthCalendar from './MonthCalendar';
+import CenterSearchBox from './CenterSearchBox';
 import { applyCenterLayout, pinnedActionsOf, type CenterLayout } from '../../lib/center/centerLayout';
 
 /** Tùy chỉnh ô (mockup v1.1: "Tùy chỉnh" → ↑ ↓ ✕ trên từng ô, "Ô đã ẩn" để thêm lại, "Xong"). */
@@ -37,9 +37,6 @@ export const WIDGET_ICONS: Record<CenterWidgetId, LucideIcon> = {
   supply: ShoppingCart,
   finance: Wallet,
 };
-
-const WEEKDAYS = ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
-const pad = (value: number) => String(value).padStart(2, '0');
 
 export interface CenterPerson {
   fullName: string;
@@ -185,7 +182,6 @@ const WidgetCard: React.FC<{
         <span className="vcc-wicon"><Icon size={14} /></span>
         <div className="min-w-0 flex-1">
           <h3 id={`vcc-w-${view.id}`} className="vcc-wname vcc-ellipsis">{view.title}</h3>
-          <div className="text-xs vcc-muted vcc-ellipsis">{view.sub}</div>
         </div>
         {edit ? (
           <span className="vcc-wedit">
@@ -234,56 +230,28 @@ const TodayView: React.FC<{
   actionsFor: (id: CenterWidgetId) => WidgetAction[] | null;
   today: TodayState;
   mineCount: number | null;
-  /** Hạn (ngày dân sự) của các việc Chờ tôi — chấm trên lịch. */
-  dueDays: CivilDate[];
-  dueRange: CivilRange | null;
-  onDueRange: (range: CivilRange | null) => void;
   onSelectProject: (projectId: string) => void;
   onRetry: () => void;
   customize: TodayCustomize;
-}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, mineCount, dueDays, dueRange, onDueRange, onSelectProject, onRetry, customize }) => {
-  const weekday = WEEKDAYS[now.getDay()];
+}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, mineCount, onSelectProject, onRetry, customize }) => {
   const data = today.status === 'ready' ? today.data : null;
   const ctx = { now, mineCount };
   const { visible: views, hidden: hiddenViews } = applyCenterLayout(data ? buildTodayWidgets(data, ctx) : [], customize.layout);
   const editing = customize.editing;
-  const summary = buildTodaySummary(data, ctx);
-  const trip = data?.widgets.office.nextTrip;
-  const tripToday = trip && ddmm(trip.pickupAt) === `${pad(now.getDate())}/${pad(now.getMonth() + 1)}` ? trip : null;
-  const todayCivil = civilOf(now) || toCivil(now);
-  const dueToday = dueDays.filter(day => day === todayCivil).length;
-  const overdue = dueDays.filter(day => day < todayCivil).length;
 
   return (
     <div className="vcc-page">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="m-0 text-[22px] font-semibold leading-tight"><Greeting person={person} /></h1>
-          <p className="mt-1 vcc-muted">{weekday}, {pad(now.getDate())}/{pad(now.getMonth() + 1)}/{now.getFullYear()}{summary ? ` · ${summary}` : ''}</p>
-        </div>
-        <div className="vcc-card vcc-cal" role="group" aria-label="Lịch">
-          <div className="text-center leading-tight">
-            <div className="text-[11px] font-medium vcc-muted">TH {now.getMonth() + 1}</div>
-            <div className="text-[26px] font-semibold tabular-nums">{pad(now.getDate())}</div>
-            <div className="text-[11px] vcc-muted">{weekday}</div>
-          </div>
-          <div className="vcc-cal-sep" />
-          <div className="min-w-0 text-xs">
-            <div className="font-semibold text-[13px]">
-              {dueToday > 0 ? `${dueToday} việc tới hạn hôm nay` : 'Hôm nay không có việc tới hạn'}
-              {overdue > 0 && <span className="vcc-danger-text"> · {overdue} quá hạn</span>}
-            </div>
-            <DueDateField today={todayCivil} dueDays={dueDays} value={dueRange} onChange={onDueRange} />
-            <div className="mt-1 vcc-muted vcc-ellipsis">{tripToday ? `Lịch: ${ddmm(tripToday.pickupAt)} ${new Date(tripToday.pickupAt).toTimeString().slice(0, 5)} xe đi ${tripToday.destination}` : 'Lịch: không có chuyến xe hôm nay'}</div>
-          </div>
-        </div>
+      {/* Đầu trang: lời chào · Tìm kiếm toàn hệ thống (giữa) · lịch tháng (chủ SP 09/10) */}
+      <div className="vcc-hero">
+        <h1 className="vcc-hero-hi m-0 text-[22px] font-semibold leading-tight"><Greeting person={person} /></h1>
+        <div className="vcc-hero-search"><CenterSearchBox /></div>
+        <div className="vcc-hero-cal"><MonthCalendar now={now} /></div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs vcc-muted">
-        <CalendarDays size={13} />
-        <span className="min-w-0 flex-1">{editing
-          ? 'Dùng ↑ ↓ để đổi thứ tự, mắt gạch để ẩn ô. Bấm "Xong" để lưu cho tài khoản của bạn.'
-          : 'Bấm một nút để làm ngay; "Xem thêm" hoặc nền ô mở đủ thao tác và cho chọn nút hiện trên ô. Nút theo quyền của bạn.'}</span>
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs vcc-muted">
+        {editing && (
+          <span className="flex min-w-0 flex-1 items-center gap-2"><CalendarDays size={13} />Dùng ↑ ↓ để đổi thứ tự, mắt gạch để ẩn ô. Bấm "Xong" để lưu cho tài khoản của bạn.</span>
+        )}
         {!editing && hiddenViews.length > 0 && <span>{hiddenViews.length} ô đang ẩn ·</span>}
         {customize.status === 'saving' && <span role="status">Đang lưu bố cục…</span>}
         {customize.status === 'saved' && !editing && <span role="status">Đã lưu bố cục</span>}
@@ -314,7 +282,7 @@ const TodayView: React.FC<{
             <section key={group.id} className={`vcc-card vcc-widget vcc-mod-${group.module}`} aria-label={group.label}>
               <header className="vcc-whead">
                 <span className="vcc-wicon"><Icon size={14} /></span>
-                <div className="min-w-0"><h3 className="vcc-wname">{group.label}</h3><div className="text-xs vcc-muted">{group.hint}</div></div>
+                <div className="min-w-0"><h3 className="vcc-wname">{group.label}</h3></div>
               </header>
               <div className="vcc-wbody"><p className="m-0 text-[12.5px] vcc-muted">Đang tải thao tác…</p></div>
             </section>

@@ -16,12 +16,26 @@ import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workIte
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
+import { buildDashboardFixture } from './dashboardFixture';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
 const PERSON = { fullName: 'Phạm Ngọc Sơn', gender: 'Nam', title: 'Chỉ huy trưởng · SMB-2026' };
 const DENIED_ROUTES = new Set(['/procurement']);
 const NOW = new Date(2026, 9, 7, 8, 30);
+// Bảng điều khiển: ?dash=bgd | ketoan | cht | muahang | none | error | slow | flaky · ?dash=off: không có tab.
+// flaky: lần đầu được, bấm Cập nhật thì lỗi (giữ số cũ). Số lần gọi ghi ở window.__dashLoads để kiểm "không realtime".
+const DASH = params.get('dash') || 'bgd';
+let dashLoads = 0;
+const loadDashboard = DASH === 'off' ? undefined : (options?: { force?: boolean }) => new Promise<ReturnType<typeof buildDashboardFixture>>((resolve, reject) => {
+  dashLoads += 1;
+  (window as unknown as { __dashLoads: number }).__dashLoads = dashLoads;
+  setTimeout(() => {
+    if (DASH === 'error' || (DASH === 'flaky' && options?.force)) reject(new Error('Máy chủ bận, thử lại sau ít phút.'));
+    else resolve({ ...buildDashboardFixture(DASH === 'flaky' ? 'bgd' : DASH), generatedAt: options?.force ? '2026-10-07T09:40:00+07:00' : '2026-10-07T08:25:00+07:00' });
+  }, DASH === 'slow' ? 1500 : 120);
+});
+const loadDashboardAccess = () => Promise.resolve(DASH === 'error' || DASH === 'flaky' || DASH === 'slow' ? buildDashboardFixture('bgd').access : buildDashboardFixture(DASH).access);
 const at = (days: number, hour = 17) => new Date(2026, 9, 7 + days, hour, 0).toISOString();
 
 const item = (partial: Partial<WorkItem> & Pick<WorkItem, 'source' | 'module' | 'kind' | 'id' | 'code' | 'title'>): WorkItem => ({
@@ -258,6 +272,8 @@ const Fixture: React.FC = () => {
             loadActions={loadActions}
             loadLayout={loadLayout}
             saveLayout={saveLayout}
+            loadDashboard={loadDashboard}
+            loadDashboardAccess={loadDashboardAccess}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
           />

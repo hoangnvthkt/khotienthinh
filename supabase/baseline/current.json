@@ -291,7 +291,9 @@
     "20261009180000_project_room_close_departed_members.sql",
     "20261009193000_catalog_manual_sku.sql",
     "20261009200000_revoke_dead_system_grants.sql",
-    "20261010090000_procurement_same_item_multi_spec.sql"
+    "20261010090000_procurement_same_item_multi_spec.sql",
+    "20261010110000_global_search_v1.sql",
+    "20261010120000_center_dashboard_v1.sql"
   ],
   "forbidIncludeAll": true
 }

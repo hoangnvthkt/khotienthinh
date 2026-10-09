@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTodaySummary, buildTodayWidgets, daysUntil, ddmm, moneyShort } from '../todayWidgets';
+import { buildTodayWidgets, daysUntil, ddmm, moneyShort } from '../todayWidgets';
 import { parseCenterToday, type CenterToday } from '../centerTodayService';
 import { getRouteModuleKey, isAuthenticatedOpenRoute, normalizeRoutePath } from '../../routeAccess';
 
@@ -86,9 +86,7 @@ describe('Today widgets (drill-down contract)', () => {
     expect(views.find(v => v.id === 'supply')!.empty).toBeTruthy();
   });
 
-  it('summarises waiting work and the contract deadline', () => {
-    expect(buildTodaySummary(FULL, ctx)).toBe('9 việc chờ bạn · 14 ngày tới hạn hợp đồng SMB-2026');
-    expect(buildTodaySummary(null, { ...ctx, mineCount: 0 })).toBe('không có việc chờ bạn');
+  it('counts days to a contract deadline', () => {
     expect(daysUntil('2026-10-05', NOW)).toBe(-2);
   });
 });

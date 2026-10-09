@@ -13,10 +13,11 @@ import LoadingSpinner from './LoadingSpinner';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import { useOfflineSync } from '../hooks/useOfflineSync';
-import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-react';
+import { RefreshCw, Menu, AlertTriangle, ExternalLink, Moon, Sun, Search } from 'lucide-react';
 import { Role } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { getRouteChrome, type LayoutOutletContext } from '../lib/routeChrome';
+import { openGlobalSearch } from '../lib/search/openGlobalSearch';
 import { useCenterUi } from '../lib/center/centerMode';
 import { CENTER_ROUTE } from '../lib/center/centerPermissions';
 import UiModeSwitch, { useUiModeSwitch } from './center/UiModeSwitch';
@@ -256,6 +257,10 @@ const Layout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Tìm kiếm toàn hệ thống */}
+            <button onClick={() => openGlobalSearch()} aria-label="Tìm kiếm" className="p-2 rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors">
+              <Search size={18} />
+            </button>
             {centerUi.available && (
               <UiModeSwitch variant="icon" active={centerUi.active} isDark={isDark} onChange={next => (next ? enterCenter() : exitCenter())} />
             )}

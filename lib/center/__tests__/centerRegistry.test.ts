@@ -40,8 +40,14 @@ describe('Command Center registry', () => {
     }
   });
 
-  it('never loops an animation (WebKit rule, docs/ui/VIOO-UI-UX.md §6)', () => {
-    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/animation|@keyframes/);
+  it('never loops an animation and only animates transform / opacity (WebKit rule, docs/ui/VIOO-UI-UX.md §6)', () => {
+    const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(code).not.toMatch(/infinite/);
+    // Animation hữu hạn được phép (ánh sáng lướt ô tìm kiếm 2 lần), nhưng khung hình chỉ đổi transform / opacity.
+    const frames = [...code.matchAll(/@keyframes[^{]*\{([\s\S]*?\})\s*\}/g)].map(match => match[1]);
+    const props = frames.flatMap(body => [...body.matchAll(/([a-z-]+)\s*:/g)].map(match => match[1]));
+    expect(new Set(props)).toEqual(new Set(['transform']));
+    for (const match of code.matchAll(/animation\s*:([^;]+);/g)) expect(match[1]).toMatch(/\b\d+\s+backwards\b|\bnone\b/);
   });
 });
 

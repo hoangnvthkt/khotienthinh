@@ -56,5 +56,6 @@ service-account*.json
 /.office-test-results/
 /.procurement-test-results/
 /.center-test-results/
+/.search-test-results/
 
 .office-run-logs/

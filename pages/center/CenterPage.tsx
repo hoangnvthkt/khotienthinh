@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -10,6 +10,7 @@ import { StateBox } from '../../components/procurement/hub/hubUi';
 import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useCenterAccess } from '../../lib/center/centerService';
+import { fetchDashboard, fetchDashboardAccess } from '../../lib/dashboard/dashboardService';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -40,6 +41,10 @@ const CenterPage: React.FC = () => {
   // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
   const playIntro = (location.state as { vccIntro?: boolean } | null)?.vccIntro === true;
   const { state, retry } = useCenterAccess(user?.id, canAccessRoute(user, CENTER_ROUTE));
+  // Bảng điều khiển: hàm cố định theo người dùng (CenterShell tải lại khi hàm đổi).
+  const userId = user?.id;
+  const loadDashboard = useCallback((options?: { force?: boolean }) => fetchDashboard(userId as string, options?.force), [userId]);
+  const loadDashboardAccess = useCallback(() => fetchDashboardAccess(userId as string), [userId]);
   const goHome = () => navigate('/');
 
   if (state.status === 'loading') {
@@ -76,6 +81,8 @@ const CenterPage: React.FC = () => {
         mobileNotifications={<NotificationCenter userId={user.id} mode="mobile" />}
         canOpenRoute={route => canAccessRoute(user, route)}
         onNavigate={(route, options) => navigate(route, options)}
+        loadDashboard={loadDashboard}
+        loadDashboardAccess={loadDashboardAccess}
       />
     </CenterEntrance>
   );
