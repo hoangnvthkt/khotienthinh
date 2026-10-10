@@ -61,7 +61,7 @@ export interface FinanceDirectReceipt {
   projectId: string | null; projectCode: string | null; cutoverDate: string | null; beforeCutover: boolean;
   supplierId: string | null; supplierName: string | null; contractCode: string | null;
   createdByName: string | null; approvedByName: string | null; attachments: number; value: number; missingPrice: number;
-  lines: Array<{ index: number; itemId: string; itemName: string; unit: string | null; qty: number; price: number; catalogPrice: number | null;
+  lines: Array<{ index: number; itemId: string; itemName: string; specification?: string | null; unit: string | null; qty: number; price: number; catalogPrice: number | null;
     vatRate: number | 'incl' | null; priceIncludesVat: boolean }>;
   duplicateOf: string | null; canPost: boolean;
   returned: { reason: string; at: string; byName: string | null } | null;
@@ -109,6 +109,9 @@ export interface FinancePendingStatement {
   id: string; code: string; supplierId: string; supplierName: string; contractCode: string | null; projectId: string; projectCode: string | null;
   periodMonth: string | null; statementDate: string | null; grossAmount: number; vatAmount: number; totalAmount: number;
   createdByName: string | null; confirmedByName: string | null; confirmedAt: string | null; canPost: boolean;
+  /** Dòng bảng đối soát (tên + quy cách theo dòng giao nhận) để xem trước khi ghi sổ. */
+  lines?: Array<{ id: string; itemName: string; specification: string | null; unit: string | null; qty: number; unitPrice: number; vatRate: number;
+    amount: number; contractPrice: number | null; priceReason: string | null }>;
 }
 export interface FinanceApprovalStep { label: string; approvers: Array<{ id: string; name: string; active: boolean }> }
 export interface FinanceSettings {
@@ -508,7 +511,9 @@ export interface FinanceInvoice {
   priceSettlement: PriceSettlement | null;
 }
 /** Một dòng hàng của chứng từ công nợ: số thực nhận (kho) + giá đặt (đơn hàng) + giá đang áp vào công nợ (giá đặt hoặc giá đã chốt). */
-export interface PriceLine { lineId: string; kind: 'po_delivery_line' | 'statement_line'; itemName: string; unit: string | null; qty: number; orderedPrice: number; currentPrice: number; vatRate: number;
+export interface PriceLine { lineId: string; kind: 'po_delivery_line' | 'statement_line'; itemName: string;
+  /** Quy cách của dòng (một mã nhiều quy cách). */
+  specification?: string | null; unit: string | null; qty: number; orderedPrice: number; currentPrice: number; vatRate: number;
   /** Mã bản chốt giá khác đang chờ duyệt dòng này (khóa nhập). */
   pendingCode?: string | null }
 export interface InvoiceDocument { id: string; code: string; documentNo: string | null; sourceType: string; projectCode: string | null; contractCode: string | null; documentDate: string | null;
@@ -523,7 +528,7 @@ export interface PriceSettlement {
   id: string; code: string; supplierId: string; supplierName: string; basis: 'invoice' | 'agreement'; invoiceNumber: string | null;
   agreementNo: string | null; agreementDate: string | null; reason: string; attachments: FinanceAttachment[]; status: PriceSettlementStatus;
   deltaGross: number; increaseGross: number;
-  lines: Array<{ documentId: string; lineId: string; documentNo: string | null; projectCode: string | null; poNumber: string | null; itemName: string; unit: string | null; qty: number;
+  lines: Array<{ documentId: string; lineId: string; documentNo: string | null; projectCode: string | null; poNumber: string | null; itemName: string; specification?: string | null; unit: string | null; qty: number;
     fromPrice: number; toPrice: number; vatRate: number; deltaGross: number }>;
   steps: Array<{ label: string; names: string[]; doneByName: string | null; doneAt: string | null }>; stepIndex: number;
   /** Chứng từ đã có hóa đơn theo giá cũ → chờ NCC xuất hóa đơn điều chỉnh. */
