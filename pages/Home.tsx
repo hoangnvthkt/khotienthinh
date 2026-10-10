@@ -872,7 +872,7 @@ const Home: React.FC = () => {
   );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4 pb-8">
+    <div className="w-full space-y-4 pb-8">
       {/* ═══════════ 1. HERO BANNER ═══════════ */}
       <div
         className="relative rounded-3xl overflow-hidden"

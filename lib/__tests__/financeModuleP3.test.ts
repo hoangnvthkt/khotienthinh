@@ -9,7 +9,7 @@ const sql = readFileSync('supabase/migrations/20261008134800_finance_module_p3.s
 const dashboard = readFileSync('pages/ProjectDashboard.tsx', 'utf8');
 const cost = readFileSync('components/finance/CostView.tsx', 'utf8');
 const misa = readFileSync('components/finance/MisaImport.tsx', 'utf8');
-const app = readFileSync('App.tsx', 'utf8');
+const app = readFileSync('routes/appPages.tsx', 'utf8');
 const sidebar = readFileSync('components/Sidebar.tsx', 'utf8');
 
 describe('Tài chính — P3', () => {

@@ -1352,7 +1352,7 @@ const WorkflowInstances: React.FC = () => {
 
                         <div className="wf-scroll min-h-0 flex-1 overflow-y-auto">
                             {viewMode === 'list' ? (
-                                <div className="mx-auto max-w-7xl space-y-3 px-4 py-4 md:px-6">
+                                <div className="w-full space-y-3 px-4 py-4 md:px-6">
                                     <WorkflowKpiStrip values={kpiValues} onWaitingClick={() => goToNav('pending')} />
 
                                     <div className="flex flex-wrap items-center gap-1.5">

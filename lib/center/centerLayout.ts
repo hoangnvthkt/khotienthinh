@@ -13,9 +13,16 @@ export const MAX_PINNED_ACTIONS = 4;
 
 export type PinnedActions = Partial<Record<CenterWidgetId, string[]>>;
 
+/** Khối của "Hôm nay" (chủ SP 10/10): Truy cập nhanh (các ô thao tác) và các màn của Bảng điều khiển. */
+export type TodayBlockId = 'quick' | 'board:portfolio' | 'board:cashflow' | 'board:materials' | 'board:debt';
+export const TODAY_BLOCK_IDS: readonly TodayBlockId[] = ['quick', 'board:portfolio', 'board:cashflow', 'board:materials', 'board:debt'];
+export const DEFAULT_BLOCKS: readonly TodayBlockId[] = ['quick'];
+
 export interface CenterLayout {
   widgets: { order: CenterWidgetId[]; hidden: CenterWidgetId[] };
   pinned?: PinnedActions;
+  /** Thứ tự khối đang hiện; undefined = mặc định (chỉ Truy cập nhanh); [] = đã xóa hết (chỉ còn nút "+"). */
+  blocks?: TodayBlockId[];
 }
 
 const WIDGET_IDS: readonly CenterWidgetId[] = CENTER_WIDGET_GROUPS.map(group => group.id);
@@ -38,6 +45,13 @@ const parsePinned = (raw: unknown): PinnedActions => {
   return out;
 };
 
+const parseBlocks = (raw: unknown): TodayBlockId[] | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const out: TodayBlockId[] = [];
+  raw.forEach(value => { if ((TODAY_BLOCK_IDS as readonly unknown[]).includes(value) && !out.includes(value as TodayBlockId)) out.push(value as TodayBlockId); });
+  return out;
+};
+
 /** null khi chưa lưu gì / dữ liệu lạ → dùng mặc định. */
 export const parseCenterLayout = (raw: unknown): CenterLayout | null => {
   const row = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
@@ -47,24 +61,36 @@ export const parseCenterLayout = (raw: unknown): CenterLayout | null => {
   const hidden = uniqueIds(widgets.hidden);
   const pinned = parsePinned(row.pinned);
   const hasPinned = Object.keys(pinned).length > 0;
-  if (order.length === 0 && hidden.length === 0 && !hasPinned) return null;
-  return hasPinned ? { widgets: { order, hidden }, pinned } : { widgets: { order, hidden } };
+  const blocks = parseBlocks(row.blocks);
+  if (order.length === 0 && hidden.length === 0 && !hasPinned && !blocks) return null;
+  return { widgets: { order, hidden }, ...(hasPinned ? { pinned } : {}), ...(blocks ? { blocks } : {}) };
 };
 
 /** Người dùng đã tự xếp ô (khác "theo mặc định"). */
 export const hasWidgetOrder = (layout: CenterLayout | null): layout is CenterLayout =>
   !!layout && (layout.widgets.order.length > 0 || layout.widgets.hidden.length > 0);
 
-/** Bố cục đang dùng: thứ tự đã lưu, không thì mặc định theo quyền; nút nhanh đã chọn luôn giữ. */
+/** Bố cục đang dùng: thứ tự đã lưu, không thì mặc định theo quyền; nút nhanh đã chọn và khối luôn giữ. */
 export const resolveCenterLayout = (saved: CenterLayout | null, fallback: CenterLayout): CenterLayout => {
-  const base = hasWidgetOrder(saved) ? { widgets: saved.widgets } : { widgets: fallback.widgets };
-  return saved?.pinned ? { ...base, pinned: saved.pinned } : base;
+  const base: CenterLayout = hasWidgetOrder(saved) ? { widgets: saved.widgets } : { widgets: fallback.widgets };
+  return { ...base, ...(saved?.pinned ? { pinned: saved.pinned } : {}), ...(saved?.blocks ? { blocks: saved.blocks } : {}) };
 };
 
-/** Lưu lựa chọn nút nhanh của một ô, giữ nguyên thứ tự ô (kể cả "theo mặc định"). */
+/** Lưu lựa chọn nút nhanh của một ô, giữ nguyên thứ tự ô (kể cả "theo mặc định") và các khối. */
 export const withPinnedActions = (saved: CenterLayout | null, id: CenterWidgetId, keys: string[]): CenterLayout => ({
   widgets: hasWidgetOrder(saved) ? saved.widgets : { order: [], hidden: [] },
   pinned: { ...(saved?.pinned || {}), [id]: keys.slice(0, MAX_PINNED_ACTIONS) },
+  ...(saved?.blocks ? { blocks: saved.blocks } : {}),
+});
+
+/** Khối đang hiện (mặc định: chỉ Truy cập nhanh). */
+export const blocksOf = (layout: CenterLayout | null): TodayBlockId[] => (layout?.blocks ? [...layout.blocks] : [...DEFAULT_BLOCKS]);
+
+/** Lưu thứ tự khối, giữ nguyên ô và nút nhanh. */
+export const withBlocks = (saved: CenterLayout | null, blocks: TodayBlockId[]): CenterLayout => ({
+  widgets: hasWidgetOrder(saved) ? saved.widgets : { order: [], hidden: [] },
+  ...(saved?.pinned ? { pinned: saved.pinned } : {}),
+  blocks: blocks.filter((id, index) => blocks.indexOf(id) === index),
 });
 
 /** Nút hiện trên ô: đã chọn (còn được phép, đúng thứ tự chọn), không thì 4 nút được phép đầu tiên. */

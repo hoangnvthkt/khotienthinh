@@ -3,11 +3,19 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Res
 import { ROUTES, axisMoney, drillMonth, money, monthLabel, monthTotals, shortMoney, type DrillDown } from '../../lib/dashboard/dashboardModel';
 import type { DashProject, DashboardDataset } from '../../lib/dashboard/dashboardTypes';
 import { Card, ChartTip, DataTable, Hero, Legend, type DashColors } from './dashUi';
+import StockTable, { type LoadMaterialMoves } from './StockTable';
 
 // Bảng 3 — Báo cáo nhập / xuất vật tư: ngân sách vật tư (BOQ), đã mua, còn lại, xu hướng nhập – xuất kho 12 tháng,
-// ngân sách theo dự án, 10 vật tư ngân sách lớn nhất, nhu cầu mua – cấp vật tư đang chờ.
+// ngân sách theo dự án, 10 vật tư ngân sách lớn nhất, bảng tồn / nhập / xuất từng vật tư.
 
-type Props = { dataset: DashboardDataset; projects: DashProject[]; colors: DashColors; onDrill: (drill: DrillDown) => void; onOpen: (route: string) => void };
+type Props = {
+  dataset: DashboardDataset; projects: DashProject[]; colors: DashColors; onDrill: (drill: DrillDown) => void; onOpen: (route: string) => void;
+  /** Dự án đang lọc (null = tất cả). */
+  projectId?: string | null;
+  loadMoves?: LoadMaterialMoves;
+  /** Ngăn đọc dữ liệu khi bấm: không mở lại nếu người dùng đã đóng trong lúc tải. */
+  onDrillAsync?: (drill: DrillDown | null) => void;
+};
 
 const sumMaterials = (projects: DashProject[], pick: (m: NonNullable<DashProject['materials']>) => number | null): number | null => {
   const visible = projects.filter(project => project.materials);
@@ -37,7 +45,7 @@ const Spark: React.FC<{ data: number[]; color: string }> = ({ data, color }) => 
   </div>
 );
 
-const MaterialsDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill, onOpen }) => {
+const MaterialsDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill, onOpen, projectId = null, loadMoves, onDrillAsync }) => {
   const ids = useMemo(() => new Set(projects.map(project => project.id)), [projects]);
   const months = useMemo(() => monthTotals(dataset, ids), [dataset, ids]);
   const budget = sumMaterials(projects, m => m.budget);
@@ -60,8 +68,7 @@ const MaterialsDashboard: React.FC<Props> = ({ dataset, projects, colors, onDril
   const pieData = pieOther > 0 ? [...pieShown, { id: 'other', name: 'Dự án khác', code: 'Khác', value: pieOther }] : pieShown;
   const top = dataset.materialItems.filter(item => ids.has(item.projectId)).sort((a, b) => b.budget - a.budget).slice(0, 10);
   const topMax = Math.max(1, ...top.map(item => item.budget));
-  const needs = dataset.needs.filter(need => ids.has(need.projectId))
-    .sort((a, b) => (a.neededDate || '9999').localeCompare(b.neededDate || '9999'));
+  const stockItems = useMemo(() => dataset.stockItems.filter(item => ids.has(item.projectId)), [dataset, ids]);
   const projectName = new Map(projects.map(project => [project.id, project]));
 
   return (
@@ -144,14 +151,10 @@ const MaterialsDashboard: React.FC<Props> = ({ dataset, projects, colors, onDril
         </div>
       </Card>
 
-      <Card className="vdb-col-12" title="Nhu cầu mua - cấp vật tư" subtitle="Đề xuất vật tư đang chờ, ngày cần sớm nhất lên trước" through={procurement}>
-        <DataTable onRow={onOpen} drill={{
-          columns: [{ key: 't', label: 'Tên đề xuất' }, { key: 'k', label: 'Loại đề xuất' }, { key: 'm', label: 'Tên vật liệu' }, { key: 'u', label: 'Đơn vị' },
-            { key: 'q', label: 'Khối lượng', kind: 'number' }, { key: 'd', label: 'Ngày cần vật liệu', kind: 'date' }],
-          rows: needs.map(need => ({ id: need.id, route: ROUTES.materialRequest(need.projectId, need.requestId),
-            cells: { t: `${need.title}`, k: need.kind === 'buy' ? 'Mua vật tư' : 'Cấp vật tư', m: need.material, u: need.unit, q: need.qty, d: need.neededDate } })),
-        }} />
-        {needs.length > 0 && <p className="m-0 mt-2 text-xs vdb-muted">{needs.length} dòng · bấm một dòng để mở đề xuất</p>}
+      <Card className="vdb-col-12" title="Tồn – nhập – xuất vật tư" through={inventory}
+        subtitle="Còn lại = BOQ − (nhập + đang giao + đã đặt chưa giao − trả lại) · bấm vào số bất kỳ để xem chứng từ">
+        <StockTable items={stockItems} projects={projects} projectId={projectId} loadMoves={loadMoves} onShow={onDrill}
+          onDrill={onDrillAsync || (drill => { if (drill) onDrill(drill); })} />
       </Card>
     </div>
   );

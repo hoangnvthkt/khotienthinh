@@ -61,7 +61,7 @@ const RequestDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-3.5 sm:space-y-6 sm:p-6">
+    <div className="w-full space-y-4 p-3.5 sm:space-y-6 sm:p-6">
       <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between sm:pb-5">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Tổng quan đề xuất</h1>

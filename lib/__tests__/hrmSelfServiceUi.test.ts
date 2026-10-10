@@ -19,10 +19,10 @@ describe('HRM Task 12.2 self-service UI isolation', () => {
   });
 
   it('registers a dedicated personal payslip page that uses no target employee id', () => {
-    const app = read('App.tsx');
+    const app = read('routes/appPages.tsx');
     const page = read('pages', 'hrm', 'MyPayroll.tsx');
 
-    expect(app).toContain("import('./pages/hrm/MyPayroll')");
+    expect(app).toContain("import('../pages/hrm/MyPayroll')");
     expect(app).toContain('path="my-payroll"');
     expect(page).toContain('hrmSensitiveProjectionService.listMyPayrolls()');
     expect(page).not.toContain('employeeId');

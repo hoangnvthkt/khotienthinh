@@ -38,7 +38,7 @@ Chủ SP duyệt 3 sửa đổi theo kết quả đó (đã làm, mục 3–4):
 | | Xu hướng nhập – xuất 12 tháng | bấm tháng → chia theo dự án; thẻ → Tồn kho |
 | | Ngân sách vật tư theo dự án (tròn, 5 dự án + Khác) | lát → Vật tư dự án |
 | | Top 10 vật tư ngân sách cao nhất (đã mua / còn lại) | dòng → Vật tư dự án |
-| | Nhu cầu mua – cấp vật tư (dòng đề xuất chưa cấp đủ, ngày cần sớm nhất trước) | dòng → mở đề xuất |
+| | Tồn – nhập – xuất vật tư (10/10, thay bảng Nhu cầu mua – cấp): tên (trên) + mã (dưới), ĐVT, Tổng BOQ, Tồn kho, Tổng nhập, Tổng xuất, Trả lại, Còn lại; 10 dòng/trang, tìm theo tên / mã | số nhập / xuất / trả lại → giao dịch kho (`get_center_material_moves_v1`) → bấm giao dịch mở đúng phiếu (`/operations?tx=`) |
 | **Thu chi & công nợ** | Khối navy: Giá trị HĐ (chưa VAT), Doanh thu, Chi phí, Lợi nhuận | chia theo dự án |
 | | Cơ cấu dòng thu (gồm VAT): đề nghị TT, giữ lại, tạm ứng còn lại, tạm ứng đã khấu trừ; thu thực tế / CĐT còn nợ | → Phải thu |
 | | Dòng thu (Sankey, chưa VAT): Giá trị HĐ → Chưa thực hiện / Doanh thu → Đã thanh toán, Nợ phải thu, Giữ lại, Khấu trừ tạm ứng | từng khối → chia theo dự án |
@@ -128,3 +128,17 @@ Không thêm loại quyền mới. Tab chỉ hiện sau lần gọi nhẹ `get_c
   (đọc dữ liệu máy chủ an toàn, null không thành 0, một lần gọi tới khi Cập nhật).
 - E2E (`tests/e2e/center-shell.spec.ts`, máy tính / máy tính bảng / iPhone WebKit): 4 bảng, lọc, drill-down / drill-through, thiếu dữ liệu → màn bổ sung,
   vai trò, không có bảng → không có tab, lỗi tải, không realtime + cập nhật lỗi giữ số cũ; trang đứng yên không chạy animation.
+
+## 8. Đợt 10/10 (chủ SP)
+
+- Mọi màn mở thành tab mới trong Trung tâm (thanh bên, ô tìm kiếm, Hôm nay, Bảng điều khiển, menu avatar): bảng route dùng chung `routes/appPages.tsx`,
+  kênh mở `lib/center/centerOpen.ts`, tab tự nạp dữ liệu theo màn (`lib/center/embedData.ts`) và kiểm quyền vào màn.
+- Bảng Vật tư: bỏ "Nhu cầu mua – cấp vật tư", thêm bảng tồn – nhập – xuất (migration `20261010130000_center_dashboard_stock.sql`), chủ SP duyệt cách tính 10/10:
+  Đã đặt chưa giao (dòng đơn mua chưa nhận, chưa lên đợt giao) · Đang giao (đợt giao chưa nhận xong) · Nhập (vào kho dự án, trừ hàng công trường trả về) ·
+  Xuất (ra khỏi kho dự án, trừ trả NCC) · Trả lại = trả nhà cung cấp · Tồn kho = sổ kho · **Còn lại = BOQ − (nhập + đang giao + đã đặt chưa giao − trả lại)**:
+  dương (xanh) còn được mua, âm (đỏ) đã đặt / mua vượt BOQ. Mọi số bấm được → chứng từ tạo nên số đó (đơn mua, đợt giao, phiếu kho, phiếu trả NCC,
+  dòng dự toán, cách tính Còn lại) → bấm chứng từ mở đúng phiếu (`/operations?tx=`) hoặc đơn (`/procurement?po=`) trong tab mới.
+- Co giãn theo màn hình lớn: bỏ giới hạn bề rộng ở Trung tâm, Bảng điều khiển, Office, Vioo Work và các trang có khung cố định; lưới ô Hôm nay 4–5 cột trên màn rộng.
+- Không viền trong Trung tâm (nền + bóng nhẹ); số ngày hôm nay trên lịch luôn trắng, nằm trên nền.
+- Menu avatar: Thông tin cá nhân, Phiếu lương của tôi, Cài đặt (thanh bên, nếu có quyền), Đăng xuất.
+- Hôm nay = các khối: Truy cập nhanh và màn của Bảng điều khiển; xóa được, ↑ ↓ đổi thứ tự, nút "+" thêm khối; lưu trong bố cục người dùng (`blocks`).

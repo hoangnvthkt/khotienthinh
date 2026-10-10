@@ -4,8 +4,6 @@
   --space-line: #dce6ec;
   --space-accent: #126e82;
   min-height: 100dvh;
-  max-width: 1440px;
-  margin: 0 auto;
   padding: 32px;
   color: var(--space-ink);
   background:

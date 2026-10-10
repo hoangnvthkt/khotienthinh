@@ -8,6 +8,7 @@ import PortfolioDashboard from './PortfolioDashboard';
 import CashflowDashboard from './CashflowDashboard';
 import MaterialsDashboard from './MaterialsDashboard';
 import DebtDashboard from './DebtDashboard';
+import type { LoadMaterialMoves } from './StockTable';
 import './dashboard.css';
 
 // Bảng điều khiển trong Trung tâm điều hành. Bảng hiện theo quyền (máy chủ trả danh sách được xem); chọn bảng + dự án ở đầu.
@@ -41,20 +42,29 @@ const DashboardView: React.FC<{
   refreshNote?: string | null;
   /** Lấy số mới (lỗi tải lần đầu: thử lại). */
   onRetry: () => void;
+  /** Giao dịch kho của một vật tư (bảng tồn / nhập / xuất). */
+  loadMoves?: LoadMaterialMoves;
   /** Mở màn gốc (Center mở thành tab nếu chạy được trong tab, không thì chuyển hẳn). */
   onOpen: (route: string) => void;
-}> = ({ state, isDark, refreshing = false, refreshNote = null, onRetry, onOpen }) => {
+  /** Chỉ một bảng, gắn trên "Hôm nay" như một khối (không tiêu đề lớn, không thanh chọn bảng). */
+  only?: DashboardId;
+  /** Chuyển sang bảng này (bấm "Mở" trên khối ở Hôm nay); nonce đổi = yêu cầu mới. */
+  focus?: { board: DashboardId; nonce: number } | null;
+}> = ({ state, isDark, refreshing = false, refreshNote = null, onRetry, loadMoves, onOpen, only, focus }) => {
   const data = state.status === 'ready' ? state.data : null;
   const access = data?.access || [];
   const [view, setView] = useState<DashboardId | null>(readView);
   const [projectId, setProjectId] = useState('all');
   const [drill, setDrill] = useState<DrillDown | null>(null);
-  const current: DashboardId | null = view && access.includes(view) ? view : access[0] || null;
+  const current: DashboardId | null = only ? (access.includes(only) ? only : null) : view && access.includes(view) ? view : access[0] || null;
   const colors = dashColors(isDark);
   const projects = useMemo(() => (data ? data.projects.filter(project => projectId === 'all' || project.id === projectId) : []), [data, projectId]);
   useEffect(() => { if (projectId !== 'all' && data && !data.projects.some(project => project.id === projectId)) setProjectId('all'); }, [data, projectId]);
   const choose = (id: DashboardId) => { setView(id); writeView(id); };
+  useEffect(() => { if (focus) { setView(focus.board); writeView(focus.board); } }, [focus]);
   const open = useCallback((route: string) => { setDrill(null); onOpen(route); }, [onOpen]);
+  // Ngăn đọc khi bấm: đang mở (đang tải) thì thay; người dùng đã đóng thì không mở lại khi dữ liệu về.
+  const drillAsync = useCallback((next: DrillDown | null) => setDrill(current => (current === null && next?.status !== 'loading' ? null : next)), []);
 
   if (state.status === 'loading') return <div className="vdb"><StateBox kind="loading" title="Đang tổng hợp số liệu…" /></div>;
   if (state.status === 'error') return <div className="vdb"><StateBox kind="error" title="Chưa tải được bảng điều khiển" message={state.message} onRetry={onRetry} /></div>;
@@ -65,15 +75,18 @@ const DashboardView: React.FC<{
   const stamp = stampText(data.generatedAt, data.today);
   const gaps = gapsFor(current, projects);
   const props = { dataset: data, projects, colors, onDrill: setDrill, onOpen: open };
+  const selectedProject = projectId === 'all' ? null : projectId;
 
   return (
     <DashOpenContext.Provider value={open}>
-    <div className="vdb">
-      <div className="vdb-head">
-        <div className="min-w-0">
-          <h2 className="vdb-title">{meta.title}</h2>
-          <p className="vdb-sub">{meta.hint}</p>
-        </div>
+    <div className="vdb" data-block={only ? true : undefined}>
+      <div className="vdb-head" data-block={only ? true : undefined}>
+        {!only && (
+          <div className="min-w-0">
+            <h2 className="vdb-title">{meta.title}</h2>
+            <p className="vdb-sub">{meta.hint}</p>
+          </div>
+        )}
         <div className="vdb-filters">
           <select className="vdb-select" aria-label="Chọn dự án" value={projectId} onChange={event => setProjectId(event.target.value)}>
             <option value="all">Tất cả dự án ({data.projects.length})</option>
@@ -85,7 +98,7 @@ const DashboardView: React.FC<{
           </button>
         </div>
       </div>
-      {access.length > 1 && (
+      {!only && access.length > 1 && (
         <div className="vdb-switch mb-3" role="tablist" aria-label="Chọn bảng điều khiển">
           {access.map(id => (
             <button key={id} type="button" role="tab" aria-selected={id === current} onClick={() => choose(id)} title={DASHBOARD_META[id].hint}>{DASHBOARD_META[id].short}</button>
@@ -103,7 +116,7 @@ const DashboardView: React.FC<{
       {refreshNote && <p className="vdb-note" role="status">Chưa cập nhật được: {refreshNote} Đang hiện số lúc {stamp}.</p>}
       {current === 'portfolio' && <PortfolioDashboard {...props} />}
       {current === 'cashflow' && <CashflowDashboard {...props} />}
-      {current === 'materials' && <MaterialsDashboard {...props} />}
+      {current === 'materials' && <MaterialsDashboard {...props} projectId={selectedProject} loadMoves={loadMoves} onDrillAsync={drillAsync} />}
       {current === 'debt' && <DebtDashboard {...props} />}
       {drill && <DrillDrawer drill={drill} onClose={() => setDrill(null)} onOpen={open} />}
     </div>

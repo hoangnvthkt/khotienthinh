@@ -64,18 +64,18 @@ describe('Command Center drill-down', () => {
     expect(target).toMatchObject({ kind: 'tab', renderer: 'procurement', props: {}, route: '/procurement' });
   });
 
-  it('only embeds module pages the Center can run in a tab', () => {
+  it('runs every app screen in a Center tab, except Home and the Center itself', () => {
     expect(isEmbeddableRoute('/hrm/leave?request=1')).toBe(true);
-    expect(isEmbeddableRoute('/work/tasks/VW-1')).toBe(true);
-    expect(isEmbeddableRoute('/booking/vehicle/approvals')).toBe(true);
-    expect(isEmbeddableRoute('/wf')).toBe(true);
-    expect(isEmbeddableRoute('/wf/0f8b3a52-1c1e-4b7a-9a77-2c4f0d7e9b10')).toBe(true);
-    expect(isEmbeddableRoute('/wf/dashboard')).toBe(false);
-    expect(isEmbeddableRoute('/hrm/checkin')).toBe(true);
-    expect(isEmbeddableRoute('/work/my?create=1')).toBe(true);
-    expect(isEmbeddableRoute('/hrm/payroll')).toBe(false);
-    expect(isEmbeddableRoute('/dashboard')).toBe(false);
-    expect(isEmbeddableRoute('/da/portfolio')).toBe(false);
+    expect(isEmbeddableRoute('/wf/dashboard')).toBe(true);
+    expect(isEmbeddableRoute('/hrm/payroll')).toBe(true);
+    expect(isEmbeddableRoute('/procurement?po=1')).toBe(true);
+    expect(isEmbeddableRoute('/settings')).toBe(true);
+    expect(isEmbeddableRoute('/da/portfolio')).toBe(true);
+    expect(isEmbeddableRoute('/')).toBe(false);
+    expect(isEmbeddableRoute('/center')).toBe(false);
+    expect(isEmbeddableRoute('/center?x=1')).toBe(false);
+    expect(isEmbeddableRoute('/centers')).toBe(true);
+    expect(isEmbeddableRoute('https://example.com')).toBe(false);
   });
 
   it('colours a quick-action tab by the module of its page', () => {

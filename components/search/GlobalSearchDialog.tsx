@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, Bot, ChevronDown, ChevronLeft, History, Loader2, LockKeyhole, Search, SearchX, Sparkles, X,
 } from 'lucide-react';
@@ -7,6 +7,9 @@ import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
 import { canAccessRoute, getRouteModuleKey } from '../../lib/routeAccess';
 import { navigationModulesFor, useModuleNavigation } from '../Sidebar';
+import { useCenterUi } from '../../lib/center/centerMode';
+import { useCenterNavigate } from '../../lib/center/centerOpen';
+import { useRouteTitle } from '../center/useRouteTitle';
 import { buildActionEntries, buildPageEntries, featuredActions, quickActionDefs, type NavItemInput, type NavModuleInput } from '../../lib/search/searchCatalog';
 import {
   displayWord, learnVocabulary, parseQuery, prepareEntry, rankLocal, scoreEntry, serverTerms, suggestCorrection, type ParsedQuery,
@@ -75,13 +78,16 @@ export interface GlobalSearchViewProps {
 export const GlobalSearchDialog: React.FC<{ initialQuery: string; onClose: () => void; onModal: (modal: Modal) => void }> = ({ initialQuery, onClose, onModal }) => {
   const { user } = useApp();
   const { toggleTheme } = useTheme();
-  const navigate = useNavigate();
   const { pathname } = useLocation();
   const navFor = useModuleNavigation();
   const modules = useMemo(() => navigationModulesFor(user).map(module => ({ key: module.key, label: module.label, route: module.route })), [user]);
   const navItems = useCallback((key: string) => navFor(key as Parameters<typeof navFor>[0]).map(item => ({ to: item.to, label: item.label, icon: item.icon })), [navFor]);
   const canAccess = useCallback((route: string) => canAccessRoute(user, route), [user]);
-  const onNavigate = useCallback((route: string, state?: unknown) => navigate(route, state ? { state } : undefined), [navigate]);
+  // Giao diện Trung tâm: kết quả mở thành tab mới trong Trung tâm (chủ SP 10/10); giao diện cũ chuyển trang như trước.
+  const centerActive = useCenterUi(user).active;
+  const go = useCenterNavigate(centerActive);
+  const titleOf = useRouteTitle();
+  const onNavigate = useCallback((route: string, state?: unknown) => go(route, { state, title: titleOf(route) || undefined }), [go, titleOf]);
   return (
     <GlobalSearchView initialQuery={initialQuery} userId={user?.id || null} pathname={pathname} modules={modules} navItems={navItems}
       canAccess={canAccess} onNavigate={onNavigate} onToggleTheme={toggleTheme} onClose={onClose} onModal={onModal} />

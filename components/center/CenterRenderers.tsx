@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import RouteRenderer from './EmbeddedRoute';
+import { appPageRoutes } from '../../routes/appPages';
+import { embedDataModules } from '../../lib/center/embedData';
+import { canAccessRoute } from '../../lib/routeAccess';
+import { StateBox } from '../procurement/hub/hubUi';
 import { useApp, type AppModule } from '../../context/AppContext';
 import { useWorkflow } from '../../context/WorkflowContext';
 import { useModuleData } from '../../hooks/useModuleData';
@@ -49,54 +54,15 @@ const SiteAssignmentRenderer: React.FC<{ initialSelectedId?: string }> = ({ init
   return <SiteAssignmentView people={people} initialSelectedId={initialSelectedId || null} />;
 };
 
-// Màn thật của module mở ngay trong tab (không qua bước "Mở ở màn …"), chạy bằng EmbeddedRoute.
-// Quyền: trang gọi cùng RPC như màn module nên máy chủ vẫn chặn đúng.
-const LeaveManagement = React.lazy(() => import('../../pages/hrm/LeaveManagement'));
-const Attendance = React.lazy(() => import('../../pages/hrm/Attendance'));
-const TimesheetClose = React.lazy(() => import('../../pages/hrm/TimesheetClose'));
-const Employees = React.lazy(() => import('../../pages/hrm/Employees'));
-const ProjectDashboard = React.lazy(() => import('../../pages/ProjectDashboard'));
-const RequestWorkflow = React.lazy(() => import('../../pages/RequestWorkflow'));
-const Operations = React.lazy(() => import('../../pages/Operations'));
-const Audit = React.lazy(() => import('../../pages/Audit'));
-const FinanceHub = React.lazy(() => import('../../pages/finance/FinanceHub'));
-const OfficePage = React.lazy(() => import('../../pages/office/OfficePage'));
-const WorkPage = React.lazy(() => import('../../pages/work/WorkPage'));
-const VehicleBookingLayout = React.lazy(() => import('../../pages/booking/VehicleBookingLayout'));
-const CheckIn = React.lazy(() => import('../../pages/hrm/CheckIn'));
-const SiteFund = React.lazy(() => import('../../pages/finance/SiteFund'));
-const EmployeeDirectory = React.lazy(() => import('../../pages/ep/EmployeeDirectory'));
-const WorkflowInstances = React.lazy(() => import('../../pages/wf/WorkflowInstances'));
-const WorkflowInstanceDetail = React.lazy(() => import('../../pages/wf/WorkflowInstanceDetail'));
-
-/** Trang nhúng được + dữ liệu module App nạp sẵn theo đường dẫn (giống App.tsx khi mở màn đó).
- *  workflow = nạp danh mục mẫu / bước Quy trình như App làm khi mở /wf. */
-const EMBED_ROUTES: { path: string; Page: React.ComponentType; data: AppModule[]; workflow?: boolean }[] = [
-  { path: '/hrm/leave', Page: LeaveManagement, data: ['hrm'] },
-  { path: '/hrm/attendance', Page: Attendance, data: ['hrm'] },
-  { path: '/hrm/timesheet', Page: TimesheetClose, data: ['hrm'] },
-  { path: '/hrm/employees', Page: Employees, data: ['hrm'] },
-  { path: '/da', Page: ProjectDashboard, data: ['da', 'admin', 'hrm'] },
-  { path: '/requests', Page: RequestWorkflow, data: ['wms'] },
-  { path: '/operations', Page: Operations, data: ['wms'] },
-  { path: '/audit', Page: Audit, data: ['wms'] },
-  { path: '/finance', Page: FinanceHub, data: [] },
-  { path: '/finance/:section', Page: FinanceHub, data: [] },
-  { path: '/office/*', Page: OfficePage, data: [] },
-  { path: '/work/tasks/:taskCode', Page: WorkPage, data: [] },
-  { path: '/booking/vehicle/*', Page: VehicleBookingLayout, data: [] },
-  { path: '/hrm/checkin', Page: CheckIn, data: [] },
-  { path: '/site-fund', Page: SiteFund, data: [] },
-  { path: '/ep', Page: EmployeeDirectory, data: ['hrm'] },
-  { path: '/work/my', Page: WorkPage, data: [] },
-  { path: '/wf', Page: WorkflowInstances, data: ['workflow-people'], workflow: true },
-  { path: '/wf/:instanceId', Page: WorkflowInstanceDetail, data: ['workflow-people'], workflow: true },
-];
-
-const EmbeddedPage: React.FC<{ Page: React.ComponentType; data: AppModule[]; workflow?: boolean }> = ({ Page, data, workflow = false }) => {
-  const { loadModuleData } = useApp();
+// Mọi màn của app mở ngay trong tab (chủ SP 10/10): cùng bảng route với router chính (routes/appPages.tsx), chạy bằng
+// EmbeddedRoute. Tab tự nạp dữ liệu dùng chung theo màn (embedDataModules) và kiểm quyền vào màn như router chính;
+// dữ liệu nghiệp vụ vẫn qua cùng RPC nên máy chủ vẫn chặn đúng.
+const EmbedGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loadModuleData } = useApp();
   const { refreshData: refreshWorkflowData } = useWorkflow();
-  const key = data.join(',');
+  const { pathname } = useLocation();
+  const { modules, workflow } = embedDataModules(pathname);
+  const key = modules.join(',');
   useEffect(() => {
     key.split(',').filter(Boolean).forEach(module => {
       loadModuleData(module as AppModule).catch(error => console.warn('Center embed data failed:', error));
@@ -105,14 +71,18 @@ const EmbeddedPage: React.FC<{ Page: React.ComponentType; data: AppModule[]; wor
   useEffect(() => {
     if (workflow) refreshWorkflowData().catch(error => console.warn('Center embed workflow data failed:', error));
   }, [workflow, refreshWorkflowData]);
-  return <Page />;
+  if (!canAccessRoute(user, pathname)) {
+    return <div className="p-4"><StateBox kind="denied" title="Bạn chưa có quyền vào màn này" message="Nhờ quản trị cấp quyền module tương ứng." /></div>;
+  }
+  return <>{children}</>;
 };
 
-const EMBED_ELEMENTS = EMBED_ROUTES.map(({ path, Page, data, workflow }) => ({ path, element: <EmbeddedPage Page={Page} data={data} workflow={workflow} /> }));
+const EMBED_ROUTES = appPageRoutes(true);
+const parseState = (raw: string | undefined): unknown => { if (!raw) return undefined; try { return JSON.parse(raw); } catch { return undefined; } };
 
 export const RendererHost: React.FC<{ renderer: RendererId; props: Record<string, string>; onExit?: (path: string) => void }> = ({ renderer, props, onExit }) => {
   switch (renderer) {
-    case 'route': return <RouteRenderer path={props.path} routes={EMBED_ELEMENTS} onExit={onExit} />;
+    case 'route': return <RouteRenderer path={props.path} state={parseState(props.state)} routes={EMBED_ROUTES} gate={EmbedGate} onExit={onExit} />;
     case 'request': return <RequestRenderer requestId={props.requestId} />;
     case 'procurement': return <ProcurementRenderer initialOrderId={props.initialOrderId} initialHotPurchaseId={props.initialHotPurchaseId} initialMode={props.initialMode} />;
     case 'finance': return <FinanceRenderer initialSection={props.initialSection} initialRequestId={props.initialRequestId} />;

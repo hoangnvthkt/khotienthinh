@@ -88,20 +88,46 @@ export interface DashMaterialItem {
   purchased: number;
 }
 
-export interface DashNeed {
-  /** Một dòng của đề xuất (requestId:số dòng). */
-  id: string;
-  requestId: string;
-  code: string;
-  title: string;
-  /** buy = cần mua (Mua hàng); issue = cấp từ kho. */
-  kind: 'buy' | 'issue';
-  material: string;
-  unit: string;
-  qty: number;
-  neededDate: string | null;
+/** Một vật tư của một dự án trên bảng tồn / nhập / xuất. key = mã danh mục (items.id) hoặc "name:…" khi dự toán chưa gắn danh mục. */
+export interface DashStockItem {
   projectId: string;
+  key: string;
+  /** null = chỉ có trong dự toán, chưa gắn danh mục (không có giao dịch kho). */
+  itemId: string | null;
+  name: string;
+  code: string | null;
+  unit: string;
+  /** Tổng khối lượng BOQ (dự toán vật tư); null = vật tư không có trong dự toán. */
+  boq: number | null;
+  /** Đơn mua đã đặt chưa giao; đợt giao chưa nhận xong (đơn vị kho). */
+  ordered: number;
+  transit: number;
+  /** Nhập kho (không gồm hàng công trường trả về); xuất kho (không gồm trả NCC); trả nhà cung cấp; tồn theo sổ kho. */
+  imported: number;
+  exported: number;
+  returned: number;
+  stock: number;
 }
+
+/** Một chứng từ tạo nên số trên bảng tồn / nhập / xuất (dòng sổ kho, dòng đơn mua, dòng đợt giao, phiếu trả NCC). */
+export interface DashMove {
+  id: string;
+  date: string | null;
+  code: string;
+  /** Loại nghiệp vụ / trạng thái (mã gốc, giao diện đổi sang chữ). */
+  event: string | null;
+  partner: string | null;
+  warehouse: string | null;
+  projectId: string;
+  projectCode: string;
+  qty: number;
+  unit: string | null;
+  /** Phiếu kho (mở Phiếu kho) hoặc đơn mua (mở Mua hàng). */
+  transactionId: string | null;
+  poId: string | null;
+  expected: string | null;
+}
+export type DashMoveKind = 'ordered' | 'transit' | 'in' | 'out' | 'return' | 'ledger';
 
 export interface DashboardDataset {
   generatedAt: string;
@@ -112,5 +138,5 @@ export interface DashboardDataset {
   projects: DashProject[];
   months: DashMonth[];
   materialItems: DashMaterialItem[];
-  needs: DashNeed[];
+  stockItems: DashStockItem[];
 }

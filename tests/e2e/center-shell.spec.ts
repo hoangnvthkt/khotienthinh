@@ -50,8 +50,12 @@ const expectToday = async (page: Page) => {
   const locked = page.getByRole("button", { name: "Mở Mua hàng" });
   await expect(locked).toBeDisabled();
   await expect(locked).toHaveAttribute("title", "Bạn chưa có quyền vào module này");
+  // Mở màn module (↗) cũng thành tab mới, không rời Center (chủ SP 10/10).
   await page.getByRole("button", { name: "Mở Dự án" }).click();
-  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "/da?projectId=smb");
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dự án" })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb"}');
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "");
+  await page.getByRole("button", { name: "Đóng Dự án" }).click();
 };
 
 const inboxOf = (page: Page) => page.getByRole("complementary", { name: "Việc của tôi" });
@@ -249,7 +253,7 @@ test("desktop: customise widgets — reorder, hide, restore, saved for the accou
   // Mặc định theo quyền: thuộc dự án, không phải kế toán / Mua hàng → Dự án trước.
   expect(await order()).toEqual(["project", "hrm", "work", "office", "supply", "finance"]);
 
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await expect(grid).toHaveAttribute("data-editing", "true");
   // Đang tùy chỉnh thì bấm ô không bung thư mục.
   await grid.locator('[data-widget="hrm"] .vcc-whead h3').click();
@@ -271,7 +275,7 @@ test("desktop: customise widgets — reorder, hide, restore, saved for the accou
   expect(await order()).toEqual(["hrm", "project", "work", "supply", "finance"]);
 
   // Thêm lại ô đã ẩn và về mặc định.
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await page.getByLabel("Ô đã ẩn").getByRole("button", { name: /Hành chính/ }).click();
   await expect(grid.locator("[data-widget]")).toHaveCount(6);
   await page.getByRole("button", { name: "Về mặc định" }).click();
@@ -283,7 +287,7 @@ test("desktop: customise widgets — reorder, hide, restore, saved for the accou
 test("desktop: customise is locked without the layout permission", async ({ page }, info) => {
   test.skip(info.project.name !== "desktop");
   await page.goto(`${base}?layout=locked`);
-  const button = page.getByRole("button", { name: "Tùy chỉnh" });
+  const button = page.getByRole("button", { name: "Tùy chỉnh ô" });
   await expect(button).toBeDisabled();
   await expect(button).toHaveAttribute("title", /Tùy chỉnh bố cục của tôi/);
 });
@@ -294,7 +298,7 @@ test("desktop: no project / today error", async ({ page }, info) => {
   // Không thuộc dự án → mặc định chỉ Nhân sự, Công việc, Hành chính; ô theo dự án vào "Ô đã ẩn".
   await expect(page.locator(".vcc-grid [data-widget]")).toHaveCount(3);
   await expect(page.getByText("2 ô đang ẩn ·")).toBeVisible();
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await page.getByLabel("Ô đã ẩn").getByRole("button", { name: /Dự án/ }).click();
   await expect(page.getByText("Bạn chưa thuộc dự án nào.")).toBeVisible();
   await page.getByRole("button", { name: "Xong" }).click();
@@ -441,7 +445,7 @@ test("desktop: choose which quick actions show on a card (max 4), saved for the 
   await page.reload();
   await expect(tiles(page, "hrm")).toHaveText(["Xin nghỉ phép", "Bảng công của tôi", "Chấm công", "Xem thêm"]);
   // Đổi thứ tự ô sau đó vẫn giữ nút đã chọn.
-  await page.getByRole("button", { name: "Tùy chỉnh" }).click();
+  await page.getByRole("button", { name: "Tùy chỉnh ô" }).click();
   await page.getByRole("button", { name: "Đưa Nhân sự lên trước" }).click();
   await page.getByRole("button", { name: "Xong" }).click();
   await expect(page.getByText("Đã lưu bố cục")).toBeVisible();
@@ -701,4 +705,70 @@ test("dashboards say 'no data yet' instead of zero, and flag estimated stock val
   await boards.getByRole("tab", { name: "Vật tư" }).click();
   await expect(page.getByRole("region", { name: "Xu hướng Nhập - Xuất" })).toContainText("ước tính theo đơn giá dự toán");
   await expectCalmPage(page);
+});
+
+// Chủ SP 10/10: bảng tồn – nhập – xuất (10 dòng/trang, bấm số → giao dịch → phiếu), khối Hôm nay (+ thêm màn Bảng điều khiển,
+// xóa Truy cập nhanh), menu avatar (thông tin cá nhân, đăng xuất).
+test("materials board: stock table pages by 10, numbers open their transactions, a transaction opens its document", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  await openDashboards(page);
+  await page.getByRole("tablist", { name: "Chọn bảng điều khiển" }).getByRole("tab", { name: "Vật tư" }).click();
+  await expect(page.getByRole("region", { name: "Nhu cầu mua - cấp vật tư" })).toHaveCount(0);
+  const stock = page.getByRole("region", { name: "Tồn – nhập – xuất vật tư" });
+  await expect(stock.getByRole("columnheader")).toHaveText(["Vật tư", "ĐVT", "Tổng BOQ", "Đã đặt chưa giao", "Đang giao", "Tổng nhập", "Tổng xuất", "Trả lại", "Tồn kho", "Còn lại"]);
+  await expect(stock.locator("tbody tr")).toHaveCount(10);
+  await expect(stock.getByRole("navigation", { name: "Phân trang vật tư" })).toContainText("Trang 1 / 2");
+  await stock.getByRole("button", { name: "Trang sau" }).click();
+  await expect(stock.locator("tbody tr")).toHaveCount(1);
+  await stock.getByRole("searchbox", { name: "Tìm vật tư" }).fill("be tong");
+  const row = stock.locator("tbody tr").filter({ hasText: "Bê tông thương phẩm M300" });
+  await expect(row).toContainText("VT-000087");
+  // Còn lại: xanh khi còn được mua; bấm ra cách tính.
+  await expect(row.locator("td").nth(9)).toHaveAttribute("data-remaining", "left");
+  await row.locator("td").nth(9).getByRole("button").click();
+  await expect(page.getByRole("dialog", { name: /Còn lại · Bê tông thương phẩm M300/ }).locator("tbody tr")).toHaveCount(5);
+  await page.keyboard.press("Escape");
+  // Tổng nhập → phiếu nhập → mở đúng phiếu kho trong tab mới.
+  await row.locator("td").nth(5).getByRole("button").click();
+  const drawer = page.getByRole("dialog", { name: /Nhập kho · Bê tông thương phẩm M300/ });
+  await expect(drawer.locator("tbody tr").first()).toBeVisible();
+  await drawer.locator("tbody tr").first().click();
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  await expect(workTabs.getByRole("tab", { name: /Phiếu kho/ })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText('/operations?tx=tx-');
+  // Đang giao → đợt giao của đơn mua → mở đúng đơn ở Mua hàng.
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await row.locator("td").nth(4).getByRole("button").click();
+  await page.getByRole("dialog", { name: /Đang giao · Bê tông thương phẩm M300/ }).locator("tbody tr").first().click();
+  await expect(workTabs.getByRole("tab", { name: /Mua hàng/ })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText('/procurement?po=po-');
+  await expectCalmPage(page);
+});
+
+test("Today blocks: add a dashboard screen with +, remove quick access, account menu opens profile and signs out", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(`${base}?inbox=empty`);
+  const quick = page.getByRole("region", { name: "Truy cập nhanh" });
+  await expect(quick).toBeVisible();
+  await page.getByRole("button", { name: "Thêm khối" }).click();
+  await page.getByRole("menuitem", { name: /Tiến độ dự án/ }).click();
+  const board = page.getByRole("region", { name: "Tiến độ dự án" });
+  await expect(board.locator("article.vdb-proj")).toHaveCount(8);
+  await page.getByRole("button", { name: "Xóa khối Truy cập nhanh" }).click();
+  await expect(quick).toHaveCount(0);
+  await page.getByRole("button", { name: "Xóa khối Tiến độ dự án" }).click();
+  await expect(page.getByRole("button", { name: "Thêm khối vào Hôm nay" })).toBeVisible();
+  await page.getByRole("button", { name: "Thêm khối vào Hôm nay" }).click();
+  await page.getByRole("menuitem", { name: /Truy cập nhanh/ }).click();
+  await expect(page.getByRole("region", { name: "Truy cập nhanh" })).toBeVisible();
+  await expectCalmPage(page);
+
+  await page.locator(".vcc-top").getByRole("button", { name: /Tài khoản/ }).click();
+  const menu = page.getByRole("menu", { name: "Tài khoản" });
+  await expect(menu.getByRole("menuitem")).toHaveText(["Thông tin cá nhân", "Phiếu lương của tôi", "Đăng xuất"]);
+  await menu.getByRole("menuitem", { name: "Thông tin cá nhân" }).click();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: /Hồ sơ của tôi/ })).toHaveAttribute("aria-selected", "true");
+  await page.locator(".vcc-top").getByRole("button", { name: /Tài khoản/ }).click();
+  await page.getByRole("menuitem", { name: "Đăng xuất" }).click();
+  await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "logout");
 });

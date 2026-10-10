@@ -357,7 +357,7 @@ const FeedbackHub: React.FC = () => {
   const activeFeedbackId = searchParams.get('feedbackId') || '';
 
   return (
-    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5 p-1">
+    <div className="flex w-full flex-col gap-5 p-1">
       <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-gradient-to-r from-blue-600/5 via-indigo-600/0 to-transparent p-4 rounded-3xl border border-blue-500/10 dark:border-blue-500/5 bg-white/40 dark:bg-slate-900/10 backdrop-blur-sm shadow-sm">
         <div>
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400">

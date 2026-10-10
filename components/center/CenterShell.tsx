@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Inbox, LayoutDashboard, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun } from 'lucide-react';
+import { Inbox, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Sparkles, Sun, UserRound, Wallet } from 'lucide-react';
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
 import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
@@ -13,12 +13,15 @@ import { displayCode, type WorkItem } from '../../lib/center/workItemsService';
 import { useBackLayers, useNarrowViewport } from '../../lib/center/useBackLayers';
 import { fetchCenterToday, type CenterToday } from '../../lib/center/centerTodayService';
 import {
-  defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget, withPinnedActions,
-  type CenterLayout, type CenterLayoutRecord,
+  blocksOf, defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget,
+  withBlocks, withPinnedActions, type CenterLayout, type CenterLayoutRecord, type TodayBlockId,
 } from '../../lib/center/centerLayout';
 import type { DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
 import { routeTitle } from '../../lib/dashboard/dashboardModel';
+import { registerCenterOpener } from '../../lib/center/centerOpen';
+import AvatarMenu from './AvatarMenu';
 import type { DashboardState } from '../dashboard/DashboardView';
+import type { LoadMaterialMoves } from '../dashboard/StockTable';
 import './center.css';
 
 type MobilePane = 'inbox' | 'today' | 'assistant';
@@ -35,6 +38,7 @@ const clampWidth = (value: number) => Math.min(INBOX_MAX, Math.max(INBOX_MIN, va
 
 const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: false };
 const DASHBOARD_TAB: CenterWorkTab = { id: 'dashboard', title: 'Bảng điều khiển', closable: false };
+const ALL_BOARDS: DashboardId[] = ['portfolio', 'cashflow', 'materials', 'debt'];
 const LazyDashboard = React.lazy(() => import('../dashboard/DashboardView'));
 
 interface OpenTab extends CenterWorkTab { item: WorkItem | null; module: CenterModuleKey; target: ItemDrillTarget }
@@ -91,6 +95,12 @@ export interface CenterShellProps {
   loadDashboard?: LoadDashboard;
   /** Kiểm có bảng nào không trước khi hiện tab; không truyền = có loadDashboard là hiện tab. */
   loadDashboardAccess?: LoadDashboardAccess;
+  /** Giao dịch kho của một vật tư (bảng tồn / nhập / xuất của Bảng điều khiển). */
+  loadMaterialMoves?: LoadMaterialMoves;
+  /** Tên tab của một màn (nhãn chức năng trên thanh bên); không có thì đặt theo màn. */
+  titleForRoute?: (route: string) => string | null;
+  /** Đăng xuất (menu avatar). */
+  onLogout?: () => void;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -102,7 +112,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now: nowProp,
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
-  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, titleForRoute, onLogout,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
@@ -210,20 +220,28 @@ const CenterShell: React.FC<CenterShellProps> = ({
 
   // Bảng điều khiển: tab chỉ hiện khi người dùng có bảng; số liệu tải khi mở tab lần đầu (không làm chậm lúc vào Center),
   // không realtime — "Cập nhật" mới lấy số mới, trong lúc đó vẫn hiện số cũ.
-  const [hasDashboards, setHasDashboards] = useState(!!loadDashboard && !loadDashboardAccess);
+  // null = chưa biết (đang kiểm); không có hàm kiểm thì coi như đủ 4 bảng (máy chủ vẫn chỉ trả bảng được xem).
+  const [dashboardAccess, setDashboardAccess] = useState<DashboardId[] | null>(loadDashboard && !loadDashboardAccess ? ALL_BOARDS : null);
   useEffect(() => {
     if (!loadDashboard || !loadDashboardAccess) return undefined;
     let alive = true;
     loadDashboardAccess()
-      .then(access => { if (alive) setHasDashboards(access.length > 0); })
-      .catch(error => console.warn('Dashboard access check failed:', error));
+      .then(access => { if (alive) setDashboardAccess(access); })
+      .catch(error => { console.warn('Dashboard access check failed:', error); if (alive) setDashboardAccess([]); });
     return () => { alive = false; };
   }, [loadDashboard, loadDashboardAccess]);
+  const hasDashboards = !!dashboardAccess && dashboardAccess.length > 0;
+  // Khối trên "Hôm nay" (chủ SP 10/10): Truy cập nhanh + màn của Bảng điều khiển người dùng tự thêm.
+  const savedBlocks = typeof layoutRecord === 'object' ? blocksOf(layoutRecord.layout) : null;
+  const todayBlocks = (savedBlocks || []).filter(id => id === 'quick' || (dashboardAccess || []).includes(id.slice(6) as DashboardId));
+  const boardOnToday = todayBlocks.some(id => id !== 'quick');
   const [dashboard, setDashboard] = useState<DashboardState | null>(null);
   const [dashboardAttempt, setDashboardAttempt] = useState(0);
   const [dashboardBusy, setDashboardBusy] = useState(false);
   const [dashboardNote, setDashboardNote] = useState<string | null>(null);
-  const dashboardWanted = activeTab === DASHBOARD_TAB.id || dashboard !== null;
+  // Bấm "Mở" trên khối bảng ở Hôm nay → tab Bảng điều khiển mở đúng bảng đó.
+  const [dashboardFocus, setDashboardFocus] = useState<{ board: DashboardId; nonce: number } | null>(null);
+  const dashboardWanted = activeTab === DASHBOARD_TAB.id || dashboard !== null || boardOnToday;
   useEffect(() => {
     if (!loadDashboard || !dashboardWanted) return undefined;
     let alive = true;
@@ -249,14 +267,25 @@ const CenterShell: React.FC<CenterShellProps> = ({
     openTab({ id: workItemKey(item), title: displayCode(item), closable: true, item, module: item.module, target: resolveDrillTarget(item) });
   }, [openTab]);
 
-  // Đích từ widget: route → sang module; tab → mở view nhúng; inbox → về cột việc.
+  // Mở một màn của app thành tab mới cạnh "Hôm nay" (chủ SP 10/10: mở gì cũng ra tab — nút trên Hôm nay, thanh bên, tìm kiếm,
+  // Bảng điều khiển, menu avatar). Cùng màn + cùng trạng thái thì chuyển sang tab đang mở. Chỉ trang chủ / chính Center mới rời trang.
+  const openRoute = useCallback((route: string, title?: string, state?: unknown) => {
+    if (!isEmbeddableRoute(route)) { onNavigate(route); return; }
+    const name = title || titleForRoute?.(route) || routeTitle(route);
+    const stateJson = state === undefined || state === null ? null : JSON.stringify(state);
+    openTab({ id: `route:${route}${stateJson ? `#${stateJson}` : ''}`, title: name, closable: true, item: null, module: moduleForRoute(route),
+      target: { kind: 'tab', renderer: 'route', props: stateJson ? { path: route, state: stateJson } : { path: route }, title: name, route } });
+  }, [onNavigate, openTab, titleForRoute]);
+  useEffect(() => registerCenterOpener(request => openRoute(request.route, request.title, request.state)), [openRoute]);
+
+  // Đích từ widget: route → tab màn đó; tab → mở view nhúng; inbox → về cột việc.
   const onDrill = useCallback((target: DrillTarget) => {
-    if (target.kind === 'route') { onNavigate(target.path); return; }
+    if (target.kind === 'route') { openRoute(target.path, target.title); return; }
     if (target.kind === 'inbox') { setInboxHidden(false); writeStorage(INBOX_HIDDEN_KEY, 'false'); setMobilePane('inbox'); return; }
     const module: CenterModuleKey = target.renderer === 'request' ? 'request' : target.renderer === 'finance' ? 'finance'
       : target.renderer === 'site_assignment' ? 'hrm' : 'procurement';
     openTab({ id: `drill:${target.renderer}:${JSON.stringify(target.props)}`, title: target.title, closable: true, item: null, module, target });
-  }, [onNavigate, openTab]);
+  }, [openRoute, openTab]);
 
   const closeTab = (id: string) => {
     const index = openTabs.findIndex(tab => tab.id === id);
@@ -286,7 +315,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
     if (sameLayout(draft, baseLayout)) { setDraft(null); setLayoutStatus('idle'); return; }
     // Về đúng mặc định → lưu bố cục rỗng để sau này mặc định theo quyền vẫn tự cập nhật.
     const backToDefault = sameLayout(draft, defaultCenterLayout(actionFlags, todayData));
-    const toSave: CenterLayout = backToDefault ? { widgets: { order: [], hidden: [] }, ...(draft.pinned ? { pinned: draft.pinned } : {}) } : draft;
+    const toSave: CenterLayout = backToDefault
+      ? { widgets: { order: [], hidden: [] }, ...(draft.pinned ? { pinned: draft.pinned } : {}), ...(draft.blocks ? { blocks: draft.blocks } : {}) } : draft;
     setLayoutStatus('saving');
     saveLayout(toSave).then(version => {
       setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: toSave, version } : current));
@@ -299,6 +329,22 @@ const CenterShell: React.FC<CenterShellProps> = ({
     const next = withPinnedActions(savedLayout, id, keys);
     return saveLayout(next).then(version => {
       setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: next, version } : current));
+    });
+  }, [savedLayout, saveLayout]);
+  // Khối "Hôm nay": thêm / xóa / đổi thứ tự lưu ngay (như chọn nút nhanh), lỗi thì trả lại như cũ.
+  const [blockStatus, setBlockStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const saveBlocks = useCallback((next: TodayBlockId[]) => {
+    const previous = savedLayout;
+    const layout = withBlocks(savedLayout, next);
+    setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout } : current));
+    setBlockStatus('saving');
+    saveLayout(layout).then(version => {
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, version } : current));
+      setBlockStatus('idle');
+    }).catch(error => {
+      console.warn('Center blocks save failed:', error);
+      setLayoutRecord(current => (typeof current === 'object' ? { ...current, layout: previous } : current));
+      setBlockStatus('error');
     });
   }, [savedLayout, saveLayout]);
   const customize: TodayCustomize = {
@@ -325,20 +371,10 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const onAction = useCallback((action: WidgetAction) => {
     const target = action.target;
     if (target.kind === 'modal') { setModal(target.modal); return; }
-    if (target.kind === 'route' && isEmbeddableRoute(target.path)) {
-      openTab({ id: `route:${target.path}`, title: target.title, closable: true, item: null, module: moduleForRoute(target.path),
-        target: { kind: 'tab', renderer: 'route', props: { path: target.path }, title: target.title, route: target.path } });
-      return;
-    }
     onDrill(target);
-  }, [onDrill, openTab]);
-  // Bấm sang từ Bảng điều khiển: màn chạy được trong tab → mở tab cạnh bảng; không thì chuyển hẳn sang module.
-  const openDashboardRoute = useCallback((route: string) => {
-    if (!isEmbeddableRoute(route)) { onNavigate(route); return; }
-    const title = routeTitle(route);
-    openTab({ id: `route:${route}`, title, closable: true, item: null, module: moduleForRoute(route),
-      target: { kind: 'tab', renderer: 'route', props: { path: route }, title, route } });
-  }, [onNavigate, openTab]);
+  }, [onDrill]);
+  // Bấm sang từ Bảng điều khiển: mở màn gốc thành tab cạnh bảng.
+  const openDashboardRoute = useCallback((route: string) => openRoute(route), [openRoute]);
   const onModalDone = useCallback(() => { setInboxRefresh(value => value + 1); setTodayAttempt(value => value + 1); }, []);
 
   // Khôi phục khi đổi tab và khi điện thoại quay lại vùng làm việc.
@@ -409,9 +445,13 @@ const CenterShell: React.FC<CenterShellProps> = ({
             <div className="vcc-who vcc-ellipsis max-w-[200px]">{person.fullName}</div>
             {person.title && <div className="text-xs vcc-muted vcc-ellipsis max-w-[200px]">{person.title}</div>}
           </div>
-          <div className="vcc-avatar" title={person.fullName}>
+          <AvatarMenu name={person.fullName} subtitle={person.title} buttonClassName="vcc-avatar" items={[
+            { key: 'profile', label: 'Thông tin cá nhân', icon: UserRound, onSelect: () => openRoute('/my-profile', 'Hồ sơ của tôi') },
+            ...(canOpenRoute('/my-payroll') ? [{ key: 'payroll', label: 'Phiếu lương của tôi', icon: Wallet, onSelect: () => openRoute('/my-payroll', 'Phiếu lương') }] : []),
+            ...(onLogout ? [{ key: 'logout', label: 'Đăng xuất', icon: LogOut, onSelect: onLogout, danger: true }] : []),
+          ]}>
             {person.avatar ? <img src={person.avatar} alt="" /> : personInitials(person.fullName)}
-          </div>
+          </AvatarMenu>
         </div>
       </header>
 
@@ -444,7 +484,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
               person={person}
               now={now}
               canOpenRoute={canOpenRoute}
-              onNavigate={onNavigate}
+              onNavigate={openRoute}
               onAction={onAction}
               onOpenFolder={onOpenFolder}
               actionsFor={actionsFor}
@@ -453,14 +493,27 @@ const CenterShell: React.FC<CenterShellProps> = ({
               onSelectProject={selectProject}
               customize={customize}
               onRetry={() => setTodayAttempt(value => value + 1)}
+              blocks={{
+                ids: savedBlocks ? todayBlocks : null,
+                available: ['quick', ...(dashboardAccess || []).map(board => `board:${board}` as TodayBlockId)],
+                status: blockStatus,
+                onChange: saveBlocks,
+                onOpenDashboard: hasDashboards ? board => { setDashboardFocus({ board, nonce: Date.now() }); setActiveTab(DASHBOARD_TAB.id); } : undefined,
+                renderBoard: board => (dashboard ? (
+                  <React.Suspense fallback={null}>
+                    <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves}
+                      onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} only={board} />
+                  </React.Suspense>
+                ) : null),
+              }}
             />
           </div>
           {/* Chưa mở tab lần nào thì không dựng ngăn (giống tab hồ sơ). */}
           {loadDashboard && hasDashboards && dashboard && (
             <div {...panelProps(DASHBOARD_TAB.id)}>
               <React.Suspense fallback={null}>
-                <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote}
-                  onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} />
+                <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves}
+                  onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} focus={dashboardFocus} />
               </React.Suspense>
             </div>
           )}

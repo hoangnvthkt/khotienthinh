@@ -293,7 +293,8 @@
     "20261009200000_revoke_dead_system_grants.sql",
     "20261010090000_procurement_same_item_multi_spec.sql",
     "20261010110000_global_search_v1.sql",
-    "20261010120000_center_dashboard_v1.sql"
+    "20261010120000_center_dashboard_v1.sql",
+    "20261010130000_center_dashboard_stock.sql"
   ],
   "forbidIncludeAll": true
 }

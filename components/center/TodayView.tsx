@@ -1,9 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowDown, ArrowUp, ArrowUpRight, BarChart3, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, Car, ClipboardCheck, ClipboardList,
   EyeOff, MoreHorizontal, FileBarChart, FileText, Flame, GitBranch, IdCard, Inbox, LineChart, ListChecks, Lock, Mail, MapPin, NotebookPen, Package, PackageCheck,
-  Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet,
+  LayoutGrid, Plus, Receipt, RotateCcw, ShoppingCart, Truck, Users, Wallet, X,
 } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import { CENTER_WIDGET_GROUPS, type CenterWidgetId } from '../../lib/center/centerRegistry';
@@ -12,7 +12,9 @@ import type { WidgetAction } from '../../lib/center/centerActions';
 import { buildTodayWidgets, type WidgetView } from '../../lib/center/todayWidgets';
 import MonthCalendar from './MonthCalendar';
 import CenterSearchBox from './CenterSearchBox';
-import { applyCenterLayout, pinnedActionsOf, type CenterLayout } from '../../lib/center/centerLayout';
+import { applyCenterLayout, pinnedActionsOf, type CenterLayout, type TodayBlockId } from '../../lib/center/centerLayout';
+import { DASHBOARD_META } from '../../lib/dashboard/dashboardModel';
+import type { DashboardId } from '../../lib/dashboard/dashboardTypes';
 
 /** Tùy chỉnh ô (mockup v1.1: "Tùy chỉnh" → ↑ ↓ ✕ trên từng ô, "Ô đã ẩn" để thêm lại, "Xong"). */
 export interface TodayCustomize {
@@ -220,6 +222,105 @@ const WidgetCard: React.FC<{
   );
 };
 
+/** Khối của Hôm nay: Truy cập nhanh hoặc một màn của Bảng điều khiển. Đầu khối: tên, công cụ riêng, ↑ ↓, xóa khối. */
+const BLOCK_META: Record<TodayBlockId, { title: string; hint: string; icon: LucideIcon }> = {
+  quick: { title: 'Truy cập nhanh', hint: 'Các ô thao tác theo module: lập phiếu, mở màn hay dùng', icon: LayoutGrid },
+  'board:portfolio': { title: DASHBOARD_META.portfolio.short, hint: DASHBOARD_META.portfolio.hint, icon: BarChart3 },
+  'board:cashflow': { title: DASHBOARD_META.cashflow.short, hint: DASHBOARD_META.cashflow.hint, icon: LineChart },
+  'board:materials': { title: DASHBOARD_META.materials.short, hint: DASHBOARD_META.materials.hint, icon: Package },
+  'board:debt': { title: DASHBOARD_META.debt.short, hint: DASHBOARD_META.debt.hint, icon: Wallet },
+};
+
+const TodayBlock: React.FC<{
+  id: TodayBlockId;
+  first: boolean;
+  last: boolean;
+  canManage: boolean;
+  onMove: (direction: -1 | 1) => void;
+  onRemove: () => void;
+  onOpenDashboard?: () => void;
+  tools?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ id, first, last, canManage, onMove, onRemove, onOpenDashboard, tools, children }) => {
+  const meta = BLOCK_META[id];
+  const Icon = meta.icon;
+  return (
+    <section className="vcc-block" aria-label={meta.title} data-block={id}>
+      <header className="vcc-block-head">
+        <span className="vcc-block-icon"><Icon size={14} /></span>
+        <h2 className="vcc-block-title">{meta.title}</h2>
+        <div className="vcc-block-tools">
+          {tools}
+          {onOpenDashboard && (
+            <button type="button" className="vcc-link" onClick={onOpenDashboard}>Mở Bảng điều khiển <ArrowUpRight size={12} /></button>
+          )}
+          {canManage && (
+            <span className="vcc-block-acts">
+              {!(first && last) && (
+                <>
+                  <button type="button" onClick={() => onMove(-1)} disabled={first} aria-label={`Đưa ${meta.title} lên trên`} title="Lên trên"><ArrowUp size={13} /></button>
+                  <button type="button" onClick={() => onMove(1)} disabled={last} aria-label={`Đưa ${meta.title} xuống dưới`} title="Xuống dưới"><ArrowDown size={13} /></button>
+                </>
+              )}
+              <button type="button" onClick={onRemove} aria-label={`Xóa khối ${meta.title}`} title="Xóa khối (thêm lại bằng nút +)"><X size={13} /></button>
+            </span>
+          )}
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+};
+
+/** Nút "+": thêm Truy cập nhanh hoặc màn của Bảng điều khiển (theo quyền) vào Hôm nay. */
+const AddBlock: React.FC<{ options: TodayBlockId[]; onAdd: (id: TodayBlockId) => void; canManage: boolean; lockReason?: string; empty: boolean }> = ({ options, onAdd, canManage, lockReason, empty }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+  if (options.length === 0 && !empty) return null;
+  return (
+    <div className="vcc-addblock" ref={ref} data-empty={empty || undefined}>
+      <button type="button" className="vcc-addtile" onClick={() => setOpen(value => !value)} disabled={!canManage || options.length === 0}
+        aria-haspopup="menu" aria-expanded={open} title={canManage ? 'Thêm khối vào Hôm nay' : lockReason}>
+        <Plus size={20} /> {empty ? 'Thêm khối vào Hôm nay' : 'Thêm khối'}
+      </button>
+      {empty && <p className="m-0 mt-2 text-center text-xs vcc-muted">Truy cập nhanh hoặc màn của Bảng điều khiển.</p>}
+      {open && (
+        <div className="vcc-addmenu" role="menu" aria-label="Chọn khối để thêm">
+          {options.map(id => {
+            const meta = BLOCK_META[id];
+            const Icon = meta.icon;
+            return (
+              <button key={id} type="button" role="menuitem" onClick={() => { setOpen(false); onAdd(id); }}>
+                <span className="vcc-block-icon"><Icon size={14} /></span>
+                <span className="min-w-0"><b className="block">{meta.title}</b><span className="block text-xs vcc-muted">{meta.hint}</span></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export interface TodayBlocks {
+  /** null = đang tải bố cục. */
+  ids: TodayBlockId[] | null;
+  /** Khối người dùng thêm được (Truy cập nhanh + bảng được xem). */
+  available: TodayBlockId[];
+  status: 'idle' | 'saving' | 'error';
+  onChange: (ids: TodayBlockId[]) => void;
+  onOpenDashboard?: (board: DashboardId) => void;
+  renderBoard: (board: DashboardId) => React.ReactNode;
+}
+
 const TodayView: React.FC<{
   person: CenterPerson;
   now: Date;
@@ -233,25 +334,16 @@ const TodayView: React.FC<{
   onSelectProject: (projectId: string) => void;
   onRetry: () => void;
   customize: TodayCustomize;
-}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, mineCount, onSelectProject, onRetry, customize }) => {
+  blocks: TodayBlocks;
+}> = ({ person, now, canOpenRoute, onNavigate, onAction, onOpenFolder, actionsFor, today, mineCount, onSelectProject, onRetry, customize, blocks }) => {
   const data = today.status === 'ready' ? today.data : null;
   const ctx = { now, mineCount };
   const { visible: views, hidden: hiddenViews } = applyCenterLayout(data ? buildTodayWidgets(data, ctx) : [], customize.layout);
   const editing = customize.editing;
 
-  return (
-    <div className="vcc-page">
-      {/* Đầu trang: lời chào · Tìm kiếm toàn hệ thống (giữa) · lịch tháng (chủ SP 09/10) */}
-      <div className="vcc-hero">
-        <h1 className="vcc-hero-hi m-0 text-[22px] font-semibold leading-tight"><Greeting person={person} /></h1>
-        <div className="vcc-hero-search"><CenterSearchBox /></div>
-        <div className="vcc-hero-cal"><MonthCalendar now={now} /></div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs vcc-muted">
-        {editing && (
-          <span className="flex min-w-0 flex-1 items-center gap-2"><CalendarDays size={13} />Dùng ↑ ↓ để đổi thứ tự, mắt gạch để ẩn ô. Bấm "Xong" để lưu cho tài khoản của bạn.</span>
-        )}
+  const quickTools = (
+    <>
+      <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs vcc-muted">
         {!editing && hiddenViews.length > 0 && <span>{hiddenViews.length} ô đang ẩn ·</span>}
         {customize.status === 'saving' && <span role="status">Đang lưu bố cục…</span>}
         {customize.status === 'saved' && !editing && <span role="status">Đã lưu bố cục</span>}
@@ -267,10 +359,16 @@ const TodayView: React.FC<{
           title={!editing && !customize.canManage ? customize.lockReason : undefined}
           aria-pressed={editing}
         >
-          {!editing && !customize.canManage && <Lock size={11} />}{editing ? 'Xong' : 'Tùy chỉnh'}
+          {!editing && !customize.canManage && <Lock size={11} />}{editing ? 'Xong' : 'Tùy chỉnh ô'}
         </button>
-      </div>
-
+      </span>
+    </>
+  );
+  const quickBody = (
+    <>
+      {editing && (
+        <p className="m-0 mt-1 flex items-center gap-2 text-xs vcc-muted"><CalendarDays size={13} />Dùng ↑ ↓ để đổi thứ tự, mắt gạch để ẩn ô. Bấm "Xong" để lưu cho tài khoản của bạn.</p>
+      )}
       {today.status === 'error' && (
         <div className="mt-3"><StateBox kind="error" title="Chưa đọc được số liệu hôm nay" message={today.message} onRetry={onRetry} /></div>
       )}
@@ -326,8 +424,44 @@ const TodayView: React.FC<{
         </div>
       )}
       {data && views.length === 0 && !editing && (
-        <div className="mt-3"><StateBox kind="empty" title="Bạn đã ẩn hết các ô" message='Bấm "Tùy chỉnh" để thêm lại ô cần xem.' /></div>
+        <button type="button" className="vcc-addtile mt-3" onClick={customize.onToggle} disabled={!customize.canManage}
+          title={customize.canManage ? 'Thêm lại ô thao tác' : customize.lockReason}>
+          <Plus size={20} /> Thêm ô thao tác
+        </button>
       )}
+    </>
+  );
+
+  return (
+    <div className="vcc-page">
+      {/* Đầu trang: lời chào · Tìm kiếm toàn hệ thống (giữa) · lịch tháng (chủ SP 09/10) */}
+      <div className="vcc-hero">
+        <h1 className="vcc-hero-hi m-0 text-[22px] font-semibold leading-tight"><Greeting person={person} /></h1>
+        <div className="vcc-hero-search"><CenterSearchBox /></div>
+        <div className="vcc-hero-cal"><MonthCalendar now={now} /></div>
+      </div>
+
+      {blocks.ids === null && <p className="mt-4 text-xs vcc-muted" role="status">Đang tải bố cục…</p>}
+      {(blocks.ids || []).map((id, index, ids) => (
+        <TodayBlock key={id} id={id} first={index === 0} last={index === ids.length - 1} canManage={customize.canManage}
+          onMove={direction => {
+            const next = [...ids];
+            const target = index + direction;
+            [next[index], next[target]] = [next[target], next[index]];
+            blocks.onChange(next);
+          }}
+          onRemove={() => blocks.onChange(ids.filter(item => item !== id))}
+          onOpenDashboard={id === 'quick' || !blocks.onOpenDashboard ? undefined : () => blocks.onOpenDashboard!(id.slice(6) as DashboardId)}
+          tools={id === 'quick' ? quickTools : undefined}>
+          {id === 'quick' ? quickBody : (blocks.renderBoard(id.slice(6) as DashboardId) || <p className="m-0 py-8 text-center text-sm vcc-muted" role="status">Đang tổng hợp số liệu…</p>)}
+        </TodayBlock>
+      ))}
+      {blocks.ids && (
+        <AddBlock options={blocks.available.filter(id => !blocks.ids!.includes(id))} onAdd={id => blocks.onChange([...blocks.ids!, id])}
+          canManage={customize.canManage} lockReason={customize.lockReason} empty={blocks.ids.length === 0} />
+      )}
+      {blocks.status === 'saving' && <p className="mt-2 text-xs vcc-muted" role="status">Đang lưu bố cục…</p>}
+      {blocks.status === 'error' && <p className="mt-2 text-xs vcc-danger-text" role="alert">Chưa lưu được bố cục — thử lại sau.</p>}
       {data?.project?.source && data.project.source !== 'selected' && (
         <p className="mt-3 text-xs vcc-muted">
           Dự án {data.project.code} được chọn vì {data.project.source === 'assignment' ? 'bạn đang được điều động tới công trường này'

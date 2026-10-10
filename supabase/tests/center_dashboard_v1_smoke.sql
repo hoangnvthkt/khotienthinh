@@ -1,6 +1,6 @@
 -- Bảng điều khiển Trung tâm v1: get_center_dashboard_v1. Chạy cùng migration trong một giao dịch rollback:
 -- node scripts/run-supabase-cloud-transaction.mjs --expected-ref <ref> \
---   --migration supabase/migrations/20261010120000_center_dashboard_v1.sql \
+--   --migration supabase/migrations/20261010130000_center_dashboard_stock.sql \
 --   --smoke supabase/tests/center_dashboard_v1_smoke.sql
 -- Persona: boss (Admin) · accountant (Tài chính — Xem) · buyer (Mua hàng — Xem) · lead (giám đốc 1 dự án) · nobody (chưa có quyền). Kiểm: quyền gọi, bảng theo vai trò, đủ trường cho giao diện,
 -- tiền không lọt khi không được xem, chi phí = tổng theo nhóm, chạy dưới 8 giây.
@@ -40,13 +40,13 @@ select pg_temp.cdb_as('nobody');
 do $$ declare r jsonb; begin
   r := public.get_center_dashboard_v1();
   perform pg_temp.cdb_assert(r -> 'access' = '[]'::jsonb, 'no boards without permissions: ' || (r -> 'access')::text);
-  perform pg_temp.cdb_assert(r -> 'projects' = '[]'::jsonb and r -> 'needs' = '[]'::jsonb, 'no data without permissions');
+  perform pg_temp.cdb_assert(r -> 'projects' = '[]'::jsonb and r -> 'stockItems' = '[]'::jsonb, 'no data without permissions');
   perform pg_temp.cdb_assert(public.get_center_dashboard_v1(true) -> 'access' = '[]'::jsonb, 'access check agrees');
 end $$;
 
 -- Admin: đủ 4 bảng, mọi dự án đang chạy, đủ tiền.
 select pg_temp.cdb_as('boss');
-do $$ declare r jsonb; t0 timestamptz := clock_timestamp(); ms numeric; ref record; p jsonb; m jsonb; bad text; begin
+do $$ declare r jsonb; t0 timestamptz := clock_timestamp(); ms numeric; ref record; p jsonb; m jsonb; mv jsonb; k record; bad text; begin
   select * into ref from cdb_test_refs;
   r := public.get_center_dashboard_v1();
   ms := extract(epoch from clock_timestamp() - t0) * 1000;
@@ -78,8 +78,21 @@ do $$ declare r jsonb; t0 timestamptz := clock_timestamp(); ms numeric; ref reco
   perform pg_temp.cdb_assert(bad is null, 'months are yyyy-mm: ' || coalesce(bad, ''));
   perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(r -> 'months') x
     where (x.value ->> 'month') < to_char(date_trunc('month', now() at time zone 'Asia/Ho_Chi_Minh') - interval '11 months', 'YYYY-MM')), 'only the last 12 months');
-  perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(r -> 'needs') x where (x.value ->> 'qty')::numeric <= 0), 'needs have a positive quantity');
-  perform pg_temp.cdb_assert(jsonb_array_length(r -> 'needs') <= 300, 'needs are capped');
+  -- Bảng tồn / nhập / xuất: số không âm; bấm vào mỗi số ra đúng các chứng từ cộng thành số đó, cùng dự án, có mã để mở chứng từ.
+  perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(r -> 'stockItems') x
+    where (x.value ->> 'imported')::numeric < 0 or (x.value ->> 'exported')::numeric < 0 or (x.value ->> 'returned')::numeric < 0
+      or (x.value ->> 'ordered')::numeric < 0 or (x.value ->> 'transit')::numeric < 0), 'stock quantities are not negative');
+  for k in select * from (values ('in', 'imported'), ('out', 'exported'), ('return', 'returned'), ('ordered', 'ordered'), ('transit', 'transit'), ('ledger', 'stock')) v(kind, field) loop
+    select value into m from jsonb_array_elements(r -> 'stockItems') where (value ->> k.field)::numeric <> 0 and value ->> 'itemId' is not null limit 1;
+    continue when m is null;
+    mv := public.get_center_material_moves_v1(m ->> 'key', k.kind, m ->> 'projectId');
+    perform pg_temp.cdb_assert(abs(coalesce((select sum((x.value ->> 'qty')::numeric) from jsonb_array_elements(mv -> 'rows') x), 0) - (m ->> k.field)::numeric) < 0.01
+      or jsonb_array_length(mv -> 'rows') = 500, k.kind || ' documents add up to the table: ' || (m ->> 'key') || ' ' || (m ->> k.field) || ' vs '
+      || coalesce((select sum((x.value ->> 'qty')::numeric) from jsonb_array_elements(mv -> 'rows') x), 0));
+    perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(mv -> 'rows') x where x.value ->> 'projectId' <> m ->> 'projectId'), k.kind || ' stays in the project');
+    perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(mv -> 'rows') x where x.value ->> 'transactionId' is null and x.value ->> 'poId' is null)
+      or k.kind in ('in', 'out', 'ledger'), k.kind || ' rows link to a document');
+  end loop;
   for m in select value from jsonb_array_elements(r -> 'materialItems') loop
     perform pg_temp.cdb_assert((m ->> 'budget')::numeric > 0, 'top materials have a budget');
   end loop;
@@ -94,7 +107,12 @@ do $$ declare r jsonb; ref record; begin
   perform pg_temp.cdb_assert(jsonb_array_length(r -> 'projects') = ref.active_projects, 'accountant sees every active project');
   perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(r -> 'projects') x where jsonb_typeof(x.value -> 'finance') <> 'object'), 'accountant sees money');
   perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(r -> 'projects') x where jsonb_typeof(x.value -> 'materials') = 'object')
-    and r -> 'needs' = '[]'::jsonb and r -> 'materialItems' = '[]'::jsonb, 'no material data without the Materials board');
+    and r -> 'stockItems' = '[]'::jsonb and r -> 'materialItems' = '[]'::jsonb, 'no material data without the Materials board');
+  begin
+    perform public.get_center_material_moves_v1('x', 'in');
+    raise exception 'accountant must not read stock moves';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 
 -- Mua hàng: chỉ bảng Vật tư, không lọt tiền dự án.
@@ -108,6 +126,12 @@ do $$ declare r jsonb; begin
     'buyer months carry no money flows');
   perform pg_temp.cdb_assert(not exists (select 1 from jsonb_array_elements(r -> 'projects') x, jsonb_array_elements_text(x.value -> 'gaps') g
     where g.value in ('contract', 'budget', 'unclassified', 'ar_due', 'ap_due')), 'buyer gets no finance gaps');
+  perform pg_temp.cdb_assert(public.get_center_material_moves_v1('no-such-item', 'out') -> 'rows' = '[]'::jsonb, 'buyer reads stock moves');
+  begin
+    perform public.get_center_material_moves_v1('x', 'all');
+    raise exception 'unknown kind must be rejected';
+  exception when invalid_parameter_value then null;
+  end;
 end $$;
 
 -- Giám đốc một dự án: tiến độ + vật tư của đúng dự án đó, không có tiền khi chưa bật công tắc.

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 describe('request template routes', () => {
-  const app = readFileSync('App.tsx', 'utf8');
+  const app = readFileSync('routes/appPages.tsx', 'utf8');
   const templateList = readFileSync('pages/request/RequestTemplates.tsx', 'utf8');
 
   it('registers the template administration routes', () => {
@@ -12,7 +12,7 @@ describe('request template routes', () => {
   });
 
   it('warms up admin people data for request routes', () => {
-    expect(app).toMatch(
+    expect(readFileSync('App.tsx', 'utf8')).toMatch(
       /if \(pathname\.startsWith\('\/rq'\)\)[\s\S]*?loadModuleData\('admin'[\s\S]*?return;/,
     );
   });
