@@ -870,3 +870,15 @@ Làm theo mục 9.3 và 16.3 (câu 14 đã duyệt: Mua hàng tạo quy cách m�
 | Ngừng dùng | Khóa khi còn tồn ở kho nào hoặc còn hàng đang về |
 | Nhật ký | Mọi thao tác ghi vào nhật ký của mã (ai, lúc nào, trước/sau, lý do) |
 | Dữ liệu cũ | 42 quy cách trên 21 mã (đơn mua, bảng giá HĐ, sổ kho) vào "chờ rà" để người Cấp mã rà một lượt |
+
+---
+
+## 24. V2 (một phần) — Chọn quy cách tay khi xuất kho, đã code (10/10/2026)
+
+| Phần | Cách làm |
+|---|---|
+| Xuất cấp thi công | Mỗi dòng có ô **Quy cách**: mặc định "Tự lấy nhập trước", hoặc chọn quy cách (thấy tồn từng quy cách tại kho xuất). Bấm "+ Xuất thêm quy cách khác" để tách một mã thành nhiều dòng. Phiếu xuất cấp, phiếu kho và thẻ kho hiện quy cách đã chọn |
+| Xuất hủy | Mỗi mã chọn một quy cách (hoặc tự lấy nhập trước) |
+| Sổ kho | Xuất có quy cách: lấy quy cách đó trước, tối đa phần còn; phần thiếu lấy quy cách nhập trước — không làm âm tồn quy cách. Ô chọn báo trước "còn X — phần thiếu tự lấy nhập trước" |
+| Hàng trả lại từ công trình | Về đúng quy cách đã xuất của dòng xuất cấp (trừ phần đã trả trước đó) |
+| Chuyển kho | **Chưa chọn tay**: phiếu chuyển gộp dòng theo mã lúc gửi hàng; vẫn tự lấy quy cách nhập trước, kho nhận giữ đúng quy cách đã xuất. Làm cùng "Phiếu kho một màn" |

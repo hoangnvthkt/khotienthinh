@@ -36,6 +36,8 @@ import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
 import { ReceiptReconciliationView } from '../components/procurement/receipt/ReceiptReconciliationView';
 import { WmsWorkspace } from '../components/wms/WmsWorkspace';
+import { useWarehouseSpecStock } from '../lib/wmsSpecStockService';
+import { IssueSpecSelect } from '../components/wms/IssueSpecSelect';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
 
@@ -247,6 +249,10 @@ const Operations: React.FC = () => {
   const [voucherDate, setVoucherDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState('');
   const [txItems, setTxItems] = useState<TransactionItem[]>([]);
+  // V2: Xuất hủy chọn quy cách từng mã (trống = tự lấy quy cách nhập trước). Chuyển kho vẫn tự lấy nhập trước.
+  const liquidationSpecStock = useWarehouseSpecStock(activeTab === TransactionType.LIQUIDATION ? selectedWarehouseId : null, txItems.map(ti => ti.itemId));
+  const setTxItemSpec = (itemId: string, specification: string) =>
+    setTxItems(prev => prev.map(ti => ti.itemId === itemId ? { ...ti, specification: specification || undefined } : ti));
   const [transactionQuantityInputs, setTransactionQuantityInputs] = useState<Record<string, string>>({});
   const [submittingTx, setSubmittingTx] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -1714,6 +1720,8 @@ const Operations: React.FC = () => {
                                 <td className="p-4">
                                   <div className="font-black text-slate-800 text-sm">{product?.name}</div>
                                   <div className="text-[10px] text-slate-400 font-bold uppercase">{product?.sku}</div>
+                                  {activeTab === TransactionType.LIQUIDATION && <IssueSpecSelect className="mt-1.5" specs={liquidationSpecStock[item.itemId]} value={item.specification || ''}
+                                    qty={item.quantity} unit={product?.unit} label={`Quy cách xuất hủy ${product?.name || ''}`} onChange={value => setTxItemSpec(item.itemId, value)} />}
                                   {hasDualUnit && (
                                     <div className="mt-1 inline-flex items-center gap-1 text-[9px] bg-amber-100 text-amber-700 font-black px-1.5 py-0.5 rounded border border-amber-200">
                                       <Scale size={8} /> Mua: {product?.purchaseUnit} → Kho: {product?.unit}
@@ -1872,6 +1880,8 @@ const Operations: React.FC = () => {
                               <div className="min-w-0 flex-1">
                                 <div className="text-[10px] font-mono text-slate-400 font-bold uppercase mb-0.5">{product?.sku}</div>
                                 <h4 className="font-black text-slate-800 text-sm truncate pr-4">{product?.name}</h4>
+                                {activeTab === TransactionType.LIQUIDATION && <IssueSpecSelect className="mt-1" specs={liquidationSpecStock[item.itemId]} value={item.specification || ''}
+                                  qty={item.quantity} unit={product?.unit} label={`Quy cách xuất hủy ${product?.name || ''}`} onChange={value => setTxItemSpec(item.itemId, value)} />}
                                 {activeTab !== TransactionType.IMPORT && (
                                   <div className={`text-[10px] font-bold mt-1 flex items-center gap-1 ${isOverStock ? 'text-orange-500' : 'text-slate-400'}`}>
                                     {isOverStock && <AlertTriangle size={9} />}

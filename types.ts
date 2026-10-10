@@ -3690,6 +3690,8 @@ export interface MaterialIssueLine {
   workBoqItemId?: string | null;
   subcontractorContractId?: string | null;
   note?: string | null;
+  /** Quy cách chọn khi xuất (trống = tự lấy quy cách nhập trước). */
+  specification?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
