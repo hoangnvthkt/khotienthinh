@@ -40,6 +40,7 @@ describe('quy cách đi xuyên chứng từ — giao diện', () => {
     const contracts = read('components/procurement/hub/ContractsView.tsx');
     expect(contracts).toContain('{r.line.specification && ');
     expect(contracts).toContain('specRows(u.specs)');
-    expect(read('components/wms/WmsStockView.tsx')).toContain('{c.specification && ');
+    // V1-3b: thẻ kho hiện phân bổ quy cách của dòng sổ (fallback quy cách trên chứng từ).
+    expect(read('components/wms/WmsStockView.tsx')).toContain('fallback={c.specification}');
   });
 });

@@ -298,7 +298,8 @@
     "20261010150000_center_metric_docs.sql",
     "20261010170000_finance_price_settlements.sql",
     "20261010173300_procurement_spec_through_documents.sql",
-    "20261010181700_finance_spec_lines.sql"
+    "20261010181700_finance_spec_lines.sql",
+    "20261010191100_wms_stock_by_spec.sql"
   ],
   "forbidIncludeAll": true
 }

@@ -56,9 +56,17 @@ export interface ItemCard {
     /** Ngày nhập liệu (khác ngày chứng từ khi ghi lùi ngày) và loại nghiệp vụ (vd. direct_consumption). */
     enteredAt?: string | null; event?: string | null;
     /** Quy cách của dòng chứng từ gốc (một mã nhiều quy cách; tồn vẫn cộng theo mã). */
-    specification?: string | null }>;
+    specification?: string | null;
+    /** V1-3b: phần của dòng sổ thuộc quy cách nào (xuất không ghi quy cách → quy cách nhập trước). */
+    specAllocations?: SpecAllocation[] | null }>;
   otherWarehouses: Array<{ warehouseId: string; warehouseName: string; qty: number }>;
+  /** V1-3b: tồn theo quy cách, xếp theo thứ tự xuất (nhập trước). specification null = Chưa ghi quy cách. */
+  specs?: SpecAllocation[];
+  specTransfers?: SpecTransfer[];
+  canTransferSpec?: boolean;
 }
+export interface SpecAllocation { specification: string | null; qty: number }
+export interface SpecTransfer { code: string; date: string; fromSpec: string | null; toSpec: string; qty: number; reason: string; byName: string | null }
 
 const ERRORS: Record<string, string> = {
   CATALOG_ISSUE_DENIED: 'Bạn chưa có ô quyền "Cấp mã". Nhờ Admin cấp ở Cài đặt → Người dùng → Kho vật tư.',
@@ -93,6 +101,10 @@ const ERRORS: Record<string, string> = {
   WMS_DOC_DATE_INVALID: 'Ngày chứng từ không hợp lệ.',
   WMS_DOC_DATE_FUTURE: 'Ngày chứng từ không được sau hôm nay.',
   WMS_DOC_DATE_REASON: 'Phiếu đã ghi sổ — cần ghi lý do sửa ngày.',
+  WMS_SPEC_DENIED: 'Chỉ thủ kho của kho này, Kế toán kho hoặc Admin được chuyển quy cách.',
+  WMS_SPEC_INVALID: 'Cần chọn quy cách mới (tối đa 80 ký tự) và số lượng lớn hơn 0.',
+  WMS_SPEC_SAME: 'Quy cách mới trùng quy cách cũ.',
+  WMS_SPEC_REASON: 'Cần ghi lý do chuyển quy cách.',
 };
 
 /** Mã vật tư người tạo tự nhập: 2–30 ký tự chữ không dấu, số, . _ - (khớp kiểm tra ở issue_material_code_v1). */
@@ -112,7 +124,7 @@ export const catalogErrorMessage = (error: unknown, fallback = 'Chưa thực hi�
   if (dup) return `Tên trùng với mã ${dup[1]} đã có (so sau khi bỏ dấu, khoảng trắng). Dùng mã đó hoặc ghi rõ khác biệt.`;
   const skuDup = raw.match(/ITEM_SKU_DUPLICATE:(\S+)/);
   if (skuDup) return `Mã ${skuDup[1]} đã có trong danh mục — chọn mã khác.`;
-  const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK): (.+)/);
+  const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK|WMS_SPEC_INSUFFICIENT): (.+)/);
   if (merge) return merge[1];
   const code = Object.keys(ERRORS).find(k => raw.includes(k));
   return code ? ERRORS[code] : raw && !/^[A-Z0-9_:\s]+$/.test(raw) ? raw : fallback;
@@ -138,6 +150,9 @@ export const wmsCatalogService = {
   setStatus: (input: { itemId: string; action: 'retire' | 'reactivate'; reason: string }) => rpc<CatalogItem>('set_catalog_item_status_v1', { p: input }),
   setMode: (input: { itemIds: string[]; mode: InventoryMode; reason?: string }) => rpc<{ updated: number }>('set_inventory_mode_v1', { p: input }),
   stock: (warehouseId?: string) => rpc<StockOverview>('list_wms_stock_v1', { p: warehouseId ? { warehouseId } : {} }),
+  /** V1-3b: phiếu chuyển quy cách trong cùng mã, cùng kho (không đổi tồn / giá trị của mã). */
+  transferSpec: (input: { itemId: string; warehouseId: string; fromSpec: string | null; toSpec: string; qty: number; reason: string }) =>
+    rpc<{ id: string; code: string }>('transfer_wms_item_spec_v1', { p: input }),
   card: (itemId: string, warehouseId: string) => rpc<ItemCard>('get_wms_item_card_v1', { p_item_id: itemId, p_warehouse_id: warehouseId }),
   // V1-3a: gộp mã trùng
   duplicates: () => rpc<DuplicatesData>('get_catalog_duplicates_v1'),
