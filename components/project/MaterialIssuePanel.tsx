@@ -45,6 +45,9 @@ import { normalizeLookupText, SITE_WAREHOUSE_STOP_WORDS } from '../../lib/projec
 import { buildMaterialIssueRecipientSource, type MaterialIssueRecipientSourceSelection } from '../../lib/materialIssueRecipientSource';
 import { dateInputToTransactionTimestamp } from '../../lib/transactionVoucherDates';
 import { formatQuantityInput, parseQuantityInput, sanitizeQuantityInput } from '../../lib/quantityInput';
+import { useWarehouseSpecStock } from '../../lib/wmsSpecStockService';
+import { specKey } from '../../lib/materialLineDescription';
+import { IssueSpecSelect } from '../wms/IssueSpecSelect';
 
 type MaterialIssuePanelProps = {
   projectId?: string | null;
@@ -63,6 +66,8 @@ type DraftLine = {
   itemId: string;
   quantity: string;
   note: string;
+  /** Quy cách chọn khi xuất; '' = tự lấy quy cách nhập trước (V2). */
+  specification: string;
 };
 
 type StockItemOption = {
@@ -231,6 +236,8 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
 
   const activeUsers = useMemo(() => users.filter(item => item.isActive !== false), [users]);
   const selectedWarehouse = warehouses.find(warehouse => warehouse.id === sourceWarehouseId);
+  // V2: tồn theo quy cách của các mã trên phiếu tại kho xuất — để chọn quy cách từng dòng.
+  const specStock = useWarehouseSpecStock(sourceWarehouseId, draftLines.map(line => line.itemId));
 
   const warehouseStockOptions = useMemo<StockItemOption[]>(() => {
     if (!sourceWarehouseId) return [];
@@ -524,9 +531,9 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
       selectedRows.forEach(({ option, draft, quantity }) => {
         const itemId = option.item.id;
         const trimmedNote = draft.note.trim();
-        const existing = next.find(line => line.itemId === itemId);
+        const existing = next.find(line => line.itemId === itemId && !line.specification);
         if (existing) {
-          next = next.map(line => line.itemId === itemId
+          next = next.map(line => line.key === existing.key
             ? { ...line, quantity: formatQuantityInput(parseQty(line.quantity) + quantity), note: trimmedNote || line.note }
             : line);
         } else {
@@ -535,6 +542,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             itemId,
             quantity: formatQuantityInput(quantity),
             note: trimmedNote,
+            specification: '',
           });
         }
       });
@@ -591,6 +599,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
             unit: item?.unit || null,
             unitPrice: item?.priceIn || 0,
             note: line.note.trim() || null,
+            specification: line.specification || null,
           };
         }),
       });
@@ -1133,6 +1142,9 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
               <div className="border-t border-slate-100 bg-white divide-y divide-slate-100">
                 {draftLines.map(line => {
                   const item = items.find(row => row.id === line.itemId);
+                  const specs = specStock[line.itemId];
+                  const usedSpecs = new Set(draftLines.filter(row => row.itemId === line.itemId && row.key !== line.key).map(row => specKey(row.specification)));
+                  const nextSpec = specs?.find(s => s.specification && !usedSpecs.has(specKey(s.specification)) && specKey(s.specification) !== specKey(line.specification))?.specification;
                   const stock = sourceWarehouseId ? getStockSummary(line.itemId, sourceWarehouseId) : null;
                   const qty = parseQty(line.quantity);
                   const isOver = !!stock && qty > stock.available;
@@ -1141,6 +1153,14 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                       <div className="min-w-0">
                         <div className="text-xs font-black text-slate-800 truncate">{item?.sku} - {item?.name}</div>
                         <div className="text-[10px] text-slate-400 font-bold mt-0.5">{line.note || 'Không có ghi chú dòng'}</div>
+                        <IssueSpecSelect className="mt-1.5" specs={specs} value={line.specification} qty={parseQty(line.quantity)} unit={item?.unit}
+                          label={`Quy cách xuất ${item?.name || ''}`}
+                          onChange={value => setDraftLines(prev => prev.map(row => row.key === line.key ? { ...row, specification: value } : row))} />
+                        {nextSpec && <button type="button" className="mt-1 text-[11px] font-bold text-indigo-600 hover:underline"
+                          onClick={() => setDraftLines(prev => {
+                            const at = prev.findIndex(row => row.key === line.key);
+                            return [...prev.slice(0, at + 1), { key: crypto.randomUUID(), itemId: line.itemId, quantity: '', note: '', specification: nextSpec }, ...prev.slice(at + 1)];
+                          })}>+ Xuất thêm quy cách khác</button>}
                       </div>
                       <div className="text-[10px] font-bold text-slate-500">
                         {stock ? (
@@ -1272,6 +1292,7 @@ const MaterialIssuePanel: React.FC<MaterialIssuePanelProps> = ({
                                 <tr key={line.id} className="text-xs">
                                   <td className="p-3">
                                     <div className="font-black text-slate-800">{line.skuSnapshot} - {line.itemNameSnapshot}</div>
+                                    {line.specification && <div className="mt-0.5 inline-block rounded bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-600">{line.specification}</div>}
                                     {line.note && <div className="text-[10px] text-slate-400 mt-0.5">{line.note}</div>}
                                   </td>
                                   <td className="p-3 text-right font-bold">{formatQty(line.requestedQty)} {line.unit}</td>

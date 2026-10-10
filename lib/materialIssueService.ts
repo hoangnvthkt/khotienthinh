@@ -37,6 +37,8 @@ export type MaterialIssueCreateLineInput = {
   workBoqItemId?: string | null;
   subcontractorContractId?: string | null;
   note?: string | null;
+  /** Quy cách chọn khi xuất (trống = tự lấy quy cách nhập trước). */
+  specification?: string | null;
 };
 
 export type MaterialIssueCreateInput = {
