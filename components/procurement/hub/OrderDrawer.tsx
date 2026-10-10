@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ArrowUpRight, CalendarClock, CircleSlash, Link2, Loader2, Pencil, Printer, Send, Trash2, Truck, Unlink, UserRound, Warehouse } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
-import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine, type ProcurementPoPayment } from '../../../lib/procurementInboxService';
+import { DELIVERY_STATUS_LABELS, PROACTIVE_REASON_LABELS, procurementInboxService, type ProcurementDelivery, type ProcurementOrderDetail, type ProcurementOrderLine, type ProcurementPoPayment, type ProcurementPoPriceSettlement } from '../../../lib/procurementInboxService';
 import { buildPoApprovalPrintHtml, lineDisplayName } from '../../../lib/procurementApprovalPrint';
 import { SUPPLIER_RETURN_REASONS, type SupplierReturnReasonCode } from '../../../lib/purchaseOrderSupplierReturnService';
 import { dateVi, fmt } from '../../project/work-plan/workPlanUi';
@@ -82,10 +82,12 @@ export const OrderDrawer: React.FC<{
   const [shortReason, setShortReason] = useState('');
   const [returnToNeed, setReturnToNeed] = useState(true);
   const [payment, setPayment] = useState<ProcurementPoPayment | null>(null);
+  const [prices, setPrices] = useState<ProcurementPoPriceSettlement[]>([]);
 
   const load = useCallback(() => {
     setError(null);
     procurementInboxService.poPaymentStatus([orderId]).then(m => setPayment(m[orderId] || null)).catch(() => setPayment(null));
+    procurementInboxService.poPriceSettlements(orderId).then(setPrices).catch(() => setPrices([]));
     procurementInboxService.getOrder(orderId).then(o => { setOrder(o); setApprover(a => a || o.submittedToUserId || ''); })
       .catch(e => setError(e instanceof Error ? e.message : String(e)));
   }, [orderId]);
@@ -230,6 +232,9 @@ export const OrderDrawer: React.FC<{
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               {line.receivedQty > 0 && <span className="font-semibold text-emerald-700 dark:text-emerald-300">Đã nhận {fmt(line.receivedQty, 3)} {line.unit}</span>}
+              {prices.filter(p => p.poLineId === line.lineId).map((p, i) => <span key={i} title={`Lý do: ${p.reason}`}
+                className={`font-semibold ${p.status === 'posted' ? 'text-teal-700 dark:text-teal-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                {p.status === 'posted' ? 'Kế toán chốt giá' : 'Chờ duyệt giá'} {money(p.fromPrice)} → {money(p.toPrice)} đ cho {fmt(p.qty, 3)} {p.unit || line.unit}{p.deliveryNo ? ` (đợt ${p.deliveryNo})` : ''} · {p.code}</span>)}
               {['confirmed', 'in_transit', 'partial'].includes(order.status) && line.remainingToDeliver > 0 && <span className="font-semibold text-amber-700 dark:text-amber-300">Còn phải giao {fmt(line.remainingToDeliver, 3)} {line.unit}</span>}
               {line.stockUnit && line.stockUnit !== line.unit && <span>= {fmt(line.qty * line.factor, 3)} {line.stockUnit}</span>}
               {order.kind === 'proactive' && line.boq && <Badge className={line.boq.status === 'within' || line.boq.status === 'stock'

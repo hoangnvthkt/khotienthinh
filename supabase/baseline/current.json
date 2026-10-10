@@ -295,7 +295,8 @@
     "20261010110000_global_search_v1.sql",
     "20261010120000_center_dashboard_v1.sql",
     "20261010130000_center_dashboard_stock.sql",
-    "20261010150000_center_metric_docs.sql"
+    "20261010150000_center_metric_docs.sql",
+    "20261010170000_finance_price_settlements.sql"
   ],
   "forbidIncludeAll": true
 }

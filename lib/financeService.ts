@@ -444,10 +444,32 @@ const ERROR_MESSAGES: Record<string, string> = {
   FINANCE_BANK_AMOUNT_DIFF_REASON: 'Số tiền sao kê khác sổ — ghi lý do lệch (VD ngân hàng trừ phí).',
   FINANCE_BANK_STATEMENT_NOT_FOUND: 'Không còn lô sao kê này. Tải lại.',
   FINANCE_BANK_STATEMENT_CANCELLED: 'Lô sao kê này đã được huỷ trước đó.',
+  FINANCE_STALE: 'Dữ liệu vừa được người khác cập nhật. Tải lại.',
+  FINANCE_SAME_PERSON: 'Người duyệt / đảo phải khác người lập.',
+  FINANCE_PRICE_LINES_REQUIRED: 'Nhập giá chốt ít nhất một dòng hàng (chốt giá kèm hóa đơn phải chọn chứng từ).',
+  FINANCE_PRICE_LINE_INVALID: 'Dòng hàng không còn trên chứng từ (hoặc chứng từ không có giá theo dòng) — tải lại',
+  FINANCE_PRICE_LINE_DUPLICATE: 'Một dòng hàng nhập giá chốt hai lần.',
+  FINANCE_PRICE_LINE_PENDING: 'Dòng này đang có bản chốt giá khác chờ duyệt — duyệt / rút bản đó trước',
+  FINANCE_PRICE_INVALID: 'Giá chốt không hợp lệ',
+  FINANCE_PRICE_UNCHANGED: 'Giá chốt bằng giá đang áp — để trống nếu không đổi',
+  FINANCE_PRICE_REASON: 'Ghi lý do đổi giá để gửi duyệt.',
+  FINANCE_PRICE_FILE_REQUIRED: 'Đính kèm biên bản thỏa thuận / email xác nhận của NCC.',
+  FINANCE_PRICE_DATE_INVALID: 'Chọn ngày thỏa thuận (không sau hôm nay).',
+  FINANCE_PRICE_NO_APPROVER: 'Bước duyệt không còn ai duyệt được (người lập / người nhận hàng bị loại) — Quản trị Tài chính bổ sung người duyệt',
+  FINANCE_PRICE_DOC_RESERVED: 'Chứng từ đang nằm trong đề nghị chi chờ duyệt / chờ chi — rút đề nghị hoặc chờ chi xong rồi chốt giảm',
+  FINANCE_PRICE_STATE: 'Bản chốt giá đã đổi trạng thái. Tải lại.',
+  FINANCE_PRICE_NOT_FOUND: 'Không còn bản chốt giá này. Tải lại.',
+  FINANCE_PRICE_VIA_INVOICE: 'Chốt giá kèm hóa đơn được duyệt / đảo cùng hóa đơn.',
+  FINANCE_PRICE_CREDIT_USED: 'Khoản NCC nợ lại của bản chốt giá đã được trừ vào công nợ / NCC đã hoàn tiền — không đảo được.',
+  FINANCE_PRICE_ADJUSTMENT_PAID: 'Chứng từ tăng nợ của bản chốt giá đã trả / đang đề nghị chi — đảo đề nghị chi trước',
+  FINANCE_CREDIT_NOT_FOUND: 'Không còn khoản NCC nợ lại này. Tải lại.',
+  FINANCE_CREDIT_OVER: 'Số tiền hoàn lớn hơn số NCC còn nợ lại.',
+  FINANCE_CREDIT_REFUND_INVALID: 'Nhập ngày nhận tiền (không sau hôm nay) và số chứng từ thu.',
   PROJECT_TRANSACTION_FINANCE_ONLY: 'Sổ giao dịch dự án chỉ ghi qua Tài chính (nhập số MISA, đề nghị chi, phiếu chi khác, phiếu thu). Không thêm / sửa / xoá tay được nữa.',
 };
 // Mã lỗi có kèm chi tiết từ máy chủ (dòng nào, ngày nào) — nối vào thông báo.
-const DETAIL_CODES = new Set(['FINANCE_INVOICE_DUPLICATE', 'FINANCE_INVOICE_OVER_DOCUMENT', 'FINANCE_INVOICE_CREDIT_OVER', 'FINANCE_CONTRACT_NEEDS_INVOICE', 'FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID', 'FINANCE_BANK_ROWS_INVALID']);
+const DETAIL_CODES = new Set(['FINANCE_PRICE_LINE_INVALID', 'FINANCE_PRICE_LINE_PENDING', 'FINANCE_PRICE_INVALID', 'FINANCE_PRICE_UNCHANGED', 'FINANCE_PRICE_NO_APPROVER',
+  'FINANCE_PRICE_DOC_RESERVED', 'FINANCE_PRICE_ADJUSTMENT_PAID', 'FINANCE_INVOICE_DUPLICATE', 'FINANCE_INVOICE_OVER_DOCUMENT', 'FINANCE_INVOICE_CREDIT_OVER', 'FINANCE_CONTRACT_NEEDS_INVOICE', 'FINANCE_MISA_ROWS_INVALID', 'FINANCE_PERIOD_LOCKED', 'FINANCE_FORECAST_ITEM_INVALID', 'FINANCE_BANK_ROWS_INVALID']);
 
 const call = async <T>(name: string, params: Record<string, unknown>): Promise<T> => {
   const { data, error } = await supabase.rpc(name, params);
@@ -480,19 +502,63 @@ export interface FinanceInvoice {
   status: InvoiceStatus; expected: number | null; variance: number | null; tolerance: number | null; reason: string | null; attachments: FinanceAttachment[]; source: 'manual' | 'xml';
   rowVersion: number; createdBy: string | null; createdByName: string | null; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null;
   reversedByName: string | null; reversedAt: string | null; reversalReason: string | null; adjustmentCode: string | null; canDecide: boolean; canEdit: boolean;
+  steps: PriceSettlement['steps']; stepIndex: number;
   documents: Array<{ id: string; code: string; documentNo: string | null; projectCode: string | null; amount: number; recognized: number; variance: number | null; sourceType: string }>;
+  /** Chốt giá theo dòng đi kèm hóa đơn (NCC đổi đơn giá so với đơn hàng). */
+  priceSettlement: PriceSettlement | null;
 }
+/** Một dòng hàng của chứng từ công nợ: số thực nhận (kho) + giá đặt (đơn hàng) + giá đang áp vào công nợ (giá đặt hoặc giá đã chốt). */
+export interface PriceLine { lineId: string; kind: 'po_delivery_line' | 'statement_line'; itemName: string; unit: string | null; qty: number; orderedPrice: number; currentPrice: number; vatRate: number;
+  /** Mã bản chốt giá khác đang chờ duyệt dòng này (khóa nhập). */
+  pendingCode?: string | null }
 export interface InvoiceDocument { id: string; code: string; documentNo: string | null; sourceType: string; projectCode: string | null; contractCode: string | null; documentDate: string | null;
-  recognized: number; outstanding: number; invoiced: number; remaining: number; requireInvoice: boolean; poNumber: string | null }
+  recognized: number; outstanding: number; invoiced: number; remaining: number; requireInvoice: boolean; poNumber: string | null;
+  /** null = chứng từ không có dòng giá (đầu kỳ, mua tại công trường) hoặc dòng chưa có giá → chỉ chỉnh được bằng lệch chung. */
+  lines: PriceLine[] | null; priceDelta: number; paid: number; companyScope: boolean }
+export interface ApprovalStepInfo { label: string; names: string[] }
+/** Người duyệt chốt giá: giảm giá = một bước Kế toán trưởng; tăng giá = ma trận duyệt theo số tiền tăng. */
+export interface PriceApproval { decrease: ApprovalStepInfo[]; tiers: Array<{ tierNo: number; min: number; max: number | null; steps: ApprovalStepInfo[] }> }
+export type PriceSettlementStatus = 'pending_approval' | 'posted' | 'rejected' | 'reversed';
+export interface PriceSettlement {
+  id: string; code: string; supplierId: string; supplierName: string; basis: 'invoice' | 'agreement'; invoiceNumber: string | null;
+  agreementNo: string | null; agreementDate: string | null; reason: string; attachments: FinanceAttachment[]; status: PriceSettlementStatus;
+  deltaGross: number; increaseGross: number;
+  lines: Array<{ documentId: string; lineId: string; documentNo: string | null; projectCode: string | null; poNumber: string | null; itemName: string; unit: string | null; qty: number;
+    fromPrice: number; toPrice: number; vatRate: number; deltaGross: number }>;
+  steps: Array<{ label: string; names: string[]; doneByName: string | null; doneAt: string | null }>; stepIndex: number;
+  /** Chứng từ đã có hóa đơn theo giá cũ → chờ NCC xuất hóa đơn điều chỉnh. */
+  needsAdjustmentInvoice: boolean;
+  adjustmentInvoice: { number: string; date: string; attachments: FinanceAttachment[]; byName: string | null; at: string } | null;
+  /** Kết quả sau khi duyệt: giảm công nợ / chứng từ tăng nợ / NCC nợ lại (chứng từ đã trả). */
+  effects: { creditGross: number; increaseDocCode: string | null; supplierOwes: number; inventoryDocs?: string[] } | null;
+  createdByName: string | null; createdAt: string; decidedByName: string | null; decidedAt: string | null; decisionNote: string | null;
+  reversedByName: string | null; reversedAt: string | null; reversalReason: string | null; rowVersion: number;
+  canDecide: boolean; canWithdraw?: boolean; canAttachInvoice: boolean; canReverse: boolean;
+}
+/** NCC nợ lại: chốt giảm khi chứng từ đã trả — tự trừ vào công nợ kế tiếp cùng NCC + dự án, hoặc NCC hoàn tiền. */
+export interface SupplierCredit {
+  id: string; code: string; supplierId: string; supplierName: string; projectCode: string | null; amount: number; remaining: number; settlementCode: string; createdAt: string;
+  uses: Array<{ id: string; kind: 'offset' | 'refund'; amount: number; status: 'active' | 'released' | 'submitted' | 'confirmed' | 'rejected'; documentNo: string | null;
+    paymentDate: string | null; documentRef: string | null; attachments: FinanceAttachment[]; createdByName: string | null; createdAt: string; decidedByName: string | null;
+    decisionNote: string | null; canDecide: boolean }>;
+}
 export interface FinanceInvoices {
   can: { record: boolean; confirm: boolean }; tolerance: { percent: number; min: number };
-  counts: { pendingApproval: number; awaitingGoods: number; posted: number; docsWithout: number; docsWithoutAmount: number; requiredMissing: number };
+  counts: { pendingApproval: number; awaitingGoods: number; posted: number; docsWithout: number; docsWithoutAmount: number; requiredMissing: number;
+    pricePending: number; awaitingAdjustment: number };
   invoices: FinanceInvoice[]; documents: InvoiceDocument[] | null;
   suppliers: Array<{ id: string; name: string; taxCode: string | null; docs: number; remaining: number }>;
+  priceSettlements: PriceSettlement[]; approval: PriceApproval; credits: SupplierCredit[];
+  /** NCC có chứng từ chốt giá được (kể cả đã có hóa đơn). */
+  priceSuppliers: Array<{ id: string; name: string; taxCode: string | null }>;
 }
+export type PriceInput = { documentId: string; lineId: string; price: number };
+export interface PriceAgreementInput { supplierId: string; agreementNo: string | null; agreementDate: string; reason: string; attachments: FinanceAttachment[]; prices: PriceInput[] }
 export interface InvoiceInput {
   id?: string; expectedRowVersion?: number; supplierId?: string; invoiceNumber: string; invoiceSymbol?: string | null; invoiceDate: string; netAmount: number; vatAmount: number; grossAmount: number;
   vatPercent?: number | null; attachments: FinanceAttachment[]; lines: Array<{ documentId: string; amount: number }>; reason?: string | null; source?: 'manual' | 'xml';
+  /** Giá chốt theo dòng (khác giá đang áp) — hóa đơn chờ duyệt giá. */
+  prices?: PriceInput[];
 }
 
 // ---------- Sao kê ngân hàng ----------
@@ -891,6 +957,21 @@ export const financeService = {
   saveInvoice(input: InvoiceInput) { return call<{ id: string; status: InvoiceStatus; expected: number; variance: number | null; tolerance: number | null }>('save_finance_invoice_v1', { p_input: input }); },
   decideInvoice(input: { id: string; expectedRowVersion: number; action: 'approve' | 'reject' | 'reverse'; reason?: string }) {
     return call<{ id: string; action: string }>('decide_finance_invoice_v1', { p_input: input });
+  },
+  /** Chứng từ của NCC kèm dòng giá (cả chứng từ đã có hóa đơn) — để chốt giá theo biên bản. */
+  priceDocuments(supplierId: string) { return call<FinanceInvoices>('get_finance_invoices_v1', { p_filter: { supplierId, forPrice: true } }); },
+  savePriceAgreement(input: PriceAgreementInput) { return call<{ id: string; code: string; status: PriceSettlementStatus }>('save_finance_price_agreement_v1', { p_input: input }); },
+  decidePriceSettlement(input: { id: string; expectedRowVersion: number; action: 'approve' | 'reject' | 'withdraw' | 'reverse'; reason?: string }) {
+    return call<{ id: string; action: string; status: PriceSettlementStatus }>('decide_finance_price_settlement_v1', { p_input: input });
+  },
+  saveCreditRefund(input: { creditId: string; amount: number; cashAccountId: string; paymentDate: string; documentRef: string; attachments: FinanceAttachment[]; note?: string | null }) {
+    return call<{ id: string }>('save_finance_supplier_credit_refund_v1', { p_input: input });
+  },
+  decideCreditRefund(input: { id: string; action: 'confirm' | 'reject'; reason?: string }) {
+    return call<{ id: string; action: string }>('decide_finance_supplier_credit_refund_v1', { p_input: input });
+  },
+  attachAdjustmentInvoice(input: { id: string; expectedRowVersion: number; number: string; date: string; attachments: FinanceAttachment[] }) {
+    return call<{ id: string }>('attach_finance_price_adjustment_invoice_v1', { p_input: input });
   },
   findSupplierByTax(taxCode: string) { return call<Array<{ id: string; name: string; taxCode: string }> | null>('find_finance_supplier_by_tax_v1', { p_tax: taxCode }); },
   bankStatement(accountId: string) { return call<FinanceBankStatement>('get_finance_bank_statement_v1', { p_input: { accountId } }); },
