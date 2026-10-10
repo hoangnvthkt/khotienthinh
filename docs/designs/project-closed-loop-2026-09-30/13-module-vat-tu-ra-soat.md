@@ -832,3 +832,22 @@ Lưu một lần, xem trước danh sách thêm / gỡ, có nhật ký (dùng ti
 **Đã kiểm trên production trong giao dịch hoàn tác** (`tools/vbd-test.mjs`): anh Luật lùi 10 ngày bị chặn, 3 ngày được; Admin lùi 30 ngày được; ngày tương lai bị chặn; sửa ngày PO-609 dời phiếu giao HĐ sang 08/09; phiếu đã nằm trong bảng đối soát chốt bị chặn; ngày đặt hàng PO-607 về 05/09; nhận 1 bước PO-143 khi đối chiếu mở bị chặn; sửa dữ liệu 4 đơn đúng.
 
 **Lưu ý nhập bù theo HĐ:** PO-607/609/611/612 đã nằm trong bảng đối soát tháng 10 đã ghi sổ (DCHD-202610-…). Muốn dời về tháng 9: kế toán đảo bảng đối soát → sửa ngày từng phiếu nhận → lập lại bảng đối soát tháng 9.
+
+---
+
+## 22. V1-3b — Tồn kho theo quy cách, đã code (10/10/2026)
+
+Làm theo mục 9 và 16.3 (câu 30, 31 đã duyệt). Nền: #147 (mỗi dòng đơn một quy cách), #152 (quy cách đi xuyên phiếu kho / sổ kho / đối soát), #153 (Tài chính).
+
+| Phần | Cách làm |
+|---|---|
+| Tồn, giá vốn, NXT, MISA | **Không đổi** — vẫn theo (mã, kho). Quy cách là chiều phụ |
+| Sổ kho | Mỗi dòng ghi `specAllocations` = phần của dòng thuộc quy cách nào, tại hàm ghi sổ duy nhất `post_inventory_ledger_entry` |
+| Nhập | Quy cách của chứng từ (ảnh chụp dòng đơn). Không có → "Chưa ghi quy cách", không tự đoán |
+| Xuất | Phiếu có quy cách (nhập–xuất thẳng, trả NCC) → đúng quy cách đó. Không ghi → **tự lấy quy cách nhập trước**; thiếu thì phần còn lại về "Chưa ghi quy cách". Chọn tay để V2 |
+| Chuyển kho, phiếu đảo | Giữ đúng quy cách của phiếu xuất / phiếu gốc |
+| Phiếu chuyển quy cách | `wms_spec_transfers` — cùng mã, cùng kho, bắt buộc lý do, không vượt tồn quy cách. Người làm: thủ kho kho đó, Kế toán kho, Admin. Không đổi số lượng / giá trị của mã |
+| Màn Tồn kho | Bấm một mã → mục **Theo quy cách** (xếp theo thứ tự xuất), nút Chuyển quy cách / Gắn quy cách cho hàng tồn, lịch sử phiếu chuyển. Thẻ kho ghi quy cách từng dòng ("chưa ghi · 117 · Loại A · 3") |
+| Dữ liệu cũ | Chạy lại toàn bộ 821 dòng sổ theo thứ tự ghi; kiểm 210/210 cặp mã–kho: tồn các quy cách cộng lại = tồn của mã, không quy cách nào âm |
+
+Chưa làm (để đợt sau): danh sách quy cách có kiểm soát của từng mã (gợi ý, nhãn "mới", rà / gộp / ngừng dùng — mục 9.3, 16.3), chọn quy cách tay khi xuất / chuyển kho (V2 Phiếu kho một màn), kiểm kê theo quy cách (V4), in quy cách trên phiếu xuất.

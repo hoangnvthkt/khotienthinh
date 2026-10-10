@@ -8,6 +8,7 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import { INVENTORY_MODE_LABELS, catalogErrorMessage, foldVi, wmsCatalogService, type ItemCard, type StockOverview, type StockRow } from '../../lib/wmsCatalogService';
 import { BAD, EmptyPanel, GREY, Panel, Section, Split, Stat, TEAL, Tile, WARN, dateVi, daysBetween, fmtQty } from './wmsUi';
 import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
+import { SpecChips, SpecStockSection } from './SpecStockSection';
 
 // Tồn kho (V1): số lấy thẳng từ sổ kho, không từ bản sao trong danh mục. Bấm một dòng → thẻ kho, kho khác, cảnh báo kèm cách xử lý.
 
@@ -83,6 +84,12 @@ export const WmsStockView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel]);
 
+  const reloadCard = () => {
+    if (!row) return;
+    const key = rowKey(row);
+    wmsCatalogService.card(row.itemId, row.warehouseId).then(d => setCard(c => c?.key === key ? { key, data: d } : c)).catch(() => undefined);
+  };
+
   const entries = useMemo(() => {
     let bal = 0;
     return (card?.data?.entries || []).map(e => { bal += Number(e.qtyIn) - Number(e.qtyOut); return { ...e, bal }; });
@@ -157,6 +164,7 @@ export const WmsStockView: React.FC = () => {
               <li key={o.warehouseId} className="flex items-center justify-between px-3 py-1.5"><button type="button" onClick={() => setSel(`${o.warehouseId}:${row.itemId}`)} className="hover:underline">{o.warehouseName}</button>
                 <span><span className={NUM}>{fmtQty(Number(o.qty))}</span> <span className="text-xs text-muted-foreground">{row.unit}</span></span></li>)}</ul>
           </Section>}
+          {card?.data && <SpecStockSection card={card.data} itemId={row.itemId} warehouseId={row.warehouseId} unit={row.unit} onChanged={reloadCard} />}
           <Section title="Thẻ kho" right={<span className="text-xs text-muted-foreground">theo ngày chứng từ</span>}>
             {card?.error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{card.error}</p>
               : !card?.data ? <p className="text-sm text-muted-foreground">Đang tải thẻ kho…</p>
@@ -166,7 +174,7 @@ export const WmsStockView: React.FC = () => {
                 <tbody>{(showAll ? entries : entries.slice(-12)).map((c, i) => <tr key={`${c.code}-${i}`} className="border-t border-border" title={c.description || undefined}>
                   <td className="!whitespace-nowrap px-2 py-1.5">{dateVi(c.date)}
                     {c.enteredAt && daysBetween(c.date, c.enteredAt) > 1 && <span className="block text-[10px] text-muted-foreground" title="Ngày nhập liệu vào hệ thống">nhập liệu {dateVi(c.enteredAt)}</span>}</td>
-                  <td className="px-2 py-1.5"><span className={ENT}>{c.code}</span>{c.specification && <span className="mt-0.5 block w-fit rounded bg-slate-100 px-1 text-slate-700 dark:bg-slate-800 dark:text-slate-200" title="Quy cách của dòng chứng từ">{c.specification}</span>}<span className="block text-muted-foreground">{c.fromSku && <span className="mr-1 rounded bg-teal-50 px-1 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200">từ {c.fromSku}</span>}{c.event === 'direct_consumption' ? 'Xuất dùng thẳng (nhập–xuất thẳng)' : TT[c.type] || c.type}{Number(c.unitPrice) === 0 && <span className="ml-1 text-amber-700 dark:text-amber-300">· giá 0</span>}</span></td>
+                  <td className="px-2 py-1.5"><span className={ENT}>{c.code}</span><span className="block"><SpecChips allocations={c.specAllocations} fallback={c.specification} /></span><span className="block text-muted-foreground">{c.fromSku && <span className="mr-1 rounded bg-teal-50 px-1 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200">từ {c.fromSku}</span>}{c.event === 'direct_consumption' ? 'Xuất dùng thẳng (nhập–xuất thẳng)' : TT[c.type] || c.type}{Number(c.unitPrice) === 0 && <span className="ml-1 text-amber-700 dark:text-amber-300">· giá 0</span>}</span></td>
                   <td className="!whitespace-nowrap px-2 py-1.5 text-right">{Number(c.qtyIn) ? <span className={NUM}>{fmtQty(Number(c.qtyIn))}</span> : ''}</td>
                   <td className="!whitespace-nowrap px-2 py-1.5 text-right">{Number(c.qtyOut) ? <span className="font-semibold tabular-nums">{fmtQty(Number(c.qtyOut))}</span> : ''}</td>
                   <td className="!whitespace-nowrap px-2 py-1.5 text-right font-semibold tabular-nums">{fmtQty(c.bal)}</td></tr>)}</tbody></table></div>}
