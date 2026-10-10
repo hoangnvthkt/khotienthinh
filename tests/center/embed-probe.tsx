@@ -29,7 +29,7 @@ const CenterProbe: React.FC = () => {
       <p>App: <span data-testid="outer-path">{outer.pathname}</span> · <span data-testid="exit">{exit || '-'}</span></p>
       <RouteRenderer
         path="/hrm/leave?request=np-41"
-        routes={[{ path: '/hrm/leave', element: <FakeLeave /> }, { path: '/work/tasks/:taskCode', element: <FakeTask /> }]}
+        routes={<><Route path="/hrm/leave" element={<FakeLeave />} /><Route path="/work/tasks/:taskCode" element={<FakeTask />} /></>}
         onExit={setExit}
       />
     </div>

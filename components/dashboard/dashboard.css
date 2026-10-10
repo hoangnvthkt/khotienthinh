@@ -6,7 +6,7 @@
   --db-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px rgba(15, 23, 42, .07);
   --t-blue: #e9f2fd; --t-blue-fg: #1c5cab; --t-rose: #fdeceb; --t-rose-fg: #b42318; --t-amber: #fdf3e2; --t-amber-fg: #a15c07;
   --t-green: #e8f6ee; --t-green-fg: #19774f; --t-teal: #e4f5f6; --t-teal-fg: #0f6e75; --t-violet: #efedfb; --t-violet-fg: #4a3aa7;
-  max-width: 1320px; margin: 0 auto; padding: 16px 18px 32px; color: var(--db-fg); }
+  padding: 16px clamp(18px, 1.6vw, 36px) 32px; color: var(--db-fg); }
 .dark .vdb { --db-line: rgba(255, 255, 255, .07); --db-navy: #0f2147; --db-navy2: #18336e; --db-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 28px rgba(0, 0, 0, .4);
   --t-blue: #16263d; --t-blue-fg: #8bb8f0; --t-rose: #3a1d1d; --t-rose-fg: #f2a3a3; --t-amber: #3a2c14; --t-amber-fg: #f0c27a;
   --t-green: #15302a; --t-green-fg: #8fd6b0; --t-teal: #133034; --t-teal-fg: #86d4da; --t-violet: #24213f; --t-violet-fg: #b4abf2; }
@@ -224,3 +224,22 @@
 .vdb-pri { height: 36px; padding: 0 16px; border-radius: 10px; background: #43992f; color: #fff; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
 .vdb-pri:hover { background: #367a27; }
 @media (prefers-reduced-motion: reduce) { .vdb-tile { transition: none; } }
+
+/* Bảng tồn / nhập / xuất vật tư: tên trên, mã dưới; số bấm được (xanh, gạch chân khi rê); vượt BOQ = đỏ (cảnh báo). */
+.vdb-stock-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.vdb-stock-search { display: flex; align-items: center; gap: 6px; flex: 1; max-width: 340px; height: 32px; padding: 0 10px; border-radius: 9px;
+  background: var(--db-hover); color: var(--db-muted); }
+.vdb-stock-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 12.5px; color: var(--db-fg); }
+.vdb-stock-table td:first-child { min-width: 220px !important; }
+.vdb-stock-name { display: block; font-weight: 600; color: var(--db-fg); overflow-wrap: anywhere; }
+.vdb-stock-code { display: block; margin-top: 1px; font-size: 11.5px; color: var(--db-muted); font-variant-numeric: tabular-nums; }
+.vdb-numlink { font: inherit; font-weight: 600; color: #1c5cab; border-radius: 4px; padding: 0 2px; min-height: 0; min-width: 0; }
+.vdb-numlink:hover { text-decoration: underline; }
+.dark .vdb-numlink { color: #8bb8f0; }
+.vdb-stock-table td[data-remaining="over"], .vdb-stock-table td[data-remaining="over"] .vdb-numlink { color: var(--t-rose-fg); font-weight: 700; }
+.vdb-stock-table td[data-remaining="left"], .vdb-stock-table td[data-remaining="left"] .vdb-numlink { color: #19774f; font-weight: 700; }
+.dark .vdb-stock-table td[data-remaining="left"], .dark .vdb-stock-table td[data-remaining="left"] .vdb-numlink { color: #8fd6b0; }
+.vdb-stock-table td[data-remaining="zero"] .vdb-numlink { color: var(--db-fg); }
+.vdb-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--db-muted); }
+.vdb-pager button { width: 30px; height: 30px; min-height: 0; min-width: 0; display: grid; place-items: center; border-radius: 8px; background: var(--db-hover); color: var(--db-fg); }
+.vdb-pager button:disabled { opacity: .4; }

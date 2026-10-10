@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { GripVertical, Moon, PanelsTopLeft, Search, Settings, Sun, X } from 'lucide-react';
+import { GripVertical, LogOut, Moon, PanelsTopLeft, Search, Settings, Sun, UserRound, Wallet, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -12,6 +12,10 @@ import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useMineWorkItems } from '../../lib/center/workItemsStore';
 import { DEFAULT_AVATAR_URL } from '../../lib/defaultAvatar';
 import { openGlobalSearch, searchShortcutLabel } from '../../lib/search/openGlobalSearch';
+import { useCenterNavigate } from '../../lib/center/centerOpen';
+import { useRouteTitle } from './useRouteTitle';
+import AvatarMenu, { type AvatarMenuItem } from './AvatarMenu';
+import { useAuth } from '../../context/AuthContext';
 import './center.css';
 
 // Rail trái của giao diện Trung tâm điều hành (máy tính): cột hẹp, mỗi app = biểu tượng gradient như ở Home + tên
@@ -97,10 +101,11 @@ export const CenterRailView: React.FC<{
   notifications?: React.ReactNode;
   onNavigate: (to: string) => void;
   onToggleTheme: () => void;
-  onProfile: () => void;
+  /** Menu tài khoản khi bấm avatar (thông tin cá nhân, phiếu lương, cài đặt, đăng xuất). */
+  accountMenu: AvatarMenuItem[];
   onSettings?: () => void;
   onExitCenter: () => void;
-}> = ({ pathname, company, modules, navFor, onReorder, badge, avatar, userName, isDark, notifications, onNavigate, onToggleTheme, onProfile, onSettings, onExitCenter }) => {
+}> = ({ pathname, company, modules, navFor, onReorder, badge, avatar, userName, isDark, notifications, onNavigate, onToggleTheme, accountMenu, onSettings, onExitCenter }) => {
   const here = firstSegment(pathname);
   const [flyout, setFlyout] = useState<{ key: string; top: number } | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
@@ -174,9 +179,9 @@ export const CenterRailView: React.FC<{
         <button type="button" className="vcc-rail-tool" onClick={onToggleTheme} title={isDark ? 'Nền sáng' : 'Nền tối'} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'}>
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
-        <button type="button" className="vcc-rail-avatar" onClick={onProfile} title={`${userName} — hồ sơ của tôi`} aria-label="Hồ sơ của tôi">
+        <AvatarMenu name={userName} items={accountMenu} placement="beside" buttonClassName="vcc-rail-avatar">
           <img src={avatar} alt="" />
-        </button>
+        </AvatarMenu>
         <UiModeSwitch variant="rail" active onChange={next => { if (!next) onExitCenter(); }} />
       </div>
       {flyout && flyoutModule && (
@@ -194,7 +199,6 @@ const CenterRail: React.FC<{ onExitCenter: () => void }> = ({ onExitCenter }) =>
   const { user, appSettings } = useApp();
   const { isDark, toggleTheme } = useTheme();
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const navFor = useModuleNavigation();
   const [order, setOrder] = useState<string[]>(readOrder);
   const modules = useMemo(() => {
@@ -207,6 +211,15 @@ const CenterRail: React.FC<{ onExitCenter: () => void }> = ({ onExitCenter }) =>
     setOrder(keys);
     try { localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* chỉ giữ trong phiên */ }
   }, []);
+  // Giao diện Trung tâm: bấm chức năng nào cũng mở thành tab mới trong Trung tâm (chủ SP 10/10).
+  const go = useCenterNavigate(true);
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const signOut = useCallback(async () => {
+    try { await logout(); } catch (error) { console.warn('Logout failed:', error); }
+    navigate('/login');
+  }, [logout, navigate]);
+  const titleOf = useRouteTitle();
   const mine = useMineWorkItems(true);
   const badge = mine && mine.total > 0 ? (mine.total > 99 ? '99+' : String(mine.total)) : null;
   return (
@@ -221,10 +234,15 @@ const CenterRail: React.FC<{ onExitCenter: () => void }> = ({ onExitCenter }) =>
       userName={user.name}
       isDark={isDark}
       notifications={<NotificationCenter userId={user?.id} mode="desktop" />}
-      onNavigate={to => navigate(to)}
+      onNavigate={to => go(to, { title: titleOf(to) || undefined })}
       onToggleTheme={toggleTheme}
-      onProfile={() => navigate('/my-profile')}
-      onSettings={canAccessRoute(user, '/settings') ? () => navigate('/settings') : undefined}
+      accountMenu={[
+        { key: 'profile', label: 'Thông tin cá nhân', icon: UserRound, onSelect: () => go('/my-profile', { title: 'Hồ sơ của tôi' }) },
+        ...(canAccessRoute(user, '/my-payroll') ? [{ key: 'payroll', label: 'Phiếu lương của tôi', icon: Wallet, onSelect: () => go('/my-payroll', { title: 'Phiếu lương' }) }] : []),
+        ...(canAccessRoute(user, '/settings') ? [{ key: 'settings', label: 'Cài đặt', icon: Settings, onSelect: () => go('/settings', { title: 'Cài đặt' }) }] : []),
+        { key: 'logout', label: 'Đăng xuất', icon: LogOut, onSelect: () => { void signOut(); }, danger: true },
+      ]}
+      onSettings={canAccessRoute(user, '/settings') ? () => go('/settings', { title: 'Cài đặt' }) : undefined}
       onExitCenter={onExitCenter}
     />
   );

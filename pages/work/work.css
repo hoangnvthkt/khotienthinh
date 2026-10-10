@@ -1,8 +1,6 @@
 .work-module {
   --work-border: #e2e8f0;
   --work-muted: #64748b;
-  max-width: 1440px;
-  margin: auto;
   padding: 28px 32px;
   color: #172b3a;
   font-size: 14px;

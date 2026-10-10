@@ -8,7 +8,7 @@ describe('request deep links', () => {
   });
 
   it('registers the canonical request detail route', () => {
-    expect(readFileSync('App.tsx', 'utf8')).toContain('path="rq/:requestId"');
+    expect(readFileSync('routes/appPages.tsx', 'utf8')).toContain('path="rq/:requestId"');
   });
 
   it('uses the canonical route from home and global search results', () => {
@@ -60,7 +60,7 @@ describe('request deep links', () => {
   });
 
   it('does not mount the retired request context at application scope', () => {
-    const app = readFileSync('App.tsx', 'utf8');
+    const app = readFileSync('App.tsx', 'utf8') + readFileSync('routes/appPages.tsx', 'utf8');
 
     expect(app).not.toContain('<RequestProvider>');
     expect(app).not.toContain("./context/RequestContext");
@@ -68,7 +68,7 @@ describe('request deep links', () => {
 
   it('keeps the phase 1 request workspace behind an environment rollback flag', () => {
     const flags = readFileSync('lib/featureFlags.ts', 'utf8');
-    const app = readFileSync('App.tsx', 'utf8');
+    const app = readFileSync('routes/appPages.tsx', 'utf8');
 
     expect(flags).toContain('VITE_ENABLE_REQUEST_APPROVAL_PHASE1');
     expect(app).toContain('isRequestApprovalPhase1Enabled');

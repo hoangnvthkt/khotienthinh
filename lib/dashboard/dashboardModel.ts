@@ -133,6 +133,10 @@ export const ROUTES = {
   procurement: '/procurement',
   portfolio: '/da/portfolio',
   materialRequest: (projectId: string, requestId: string) => query('/da', { projectId, tab: 'material', materialTab: 'request', requestId }),
+  /** Phiếu kho (Phiếu kho mở đúng phiếu theo ?tx=). */
+  stockDocument: (transactionId: string) => query('/operations', { tx: transactionId }),
+  /** Đơn mua (Mua hàng mở đúng đơn theo ?po=). */
+  purchaseOrder: (poId: string) => query('/procurement', { po: poId }),
 };
 
 /** Tên tab khi mở màn gốc từ bảng. */
@@ -165,6 +169,11 @@ export interface DrillDown {
   total?: Record<string, number | null>;
   /** Mở màn gốc của con số này. */
   through?: { label: string; route: string };
+  /** Dòng đọc khi bấm (giao dịch vật tư): đang tải / lỗi. */
+  status?: 'loading' | 'error';
+  message?: string;
+  /** Dòng nhắc dưới bảng (mặc định "Bấm một dòng để mở hồ sơ."). */
+  hint?: string;
 }
 
 const projectCol: DrillColumn = { key: 'project', label: 'Dự án' };

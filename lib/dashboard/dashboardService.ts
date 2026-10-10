@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { DashGap, DashNeed, DashProject, DashProjectFinance, DashboardDataset, DashboardId } from './dashboardTypes';
+import type { DashGap, DashMove, DashMoveKind, DashProject, DashProjectFinance, DashStockItem, DashboardDataset, DashboardId } from './dashboardTypes';
 
 // Bảng điều khiển đọc một RPC (get_center_dashboard_v1): máy chủ kiểm quyền từng bảng, từng dự án và tổng hợp số.
 // Không realtime: số liệu giữ trong bộ nhớ tới khi người dùng bấm Cập nhật — rời Trung tâm rồi quay lại vẫn thấy số cũ
@@ -78,10 +78,11 @@ export const parseDashboard = (raw: unknown): DashboardDataset => {
     materialItems: list(r.materialItems).map(obj).map(m => ({
       id: text(m.id), projectId: text(m.projectId), name: text(m.name), unit: text(m.unit), budget: num(m.budget), purchased: num(m.purchased),
     })),
-    needs: list(r.needs).map(obj).map((n): DashNeed => ({
-      id: text(n.id), requestId: text(n.requestId) || text(n.id), code: text(n.code), title: text(n.title), kind: n.kind === 'buy' ? 'buy' : 'issue',
-      material: text(n.material), unit: text(n.unit), qty: num(n.qty), neededDate: textOrNull(n.neededDate), projectId: text(n.projectId),
-    })),
+    stockItems: list(r.stockItems).map(obj).map((m): DashStockItem => ({
+      projectId: text(m.projectId), key: text(m.key), itemId: textOrNull(m.itemId), name: text(m.name) || 'Vật tư', code: textOrNull(m.code),
+      unit: text(m.unit), boq: numOrNull(m.boq), ordered: num(m.ordered), transit: num(m.transit), imported: num(m.imported), exported: num(m.exported),
+      returned: num(m.returned), stock: num(m.stock),
+    })).filter(m => m.projectId && m.key),
   };
 };
 
@@ -115,4 +116,18 @@ export const fetchDashboard = async (userId: string, force = false): Promise<Das
   dataCache = { userId, data: parsed };
   accessCache = { userId, promise: Promise.resolve(parsed.access) };
   return parsed;
+};
+
+/** Giao dịch kho của một vật tư (bấm vào số trên bảng tồn / nhập / xuất) — đọc khi bấm, không nằm trong số liệu bảng. */
+export const fetchMaterialMoves = async (key: string, kind: DashMoveKind, projectId: string | null): Promise<DashMove[]> => {
+  const { data, error } = await supabase.rpc('get_center_material_moves_v1', { p_material_key: key, p_kind: kind, p_project_id: projectId });
+  if (error) {
+    console.warn('Center material moves failed:', error);
+    throw new Error('Chưa tải được giao dịch. Thử lại sau ít phút.');
+  }
+  return list(obj(data).rows).map(obj).map(m => ({
+    id: text(m.id), date: textOrNull(m.date), code: text(m.code) || '—', event: textOrNull(m.event), partner: textOrNull(m.partner),
+    warehouse: textOrNull(m.warehouse), projectId: text(m.projectId), projectCode: text(m.projectCode), qty: num(m.qty), unit: textOrNull(m.unit),
+    transactionId: textOrNull(m.transactionId), poId: textOrNull(m.poId), expected: textOrNull(m.expected),
+  }));
 };

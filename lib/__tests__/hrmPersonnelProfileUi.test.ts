@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(join(process.cwd(), 'pages/ep/HrmPersonnelProfile.tsx'), 'utf8');
-const app = readFileSync(join(process.cwd(), 'App.tsx'), 'utf8');
+const app = readFileSync(join(process.cwd(), 'routes/appPages.tsx'), 'utf8');
 
 describe('HRM personnel profile 8-tab UI', () => {
   it('defines exactly the eight governed profile sections', () => {
@@ -13,7 +13,7 @@ describe('HRM personnel profile 8-tab UI', () => {
       'qualifications_documents',
     ];
     keys.forEach(key => expect(page).toContain(`key: '${key}'`));
-    expect(app).toContain("import('./pages/ep/HrmPersonnelProfile')");
+    expect(app).toContain("import('../pages/ep/HrmPersonnelProfile')");
   });
 
   it('renders separate permission, loading, empty and error states', () => {

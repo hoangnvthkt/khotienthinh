@@ -206,8 +206,11 @@ export const DrillDrawer: React.FC<{ drill: DrillDown; onClose: () => void; onOp
           <button type="button" className="vdb-menu" onClick={onClose} aria-label="Đóng"><X size={16} /></button>
         </header>
         <div className="vdb-drawer-body">
-          <DataTable drill={drill} onRow={onOpen} />
-          {drill.rows.some(row => row.route) && !drill.subtitle?.includes('Bấm một dòng') && <p className="m-0 mt-2 px-2 text-xs vdb-muted">Bấm một dòng để mở hồ sơ.</p>}
+          {drill.status === 'loading' ? <p className="m-0 px-2 py-8 text-center text-sm vdb-muted" role="status">Đang tải…</p>
+            : drill.status === 'error' ? <p className="m-0 px-2 py-8 text-center text-sm" role="alert">{drill.message || 'Chưa tải được.'}</p>
+            : <DataTable drill={drill} onRow={onOpen} />}
+          {!drill.status && drill.rows.some(row => row.route) && !drill.subtitle?.includes('Bấm một dòng')
+            && <p className="m-0 mt-2 px-2 text-xs vdb-muted">{drill.hint || 'Bấm một dòng để mở hồ sơ.'}</p>}
         </div>
         {drill.through && (
           <footer className="vdb-drawer-foot">

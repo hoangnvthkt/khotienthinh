@@ -166,7 +166,8 @@ const Operations: React.FC = () => {
   }, [location.state]);
 
   useEffect(() => {
-    const transactionId = location.state?.transactionId;
+    // Mở đúng phiếu: state (từ màn khác) hoặc ?tx= (link từ Bảng điều khiển / tab Trung tâm).
+    const transactionId = location.state?.transactionId || new URLSearchParams(location.search).get('tx');
     if (!transactionId || openedStateTransactionRef.current === transactionId) return;
     const loaded = transactions.find(item => item.id === transactionId);
     const open = async () => {
@@ -182,7 +183,7 @@ const Operations: React.FC = () => {
       await openTransactionDetails(tx);
     };
     void open().catch(error => toast.error('Không thể mở phiếu kho', getApiErrorMessage(error)));
-  }, [location.state, transactions]);
+  }, [location.state, location.search, transactions]);
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isItemSelectOpen, setItemSelectOpen] = useState(false);
 

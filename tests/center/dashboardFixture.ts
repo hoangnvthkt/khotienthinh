@@ -1,7 +1,7 @@
 // Dữ liệu minh họa cho Bảng điều khiển (không phải số liệu thật). Số khớp nhau giữa các bảng: doanh thu = đã thu + còn nợ
 // + giữ lại + khấu trừ tạm ứng; chi phí = tổng các nhóm; 12 tháng cộng lại đúng tổng.
 // ?dash=bgd (mặc định) | ketoan | cht | muahang | none | error | slow
-import type { CostCategory, DashGap, DashMonth, DashProject, DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
+import type { CostCategory, DashGap, DashMonth, DashMove, DashMoveKind, DashProject, DashStockItem, DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
 
 const TODAY = '2026-10-07';
 const MONTHS = ['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
@@ -113,15 +113,48 @@ const MATERIALS: Array<[string, string, number]> = [
   ['Cáp điện CXV 3×95+1×50', 'm', 0.05], ['Sơn chống thấm Kova CT-11A', 'thùng', 0.04],
 ];
 
-const NEEDS = [
-  { id: 'mr2688:1', requestId: 'mr2688', code: 'MR-2026-2688', title: 'Thép móng nhà xưởng 3', kind: 'buy', material: 'Thép cây D16 CB400', unit: 'kg', qty: 18500, neededDate: '2026-10-09', projectId: 'smb' },
-  { id: 'mr2688:2', requestId: 'mr2688', code: 'MR-2026-2688', title: 'Thép móng nhà xưởng 3', kind: 'buy', material: 'Thép cây D10 CB300', unit: 'kg', qty: 7200, neededDate: '2026-10-09', projectId: 'smb' },
-  { id: 'mr2701:1', requestId: 'mr2701', code: 'MR-2026-2701', title: 'Cấp vật tư đổ bê tông sàn tầng 2', kind: 'issue', material: 'Xi măng PCB40', unit: 'tấn', qty: 24, neededDate: '2026-10-10', projectId: 'da29' },
-  { id: 'mr2703:1', requestId: 'mr2703', code: 'MR-2026-2703', title: 'Vật liệu hoàn thiện khu văn phòng', kind: 'buy', material: 'Gạch đặc 6,5×10,5×22', unit: 'viên', qty: 32000, neededDate: '2026-10-12', projectId: 'xhv' },
-  { id: 'mr2704:1', requestId: 'mr2704', code: 'MR-2026-2704', title: 'Cấp cát đá cho trạm trộn', kind: 'issue', material: 'Cát vàng hạt to', unit: 'm³', qty: 120, neededDate: '2026-10-14', projectId: 'tttm' },
-  { id: 'mr2705:1', requestId: 'mr2705', code: 'MR-2026-2705', title: 'Cáp điện tủ tổng', kind: 'buy', material: 'Cáp điện CXV 3×95+1×50', unit: 'm', qty: 420, neededDate: '2026-10-18', projectId: 'ql1a' },
-  { id: 'mr2706:1', requestId: 'mr2706', code: 'MR-2026-2706', title: 'Tôn lợp nhà kho', kind: 'buy', material: 'Tôn lợp mạ màu 0,45mm', unit: 'm²', qty: 2600, neededDate: '2026-10-21', projectId: 'hpg' },
-] as const;
+const CODES = ['VT-000124', 'VT-000087', 'VT-000125', 'VT-000033', 'VT-000201', 'VT-000058', 'VT-000041', 'VT-000042', 'VT-000310', 'VT-000277'];
+
+/** Tồn / nhập / xuất: mỗi vật tư một mã danh mục chung giữa các dự án; thêm 1 dòng chỉ có dự toán (chưa gắn danh mục). */
+const stockOf = (seed: Seed): DashStockItem[] => {
+  const count = seed.id === 'smb' || seed.id === 'tttm' ? 10 : 5;
+  const rows: DashStockItem[] = MATERIALS.slice(0, count).map(([name, unit, share], index) => {
+    const boq = Math.round(seed.matBudget * share / 1e6) * 10;
+    const imported = Math.round(boq * Math.min(0.95, seed.actual / 100 + 0.1 - index * 0.04));
+    const exported = Math.round(imported * 0.82);
+    const returned = index % 3 === 0 ? Math.round(imported * 0.02) : 0;
+    const ordered = index % 2 === 0 ? Math.round(boq * 0.08) : 0;
+    const transit = index % 3 === 1 ? Math.round(boq * 0.05) : 0;
+    const siteBack = index === 2 ? Math.round(exported * 0.03) : 0;
+    return { projectId: seed.id, key: `item-${index}`, itemId: `item-${index}`, name, code: CODES[index], unit, boq, ordered, transit, imported, exported, returned,
+      stock: imported + siteBack - exported - returned };
+  });
+  // Vượt BOQ ở DA29 (thép D16) để thấy cảnh báo.
+  if (seed.id === 'da29') rows[0] = { ...rows[0], exported: rows[0].boq! + 120, imported: rows[0].boq! + 200, stock: 80 - rows[0].returned };
+  rows.push({ projectId: seed.id, key: 'name:phụ gia chống thấm sika', itemId: null, name: 'Phụ gia chống thấm Sika', code: null, unit: 'kg', boq: 450,
+    ordered: 0, transit: 0, imported: 0, exported: 0, returned: 0, stock: 0 });
+  return rows;
+};
+
+/** Chứng từ mẫu cộng đúng số trên bảng (chia 3 dòng). */
+export const fixtureMoves = (dataset: DashboardDataset, key: string, kind: DashMoveKind, projectId: string | null): DashMove[] =>
+  dataset.stockItems.filter(item => item.key === key && (!projectId || item.projectId === projectId)).flatMap(item => {
+    const field = { ordered: 'ordered', transit: 'transit', in: 'imported', out: 'exported', return: 'returned', ledger: 'stock' } as const;
+    const total = item[field[kind]];
+    if (!total) return [];
+    const parts = [Math.round(total * 0.5), Math.round(total * 0.3)];
+    parts.push(total - parts[0] - parts[1]);
+    const code = SEEDS.find(seed => seed.id === item.projectId)!.code;
+    const po = kind === 'ordered' || kind === 'transit';
+    return parts.map((part, index) => ({
+      id: `${item.projectId}-${key}-${kind}-${index}`, date: `2026-0${7 + index}-1${index}T08:00:00+07:00`,
+      code: po ? `PO-2026-0${index + 4}${item.projectId.length}` : `${kind === 'out' ? 'PX' : 'PN'}-2026-0${index + 4}${item.projectId.length}`,
+      event: kind === 'ordered' ? 'confirmed' : kind === 'transit' ? 'waiting_delivery' : kind === 'out' ? 'construction_issue' : 'request_po_receipt',
+      partner: po || kind === 'return' ? 'Công ty Thép Hòa Phát' : null, warehouse: `Kho ${code}`, projectId: item.projectId, projectCode: code,
+      qty: part, unit: item.unit, transactionId: po ? null : `tx-${item.projectId}-${kind}-${index}`, poId: po || kind === 'return' ? `po-${item.projectId}-${index}` : null,
+      expected: null,
+    }));
+  });
 
 const ACCESS: Record<string, DashboardId[]> = {
   bgd: ['portfolio', 'cashflow', 'materials', 'debt'],
@@ -153,6 +186,6 @@ export const buildDashboardFixture = (role: string): DashboardDataset => {
       const budget = round(seed.matBudget * share);
       return { id: `${seed.id}-m${index}`, projectId: seed.id, name, unit, budget, purchased: round(budget * Math.min(0.98, seed.actual / 100 + 0.1 - index * 0.03)) };
     })),
-    needs: NEEDS.filter(need => ids.has(need.projectId)).map(need => ({ ...need })),
+    stockItems: SEEDS.filter(seed => ids.has(seed.id)).flatMap(stockOf),
   };
 };

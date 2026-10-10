@@ -22,7 +22,7 @@ describe('authorization E27 role-template administration', () => {
     const page = read('pages/settings/SettingsRoleTemplates.tsx');
     const service = read('lib/permissions/businessRoleAdminService.ts');
     const settings = read('pages/Settings.tsx');
-    const app = read('App.tsx');
+    const app = read('routes/appPages.tsx');
 
     expect(page).toContain('Thông tin chung');
     expect(page).toContain('Cấu hình bảng phân quyền');

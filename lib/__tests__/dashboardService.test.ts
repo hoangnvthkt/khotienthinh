@@ -16,7 +16,7 @@ const SERVER = {
     { id: 'p2', code: 'DA29', name: 'Nhà xưởng', status: 'active', finance: null, gaps: null },
   ],
   months: [{ month: '2026-09', projectId: 'p1', revenue: '10', cost: 2 }],
-  materialItems: [], needs: [{ id: 'r1:1', requestId: 'r1', code: 'MR-1', kind: 'buy', qty: '18.5', neededDate: null, projectId: 'p1' }],
+  materialItems: [], stockItems: [{ projectId: 'p1', key: 'item-1', itemId: 'item-1', name: 'Thép', code: 'VT-1', unit: 'kg', boq: null, imported: '18.5', exported: 2, returned: null }, { projectId: '', key: 'x' }],
 };
 
 describe('dashboard service', () => {
@@ -40,7 +40,7 @@ describe('dashboard service', () => {
     expect(p2.finance).toBeNull();
     expect(p2.gaps).toEqual([]);
     expect(data.months[0]).toMatchObject({ revenue: 10, cashIn: 0 });
-    expect(data.needs[0]).toMatchObject({ requestId: 'r1', qty: 18.5, kind: 'buy' });
+    expect(data.stockItems).toEqual([{ projectId: 'p1', key: 'item-1', itemId: 'item-1', name: 'Thép', code: 'VT-1', unit: 'kg', boq: null, ordered: 0, transit: 0, imported: 18.5, exported: 2, returned: 0, stock: 0 }]);
   });
 
   it('is not realtime: one server call until the user asks for an update', async () => {

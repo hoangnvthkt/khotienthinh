@@ -2,15 +2,17 @@ import React, { useCallback } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import NotificationCenter from '../../components/NotificationCenter';
 import CenterShell from '../../components/center/CenterShell';
+import { useRouteTitle } from '../../components/center/useRouteTitle';
 import CenterEntrance from '../../components/center/CenterIntro';
 import { StateBox } from '../../components/procurement/hub/hubUi';
 import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useCenterAccess } from '../../lib/center/centerService';
-import { fetchDashboard, fetchDashboardAccess } from '../../lib/dashboard/dashboardService';
+import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves } from '../../lib/dashboard/dashboardService';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -45,6 +47,11 @@ const CenterPage: React.FC = () => {
   const userId = user?.id;
   const loadDashboard = useCallback((options?: { force?: boolean }) => fetchDashboard(userId as string, options?.force), [userId]);
   const loadDashboardAccess = useCallback(() => fetchDashboardAccess(userId as string), [userId]);
+  const titleForRoute = useRouteTitle();
+  const { logout } = useAuth();
+  const onLogout = useCallback(() => {
+    logout().catch(error => console.warn('Logout failed:', error)).finally(() => navigate('/login'));
+  }, [logout, navigate]);
   const goHome = () => navigate('/');
 
   if (state.status === 'loading') {
@@ -83,6 +90,9 @@ const CenterPage: React.FC = () => {
         onNavigate={(route, options) => navigate(route, options)}
         loadDashboard={loadDashboard}
         loadDashboardAccess={loadDashboardAccess}
+        loadMaterialMoves={fetchMaterialMoves}
+        titleForRoute={titleForRoute}
+        onLogout={onLogout}
       />
     </CenterEntrance>
   );

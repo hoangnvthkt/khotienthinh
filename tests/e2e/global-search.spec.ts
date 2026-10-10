@@ -26,8 +26,10 @@ test("ô trống: thao tác nhanh theo quyền, mẹo tìm, phủ kín màn đi�
   await expect(quick.getByRole("button")).toHaveText(["Chấm công", "Xin nghỉ phép", "Tạo đề xuất", "Lập đề xuất vật tư", "Ghi nhật ký công trường", "Lập đơn hàng", "Lập đề nghị chi", "Đặt xe"]);
   await expect(page.getByText(/Mẹo: gõ không dấu hoặc viết tắt/)).toBeVisible();
   if (isPhone(page)) {
+    // Đợi hiệu ứng mở (hữu hạn) chạy xong rồi mới đo.
+    await page.locator(".global-search-panel").evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)));
     const box = await page.locator(".global-search-panel").boundingBox();
-    expect(box).toMatchObject({ x: 0, y: 0 });
+    expect({ x: Math.round(box!.x), y: Math.round(box!.y) }).toEqual({ x: 0, y: 0 });
     expect(Math.round(box!.height)).toBe(page.viewportSize()!.height);
   }
   await expectCalm(page);

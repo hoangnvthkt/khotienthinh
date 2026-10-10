@@ -396,7 +396,7 @@ const HrmPersonnelProfile: React.FC = () => {
   const hasPermission = visibleSections.has(activeSection);
 
   return (
-    <main className="mx-auto max-w-[1500px] space-y-5 pb-10">
+    <main className="w-full space-y-5 pb-10">
       <button type="button" onClick={() => navigate(overview.accessLevel === 'SELF' ? '/my-profile' : '/ep')} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-sky-700 dark:text-slate-300 dark:hover:text-sky-300">
         <ArrowLeft size={16} /> {overview.accessLevel === 'SELF' ? 'Hồ sơ của tôi' : 'Danh sách nhân sự'}
       </button>

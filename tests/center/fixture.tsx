@@ -5,7 +5,7 @@
 // Cột 64px bên trái chỉ giả lập thanh bên (Sidebar) có sẵn của app.
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, Package, ShoppingCart } from 'lucide-react';
+import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
@@ -16,7 +16,8 @@ import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workIte
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
-import { buildDashboardFixture } from './dashboardFixture';
+import { buildDashboardFixture, fixtureMoves } from './dashboardFixture';
+import type { DashMoveKind } from '../../lib/dashboard/dashboardTypes';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
@@ -35,6 +36,8 @@ const loadDashboard = DASH === 'off' ? undefined : (options?: { force?: boolean 
     else resolve({ ...buildDashboardFixture(DASH === 'flaky' ? 'bgd' : DASH), generatedAt: options?.force ? '2026-10-07T09:40:00+07:00' : '2026-10-07T08:25:00+07:00' });
   }, DASH === 'slow' ? 1500 : 120);
 });
+const loadMaterialMoves = (key: string, kind: DashMoveKind, projectId: string | null) =>
+  new Promise<ReturnType<typeof fixtureMoves>>(resolve => setTimeout(() => resolve(fixtureMoves(buildDashboardFixture(DASH === 'flaky' || DASH === 'slow' ? 'bgd' : DASH), key, kind, projectId)), 150));
 const loadDashboardAccess = () => Promise.resolve(DASH === 'error' || DASH === 'flaky' || DASH === 'slow' ? buildDashboardFixture('bgd').access : buildDashboardFixture(DASH).access);
 const at = (days: number, hour = 17) => new Date(2026, 9, 7 + days, hour, 0).toISOString();
 
@@ -224,7 +227,10 @@ const FixtureRail: React.FC<{ dark: boolean; onToggleTheme: () => void; onExit: 
       notifications={<button type="button" aria-label="Thông báo"><Bell size={16} /></button>}
       onNavigate={onNavigate}
       onToggleTheme={onToggleTheme}
-      onProfile={() => undefined}
+      accountMenu={[
+        { key: 'profile', label: 'Thông tin cá nhân', icon: UserRound, onSelect: () => onNavigate('/my-profile') },
+        { key: 'logout', label: 'Đăng xuất', icon: LogOut, onSelect: () => onNavigate('/login'), danger: true },
+      ]}
       onSettings={() => undefined}
       onExitCenter={onExit}
     />
@@ -263,6 +269,7 @@ const Fixture: React.FC = () => {
             isDark={dark}
             onToggleTheme={() => setDark(value => !value)}
             onOpenMenu={() => setLastRoute('menu')}
+            onLogout={() => setLastRoute('logout')}
             mobileNotifications={<button type="button" className="vcc-iconbtn" aria-label="Thông báo"><Bell size={15} /></button>}
             canOpenRoute={route => !DENIED_ROUTES.has(route)}
             onNavigate={setLastRoute}
@@ -274,6 +281,7 @@ const Fixture: React.FC = () => {
             saveLayout={saveLayout}
             loadDashboard={loadDashboard}
             loadDashboardAccess={loadDashboardAccess}
+            loadMaterialMoves={loadMaterialMoves}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
           />
