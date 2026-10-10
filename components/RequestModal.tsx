@@ -3213,6 +3213,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                         {isEditable && !hasMultipleSources && (
                                                             <MaterialCommercialDescriptionFields
                                                                 sku={group.sku}
+                                                                itemId={primaryRow.itemId}
                                                                 name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
                                                                 onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
                                                                 specification={(primaryRow as RequestLineDraft).specification || ''}
@@ -3472,6 +3473,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                             {isEditable && !hasMultipleSources && (
                                                 <MaterialCommercialDescriptionFields
                                                     sku={group.sku}
+                                                    itemId={primaryRow.itemId}
                                                     name={(primaryRow as RequestLineDraft).itemNameSnapshot || group.name}
                                                     onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
                                                     specification={(primaryRow as RequestLineDraft).specification || ''}

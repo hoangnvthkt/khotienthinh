@@ -8,6 +8,7 @@ import { splitLinesForOrder } from '../../../lib/procurementLineAssignment';
 import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { SpecInput } from '../../material/SpecInput';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
 
@@ -238,7 +239,7 @@ export const OrderEditor: React.FC<{
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
                       <span className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] md:basis-auto"><span className="font-semibold text-foreground">{item.name}</span>
                         <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span>
-                        <input value={item.specification} onChange={e => patchItem(item.key, { specification: e.target.value })} maxLength={160}
+                        <SpecInput itemId={item.itemId} itemName={item.name} hideHint={Boolean(specProblem)} value={item.specification} onChange={v => patchItem(item.key, { specification: v })} maxLength={160}
                           placeholder="Quy cách / cấu hình (VD loại 1, tôn biên 13 sóng)" aria-label={`Quy cách ${item.name}`} aria-invalid={Boolean(specProblem)}
                           className={`mt-1 block w-full max-w-md text-sm ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />
                         {specProblem && <span className="mt-0.5 block text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}</span>

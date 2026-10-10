@@ -10,6 +10,7 @@ import { procurementInboxService } from '../../../lib/procurementInboxService';
 import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { SpecInput } from '../../material/SpecInput';
 
 // Gọi hàng theo HĐ nguyên tắc: giá lấy từ bảng giá HĐ theo ngày giao, không duyệt từng đơn.
 // Gửi xong thủ kho kho nhận thấy phiếu nhập như đơn PO; nhận xong chờ đối soát tháng (chưa ghi nợ).
@@ -201,7 +202,7 @@ export const ContractOrderEditor: React.FC<{
               <span className="min-w-[10rem] flex-1"><span className="font-medium text-foreground">{r.name}</span>
                 {r.contractPrice != null
                   ? r.spec && <span className="block text-xs text-muted-foreground">{r.spec}</span>
-                  : <input aria-label={`Quy cách ${r.name}`} value={r.spec} onChange={e => patch(i, { spec: e.target.value })} maxLength={160} placeholder="Quy cách (nếu có)"
+                  : <SpecInput itemId={r.itemId} itemName={r.name} hideHint={Boolean(specProblem)} aria-label={`Quy cách ${r.name}`} value={r.spec} onChange={v => patch(i, { spec: v })} maxLength={160} placeholder="Quy cách (nếu có)"
                     aria-invalid={Boolean(specProblem)} className={`mt-1 block w-full max-w-xs py-1 text-xs ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />}
                 {specProblem && <span className="block text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}</span>
               <input aria-label={`SL ${r.name}`} inputMode="decimal" value={r.qty} onChange={e => patch(i, { qty: e.target.value })} placeholder="SL" className={`w-24 text-right tabular-nums ${inputCls}`} />

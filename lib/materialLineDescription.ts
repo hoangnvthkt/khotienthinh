@@ -47,8 +47,12 @@ export const buildPurchaseOrderLineDescription = (
   };
 };
 
-/** So sánh quy cách: bỏ khoảng trắng thừa, không phân biệt hoa thường (khớp lower(btrim()) ở máy chủ). */
-export const specKey = (value?: string | null): string => clean(value).replace(/\s+/g, ' ').toLowerCase();
+/**
+ * So sánh quy cách = so tên mã (khớp app_private.spec_key / catalog_name_key ở máy chủ, doc 13 mục 9.3):
+ * bỏ dấu, hoa thường, dấu cách và - _ / ( ) ., coi "x" / "*" / "×" là một, dấu phẩy thập phân là dấu chấm, "ly" = mm.
+ */
+export const specKey = (value?: string | null): string => clean(value).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd')
+  .replace(/(\d)\s*ly\b/g, '$1mm').replace(/,/g, '.').replace(/[×*]/g, 'x').replace(/\bly\b/g, 'mm').replace(/[\s\-_/().]+/g, '');
 
 /**
  * Một mã nhiều quy cách (chủ SP 09/10/2026): mã có từ 2 dòng trong chứng từ thì mỗi dòng phải ghi quy cách,

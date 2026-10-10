@@ -851,3 +851,22 @@ Làm theo mục 9 và 16.3 (câu 30, 31 đã duyệt). Nền: #147 (mỗi dòng 
 | Dữ liệu cũ | Chạy lại toàn bộ 821 dòng sổ theo thứ tự ghi; kiểm 210/210 cặp mã–kho: tồn các quy cách cộng lại = tồn của mã, không quy cách nào âm |
 
 Chưa làm (để đợt sau): danh sách quy cách có kiểm soát của từng mã (gợi ý, nhãn "mới", rà / gộp / ngừng dùng — mục 9.3, 16.3), chọn quy cách tay khi xuất / chuyển kho (V2 Phiếu kho một màn), kiểm kê theo quy cách (V4), in quy cách trên phiếu xuất.
+
+---
+
+## 23. Danh sách quy cách chuẩn của từng mã, đã code (10/10/2026)
+
+Làm theo mục 9.3 và 16.3 (câu 14 đã duyệt: Mua hàng tạo quy cách mới khi lập đơn, nhãn "mới", người Cấp mã rà sau).
+
+| Phần | Cách làm |
+|---|---|
+| Danh sách | Bảng `item_specs`: mỗi mã một danh sách; trạng thái đang dùng / mới · chờ rà / ngừng dùng / đã gộp (tên khác) |
+| So trùng | Cùng quy tắc với tên mã: bỏ dấu, hoa thường, dấu cách và - _ / ( ) ., "x" / "*" / "×", dấu phẩy thập phân, "ly" = mm (kể cả "1,5ly"). Áp dụng luôn cho giá HĐ theo quy cách và tồn theo quy cách |
+| Ô quy cách trên chứng từ | Đơn từ đề xuất, đơn chủ động, gọi hàng HĐ, bảng giá HĐ, phiếu đề xuất, phiếu chuyển quy cách: gợi ý danh sách của mã; gõ khác kiểu tự đổi về đúng tên; chưa có → nhãn "mới", **không chặn**; quy cách khác số với tên mã (D8 / D10, M24 / M20, 0.45mm / 0.5mm) → cảnh báo "có thể là vật tư khác" |
+| Tự vào danh sách | Quy cách gõ trên đơn mua, bảng giá HĐ, phiếu chuyển quy cách → "chờ rà" |
+| Danh mục → ô "Quy cách chờ rà" | Người Cấp mã: Giữ / Sửa chữ / Gộp vào… / Ngừng dùng (lý do gợi ý: là ghi chú, là vật tư khác — cần mã riêng, không dùng nữa) |
+| Danh mục → chi tiết mã → Quy cách | Danh sách kèm tồn từng kho, hàng đang về, số dòng đơn; thêm quy cách (kiểm trùng ngay khi gõ) |
+| Sửa chữ / gộp | Tồn chuyển sang quy cách mới bằng phiếu chuyển quy cách; tên cũ thành "tên khác" (gõ lại vẫn ra đúng). Chứng từ đã lập giữ nguyên chữ |
+| Ngừng dùng | Khóa khi còn tồn ở kho nào hoặc còn hàng đang về |
+| Nhật ký | Mọi thao tác ghi vào nhật ký của mã (ai, lúc nào, trước/sau, lý do) |
+| Dữ liệu cũ | 42 quy cách trên 21 mã (đơn mua, bảng giá HĐ, sổ kho) vào "chờ rà" để người Cấp mã rà một lượt |

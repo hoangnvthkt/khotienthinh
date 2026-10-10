@@ -7,6 +7,7 @@ import {
 } from '../../../lib/procurementInboxService';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { SpecInput } from '../../material/SpecInput';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker, type VendorValue } from './OrderFormParts';
 import PoExcelImport from './PoExcelImport';
@@ -352,7 +353,7 @@ export const ProactiveOrderEditor: React.FC<{
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
                       <span className="flex min-w-0 flex-1 basis-[calc(100%-2.5rem)] flex-wrap items-center gap-x-2 gap-y-1 md:basis-auto">
                         <span className="font-semibold text-mint-700 dark:text-mint-300">{l.name}</span>
-                        <input value={l.spec} onChange={e => patch(l.key, { spec: e.target.value })} maxLength={160} aria-label={`Quy cách ${l.name}`} aria-invalid={Boolean(specProblem)}
+                        <SpecInput itemId={l.itemId} itemName={l.name} hideHint={Boolean(specProblem)} value={l.spec} onChange={v => patch(l.key, { spec: v })} maxLength={160} aria-label={`Quy cách ${l.name}`} aria-invalid={Boolean(specProblem)}
                           placeholder="Quy cách / cấu hình (VD KT 30x30)" title="Hiển thị trên đơn và mẫu in; mỗi quy cách một giá — kho vẫn theo mã vật tư gốc"
                           className={`min-w-[10rem] flex-1 py-1 text-xs md:max-w-[16rem] ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />
                         {specProblem && <span className="w-full text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}
