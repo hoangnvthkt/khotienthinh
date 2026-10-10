@@ -387,12 +387,12 @@ const ReconEditor: React.FC<{ item: ReconItem; currentUserId?: string | null; on
             <tbody className="divide-y divide-border">{rows.map(l => {
               const diff = Number.isFinite(l.got) ? l.got - l.plannedQty : 0;
               return <tr key={l.deliveryLineId}>
-                <td className={`py-1.5 pr-2 ${ENT}`}>{l.name}</td><td className="px-2 text-muted-foreground">{l.unit}</td>
+                <td className="py-1.5 pr-2"><span className={ENT}>{l.name}</span>{l.specification && <span className="block text-xs text-muted-foreground">{l.specification}</span>}</td><td className="px-2 text-muted-foreground">{l.unit}</td>
                 <td className={`px-2 text-right ${NUM}`}>{fmt(l.plannedQty, 3)}</td>
                 {item.lines.some(x => x.checkedQty != null) && <td className="px-2 text-right tabular-nums text-muted-foreground">{l.checkedQty != null ? fmt(l.checkedQty, 3) : ''}</td>}
                 {item.stocked && <td className="px-2 text-right tabular-nums text-muted-foreground">{fmt(l.stockedQty ?? 0, 3)}</td>}
                 <td className="px-2 py-1 text-right">{decision === 'partial' && !locked
-                  ? <input inputMode="decimal" value={qty[l.deliveryLineId] ?? ''} aria-label={`SL thực nhận ${l.name}`}
+                  ? <input inputMode="decimal" value={qty[l.deliveryLineId] ?? ''} aria-label={`SL thực nhận ${l.name}${l.specification ? ` ${l.specification}` : ''}`}
                     onChange={e => setQty(q => ({ ...q, [l.deliveryLineId]: e.target.value }))}
                     className={`${inputCls} w-28 text-right tabular-nums ${diff < 0 ? 'border-amber-300' : ''}`} />
                   : <span className={NUM}>{fmt(l.got, 3)}</span>}</td>
@@ -403,12 +403,12 @@ const ReconEditor: React.FC<{ item: ReconItem; currentUserId?: string | null; on
           <ul className="divide-y divide-border sm:hidden">{rows.map(l => {
             const diff = Number.isFinite(l.got) ? l.got - l.plannedQty : 0;
             return <li key={l.deliveryLineId} className="flex items-center gap-3 py-2">
-              <div className="min-w-0 flex-1"><p className={ENT}>{l.name}</p>
+              <div className="min-w-0 flex-1"><p className={ENT}>{l.name}</p>{l.specification && <p className="text-xs text-muted-foreground">{l.specification}</p>}
                 <p className="text-xs text-muted-foreground">Đợt <span className={NUM}>{fmt(l.plannedQty, 3)}</span> {l.unit}
                   {l.checkedQty != null && <> · đã kiểm {fmt(l.checkedQty, 3)}</>}{item.stocked && <> · kho đã nhập {fmt(l.stockedQty ?? 0, 3)}</>}</p>
                 {diff < -0.000001 && <p className="text-xs text-amber-700 dark:text-amber-300">Thiếu {fmt(-diff, 3)} {l.unit}</p>}</div>
               {decision === 'partial' && !locked
-                ? <input inputMode="decimal" value={qty[l.deliveryLineId] ?? ''} aria-label={`SL thực nhận ${l.name}`}
+                ? <input inputMode="decimal" value={qty[l.deliveryLineId] ?? ''} aria-label={`SL thực nhận ${l.name}${l.specification ? ` ${l.specification}` : ''}`}
                   onChange={e => setQty(q => ({ ...q, [l.deliveryLineId]: e.target.value }))} className={`${inputCls} w-28 text-right tabular-nums`} />
                 : <span className={NUM}>{fmt(l.got, 3)}</span>}
             </li>;
@@ -431,7 +431,7 @@ const ReconEditor: React.FC<{ item: ReconItem; currentUserId?: string | null; on
         {canDecideRemainder && !posted ? <fieldset className="space-y-1.5">
           <legend className="text-xs font-semibold text-muted-foreground">Phần PO chưa giao</legend>
           {item.poUnscheduled.length > 0 && <p className="text-xs text-muted-foreground">Ngoài đợt này PO còn: {item.poUnscheduled.map((u, i) =>
-            <span key={i}>{i > 0 && ', '}<span className={ENT}>{u.name}</span> <span className={NUM}>{fmt(u.qty, 3)}</span> {u.unit}</span>)}</p>}
+            <span key={i}>{i > 0 && ', '}<span className={ENT}>{u.name}</span>{u.specification && <span> ({u.specification})</span>} <span className={NUM}>{fmt(u.qty, 3)}</span> {u.unit}</span>)}</p>}
           {([['keep_open', 'Chờ NCC giao tiếp — PO vẫn mở'], ['close', 'Chốt thiếu — đóng PO, phần còn lại về Cần mua']] as const).map(([k, l]) =>
             <label key={k} className="flex items-start gap-2 text-sm"><input type="radio" name={`rem-${item.deliveryBatchId}`} checked={remainder === k} disabled={locked}
               onChange={() => setRemainder(k)} className="mt-1 accent-leaf-600" />{l}</label>)}

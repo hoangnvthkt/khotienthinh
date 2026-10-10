@@ -682,7 +682,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                   return (
                     <tr key={`${ti.fulfillmentBatchId || ''}-${ti.requestLineId || ti.itemId}-${idx}`}>
                       <td className="px-4 py-3">
-                        <div className="font-bold text-slate-700">{item?.name || 'Vật tư mới'}</div>
+                        {/* Tên + quy cách giữ đúng như dòng đơn gốc (một mã nhiều quy cách); mã vẫn là mã danh mục. */}
+                        <div className="font-bold text-slate-700">{ti.itemNameSnapshot || item?.name || 'Vật tư mới'}</div>
+                        {ti.specification && <div className="mt-0.5 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{ti.specification}</div>}
                         <div className="text-[10px] text-slate-400 font-mono">{item?.sku || 'Đang chờ duyệt'}</div>
                       </td>
                        <td className="px-4 py-3 text-right font-bold text-slate-800">
