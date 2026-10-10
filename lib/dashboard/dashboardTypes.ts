@@ -140,3 +140,31 @@ export interface DashboardDataset {
   materialItems: DashMaterialItem[];
   stockItems: DashStockItem[];
 }
+
+/** Chỉ số tiền có danh sách chứng từ (get_center_metric_docs_v1). */
+export type DashDocMetric =
+  | 'contract' | 'budget' | 'accepted' | 'received' | 'cost' | 'cash_in' | 'cash_out'
+  | 'ar_requested' | 'ar_outstanding' | 'ar_overdue' | 'ar_retention' | 'ar_advance' | 'ar_recovered'
+  | 'ap_requested' | 'ap_outstanding' | 'ap_overdue' | 'ap_retention' | 'ap_paid' | 'ap_advance' | 'sub_total' | 'sub_paid' | 'sup_total' | 'sup_paid';
+
+/** Một loại chứng từ của một con số (chỉ số ghép có nhiều loại: lợi nhuận = doanh thu + chi phí). */
+export interface DashDocQuery { label: string; metric: DashDocMetric; month?: string; category?: string }
+
+/** Màn mở chứng từ: hợp đồng, phải thu theo HĐ, phải trả theo NCC, thầu phụ, đề nghị chi / tạm ứng, chi phí & ngân sách, tài chính dự án. */
+export type DashDocLink = 'contract' | 'receivable' | 'payable' | 'subcontract' | 'request' | 'cost' | 'project_finance';
+
+export interface DashDoc {
+  id: string;
+  date: string | null;
+  code: string;
+  title: string;
+  partner: string | null;
+  projectId: string;
+  projectCode: string;
+  amount: number;
+  due: string | null;
+  linkType: DashDocLink | null;
+  linkId: string | null;
+}
+
+export interface DashDocList { rows: DashDoc[]; total: number; count: number }

@@ -12,7 +12,7 @@ import { StateBox } from '../../components/procurement/hub/hubUi';
 import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useCenterAccess } from '../../lib/center/centerService';
-import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves } from '../../lib/dashboard/dashboardService';
+import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves, fetchMetricDocs } from '../../lib/dashboard/dashboardService';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -91,8 +91,10 @@ const CenterPage: React.FC = () => {
         loadDashboard={loadDashboard}
         loadDashboardAccess={loadDashboardAccess}
         loadMaterialMoves={fetchMaterialMoves}
+        loadMetricDocs={fetchMetricDocs}
         titleForRoute={titleForRoute}
         onLogout={onLogout}
+        userId={user.id}
       />
     </CenterEntrance>
   );

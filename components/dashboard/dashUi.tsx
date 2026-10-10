@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, MoreHorizontal, Table2, X } from 'lucide-react';
-import { NO_DATA, money, pct, viDate, type DrillColumn, type DrillDown } from '../../lib/dashboard/dashboardModel';
+import { ArrowLeft, ArrowUpRight, FileText, MoreHorizontal, Table2, X } from 'lucide-react';
+import { NO_DATA, ROUTES, monthLabel, money, pct, viDate, type DrillColumn, type DrillDown } from '../../lib/dashboard/dashboardModel';
+import type { DashDocList, DashDocQuery } from '../../lib/dashboard/dashboardTypes';
 import type { CostCategory } from '../../lib/dashboard/dashboardTypes';
 
 // Đồ dùng chung của Bảng điều khiển. Màu dữ liệu: bảng màu phân loại đã kiểm mù màu (dataviz validator, 09/10):
@@ -29,6 +30,8 @@ export const dashColors = (isDark: boolean): DashColors => (isDark ? DARK : LIGH
 
 /** Mở màn gốc (drill-through) — Bảng điều khiển cung cấp, thẻ dùng cho mục "Mở …" trong menu. */
 export const DashOpenContext = createContext<(route: string) => void>(() => undefined);
+/** Mở thẳng chứng từ của một con số (thẻ dự án, dòng bảng) — null khi không có nguồn chứng từ. */
+export const DashDocsContext = createContext<((docs: DashDocQuery[], projectId: string | null, title?: string) => void) | null>(null);
 
 /** Thẻ biểu đồ: tiêu đề, phụ đề, menu "…" (xem bảng số liệu · mở màn gốc). */
 export const Card: React.FC<{
@@ -188,7 +191,20 @@ export const DataTable: React.FC<{ drill: Pick<DrillDown, 'columns' | 'rows' | '
 );
 
 /** Ngăn bấm xuống: các dòng tạo nên con số; bấm dòng = mở hồ sơ; nút chân = mở màn gốc. */
-export const DrillDrawer: React.FC<{ drill: DrillDown; onClose: () => void; onOpen: (route: string) => void }> = ({ drill, onClose, onOpen }) => {
+export const DrillDrawer: React.FC<{
+  drill: DrillDown;
+  onClose: () => void;
+  onOpen: (route: string) => void;
+  /** Có chứng từ: bấm dòng dự án → chứng từ của dự án đó; nút chân → chứng từ mọi dự án (projectId null). */
+  onDocs?: (docs: DashDocQuery[], projectId: string | null, index: number) => void;
+}> = ({ drill, onClose, onOpen, onDocs }) => {
+  const docs = drill.docs && drill.docs.length > 0 && onDocs ? drill.docs : null;
+  // Ngăn có chứng từ: mỗi dòng là một dự án → mở chứng từ của dự án đó.
+  const openRow = (route: string) => {
+    const row = docs ? drill.rows.find(item => item.route === route) : null;
+    if (docs && row) { onDocs!(docs, row.id, 0); return; }
+    onOpen(route);
+  };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -208,16 +224,83 @@ export const DrillDrawer: React.FC<{ drill: DrillDown; onClose: () => void; onOp
         <div className="vdb-drawer-body">
           {drill.status === 'loading' ? <p className="m-0 px-2 py-8 text-center text-sm vdb-muted" role="status">Đang tải…</p>
             : drill.status === 'error' ? <p className="m-0 px-2 py-8 text-center text-sm" role="alert">{drill.message || 'Chưa tải được.'}</p>
-            : <DataTable drill={drill} onRow={onOpen} />}
+            : <DataTable drill={drill} onRow={openRow} />}
           {!drill.status && drill.rows.some(row => row.route) && !drill.subtitle?.includes('Bấm một dòng')
-            && <p className="m-0 mt-2 px-2 text-xs vdb-muted">{drill.hint || 'Bấm một dòng để mở hồ sơ.'}</p>}
+            && <p className="m-0 mt-2 px-2 text-xs vdb-muted">{docs ? 'Bấm một dự án để xem từng chứng từ.' : drill.hint || 'Bấm một dòng để mở hồ sơ.'}</p>}
         </div>
-        {drill.through && (
+        {(drill.through || docs) && (
           <footer className="vdb-drawer-foot">
-            <button type="button" className="vdb-pri" onClick={() => onOpen(drill.through!.route)}>{drill.through.label} <ArrowUpRight size={14} /></button>
+            {docs && docs.map((doc, index) => (
+              <button key={doc.metric + index} type="button" className="vdb-btn" onClick={() => onDocs!(docs, null, index)}>
+                <FileText size={13} /> Chứng từ{docs.length > 1 ? `: ${doc.label}` : ''}
+              </button>
+            ))}
+            {drill.through && <button type="button" className="vdb-pri" onClick={() => onOpen(drill.through!.route)}>{drill.through.label} <ArrowUpRight size={14} /></button>}
           </footer>
         )}
       </aside>
     </div>
   );
 };
+
+/** Ngăn chứng từ: các chứng từ tạo nên một con số; bấm một chứng từ → mở đúng màn. Chỉ số ghép: chuyển loại chứng từ ở đầu ngăn. */
+export interface DocsView {
+  title: string;
+  docs: DashDocQuery[];
+  index: number;
+  projectId: string | null;
+  projectLabel: string | null;
+  state: { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; list: DashDocList };
+}
+
+export const DocsDrawer: React.FC<{ view: DocsView; multiProject: boolean; onClose: () => void; onBack?: () => void; onSwitch: (index: number) => void; onOpen: (route: string) => void }> =
+  ({ view, multiProject, onClose, onBack, onSwitch, onOpen }) => {
+    useEffect(() => {
+      const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+    const doc = view.docs[view.index];
+    const list = view.state.status === 'ready' ? view.state.list : null;
+    const showDue = ['ar_outstanding', 'ar_overdue', 'ap_outstanding', 'ap_overdue', 'ap_retention', 'ap_advance'].includes(doc.metric);
+    const drill: Pick<DrillDown, 'columns' | 'rows' | 'total'> = {
+      columns: [{ key: 'doc', label: 'Chứng từ' }, { key: 'date', label: 'Ngày', kind: 'date' }, ...(showDue ? [{ key: 'due', label: 'Hạn', kind: 'date' as const }] : []),
+        { key: 'partner', label: 'Đối tác' }, ...(multiProject && !view.projectId ? [{ key: 'project', label: 'Dự án' }] : []), { key: 'amount', label: 'Số tiền', kind: 'money' }],
+      rows: (list?.rows || []).map(row => ({
+        id: row.id,
+        route: row.linkType && row.linkId ? ROUTES.doc(row.linkType, row.linkId) : undefined,
+        cells: { doc: row.title ? `${row.code} · ${row.title}` : row.code, date: row.date, due: row.due, partner: row.partner || '—', project: row.projectCode, amount: row.amount },
+      })),
+      total: list ? { amount: list.total } : undefined,
+    };
+    return (
+      <div className="vdb-drawer" role="dialog" aria-modal="true" aria-label={`Chứng từ · ${view.title}`}>
+        <button type="button" className="vdb-drawer-bg" aria-label="Đóng" onClick={onClose} />
+        <aside className="vdb-drawer-panel">
+          <header className="vdb-drawer-head">
+            {onBack && <button type="button" className="vdb-menu" onClick={onBack} aria-label="Quay lại" title="Quay lại"><ArrowLeft size={16} /></button>}
+            <div className="min-w-0 flex-1">
+              <h3 className="m-0 text-base font-bold">Chứng từ · {view.title}</h3>
+              <p className="m-0 mt-0.5 text-xs vdb-muted">{view.projectLabel || 'Mọi dự án đang xem'}{doc.month ? ` · tháng ${monthLabel(doc.month)}` : ''} · bấm một chứng từ để mở.</p>
+            </div>
+            <button type="button" className="vdb-menu" onClick={onClose} aria-label="Đóng"><X size={16} /></button>
+          </header>
+          {view.docs.length > 1 && (
+            <div className="vdb-switch mx-3 mt-2" role="tablist" aria-label="Loại chứng từ">
+              {view.docs.map((item, index) => (
+                <button key={item.metric + index} type="button" role="tab" aria-selected={index === view.index} onClick={() => onSwitch(index)}>{item.label}</button>
+              ))}
+            </div>
+          )}
+          <div className="vdb-drawer-body">
+            {view.state.status === 'loading' ? <p className="m-0 px-2 py-8 text-center text-sm vdb-muted" role="status">Đang tải chứng từ…</p>
+              : view.state.status === 'error' ? <p className="m-0 px-2 py-8 text-center text-sm" role="alert">{view.state.message}</p>
+              : <DataTable drill={drill} onRow={onOpen} />}
+            {list && list.count > list.rows.length && (
+              <p className="m-0 mt-2 px-2 text-xs vdb-muted">Hiện {list.rows.length} / {list.count} chứng từ (mới nhất, lớn nhất trước); dòng Tổng tính đủ mọi chứng từ.</p>
+            )}
+          </div>
+        </aside>
+      </div>
+    );
+  };

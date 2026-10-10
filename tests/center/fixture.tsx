@@ -16,8 +16,8 @@ import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workIte
 import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
-import { buildDashboardFixture, fixtureMoves } from './dashboardFixture';
-import type { DashMoveKind } from '../../lib/dashboard/dashboardTypes';
+import { buildDashboardFixture, fixtureDocs, fixtureMoves } from './dashboardFixture';
+import type { DashDocQuery, DashMoveKind } from '../../lib/dashboard/dashboardTypes';
 import '../../index.css';
 
 const params = new URLSearchParams(location.search);
@@ -38,6 +38,8 @@ const loadDashboard = DASH === 'off' ? undefined : (options?: { force?: boolean 
 });
 const loadMaterialMoves = (key: string, kind: DashMoveKind, projectId: string | null) =>
   new Promise<ReturnType<typeof fixtureMoves>>(resolve => setTimeout(() => resolve(fixtureMoves(buildDashboardFixture(DASH === 'flaky' || DASH === 'slow' ? 'bgd' : DASH), key, kind, projectId)), 150));
+const loadMetricDocs = (query: DashDocQuery, projectId: string | null) =>
+  new Promise<ReturnType<typeof fixtureDocs>>(resolve => setTimeout(() => resolve(fixtureDocs(buildDashboardFixture(DASH === 'flaky' || DASH === 'slow' ? 'bgd' : DASH), query, projectId)), 150));
 const loadDashboardAccess = () => Promise.resolve(DASH === 'error' || DASH === 'flaky' || DASH === 'slow' ? buildDashboardFixture('bgd').access : buildDashboardFixture(DASH).access);
 const at = (days: number, hour = 17) => new Date(2026, 9, 7 + days, hour, 0).toISOString();
 
@@ -282,6 +284,7 @@ const Fixture: React.FC = () => {
             loadDashboard={loadDashboard}
             loadDashboardAccess={loadDashboardAccess}
             loadMaterialMoves={loadMaterialMoves}
+            loadMetricDocs={loadMetricDocs}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
           />

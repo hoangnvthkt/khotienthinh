@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AlertTriangle, Building2, ClipboardCheck, FilePlus2, Flame, HardHat } from 'lucide-react';
 import {
@@ -6,7 +6,7 @@ import {
   recordCount, shortMoney, sumFinance, type DrillDown,
 } from '../../lib/dashboard/dashboardModel';
 import type { CostCategory, DashProject, DashProjectFinance, DashboardDataset } from '../../lib/dashboard/dashboardTypes';
-import { Card, ChartTip, DataTable, DebtEmpty, Hero, Legend, NoData, Tile, type DashColors } from './dashUi';
+import { Card, ChartTip, DashDocsContext, DataTable, DebtEmpty, Hero, Legend, NoData, Tile, type DashColors } from './dashUi';
 
 // Bảng 2 — Tổng quan dòng tiền, chi phí dự án (12 tháng gần nhất). Bấm số → bảng theo dự án; bấm tháng → tháng đó theo dự án;
 // bấm lát bánh / cột → nhóm chi phí đó theo dự án; "…" → xem bảng số liệu hoặc mở màn Tài chính gốc.
@@ -32,6 +32,7 @@ const CashflowDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill
   const months = useMemo(() => monthTotals(dataset, ids), [dataset, ids]);
   const categories = useMemo(() => costByCategory(projects), [projects]);
   const [debtView, setDebtView] = useState<'ar' | 'ap'>('ar');
+  const docs = useContext(DashDocsContext);
   const today = dataset.today;
   const revenue = sumFinance(projects, finance => finance.accepted);
   const cost = sumFinance(projects, finance => finance.cost);
@@ -46,7 +47,7 @@ const CashflowDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill
       : drillMonth(dataset, projects, month, [{ key: 'cashIn', label: 'Giá trị thu' }, { key: 'cashOut', label: 'Giá trị chi' }], { label: 'Mở Thu chi & quỹ', route: ROUTES.cash }));
   };
   const categoryDrill = (category: CostCategory) => onDrill(drillByProject(CATEGORY_LABEL[category], projects, finance => finance.costByCategory[category] ?? null,
-    { subtitle: 'Chi phí thực tế theo dự án', through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost } }));
+    { subtitle: 'Chi phí thực tế theo dự án', through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost }, docs: [{ label: CATEGORY_LABEL[category], metric: 'cost', category }] }));
 
   // Chưa nhập chứng từ nào → "Chưa có dữ liệu", không vẽ 0.
   const noAr = recordCount(projects, 'arRounds') === 0;
@@ -75,11 +76,11 @@ const CashflowDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill
       <div className="vdb-col-5">
         <p className="vdb-group-l">Tổng quan</p>
         <Hero metrics={[
-          { label: 'Giá trị hợp đồng', value: shortMoney(sumFinance(projects, f => f.contractValue)), onClick: () => onDrill(drillByProject('Giá trị hợp đồng theo dự án', projects, f => f.contractValue, { through: reports })) },
-          { label: 'Doanh thu', value: shortMoney(revenue), size: 'sm', onClick: () => onDrill(drillByProject('Doanh thu (nghiệm thu, chưa VAT) theo dự án', projects, f => f.accepted, { through: reports })) },
+          { label: 'Giá trị hợp đồng', value: shortMoney(sumFinance(projects, f => f.contractValue)), onClick: () => onDrill(drillByProject('Giá trị hợp đồng theo dự án', projects, f => f.contractValue, { docs: [{ label: 'Hợp đồng & phát sinh', metric: 'contract' }], through: reports })) },
+          { label: 'Doanh thu', value: shortMoney(revenue), size: 'sm', onClick: () => onDrill(drillByProject('Doanh thu (nghiệm thu, chưa VAT) theo dự án', projects, f => f.accepted, { docs: [{ label: 'Đợt nghiệm thu', metric: 'accepted' }], through: reports })) },
           { label: 'Lợi nhuận', value: shortMoney(profit), tone: profit != null && profit < 0 ? 'bad' : 'good', title: 'Doanh thu nghiệm thu − chi phí đã ghi nhận',
-            onClick: () => onDrill(drillByProject('Lợi nhuận theo dự án', projects, f => f.accepted - f.cost, { subtitle: 'Doanh thu nghiệm thu − chi phí đã ghi nhận', through: reports })) },
-          { label: 'Chi phí', value: shortMoney(cost), size: 'sm', onClick: () => onDrill(drillByProject('Chi phí theo dự án', projects, f => f.cost, { through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost } })) },
+            onClick: () => onDrill(drillByProject('Lợi nhuận theo dự án', projects, f => f.accepted - f.cost, { docs: [{ label: 'Doanh thu', metric: 'accepted' }, { label: 'Chi phí', metric: 'cost' }], subtitle: 'Doanh thu nghiệm thu − chi phí đã ghi nhận', through: reports })) },
+          { label: 'Chi phí', value: shortMoney(cost), size: 'sm', onClick: () => onDrill(drillByProject('Chi phí theo dự án', projects, f => f.cost, { docs: [{ label: 'Chi phí', metric: 'cost' }], through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost } })) },
         ]} />
       </div>
       <div className="vdb-col-7">
@@ -95,11 +96,11 @@ const CashflowDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill
         <p className="vdb-group-l mt-3">Kết quả thực hiện</p>
         <div className="vdb-tiles">
           <Tile icon={FilePlus2} tone="violet" label="Phát sinh" value={shortMoney(sumFinance(projects, f => f.variation))}
-            onClick={() => onDrill(drillByProject('Phát sinh (phụ lục hợp đồng) theo dự án', projects, f => f.variation, { through: reports }))} />
+            onClick={() => onDrill(drillByProject('Phát sinh (phụ lục hợp đồng) theo dự án', projects, f => f.variation, { docs: [{ label: 'Hợp đồng & phát sinh', metric: 'contract' }], through: reports }))} />
           <Tile icon={HardHat} tone="green" label="Sản lượng thực hiện" value={shortMoney(sumFinance(projects, f => f.output))}
-            onClick={() => onDrill(drillByProject('Sản lượng thực hiện theo dự án', projects, f => f.output, { subtitle: 'Giá trị hợp đồng × tiến độ thực tế', through: reports }))} />
+            onClick={() => onDrill(drillByProject('Sản lượng thực hiện theo dự án', projects, f => f.output, { docs: [{ label: 'Hợp đồng & phát sinh', metric: 'contract' }], subtitle: 'Giá trị hợp đồng × tiến độ thực tế', through: reports }))} />
           <Tile icon={ClipboardCheck} tone="teal" label="Sản lượng nghiệm thu" value={shortMoney(revenue)}
-            onClick={() => onDrill(drillByProject('Sản lượng nghiệm thu theo dự án', projects, f => f.accepted, { through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))} />
+            onClick={() => onDrill(drillByProject('Sản lượng nghiệm thu theo dự án', projects, f => f.accepted, { docs: [{ label: 'Đợt nghiệm thu', metric: 'accepted' }], through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))} />
         </div>
       </div>
 
@@ -148,29 +149,29 @@ const CashflowDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill
       <section className="vdb-debt vdb-col-3" data-tone="green" aria-label="Công nợ chủ đầu tư">
         <p className="vdb-group-l m-0">Công nợ CĐT <span className="vdb-muted text-xs font-normal">· gồm VAT</span></p>
         {noAr ? <DebtEmpty>Chưa nhập đợt phải thu CĐT (Tài chính → Phải thu).</DebtEmpty> : (
-        <button type="button" className="vdb-debt-total vdb-link block w-full" onClick={() => onDrill(drillByProject('Chủ đầu tư còn nợ theo dự án', projects, f => f.ar.outstanding, { through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
+        <button type="button" className="vdb-debt-total vdb-link block w-full" onClick={() => onDrill(drillByProject('Chủ đầu tư còn nợ theo dự án', projects, f => f.ar.outstanding, { docs: [{ label: 'Đợt còn nợ', metric: 'ar_outstanding' }], through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
           {shortMoney(ar.outstanding)}
         </button>
         )}
-        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Đề nghị thanh toán đã gửi CĐT', projects, f => f.ar.requested, { through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
+        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Đề nghị thanh toán đã gửi CĐT', projects, f => f.ar.requested, { docs: [{ label: 'Đề nghị thanh toán', metric: 'ar_requested' }], through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
           <span>1. Đề nghị thanh toán</span><b className="vdb-num">{shortMoney(ar.requested)}</b></button>
-        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Giá trị CĐT giữ lại (bảo hành)', projects, f => f.ar.retention, { through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
+        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Giá trị CĐT giữ lại (bảo hành)', projects, f => f.ar.retention, { docs: [{ label: 'Giữ lại theo hợp đồng', metric: 'ar_retention' }], through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
           <span>2. Giá trị giữ lại</span><b className="vdb-num">{shortMoney(ar.retention)}</b></button>
-        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Tạm ứng CĐT còn phải khấu trừ', projects, f => f.ar.advance, { through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
+        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Tạm ứng CĐT còn phải khấu trừ', projects, f => f.ar.advance, { docs: [{ label: 'Tạm ứng còn lại', metric: 'ar_advance' }], through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))}>
           <span>3. Tạm ứng</span><b className="vdb-num">{shortMoney(ar.advance)}</b></button>
       </section>
       <section className="vdb-debt vdb-col-3" data-tone="rose" aria-label="Công nợ nhà thầu và nhà cung cấp">
         <p className="vdb-group-l m-0">Công nợ Nhà thầu và NCC <span className="vdb-muted text-xs font-normal">· gồm VAT</span></p>
         {noAp ? <DebtEmpty>Chưa có chứng từ công nợ NCC, thầu phụ (Tài chính → Phải trả).</DebtEmpty> : (
-        <button type="button" className="vdb-debt-total vdb-link block w-full" onClick={() => onDrill(drillByProject('Còn phải trả nhà thầu, NCC theo dự án', projects, f => f.ap.outstanding, { through: { label: 'Mở Phải trả', route: ROUTES.payables } }))}>
+        <button type="button" className="vdb-debt-total vdb-link block w-full" onClick={() => onDrill(drillByProject('Còn phải trả nhà thầu, NCC theo dự án', projects, f => f.ap.outstanding, { docs: [{ label: 'Chứng từ còn nợ', metric: 'ap_outstanding' }], through: { label: 'Mở Phải trả', route: ROUTES.payables } }))}>
           {shortMoney(ap.outstanding)}
         </button>
         )}
-        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Đề nghị thanh toán của nhà thầu, NCC', projects, f => f.ap.requested, { through: { label: 'Mở Phải trả', route: ROUTES.payables } }))}>
+        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Đề nghị thanh toán của nhà thầu, NCC', projects, f => f.ap.requested, { docs: [{ label: 'Chứng từ công nợ', metric: 'ap_requested' }], through: { label: 'Mở Phải trả', route: ROUTES.payables } }))}>
           <span>1. Đề nghị thanh toán</span><b className="vdb-num">{shortMoney(ap.requested)}</b></button>
-        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Giá trị giữ lại thầu phụ', projects, f => f.ap.retention, { through: { label: 'Mở Thầu phụ', route: ROUTES.subcontracts } }))}>
+        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Giá trị giữ lại thầu phụ', projects, f => f.ap.retention, { docs: [{ label: 'Giữ lại thầu phụ', metric: 'ap_retention' }], through: { label: 'Mở Thầu phụ', route: ROUTES.subcontracts } }))}>
           <span>2. Giá trị giữ lại</span><b className="vdb-num">{shortMoney(ap.retention)}</b></button>
-        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Tạm ứng nhà thầu, NCC chưa khấu trừ', projects, f => f.ap.advance, { through: { label: 'Mở Phải trả', route: ROUTES.payables } }))}>
+        <button type="button" className="vdb-debt-row" onClick={() => onDrill(drillByProject('Tạm ứng nhà thầu, NCC chưa khấu trừ', projects, f => f.ap.advance, { docs: [{ label: 'Tạm ứng', metric: 'ap_advance' }], through: { label: 'Mở Phải trả', route: ROUTES.payables } }))}>
           <span>3. Tạm ứng</span><b className="vdb-num">{shortMoney(ap.advance)}</b></button>
       </section>
       <Card className="vdb-col-6 vdb-wide" title="Danh sách dự án có công nợ lớn"
@@ -181,11 +182,17 @@ const CashflowDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill
           </div>
         )}>
         {(debtView === 'ar' ? noAr : noAp) ? <NoData>{debtView === 'ar' ? 'Chưa nhập đợt phải thu CĐT.' : 'Chưa có chứng từ công nợ NCC, thầu phụ.'}</NoData> : (
-        <DataTable onRow={onOpen} drill={{
+        <DataTable onRow={route => {
+          // Bấm dự án → chứng từ còn nợ của dự án đó (đợt phải thu / chứng từ công nợ).
+          const row = debtRows.find(item => ROUTES.projectFinance(item.project.id) === route);
+          if (docs && row) docs([{ label: debtView === 'ar' ? 'Đợt còn nợ' : 'Chứng từ còn nợ', metric: debtView === 'ar' ? 'ar_outstanding' : 'ap_outstanding' }], row.project.id,
+            `${debtView === 'ar' ? 'Chủ đầu tư còn nợ' : 'Còn phải trả'} · ${row.project.code}`);
+          else onOpen(route);
+        }} drill={{
           columns: [{ key: 'p', label: 'Dự án' }, { key: 'v', label: 'Giá trị hợp đồng', kind: 'money' }, { key: 'r', label: 'Đề nghị thanh toán', kind: 'money' },
             { key: 'k', label: 'Giá trị giữ lại', kind: 'money' }, { key: 'd', label: debtView === 'ar' ? 'CĐT còn nợ' : 'Còn phải trả', kind: 'money' }],
           rows: debtRows.map(({ project, debt }) => ({
-            id: project.id, route: debtView === 'ar' ? ROUTES.projectFinance(project.id) : ROUTES.payables,
+            id: project.id, route: ROUTES.projectFinance(project.id),
             cells: { p: project.name, v: project.finance!.contractValue, r: debtView === 'ar' ? project.finance!.ar.requested : project.finance!.ap.requested,
               k: debtView === 'ar' ? project.finance!.ar.retention : project.finance!.ap.retention, d: debt },
           })),

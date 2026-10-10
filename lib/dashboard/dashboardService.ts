@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { DashGap, DashMove, DashMoveKind, DashProject, DashProjectFinance, DashStockItem, DashboardDataset, DashboardId } from './dashboardTypes';
+import type { DashDocList, DashDocQuery, DashGap, DashMove, DashMoveKind, DashProject, DashProjectFinance, DashStockItem, DashboardDataset, DashboardId } from './dashboardTypes';
 
 // Bảng điều khiển đọc một RPC (get_center_dashboard_v1): máy chủ kiểm quyền từng bảng, từng dự án và tổng hợp số.
 // Không realtime: số liệu giữ trong bộ nhớ tới khi người dùng bấm Cập nhật — rời Trung tâm rồi quay lại vẫn thấy số cũ
@@ -130,4 +130,28 @@ export const fetchMaterialMoves = async (key: string, kind: DashMoveKind, projec
     warehouse: textOrNull(m.warehouse), projectId: text(m.projectId), projectCode: text(m.projectCode), qty: num(m.qty), unit: textOrNull(m.unit),
     transactionId: textOrNull(m.transactionId), poId: textOrNull(m.poId), expected: textOrNull(m.expected),
   }));
+};
+
+const DOC_LINKS = ['contract', 'receivable', 'payable', 'subcontract', 'request', 'cost', 'project_finance'] as const;
+
+/** Chứng từ tạo nên một con số tiền (bấm vào số trên Bảng điều khiển). projectId null = mọi dự án đang xem. */
+export const fetchMetricDocs = async (query: DashDocQuery, projectId: string | null): Promise<DashDocList> => {
+  const { data, error } = await supabase.rpc('get_center_metric_docs_v1', {
+    p_metric: query.metric, p_project_id: projectId, p_month: query.month ?? null, p_category: query.category ?? null,
+  });
+  if (error) {
+    console.warn('Center metric documents failed:', error);
+    throw new Error('Chưa tải được chứng từ. Thử lại sau ít phút.');
+  }
+  const r = obj(data);
+  return {
+    total: num(r.total),
+    count: num(r.count),
+    rows: list(r.rows).map(obj).map(d => ({
+      id: text(d.id), date: textOrNull(d.date), code: text(d.code) || '—', title: text(d.title), partner: textOrNull(d.partner),
+      projectId: text(d.projectId), projectCode: text(d.projectCode), amount: num(d.amount), due: textOrNull(d.due),
+      linkType: (DOC_LINKS as readonly string[]).includes(text(d.linkType)) ? d.linkType as DashDocList['rows'][number]['linkType'] : null,
+      linkId: textOrNull(d.linkId),
+    })),
+  };
 };

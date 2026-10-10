@@ -612,13 +612,16 @@ test("dashboards: four boards for management, drill-down and drill-through", asy
 
   // Bấm xuống: số "Thu" → ngăn theo dự án; bấm dòng → mở Tài chính dự án thành tab cạnh bảng.
   await page.getByRole("region", { name: "Tổng ngân sách, thu, chi" }).getByRole("button", { name: /Thu/ }).click();
-  const drawer = page.getByRole("dialog", { name: "Tiền chủ đầu tư đã trả theo dự án" });
+  const drawer = page.getByRole("dialog", { name: "Tiền chủ đầu tư đã trả theo dự án", exact: true });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator("tfoot")).toContainText("77.242.940.000");
+  // Bấm dự án → chứng từ tiền đã thu của dự án → bấm chứng từ mở Phải thu đúng hợp đồng thành tab cạnh bảng.
   await drawer.getByRole("row", { name: /SMB-2026/ }).click();
   await expect(drawer).toHaveCount(0);
+  const received = page.getByRole("dialog", { name: "Chứng từ · Tiền chủ đầu tư đã trả theo dự án" });
+  await received.locator("tbody tr").first().click();
   const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
-  await expect(workTabs.getByRole("tab", { name: /Tài chính dự án/ })).toHaveAttribute("aria-selected", "true");
+  await expect(workTabs.getByRole("tab", { name: /Phải thu/ })).toHaveAttribute("aria-selected", "true");
 
   // Dòng tiền: khối navy → bảng theo dự án, tổng khớp; bấm sang màn gốc từ nút chân ngăn.
   await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
@@ -771,4 +774,45 @@ test("Today blocks: add a dashboard screen with +, remove quick access, account 
   await page.locator(".vcc-top").getByRole("button", { name: /Tài khoản/ }).click();
   await page.getByRole("menuitem", { name: "Đăng xuất" }).click();
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "logout");
+});
+
+test("money numbers go down to documents: project → documents → the document's screen; composite numbers switch document types", async ({ page }, info) => {
+  test.skip(info.project.name === "tablet");
+  await openDashboards(page);
+  const boards = page.getByRole("tablist", { name: "Chọn bảng điều khiển" });
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  // Thẻ dự án: số Chi → chứng từ chi phí của đúng dự án.
+  await page.getByRole("article", { name: "Nhà máy Sơn Miền Bắc" }).locator(".vdb-proj-money").getByRole("button", { name: /Chi/ }).click();
+  const cost = page.getByRole("dialog", { name: "Chứng từ · Chi phí · SMB-2026" });
+  await expect(cost.locator("tbody tr")).toHaveCount(3);
+  await expect(cost.locator("tfoot")).toContainText("25.777.440.000");
+  await page.keyboard.press("Escape");
+
+  await boards.getByRole("tab", { name: "Dòng tiền & chi phí" }).click();
+  await page.getByRole("button", { name: /Giá trị hợp đồng/ }).first().click();
+  const byProject = page.getByRole("dialog", { name: "Giá trị hợp đồng theo dự án" });
+  await expect(byProject).toContainText("Bấm một dự án để xem từng chứng từ.");
+  await byProject.getByRole("row", { name: /SMB-2026/ }).click();
+  const docs = page.getByRole("dialog", { name: "Chứng từ · Giá trị hợp đồng theo dự án" });
+  await expect(docs).toContainText("SMB-2026 · Nhà máy Sơn Miền Bắc");
+  await expect(docs.locator("tfoot")).toContainText("48.600.000.000");
+  // ← quay lại ngăn theo dự án, rồi xem chứng từ mọi dự án.
+  await docs.getByRole("button", { name: "Quay lại" }).click();
+  await byProject.getByRole("button", { name: "Chứng từ" }).click();
+  await expect(docs.locator("tfoot")).toContainText("204.400.000.000");
+  // Bấm chứng từ → mở đúng hợp đồng thành tab mới.
+  await docs.locator("tbody tr").first().click();
+  await expect(workTabs.getByRole("tab", { name: /Hợp đồng CĐT/ })).toHaveAttribute("aria-selected", "true");
+  await expect(shownRecord(page)).toContainText("/hd/customer/hd-");
+
+  // Lợi nhuận = doanh thu − chi phí: chuyển giữa hai loại chứng từ.
+  await workTabs.getByRole("tab", { name: "Bảng điều khiển" }).click();
+  await page.getByRole("button", { name: /Lợi nhuận/ }).first().click();
+  await page.getByRole("dialog", { name: "Lợi nhuận theo dự án" }).getByRole("button", { name: "Chứng từ: Chi phí" }).click();
+  const profit = page.getByRole("dialog", { name: "Chứng từ · Lợi nhuận theo dự án" });
+  await expect(profit.getByRole("tab", { name: "Chi phí" })).toHaveAttribute("aria-selected", "true");
+  await expect(profit.locator("tfoot")).toContainText("81.287.240.000");
+  await profit.getByRole("tab", { name: "Doanh thu" }).click();
+  await expect(profit.locator("tfoot")).toContainText("83.701");
+  await expectCalmPage(page);
 });

@@ -3,7 +3,7 @@ import { Bar, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, Reference
 import {
   CATEGORY_LABEL, ROUTES, axisMoney, costByCategory, drillByProject, drillMonth, money, monthLabel, monthTotals, recordCount, shortMoney, sumFinance, type DrillDown,
 } from '../../lib/dashboard/dashboardModel';
-import type { DashProject, DashProjectFinance, DashboardDataset } from '../../lib/dashboard/dashboardTypes';
+import type { DashDocQuery, DashProject, DashProjectFinance, DashboardDataset } from '../../lib/dashboard/dashboardTypes';
 import { Card, DataTable, DebtEmpty, Hero, Legend, NoData, type DashColors } from './dashUi';
 
 // Bảng 4 — Báo cáo thu / chi, công nợ. Dòng thu: giá trị HĐ → chưa thực hiện / doanh thu nghiệm thu → đã thu, CĐT còn nợ,
@@ -15,6 +15,34 @@ type Props = { dataset: DashboardDataset; projects: DashProject[]; colors: DashC
 const paidOfRevenue = (f: DashProjectFinance) => f.ar.flow.paid;
 /** Sơ đồ dòng chi: phần chi phí không còn nợ = chi phí ghi nhận − còn phải trả (công nợ gồm VAT, không vượt chi phí). */
 const costSettled = (f: DashProjectFinance) => Math.max(0, f.cost - f.ap.outstanding);
+/** Chứng từ của từng con số (bấm dự án trong ngăn → chứng từ; chỉ số ghép có nhiều loại). */
+const DEBT_DOCS: Record<string, DashDocQuery[]> = {
+  'Giá trị hợp đồng theo dự án': [{ label: 'Hợp đồng & phát sinh', metric: 'contract' }],
+  'Giá trị hợp đồng chưa nghiệm thu': [{ label: 'Hợp đồng & phát sinh', metric: 'contract' }, { label: 'Đợt nghiệm thu', metric: 'accepted' }],
+  'Doanh thu nghiệm thu theo dự án': [{ label: 'Đợt nghiệm thu', metric: 'accepted' }],
+  'Doanh thu CĐT đã thanh toán': [{ label: 'Tiền đã thu (gồm VAT)', metric: 'received' }],
+  'Doanh thu CĐT còn nợ (chưa VAT)': [{ label: 'Đợt còn nợ (gồm VAT)', metric: 'ar_outstanding' }],
+  'Doanh thu CĐT giữ lại (chưa VAT)': [{ label: 'Giữ lại theo hợp đồng (gồm VAT)', metric: 'ar_retention' }],
+  'Doanh thu đã khấu trừ tạm ứng (chưa VAT)': [{ label: 'Tạm ứng đã khấu trừ (gồm VAT)', metric: 'ar_recovered' }],
+  'Chi phí thực tế theo dự án': [{ label: 'Chi phí', metric: 'cost' }],
+  'Chi phí không còn nợ theo dự án': [{ label: 'Chi phí', metric: 'cost' }, { label: 'Còn phải trả', metric: 'ap_outstanding' }],
+  'Còn phải trả theo dự án': [{ label: 'Chứng từ còn nợ', metric: 'ap_outstanding' }],
+  'Chi phí theo dự án': [{ label: 'Chi phí', metric: 'cost' }],
+  'Lợi nhuận theo dự án': [{ label: 'Doanh thu', metric: 'accepted' }, { label: 'Chi phí', metric: 'cost' }],
+  'Tiền CĐT đã trả theo dự án': [{ label: 'Tiền đã thu', metric: 'received' }],
+  'Đề nghị thanh toán đã gửi CĐT': [{ label: 'Đề nghị thanh toán', metric: 'ar_requested' }],
+  'Giá trị CĐT giữ lại': [{ label: 'Giữ lại theo hợp đồng', metric: 'ar_retention' }],
+  'Tạm ứng CĐT chưa khấu trừ': [{ label: 'Tạm ứng còn lại', metric: 'ar_advance' }],
+  'Tạm ứng CĐT đã khấu trừ': [{ label: 'Tạm ứng đã khấu trừ', metric: 'ar_recovered' }],
+  'CĐT còn nợ theo dự án': [{ label: 'Đợt còn nợ', metric: 'ar_outstanding' }],
+  'Phải thu quá hạn theo dự án': [{ label: 'Đợt quá hạn', metric: 'ar_overdue' }],
+  'Phải thu trong hạn theo dự án': [{ label: 'Đợt còn nợ (gồm quá hạn)', metric: 'ar_outstanding' }],
+  'Phải trả quá hạn theo dự án': [{ label: 'Chứng từ quá hạn', metric: 'ap_overdue' }],
+  'Phải trả trong hạn theo dự án': [{ label: 'Chứng từ còn nợ (gồm quá hạn)', metric: 'ap_outstanding' }],
+  'Chi thầu phụ theo dự án': [{ label: 'Công nợ thầu phụ', metric: 'sub_total' }, { label: 'Đã trả thầu phụ', metric: 'sub_paid' }],
+  'Chi nhà cung cấp theo dự án': [{ label: 'Công nợ NCC', metric: 'sup_total' }, { label: 'Đã trả NCC', metric: 'sup_paid' }],
+};
+
 /** "Chi phí vật liệu" → "Vật liệu" (tiêu đề thẻ đã nói là chi phí). */
 const groupName = (category: keyof typeof CATEGORY_LABEL) => { const name = CATEGORY_LABEL[category].replace('Chi phí ', ''); return name.charAt(0).toUpperCase() + name.slice(1); };
 
@@ -135,7 +163,7 @@ const DebtDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill, on
   const payables = { label: 'Mở Phải trả', route: ROUTES.payables };
   const reports = { label: 'Mở Báo cáo tài chính', route: ROUTES.reports };
   const byP = (title: string, pick: (f: DashProjectFinance) => number | null, through: DrillDown['through'], subtitle?: string) =>
-    () => onDrill(drillByProject(title, projects, pick, { through, subtitle }));
+    () => onDrill(drillByProject(title, projects, pick, { through, subtitle, docs: DEBT_DOCS[title] }));
 
   // Dòng thu
   const inNodes: FlowNode[] = [
@@ -159,7 +187,8 @@ const DebtDashboard: React.FC<Props> = ({ dataset, projects, colors, onDrill, on
   const cats = costByCategory(projects);
   const outNodes: FlowNode[] = [
     ...cats.map(item => ({ name: groupName(item.category), side: 'right' as const, color: colors.category[item.category],
-      drill: byP(CATEGORY_LABEL[item.category], f => f.costByCategory[item.category] ?? null, { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost }) })),
+      drill: () => onDrill(drillByProject(CATEGORY_LABEL[item.category], projects, f => f.costByCategory[item.category] ?? null,
+        { through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost }, docs: [{ label: CATEGORY_LABEL[item.category], metric: 'cost', category: item.category }] })) })),
     { name: 'Chi phí thực tế', side: 'top', color: colors.chi, drill: byP('Chi phí thực tế theo dự án', f => f.cost, { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost }) },
     { name: 'Đã trả', side: 'left', color: colors.thu, drill: byP('Chi phí không còn nợ theo dự án', costSettled, payables, 'Chi phí ghi nhận − còn phải trả') },
     { name: 'Còn phải trả', side: 'left', color: colors.danger, drill: byP('Còn phải trả theo dự án', f => f.ap.outstanding, payables) },
