@@ -894,3 +894,48 @@ Làm theo mục 9.3 và 16.3 (câu 14 đã duyệt: Mua hàng tạo quy cách m�
 | Duyệt | Điều chỉnh lệch tổng của mã như cũ; sau đó phiếu chuyển quy cách tự động để tồn từng quy cách = số đếm (lý do "Kiểm kê KK-… — tồn từng quy cách theo số đếm"). Được chuyển về "Chưa ghi quy cách" khi đếm ra hàng không rõ quy cách |
 | Phiếu kho (xem / in) | Phiếu xuất, xuất hủy, chuyển kho đã ghi sổ: dòng ghi **quy cách thực xuất theo sổ kho**, kể cả phần tự lấy nhập trước ("chưa ghi quy cách · 2; 14+2 · 3"). Phiếu nhập / chưa ghi sổ: quy cách ghi trên phiếu. Mẫu in lấy tên theo dòng phiếu (ảnh chụp tên đã mua) |
 | Còn lại | Chọn quy cách khi chuyển kho — làm cùng đợt "Phiếu kho một màn" |
+
+---
+
+## 26. V2 — Kho một màn (mockup 10/10/2026)
+
+Mockup: `.superpowers/review/wms-one/fixture.html` (dữ liệu thật chụp 10/10 bằng `one-data.mjs`, chỉ đọc; quy cách của Xi măng PCB 30 là minh họa). Chủ SP: "toàn bộ kho chỉ trong 1 màn, cắt bớt cái không cần, bỏ phần NHẬP KHO (nhập không ràng buộc đơn hàng, không giá)".
+
+### 26.1 Số liệu làm căn cứ
+
+- **Phiếu nhập tự do (nhập trực tiếp NCC):** 72 phiếu, 61 trong 60 ngày — chị Thủy (XHV) 42, anh Luật (SMB) 20, Admin 10. 54/122 dòng không có giá. Phiếu cuối của thủ kho 25/09; từ cuối tháng 9 hàng đã đi qua đơn mua. Còn treo 3 phiếu: 2 phiếu tấm ALC ở SMB (đã duyệt, chưa nhập), 1 phiếu ở XHV.
+- **Đợt giao chờ nhận:** 17 đợt (SMB 9, XHV 7, Kho Tổng 1), 4 đợt treo từ 31/07 (PO-259/261/263/272).
+- **Xuất cấp thi công:** 63 phiếu; 36 đã đóng, 22 hủy, 1 đang chờ kho duyệt (MI-20260925, Tổ đội Vũ Văn Vui, XHV). 6/20 tên người nhận là tên giả ("XUẤT CHỐT T6", "Tài khoản 627"…).
+- **Chuyển kho:** 21 phiếu, chỉ 2 trong 60 ngày. **Xuất hủy:** 5, không có trong 60 ngày.
+
+### 26.2 Màn "Kho"
+
+| Vùng | Có gì |
+|---|---|
+| Đầu trang | Chip kho (thủ kho mặc định kho của mình) · nút Xuất cấp, Chuyển kho, Kiểm đếm, Quét QR. **Không có nút Nhập** |
+| 4 ô chỉ số (bấm = lọc) | Hàng về chờ nhận (nhấp nháy khi treo ≥ 3 ngày) · Chờ duyệt ngoại lệ · Đang có tồn (giá trị tạm tính) · Cần kiểm tra |
+| Danh sách trái, 3 chế độ | **Việc cần làm** (đợt giao, hàng chuyển đến, hàng trả lại) · **Tồn kho** · **Sổ phiếu** (đã ghi sổ + chờ duyệt) |
+| Cột phải | Nhận hàng (SL điền sẵn, chỉ sửa dòng lệch, thiếu thì chọn: giao bù / chốt thiếu / hàng lỗi trả NCC; ngày hàng về; ảnh phiếu giao; nút "Hàng không về") · Thẻ kho + theo quy cách + nút Xuất / Chuyển / Hủy / Kiểm đếm · Form Xuất cấp, Chuyển kho, Xuất hủy, Kiểm đếm · Xem / In / Đảo phiếu |
+| Điện thoại | Danh sách trước, chạm vào mở toàn màn, nút chính ghim đáy |
+
+### 26.3 Cắt bỏ so với hiện tại
+
+| Bỏ | Thay bằng |
+|---|---|
+| Phiếu **Nhập kho tự do** (tab Nhập, nút "Phiếu nhập") | Hàng vào kho chỉ từ đợt giao Mua hàng (PO, gọi hàng HĐ, mua nóng), hàng chuyển đến, hàng trả lại từ công trình. Tồn đầu kỳ / hàng tặng / hàng thừa → Kiểm đếm (chênh lệch có duyệt) |
+| Duyệt xuất cấp thường; người nhận bắt buộc xác nhận; quyết toán từng phiếu (12 trạng thái) | Xuất 1 bước: thủ kho bấm Xuất kho là ghi sổ. Người nhận ký điện thoại / QR không bắt buộc |
+| Duyệt chuyển kho | 2 bước Gửi hàng → Nhận hàng; chọn quy cách khi gửi |
+| Tab Xử lý phiếu, Lịch sử | Việc cần làm + Sổ phiếu ngay trong danh sách |
+| 3 menu Tồn kho, Phiếu kho, Kiểm kê | 1 menu **Kho**. Menu Vật tư 6 → 4: Kho · Danh mục vật tư · Báo cáo · Phân quyền kho |
+| Gõ tên người nhận tự do | Chọn tổ đội / thầu phụ có hợp đồng hoặc đối tác; chốt tiêu hao tháng làm bằng Kiểm đếm ("Đã dùng, chưa lập phiếu") |
+
+Giữ nguyên: Xuất trả NCC (đi từ Mua hàng), Đối chiếu nhận hàng (ở Mua hàng), ngày chứng từ / ghi lùi có quyền, đảo phiếu thay sửa đè, quy cách (chọn khi xuất / chuyển / đếm).
+
+### 26.4 Câu hỏi cho chủ SP
+
+33. Bỏ phiếu nhập tự do. 3 phiếu đang treo (2 phiếu tấm ALC ở SMB đã duyệt chưa nhập, 1 phiếu ở XHV): hủy và để Mua hàng lập đơn (mua nóng / gọi hàng HĐ) nếu hàng đã về? Tồn đầu kỳ, hàng tặng, hàng thừa đi qua Kiểm đếm (có duyệt). Đồng ý?
+34. 17 đợt giao đang chờ nhận, 4 đợt treo từ 31/07 (PO-259/261/263/272 SMB): Mua hàng rà và đóng / chốt thiếu trước khi lên màn mới?
+35. Xuất cấp 1 bước, không duyệt. Phiếu MI-20260925 (Tổ đội Vũ Văn Vui, XHV) đang chờ duyệt: xuất luôn hay hủy?
+36. Chuyển kho 2 bước Gửi → Nhận, bỏ duyệt. Người lập: thủ kho kho gửi và Mua hàng ("Cấp từ kho"). Đồng ý?
+37. Người nhận khi xuất cấp chỉ chọn trong danh sách (tổ đội / thầu phụ có HĐ, đối tác), không gõ tự do. Có tổ đội chưa có trong danh sách thì ai thêm (Mua hàng hay CHT)?
+38. Menu Vật tư 6 → 4 (Kho · Danh mục · Báo cáo · Phân quyền). Màn Kiểm kê cũ thành nút Kiểm đếm (kiểm nhanh 1 mã, theo nhóm, cả kho). Đồng ý?
