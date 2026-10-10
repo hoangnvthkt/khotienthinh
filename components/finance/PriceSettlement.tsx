@@ -67,12 +67,12 @@ export const PriceLinesEditor: React.FC<{ doc: InvoiceDocument; draft: PriceDraf
       const k = priceKey(doc.id, l.lineId); const raw = l.pendingCode ? undefined : draft[k]; const p = raw == null || raw.trim() === '' ? l.currentPrice : parsePrice(raw);
       const bad = !Number.isFinite(p) || p < 0; const delta = bad ? 0 : lineDelta(l, p); const changed = !bad && Math.abs(p - l.currentPrice) >= 0.005;
       return <li key={l.lineId} className={`grid grid-cols-2 items-center gap-x-2 gap-y-1 rounded-lg px-1 py-1 md:grid-cols-[minmax(0,1fr)_6.5rem_7rem_8.5rem_7.5rem] ${changed ? 'bg-amber-50/70 dark:bg-amber-950/20' : ''}`}>
-        <span className="col-span-2 min-w-0 md:col-span-1"><b className="font-semibold">{l.itemName}</b>{l.vatRate > 0 && <span className="text-xs text-muted-foreground"> · VAT {l.vatRate}%</span>}</span>
+        <span className="col-span-2 min-w-0 md:col-span-1"><b className="font-semibold">{l.itemName}</b>{l.specification && <span className="text-xs text-muted-foreground"> — {l.specification}</span>}{l.vatRate > 0 && <span className="text-xs text-muted-foreground"> · VAT {l.vatRate}%</span>}</span>
         <span className="text-xs tabular-nums md:text-right md:text-sm"><span className="text-muted-foreground md:hidden">SL nhận </span>{l.qty.toLocaleString('vi-VN', { maximumFractionDigits: 3 })} {l.unit || ''}</span>
         <span className="text-right text-xs tabular-nums md:text-sm"><span className="text-muted-foreground md:hidden">giá đặt </span>{price(l.orderedPrice)}
           {Math.abs(l.currentPrice - l.orderedPrice) >= 0.005 && <span className="block text-[11px] text-teal-700">đã chốt {price(l.currentPrice)}</span>}</span>
         {l.pendingCode ? <span className="text-right text-[11px] font-semibold text-amber-700" title="Duyệt hoặc rút bản đang chờ trước khi chốt giá lại">đang chờ duyệt {l.pendingCode}</span>
-          : <input value={raw ?? ''} placeholder={price(l.currentPrice)} inputMode="numeric" aria-label={`Giá chốt ${l.itemName}`}
+          : <input value={raw ?? ''} placeholder={price(l.currentPrice)} inputMode="numeric" aria-label={`Giá chốt ${l.itemName}${l.specification ? ` ${l.specification}` : ''}`}
             onChange={e => onChange(k, e.target.value)} onBlur={e => { const x = parsePrice(e.target.value); if (e.target.value.trim() && Number.isFinite(x)) onChange(k, price(x)); }}
             className={`w-full text-right tabular-nums ${inputCls} ${bad ? 'border-rose-400' : changed ? 'border-amber-400 font-semibold' : ''}`} />}
         <span className={`text-right text-sm font-semibold tabular-nums ${!changed ? 'text-muted-foreground' : delta < 0 ? 'text-leaf-700' : 'text-amber-700'}`}>{changed ? signed(delta) : '—'}</span>
@@ -110,7 +110,7 @@ export const SettlementCard: React.FC<{ s: PriceSettlement; busy: boolean; embed
         {s.status === 'posted' && s.needsAdjustmentInvoice && !s.adjustmentInvoice && <Badge className="border-amber-300 bg-amber-50 text-amber-800">Chờ HĐ điều chỉnh</Badge>}</p>}
       {embedded && <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">Chốt giá kèm hóa đơn · {s.code} · {signed(s.deltaGross)} đ</p>}
       <ul className="mt-1.5 space-y-0.5 text-xs">{s.lines.map((l, i) => <li key={i} className="flex flex-wrap items-center gap-x-1.5">
-        <b className="font-semibold text-foreground">{l.itemName}</b><span className="text-muted-foreground">· {l.poNumber || l.documentNo}{l.projectCode ? ` · ${l.projectCode}` : ''}:</span>
+        <b className="font-semibold text-foreground">{l.itemName}</b>{l.specification && <span className="text-muted-foreground">— {l.specification}</span>}<span className="text-muted-foreground">· {l.poNumber || l.documentNo}{l.projectCode ? ` · ${l.projectCode}` : ''}:</span>
         <span className="tabular-nums">{price(l.fromPrice)}</span><ArrowRight size={11} className="text-muted-foreground" /><b className="tabular-nums">{price(l.toPrice)}</b>
         <span className="text-muted-foreground">đ{unitText(l.unit)} × {l.qty.toLocaleString('vi-VN', { maximumFractionDigits: 3 })}{l.vatRate ? ` (+VAT ${l.vatRate}%)` : ''} =</span>
         <b className={`tabular-nums ${l.deltaGross < 0 ? 'text-leaf-700' : 'text-amber-700'}`}>{signed(l.deltaGross)}</b></li>)}</ul>
