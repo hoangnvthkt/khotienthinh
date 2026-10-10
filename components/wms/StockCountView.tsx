@@ -6,6 +6,7 @@ import {
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { formatQuantityInput, parseQuantityInput } from '../../lib/quantityInput';
+import { SpecCountRows, specCountInvalid, specCountTotal, type SpecCountRow } from './SpecCountRows';
 import {
   REASON_LABEL, SHORTAGE_REASONS, STOCK_COUNT_EVENT_LABEL, STOCK_COUNT_STATUS_LABEL, SURPLUS_REASONS, stockCountService,
   type StockCountDetail, type StockCountList, type StockCountStatus, type StockCountSummary, type VarianceReason,
@@ -195,6 +196,18 @@ const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string
   const confirm = useConfirm();
   const reasonConfirm = useReasonConfirm();
   const [qty, setQty] = useState<Record<string, string>>(() => Object.fromEntries(d.lines.map(l => [l.id, l.countedQty == null ? '' : formatQuantityInput(l.countedQty)])));
+  // V4: dòng đếm theo quy cách (mã có quy cách tại kho, hoặc người đếm tách quy cách) — số đếm của mã = cộng các quy cách.
+  const specRowsOf = (l: typeof d.lines[number]): SpecCountRow[] | null => l.specCounts?.length
+    ? l.specCounts.map(s => ({ specification: s.specification, value: s.countedQty == null ? '' : formatQuantityInput(s.countedQty), snapshotQty: s.snapshotQty, added: s.added }))
+    : null;
+  const [specRows, setSpecRows] = useState<Record<string, SpecCountRow[]>>(() =>
+    Object.fromEntries(d.lines.flatMap(l => { const r = specRowsOf(l); return r ? [[l.id, r]] : []; })));
+  const setLineSpecs = (lineId: string, rows: SpecCountRow[]) => {
+    setSpecRows(s => ({ ...s, [lineId]: rows }));
+    setQty(s => ({ ...s, [lineId]: specCountTotal(rows) }));
+  };
+  const specDirty = (l: typeof d.lines[number]) => !!specRows[l.id]
+    && JSON.stringify(specRows[l.id].map(r => [r.specification, r.value])) !== JSON.stringify((specRowsOf(l) || []).map(r => [r.specification, r.value]));
   const [reasons, setReasons] = useState<Record<string, VarianceReason | ''>>(() => Object.fromEntries(d.lines.map(l => [l.id, l.varianceReason || ''])));
   const [notes, setNotes] = useState<Record<string, string>>(() => Object.fromEntries(d.lines.map(l => [l.id, l.note || ''])));
   const [filter, setFilter] = useState<LineFilter>(d.status === 'counting' ? 'all' : 'variance');
@@ -203,10 +216,10 @@ const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string
   const [adding, setAdding] = useState('');
   const [showHistory, setShowHistory] = useState(false);
 
-  const dirtyCounts = d.lines.filter(l => (qty[l.id] ?? '') !== (l.countedQty == null ? '' : formatQuantityInput(l.countedQty)));
+  const dirtyCounts = d.lines.filter(l => specDirty(l) || (!specRows[l.id] && (qty[l.id] ?? '') !== (l.countedQty == null ? '' : formatQuantityInput(l.countedQty))));
   const dirtyExplain = d.lines.filter(l => (reasons[l.id] || '') !== (l.varianceReason || '') || (notes[l.id] || '') !== (l.note || ''));
   const counted = d.lines.filter(l => (qty[l.id] ?? '').trim() !== '').length;
-  const invalid = d.lines.some(l => (qty[l.id] ?? '').trim() !== '' && !(parseQuantityInput(qty[l.id]) >= 0));
+  const invalid = d.lines.some(l => specRows[l.id] ? specCountInvalid(specRows[l.id]) : (qty[l.id] ?? '').trim() !== '' && !(parseQuantityInput(qty[l.id]) >= 0));
   const variance = d.lines.filter(l => (l.varianceQty || 0) !== 0);
   const unexplained = variance.filter(l => !reasons[l.id]).length;
   const valueOf = (l: typeof d.lines[number]) => (l.varianceQty || 0) * (l.unitCost || 0);
@@ -227,7 +240,9 @@ const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string
     } finally { setBusy(null); }
   };
   const saveCounts = () => run('save', () => stockCountService.saveLines({ countId: d.id,
-    lines: dirtyCounts.map(l => ({ lineId: l.id, countedQty: (qty[l.id] ?? '').trim() === '' ? null : parseQuantityInput(qty[l.id]) })) }),
+    lines: dirtyCounts.map(l => specRows[l.id]
+      ? { lineId: l.id, specCounts: specRows[l.id].map(r => ({ specification: r.specification, countedQty: r.value.trim() === '' ? null : parseQuantityInput(r.value) })) }
+      : { lineId: l.id, countedQty: (qty[l.id] ?? '').trim() === '' ? null : parseQuantityInput(qty[l.id]) }) }),
     ['Đã lưu số đếm', `${dirtyCounts.length} dòng · đã đếm ${counted}/${d.lines.length}.`]);
   const saveExplain = () => run('explain', () => stockCountService.saveLines({ countId: d.id,
     lines: dirtyExplain.map(l => ({ lineId: l.id, varianceReason: (reasons[l.id] || null) as VarianceReason | null, note: notes[l.id] || '' })) }),
@@ -310,9 +325,12 @@ const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string
       {d.can.count && <ul className="divide-y divide-border rounded-xl border border-border sm:hidden" aria-label="Dòng đếm">{lines.map(l =>
         <li key={l.id} className="flex items-center gap-3 px-3 py-2.5">
           <div className="min-w-0 flex-1"><p className={ENT}>{l.name}</p>
-            <p className="text-[11px] text-muted-foreground">{l.sku}{l.unit && ` · ${l.unit}`}{d.systemVisible && l.snapshotQty != null && ` · sổ ${qtyFmt(l.snapshotQty)}`}{l.addedDuringCount && ' · ngoài sổ'}</p></div>
-          <input inputMode="decimal" value={qty[l.id] ?? ''} onChange={e => setQty(s => ({ ...s, [l.id]: e.target.value }))} aria-label={`Số đếm ${l.name}`}
-            placeholder="—" className={`${inputCls} w-28 text-right tabular-nums text-leaf-800`} />
+            <p className="text-[11px] text-muted-foreground">{l.sku}{l.unit && ` · ${l.unit}`}{d.systemVisible && l.snapshotQty != null && ` · sổ ${qtyFmt(l.snapshotQty)}`}{l.addedDuringCount && ' · ngoài sổ'}</p>
+            {specRows[l.id] ? <SpecCountRows rows={specRows[l.id]} editable systemVisible={d.systemVisible} unit={l.unit} itemId={l.itemId} itemName={l.name} onChange={rows => setLineSpecs(l.id, rows)} />
+              : <button type="button" onClick={() => setLineSpecs(l.id, [{ specification: null, value: qty[l.id] ?? '', snapshotQty: l.snapshotQty }])} className="mt-0.5 text-[11px] font-semibold text-teal-700">Đếm theo quy cách</button>}</div>
+          {specRows[l.id] ? <span className={`w-20 text-right ${NUM}`}>{qty[l.id] || '—'}</span>
+            : <input inputMode="decimal" value={qty[l.id] ?? ''} onChange={e => setQty(s => ({ ...s, [l.id]: e.target.value }))} aria-label={`Số đếm ${l.name}`}
+            placeholder="—" className={`${inputCls} w-28 text-right tabular-nums text-leaf-800`} />}
         </li>)}{lines.length === 0 && <li className="px-3 py-8 text-center text-sm text-muted-foreground">Không có dòng nào.</li>}</ul>}
       <div className={`max-h-[55vh] overflow-auto rounded-xl border border-border ${d.can.count ? 'hidden sm:block' : ''}`}>
         <table className={`w-full text-sm ${d.status === 'counting' ? 'min-w-[520px]' : 'min-w-[820px]'}`}>
@@ -327,10 +345,15 @@ const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string
             return <tr key={l.id} className="align-top">
               <td className="px-3 py-2"><span className={ENT}>{l.name}</span>{l.addedDuringCount && <span className="ml-1 text-[11px] text-amber-700">ngoài sổ</span>}
                 <span className="block text-[11px] text-muted-foreground">{l.sku}{l.countedBy && ` · đếm: ${l.countedBy}`}
-                  {d.systemVisible && l.cacheQtyAtSnapshot != null && l.snapshotQty != null && Math.abs(l.cacheQtyAtSnapshot - l.snapshotQty) > 0.0005 && <span className="text-amber-700"> · danh mục ghi {qtyFmt(l.cacheQtyAtSnapshot)}</span>}</span></td>
+                  {d.systemVisible && l.cacheQtyAtSnapshot != null && l.snapshotQty != null && Math.abs(l.cacheQtyAtSnapshot - l.snapshotQty) > 0.0005 && <span className="text-amber-700"> · danh mục ghi {qtyFmt(l.cacheQtyAtSnapshot)}</span>}</span>
+                {specRows[l.id] ? <SpecCountRows rows={specRows[l.id]} editable={d.can.count} systemVisible={d.systemVisible} unit={l.unit} itemId={l.itemId} itemName={l.name} onChange={rows => setLineSpecs(l.id, rows)} />
+                  : d.can.count && <button type="button" onClick={() => setLineSpecs(l.id, [{ specification: null, value: qty[l.id] ?? '', snapshotQty: l.snapshotQty }])}
+                    className="mt-0.5 text-[11px] font-semibold text-teal-700 hover:underline dark:text-teal-300" title="Kho có nhiều quy cách của mã này — đếm riêng từng quy cách">Đếm theo quy cách</button>}</td>
               <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">{l.unit}</td>
               {d.systemVisible && <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{qtyFmt(d.status === 'counting' ? l.snapshotQty : l.expectedQty)}</td>}
-              <td className="px-2 py-1.5 text-right">{d.can.count
+              <td className="px-2 py-1.5 text-right">{d.can.count && specRows[l.id]
+                ? <span className={`whitespace-nowrap ${NUM}`} title="Cộng các quy cách">{qty[l.id] || '—'}</span>
+                : d.can.count
                 ? <input inputMode="decimal" value={qty[l.id] ?? ''} onChange={e => setQty(s => ({ ...s, [l.id]: e.target.value }))} aria-label={`Số đếm ${l.name}`}
                   placeholder="—" className={`${inputCls} w-28 text-right tabular-nums text-leaf-800`} />
                 : <span className={`whitespace-nowrap ${NUM}`}>{qtyFmt(l.countedQty)}</span>}</td>

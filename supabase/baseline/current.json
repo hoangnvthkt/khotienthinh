@@ -301,7 +301,8 @@
     "20261010181700_finance_spec_lines.sql",
     "20261010191100_wms_stock_by_spec.sql",
     "20261010201300_item_spec_catalog.sql",
-    "20261010211500_wms_issue_pick_spec.sql"
+    "20261010211500_wms_issue_pick_spec.sql",
+    "20261010221700_wms_count_print_spec.sql"
   ],
   "forbidIncludeAll": true
 }

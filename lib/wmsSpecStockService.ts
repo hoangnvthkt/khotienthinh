@@ -27,3 +27,32 @@ export const useWarehouseSpecStock = (warehouseId: string | null | undefined, it
   }, [warehouseId, key]);
   return stock;
 };
+
+export interface TxLedgerAllocation { itemId: string; direction: 'in' | 'out'; qty: number; allocations: SpecAllocation[] | null }
+
+/** Quy cách thực của các dòng sổ kho thuộc một phiếu kho (xuất tự lấy nhập trước cũng có). */
+export const fetchTxSpecAllocations = async (transactionId: string): Promise<TxLedgerAllocation[]> => {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.rpc('get_wms_tx_spec_allocations_v1', { p_transaction_id: transactionId });
+  if (error) throw error;
+  return (data || []) as TxLedgerAllocation[];
+};
+
+/**
+ * Ghép dòng sổ kho vào từng dòng phiếu: theo mã, theo thứ tự (dòng thứ n của mã ↔ dòng sổ thứ n của mã).
+ * Nhập lấy dòng sổ nhập, còn lại lấy dòng sổ xuất. Trả null khi dòng không có quy cách đặt tên.
+ */
+export const lineSpecAllocations = (isImport: boolean, lines: Array<{ itemId: string }>, ledger: TxLedgerAllocation[]): Array<SpecAllocation[] | null> => {
+  const queue = new Map<string, TxLedgerAllocation[]>();
+  ledger.filter(e => e.direction === (isImport ? 'in' : 'out')).forEach(e => queue.set(e.itemId, [...(queue.get(e.itemId) || []), e]));
+  return lines.map(line => {
+    const e = queue.get(line.itemId)?.shift();
+    const parts = (e?.allocations || []).filter(a => Number(a.qty) > 0);
+    return parts.some(a => a.specification) ? parts : null;
+  });
+};
+
+/** "M350CV, R7 · 10; chưa ghi quy cách · 5" (một phần thì không kèm số). */
+export const specAllocationText = (parts: SpecAllocation[], fmt: (n: number) => string) =>
+  parts.length === 1 ? (parts[0].specification || 'chưa ghi quy cách')
+    : parts.map(a => `${a.specification || 'chưa ghi quy cách'} · ${fmt(Number(a.qty))}`).join('; ');

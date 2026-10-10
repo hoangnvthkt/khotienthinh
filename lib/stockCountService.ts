@@ -18,6 +18,8 @@ export interface StockCountLine {
   snapshotQty: number | null; cacheQtyAtSnapshot: number | null; expectedQty: number | null;
   countedQty: number | null; varianceQty: number | null; varianceReason: VarianceReason | null; note: string | null;
   unitCost: number | null; countedBy: string | null; countedAt: string | null; addedDuringCount: boolean;
+  /** V4: đếm theo quy cách (mã có quy cách tại kho). snapshotQty ẩn khi đếm mù. */
+  specCounts?: Array<{ specification: string | null; snapshotQty?: number | null; countedQty: number | null; added?: boolean }> | null;
 }
 
 export interface StockCountDetail {
@@ -82,7 +84,8 @@ export const stockCountService = {
   get: (id: string) => call<StockCountDetail>('get_stock_count_v1', { p_count_id: id }),
   start: (input: { warehouseId: string; reason: string; blind: boolean }) => call<StockCountDetail>('start_stock_count_v1', { p_input: input }),
   addItem: (input: { countId: string; itemId: string }) => call<StockCountDetail>('add_stock_count_item_v1', { p_input: input }),
-  saveLines: (input: { countId: string; lines: Array<{ lineId: string; countedQty?: number | null; varianceReason?: VarianceReason | null; note?: string }> }) =>
+  saveLines: (input: { countId: string; lines: Array<{ lineId: string; countedQty?: number | null; varianceReason?: VarianceReason | null; note?: string;
+    specCounts?: Array<{ specification: string | null; countedQty: number | null }> }> }) =>
     call<StockCountDetail>('save_stock_count_lines_v1', { p_input: input }),
   submit: (input: { countId: string; revision: number }) => call<StockCountDetail>('submit_stock_count_v1', { p_input: input }),
   decide: (input: { countId: string; revision: number; action: 'approve' | 'reject'; reason?: string }) =>

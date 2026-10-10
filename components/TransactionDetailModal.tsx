@@ -17,6 +17,9 @@ import { dateInputToTransactionTimestamp } from '../lib/transactionVoucherDates'
 import { canEditTransactionVoucher } from '../lib/transactionVoucherMetadata';
 import { buildActualReceiptItems, validateReceiptQuantityLines } from '../lib/poActualReceipt';
 import { wmsTransferService, type WmsTransferProgressLine } from '../lib/wmsTransferService';
+import { fetchTxSpecAllocations, lineSpecAllocations } from '../lib/wmsSpecStockService';
+import type { SpecAllocation } from '../lib/wmsCatalogService';
+import { SpecChips } from './wms/SpecStockSection';
 import {
   cleanupTransactionAttachmentPaths,
   getTransactionAttachmentUrl,
@@ -57,6 +60,17 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [transferReceiveDrafts, setTransferReceiveDrafts] = useState<Record<string, string>>({});
   const [transferProgressState, setTransferProgressState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const transferReceiveCommandRef = useRef<{ signature: string; key: string } | null>(null);
+  // Quy cách thực xuất của từng dòng (đọc sổ kho sau khi ghi sổ) — kể cả khi hệ thống tự lấy quy cách nhập trước.
+  const [lineSpecs, setLineSpecs] = useState<Array<SpecAllocation[] | null>>([]);
+  useEffect(() => {
+    let live = true;
+    setLineSpecs([]);
+    if (!isOpen || !transactionProp || transactionProp.status !== TransactionStatus.COMPLETED) return;
+    fetchTxSpecAllocations(transactionProp.id)
+      .then(ledger => { if (live) setLineSpecs(lineSpecAllocations(transactionProp.type === TransactionType.IMPORT, transactionProp.items, ledger)); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [isOpen, transactionProp]);
 
   useEffect(() => {
     if (transactionProp) {
@@ -684,7 +698,9 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                       <td className="px-4 py-3">
                         {/* Tên + quy cách giữ đúng như dòng đơn gốc (một mã nhiều quy cách); mã vẫn là mã danh mục. */}
                         <div className="font-bold text-slate-700">{ti.itemNameSnapshot || item?.name || 'Vật tư mới'}</div>
-                        {ti.specification && <div className="mt-0.5 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{ti.specification}</div>}
+                        {lineSpecs[idx] && transaction.type !== TransactionType.IMPORT
+                          ? <div className="text-[11px] font-semibold text-slate-600" title="Quy cách thực xuất theo sổ kho"><SpecChips allocations={lineSpecs[idx]} /></div>
+                          : ti.specification && <div className="mt-0.5 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">{ti.specification}</div>}
                         <div className="text-[10px] text-slate-400 font-mono">{item?.sku || 'Đang chờ duyệt'}</div>
                       </td>
                        <td className="px-4 py-3 text-right font-bold text-slate-800">

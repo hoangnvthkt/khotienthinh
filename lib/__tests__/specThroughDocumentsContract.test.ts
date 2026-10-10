@@ -32,7 +32,8 @@ describe('quy cách đi xuyên chứng từ — giao diện', () => {
   it('phiếu kho hiện tên + quy cách theo dòng đơn', () => {
     const modal = read('components/TransactionDetailModal.tsx');
     expect(modal).toContain("{ti.itemNameSnapshot || item?.name || 'Vật tư mới'}");
-    expect(modal).toContain('{ti.specification && ');
+    // Phiếu nhập / chưa ghi sổ: quy cách trên dòng; phiếu xuất đã ghi sổ: quy cách thực theo sổ kho (V4).
+    expect(modal).toContain(': ti.specification && ');
   });
 
   it('đối chiếu đợt giao, đối soát HĐ, thẻ kho hiện quy cách', () => {
