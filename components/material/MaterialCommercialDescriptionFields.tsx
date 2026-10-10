@@ -1,7 +1,10 @@
 import React from 'react';
+import { SpecInput } from './SpecInput';
 
 type MaterialCommercialDescriptionFieldsProps = {
     sku?: string;
+    /** Mã vật tư — để gợi ý danh sách quy cách chuẩn của mã. */
+    itemId?: string;
     name: string;
     disabled?: boolean;
     className?: string;
@@ -15,6 +18,7 @@ type MaterialCommercialDescriptionFieldsProps = {
 
 const MaterialCommercialDescriptionFields: React.FC<MaterialCommercialDescriptionFieldsProps> = ({
     sku,
+    itemId,
     name,
     disabled = false,
     className = '',
@@ -47,11 +51,14 @@ const MaterialCommercialDescriptionFields: React.FC<MaterialCommercialDescriptio
         {onSpecificationChange && (
             <div>
                 <span className="sr-only">Quy cách</span>
-                <input
+                <SpecInput
+                    itemId={itemId}
+                    itemName={name}
+                    hideHint={!!specificationProblem}
                     value={specification}
                     disabled={disabled}
                     maxLength={160}
-                    onChange={event => onSpecificationChange(event.target.value)}
+                    onChange={onSpecificationChange}
                     placeholder="Quy cách / ghi chú — VD: loại 1, tôn biên 13 sóng"
                     aria-invalid={!!specificationProblem}
                     className={`w-full rounded-lg border bg-white px-2.5 py-1 text-xs text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 disabled:cursor-not-allowed disabled:bg-slate-100 ${specificationProblem ? 'border-rose-400 ring-2 ring-rose-400/20' : 'border-slate-200'}`}

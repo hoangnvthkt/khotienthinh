@@ -7,6 +7,8 @@ import { formatQuantityInput, parseQuantityInput } from '../../lib/quantityInput
 import { specKey } from '../../lib/materialLineDescription';
 import { catalogErrorMessage, wmsCatalogService, type ItemCard, type SpecAllocation } from '../../lib/wmsCatalogService';
 import { Section, dateVi, fmtQty } from './wmsUi';
+import { SpecInput } from '../material/SpecInput';
+import { itemSpecService } from '../../lib/itemSpecService';
 
 // V1-3b Tồn theo quy cách: tồn của mã = cộng các quy cách. Xuất không ghi quy cách tự lấy từ trên xuống (nhập trước).
 // Phiếu chuyển quy cách (cùng mã, cùng kho, có lý do) dùng khi hàng về khác quy cách hoặc gắn quy cách cho hàng cũ.
@@ -25,7 +27,7 @@ export const SpecChips: React.FC<{ allocations?: SpecAllocation[] | null; fallba
 const SpecChip: React.FC<{ muted?: boolean; children: React.ReactNode }> = ({ muted, children }) =>
   <span title="Quy cách của dòng chứng từ" className={`mt-0.5 mr-1 inline-block w-fit rounded px-1 ${muted ? 'bg-muted text-muted-foreground' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>{children}</span>;
 
-export const SpecStockSection: React.FC<{ card: ItemCard; itemId: string; warehouseId: string; unit: string | null; onChanged: () => void }> = ({ card, itemId, warehouseId, unit, onChanged }) => {
+export const SpecStockSection: React.FC<{ card: ItemCard; itemId: string; itemName?: string; warehouseId: string; unit: string | null; onChanged: () => void }> = ({ card, itemId, itemName, warehouseId, unit, onChanged }) => {
   const toast = useToast();
   const specs = useMemo(() => (card.specs || []).filter(s => Math.abs(Number(s.qty)) > 0.0000005), [card.specs]);
   const available = specs.filter(s => Number(s.qty) > 0.0000005);
@@ -48,7 +50,6 @@ export const SpecStockSection: React.FC<{ card: ItemCard; itemId: string; wareho
     const first = available.find(s => !s.specification) || available[0];
     setFrom(specKey(first?.specification)); setTo(''); setQty(formatQuantityInput(Number(first?.qty || 0))); setReason(''); setError(null); setOpen(true);
   };
-  const suggestions = [...new Set(specs.map(s => s.specification).filter((s): s is string => !!s))].filter(s => specKey(s) !== specKey(fromSpec?.specification));
   const save = async () => {
     const n = parseQuantityInput(qty);
     if (!to.trim()) { setError('Nhập quy cách mới.'); return; }
@@ -59,7 +60,7 @@ export const SpecStockSection: React.FC<{ card: ItemCard; itemId: string; wareho
     try {
       const r = await wmsCatalogService.transferSpec({ itemId, warehouseId, fromSpec: fromSpec?.specification ?? null, toSpec: to.trim(), qty: n, reason: reason.trim() });
       toast.success(`Đã chuyển quy cách · ${r.code}`, `${fmtQty(n)} ${unit || ''} từ "${fromSpec?.specification || UNSPEC_LABEL}" sang "${to.trim()}". Tồn của mã không đổi.`);
-      setOpen(false); onChanged();
+      itemSpecService.forget(itemId); setOpen(false); onChanged();
     } catch (e) { setError(catalogErrorMessage(e)); } finally { setSaving(false); }
   };
 
@@ -83,8 +84,7 @@ export const SpecStockSection: React.FC<{ card: ItemCard; itemId: string; wareho
             {available.map(s => <option key={specKey(s.specification) || '-'} value={specKey(s.specification)}>{s.specification || UNSPEC_LABEL} — còn {fmtQty(Number(s.qty))}</option>)}
           </select></label>
         <label className="block"><span className={CAP}>Sang quy cách</span>
-          <input value={to} onChange={e => setTo(e.target.value)} maxLength={80} list={`spec-${itemId}`} placeholder="VD M350CV, R7" className={`mt-1 w-full ${inputCls}`} />
-          <datalist id={`spec-${itemId}`}>{suggestions.map(s => <option key={s} value={s} />)}</datalist></label>
+          <SpecInput itemId={itemId} itemName={itemName} value={to} onChange={setTo} maxLength={80} placeholder="Chọn hoặc gõ quy cách" className={`mt-1 w-full ${inputCls}`} /></label>
         <label className="block"><span className={CAP}>Số lượng ({unit})</span>
           <input value={qty} inputMode="decimal" onChange={e => setQty(e.target.value)} className={`mt-1 w-full text-right tabular-nums ${inputCls}`} /></label>
         <label className="block"><span className={CAP}>Lý do</span>

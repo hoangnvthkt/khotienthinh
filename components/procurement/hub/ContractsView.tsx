@@ -9,6 +9,7 @@ import {
 import type { Warehouse } from '../../../types';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
+import { SpecInput } from '../../material/SpecInput';
 import { ContractForm } from './ContractForm';
 import { ContractOrderEditor } from './ContractOrderEditor';
 
@@ -210,7 +211,7 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
           <th className="px-2 py-1 text-right font-semibold">Hạn mức SL</th><th className="px-2 py-1 text-left font-semibold">Hiệu lực từ</th><th className="px-2 py-1 text-left font-semibold">đến</th><th /></tr></thead>
         <tbody>{rows.map((r, i) => <tr key={r.id || `${r.itemId}-${i}`} className="border-t border-border">
           <td className="min-w-[16rem] px-2 py-1.5"><span className="font-medium text-foreground">{r.name}</span> <span className="text-xs text-muted-foreground">{r.unit}</span>
-            <input value={r.spec} onChange={e => patch(i, { spec: e.target.value })} maxLength={160} placeholder="Quy cách (nếu có nhiều loại giá)" aria-label={`Quy cách ${r.name}`}
+            <SpecInput itemId={r.itemId} itemName={r.name} value={r.spec} onChange={v => patch(i, { spec: v })} maxLength={160} placeholder="Quy cách (nếu có nhiều loại giá)" aria-label={`Quy cách ${r.name}`}
               className={`mt-1 block w-full py-1 text-xs ${inputCls}`} />
             <button type="button" onClick={() => setRows(cur => [...cur.slice(0, i + 1), { itemId: r.itemId, name: r.name, unit: r.unit, spec: '', unitPrice: '', vatRate: r.vatRate,
               quantityLimit: '', amountLimit: '', effectiveFrom: r.effectiveFrom, effectiveTo: r.effectiveTo, used: false }, ...cur.slice(i + 1)])}

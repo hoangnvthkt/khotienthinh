@@ -19,8 +19,10 @@ describe('duplicateItemSpecProblems — một mã nhiều quy cách', () => {
     expect(p.get('c')).toMatch(/ghi quy cách/);
     expect(p.get('a')).toMatch(/Trùng quy cách/);
   });
-  it('specKey khớp lower(btrim()) phía máy chủ', () => {
-    expect(specKey('  Loại 1 ')).toBe('loại 1');
+  it('specKey khớp catalog_name_key phía máy chủ (bỏ dấu, dấu cách, x/*/×, phẩy thập phân, ly = mm)', () => {
+    expect(specKey('  Loại 1 ')).toBe('loai1');
+    expect(specKey('Hòa Phát CB-300')).toBe(specKey('hoa phat cb 300'));
+    expect(specKey('V120*30*1,5ly')).toBe('v120x30x15mm');
     expect(specKey(null)).toBe('');
   });
 });

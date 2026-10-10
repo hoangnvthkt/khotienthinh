@@ -164,7 +164,7 @@ export const WmsStockView: React.FC = () => {
               <li key={o.warehouseId} className="flex items-center justify-between px-3 py-1.5"><button type="button" onClick={() => setSel(`${o.warehouseId}:${row.itemId}`)} className="hover:underline">{o.warehouseName}</button>
                 <span><span className={NUM}>{fmtQty(Number(o.qty))}</span> <span className="text-xs text-muted-foreground">{row.unit}</span></span></li>)}</ul>
           </Section>}
-          {card?.data && <SpecStockSection card={card.data} itemId={row.itemId} warehouseId={row.warehouseId} unit={row.unit} onChanged={reloadCard} />}
+          {card?.data && <SpecStockSection card={card.data} itemId={row.itemId} itemName={row.name} warehouseId={row.warehouseId} unit={row.unit} onChanged={reloadCard} />}
           <Section title="Thẻ kho" right={<span className="text-xs text-muted-foreground">theo ngày chứng từ</span>}>
             {card?.error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{card.error}</p>
               : !card?.data ? <p className="text-sm text-muted-foreground">Đang tải thẻ kho…</p>
