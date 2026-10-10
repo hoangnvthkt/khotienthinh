@@ -216,6 +216,9 @@ export const procurementInboxService = {
   poPaymentStatus(ids: string[]) {
     return ids.length ? call<Record<string, ProcurementPoPayment>>('get_procurement_po_payment_status_v1', { p_po_ids: ids }) : Promise.resolve({} as Record<string, ProcurementPoPayment>);
   },
+  poPriceSettlements(id: string) {
+    return call<ProcurementPoPriceSettlement[]>('get_procurement_po_price_settlements_v1', { p_po_id: id });
+  },
   getOrder(id: string) {
     return call<ProcurementOrderDetail>('get_procurement_order_v1', { p_po_id: id });
   },
@@ -305,6 +308,11 @@ export interface ProcurementGroupSite {
     /** Đã nhận về công trường nhưng vượt các dòng nhu cầu (tồn kho) và đề xuất cùng dự án có thể nhận phần thừa. */
     excessStockQty: number; excessCandidates: Array<{ sourceId: string; lineId: string; code: string; shortQty: number }>;
     allocations: Array<{ linkId: string; kind: ProcurementSourceType; code: string | null; neededDate: string | null; orderedQty: number; receivedQty: number; excess: boolean; excessReason: string | null }> }>;
+}
+/** Giá kế toán chốt cho hàng đã giao của một dòng PO (NCC đổi đơn giá) — Mua hàng chỉ xem. */
+export interface ProcurementPoPriceSettlement {
+  poLineId: string | null; code: string; status: 'pending_approval' | 'posted'; itemName: string | null; unit: string | null; qty: number;
+  fromPrice: number; toPrice: number; deltaGross: number; reason: string; at: string; deliveryNo: number | null;
 }
 export type ProcurementPoPaymentState = 'none' | 'unpaid' | 'partial' | 'paid';
 /** Tình trạng thanh toán PO (từ công nợ nhận hàng) — Mua hàng chỉ thấy nợ, đã chi và hạn (K3b-2). */
