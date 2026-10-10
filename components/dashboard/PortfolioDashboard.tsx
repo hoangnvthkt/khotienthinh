@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { Coins, PiggyBank, Wallet } from 'lucide-react';
 import {
   HEALTH_LABEL, ROUTES, daysBetween, drillByProject, pct, projectHealth, ringMoney, shortMoney, sumFinance, viDate,
   type DrillDown, type ProjectHealth,
 } from '../../lib/dashboard/dashboardModel';
 import type { DashProject, DashboardDataset } from '../../lib/dashboard/dashboardTypes';
-import type { DashColors } from './dashUi';
+import { DashDocsContext, type DashColors } from './dashUi';
 import SiteMap from './SiteMap';
 
 // Bảng 1 — Quản lý tiến độ đa dự án: mỗi công trình một thẻ (ngày, thời gian, tình trạng, giá trị HĐ, tiến độ kế hoạch /
@@ -62,6 +62,7 @@ const stamp = (iso: string | null) => {
 const ProjectCard: React.FC<{ project: DashProject; today: string; colors: DashColors; onOpen: (route: string) => void }> = ({ project, today, colors, onOpen }) => {
   const health = projectHealth(project, today);
   const finance = project.finance;
+  const docs = useContext(DashDocsContext);
   const days = project.start && project.end ? daysBetween(project.start, project.end) + 1 : null;
   const late = health === 'late' || health === 'overdue';
   return (
@@ -97,9 +98,13 @@ const ProjectCard: React.FC<{ project: DashProject; today: string; colors: DashC
       </div>
       <SiteMap lat={project.site?.lat ?? null} lng={project.site?.lng ?? null} label={project.site?.name || project.name} />
       <div className="vdb-proj-money" style={{ gridColumn: '1 / -1' }}>
-        <SumItem icon={Coins} label="Ngân sách" value={finance ? finance.budget : null} onClick={() => onOpen(ROUTES.projectFinance(project.id))} />
-        <SumItem icon={PiggyBank} label="Thu" value={finance ? finance.received : null} onClick={() => onOpen(ROUTES.receivables)} />
-        <SumItem icon={Wallet} label="Chi" value={finance ? finance.cost : null} onClick={() => onOpen(ROUTES.cost)} />
+        {/* Bấm số → chứng từ của dự án (dòng ngân sách, tiền đã thu, giao dịch chi phí); không có nguồn chứng từ thì mở màn. */}
+        <SumItem icon={Coins} label="Ngân sách" value={finance ? finance.budget : null}
+          onClick={() => (docs ? docs([{ label: 'Khoản mục ngân sách', metric: 'budget' }], project.id, `Ngân sách · ${project.code}`) : onOpen(ROUTES.projectFinance(project.id)))} />
+        <SumItem icon={PiggyBank} label="Thu" value={finance ? finance.received : null}
+          onClick={() => (docs ? docs([{ label: 'Tiền đã thu', metric: 'received' }], project.id, `Tiền CĐT đã trả · ${project.code}`) : onOpen(ROUTES.receivables))} />
+        <SumItem icon={Wallet} label="Chi" value={finance ? finance.cost : null}
+          onClick={() => (docs ? docs([{ label: 'Chi phí', metric: 'cost' }], project.id, `Chi phí · ${project.code}`) : onOpen(ROUTES.cost))} />
       </div>
     </article>
   );
@@ -125,11 +130,11 @@ const PortfolioDashboard: React.FC<{
       <section className="vdb-card vdb-col-12" aria-label="Tổng ngân sách, thu, chi">
         <div className="vdb-sum">
           <SumItem icon={Coins} label="Ngân sách" value={sumFinance(projects, finance => finance.budget)}
-            onClick={() => onDrill(drillByProject('Ngân sách chi phí theo dự án', projects, finance => finance.budget, { through }))} />
+            onClick={() => onDrill(drillByProject('Ngân sách chi phí theo dự án', projects, finance => finance.budget, { docs: [{ label: 'Khoản mục ngân sách', metric: 'budget' }], through }))} />
           <SumItem icon={PiggyBank} label="Thu" value={sumFinance(projects, finance => finance.received)}
-            onClick={() => onDrill(drillByProject('Tiền chủ đầu tư đã trả theo dự án', projects, finance => finance.received, { through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))} />
+            onClick={() => onDrill(drillByProject('Tiền chủ đầu tư đã trả theo dự án', projects, finance => finance.received, { docs: [{ label: 'Tiền đã thu', metric: 'received' }], through: { label: 'Mở Phải thu', route: ROUTES.receivables } }))} />
           <SumItem icon={Wallet} label="Chi" value={sumFinance(projects, finance => finance.cost)}
-            onClick={() => onDrill(drillByProject('Chi phí đã ghi nhận theo dự án', projects, finance => finance.cost, { through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost } }))} />
+            onClick={() => onDrill(drillByProject('Chi phí đã ghi nhận theo dự án', projects, finance => finance.cost, { docs: [{ label: 'Chi phí', metric: 'cost' }], through: { label: 'Mở Chi phí & ngân sách', route: ROUTES.cost } }))} />
         </div>
       </section>
       <div className="vdb-col-12 vdb-chips" role="group" aria-label="Lọc theo tình trạng">

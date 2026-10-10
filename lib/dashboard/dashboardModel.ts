@@ -1,7 +1,7 @@
 // Tính toán cho Bảng điều khiển: định dạng tiền kiểu "285,248 tỷ", tình trạng dự án, cộng dồn theo dự án / tháng,
 // và dữ liệu bấm xuống (drill-down: bảng các dòng tạo nên một con số) / bấm sang (drill-through: mở màn gốc).
 
-import type { CostCategory, DashGap, DashMonth, DashProject, DashProjectFinance, DashRecords, DashboardDataset, DashboardId } from './dashboardTypes';
+import type { CostCategory, DashDocLink, DashDocQuery, DashGap, DashMonth, DashProject, DashProjectFinance, DashRecords, DashboardDataset, DashboardId } from './dashboardTypes';
 
 // ── Định dạng ────────────────────────────────────────────────────────────────
 
@@ -135,6 +135,18 @@ export const ROUTES = {
   materialRequest: (projectId: string, requestId: string) => query('/da', { projectId, tab: 'material', materialTab: 'request', requestId }),
   /** Phiếu kho (Phiếu kho mở đúng phiếu theo ?tx=). */
   stockDocument: (transactionId: string) => query('/operations', { tx: transactionId }),
+  /** Màn mở đúng một chứng từ tiền (từ danh sách chứng từ của một chỉ số). */
+  doc: (type: DashDocLink, id: string): string => {
+    switch (type) {
+      case 'contract': return `/hd/customer/${encodeURIComponent(id)}`;
+      case 'receivable': return query('/finance/receivables', { contract: id });
+      case 'payable': return query('/finance/payables', { supplier: id });
+      case 'subcontract': return query('/finance/subcontracts', { subcontract: id });
+      case 'request': return query('/finance/requests', { request: id });
+      case 'cost': return query('/finance/cost', { project: id });
+      default: return query('/finance/project', { project: id });
+    }
+  },
   /** Đơn mua (Mua hàng mở đúng đơn theo ?po=). */
   purchaseOrder: (poId: string) => query('/procurement', { po: poId }),
 };
@@ -148,6 +160,8 @@ export const routeTitle = (route: string): string => {
     '/finance/cost': 'Chi phí & ngân sách', '/finance/reports': 'Báo cáo tài chính', '/finance/cash': 'Thu chi & quỹ', '/finance/overview': 'Tổng quan tài chính',
     '/inventory': 'Tồn kho', '/operations': 'Phiếu kho', '/procurement': 'Mua hàng', '/da/portfolio': 'Đa dự án',
   };
+  if (path.startsWith('/hd/customer/')) return 'Hợp đồng CĐT';
+  if (path === '/finance/requests') return 'Đề nghị chi';
   if (path === '/da') {
     const tab = params.get('tab');
     return tab === 'gantt' ? 'Tiến độ' : tab === 'material' ? (params.get('requestId') ? 'Đề xuất vật tư' : 'Vật tư dự án') : 'Dự án';
@@ -174,6 +188,8 @@ export interface DrillDown {
   message?: string;
   /** Dòng nhắc dưới bảng (mặc định "Bấm một dòng để mở hồ sơ."). */
   hint?: string;
+  /** Chứng từ tạo nên con số (dòng là dự án → bấm dòng ra chứng từ của dự án đó; chân ngăn: chứng từ mọi dự án). */
+  docs?: DashDocQuery[];
 }
 
 const projectCol: DrillColumn = { key: 'project', label: 'Dự án' };
@@ -183,7 +199,7 @@ export const drillByProject = (
   title: string,
   projects: readonly DashProject[],
   pick: (finance: DashProjectFinance, project: DashProject) => number | null,
-  options: { subtitle?: string; through?: DrillDown['through']; route?: (project: DashProject) => string; valueLabel?: string } = {},
+  options: { subtitle?: string; through?: DrillDown['through']; route?: (project: DashProject) => string; valueLabel?: string; docs?: DashDocQuery[] } = {},
 ): DrillDown => {
   const rows = projects
     .filter(project => project.finance)
@@ -201,6 +217,7 @@ export const drillByProject = (
     })),
     total: { value: rows.reduce((sum, item) => sum + (item.value as number), 0) },
     through: options.through,
+    docs: options.docs,
   };
 };
 
@@ -231,7 +248,15 @@ export const drillMonth = (
     rows,
     total: Object.fromEntries(fields.map(field => [field.key, rows.reduce((sum, row) => sum + Number(row.cells[field.key] ?? 0), 0)])),
     through,
+    docs: fields.map(field => MONTH_DOCS[field.key]).filter((doc): doc is { label: string; metric: DashDocQuery['metric'] } => !!doc)
+      .map(doc => ({ ...doc, month })),
   };
+};
+
+/** Số theo tháng có chứng từ (nhập / xuất kho xem ở bảng vật tư theo từng vật tư). */
+const MONTH_DOCS: Partial<Record<keyof DashMonth, { label: string; metric: DashDocQuery['metric'] }>> = {
+  revenue: { label: 'Doanh thu', metric: 'accepted' }, cost: { label: 'Chi phí', metric: 'cost' },
+  cashIn: { label: 'Giá trị thu', metric: 'cash_in' }, cashOut: { label: 'Giá trị chi', metric: 'cash_out' },
 };
 
 // ── Quyền xem bảng ───────────────────────────────────────────────────────────

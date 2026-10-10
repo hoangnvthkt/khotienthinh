@@ -1,7 +1,7 @@
 // Dữ liệu minh họa cho Bảng điều khiển (không phải số liệu thật). Số khớp nhau giữa các bảng: doanh thu = đã thu + còn nợ
 // + giữ lại + khấu trừ tạm ứng; chi phí = tổng các nhóm; 12 tháng cộng lại đúng tổng.
 // ?dash=bgd (mặc định) | ketoan | cht | muahang | none | error | slow
-import type { CostCategory, DashGap, DashMonth, DashMove, DashMoveKind, DashProject, DashStockItem, DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
+import type { CostCategory, DashDocLink, DashDocList, DashDocQuery, DashGap, DashMonth, DashMove, DashMoveKind, DashProject, DashProjectFinance, DashStockItem, DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
 
 const TODAY = '2026-10-07';
 const MONTHS = ['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
@@ -155,6 +155,41 @@ export const fixtureMoves = (dataset: DashboardDataset, key: string, kind: DashM
       expected: null,
     }));
   });
+
+/** Chứng từ mẫu: mỗi dự án chia số của chỉ số thành 3 chứng từ, cộng lại đúng số trên bảng (như máy chủ). */
+const DOC_VALUE: Record<DashDocQuery['metric'], (f: DashProjectFinance) => number | null> = {
+  contract: f => f.contractValue, budget: f => f.budget, accepted: f => f.accepted, received: f => f.received, cost: f => f.cost,
+  cash_in: () => null, cash_out: () => null,
+  ar_requested: f => f.ar.requested, ar_outstanding: f => f.ar.outstanding, ar_overdue: f => f.ar.overdue, ar_retention: f => f.ar.retention,
+  ar_advance: f => f.ar.advance, ar_recovered: f => f.ar.advanceRecovered,
+  ap_requested: f => f.ap.requested, ap_outstanding: f => f.ap.outstanding, ap_overdue: f => f.ap.overdue, ap_retention: f => f.ap.retention,
+  ap_paid: f => f.ap.paid, ap_advance: f => f.ap.advance, sub_total: f => f.ap.subcontract.total, sub_paid: f => f.ap.subcontract.paid,
+  sup_total: f => f.ap.supplier.total, sup_paid: f => f.ap.supplier.paid,
+};
+const DOC_LINK: Partial<Record<DashDocQuery['metric'], 'contract' | 'receivable' | 'payable' | 'request' | 'cost'>> = {
+  contract: 'contract', budget: 'cost', accepted: 'receivable', received: 'receivable', ar_requested: 'receivable', ar_outstanding: 'receivable',
+  ar_overdue: 'receivable', ar_retention: 'receivable', ar_advance: 'receivable', ar_recovered: 'receivable', ap_advance: 'request',
+};
+
+export const fixtureDocs = (dataset: DashboardDataset, query: DashDocQuery, projectId: string | null): DashDocList => {
+  const rows = dataset.projects.filter(project => project.finance && (!projectId || project.id === projectId)).flatMap(project => {
+    const f = project.finance!;
+    const month = query.month ? dataset.months.find(row => row.projectId === project.id && row.month === query.month) : null;
+    const value = query.month
+      ? (month ? { accepted: month.revenue, cost: month.cost, cash_in: month.cashIn, cash_out: month.cashOut }[query.metric as 'accepted'] ?? 0 : 0)
+      : query.category ? f.costByCategory[query.category as CostCategory] ?? 0 : DOC_VALUE[query.metric](f) ?? 0;
+    if (!value) return [];
+    const parts = [Math.round(value * 0.5), Math.round(value * 0.3)];
+    parts.push(value - parts[0] - parts[1]);
+    const link: DashDocLink = DOC_LINK[query.metric] || (query.metric.startsWith('ap_') || query.metric.startsWith('su') ? 'payable' : 'project_finance');
+    return parts.map((amount, index) => ({
+      id: `${project.id}-${query.metric}-${index}`, date: `2026-0${7 + index}-0${index + 3}`, code: `${query.metric.toUpperCase().slice(0, 3)}-${project.code}-${index + 1}`,
+      title: `${query.label} ${index + 1}`, partner: link === 'payable' ? 'Công ty Thép Hòa Phát' : 'Chủ đầu tư', projectId: project.id, projectCode: project.code,
+      amount, due: null as string | null, linkType: link, linkId: link === 'contract' || link === 'receivable' ? `hd-${project.id}` : link === 'payable' ? 'ncc-hoaphat' : project.id,
+    }));
+  });
+  return { rows, total: rows.reduce((sum, row) => sum + row.amount, 0), count: rows.length };
+};
 
 const ACCESS: Record<string, DashboardId[]> = {
   bgd: ['portfolio', 'cashflow', 'materials', 'debt'],

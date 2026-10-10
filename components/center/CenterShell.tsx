@@ -16,7 +16,7 @@ import {
   blocksOf, defaultCenterLayout, fetchCenterLayout, hideWidget, moveWidget, pinnedActionsOf, resolveCenterLayout, saveCenterLayout, sameLayout, showWidget,
   withBlocks, withPinnedActions, type CenterLayout, type CenterLayoutRecord, type TodayBlockId,
 } from '../../lib/center/centerLayout';
-import type { DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
+import type { DashDocList, DashDocQuery, DashboardDataset, DashboardId } from '../../lib/dashboard/dashboardTypes';
 import { routeTitle } from '../../lib/dashboard/dashboardModel';
 import { registerCenterOpener } from '../../lib/center/centerOpen';
 import AvatarMenu from './AvatarMenu';
@@ -32,8 +32,10 @@ const PROJECT_KEY = 'vcc_project';
 const INBOX_MIN = 260;
 const INBOX_MAX = 460;
 const FOCUS_REFRESH_MS = 60_000;
-const readStorage = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
-const writeStorage = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* chỉ là tiện ích */ } };
+// Tiện ích giao diện lưu theo tài khoản (máy dùng chung nhiều người vẫn đúng của ai nấy); chưa có bản theo tài khoản thì đọc bản cũ.
+const scoped = (key: string, owner?: string) => (owner ? `${key}:${owner}` : key);
+const readStorage = (key: string, owner?: string) => { try { return localStorage.getItem(scoped(key, owner)) ?? localStorage.getItem(key); } catch { return null; } };
+const writeStorage = (key: string, value: string, owner?: string) => { try { localStorage.setItem(scoped(key, owner), value); } catch { /* chỉ là tiện ích */ } };
 const clampWidth = (value: number) => Math.min(INBOX_MAX, Math.max(INBOX_MIN, value));
 
 const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: false };
@@ -97,10 +99,14 @@ export interface CenterShellProps {
   loadDashboardAccess?: LoadDashboardAccess;
   /** Giao dịch kho của một vật tư (bảng tồn / nhập / xuất của Bảng điều khiển). */
   loadMaterialMoves?: LoadMaterialMoves;
+  /** Chứng từ tạo nên một con số tiền trên Bảng điều khiển. */
+  loadMetricDocs?: (query: DashDocQuery, projectId: string | null) => Promise<DashDocList>;
   /** Tên tab của một màn (nhãn chức năng trên thanh bên); không có thì đặt theo màn. */
   titleForRoute?: (route: string) => string | null;
   /** Đăng xuất (menu avatar). */
   onLogout?: () => void;
+  /** Mã người dùng: tiện ích giao diện (cột việc, dự án đang chọn) lưu riêng từng tài khoản. */
+  userId?: string;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -112,20 +118,20 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now: nowProp,
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
-  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, titleForRoute, onLogout,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
   const now = nowProp ?? mountedAt;
   const [mobilePane, setMobilePane] = useState<MobilePane>('inbox');
-  const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY) === 'true');
-  const [inboxWidth, setInboxWidth] = useState(() => clampWidth(Number(readStorage(INBOX_WIDTH_KEY)) || 340));
+  const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY, userId) === 'true');
+  const [inboxWidth, setInboxWidth] = useState(() => clampWidth(Number(readStorage(INBOX_WIDTH_KEY, userId)) || 340));
   const [resizing, setResizing] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTab, setActiveTabState] = useState(TODAY_TAB.id);
   const [mineCount, setMineCount] = useState<number | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY));
+  const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY, userId));
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
   const [todayAttempt, setTodayAttempt] = useState(0);
   const [actionFlags, setActionFlags] = useState<CenterActionFlags | null>(null);
@@ -190,7 +196,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   }, []);
 
 
-  const toggleInbox = () => setInboxHidden(value => { writeStorage(INBOX_HIDDEN_KEY, String(!value)); return !value; });
+  const toggleInbox = () => setInboxHidden(value => { writeStorage(INBOX_HIDDEN_KEY, String(!value), userId); return !value; });
 
   // Kéo mép cột việc (260–460px), nhớ độ rộng trên trình duyệt này.
   const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -205,7 +211,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
       target.removeEventListener('pointerup', stop);
       target.removeEventListener('pointercancel', stop);
       setResizing(false);
-      setInboxWidth(width => { writeStorage(INBOX_WIDTH_KEY, String(width)); return width; });
+      setInboxWidth(width => { writeStorage(INBOX_WIDTH_KEY, String(width), userId); return width; });
     };
     target.addEventListener('pointermove', move);
     target.addEventListener('pointerup', stop);
@@ -281,11 +287,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
   // Đích từ widget: route → tab màn đó; tab → mở view nhúng; inbox → về cột việc.
   const onDrill = useCallback((target: DrillTarget) => {
     if (target.kind === 'route') { openRoute(target.path, target.title); return; }
-    if (target.kind === 'inbox') { setInboxHidden(false); writeStorage(INBOX_HIDDEN_KEY, 'false'); setMobilePane('inbox'); return; }
+    if (target.kind === 'inbox') { setInboxHidden(false); writeStorage(INBOX_HIDDEN_KEY, 'false', userId); setMobilePane('inbox'); return; }
     const module: CenterModuleKey = target.renderer === 'request' ? 'request' : target.renderer === 'finance' ? 'finance'
       : target.renderer === 'site_assignment' ? 'hrm' : 'procurement';
     openTab({ id: `drill:${target.renderer}:${JSON.stringify(target.props)}`, title: target.title, closable: true, item: null, module, target });
-  }, [openRoute, openTab]);
+  }, [openRoute, openTab, userId]);
 
   const closeTab = (id: string) => {
     const index = openTabs.findIndex(tab => tab.id === id);
@@ -295,7 +301,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     scrollTops.current.delete(id);
   };
 
-  const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id); setProjectId(id); };
+  const selectProject = (id: string) => { writeStorage(PROJECT_KEY, id, userId); setProjectId(id); };
 
   // Bố cục ô: đã lưu (máy chủ) → dùng; chưa lưu → mặc định theo quyền máy chủ. Sửa trên bản nháp, "Xong" mới lưu.
   useEffect(() => {
@@ -501,7 +507,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
                 onOpenDashboard: hasDashboards ? board => { setDashboardFocus({ board, nonce: Date.now() }); setActiveTab(DASHBOARD_TAB.id); } : undefined,
                 renderBoard: board => (dashboard ? (
                   <React.Suspense fallback={null}>
-                    <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves}
+                    <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves} loadDocs={loadMetricDocs} storageOwner={userId}
                       onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} only={board} />
                   </React.Suspense>
                 ) : null),
@@ -512,7 +518,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
           {loadDashboard && hasDashboards && dashboard && (
             <div {...panelProps(DASHBOARD_TAB.id)}>
               <React.Suspense fallback={null}>
-                <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves}
+                <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves} loadDocs={loadMetricDocs} storageOwner={userId}
                   onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} focus={dashboardFocus} />
               </React.Suspense>
             </div>

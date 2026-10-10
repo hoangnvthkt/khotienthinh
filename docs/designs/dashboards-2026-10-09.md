@@ -142,3 +142,16 @@ Không thêm loại quyền mới. Tab chỉ hiện sau lần gọi nhẹ `get_c
 - Không viền trong Trung tâm (nền + bóng nhẹ); số ngày hôm nay trên lịch luôn trắng, nằm trên nền.
 - Menu avatar: Thông tin cá nhân, Phiếu lương của tôi, Cài đặt (thanh bên, nếu có quyền), Đăng xuất.
 - Hôm nay = các khối: Truy cập nhanh và màn của Bảng điều khiển; xóa được, ↑ ↓ đổi thứ tự, nút "+" thêm khối; lưu trong bố cục người dùng (`blocks`).
+
+## 9. Bấm tới chứng từ cho 3 bảng tiền (10/10)
+
+- `get_center_metric_docs_v1(metric, project?, month?, category?)` (migration `20261010150000_center_metric_docs.sql`): chứng từ tạo nên mỗi con số tiền —
+  hợp đồng + phát sinh, dòng ngân sách, đợt nghiệm thu / đề nghị / còn nợ / quá hạn, tiền đã thu, giữ lại / tạm ứng theo hợp đồng, giao dịch chi phí (theo nhóm,
+  theo tháng), tiền CĐT trả, tiền đã chi NCC, chứng từ công nợ NCC / thầu phụ (đề nghị, còn nợ, quá hạn, giữ lại, đã trả), tạm ứng NCC.
+  Smoke trên Cloud: với mọi dự án và mọi tháng, **tổng chứng từ = đúng con số trên bảng**; Mua hàng không đọc được chứng từ tiền.
+- Giao diện: bấm số → ngăn theo dự án → bấm dự án → chứng từ của dự án (nút ← quay lại) · nút "Chứng từ" ở chân ngăn = mọi dự án đang lọc ·
+  chỉ số ghép (Lợi nhuận, Chưa thực hiện, Đã trả…) chuyển loại chứng từ ở đầu ngăn · số trên thẻ dự án / bảng công nợ lớn mở thẳng chứng từ dự án đó.
+  Bấm chứng từ → mở đúng màn trong tab mới: hợp đồng (`/hd/customer/<id>`), Phải thu theo HĐ (`?contract=`), Phải trả theo NCC (`?supplier=`),
+  Thầu phụ (`?subcontract=`), Đề nghị chi / tạm ứng (`?request=`), Chi phí & ngân sách, Tài chính dự án.
+- Cá nhân hóa: bố cục Hôm nay (khối, ô, nút nhanh) lưu trên máy chủ theo tài khoản; thứ tự app trên rail, bảng đang xem, cột việc ẩn / độ rộng,
+  dự án đang chọn nay lưu theo tài khoản trên từng máy (trước lưu chung theo trình duyệt).

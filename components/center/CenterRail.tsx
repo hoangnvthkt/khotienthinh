@@ -191,8 +191,10 @@ export const CenterRailView: React.FC<{
   );
 };
 
-const readOrder = (): string[] => {
-  try { const value = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; }
+// Thứ tự app trên rail lưu riêng từng tài khoản (máy dùng chung vẫn đúng của ai nấy); chưa có thì theo thứ tự của thanh bên.
+const orderKey = (userId?: string) => (userId ? `${ORDER_KEY}:${userId}` : ORDER_KEY);
+const readOrder = (userId?: string): string[] => {
+  try { const value = JSON.parse(localStorage.getItem(orderKey(userId)) || localStorage.getItem(ORDER_KEY) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; }
 };
 
 const CenterRail: React.FC<{ onExitCenter: () => void }> = ({ onExitCenter }) => {
@@ -200,7 +202,7 @@ const CenterRail: React.FC<{ onExitCenter: () => void }> = ({ onExitCenter }) =>
   const { isDark, toggleTheme } = useTheme();
   const { pathname } = useLocation();
   const navFor = useModuleNavigation();
-  const [order, setOrder] = useState<string[]>(readOrder);
+  const [order, setOrder] = useState<string[]>(() => readOrder(user?.id));
   const modules = useMemo(() => {
     const allowed = navigationModulesFor(user);
     if (order.length === 0) return allowed;
@@ -209,8 +211,8 @@ const CenterRail: React.FC<{ onExitCenter: () => void }> = ({ onExitCenter }) =>
   }, [user, order]);
   const reorder = useCallback((keys: string[]) => {
     setOrder(keys);
-    try { localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* chỉ giữ trong phiên */ }
-  }, []);
+    try { localStorage.setItem(orderKey(user?.id), JSON.stringify(keys)); } catch { /* chỉ giữ trong phiên */ }
+  }, [user?.id]);
   // Giao diện Trung tâm: bấm chức năng nào cũng mở thành tab mới trong Trung tâm (chủ SP 10/10).
   const go = useCenterNavigate(true);
   const navigate = useNavigate();
