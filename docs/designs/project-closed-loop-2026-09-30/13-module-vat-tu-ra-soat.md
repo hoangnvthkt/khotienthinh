@@ -882,3 +882,15 @@ Làm theo mục 9.3 và 16.3 (câu 14 đã duyệt: Mua hàng tạo quy cách m�
 | Sổ kho | Xuất có quy cách: lấy quy cách đó trước, tối đa phần còn; phần thiếu lấy quy cách nhập trước — không làm âm tồn quy cách. Ô chọn báo trước "còn X — phần thiếu tự lấy nhập trước" |
 | Hàng trả lại từ công trình | Về đúng quy cách đã xuất của dòng xuất cấp (trừ phần đã trả trước đó) |
 | Chuyển kho | **Chưa chọn tay**: phiếu chuyển gộp dòng theo mã lúc gửi hàng; vẫn tự lấy quy cách nhập trước, kho nhận giữ đúng quy cách đã xuất. Làm cùng "Phiếu kho một màn" |
+
+---
+
+## 25. V4 Kiểm kê theo quy cách + in quy cách trên phiếu xuất, đã code (10/10/2026)
+
+| Phần | Cách làm |
+|---|---|
+| Lập phiên | Mã có quy cách tại kho → dòng đếm tự tách theo quy cách, chụp tồn sổ từng quy cách (kể cả "Chưa ghi quy cách") |
+| Đếm | Mỗi quy cách một ô; số đếm của mã = cộng các quy cách (còn quy cách chưa đếm = dòng chưa đếm xong). "+ Quy cách khác (đếm thấy)" thêm quy cách lạ (gợi ý danh sách chuẩn). Mã chưa có quy cách: bấm "Đếm theo quy cách" để tách khi cần. Đếm mù ẩn cả số sổ từng quy cách |
+| Duyệt | Điều chỉnh lệch tổng của mã như cũ; sau đó phiếu chuyển quy cách tự động để tồn từng quy cách = số đếm (lý do "Kiểm kê KK-… — tồn từng quy cách theo số đếm"). Được chuyển về "Chưa ghi quy cách" khi đếm ra hàng không rõ quy cách |
+| Phiếu kho (xem / in) | Phiếu xuất, xuất hủy, chuyển kho đã ghi sổ: dòng ghi **quy cách thực xuất theo sổ kho**, kể cả phần tự lấy nhập trước ("chưa ghi quy cách · 2; 14+2 · 3"). Phiếu nhập / chưa ghi sổ: quy cách ghi trên phiếu. Mẫu in lấy tên theo dòng phiếu (ảnh chụp tên đã mua) |
+| Còn lại | Chọn quy cách khi chuyển kho — làm cùng đợt "Phiếu kho một màn" |

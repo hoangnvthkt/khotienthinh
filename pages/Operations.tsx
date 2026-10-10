@@ -36,7 +36,7 @@ import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
 import { ReceiptReconciliationView } from '../components/procurement/receipt/ReceiptReconciliationView';
 import { WmsWorkspace } from '../components/wms/WmsWorkspace';
-import { useWarehouseSpecStock } from '../lib/wmsSpecStockService';
+import { fetchTxSpecAllocations, lineSpecAllocations, specAllocationText, useWarehouseSpecStock } from '../lib/wmsSpecStockService';
 import { IssueSpecSelect } from '../components/wms/IssueSpecSelect';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
@@ -662,7 +662,24 @@ const Operations: React.FC = () => {
         ? `Phạm vi: ${wmsViewAccess.warehouseIds.length} kho`
         : '';
 
-  const handlePrintTransaction = (tx: Transaction, mode: 'print' | 'pdf' = 'print') => {
+  const handlePrintTransaction = async (tx: Transaction, mode: 'print' | 'pdf' = 'print') => {
+    // Mở cửa sổ ngay khi bấm (trình duyệt chặn cửa sổ mở sau khi chờ mạng), rồi mới đọc quy cách thực xuất từ sổ kho.
+    const printWindow = window.open('', '_blank', 'width=980,height=720');
+    if (!printWindow) {
+      toast.error(mode === 'pdf' ? 'Không thể xuất PDF' : 'Không thể in phiếu', 'Trình duyệt đang chặn cửa sổ in/PDF.');
+      return;
+    }
+    printWindow.document.write('<p style="font-family:Arial;padding:24px;color:#64748b">Đang chuẩn bị phiếu…</p>');
+    const isImport = tx.type === TransactionType.IMPORT;
+    const lineSpecs = tx.status === TransactionStatus.COMPLETED
+      ? lineSpecAllocations(isImport, tx.items, await fetchTxSpecAllocations(tx.id).catch(() => []))
+      : [];
+    const specLine = (line: TransactionItem, index: number) => {
+      const parts = lineSpecs[index];
+      // Xuất: quy cách thực theo sổ kho (gồm phần tự lấy nhập trước); nhập / phiếu chưa ghi sổ: quy cách ghi trên phiếu.
+      const text = parts && !isImport ? specAllocationText(parts, n => n.toLocaleString('vi-VN')) : line.specification || '';
+      return text ? `<div class="spec">Quy cách: ${escapeHtml(text)}</div>` : '';
+    };
     const title = getVoucherTitle(tx);
     const code = formatVoucherCode(tx);
     const requester = users.find(item => item.id === tx.requesterId);
@@ -684,7 +701,8 @@ const Operations: React.FC = () => {
         <tr>
           <td>${index + 1}</td>
           <td>
-            <strong>${escapeHtml(product?.name || 'Vật tư')}</strong>
+            <strong>${escapeHtml(line.itemNameSnapshot || product?.name || 'Vật tư')}</strong>
+            ${specLine(line, index)}
             <div class="muted">${escapeHtml(product?.sku || line.itemId)}</div>
           </td>
           <td class="right">${Number(line.quantity || 0).toLocaleString('vi-VN')}</td>
@@ -715,6 +733,7 @@ const Operations: React.FC = () => {
           th, td { border: 1px solid #cbd5e1; padding: 9px 10px; vertical-align: top; }
           .right { text-align: right; }
           .muted { color: #64748b; font-size: 11px; margin-top: 2px; }
+          .spec { font-size: 12px; margin-top: 2px; color: #0f172a; }
           .note { margin-top: 18px; border-left: 4px solid #94a3b8; background: #f8fafc; padding: 12px 14px; font-size: 13px; }
           .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 800; }
           .signatures span { display: block; margin-top: 64px; font-weight: 400; color: #64748b; }
@@ -762,11 +781,6 @@ const Operations: React.FC = () => {
       </body>
       </html>`;
 
-    const printWindow = window.open('', '_blank', 'width=980,height=720');
-    if (!printWindow) {
-      toast.error(mode === 'pdf' ? 'Không thể xuất PDF' : 'Không thể in phiếu', 'Trình duyệt đang chặn cửa sổ in/PDF.');
-      return;
-    }
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
