@@ -49,6 +49,11 @@ const STATEMENT_TONE: Record<string, string> = {
 // ---------------------------------------------------------------------------
 interface StmtRow { line: ContractDeliveryLine; date: string; noteCode: string; ticketNo: string | null; poNo: string | null; scopeKey: string; projectCode: string | null; include: boolean; price: string; vat: string; reason: string }
 // Giá khác giá HĐ tại ngày giao → phải ghi lý do.
+/** Tên dòng kèm quy cách — hai dòng cùng mã khác quy cách phải phân biệt được. */
+const lineLabel = (l: { name: string; specification?: string | null }) => l.specification ? `${l.name} (${l.specification})` : l.name;
+/** Tách theo quy cách chỉ khi có quy cách (mã chỉ một dòng không quy cách thì không cần). */
+const specRows = (specs?: Array<{ specification: string | null; qty: number; value: number | null }>) =>
+  specs && specs.some(s => s.specification) ? specs : [];
 const priceDiffers = (r: StmtRow) => { const p = parseQty(r.price); return r.line.contractPrice != null && p != null && !Number.isNaN(p) && Math.abs(p - r.line.contractPrice) > 0.005; };
 
 const StatementEditor: React.FC<{ contract: ContractDetail; month: string; statement?: ContractStatement | null; onClose: () => void; onSaved: () => void }> = ({ contract, month, statement = null, onClose, onSaved }) => {
@@ -116,24 +121,24 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
         return <li key={r.line.lineId} className={`px-3 py-2.5 ${r.include ? '' : 'opacity-60'}`}>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <input type="checkbox" checked={r.include} disabled={!r.line.wmsReady} onChange={e => patch(r.line.lineId, { include: e.target.checked })}
-              aria-label={`Chọn ${r.noteCode} ${r.line.name}`} className="h-4 w-4 accent-teal-600" />
+              aria-label={`Chọn ${r.noteCode} ${lineLabel(r.line)}`} className="h-4 w-4 accent-teal-600" />
             <span className="w-20 text-xs tabular-nums text-muted-foreground">{dateVi(r.date)}</span>
             <span className="text-xs text-muted-foreground">{r.poNo || r.noteCode}{r.ticketNo && r.ticketNo !== r.poNo ? ` · ${r.ticketNo}` : ''}</span>
-            <span className="min-w-0 flex-1 font-medium text-foreground">{r.line.name}</span>
+            <span className="min-w-0 flex-1"><span className="font-medium text-foreground">{r.line.name}</span>{r.line.specification && <span className="ml-1.5 text-xs text-muted-foreground">— {r.line.specification}</span>}</span>
             <StockBadge line={r.line} />
             <span className="text-sm tabular-nums">{fmt(r.line.qty, 3)} {r.line.unit}</span>
           </div>
           {!r.line.wmsReady ? <p className="mt-1 pl-7 text-xs text-amber-700 dark:text-amber-300">Chưa nhập kho xong — thủ kho hoàn tất phiếu nhập trước khi đối soát.</p>
             : r.include && <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 pl-7 text-xs text-muted-foreground">
               <label className="flex items-center gap-1.5">Đơn giá
-                <input inputMode="decimal" value={r.price} onChange={e => patch(r.line.lineId, { price: e.target.value })} aria-label={`Đơn giá ${r.line.name} ${r.noteCode}`}
+                <input inputMode="decimal" value={r.price} onChange={e => patch(r.line.lineId, { price: e.target.value })} aria-label={`Đơn giá ${lineLabel(r.line)} ${r.noteCode}`}
                   className={`w-28 text-right tabular-nums ${inputCls} ${r.price === '' ? 'border-rose-400' : ''}`} /></label>
               <label className="flex items-center gap-1.5">VAT %
-                <input inputMode="decimal" value={r.vat} onChange={e => patch(r.line.lineId, { vat: e.target.value })} aria-label={`VAT ${r.line.name}`} className={`w-14 text-right ${inputCls}`} /></label>
+                <input inputMode="decimal" value={r.vat} onChange={e => patch(r.line.lineId, { vat: e.target.value })} aria-label={`VAT ${lineLabel(r.line)}`} className={`w-14 text-right ${inputCls}`} /></label>
               {r.line.priceSource === 'missing' && r.price === '' && <span className="text-rose-700 dark:text-rose-300">HĐ chưa có giá vật tư này</span>}
               {r.line.priceSource === 'contract' && !priceDiffers(r) && <span>theo giá HĐ</span>}
               {priceDiffers(r) && <label className="flex min-w-[16rem] flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">Giá HĐ {money(r.line.contractPrice)} · lý do
-                <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${r.line.name}`}
+                <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${lineLabel(r.line)}`}
                   className={`min-w-0 flex-1 ${inputCls} ${r.reason.trim() ? '' : 'border-amber-400'}`} /></label>}
               <span className="ml-auto font-semibold tabular-nums text-foreground">{price != null && !Number.isNaN(price) ? `${money(r.line.qty * price)} đ` : ''}</span>
             </div>}
@@ -163,8 +168,11 @@ const PriceEditor: React.FC<{ contract: ContractDetail; onDone: () => void; onCa
       quantityLimit: qtyInput(l.quantityLimit), amountLimit: qtyInput(l.amountLimit), effectiveFrom: l.effectiveFrom || '', effectiveTo: l.effectiveTo || '', used: l.used }));
     // Delivered items without a price yet are proposed first.
     const priced = new Set(base.map(r => r.itemId));
-    const missing = contract.usage.filter(u => !priced.has(u.itemId)).map(u => ({ itemId: u.itemId, name: u.name, unit: u.unit, spec: '', unitPrice: '', vatRate: '8',
-      quantityLimit: '', amountLimit: '', effectiveFrom: contract.signedDate || '', effectiveTo: '', used: false }));
+    const missing = contract.usage.filter(u => !priced.has(u.itemId)).flatMap(u => {
+      const specs = (u.specs || []).map(s => s.specification || '').filter(Boolean);
+      return (specs.length ? specs : ['']).map(spec => ({ itemId: u.itemId, name: u.name, unit: u.unit, spec, unitPrice: '', vatRate: '8',
+        quantityLimit: '', amountLimit: '', effectiveFrom: contract.signedDate || '', effectiveTo: '', used: false }));
+    });
     return [...base, ...missing];
   });
   const [deleted, setDeleted] = useState<string[]>([]);
@@ -390,14 +398,20 @@ const ContractDrawer: React.FC<{ contractId: string; contracts: ContractSummary[
           <table className="w-full text-sm">
             <thead className="bg-muted/60 text-xs text-muted-foreground"><tr><th className="px-3 py-2 text-left font-semibold">Vật tư</th><th className="px-2 py-2 text-right font-semibold">Lũy kế SL</th>
               <th className="px-2 py-2 text-right font-semibold">Giá trị</th><th className="px-3 py-2 text-left font-semibold">So với hạn mức</th></tr></thead>
-            <tbody>{c.usage.map(u => <tr key={u.itemId} className="border-t border-border">
+            <tbody>{c.usage.map(u => <React.Fragment key={u.itemId}><tr className="border-t border-border">
               <td className="px-3 py-2"><span className="font-medium text-foreground">{u.name}</span>
                 <span className="block text-xs text-muted-foreground">{u.currentPrice != null ? `Giá hiện hành ${money(u.currentPrice)} đ/${u.unit}` : 'Chưa có giá HĐ'}</span></td>
               <td className="px-2 py-2 text-right tabular-nums">{fmt(u.deliveredQty, 3)} {u.unit}</td>
               <td className="px-2 py-2 text-right tabular-nums">{money(u.deliveredValue)} đ{u.unpricedLines ? <span className="block text-xs text-amber-700 dark:text-amber-300">+{u.unpricedLines} dòng chưa giá</span> : null}</td>
               <td className="px-3 py-2"><UsageBar pct={limitPct(u.deliveredQty, u.quantityLimit) ?? limitPct(u.deliveredValue, u.amountLimit)} />
                 {u.quantityLimit ? <span className="block text-xs text-muted-foreground">hạn mức {fmt(u.quantityLimit)} {u.unit}</span> : null}</td>
-            </tr>)}</tbody>
+            </tr>
+            {/* Một mã nhiều quy cách: dòng trên cộng theo mã (so BOQ / hạn mức), dưới là từng quy cách. */}
+            {specRows(u.specs).map(s => <tr key={`${u.itemId}:${s.specification ?? ''}`} className="text-xs text-muted-foreground">
+              <td className="py-1 pl-6 pr-3">{s.specification || 'Không ghi quy cách'}</td>
+              <td className="px-2 py-1 text-right tabular-nums">{fmt(s.qty, 3)} {u.unit}</td>
+              <td className="px-2 py-1 text-right tabular-nums">{s.value != null ? `${money(s.value)} đ` : ''}</td><td />
+            </tr>)}</React.Fragment>)}</tbody>
           </table>
         </section>
         <section>
@@ -407,7 +421,7 @@ const ContractDrawer: React.FC<{ contractId: string; contracts: ContractSummary[
               {d.ticketNo && !d.purchaseOrderNo && <span className="text-xs text-muted-foreground">Phiếu NCC {d.ticketNo}</span>}
               {!d.purchaseOrderNo && <Badge className="border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Phiếu giao cũ (Dự án)</Badge>}
               {d.lines[0] && <StockBadge line={d.lines[0]} />}</div>
-            <ul className="mt-0.5 text-xs text-muted-foreground">{d.lines.map(l => <li key={l.lineId}>{l.name}: {fmt(l.qty, 3)} {l.unit}
+            <ul className="mt-0.5 text-xs text-muted-foreground">{d.lines.map(l => <li key={l.lineId}>{lineLabel(l)}: {fmt(l.qty, 3)} {l.unit}
               {l.unitPrice != null ? ` × ${money(l.unitPrice)} = ${money(l.amount)} đ` : ' · chưa có giá'}
               {l.statementCode ? ` · ${l.statementCode} (${STATEMENT_STATUS_LABELS[l.statementStatus || ''] || l.statementStatus})` : ' · chưa đối soát'}</li>)}</ul>
           </li>)}</ul>

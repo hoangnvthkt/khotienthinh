@@ -54,7 +54,9 @@ export interface ItemCard {
     /** V1-3a: dòng của mã cũ đã gộp vào mã này. */
     fromSku?: string | null;
     /** Ngày nhập liệu (khác ngày chứng từ khi ghi lùi ngày) và loại nghiệp vụ (vd. direct_consumption). */
-    enteredAt?: string | null; event?: string | null }>;
+    enteredAt?: string | null; event?: string | null;
+    /** Quy cách của dòng chứng từ gốc (một mã nhiều quy cách; tồn vẫn cộng theo mã). */
+    specification?: string | null }>;
   otherWarehouses: Array<{ warehouseId: string; warehouseName: string; qty: number }>;
 }
 

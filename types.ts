@@ -3619,6 +3619,9 @@ export interface TransactionItem {
   // --- VAT phiếu nhập trực tiếp NCC (K3a-3): Tài chính dùng khi ghi công nợ ---
   vatRate?: number;
   priceIncludesVat?: boolean;
+  // --- Ảnh chụp dòng đơn mua (máy chủ tự chép khi có purchaseOrderLineId): một mã nhiều quy cách ---
+  itemNameSnapshot?: string | null;
+  specification?: string | null;
 }
 
 export type MaterialIssueRecipientType = 'employee' | 'work_group' | 'subcontractor' | 'partner' | 'manual';

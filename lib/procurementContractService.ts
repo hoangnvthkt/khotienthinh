@@ -31,6 +31,8 @@ export type PriceSource = 'statement' | 'contract' | 'note' | 'missing';
 export type StockState = 'stock' | 'direct' | 'none' | 'pending';
 export interface ContractDeliveryLine {
   lineId: string; itemId: string; name: string; unit: string | null; qty: number; unitPrice: number | null; vatRate: number;
+  /** Quy cách của dòng (ảnh chụp từ dòng đơn / dòng giá HĐ). */
+  specification?: string | null;
   priceSource: PriceSource; amount: number | null; wmsReady: boolean; statementId: string | null; statementCode: string | null; statementStatus: string | null;
   stockState: StockState; warehouseName: string | null; contractPrice: number | null;
 }
@@ -56,7 +58,9 @@ export interface ContractDetail extends Omit<ContractSummary, 'priceLines' | 'de
   orders: ContractOrder[];
   priceLines: ContractPriceLine[];
   usage: Array<{ itemId: string; name: string; unit: string | null; deliveredQty: number; deliveredValue: number; unpricedLines: number;
-    quantityLimit: number | null; amountLimit: number | null; currentPrice: number | null }>;
+    quantityLimit: number | null; amountLimit: number | null; currentPrice: number | null;
+    /** Cộng theo mã; từng quy cách vẫn đủ khối lượng + giá trị. */
+    specs?: Array<{ specification: string | null; qty: number; value: number | null }> }>;
   deliveries: Array<{ noteId: string; code: string; ticketNo: string | null; date: string; purchaseOrderNo: string | null; projectCode: string | null; scopeKey: string; lines: ContractDeliveryLine[] }>;
   statements: ContractStatement[];
 }
