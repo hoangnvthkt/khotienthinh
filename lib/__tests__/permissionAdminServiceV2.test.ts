@@ -80,7 +80,7 @@ describe('permissionAdminService Authorization V2 command', () => {
   });
 
   it('maps optimistic-lock conflicts to an actionable message', async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { code: '40001', message: 'stale' } });
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: 'PT409', message: 'User authorization changed after it was loaded' } });
     await expect(updateUserAuthorizationV2({
       userId: 'user-1', profile: {}, grants: [], reason: 'Cap nhat theo yeu cau',
       expectedUpdatedAt: '2026-09-10T02:00:00.000Z',
