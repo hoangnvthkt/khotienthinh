@@ -960,3 +960,15 @@ Giữ nguyên: Xuất trả NCC (đi từ Mua hàng), Đối chiếu nhận hàn
 Kiểm tra: smoke `supabase/tests/wms_v2_one_screen_smoke.sql` rollback Cloud đạt (không ghi sổ, không nhảy số phiếu); test rollback có ghi sổ (xuất, gửi chuyển kho có quy cách, chặn nhập tự do, từ chối kho không phụ trách, vượt tồn) đạt; `lib/__tests__/wmsOneScreenContract.test.ts`.
 
 Còn: In / PDF phiếu chưa có ở màn Kho (vẫn ở Phiếu kho → Lịch sử, `/operations`); nhận hàng thiếu chọn lý do (giao bù / chốt thiếu / trả NCC), ảnh phiếu giao NCC — đợt sau.
+
+## 28. In phiếu ở màn Kho + NCC giao một đơn nhiều lần (11/10)
+
+| Phần | Làm |
+|---|---|
+| In / PDF | Nút In phiếu, PDF ở chân mọi phiếu trong màn Kho. Dùng chung `lib/wmsVoucherPrint.ts` với Phiếu kho. Số phiếu lấy từ sổ kho (NK/XK; chuyển kho in cả XK + NK; chưa ghi sổ in "Chưa ghi sổ"). Phiếu nhận theo đợt giao in cột "Theo đợt giao" + thiếu/dư + lý do. Chữ ký theo loại phiếu (nhập: Người giao hàng · Thủ kho · Kế toán) |
+| Nhận thiếu | Ô bắt buộc "Phần thiếu xử lý thế nào?": **NCC giao tiếp phần còn lại** (mở ngay đợt giao kế tiếp) hoặc **Chốt thiếu — báo Mua hàng** (đơn dừng ở Về một phần) |
+| Đợt giao tiếp | `continue_purchase_delivery_v1`: đợt nhận thiếu → đợt N+1 cho phần còn lại (cùng giá, VAT, kho, quy cách theo dòng đơn), phiếu nhập chờ nhận hiện ngay ở Việc cần làm; không vượt phần đơn chưa giao; bấm lại trả đợt đã mở; báo người lập đơn. Người làm: thủ kho kho nhận, Mua hàng, Admin. Phiếu nhận thiếu đã ghi sổ có nút "NCC giao tiếp" (xử lý đơn đang treo Về một phần) |
+
+Ví dụ đơn 100 thùng sơn, NCC giao 3 lần (40 · 35 · 25): đợt 1 nhận 40 → chọn NCC giao tiếp → đợt 2 (60) chờ nhận; xe 2 nhận 35 → NCC giao tiếp → đợt 3 (25); xe 3 nhận 25 → đơn Đã nhận đủ. Mỗi lần giao một phiếu nhập kho, một dòng công nợ, cùng một đơn.
+
+Dữ liệu thật 11/10: 4 đơn ở SMB nhận thiếu đợt 1 rồi treo Về một phần, chưa có đợt tiếp (PO-449, PO-145, PO-268, PO-253).

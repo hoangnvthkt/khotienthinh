@@ -28,7 +28,7 @@ export const useWarehouseSpecStock = (warehouseId: string | null | undefined, it
   return stock;
 };
 
-export interface TxLedgerAllocation { itemId: string; direction: 'in' | 'out'; qty: number; allocations: SpecAllocation[] | null }
+export interface TxLedgerAllocation { itemId: string; direction: 'in' | 'out'; qty: number; allocations: SpecAllocation[] | null; /** Số phiếu sổ kho (NK/XK…). */ code?: string | null }
 
 /** Quy cách thực của các dòng sổ kho thuộc một phiếu kho (xuất tự lấy nhập trước cũng có). */
 export const fetchTxSpecAllocations = async (transactionId: string): Promise<TxLedgerAllocation[]> => {

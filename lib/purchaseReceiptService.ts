@@ -129,4 +129,22 @@ export const purchaseReceiptService = {
   }): Promise<ReceiptCommandResult> {
     return this.finalizeReceipt(input);
   },
+
+  /** Nhận thiếu, NCC còn giao tiếp: mở ngay đợt giao kế tiếp cho phần còn lại (cùng giá, VAT, kho). Bấm lại trả đợt đã mở. */
+  async continueDelivery(deliveryBatchId: string): Promise<{ deliveryId: string; deliveryNo: number; wmsTransactionId: string | null; replayed: boolean }> {
+    const { data, error } = await supabase.rpc('continue_purchase_delivery_v1', { p: { deliveryId: deliveryBatchId } });
+    if (error) {
+      const code = Object.keys(CONTINUE_ERRORS).find(key => error.message?.includes(key));
+      throw new Error(code ? CONTINUE_ERRORS[code] : error.message || 'Chưa mở được đợt giao tiếp.');
+    }
+    return data as { deliveryId: string; deliveryNo: number; wmsTransactionId: string | null; replayed: boolean };
+  },
+};
+
+const CONTINUE_ERRORS: Record<string, string> = {
+  PURCHASE_CONTINUE_DENIED: 'Chỉ thủ kho kho nhận, Mua hàng hoặc Admin mở được đợt giao tiếp.',
+  PURCHASE_CONTINUE_NOT_SHORT: 'Đợt giao này không ở trạng thái nhận thiếu.',
+  PURCHASE_CONTINUE_PO_STATE: 'Đơn đã nhận đủ, đã đóng hoặc đã kết thúc thiếu.',
+  PURCHASE_CONTINUE_NOTHING_LEFT: 'Đơn không còn phần chưa giao (đã có đợt giao khác cho phần còn lại).',
+  PURCHASE_CONTINUE_NOT_FOUND: 'Không tìm thấy đợt giao.',
 };

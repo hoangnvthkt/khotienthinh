@@ -36,7 +36,8 @@ import { isPerf02WmsPagingEnabled } from '../lib/featureFlags';
 import { wmsTransactionListService, type TransactionCursor } from '../lib/wmsTransactionListService';
 import { ReceiptReconciliationView } from '../components/procurement/receipt/ReceiptReconciliationView';
 import { WmsWorkspace } from '../components/wms/WmsWorkspace';
-import { fetchTxSpecAllocations, lineSpecAllocations, specAllocationText, useWarehouseSpecStock } from '../lib/wmsSpecStockService';
+import { useWarehouseSpecStock } from '../lib/wmsSpecStockService';
+import { printWmsVoucher } from '../lib/wmsVoucherPrint';
 import { IssueSpecSelect } from '../components/wms/IssueSpecSelect';
 
 const ScannerModal = React.lazy(() => import('../components/ScannerModal'));
@@ -664,130 +665,10 @@ const Operations: React.FC = () => {
         : '';
 
   const handlePrintTransaction = async (tx: Transaction, mode: 'print' | 'pdf' = 'print') => {
-    // Mở cửa sổ ngay khi bấm (trình duyệt chặn cửa sổ mở sau khi chờ mạng), rồi mới đọc quy cách thực xuất từ sổ kho.
-    const printWindow = window.open('', '_blank', 'width=980,height=720');
-    if (!printWindow) {
-      toast.error(mode === 'pdf' ? 'Không thể xuất PDF' : 'Không thể in phiếu', 'Trình duyệt đang chặn cửa sổ in/PDF.');
-      return;
-    }
-    printWindow.document.write('<p style="font-family:Arial;padding:24px;color:#64748b">Đang chuẩn bị phiếu…</p>');
-    const isImport = tx.type === TransactionType.IMPORT;
-    const lineSpecs = tx.status === TransactionStatus.COMPLETED
-      ? lineSpecAllocations(isImport, tx.items, await fetchTxSpecAllocations(tx.id).catch(() => []))
-      : [];
-    const specLine = (line: TransactionItem, index: number) => {
-      const parts = lineSpecs[index];
-      // Xuất: quy cách thực theo sổ kho (gồm phần tự lấy nhập trước); nhập / phiếu chưa ghi sổ: quy cách ghi trên phiếu.
-      const text = parts && !isImport ? specAllocationText(parts, n => n.toLocaleString('vi-VN')) : line.specification || '';
-      return text ? `<div class="spec">Quy cách: ${escapeHtml(text)}</div>` : '';
-    };
-    const title = getVoucherTitle(tx);
-    const code = formatVoucherCode(tx);
-    const requester = users.find(item => item.id === tx.requesterId);
-    const approver = users.find(item => item.id === tx.approverId);
-    const sourceWh = warehouses.find(item => item.id === tx.sourceWarehouseId);
-    const targetWh = warehouses.find(item => item.id === tx.targetWarehouseId);
     const supplyName = getTransactionSupplyName(tx);
-    const documentTitle = `${mode === 'pdf' ? 'PDF_' : ''}${title}_${code}`.replace(/[^\p{L}\p{N}_-]+/gu, '_');
-    const flowLabel = tx.type === TransactionType.IMPORT
-      ? `Nhập vào: ${targetWh?.name || '-'}`
-      : tx.type === TransactionType.TRANSFER
-        ? `${sourceWh?.name || '-'} -> ${targetWh?.name || '-'}`
-        : `Xuất từ: ${sourceWh?.name || '-'}`;
-
-    const rows = tx.items.map((line, index) => {
-      const product = items.find(item => item.id === line.itemId) || tx.pendingItems?.find(item => item.id === line.itemId);
-      const amount = Number(line.quantity || 0) * Number(line.price || 0);
-      return `
-        <tr>
-          <td>${index + 1}</td>
-          <td>
-            <strong>${escapeHtml(line.itemNameSnapshot || product?.name || 'Vật tư')}</strong>
-            ${specLine(line, index)}
-            <div class="muted">${escapeHtml(product?.sku || line.itemId)}</div>
-          </td>
-          <td class="right">${Number(line.quantity || 0).toLocaleString('vi-VN')}</td>
-          <td>${escapeHtml(product?.unit || '')}</td>
-          <td class="right">${line.price ? Number(line.price).toLocaleString('vi-VN') : ''}</td>
-          <td class="right">${amount ? amount.toLocaleString('vi-VN') : ''}</td>
-        </tr>
-      `;
-    }).join('');
-
-    const html = `<!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeHtml(documentTitle)}</title>
-        <style>
-          * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; color: #0f172a; margin: 32px; }
-          .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px; }
-          h1 { margin: 0; font-size: 26px; text-transform: uppercase; letter-spacing: 0.04em; }
-          .code { font-size: 18px; font-weight: 800; margin-top: 8px; }
-          .status { text-align: right; font-size: 12px; text-transform: uppercase; font-weight: 800; color: ${tx.status === TransactionStatus.CANCELLED ? '#dc2626' : '#059669'}; }
-          .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; margin: 18px 0 22px; font-size: 13px; }
-          .meta div { border-bottom: 1px solid #e2e8f0; padding-bottom: 7px; }
-          .label { color: #64748b; font-size: 10px; text-transform: uppercase; font-weight: 800; display: block; margin-bottom: 3px; }
-          table { width: 100%; border-collapse: collapse; font-size: 13px; }
-          th { background: #f1f5f9; text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em; color: #475569; }
-          th, td { border: 1px solid #cbd5e1; padding: 9px 10px; vertical-align: top; }
-          .right { text-align: right; }
-          .muted { color: #64748b; font-size: 11px; margin-top: 2px; }
-          .spec { font-size: 12px; margin-top: 2px; color: #0f172a; }
-          .note { margin-top: 18px; border-left: 4px solid #94a3b8; background: #f8fafc; padding: 12px 14px; font-size: 13px; }
-          .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 42px; text-align: center; font-size: 12px; font-weight: 800; }
-          .signatures span { display: block; margin-top: 64px; font-weight: 400; color: #64748b; }
-          @media print { body { margin: 18mm; } .no-print { display: none; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <h1>${escapeHtml(title)}</h1>
-            <div class="code">Mã phiếu: ${escapeHtml(code)}</div>
-          </div>
-          <div class="status">${tx.status === TransactionStatus.CANCELLED ? 'Từ chối' : 'Hoàn thành'}</div>
-        </div>
-        <div class="meta">
-          <div><span class="label">Ngày lập</span>${escapeHtml(new Date(tx.date).toLocaleString('vi-VN'))}</div>
-          <div><span class="label">Luồng kho</span>${escapeHtml(flowLabel)}</div>
-          <div><span class="label">Người lập</span>${escapeHtml(requester?.name || 'Hệ thống')}</div>
-          <div><span class="label">Người phê duyệt</span>${escapeHtml(approver?.name || '-')}</div>
-          <div><span class="label">Ngày duyệt</span>${escapeHtml(tx.approvedAt ? new Date(tx.approvedAt).toLocaleDateString('vi-VN') : '-')}</div>
-          <div><span class="label">Nguồn cung cấp</span>${escapeHtml(supplyName)}</div>
-          <div><span class="label">Mã giao dịch hệ thống</span>${escapeHtml(tx.id)}</div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>STT</th>
-              <th>Vật tư</th>
-              <th class="right">Số lượng</th>
-              <th>ĐVT</th>
-              <th class="right">Đơn giá</th>
-              <th class="right">Thành tiền</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        ${tx.note ? `<div class="note"><strong>Ghi chú:</strong> ${escapeHtml(tx.note)}</div>` : ''}
-        ${tx.approvalNote ? `<div class="note"><strong>Ghi chú duyệt:</strong> ${escapeHtml(tx.approvalNote)}</div>` : ''}
-        <div class="signatures">
-          <div>Người lập<span>Ký, ghi rõ họ tên</span></div>
-          <div>Thủ kho<span>Ký, ghi rõ họ tên</span></div>
-          <div>Người duyệt<span>Ký, ghi rõ họ tên</span></div>
-        </div>
-        <script>setTimeout(function(){ window.print(); }, 250);</script>
-      </body>
-      </html>`;
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    if (mode === 'pdf') {
-      toast.info('Xuất PDF', 'Trong hộp thoại in, chọn "Save as PDF" để lưu file.');
-    }
+    const ok = await printWmsVoucher(tx, { items, users, warehouses, supplyName: supplyName !== '-' ? supplyName : null }, mode);
+    if (!ok) toast.error(mode === 'pdf' ? 'Không thể xuất PDF' : 'Không thể in phiếu', 'Trình duyệt đang chặn cửa sổ in/PDF.');
+    else if (mode === 'pdf') toast.info('Xuất PDF', 'Trong hộp thoại in, chọn "Save as PDF" để lưu file.');
   };
 
   const historyColumnCounts = useMemo(() => {

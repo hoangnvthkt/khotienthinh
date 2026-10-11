@@ -34,9 +34,13 @@ interface TransactionDetailModalProps {
   onUpdated?: (transaction: Transaction) => void;
   /** 'panel': hiện ngay trong cột phải của màn Nhập xuất kho thay vì hộp thoại nổi. */
   variant?: 'modal' | 'panel';
+  /** Nút thêm ở chân phiếu (vd. In / PDF ở màn Kho). */
+  footerExtra?: React.ReactNode;
 }
 
-const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated, variant = 'modal' }) => {
+const SHORT_PLAN_LABEL = { continue: 'NCC giao tiếp phần còn lại', close: 'Chốt thiếu — báo Mua hàng' } as const;
+
+const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen, onClose, transaction: transactionProp, onUpdated, variant = 'modal', footerExtra }) => {
   const { items, warehouses, users, suppliers, transactions, user, updateTransactionStatus, updateTransactionVoucher, refreshWmsRecords } = useApp();
   const toast = useToast();
   const confirm = useConfirm();
@@ -50,6 +54,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
   const [docDateEdit, setDocDateEdit] = useState<{ date: string; reason: string } | null>(null);
   // Ngày nghiệp vụ: ngày hàng về thực tế khi nhận hàng theo đơn mua (phiếu kho, công nợ, kỳ đối soát theo ngày này).
   const [arrivalDate, setArrivalDate] = useState(vnToday);
+  // Nhận thiếu theo đợt giao: NCC còn giao tiếp (mở ngay đợt kế tiếp) hay chốt thiếu (Mua hàng kết thúc thiếu).
+  const [shortPlan, setShortPlan] = useState<'continue' | 'close' | null>(null);
   const [savingDocDate, setSavingDocDate] = useState(false);
   const [voucherNote, setVoucherNote] = useState('');
   const [savingVoucher, setSavingVoucher] = useState(false);
@@ -146,6 +152,11 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
       ? 'Đối tác'
       : 'Nhà cung cấp';
 
+  const anyShortDraft = transaction.items.some((ti, index) => {
+    const value = parseQuantityInput(quantityDrafts[index]?.quantity ?? formatQuantityInput(ti.quantity));
+    return Number.isFinite(value) && value < Number(ti.orderedQty ?? ti.quantity ?? 0);
+  });
+
   const updateQuantityDraft = (index: number, patch: Partial<{ quantity: string; reason: string }>) => {
     setQuantityDrafts(prev => ({
       ...prev,
@@ -172,7 +183,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
     const lines = sourceTransaction.items.map((ti, index) => {
       const draft = drafts[index] || { quantity: formatQuantityInput(ti.quantity), reason: '' };
       const quantity = parseQuantityInput(draft.quantity);
-      const reason = draft.reason.trim();
+      const short = isPoDeliveryTx && shortPlan && quantity < Number(ti.orderedQty ?? ti.quantity ?? 0);
+      const reason = draft.reason.trim() || (short ? SHORT_PLAN_LABEL[shortPlan] : '');
       return { index, quantity, reason };
     });
     validateReceiptQuantityLines(sourceTransaction, lines);
@@ -216,10 +228,10 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
         if (!deliveryBatchId) throw new Error('Phiếu WMS thiếu liên kết Đợt giao.');
 
         if (actionMode === 'approval') {
-          const receiptPayload = buildPurchaseReceiptQualityPayloadFromTransaction(
-            latestTransaction,
-            buildQuantityLines(latestTransaction),
-          );
+          const quantityLines = buildQuantityLines(latestTransaction);
+          const receivedShort = quantityLines.some(line => line.quantity < Number(latestTransaction.items[line.index]?.orderedQty ?? latestTransaction.items[line.index]?.quantity ?? 0));
+          if (receivedShort && !shortPlan) throw new Error('Nhận thiếu: chọn phần còn lại NCC giao tiếp hay chốt thiếu.');
+          const receiptPayload = buildPurchaseReceiptQualityPayloadFromTransaction(latestTransaction, quantityLines);
           let nextAttachments = previousAttachments;
           if (attachmentDrafts.length > 0) {
             const uploadResult = await uploadTransactionAttachments({
@@ -249,6 +261,15 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             transactionIds: [result.wmsTransactionId],
           });
           setAttachmentDrafts([]);
+          if (receivedShort && shortPlan === 'continue') {
+            try {
+              const next = await purchaseReceiptService.continueDelivery(deliveryBatchId);
+              await refreshWmsRecords({ transactionIds: next.wmsTransactionId ? [next.wmsTransactionId] : [] });
+              toast.info(`Đã mở đợt giao ${next.deliveryNo}`, 'Phần còn lại chờ nhận ở Việc cần làm.');
+            } catch (err: any) {
+              toast.warning('Chưa mở được đợt giao tiếp', getApiErrorMessage(err, 'Báo Mua hàng lập đợt giao bù.'));
+            }
+          }
           onClose();
           toast.success('Đã nhận hàng và nhập kho',
             `${receiptPayload.lines.length} dòng đã cộng tồn ${targetWh?.name || 'kho nhận'}; công nợ tạm tính ${Math.round(result.acceptedGrossAmount).toLocaleString('vi-VN')} đ đã chuyển kế toán.`);
@@ -747,6 +768,20 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
             </table>
           </div>
 
+          {isPoDeliveryTx && canAdjustQuantities && anyShortDraft && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-2" role="group" aria-label="Phần thiếu">
+              <div className="text-sm font-black text-amber-900">Phần thiếu xử lý thế nào? *</div>
+              <div className="flex flex-wrap gap-2">
+                {(['continue', 'close'] as const).map(plan => (
+                  <button key={plan} type="button" onClick={() => setShortPlan(plan)} aria-pressed={shortPlan === plan} disabled={processing}
+                    title={plan === 'continue' ? 'Mở ngay đợt giao kế tiếp cho phần còn lại — xe sau đến là nhận được' : 'Đơn dừng ở Về một phần — Mua hàng kết thúc thiếu hoặc lập đợt bù'}
+                    className={`rounded-full border px-3 py-1.5 text-[13px] font-semibold ${shortPlan === plan ? 'border-teal-600 bg-teal-700 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}>
+                    {SHORT_PLAN_LABEL[plan]}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {(transaction.attachments?.length || 0) > 0 && (
             <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-black text-slate-700">
@@ -842,9 +877,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
               </>
             )}
           </div>
-          <button onClick={onClose} className="px-8 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm">
-            {variant === 'panel' ? 'Bỏ chọn' : 'Đóng'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {footerExtra}
+            <button onClick={onClose} className="px-8 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm">
+              {variant === 'panel' ? 'Bỏ chọn' : 'Đóng'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
