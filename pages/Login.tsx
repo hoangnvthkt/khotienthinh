@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { createPerformanceTrace } from '../lib/performanceTrace';
 import { useAuth } from '../context/AuthContext';
+import { isLoginRemembered, setLoginRemembered } from '../lib/supabase';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ const Login: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [remember, setRemember] = useState(isLoginRemembered);
 
   useEffect(() => {
     setMounted(true);
@@ -33,6 +35,7 @@ const Login: React.FC = () => {
     let success = false;
 
     try {
+      setLoginRemembered(remember);
       await trace.step('authContext.login()', () => login(email, password));
       success = true;
       trace.startStep('navigate:/');
@@ -91,26 +94,32 @@ const Login: React.FC = () => {
           )}
 
           <div className="login-field">
-            <label className="login-label">Email</label>
+            <label htmlFor="login-email" className="login-label">Email</label>
             <div className="login-input-wrapper">
               <Mail className="login-input-icon" size={18} />
               <input
+                id="login-email"
+                name="email"
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="login-input"
                 placeholder="Nhập email..."
-                autoComplete="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                inputMode="email"
               />
             </div>
           </div>
 
           <div className="login-field">
-            <label className="login-label">Mật khẩu</label>
+            <label htmlFor="login-password" className="login-label">Mật khẩu</label>
             <div className="login-input-wrapper">
               <Lock className="login-input-icon" size={18} />
               <input
+                id="login-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
@@ -132,7 +141,7 @@ const Login: React.FC = () => {
 
           <div className="login-options">
             <label className="login-remember">
-              <input type="checkbox" />
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
               <span>Ghi nhớ đăng nhập</span>
             </label>
             <button
