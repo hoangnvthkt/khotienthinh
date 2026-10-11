@@ -1147,7 +1147,7 @@ const ProjectDashboard: React.FC = () => {
 
         let cancelled = false;
         setTaskProgressStatus('loading');
-        taskService.listBySites(siteIds)
+        taskService.listProgressInputsBySites(siteIds)
             .then(allTasks => {
                 if (cancelled) return;
                 const next: Record<string, { progressPercent: number; leafTaskCount: number }> = {};
