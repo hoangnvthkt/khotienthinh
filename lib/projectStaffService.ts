@@ -403,6 +403,14 @@ export const projectStaffService = {
       p_permission_codes: codes,
       p_user_id: params.userId,
     });
+    // RPC theo lô chưa có trên máy chủ (client lên trước migration): kiểm từng quyền như cũ.
+    if (error && (error.code === 'PGRST202' || /project_has_permissions_v2/.test(error.message || ''))) {
+      const results = await Promise.all(codes.map(async permissionCode => ({
+        permissionCode,
+        allowed: (await this.checkProjectAction({ ...params, permissionCode })).allowed,
+      })));
+      return new Set(results.filter(result => result.allowed).map(result => result.permissionCode));
+    }
     if (error) throw error;
     return new Set(Array.isArray(data) ? data.map(String) : []);
   },
