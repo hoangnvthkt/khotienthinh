@@ -371,11 +371,15 @@ describe('fail-closed auth state', () => {
     const authSource = readFileSync(join(process.cwd(), 'context', 'AuthContext.tsx'), 'utf8');
     const layoutSource = readFileSync(join(process.cwd(), 'components', 'Layout.tsx'), 'utf8');
 
-    expect(authSource).toContain("supabase.auth.signOut({ scope: 'local' })");
+    expect(authSource).toContain("supabase.auth.signOut({ scope: options?.everywhere ? 'global' : 'local' })");
     expect(authSource).not.toMatch(/auth\.signOut\(\)/);
     expect(authSource).toContain('if (!failure.transient) handleRemoteAuthLoss();');
     expect(authSource).toContain("window.addEventListener('online', retryNow);");
     expect(layoutSource).not.toMatch(/SESSION_TIMEOUT|sessionWarning|logout\(/);
+
+    const accountSource = readFileSync(join(process.cwd(), 'pages', 'settings', 'SettingsAccount.tsx'), 'utf8');
+    expect(accountSource).toContain('await logout({ everywhere: true });');
+    expect(accountSource).toContain("title: 'Đăng xuất mọi thiết bị?'");
   });
 
   it('recognizes only UPDATE or DELETE events for the exact current profile', () => {
