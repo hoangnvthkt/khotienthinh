@@ -254,6 +254,13 @@ const TASK_SELECT = [
     'row_version',
 ].join(',');
 
+// Chỉ các cột calculateProjectProgress cần (lá, trọng số, % hoàn thành) — dùng cho % tiến độ trên danh sách dự án.
+const TASK_PROGRESS_SELECT = [
+    'id', 'project_id', 'construction_site_id', 'parent_id',
+    'start_date', 'end_date', 'duration', 'progress', 'is_milestone',
+    'estimated_cost_per_day', 'resource_count', 'sort_order',
+].join(',');
+
 const LEGACY_TASK_SELECT = TASK_SELECT
     .split(',')
     .filter(column => !['updated_at', 'row_version'].includes(column))
@@ -342,6 +349,19 @@ export const taskService = {
             .order('id', { ascending: true }), { label: "lib/projectService.ts:333", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') });
         if (error) throw error;
         return dedupeRowsById((data || []) as any[]).map(taskFromDb) as ProjectTaskLite[];
+    },
+    /** Bản gọn của listBySites: đủ để tính % tiến độ, không tải tên/ghi chú/phụ thuộc. */
+    async listProgressInputsBySites(siteIds: string[]): Promise<ProjectTask[]> {
+        if (siteIds.length === 0) return [];
+        const { data, error } = await fetchAllSupabaseRows(supabase
+            .from('project_tasks')
+            .select(TASK_PROGRESS_SELECT)
+            .in('construction_site_id', siteIds)
+            .order('construction_site_id', { ascending: true })
+            .order('sort_order', { ascending: true })
+            .order('id', { ascending: true }), { label: "lib/projectService.ts:listProgressInputsBySites", maxRows: 50_000, orderBy: getSupabaseOrderColumns('project_tasks') });
+        if (error) throw error;
+        return ((data || []) as any[]).map(taskFromDb);
     },
     async listBySites(siteIds: string[]): Promise<ProjectTask[]> {
         if (siteIds.length === 0) return [];

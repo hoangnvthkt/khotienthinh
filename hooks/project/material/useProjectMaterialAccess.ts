@@ -141,23 +141,20 @@ export const useProjectMaterialAccess = ({
             }
 
             try {
-                const [results, roomActions] = await Promise.all([
-                    Promise.all(NON_BOQ_PBAC_ACTION_CODES.map(async permissionCode => ({
-                        permissionCode,
-                        allowed: (await projectStaffService.checkProjectAction({
-                            userId: user.id,
-                            projectId,
-                            constructionSiteId,
-                            permissionCode,
-                        })).allowed,
-                    }))),
+                const [allowedCodes, roomActions] = await Promise.all([
+                    projectStaffService.checkProjectActions({
+                        userId: user.id,
+                        projectId,
+                        constructionSiteId,
+                        permissionCodes: NON_BOQ_PBAC_ACTION_CODES,
+                    }),
                     projectPermissionRoomService.listMyActions(
                         projectId || constructionSiteId || '',
                         constructionSiteId || null,
                     ),
                 ]);
                 if (!cancelled) {
-                    const grantedCodes = new Set(results.filter(result => result.allowed).map(result => result.permissionCode));
+                    const grantedCodes = new Set(NON_BOQ_PBAC_ACTION_CODES.filter(permissionCode => allowedCodes.has(permissionCode)));
                     roomActions
                         .filter(action => action.roomCode === 'material_planning')
                         .flatMap(action => getProjectMaterialActionCodesForRoomAction(
