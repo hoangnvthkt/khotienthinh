@@ -75,7 +75,7 @@ describe('materialPlanService', () => {
       p_payload_schema_version: 1, p_idempotency_key: 'convert-1',
     });
 
-    const conflict = { code: '40001', message: 'MATERIAL_PLAN_CONVERSION_EXCEEDED' };
+    const conflict = { code: 'PT409', message: 'MATERIAL_PLAN_CONVERSION_EXCEEDED' };
     mocks.rpc.mockResolvedValueOnce({ data: null, error: conflict });
     await expect(materialPlanService.convert({
       planId: detail().id, expectedVersion: 1, siteWarehouseId: 'warehouse-1',

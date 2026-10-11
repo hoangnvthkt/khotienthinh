@@ -149,7 +149,7 @@ begin
        or coalesce((app_private.procurement_access_v1(v_actor,
          demand.project_id, demand.construction_site_id) ->> 'canViewPrice')::boolean, false) is not true
   ) then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_VERSION_CONFLICT';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_VERSION_CONFLICT';
   end if;
 
   -- A request link exists only for a real MR source. Plan demand uses its

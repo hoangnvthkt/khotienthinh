@@ -38,7 +38,7 @@ describe('projectV2CommandService', () => {
   });
 
   it('preserves stale version and idempotency conflict errors from the server', async () => {
-    const stale = { code: '40001', message: 'PROJECT_V2_VERSION_STALE' };
+    const stale = { code: 'PT409', message: 'PROJECT_V2_VERSION_STALE' };
     mocks.rpc.mockResolvedValueOnce({ data: null, error: stale });
     await expect(projectV2CommandService.approve(command)).rejects.toBe(stale);
     const conflict = { code: '23505', message: 'PROJECT_V2_IDEMPOTENCY_CONFLICT' };

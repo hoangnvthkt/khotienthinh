@@ -218,7 +218,7 @@ export function ProjectV2MaterialPlanDialog({ workspaceId, projectId, siteId, si
       onSaved(response.planId);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Không lưu được kế hoạch.';
-      if (message.includes('PROJECT_V2_VERSION_STALE') || message.includes('40001')) setConflict(true);
+      if (message.includes('PROJECT_V2_VERSION_STALE') || message.includes('PT409') || message.includes('40001')) setConflict(true);
       else setError(presentProjectV2Error(cause, 'Không lưu được kế hoạch.'));
     } finally { setSaving(false); }
   };

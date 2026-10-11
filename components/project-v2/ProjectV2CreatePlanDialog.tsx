@@ -191,7 +191,7 @@ export function ProjectV2CreatePlanDialog({ workspaceId, type, onClose, onCreate
       onCreated(response.planId);
     } catch (cause) {
       const rawMessage = cause instanceof Error ? cause.message : '';
-      if (existing && (rawMessage.includes('PROJECT_V2_VERSION_STALE') || rawMessage.includes('40001'))) {
+      if (existing && (rawMessage.includes('PROJECT_V2_VERSION_STALE') || rawMessage.includes('PT409') || rawMessage.includes('40001'))) {
         try {
           const [current, thread] = await Promise.all([projectV2ReadService.getPlan(existing.plan.id),
             projectV2ReadService.getDiscussion(existing.plan.id)]);

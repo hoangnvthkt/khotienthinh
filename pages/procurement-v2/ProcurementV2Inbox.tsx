@@ -12,7 +12,7 @@ type LoadState = 'loading' | 'ready' | 'denied' | 'error' | 'stale';
 const isDenied = (error: unknown) => !!error && typeof error === 'object'
   && 'code' in error && (error as { code: string }).code === '42501';
 const isStale = (error: unknown) => !!error && typeof error === 'object'
-  && 'code' in error && (error as { code: string }).code === '40001';
+  && 'code' in error && ['PT409', '40001'].includes((error as { code: string }).code);
 
 export const ProcurementV2InboxContent: React.FC<{
   page: ProcurementV2Page | null;

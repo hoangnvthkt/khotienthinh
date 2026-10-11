@@ -152,7 +152,7 @@ begin
   begin
     perform public.approve_project_v2_plan_v1(v_plan_id,2,'task7-stale-approve');
     raise exception 'TASK7_STALE_NORM_APPROVED';
-  exception when sqlstate '40001' then null;
+  exception when sqlstate 'PT409' then null;
   end;
 end $$;
 rollback;

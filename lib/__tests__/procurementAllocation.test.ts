@@ -61,7 +61,7 @@ describe('procurement allocation contract', () => {
   });
 
   it('propagates server conflict and permission errors', async () => {
-    const conflict = { code: '40001', message: 'PROCUREMENT_AVAILABLE_EXCEEDED' };
+    const conflict = { code: 'PT409', message: 'PROCUREMENT_AVAILABLE_EXCEEDED' };
     mocks.rpc.mockResolvedValue({ data: null, error: conflict });
     await expect(procurementAllocationService.save({
       demandLineId: 'demand-line-1', sourceRevisionId: 'revision-1',

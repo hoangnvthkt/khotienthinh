@@ -248,7 +248,7 @@ begin
   v_count := jsonb_array_length(v_all);
   v_snapshot := encode(extensions.digest(v_all::text, 'sha256'), 'hex');
   if v_cursor_snapshot is not null and v_cursor_snapshot <> v_snapshot then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_SNAPSHOT_STALE';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_SNAPSHOT_STALE';
   end if;
   select coalesce(jsonb_agg(entry.value - 'lines' - 'issues' - 'allowedActions' - 'sourceRef'
     order by entry.ordinality), '[]'::jsonb) into v_page

@@ -248,7 +248,7 @@ export const mapAuthorizationRpcError = (error: RpcErrorLike): AuthorizationComm
     );
   }
 
-  if (error.code === '40001' || /changed after it was loaded|stale/i.test(error.message || '')) {
+  if (error.code === 'PT409' || error.code === '40001' || /changed after it was loaded|stale/i.test(error.message || '')) {
     return new AuthorizationCommandError(
       'Thông tin người dùng đã thay đổi. Vui lòng tải lại và đối chiếu trước khi lưu.',
       'stale_version',

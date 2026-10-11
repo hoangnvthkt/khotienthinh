@@ -55,7 +55,7 @@ begin
         and p.effective_revision_no = r.revision_no
         and l.unit = v_source.source_unit
     ) then
-      raise exception using errcode = '40001', message = 'PROJECT_V2_SOURCE_HASH_STALE';
+      raise exception using errcode = 'PT409', message = 'PROJECT_V2_SOURCE_HASH_STALE';
     end if;
     select l.quantity into v_available from public.project_v2_plan_lines l
       where l.id = v_source.source_plan_line_id;
@@ -230,7 +230,7 @@ begin
     'save', p_idempotency_key, v_payload);
   if v_existing is not null then return v_existing; end if;
   if p_plan_id is not null and (p_expected_version is null or v_plan.version <> p_expected_version) then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_VERSION_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_VERSION_STALE';
   end if;
   if p_plan_id is null then
     insert into public.project_v2_plans(workspace_id, plan_type, code, title, period_start,
@@ -283,7 +283,7 @@ begin
         or v_source_plan.plan_type <> (case when p_plan_type = 'construction' then 'month' else 'construction' end)
         or v_source_hash is null or v_source_line.id is null or (v_source ? 'sourcePlanHash'
           and v_source ->> 'sourcePlanHash' <> v_source_hash) then
-        raise exception using errcode = '40001', message = 'PROJECT_V2_SOURCE_HASH_STALE';
+        raise exception using errcode = 'PT409', message = 'PROJECT_V2_SOURCE_HASH_STALE';
       end if;
       v_quantity_text := coalesce(v_source ->> 'sourceQuantity', v_source ->> 'sourceWorkQuantity');
       if v_quantity_text is not null and v_quantity_text !~ '^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$' then
@@ -392,7 +392,7 @@ begin
     p_operation, p_idempotency_key, v_payload);
   if v_existing is not null then return v_existing; end if;
   if p_expected_version is null or p_expected_version <> v_plan.version then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_VERSION_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_VERSION_STALE';
   end if;
 
   if p_operation = 'submit' then

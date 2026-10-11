@@ -322,7 +322,7 @@ begin
       v_workspace.primary_construction_site_id::text,
       'project.v2_' || p.plan_type || '_plan.view', v_actor);
   if p_snapshot_token is not null and p_snapshot_token is distinct from v_snapshot then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_SNAPSHOT_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_SNAPSHOT_STALE';
   end if;
   with scoped as (
     select p.* from public.project_v2_plans p

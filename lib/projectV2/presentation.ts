@@ -59,7 +59,7 @@ export function presentProjectV2Error(error: unknown, fallback: string): string 
     return 'Bạn không có quyền thực hiện thao tác này.';
   if (/PROJECT_V2_(?:MATERIAL_)?NORM_(?:INCOMPLETE|STALE)/.test(raw))
     return 'Thiếu định mức vật tư. Kiểm tra lại nguồn trước khi lưu.';
-  if (/PROJECT_V2_(?:VERSION_STALE|SOURCE_HASH_STALE|MATERIAL_REVISION_STALE)|40001/.test(raw))
+  if (/PROJECT_V2_(?:VERSION_STALE|SOURCE_HASH_STALE|MATERIAL_REVISION_STALE)|PT409|40001/.test(raw))
     return 'Kế hoạch đã đổi phiên bản. Tải lại trước khi tiếp tục.';
   if (/PROJECT_V2_[A-Z_]+/.test(raw) || /^[A-Z][A-Z0-9_]+$/.test(message)) return fallback;
   if (/failed to fetch|network|timeout/i.test(raw))

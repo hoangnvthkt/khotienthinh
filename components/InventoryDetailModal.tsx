@@ -228,7 +228,7 @@ const InventoryDetailModal: React.FC<InventoryDetailModalProps> = ({ isOpen, onC
       onClose();
     } catch (error) {
       logApiError('inventoryDetail.adjustStock', error);
-      const fallback = (error as { code?: string })?.code === '40001'
+      const fallback = ['PT409', '40001'].includes((error as { code?: string })?.code ?? '')
         ? 'Tồn kho vừa thay đổi bởi người khác. Vui lòng mở lại vật tư và thử lại.'
         : 'Không thể điều chỉnh tồn kho tại kho này.';
       toast.error('Không thể điều chỉnh tồn kho', getApiErrorMessage(error, fallback));

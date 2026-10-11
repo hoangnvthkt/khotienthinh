@@ -72,7 +72,7 @@ describe('projectV2ReadService', () => {
 
   it('propagates denied, stale and network errors', async () => {
     for (const error of [{ code: '42501', message: 'PROJECT_V2_READ_DENIED' },
-      { code: '40001', message: 'PROJECT_V2_SNAPSHOT_STALE' },
+      { code: 'PT409', message: 'PROJECT_V2_SNAPSHOT_STALE' },
       { message: 'network unavailable' }]) {
       mocks.rpc.mockResolvedValueOnce({ data: null, error });
       await expect(projectV2ReadService.listWorkspaces()).rejects.toBe(error);

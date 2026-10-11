@@ -262,7 +262,7 @@ begin
         or v_source.current_hash is distinct from v_source.source_plan_hash
         or v_source.work_quantity is null or v_source.source_work_quantity is distinct from v_source.work_quantity
         or v_source.source_unit is distinct from v_source.work_unit then
-        raise exception using errcode = '40001', message = 'PROJECT_V2_SOURCE_HASH_STALE';
+        raise exception using errcode = 'PT409', message = 'PROJECT_V2_SOURCE_HASH_STALE';
       end if;
       if v_source.norm_resource_id is null or v_source.norm_resource_id !~ '^g8:' then
         raise exception using errcode = '22023', message = 'PROJECT_V2_MATERIAL_NORM_INCOMPLETE';
@@ -287,7 +287,7 @@ begin
         or v_estimate.work_boq_qty_snapshot <= 0 or v_estimate.coefficient <= 0
         or v_source.norm_revision is distinct from md5(to_jsonb(v_mapping)::text
           || to_jsonb(v_estimate)::text || to_jsonb(v_budget)::text) then
-        raise exception using errcode = '40001', message = 'PROJECT_V2_MATERIAL_NORM_STALE';
+        raise exception using errcode = 'PT409', message = 'PROJECT_V2_MATERIAL_NORM_STALE';
       end if;
       v_expected := round(v_estimate.estimated_qty / v_estimate.work_boq_qty_snapshot
         / v_estimate.coefficient, 6);
@@ -389,7 +389,7 @@ begin
         and p.effective_revision_no = r.revision_no
         and l.unit = v_source.source_unit
     ) then
-      raise exception using errcode = '40001', message = 'PROJECT_V2_SOURCE_HASH_STALE';
+      raise exception using errcode = 'PT409', message = 'PROJECT_V2_SOURCE_HASH_STALE';
     end if;
     select l.quantity into v_available from public.project_v2_plan_lines l
       where l.id = v_source.source_plan_line_id;
@@ -546,7 +546,7 @@ begin
     'save', p_idempotency_key, v_payload);
   if v_existing is not null then return v_existing; end if;
   if p_plan_id is not null and (p_expected_version is null or v_plan.version <> p_expected_version) then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_VERSION_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_VERSION_STALE';
   end if;
   if p_plan_id is null then
     insert into public.project_v2_plans(workspace_id, plan_type, code, title, period_start,
@@ -611,7 +611,7 @@ begin
         or v_source_plan.plan_type <> (case when p_plan_type = 'construction' then 'month' else 'construction' end)
         or v_source_hash is null or v_source_line.id is null or (v_source ? 'sourcePlanHash'
           and v_source ->> 'sourcePlanHash' <> v_source_hash) then
-        raise exception using errcode = '40001', message = 'PROJECT_V2_SOURCE_HASH_STALE';
+        raise exception using errcode = 'PT409', message = 'PROJECT_V2_SOURCE_HASH_STALE';
       end if;
       v_quantity_text := coalesce(v_source ->> 'sourceQuantity', v_source ->> 'sourceWorkQuantity');
       if v_quantity_text is not null and v_quantity_text !~ '^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$' then

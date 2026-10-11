@@ -13,7 +13,7 @@ describe('ERP completion rollout errors', () => {
   });
 
   it('preserves unrelated errors for their existing domain mapper', () => {
-    const source = { code: '40001', message: 'STALE_VERSION' };
+    const source = { code: 'PT409', message: 'STALE_VERSION' };
     expect(mapErpCompletionCommandError(source)).toBe(source);
   });
 });

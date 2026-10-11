@@ -105,7 +105,7 @@ const ProjectV2PlanDetail: React.FC = () => {
   const navigateBack = () => { if (!dirty || window.confirm('Bỏ nội dung trao đổi chưa gửi?')) navigate('/project-v2'); };
   const handleError = async (cause: unknown) => {
     const message = cause instanceof Error ? cause.message : 'Thao tác không thành công';
-    if (message.includes('PROJECT_V2_VERSION_STALE') || message.includes('40001')) {
+    if (message.includes('PROJECT_V2_VERSION_STALE') || message.includes('PT409') || message.includes('40001')) {
       try {
         const current = await projectV2ReadService.getPlan(planId);
         setConflict({ message: 'Kế hoạch đã được người khác thay đổi. Tải lại để xem phiên bản mới.',

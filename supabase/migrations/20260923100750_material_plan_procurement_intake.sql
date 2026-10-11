@@ -72,7 +72,7 @@ begin
   perform app_private.project_v2_assert_permission(v_workspace, 'material', 'approve', v_actor);
   if v_plan.plan_type <> 'material' or v_plan.status <> 'approved'
     or v_plan.effective_revision_no is distinct from p_expected_revision then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_MATERIAL_REVISION_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_MATERIAL_REVISION_STALE';
   end if;
   select * into strict v_plan_revision from public.project_v2_plan_revisions r
     where r.plan_id = p_plan_id and r.revision_no = p_expected_revision;
@@ -89,7 +89,7 @@ begin
     where owner_context_id = v_owner.id and command_type = 'sync_material_plan_demand'
       and idempotency_key = p_idempotency_key for update;
   if v_command.actor_user_id is distinct from v_actor or v_command.payload_hash <> v_payload_hash then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_IDEMPOTENCY_CONFLICT';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_IDEMPOTENCY_CONFLICT';
   end if;
   if v_command.result is not null then
     return v_command.result || jsonb_build_object('outcome', 'replayed');
@@ -101,7 +101,7 @@ begin
   if v_document.id is not null and (v_document.current_revision > p_expected_revision
       or (v_document.current_revision = p_expected_revision
         and v_document.source_hash <> v_plan_revision.content_hash)) then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_SOURCE_REVISION_CONFLICT';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_SOURCE_REVISION_CONFLICT';
   end if;
   insert into public.procurement_source_documents(
     owner_context_id, source_adapter, source_document_id, source_code_snapshot,
@@ -124,7 +124,7 @@ begin
   select * into strict v_source_revision from public.procurement_source_revisions r
     where r.source_document_id = v_document.id and r.revision = p_expected_revision;
   if v_source_revision.source_hash <> v_plan_revision.content_hash then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_SOURCE_REVISION_CONFLICT';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_SOURCE_REVISION_CONFLICT';
   end if;
 
   select * into v_demand from public.procurement_demands d
@@ -422,7 +422,7 @@ begin
     'save', p_idempotency_key, v_payload);
   if v_existing is not null then return v_existing; end if;
   if p_plan_id is not null and (p_expected_version is null or v_plan.version <> p_expected_version) then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_VERSION_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_VERSION_STALE';
   end if;
   if p_plan_id is null then
     insert into public.project_v2_plans(workspace_id, plan_type, code, title, period_start,
@@ -496,7 +496,7 @@ begin
         or v_source_plan.plan_type <> (case when p_plan_type = 'construction' then 'month' else 'construction' end)
         or v_source_hash is null or v_source_line.id is null or (v_source ? 'sourcePlanHash'
           and v_source ->> 'sourcePlanHash' <> v_source_hash) then
-        raise exception using errcode = '40001', message = 'PROJECT_V2_SOURCE_HASH_STALE';
+        raise exception using errcode = 'PT409', message = 'PROJECT_V2_SOURCE_HASH_STALE';
       end if;
       v_quantity_text := coalesce(v_source ->> 'sourceQuantity', v_source ->> 'sourceWorkQuantity');
       if v_quantity_text is not null and v_quantity_text !~ '^(0|[1-9][0-9]*)(\.[0-9]{1,6})?$' then
@@ -666,7 +666,7 @@ begin
     p_operation, p_idempotency_key, v_payload);
   if v_existing is not null then return v_existing; end if;
   if p_expected_version is null or p_expected_version <> v_plan.version then
-    raise exception using errcode = '40001', message = 'PROJECT_V2_VERSION_STALE';
+    raise exception using errcode = 'PT409', message = 'PROJECT_V2_VERSION_STALE';
   end if;
 
   if p_operation = 'submit' then
@@ -888,13 +888,13 @@ begin
       and c.command_type = 'resolve_material_plan_source_change'
       and c.idempotency_key = p_idempotency_key for update;
   if v_command.actor_user_id is distinct from v_actor or v_command.payload_hash <> v_hash then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_IDEMPOTENCY_CONFLICT';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_IDEMPOTENCY_CONFLICT';
   end if;
   if v_command.result is not null then
     return v_command.result || jsonb_build_object('outcome', 'replayed');
   end if;
   if v_demand.version <> p_expected_version then
-    raise exception using errcode = '40001', message = 'PROCUREMENT_VERSION_CONFLICT';
+    raise exception using errcode = 'PT409', message = 'PROCUREMENT_VERSION_CONFLICT';
   end if;
   if v_demand.intake_state <> 'source_changed' then
     raise exception using errcode = '22023', message = 'PROCUREMENT_SOURCE_CHANGE_NOT_OPEN';
@@ -905,7 +905,7 @@ begin
     if v_plan.id is null or v_plan.status <> 'approved'
       or v_plan.effective_revision_no is distinct from v_document.current_revision
       or v_document.source_hash <> v_revision.source_hash then
-      raise exception using errcode = '40001', message = 'PROJECT_V2_MATERIAL_REVISION_STALE';
+      raise exception using errcode = 'PT409', message = 'PROJECT_V2_MATERIAL_REVISION_STALE';
     end if;
   end if;
   for v_line in select dl.id, dl.approved_qty, dr.approved_qty replacement_qty,

@@ -157,7 +157,7 @@ suite('G2 allocation concurrency on an ephemeral Supabase Cloud branch', () => {
     ]);
     expect(results.filter(result => result.outcome === 'committed')).toHaveLength(1);
     const rejected = results.find(result => result.outcome === 'rejected');
-    expect(rejected?.error?.code).toBe('40001');
+    expect(rejected?.error?.code).toBe('PT409');
     expect(['PROCUREMENT_VERSION_CONFLICT', 'PROCUREMENT_AVAILABLE_EXCEEDED'])
       .toContain(rejected?.error?.message);
 
