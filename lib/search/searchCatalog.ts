@@ -193,7 +193,6 @@ export const quickActionDefs = (now: Date): QuickActionDef[] => [
   { id: 'task', title: 'Tạo công việc', subtitle: 'Giao việc trong Vioo Work', context: 'Công việc', keywords: 'tao cong viec giao viec task moi', gate: '/work/my', route: '/work/my?create=1' },
   { id: 'compose', title: 'Soạn văn bản', subtitle: 'Văn bản, công văn mới', context: 'Văn bản', keywords: 'soan van ban cong van to trinh quyet dinh', gate: '/office/new', route: '/office/new' },
   { id: 'hot', title: 'Mua nóng / CCDC', subtitle: 'Mua gấp ở công trường', context: 'Mua hàng', keywords: 'mua nong mua gap ccdc cong cu dung cu', gate: '/procurement', route: '/procurement?mode=hot' },
-  { id: 'import', title: 'Lập phiếu nhập kho', subtitle: 'Nhận hàng vào kho', context: 'Vật tư', keywords: 'nhap kho phieu nhap pnk nhan hang', gate: '/operations', route: '/operations', routeState: { tab: 'IMPORT' } },
   { id: 'export', title: 'Lập phiếu xuất kho', subtitle: 'Cấp phát vật tư cho công trường', context: 'Vật tư', keywords: 'xuat kho phieu xuat pxk cap phat', gate: '/operations', route: '/operations', routeState: { tab: 'EXPORT' } },
   { id: 'transfer', title: 'Chuyển kho', subtitle: 'Điều chuyển vật tư giữa các kho', context: 'Vật tư', keywords: 'chuyen kho dieu chuyen vat tu', gate: '/operations', route: '/operations', routeState: { tab: 'TRANSFER' } },
   { id: 'count', title: 'Kiểm kê kho', subtitle: 'Đếm và đối chiếu tồn', context: 'Vật tư', keywords: 'kiem ke kho dem hang doi chieu ton', gate: '/audit', route: '/audit' },

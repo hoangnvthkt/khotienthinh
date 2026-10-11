@@ -134,11 +134,9 @@ export const useModuleNavigation = () => {
   const moduleNavMap: Record<AppKey, any[]> = useMemo(() => ({
     'office.module': [{ to: '/office', icon: LayoutDashboard, label: 'Tổng quan' }, { to: '/office/documents', icon: FileText, label: 'Văn bản' }, { to: '/office/templates', icon: BookOpen, label: 'Mẫu văn bản' }, { to: '/office/reports', icon: BarChart3, label: 'Báo cáo' }, { to: '/office/settings', icon: Settings, label: 'Cấu hình Office' }],
     'work.module': [{ to: '/work', icon: LayoutDashboard, label: 'Không gian làm việc' }, { to: '/work/my', icon: ClipboardCheck, label: 'Công việc của tôi' }, { to: '/work/settings', icon: Settings, label: 'Cấu hình công việc' }],
-    // V1 Module Vật tư: 5 việc. Dashboard gộp vào Tồn kho; Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
+    // V2 Kho một màn: Tồn kho + Phiếu kho + Kiểm kê gộp thành Kho. Đề xuất vật tư ở Dự án / Mua hàng; Đồng bộ MISA mở từ Báo cáo.
     WMS: [
-      { to: '/inventory', icon: Package, label: 'Tồn kho' },
-      { to: '/operations', icon: ArrowLeftRight, label: 'Phiếu kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
-      { to: '/audit', icon: ClipboardCheck, label: 'Kiểm kê' },
+      { to: '/inventory', icon: Package, label: 'Kho', badge: pendingTxCount > 0 ? pendingTxCount : null },
       { to: '/material-code-requests', icon: FileText, label: 'Danh mục vật tư' },
       { to: '/reports', icon: History, label: 'Báo cáo' },
       { to: '/wms/owners', icon: Users, label: 'Phân quyền kho' },
