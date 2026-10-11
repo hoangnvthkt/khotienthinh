@@ -37,7 +37,8 @@ describe('quy cách thực trên phiếu xuất', () => {
     expect(specAllocationText(r[2]!, n => String(n))).toBe('chưa ghi quy cách · 2; 14+2 · 3');
   });
   it('phiếu in và màn xem phiếu đọc quy cách thực từ sổ kho', () => {
-    expect(read('pages/Operations.tsx')).toContain('${specLine(line, index)}');
+    expect(read('lib/wmsVoucherPrint.ts')).toContain('${specText(line, i)}');
+    expect(read('pages/Operations.tsx')).toContain('printWmsVoucher(tx,');
     expect(read('components/TransactionDetailModal.tsx')).toContain('fetchTxSpecAllocations(transactionProp.id)');
   });
 });

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  AlarmClock, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Boxes, ClipboardCheck, FileSpreadsheet, MoreHorizontal, RefreshCw, Search, ShieldCheck, Trash2, Truck,
+  AlarmClock, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Boxes, ClipboardCheck, FileSpreadsheet, FileText, MoreHorizontal, Printer, RefreshCw, Search, ShieldCheck, Trash2, Truck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -15,6 +15,8 @@ import { canApproveWmsTransaction, canReceiveWmsTransaction, canViewWmsTransacti
 import { getTransactionNextAction } from '../../lib/erpWorkflow';
 import { loadXlsx } from '../../lib/loadXlsx';
 import { wmsTransactionListService } from '../../lib/wmsTransactionListService';
+import { printWmsVoucher } from '../../lib/wmsVoucherPrint';
+import { purchaseReceiptService } from '../../lib/purchaseReceiptService';
 import { useSearchParamPrefill } from '../../hooks/useSearchParamPrefill';
 import { BAD, EmptyPanel, GREY, OK, Split, TEAL, Tile, WARN, dateVi, daysBetween, fmtQty } from './wmsUi';
 import { StockItemPanel, flagsOf, needsCheck, rowKey, type StockAction } from './WmsStockView';
@@ -40,7 +42,7 @@ export const KhoView: React.FC = () => {
   const navigate = useNavigate();
   const [more, setMore] = useState(false);
   const toast = useToast();
-  const { user, items, warehouses: allWarehouses, transactions } = useApp();
+  const { user, users, items, warehouses: allWarehouses, transactions } = useApp();
   const [data, setData] = useState<StockOverview | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [message, setMessage] = useState('');
@@ -167,7 +169,26 @@ export const KhoView: React.FC = () => {
     if (sel.kind === 'tx') {
       const tx = sel.tx || transactions.find(t => t.id === sel.id);
       if (!tx) return <StateBox kind="loading" title="Đang mở phiếu…" />;
+      const print = async (mode: 'print' | 'pdf') => {
+        const ok = await printWmsVoucher(tx, { items, users, warehouses: allWarehouses, supplyName: tx.businessPartnerNameSnapshot }, mode);
+        if (!ok) toast.error('Không mở được cửa sổ in', 'Trình duyệt đang chặn cửa sổ bật lên.');
+        else if (mode === 'pdf') toast.info('Lưu PDF', 'Chọn "Save as PDF" trong hộp thoại in.');
+      };
+      // Phiếu nhận thiếu đã ghi sổ: NCC còn giao tiếp → mở đợt giao kế tiếp cho phần còn lại.
+      const shortReceived = tx.status === TransactionStatus.COMPLETED && tx.sourceType === 'po_delivery_batch' && !!tx.sourceId
+        && tx.items.some(l => Number(l.quantity || 0) < Number(l.orderedQty ?? l.quantity ?? 0) - 1e-9);
+      const continueDelivery = async () => {
+        try {
+          const next = await purchaseReceiptService.continueDelivery(tx.sourceId!);
+          toast.success(next.replayed ? `Đợt giao ${next.deliveryNo} đã mở trước đó` : `Đã mở đợt giao ${next.deliveryNo}`, 'Phần còn lại chờ nhận ở Việc cần làm.');
+          if (next.wmsTransactionId) setSel({ kind: 'tx', id: next.wmsTransactionId });
+        } catch (e) { toast.error('Chưa mở được đợt giao tiếp', (e as Error).message); }
+      };
       return <TransactionDetailModal key={tx.id} variant="panel" isOpen transaction={tx}
+        footerExtra={<>
+          {shortReceived && canOperate && <button type="button" onClick={() => void continueDelivery()} className={secondaryBtn}><Truck size={15} />NCC giao tiếp</button>}
+          <button type="button" onClick={() => void print('pdf')} className={secondaryBtn}><FileText size={15} />PDF</button>
+          <button type="button" onClick={() => void print('print')} className={secondaryBtn}><Printer size={15} />In phiếu</button></>}
         onClose={() => setSel(null)} onUpdated={next => { setSel({ kind: 'tx', id: next.id, tx: next }); void loadStock(); }} />;
     }
     if (sel.kind === 'item') {
