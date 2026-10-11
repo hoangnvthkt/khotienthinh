@@ -190,7 +190,7 @@ const StartDialog: React.FC<{ warehouses: StockCountList['warehouses']; onClose:
 
 type LineFilter = 'all' | 'uncounted' | 'variance';
 
-const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string; name: string; sku?: string; unit?: string }>; onChange: (d: StockCountDetail) => void; onStale: () => void }> =
+export const CountPanel: React.FC<{ detail: StockCountDetail; items: Array<{ id: string; name: string; sku?: string; unit?: string }>; onChange: (d: StockCountDetail) => void; onStale: () => void }> =
   ({ detail: d, items, onChange, onStale }) => {
   const toast = useToast();
   const confirm = useConfirm();

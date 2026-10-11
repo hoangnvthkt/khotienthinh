@@ -939,3 +939,24 @@ Giữ nguyên: Xuất trả NCC (đi từ Mua hàng), Đối chiếu nhận hàn
 36. Chuyển kho 2 bước Gửi → Nhận, bỏ duyệt. Người lập: thủ kho kho gửi và Mua hàng ("Cấp từ kho"). Đồng ý?
 37. Người nhận khi xuất cấp chỉ chọn trong danh sách (tổ đội / thầu phụ có HĐ, đối tác), không gõ tự do. Có tổ đội chưa có trong danh sách thì ai thêm (Mua hàng hay CHT)?
 38. Menu Vật tư 6 → 4 (Kho · Danh mục · Báo cáo · Phân quyền). Màn Kiểm kê cũ thành nút Kiểm đếm (kiểm nhanh 1 mã, theo nhóm, cả kho). Đồng ý?
+
+### 26.5 Chủ SP trả lời (10/10)
+
+33 hủy 3 phiếu nhập tự do (đã chạy) · 34 Mua hàng rà 17 đợt giao treo · 35 xuất luôn MI-20260925 (XK20260925-00405) · 36 chuyển kho 2 bước không duyệt · 37 Mua hàng thêm người nhận · 38 Kiểm đếm thay màn Kiểm kê · 39 giao diện chỉ tiêu đề + số liệu, bỏ dòng giải thích dài.
+
+## 27. V2 Kho một màn — đã làm (11/10)
+
+| Phần | Làm |
+|---|---|
+| Màn **Kho** (`/inventory`, `components/wms/KhoView.tsx`) | Chip kho · 4 nút Kiểm đếm / Xuất hủy / Chuyển kho / Xuất cấp · 4 ô Hàng về chờ nhận / Chờ duyệt / Đang có tồn / Cần kiểm tra · danh sách Việc cần làm / Tồn kho / Sổ phiếu · cột phải: phiếu (nhận / duyệt / nhận chuyển kho dùng lại `TransactionDetailModal`), thẻ kho (`StockItemPanel`), phiên đếm (`CountPanel`), form (`KhoForms.tsx`). Mở phiếu bằng `?tx=` |
+| Xuất cấp 1 bước | `issue_material_now_v1`: thủ kho kho xuất (quyền duyệt kho) lập + gửi + ghi sổ trong một lệnh; người nhận chỉ chọn HĐ NCC / đối tác; chọn quy cách từng dòng |
+| Chuyển kho | Lập phiếu + **Gửi hàng** ngay (`dispatch_wms_transfer_v1`, dòng mang quy cách); kho nhận bấm Nhận ở Việc cần làm |
+| Xuất hủy | Vẫn chờ người Duyệt ngoại lệ |
+| Kiểm đếm | 1 mã / nhóm vật tư / cả kho (`start_stock_count_v1` nhận `itemIds`), mặc định đếm mù; phiên mở ngay ở cột phải |
+| Bỏ nhập tự do | Trigger `trg_block_free_import` chặn phiếu IMPORT nguồn đối tác / HĐ NCC không qua đợt giao (`WMS_FREE_IMPORT_REMOVED`); bỏ tab Nhập kho (Phiếu kho), mục "Phiếu nhập", lệnh tìm "Lập phiếu nhập kho" |
+| Menu | Vật tư 6 → 4: Kho (đếm việc chờ) · Danh mục vật tư · Báo cáo · Phân quyền kho. Trang `/operations`, `/audit` giữ cho link cũ; nút "…" ở màn Kho mở Trả lại · quyết toán xuất cấp và Đối chiếu nhận hàng |
+| Sửa lỗi | `process_transaction_status` đọc số lượng kiểu numeric (trước ép integer → lỗi khi tồn lẻ 52,6) |
+
+Kiểm tra: smoke `supabase/tests/wms_v2_one_screen_smoke.sql` rollback Cloud đạt (không ghi sổ, không nhảy số phiếu); test rollback có ghi sổ (xuất, gửi chuyển kho có quy cách, chặn nhập tự do, từ chối kho không phụ trách, vượt tồn) đạt; `lib/__tests__/wmsOneScreenContract.test.ts`.
+
+Còn: In / PDF phiếu chưa có ở màn Kho (vẫn ở Phiếu kho → Lịch sử, `/operations`); nhận hàng thiếu chọn lý do (giao bù / chốt thiếu / trả NCC), ảnh phiếu giao NCC — đợt sau.

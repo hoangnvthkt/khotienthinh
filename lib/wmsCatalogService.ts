@@ -101,6 +101,8 @@ const ERRORS: Record<string, string> = {
   WMS_DOC_DATE_INVALID: 'Ngày chứng từ không hợp lệ.',
   WMS_DOC_DATE_FUTURE: 'Ngày chứng từ không được sau hôm nay.',
   WMS_DOC_DATE_REASON: 'Phiếu đã ghi sổ — cần ghi lý do sửa ngày.',
+  WMS_ISSUE_DENIED: 'Chỉ thủ kho của kho xuất (hoặc Admin) được xuất.',
+  WMS_FREE_IMPORT_REMOVED: 'Đã bỏ phiếu nhập tự do — hàng vào kho qua đợt giao Mua hàng, chuyển kho hoặc kiểm đếm.',
   WMS_SPEC_DENIED: 'Chỉ thủ kho của kho này, Kế toán kho hoặc Admin được chuyển quy cách.',
   WMS_SPEC_INVALID: 'Cần chọn quy cách mới (tối đa 80 ký tự) và số lượng lớn hơn 0.',
   WMS_SPEC_SAME: 'Quy cách mới trùng quy cách cũ.',
@@ -124,6 +126,8 @@ export const catalogErrorMessage = (error: unknown, fallback = 'Chưa thực hi�
   if (dup) return `Tên trùng với mã ${dup[1]} đã có (so sau khi bỏ dấu, khoảng trắng). Dùng mã đó hoặc ghi rõ khác biệt.`;
   const skuDup = raw.match(/ITEM_SKU_DUPLICATE:(\S+)/);
   if (skuDup) return `Mã ${skuDup[1]} đã có trong danh mục — chọn mã khác.`;
+  const short = raw.match(/insufficient stock for item [^,]+, warehouse [^:]+: available ([-\d.]+)/);
+  if (short) return `Không đủ tồn — kho còn ${Number(short[1]).toLocaleString('vi-VN')}.`;
   const merge = raw.match(/(?:MERGE_(?:SIZE_DIFF|UNIT_CONFIRM|BLOCKED)|WMS_BACKDATE_NEGATIVE|INVENTORY_NEGATIVE_STOCK|WMS_SPEC_INSUFFICIENT): (.+)/);
   if (merge) return merge[1];
   const code = Object.keys(ERRORS).find(k => raw.includes(k));

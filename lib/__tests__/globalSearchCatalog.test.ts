@@ -44,7 +44,7 @@ describe('search catalog', () => {
     const defs = quickActionDefs(new Date(2026, 9, 9));
     expect(defs.find(def => def.id === 'work-plan')?.needsProject?.extra?.start).toBe('2026-10-05');
     expect(defs.find(def => def.id === 'leave')?.modal).toBe('leave');
-    expect(defs.find(def => def.id === 'import')?.routeState).toEqual({ tab: 'IMPORT' });
+    expect(defs.find(def => def.id === 'import')).toBeUndefined();
   });
 
   it('puts the actions a person uses most first in the empty state', () => {

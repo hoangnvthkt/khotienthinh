@@ -82,7 +82,7 @@ const call = async <T>(name: string, params: Record<string, unknown>): Promise<T
 export const stockCountService = {
   list: () => call<StockCountList>('list_stock_counts_v1', { p_filter: {} }),
   get: (id: string) => call<StockCountDetail>('get_stock_count_v1', { p_count_id: id }),
-  start: (input: { warehouseId: string; reason: string; blind: boolean }) => call<StockCountDetail>('start_stock_count_v1', { p_input: input }),
+  start: (input: { warehouseId: string; reason: string; blind: boolean; itemIds?: string[] }) => call<StockCountDetail>('start_stock_count_v1', { p_input: input }),
   addItem: (input: { countId: string; itemId: string }) => call<StockCountDetail>('add_stock_count_item_v1', { p_input: input }),
   saveLines: (input: { countId: string; lines: Array<{ lineId: string; countedQty?: number | null; varianceReason?: VarianceReason | null; note?: string;
     specCounts?: Array<{ specification: string | null; countedQty: number | null }> }> }) =>

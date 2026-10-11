@@ -99,7 +99,8 @@ const Operations: React.FC = () => {
   const toast = useToast();
   const { getStockSummary, getConflictingTxs } = useReservedStock();
   // Thủ kho / Admin vào thẳng màn xử lý phiếu; người lập phiếu vào form lập.
-  const [activeTab, setActiveTab] = useState<string>(() => (isWarehouseKeeper(user) || user.role === Role.ADMIN ? 'PENDING' : 'IMPORT'));
+  // V2: bỏ phiếu nhập tự do — hàng vào kho qua đợt giao Mua hàng, chuyển kho, trả lại hoặc kiểm đếm.
+  const [activeTab, setActiveTab] = useState<string>(() => (isWarehouseKeeper(user) || user.role === Role.ADMIN ? 'PENDING' : 'MATERIAL_ISSUE'));
   const [opsSubTab, setOpsSubTab] = useState<'approvals' | 'history'>('approvals');
   const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('table');
   const openedStateTransactionRef = useRef<string | null>(null);
@@ -158,7 +159,7 @@ const Operations: React.FC = () => {
 
   useEffect(() => {
     if (location.state?.tab) {
-      setActiveTab(location.state.tab);
+      setActiveTab(location.state.tab === TransactionType.IMPORT ? 'PENDING' : location.state.tab);
     }
     // Mở từ màn Tồn kho (V1): điền sẵn kho và vật tư cho phiếu chuyển kho.
     if (location.state?.tab === TransactionType.TRANSFER && location.state?.prefillItemId) {
@@ -907,7 +908,6 @@ const Operations: React.FC = () => {
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="flex border-b border-slate-100 overflow-x-auto bg-slate-50/50 scrollbar-hide">
-          <button onClick={() => handleTabChange('IMPORT')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'IMPORT' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Nhập kho</button>
           <button onClick={() => handleTabChange('MATERIAL_ISSUE')} className={`flex-1 min-w-[140px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'MATERIAL_ISSUE' ? 'border-indigo-500 text-indigo-600 bg-white shadow-[0_-4px_0_inset_#6366f1]' : 'border-transparent text-slate-400 hover:text-indigo-500'}`}>Xuất cấp thi công</button>
           <button onClick={() => handleTabChange('TRANSFER')} className={`flex-1 min-w-[100px] px-4 py-4 text-[10px] md:text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'TRANSFER' ? 'border-accent text-accent bg-white shadow-[0_-4px_0_inset_#2563eb]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>Chuyển kho</button>
           {canLiquidate && (
