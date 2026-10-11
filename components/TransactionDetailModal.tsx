@@ -711,6 +711,8 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                  const draftQty = parseQuantityInput(draft.quantity);
                  const orderedQty = Number(ti.orderedQty ?? ti.quantity ?? 0);
                  const hasVariance = Number.isFinite(draftQty) && draftQty !== orderedQty;
+                 // Phiếu đã ghi sổ: hiện số thực nhận, kèm số theo đợt giao khi lệch (trước đây chỉ hiện số theo đợt).
+                 const postedVariance = transaction.status === TransactionStatus.COMPLETED && Math.abs(Number(ti.quantity || 0) - orderedQty) > 1e-9;
                  // Phiếu giao của đơn mua: hiện thêm SL theo đơn vị mua (VD kg) cạnh SL kho (VD cây).
                  const purchaseUnit = ti.accountingUnit && ti.accountingUnit !== item?.unit ? ti.accountingUnit : null;
                  const purchasePerStock = purchaseUnit && orderedQty > 0 ? Number(ti.accountingQty || 0) / orderedQty : 0;
@@ -725,7 +727,12 @@ const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ isOpen,
                         <div className="text-[10px] text-slate-400 font-mono">{item?.sku || 'Đang chờ duyệt'}</div>
                       </td>
                        <td className="px-4 py-3 text-right font-bold text-slate-800">
-                         {orderedQty} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                         {postedVariance
+                           ? <>{Number(ti.quantity || 0).toLocaleString('vi-VN')} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span>
+                             <div className={`text-[10px] font-bold ${Number(ti.quantity || 0) < orderedQty ? 'text-amber-600' : 'text-teal-700'}`}>
+                               theo đợt {orderedQty.toLocaleString('vi-VN')} · {Number(ti.quantity || 0) < orderedQty ? 'thiếu' : 'dư'} {Math.abs(orderedQty - Number(ti.quantity || 0)).toLocaleString('vi-VN')}</div>
+                             {ti.varianceReason && <div className="text-[10px] font-semibold text-slate-500">{ti.varianceReason}</div>}</>
+                           : <>{orderedQty} <span className="text-[10px] text-slate-400 ml-1">{item?.unit}</span></>}
                          {purchaseUnit && <div className="text-[10px] font-bold text-slate-500">= {Number(ti.accountingQty || 0).toLocaleString('vi-VN')} {purchaseUnit} (ĐV mua)</div>}
                          {hasVariance && canAdjustQuantities && (
                            <div className="text-[10px] font-bold text-amber-600">Lệch: {(Number.isFinite(draftQty) ? draftQty : 0) - orderedQty}</div>
