@@ -28,6 +28,8 @@ export interface AuthFailure {
     | 'sign_out_failed';
   message: string;
   cause?: unknown;
+  /** Lỗi mạng/máy chủ tạm thời: phiên vẫn còn, chỉ cần thử lại. */
+  transient?: boolean;
 }
 
 export interface AuthState {
@@ -278,6 +280,31 @@ export type ApplicationShell = 'public_login' | 'authenticated';
 
 export const selectApplicationShell = (pathname: string): ApplicationShell => (
   pathname === '/login' ? 'public_login' : 'authenticated'
+);
+
+const TRANSIENT_MESSAGE_PATTERN = /failed to fetch|load failed|network|timeout|timed out|abort|refresh lock/i;
+
+/**
+ * True only when verification could not reach Supabase (offline, timeout, 5xx).
+ * A definitive answer — 4xx, missing/inactive/mismatched profile — is never transient,
+ * so the protected tree still fails closed on a revoked session or disabled account.
+ */
+export const isTransientAuthCause = (
+  cause: unknown,
+  online: boolean = typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+): boolean => {
+  const error = (cause ?? {}) as { name?: unknown; status?: unknown; code?: unknown; message?: unknown };
+  const status = typeof error.status === 'number' ? error.status : null;
+  if (status !== null && status >= 400 && status < 500) return false;
+  if (!online) return true;
+  if (error.name === 'AuthRetryableFetchError') return true;
+  if (status !== null && (status === 0 || status >= 500)) return true;
+  return TRANSIENT_MESSAGE_PATTERN.test(String(error.message ?? ''));
+};
+
+export const isTransientAuthFailure = (failure: AuthFailure): boolean => (
+  (failure.code === 'session_verification_failed' || failure.code === 'profile_load_failed')
+  && isTransientAuthCause(failure.cause)
 );
 
 export const shouldRevalidateInBackground = (state: AuthState, session: Session): boolean => (

@@ -171,6 +171,67 @@ const resilientFetch: typeof fetch = async (input, init) => {
     return response.clone();
 };
 
+// "Ghi nhớ đăng nhập": bật (mặc định) giữ phiên trong localStorage; tắt (máy dùng chung)
+// giữ phiên trong sessionStorage nên đóng trình duyệt là thoát.
+const REMEMBER_LOGIN_KEY = 'vioo:remember-login';
+
+const browserStorage = (kind: 'localStorage' | 'sessionStorage'): Storage | null => {
+    try {
+        return typeof window === 'undefined' ? null : window[kind];
+    } catch {
+        return null;
+    }
+};
+
+export const isLoginRemembered = (): boolean => {
+    try {
+        return browserStorage('localStorage')?.getItem(REMEMBER_LOGIN_KEY) !== '0';
+    } catch {
+        return true;
+    }
+};
+
+export const setLoginRemembered = (remember: boolean): void => {
+    try {
+        const local = browserStorage('localStorage');
+        if (remember) local?.removeItem(REMEMBER_LOGIN_KEY);
+        else local?.setItem(REMEMBER_LOGIN_KEY, '0');
+    } catch {
+        // Lưu lựa chọn là best effort; phiên vẫn dùng localStorage.
+    }
+};
+
+const rememberAwareAuthStorage = {
+    getItem: (key: string): string | null => {
+        try {
+            return browserStorage('sessionStorage')?.getItem(key)
+                ?? browserStorage('localStorage')?.getItem(key)
+                ?? null;
+        } catch {
+            return null;
+        }
+    },
+    setItem: (key: string, value: string): void => {
+        const [target, other] = isLoginRemembered()
+            ? [browserStorage('localStorage'), browserStorage('sessionStorage')]
+            : [browserStorage('sessionStorage'), browserStorage('localStorage')];
+        try {
+            target?.setItem(key, value);
+            other?.removeItem(key);
+        } catch {
+            // Không ghi được storage (chế độ riêng tư): phiên chỉ còn trong bộ nhớ.
+        }
+    },
+    removeItem: (key: string): void => {
+        try {
+            browserStorage('localStorage')?.removeItem(key);
+            browserStorage('sessionStorage')?.removeItem(key);
+        } catch {
+            // best effort
+        }
+    },
+};
+
 export const supabase = createClient(
     supabaseUrl || 'https://placeholder.supabase.co',
     supabaseAnonKey || 'placeholder_key',
@@ -182,6 +243,7 @@ export const supabase = createClient(
             autoRefreshToken: true,
             persistSession: true,
             detectSessionInUrl: true,
+            storage: rememberAwareAuthStorage,
         },
         global: {
             fetch: resilientFetch,
