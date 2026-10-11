@@ -24,7 +24,7 @@ describe('businessRoleAdminService', () => {
   });
 
   it('maps stale template versions to a reload instruction', async () => {
-    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: '40001', message: 'AUTHORIZATION_STALE_ROLE_VERSION' } });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: 'PT409', message: 'AUTHORIZATION_STALE_ROLE_VERSION' } });
     await expect(saveBusinessRole({ roleTemplateId: 'r1', expectedRoleVersion: 1, code: 'TEST', name: 'Test role', items: [], reason: 'Concurrent edit check' }, { rpc }))
       .rejects.toThrow('Vui lòng tải lại');
   });
