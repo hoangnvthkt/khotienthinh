@@ -391,6 +391,22 @@ export const projectStaffService = {
     return { allowed: Boolean(data) };
   },
 
+  /** Kiểm nhiều quyền project.* trong một lần gọi; trả về tập mã được phép. */
+  async checkProjectActions(params: Omit<ProjectActionCheckInput, 'permissionCode'> & { permissionCodes: readonly string[] }): Promise<Set<string>> {
+    const codes = [...new Set(params.permissionCodes.filter(code => code?.startsWith('project.')))];
+    if (!params.userId || codes.length === 0) return new Set();
+    if (!params.projectId && !params.constructionSiteId) return new Set();
+
+    const { data, error } = await supabase.rpc('project_has_permissions_v2', {
+      p_project_id: params.projectId || null,
+      p_construction_site_id: params.constructionSiteId || null,
+      p_permission_codes: codes,
+      p_user_id: params.userId,
+    });
+    if (error) throw error;
+    return new Set(Array.isArray(data) ? data.map(String) : []);
+  },
+
   async requireProjectAction(params: ProjectActionRequireInput): Promise<void> {
     const result = await this.checkProjectAction(params);
     if (!result.allowed) {

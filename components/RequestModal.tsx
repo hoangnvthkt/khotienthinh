@@ -413,9 +413,14 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const items = appItems.length > 0 ? appItems : projectCatalog;
     const isUsingProjectCatalog = appItems.length === 0 && projectCatalog.length > 0;
 
+    // Chỉ hỏi lại tồn khả dụng khi tập mã vật tư đổi, không phải mỗi lần gõ số lượng/ghi chú trên dòng.
+    const availableStockItemKey = useMemo(
+        () => JSON.stringify([...new Set(reqItems.map(line => line.itemId).filter(Boolean))].sort()),
+        [reqItems],
+    );
     useEffect(() => {
         let cancelled = false;
-        const itemIds = [...new Set(reqItems.map(line => line.itemId).filter(Boolean))];
+        const itemIds = JSON.parse(availableStockItemKey) as string[];
         if (!isOpen || !isProjectRequest || !canViewAvailableStock || !effectiveProjectId || !projectStockWarehouseId || itemIds.length === 0) {
             setProjectAvailableStock({});
             return;
@@ -434,7 +439,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
             if (!cancelled) setProjectAvailableStock({});
         });
         return () => { cancelled = true; };
-    }, [canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, projectStockWarehouseId, reqItems]);
+    }, [availableStockItemKey, canViewAvailableStock, effectiveConstructionSiteId, effectiveProjectId, isOpen, isProjectRequest, projectStockWarehouseId]);
     const isProjectWorkflowReviewStep = !!request
         && isProjectRequest
         && request.status === RequestStatus.PENDING
