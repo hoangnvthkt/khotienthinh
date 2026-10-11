@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Plus, Edit2, Trash2, Package,
     ChevronDown, ChevronRight,
     RefreshCcw, Download, Upload,
-    FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen
+    FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen, ShoppingCart, Zap, ExternalLink
 } from 'lucide-react';
 import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance, ProjectMaterialReconciliationRow, ProjectMaterialReconciliationSummary } from '../../types';
 import { boqService, workBoqService, poService } from '../../lib/projectService';
@@ -35,7 +35,6 @@ import ProjectOpeningBalanceModal from '../../components/project/ProjectOpeningB
 import { MaterialRequestTab } from '../../components/project/material/MaterialRequestTab';
 import { MaterialSummaryTab } from '../../components/project/material/MaterialSummaryTab';
 import { MaterialTabHeader } from '../../components/project/material/MaterialTabHeader';
-const HotPurchaseView = React.lazy(() => import('../../components/procurement/hotPurchase/HotPurchaseView'));
 import { MaterialWasteTab } from '../../components/project/material/MaterialWasteTab';
 import {
     aggregateMaterialWasteRows,
@@ -70,7 +69,6 @@ import { buildProjectScheduleProjection } from '../../lib/projectScheduleProject
 import { projectMaterialReconciliationService } from '../../lib/projectMaterialReconciliationService';
 import { summarizeProjectMaterialReconciliation } from '../../lib/projectMaterialReconciliation';
 
-const SupplyChainTab = React.lazy(() => import('./SupplyChainTab'));
 const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
 const BoqMaterialPlanningWorkspace = React.lazy(() => import('../../components/project/material/BoqMaterialPlanningWorkspace')
     .then(module => ({ default: module.BoqMaterialPlanningWorkspace })));
@@ -79,6 +77,9 @@ const ProjectWorkflowActionDialog = React.lazy(() => import('../../components/pr
 const ProjectWorkflowStartDialog = React.lazy(() => import('../../components/project/ProjectWorkflowStartDialog'));
 const BoqReconciliationPanel = React.lazy(() => import('../../components/project/BoqReconciliationPanel'));
 const RequestModal = React.lazy(() => import('../../components/RequestModal'));
+
+// Đơn hàng PO + Mua nóng chuyển sang Mua hàng (12/10/2026); quyền phòng giữ nguyên, chỉ không còn tab ở đây.
+const MOVED_TO_PROCUREMENT_TABS = new Set<ProjectMaterialTabKey>(['po', 'hot_purchase']);
 
 const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: string }) => (
     <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-slate-100 bg-white text-xs font-bold text-slate-400 shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
@@ -119,6 +120,7 @@ const normalizeMaterialRequestPermissionCodes = (codes?: string[] | null): strin
 
 const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions }) => {
     const location = useLocation();
+    const navigate = useNavigate();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
     const isAdmin = user?.role === 'ADMIN';
     const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
@@ -175,17 +177,39 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         user,
     });
 
-    useEffect(() => {
-        if (visibleMaterialTabs.length > 0 && !materialAccess[activeSubTab].canView) {
-            setActiveSubTab(visibleMaterialTabs[0].key);
-        }
-    }, [activeSubTab, materialAccess, visibleMaterialTabs]);
+    // Đơn hàng PO + Mua nóng đã chuyển sang Mua hàng (12/10/2026): tab Vật tư chỉ còn liên kết.
+    const projectMaterialTabs = useMemo(
+        () => visibleMaterialTabs.filter(tab => !MOVED_TO_PROCUREMENT_TABS.has(tab.key)),
+        [visibleMaterialTabs],
+    );
+    const ordersLink = projectId ? `#/procurement?${new URLSearchParams({ mode: 'orders', project: projectId }).toString()}` : '#/procurement?mode=orders';
+    const hotPurchaseLink = '#/procurement?mode=hot';
 
     useEffect(() => {
-        const materialTab = getValidMaterialTab(new URLSearchParams(location.search).get('materialTab'));
+        if (projectMaterialTabs.length > 0 && (MOVED_TO_PROCUREMENT_TABS.has(activeSubTab) || !materialAccess[activeSubTab].canView)) {
+            setActiveSubTab(projectMaterialTabs[0].key);
+        }
+    }, [activeSubTab, materialAccess, projectMaterialTabs]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const materialTab = getValidMaterialTab(params.get('materialTab'));
+        // Link cũ (thông báo, Tài chính, Trung tâm) trỏ vào tab PO / Mua nóng của dự án → mở đúng chỗ ở Mua hàng.
+        if (materialTab === 'po' || params.get('poId')) {
+            const target = new URLSearchParams();
+            if (projectId) target.set('projectId', projectId);
+            if (constructionSiteId) target.set('siteId', constructionSiteId);
+            if (params.get('poId')) target.set('poId', params.get('poId')!);
+            navigate(`/procurement/project-po?${target.toString()}`, { replace: true });
+            return;
+        }
+        if (materialTab === 'hot_purchase') {
+            navigate(`/procurement?${new URLSearchParams({ mode: 'hot', ...(params.get('hp') ? { hp: params.get('hp')! } : {}) }).toString()}`, { replace: true });
+            return;
+        }
         if (!materialTab) return;
         if (materialAccess[materialTab].canView) setActiveSubTab(materialTab);
-    }, [location.search, materialAccess]);
+    }, [constructionSiteId, location.search, materialAccess, navigate, projectId]);
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
@@ -200,8 +224,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const [planningRules, setPlanningRules] = useState<MaterialPlanningRule[]>([]);
     const [planningCurveTemplates, setPlanningCurveTemplates] = useState<PlanningCurveTemplate[]>([]);
     const [planningLoading, setPlanningLoading] = useState(false);
-    const [planningDraftPo, setPlanningDraftPo] = useState<MaterialPlanningDraftPo | null>(null);
-    const [planningDraftPoKey, setPlanningDraftPoKey] = useState(0);
     const [contractItems, setContractItems] = useState<ContractItem[]>([]);
     const [taskContractLinks, setTaskContractLinks] = useState<Record<string, string[]>>({});
     const [syncingBoq, setSyncingBoq] = useState(false);
@@ -2636,15 +2658,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         });
     }, []);
 
-    const handleCreatePlanningDraftPo = useCallback((draft: MaterialPlanningDraftPo) => {
-        if (!materialAccess.po.canView || !canEditPo) {
-            toast.warning('Không có quyền tạo PO', 'Bạn cần quyền Sửa trong Room Đơn hàng PO để tạo PO từ kế hoạch vật tư.');
-            return;
-        }
-        setPlanningDraftPo(draft);
-        setPlanningDraftPoKey(prev => prev + 1);
-        setActiveSubTab('po');
-    }, [canEditPo, materialAccess.po.canView, toast]);
+    // Lập đơn hàng ở Mua hàng; dự báo tham khảo không tạo PO (allowCreatePo={false}).
+    const handleCreatePlanningDraftPo = useCallback((_draft: MaterialPlanningDraftPo) => {
+        toast.info('Lập đơn ở Mua hàng', 'Đơn hàng lập tại Mua hàng → Cần mua, từ phiếu đề xuất hoặc kế hoạch vật tư đã duyệt.');
+    }, [toast]);
 
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
         summary: '🔗 Tổng hợp',
@@ -2676,13 +2693,24 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 constructionSiteId={constructionSiteId}
                 materialBoqStats={stats}
                 totalRequestCount={requests.length}
-                visibleMaterialTabs={visibleMaterialTabs}
+                visibleMaterialTabs={projectMaterialTabs}
                 activeSubTab={activeSubTab}
                 tabLabels={materialTabLabels}
                 tabCounts={materialTabCounts}
                 formatMoneyShort={fmt}
                 onTabChange={setActiveSubTab}
-                actions={canManageOpeningBalance ? (
+                actions={<>
+                    {materialAccess.po.canView && <a href={ordersLink}
+                        title="Đơn hàng của dự án ở Mua hàng"
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground transition hover:border-teal-300 hover:text-teal-800">
+                        <ShoppingCart size={14} /> Đơn hàng <ExternalLink size={12} className="text-muted-foreground" />
+                    </a>}
+                    {materialAccess.hot_purchase.canView && <a href={hotPurchaseLink}
+                        title="Mua nóng ở Mua hàng"
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground transition hover:border-teal-300 hover:text-teal-800">
+                        <Zap size={14} /> Mua nóng <ExternalLink size={12} className="text-muted-foreground" />
+                    </a>}
+                    {canManageOpeningBalance && (
                     <button
                         type="button"
                         onClick={() => setOpeningBalanceOpen(true)}
@@ -2692,7 +2720,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     >
                         <FileSpreadsheet size={14} /> Nhập đầu kỳ
                     </button>
-                ) : null}
+                    )}
+                </>}
             />
 
             {project && constructionSiteId && (
@@ -2707,7 +2736,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 />
             )}
 
-            {visibleMaterialTabs.length === 0 && (
+            {projectMaterialTabs.length === 0 && (
                 <div className="rounded-2xl border border-slate-100 bg-white p-12 text-center shadow-sm">
                     <Package size={36} className="mx-auto mb-2 text-slate-200" />
                     <p className="text-sm font-bold text-slate-500">Tài khoản chưa được cấp quyền xem phần Vật tư</p>
@@ -3155,56 +3184,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 />
             )}
 
-            {materialAccess.po.canView && activeSubTab === 'po' && (
-                <React.Suspense fallback={<LazyPanelFallback label="Đang tải đơn hàng PO..." />}>
-                    <SupplyChainTab
-                        constructionSiteId={constructionSiteId}
-                        projectId={projectId}
-                        canManageTab={canEditPo || canSubmitPo || canApprovePo || canConfirmPo || canDeletePo || canCreateDirectPurchase || canEditDirectPurchase || canDeleteDirectPurchase || canRecordDirectPurchaseAp || canCreateSupplierDelivery || canEditSupplierDelivery || canDeleteSupplierDelivery || canRecordSupplierDelivery || canUnrecordSupplierDelivery || canReconcileSupplierDelivery}
-                        poCapabilities={{
-                            canViewPo,
-                            canEditPo,
-                            canSubmitPo,
-                            canApprovePo,
-                            canConfirmPo,
-                            canDeletePo,
-                        }}
-                        directPurchaseCapabilities={{
-                            canViewDirectPurchase,
-                            canCreateDirectPurchase,
-                            canEditDirectPurchase,
-                            canDeleteDirectPurchase,
-                            canRecordDirectPurchaseAp,
-                        }}
-                        supplierDeliveryCapabilities={{
-                            canViewSupplierDelivery,
-                            canCreateSupplierDelivery,
-                            canEditSupplierDelivery,
-                            canDeleteSupplierDelivery,
-                            canRecordSupplierDelivery,
-                            canUnrecordSupplierDelivery,
-                            canReconcileSupplierDelivery,
-                        }}
-                        initialDraftPo={planningDraftPo}
-                        initialDraftPoKey={planningDraftPoKey}
-                        deepLinkPoId={activePurchaseOrderDeepLinkId}
-                        compact
-                    />
-                </React.Suspense>
-            )}
-
-            {materialAccess.hot_purchase.canView && activeSubTab === 'hot_purchase' && projectId && (
-                <React.Suspense fallback={<LazyPanelFallback label="Đang tải mua nóng..." />}>
-                    <HotPurchaseView
-                        items={inventoryItems}
-                        projectId={projectId}
-                        constructionSiteId={constructionSiteId || null}
-                        initialPurchaseId={new URLSearchParams(location.search).get('hp')}
-                    />
-                </React.Suspense>
-            )}
-
-            {/* Waste Comparison Tab */}
             {materialAccess.waste.canView && activeSubTab === 'waste' && (
                 <MaterialWasteTab
                     computedBoqItems={computedBoqItems}

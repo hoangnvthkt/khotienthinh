@@ -210,6 +210,10 @@ export const procurementInboxService = {
   vendors(search?: string) {
     return call<ProcurementVendor[]>('list_procurement_vendors_v1', { p_search: search || null });
   },
+  /** Phạm vi Mua hàng của người công trường (không có quyền phòng Mua hàng): dự án được xem đơn, lập được mua nóng không. */
+  siteScope() {
+    return call<ProcurementSiteScope>('get_procurement_site_scope_v1', {});
+  },
   listOrders(filter: ProcurementOrderFilter) {
     return call<ProcurementOrderList>('list_procurement_orders_v1', { p_filter: filter });
   },
@@ -274,6 +278,11 @@ export const procurementInboxService = {
 export type ProcurementSourceRef = { sourceType: ProcurementSourceType; sourceId: string };
 export interface ProcurementVendor { id: string; name: string; taxCode: string | null; recentOrders: number }
 export type ProcurementOrderStage = 'drafting' | 'ordered' | 'delivering' | 'received';
+export interface ProcurementSiteScope {
+  procurementView: boolean;
+  orderProjects: Array<{ id: string; code: string | null; name: string | null }>;
+  canCreateHotPurchase: boolean;
+}
 export interface ProcurementOrderFilter { stage?: ProcurementOrderStage | 'all'; projectId?: string; search?: string; mine?: boolean }
 export interface ProcurementOrderSummary {
   id: string; poNumber: string | null; status: string; stage: ProcurementOrderStage | 'other'; isHub: boolean;
