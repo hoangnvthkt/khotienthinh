@@ -1,6 +1,6 @@
 import React from 'react';
 import { User } from '../../types';
-import { Bell, BellOff, CheckCircle2, Loader2, Upload, Save, AlertCircle, RefreshCw } from 'lucide-react';
+import { Bell, BellOff, CheckCircle2, Loader2, Upload, Save, AlertCircle, RefreshCw, LogOut, ShieldAlert } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import { useToast } from '../../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../../lib/apiError';
@@ -8,6 +8,7 @@ import { webPushService } from '../../lib/webPushService';
 import { pwaService, PWAStatus } from '../../lib/pwaService';
 import { notificationSoundService } from '../../lib/notificationSoundService';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 interface SettingsAccountProps {
   currentUser: User;
@@ -22,6 +23,31 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
 }) => {
   const { logout } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
+  const [loggingOutEverywhere, setLoggingOutEverywhere] = React.useState(false);
+
+  // Mất điện thoại / nghi lộ mật khẩu: thu hồi mọi phiên của tài khoản trên máy chủ.
+  const handleLogoutEverywhere = async () => {
+    const ok = await confirm({
+      title: 'Đăng xuất mọi thiết bị?',
+      confirmText: 'Đăng xuất mọi thiết bị của',
+      targetName: currentUser.email || currentUser.name,
+      warningText: 'Mọi điện thoại, máy tính đang đăng nhập tài khoản này (kể cả máy này) phải đăng nhập lại.',
+      actionLabel: 'Đăng xuất hết',
+      cancelLabel: 'Hủy',
+      intent: 'warning',
+      countdownSeconds: 0,
+    });
+    if (!ok) return;
+    setLoggingOutEverywhere(true);
+    try {
+      await logout({ everywhere: true });
+      window.location.href = '/login';
+    } catch (error) {
+      setLoggingOutEverywhere(false);
+      toast.error('Chưa đăng xuất được', getApiErrorMessage(error, 'Kiểm tra kết nối mạng rồi thử lại.'));
+    }
+  };
   const [passwords, setPasswords] = React.useState({ current: '', new: '', confirm: '' });
   const [passError, setPassError] = React.useState('');
   const [passSuccess, setPassSuccess] = React.useState('');
@@ -398,16 +424,31 @@ const SettingsAccount: React.FC<SettingsAccountProps> = ({
         </div>
 
         <div className="pt-8 border-t border-slate-100">
-          <h3 className="text-sm font-bold text-slate-800 mb-2">Đăng xuất</h3>
-          <p className="text-xs text-slate-500 mb-4">Kết thúc phiên làm việc hiện tại trên thiết bị này.</p>
-          <button
-            onClick={() => void logout()
-              .then(() => { window.location.href = '/login'; })
-              .catch(error => console.warn('Logout failed:', error))}
-            className="px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-600 hover:text-white transition"
-          >
-            Đăng xuất ngay
-          </button>
+          <h3 className="text-sm font-bold text-slate-800 mb-4">Đăng xuất</h3>
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <button
+              type="button"
+              onClick={() => void logout()
+                .then(() => { window.location.href = '/login'; })
+                .catch(error => console.warn('Logout failed:', error))}
+              disabled={loggingOutEverywhere}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-bold hover:bg-red-600 hover:text-white transition disabled:opacity-50"
+            >
+              <LogOut size={16} />
+              Đăng xuất máy này
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleLogoutEverywhere()}
+              disabled={loggingOutEverywhere}
+              title="Dùng khi mất điện thoại hoặc nghi lộ mật khẩu"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white text-red-600 border border-red-200 rounded-xl font-bold hover:bg-red-50 transition disabled:opacity-50"
+            >
+              {loggingOutEverywhere ? <Loader2 size={16} className="animate-spin" /> : <ShieldAlert size={16} />}
+              {loggingOutEverywhere ? 'Đang đăng xuất…' : 'Đăng xuất mọi thiết bị'}
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] font-medium text-slate-500">Mất điện thoại hoặc nghi lộ mật khẩu: đổi mật khẩu ở trên, rồi bấm “Đăng xuất mọi thiết bị”.</p>
         </div>
       </div>
     </div>

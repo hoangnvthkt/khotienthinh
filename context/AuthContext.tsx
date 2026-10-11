@@ -52,7 +52,8 @@ export interface AuthContextValue {
   user: User | null;
   error: AuthFailure | null;
   login(email: string, password: string): Promise<User>;
-  logout(): Promise<void>;
+  /** everywhere: thoát cả các thiết bị khác của người dùng (mất điện thoại, nghi lộ mật khẩu). */
+  logout(options?: { everywhere?: boolean }): Promise<void>;
   retry(): Promise<void>;
   refreshProfile(): Promise<User>;
 }
@@ -343,7 +344,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return commitCandidateSession(data.session, attempt, authEpoch);
   }, [commitCandidateSession, dispatchAuth]);
 
-  const logout = useCallback(async (): Promise<void> => {
+  const logout = useCallback(async (options?: { everywhere?: boolean }): Promise<void> => {
     const authState = stateRef.current;
     const shouldEndServerSession = shouldEndTelemetrySessionOnServer(
       authState.status,
@@ -362,8 +363,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut: async () => {
           if (!isSupabaseConfigured) return;
           await signOutAndConfirmLocalSessionCleared({
-            // Chỉ thoát thiết bị này; các máy khác của người dùng vẫn đăng nhập.
-            signOut: () => supabase.auth.signOut({ scope: 'local' }),
+            // Mặc định chỉ thoát thiết bị này; "mọi thiết bị" thu hồi mọi phiên trên máy chủ.
+            signOut: () => supabase.auth.signOut({ scope: options?.everywhere ? 'global' : 'local' }),
             getSession: () => supabase.auth.getSession(),
           });
         },
