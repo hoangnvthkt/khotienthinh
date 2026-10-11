@@ -25,6 +25,7 @@ const ProjectDashboard = React.lazy(() => import('../pages/ProjectDashboard'));
 const PortfolioDashboard = React.lazy(() => import('../pages/PortfolioDashboard'));
 const ProcurementWorkbench = React.lazy(() => import('../pages/procurement/ProcurementWorkbench'));
 const ProcurementHub = React.lazy(() => import('../pages/procurement/ProcurementHub'));
+const ProjectPoPage = React.lazy(() => import('../pages/procurement/ProjectPoPage'));
 const FinanceHub = React.lazy(() => import('../pages/finance/FinanceHub'));
 const SiteFund = React.lazy(() => import('../pages/finance/SiteFund'));
 const MyProfile = React.lazy(() => import('../pages/MyProfile'));
@@ -207,6 +208,7 @@ export const appPageRoutes = (embedded = false) => (
     <Route path="finance/:section" element={<FinanceHub />} />
     <Route path="site-fund" element={<SiteFund />} />
     <Route path="procurement/legacy" element={<ProcurementWorkbench />} />
+    <Route path="procurement/project-po" element={<ProjectPoPage />} />
     <Route path="chat" element={isChatEnabled ? (isChatV2Enabled ? <ChatV2 /> : <Chat />) : <Navigate to="/" replace />} />
     <Route path="storage" element={<DataStorage />} />
     <Route path="ai" element={<AiAssistant />} />

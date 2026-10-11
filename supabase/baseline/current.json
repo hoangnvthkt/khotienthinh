@@ -306,7 +306,8 @@
     "20261011090500_wms_v2_one_screen.sql",
     "20261011150000_wms_print_continue_delivery.sql",
     "20261011230000_rpc_conflict_errcode_pt409.sql",
-    "20261012094700_project_rls_scope_initplan.sql"
+    "20261012094700_project_rls_scope_initplan.sql",
+    "20261012113900_procurement_site_scope.sql"
   ],
   "forbidIncludeAll": true
 }

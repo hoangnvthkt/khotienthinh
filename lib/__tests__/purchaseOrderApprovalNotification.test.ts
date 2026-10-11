@@ -26,17 +26,25 @@ describe('purchase order approval notifications', () => {
         deliveryBatchId: 'batch-1',
       },
     } as any)).toBe(
-      '/da?projectId=project-1&siteId=site-1&tab=material&materialTab=po&poId=po-1',
+      '/procurement/project-po?projectId=project-1&siteId=site-1&poId=po-1',
     );
   });
 
-  it('opens a purchase order notification on the PO subtab and drawer', () => {
+  it('opens a purchase order notification on the project PO screen in Mua hàng', () => {
     expect(resolveNotificationPath({
       sourceType: 'purchase_order',
       sourceId: 'po-1',
       metadata: { projectId: 'project-1' },
     } as any)).toBe(
-      '/da?projectId=project-1&tab=material&materialTab=po&poId=po-1',
+      '/procurement/project-po?projectId=project-1&poId=po-1',
     );
+  });
+
+  it('falls back to the Mua hàng drawer when the notification has no project', () => {
+    expect(resolveNotificationPath({
+      sourceType: 'purchase_order',
+      sourceId: 'po-9',
+      metadata: {},
+    } as any)).toBe('/procurement?po=po-9');
   });
 });

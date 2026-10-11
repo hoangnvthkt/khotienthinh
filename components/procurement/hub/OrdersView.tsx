@@ -50,10 +50,14 @@ const OrderRow: React.FC<{ order: ProcurementOrderSummary; payment?: Procurement
 export const OrdersView: React.FC<{
   stage: ProcurementOrderStage; projects: Array<{ id: string; code: string | null; name: string | null }>;
   reloadKey: number; onOpen: (orderId: string) => void;
-}> = ({ stage, projects, reloadKey, onOpen }) => {
+  /** Lọc sẵn một dự án (link từ Dự án → Vật tư). */
+  initialProjectId?: string | null;
+  /** Người công trường chỉ xem: ẩn "Của tôi" và nhắc xử lý đơn quá hẹn (việc của phòng Mua hàng). */
+  readOnly?: boolean;
+}> = ({ stage, projects, reloadKey, onOpen, initialProjectId = null, readOnly = false }) => {
   const [data, setData] = useState<ProcurementOrderList | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(initialProjectId || '');
   const [mine, setMine] = useState(false);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -93,7 +97,7 @@ export const OrdersView: React.FC<{
     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-2 shadow-sm">
       <p className="px-1 text-sm text-muted-foreground">{STAGE_COPY[stage].hint}</p>
       <span className="ml-auto flex flex-wrap items-center gap-2">
-        <label className="inline-flex items-center gap-1.5 text-sm"><input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} className="h-4 w-4 accent-teal-600" />Của tôi</label>
+        {!readOnly && <label className="inline-flex items-center gap-1.5 text-sm"><input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} className="h-4 w-4 accent-teal-600" />Của tôi</label>}
         <select aria-label="Dự án" value={projectId} onChange={e => setProjectId(e.target.value)} className={`max-w-[12rem] ${inputCls}`}>
           <option value="">Mọi dự án</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.code || p.name}</option>)}
@@ -104,9 +108,9 @@ export const OrdersView: React.FC<{
         </label>
       </span>
     </div>
-    {stale.length > 0 && <p className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+    {!readOnly && stale.length > 0 && <p className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
       <AlertTriangle size={17} className="shrink-0" />
-      <span className="min-w-[14rem] flex-1"><b>{stale.length} đơn quá hẹn giao hơn 30 ngày.</b> Liên hệ NCC; nếu NCC không giao nữa, mở đơn → "Kết thúc thiếu" (đơn lập ở dự án: xử lý ở tab dự án) để Tài chính không tính phần chưa giao vào chi phí sắp phát sinh.</span>
+      <span className="min-w-[14rem] flex-1"><b>{stale.length} đơn quá hẹn giao hơn 30 ngày.</b> Liên hệ NCC; nếu NCC không giao nữa, mở đơn → "Kết thúc thiếu" (đơn lập ở dự án: mở đơn → "Màn PO dự án") để Tài chính không tính phần chưa giao vào chi phí sắp phát sinh.</span>
       <button type="button" onClick={() => setStaleOnly(s => !s)} className="rounded-lg border border-amber-300 bg-card px-3 py-1.5 text-sm font-semibold">{staleOnly ? 'Xem mọi đơn' : 'Chỉ xem các đơn này'}</button>
     </p>}
     {error ? <StateBox kind="error" message={error} onRetry={load} />

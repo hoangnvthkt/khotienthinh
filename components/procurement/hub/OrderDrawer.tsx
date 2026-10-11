@@ -60,11 +60,11 @@ export const printPoApproval = (o: ProcurementOrderDetail): boolean => {
   return true;
 };
 
-/** Link to the PO inside its project, where the site schedules deliveries and receives goods. */
+/** Màn PO theo dự án (đã chuyển từ Dự án → Vật tư sang Mua hàng): xử lý đơn lập ở dự án, giao nhận tại công trường. */
 export const projectPoLink = (o: Pick<ProcurementOrderDetail, 'id' | 'projectId' | 'constructionSiteId'>) => {
   if (!o.projectId) return null;
-  const p = new URLSearchParams({ projectId: o.projectId, ...(o.constructionSiteId ? { siteId: o.constructionSiteId } : {}), tab: 'material', materialTab: 'po', poId: o.id });
-  return `#/da?${p.toString()}`;
+  const p = new URLSearchParams({ projectId: o.projectId, ...(o.constructionSiteId ? { siteId: o.constructionSiteId } : {}), poId: o.id });
+  return `#/procurement/project-po?${p.toString()}`;
 };
 
 export const OrderDrawer: React.FC<{
@@ -140,7 +140,7 @@ export const OrderDrawer: React.FC<{
 
   const footer = order && <>
     <span className="mr-auto flex flex-wrap gap-2">
-      {link && <a href={link} className={secondaryBtn}><ArrowUpRight size={15} />Mở trong dự án</a>}
+      {link && <a href={link} className={secondaryBtn}><ArrowUpRight size={15} />Màn PO dự án</a>}
       {order.lines.length > 0 && <button type="button" className={secondaryBtn} onClick={() => { if (!printPoApproval(order)) toast.error('Không mở được cửa sổ in', 'Trình duyệt đang chặn cửa sổ bật lên — cho phép rồi thử lại.'); }}>
         <Printer size={15} />In đề nghị duyệt</button>}
     </span>
@@ -209,7 +209,7 @@ export const OrderDrawer: React.FC<{
           ? 'Hàng vào Kho Tổng: công nợ NCC ghi cấp công ty; chi phí vào dự án khi chuyển kho sang công trường.'
           : 'Nhu cầu cùng vật tư của dự án được gắn vào phần chưa phân bổ ở phiếu nhu cầu (Cần mua) thay vì lập đơn mới.'}</p>
       </div>}
-      {!order.isHub && <p className="rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">Đơn này lập ở tab dự án trước khi có Mua hàng — chỉ xem tại đây.</p>}
+      {!order.isHub && <p className="rounded-xl border border-dashed border-border px-3 py-2.5 text-sm text-muted-foreground">Đơn này lập ở dự án trước khi có Mua hàng — xử lý ở "Màn PO dự án".</p>}
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm md:grid-cols-4">
         {([

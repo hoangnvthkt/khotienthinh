@@ -24,6 +24,7 @@ import { ReceiptReconciliationView } from '../receipt/ReceiptReconciliationView'
 import { SupplyFromStockDrawer, TRANSFER_STATUS_LABELS } from './SupplyFromStockDrawer';
 import { ExternalSourceSnapshot } from './ExternalSourceSnapshot';
 import { HotPurchaseView } from '../hotPurchase/HotPurchaseView';
+import { SiteProcurementView } from './SiteProcurementView';
 import type { HotPurchasePrefill } from '../../../lib/hotPurchaseService';
 import { docBuyers, givenName, lineKey, lineOwner, openLineOwners } from '../../../lib/procurementLineAssignment';
 
@@ -366,11 +367,11 @@ export const DocumentRow: React.FC<{
 
 const EMPTY_FILTER: Required<ProcurementInboxFilter> = { source: '', progress: 'open', projectId: '', assigneeId: '', search: '' };
 
-export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null; initialContractId?: string | null; initialMode?: string | null; initialHotPurchaseId?: string | null }> = ({ currentUserId, initialOrderId = null, initialContractId = null, initialMode = null, initialHotPurchaseId = null }) => {
+export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderId?: string | null; initialContractId?: string | null; initialMode?: string | null; initialHotPurchaseId?: string | null; initialProjectId?: string | null }> = ({ currentUserId, initialOrderId = null, initialContractId = null, initialMode = null, initialHotPurchaseId = null, initialProjectId = null }) => {
   const toast = useToast();
   const askReason = useReasonConfirm();
   const { items, warehouses } = useApp();
-  const [stage, setStage] = useState<Stage>(initialOrderId ? 'drafting' : 'intake');
+  const [stage, setStage] = useState<Stage>(initialOrderId ? 'drafting' : initialMode === 'orders' && initialProjectId ? 'ordered' : 'intake');
   const [mode, setMode] = useState<'orders' | 'contracts' | 'hot' | 'reconcile'>(initialContractId || initialMode === 'contracts' ? 'contracts' : initialMode === 'reconcile' ? 'reconcile' : initialMode === 'hot' || initialHotPurchaseId ? 'hot' : 'orders');
   const [hotPrefill, setHotPrefill] = useState<HotPurchasePrefill | null>(null);
   const [filter, setFilter] = useState<Required<ProcurementInboxFilter>>(EMPTY_FILTER);
@@ -488,10 +489,9 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
       </span>
     </header>
 
-    {status === 'denied' && mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} />
-      // Công trường không có quyền Mua hàng vẫn gọi hàng theo HĐ của dự án mình (link ?mode=contracts).
-      : status === 'denied' && mode === 'contracts' ? <ContractsView projects={[]} warehouses={warehouses} initialContractId={initialContractId} currentUserId={currentUserId} />
-      : status === 'denied' ? <StateBox kind="denied" message={message} />
+    {/* Công trường không có quyền Mua hàng: xem đơn của dự án mình, gọi hàng theo HĐ, mua nóng. */}
+    {status === 'denied' ? <SiteProcurementView currentUserId={currentUserId} deniedMessage={message} initialMode={initialMode}
+        initialProjectId={initialProjectId} initialOrderId={initialOrderId} initialContractId={initialContractId} initialHotPurchaseId={initialHotPurchaseId} />
       : status === 'error' && !inbox ? <StateBox kind="error" title="Chưa tải được Mua hàng" message={message} onRetry={() => void load()} />
         : !inbox ? <StateBox kind="loading" title="Đang tải nhu cầu mua hàng…" />
           : <>
@@ -504,7 +504,7 @@ export const ProcurementHubView: React.FC<{ currentUserId: string; initialOrderI
               : mode === 'hot' ? <HotPurchaseView items={items} initialPurchaseId={initialHotPurchaseId} prefill={hotPrefill} onPrefillUsed={() => setHotPrefill(null)} showSettings />
               : mode === 'contracts' ? <ContractsView projects={inbox.projects} warehouses={warehouses} initialContractId={initialContractId} currentUserId={currentUserId} /> : <>
             <StageStrip inbox={inbox} stage={stage} onStage={setStage} />
-            {stage !== 'intake' ? <OrdersView stage={stage} projects={inbox.projects} reloadKey={ordersReload} onOpen={setOrderId} /> : <section className="space-y-3">
+            {stage !== 'intake' ? <OrdersView stage={stage} projects={inbox.projects} reloadKey={ordersReload} onOpen={setOrderId} initialProjectId={initialProjectId} /> : <section className="space-y-3">
               <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Nguồn đề xuất">
                 {([['', 'Tất cả nguồn', sourceTotal], ['material_plan', PROCUREMENT_SOURCE_LABELS.material_plan, inbox.sourceCounts.material_plan || 0],
                   ['material_request', PROCUREMENT_SOURCE_LABELS.material_request, inbox.sourceCounts.material_request || 0],
