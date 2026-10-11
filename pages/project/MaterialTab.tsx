@@ -6,7 +6,7 @@ import {
     RefreshCcw, Download, Upload,
     FileSpreadsheet, GitBranch, ListTree, Loader2, BookOpen, ShoppingCart, Zap, ExternalLink
 } from 'lucide-react';
-import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance, ProjectMaterialReconciliationRow, ProjectMaterialReconciliationSummary } from '../../types';
+import { MaterialBudgetItem, InventoryItem, MaterialRequest, RequestStatus, ProjectTask, ProjectWorkBoqItem, ContractItem, TaskContractItem, MaterialRequestFulfillmentSummary, MaterialRequestFulfillmentBatch, MaterialRequestEvent, MaterialRequestKanbanLaneId, MaterialRequestKanbanStage, MaterialRequestWorkflowStep, ProjectSubmissionTarget, Role, PurchaseOrder, MaterialPlanningRule, MaterialPlanningDraftPo, PlanningCurveTemplate, ProjectWorkflowActionContext, ProjectWorkflowBoardFilter, ProjectWorkflowConfiguration, ProjectWorkflowRuntimeContext, ProjectWorkflowSubject, MaterialRequestWorkflowBoardCard, WorkflowNode, WorkflowNodeType, WorkflowStepAssignment, Project, ProjectFinance } from '../../types';
 import { boqService, workBoqService, poService } from '../../lib/projectService';
 import { loadMaterialPlanningGanttCatalog } from '../../lib/projectGanttCatalogAdapters';
 import { materialRequestFulfillmentService, getRequestLineId } from '../../lib/materialRequestFulfillmentService';
@@ -27,15 +27,12 @@ import { getApiErrorMessage, logApiError } from '../../lib/apiError';
 import { isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../../lib/wmsPermissions';
 import { getMaterialPlanningScopeKey, materialPlanningCurveService, materialPlanningRuleService, projectMaterialPlanningService } from '../../lib/projectMaterialPlanningService';
 import { MaterialBoqFormModal } from '../../components/project/material/MaterialBoqFormModal';
-import { CustomMaterialRequestTab } from '../../components/project/material/CustomMaterialRequestTab';
 import { G8NormApplyModal } from '../../components/project/material/G8NormApplyModal';
 import { MaterialBoqImportPreviewModal } from '../../components/project/material/MaterialBoqImportPreviewModal';
-import { MaterialDashboardTab } from '../../components/project/material/MaterialDashboardTab';
 import ProjectOpeningBalanceModal from '../../components/project/ProjectOpeningBalanceModal';
 import { MaterialRequestTab } from '../../components/project/material/MaterialRequestTab';
 import { MaterialSummaryTab } from '../../components/project/material/MaterialSummaryTab';
 import { MaterialTabHeader } from '../../components/project/material/MaterialTabHeader';
-import { MaterialWasteTab } from '../../components/project/material/MaterialWasteTab';
 import {
     aggregateMaterialWasteRows,
     calculateMaterialBudgetQty,
@@ -65,21 +62,19 @@ import {
     type WorkBoqImportPreview,
 } from '../../lib/projectMaterialTabUtils';
 import { useProjectMaterialAccess } from '../../hooks/project/material/useProjectMaterialAccess';
-import { buildProjectScheduleProjection } from '../../lib/projectScheduleProjection';
-import { projectMaterialReconciliationService } from '../../lib/projectMaterialReconciliationService';
-import { summarizeProjectMaterialReconciliation } from '../../lib/projectMaterialReconciliation';
 
-const MaterialPlanningPanel = React.lazy(() => import('../../components/project/MaterialPlanningPanel'));
-const BoqMaterialPlanningWorkspace = React.lazy(() => import('../../components/project/material/BoqMaterialPlanningWorkspace')
-    .then(module => ({ default: module.BoqMaterialPlanningWorkspace })));
+const WorkPlanTab = React.lazy(() => import('./WorkPlanTab'));
 const ProjectRoomSubmissionDialog = React.lazy(() => import('../../components/project/ProjectRoomSubmissionDialog'));
 const ProjectWorkflowActionDialog = React.lazy(() => import('../../components/project/ProjectWorkflowActionDialog'));
 const ProjectWorkflowStartDialog = React.lazy(() => import('../../components/project/ProjectWorkflowStartDialog'));
-const BoqReconciliationPanel = React.lazy(() => import('../../components/project/BoqReconciliationPanel'));
 const RequestModal = React.lazy(() => import('../../components/RequestModal'));
 
 // Đơn hàng PO + Mua nóng chuyển sang Mua hàng (12/10/2026); quyền phòng giữ nguyên, chỉ không còn tab ở đây.
 const MOVED_TO_PROCUREMENT_TABS = new Set<ProjectMaterialTabKey>(['po', 'hot_purchase']);
+// Dọn tab Vật tư (P1, 12/10/2026): Hao hụt + Dashboard gộp vào Theo dõi; Phi tiêu chuẩn chưa từng có phiếu.
+const MERGED_MATERIAL_TABS: Partial<Record<ProjectMaterialTabKey, ProjectMaterialTabKey>> = { waste: 'summary', dashboard: 'summary', custom: 'request' };
+// Thứ tự tab con: theo dõi → đề xuất → kế hoạch → BOQ (thiết lập).
+const MATERIAL_TAB_ORDER: ProjectMaterialTabKey[] = ['summary', 'request', 'planning', 'boq'];
 
 const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: string }) => (
     <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-slate-100 bg-white text-xs font-bold text-slate-400 shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
@@ -179,14 +174,16 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
 
     // Đơn hàng PO + Mua nóng đã chuyển sang Mua hàng (12/10/2026): tab Vật tư chỉ còn liên kết.
     const projectMaterialTabs = useMemo(
-        () => visibleMaterialTabs.filter(tab => !MOVED_TO_PROCUREMENT_TABS.has(tab.key)),
+        () => MATERIAL_TAB_ORDER
+            .map(key => visibleMaterialTabs.find(tab => tab.key === key))
+            .filter((tab): tab is (typeof visibleMaterialTabs)[number] => Boolean(tab)),
         [visibleMaterialTabs],
     );
     const ordersLink = projectId ? `#/procurement?${new URLSearchParams({ mode: 'orders', project: projectId }).toString()}` : '#/procurement?mode=orders';
     const hotPurchaseLink = '#/procurement?mode=hot';
 
     useEffect(() => {
-        if (projectMaterialTabs.length > 0 && (MOVED_TO_PROCUREMENT_TABS.has(activeSubTab) || !materialAccess[activeSubTab].canView)) {
+        if (projectMaterialTabs.length > 0 && !projectMaterialTabs.some(tab => tab.key === activeSubTab)) {
             setActiveSubTab(projectMaterialTabs[0].key);
         }
     }, [activeSubTab, materialAccess, projectMaterialTabs]);
@@ -208,18 +205,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             return;
         }
         if (!materialTab) return;
-        if (materialAccess[materialTab].canView) setActiveSubTab(materialTab);
+        const target = MERGED_MATERIAL_TABS[materialTab] || materialTab;
+        if (materialAccess[target].canView) setActiveSubTab(target);
     }, [constructionSiteId, location.search, materialAccess, navigate, projectId]);
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
     const [workBoqItems, setWorkBoqItems] = useState<ProjectWorkBoqItem[]>([]);
     const [tasks, setTasks] = useState<ProjectTask[]>([]);
-    const [reconciliationReportDate, setReconciliationReportDate] = useState(() => new Date().toISOString().slice(0, 10));
-    const [reconciliationRows, setReconciliationRows] = useState<ProjectMaterialReconciliationRow[]>([]);
-    const [reconciliationSummary, setReconciliationSummary] = useState<ProjectMaterialReconciliationSummary>(() => summarizeProjectMaterialReconciliation([]));
-    const [reconciliationLoading, setReconciliationLoading] = useState(false);
-    const [reconciliationError, setReconciliationError] = useState<string | null>(null);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [planningRules, setPlanningRules] = useState<MaterialPlanningRule[]>([]);
     const [planningCurveTemplates, setPlanningCurveTemplates] = useState<PlanningCurveTemplate[]>([]);
@@ -862,46 +855,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     }, [activeSubTab, constructionSiteId, effectiveId, loadBoqData, materialAccess]);
 
     useEffect(() => {
-        if (activeSubTab !== 'planning' && activeSubTab !== 'summary') return;
-        if (activeSubTab === 'planning' && !materialAccess.planning.canView) return;
-        if (activeSubTab === 'summary' && !materialAccess.summary.canView) return;
-        void loadPlanningData();
-    }, [activeSubTab, loadPlanningData, materialAccess.planning.canView, materialAccess.summary.canView]);
-
-    const reconciliationPlannedProgress = useMemo(() => buildProjectScheduleProjection({
-        tasks,
-        todayIso: reconciliationReportDate,
-    }).plannedProgressPercent, [reconciliationReportDate, tasks]);
-
-    const loadReconciliation = useCallback(async () => {
-        if (!projectId || !materialAccess.summary.canView) {
-            setReconciliationRows([]);
-            setReconciliationSummary(summarizeProjectMaterialReconciliation([]));
-            return;
-        }
-        setReconciliationLoading(true);
-        setReconciliationError(null);
-        try {
-            const report = await projectMaterialReconciliationService.getReport({
-                projectId,
-                constructionSiteId: constructionSiteId || null,
-                reportDate: reconciliationReportDate,
-                plannedProgressPercent: reconciliationPlannedProgress,
-            });
-            setReconciliationRows(report.rows);
-            setReconciliationSummary(report.summary);
-        } catch (error) {
-            logApiError('MaterialTab.loadReconciliation', error);
-            setReconciliationError(getApiErrorMessage(error, 'Không thể tải đối chiếu BOQ vật tư.'));
-        } finally {
-            setReconciliationLoading(false);
-        }
-    }, [constructionSiteId, materialAccess.summary.canView, projectId, reconciliationPlannedProgress, reconciliationReportDate]);
-
-    useEffect(() => {
+        // Cột dự báo 7/30/90 ngày ở Theo dõi dùng quy tắc + đường cong; tab Kế hoạch vật tư tự tải dữ liệu riêng.
         if (activeSubTab !== 'summary' || !materialAccess.summary.canView) return;
-        void loadReconciliation();
-    }, [activeSubTab, loadReconciliation, materialAccess.summary.canView]);
+        void loadPlanningData();
+    }, [activeSubTab, loadPlanningData, materialAccess.summary.canView]);
 
     useEffect(() => {
         if (!needsRequestFulfillmentDetails) return;
@@ -2663,10 +2620,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         toast.info('Lập đơn ở Mua hàng', 'Đơn hàng lập tại Mua hàng → Cần mua, từ phiếu đề xuất hoặc kế hoạch vật tư đã duyệt.');
     }, [toast]);
 
+    const overBudgetItems = useMemo(() => computedBoqItems
+        .filter(item => (item.budgetOverPercent || 0) > 0)
+        .sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)), [computedBoqItems]);
+    const overWasteItems = useMemo(() => computedBoqItems
+        .filter(item => (item.wasteQty || 0) > 0)
+        .sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)), [computedBoqItems]);
+
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
-        summary: '🔗 Tổng hợp',
+        summary: '📊 Theo dõi',
         boq: '📋 BOQ',
-        planning: '🧭 Kế hoạch',
+        planning: '🧭 Kế hoạch vật tư',
         request: '📦 Yêu cầu',
         custom: '🧩 Phi tiêu chuẩn',
         po: '🛒 Đơn hàng (PO)',
@@ -2690,14 +2654,10 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     return (
         <div className="space-y-6">
             <MaterialTabHeader
-                constructionSiteId={constructionSiteId}
-                materialBoqStats={stats}
-                totalRequestCount={requests.length}
                 visibleMaterialTabs={projectMaterialTabs}
                 activeSubTab={activeSubTab}
                 tabLabels={materialTabLabels}
                 tabCounts={materialTabCounts}
-                formatMoneyShort={fmt}
                 onTabChange={setActiveSubTab}
                 actions={<>
                     {materialAccess.po.canView && <a href={ordersLink}
@@ -2716,7 +2676,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                         onClick={() => setOpeningBalanceOpen(true)}
                         disabled={!constructionSiteId}
                         title={!constructionSiteId ? 'Cần liên kết công trường trước khi nhập đầu kỳ' : 'Nhập dữ liệu đầu kỳ vật tư'}
-                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                        className="flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground transition hover:border-teal-300 hover:text-teal-800 disabled:cursor-not-allowed disabled:text-slate-400"
                     >
                         <FileSpreadsheet size={14} /> Nhập đầu kỳ
                     </button>
@@ -2748,14 +2708,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {materialAccess.summary.canView && activeSubTab === 'summary' && (
                 <MaterialSummaryTab
                     materialRows={materialAggregateSummaryRows}
-                    reconciliationRows={reconciliationRows}
-                    reconciliationSummary={reconciliationSummary}
-                    reconciliationReportDate={reconciliationReportDate}
-                    reconciliationPlannedProgress={reconciliationPlannedProgress}
-                    reconciliationLoading={reconciliationLoading}
-                    reconciliationError={reconciliationError}
-                    onReconciliationReportDateChange={setReconciliationReportDate}
-                    onReloadReconciliation={() => { void loadReconciliation(); }}
+                    overBudgetItems={overBudgetItems}
+                    overWasteItems={overWasteItems}
+                    dashboardLink={projectId ? `#/center?${new URLSearchParams({ board: 'materials', project: projectId }).toString()}` : null}
                     selectedMaterialGroupKeys={selectedMaterialGroupKeys}
                     canCreateMaterialRequest={canCreateMaterialRequest}
                     onToggleMaterialGroup={toggleMaterialGroupSelection}
@@ -2770,22 +2725,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             {/* BOQ Tab */}
             {materialAccess.boq.canView && activeSubTab === 'boq' && (
                 <div className="space-y-4">
-                    <details className="group border-y border-zinc-200 dark:border-zinc-800">
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4">
-                            <div>
-                                <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                    <GitBranch size={16} className="text-teal-700 dark:text-teal-400" /> Đối chiếu BOQ hợp đồng tham khảo
-                                </h3>
-                                <p className="mt-1 text-[10px] font-medium text-zinc-400">Không còn là điều kiện tạo nghiệm thu/thanh toán; mở ra khi cần so sánh BOQ hợp đồng với BOQ triển khai.</p>
-                            </div>
-                            <ChevronDown size={16} className="shrink-0 text-zinc-400 transition-transform group-open:rotate-180" />
-                        </summary>
-                        <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải đối chiếu BOQ..." />}>
-                                <BoqReconciliationPanel projectId={projectId || null} constructionSiteId={constructionSiteId || null} />
-                            </React.Suspense>
-                        </div>
-                    </details>
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
                         <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                             <div>
@@ -3074,59 +3013,15 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 </div>
             )}
 
-            {materialAccess.planning.canView && activeSubTab === 'planning' && (
-                <div className="space-y-6">
-                    {projectId && <a href={`#/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'material', period: 'week' }).toString()}`}
-                        className="flex flex-col gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950 transition-colors hover:bg-teal-100 dark:border-teal-900 dark:bg-teal-950/40 dark:text-teal-100 md:flex-row md:items-center md:justify-between">
-                        <span><strong>Kế hoạch vật tư tuần/tháng</strong> nay lập từ kế hoạch thi công đã duyệt, tự tính nhu cầu theo BOQ, đối chiếu tồn kho và gửi CHT duyệt.</span>
-                        <span className="shrink-0 font-semibold">Mở Kế hoạch → Vật tư ›</span>
-                    </a>}
-                    <React.Suspense fallback={<LazyPanelFallback label="Đang tải cân đối BOQ..." />}>
-                        <BoqMaterialPlanningWorkspace
-                            projectId={projectId || null}
-                            constructionSiteId={constructionSiteId || null}
-                            defaultDestination={siteName || ''}
-                            defaultSiteWarehouseId={defaultSiteWarehouseId}
-                            canManage={canEditPlanning}
-                            onOpenRequest={openMaterialPlanRequest}
-                        />
-                    </React.Suspense>
-                    <section aria-label="Dự báo tham khảo" className="space-y-3">
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <h3 className="text-sm font-black text-slate-800">Dự báo tham khảo</h3>
-                            <p className="mt-1 text-[10px] font-bold text-slate-500">Quy tắc tiến độ và đường cong nhu cầu dùng để tham khảo; không thay thế cân đối BOQ và không tạo PO trực tiếp tại bước G3.</p>
-                        </div>
-                        {canViewPo ? (
-                            <React.Suspense fallback={<LazyPanelFallback label="Đang tải dự báo vật tư..." />}>
-                                <MaterialPlanningPanel
-                                    projectId={projectId || null}
-                                    constructionSiteId={constructionSiteId || null}
-                                    scopeKey={planningScopeKey}
-                                    siteWarehouseId={defaultSiteWarehouseId}
-                                    canManage={canEditPlanning}
-                                    userId={user.id}
-                                    tasks={tasks}
-                                    workBoqItems={workBoqItems}
-                                    materialBudgetItems={computedBoqItems}
-                                    inventoryItems={inventoryItems}
-                                    purchaseOrders={purchaseOrders}
-                                    transactions={transactions}
-                                    rules={planningRules}
-                                    curveTemplates={planningCurveTemplates}
-                                    loading={planningLoading}
-                                    allowCreatePo={false}
-                                    onRefresh={loadPlanningData}
-                                    onRuleSaved={handlePlanningRuleSaved}
-                                    onCreateDraftPo={handleCreatePlanningDraftPo}
-                                />
-                            </React.Suspense>
-                        ) : (
-                            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-5 text-xs font-bold text-slate-500">
-                                Dự báo tham khảo có dữ liệu giá nên chỉ hiển thị khi có quyền xem PO.
-                            </div>
-                        )}
-                    </section>
-                </div>
+            {materialAccess.planning.canView && activeSubTab === 'planning' && projectId && (
+                <React.Suspense fallback={<LazyPanelFallback label="Đang tải kế hoạch vật tư..." />}>
+                    <WorkPlanTab
+                        projectId={projectId}
+                        constructionSiteId={constructionSiteId || undefined}
+                        materialOnly
+                        onOpenWorkPlan={() => navigate(`/da?${new URLSearchParams({ projectId, ...(constructionSiteId ? { siteId: constructionSiteId } : {}), tab: 'work_plan', view: 'work' }).toString()}`)}
+                    />
+                </React.Suspense>
             )}
 
             {/* Material Request Tab — using MaterialRequest from Inventory module */}
@@ -3170,27 +3065,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                     onMoveMaterialRequest={handleMoveMaterialRequest}
                     onOpenRequest={openProjectRequestDetail}
                     onRequestsChanged={() => void loadProjectRequests()}
-                />
-            )}
-
-            {materialAccess.custom.canView && activeSubTab === 'custom' && (
-                <CustomMaterialRequestTab
-                    projectId={projectId}
-                    constructionSiteId={constructionSiteId}
-                    currentUserId={user.id}
-                    currentUserName={user.name || user.username}
-                    canCreate={isAdmin}
-                    canApprove={isAdmin}
-                />
-            )}
-
-            {materialAccess.waste.canView && activeSubTab === 'waste' && (
-                <MaterialWasteTab
-                    computedBoqItems={computedBoqItems}
-                    sortedWasteBoqItems={sortedWasteBoqItems}
-                    wasteChartData={wasteChartData}
-                    formatQuantity={formatQuantity}
-                    formatPercent={formatPercent}
                 />
             )}
 
@@ -3330,16 +3204,6 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             )}
 
             {/* ===== DASHBOARD TAB ===== */}
-            {materialAccess.dashboard.canView && activeSubTab === 'dashboard' && (
-                <MaterialDashboardTab
-                    computedBoqItems={computedBoqItems}
-                    budgetCategoryChartData={budgetCategoryChartData}
-                    topBudgetValueChartData={topBudgetValueChartData}
-                    formatQuantity={formatQuantity}
-                    formatPercent={formatPercent}
-                    formatMoneyShort={fmt}
-                />
-            )}
 
             {/* Request Modal — Integrated from Inventory Module */}
             {isReqModalOpen && (

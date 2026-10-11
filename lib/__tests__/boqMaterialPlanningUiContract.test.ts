@@ -5,15 +5,14 @@ import { describe, expect, it } from 'vitest';
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 describe('G3 BOQ material planning UI contract', () => {
-  it('mounts S01 before the reference forecast and disables its direct PO action', () => {
+  // 12/10/2026 (P1 dọn tab Vật tư): tab Kế hoạch vật tư dùng kế hoạch vật tư tuần/tháng mới; cân đối BOQ (S01) và
+  // dự báo tham khảo không còn gắn trong Dự án (0 kế hoạch đã lưu). Thành phần vẫn giữ để dùng lại nếu cần.
+  it('Kế hoạch vật tư trong Dự án dùng kế hoạch tuần/tháng mới, không còn S01 + dự báo tham khảo', () => {
     const materialTab = read('pages/project/MaterialTab.tsx');
-    expect(materialTab).toContain('BoqMaterialPlanningWorkspace');
-    expect(materialTab.indexOf('<BoqMaterialPlanningWorkspace')).toBeLessThan(
-      materialTab.indexOf('<MaterialPlanningPanel'),
-    );
-    expect(materialTab).toContain('Dự báo tham khảo');
-    expect(materialTab).toContain('allowCreatePo={false}');
-    expect(materialTab).toContain('canViewPo ? (');
+    expect(materialTab).toContain('<WorkPlanTab');
+    expect(materialTab).toContain('materialOnly');
+    expect(materialTab).not.toContain('<BoqMaterialPlanningWorkspace');
+    expect(materialTab).not.toContain('<MaterialPlanningPanel');
   });
 
   it('keeps loading, denied, failed and empty reads visibly distinct', () => {

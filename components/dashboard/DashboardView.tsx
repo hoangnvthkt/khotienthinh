@@ -53,7 +53,7 @@ const DashboardView: React.FC<{
   /** Chỉ một bảng, gắn trên "Hôm nay" như một khối (không tiêu đề lớn, không thanh chọn bảng). */
   only?: DashboardId;
   /** Chuyển sang bảng này (bấm "Mở" trên khối ở Hôm nay); nonce đổi = yêu cầu mới. */
-  focus?: { board: DashboardId; nonce: number } | null;
+  focus?: { board: DashboardId; nonce: number; projectId?: string | null } | null;
   /** Người dùng: bảng đang xem lưu riêng từng tài khoản. */
   storageOwner?: string;
 }> = ({ state, isDark, refreshing = false, refreshNote = null, onRetry, loadMoves, loadDocs, onOpen, only, focus, storageOwner }) => {
@@ -67,7 +67,11 @@ const DashboardView: React.FC<{
   const projects = useMemo(() => (data ? data.projects.filter(project => projectId === 'all' || project.id === projectId) : []), [data, projectId]);
   useEffect(() => { if (projectId !== 'all' && data && !data.projects.some(project => project.id === projectId)) setProjectId('all'); }, [data, projectId]);
   const choose = (id: DashboardId) => { setView(id); writeView(id, storageOwner); };
-  useEffect(() => { if (focus) { setView(focus.board); writeView(focus.board, storageOwner); } }, [focus, storageOwner]);
+  useEffect(() => {
+    if (!focus) return;
+    setView(focus.board); writeView(focus.board, storageOwner);
+    if (focus.projectId) setProjectId(focus.projectId);
+  }, [focus, storageOwner]);
   const [docsView, setDocsView] = useState<DocsView | null>(null);
   // Ngăn đang mở trước khi xem chứng từ (nút ← quay lại).
   const [docsBack, setDocsBack] = useState<DrillDown | null>(null);

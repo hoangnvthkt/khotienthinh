@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -39,6 +39,13 @@ const CenterPage: React.FC = () => {
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+  // /center?board=materials&project=<id>: mở thẳng Bảng điều khiển ở bảng + dự án đó (link từ Dự án → Vật tư).
+  const initialDashboard = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const board = params.get('board');
+    if (board !== 'portfolio' && board !== 'cashflow' && board !== 'materials' && board !== 'debt') return null;
+    return { board, projectId: params.get('project'), nonce: Date.now() } as const;
+  }, [location.search]);
   const outlet = useOutletContext<LayoutOutletContext | undefined>();
   // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
   const playIntro = (location.state as { vccIntro?: boolean } | null)?.vccIntro === true;
@@ -95,6 +102,7 @@ const CenterPage: React.FC = () => {
         titleForRoute={titleForRoute}
         onLogout={onLogout}
         userId={user.id}
+        initialDashboard={initialDashboard}
       />
     </CenterEntrance>
   );
