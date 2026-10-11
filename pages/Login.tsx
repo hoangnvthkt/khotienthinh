@@ -6,6 +6,8 @@ import { useToast } from '../context/ToastContext';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { createPerformanceTrace } from '../lib/performanceTrace';
 import { useAuth } from '../context/AuthContext';
+import { detectInAppBrowser, isIosDevice } from '../lib/attendancePasskey';
+import InAppBrowserNotice from '../components/common/InAppBrowserNotice';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ const Login: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [inAppBrowser] = useState(detectInAppBrowser);
 
   useEffect(() => {
     setMounted(true);
@@ -83,6 +86,15 @@ const Login: React.FC = () => {
 
         {/* Form */}
         <form onSubmit={handleLogin} className="login-form">
+          {inAppBrowser && (
+            <InAppBrowserNotice
+              appName={inAppBrowser}
+              isIos={isIosDevice()}
+              path="/"
+              dark
+              message={`Bạn đang mở Vioo trong ${inAppBrowser}: đăng nhập không được lưu. Hãy mở bằng ${isIosDevice() ? 'Safari' : 'Chrome'}.`}
+            />
+          )}
           {error && (
             <div className="login-error">
               <AlertCircle size={16} />

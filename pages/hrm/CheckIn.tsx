@@ -2,11 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
+  Camera,
   CameraOff,
   CheckCircle,
-  Copy,
+  ChevronDown,
   Crosshair,
-  ExternalLink,
   FilePlus2,
   Fingerprint,
   MapPin,
@@ -19,8 +19,13 @@ import { AttendanceRecord } from '../../types';
 import { getApiErrorMessage } from '../../lib/apiError';
 import { checkInService, MyCheckInContext, PasskeyState } from '../../lib/checkInService';
 import {
-  chromeIntentUrl, detectInAppBrowser, getPunchToken, isIosDevice, isPasskeySupported, registerThisPhone,
+  detectInAppBrowser, getPunchToken, isIosDevice, isPasskeySupported, registerThisPhone,
 } from '../../lib/attendancePasskey';
+import {
+  detectPlatform, isFreshPhoto, loadImageFile, locationPermissionSteps, locationPromptTip,
+  PermissionStatus, queryLocationPermission, shouldUseNativeCamera, stampPhoto,
+} from '../../lib/attendanceCapture';
+import InAppBrowserNotice from '../../components/common/InAppBrowserNotice';
 import {
   CheckInPlace,
   DEFAULT_OFFICE_RADIUS_M,
@@ -84,15 +89,13 @@ const CheckIn: React.FC = () => {
   const [passkeySupported, setPasskeySupported] = useState<boolean | null>(null);
   const inAppBrowser = useMemo(() => detectInAppBrowser(), []);
   const isIos = useMemo(() => isIosDevice(), []);
-  const [linkCopied, setLinkCopied] = useState(false);
-  const copyCheckInLink = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/#/hrm/checkin`);
-      setLinkCopied(true);
-    } catch {
-      window.prompt('Sao chép đường dẫn này rồi dán vào trình duyệt:', `${window.location.origin}/#/hrm/checkin`);
-    }
-  };
+  const platform = useMemo(() => detectPlatform(), []);
+  // Điện thoại: chụp bằng camera của máy nên không phải xin quyền camera mỗi lần chấm.
+  const nativeCamera = useMemo(() => shouldUseNativeCamera(platform), [platform]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [photo, setPhoto] = useState<{ blob: Blob; url: string; capturedAt: number } | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [locationPermission, setLocationPermission] = useState<PermissionStatus>('unknown');
   const [registering, setRegistering] = useState(false);
   const [offerRegister, setOfferRegister] = useState(false);
 
@@ -214,13 +217,20 @@ const CheckIn: React.FC = () => {
   }, []);
 
   // Follow the position for a few seconds and keep the most accurate reading.
-  const startGps = useCallback(() => {
+  const startGps = useCallback(async () => {
     if (!navigator.geolocation) {
       setGps({ status: 'unavailable' });
       return;
     }
     stopGps();
     setGps({ status: 'locating' });
+    // Đã bị chặn thì không hỏi lại vô ích: hiện ngay hướng dẫn mở quyền.
+    const permission = await queryLocationPermission();
+    setLocationPermission(permission);
+    if (permission === 'denied') {
+      setGps({ status: 'denied' });
+      return;
+    }
     let best: { lat: number; lng: number; accuracy: number } | null = null;
     watchIdRef.current = navigator.geolocation.watchPosition(
       position => {
@@ -237,6 +247,7 @@ const CheckIn: React.FC = () => {
       },
       error => {
         stopGps();
+        if (error.code === 1) setLocationPermission('denied');
         setGps(error.code === 1 ? { status: 'denied' } : { status: 'unavailable' });
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
@@ -246,47 +257,67 @@ const CheckIn: React.FC = () => {
 
   useEffect(() => {
     if (!currentEmployee) return undefined;
-    void startCamera();
-    startGps();
+    if (!nativeCamera) void startCamera();
+    void startGps();
     return () => {
       stopCamera();
       stopGps();
     };
-  }, [currentEmployee, startCamera, startGps, stopCamera, stopGps]);
+  }, [currentEmployee, nativeCamera, startCamera, startGps, stopCamera, stopGps]);
+
+  useEffect(() => () => {
+    if (photo) URL.revokeObjectURL(photo.url);
+  }, [photo]);
+
+  const clearPhoto = () => setPhoto(null);
+
+  // Phải gọi trực tiếp trong lúc bấm nút, nếu không trình duyệt chặn mở camera.
+  const openNativeCamera = () => {
+    setResult(null);
+    fileInputRef.current?.click();
+  };
+
+  const onNativePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    // Ảnh vừa chụp mang giờ hiện tại; ảnh cũ chọn từ thư viện thì bị từ chối.
+    const takenAt = file.lastModified > 0 ? file.lastModified : Date.now();
+    if (!isFreshPhoto(takenAt)) {
+      setResult({ ok: false, message: 'Ảnh chấm công phải chụp ngay lúc này. Hãy chụp lại bằng camera.' });
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      const image = await loadImageFile(file);
+      const blob = await stampPhoto(image, image.naturalWidth, image.naturalHeight, selectedPlace?.name || '', {
+        maxEdge: PHOTO_MAX_EDGE, quality: PHOTO_QUALITY, canvas: canvasRef.current || undefined,
+      });
+      setPhoto({ blob, url: URL.createObjectURL(blob), capturedAt: Date.now() });
+    } catch (error) {
+      setResult({ ok: false, message: formatSyncError(error) });
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   // Downscaled, compressed JPEG: about 40–80 KB instead of the full camera frame.
   const capturePhotoBlob = useCallback(async (placeName: string): Promise<Blob> => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !cameraReady) throw new Error('Camera chưa sẵn sàng.');
-
-    const sourceWidth = video.videoWidth || 720;
-    const sourceHeight = video.videoHeight || 960;
-    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(sourceWidth, sourceHeight));
-    const width = Math.round(sourceWidth * scale);
-    const height = Math.round(sourceHeight * scale);
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Không tạo được ảnh chấm công.');
-
-    ctx.setTransform(-1, 0, 0, 1, width, 0);
-    ctx.drawImage(video, 0, 0, width, height);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
-    ctx.fillRect(0, height - 56, width, 56);
-    ctx.fillStyle = '#fff';
-    ctx.font = '600 15px sans-serif';
-    ctx.fillText(new Date().toLocaleString('vi-VN'), 14, height - 33);
-    ctx.fillText(placeName, 14, height - 12);
-
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', PHOTO_QUALITY));
-    if (!blob?.size) throw new Error('Ảnh chấm công rỗng.');
-    return blob;
+    return stampPhoto(video, video.videoWidth || 720, video.videoHeight || 960, placeName, {
+      maxEdge: PHOTO_MAX_EDGE, quality: PHOTO_QUALITY, mirror: true, canvas,
+    });
   }, [cameraReady]);
 
   const punch = async () => {
     if (!currentEmployee || !selectedPlace || gps.status !== 'ready') return;
+    if (nativeCamera && (!photo || !isFreshPhoto(photo.capturedAt))) {
+      clearPhoto();
+      setResult({ ok: false, message: 'Ảnh đã chụp quá 2 phút. Hãy chụp lại.' });
+      return;
+    }
     setProcessing(true);
     setResult(null);
     setOfferRegister(false);
@@ -301,7 +332,7 @@ const CheckIn: React.FC = () => {
           throw error;
         }
       }
-      const imageBlob = await capturePhotoBlob(selectedPlace.name);
+      const imageBlob = nativeCamera && photo ? photo.blob : await capturePhotoBlob(selectedPlace.name);
       const saved = await checkInService.punch({
         employeeId: currentEmployee.id,
         lat: gps.lat,
@@ -312,6 +343,7 @@ const CheckIn: React.FC = () => {
         punchToken,
       });
       setLastSavedRecord(saved);
+      clearPhoto();
       const isFirst = Number(saved.eventCount) <= 1;
       const time = isFirst ? saved.checkIn : saved.checkOut;
       setResult({ ok: true, message: `${isFirst ? 'Đã chấm công vào' : 'Đã chấm công ra'} lúc ${time} tại ${selectedPlace.name}` });
@@ -386,13 +418,13 @@ const CheckIn: React.FC = () => {
 
   // Why the button cannot be used right now, in the order the person can fix it.
   // Inside Zalo / Facebook… nothing else can be fixed until the page is opened in a real browser.
-  const blocker: { text: string; proposal?: boolean; inApp?: boolean } | null =
+  const blocker: { text: string; proposal?: boolean; inApp?: boolean; locationHelp?: boolean } | null =
     needsPasskey && passkeySupported === false && inAppBrowser ? {
       text: `Bạn đang mở Vioo trong ${inAppBrowser}. Trình duyệt của ${inAppBrowser} không hỗ trợ vân tay / Face ID nên không chấm công được. Hãy mở bằng ${isIos ? 'Safari' : 'Chrome'}.`,
       inApp: true,
     }
     : cameraError ? { text: cameraError }
-      : gps.status === 'denied' ? { text: 'Chưa cho phép truy cập vị trí. Mở cài đặt trình duyệt để cấp quyền vị trí.' }
+      : gps.status === 'denied' ? { text: 'Chưa cho phép truy cập vị trí.', locationHelp: true }
         : gps.status === 'unavailable' ? { text: 'Không lấy được vị trí GPS. Bật định vị rồi bấm làm mới.' }
           : gps.status === 'locating' ? { text: 'Đang xác định vị trí…' }
             : !accuracyOk ? { text: `GPS chưa đủ chính xác (±${gps.accuracy} m). Ra chỗ thoáng rồi bấm làm mới.` }
@@ -403,7 +435,7 @@ const CheckIn: React.FC = () => {
                     : 'Bạn đang ngoài phạm vi chấm công.',
                   proposal: true,
                 }
-                  : !cameraReady ? { text: 'Đang mở camera…' }
+                  : !nativeCamera && !cameraReady ? { text: 'Đang mở camera…' }
                     : needsPasskey && passkeySupported === false
                       ? { text: `Điện thoại chưa bật khóa màn hình (vân tay, khuôn mặt hoặc mã PIN) hoặc trình duyệt đã cũ. Vào Cài đặt → Bảo mật để bật khóa màn hình, cập nhật ${isIos ? 'iOS' : 'Chrome'}, rồi mở lại trang này. Vẫn không được: báo HCNS để được miễn tạm thời.` }
                       : needsPasskey && passkey && !hasActiveDevice && hasPendingDevice
@@ -413,6 +445,8 @@ const CheckIn: React.FC = () => {
   const showRegister = !blocker && (mustRegister || offerRegister);
 
   const actionLabel = nextAction === 'check_in' ? 'Chấm công vào' : 'Chấm công ra';
+  const needsPhoto = nativeCamera && !photo;
+  const promptTip = gps.status === 'locating' && locationPermission === 'prompt' ? locationPromptTip(platform) : null;
 
   return (
     <div className="max-w-lg mx-auto flex flex-col gap-3 pb-2">
@@ -427,6 +461,10 @@ const CheckIn: React.FC = () => {
         </div>
       </div>
 
+      {inAppBrowser && !blocker?.inApp && (
+        <InAppBrowserNotice appName={inAppBrowser} isIos={isIos} path="/hrm/checkin" />
+      )}
+
       <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${selectedPlace ? 'bg-mint-100 text-mint-700 dark:bg-mint-900/40 dark:text-mint-300' : 'bg-slate-100 text-slate-400 dark:bg-slate-800'}`}>
@@ -434,20 +472,26 @@ const CheckIn: React.FC = () => {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-black text-slate-800 dark:text-white">
-              {selectedPlace ? selectedPlace.name : match?.status === 'outside' ? 'Ngoài phạm vi chấm công' : 'Đang xác định địa điểm'}
+              {selectedPlace ? selectedPlace.name
+                : match?.status === 'outside' ? 'Ngoài phạm vi chấm công'
+                  : gps.status === 'denied' ? 'Chưa có quyền vị trí'
+                    : gps.status === 'unavailable' ? 'Không lấy được vị trí'
+                      : 'Đang xác định địa điểm'}
             </p>
             <p className="text-[11px] font-bold text-slate-500">
               {selectedPlace
                 ? `Trong phạm vi · cách ${formatDistance(selectedPlace.distanceM as number)}`
                 : match?.status === 'outside' && match.nearest
                   ? `Gần nhất: ${match.nearest.name} · ${formatDistance(match.nearest.distanceM as number)}`
-                  : 'Đang lấy GPS'}
+                  : gps.status === 'denied' ? 'Bật quyền vị trí theo hướng dẫn bên dưới'
+                    : gps.status === 'unavailable' ? 'Bật định vị rồi bấm nút bên phải'
+                      : 'Đang lấy GPS'}
               {gps.status === 'ready' && ` · GPS ±${gps.accuracy} m`}
             </p>
           </div>
           <button
             type="button"
-            onClick={startGps}
+            onClick={() => void startGps()}
             className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
             title="Lấy lại vị trí"
             aria-label="Lấy lại vị trí"
@@ -455,6 +499,17 @@ const CheckIn: React.FC = () => {
             <Crosshair size={16} className={gps.status === 'locating' ? 'animate-spin text-mint-500' : 'text-slate-500'} />
           </button>
         </div>
+        {gps.status === 'denied' && (
+          <details className="group mt-2 border-t border-slate-100 pt-2 dark:border-slate-800" open>
+            <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-black text-teal-700 dark:text-teal-300">
+              Cách bật quyền vị trí trên {platform === 'ios' ? 'iPhone' : platform === 'android' ? 'Android' : 'máy tính'}
+              <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+            </summary>
+            <ol className="mt-1.5 list-decimal space-y-1 pl-4 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              {locationPermissionSteps(platform).map(step => <li key={step}>{step}</li>)}
+            </ol>
+          </details>
+        )}
         {insidePlaces.length > 1 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {insidePlaces.map(place => (
@@ -483,7 +538,36 @@ const CheckIn: React.FC = () => {
           style={{ transform: 'scaleX(-1)' }}
         />
         <canvas ref={canvasRef} className="hidden" />
-        {cameraReady ? (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="user"
+          className="hidden"
+          onChange={event => void onNativePhoto(event)}
+        />
+        {nativeCamera ? (
+          photo ? (
+            <>
+              <img src={photo.url} alt="Ảnh chấm công vừa chụp" className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={openNativeCamera}
+                disabled={processing}
+                className="absolute right-2 top-2 inline-flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-2 text-xs font-black text-slate-900 shadow disabled:opacity-40"
+              >
+                <Camera size={14} /> Chụp lại
+              </button>
+            </>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+              {photoBusy
+                ? <RefreshCw size={36} className="mb-2 animate-spin text-slate-400" />
+                : <Camera size={36} className="mb-2 text-slate-500" />}
+              <p className="text-sm font-bold text-slate-400">{photoBusy ? 'Đang xử lý ảnh…' : 'Chụp ảnh khuôn mặt để chấm công'}</p>
+            </div>
+          )
+        ) : cameraReady ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="h-[72%] aspect-[3/4] rounded-[50%] border-2 border-white/70 shadow-[0_0_0_9999px_rgba(2,6,23,0.25)]" />
           </div>
@@ -523,27 +607,15 @@ const CheckIn: React.FC = () => {
       )}
 
       <div className="sticky bottom-24 lg:bottom-4 z-10 space-y-2 rounded-2xl bg-white/95 p-2 shadow-lg backdrop-blur dark:bg-slate-900/95">
-        {blocker && (
-          <p className={`px-1 text-xs font-bold ${blocker.proposal || blocker.inApp ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
+        {blocker?.inApp ? (
+          <InAppBrowserNotice appName={inAppBrowser || 'ứng dụng này'} isIos={isIos} path="/hrm/checkin" message={blocker.text} />
+        ) : blocker && (
+          <p className={`px-1 text-xs font-bold ${blocker.proposal || blocker.locationHelp ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`}>
             {blocker.text}
           </p>
         )}
-        {blocker?.inApp && (
-          <div className="space-y-2 px-1">
-            {!isIos && (
-              <a href={chromeIntentUrl(window.location.origin)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-leaf-600 py-3 text-sm font-black text-white active:scale-[0.98]">
-                <ExternalLink size={16} /> Mở bằng Chrome
-              </a>
-            )}
-            <button type="button" onClick={() => void copyCheckInLink()}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">
-              <Copy size={15} /> {linkCopied ? 'Đã sao chép, dán vào ' + (isIos ? 'Safari' : 'Chrome') : 'Sao chép đường dẫn chấm công'}
-            </button>
-            <p className="text-[11px] font-semibold text-slate-500">
-              Hoặc bấm {isIos ? '•••' : '⋮'} ở góc trên màn hình → chọn “Mở bằng trình duyệt”. Lần sau hãy mở Vioo từ {isIos ? 'Safari' : 'Chrome'} hoặc biểu tượng Vioo trên màn hình chính.
-            </p>
-          </div>
+        {promptTip && (
+          <p className="px-1 text-[11px] font-bold text-teal-700 dark:text-teal-300">{promptTip}</p>
         )}
         {nextAction === 'check_in' && !blocker && !showRegister && (todayRecord === null) && currentTime.getHours() >= 12 && (
           <p className="px-1 text-[11px] font-bold text-slate-500">
@@ -578,6 +650,16 @@ const CheckIn: React.FC = () => {
             <FilePlus2 size={18} />
             Gửi đề xuất chấm công bù
           </Link>
+        ) : needsPhoto ? (
+          <button
+            type="button"
+            onClick={openNativeCamera}
+            disabled={photoBusy || Boolean(blocker) || !selectedPlace}
+            className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-xl bg-leaf-600 px-4 text-base font-black text-white shadow-lg shadow-leaf-600/20 hover:bg-leaf-700 disabled:opacity-40 disabled:shadow-none"
+          >
+            {photoBusy ? <RefreshCw size={20} className="animate-spin" /> : <Camera size={20} />}
+            {photoBusy ? 'Đang xử lý ảnh…' : `Chụp ảnh ${actionLabel.toLowerCase()}`}
+          </button>
         ) : (
           <button
             type="button"
