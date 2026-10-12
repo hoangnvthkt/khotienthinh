@@ -27,6 +27,7 @@ import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
 import { buildDailyLogPrefill, shortDate } from '../../lib/dailyLogPrefill';
 import { recordSuggestionEvent } from '../../lib/uiSuggestionEvents';
+import { PrefillGhost } from '../../components/common/PrefillGhost';
 import { DailyLogEngineerWorkspace } from '../../components/project/daily-log/DailyLogEngineerWorkspace';
 import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
 import { DailyLogRevisionActions } from '../../components/project/daily-log/DailyLogRevisionActions';
@@ -1172,6 +1173,8 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     // Form state
     const [fDate, setFDate] = useState(new Date().toISOString().split('T')[0]);
     const [fWeather, setFWeather] = useState<WeatherType>('sunny');
+    // Gợi ý "công việc hôm nay theo kế hoạch hôm qua" đã bị người ghi bấm Bỏ.
+    const [planDismissed, setPlanDismissed] = useState(false);
     const [fDesc, setFDesc] = useState('');
     const [fAcceptanceDesc, setFAcceptanceDesc] = useState('');
     const [fWorkSafetyOk, setFWorkSafetyOk] = useState(true);
@@ -1336,6 +1339,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         setEditing(null);
         setFDate(new Date().toISOString().split('T')[0]);
         setFWeather('sunny'); setFDesc(''); setFIssues('');
+        setPlanDismissed(false);
         setFAcceptanceDesc('');
         setFNextDayPlan('');
         setFStaffIds([]);
@@ -3680,6 +3684,21 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nội dung công việc thi công</label>
+                                {formPrefill?.plan && !planDismissed && !fDesc.trim() && (
+                                    <div className="mb-2">
+                                        <PrefillGhost heading="Kế hoạch hôm qua" title="công việc thi công hôm nay"
+                                            rows={formPrefill.plan.text.split('\n').map(row => row.trim()).filter(Boolean)}
+                                            sourceLabel={`nhật ký ${shortDate(formPrefill.plan.date)}${formPrefill.plan.byMe ? ' của bạn' : ''}`}
+                                            onAccept={() => {
+                                                setFDesc(formPrefill.plan!.text);
+                                                recordSuggestionEvent({ screen: 'daily_log', field: 'description', outcome: 'accepted', suggested: 1, accepted: 1, source: { logId: formPrefill.plan!.logId, date: formPrefill.plan!.date } });
+                                            }}
+                                            onDismiss={() => {
+                                                setPlanDismissed(true);
+                                                recordSuggestionEvent({ screen: 'daily_log', field: 'description', outcome: 'dismissed', suggested: 1, source: { logId: formPrefill.plan!.logId, date: formPrefill.plan!.date } });
+                                            }} />
+                                    </div>
+                                )}
                                 <VoiceTextarea
                                     value={fDesc}
                                     onChange={setFDesc}

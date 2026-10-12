@@ -12,9 +12,15 @@ export interface DailyLogPrefill {
   /** Thời tiết theo nhật ký gần nhất của công trường (có thể là nhật ký khác nguồn nhân công). */
   weather: WeatherType;
   weatherDate: string;
+  /** "Kế hoạch thi công ngày hôm sau" đã ghi ở nhật ký trước → gợi ý cho "Nội dung công việc thi công" hôm nay. */
+  plan: { text: string; logId: string; date: string; byMe: boolean } | null;
 }
 
+/** Kế hoạch chỉ còn đúng trong vài ngày (qua cuối tuần vẫn dùng được); xa hơn thì không gợi ý. */
+const PLAN_MAX_GAP_DAYS = 3;
+
 const day = (value?: string | null) => String(value || '').slice(0, 10);
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 864e5);
 
 /** Chỉ giữ các cột nghiệp vụ: bỏ id, liên kết nhật ký cũ và thành tiền (tính lại theo số mới). */
 const laborRow = (row: DailyLogLabor): DailyLogLabor => ({
@@ -58,7 +64,13 @@ export const buildDailyLogPrefill = (logs: DailyLog[], input: { date: string; us
   const withRows = earlier.filter(log => usableLabor(log).length || usableMachines(log).length);
   const mine = input.userId ? withRows.find(log => log.createdById === input.userId) : undefined;
   const source = mine || withRows[0] || earlier[0];
+  const planned = earlier.filter(log => String(log.nextDayPlan || '').trim() && daysBetween(day(log.date), date) <= PLAN_MAX_GAP_DAYS);
+  const planSource = (input.userId ? planned.find(log => log.createdById === input.userId) : undefined) || planned[0];
   return {
+    plan: planSource ? {
+      text: String(planSource.nextDayPlan).trim(), logId: planSource.id, date: day(planSource.date),
+      byMe: Boolean(input.userId && planSource.createdById === input.userId),
+    } : null,
     sourceLogId: source.id,
     sourceDate: day(source.date),
     byMe: Boolean(input.userId && source.createdById === input.userId),

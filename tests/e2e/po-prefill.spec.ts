@@ -10,7 +10,11 @@ const VENDORS = [{ id: 'v1', name: 'Hoàng Gia', taxCode: null, recentOrders: 7 
 const ITEMS = [{ id: 'i1', name: 'Bê tông M300', sku: 'BT300', unit: 'm³', purchaseUnit: null, purchaseFactor: null, inBoq: true, boqQty: 460, orderedQty: 120 }];
 const PREFILL = {
   order: { poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08', vatRate: 8, purchaseMode: 'multiple', projectId: 'p1', constructionSiteId: null, targetWarehouseId: 'w1' },
-  lines: [{ itemId: 'i1', specification: 'M300 R28', unit: 'm³', stockUnit: 'm³', factor: 1, unitPrice: 1250000, poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08' }],
+  lines: [
+    { itemId: 'i1', itemName: 'Bê tông M300', sku: 'BT300', orders: 3, specification: 'M300 R28', unit: 'm³', stockUnit: 'm³', factor: 1, unitPrice: 1250000, poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08' },
+    // Mã không nằm trong BOQ dự án (ô tìm không trả về): vẫn thêm được từ nhóm "Đã mua của NCC".
+    { itemId: 'i2', itemName: 'Thép D16', sku: 'TD16', orders: 1, specification: 'CB400', unit: 'kg', stockUnit: 'kg', factor: 1, unitPrice: 15500, poNumber: 'PO-600', title: null, orderDate: '2026-09-20' },
+  ],
 };
 
 test.beforeEach(async ({ page }) => {
@@ -72,6 +76,28 @@ test('dòng vật tư: quy cách và đơn giá in mờ theo dòng mua gần nh�
   await expect(page.getByText('Lệch +12% so với PO-627 (8/10)')).toBeVisible();
   await price.fill('1230000');
   await expect(page.getByText(/Lệch/)).toHaveCount(0);
+});
+
+test('ô thêm vật tư: vật tư đã mua của NCC lên đầu, hay mua trước; bấm là thêm dòng; gõ tìm thì nhóm ẩn', async ({ page }) => {
+  await page.getByLabel('Thêm vật tư').click();
+  const group = page.getByTestId('vendor-items');
+  await expect(group).toContainText('Đã mua của Hoàng Gia · 90 ngày');
+  const options = group.getByRole('option');
+  await expect(options).toHaveCount(2);
+  await expect(options.nth(0)).toContainText('Bê tông M300');
+  await expect(options.nth(0)).toContainText('3 đơn · gần nhất 8/10');
+  await expect(options.nth(1)).toContainText('Thép D16');
+  await expect(options.nth(1)).toContainText('PO-600 (20/9)');
+  // Vật tư BOQ không lặp lại mã đã nằm trong nhóm NCC.
+  await expect(page.getByRole('listbox').getByRole('option', { name: /Bê tông M300/ })).toHaveCount(1);
+  await options.nth(1).click();
+  await expect(page.getByLabel('Quy cách Thép D16')).toHaveAttribute('placeholder', 'CB400');
+  await expect(page.getByLabel('Đơn giá Thép D16')).toHaveAttribute('placeholder', '15.500');
+  await page.getByLabel('Thêm vật tư').click();
+  await expect(group.getByRole('option').nth(1)).toContainText('Đã có 1 dòng');
+  await page.getByLabel('Thêm vật tư').fill('bê');
+  await expect(group).toHaveCount(0);
+  await expect(page.getByRole('option', { name: /Bê tông M300/ })).toBeVisible();
 });
 
 test('quy cách khác hẳn thì không gợi ý giá', async ({ page, isMobile }) => {

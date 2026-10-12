@@ -8,7 +8,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -33,6 +33,7 @@ import SettingsProjectRoomTemplates from './settings/SettingsProjectRoomTemplate
 import SettingsUserPermissionTemplates from './settings/SettingsUserPermissionTemplates';
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import SettingsAttendanceLocations from './settings/SettingsAttendanceLocations';
+import SettingsSuggestionStats from './settings/SettingsSuggestionStats';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -1138,6 +1139,7 @@ const Settings: React.FC = () => {
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
+    { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
   ].filter(tab => tab.rolesOnly
@@ -1154,6 +1156,7 @@ const Settings: React.FC = () => {
   const activeSettingsTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'account';
   const activeFeatureReadOnly = activeSettingsTab !== 'account'
     && activeSettingsTab !== 'attendance-locations'
+    && activeSettingsTab !== 'suggestion-stats'
     && activeSettingsTab !== 'release-notes'
     && activeSettingsTab !== 'role-templates'
     && activeSettingsTab !== 'project-room-templates'
@@ -2427,6 +2430,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'ai-learning' && (
             <fieldset disabled={activeFeatureReadOnly}><SettingsAiLearning actorId={currentUser.id} /></fieldset>
+          )}
+
+          {activeSettingsTab === 'suggestion-stats' && (
+            <SettingsSuggestionStats />
           )}
     </div>
   );
