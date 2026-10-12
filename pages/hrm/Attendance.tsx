@@ -6,7 +6,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Clock, Users, Download,
   CheckCircle, XCircle, Sun, Coffee, Plane, Filter, Search,
   Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle, Trash2, Star, Plus,
-  MapPin, Eye, Save, X, Edit3, Camera, ShieldCheck, RefreshCw
+  MapPin, Eye, Save, X, Edit3, Camera, ShieldCheck, RefreshCw, CalendarDays
 } from 'lucide-react';
 import {
   AttendanceStatus, AttendanceRecord,
@@ -26,6 +26,7 @@ import { loadXlsx } from '../../lib/loadXlsx';
 import { attendanceProposalService } from '../../lib/attendanceProposalService';
 import { getApiErrorMessage } from '../../lib/apiError';
 import AttendancePhoto from '../../components/hrm/AttendancePhoto';
+import MyAttendanceCalendar from '../../components/hrm/MyAttendanceCalendar';
 
 const STATUS_CYCLE: AttendanceStatus[] = ['present', 'absent', 'half_day', 'leave', 'holiday', 'business_trip'];
 
@@ -93,7 +94,14 @@ const Attendance: React.FC = () => {
   const reviewProposalId = searchParams.get('proposal');
   const openProposals = searchParams.get('tab') === 'proposals';
   const openProposalForm = openProposals && !reviewProposalId;
-  const [activeTab, setActiveTab] = useState<'summary' | 'timesheet' | 'proposals' | 'devices'>(openProposals ? 'proposals' : 'timesheet');
+  // Người không quản lý chấm công mở trang thấy ngay lịch của mình; HR vẫn mặc định Bảng công.
+  const [activeTab, setActiveTab] = useState<'mine' | 'summary' | 'timesheet' | 'proposals' | 'devices'>(
+    openProposals ? 'proposals' : searchParams.get('tab') === 'mine' || !canViewAllAttendance ? 'mine' : 'timesheet');
+
+  // Không có hồ sơ nhân sự (VD tài khoản quản trị) thì không có lịch riêng.
+  useEffect(() => {
+    if (activeTab === 'mine' && employees.length > 0 && !currentEmployee) setActiveTab('timesheet');
+  }, [activeTab, employees.length, currentEmployee]);
 
   // Proposal state
   const [showProposalForm, setShowProposalForm] = useState(openProposalForm);
@@ -860,6 +868,12 @@ const Attendance: React.FC = () => {
 
       {/* Tab Switcher */}
       <div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-2xl p-1">
+        {currentEmployee && (
+          <button onClick={() => setActiveTab('mine')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'mine' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            <CalendarDays size={14} className="inline mr-1.5" />Lịch của tôi
+          </button>
+        )}
         <button onClick={() => setActiveTab('summary')}
           className={`px-4 py-2 rounded-xl text-xs font-black transition ${activeTab === 'summary' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
           <Clock size={14} className="inline mr-1.5" />Tổng hợp công
@@ -882,6 +896,19 @@ const Attendance: React.FC = () => {
           </button>
         )}
       </div>
+
+      {activeTab === 'mine' && currentEmployee && (
+        <MyAttendanceCalendar
+          employeeId={currentEmployee.id}
+          onRequestMakeup={date => {
+            resetProposalForm();
+            setPTargetEmployeeId(currentEmployee.id);
+            setPDate(date);
+            setActiveTab('proposals');
+            setShowProposalForm(true);
+          }}
+        />
+      )}
 
       {activeTab === 'summary' && (
         <AttendanceSummaryPanel
