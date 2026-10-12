@@ -210,6 +210,10 @@ export const procurementInboxService = {
   vendors(search?: string) {
     return call<ProcurementVendor[]>('list_procurement_vendors_v1', { p_search: search || null });
   },
+  /** Gợi ý in mờ "Như đơn trước": đầu đơn gần nhất + dòng mua gần nhất (90 ngày) của NCC. */
+  vendorPrefill(vendorId: string) {
+    return call<ProcurementVendorPrefill>('get_procurement_vendor_prefill_v1', { p_vendor_id: vendorId });
+  },
   /** Phạm vi Mua hàng của người công trường (không có quyền phòng Mua hàng): dự án được xem đơn, lập được mua nóng không. */
   siteScope() {
     return call<ProcurementSiteScope>('get_procurement_site_scope_v1', {});
@@ -277,6 +281,15 @@ export const procurementInboxService = {
 
 export type ProcurementSourceRef = { sourceType: ProcurementSourceType; sourceId: string };
 export interface ProcurementVendor { id: string; name: string; taxCode: string | null; recentOrders: number }
+export interface ProcurementVendorPrefillOrder {
+  poNumber: string | null; title?: string | null; orderDate: string | null; vatRate: number | null; purchaseMode: 'single' | 'multiple' | null;
+  projectId: string | null; constructionSiteId: string | null; targetWarehouseId: string | null;
+}
+export interface ProcurementVendorPrefillLine {
+  itemId: string; specification: string; unit: string | null; stockUnit: string | null; factor: number; unitPrice: number;
+  poNumber: string | null; title?: string | null; orderDate: string | null;
+}
+export interface ProcurementVendorPrefill { order: ProcurementVendorPrefillOrder | null; lines: ProcurementVendorPrefillLine[] }
 export type ProcurementOrderStage = 'drafting' | 'ordered' | 'delivering' | 'received';
 export interface ProcurementSiteScope {
   procurementView: boolean;
