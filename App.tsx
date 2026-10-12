@@ -95,22 +95,23 @@ const AppDataWarmup: React.FC = () => {
       return;
     }
 
+    // Dự án / Mua hàng chỉ cần danh bạ nhân sự (hrm-core), không phải cả module Nhân sự (lương, chấm công…).
     if (pathname.startsWith('/da')) {
-      setActiveRealtimeModules(['wms-core', 'admin', 'hrm']);
+      setActiveRealtimeModules(['wms-core', 'admin', 'hrm-core']);
       Promise.all([
         loadModuleData('da'),
         loadModuleData('admin'),
-        loadModuleData('hrm'),
+        loadModuleData('hrm-core'),
       ]).catch(err => console.warn('Project lazy load failed:', err));
       return;
     }
 
     if (pathname.startsWith('/procurement')) {
-      setActiveRealtimeModules(['wms-core', 'admin', 'hrm']);
+      setActiveRealtimeModules(['wms-core', 'admin', 'hrm-core']);
       Promise.all([
         loadModuleData('wms-core'),
         loadModuleData('admin'),
-        loadModuleData('hrm'),
+        loadModuleData('hrm-core'),
       ]).catch(err => console.warn('Procurement lazy load failed:', err));
       return;
     }

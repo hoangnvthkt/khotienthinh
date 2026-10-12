@@ -58,6 +58,7 @@ import { canAccessRoute } from '../lib/routeAccess';
 import { parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { warehouseSiteBindingService } from '../lib/warehouseSiteBindingService';
 import { readOfficePermissionFocus } from '../lib/office/officeAdminNavigation';
+import { supabase } from '../lib/supabase';
 
 type MaterialCatalogForm = {
   sku: string;
@@ -289,24 +290,35 @@ const Settings: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Ảnh đại diện lưu ở kho ảnh (bucket avatars), cột users.avatar chỉ giữ URL — như Hồ sơ của tôi. Trước 12/10/2026
+  // nút này lưu nguyên base64 vào users.avatar (6 người, 5,8 MB) → mọi trang nạp danh sách người dùng tải theo.
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string;
-      setAvatarUploading(true);
-      try {
-        await updateUser({ ...currentUser, avatar: base64 });
-        toast.success('Đã cập nhật ảnh đại diện');
-      } catch (error: any) {
-        logApiError('settings.avatarUpload', error);
-        toast.error('Không thể cập nhật ảnh đại diện', getApiErrorMessage(error, 'Không thể cập nhật ảnh đại diện trên Supabase.'));
-      } finally {
-        setAvatarUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 2 * 1024 * 1024) {
+      toast.warning('Ảnh quá lớn', 'Dung lượng tối đa là 2MB.');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.warning('File không hợp lệ', 'Chỉ chấp nhận JPG, PNG hoặc WEBP.');
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `employees/${currentUser.id}_${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { cacheControl: '3600', upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+      await updateUser({ ...currentUser, avatar: urlData.publicUrl });
+      toast.success('Đã cập nhật ảnh đại diện');
+    } catch (error: any) {
+      logApiError('settings.avatarUpload', error);
+      toast.error('Không thể cập nhật ảnh đại diện', getApiErrorMessage(error, 'Không thể cập nhật ảnh đại diện trên Supabase.'));
+    } finally {
+      setAvatarUploading(false);
+    }
   };
 
   // Warehouse Handlers
