@@ -1,60 +1,33 @@
 import React from 'react';
-import { AlertTriangle, Clock, Package, TrendingUp } from 'lucide-react';
 import type { ProjectMaterialTabKey } from '../../../lib/projectTabPermissions';
 
-const AiInsightPanel = React.lazy(() => import('../../AiInsightPanel'));
-
-type MaterialBoqStats = {
-    boqCount: number;
-    totalBudget: number;
-    totalActual: number;
-    diff: number;
-    overWaste: number;
-    overBudget: number;
-    totalWasteValue: number;
-    pendingReq: number;
-};
-
 type MaterialTabHeaderProps = {
-    constructionSiteId?: string;
-    materialBoqStats: MaterialBoqStats;
-    totalRequestCount: number;
     visibleMaterialTabs: Array<{ key: ProjectMaterialTabKey }>;
     activeSubTab: ProjectMaterialTabKey;
     tabLabels: Record<ProjectMaterialTabKey, string>;
     tabCounts: Record<ProjectMaterialTabKey, number>;
-    formatMoneyShort: (value: number) => string;
     onTabChange: (tab: ProjectMaterialTabKey) => void;
+    /** Nút phụ bên phải (Đơn hàng, Mua nóng ở Mua hàng; Nhập đầu kỳ). */
     actions?: React.ReactNode;
 };
 
+// Một hàng: tab con bên trái (cuộn ngang trên màn hẹp), nút phụ bên phải.
 export const MaterialTabHeader: React.FC<MaterialTabHeaderProps> = ({
-    constructionSiteId,
-    materialBoqStats,
-    totalRequestCount,
     visibleMaterialTabs,
     activeSubTab,
     tabLabels,
     tabCounts,
-    formatMoneyShort,
     onTabChange,
     actions,
 }) => (
-    <>
-        <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-700 dark:text-white">Quản lý vật tư</h3>
-            <div className="flex items-center gap-2">
-                {actions}
-                <React.Suspense fallback={null}>
-                    <AiInsightPanel module="material" siteId={constructionSiteId} />
-                </React.Suspense>
-            </div>
-        </div>
-
-        <div className="flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div role="tablist" aria-label="Vật tư" className="flex min-w-0 gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 [&::-webkit-scrollbar]:hidden">
             {visibleMaterialTabs.map(tab => (
                 <button
                     key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeSubTab === tab.key}
                     onClick={() => onTabChange(tab.key)}
                     className={`flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium transition-all ${activeSubTab === tab.key ? 'bg-teal-700 text-white shadow-sm font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
                 >
@@ -62,5 +35,6 @@ export const MaterialTabHeader: React.FC<MaterialTabHeaderProps> = ({
                 </button>
             ))}
         </div>
-    </>
+        {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    </div>
 );

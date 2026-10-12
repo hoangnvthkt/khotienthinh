@@ -107,6 +107,8 @@ export interface CenterShellProps {
   onLogout?: () => void;
   /** Mã người dùng: tiện ích giao diện (cột việc, dự án đang chọn) lưu riêng từng tài khoản. */
   userId?: string;
+  /** Mở thẳng Bảng điều khiển ở một bảng (và dự án) — link từ module khác; nonce đổi = yêu cầu mới. */
+  initialDashboard?: { board: DashboardId; projectId?: string | null; nonce: number } | null;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -118,7 +120,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   person, company, isDark, onToggleTheme, onOpenMenu, mobileNotifications, canOpenRoute, onNavigate: navigateTo, now: nowProp,
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
-  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId,
+  loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
@@ -246,7 +248,13 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [dashboardBusy, setDashboardBusy] = useState(false);
   const [dashboardNote, setDashboardNote] = useState<string | null>(null);
   // Bấm "Mở" trên khối bảng ở Hôm nay → tab Bảng điều khiển mở đúng bảng đó.
-  const [dashboardFocus, setDashboardFocus] = useState<{ board: DashboardId; nonce: number } | null>(null);
+  const [dashboardFocus, setDashboardFocus] = useState<{ board: DashboardId; nonce: number; projectId?: string | null } | null>(null);
+  useEffect(() => {
+    if (!initialDashboard || !loadDashboard) return;
+    setDashboardFocus(initialDashboard);
+    setActiveTab(DASHBOARD_TAB.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDashboard?.nonce]);
   const dashboardWanted = activeTab === DASHBOARD_TAB.id || dashboard !== null || boardOnToday;
   useEffect(() => {
     if (!loadDashboard || !dashboardWanted) return undefined;

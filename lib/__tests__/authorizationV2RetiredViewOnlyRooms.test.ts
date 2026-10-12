@@ -60,8 +60,8 @@ describe('Authorization V2 retired view-only Rooms', () => {
     const subcontract = read('pages/project/SubcontractTab.tsx');
     const dashboard = read('pages/ProjectDashboard.tsx');
 
-    expect(material).toContain('canCreate={isAdmin}');
-    expect(material).toContain('canApprove={isAdmin}');
+    // 12/10/2026: tab Phi tiêu chuẩn (0 phiếu, chỉ Admin lập/duyệt) gỡ khỏi Dự án → không còn bề mặt ghi.
+    expect(material).not.toContain('<CustomMaterialRequestTab');
     expect(boq).toContain('const canMutate = isAdminUser;');
     // 05/10: nghiệm thu thanh toán HĐ thầu phụ chuyển sang Tài chính → Thầu phụ; tab Nhà thầu chỉ xem với mọi người, kể cả Admin.
     expect(subcontract).toContain('const canMutate = false;');

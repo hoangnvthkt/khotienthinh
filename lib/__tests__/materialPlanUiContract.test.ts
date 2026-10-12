@@ -35,10 +35,11 @@ describe('G4 material plan UI contract', () => {
     expect(detail).toContain('Lịch sử phiên bản');
   });
 
-  it('passes permissions, warehouse context and request navigation from MaterialTab', () => {
+  it('tab Kế hoạch vật tư chỉ hiện kế hoạch vật tư, nút sang kế hoạch thi công mở tab Kế hoạch', () => {
     const materialTab = read('pages/project/MaterialTab.tsx');
-    expect(materialTab).toContain('canManage={canEditPlanning}');
-    expect(materialTab).toContain('defaultSiteWarehouseId={defaultSiteWarehouseId}');
-    expect(materialTab).toContain('onOpenRequest={openMaterialPlanRequest}');
+    const workPlan = read('pages/project/WorkPlanTab.tsx');
+    expect(materialTab).toContain("tab: 'work_plan', view: 'work'");
+    expect(workPlan).toContain('{!materialOnly && <div');
+    expect(workPlan).toContain('onOpenWorkPlan={onOpenWorkPlan || (() => setView(\'work\'))}');
   });
 });
