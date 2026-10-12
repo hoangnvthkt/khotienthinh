@@ -59,13 +59,9 @@ export const buildWorkflowDependencyUrl = (input: {
   constructionSiteId?: string | null;
 }): string | null => {
   if (input.dependency.type !== 'purchase_order' || !input.dependency.id) return null;
-  const params = new URLSearchParams();
-  if (input.projectId) params.set('projectId', input.projectId);
-  if (input.constructionSiteId) params.set('siteId', input.constructionSiteId);
-  params.set('tab', 'material');
-  params.set('materialTab', 'po');
-  params.set('poId', input.dependency.id);
-  return `/da?${params.toString()}`;
+  // Mở thẳng đơn ở Mua hàng (tab PO trong Dự án đã chuyển sang Mua hàng, #165). Ứng dụng định tuyến bằng '#':
+  // thiếu '#' thì trình duyệt mở trang gốc và rơi về Trung tâm điều hành (lỗi 12/10/2026).
+  return `#/procurement?${new URLSearchParams({ po: input.dependency.id }).toString()}`;
 };
 
 export const getWorkflowActionErrorMessage = (error: unknown): string => {
