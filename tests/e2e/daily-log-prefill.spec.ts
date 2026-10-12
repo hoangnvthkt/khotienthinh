@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // Gợi ý "Như hôm qua" trong Chi tiết thi công (fixture, không gọi Supabase): Tab / bấm để dùng, Esc để bỏ, đổi nguồn thì hiện lại.
 const base = '/tests/daily-log/prefill-fixture.html';
-const ghost = (page: import('@playwright/test').Page) => page.getByTestId('daily-log-prefill');
+const ghost = (page: import('@playwright/test').Page) => page.getByTestId('prefill-ghost');
 const laborInputs = (page: import('@playwright/test').Page) => page.locator('[data-prefill-rows="labor"] input');
 
 test.beforeEach(async ({ page }) => {

@@ -69,8 +69,4 @@ export const buildDailyLogPrefill = (logs: DailyLog[], input: { date: string; us
   };
 };
 
-/** "11/10" cho nhãn nguồn gợi ý. */
-export const shortDate = (value: string) => {
-  const [y, m, d] = day(value).split('-');
-  return y && m && d ? `${Number(d)}/${Number(m)}` : value;
-};
+export { shortDate } from './uiPrefill';

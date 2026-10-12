@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import {
   procurementInboxService,
-  type ProcurementInboxDetail, type ProcurementOrderDetail, type ProcurementSourceRef,
+  type ProcurementInboxDetail, type ProcurementOrderDetail, type ProcurementSourceRef, type ProcurementVendorPrefill,
 } from '../../../lib/procurementInboxService';
 import { splitLinesForOrder } from '../../../lib/procurementLineAssignment';
 import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
@@ -11,6 +11,11 @@ import { Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './h
 import { SpecInput } from '../../material/SpecInput';
 import { backdateHint, vnToday } from '../../../lib/businessDate';
 import { DeliveryModePicker, VatPicker, VendorPicker } from './OrderFormParts';
+import { PrefillGhost, ghostInput } from '../../common/PrefillGhost';
+import {
+  PRICE_DEVIATION_WARN_PERCENT, headerGhostRows, matchPrefillLine, prefillSourceLabel, priceDeviationPercent, priceGhost, recordPrefillOutcome, specGhost,
+} from '../../../lib/procurementPrefill';
+import { recordSuggestionEvent } from '../../../lib/uiSuggestionEvents';
 
 // Lập / sửa đơn hàng từ một hoặc nhiều phiếu nhu cầu. Mỗi mã + quy cách là một dòng đơn hàng (một mã nhiều
 // quy cách, mỗi quy cách một giá — chủ SP 09/10); người mua tách thêm dòng được. SL đặt phân về từng dòng nhu cầu
@@ -90,6 +95,19 @@ export const OrderEditor: React.FC<{
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<Array<{ name: string | null; count: number }>>([]);
+  // "Như đơn trước" cùng NCC (chỉ khi lập mới): đầu đơn một khối, quy cách / đơn giá in mờ trong ô.
+  const [prefill, setPrefill] = useState<ProcurementVendorPrefill | null>(null);
+  const [headerTouched, setHeaderTouched] = useState(false);
+  const [headerDismissed, setHeaderDismissed] = useState(false);
+  const vendorId = vendor?.id || '';
+  useEffect(() => {
+    setPrefill(null); setHeaderDismissed(false);
+    if (order || !vendorId) return;
+    let alive = true;
+    procurementInboxService.vendorPrefill(vendorId).then(r => { if (alive) setPrefill(r); }).catch(() => { if (alive) setPrefill(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
 
   const sourceKey = sources.map(s => `${s.sourceType}:${s.sourceId}`).join(',');
   useEffect(() => {
@@ -182,8 +200,23 @@ export const OrderEditor: React.FC<{
         expectedDeliveryDate: expected || null, vatRate, note: note.trim(), items: payload,
       });
       if (orderDateTouched) await procurementInboxService.setOrderDate(result.purchaseOrderId, orderDate);
+      if (!order) recordPrefillOutcome(prefill, items.map(i => ({ itemId: i.itemId, specification: i.specification, price: parseQty(i.price) })), { vendorId: vendor.id, poNumber: result.poNumber });
       onSaved(result.purchaseOrderId, result.poNumber);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
+  };
+
+  const headerRows = prefill?.order && !headerTouched && !headerDismissed ? headerGhostRows(prefill.order, { vat, mode, allowMode: !isGroup }) : [];
+  const acceptHeader = () => {
+    const last = prefill?.order;
+    if (!last) return;
+    if (last.vatRate != null) setVat(String(last.vatRate));
+    if (!isGroup && last.purchaseMode) setMode(last.purchaseMode);
+    setHeaderTouched(true);
+    recordSuggestionEvent({ screen: 'purchase_order', field: 'header', outcome: 'accepted', suggested: headerRows.length, accepted: headerRows.length, source: { vendorId, poNumber: last.poNumber } });
+  };
+  const dismissHeader = () => {
+    setHeaderDismissed(true);
+    recordSuggestionEvent({ screen: 'purchase_order', field: 'header', outcome: 'dismissed', suggested: headerRows.length, source: { vendorId, poNumber: prefill?.order?.poNumber } });
   };
 
   return <Drawer xl label={order ? `Sửa ${order.poNumber}` : 'Lập đơn hàng'} onClose={onClose}
@@ -212,10 +245,13 @@ export const OrderEditor: React.FC<{
                 <label className="text-xs font-semibold text-muted-foreground" htmlFor="po-expected">Ngày cần giao</label>
                 <input id="po-expected" type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`mt-1 w-full ${inputCls}`} />
               </div>
-              <VatPicker value={vat} onChange={setVat} />
+              <VatPicker value={vat} onChange={v => { setVat(v); setHeaderTouched(true); }} />
             </section>
 
-            {!isGroup && <DeliveryModePicker value={mode} onChange={setMode} />}
+            {headerRows.length > 0 && prefill?.order && <PrefillGhost heading="Như đơn trước" title="đầu đơn" rows={headerRows}
+              sourceLabel={prefillSourceLabel(prefill.order)} onAccept={acceptHeader} onDismiss={dismissHeader} />}
+
+            {!isGroup && <DeliveryModePicker value={mode} onChange={v => { setMode(v); setHeaderTouched(true); }} />}
 
             {skipped.length > 0 && <p className="rounded-xl border border-border bg-muted/50 px-3 py-2.5 text-sm text-muted-foreground">
               Không đưa vào đơn {skipped.reduce((s, x) => s + x.count, 0)} dòng do người khác mua: <b className="text-foreground">{skipped.map(x => `${x.name || '—'} (${x.count})`).join(', ')}</b>.
@@ -234,6 +270,12 @@ export const OrderEditor: React.FC<{
                   const unitLabel = item.altUnit ? item.purchaseUnit || '?' : item.unit || '';
                   const priceBad = qty > 0 && price != null && (Number.isNaN(price) || price < 0);
                   const specProblem = specProblems.get(item.key);
+                  // Dòng mua gần nhất của NCC cho mã + quy cách này: quy cách và đơn giá in mờ, Tab để dùng; giá lệch > 5% báo cam.
+                  const last = prefill ? matchPrefillLine(prefill.lines, item.itemId, item.specification) : null;
+                  const priceHint = ghostInput(last ? priceGhost(last) : null, item.price, v => patchItem(item.key, {
+                    price: v, ...(last && !item.altUnit && last.unit && last.stockUnit && last.unit !== last.stockUnit ? { altUnit: true, purchaseUnit: last.unit, factor: last.factor || 1 } : {}) }));
+                  const specHint = ghostInput(last ? specGhost(last) : null, item.specification, v => patchItem(item.key, { specification: v }));
+                  const deviation = last ? priceDeviationPercent(price, last.unitPrice) : null;
                   return <div key={item.key} className="overflow-hidden rounded-2xl border border-border bg-card">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l-4 border-l-teal-500 bg-teal-50/60 px-3 py-2.5 dark:bg-teal-950/20">
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
@@ -241,12 +283,14 @@ export const OrderEditor: React.FC<{
                         <span className="ml-2 text-xs text-muted-foreground">{[item.sku, item.unit].filter(Boolean).join(' · ')}</span>
                         <SpecInput itemId={item.itemId} itemName={item.name} hideHint={Boolean(specProblem)} value={item.specification} onChange={v => patchItem(item.key, { specification: v })} maxLength={160}
                           placeholder="Quy cách / cấu hình (VD loại 1, tôn biên 13 sóng)" aria-label={`Quy cách ${item.name}`} aria-invalid={Boolean(specProblem)}
-                          className={`mt-1 block w-full max-w-md text-sm ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />
+                          className={`mt-1 block w-full max-w-md text-sm ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''} ${specHint.className}`} {...specHint.props} />
                         {specProblem && <span className="mt-0.5 block text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}</span>
                       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">Đơn giá{unitLabel ? ` / ${unitLabel}` : ''}
                         <input inputMode="decimal" value={item.price} onChange={e => setPrice(item.key, e.target.value)} placeholder="0"
                           aria-label={`Đơn giá ${item.name}`} aria-invalid={priceBad}
-                          className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
+                          className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''} ${priceHint.className}`} {...priceHint.props} /></label>
+                      {last && deviation != null && Math.abs(deviation) > PRICE_DEVIATION_WARN_PERCENT && <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                        Lệch {deviation > 0 ? '+' : ''}{deviation}% so với {prefillSourceLabel(last)}</span>}
                       <span className="ml-auto w-32 text-right text-sm font-semibold tabular-nums text-foreground">{price && price > 0 && qty > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
                     </div>
                     {item.altUnit

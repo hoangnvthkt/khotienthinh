@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck, Search, ChevronDown, ChevronUp, FileSpreadsheet, Loader2, History } from 'lucide-react';
+import { Plus, X, Package, Users, Wrench, Layers, Paperclip, ClipboardCheck, Search, ChevronDown, ChevronUp, FileSpreadsheet, Loader2 } from 'lucide-react';
 import {
   DailyLogVolume, DailyLogMaterial, DailyLogLabor, DailyLogMachine,
   Attachment, BusinessPartner, ContractLaborCatalogItem, ContractMachineCatalogItem, InventoryItem, ProjectTask, ProjectWorkBoqItem,
 } from '../../types';
 import { parseNonNegativeLocaleNumber } from '../../lib/localeNumberInput';
+import { PrefillGhost } from '../common/PrefillGhost';
 
 /** Gợi ý "Như hôm qua": in mờ khi tab còn trống, Tab / bấm để dùng, Esc để bỏ. */
 export interface DailyLogDetailPrefill {
@@ -240,44 +241,6 @@ const laborGhostText = (l: DailyLogLabor) =>
   `${l.groupName || l.catalogName || l.laborType}${l.taskName ? ` · ${l.taskName}` : ''} · ${formatQuantity(l.count)} ${l.unit || 'người'} × ${formatQuantity(l.hours ?? 8)} giờ`;
 const machineGhostText = (m: DailyLogMachine) =>
   `${m.catalogName || m.machineName}${m.taskName ? ` · ${m.taskName}` : ''}${m.shifts ? ` · ${formatQuantity(m.shifts)} ca` : ''}${m.hours ? ` · ${formatQuantity(m.hours)} giờ máy` : ''}`;
-
-/** Khối in mờ: cả khối là một nút — bấm, Enter hoặc Tab để dùng; Esc hoặc "Bỏ" để ẩn. Chữ mờ chưa phải dữ liệu. */
-const PrefillGhost: React.FC<{ title: string; rows: string[]; sourceLabel: string; onAccept: () => void; onDismiss: () => void }> = ({
-  title, rows, sourceLabel, onAccept, onDismiss,
-}) => (
-  <div
-    role="group"
-    tabIndex={0}
-    aria-label={`Như hôm qua: ${title}`}
-    data-testid="daily-log-prefill"
-    onClick={onAccept}
-    onKeyDown={event => {
-      if ((event.key === 'Tab' && !event.shiftKey) || event.key === 'Enter') { event.preventDefault(); onAccept(); }
-      if (event.key === 'Escape') { event.preventDefault(); onDismiss(); }
-    }}
-    className="rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50/70 dark:bg-slate-800/40 px-3 py-2.5 cursor-pointer outline-none focus:ring-2 focus:ring-teal-400 hover:border-teal-400 transition-colors"
-  >
-    <div className="flex items-center justify-between gap-2 flex-wrap">
-      <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-600 dark:text-slate-300">
-        <History size={12} className="text-teal-600" /> Như hôm qua
-        <span className="font-bold text-slate-400 dark:text-slate-500">· {sourceLabel} · {rows.length} dòng</span>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <button type="button" onClick={event => { event.stopPropagation(); onAccept(); }}
-          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-black">
-          Dùng <kbd className="hidden sm:inline rounded bg-white/20 px-1 font-mono text-[9px] font-bold">Tab</kbd>
-        </button>
-        <button type="button" onClick={event => { event.stopPropagation(); onDismiss(); }}
-          className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-500 hover:bg-slate-200/70 dark:hover:bg-slate-700">
-          Bỏ
-        </button>
-      </div>
-    </div>
-    <ul className="mt-1.5 space-y-0.5 text-xs italic text-slate-400 dark:text-slate-500">
-      {rows.map((row, index) => <li key={index} className="truncate">{row}</li>)}
-    </ul>
-  </div>
-);
 
 const DailyLogDetailTabs: React.FC<Props> = ({
   prefill,

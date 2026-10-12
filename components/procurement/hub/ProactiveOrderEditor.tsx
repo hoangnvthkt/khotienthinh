@@ -3,7 +3,7 @@ import { AlertTriangle, Link2, Loader2, Plus, Search, Trash2 } from 'lucide-reac
 import {
   PROACTIVE_REASON_LABELS, boqStatusOf, procurementInboxService,
   type ProcurementBoqSnapshot, type ProcurementCatalogItem, type ProcurementOrderDetail, type ProcurementProactiveProject,
-  type ProcurementProactiveReason,
+  type ProcurementProactiveReason, type ProcurementVendorPrefill,
 } from '../../../lib/procurementInboxService';
 import { dateVi, fmt, parseQty, qtyInput } from '../../project/work-plan/workPlanUi';
 import { Badge, Drawer, StateBox, inputCls, money, primaryBtn, secondaryBtn } from './hubUi';
@@ -15,6 +15,11 @@ import type { ImportedPoLine } from '../../../lib/procurementExcelImport';
 import { duplicateItemSpecProblems, specKey } from '../../../lib/materialLineDescription';
 import { QuickCreateItemDialog } from '../../wms/QuickCreateItemDialog';
 import { wmsCatalogService } from '../../../lib/wmsCatalogService';
+import { PrefillGhost, ghostInput } from '../../common/PrefillGhost';
+import {
+  PRICE_DEVIATION_WARN_PERCENT, headerGhostRows, matchPrefillLine, prefillSourceLabel, priceDeviationPercent, priceGhost, recordPrefillOutcome, specGhost,
+} from '../../../lib/procurementPrefill';
+import { recordSuggestionEvent } from '../../../lib/uiSuggestionEvents';
 
 // Đơn chủ động: Mua hàng tự lập PO khi chưa có phiếu nhu cầu (chốt giá, hàng đặt dài ngày, bù tồn…).
 // Vẫn gửi duyệt như đơn thường. Vượt hoặc ngoài BOQ dự án thì phải ghi lý do. Nhu cầu đến sau
@@ -113,6 +118,19 @@ export const ProactiveOrderEditor: React.FC<{
   // Ô quyền nhạy cảm "Tạo mã vật tư": không có thì không hiện nút tạo.
   const [canCreateItem, setCanCreateItem] = useState(false);
   useEffect(() => { wmsCatalogService.createOptions().then(o => setCanCreateItem(o.canCreate)).catch(() => setCanCreateItem(false)); }, []);
+  // "Như đơn trước" cùng NCC (chỉ khi lập mới): đầu đơn một khối, quy cách / đơn giá in mờ trong ô.
+  const [prefill, setPrefill] = useState<ProcurementVendorPrefill | null>(null);
+  const [headerTouched, setHeaderTouched] = useState(false);
+  const [headerDismissed, setHeaderDismissed] = useState(false);
+  const vendorId = vendor?.id || '';
+  useEffect(() => {
+    setPrefill(null); setHeaderDismissed(false);
+    if (order || !vendorId) return;
+    let alive = true;
+    procurementInboxService.vendorPrefill(vendorId).then(r => { if (alive) setPrefill(r); }).catch(() => { if (alive) setPrefill(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
 
   useEffect(() => {
     procurementInboxService.proactiveOptions().then(r => { setProjects(r.projects); setStockWarehouses(r.stockWarehouses || []); })
@@ -211,8 +229,34 @@ export const ProactiveOrderEditor: React.FC<{
         }),
       });
       if (orderDateTouched) await procurementInboxService.setOrderDate(result.purchaseOrderId, orderDate);
+      if (!order) recordPrefillOutcome(prefill, lines.map(l => ({ itemId: l.itemId, specification: l.spec, price: parseQty(l.price) })), { vendorId: vendor.id, poNumber: result.poNumber });
       onSaved(result.purchaseOrderId, result.poNumber);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setSaving(false); }
+  };
+
+  // Đầu đơn theo đơn trước: dự án / kho chỉ gợi ý khi chưa thêm vật tư (đổi dự án sẽ xóa dòng).
+  const lastOrder = prefill?.order || null;
+  const lastProject = lastOrder && !stock ? projects?.find(p => p.id === lastOrder.projectId) || null : null;
+  const lastWarehouse = lastOrder ? [...(lastProject?.warehouses || []), ...(stock ? stockWarehouses : [])].find(w => w.id === lastOrder.targetWarehouseId) || null : null;
+  const headerRows = lastOrder && !headerTouched && !headerDismissed ? headerGhostRows(lastOrder, {
+    vat, mode, projectId, warehouseId,
+    projectName: !lines.length ? lastProject?.name || null : null,
+    warehouseName: !lines.length ? lastWarehouse?.name || null : null,
+  }) : [];
+  const acceptHeader = () => {
+    if (!lastOrder) return;
+    if (lastOrder.vatRate != null) setVat(String(lastOrder.vatRate));
+    if (lastOrder.purchaseMode) setMode(lastOrder.purchaseMode);
+    if (!lines.length) {
+      if (lastProject) setProjectId(lastProject.id);
+      if (lastWarehouse) setWarehouseId(lastWarehouse.id);
+    }
+    setHeaderTouched(true);
+    recordSuggestionEvent({ screen: 'purchase_order', field: 'header', outcome: 'accepted', suggested: headerRows.length, accepted: headerRows.length, source: { vendorId, poNumber: lastOrder.poNumber } });
+  };
+  const dismissHeader = () => {
+    setHeaderDismissed(true);
+    recordSuggestionEvent({ screen: 'purchase_order', field: 'header', outcome: 'dismissed', suggested: headerRows.length, source: { vendorId, poNumber: lastOrder?.poNumber } });
   };
 
   return <Drawer xl label={order ? `Sửa đơn chủ động ${order.poNumber}` : 'Lập đơn chủ động'} onClose={onClose}
@@ -266,9 +310,12 @@ export const ProactiveOrderEditor: React.FC<{
                   {backdateHint(orderDate) && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">{backdateHint(orderDate)}</span>}</label>
                 <label className="text-xs font-semibold text-muted-foreground">Ngày cần giao
                   <input type="date" value={expected} onChange={e => setExpected(e.target.value)} className={`mt-1 w-full ${inputCls}`} /></label>
-                <VatPicker value={vat} onChange={setVat} />
+                <VatPicker value={vat} onChange={v => { setVat(v); setHeaderTouched(true); }} />
               </div>
             </section>
+
+            {headerRows.length > 0 && lastOrder && <PrefillGhost heading="Như đơn trước" title="đầu đơn" rows={headerRows}
+              sourceLabel={prefillSourceLabel(lastOrder)} onAccept={acceptHeader} onDismiss={dismissHeader} />}
 
             <section className="space-y-2 rounded-2xl border border-border bg-card p-4">
               <h3 className="text-sm font-semibold text-foreground">Vì sao mua khi chưa có phiếu nhu cầu?</h3>
@@ -286,7 +333,7 @@ export const ProactiveOrderEditor: React.FC<{
                 className={`w-full ${inputCls} ${reasonCode === 'other' && !reason.trim() ? 'border-amber-400' : ''}`} />
             </section>
 
-            <DeliveryModePicker value={mode} onChange={setMode} />
+            <DeliveryModePicker value={mode} onChange={v => { setMode(v); setHeaderTouched(true); }} />
 
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -348,6 +395,12 @@ export const ProactiveOrderEditor: React.FC<{
                   const status = boqStatusOf(l.boq, stockBad ? 0 : stock as number);
                   const typed = l.altUnit && l.purchaseQty.trim() !== '';
                   const unitLabel = l.altUnit ? l.purchaseUnit || '?' : l.unit || '';
+                  // Dòng mua gần nhất của NCC cho mã + quy cách này: quy cách và đơn giá in mờ, Tab để dùng; giá lệch > 5% báo cam.
+                  const last = prefill ? matchPrefillLine(prefill.lines, l.itemId, l.spec) : null;
+                  const priceHint = ghostInput(last ? priceGhost(last) : null, l.price, v => patch(l.key, {
+                    price: v, ...(last && !l.altUnit && last.unit && last.stockUnit && last.unit !== last.stockUnit ? { altUnit: true, purchaseUnit: last.unit, factor: last.factor || 1 } : {}) }));
+                  const specHint = ghostInput(last ? specGhost(last) : null, l.spec, v => patch(l.key, { spec: v }));
+                  const deviation = last ? priceDeviationPercent(price, last.unitPrice) : null;
                   return <li key={l.key} className="overflow-hidden rounded-2xl border border-border bg-card">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-l-4 border-l-teal-500 bg-teal-50/60 px-3 py-2.5 dark:bg-teal-950/20">
                       <span className="w-5 text-sm font-bold tabular-nums">{i + 1}</span>
@@ -355,7 +408,7 @@ export const ProactiveOrderEditor: React.FC<{
                         <span className="font-semibold text-mint-700 dark:text-mint-300">{l.name}</span>
                         <SpecInput itemId={l.itemId} itemName={l.name} hideHint={Boolean(specProblem)} value={l.spec} onChange={v => patch(l.key, { spec: v })} maxLength={160} aria-label={`Quy cách ${l.name}`} aria-invalid={Boolean(specProblem)}
                           placeholder="Quy cách / cấu hình (VD KT 30x30)" title="Hiển thị trên đơn và mẫu in; mỗi quy cách một giá — kho vẫn theo mã vật tư gốc"
-                          className={`min-w-[10rem] flex-1 py-1 text-xs md:max-w-[16rem] ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} />
+                          className={`min-w-[10rem] flex-1 py-1 text-xs md:max-w-[16rem] ${inputCls} ${specProblem ? 'border-rose-400 ring-2 ring-rose-400/30' : ''} ${specHint.className}`} {...specHint.props} />
                         {specProblem && <span className="w-full text-xs font-semibold text-rose-700 dark:text-rose-300">{specProblem}</span>}
                         <span className="w-full text-xs text-muted-foreground">{[l.sku, l.unit].filter(Boolean).join(' · ')}</span></span>
                       {purpose === 'project' && <Badge className={BOQ_TONE[status]}>{boqLabel(l, stockBad ? 0 : stock as number)}</Badge>}
@@ -377,7 +430,9 @@ export const ProactiveOrderEditor: React.FC<{
                         : <button type="button" onClick={() => patch(l.key, { altUnit: true, factor: 1 })} className="font-semibold text-teal-700 hover:underline dark:text-teal-300">+ Mua theo đơn vị khác</button>}
                       <label className="flex items-center gap-1.5">Đơn giá{unitLabel ? ` / ${unitLabel}` : ''}
                         <input inputMode="decimal" value={l.price} onChange={e => patch(l.key, { price: e.target.value })} placeholder="0" aria-label={`Đơn giá ${l.name}`} aria-invalid={priceBad}
-                          className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''}`} /></label>
+                          className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''} ${priceHint.className}`} {...priceHint.props} /></label>
+                      {last && deviation != null && Math.abs(deviation) > PRICE_DEVIATION_WARN_PERCENT && <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                        Lệch {deviation > 0 ? '+' : ''}{deviation}% so với {prefillSourceLabel(last)}</span>}
                       <span className="ml-auto whitespace-nowrap text-sm font-semibold tabular-nums text-leaf-700 dark:text-leaf-300">{price && price > 0 && qty > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
                       {l.allocatedQty > 0 && <span className="flex w-full items-center gap-1 text-teal-700 dark:text-teal-300"><Link2 size={12} />Đã gắn {fmt(l.allocatedQty, 3)} {l.unit} cho phiếu nhu cầu — không giảm SL dưới mức này.</span>}
                     </div>
