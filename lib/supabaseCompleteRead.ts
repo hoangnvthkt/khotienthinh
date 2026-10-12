@@ -107,7 +107,10 @@ const addKeysetPredicate = (
 ): void => {
   if (query?.url instanceof URL) {
     if (columns.length === 1) {
-      query.url.searchParams.append(columns[0], `gt.${postgrestValue(cursor[columns[0]])}`);
+      // Lọc đơn `cột=gt.giá_trị`: PostgREST lấy nguyên phần sau `gt.` — KHÔNG bọc dấu nháy. Bọc nháy làm cột
+      // mã dạng chữ so với chuỗi có dấu nháy → trang 2 trả lại từ đầu, vòng lặp chạy tới trần rồi báo lỗi
+      // (project_transactions 1.115 dòng: 11 lần gọi rồi lỗi, đo 12/10/2026). Dấu nháy chỉ dùng trong cú pháp or=(…).
+      query.url.searchParams.append(columns[0], `gt.${String(cursor[columns[0]])}`);
       return;
     }
     const branches = columns.map((column, index) => {

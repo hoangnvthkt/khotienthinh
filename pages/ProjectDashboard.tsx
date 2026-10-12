@@ -564,6 +564,12 @@ const ProjectDashboard: React.FC = () => {
     const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
     const [taskProgressBySite, setTaskProgressBySite] = useState<Record<string, { progressPercent: number; leafTaskCount: number }>>({});
     const [taskProgressStatus, setTaskProgressStatus] = useState<ProjectProgressLoadStatus>('idle');
+    // Có % từ Gantt thì hiện ngay; chỉ khi phải dùng % dự phòng ở project_finances mới chờ module tài chính.
+    const progressTaskStatus = (taskProgress: number | undefined): ProjectProgressLoadStatus => {
+        if (taskProgress !== undefined) return taskProgressStatus === 'loading' ? 'loaded' : taskProgressStatus;
+        return moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus;
+    };
+
     const [projects, setProjects] = useState<Project[]>([]);
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [projectLoadError, setProjectLoadError] = useState<string | null>(null);
@@ -960,7 +966,7 @@ const ProjectDashboard: React.FC = () => {
         const agg = getProjectAggregated(project);
         const progressDisplay = resolveProjectProgressDisplay({
             mode: project.progressCalculationMode || 'gantt_weighted',
-            taskStatus: moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus,
+            taskStatus: progressTaskStatus(project.constructionSiteId ? taskProgressBySite[project.constructionSiteId]?.progressPercent : undefined),
             taskProgress: project.constructionSiteId ? taskProgressBySite[project.constructionSiteId]?.progressPercent : undefined,
             financeProgress: finance?.progressPercent,
             manualProgress: project.manualProgressPercent,
@@ -1144,10 +1150,37 @@ const ProjectDashboard: React.FC = () => {
         ]),
     ];
 
-    const financeSiteKey = useMemo(() =>
-        projectFinances.map(p => `${p.constructionSiteId}:${p.progressPercent}`).sort().join('|'),
-        [projectFinances]
-    );
+    // % tiến độ là thứ người dùng cần thấy đầu tiên: lấy mã công trường ngay từ danh sách dự án (không chờ module
+    // tài chính tải xong), cộng công trường trong project_finances. Đo 12/10/2026: % hiện ở 4,55 s vì phải chờ module.
+    const progressSiteKey = useMemo(() => JSON.stringify(Array.from(new Set([
+        ...projectRows.map(project => project.constructionSiteId),
+        ...projectFinances.map(finance => finance.constructionSiteId),
+    ].filter(Boolean) as string[])).sort()), [projectFinances, projectRows]);
+
+    // Đường chính: máy chủ tính sẵn % mỗi công trường, gọi ngay khi mở trang (song song danh sách dự án) và mỗi
+    // lần quay lại danh sách để % không cũ sau khi sửa Gantt. Máy chủ chưa có hàm → đường cũ bên dưới.
+    const [progressRpcMissing, setProgressRpcMissing] = useState(false);
+    useEffect(() => {
+        if (!isSupabaseConfigured || progressRpcMissing) return;
+        let cancelled = false;
+        setTaskProgressStatus(current => current === 'loaded' ? 'loaded' : 'loading');
+        taskService.getProgressBySite()
+            .then(next => {
+                if (cancelled) return;
+                setTaskProgressBySite(next);
+                setTaskProgressStatus('loaded');
+            })
+            .catch(error => {
+                if (cancelled) return;
+                if (error?.code === 'PGRST202' || /get_project_task_progress_v1/.test(error?.message || '')) {
+                    setProgressRpcMissing(true);
+                    return;
+                }
+                console.error(error);
+                setTaskProgressStatus('error');
+            });
+        return () => { cancelled = true; };
+    }, [activeView, progressRpcMissing]);
 
     useEffect(() => {
         if (!isSupabaseConfigured) {
@@ -1155,15 +1188,17 @@ const ProjectDashboard: React.FC = () => {
             setTaskProgressStatus('loaded');
             return;
         }
-        const siteIds = Array.from(new Set(projectFinances.map(p => p.constructionSiteId).filter(Boolean)));
+        if (!progressRpcMissing) return;
+        const siteIds = JSON.parse(progressSiteKey) as string[];
         if (siteIds.length === 0) {
             setTaskProgressBySite({});
-            setTaskProgressStatus(moduleLoadState.da === 'loaded' ? 'loaded' : 'idle');
+            setTaskProgressStatus(moduleLoadState.da === 'loaded' && !projectsLoading ? 'loaded' : 'idle');
             return;
         }
 
         let cancelled = false;
-        setTaskProgressStatus('loading');
+        // Đã có số thì giữ hiển thị trong lúc tải thêm công trường mới (không nháy về "Đang tải").
+        setTaskProgressStatus(current => current === 'loaded' ? 'loaded' : 'loading');
         taskService.listProgressInputsBySites(siteIds)
             .then(allTasks => {
                 if (cancelled) return;
@@ -1187,7 +1222,7 @@ const ProjectDashboard: React.FC = () => {
             });
 
         return () => { cancelled = true; };
-    }, [financeSiteKey, moduleLoadState.da, projectFinances]);
+    }, [moduleLoadState.da, progressRpcMissing, progressSiteKey, projectsLoading]);
 
     const getProjectMetaChips = (project: Project): { label: string; tone: string }[] => {
         const group = project.projectGroupId ? projectGroupMap.get(project.projectGroupId) : undefined;
@@ -3149,7 +3184,7 @@ const ProjectDashboard: React.FC = () => {
         const statusKey = financeForRender?.status || selectedProject.status || 'planning';
         const progressDisplay = resolveProjectProgressDisplay({
             mode: selectedProject.progressCalculationMode || 'gantt_weighted',
-            taskStatus: moduleLoadState.da === 'loading' || moduleLoadState.da === 'idle' ? 'loading' : taskProgressStatus,
+            taskStatus: progressTaskStatus(effectiveSiteId ? taskProgressBySite[effectiveSiteId]?.progressPercent : undefined),
             taskProgress: effectiveSiteId ? taskProgressBySite[effectiveSiteId]?.progressPercent : undefined,
             financeProgress: selectedFinance?.progressPercent,
             manualProgress: selectedProject.manualProgressPercent,

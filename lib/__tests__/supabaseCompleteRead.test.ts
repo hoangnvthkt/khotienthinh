@@ -86,10 +86,26 @@ describe('fetchAllSupabaseRows', () => {
     });
 
     expect(result.data?.map(row => row.id)).toEqual(['2', '3', '1']);
-    expect(url.searchParams.getAll('id')).toEqual(['in.(1,2,3)', 'gt."2"']);
+    // Lọc đơn không bọc nháy: `id=gt."2"` khiến PostgREST so với chuỗi có dấu nháy (lỗi 03/09 → 12/10/2026).
+    expect(url.searchParams.getAll('id')).toEqual(['in.(1,2,3)', 'gt.2']);
     expect(url.searchParams.has('order')).toBe(true);
     expect(url.searchParams.get('order')).toBe('id.asc');
     expect(fake.calls).not.toEqual(expect.arrayContaining([expect.arrayContaining(['range'])]));
+  });
+
+  it('mỗi trang dùng mốc của trang trước, không bọc nháy (mã dạng chữ, 3 trang)', async () => {
+    const url = new URL('https://example.test/project_transactions?select=id');
+    const fake = queryFake([
+      { data: [{ id: 'a1' }, { id: 'b2' }], error: null },
+      { data: [{ id: 'c3' }, { id: 'd4' }], error: null },
+      { data: [{ id: 'e5' }], error: null },
+    ], url);
+
+    const result = await fetchAllSupabaseRows(fake.query, { label: 'tx', maxRows: 10, orderBy: 'id', pageSize: 2 });
+
+    expect(result.error).toBeNull();
+    expect(result.data?.map(row => row.id)).toEqual(['a1', 'b2', 'c3', 'd4', 'e5']);
+    expect(url.searchParams.getAll('id')).toEqual(['gt.b2', 'gt.d4']);
   });
 
   it('fails visibly when another full page reaches the safety cap', async () => {
