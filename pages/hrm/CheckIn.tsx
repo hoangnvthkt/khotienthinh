@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
+  CalendarDays,
   Camera,
   CameraOff,
   CheckCircle,
@@ -454,6 +455,9 @@ const CheckIn: React.FC = () => {
         <div className="min-w-0">
           <h1 className="text-lg font-black text-slate-900 dark:text-white">Chấm công</h1>
           <p className="truncate text-xs font-bold text-slate-500">{currentEmployee.fullName} · {currentEmployee.employeeCode}</p>
+          <Link to="/hrm/attendance?tab=mine" className="mt-0.5 inline-flex items-center gap-1 text-xs font-bold text-teal-700 hover:underline dark:text-teal-300">
+            <CalendarDays size={13} />Lịch công của tôi
+          </Link>
         </div>
         <div className="text-right">
           <div className="text-lg font-black font-mono text-slate-900 dark:text-white">{currentTime.toLocaleTimeString('vi-VN')}</div>

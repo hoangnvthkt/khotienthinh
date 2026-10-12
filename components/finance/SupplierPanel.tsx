@@ -1,27 +1,34 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, Ban, Banknote, CalendarClock, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, HandCoins, History, Loader2,
-  RotateCcw, ShieldCheck, Undo2, X,
+  RotateCcw, ShieldCheck, ShoppingCart, Undo2, X,
 } from 'lucide-react';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import {
   DUE_SOURCE_LABELS, EVENT_LABELS, ISSUE_LABELS, METHOD_LABELS, SOURCE_LABELS, financeService,
-  type FinanceAdvances, type FinanceDocument, type FinancePayment, type FinanceSupplierDetail,
+  type FinanceAdvances, type FinanceDocument, type FinancePayment, type FinanceSupplierDetail, type FinanceSupplierOrder,
 } from '../../lib/financeService';
+import { procurementInboxService, type ProcurementPoPayment } from '../../lib/procurementInboxService';
+import { OrderDrawer } from '../procurement/hub/OrderDrawer';
 import { AdvanceDrawer } from './AdvanceDrawer';
-import { Badge, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
+import { Badge, PoPaymentChip, PoStatusChip, StateBox, inputCls, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ExternalPaymentDrawer } from './ExternalPaymentDrawer';
 import { OpeningDrawer } from './OpeningDrawer';
 import { PaymentRequestDrawer } from './PaymentRequestDrawer';
 import { TermsDrawer } from './TermsDrawer';
 import { ENT, NUM, TONE_BAR, TONE_TEXT, dueText, shortMoney, toneOf, viDate } from './financeUi';
 
-const Provenance: React.FC<{ d: FinanceDocument }> = ({ d }) => {
+const PoLink: React.FC<{ poId?: unknown; poNumber?: unknown; onOpen: (poId: string) => void }> = ({ poId, poNumber, onOpen }) =>
+  typeof poId === 'string' && poId
+    ? <button type="button" onClick={() => onOpen(poId)} title="Mở đơn hàng" className={`${ENT} underline decoration-dotted underline-offset-2 hover:decoration-solid`}>{(poNumber as string) || '—'}</button>
+    : <b className={ENT}>{(poNumber as string) || '—'}</b>;
+
+const Provenance: React.FC<{ d: FinanceDocument; onOpenPo: (poId: string) => void }> = ({ d, onOpenPo }) => {
   const p = d.provenance || {};
   const rows: React.ReactNode[] = [];
   if (d.sourceType === 'purchase_delivery_receipt') {
-    rows.push(<>Đơn hàng <b className={ENT}>{p.poNumber || '—'}</b> · đợt giao {p.deliveryNo ?? '—'}</>);
+    rows.push(<>Đơn hàng <PoLink poId={p.poId} poNumber={p.poNumber} onOpen={onOpenPo} /> · đợt giao {p.deliveryNo ?? '—'}</>);
     rows.push(<>Kho <b className={ENT}>{p.warehouse || '—'}</b> nhận {viDate(p.receivedAt as string)} · <span className={ENT}>{p.receivedByName || '—'}</span></>);
     rows.push(<>Công nợ tự sinh khi kho nhận hàng{d.origin === 'receipt_reconciliation' ? ' — ghi lùi ngày từ đối chiếu nhận hàng' : ''}</>);
   } else if (d.sourceType === 'supplier_delivery_statement') {
@@ -40,6 +47,38 @@ const Provenance: React.FC<{ d: FinanceDocument }> = ({ d }) => {
   return <ol className="mt-2 space-y-1 border-l-2 border-mint-200 pl-3 text-xs text-muted-foreground dark:border-mint-900">{rows.map((r, i) => <li key={i}>{r}</li>)}</ol>;
 };
 
+const SupplierOrders: React.FC<{ orders: FinanceSupplierOrder[] | null; pay: Record<string, ProcurementPoPayment>; error: string | null; onRetry: () => void; onOpen: (poId: string) => void }> = ({ orders, pay, error, onRetry, onOpen }) => {
+  if (error) return <StateBox kind="error" message={error} onRetry={onRetry} />;
+  if (!orders) return <StateBox kind="loading" title="Đang tải đơn hàng…" />;
+  if (orders.length === 0) return <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">Chưa có đơn hàng gửi NCC này.</p>;
+  const ordered = orders.reduce((s, o) => s + o.totalAmount, 0);
+  const received = orders.reduce((s, o) => s + o.receivedNet, 0);
+  return <section className="space-y-2">
+    <dl className="grid grid-cols-3 gap-2 text-sm">
+      {([['Giá trị đặt', ordered], ['Đã nhận', received], ['Chưa nhận', Math.max(ordered - received, 0)]] as const).map(([l, v]) =>
+        <div key={l} className="rounded-xl bg-muted/50 px-3 py-2" title="Tiền hàng chưa VAT"><dt className="text-xs text-muted-foreground">{l}</dt><dd className={NUM}>{shortMoney(v)}</dd></div>)}
+    </dl>
+    <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border">{orders.map(o => {
+      const ratio = o.totalAmount > 0 ? Math.min(100, (o.receivedNet / o.totalAmount) * 100) : 0;
+      return <li key={o.id}>
+        <button type="button" onClick={() => onOpen(o.id)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left hover:bg-muted/40">
+          <ShoppingCart size={14} className="shrink-0 text-teal-700" />
+          <span className="min-w-0 flex-1">
+            <span className={ENT}>{o.poNumber || '—'}</span>
+            <span className="ml-2 inline-flex flex-wrap gap-1 align-middle"><PoStatusChip status={o.status} /><PoPaymentChip payment={pay[o.id]} /></span>
+            <span className="block text-xs text-muted-foreground">{o.projectCode || 'Kho Tổng'} · đặt {viDate(o.orderDate)}</span>
+          </span>
+          <span className="w-full text-right text-xs tabular-nums text-muted-foreground sm:w-48">
+            <span className={`block text-sm ${NUM}`}>{money(o.totalAmount)} đ</span>
+            <span className="mt-1 flex items-center justify-end gap-1.5">đã nhận {money(o.receivedNet)}
+              <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-leaf-500" style={{ width: `${ratio}%` }} /></span></span>
+          </span>
+        </button>
+      </li>;
+    })}</ul>
+  </section>;
+};
+
 export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; onChanged: () => void; onOpenAdvances?: () => void }> = ({ supplierId, onBack, onChanged, onOpenAdvances }) => {
   const toast = useToast();
   const confirm = useConfirm();
@@ -52,6 +91,11 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
   const [drawer, setDrawer] = useState<{ kind: 'external'; documentId?: string | null } | { kind: 'opening'; projectId?: string | null } | { kind: 'terms' } | { kind: 'request' } | { kind: 'advance' } | null>(null);
   const [advances, setAdvances] = useState<FinanceAdvances | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [view, setView] = useState<'debts' | 'orders'>('debts');
+  const [orders, setOrders] = useState<FinanceSupplierOrder[] | null>(null);
+  const [orderPay, setOrderPay] = useState<Record<string, ProcurementPoPayment>>({});
+  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [openPo, setOpenPo] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -59,6 +103,15 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     financeService.advances(supplierId).then(setAdvances).catch(() => setAdvances(null));
   }, [supplierId]);
   useEffect(() => { setDetail(null); setOpenDoc(null); load(); }, [load]);
+
+  const loadOrders = useCallback(() => {
+    setOrdersError(null);
+    financeService.supplierOrders(supplierId).then(list => {
+      setOrders(list);
+      procurementInboxService.poPaymentStatus(list.map(o => o.id)).then(setOrderPay).catch(() => setOrderPay({}));
+    }).catch(e => setOrdersError(e instanceof Error ? e.message : String(e)));
+  }, [supplierId]);
+  useEffect(() => { setOrders(null); setOrderPay({}); loadOrders(); }, [loadOrders]);
 
   const done = (message: string) => { toast.success(detail?.supplier.name || 'Tài chính', message); setDrawer(null); load(); onChanged(); };
   const run = async (fn: () => Promise<unknown>, message: string) => {
@@ -188,6 +241,12 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     </div>
 
     <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div role="tablist" aria-label="Xem theo" className="inline-flex rounded-xl border border-border bg-muted/40 p-1">
+        {([['debts', `Công nợ (${openDocs.length})`], ['orders', `Đơn hàng${orders ? ` (${orders.length})` : ''}`]] as const).map(([k, l]) =>
+          <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)}
+            className={`whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-semibold transition ${view === k ? 'bg-teal-700 text-white' : 'text-muted-foreground hover:text-foreground'}`}>{l}</button>)}
+      </div>
+      {view === 'orders' ? <SupplierOrders orders={orders} pay={orderPay} error={ordersError} onRetry={loadOrders} onOpen={setOpenPo} /> : <>
       {groups.length === 0 && <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">Không còn chứng từ công nợ đang theo dõi.</p>}
       {groups.map(g => <div key={g.project} className="overflow-hidden rounded-xl border border-border">
         <p className="flex items-center gap-2 bg-teal-50/70 px-3 py-2 text-sm dark:bg-teal-950/20"><ChevronDown size={15} className="shrink-0" /><b className={`shrink-0 ${ENT}`}>{g.project}</b><span className="min-w-0 truncate text-xs text-muted-foreground">{g.name}</span></p>
@@ -214,7 +273,7 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
               </button>
               {open && <div className="px-3 pb-3 pl-9">
                 {d.issues.map(i => <p key={i} className="mt-1 flex gap-1.5 text-xs text-amber-800 dark:text-amber-200"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{ISSUE_LABELS[i]}</p>)}
-                <Provenance d={d} />
+                <Provenance d={d} onOpenPo={setOpenPo} />
                 <p className="mt-2 text-xs text-muted-foreground">Ghi nhận <b className="text-foreground">{money(d.recognized)} đ</b>{d.credit > 0 ? ` · giảm trừ ${money(d.credit)} đ` : ''} · đã trả {money(d.paid)} đ · Hóa đơn: <span className="italic">ghi ở K3c</span></p>
                 {docActions(d)}
               </div>}
@@ -243,6 +302,8 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
         <ul className="space-y-2">{detail.payments.map(paymentRow)}</ul>
       </section>}
 
+      </>}
+
       {detail.events.length > 0 && <section>
         <button type="button" onClick={() => setShowHistory(v => !v)} className="flex items-center gap-1.5 text-sm font-semibold text-foreground"><History size={15} />Lịch sử ({detail.events.length})
           <ChevronDown size={14} className={`transition-transform ${showHistory ? 'rotate-180' : ''}`} /></button>
@@ -267,6 +328,7 @@ export const SupplierPanel: React.FC<{ supplierId: string; onBack: () => void; o
     {drawer?.kind === 'opening' && <OpeningDrawer detail={detail} projectId={drawer.projectId} onClose={() => setDrawer(null)} onChanged={done}
       onExternalPayment={documentId => setDrawer({ kind: 'external', documentId })} />}
     {drawer?.kind === 'terms' && <TermsDrawer detail={detail} onClose={() => setDrawer(null)} onSaved={done} />}
+    {openPo && <OrderDrawer orderId={openPo} today={today} currentUserId={me} onClose={() => setOpenPo(null)} onChanged={() => { load(); loadOrders(); }} onEdit={() => undefined} />}
     {drawer?.kind === 'advance' && <AdvanceDrawer supplierId={detail.supplier.id} onClose={() => setDrawer(null)} onSaved={code => done(`Đã gửi ${code} — xem ở bước Đề nghị chi.`)} />}
   </section>;
 };

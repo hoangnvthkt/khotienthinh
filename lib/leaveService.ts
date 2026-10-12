@@ -281,6 +281,15 @@ export const leaveService = {
     return (data || []).map(row => mapRequest(row as Record<string, unknown>));
   },
 
+  /** One person's requests touching [from, to] — personal calendar. */
+  async listForEmployee(employeeId: string, from: string, to: string): Promise<LeaveRequestRow[]> {
+    const { data, error } = await supabase.from('hrm_leave_requests').select(REQUEST_SELECT)
+      .eq('employeeId', employeeId).lte('startDate', to).gte('endDate', from)
+      .order('startDate', { ascending: true }).limit(100);
+    if (error) fail(error, 'Không tải được đơn nghỉ.');
+    return (data || []).map(row => mapRequest(row as Record<string, unknown>));
+  },
+
   async listLogs(requestId: string): Promise<LeaveLogRow[]> {
     const { data, error } = await supabase.from('hrm_leave_logs').select('id,action,acted_by,comment,created_at')
       .eq('leave_request_id', requestId).order('created_at').limit(100);
