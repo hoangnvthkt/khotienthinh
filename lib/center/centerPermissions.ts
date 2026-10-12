@@ -24,5 +24,14 @@ export const CENTER_PERMISSION_APPLICATION: PermissionApplicationDefinition = {
       sortOrder: 20,
       actions: [{ action: 'manage', label: 'Tùy chỉnh bố cục của tôi', permissionCode: 'center.layout.manage', scopeTypes: ['own'], sortOrder: 10 }],
     },
+    {
+      // Khớp migration 20261013141500_center_flow_v1. Toàn công ty = Admin hoặc quyền này; trưởng phòng và giám đốc dự án
+      // thấy phạm vi của mình không cần quyền (máy chủ tự xét, vcc_flow_v1).
+      code: 'center.flow',
+      label: 'Dòng chảy công việc',
+      routes: [CENTER_ROUTE],
+      sortOrder: 30,
+      actions: [{ action: 'view', label: 'Xem dòng chảy công việc toàn công ty', permissionCode: 'center.flow.view', scopeTypes: ['global'], sortOrder: 1 }],
+    },
   ],
 };

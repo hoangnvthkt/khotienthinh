@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vioo · Dòng chảy công việc — bản xem thử v0 (13/10/2026)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#ffffff;--card:#ffffff;--card2:#f7f7f7;--border:#e5e5e5;--fg:#1a1a1a;--fg2:#444444;--muted:#737373;--hover:#f2f2f2;
+--accent:#1f8a70;--accent-fg:#fff;--accent-soft:#e8f3ee;--num:#2f7a2a;--who:#7c3aed;--who-soft:#f1ebfd;
+--steel:#2e6f80;--steel-s:#e7f0f3;--warn:#b45309;--warn-soft:#fdf3e3;--danger:#b42318;--danger-soft:#fdecec;--sky:#0369a1;--sky-soft:#e3f1fa;
+--shadow:0 1px 2px rgba(20,20,15,.05)}
+[data-theme=dark]{--bg:#1b1b1b;--card:#222;--card2:#2a2a2a;--border:#353535;--fg:#ededed;--fg2:#c8c8c8;--muted:#9a9a9a;--hover:#2f2f2f;
+--accent:#5cc3a3;--accent-fg:#112019;--accent-soft:#213229;--num:#8fd27f;--who:#c4b5fd;--who-soft:#2a2340;--steel:#8cc5d3;--steel-s:#1c3238;
+--warn:#e9a23b;--warn-soft:#3a2d16;--danger:#f08c8c;--danger-soft:#3b2220;--sky:#7cc4ea;--sky-soft:#16303d;--shadow:none}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--border);border-radius:8px;height:30px;padding:0 8px}
+.app{display:flex;height:100dvh;overflow:hidden}
+.rail{width:56px;flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;border-right:1px solid var(--border);background:var(--card)}
+.rail .logo{width:36px;height:36px;border-radius:10px;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;font-weight:700;margin-bottom:8px}
+.rail button{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.02em;line-height:1}
+.rail button:hover{background:var(--hover)}.rail button.on{background:var(--accent-soft);color:var(--accent)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+header.top{display:flex;align-items:center;gap:10px;padding:0 14px;height:46px;border-bottom:1px solid var(--border);background:var(--card);flex:none}
+header.top .brand{font-weight:600;color:var(--fg2);white-space:nowrap}
+.wtabs{display:flex;gap:2px;margin-left:12px;height:100%}
+.wtab{padding:0 12px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.wtab.on{color:var(--fg);border-color:var(--accent)}
+.sp{flex:1}
+.iconbtn{height:30px;min-width:30px;padding:0 9px;border-radius:8px;border:1px solid var(--border);display:inline-flex;align-items:center;gap:6px;color:var(--fg2);background:var(--card);white-space:nowrap}
+.iconbtn:hover{background:var(--hover)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--who-soft);color:var(--who);display:grid;place-items:center;font-weight:600;font-size:12px}
+.page{flex:1;min-height:0;overflow:auto;padding:14px 16px 24px}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.toolbar h1{font-size:18px;margin:0;font-weight:700}
+.live{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.live .dot{width:8px;height:8px;border-radius:50%;background:var(--num);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;padding:2px;background:var(--card2)}
+.seg button{height:26px;padding:0 10px;border-radius:6px;color:var(--muted);font-weight:500}
+.seg button.on{background:var(--card);color:var(--fg);box-shadow:var(--shadow)}
+.seg button[disabled]{opacity:.45;cursor:not-allowed}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--border);display:inline-flex;align-items:center;gap:6px;color:var(--fg2);background:var(--card)}
+.chip .n{font-weight:600;color:var(--num);font-variant-numeric:tabular-nums}
+.chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.chip.off{opacity:.55}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.kpi{border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:var(--card);text-align:left;display:flex;flex-direction:column;gap:2px;min-height:78px;position:relative}
+.kpi:hover{background:var(--hover)}.kpi.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.kpi .l{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:6px}
+.kpi .v{font-size:22px;font-weight:700;color:var(--num);font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi .v.warn{color:var(--warn)}.kpi .v.danger{color:var(--danger)}.kpi .v.steel{color:var(--steel)}
+.kpi .s{font-size:11.5px;color:var(--muted)}
+.kpi .ico{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px}
+.ico.amber{background:var(--warn-soft);color:var(--warn)}.ico.rose{background:var(--danger-soft);color:var(--danger)}.ico.sky{background:var(--sky-soft);color:var(--sky)}.ico.mint{background:var(--accent-soft);color:var(--accent)}.ico.who{background:var(--who-soft);color:var(--who)}
+.kpi svg.spark{position:absolute;right:10px;bottom:8px;width:92px;height:28px}
+.body2{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;align-items:start}
+.card{border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+.viz{padding:10px 12px 8px}
+.vhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.vhead .legend{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto;color:var(--muted);font-size:11.5px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.viz svg{width:100%;height:auto;display:block}
+.viz .foot{color:var(--muted);font-size:11.5px;margin-top:6px;display:flex;gap:12px;flex-wrap:wrap}
+.node rect{rx:3}
+.node text{font-size:11.5px;font-weight:600;fill:var(--fg);paint-order:stroke;stroke:var(--card);stroke-width:3px;stroke-linejoin:round}
+.node text.n{font-weight:500;fill:var(--muted)}
+.node.sel rect{stroke:var(--fg);stroke-width:1.5}
+.link{cursor:pointer;transition:opacity .12s}
+.link.dim{opacity:.12 !important}
+.node{cursor:pointer}
+.panel{padding:12px;position:sticky;top:0;max-height:calc(100dvh - 80px);overflow:auto}
+.panel h2{font-size:14px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.panel h3{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 6px;font-weight:600}
+.panel .sub{color:var(--muted);font-size:12px;margin-bottom:6px}
+.ent{color:var(--accent);font-weight:600}.who{color:var(--who);font-weight:600}.num{color:var(--num);font-weight:600;font-variant-numeric:tabular-nums}
+.bad{color:var(--danger);font-weight:600}.wrn{color:var(--warn);font-weight:600}
+.row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;border:1px solid transparent}
+.row:hover{background:var(--hover)}
+.row .t{flex:1;min-width:0}.row .t b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row .t small{color:var(--muted);display:block}
+.row .acts{display:flex;gap:4px}
+.mini{height:24px;padding:0 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px;color:var(--fg2);background:var(--card)}
+.mini:hover{background:var(--hover)}.mini.p{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.bar{display:grid;grid-template-columns:90px 1fr 36px;gap:8px;align-items:center;padding:3px 0;font-size:12px}
+.bar .tr{height:9px;border-radius:4px;background:var(--card2);overflow:hidden}.bar .tr i{display:block;height:100%;border-radius:4px}
+.bar .r{text-align:right;font-variant-numeric:tabular-nums}
+.stat3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0}
+.stat3 div{border:1px solid var(--border);border-radius:8px;padding:6px 8px;text-align:center}
+.stat3 b{display:block;font-size:16px;font-variant-numeric:tabular-nums}.stat3 small{color:var(--muted);font-size:11px}
+.note{border:1px dashed var(--border);border-radius:8px;padding:6px 8px;color:var(--muted);font-size:11.5px;margin-top:10px}
+.stuck{animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.45}}
+@media(prefers-reduced-motion:reduce){.stuck,.live .dot{animation:none}}
+.tabs2{display:inline-flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:8px;width:100%}
+.tabs2 button{padding:6px 10px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs2 button.on{color:var(--fg);border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.03em;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:middle}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+tr:hover td{background:var(--hover)}
+.rank{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rank h4{margin:0 0 4px;font-size:12.5px;display:flex;gap:6px;align-items:center}
+.tip{position:fixed;pointer-events:none;background:var(--fg);color:var(--bg);padding:6px 8px;border-radius:6px;font-size:11.5px;z-index:9;max-width:260px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.back{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;margin-bottom:6px}
+.back:hover{color:var(--fg)}
+.pill{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:999px;font-size:10.5px;font-weight:600}
+.pill.amber{background:var(--warn-soft);color:var(--warn)}.pill.rose{background:var(--danger-soft);color:var(--danger)}.pill.steel{background:var(--steel-s);color:var(--steel)}.pill.who{background:var(--who-soft);color:var(--who)}.pill.gray{background:var(--card2);color:var(--muted)}
+.mobile-nav{display:none}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.body2{grid-template-columns:1fr}.panel{position:static;max-height:none}}
+@media(max-width:760px){
+  .rail{display:none}.wtabs{display:none}.brand{font-size:12px}
+  .page{padding:10px 10px 70px}
+  .kpis{display:flex;overflow-x:auto;gap:8px;scrollbar-width:none;margin-bottom:10px}.kpis::-webkit-scrollbar{display:none}
+  .kpi{min-width:150px;flex:none}.kpi svg.spark{display:none}
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}.chip{flex:none}
+  .toolbar h1{font-size:16px;width:100%}
+  .rank{grid-template-columns:1fr}
+  .mobile-nav{display:flex;position:fixed;bottom:0;left:0;right:0;height:56px;border-top:1px solid var(--border);background:var(--card);justify-content:space-around;align-items:center;z-index:5}
+  .mobile-nav button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--muted);font-weight:600}
+  .mobile-nav button.on{color:var(--accent)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="logo">V</div>
+    <button title="Hôm nay">Hôm<br>nay</button>
+    <button title="Bảng điều khiển">Bảng</button>
+    <button class="on" title="Dòng chảy công việc">Dòng<br>chảy</button>
+    <button title="Dự án">Dự án</button>
+    <button title="Mua hàng">Mua</button>
+    <button title="Tài chính">TC</button>
+    <button title="Nhân sự">NS</button>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <span class="brand">Tiến Thịnh Group · Trung tâm điều hành</span>
+      <nav class="wtabs">
+        <span class="wtab">Hôm nay</span>
+        <span class="wtab">Bảng điều khiển</span>
+        <span class="wtab on">Dòng chảy công việc</span>
+      </nav>
+      <div class="sp"></div>
+      <button class="iconbtn" id="themeBtn" title="Sáng / tối">◐</button>
+      <div class="avatar" title="Admin Hoàng">AH</div>
+    </header>
+
+    <div class="page">
+      <div class="toolbar">
+        <h1>Dòng chảy công việc</h1>
+        <span class="live"><span class="dot"></span>Số liệu lúc 13/10 09:41 · tự cập nhật mỗi phút</span>
+        <div class="sp"></div>
+        <div class="seg" id="period">
+          <button disabled title="Đợt 1">7 ngày</button>
+          <button disabled title="Đợt 1">30 ngày</button>
+          <button class="on">90 ngày</button>
+        </div>
+        <select id="projSel" title="Lọc theo dự án / công trường"><option>Mọi dự án</option><option>DỰ ÁN SƠN MIỀN BẮC</option><option>NHÀ MÁY THÚ NHỒI BÔNG GĐ2</option><option>G3 BOQ project</option></select>
+        <select id="unitSel" title="Lọc theo phòng ban"><option>Mọi phòng ban</option></select>
+        <button class="iconbtn" id="motionBtn" title="Bật/tắt chuyển động trên sơ đồ">▶ Chuyển động</button>
+      </div>
+
+      <div class="chips" id="chips" style="margin-bottom:10px"></div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="body2">
+        <section class="card viz">
+          <div class="vhead">
+            <div class="seg" id="viewSeg">
+              <button data-v="flow" class="on">Dòng chảy</button>
+              <button data-v="map">Bản đồ</button>
+              <button data-v="rank">Xếp hạng</button>
+            </div>
+            <div class="legend" id="legend"></div>
+          </div>
+          <div id="vizBody"></div>
+          <div class="foot" id="vizFoot"></div>
+        </section>
+        <aside class="card panel" id="panel"></aside>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+<nav class="mobile-nav">
+  <button>Việc</button><button>Hôm nay</button><button class="on">Dòng chảy</button><button>Trợ lý</button>
+</nav>
+
+<script>
+/* ───────────────── SỐ THẬT đọc chỉ-đọc từ Cloud 13/10/2026 (workflow_step_assignments, org_units, employees, notifications…) ───────────────── */
+const UNITS = {
+  PM:{name:'Phòng Quản lý dự án', short:'QL dự án', people:10},
+  VT:{name:'Phòng Vật tư - Thiết bị', short:'Vật tư - TB', people:3},
+  HR:{name:'Phòng Hành chính - Nhân sự', short:'HC - Nhân sự', people:8},
+  BLD:{name:'Ban lãnh đạo', short:'Ban lãnh đạo', people:5},
+  TC:{name:'Phòng Tài chính - Kế toán', short:'Tài chính - KT', people:5},
+  NM:{name:'Văn phòng nhà máy', short:'VP nhà máy', people:5},
+  UNK:{name:'Chưa gắn phòng ban', short:'Chưa gắn phòng', people:44, gap:true},
+};
+/* Lượt giao bước duyệt 90 ngày: phòng của người giao → phòng của người nhận (20 cặp lớn nhất, 363/366 lượt) */
+const FLOWS = [['PM','PM',155],['PM','VT',60],['HR','HR',26],['PM','UNK',24],['HR','BLD',15],['UNK','PM',15],['PM','HR',15],['UNK','VT',14],['UNK','HR',8],['HR','PM',7],['UNK','BLD',7],['VT','VT',6],['PM','BLD',2],['VT','PM',2],['HR','VT',2],['VT','UNK',1],['HR','UNK',1],['TC','PM',1],['BLD','BLD',1],['HR','NM',1]];
+/* Đang chờ hôm nay theo phòng của người nhận: tổng / đứng yên >3 ngày / quá hạn SLA */
+const WAITING = {VT:[13,5,5],PM:[11,8,2],BLD:[7,7,1],HR:[6,6,6],UNK:[3,3,0],TC:[1,1,0],NM:[1,1,0]};
+/* Kết quả 90 ngày */
+const OUTCOMES = [
+  {id:'APPROVED',name:'Đã duyệt',n:282,color:'steel',avg:56.5,med:19.5},
+  {id:'PENDING',name:'Đang chờ',n:28,color:'amber',med:92.3},
+  {id:'SKIPPED',name:'Bỏ qua bước',n:22,color:'gray',avg:114.9},
+  {id:'CANCELLED',name:'Hủy phiếu',n:17,color:'gray',avg:30.8},
+  {id:'RETURNED',name:'Trả lại',n:12,color:'who',avg:16.6},
+  {id:'REJECTED',name:'Từ chối',n:5,color:'rose',avg:124.3},
+];
+const AGE = [['Dưới 1 ngày',11,'mint'],['1–3 ngày',0,'mint'],['3–7 ngày',7,'amber'],['7–30 ngày',3,'amber'],['Trên 30 ngày',21,'rose']];
+const PENDING_PEOPLE = [
+  ['Nguyễn Văn Luật',6,'16/06','PM'],['Bùi Thuỳ Linh',6,'16/06',null],['Admin Hoàng',6,'04/06','HR'],['Dương Xuân Thịnh',5,'07/09',null],
+  ['Bùi Quang Chung',5,'08/10',null],['Đặng Thị Thu Hà',2,'12/10',null],['Nguyễn Quang Thuận',2,'08/07',null],['Nguyễn Thành Đô',2,'12/10','PM'],
+  ['Hoàng Công Minh',1,'09/10',null],['Đoàn Văn Dương',1,'01/10',null]];
+const TEMPLATES = [['Quy trình cấp vật tư công trường',30],['Quy trình cấp vật tư công trường (riêng SMB-2026)',6],['[Request] Đề xuất trực tiếp',3],['[Request] Đề xuất phê duyệt hồ sơ phòng HCNS',3]];
+const APPROVERS = [['Phạm Ngọc Sơn',45,0.6,19.2],['Nguyễn Văn Năm',43,1.3,7.0],['Nguyễn Phương Thảo',6,0.1,1.4],['Nguyễn Thị Giang',28,4.6,60.2],['Nguyễn Thành Đô',73,20.3,25.5],['Nguyễn Thị Mơ',17,50.2,142.3],['Phạm Đức Thiện',23,51.1,105.8],['Đặng Thị Hương',16,53.8,103.0],['Đặng Thị Thu Hà',10,65.0,61.7],['Bùi Quang Chung',35,65.3,108.6],['Bùi Thuỳ Linh',27,89.6,138.0]];
+const CREATORS = [['Nguyễn Văn Luật',45,'PM'],['Nguyễn Phương Thảo',26,'PM'],['Nguyễn Hồng Quân',17,'NM'],['Admin Hoàng',11,'HR'],['Nguyễn Thị Thu Hà',11,'UNK'],['Đoàn Văn Dương',11,'UNK'],['Lưu Công Danh',9,'PM'],['Đặng Thị Hương',7,'HR'],['Nguyễn Thành Đô',6,'PM'],['Trần Thị Tươi',6,'HR']];
+const DAILY = [1,6,0,0,0,4,1,1,3,8,8,4,7,12,3,5,7,9,8,0,1,4,5,12,12,12,17,7,1,18]; /* 13/09 → 12/10, 176 lượt */
+/* Các nguồn khác đang chờ (đợt 1 nối vào sơ đồ) */
+const MODULES = [
+  {id:'wf',name:'Quy trình & Đề xuất',n:42,on:true},
+  {id:'mr',name:'Đề xuất vật tư',n:15,note:'+52 đã duyệt chờ cấp, 4 đang chuyển'},
+  {id:'po',name:'Đơn hàng',n:32,note:'32 đã gửi NCC · 25 xác nhận · 7 giao một phần · 6 đang giao'},
+  {id:'wms',name:'Phiếu kho',n:23},
+  {id:'dl',name:'Nhật ký thi công',n:6,note:'154 bản nháp chưa gửi'},
+  {id:'hr',name:'Nghỉ phép / điều động',n:5},
+  {id:'off',name:'Văn bản',n:2},
+  {id:'fin',name:'Đề nghị chi',n:null,note:'chưa có phiếu 90 ngày'},
+];
+const PROJECTS = [
+  {id:'SMB',name:'DỰ ÁN SƠN MIỀN BẮC',pending:4,approved:30,transit:3,avgDays:53.5},
+  {id:'TNB',name:'NHÀ MÁY THÚ NHỒI BÔNG GĐ2',pending:8,approved:21,transit:0,avgDays:37.8},
+  {id:'G3',name:'G3 BOQ project',pending:3,approved:1,transit:1,avgDays:20.6},
+];
+const NOTIF = {total30:3749,unread:3170,unread7d:1111,people7d:34,noModule:2497};
+
+const COLORS = {steel:'var(--steel)',amber:'var(--warn)',rose:'var(--danger)',who:'var(--who)',gray:'#9ca3af',mint:'var(--accent)'};
+const fmt = n => n==null?'—':n.toLocaleString('vi-VN');
+
+/* ───────────────── Trạng thái giao diện ───────────────── */
+const state = {view:'flow', sel:null /* {type:'unit'|'link'|'outcome'|'person'|'kpi', ...} */, motion:false, unit:null};
+const $ = id => document.getElementById(id);
+const tip = $('tip');
+function showTip(e, html){tip.innerHTML=html;tip.style.display='block';moveTip(e)}
+function moveTip(e){const x=Math.min(e.clientX+12, innerWidth-270);tip.style.left=x+'px';tip.style.top=(e.clientY+14)+'px'}
+function hideTip(){tip.style.display='none'}
+
+/* ───────────────── Chips module ───────────────── */
+function renderChips(){
+  $('chips').innerHTML = MODULES.map(m=>`<button class="chip ${m.on?'on':'off'}" title="${m.on?'Đã nối vào sơ đồ':'Đợt 1 nối vào sơ đồ — bản xem thử chỉ hiện số đang chờ'}${m.note?' · '+m.note:''}">${m.name}<span class="n">${m.n==null?'—':fmt(m.n)}</span>${m.on?'':'<span class="pill gray">đợt 1</span>'}</button>`).join('');
+}
+
+/* ───────────────── KPI ───────────────── */
+const totalWaiting = Object.values(WAITING).reduce((a,b)=>a+b[0],0);
+const totalStuck = Object.values(WAITING).reduce((a,b)=>a+b[1],0);
+const totalOverdue = Object.values(WAITING).reduce((a,b)=>a+b[2],0);
+const KPIS = [
+  {id:'waiting',l:'Đang chờ xử lý',v:totalWaiting,s:'ở 7 phòng · 28 phát sinh trong 90 ngày',ico:'amber',sym:'⏳',cls:'warn'},
+  {id:'stuck',l:'Đứng yên > 3 ngày',v:totalStuck,s:'21 việc đã chờ trên 30 ngày',ico:'rose',sym:'!',cls:'danger',blink:true},
+  {id:'overdue',l:'Quá hạn SLA',v:totalOverdue,s:'SLA có ở 265/366 lượt giao (72%)',ico:'rose',sym:'⏰',cls:'danger'},
+  {id:'median',l:'Trung vị xử lý',v:'19,5 giờ',s:'282 lượt duyệt xong · trung bình 56,5 giờ',ico:'sky',sym:'◔',cls:'steel'},
+  {id:'returned',l:'Trả lại / từ chối',v:17,s:'11 phiếu bị trả, 1 phiếu trả 2 lần',ico:'who',sym:'↩',cls:''},
+  {id:'volume',l:'Lượt giao 30 ngày',v:176,s:'cao nhất 18 lượt ngày 12/10',ico:'mint',sym:'↗',cls:'',spark:true},
+];
+function spark(){
+  const w=92,hh=28,max=Math.max(...DAILY);const pts=DAILY.map((v,i)=>[(i/(DAILY.length-1))*w, hh-2-(v/max)*(hh-6)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${hh}"><path d="${d}" fill="none" stroke="var(--num)" stroke-width="1.5"/><circle cx="${w}" cy="${pts[pts.length-1][1].toFixed(1)}" r="2" fill="var(--num)"/></svg>`;
+}
+function renderKpis(){
+  $('kpis').innerHTML = KPIS.map(k=>`<button class="kpi ${state.sel&&state.sel.type==='kpi'&&state.sel.id===k.id?'on':''}" data-k="${k.id}" title="Bấm để xem danh sách">
+    <span class="l"><span class="ico ${k.ico}">${k.sym}</span>${k.l}</span>
+    <span class="v ${k.cls} ${k.blink?'stuck':''}">${typeof k.v==='number'?fmt(k.v):k.v}</span>
+    <span class="s">${k.s}</span>${k.spark?spark():''}</button>`).join('');
+  $('kpis').querySelectorAll('.kpi').forEach(b=>b.onclick=()=>{select({type:'kpi',id:b.dataset.k})});
+}
+
+/* ───────────────── Sankey 3 cột ───────────────── */
+function buildSankey(){
+  const col1 = {}, col2 = {};
+  FLOWS.forEach(([a,b,n])=>{col1[a]=(col1[a]||0)+n;col2[b]=(col2[b]||0)+n});
+  const c1 = Object.entries(col1).sort((a,b)=>b[1]-a[1]).map(([id,v])=>({id,v,col:0}));
+  const c2 = Object.entries(col2).sort((a,b)=>b[1]-a[1]).map(([id,v])=>({id,v,col:1}));
+  const c3 = OUTCOMES.map(o=>({id:o.id,v:o.n,col:2,o}));
+  /* Cột 2 → cột 3: tổng kết quả là số thật; chia theo từng phòng theo tỷ lệ (minh họa) — "Đang chờ" chia theo số đang chờ thật của phòng */
+  const sum2 = c2.reduce((a,n)=>a+n.v,0), sum3 = c3.reduce((a,n)=>a+n.v,0);
+  const pendTot = Object.values(WAITING).reduce((a,b)=>a+b[0],0);
+  const links2 = [];
+  c2.forEach(u=>{
+    const pendV = Math.min(u.v, (WAITING[u.id]?WAITING[u.id][0]:0) * (OUTCOMES[1].n/pendTot));
+    const rest = u.v - pendV;
+    const restTot = sum3 - OUTCOMES[1].n;
+    OUTCOMES.forEach(o=>{
+      const v = o.id==='PENDING'?pendV: rest*(o.n/restTot);
+      if(v>0.05) links2.push({s:u.id,t:o.id,v,o});
+    });
+  });
+  return {c1,c2,c3,links1:FLOWS.map(([a,b,v])=>({s:a,t:b,v})),links2};
+}
+function sankeySVG(){
+  const {c1,c2,c3,links1,links2} = buildSankey();
+  const W=880,H=570,NW=14,PAD=10,TOP=26;
+  const cols=[c1,c2,c3];
+  const scale = Math.min(...cols.map(c=>(H-TOP-PAD*(c.length-1)-10)/c.reduce((a,n)=>a+n.v,0)));
+  const X=[8, (W-NW)/2, W-NW-8];
+  const pos={};
+  cols.forEach((c,ci)=>{let y=TOP;c.forEach(n=>{const hh=Math.max(3,n.v*scale);pos[ci+':'+n.id]={x:X[ci],y,h:hh,n};y+=hh+PAD})});
+  /* nhãn: nút thấp dùng 1 dòng, đẩy xuống nếu chồng nhãn trước */
+  cols.forEach((c,ci)=>{let last=-99;c.forEach(n=>{const p=pos[ci+':'+n.id];p.small=p.h<28;let ly=p.small?p.y+p.h/2+4:p.y+p.h/2+1;ly=Math.max(ly,last+(p.small?15:30));p.ly=ly;last=ly;})});
+  /* offsets */
+  const outOff={}, inOff={};
+  const linkPaths=[];
+  function addLinks(links, sc, tc, colorFn, cls){
+    const bySource={};links.forEach(l=>{(bySource[l.s]=bySource[l.s]||[]).push(l)});
+    /* sắp theo vị trí đích để giảm cắt nhau */
+    const tIndex=id=>cols[tc].findIndex(n=>n.id===id);
+    links.slice().sort((a,b)=>{const pa=pos[sc+':'+a.s].y-pos[sc+':'+b.s].y;return pa||(tIndex(a.t)-tIndex(b.t))}).forEach(l=>{
+      const s=pos[sc+':'+l.s], t=pos[tc+':'+l.t];
+      const hh=Math.max(1.5,l.v*scale);
+      const so=outOff[sc+':'+l.s]||0, to=inOff[tc+':'+l.t]||0;
+      const sy0=s.y+so, sy1=sy0+hh, ty0=t.y+to, ty1=ty0+hh;
+      outOff[sc+':'+l.s]=so+hh; inOff[tc+':'+l.t]=to+hh;
+      const sx=s.x+NW, tx=t.x, mx=(sx+tx)/2;
+      const d=`M${sx},${sy0} C${mx},${sy0} ${mx},${ty0} ${tx},${ty0} L${tx},${ty1} C${mx},${ty1} ${mx},${sy1} ${sx},${sy1} Z`;
+      const mid=`M${sx},${(sy0+sy1)/2} C${mx},${(sy0+sy1)/2} ${mx},${(ty0+ty1)/2} ${tx},${(ty0+ty1)/2}`;
+      linkPaths.push({d,mid,l,cls,color:colorFn(l),sc,tc});
+    });
+  }
+  addLinks(links1,0,1,()=>COLORS.steel,'l1');
+  addLinks(links2,1,2,l=>COLORS[l.o.color],'l2');
+  const selKey = state.sel ? JSON.stringify(state.sel) : '';
+  let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Sơ đồ dòng chảy công việc 90 ngày">`;
+  svg+=`<text x="${X[0]}" y="14" font-size="11" font-weight="600" fill="var(--muted)">NƠI PHÁT SINH · phòng của người giao</text>`;
+  svg+=`<text x="${X[1]+NW/2}" y="14" text-anchor="middle" font-size="11" font-weight="600" fill="var(--muted)">NƠI XỬ LÝ · phòng của người nhận</text>`;
+  svg+=`<text x="${X[2]+NW}" y="14" text-anchor="end" font-size="11" font-weight="600" fill="var(--muted)">KẾT QUẢ · 90 ngày</text>`;
+  linkPaths.forEach((p,i)=>{
+    const isSel = state.sel && ((state.sel.type==='link'&&state.sel.s===p.l.s&&state.sel.t===p.l.t&&state.sel.cls===p.cls) || (state.sel.type==='unit'&&(p.l.s===state.sel.id||p.l.t===state.sel.id)) || (state.sel.type==='outcome'&&p.l.t===state.sel.id));
+    const dim = state.sel && state.sel.type!=='kpi' && !isSel;
+    const op = p.cls==='l1'?0.32:(p.l.o.id==='PENDING'?0.75:p.l.o.id==='APPROVED'?0.45:0.5);
+    svg+=`<path class="link ${dim?'dim':''}" data-i="${i}" d="${p.d}" fill="${p.color}" opacity="${isSel?Math.min(1,op+0.3):op}"/>`;
+    if(state.motion && (p.cls==='l1' ? p.l.v>=7 : p.l.o.id==='PENDING' && p.l.v>=1)){
+      const dur = p.cls==='l1'? (6 - Math.min(3,p.l.v/60)) : 4;
+      svg+=`<circle r="2.2" fill="${p.cls==='l1'?'var(--steel)':'var(--warn)'}"><animateMotion dur="${dur}s" repeatCount="indefinite" path="${p.mid}"/></circle>`;
+    }
+  });
+  /* nodes */
+  cols.forEach((c,ci)=>c.forEach(n=>{
+    const p=pos[ci+':'+n.id];
+    const u=UNITS[n.id];
+    const sel = state.sel && ((state.sel.type==='unit'&&state.sel.id===n.id&&state.sel.col===ci)||(state.sel.type==='outcome'&&state.sel.id===n.id));
+    let fill='var(--steel)';
+    if(ci===2) fill=COLORS[n.o.color];
+    if(u&&u.gap) fill='#9ca3af';
+    svg+=`<g class="node ${sel?'sel':''}" data-col="${ci}" data-id="${n.id}">`;
+    svg+=`<rect x="${p.x}" y="${p.y}" width="${NW}" height="${p.h}" fill="${fill}" opacity="${ci===2?0.9:0.85}"/>`;
+    if(ci===1 && WAITING[n.id]){ /* vạch đỏ: đứng yên hôm nay */
+      const w=WAITING[n.id]; const frac=Math.min(1,w[1]/Math.max(1,n.v)*6);
+      svg+=`<rect x="${p.x-4}" y="${p.y}" width="3" height="${Math.max(3,p.h*frac)}" fill="var(--danger)"/>`;
+    }
+    const label = ci===2? n.o.name : (u?u.short:n.id);
+    const ty = p.ly;
+    const w=WAITING[n.id];
+    const waitTs = (ci===1&&w)?` · <tspan fill="${w[1]?'var(--danger)':'var(--muted)'}" font-weight="600">${w[0]} đang chờ</tspan>`:'';
+    if(p.small){
+      const one = ci===0?`${label} <tspan class="n">· ${fmt(n.v)}</tspan>`: ci===1?`${label} <tspan class="n">· ${fmt(n.v)}${waitTs}</tspan>`:`${label} <tspan class="n">· ${fmt(n.v)}</tspan>`;
+      svg+=`<text x="${ci===2?p.x-6:p.x+NW+6}" y="${ty}" ${ci===2?'text-anchor="end"':''}>${one}</text>`;
+    } else if(ci===0){ svg+=`<text x="${p.x+NW+6}" y="${ty}">${label}</text><text class="n" x="${p.x+NW+6}" y="${ty+13}">${fmt(n.v)} lượt giao</text>`; }
+    else if(ci===1){ svg+=`<text x="${p.x+NW+6}" y="${ty}">${label}</text><text class="n" x="${p.x+NW+6}" y="${ty+13}">${fmt(n.v)} nhận${waitTs}</text>`; }
+    else { svg+=`<text x="${p.x-6}" y="${ty}" text-anchor="end">${label}</text><text class="n" x="${p.x-6}" y="${ty+13}" text-anchor="end">${fmt(n.v)}${n.o.med?` · trung vị ${String(n.o.med).replace('.',',')} giờ`:''}</text>`; }
+    svg+='</g>';
+  }));
+  svg+='</svg>';
+  const el=$('vizBody'); el.innerHTML=svg;
+  el.querySelectorAll('.link').forEach(pth=>{
+    const p=linkPaths[+pth.dataset.i];
+    pth.onmousemove=e=>{
+      const sName=UNITS[p.l.s]?UNITS[p.l.s].name:p.l.s; const tName=p.cls==='l1'?UNITS[p.l.t].name:p.l.o.name;
+      showTip(e,`<b>${sName}</b> → <b>${tName}</b><br>${p.cls==='l1'?fmt(p.l.v)+' lượt giao / 90 ngày':Math.round(p.l.v)+' lượt (ước theo tỷ lệ)'}`)};
+    pth.onmouseleave=hideTip;
+    pth.onclick=()=>select({type:'link',s:p.l.s,t:p.l.t,cls:p.cls,v:p.l.v,o:p.l.o});
+  });
+  el.querySelectorAll('.node').forEach(g=>{
+    g.onclick=()=>{const ci=+g.dataset.col,id=g.dataset.id; select(ci===2?{type:'outcome',id}:{type:'unit',id,col:ci})};
+  });
+  $('legend').innerHTML=`<span><i style="background:var(--steel)"></i>Đã duyệt</span><span><i style="background:var(--warn)"></i>Đang chờ</span><span><i style="background:var(--who)"></i>Trả lại</span><span><i style="background:var(--danger)"></i>Từ chối</span><span><i style="background:#9ca3af"></i>Bỏ qua / hủy</span><span><i style="background:var(--danger);width:3px"></i>vạch đỏ = đứng yên hôm nay</span>`;
+  $('vizFoot').innerHTML=`<span>Độ rộng dải = số lượt giao bước xử lý trong 90 ngày (363 / 366 lượt, 20 cặp phòng lớn nhất).</span><span>Bấm phòng, dải hoặc kết quả để xem người và hồ sơ.</span><span class="wrn">Cột Kết quả theo từng phòng là chia tỷ lệ minh họa; tổng mỗi kết quả là số thật.</span>`;
+}
+
+/* ───────────────── Bản đồ phòng ban + công trường ───────────────── */
+function mapSVG(){
+  const W=880,H=540;
+  const P={SMB:[92,120],TNB:[92,270],G3:[92,420],PM:[400,170],VT:[400,400],HR:[650,120],BLD:[800,270],UNK:[600,300],TC:[650,430],NM:[480,500]};
+  const inTot={};FLOWS.forEach(([a,b,n])=>inTot[b]=(inTot[b]||0)+n);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Bản đồ phòng ban và công trường"><defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--steel)" opacity=".7"/></marker><marker id="arrw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--warn)"/></marker></defs>`;
+  svg+=`<text x="92" y="40" text-anchor="middle" font-size="11" font-weight="600" fill="var(--muted)">CÔNG TRƯỜNG · đề xuất vật tư</text><text x="600" y="40" text-anchor="middle" font-size="11" font-weight="600" fill="var(--muted)">PHÒNG BAN · lượt giao bước xử lý 90 ngày</text>`;
+  const r=id=>UNITS[id]?(UNITS[id].gap?24:10+Math.sqrt(UNITS[id].people)*4.2):22;
+  function edge(a,b,n,color,marker,dash){
+    const [x1,y1]=P[a],[x2,y2]=P[b];
+    const w=Math.min(11,Math.max(1.2,Math.sqrt(n)*1.0));
+    if(a===b){const rr=r(a);return `<g class="link" data-e="${a}|${b}"><path d="M${x1-7},${y1-rr+2} a 10 10 0 1 1 14,0" fill="none" stroke="${color}" stroke-width="${Math.min(5,w)}" opacity=".55" marker-end="url(#${marker})"/><text x="${x1+16}" y="${y1-rr-12}" font-size="10" fill="var(--muted)">${fmt(n)} nội bộ</text></g>`}
+    const dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy),ux=dx/L,uy=dy/L;
+    const sx=x1+ux*r(a),sy=y1+uy*r(a),tx=x2-ux*(r(b)+6),ty=y2-uy*(r(b)+6);
+    const cx=(sx+tx)/2-uy*L*0.12,cy=(sy+ty)/2+ux*L*0.12;
+    return `<path class="link" data-e="${a}|${b}" d="M${sx},${sy} Q${cx},${cy} ${tx},${ty}" fill="none" stroke="${color}" stroke-width="${w}" opacity=".5" ${dash?'stroke-dasharray="5 4"':''} marker-end="url(#${marker})"/>`;
+  }
+  const edges=[];
+  FLOWS.forEach(([a,b,n])=>{ if(P[a]&&P[b]) edges.push({a,b,n,svg:edge(a,b,n,'var(--steel)','arr')}); });
+  PROJECTS.forEach(p=>{ edges.push({a:p.id,b:'PM',n:p.pending,mr:true,svg:edge(p.id,'PM',p.pending*3,'var(--warn)','arrw',true)}); edges.push({a:p.id,b:'VT',n:p.approved+p.transit,mr:true,svg:edge(p.id,'VT',(p.approved+p.transit)*1.2,'var(--warn)','arrw',true)}); });
+  edges.sort((a,b)=>b.n-a.n).forEach(e=>svg+=e.svg);
+  /* công trường */
+  PROJECTS.forEach(p=>{const [x,y]=P[p.id];const w=p.pending+p.approved+p.transit;
+    svg+=`<g class="node" data-proj="${p.id}"><rect x="${x-70}" y="${y-26}" width="140" height="52" rx="10" fill="var(--card)" stroke="var(--warn)" stroke-width="1.5"/>
+    <text x="${x}" y="${y-8}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--fg)">${p.id==='SMB'?'Sơn Miền Bắc':p.id==='TNB'?'Thú nhồi bông GĐ2':'G3 BOQ'}</text>
+    <text x="${x}" y="${y+8}" text-anchor="middle" font-size="11" fill="var(--warn)" font-weight="600">${w} đề xuất VT đang mở</text>
+    <text x="${x}" y="${y+20}" text-anchor="middle" font-size="10" fill="var(--muted)">chờ cấp trung bình ${String(p.avgDays).replace('.',',')} ngày</text></g>`});
+  /* phòng ban */
+  Object.keys(UNITS).forEach(id=>{const [x,y]=P[id];const rr=r(id);const u=UNITS[id];const w=WAITING[id]||[0,0,0];const frac=w[0]?w[1]/w[0]:0;
+    const circ=2*Math.PI*(rr+5);
+    const sel=state.sel&&state.sel.type==='unit'&&state.sel.id===id;
+    svg+=`<g class="node ${sel?'sel':''}" data-unit="${id}">
+      <circle cx="${x}" cy="${y}" r="${rr}" fill="${u.gap?'#e5e7eb':'var(--steel-s)'}" stroke="${u.gap?'#9ca3af':'var(--steel)'}" stroke-width="${sel?2.5:1.5}" ${u.gap?'stroke-dasharray="4 3"':''}/>
+      ${w[0]?`<circle cx="${x}" cy="${y}" r="${rr+5}" fill="none" stroke="var(--danger-soft)" stroke-width="4"/><circle cx="${x}" cy="${y}" r="${rr+5}" fill="none" stroke="var(--danger)" stroke-width="4" stroke-dasharray="${(circ*frac).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${x} ${y})"/>`:''}
+      <text x="${x}" y="${y+4}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--steel)">${u.people}</text>
+      <text x="${x}" y="${y+rr+22}" text-anchor="middle" font-size="11.5" font-weight="600" fill="var(--fg)">${u.short}</text>
+      <text x="${x}" y="${y+rr+35}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${fmt(inTot[id]||0)} nhận · <tspan fill="${w[1]?'var(--danger)':'var(--muted)'}" font-weight="600">${w[0]} chờ</tspan></text>
+      ${w[0]?`<g><circle cx="${x+rr-2}" cy="${y-rr+2}" r="10" fill="${w[1]?'var(--danger)':'var(--warn)'}"/><text x="${x+rr-2}" y="${y-rr+6}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff">${w[0]}</text></g>`:''}
+    </g>`});
+  svg+='</svg>';
+  const el=$('vizBody');el.innerHTML=svg;
+  el.querySelectorAll('[data-unit]').forEach(g=>g.onclick=()=>select({type:'unit',id:g.dataset.unit,col:1}));
+  el.querySelectorAll('[data-proj]').forEach(g=>g.onclick=()=>select({type:'project',id:g.dataset.proj}));
+  el.querySelectorAll('.link').forEach(p=>{const [a,b]=p.dataset.e.split('|');const e=edges.find(x=>x.a===a&&x.b===b);
+    p.onmousemove=ev=>showTip(ev,`<b>${UNITS[a]?UNITS[a].name:PROJECTS.find(x=>x.id===a).name}</b> → <b>${UNITS[b].name}</b><br>${e.mr?e.n+' đề xuất vật tư đang mở':fmt(e.n)+' lượt giao / 90 ngày'}`);
+    p.onmouseleave=hideTip; p.onclick=()=>select(e.mr?{type:'project',id:a}:{type:'link',s:a,t:b,cls:'l1',v:e.n});});
+  $('legend').innerHTML=`<span><i style="background:var(--steel-s);border:1px solid var(--steel);border-radius:50%"></i>số = người trong phòng</span><span><i style="background:var(--danger);border-radius:50%"></i>huy hiệu = việc đang chờ; vòng đỏ = phần đứng yên</span><span><i style="background:var(--warn);height:2px;vertical-align:3px"></i>nét đứt = đề xuất vật tư từ công trường</span>`;
+  $('vizFoot').innerHTML=`<span>Vị trí phòng cố định để nhìn ngày nào cũng giống nhau; mũi tên to = nhiều lượt giao.</span><span class="wrn">"Chưa gắn phòng ban" (44 nhân viên) là lỗ hổng dữ liệu cần HR gắn phòng trước khi bản đồ đúng.</span>`;
+}
+
+/* ───────────────── Xếp hạng ───────────────── */
+function rankHTML(){
+  const byIn={};FLOWS.forEach(([a,b,n])=>byIn[b]=(byIn[b]||0)+n);
+  const mostAssigned=APPROVERS.slice().sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const fastest=APPROVERS.filter(a=>a[1]>=10).sort((a,b)=>a[2]-b[2]).slice(0,5);
+  const slowest=APPROVERS.filter(a=>a[1]>=10).sort((a,b)=>b[2]-a[2]).slice(0,5);
+  const maxN=Math.max(...APPROVERS.map(a=>a[1]));
+  const tbl=(rows,cols)=>`<table><thead><tr>${cols.map(c=>`<th class="${c.r?'r':''}">${c.l}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td class="${c.r?'r':''}">${c.f(r)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  const bar=(v,max,color)=>`<span class="tr" style="display:inline-block;width:70px;height:8px;background:var(--card2);border-radius:4px;vertical-align:middle;margin-right:6px"><i style="display:block;height:100%;width:${(v/max*100).toFixed(0)}%;background:${color};border-radius:4px"></i></span>`;
+  const hrs=v=>String(v).replace('.',',')+' giờ';
+  $('vizBody').innerHTML=`<div class="rank">
+    <div><h4><span class="ico sky" style="width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center">↓</span>Nhận nhiều việc nhất · 90 ngày</h4>${tbl(mostAssigned,[{l:'Người',f:r=>`<span class="who">${r[0]}</span>`},{l:'Lượt xử lý',r:1,f:r=>bar(r[1],maxN,'var(--steel)')+`<span class="num">${r[1]}</span>`},{l:'Trung vị',r:1,f:r=>hrs(r[2])}])}</div>
+    <div><h4><span class="ico mint" style="width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center">✓</span>Xử lý nhanh nhất · từ 10 lượt</h4>${tbl(fastest,[{l:'Người',f:r=>`<span class="who">${r[0]}</span>`},{l:'Lượt',r:1,f:r=>`<span class="num">${r[1]}</span>`},{l:'Trung vị',r:1,f:r=>`<span class="num">${hrs(r[2])}</span>`},{l:'Trung bình',r:1,f:r=>hrs(r[3])}])}</div>
+    <div><h4><span class="ico rose" style="width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center">!</span>Xử lý chậm nhất · từ 10 lượt</h4>${tbl(slowest,[{l:'Người',f:r=>`<span class="who">${r[0]}</span>`},{l:'Lượt',r:1,f:r=>`<span class="num">${r[1]}</span>`},{l:'Trung vị',r:1,f:r=>`<span class="bad">${hrs(r[2])}</span>`},{l:'Đang giữ',r:1,f:r=>{const p=PENDING_PEOPLE.find(x=>x[0]===r[0]);return p?`<span class="bad">${p[1]}</span>`:'0'}}])}</div>
+    <div><h4><span class="ico who" style="width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center">+</span>Tạo nhiều phiếu nhất · 90 ngày</h4>${tbl(CREATORS.slice(0,6),[{l:'Người',f:r=>`<span class="who">${r[0]}</span>`},{l:'Phòng',f:r=>UNITS[r[2]]?UNITS[r[2]].short:'—'},{l:'Phiếu',r:1,f:r=>bar(r[1],45,'var(--who)')+`<span class="num">${r[1]}</span>`}])}</div>
+  </div>`;
+  $('legend').innerHTML='';
+  $('vizFoot').innerHTML=`<span>Trung vị = một nửa số lượt xử lý nhanh hơn con số này. Chỉ xếp hạng người có từ 10 lượt để tránh so sánh lệch.</span><span class="wrn">Một lượt duyệt 1 phút và một bước nhận hàng cả ngày đang được đếm như nhau — cần trọng số theo loại phiếu (câu hỏi 5).</span>`;
+}
+
+/* ───────────────── Ngăn phải ───────────────── */
+function personRow(p){const u=p[3]&&UNITS[p[3]];const old=p[2];const oldDays=ageDays(old);
+  return `<div class="row"><div class="t"><b><span class="who">${p[0]}</span>${u?` <span class="pill steel">${u.short}</span>`:''}</b><small><span class="${oldDays>30?'bad':oldDays>3?'wrn':''}">${p[1]} việc đang chờ</span> · cũ nhất từ ${old}${oldDays>30?` <span class="bad stuck">· ${oldDays} ngày</span>`:''}</small></div><div class="acts"><button class="mini" title="Gửi nhắc qua thông báo + Zalo">Nhắc</button><button class="mini p" title="Mở danh sách việc của người này thành tab">Xem</button></div></div>`}
+function ageDays(dm){const [d,m]=dm.split('/').map(Number);const dt=new Date(2026,m-1,d);return Math.round((new Date(2026,9,13)-dt)/86400000)}
+function bars(items,max){return items.map(([l,v,c])=>`<div class="bar"><span>${l}</span><span class="tr"><i style="width:${(v/max*100).toFixed(0)}%;background:${COLORS[c]||'var(--steel)'}"></i></span><span class="r num">${v}</span></div>`).join('')}
+function overviewPanel(){
+  return `<h2>Điểm nghẽn hôm nay <span class="pill rose">${totalStuck} đứng yên</span></h2><div class="sub">Việc đang nằm ở ai, bao lâu, và nguồn nào chưa nối.</div>
+  <h3>Ùn ở người</h3>${PENDING_PEOPLE.slice(0,5).map(personRow).join('')}<button class="mini" style="margin:4px 0 0 8px">Xem cả 10 người</button>
+  <h3>Tuổi của ${totalWaiting} việc đang chờ</h3>${bars(AGE,21)}
+  <h3>Theo loại phiếu</h3>${bars(TEMPLATES.map(t=>[t[0].length>30?t[0].slice(0,28)+'…':t[0],t[1],'amber']),30).replace(/<span>([^<]+)<\/span>/g,(m,s)=>`<span title="${s}">${s}</span>`)}
+  <h3>Thông tin gửi đi mà chưa được đọc</h3>
+  <div class="stat3"><div><b class="bad">${fmt(NOTIF.unread7d)}</b><small>thông báo quá 7 ngày</small></div><div><b>${NOTIF.people7d}</b><small>người chưa đọc</small></div><div><b>${Math.round(NOTIF.unread/NOTIF.total30*100)}%</b><small>chưa đọc / 30 ngày</small></div></div>
+  <div class="note">Bản xem thử v0: sơ đồ chạy trên 366 lượt giao của Quy trình & Đề xuất. Đợt 1 nối thêm 18 nguồn (đơn hàng, phiếu kho, nhật ký, đề nghị chi, nghỉ phép, văn bản…) đã có trong RPC Việc của tôi.</div>`;
+}
+function unitPanel(id){
+  const u=UNITS[id];const w=WAITING[id]||[0,0,0];
+  const out=FLOWS.filter(f=>f[0]===id),inn=FLOWS.filter(f=>f[1]===id);
+  const sum=a=>a.reduce((x,f)=>x+f[2],0);
+  const partners=[...new Set([...out,...inn].map(f=>f[0]===id?f[1]:f[0]))].filter(x=>x!==id).map(p=>[p, sum(out.filter(f=>f[1]===p)), sum(inn.filter(f=>f[0]===p))]).sort((a,b)=>b[1]+b[2]-a[1]-a[2]);
+  const people=PENDING_PEOPLE.filter(p=>p[3]===id);
+  return `<button class="back" onclick="select(null)">‹ Điểm nghẽn hôm nay</button>
+  <h2><span class="ent">${u.name}</span></h2><div class="sub">${u.people} người${u.gap?' · <span class="bad">chưa có phòng ban trong HRM</span>':''}</div>
+  <div class="stat3"><div><b class="${w[0]?'wrn':''}">${w[0]}</b><small>đang chờ</small></div><div><b class="${w[1]?'bad':''}">${w[1]}</b><small>đứng yên &gt;3 ngày</small></div><div><b class="${w[2]?'bad':''}">${w[2]}</b><small>quá hạn SLA</small></div></div>
+  <div class="stat3"><div><b>${fmt(sum(inn))}</b><small>nhận / 90 ngày</small></div><div><b>${fmt(sum(out))}</b><small>giao đi / 90 ngày</small></div><div><b>${fmt(sum(inn.filter(f=>f[0]===id)))}</b><small>nội bộ phòng</small></div></div>
+  <h3>Trao đổi với phòng khác</h3>${partners.slice(0,5).map(([p,o,i])=>`<div class="bar"><span title="${UNITS[p].name}">${UNITS[p].short}</span><span class="tr" style="display:flex;gap:1px;background:none"><i style="width:${(i/180*100).toFixed(0)}%;background:var(--steel)" title="nhận từ ${UNITS[p].short}: ${i}"></i><i style="width:${(o/180*100).toFixed(0)}%;background:var(--accent);opacity:.6" title="giao cho ${UNITS[p].short}: ${o}"></i></span><span class="r num">${i}↓ ${o}↑</span></div>`).join('')||'<div class="sub">Chỉ xử lý nội bộ.</div>'}
+  <h3>Người đang giữ việc</h3>${people.length?people.map(personRow).join(''):`<div class="sub">Bản xem thử chưa gắn người của phòng này (đợt 1 lấy từ cùng truy vấn).</div>`}
+  <div style="display:flex;gap:6px;margin-top:12px"><button class="mini p" style="flex:1;height:30px">Mở ${w[0]} việc đang chờ</button><button class="mini" style="height:30px" title="Nhắc trưởng phòng và người đang giữ việc">Nhắc cả phòng</button></div>`;
+}
+function linkPanel(s){
+  const sName=UNITS[s.s]?UNITS[s.s].name:s.s; const tName=s.cls==='l1'?UNITS[s.t].name:s.o.name;
+  return `<button class="back" onclick="select(null)">‹ Điểm nghẽn hôm nay</button><h2><span class="ent">${sName}</span> → <span class="ent">${tName}</span></h2>
+  <div class="sub">${s.cls==='l1'?fmt(s.v)+' lượt giao trong 90 ngày':Math.round(s.v)+' lượt (chia tỷ lệ minh họa)'}</div>
+  <div class="stat3"><div><b>${s.cls==='l1'?fmt(s.v):Math.round(s.v)}</b><small>lượt</small></div><div><b>—</b><small>trung vị xử lý<br><span style="font-size:10px">(đợt 1)</span></small></div><div><b>—</b><small>% đúng hạn<br><span style="font-size:10px">(đợt 1)</span></small></div></div>
+  <h3>Loại phiếu chạy trên dải này</h3>${bars(TEMPLATES.map(t=>[t[0].length>30?t[0].slice(0,28)+'…':t[0],t[1],'steel']),30)}
+  <div class="note">Đợt 1: bấm dải mở đúng danh sách phiếu (mã, người gửi, người nhận, ngày giao, thời gian chờ) và lọc được theo dự án.</div>`;
+}
+function outcomePanel(id){const o=OUTCOMES.find(x=>x.id===id);
+  let extra='';
+  if(id==='PENDING') extra=`<h3>Tuổi việc</h3>${bars(AGE,21)}<h3>Ùn ở người</h3>${PENDING_PEOPLE.slice(0,5).map(personRow).join('')}`;
+  if(id==='RETURNED') extra=`<div class="stat3"><div><b>11</b><small>phiếu bị trả</small></div><div><b class="bad">1</b><small>phiếu trả 2 lần</small></div><div><b>16,6 giờ</b><small>trung bình tới lúc trả</small></div></div><div class="note">Trả lại nhiều ở một mẫu phiếu = form thiếu trường bắt buộc hoặc người lập chưa được hướng dẫn. Đợt 2 thống kê lý do trả.</div>`;
+  if(id==='APPROVED') extra=`<div class="stat3"><div><b>19,5 giờ</b><small>trung vị</small></div><div><b>56,5 giờ</b><small>trung bình</small></div><div><b>72%</b><small>có SLA</small></div></div><div class="note">Trung bình cao hơn trung vị gần 3 lần: phần lớn duyệt trong ngày, một số ít kéo rất dài làm xấu bình quân. Đợt 1 hiện phân phối thời gian theo loại phiếu.</div>`;
+  if(id==='SKIPPED'||id==='CANCELLED') extra=`<div class="note">${id==='SKIPPED'?'Bỏ qua bước thường do người duyệt vắng và hệ thống tự chuyển; nhiều lần ở cùng một bước = bước thừa trong quy trình.':'Phiếu bị hủy sau khi đã giao = công sức mất; hiện số này theo mẫu phiếu để chỉnh quy trình.'}</div>`;
+  return `<button class="back" onclick="select(null)">‹ Điểm nghẽn hôm nay</button><h2>${o.name} <span class="pill ${o.color}">${fmt(o.n)} / 90 ngày</span></h2><div class="sub">${Math.round(o.n/366*100)}% số lượt giao.</div>${extra}`;
+}
+function projectPanel(id){const p=PROJECTS.find(x=>x.id===id);
+  return `<button class="back" onclick="select(null)">‹ Điểm nghẽn hôm nay</button><h2><span class="ent">${p.name}</span></h2><div class="sub">Đề xuất vật tư từ công trường đang mở</div>
+  <div class="stat3"><div><b class="wrn">${p.pending}</b><small>chờ duyệt</small></div><div><b class="${p.avgDays>30?'bad':'wrn'}">${p.approved}</b><small>đã duyệt, chờ cấp</small></div><div><b>${p.transit}</b><small>đang chuyển</small></div></div>
+  <div class="bar"><span>Chờ cấp TB</span><span class="tr"><i style="width:${Math.min(100,p.avgDays/60*100).toFixed(0)}%;background:${p.avgDays>30?'var(--danger)':'var(--warn)'}"></i></span><span class="r num">${String(p.avgDays).replace('.',',')} ng</span></div>
+  <div class="note">Đề xuất đã duyệt mà chưa cấp là điểm nghẽn ở Vật tư / Mua hàng, không phải ở người duyệt. Đợt 1 nối đơn hàng và phiếu kho để thấy dòng này chạy tiếp đến đâu.</div>
+  <div style="display:flex;gap:6px;margin-top:12px"><button class="mini p" style="flex:1;height:30px">Mở ${p.pending+p.approved+p.transit} đề xuất</button><button class="mini" style="height:30px">Xem Mua hàng</button></div>`;
+}
+function kpiPanel(id){
+  const map={
+    waiting:()=>`<h2>${fmt(totalWaiting)} việc đang chờ</h2><div class="sub">Theo phòng của người đang giữ việc</div>${bars(Object.entries(WAITING).sort((a,b)=>b[1][0]-a[1][0]).map(([u,w])=>[UNITS[u].short,w[0],w[1]?'rose':'amber']),13)}<h3>Ùn ở người</h3>${PENDING_PEOPLE.slice(0,6).map(personRow).join('')}`,
+    stuck:()=>`<h2>${totalStuck} việc đứng yên &gt; 3 ngày</h2><div class="sub">Ngưỡng 3 ngày làm việc; đổi được ở Thiết lập.</div>${bars(AGE.slice(2),21)}<h3>Ùn ở người</h3>${PENDING_PEOPLE.filter(p=>ageDays(p[2])>3).map(personRow).join('')}<div class="note">21 việc chờ từ tháng 6–9 nhiều khả năng là phiếu "chết" (người duyệt đổi vị trí, phiếu không còn cần). Cần nút <b>Dọn việc cũ</b>: hủy hoặc chuyển người, có lý do, có nhật ký.</div>`,
+    overdue:()=>`<h2>${totalOverdue} việc quá hạn SLA</h2><div class="sub">SLA lấy từ mẫu quy trình (sla_hours); 28% lượt giao chưa đặt SLA.</div>${bars(Object.entries(WAITING).filter(([u,w])=>w[2]).sort((a,b)=>b[1][2]-a[1][2]).map(([u,w])=>[UNITS[u].short,w[2],'rose']),6)}<div class="note">Đặt SLA mặc định cho mẫu chưa có (câu hỏi 4) để con số này phủ 100%.</div>`,
+    median:()=>outcomePanel('APPROVED').replace(/<button class="back"[^>]*>[^<]*<\/button>/,''),
+    returned:()=>outcomePanel('RETURNED').replace(/<button class="back"[^>]*>[^<]*<\/button>/,''),
+    volume:()=>{const max=Math.max(...DAILY);return `<h2>176 lượt giao / 30 ngày</h2><div class="sub">13/09 → 12/10 · trung bình 5,9 lượt/ngày</div><div style="display:flex;align-items:flex-end;gap:2px;height:70px;margin:8px 0">${DAILY.map((v,i)=>`<i title="${v} lượt" style="flex:1;background:${i>=DAILY.length-7?'var(--accent)':'var(--steel)'};opacity:${v?1:.15};height:${Math.max(2,v/max*100)}%;border-radius:2px 2px 0 0"></i>`).join('')}</div><div class="note">Tuần gần nhất (xanh) tăng gấp đôi tuần trước: nhu cầu vật tư cuối tháng dồn về Vật tư và Ban lãnh đạo.</div>`},
+  };
+  return `<button class="back" onclick="select(null)">‹ Điểm nghẽn hôm nay</button>`+map[id]();
+}
+function renderPanel(){
+  const s=state.sel; let html;
+  if(!s) html=overviewPanel();
+  else if(s.type==='unit') html=unitPanel(s.id);
+  else if(s.type==='link') html=linkPanel(s);
+  else if(s.type==='outcome') html=outcomePanel(s.id);
+  else if(s.type==='project') html=projectPanel(s.id);
+  else if(s.type==='kpi') html=kpiPanel(s.id);
+  $('panel').innerHTML=html;
+}
+function select(sel){state.sel=sel;renderKpis();renderViz();renderPanel();
+  if(innerWidth<=1100&&sel){$('panel').scrollIntoView({behavior:'smooth',block:'start'})}}
+function flowBarsHTML(){
+  const inTot={};FLOWS.forEach(([a,b,n])=>inTot[b]=(inTot[b]||0)+n);
+  const rows=Object.entries(inTot).sort((a,b)=>b[1]-a[1]);
+  $('vizBody').innerHTML=`<div class="sub" style="color:var(--muted);font-size:12px;margin-bottom:6px">Nơi xử lý · 90 ngày nhận bao nhiêu, hôm nay còn bao nhiêu đang chờ</div>`+rows.map(([id,n])=>{const u=UNITS[id],w=WAITING[id]||[0,0,0];
+    return `<button class="row" style="width:100%;text-align:left;border-color:var(--border);margin-bottom:6px" data-u="${id}"><div class="t"><b><span class="ent">${u.short}</span>${u.gap?' <span class="pill gray">lỗ hổng dữ liệu</span>':''}</b>
+      <div class="bar" style="grid-template-columns:1fr 44px"><span class="tr"><i style="width:${(n/180*100).toFixed(0)}%;background:var(--steel)"></i></span><span class="r num">${fmt(n)}</span></div>
+      <small>${w[0]?`<span class="${w[1]?'bad':'wrn'}">${w[0]} đang chờ · ${w[1]} đứng yên</span>`:'không có việc chờ'}</small></div><span style="color:var(--muted)">›</span></button>`}).join('');
+  $('vizBody').querySelectorAll('[data-u]').forEach(b=>b.onclick=()=>select({type:'unit',id:b.dataset.u,col:1}));
+  $('legend').innerHTML='';$('vizFoot').innerHTML='<span>Trên điện thoại sơ đồ dải thay bằng thanh; bấm phòng để xem người và hồ sơ.</span>';
+}
+function renderViz(){ if(state.view==='flow'){ if(innerWidth<=760) flowBarsHTML(); else sankeySVG(); } else if(state.view==='map') mapSVG(); else rankHTML(); }
+let rsT;addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(renderViz,150)});
+
+/* ───────────────── Khởi tạo ───────────────── */
+renderChips();renderKpis();renderViz();renderPanel();
+Object.entries(UNITS).forEach(([id,u])=>{const o=document.createElement('option');o.textContent=u.name;$('unitSel').appendChild(o)});
+$('viewSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.view=b.dataset.v;$('viewSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));renderViz()});
+$('motionBtn').onclick=()=>{state.motion=!state.motion;$('motionBtn').textContent=(state.motion?'■ Dừng':'▶ Chuyển động');renderViz()};
+$('themeBtn').onclick=()=>{const d=document.documentElement;d.dataset.theme=d.dataset.theme==='dark'?'':'dark'};
+$('unitSel').onchange=e=>{const id=Object.keys(UNITS).find(k=>UNITS[k].name===e.target.value);select(id?{type:'unit',id,col:1}:null)};
+$('projSel').onchange=e=>{const p=PROJECTS.find(x=>x.name===e.target.value||(x.id==='TNB'&&e.target.value.startsWith('NHÀ MÁY')));select(p?{type:'project',id:p.id}:null)};
+if(location.search.includes('dark')) document.documentElement.dataset.theme='dark';
+if(location.search.includes('view=map')) {state.view='map';$('viewSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v==='map'));renderViz()}
+if(location.search.includes('view=rank')) {state.view='rank';$('viewSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x.dataset.v==='rank'));renderViz()}
+if(location.search.includes('sel=VT')) select({type:'unit',id:'VT',col:1});
+</script>
+</body>
+</html>

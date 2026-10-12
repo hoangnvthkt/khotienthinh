@@ -286,6 +286,12 @@
       ]
     },
     {
+      "permissionCode": "center.flow.view",
+      "scopeTypes": [
+        "global"
+      ]
+    },
+    {
       "permissionCode": "center.layout.manage",
       "scopeTypes": [
         "own"
