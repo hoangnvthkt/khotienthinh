@@ -9,6 +9,8 @@ type MaterialTabHeaderProps = {
     onTabChange: (tab: ProjectMaterialTabKey) => void;
     /** Nút phụ bên phải (Đơn hàng, Mua nóng ở Mua hàng; Nhập đầu kỳ). */
     actions?: React.ReactNode;
+    /** Tab con đã có ở menu cột của dự án → ẩn trên màn rộng. */
+    hideTabsOnDesktop?: boolean;
 };
 
 // Một hàng: tab con bên trái (cuộn ngang trên màn hẹp), nút phụ bên phải.
@@ -19,9 +21,10 @@ export const MaterialTabHeader: React.FC<MaterialTabHeaderProps> = ({
     tabCounts,
     onTabChange,
     actions,
+    hideTabsOnDesktop = false,
 }) => (
-    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div role="tablist" aria-label="Vật tư" className="flex min-w-0 gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 [&::-webkit-scrollbar]:hidden">
+    <div className={`flex flex-col gap-2 md:flex-row md:items-center md:justify-between ${hideTabsOnDesktop ? 'lg:justify-end' : ''}`}>
+        <div role="tablist" aria-label="Vật tư" className={`${hideTabsOnDesktop ? 'lg:hidden ' : ''}flex min-w-0 gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 [&::-webkit-scrollbar]:hidden`}>
             {visibleMaterialTabs.map(tab => (
                 <button
                     key={tab.key}

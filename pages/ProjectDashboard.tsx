@@ -65,9 +65,12 @@ import {
     PROJECT_TAB_ROUTE_BY_KEY,
     isProjectFinanceLegacyTabKey,
     isProjectOverviewTabKey,
+    type ProjectMaterialTabKey,
     type ProjectMaterialTabPermissionMap,
     type ProjectOverviewTabKey,
 } from '../lib/projectTabPermissions';
+import { getValidMaterialTab, MATERIAL_TAB_NAV_LABELS, MATERIAL_TAB_ORDER } from '../lib/projectMaterialTabUtils';
+import { ProjectSideNav } from '../components/project/ProjectSideNav';
 import {
     canManageProjectMaterialTab as canManageProjectMaterialTabV2,
     canManageProjectTab as canManageProjectTabV2,
@@ -802,6 +805,20 @@ const ProjectDashboard: React.FC = () => {
         const tab = PROJECT_TAB_PERMISSIONS.find(item => item.key === tabKey);
         toast.warning('Không có quyền xem tab', `Tài khoản chưa được cấp quyền xem "${tab?.label || tabKey}".`);
     }, [canViewProjectTab, navigate, projectRows, selectedProjectId, selectedSiteId, toast]);
+
+    // Menu cột: mục con của Vật tư do MaterialTab báo lên (đúng quyền thực tế); chưa mở Vật tư thì ước theo quyền tab.
+    const [materialNav, setMaterialNav] = useState<{ tabs: ProjectMaterialTabKey[]; active: ProjectMaterialTabKey } | null>(null);
+    useEffect(() => { setMaterialNav(null); }, [selectedProjectId]);
+    const sideNavMaterialItems = useMemo(() => (materialNav?.tabs
+        || MATERIAL_TAB_ORDER.filter(key => materialTabPermissions[key]?.canView))
+        .map(key => ({ key, label: MATERIAL_TAB_NAV_LABELS[key] || key })), [materialNav, materialTabPermissions]);
+    const goToMaterialTab = useCallback((materialTab: ProjectMaterialTabKey) => {
+        if (!canViewProjectTab('material')) { goToProjectTab('material'); return; }
+        const project = selectedProjectId ? projectRows.find(item => item.id === selectedProjectId) : null;
+        const siteId = project?.constructionSiteId || selectedSiteId;
+        setOverviewTab('material');
+        if (selectedProjectId) navigate(buildProjectDashboardPath(selectedProjectId, siteId, 'material', { materialTab }));
+    }, [canViewProjectTab, goToProjectTab, navigate, projectRows, selectedProjectId, selectedSiteId]);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -3296,19 +3313,17 @@ const ProjectDashboard: React.FC = () => {
 
                 {/* Cần chú ý (attentionItems) - Ẩn theo yêu cầu */}
 
-                {/* Overview Sub-tabs */}
-                <div className="flex gap-1 bg-white dark:bg-zinc-900 rounded-xl p-1.5 border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-x-auto [&::-webkit-scrollbar]:hidden">
-                    {visibleOverviewTabs.map(tab => (
-                        <button key={tab.key} onClick={() => goToProjectTab(tab.key)}
-                            className={`shrink-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${overviewTab === tab.key
-                                ? 'bg-teal-700 text-white shadow-sm font-semibold'
-                                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
-                                }`}>
-                            <span>{tab.icon}</span> {tab.label}
-                        </button>
-                    ))}
-                </div>
-
+                {/* Menu dạng cột (P2, 12/10/2026): nhóm theo công việc; màn hẹp là ngăn kéo. */}
+                <div className="space-y-3 lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
+                <ProjectSideNav
+                    tabs={visibleOverviewTabs.map(tab => ({ key: tab.key, label: tab.label }))}
+                    activeTab={overviewTab}
+                    onSelectTab={goToProjectTab}
+                    materialItems={sideNavMaterialItems}
+                    activeMaterialTab={overviewTab === 'material' ? (materialNav?.active || getValidMaterialTab(routeParams.get('materialTab'))) : null}
+                    onSelectMaterial={goToMaterialTab}
+                />
+                <div className="min-w-0">
                 <Suspense fallback={
                     <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 p-10 text-center text-sm font-bold text-slate-400">
                         <Loader2 size={22} className="mx-auto mb-2 animate-spin text-orange-500" />
@@ -3372,6 +3387,8 @@ const ProjectDashboard: React.FC = () => {
                             siteName={selectedSite?.name}
                             canManageTab={canManageProjectTab('material')}
                             materialPermissions={materialTabPermissions}
+                            onSubNavChange={setMaterialNav}
+                            subTabsInSideNav
                         />
                     ) : overviewTab === 'report' ? (
                         hasSiteScope ? (
@@ -3384,6 +3401,8 @@ const ProjectDashboard: React.FC = () => {
                         <FinanceMovedRedirect projectId={selectedProject.id} workspaceTab={financeInitialTab} />
                     )}
                 </Suspense>
+                </div>
+                </div>
             </div>
         );
     };

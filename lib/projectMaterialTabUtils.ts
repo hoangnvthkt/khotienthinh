@@ -18,6 +18,13 @@ export const MATERIAL_BOQ_SHEET_NAME = 'Vat_tu';
 export const WORK_BOQ_HEADERS = ['Mã WBS', 'Mã cha', 'Tên đầu mục', 'ĐVT', 'KL dự toán', 'Đơn giá', 'Ghi chú'];
 export const MATERIAL_BOQ_HEADERS = ['WBS đầu mục', 'Mã vật tư/SKU', 'Tên vật tư', 'Nhóm', 'ĐVT', 'KL dự toán', 'Ngưỡng hao hụt', 'Đơn giá', 'Ghi chú'];
 export const MATERIAL_BUDGET_QTY_PRECISION = 6;
+// Tab con Vật tư theo thứ tự công việc (P1 12/10/2026): theo dõi → đề xuất → kế hoạch → BOQ (thiết lập).
+export const MATERIAL_TAB_ORDER: ProjectMaterialTabKey[] = ['summary', 'request', 'planning', 'boq'];
+/** Nhãn ngắn cho menu cột của dự án. */
+export const MATERIAL_TAB_NAV_LABELS: Partial<Record<ProjectMaterialTabKey, string>> = {
+    summary: 'Theo dõi', request: 'Yêu cầu', planning: 'Kế hoạch vật tư', boq: 'BOQ',
+};
+
 export const PROJECT_REQUEST_DATA_TABS = new Set<ProjectMaterialTabKey>(['summary', 'boq', 'request', 'waste', 'dashboard']);
 export const PROJECT_REQUEST_FULFILLMENT_TABS = new Set<ProjectMaterialTabKey>(['summary', 'boq', 'request', 'waste', 'dashboard']);
 
