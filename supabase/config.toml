@@ -69,3 +69,10 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/office-assistant/deno.json"
 entrypoint = "./functions/office-assistant/index.ts"
+
+[functions.wms-doc-reader]
+# JWT verified explicitly with Auth; capture, photos and save all use the caller's RLS context.
+enabled = true
+verify_jwt = false
+import_map = "./functions/wms-doc-reader/deno.json"
+entrypoint = "./functions/wms-doc-reader/index.ts"

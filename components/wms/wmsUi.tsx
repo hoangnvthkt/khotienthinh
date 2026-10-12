@@ -48,7 +48,7 @@ export const Panel: React.FC<{ onBack?: () => void; head: React.ReactNode; foot?
       {head}
     </header>
     <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3">{children}</div>
-    {foot && <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 rounded-b-2xl border-t border-border bg-card/95 px-4 py-3 backdrop-blur">{foot}</footer>}
+    {foot && <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 rounded-b-2xl border-t border-border bg-card px-4 py-3">{foot}</footer>}
   </section>;
 
 export const EmptyPanel: React.FC<{ icon: React.ElementType; title: string; text: React.ReactNode }> = ({ icon: Icon, title, text }) =>
