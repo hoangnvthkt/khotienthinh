@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronRight, ExternalLink, FilePlus2, FileSignature, Loader2, Pencil, Plus, RotateCcw, Search, Trash2, Truck } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { canPerform } from '../../../lib/permissions/permissionService';
-import { calcStatement, invoiceTolerance } from '../../../lib/statementInvoiceAmounts';
+import { LINE_ROUNDING_LIMIT, calcStatement, invoiceTolerance } from '../../../lib/statementInvoiceAmounts';
 import { Role } from '../../../types';
 import { useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
@@ -173,10 +173,10 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
                 if (!canInvoice || computed == null) return <span className="ml-auto font-semibold tabular-nums text-foreground">{computed != null ? `${money(computed)} đ` : ''}</span>;
                 const typed = r.amount.trim() === '' ? null : parseQty(r.amount);
                 const delta = typed != null && !Number.isNaN(typed) ? Math.round(typed) - computed : 0;
-                const over = typed != null && (Number.isNaN(typed) || typed < 0 || Math.abs(delta) > invoiceTolerance(computed));
+                const over = typed != null && (Number.isNaN(typed) || typed < 0 || Math.abs(delta) > LINE_ROUNDING_LIMIT);
                 return <span className="ml-auto flex items-center gap-1.5">
                   {typed != null && <span className={`text-[11px] font-semibold tabular-nums ${over ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}`}
-                    title={`SL × đơn giá = ${money(computed)} đ · dung sai ${money(invoiceTolerance(computed))} đ`}>
+                    title={`SL × đơn giá = ${money(computed)} đ · mỗi dòng lệch tối đa ${money(LINE_ROUNDING_LIMIT)} đ`}>
                     {over ? 'Vượt dung sai' : `Theo HĐ ${delta > 0 ? '+' : ''}${money(delta)} đ`}</span>}
                   <input inputMode="numeric" value={r.amount} placeholder={money(computed)} onChange={e => patch(r.line.lineId, { amount: e.target.value })}
                     aria-label={`Thành tiền theo hóa đơn ${lineLabel(r.line)} ${r.noteCode}`} title="Thành tiền theo hóa đơn NCC — để trống = SL × đơn giá"

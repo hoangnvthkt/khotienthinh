@@ -1,5 +1,9 @@
 // Bảng đối soát HĐ NCC: tiền theo hóa đơn thực tế (NCC làm tròn đơn giá / SL lẻ).
-// Cùng công thức + dung sai với save_procurement_contract_statement_v1 (dung sai hóa đơn K3c: 0,5%, tối thiểu 50.000 đ).
+// Cùng công thức + dung sai với save_procurement_contract_statement_v1: mỗi dòng tối đa 1.000 đ;
+// tổng VAT / cả bảng theo dung sai hóa đơn K3c (0,5%, tối thiểu 50.000 đ).
+
+/** Dung sai làm tròn mỗi dòng (chủ SP 12/10/2026). */
+export const LINE_ROUNDING_LIMIT = 1000;
 
 export const invoiceTolerance = (expected: number) => Math.max(Math.round(Math.abs(expected) * 0.005 * 100) / 100, 50000);
 
@@ -31,7 +35,7 @@ export const calcStatement = (lines: StatementCalcLine[], invoiceVat: number | n
     const gross = l.amount ?? computed;
     return {
       computed, gross, vat: Math.round(gross * l.vatRate / 100), computedVat: Math.round(computed * l.vatRate / 100),
-      delta: gross - computed, overLimit: l.amount != null && Math.abs(l.amount - computed) > invoiceTolerance(computed),
+      delta: gross - computed, overLimit: l.amount != null && Math.abs(l.amount - computed) > LINE_ROUNDING_LIMIT,
     };
   });
   const sum = (pick: (r: typeof rows[number]) => number) => rows.reduce((s, r) => s + pick(r), 0);
