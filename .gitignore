@@ -61,3 +61,4 @@ service-account*.json
 .office-run-logs/
 /.daily-log-prefill-test-results/
 /.po-prefill-test-results/
+/.suggestion-stats-test-results/

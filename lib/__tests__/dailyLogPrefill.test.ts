@@ -51,6 +51,24 @@ describe('buildDailyLogPrefill', () => {
     const logs = [log({ id: 'a', date: '2026-10-10T17:00:00', createdAt: '2026-10-11T01:00:00Z', laborDetails: [crew] })];
     expect(buildDailyLogPrefill(logs, { date: '2026-10-11' })?.sourceLogId).toBe('a');
   });
+
+  it('kế hoạch ngày hôm sau của nhật ký trước → gợi ý công việc hôm nay; ưu tiên nhật ký của mình', () => {
+    const logs = [
+      log({ id: 'other', date: '2026-10-10', createdById: 'u2', nextDayPlan: '- Đổ bê tông sàn tầng 2' }),
+      log({ id: 'mine', date: '2026-10-09', createdById: 'u1', nextDayPlan: '  - Lắp cốp pha cột trục 3\n- Nghiệm thu thép  ' }),
+    ];
+    expect(buildDailyLogPrefill(logs, { date: '2026-10-11', userId: 'u1' })?.plan).toEqual({
+      text: '- Lắp cốp pha cột trục 3\n- Nghiệm thu thép', logId: 'mine', date: '2026-10-09', byMe: true,
+    });
+    expect(buildDailyLogPrefill(logs, { date: '2026-10-11', userId: 'u3' })?.plan).toMatchObject({ logId: 'other', byMe: false });
+  });
+
+  it('kế hoạch quá 3 ngày hoặc để trống thì không gợi ý', () => {
+    const stale = [log({ id: 'old', date: '2026-10-06', nextDayPlan: '- Việc cũ', laborDetails: [crew] })];
+    expect(buildDailyLogPrefill(stale, { date: '2026-10-11' })?.plan).toBeNull();
+    expect(buildDailyLogPrefill([log({ id: 'friday', date: '2026-10-09', nextDayPlan: '- Qua cuối tuần' })], { date: '2026-10-12' })?.plan?.logId).toBe('friday');
+    expect(buildDailyLogPrefill([log({ id: 'blank', date: '2026-10-10', nextDayPlan: '   ' })], { date: '2026-10-11' })?.plan).toBeNull();
+  });
 });
 
 describe('shortDate', () => {

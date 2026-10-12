@@ -4,7 +4,11 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import '../../index.css';
 import DailyLogDetailTabs, { type DailyLogDetailPrefill } from '../../components/project/DailyLogDetailTabs';
+import { PrefillGhost } from '../../components/common/PrefillGhost';
 import type { DailyLogLabor, DailyLogMachine, ProjectTask } from '../../types';
+
+// "Kế hoạch thi công ngày hôm sau" ghi ở nhật ký hôm qua → gợi ý cho ô "Nội dung công việc thi công" (cùng khối với bảng DailyLogTab).
+const yesterdayPlan = '- Đổ bê tông móng M3 trục 4–6\n- Lắp cốp pha cột tầng 1 trục 1–3\n- Nghiệm thu thép móng M3 với TVGS';
 
 const params = new URLSearchParams(location.search);
 if (params.get('theme') === 'dark') document.documentElement.classList.add('dark');
@@ -33,6 +37,8 @@ const Fixture: React.FC = () => {
   const [labor, setLabor] = useState<DailyLogLabor[]>([]);
   const [machines, setMachines] = useState<DailyLogMachine[]>([]);
   const [sourceDate, setSourceDate] = useState('2026-10-11');
+  const [desc, setDesc] = useState('');
+  const [planDismissed, setPlanDismissed] = useState(false);
   const prefill: DailyLogDetailPrefill | undefined = params.get('empty') ? undefined : {
     sourceLogId: `log-${sourceDate}`,
     sourceLabel: `nhật ký ${Number(sourceDate.slice(8))}/${Number(sourceDate.slice(5, 7))} của bạn`,
@@ -50,6 +56,19 @@ const Fixture: React.FC = () => {
             <button type="button" className="px-2.5 py-1 rounded-lg border border-border text-xs font-bold" onClick={() => setSourceDate(d => d === '2026-10-11' ? '2026-10-10' : '2026-10-11')}>Đổi ngày (nguồn khác)</button>
             <button type="button" className="px-2.5 py-1 rounded-lg border border-border text-xs font-bold" onClick={() => { setLabor([]); setMachines([]); }}>Xóa dòng</button>
           </div>
+        </div>
+        <div>
+          <label htmlFor="desc" className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nội dung công việc thi công</label>
+          {prefill && !planDismissed && !desc.trim() && (
+            <div className="mb-2">
+              <PrefillGhost heading="Kế hoạch hôm qua" title="công việc thi công hôm nay" rows={yesterdayPlan.split('\n')}
+                sourceLabel={`nhật ký ${Number(sourceDate.slice(8))}/${Number(sourceDate.slice(5, 7))} của bạn`}
+                onAccept={() => { setDesc(yesterdayPlan); log('description', 'accepted', 1); }}
+                onDismiss={() => { setPlanDismissed(true); log('description', 'dismissed', 1); }} />
+            </div>
+          )}
+          <textarea id="desc" value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="Mô tả công việc thi công đã thực hiện trong ngày..."
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-750 bg-muted/30 text-foreground text-sm focus:ring-2 focus:ring-teal-500 outline-none resize-none" />
         </div>
         <DailyLogDetailTabs
           prefill={prefill}

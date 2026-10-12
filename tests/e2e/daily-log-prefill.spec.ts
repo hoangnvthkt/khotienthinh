@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 // Gợi ý "Như hôm qua" trong Chi tiết thi công (fixture, không gọi Supabase): Tab / bấm để dùng, Esc để bỏ, đổi nguồn thì hiện lại.
 const base = '/tests/daily-log/prefill-fixture.html';
-const ghost = (page: import('@playwright/test').Page) => page.getByTestId('prefill-ghost');
+// Khối "Kế hoạch hôm qua" (ô công việc hôm nay) nằm ngoài Chi tiết thi công — các kiểm tra dưới chỉ xét khối nhân công / máy.
+const ghost = (page: import('@playwright/test').Page) => page.getByTestId('prefill-ghost').filter({ hasNotText: 'Kế hoạch hôm qua' });
 const laborInputs = (page: import('@playwright/test').Page) => page.locator('[data-prefill-rows="labor"] input');
 
 test.beforeEach(async ({ page }) => {
@@ -45,9 +46,19 @@ test('điện thoại: bấm Dùng điền cả nhóm, thanh tab không tràn ng
   await page.getByRole('button', { name: 'Nhân công' }).tap();
   await expect(ghost(page)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.getByRole('button', { name: 'Dùng' }).tap();
+  await ghost(page).getByRole('button', { name: 'Dùng' }).tap();
   await expect(laborInputs(page)).toHaveCount(18);
   await expect(page.locator('#events')).toContainText('labor · accepted · 3 dòng');
+});
+
+test('ô công việc hôm nay: kế hoạch hôm qua in mờ, Dùng là điền vào ô; đã gõ thì khối ẩn', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'cùng luồng với máy tính');
+  const plan = page.getByTestId('prefill-ghost').filter({ hasText: 'Kế hoạch hôm qua' });
+  await expect(plan).toContainText('nhật ký 11/10 của bạn · 3 dòng');
+  await plan.getByRole('button', { name: 'Dùng' }).click();
+  await expect(page.getByLabel('Nội dung công việc thi công')).toHaveValue(/Đổ bê tông móng M3 trục 4–6/);
+  await expect(plan).toHaveCount(0);
+  await expect(page.locator('#events')).toContainText('description · accepted · 1 dòng');
 });
 
 test('không có nhật ký trước thì không có gì thay đổi', async ({ page }) => {

@@ -18,6 +18,7 @@ import { wmsCatalogService } from '../../../lib/wmsCatalogService';
 import { PrefillGhost, ghostInput } from '../../common/PrefillGhost';
 import {
   PRICE_DEVIATION_WARN_PERCENT, headerGhostRows, matchPrefillLine, prefillSourceLabel, priceDeviationPercent, priceGhost, recordPrefillOutcome, specGhost,
+  vendorItemHint, vendorItems, type VendorItem,
 } from '../../../lib/procurementPrefill';
 import { recordSuggestionEvent } from '../../../lib/uiSuggestionEvents';
 
@@ -122,6 +123,9 @@ export const ProactiveOrderEditor: React.FC<{
   const [prefill, setPrefill] = useState<ProcurementVendorPrefill | null>(null);
   const [headerTouched, setHeaderTouched] = useState(false);
   const [headerDismissed, setHeaderDismissed] = useState(false);
+  // Vật tư đã mua của NCC (90 ngày) lên đầu ô thêm vật tư khi chưa gõ tìm; đang tra lại danh mục cho mã nào thì ghi ở đây.
+  const vendorList = useMemo(() => vendorItems(prefill), [prefill]);
+  const [addingVendorItem, setAddingVendorItem] = useState<string | null>(null);
   const vendorId = vendor?.id || '';
   useEffect(() => {
     setPrefill(null); setHeaderDismissed(false);
@@ -160,6 +164,22 @@ export const ProactiveOrderEditor: React.FC<{
       boq: { inBoq: item.inBoq, boqQty: item.boqQty, orderedQty: item.orderedQty },
     }]);
     setQuery(''); setSearchOpen(false);
+  };
+  /** Thêm từ nhóm "Đã mua của NCC": lấy lại mã trong danh mục (BOQ, đơn vị mua) rồi thêm như chọn thường. */
+  const addVendorItem = async (v: VendorItem) => {
+    let item = results?.find(r => r.id === v.itemId);
+    if (!item) {
+      setAddingVendorItem(v.itemId);
+      try { item = (await procurementInboxService.searchItems(stock ? null : projectId, v.sku || v.name)).find(r => r.id === v.itemId); }
+      catch { item = undefined; }
+      finally { setAddingVendorItem(null); }
+    }
+    // Không tra lại được trong danh mục (hiếm): dùng đơn vị / hệ số của lần mua trước, BOQ coi như ngoài.
+    addItem(item || {
+      id: v.itemId, name: v.name, sku: v.sku, unit: v.stockUnit || v.unit, purchaseUnit: v.unit && v.unit !== v.stockUnit ? v.unit : null,
+      purchaseFactor: v.factor, inBoq: false, boqQty: 0, orderedQty: 0,
+    });
+    recordSuggestionEvent({ screen: 'purchase_order', field: 'item', outcome: 'accepted', suggested: 1, accepted: 1, source: { vendorId, itemId: v.itemId, poNumber: v.poNumber } });
   };
   const patch = (key: string, p: Partial<Line>) => setLines(cur => cur.map(l => l.key === key ? { ...l, ...p } : l));
   /** Từ Excel: vật tư mới thì thêm dòng, vật tư đã có thì cập nhật SL, đơn giá (và quy cách nếu file có). */
@@ -353,14 +373,30 @@ export const ProactiveOrderEditor: React.FC<{
               <div className="flex gap-2">
               <div className="relative min-w-0 flex-1">
                 <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input ref={searchRef} value={query} disabled={!scopeReady} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
+                <input ref={searchRef} value={query} disabled={!scopeReady} onFocus={() => setSearchOpen(true)} onClick={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 150)}
                   onChange={e => { setQuery(e.target.value); setSearchOpen(true); }} aria-label="Thêm vật tư"
                   placeholder={!scopeReady ? 'Chọn dự án trước khi thêm vật tư' : stock ? 'Thêm vật tư — gõ tên hoặc mã' : 'Thêm vật tư — gõ tên hoặc mã (để trống: gợi ý vật tư trong BOQ dự án)'}
                   className={`w-full pl-8 ${inputCls}`} />
-                {searchOpen && scopeReady && (!stock || query.trim()) && <ul role="listbox" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+                {searchOpen && scopeReady && (!stock || query.trim() || vendorList.length > 0) && <ul role="listbox" className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+                  {!query.trim() && vendorList.length > 0 && <li className="border-b border-border pb-1" data-testid="vendor-items">
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-black uppercase tracking-wide text-teal-700 dark:text-teal-300">Đã mua của {vendor?.name || 'NCC này'} · 90 ngày</p>
+                    <ul>{vendorList.map(v => {
+                      const added = lines.filter(l => l.itemId === v.itemId).length;
+                      const busy = addingVendorItem === v.itemId;
+                      return <li key={v.itemId}><button type="button" role="option" aria-selected={false} disabled={busy} onMouseDown={e => e.preventDefault()} onClick={() => { addVendorItem(v); }}
+                        title={added ? 'Thêm một dòng nữa của mã này — ghi quy cách khác để đặt giá riêng' : undefined}
+                        className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-60">
+                        <span className="min-w-0"><span className="font-medium text-mint-700 dark:text-mint-300">{v.name}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">{[v.sku, v.unit].filter(Boolean).join(' · ')}</span></span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">{busy && <Loader2 size={12} className="animate-spin" />}
+                          {added ? <b className="text-teal-700 dark:text-teal-300">Đã có {added} dòng</b> : vendorItemHint(v)}</span></button></li>;
+                    })}</ul>
+                  </li>}
                   {results == null && <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"><Loader2 size={14} className="animate-spin" />Đang tìm vật tư…</li>}
-                  {results?.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{query ? (canCreateItem ? 'Không tìm thấy vật tư trong danh mục.' : 'Không tìm thấy vật tư. Gửi Đề xuất mã mới ở Vật tư → Danh mục, hoặc nhờ người có quyền Tạo mã vật tư.') : 'Dự án chưa có BOQ vật tư — gõ tên để tìm trong danh mục.'}</li>}
-                  {results?.map(item => {
+                  {results?.length === 0 && (query.trim() || !vendorList.length) && <li className="px-3 py-2 text-sm text-muted-foreground">{query ? (canCreateItem ? 'Không tìm thấy vật tư trong danh mục.' : 'Không tìm thấy vật tư. Gửi Đề xuất mã mới ở Vật tư → Danh mục, hoặc nhờ người có quyền Tạo mã vật tư.') : 'Dự án chưa có BOQ vật tư — gõ tên để tìm trong danh mục.'}</li>}
+                  {!query.trim() && vendorList.length > 0 && results?.some(item => !vendorList.some(v => v.itemId === item.id)) &&
+                    <li><p className="px-3 pt-2 pb-1 text-[10px] font-black uppercase tracking-wide text-muted-foreground">Vật tư trong BOQ dự án</p></li>}
+                  {results?.filter(item => query.trim() || !vendorList.some(v => v.itemId === item.id)).map(item => {
                     const added = lines.filter(l => l.itemId === item.id).length;
                     return <li key={item.id}><button type="button" role="option" aria-selected={false} onMouseDown={e => e.preventDefault()} onClick={() => addItem(item)}
                       title={added ? 'Thêm một dòng nữa của mã này — ghi quy cách khác để đặt giá riêng' : undefined}

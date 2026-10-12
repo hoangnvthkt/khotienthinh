@@ -7,6 +7,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Biến màu như index.html của app thật (nền sáng) để fixture nhìn đúng. */
+      :root { --background: #f4f4f5; --foreground: #09090b; --card: #ffffff; --card-foreground: #09090b; --muted: #f1f5f9; --muted-foreground: #71717a; --border: #e4e4e7; --input: #cbd5e1; --popover: #ffffff; --popover-foreground: #09090b; }
+      .dark { --background: #101214; --foreground: #cbd5e1; --card: #23272c; --card-foreground: #f1f5f9; --muted: #1c1f22; --muted-foreground: #94a3b8; --border: #2d3135; --input: #2d3135; --popover: #23272c; --popover-foreground: #f1f5f9; }
+    </style>
     <script>
       tailwind.config = {
         darkMode: "class",

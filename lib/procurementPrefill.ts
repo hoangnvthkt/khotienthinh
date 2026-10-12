@@ -65,6 +65,33 @@ export const headerGhostRows = (order: ProcurementVendorPrefillOrder, current: {
   return rows;
 };
 
+export interface VendorItem {
+  itemId: string; name: string; sku: string | null; unit: string | null; stockUnit: string | null; factor: number;
+  /** Số đơn 90 ngày có mã này. */
+  orders: number;
+  poNumber: string | null; orderDate: string | null;
+}
+
+/** Vật tư đã mua của NCC (90 ngày), mỗi mã một dòng: hay mua trước, cùng số đơn thì mua gần đây trước. Bỏ dòng máy chủ chưa trả tên. */
+export const vendorItems = (prefill: ProcurementVendorPrefill | null, limit = 8): VendorItem[] => {
+  const byItem = new Map<string, VendorItem>();
+  (prefill?.lines || []).forEach(line => {
+    if (!line.itemName || byItem.has(line.itemId)) return;
+    byItem.set(line.itemId, {
+      itemId: line.itemId, name: line.itemName, sku: line.sku || null, unit: line.unit, stockUnit: line.stockUnit, factor: line.factor || 1,
+      orders: Math.max(1, Number(line.orders) || 1), poNumber: line.poNumber, orderDate: line.orderDate,
+    });
+  });
+  return Array.from(byItem.values())
+    .sort((a, b) => b.orders - a.orders || String(b.orderDate || '').localeCompare(String(a.orderDate || '')))
+    .slice(0, limit);
+};
+
+/** "3 đơn · gần nhất 8/10" hoặc "PO-627 (8/10)" khi mới mua một lần. */
+export const vendorItemHint = (item: VendorItem) => item.orders > 1
+  ? `${item.orders} đơn · gần nhất ${shortDate(item.orderDate || '')}`
+  : `${item.poNumber || 'đơn trước'} (${shortDate(item.orderDate || '')})`;
+
 /** Tổng kết lúc lưu để đo: số dòng có gợi ý và số dòng giữ nguyên giá / quy cách gợi ý. */
 export const prefillOutcome = (prefill: ProcurementVendorPrefill | null, lines: Array<{ itemId: string; specification: string; price: number | null }>) => {
   const result = { price: { suggested: 0, accepted: 0 }, spec: { suggested: 0, accepted: 0 } };

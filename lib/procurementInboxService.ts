@@ -288,6 +288,8 @@ export interface ProcurementVendorPrefillOrder {
 export interface ProcurementVendorPrefillLine {
   itemId: string; specification: string; unit: string | null; stockUnit: string | null; factor: number; unitPrice: number;
   poNumber: string | null; title?: string | null; orderDate: string | null;
+  /** Tên, mã vật tư và số đơn 90 ngày có mã này (để xếp "hay mua" lên đầu ô thêm vật tư). */
+  itemName?: string | null; sku?: string | null; orders?: number;
 }
 export interface ProcurementVendorPrefill { order: ProcurementVendorPrefillOrder | null; lines: ProcurementVendorPrefillLine[] }
 export type ProcurementOrderStage = 'drafting' | 'ordered' | 'delivering' | 'received';
