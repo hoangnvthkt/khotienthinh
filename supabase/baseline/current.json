@@ -311,7 +311,8 @@
     "20261012160400_project_task_progress_v1.sql",
     "20261012200000_finance_supplier_orders.sql",
     "20261012210000_statement_invoice_amounts.sql",
-    "20261012230000_statement_line_rounding_1000.sql"
+    "20261012230000_statement_line_rounding_1000.sql",
+    "20261012213000_wms_delivery_capture.sql"
   ],
   "forbidIncludeAll": true
 }

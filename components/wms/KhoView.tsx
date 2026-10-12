@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  AlarmClock, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Boxes, ClipboardCheck, FileSpreadsheet, FileText, MoreHorizontal, Printer, RefreshCw, Search, ShieldCheck, Trash2, Truck,
+  AlarmClock, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Boxes, Camera, ClipboardCheck, FileSpreadsheet, FileText, MoreHorizontal, Printer, RefreshCw, Search, ShieldCheck, Trash2, Truck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../../context/ToastContext';
@@ -23,13 +23,17 @@ import { StockItemPanel, flagsOf, needsCheck, rowKey, type StockAction } from '.
 import { CountPanel } from './StockCountView';
 import { CountStartForm, MoveForm } from './KhoForms';
 import { wmsStepLabel } from './WmsWorkspace';
+import { CaptureButton, KhoCapture } from './KhoCapture';
+import { wmsDeliveryCaptureService, type DeliveryCapture } from '../../lib/wmsDeliveryCaptureService';
 
 // V2 Kho một màn: Việc cần làm · Tồn kho · Sổ phiếu bên trái; nhận hàng, xuất, chuyển, hủy, kiểm đếm mở ngay cột phải.
 // Hàng vào kho chỉ qua đợt giao Mua hàng, hàng chuyển đến, trả lại từ công trình hoặc kiểm đếm (đã bỏ phiếu nhập tự do).
+// Đợt 1 (12/10): Chụp phiếu giao NCC ở cổng kho → AI điền / nhập tay → chọn đơn → nhận theo xe (KhoCapture).
 
 type Mode = 'todo' | 'stock' | 'book';
 type TileKey = 'receive' | 'approve' | 'stock' | 'check';
 type Sel = { kind: 'tx'; id: string; tx?: Transaction } | { kind: 'item'; key: string } | { kind: 'count'; id: string }
+  | { kind: 'capture'; key: string; id?: string; files?: File[] }
   | { kind: 'issue' | 'transfer' | 'loss' | 'newCount'; itemKey?: string } | null;
 
 const ageDays = (iso: string, today: string) => daysBetween(iso, today);
@@ -61,8 +65,14 @@ export const KhoView: React.FC = () => {
     catch (e) { setMessage(catalogErrorMessage(e, 'Chưa tải được tồn kho.')); setState('error'); }
   }, []);
   const loadCounts = useCallback(() => stockCountService.list().then(setCounts).catch(() => setCounts(c => c)), []);
-  useEffect(() => { void loadStock(); void loadCounts(); }, [loadStock, loadCounts]);
-  const reload = () => { void loadStock(); void loadCounts(); };
+  const [caps, setCaps] = useState<DeliveryCapture[]>([]);
+  const loadCaps = useCallback(() => wmsDeliveryCaptureService.list().then(setCaps).catch(() => setCaps(c => c)), []);
+  useEffect(() => { void loadStock(); void loadCounts(); void loadCaps(); }, [loadStock, loadCounts, loadCaps]);
+  const reload = () => { void loadStock(); void loadCounts(); void loadCaps(); };
+  const onCapSaved = useCallback((c: DeliveryCapture) => {
+    setCaps(list => [c, ...list.filter(x => x.id !== c.id)]);
+    setSel(s => s?.kind === 'capture' && (s.id === c.id || !s.id) ? { ...s, id: c.id } : s);
+  }, []);
 
   // Mở đúng phiếu từ link (?tx= hoặc state.transactionId).
   useEffect(() => {
@@ -112,9 +122,11 @@ export const KhoView: React.FC = () => {
   const doneTx = useMemo(() => transactions.filter(t => (t.status === TransactionStatus.COMPLETED || t.status === TransactionStatus.CANCELLED)
     && (isAdmin || canViewWmsTransaction(user, t))).sort((a, b) => b.date.localeCompare(a.date)), [transactions, user, isAdmin]);
   const openCounts = (counts?.counts || []).filter(c => c.status === 'counting' || c.status === 'submitted');
+  const openCaps = caps.filter(c => c.status === 'new' || c.status === 'read');
 
   const myOpen = openTx.filter(t => inWh(t.targetWarehouseId, t.sourceWarehouseId));
   const myCounts = openCounts.filter(c => inWh(c.warehouseId));
+  const myCaps = openCaps.filter(c => inWh(c.warehouseId));
   const receive = myOpen.filter(isReceive);
   const late = receive.filter(t => ageDays(t.date, today) >= 3);
   const approve = [...myOpen.filter(t => !isReceive(t)), ...myCounts.filter(c => c.status === 'submitted')];
@@ -124,6 +136,7 @@ export const KhoView: React.FC = () => {
 
   const todoTx = myOpen.filter(t => (tile !== 'receive' || isReceive(t)) && (tile !== 'approve' || !isReceive(t)) && match(txText(t)))
     .sort((a, b) => a.date.localeCompare(b.date));
+  const todoCaps = tile === 'approve' ? [] : myCaps.filter(c => match(`${c.supplierName || ''} ${c.docNo || ''} ${c.truckNo || ''} ${c.lines.map(l => l.name).join(' ')}`));
   const todoCounts = myCounts.filter(c => (tile !== 'receive') && (tile !== 'approve' || c.status === 'submitted') && match(`${c.countNo} ${c.reason} ${c.warehouseName}`));
   const listStock = (tile === 'check' ? check : stock).filter(r => match(`${r.name} ${r.sku || ''} ${r.category || ''}`)).sort((a, b) => b.value - a.value);
   const listBook = doneTx.filter(t => inWh(t.targetWarehouseId, t.sourceWarehouseId) && match(txText(t)));
@@ -156,7 +169,7 @@ export const KhoView: React.FC = () => {
   const canOperate = whs.some(w => w.canOperate && (!wh || w.id === wh));
 
   const tiles: Array<{ k: TileKey; label: string; icon: React.ElementType; value: React.ReactNode; hint: string; tone: string; ic: string; blink?: boolean }> = [
-    { k: 'receive', label: 'Hàng về chờ nhận', icon: Truck, value: receive.length, hint: late.length ? `${late.length} treo ≥ 3 ngày` : 'không treo', tone: 'text-teal-800 dark:text-teal-200', ic: 'bg-teal-600', blink: late.length > 0 },
+    { k: 'receive', label: 'Hàng về chờ nhận', icon: Truck, value: receive.length + myCaps.length, hint: [myCaps.length ? `${myCaps.length} phiếu chụp` : '', late.length ? `${late.length} treo ≥ 3 ngày` : myCaps.length ? '' : 'không treo'].filter(Boolean).join(' · '), tone: 'text-teal-800 dark:text-teal-200', ic: 'bg-teal-600', blink: late.length > 0 },
     { k: 'approve', label: 'Chờ duyệt', icon: ShieldCheck, value: approve.length, hint: 'hủy · kiểm đếm · phiếu cũ', tone: 'text-amber-700 dark:text-amber-300', ic: 'bg-amber-500' },
     { k: 'stock', label: 'Đang có tồn', icon: Boxes, value: pos.length, hint: `${shortMoney(pos.reduce((s, r) => s + Math.max(0, r.value), 0))} tạm tính`, tone: 'text-leaf-700 dark:text-leaf-300', ic: 'bg-leaf-600' },
     { k: 'check', label: 'Cần kiểm tra', icon: AlarmClock, value: check.length, hint: 'tồn ảo · giá lệch', tone: 'text-rose-700 dark:text-rose-300', ic: 'bg-rose-500' },
@@ -165,7 +178,7 @@ export const KhoView: React.FC = () => {
   const selRow = sel?.kind === 'item' ? rowOf(sel.key) : undefined;
   const formWh = (itemKey?: string) => rowOf(itemKey)?.warehouseId || (whs.find(w => w.id === wh)?.canOperate ? wh : '');
   const detail = (() => {
-    if (!sel) return <EmptyPanel icon={Boxes} title={wh ? whName(wh) : 'Mọi kho'} text={<>{receive.length} đợt hàng chờ nhận · {pos.length} mã có tồn</>} />;
+    if (!sel) return <EmptyPanel icon={Boxes} title={wh ? whName(wh) : 'Mọi kho'} text={<>{receive.length} đợt hàng chờ nhận{myCaps.length > 0 && ` · ${myCaps.length} phiếu chụp`} · {pos.length} mã có tồn</>} />;
     if (sel.kind === 'tx') {
       const tx = sel.tx || transactions.find(t => t.id === sel.id);
       if (!tx) return <StateBox kind="loading" title="Đang mở phiếu…" />;
@@ -191,6 +204,9 @@ export const KhoView: React.FC = () => {
           <button type="button" onClick={() => void print('print')} className={secondaryBtn}><Printer size={15} />In phiếu</button></>}
         onClose={() => setSel(null)} onUpdated={next => { setSel({ kind: 'tx', id: next.id, tx: next }); void loadStock(); }} />;
     }
+    if (sel.kind === 'capture') return <KhoCapture key={sel.key} initial={sel.id ? caps.find(c => c.id === sel.id) : undefined} files={sel.files}
+      warehouseId={wh} warehouses={whs} onBack={() => setSel(null)} onSaved={onCapSaved}
+      onOpenTx={id => { reload(); setSel({ kind: 'tx', id }); }} />;
     if (sel.kind === 'item') {
       if (!selRow) return <EmptyPanel icon={Boxes} title="Không còn dòng tồn này" text="Tải lại để xem số mới." />;
       return <StockItemPanel key={sel.key} row={selRow} warehouses={whs} today={today} onBack={() => setSel(null)}
@@ -230,6 +246,15 @@ export const KhoView: React.FC = () => {
         : <Badge className={age >= 3 ? BAD : TEAL}>{age >= 3 ? `treo ${age} ngày` : dateVi(t.date)}</Badge>}
     </button></li>;
   };
+  const capRow = (c: DeliveryCapture) => { const age = ageDays(c.createdAt, today); const names = c.lines.map(l => l.name).filter(Boolean);
+    return <li key={c.id}><button type="button" onClick={() => setSel({ kind: 'capture', key: c.id, id: c.id })}
+      className={`flex w-full items-start gap-2 border-l-4 border-l-leaf-500 px-3 py-2.5 text-left ${active(sel?.kind === 'capture' && sel.id === c.id)}`}>
+      <Camera size={16} className="mt-0.5 shrink-0 text-teal-600" />
+      <span className="min-w-0 flex-1"><span className={`line-clamp-2 ${ENT}`}>{c.supplierName || 'Phiếu giao chụp'}</span>
+        <span className="block truncate text-[12px] text-muted-foreground">{[c.docNo && `Số ${c.docNo}`, c.truckNo, !wh && whName(c.warehouseId)].filter(Boolean).join(' · ') || dateVi(c.createdAt)}</span>
+        <span className="block truncate text-[12px]">{names.length ? <>{names.slice(0, 2).join(', ')}{names.length > 2 ? ` +${names.length - 2}` : ''}</> : <span className="text-muted-foreground">Chưa nhập hàng</span>}</span></span>
+      <Badge className={age >= 3 ? BAD : TEAL}>{age >= 3 ? `treo ${age} ngày` : 'Phiếu chụp'}</Badge>
+    </button></li>; };
   const countRow = (c: StockCountSummary) => <li key={c.id}><button type="button" onClick={() => setSel({ kind: 'count', id: c.id })}
     className={`flex w-full items-start gap-2 px-3 py-2.5 text-left ${active(sel?.kind === 'count' && sel.id === c.id)}`}>
     <ClipboardCheck size={16} className="mt-0.5 shrink-0 text-teal-600" />
@@ -250,7 +275,7 @@ export const KhoView: React.FC = () => {
   const list = <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
     <div className="space-y-2 border-b border-border p-2">
       <div className="flex gap-1 rounded-xl bg-muted/60 p-1" role="group" aria-label="Xem">
-        {seg('todo', 'Việc cần làm', myOpen.length + myCounts.length)}{seg('stock', 'Tồn kho', stock.length)}{seg('book', 'Sổ phiếu', listBook.length)}</div>
+        {seg('todo', 'Việc cần làm', myOpen.length + myCounts.length + myCaps.length)}{seg('stock', 'Tồn kho', stock.length)}{seg('book', 'Sổ phiếu', listBook.length)}</div>
       <div className="flex items-center gap-2">
         <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-background px-2"><Search size={15} className="text-muted-foreground" />
           <input type="search" value={q} onChange={e => setQ(e.target.value)} aria-label="Tìm" placeholder={mode === 'stock' ? 'Tìm vật tư, mã, nhóm' : mode === 'todo' ? 'Tìm PO, NCC, vật tư' : 'Tìm số phiếu, nội dung'}
@@ -259,8 +284,8 @@ export const KhoView: React.FC = () => {
       </div>
     </div>
     <ul className="max-h-[68vh] divide-y divide-border overflow-y-auto">
-      {mode === 'todo' && (todoTx.length + todoCounts.length === 0 ? empty(tile === 'receive' ? 'Không có hàng chờ nhận' : 'Không có việc cần làm')
-        : <>{todoTx.map(t => txRow(t, false))}{todoCounts.map(countRow)}</>)}
+      {mode === 'todo' && (todoCaps.length + todoTx.length + todoCounts.length === 0 ? empty(tile === 'receive' ? 'Không có hàng chờ nhận' : 'Không có việc cần làm')
+        : <>{todoCaps.map(capRow)}{todoTx.map(t => txRow(t, false))}{todoCounts.map(countRow)}</>)}
       {mode === 'stock' && (listStock.length === 0 ? empty('Không có vật tư khớp') : <>{listStock.slice(0, 300).map(stockRow)}
         {listStock.length > 300 && <li className="px-3 py-2 text-center text-[12px] text-muted-foreground">+{listStock.length - 300} dòng — gõ để tìm</li>}</>)}
       {mode === 'book' && (listBook.length === 0 ? empty('Chưa có phiếu') : <>{listBook.slice(0, 200).map(t => txRow(t, true))}
@@ -271,7 +296,7 @@ export const KhoView: React.FC = () => {
   return <div className="space-y-3">
     <div className="flex flex-wrap items-center gap-2">
       <div className="scrollbar-hide flex min-w-0 flex-1 gap-1.5 overflow-x-auto" role="group" aria-label="Kho">
-        {[{ id: '', name: 'Mọi kho' }, ...whs].map(w => { const n = w.id ? openTx.filter(t => isReceive(t) && t.targetWarehouseId === w.id).length : 0;
+        {[{ id: '', name: 'Mọi kho' }, ...whs].map(w => { const n = w.id ? openTx.filter(t => isReceive(t) && t.targetWarehouseId === w.id).length + openCaps.filter(c => c.warehouseId === w.id).length : 0;
           return <button key={w.id || 'all'} type="button" onClick={() => { setWh(w.id); setSel(null); }} aria-pressed={wh === w.id}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-sm font-semibold ${wh === w.id ? 'border-teal-600 bg-teal-700 text-white' : 'border-border bg-card hover:border-teal-300'}`}>
             {w.name}{n > 0 && <span className={`rounded-full px-1.5 text-[11px] tabular-nums ${wh === w.id ? 'bg-white/20' : 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-100'}`}>{n}</span>}</button>; })}
@@ -285,14 +310,17 @@ export const KhoView: React.FC = () => {
       </div>}
       <button type="button" onClick={reload} disabled={state === 'loading'} className={`${secondaryBtn} bg-card`} aria-label="Tải lại"><RefreshCw size={15} className={state === 'loading' ? 'animate-spin' : ''} /></button>
     </div>
-    {canOperate && <div className={`${sel ? 'hidden lg:flex' : 'grid sm:flex'} grid-cols-4 gap-1.5 sm:justify-end sm:gap-2`}>
-      {([['newCount', 'Kiểm đếm', ClipboardCheck], ['loss', 'Xuất hủy', Trash2], ['transfer', 'Chuyển kho', ArrowRightLeft], ['issue', 'Xuất cấp', ArrowUpFromLine]] as const).map(([k, label, Icon]) =>
-        <button key={k} type="button" onClick={() => setSel({ kind: k })}
-          className={`${k === 'issue' ? primaryBtn : secondaryBtn} flex-col !gap-0.5 !px-1 !py-1.5 text-[12px] sm:flex-row sm:!gap-1.5 sm:!px-3 sm:!py-2 sm:text-sm`}><Icon size={15} />{label}</button>)}
+    {canOperate && <div className={`${sel ? 'hidden lg:flex' : 'flex'} flex-col gap-1.5 sm:flex-row sm:justify-end sm:gap-2`}>
+      <CaptureButton onFiles={files => setSel({ kind: 'capture', key: `new-${Date.now()}`, files })} className={`${primaryBtn} !py-2.5 sm:order-last sm:!py-2`} />
+      <div className="grid grid-cols-4 gap-1.5 sm:flex sm:gap-2">
+        {([['newCount', 'Kiểm đếm', ClipboardCheck], ['loss', 'Xuất hủy', Trash2], ['transfer', 'Chuyển kho', ArrowRightLeft], ['issue', 'Xuất cấp', ArrowUpFromLine]] as const).map(([k, label, Icon]) =>
+          <button key={k} type="button" onClick={() => setSel({ kind: k })}
+            className={`${secondaryBtn} bg-card flex-col !gap-0.5 !px-1 !py-1.5 text-[12px] sm:flex-row sm:!gap-1.5 sm:!px-3 sm:!py-2 sm:text-sm`}><Icon size={15} />{label}</button>)}
+      </div>
     </div>}
     <div className={`${sel ? 'hidden lg:flex' : 'flex'} scrollbar-hide gap-2 overflow-x-auto pb-1`}>{tiles.map(t => <Tile key={t.k} active={tile === t.k} onClick={() => pick(t.k)}
       icon={t.icon} label={t.label} value={t.value} hint={t.hint} tone={t.tone} ic={t.ic} blink={t.blink && tile !== t.k} />)}</div>
-    <Split open={!!sel} selKey={sel ? `${sel.kind}:${'id' in sel ? sel.id : 'key' in sel ? sel.key : sel.itemKey || ''}` : null} list={list} detail={detail} />
+    <Split open={!!sel} selKey={sel ? `${sel.kind}:${sel.kind === 'capture' ? sel.key : 'id' in sel ? sel.id : 'key' in sel ? sel.key : sel.itemKey || ''}` : null} list={list} detail={detail} />
   </div>;
 };
 
