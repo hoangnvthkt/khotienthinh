@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronRight, ExternalLink, FilePlus2, FileSignature, Loader2, Pencil, Plus, Search, Trash2, Truck } from 'lucide-react';
+import { AlertTriangle, ChevronRight, ExternalLink, FilePlus2, FileSignature, Loader2, Pencil, Plus, RotateCcw, Search, Trash2, Truck } from 'lucide-react';
+import { useApp } from '../../../context/AppContext';
+import { canPerform } from '../../../lib/permissions/permissionService';
+import { calcStatement, invoiceTolerance } from '../../../lib/statementInvoiceAmounts';
+import { Role } from '../../../types';
 import { useReasonConfirm } from '../../../context/ConfirmContext';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -48,7 +52,9 @@ const STATEMENT_TONE: Record<string, string> = {
 // ---------------------------------------------------------------------------
 // Bảng đối soát tháng
 // ---------------------------------------------------------------------------
-interface StmtRow { line: ContractDeliveryLine; date: string; noteCode: string; ticketNo: string | null; poNo: string | null; scopeKey: string; projectCode: string | null; include: boolean; price: string; vat: string; reason: string }
+interface StmtRow { line: ContractDeliveryLine; date: string; noteCode: string; ticketNo: string | null; poNo: string | null; scopeKey: string; projectCode: string | null; include: boolean; price: string; vat: string; reason: string;
+  /** Tiền hàng theo hóa đơn NCC ('' = SL × đơn giá). */
+  amount: string }
 // Giá khác giá HĐ tại ngày giao → phải ghi lý do.
 /** Tên dòng kèm quy cách — hai dòng cùng mã khác quy cách phải phân biệt được. */
 const lineLabel = (l: { name: string; specification?: string | null }) => l.specification ? `${l.name} (${l.specification})` : l.name;
@@ -59,12 +65,21 @@ const priceDiffers = (r: StmtRow) => { const p = parseQty(r.price); return r.lin
 
 const StatementEditor: React.FC<{ contract: ContractDetail; month: string; statement?: ContractStatement | null; onClose: () => void; onSaved: () => void }> = ({ contract, month, statement = null, onClose, onSaved }) => {
   const toast = useToast();
+  const { user } = useApp();
+  // Sửa tiền theo hóa đơn: kế toán (Tài chính — Ghi nhận) / Admin; máy chủ kiểm lại.
+  const canInvoice = user.role === Role.ADMIN || canPerform(user, 'system.finance.record');
   const [rows, setRows] = useState<StmtRow[]>(() => contract.deliveries
     .filter(d => d.date.slice(0, 7) === month.slice(0, 7))
-    .flatMap(d => d.lines.filter(l => !l.statementId || l.statementId === statement?.id).map(l => ({
-      line: l, date: d.date, noteCode: d.code, ticketNo: d.ticketNo, poNo: d.purchaseOrderNo, scopeKey: d.scopeKey, projectCode: d.projectCode,
-      include: l.wmsReady, price: l.unitPrice != null ? qtyInput(l.unitPrice) : '', vat: qtyInput(l.vatRate ?? 0), reason: '',
-    })))
+    .flatMap(d => d.lines.filter(l => !l.statementId || l.statementId === statement?.id).map(l => {
+      // Bảng nháp mở lại: dòng đã sửa theo hóa đơn giữ số đã lưu.
+      const saved = l.statementId && l.statementId === statement?.id && l.amount != null && l.unitPrice != null
+        && Math.round(l.qty * l.unitPrice) !== Math.round(l.amount);
+      return {
+        line: l, date: d.date, noteCode: d.code, ticketNo: d.ticketNo, poNo: d.purchaseOrderNo, scopeKey: d.scopeKey, projectCode: d.projectCode,
+        include: l.wmsReady, price: l.unitPrice != null ? qtyInput(l.unitPrice) : '', vat: qtyInput(l.vatRate ?? 0), reason: '',
+        amount: saved ? String(Math.round(l.amount as number)) : '',
+      };
+    }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.noteCode.localeCompare(b.noteCode)));
   // Một bảng đối soát cho một dự án (công nợ + chi phí theo dự án); HĐ dùng chung thì chọn dự án.
   const scopes = useMemo(() => Array.from(new Map(rows.map(r => [r.scopeKey, r.projectCode || 'Kho Tổng (công ty)'])).entries()), [rows]);
@@ -75,24 +90,36 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
   const [error, setError] = useState<string | null>(null);
   const patch = (id: string, p: Partial<StmtRow>) => setRows(cur => cur.map(r => r.line.lineId === id ? { ...r, ...p } : r));
 
-  const totals = useMemo(() => rows.filter(r => r.include && r.scopeKey === scope).reduce((t, r) => {
-    const price = parseQty(r.price); const vat = parseQty(r.vat) ?? 0;
-    if (price == null || Number.isNaN(price) || price < 0 || Number.isNaN(vat) || vat < 0 || vat > 100) return { ...t, invalid: t.invalid + 1 };
-    const gross = Math.round(r.line.qty * price);
-    return { ...t, gross: t.gross + gross, vat: t.vat + Math.round(gross * vat / 100), count: t.count + 1 };
-  }, { gross: 0, vat: 0, count: 0, invalid: 0 }), [rows, scope]);
+  const [invoiceVat, setInvoiceVat] = useState('');
+  const vatOverride = invoiceVat.trim() === '' ? null : parseQty(invoiceVat);
+  const totals = useMemo(() => {
+    const picked = rows.filter(r => r.include && r.scopeKey === scope);
+    const valid = picked.flatMap(r => {
+      const price = parseQty(r.price); const vat = parseQty(r.vat) ?? 0; const amount = r.amount.trim() === '' ? null : parseQty(r.amount);
+      if (price == null || Number.isNaN(price) || price < 0 || Number.isNaN(vat) || vat < 0 || vat > 100 || (amount != null && (Number.isNaN(amount) || amount < 0))) return [];
+      return [{ qty: r.line.qty, price, vatRate: vat, amount: amount == null ? null : Math.round(amount) }];
+    });
+    const calc = calcStatement(valid, vatOverride == null || Number.isNaN(vatOverride) ? null : Math.round(vatOverride));
+    return { ...calc, count: valid.length, invalid: picked.length - valid.length + (vatOverride != null && (Number.isNaN(vatOverride) || vatOverride < 0) ? 1 : 0) };
+  }, [rows, scope, vatOverride]);
+  // Bảng nháp đã sửa tổng VAT theo hóa đơn: hiện lại số đã lưu.
+  useEffect(() => {
+    if (statement && statement.status === 'draft' && Math.abs(statement.vatAmount - totals.lineVat) >= 0.5 && totals.count > 0) setInvoiceVat(String(Math.round(statement.vatAmount)));
+  }, []);
   const missingReason = shown.filter(r => r.include && priceDiffers(r) && !r.reason.trim()).length;
 
   const save = async (confirm: boolean) => {
     setError(null);
-    if (totals.invalid) { setError('Còn dòng chưa có đơn giá hoặc VAT không hợp lệ.'); return; }
+    if (totals.invalid) { setError('Còn dòng chưa có đơn giá hoặc VAT / thành tiền không hợp lệ.'); return; }
+    if (totals.overLimit) { setError('Tiền theo hóa đơn lệch quá dung sai làm tròn — kiểm tra lại số hoặc sửa đơn giá kèm lý do.'); return; }
     if (!totals.count) { setError('Chọn ít nhất một dòng giao nhận.'); return; }
     if (missingReason) { setError(`Còn ${missingReason} dòng giá khác giá HĐ chưa ghi lý do.`); return; }
     setSaving(true);
     try {
       const r = await procurementContractService.saveStatement({ contractId: contract.id, month, statementId: statement?.id, note: note.trim(),
         lines: shown.filter(x => x.include).map(x => ({ deliveryLineId: x.line.lineId, unitPrice: parseQty(x.price) || 0, vatRate: parseQty(x.vat) || 0,
-          reason: priceDiffers(x) ? x.reason.trim() : undefined })) });
+          reason: priceDiffers(x) ? x.reason.trim() : undefined, amount: x.amount.trim() !== '' ? Math.round(parseQty(x.amount) || 0) : undefined })),
+        invoiceVat: vatOverride != null && !Number.isNaN(vatOverride) && Math.round(vatOverride) !== totals.lineVat ? Math.round(vatOverride) : undefined });
       if (confirm) await procurementContractService.transitionStatement({ statementId: r.statementId, action: 'confirm' });
       toast.success(confirm ? `Đã chốt ${r.code} — chờ kế toán ghi công nợ` : `Đã lưu nháp ${r.code}`, confirm ? 'Kế toán dự án đã được thông báo.' : undefined);
       onSaved();
@@ -141,7 +168,23 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
               {priceDiffers(r) && <label className="flex min-w-[16rem] flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">Giá HĐ {money(r.line.contractPrice)} · lý do
                 <input value={r.reason} onChange={e => patch(r.line.lineId, { reason: e.target.value })} placeholder="VD NCC giảm giá tháng này" aria-label={`Lý do giá ${lineLabel(r.line)}`}
                   className={`min-w-0 flex-1 ${inputCls} ${r.reason.trim() ? '' : 'border-amber-400'}`} /></label>}
-              <span className="ml-auto font-semibold tabular-nums text-foreground">{price != null && !Number.isNaN(price) ? `${money(r.line.qty * price)} đ` : ''}</span>
+              {(() => {
+                const computed = price != null && !Number.isNaN(price) ? Math.round(r.line.qty * price) : null;
+                if (!canInvoice || computed == null) return <span className="ml-auto font-semibold tabular-nums text-foreground">{computed != null ? `${money(computed)} đ` : ''}</span>;
+                const typed = r.amount.trim() === '' ? null : parseQty(r.amount);
+                const delta = typed != null && !Number.isNaN(typed) ? Math.round(typed) - computed : 0;
+                const over = typed != null && (Number.isNaN(typed) || typed < 0 || Math.abs(delta) > invoiceTolerance(computed));
+                return <span className="ml-auto flex items-center gap-1.5">
+                  {typed != null && <span className={`text-[11px] font-semibold tabular-nums ${over ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}`}
+                    title={`SL × đơn giá = ${money(computed)} đ · dung sai ${money(invoiceTolerance(computed))} đ`}>
+                    {over ? 'Vượt dung sai' : `Theo HĐ ${delta > 0 ? '+' : ''}${money(delta)} đ`}</span>}
+                  <input inputMode="numeric" value={r.amount} placeholder={money(computed)} onChange={e => patch(r.line.lineId, { amount: e.target.value })}
+                    aria-label={`Thành tiền theo hóa đơn ${lineLabel(r.line)} ${r.noteCode}`} title="Thành tiền theo hóa đơn NCC — để trống = SL × đơn giá"
+                    className={`w-36 text-right font-semibold tabular-nums ${inputCls} ${over ? 'border-rose-400' : typed != null ? 'border-amber-400' : ''}`} />
+                  {typed != null && <button type="button" onClick={() => patch(r.line.lineId, { amount: '' })} title="Về SL × đơn giá" aria-label="Về SL × đơn giá"
+                    className="rounded-lg p-1 text-muted-foreground hover:bg-muted"><RotateCcw size={13} /></button>}
+                </span>;
+              })()}
             </div>}
         </li>;
       })}</ul>}
@@ -150,8 +193,18 @@ const StatementEditor: React.FC<{ contract: ContractDetail; month: string; state
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} className={`mt-1 w-full ${inputCls}`} /></label>
       <dl className="space-y-0.5 rounded-2xl border border-border bg-card p-4 text-sm">
         <div className="flex justify-between"><dt className="text-muted-foreground">{totals.count} dòng · tiền hàng</dt><dd className="tabular-nums">{money(totals.gross)} đ</dd></div>
-        <div className="flex justify-between"><dt className="text-muted-foreground">VAT</dt><dd className="tabular-nums">{money(totals.vat)} đ</dd></div>
-        <div className="flex justify-between font-bold"><dt>Tổng đối soát</dt><dd className="tabular-nums">{money(totals.gross + totals.vat)} đ</dd></div>
+        {canInvoice
+          ? <div className="flex items-center justify-between gap-2"><dt className="text-muted-foreground">VAT</dt><dd className="flex items-center gap-1">
+            <input inputMode="numeric" value={invoiceVat} placeholder={money(totals.lineVat)} onChange={e => setInvoiceVat(e.target.value)} aria-label="Tổng VAT theo hóa đơn"
+              title="Tổng VAT theo hóa đơn NCC — để trống = cộng VAT từng dòng"
+              className={`w-36 text-right tabular-nums ${inputCls} ${vatOverride != null ? 'border-amber-400' : ''}`} />
+            {vatOverride != null && <button type="button" onClick={() => setInvoiceVat('')} title="Về VAT cộng từ các dòng" aria-label="Về VAT cộng từ các dòng"
+              className="rounded-lg p-1 text-muted-foreground hover:bg-muted"><RotateCcw size={13} /></button>}</dd></div>
+          : <div className="flex justify-between"><dt className="text-muted-foreground">VAT</dt><dd className="tabular-nums">{money(totals.vat)} đ</dd></div>}
+        <div className="flex justify-between font-bold"><dt>Tổng đối soát</dt><dd className="tabular-nums">{money(totals.total)} đ</dd></div>
+        {totals.delta !== 0 && <div className={`flex justify-between text-xs ${totals.overLimit ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}`}
+          title={`SL × đơn giá: ${money(totals.computedGross + totals.computedVat)} đ · dung sai ${money(invoiceTolerance(totals.computedGross + totals.computedVat))} đ`}>
+          <dt>{totals.overLimit ? 'Vượt dung sai làm tròn' : 'Làm tròn theo HĐ'}</dt><dd className="tabular-nums">{totals.delta > 0 ? '+' : ''}{money(totals.delta)} đ</dd></div>}
       </dl>
     </section>
   </Drawer>;
