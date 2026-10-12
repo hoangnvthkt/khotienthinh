@@ -13,6 +13,8 @@ interface ItemSelectionModalProps {
   allowAllItems?: boolean;    // true = hiển thị tất cả vật tư (cho nhập kho/đề xuất nhu cầu)
   showStockQuantities?: boolean;
   items?: InventoryItem[];    // Danh mục riêng (mặc định lấy từ kho dữ liệu chung)
+  /** Mã công trường hay đề xuất (mới nhất / nhiều nhất trước): khi chưa gõ tìm, đưa lên đầu kèm số phiếu. */
+  frequent?: Array<{ itemId: string; count: number }>;
 }
 
 const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
@@ -24,6 +26,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
   allowAllItems = false,
   showStockQuantities = true,
   items: itemsProp,
+  frequent,
 }) => {
   const { items: appItems, warehouses } = useApp();
   const items = itemsProp ?? appItems;
@@ -51,6 +54,16 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
     }),
     [allowAllItems, debouncedSearchTerm, filterWarehouseId, items],
   );
+  // Chưa gõ tìm: mã hay đề xuất của công trường lên đầu (chỉ mã còn trong danh mục đang chọn được).
+  const frequentCount = useMemo(() => new Map((frequent || []).map(f => [f.itemId, f.count])), [frequent]);
+  const shownItems = useMemo(() => {
+    if (debouncedSearchTerm.trim() || !frequentCount.size) return filteredItems;
+    const usable = items.filter(item => item.status !== 'retired' && frequentCount.has(item.id)
+      && (allowAllItems || !filterWarehouseId || filteredItems.some(f => f.id === item.id)));
+    const top = (frequent || []).map(f => usable.find(item => item.id === f.itemId)).filter((item): item is InventoryItem => Boolean(item));
+    const topIds = new Set(top.map(item => item.id));
+    return [...top, ...filteredItems.filter(item => !topIds.has(item.id))];
+  }, [allowAllItems, debouncedSearchTerm, filterWarehouseId, filteredItems, frequent, frequentCount, items]);
   const isSearching = searchTerm !== debouncedSearchTerm;
   const isResultLimited = totalMatches > ITEM_SELECTION_RESULT_LIMIT;
 
@@ -134,14 +147,16 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredItems.map(item => {
+              {shownItems.map(item => {
                 const stock = getDisplayStock(item);
+                const usedCount = debouncedSearchTerm.trim() ? 0 : frequentCount.get(item.id) || 0;
                 return (
                   <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
                     <td className="p-4 font-mono text-slate-500 text-xs font-bold">{item.sku}</td>
                     <td className="p-4">
                       <div className="font-bold text-slate-800 text-sm">{item.name}</div>
                       <div className="text-[10px] text-slate-400 uppercase font-bold">{item.category}</div>
+                      {usedCount > 0 && <div className="mt-0.5 text-[10px] font-bold text-teal-700" data-testid="frequent-item">Hay đề xuất · {usedCount} phiếu gần đây</div>}
                     </td>
                     {showStockQuantities && (
                       <td className="p-4 text-right">
@@ -160,7 +175,7 @@ const ItemSelectionModal: React.FC<ItemSelectionModalProps> = ({
                   </tr>
                 );
               })}
-              {filteredItems.length === 0 && (
+              {shownItems.length === 0 && (
                 <tr>
                   <td colSpan={showStockQuantities ? 4 : 3} className="p-20 text-center">
                     <div className="flex flex-col items-center opacity-20">
