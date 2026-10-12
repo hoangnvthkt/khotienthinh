@@ -5,6 +5,11 @@ import { useToast } from '../../context/ToastContext';
 import { financeService, type FinancePendingStatement } from '../../lib/financeService';
 import { StateBox, money, primaryBtn, secondaryBtn } from '../procurement/hub/hubUi';
 import { ENT, NUM, viDate } from './financeUi';
+import { calcStatement } from '../../lib/statementInvoiceAmounts';
+
+/** Chênh lệch kế toán sửa theo hóa đơn NCC (làm tròn) so với SL × đơn giá. */
+const invoiceDelta = (s: FinancePendingStatement) => s.lines?.length
+  ? Math.round(s.totalAmount - calcStatement(s.lines.map(l => ({ qty: l.qty, price: l.unitPrice, vatRate: l.vatRate }))).total) : 0;
 
 // Bảng đối soát HĐ đã được Mua hàng chốt, chờ kế toán ghi công nợ (người ghi phải khác người chốt).
 
@@ -35,7 +40,9 @@ export const PendingStatementsView: React.FC<{ onChanged: () => void }> = ({ onC
       <span className={ENT}>{s.code}</span> <span className="text-sm text-muted-foreground">· {s.supplierName}</span>
       <span className="block text-xs text-muted-foreground">HĐ <span className={ENT}>{s.contractCode || '—'}</span> · {s.projectCode} · kỳ {viDate(s.periodMonth).slice(3)} · chốt bởi <span className={ENT}>{s.confirmedByName || '—'}</span> {viDate(s.confirmedAt)}</span>
     </span>
-    <span className={`text-right ${NUM}`}>{money(s.totalAmount)} đ<span className="block text-xs font-normal text-muted-foreground">gồm VAT {money(s.vatAmount)} đ</span></span>
+    <span className={`text-right ${NUM}`}>{money(s.totalAmount)} đ<span className="block text-xs font-normal text-muted-foreground">gồm VAT {money(s.vatAmount)} đ</span>
+      {invoiceDelta(s) !== 0 && <span className="block text-xs font-semibold text-amber-700 dark:text-amber-300" title="Kế toán sửa tiền theo hóa đơn NCC (làm tròn), so với SL × đơn giá">
+        Làm tròn theo HĐ {invoiceDelta(s) > 0 ? '+' : ''}{money(invoiceDelta(s))} đ</span>}</span>
     <span className="flex gap-2">
       <button type="button" disabled={busy === s.id || !s.canPost} className={secondaryBtn} onClick={async () => {
         const reason = await askReason({ title: 'Trả lại bảng đối soát', targetName: s.code, reasonLabel: 'Lý do', reasonPlaceholder: 'VD: Thiếu phiếu giao ngày 12/09', actionLabel: 'Trả lại', intent: 'warning' });
@@ -56,7 +63,8 @@ export const PendingStatementsView: React.FC<{ onChanged: () => void }> = ({ onC
         <span className="min-w-0 flex-1"><span className={ENT}>{l.itemName}</span>{l.specification && <span className="text-xs text-muted-foreground"> — {l.specification}</span>}
           {l.priceReason && <span className="block text-xs text-amber-700 dark:text-amber-300">Giá HĐ {l.contractPrice != null ? `${money(l.contractPrice)} đ` : 'chưa có'} · lý do: {l.priceReason}</span>}</span>
         <span className="text-xs tabular-nums text-muted-foreground">{l.qty.toLocaleString('vi-VN', { maximumFractionDigits: 3 })} {l.unit || ''} × {money(l.unitPrice)}</span>
-        <span className={`w-28 text-right ${NUM}`}>{money(l.amount)} đ</span>
+        <span className={`w-28 text-right ${NUM}`}>{money(l.amount)} đ
+          {Math.round(l.amount) !== Math.round(l.qty * l.unitPrice) && <span className="block text-xs font-semibold text-amber-700 dark:text-amber-300">theo HĐ {l.amount > l.qty * l.unitPrice ? '+' : ''}{money(Math.round(l.amount) - Math.round(l.qty * l.unitPrice))} đ</span>}</span>
       </li>)}</ul>}
     </>}
   </li>)}</ul>;

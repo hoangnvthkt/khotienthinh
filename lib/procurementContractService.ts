@@ -86,6 +86,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   PROCUREMENT_STATEMENT_SELF_POST: 'Người chốt bảng đối soát không tự ghi công nợ. Nhờ kế toán khác.',
   PROCUREMENT_PO_RETURN_REASON_REQUIRED: 'Nhập lý do trả lại.',
   PROCUREMENT_STATEMENT_PRICE_REASON: 'Có dòng giá khác giá HĐ — ghi lý do cho từng dòng đó.',
+  PROCUREMENT_STATEMENT_INVOICE_DENIED: 'Chỉ kế toán (Tài chính — Ghi nhận) được sửa tiền theo hóa đơn.',
+  PROCUREMENT_STATEMENT_INVOICE_LIMIT: 'Tiền theo hóa đơn lệch quá dung sai làm tròn (0,5%, tối thiểu 50.000 đ) — sửa đơn giá kèm lý do.',
   PROCUREMENT_CONTRACT_FIELDS_REQUIRED: 'Nhập số và tên hợp đồng.',
   PROCUREMENT_CONTRACT_INVALID: 'Giá trị HĐ, hạn thanh toán hoặc trạng thái không hợp lệ.',
   PROCUREMENT_CONTRACT_SCOPE_LOCKED: 'HĐ đã có giao nhận / đơn gọi hàng nên không đổi được NCC hoặc dự án.',
@@ -143,7 +145,7 @@ export const procurementContractService = {
     quantityLimit?: number | null; amountLimit?: number | null; effectiveFrom?: string | null; effectiveTo?: string | null; note?: string; specification?: string }> }) {
     return call<{ saved: number }>('save_procurement_contract_lines_v1', { p_input: input });
   },
-  saveStatement(input: { contractId: string; month: string; statementId?: string; note?: string; lines: Array<{ deliveryLineId: string; unitPrice: number; vatRate: number; reason?: string }> }) {
+  saveStatement(input: { contractId: string; month: string; statementId?: string; note?: string; lines: Array<{ deliveryLineId: string; unitPrice: number; vatRate: number; reason?: string; amount?: number }>; invoiceVat?: number }) {
     return call<{ statementId: string; code: string; lines: number; totalAmount: number }>('save_procurement_contract_statement_v1', { p_input: input });
   },
   transitionStatement(input: { statementId: string; action: 'confirm' | 'withdraw' | 'delete' | 'return' | 'post'; reason?: string }) {

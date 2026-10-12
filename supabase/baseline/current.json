@@ -308,7 +308,8 @@
     "20261011230000_rpc_conflict_errcode_pt409.sql",
     "20261012094700_project_rls_scope_initplan.sql",
     "20261012113900_procurement_site_scope.sql",
-    "20261012160400_project_task_progress_v1.sql"
+    "20261012160400_project_task_progress_v1.sql",
+    "20261012210000_statement_invoice_amounts.sql"
   ],
   "forbidIncludeAll": true
 }
