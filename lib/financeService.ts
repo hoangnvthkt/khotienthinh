@@ -48,6 +48,11 @@ export interface FinanceOpening {
   decidedByName: string | null; decidedAt: string | null; decisionNote: string | null; openingDocumentId: string | null;
 }
 export interface FinanceEvent { action: string; entityType: string; actorName: string | null; reason: string | null; payload: Record<string, unknown>; at: string }
+/** Đơn đã gửi của một NCC — Tài chính soi chiếu với công nợ. receivedNet = SL đã nhận × đơn giá, chưa VAT. */
+export interface FinanceSupplierOrder {
+  id: string; poNumber: string | null; status: string; projectCode: string | null; projectName: string | null;
+  orderDate: string | null; totalAmount: number; vatRate: number; receivedNet: number;
+}
 export interface FinanceSupplierDetail {
   today: string; cutoverDate: string; defaultPaymentDays: number; can: FinanceCan; currentUserId: string;
   supplier: { id: string; name: string; code: string | null; taxCode: string | null; bankName: string | null; bankAccount: string | null;
@@ -887,6 +892,7 @@ export const financeService = {
   /** Tổng quan toàn công ty + sức khỏe từng dự án (chỉ Tài chính — Quản trị / Admin). */
   overview() { return call<FinanceOverview>('get_finance_overview_v1', {}); },
   supplier(supplierId: string) { return call<FinanceSupplierDetail>('get_finance_supplier_v1', { p_supplier_id: supplierId }); },
+  supplierOrders(supplierId: string) { return call<FinanceSupplierOrder[]>('get_finance_supplier_orders_v1', { p_supplier_id: supplierId }); },
   directReceipts() { return call<FinanceDirectReceipts>('list_finance_direct_receipts_v1', {}); },
   postDirectReceipts(input: { receipts: Array<{ transactionId: string; rowVersion: number; prices?: Record<string, number> }>; vat: FinanceVatChoice; invoiceNo?: string; duplicateChecked?: boolean }) {
     return call<{ documents: Array<{ transactionId: string; code: string; amount: number }>; total: number }>('post_finance_direct_receipts_v1', { p_input: input });
