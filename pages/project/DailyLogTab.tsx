@@ -25,6 +25,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm, useReasonConfirm } from '../../context/ConfirmContext';
 import { useApp } from '../../context/AppContext';
 import DailyLogDetailTabs from '../../components/project/DailyLogDetailTabs';
+import { buildDailyLogPrefill, shortDate } from '../../lib/dailyLogPrefill';
+import { recordSuggestionEvent } from '../../lib/uiSuggestionEvents';
 import { DailyLogEngineerWorkspace } from '../../components/project/daily-log/DailyLogEngineerWorkspace';
 import { DailyLogSummaryWorkspace } from '../../components/project/daily-log/DailyLogSummaryWorkspace';
 import { DailyLogRevisionActions } from '../../components/project/daily-log/DailyLogRevisionActions';
@@ -1253,6 +1255,11 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
     const shouldRenderWbsEditor = Boolean(
         !editing && (wbsBundleLoading || wbsBundleDenied || wbsBundleError || isWbsContributionFlow),
     );
+    // "Như hôm qua": nhật ký gần nhất trước ngày đang ghi (chỉ khi lập mới, không khi sửa).
+    const formPrefill = useMemo(
+        () => (showForm && !editing ? buildDailyLogPrefill(logs, { date: fDate, userId: user?.id }) : null),
+        [showForm, editing, logs, fDate, user?.id],
+    );
 
 
     const targetDailyLogId = useMemo(() => new URLSearchParams(location.search).get('dailyLogId'), [location.search]);
@@ -1427,6 +1434,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
         resetForm();
         setDayLogPicker(null);
         setFDate(date);
+        // Thời tiết mặc định theo nhật ký gần nhất thay vì luôn "Nắng"; người ghi bấm ô khác nếu đổi.
+        const prefill = buildDailyLogPrefill(logs, { date, userId: user?.id });
+        if (prefill) setFWeather(prefill.weather);
         setShowForm(true);
     };
 
@@ -1865,6 +1875,10 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                 createdBy: user?.name || user?.id || 'admin', createdById: user?.id, createdAt: new Date().toISOString(),
             };
             await dailyLogService.upsert(item);
+            if (!editing && formPrefill) {
+                const kept = fWeather === formPrefill.weather;
+                recordSuggestionEvent({ screen: 'daily_log', field: 'weather', outcome: kept ? 'accepted' : 'edited', suggested: 1, accepted: kept ? 1 : 0, source: { logId: formPrefill.sourceLogId, date: formPrefill.weatherDate } });
+            }
             toast.success(editing ? 'Cập nhật nhật ký' : 'Ghi nhật ký thành công');
             resetForm();
             setShowForm(false);
@@ -2812,7 +2826,7 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                             <BarChart3 size={13} className="text-teal-600" /> Báo cáo
                         </a>
                         <AiInsightPanel module="dailylog" siteId={constructionSiteId} />
-                        <button onClick={() => { if (!ensureDailyLogAction(DAILY_LOG_ACTION.create, 'ghi nhật ký')) return; resetForm(); setShowForm(true); }}
+                        <button onClick={() => openCreateForDate(new Date().toISOString().split('T')[0])}
                             disabled={!pbacLoaded || !hasDailyLogAction(DAILY_LOG_ACTION.create)}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-200 hover:bg-teal-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                             <Plus size={12} /> Ghi nhật ký chi tiết
@@ -3660,6 +3674,9 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
                                         </button>
                                     ))}
                                 </div>
+                                {formPrefill && fWeather === formPrefill.weather && (
+                                    <p className="mt-1 text-[10px] font-medium text-muted-foreground">Như hôm qua ({shortDate(formPrefill.weatherDate)}) · bấm ô khác nếu đổi.</p>
+                                )}
                             </div>
                             <div>
                                 <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Nội dung công việc thi công</label>
@@ -3984,6 +4001,13 @@ const DailyLogTab: React.FC<DailyLogTabProps> = ({ constructionSiteId, projectId
 
                             {/* FastCons Detail Tabs */}
                             <DailyLogDetailTabs
+                                prefill={formPrefill && !shouldRenderWbsEditor ? {
+                                    sourceLogId: formPrefill.sourceLogId,
+                                    sourceLabel: `nhật ký ${shortDate(formPrefill.sourceDate)}${formPrefill.byMe ? ' của bạn' : ''}`,
+                                    labor: formPrefill.labor, machines: formPrefill.machines,
+                                    onAccept: (field, rows) => recordSuggestionEvent({ screen: 'daily_log', field, outcome: 'accepted', suggested: rows, accepted: rows, source: { logId: formPrefill.sourceLogId, date: formPrefill.sourceDate } }),
+                                    onDismiss: (field, rows) => recordSuggestionEvent({ screen: 'daily_log', field, outcome: 'dismissed', suggested: rows, source: { logId: formPrefill.sourceLogId, date: formPrefill.sourceDate } }),
+                                } : undefined}
                                 volumes={fVolumes} materials={fMaterials}
                                 laborDetails={fLabor} machines={fMachines}
                                 onVolumesChange={setFVolumes} onMaterialsChange={setFMaterials}
