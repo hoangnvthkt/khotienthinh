@@ -45,6 +45,7 @@ import { downloadWorkflowFile, hasDownloadableFile, uploadWorkflowAttachment } f
 import { WorkflowStepChecklist } from '../../components/wf/WorkflowStepChecklist';
 import { canPerform } from '../../lib/permissions/permissionService';
 import { buildWorkflowRoute } from '../../lib/workflowRoutes';
+import { WORKFLOW_CLONE_PARAM, canCloneWorkflowInstance } from '../../lib/workflowClone';
 import { getWorkflowStepActionCopy, getWorkflowStepApprovalState } from '../../lib/workflowStepType';
 
 const STATUS_LABEL: Record<WorkflowInstanceStatus, string> = {
@@ -666,6 +667,17 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
 
     const customFieldsToRender = template?.customFields || [];
 
+    const cloneButton = canCloneWorkflowInstance(template) ? (
+        <button
+            type="button"
+            onClick={() => navigate(`/wf?${WORKFLOW_CLONE_PARAM}=${encodeURIComponent(instance.id)}`)}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
+            title="Tạo phiếu mới giống phiếu này"
+        >
+            <Copy size={13} className="shrink-0" /> <span className="whitespace-nowrap">Nhân bản</span>
+        </button>
+    ) : null;
+
     // Calculate deadline formatted string
     const deadlineString = (() => {
         if (currentNode && instance.status === WorkflowInstanceStatus.RUNNING) {
@@ -856,12 +868,12 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                     {/* Top Action Buttons (Purple / Red / Actions) */}
                     <div className="w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
                         {canAct ? (
-                            <div className={`grid ${currentStepCopy.canReject ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:flex sm:items-center sm:gap-2`}>
+                            <div className="flex flex-wrap gap-2 sm:flex-nowrap sm:items-center">
                                 <button
                                     onClick={() => { setActiveAction(WorkflowInstanceAction.APPROVED); }}
                                     disabled={userAlreadyApproved}
                                     title={userAlreadyApproved ? `Đang chờ: ${approvalState.pending.map(userLabel).join(', ')}` : undefined}
-                                    className={`${currentStepCopy.canReject ? 'col-span-3' : 'col-span-2'} sm:col-span-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60`}
+                                    className={`w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-4 py-2.5 sm:py-2 text-xs font-black transition shadow-md shadow-purple-700/20 active:scale-98 min-h-[42px] sm:min-h-0 disabled:cursor-not-allowed disabled:opacity-60`}
                                 >
                                     <CheckCircle size={15} />
                                     <span>{userAlreadyApproved
@@ -870,16 +882,17 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 </button>
                                 <button
                                     onClick={() => { setActiveAction(WorkflowInstanceAction.REVISION_REQUESTED); }}
-                                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-pink-300 dark:border-pink-800 text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
+                                    className="flex-1 sm:flex-none min-w-0 inline-flex items-center justify-center gap-1 rounded-xl border border-pink-300 dark:border-pink-800 text-pink-700 dark:text-pink-300 hover:bg-pink-50 dark:hover:bg-pink-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
                                     <RotateCcw size={13} /> <span className="truncate">Yêu cầu bổ sung</span>
                                 </button>
                                 {currentStepCopy.canReject && <button
                                     onClick={() => { setActiveAction(WorkflowInstanceAction.REJECTED); }}
-                                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
+                                    className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1 rounded-xl border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 px-2.5 py-2.5 sm:py-2 text-[11px] sm:text-xs font-black transition active:scale-98 min-h-[42px] sm:min-h-0"
                                 >
                                     <XCircle size={13} /> <span>Từ chối</span>
                                 </button>}
+                                {cloneButton}
                                 <button
                                     onClick={() => void reloadInstance()}
                                     className="inline-flex items-center justify-center p-2.5 sm:p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition min-h-[42px] sm:min-h-0"
@@ -889,7 +902,8 @@ const WorkflowInstanceDetail: React.FC<WorkflowInstanceDetailProps> = ({ instanc
                                 </button>
                             </div>
                         ) : (
-                            <div className="flex justify-end">
+                            <div className="flex justify-end gap-2">
+                                {cloneButton}
                                 <button
                                     onClick={() => void reloadInstance()}
                                     className="inline-flex items-center justify-center p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
