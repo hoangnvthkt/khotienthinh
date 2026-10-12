@@ -8,7 +8,7 @@ import {
   HardHat, Briefcase, Tag, Ruler, Trash2, Edit2,
   Truck, User as UserIcon, Search, AlertCircle,
   Database, MapPinned, DollarSign, Calendar, Layers, GitBranch, Percent, TrendingDown, PenTool, Bot, FolderKanban,
-  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles
+  Package, FileSpreadsheet, Upload, Download, Loader2, RefreshCcw, ClipboardCheck, BrainCircuit, Megaphone, BellRing, ShieldCheck, ChevronRight, Sparkles, Plug
 } from 'lucide-react';
 import MasterDataConfirmModal from '../components/MasterDataConfirmModal';
 import { RealtimeBadge } from '../components/OfflineIndicator';
@@ -34,6 +34,7 @@ import SettingsUserPermissionTemplates from './settings/SettingsUserPermissionTe
 import SettingsHrmSharedCatalog from './settings/SettingsHrmSharedCatalog';
 import SettingsAttendanceLocations from './settings/SettingsAttendanceLocations';
 import SettingsSuggestionStats from './settings/SettingsSuggestionStats';
+import SettingsAiGateway from './settings/SettingsAiGateway';
 import { useModuleData } from '../hooks/useModuleData';
 import { useToast } from '../context/ToastContext';
 import { useAsyncAction } from '../hooks/useAsyncAction';
@@ -1139,6 +1140,7 @@ const Settings: React.FC = () => {
     { id: 'project-room-templates', label: 'Mẫu quyền dự án', icon: ShieldCheck, adminOnly: true },
     { id: 'chibi-bot', label: 'Trợ lý ảo', icon: Bot },
     { id: 'ai-learning', label: 'AI Learning', icon: BrainCircuit },
+    { id: 'ai-gateway', label: 'Cổng AI', icon: Plug, adminOnly: true },
     { id: 'suggestion-stats', label: 'Gợi ý nhập liệu', icon: Sparkles, adminOnly: true },
     { id: 'account', label: 'Tài khoản', icon: UserIcon },
     { id: 'maintenance', label: 'Bảo trì', icon: AlertCircle },
@@ -1157,6 +1159,7 @@ const Settings: React.FC = () => {
   const activeFeatureReadOnly = activeSettingsTab !== 'account'
     && activeSettingsTab !== 'attendance-locations'
     && activeSettingsTab !== 'suggestion-stats'
+    && activeSettingsTab !== 'ai-gateway'
     && activeSettingsTab !== 'release-notes'
     && activeSettingsTab !== 'role-templates'
     && activeSettingsTab !== 'project-room-templates'
@@ -2434,6 +2437,10 @@ const Settings: React.FC = () => {
 
           {activeSettingsTab === 'suggestion-stats' && (
             <SettingsSuggestionStats />
+          )}
+
+          {activeSettingsTab === 'ai-gateway' && (
+            <SettingsAiGateway />
           )}
     </div>
   );

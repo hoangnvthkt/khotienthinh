@@ -1,0 +1,83 @@
+// Cổng AI chung (chủ SP 11–13/10/2026, doc audit mục 5–7): mọi tính năng AI mới là một skill cắm vào đây.
+//   * Chạy bằng phiên người dùng (JWT), không dùng service-role; quyền theo bậc skill, hạn mức ngày và trần tháng do RPC ai_gateway_begin_v1 giữ.
+//   * Mỗi lượt có nhật ký (ai_runs): ai gọi, skill nào, trạng thái, token, chi phí, thời gian; không lưu nội dung.
+//   * Dữ liệu người dùng được che thông tin nhạy cảm và bọc <du_lieu> (guard.ts) trước khi gửi model.
+//   * Cổng không ghi sổ: chỉ trả kết quả để màn hình hiện cho người quyết định.
+//   Chưa có khóa AI → { code: 'AI_NOT_CONFIGURED' } và lượt ghi 'no_provider' (xem nhu cầu); form thường vẫn chạy.
+// Body: { action: 'status' } → tình trạng cấu hình (không lộ khóa). { skill, input, context? } → chạy skill.
+import { createClient } from '@supabase/supabase-js';
+import { GUARD_SYSTEM, parseJsonLoose, redact } from './guard.ts';
+import { complete, costUsd, readConfig } from './providers.ts';
+import { SKILLS } from './skills.ts';
+
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
+const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
+const SKILL_CODE = /^[a-z][a-z0-9_]{2,40}$/;
+
+Deno.serve(async request => {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  const token = request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+  if (!token) return json({ error: 'Unauthorized' }, 401);
+  let body: { action?: unknown; skill?: unknown; input?: unknown; context?: unknown };
+  try { body = await request.json(); } catch { return json({ error: 'Invalid request' }, 400); }
+
+  const user = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false },
+  });
+  if ((await user.auth.getUser(token)).error) return json({ error: 'Unauthorized' }, 401);
+
+  const config = readConfig(name => Deno.env.get(name));
+
+  if (body?.action === 'status') {
+    return json({
+      code: 'OK', configured: Boolean(config.key), provider: config.provider, providerSource: config.providerSource,
+      models: config.models, keysPresent: config.keysPresent, priceKnown: config.price.inPerM != null && config.price.outPerM != null,
+      skills: Object.keys(SKILLS),
+    });
+  }
+
+  if (typeof body?.skill !== 'string' || !SKILL_CODE.test(body.skill)) return json({ error: 'Invalid request' }, 400);
+  const context = body.context && typeof body.context === 'object' && !Array.isArray(body.context) ? body.context : {};
+
+  const begin = await user.rpc('ai_gateway_begin_v1', { p_skill: body.skill, p_context: context });
+  if (begin.error) return json({ code: 'AI_DENIED', error: begin.error.message }, begin.error.code === '42501' ? 403 : 409);
+  const opened = begin.data as { code: string; runId?: string; skill?: { modelClass: 'fast' | 'reasoning'; name: string }; reason?: string; usedToday?: number; dailyLimit?: number };
+  if (opened.code !== 'OK' || !opened.runId) return json(opened);
+
+  const runId = opened.runId;
+  const finish = (p: Record<string, unknown>) => user.rpc('ai_gateway_finish_v1', { p_run_id: runId, p }).then(r => { if (r.error) console.error('ai-gateway finish failed', r.error.message); });
+
+  const def = SKILLS[body.skill];
+  if (!def) { await finish({ status: 'error', error: 'AI_SKILL_NOT_IMPLEMENTED' }); return json({ code: 'AI_FAILED', error: 'AI_SKILL_NOT_IMPLEMENTED' }); }
+  if (!config.key) { await finish({ status: 'no_provider', provider: config.provider, error: 'AI_NOT_CONFIGURED' }); return json({ code: 'AI_NOT_CONFIGURED', runId }); }
+
+  const model = config.models[opened.skill?.modelClass || 'fast'];
+  const started = Date.now();
+  let input: Record<string, string>;
+  try { input = def.parseInput(body.input); } catch { await finish({ status: 'error', provider: config.provider, model, error: 'AI_BAD_INPUT', durationMs: 0 }); return json({ code: 'AI_FAILED', error: 'AI_BAD_INPUT' }); }
+
+  // Che dữ liệu nhạy cảm từng ô rồi mới dựng prompt; số lượt che ghi vào tóm tắt nhật ký.
+  const masked: Record<string, string> = {}; const hits: Record<string, number> = {};
+  for (const [k, v] of Object.entries(input)) {
+    const r = redact(v); masked[k] = r.text.slice(0, def.maxInputChars);
+    for (const [name, n] of Object.entries(r.hits)) hits[name] = (hits[name] || 0) + n;
+  }
+  const userText = def.user(masked);
+  const inputChars = userText.length;
+
+  try {
+    const out = await complete(config, model, { system: `${GUARD_SYSTEM}\n${def.system}`, user: userText, schema: def.schema, maxTokens: def.maxOutputTokens });
+    const result = def.parseOutput(parseJsonLoose(out.text));
+    const redactNote = Object.keys(hits).length ? ` · đã che ${Object.entries(hits).map(([k, n]) => `${k}×${n}`).join(', ')}` : '';
+    const usage = { tokensIn: out.usage.tokensIn, tokensOut: out.usage.tokensOut, costUsd: costUsd(out.usage, config.price), durationMs: Date.now() - started };
+    await finish({ status: 'ok', provider: config.provider, model, inputChars, outputChars: out.text.length, ...usage, summary: `${def.summary(masked, result)}${redactNote}` });
+    return json({ code: 'OK', runId, result, model, provider: config.provider, usage });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'AI_FAILED';
+    const code = message === 'AI_REFUSED' ? 'refused' : 'error';
+    console.error('ai-gateway failed', config.provider, model, message);
+    await finish({ status: code, provider: config.provider, model, inputChars, durationMs: Date.now() - started, error: message.slice(0, 200) });
+    return json({ code: message === 'AI_REFUSED' ? 'AI_REFUSED' : 'AI_FAILED', runId, error: message.startsWith('AI_') ? message : 'AI_FAILED' });
+  }
+});

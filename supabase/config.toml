@@ -76,3 +76,10 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/wms-doc-reader/deno.json"
 entrypoint = "./functions/wms-doc-reader/index.ts"
+
+[functions.ai-gateway]
+# Cổng AI chung: JWT verified explicitly with Auth; begin/finish/feedback RPCs run in the caller's RLS context.
+enabled = true
+verify_jwt = false
+import_map = "./functions/ai-gateway/deno.json"
+entrypoint = "./functions/ai-gateway/index.ts"
