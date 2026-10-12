@@ -37,6 +37,9 @@ describe('giá', () => {
     expect(specGhost(l)).toEqual({ text: 'M300 R28', value: 'M300 R28', title: 'Theo PO-627 (8/10)' });
     expect(specGhost(line({}))).toBeNull();
     expect(prefillSourceLabel({ poNumber: null, orderDate: '2026-10-08' })).toBe('đơn trước (8/10)');
+    expect(prefillSourceLabel({ poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08' })).toBe('PO-627 - Gọi bê tông móng M3 (8/10)');
+    expect(prefillSourceLabel({ poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08' }, true)).toBe('PO-627 (8/10)');
+    expect(prefillSourceLabel({ poNumber: 'PO-1', title: 'x'.repeat(80), orderDate: '2026-10-08' })).toBe(`PO-1 - ${'x'.repeat(59)}… (8/10)`);
   });
 });
 

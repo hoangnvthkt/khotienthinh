@@ -9,8 +9,8 @@ const PROJECTS = { projects: [{ id: 'p1', code: 'SMB-2026', name: 'Nhà máy SMB
 const VENDORS = [{ id: 'v1', name: 'Hoàng Gia', taxCode: null, recentOrders: 7 }];
 const ITEMS = [{ id: 'i1', name: 'Bê tông M300', sku: 'BT300', unit: 'm³', purchaseUnit: null, purchaseFactor: null, inBoq: true, boqQty: 460, orderedQty: 120 }];
 const PREFILL = {
-  order: { poNumber: 'PO-627', orderDate: '2026-10-08', vatRate: 8, purchaseMode: 'multiple', projectId: 'p1', constructionSiteId: null, targetWarehouseId: 'w1' },
-  lines: [{ itemId: 'i1', specification: 'M300 R28', unit: 'm³', stockUnit: 'm³', factor: 1, unitPrice: 1250000, poNumber: 'PO-627', orderDate: '2026-10-08' }],
+  order: { poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08', vatRate: 8, purchaseMode: 'multiple', projectId: 'p1', constructionSiteId: null, targetWarehouseId: 'w1' },
+  lines: [{ itemId: 'i1', specification: 'M300 R28', unit: 'm³', stockUnit: 'm³', factor: 1, unitPrice: 1250000, poNumber: 'PO-627', title: 'Gọi bê tông móng M3', orderDate: '2026-10-08' }],
 };
 
 test.beforeEach(async ({ page }) => {
@@ -38,7 +38,7 @@ const addItem = async (page: Page) => {
 
 test('chọn NCC: đầu đơn in mờ VAT và hình thức giao của đơn trước; Dùng là điền', async ({ page, isMobile }) => {
   await expect(ghost(page)).toContainText('Như đơn trước');
-  await expect(ghost(page)).toContainText('PO-627 (8/10)');
+  await expect(ghost(page)).toContainText('PO-627 - Gọi bê tông móng M3 (8/10)');
   await expect(ghost(page)).toContainText('VAT 8%');
   await expect(ghost(page)).toContainText('Giao nhiều đợt');
   if (isMobile) await page.getByRole('button', { name: 'Dùng' }).tap(); else await page.getByRole('button', { name: 'Dùng' }).click();
@@ -59,7 +59,7 @@ test('dòng vật tư: quy cách và đơn giá in mờ theo dòng mua gần nh�
   const price = page.getByLabel('Đơn giá Bê tông M300');
   await expect(spec).toHaveAttribute('placeholder', 'M300 R28');
   await expect(price).toHaveAttribute('placeholder', '1.250.000');
-  await expect(price).toHaveAttribute('title', /PO-627 \(8\/10\)/);
+  await expect(price).toHaveAttribute('title', /PO-627 - Gọi bê tông móng M3 \(8\/10\)/);
   await spec.focus();
   await page.keyboard.press('Tab');
   await expect(spec).toHaveValue('M300 R28');

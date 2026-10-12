@@ -432,7 +432,7 @@ export const ProactiveOrderEditor: React.FC<{
                         <input inputMode="decimal" value={l.price} onChange={e => patch(l.key, { price: e.target.value })} placeholder="0" aria-label={`Đơn giá ${l.name}`} aria-invalid={priceBad}
                           className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''} ${priceHint.className}`} {...priceHint.props} /></label>
                       {last && deviation != null && Math.abs(deviation) > PRICE_DEVIATION_WARN_PERCENT && <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                        Lệch {deviation > 0 ? '+' : ''}{deviation}% so với {prefillSourceLabel(last)}</span>}
+                        Lệch {deviation > 0 ? '+' : ''}{deviation}% so với {prefillSourceLabel(last, true)}</span>}
                       <span className="ml-auto whitespace-nowrap text-sm font-semibold tabular-nums text-leaf-700 dark:text-leaf-300">{price && price > 0 && qty > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
                       {l.allocatedQty > 0 && <span className="flex w-full items-center gap-1 text-teal-700 dark:text-teal-300"><Link2 size={12} />Đã gắn {fmt(l.allocatedQty, 3)} {l.unit} cho phiếu nhu cầu — không giảm SL dưới mức này.</span>}
                     </div>

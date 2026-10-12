@@ -1,5 +1,5 @@
 -- Gợi ý in mờ khi lập đơn (chủ SP 11–12/10/2026): "Như đơn trước" cùng NCC.
---   * get_procurement_vendor_prefill_v1(NCC): đầu đơn gần nhất (VAT, hình thức giao, dự án, kho nhận) + dòng mua gần nhất
+--   * get_procurement_vendor_prefill_v1(NCC): đầu đơn gần nhất (số + tên PO, VAT, hình thức giao, dự án, kho nhận) + dòng mua gần nhất
 --     của từng mã + quy cách trong 90 ngày (đơn vị mua, hệ số, đơn giá, số đơn, ngày). Bỏ đơn nháp / hủy / trả / lưu trữ.
 --   * Chỉ đọc; quyền như xem đơn Mua hàng. Máy chủ không điền gì — người mua Tab để dùng, giá lệch > 5% thì màn báo cam.
 
@@ -11,7 +11,7 @@ begin
     raise exception using errcode = '42501', message = 'PROCUREMENT_VIEW_DENIED'; end if;
   if coalesce(btrim(p_vendor_id), '') = '' then return jsonb_build_object('order', null, 'lines', '[]'::jsonb); end if;
 
-  select jsonb_build_object('poNumber', o.po_number, 'orderDate', o.order_date, 'vatRate', o.vat_rate, 'purchaseMode', o.purchase_mode,
+  select jsonb_build_object('poNumber', o.po_number, 'title', nullif(btrim(o.approval_request_title), ''), 'orderDate', o.order_date, 'vatRate', o.vat_rate, 'purchaseMode', o.purchase_mode,
       'projectId', o.project_id, 'constructionSiteId', o.construction_site_id, 'targetWarehouseId', o.target_warehouse_id)
     into v_order
   from public.purchase_orders o
@@ -29,7 +29,7 @@ begin
         'stockUnit', coalesce(nullif(x.value->>'stockUnitSnapshot', ''), x.value->>'unit'),
         'factor', coalesce(nullif(x.value->>'purchaseConversionFactor', '')::numeric, 1),
         'unitPrice', coalesce(nullif(x.value->>'unitPrice', '')::numeric, 0),
-        'poNumber', o.po_number, 'orderDate', o.order_date) line,
+        'poNumber', o.po_number, 'title', nullif(btrim(o.approval_request_title), ''), 'orderDate', o.order_date) line,
       o.order_date, o.created_at
     from public.purchase_orders o
     cross join lateral jsonb_array_elements(case when jsonb_typeof(o.items) = 'array' then o.items else '[]'::jsonb end) x

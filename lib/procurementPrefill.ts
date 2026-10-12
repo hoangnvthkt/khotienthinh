@@ -8,9 +8,14 @@ import { recordSuggestionEvent } from './uiSuggestionEvents';
 /** Giá lệch quá mức này so với lần trước thì báo cam. */
 export const PRICE_DEVIATION_WARN_PERCENT = 5;
 
-/** "PO-621 (8/10)" */
-export const prefillSourceLabel = (source: Pick<ProcurementVendorPrefillOrder, 'poNumber' | 'orderDate'>) =>
-  `${source.poNumber || 'đơn trước'} (${shortDate(source.orderDate || '')})`;
+const TITLE_MAX = 60;
+
+/** "PO-621 - Gọi bê tông móng M3 (8/10)"; short = "PO-621 (8/10)" cho chỗ hẹp (cảnh báo lệch giá). */
+export const prefillSourceLabel = (source: Pick<ProcurementVendorPrefillOrder, 'poNumber' | 'orderDate'> & { title?: string | null }, short = false) => {
+  const title = short ? '' : String(source.title || '').trim();
+  const name = title ? ` - ${title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title}` : '';
+  return `${source.poNumber || 'đơn trước'}${name} (${shortDate(source.orderDate || '')})`;
+};
 
 /**
  * Dòng mua gần nhất của NCC cho vật tư: đúng quy cách đang gõ; ô quy cách còn trống thì lấy dòng mới nhất của mã

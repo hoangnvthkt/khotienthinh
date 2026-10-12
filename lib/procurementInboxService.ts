@@ -282,12 +282,12 @@ export const procurementInboxService = {
 export type ProcurementSourceRef = { sourceType: ProcurementSourceType; sourceId: string };
 export interface ProcurementVendor { id: string; name: string; taxCode: string | null; recentOrders: number }
 export interface ProcurementVendorPrefillOrder {
-  poNumber: string | null; orderDate: string | null; vatRate: number | null; purchaseMode: 'single' | 'multiple' | null;
+  poNumber: string | null; title?: string | null; orderDate: string | null; vatRate: number | null; purchaseMode: 'single' | 'multiple' | null;
   projectId: string | null; constructionSiteId: string | null; targetWarehouseId: string | null;
 }
 export interface ProcurementVendorPrefillLine {
   itemId: string; specification: string; unit: string | null; stockUnit: string | null; factor: number; unitPrice: number;
-  poNumber: string | null; orderDate: string | null;
+  poNumber: string | null; title?: string | null; orderDate: string | null;
 }
 export interface ProcurementVendorPrefill { order: ProcurementVendorPrefillOrder | null; lines: ProcurementVendorPrefillLine[] }
 export type ProcurementOrderStage = 'drafting' | 'ordered' | 'delivering' | 'received';

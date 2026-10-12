@@ -290,7 +290,7 @@ export const OrderEditor: React.FC<{
                           aria-label={`Đơn giá ${item.name}`} aria-invalid={priceBad}
                           className={`w-28 text-right tabular-nums ${inputCls} ${priceBad ? 'border-rose-400 ring-2 ring-rose-400/30' : ''} ${priceHint.className}`} {...priceHint.props} /></label>
                       {last && deviation != null && Math.abs(deviation) > PRICE_DEVIATION_WARN_PERCENT && <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                        Lệch {deviation > 0 ? '+' : ''}{deviation}% so với {prefillSourceLabel(last)}</span>}
+                        Lệch {deviation > 0 ? '+' : ''}{deviation}% so với {prefillSourceLabel(last, true)}</span>}
                       <span className="ml-auto w-32 text-right text-sm font-semibold tabular-nums text-foreground">{price && price > 0 && qty > 0 ? `${money(qty * price)} đ` : 'Chưa có giá'}</span>
                     </div>
                     {item.altUnit
