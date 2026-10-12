@@ -315,7 +315,8 @@
     "20261012213000_wms_delivery_capture.sql",
     "20261013080000_ui_suggestion_events.sql",
     "20261013100000_procurement_vendor_prefill.sql",
-    "20261013130000_prefill_vendor_items_suggestion_stats.sql"
+    "20261013130000_prefill_vendor_items_suggestion_stats.sql",
+    "20261013150000_ai_gateway.sql"
   ],
   "forbidIncludeAll": true
 }

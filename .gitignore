@@ -62,3 +62,4 @@ service-account*.json
 /.daily-log-prefill-test-results/
 /.po-prefill-test-results/
 /.suggestion-stats-test-results/
+/.ai-gateway-test-results/
