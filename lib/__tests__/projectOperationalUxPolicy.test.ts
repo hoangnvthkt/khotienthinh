@@ -107,12 +107,12 @@ describe('project operational UX policy', () => {
       });
   });
 
-  it('builds a project PO deep-link for an active purchase order', () => {
+  it('mở đúng đơn ở Mua hàng, đường dẫn có # của định tuyến', () => {
     expect(buildWorkflowDependencyUrl({
       dependency: { type: 'purchase_order', id: 'po-462', status: 'active' },
       projectId: 'project 1',
       constructionSiteId: 'site/1',
-    })).toBe('/da?projectId=project+1&siteId=site%2F1&tab=material&materialTab=po&poId=po-462');
+    })).toBe('#/procurement?po=po-462');
   });
 
   it('turns a server dependency race into an actionable Vietnamese message', () => {
@@ -157,5 +157,16 @@ describe('project operational UX policy', () => {
       financeProgress: 1,
       manualProgress: 45,
     })).toEqual({ state: 'ready', percent: 45, label: 'Tiến độ: 45%' });
+  });
+});
+
+describe('đường dẫn nội bộ luôn có # của định tuyến', () => {
+  it('không còn href tuyệt đối thiếu # tới các module', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    for (const file of ['components/procurement/hub/ContractsView.tsx', 'components/project/finance/ResourceUsageEvidencePanel.tsx', 'pages/project/SupplyChainTab.tsx']) {
+      const source = readFileSync(join(process.cwd(), file), 'utf8');
+      expect(source, file).not.toMatch(/href=\{?["'`]\/(da|procurement|finance|wf|rq|hrm|center)\b/);
+    }
   });
 });

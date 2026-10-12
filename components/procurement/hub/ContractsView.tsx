@@ -259,7 +259,7 @@ const OrderRow: React.FC<{ o: ContractOrder; isBuyer: boolean; mine: boolean; bu
       {mine && (o.status === 'draft' || o.status === 'returned') && <>
         {o.status === 'draft' && <button type="button" disabled={busy} onClick={onDelete} className={secondaryBtn}><Trash2 size={14} />Xóa nháp</button>}
         <button type="button" disabled={busy} onClick={onEdit} className={primaryBtn}><Pencil size={14} />Sửa & gửi</button></>}
-      {isBuyer && o.status !== 'draft' && <a href={`/procurement?po=${encodeURIComponent(o.id)}`} className={secondaryBtn}><ExternalLink size={14} />Mở đơn</a>}
+      {isBuyer && o.status !== 'draft' && <a href={`#/procurement?po=${encodeURIComponent(o.id)}`} className={secondaryBtn}><ExternalLink size={14} />Mở đơn</a>}
     </div>
   </li>;
 

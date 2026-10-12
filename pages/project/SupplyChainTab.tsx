@@ -6812,7 +6812,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ constructionSiteId, pro
                                 </div>
                                 {effectiveSupplierDeliveryCapabilities.canCreateSupplierDelivery && (
                                     <a
-                                        href="/procurement?mode=contracts"
+                                        href="#/procurement?mode=contracts"
                                         className="inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-[10px] font-black text-teal-800 transition hover:bg-teal-100 active:scale-[0.98]"
                                     >
                                         <Truck size={12} /> Gọi hàng ở Mua hàng
