@@ -1869,7 +1869,23 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     // Compute actualQty from successful site receipts; legacy completed requests fall back to approvedQty.
-    const computedBoqItems = useMemo(() => {
+    // BOQ chia theo đầu mục (nhiều dòng cùng mã vật tư), phiếu yêu cầu gom theo mã. Dòng phiếu không gắn dòng BOQ
+    // chỉ được tính MỘT lần — vào dòng neo (dòng đầu) của mã — để không nhân số đề xuất lên N lần (lỗi "vượt ngân
+    // sách 199" ở DA29, 12/10/2026). Vượt ngân sách / tình trạng cung ứng đánh giá theo cả mã.
+    const boqGroupKeyOf = useCallback((line: Pick<MaterialBudgetItem, 'id' | 'inventoryItemId'>) =>
+        line.inventoryItemId ? `item:${line.inventoryItemId}` : `line:${line.id}`, []);
+    const boqGroupByLineId = useMemo(() => new Map(boqItems.map(line => [line.id, boqGroupKeyOf(line)])), [boqGroupKeyOf, boqItems]);
+    const boqAnchorLineIdByGroup = useMemo(() => {
+        const anchors = new Map<string, string>();
+        boqItems.forEach(line => { const key = boqGroupKeyOf(line); if (!anchors.has(key)) anchors.set(key, line.id); });
+        return anchors;
+    }, [boqGroupKeyOf, boqItems]);
+    const requestLineGroupKey = useCallback((line: any): string | null => {
+        if (line.materialBudgetItemId) return boqGroupByLineId.get(line.materialBudgetItemId) || null;
+        return line.itemId ? `item:${line.itemId}` : null;
+    }, [boqGroupByLineId]);
+
+    const rawBoqLines = useMemo(() => {
         return boqItems.map(b => {
             const linkedWorkItem = b.workBoqItemId ? workBoqItemById.get(b.workBoqItemId) : undefined;
             const formulaBudgetQty = linkedWorkItem && Number(linkedWorkItem.plannedQty || 0) > 0 && Number(b.wasteThreshold || 0) > 0
@@ -1887,9 +1903,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 const summaryByLine = requestFulfillmentLineSummaries[r.id];
                 rItems.forEach((ri: any, index: number) => {
                     const sameBudgetLine = ri.materialBudgetItemId && ri.materialBudgetItemId === b.id;
-                    const legacySameItem = !!b.inventoryItemId && !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId;
+                    const legacySameItem = !!b.inventoryItemId && !ri.materialBudgetItemId && ri.itemId === b.inventoryItemId
+                        && boqAnchorLineIdByGroup.get(boqGroupKeyOf(b)) === b.id;
                     if (sameBudgetLine || legacySameItem) {
-                        totalRequested += (ri.requestQty || 0);
+                        // Phiếu nháp chưa gửi: không tính là đã đề xuất.
+                        if (r.status !== RequestStatus.DRAFT) totalRequested += (ri.requestQty || 0);
                         const requestLineId = getRequestLineId(r, ri, index);
                         const lineSummary = summaryByLine?.get(requestLineId);
                         if (hasFulfillmentBatches && lineSummary) {
@@ -1901,10 +1919,11 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 });
             });
             if (!materialAccess.request.canView) {
-                const aggregate = requestAggregateByBudgetOrItem.get(`budget:${b.id}`)
-                    || (b.inventoryItemId ? requestAggregateByBudgetOrItem.get(`item:${b.inventoryItemId}`) : undefined);
-                totalRequested = aggregate?.requestedQty || 0;
-                totalReceived = aggregate?.receivedQty || 0;
+                const lineAggregate = requestAggregateByBudgetOrItem.get(`budget:${b.id}`);
+                const itemAggregate = b.inventoryItemId && boqAnchorLineIdByGroup.get(boqGroupKeyOf(b)) === b.id
+                    ? requestAggregateByBudgetOrItem.get(`item:${b.inventoryItemId}`) : undefined;
+                totalRequested = (lineAggregate?.requestedQty || 0) + (itemAggregate?.requestedQty || 0);
+                totalReceived = (lineAggregate?.receivedQty || 0) + (itemAggregate?.receivedQty || 0);
             }
             const actualQty = totalReceived;
             const wasteQty = actualQty - derivedBudgetQty;
@@ -1926,7 +1945,33 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 autoAlert: budgetOverPercent > 0 ? 'Vượt ngân sách' : wasteQty > 0 ? 'Vượt định mức hao hụt' : undefined,
             };
         });
-    }, [boqItems, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
+    }, [boqAnchorLineIdByGroup, boqGroupKeyOf, boqItems, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentBatchCounts, requestFulfillmentLineSummaries, requests, workBoqItemById]);
+
+    // Tổng theo mã: ngân sách mọi dòng cùng mã so với tổng đề xuất / đã nhận của mã.
+    const boqGroupTotals = useMemo(() => {
+        const totals = new Map<string, { budgetQty: number; requestedQty: number; receivedQty: number }>();
+        rawBoqLines.forEach(line => {
+            const key = boqGroupKeyOf(line);
+            const current = totals.get(key) || { budgetQty: 0, requestedQty: 0, receivedQty: 0 };
+            current.budgetQty += Number(line.budgetQty || 0);
+            current.requestedQty += Number(line.cumulativeRequested || 0);
+            current.receivedQty += Number(line.actualQty || 0);
+            totals.set(key, current);
+        });
+        return totals;
+    }, [boqGroupKeyOf, rawBoqLines]);
+
+    const computedBoqItems = useMemo(() => rawBoqLines.map(line => {
+        const group = boqGroupTotals.get(boqGroupKeyOf(line));
+        if (!group || group.budgetQty <= 0) return line;
+        const overPercent = Math.max(0, Math.round(((group.requestedQty - group.budgetQty) / group.budgetQty) * 1000) / 10);
+        const groupWaste = group.receivedQty - group.budgetQty;
+        return {
+            ...line,
+            budgetOverPercent: overPercent,
+            autoAlert: overPercent > 0 ? 'Vượt ngân sách' : groupWaste > 0 ? 'Vượt định mức hao hụt' : undefined,
+        };
+    }), [boqGroupKeyOf, boqGroupTotals, rawBoqLines]);
 
     const materialAggregateSummaryRows = useMemo(
         () => projectMaterialPlanningService.buildAggregateSummary({
@@ -2034,10 +2079,9 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             if (!isCompleted && !isHolding) return;
             const summaryByLine = requestFulfillmentLineSummaries[request.id];
             (request.items || []).forEach((line: any, index: number) => {
-                const sameBudgetLine = line.materialBudgetItemId && line.materialBudgetItemId === material.id;
-                const legacySameItem = !!material.inventoryItemId && !line.materialBudgetItemId && line.itemId === material.inventoryItemId;
-                if (!sameBudgetLine && !legacySameItem) return;
-                requestedQty += Number(line.requestQty || 0);
+                // Theo cả mã vật tư: mỗi dòng phiếu đếm một lần cho mã của nó.
+                if (requestLineGroupKey(line) !== boqGroupKeyOf(material)) return;
+                if (request.status !== RequestStatus.DRAFT) requestedQty += Number(line.requestQty || 0);
                 const requestLineId = getRequestLineId(request, line, index);
                 const lineSummary = summaryByLine?.get(requestLineId);
                 const completedQty = Number(lineSummary?.receivedQty ?? line.receivedQty ?? line.issuedQty ?? line.approvedQty ?? line.requestQty ?? 0);
@@ -2050,14 +2094,14 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                 }
             });
         });
+        const group = boqGroupTotals.get(boqGroupKeyOf(material));
         if (!materialAccess.request.canView) {
-            const aggregate = requestAggregateByBudgetOrItem.get(`budget:${material.id}`)
-                || (material.inventoryItemId ? requestAggregateByBudgetOrItem.get(`item:${material.inventoryItemId}`) : undefined);
-            requestedQty = aggregate?.requestedQty || 0;
-            receivedQty = aggregate?.receivedQty || 0;
+            requestedQty = group?.requestedQty || 0;
+            receivedQty = group?.receivedQty || 0;
             reservedQty = requestedQty;
         }
-        const budgetQty = Number(material.budgetQty || 0);
+        // Ngân sách của cả mã (mọi dòng BOQ cùng mã) — cùng phạm vi với số đề xuất / đã nhận ở trên.
+        const budgetQty = group ? group.budgetQty : Number(material.budgetQty || 0);
         const availableQty = budgetQty - reservedQty;
         return {
             budgetQty,
@@ -2066,16 +2110,17 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
             receivedQty,
             availableQty,
             requestableQty: Math.max(0, availableQty),
+            isOverBudget: budgetQty > 0 && requestedQty > budgetQty,
             inventoryItem: findBoqInventoryItem(material),
         };
-    }, [findBoqInventoryItem, materialAccess.request.canView, requestAggregateByBudgetOrItem, requestFulfillmentLineSummaries, requests]);
+    }, [boqGroupKeyOf, boqGroupTotals, findBoqInventoryItem, materialAccess.request.canView, requestFulfillmentLineSummaries, requestLineGroupKey, requests]);
 
     const getWorkSupplyStatus = useCallback((materials: MaterialBudgetItem[]) => {
         if (materials.length === 0) return { label: 'Chưa kê khai', className: 'bg-slate-100 text-slate-500 border-slate-200' };
         const statsList = materials.map(getBoqMaterialRequestStats);
-        const hasOver = materials.some(material => (material.budgetOverPercent || 0) > 0) || statsList.some(stats => stats.availableQty < 0);
+        const hasOver = statsList.some(stats => stats.isOverBudget);
         if (hasOver) return { label: 'Vượt', className: 'bg-red-50 text-red-600 border-red-200' };
-        const allReceivedEnough = materials.every((material, index) => Number(material.budgetQty || 0) > 0 && statsList[index].receivedQty >= Number(material.budgetQty || 0));
+        const allReceivedEnough = statsList.every(stats => stats.budgetQty > 0 && stats.receivedQty >= stats.budgetQty);
         if (allReceivedEnough) return { label: 'Đủ', className: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
         const hasSupplyActivity = statsList.some(stats => stats.requestedQty > 0 || stats.receivedQty > 0);
         if (hasSupplyActivity) return { label: 'Đang cung ứng', className: 'bg-amber-50 text-amber-600 border-amber-200' };
@@ -2182,8 +2227,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     };
 
     const aggregatedWasteBoqItems = useMemo(
-        () => aggregateMaterialWasteRows(computedBoqItems),
-        [computedBoqItems],
+        () => aggregateMaterialWasteRows(rawBoqLines),
+        [rawBoqLines],
     );
 
     const sortedWasteBoqItems = useMemo(
@@ -2643,12 +2688,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         toast.info('Lập đơn ở Mua hàng', 'Đơn hàng lập tại Mua hàng → Cần mua, từ phiếu đề xuất hoặc kế hoạch vật tư đã duyệt.');
     }, [toast]);
 
-    const overBudgetItems = useMemo(() => computedBoqItems
+    // "Cần chú ý" theo mã vật tư (gộp mọi dòng BOQ cùng mã), không theo từng dòng đầu mục.
+    const overBudgetItems = useMemo(() => aggregatedWasteBoqItems
         .filter(item => (item.budgetOverPercent || 0) > 0)
-        .sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)), [computedBoqItems]);
-    const overWasteItems = useMemo(() => computedBoqItems
+        .sort((a, b) => (b.budgetOverPercent || 0) - (a.budgetOverPercent || 0)), [aggregatedWasteBoqItems]);
+    const overWasteItems = useMemo(() => aggregatedWasteBoqItems
         .filter(item => (item.wasteQty || 0) > 0)
-        .sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)), [computedBoqItems]);
+        .sort((a, b) => (b.wastePercent || 0) - (a.wastePercent || 0)), [aggregatedWasteBoqItems]);
 
     const materialTabLabels: Record<ProjectMaterialTabKey, string> = {
         summary: '📊 Theo dõi',
@@ -2941,8 +2987,8 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
                                                                     {childMaterials.map(material => {
                                                                         const materialStats = getBoqMaterialRequestStats(material);
                                                                         const hasInventory = Boolean(materialStats.inventoryItem);
-                                                                        const isOver = materialStats.availableQty < 0 || (material.budgetOverPercent || 0) > 0;
-                                                                        const isEnough = Number(material.budgetQty || 0) > 0 && materialStats.receivedQty >= Number(material.budgetQty || 0);
+                                                                        const isOver = materialStats.isOverBudget;
+                                                                        const isEnough = materialStats.budgetQty > 0 && materialStats.receivedQty >= materialStats.budgetQty;
                                                                         const lineStatus = !hasInventory
                                                                             ? { label: 'Chưa có mã kho', className: 'bg-red-50 text-[#DC2626] border-red-200' }
                                                                             : isOver
