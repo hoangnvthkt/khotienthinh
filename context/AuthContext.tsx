@@ -168,6 +168,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const attemptsRef = useRef(new AuthAttemptCoordinator());
   const authEpochRef = useRef(new AuthoritativeAuthEpoch());
   const profileRefreshesRef = useRef(new KeyedSingleFlightCoordinator<string, User>());
+  // Lúc mở ứng dụng, sự kiện INITIAL_SESSION và loadCurrentSession cùng xác minh một token → trước đây tải hồ sơ +
+  // snapshot phân quyền 2 lần (đo 12/10/2026: 2 × ~1,4 s). Cùng token thì dùng chung một lượt xác minh; mỗi lượt
+  // gọi vẫn tự kiểm attempt/epoch của mình. Bộ riêng (không dùng profileRefreshesRef) vì refreshProfile gọi lại
+  // commitCandidateSession trong chính lượt của nó.
+  const sessionVerificationsRef = useRef(new KeyedSingleFlightCoordinator<string, User>());
   const [needsRevalidation, setNeedsRevalidation] = useState(false);
 
   const dispatchAuth = useCallback((action: Parameters<typeof authReducer>[1]) => {
@@ -201,7 +206,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (showLoading) dispatchAuth({ type: 'VERIFYING_SESSION', session });
     try {
-      const user = await resolveCandidateSession(session, authGateway);
+      const user = await sessionVerificationsRef.current.run(
+        session.access_token,
+        () => resolveCandidateSession(session, authGateway),
+      );
       if (
         !attemptsRef.current.isCurrent(attempt)
         || !authEpochRef.current.canResolve(authEpoch)

@@ -782,6 +782,17 @@ const ProjectDashboard: React.FC = () => {
         }
     }, [toast]);
 
+    // Tên quy trình trên thẻ dự án: nạp sau khi danh sách đã hiện, không tranh băng thông lúc mở trang.
+    const workflowTemplatesRequestedRef = useRef(false);
+    useEffect(() => {
+        if (workflowTemplatesRequestedRef.current || workflowTemplates.length > 0 || projectsLoading || projects.length === 0) return;
+        workflowTemplatesRequestedRef.current = true;
+        const timer = window.setTimeout(() => {
+            refreshWorkflowData().catch(err => console.warn('Failed to load workflow templates for project list:', err));
+        }, 300);
+        return () => window.clearTimeout(timer);
+    }, [projects.length, projectsLoading, refreshWorkflowData, workflowTemplates.length]);
+
     useEffect(() => {
         if (!showProjectForm) return;
         refreshWorkflowData().catch(err => console.warn('Failed to load workflow templates for project form:', err));

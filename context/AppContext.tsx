@@ -101,10 +101,10 @@ const userToDbPayload = (data: User) => {
   return payload;
 };
 
-export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'da' | 'ts' | 'ex' | 'admin' | 'workflow-people';
+export type AppModule = 'wms' | 'wms-core' | 'hrm' | 'hrm-core' | 'da' | 'ts' | 'ex' | 'admin' | 'workflow-people';
 export type ModuleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
-const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'da', 'ts', 'ex', 'admin', 'workflow-people'];
+const APP_MODULES: AppModule[] = ['wms', 'wms-core', 'hrm', 'hrm-core', 'da', 'ts', 'ex', 'admin', 'workflow-people'];
 
 const createModuleLoadState = (status: ModuleLoadStatus = 'idle') =>
   APP_MODULES.reduce((acc, module) => {
@@ -120,6 +120,7 @@ const REALTIME_TABLES_BY_MODULE: Partial<Record<AppModule, string[]>> = {
   'wms-core': ['items', 'warehouses', 'warehouse_types', 'requests'],
   wms: ['items', 'transactions', 'warehouses', 'warehouse_types', 'requests', 'suppliers', 'activities', 'categories', 'units'],
   hrm: ['org_units', 'hrm_attendance'],
+  'hrm-core': ['org_units'],
 };
 
 interface AppContextType {
@@ -280,6 +281,17 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+const mapOrgUnitFromDb = (u: any): OrgUnit => ({
+  id: u.id,
+  name: u.name,
+  type: u.type,
+  customTypeLabel: u.customTypeLabel || undefined,
+  parentId: u.parent_id,
+  description: u.description,
+  orderIndex: u.order_index,
+  createdAt: u.created_at,
+});
 
 const mapInventoryItemFromDb = (i: any): InventoryItem => ({
   ...i,
@@ -904,7 +916,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loadModuleData = useCallback(async (module: AppModule, force = false) => {
     if (!isSupabaseConfigured) return;
-    if (!force && (loadedModulesRef.current.has(module) || (module === 'wms-core' && loadedModulesRef.current.has('wms')))) return;
+    if (!force && (loadedModulesRef.current.has(module)
+      || (module === 'wms-core' && loadedModulesRef.current.has('wms'))
+      || (module === 'hrm-core' && loadedModulesRef.current.has('hrm')))) return;
     const existingLoad = inflightModuleLoadsRef.current[module];
     if (existingLoad) return existingLoad;
 
@@ -1021,6 +1035,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })));
           if (auditSessionsData) setAuditSessions(auditSessionsData);
           markModuleLoaded('wms-core');
+        } else if (module === 'hrm-core') {
+          // Dự án / Mua hàng chỉ cần danh bạ nhân viên, chức vụ, sơ đồ tổ chức — không tải lương, chấm công,
+          // nghỉ phép, hợp đồng lao động… như module 'hrm' đầy đủ (đo 12/10/2026: ~20 lệnh gọi thừa khi mở /da).
+          const [empData, positionsData, orgUnitsData] = await Promise.all([
+            hrmSensitiveProjectionService.listEmployees(),
+            fetchTableHelper('hrm_positions'),
+            fetchTableHelper('org_units'),
+          ]);
+          setEmployees(requireModuleData(module, 'employees', empData));
+          if (positionsData) setHrmPositions(positionsData);
+          setOrgUnits(requireModuleData(module, 'org_units', orgUnitsData).map(mapOrgUnitFromDb));
         } else if (module === 'hrm') {
           const canViewPayroll = canPerformHrmTemplatePermission(user, 'hrm.payroll.view');
           const canViewContracts = canPerform(user, 'hrm.contract.view');
@@ -1071,16 +1096,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (constructionSitesData) setHrmConstructionSites(constructionSitesData.map(mapConstructionSiteWarehouseBindingFromDb));
           {
             const requiredOrgUnits = requireModuleData(module, 'org_units', orgUnitsData);
-            const units = requiredOrgUnits.map((u: any) => ({
-              id: u.id,
-              name: u.name,
-              type: u.type,
-              customTypeLabel: u.customTypeLabel || undefined,
-              parentId: u.parent_id,
-              description: u.description,
-              orderIndex: u.order_index,
-              createdAt: u.created_at,
-            }));
+            const units = requiredOrgUnits.map(mapOrgUnitFromDb);
 
             if (!units.some((u: OrgUnit) => u.type === 'factory')) {
               const root = units.find((u: OrgUnit) => !u.parentId && u.type === 'company');

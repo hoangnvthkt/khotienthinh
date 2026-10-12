@@ -121,7 +121,13 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     const navigate = useNavigate();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
     const isAdmin = user?.role === 'ADMIN';
-    const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges } = useWorkflow();
+    const { templates: workflowTemplates, nodes: workflowNodes, edges: workflowEdges, refreshData: refreshWorkflowData } = useWorkflow();
+    // /da không còn nạp sẵn quy trình lúc mở trang: tab Vật tư cần mẫu + bước để xử lý phiếu yêu cầu.
+    useEffect(() => {
+        if (workflowTemplates.length > 0) return;
+        refreshWorkflowData().catch(err => console.warn('Failed to load workflow data for material requests:', err));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const toast = useToast();
     const confirm = useConfirm();
     const effectiveId = projectId || constructionSiteId || '';
