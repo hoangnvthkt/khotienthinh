@@ -38,6 +38,7 @@ import { useReservedStock } from '../hooks/useReservedStock';
 import { canApproveMaterialRequest, canApproveWmsTransaction, canDeleteWmsMaterialRequest, canExportMaterialRequest, canReceiveMaterialRequest, canReceiveWmsTransaction, isAdmin, isGlobalWarehouseKeeper, isWarehouseKeeperFor } from '../lib/wmsPermissions';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
+import ReasonConfirmModal from './ReasonConfirmModal';
 import { getApiErrorMessage, logApiError } from '../lib/apiError';
 import { projectSubmissionService } from '../lib/projectSubmissionService';
 import { projectWorkflowService } from '../lib/projectWorkflowService';
@@ -348,6 +349,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
     const [expectedDate, setExpectedDate] = useState('');
     const [fulfillmentMode, setFulfillmentMode] = useState<MaterialRequestFulfillmentMode>(MaterialRequestFulfillmentMode.RECEIVE_TO_STOCK);
     const [overrideReason, setOverrideReason] = useState('');
+    const [isReturnDialogOpen, setIsReturnDialogOpen] = useState(false);
     const [reqItems, setReqItems] = useState<RequestLineDraft[]>([]);
     const [approvedItems, setApprovedItems] = useState<{ lineId?: string, itemId: string, qty: number, qtyInput?: string }[]>([]);
     const [selectedWorkBoqItemIds, setSelectedWorkBoqItemIds] = useState<Set<string>>(() => new Set());
@@ -1625,28 +1627,17 @@ const RequestModal: React.FC<RequestModalProps> = ({
         }
     };
 
-    const handleReturnRequest = async () => {
+    const handleReturnRequest = () => {
         if (isSaving || !request) return;
         if (request.relatedTransactionId) {
             toast.error('Không thể trả lại trực tiếp', 'Phiếu đã phát sinh phiếu kho liên kết. Cần huỷ/rollback phiếu kho trước.');
             return;
         }
-        const reason = overrideReason.trim() || note.trim();
-        if (!reason) {
-            toast.warning('Thiếu lý do trả lại', 'Vui lòng nhập lý do để người tạo phiếu biết cần bổ sung gì.');
-            return;
-        }
-        const ok = await confirm({
-            title: 'Trả lại phiếu đề xuất',
-            targetName: request.code,
-            subtitle: 'Phiếu sẽ quay về trạng thái Nháp và hiển thị nhãn Bị trả lại cho người tạo phiếu.',
-            confirmText: 'Xác nhận trả lại',
-            actionLabel: 'Trả lại',
-            cancelLabel: 'Kiểm tra lại',
-            intent: 'warning',
-            countdownSeconds: 1,
-        });
-        if (!ok) return;
+        setIsReturnDialogOpen(true);
+    };
+
+    const confirmReturnRequest = async (reason: string) => {
+        if (isSaving || !request) return;
         setIsSaving(true);
         try {
             const saved = await updateRequestStatus(request.id, RequestStatus.DRAFT, reason, undefined, undefined, undefined, 'RETURNED');
@@ -1654,7 +1645,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể trả lại phiếu', 'Không cập nhật được trạng thái phiếu trên hệ thống.');
                 return;
             }
-            toast.success('Đã trả lại phiếu', 'Phiếu đã quay về Nháp để người tạo phiếu chỉnh sửa và gửi lại.');
+            setIsReturnDialogOpen(false);
+            toast.success('Đã trả lại phiếu', `Phiếu đã quay về Nháp để ${requester?.name || 'người lập phiếu'} chỉnh sửa và gửi lại.`);
             onClose();
         } catch (err: any) {
             logApiError('requestModal.returnRequest', err);
@@ -4372,6 +4364,21 @@ const RequestModal: React.FC<RequestModalProps> = ({
                     onConfirm={target => submitRequestForApproval(submittingProjectRequest, target)}
                 />
             )}
+            <ReasonConfirmModal
+                isOpen={isReturnDialogOpen && !!request}
+                onClose={() => { if (!isSaving) setIsReturnDialogOpen(false); }}
+                onConfirm={confirmReturnRequest}
+                title="Trả lại phiếu đề xuất"
+                targetName={request?.code || ''}
+                subtitle={`Trả về người lập: ${requester?.name || 'N/A'}`}
+                warningText="Phiếu quay về Nháp, số lượng đã duyệt được xoá. Người lập sửa xong gửi duyệt lại từ đầu."
+                reasonLabel="Lý do trả lại"
+                reasonPlaceholder="Ví dụ: Bổ sung quy cách, sửa lại số lượng..."
+                actionLabel="Trả lại"
+                cancelLabel="Huỷ"
+                intent="warning"
+                isSubmitting={isSaving}
+            />
         </div>
     );
 };
