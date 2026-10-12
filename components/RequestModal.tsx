@@ -50,6 +50,8 @@ import { getMaterialIssueDraftQty } from '../lib/materialRequestIssueDraft';
 import { formatLocaleDecimalInput, parseNonNegativeLocaleNumber } from '../lib/localeNumberInput';
 import { BoqSummaryStrip } from './erp';
 import MaterialCommercialDescriptionFields from './material/MaterialCommercialDescriptionFields';
+import { buildSiteItemHistory, frequentSiteItems, siteSpecGhost } from '../lib/materialRequestPrefill';
+import { recordSuggestionEvent } from '../lib/uiSuggestionEvents';
 import { duplicateItemSpecProblems, getMaterialDocumentLineKey, resolveMaterialLineName } from '../lib/materialLineDescription';
 import { MaterialRequestSupplyPanel } from './project/material/MaterialRequestSupplyPanel';
 
@@ -499,6 +501,25 @@ const RequestModal: React.FC<RequestModalProps> = ({
         if (effectiveProjectId) return req.projectId === effectiveProjectId;
         if (effectiveConstructionSiteId) return req.constructionSiteId === effectiveConstructionSiteId;
         return true;
+    };
+
+    // Gợi ý (chủ SP 11–13/10): mã công trường hay đề xuất lên đầu ô chọn; quy cách lần trước in mờ, Tab để dùng. Chỉ khi lập phiếu.
+    const prefillEnabled = isOpen && isProjectRequest && step === 'CREATE' && (!request || request.status === RequestStatus.DRAFT);
+    const siteItemHistory = useMemo(
+        () => (prefillEnabled ? buildSiteItemHistory(requests, { projectId: effectiveProjectId, constructionSiteId: effectiveConstructionSiteId, excludeRequestId: request?.id }) : new Map()),
+        [prefillEnabled, requests, effectiveProjectId, effectiveConstructionSiteId, request?.id],
+    );
+    const frequentItems = useMemo(() => frequentSiteItems(siteItemHistory), [siteItemHistory]);
+    const recordSpecOutcome = (lines: RequestLineDraft[], code?: string) => {
+        if (request?.id || !siteItemHistory.size) return;
+        let suggested = 0; let accepted = 0;
+        lines.forEach(line => {
+            const last = siteItemHistory.get(line.itemId)?.lastSpec;
+            if (!last) return;
+            suggested += 1;
+            if (String(line.specification || '').trim().toLowerCase() === last.toLowerCase()) accepted += 1;
+        });
+        if (suggested) recordSuggestionEvent({ screen: 'material_request', field: 'spec', outcome: accepted === suggested ? 'accepted' : accepted ? 'edited' : 'dismissed', suggested, accepted, source: { projectId: effectiveProjectId, code } });
     };
 
     const getCompletedReceivedQtyForBudgetLine = (req: MaterialRequest, line: RequestItem, lineIndex: number) => {
@@ -957,6 +978,8 @@ const RequestModal: React.FC<RequestModalProps> = ({
     };
 
     const handleSelectFromModal = (item: InventoryItem) => {
+        const used = siteItemHistory.get(item.id);
+        if (used) recordSuggestionEvent({ screen: 'material_request', field: 'item', outcome: 'accepted', suggested: 1, accepted: 1, source: { projectId: effectiveProjectId, code: used.lastCode } });
         setReqItems([...reqItems, {
             lineId: crypto.randomUUID(),
             itemId: item.id,
@@ -1153,6 +1176,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể lưu đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
                 throw new Error('Không lưu được phiếu đề xuất lên hệ thống.');
             }
+            recordSpecOutcome(reqItems, requestToSave.code);
             toast.success(successTitle, successMessage);
             onSaved?.(requestToSave);
             onClose();
@@ -1203,6 +1227,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 toast.error('Không thể gửi đề xuất', 'Không lưu được phiếu đề xuất lên hệ thống. Vui lòng thử lại.');
                 return;
             }
+            recordSpecOutcome(reqItems, requestToSave.code);
             let savedForCallback = requestToSave;
             if (dynamicBinding) {
                 const targetUserIds = submissionTarget.userIds?.length
@@ -3215,6 +3240,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                                 onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
                                                                 specification={(primaryRow as RequestLineDraft).specification || ''}
                                                                 onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                                specificationGhost={prefillEnabled ? siteSpecGhost(siteItemHistory.get(primaryRow.itemId)) : null}
                                                                 specificationProblem={specProblems.get((primaryRow as RequestLineDraft).lineId)}
                                                             />
                                                         )}
@@ -3475,6 +3501,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                                                     onNameChange={value => handleUpdateItem(primary.index, 'itemNameSnapshot', value)}
                                                     specification={(primaryRow as RequestLineDraft).specification || ''}
                                                     onSpecificationChange={value => handleUpdateItem(primary.index, 'specification', value)}
+                                                                specificationGhost={prefillEnabled ? siteSpecGhost(siteItemHistory.get(primaryRow.itemId)) : null}
                                                     specificationProblem={specProblems.get((primaryRow as RequestLineDraft).lineId)}
                                                 />
                                             )}
@@ -4304,6 +4331,7 @@ const RequestModal: React.FC<RequestModalProps> = ({
                 allowAllItems={isProjectRequest}
                 showStockQuantities={canSeeAvailability && !isUsingProjectCatalog}
                 items={items}
+                frequent={prefillEnabled ? frequentItems : undefined}
             />
 
             {isScannerOpen && (
