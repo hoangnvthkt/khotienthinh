@@ -1,6 +1,6 @@
 # Dòng chảy công việc — mô hình điều hành trực quan cho Ban lãnh đạo (13/10/2026)
 
-Trạng thái: chủ SP **đồng ý cả 9 câu** (13/10) → **PR-1 đã code** (mục 10): migration `20261013141500_center_flow_v1.sql`, smoke Cloud đạt trong giao dịch rollback, chưa lên production. Bản xem thử v0 ở mục 8.
+Trạng thái: chủ SP **đồng ý cả 9 câu** (13/10) → **PR-1 #183 đã lên production 13/10** (mục 10): migration `20261013141500_center_flow_v1.sql` áp Cloud, smoke đạt trên prod. Bản xem thử v0 ở mục 8. Tiếp: PR-2 tab giao diện.
 
 Tệp đi kèm:
 
@@ -204,8 +204,8 @@ Quyền, quyết định ở máy chủ (câu 2): toàn công ty = Admin hoặc 
 phòng mình + phòng con = người giữ slot trưởng phòng (`org_units.manager_slot_id`); dự án mình = giám đốc dự án hoặc Room duyệt nhật ký / phân công / đề xuất vật tư.
 Lọc phòng / dự án ngoài phạm vi → `42501 FLOW_SCOPE_DENIED`; không thuộc bậc nào → `{access:false}` để giao diện ẩn tab. Hôm nay chỉ 2/17 phòng có trưởng phòng gắn slot (`gaps.unitsWithoutManager`) — HR cần gắn để trưởng phòng tự xem.
 
-Hiệu năng (câu 7, làm mới mỗi phút): 2 tập dữ liệu dựng một lần bằng CTE materialized rồi mọi số đếm đọc trong bộ nhớ; thêm 3 chỉ mục
-(`assigned_at`, `PENDING`, `employees.user_id`). Đo trên Cloud với dữ liệu thật + dữ liệu mẫu: **toàn công ty 56 ms, một phòng 41 ms, JSON 38.656 byte**.
+Hiệu năng (câu 7, làm mới mỗi phút): 2 tập dữ liệu dựng một lần bằng CTE materialized rồi mọi số đếm đọc trong bộ nhớ; thêm 2 chỉ mục
+(`assigned_at`, `PENDING`; `employees.user_id` đã có sẵn trên production). Đo trên Cloud với dữ liệu thật + dữ liệu mẫu: **toàn công ty 56 ms, một phòng 41 ms, JSON 38.656 byte**.
 Không trả danh sách phiếu (PR-3 có hàm theo trang).
 
 Smoke (giao dịch rollback trên Cloud, đạt 13/10): 6 vai (Admin, quyền toàn công ty, trưởng phòng, giám đốc dự án, vào Center không bậc nào, không vào Center);

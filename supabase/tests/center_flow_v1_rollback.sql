@@ -6,7 +6,7 @@ drop function if exists app_private.vcc_flow_unit_tree(uuid);
 drop function if exists app_private.vcc_flow_business_days(timestamptz, timestamptz, integer);
 drop index if exists public.idx_wsa_flow_assigned_at;
 drop index if exists public.idx_wsa_flow_pending;
-drop index if exists public.idx_employees_user_id;
+-- idx_employees_user_id đã có sẵn trên production trước PR-1 (migration chỉ 'if not exists') — KHÔNG gỡ.
 update public.user_permission_templates
 set items = (select coalesce(jsonb_agg(i), '[]'::jsonb) from jsonb_array_elements(items) i where i ->> 'permissionCode' <> 'center.flow.view'), updated_at = now()
 where code = 'executive';
