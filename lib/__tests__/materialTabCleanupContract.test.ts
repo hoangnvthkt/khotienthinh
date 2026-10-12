@@ -10,7 +10,8 @@ describe('Dự án → Vật tư sau khi dọn (P1, 12/10/2026)', () => {
   const header = read('components/project/material/MaterialTabHeader.tsx');
 
   it('chỉ còn 4 tab con theo thứ tự công việc; link cũ tới tab đã gộp mở đúng chỗ mới', () => {
-    expect(materialTab).toContain("const MATERIAL_TAB_ORDER: ProjectMaterialTabKey[] = ['summary', 'request', 'planning', 'boq'];");
+    expect(read('lib/projectMaterialTabUtils.ts')).toContain("export const MATERIAL_TAB_ORDER: ProjectMaterialTabKey[] = ['summary', 'request', 'planning', 'boq'];");
+    expect(materialTab).toContain('MATERIAL_TAB_ORDER');
     expect(materialTab).toContain("{ waste: 'summary', dashboard: 'summary', custom: 'request' }");
     expect(materialTab).not.toContain('<MaterialWasteTab');
     expect(materialTab).not.toContain('<MaterialDashboardTab');

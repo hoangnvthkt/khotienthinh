@@ -162,16 +162,16 @@ export const MaterialSummaryTab: React.FC<MaterialSummaryTabProps> = ({
                         {overBudgetItems.length === 0 && overWasteItems.length === 0 ? (
                             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">Không có vật tư vượt ngân sách hoặc vượt hao hụt</span>
                         ) : (<>
-                            <button type="button" aria-expanded={attention === 'budget'} disabled={overBudgetItems.length === 0}
+                            {overBudgetItems.length > 0 && <button type="button" aria-expanded={attention === 'budget'}
                                 onClick={() => setAttention(current => current === 'budget' ? null : 'budget')}
                                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition disabled:cursor-default disabled:opacity-60 ${attention === 'budget' ? 'border-rose-400 bg-rose-100 text-rose-800' : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300'}`}>
                                 <AlertTriangle size={12} /> Vượt ngân sách <span className="tabular-nums">{overBudgetItems.length}</span>
-                            </button>
-                            <button type="button" aria-expanded={attention === 'waste'} disabled={overWasteItems.length === 0}
+                            </button>}
+                            {overWasteItems.length > 0 && <button type="button" aria-expanded={attention === 'waste'}
                                 onClick={() => setAttention(current => current === 'waste' ? null : 'waste')}
                                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition disabled:cursor-default disabled:opacity-60 ${attention === 'waste' ? 'border-amber-400 bg-amber-100 text-amber-900' : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'}`}>
                                 <AlertTriangle size={12} /> Vượt hao hụt <span className="tabular-nums">{overWasteItems.length}</span>
-                            </button>
+                            </button>}
                         </>)}
                     </div>
                     {dashboardLink && (

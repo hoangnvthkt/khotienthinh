@@ -52,6 +52,7 @@ import {
     normalizeLookupText,
     parseVietnameseMoney,
     pickImportValue,
+    MATERIAL_TAB_ORDER,
     PROJECT_REQUEST_DATA_TABS,
     PROJECT_REQUEST_FULFILLMENT_TABS,
     rowHasAnyValue,
@@ -73,8 +74,6 @@ const RequestModal = React.lazy(() => import('../../components/RequestModal'));
 const MOVED_TO_PROCUREMENT_TABS = new Set<ProjectMaterialTabKey>(['po', 'hot_purchase']);
 // Dọn tab Vật tư (P1, 12/10/2026): Hao hụt + Dashboard gộp vào Theo dõi; Phi tiêu chuẩn chưa từng có phiếu.
 const MERGED_MATERIAL_TABS: Partial<Record<ProjectMaterialTabKey, ProjectMaterialTabKey>> = { waste: 'summary', dashboard: 'summary', custom: 'request' };
-// Thứ tự tab con: theo dõi → đề xuất → kế hoạch → BOQ (thiết lập).
-const MATERIAL_TAB_ORDER: ProjectMaterialTabKey[] = ['summary', 'request', 'planning', 'boq'];
 
 const LazyPanelFallback = ({ label = 'Đang tải dữ liệu...' }: { label?: string }) => (
     <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-slate-100 bg-white text-xs font-bold text-slate-400 shadow-sm dark:border-slate-700/60 dark:bg-slate-800">
@@ -93,6 +92,10 @@ interface MaterialTabProps {
     siteWarehouseId?: string; // ID kho công trường
     canManageTab?: boolean;
     materialPermissions?: ProjectMaterialTabPermissionMap;
+    /** Menu cột của dự án hiện tab con: báo danh sách tab con được xem + tab đang mở. */
+    onSubNavChange?: (state: { tabs: ProjectMaterialTabKey[]; active: ProjectMaterialTabKey }) => void;
+    /** Màn rộng đã có tab con ở menu cột → ẩn thanh tab con (màn hẹp vẫn hiện). */
+    subTabsInSideNav?: boolean;
 }
 
 const MATERIAL_REQUEST_APPROVE_PERMISSION = 'project.material_request.approve';
@@ -113,7 +116,7 @@ const normalizeMaterialRequestPermissionCodes = (codes?: string[] | null): strin
     return [...new Set(normalized.length > 0 ? normalized : [MATERIAL_REQUEST_APPROVE_PERMISSION])];
 };
 
-const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions }) => {
+const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId, project, projectFinance, siteName, siteWarehouseId, canManageTab = true, materialPermissions, onSubNavChange, subTabsInSideNav = false }) => {
     const location = useLocation();
     const navigate = useNavigate();
     const { items: inventoryItems, requests: allRequests, warehouses, users, employees, orgUnits, user, transactions, hrmConstructionSites, loadModuleData, isModuleAdmin } = useApp();
@@ -208,6 +211,26 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
         const target = MERGED_MATERIAL_TABS[materialTab] || materialTab;
         if (materialAccess[target].canView) setActiveSubTab(target);
     }, [constructionSiteId, location.search, materialAccess, navigate, projectId]);
+
+    // Menu cột của dự án: báo tab con được xem + tab đang mở; giữ ?materialTab= khớp tab đang mở
+    // để link/F5 mở đúng chỗ và menu tô đúng mục.
+    const subNavKey = projectMaterialTabs.map(tab => tab.key).join(',');
+    useEffect(() => {
+        if (!onSubNavChange || projectMaterialTabs.length === 0) return;
+        onSubNavChange({ tabs: projectMaterialTabs.map(tab => tab.key), active: activeSubTab });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeSubTab, onSubNavChange, subNavKey]);
+    useEffect(() => {
+        if (!projectMaterialTabs.some(tab => tab.key === activeSubTab)) return;
+        const params = new URLSearchParams(location.search);
+        if (params.get('materialTab') === activeSubTab || params.get('poId')) return;
+        // Link cũ tới PO / Mua nóng đang được chuyển sang Mua hàng ở hiệu ứng trên — không ghi đè.
+        if (MOVED_TO_PROCUREMENT_TABS.has(params.get('materialTab') as ProjectMaterialTabKey)) return;
+        if (!params.get('tab')) return; // chỉ đồng bộ khi đang ở URL tab dự án
+        params.set('materialTab', activeSubTab);
+        navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeSubTab, subNavKey]);
 
     // BOQ Data
     const [boqItems, setBoqItems] = useState<MaterialBudgetItem[]>([]);
@@ -2654,6 +2677,7 @@ const MaterialTab: React.FC<MaterialTabProps> = ({ constructionSiteId, projectId
     return (
         <div className="space-y-6">
             <MaterialTabHeader
+                hideTabsOnDesktop={subTabsInSideNav}
                 visibleMaterialTabs={projectMaterialTabs}
                 activeSubTab={activeSubTab}
                 tabLabels={materialTabLabels}
