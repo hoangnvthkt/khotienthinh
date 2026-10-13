@@ -18,6 +18,8 @@ import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
 import { buildDashboardFixture, fixtureDocs, fixtureMoves } from './dashboardFixture';
+import { buildFlowFixture } from './flowFixture';
+import type { FlowQuery, FlowResult } from '../../lib/center/centerFlowService';
 import type { DashDocQuery, DashMoveKind } from '../../lib/dashboard/dashboardTypes';
 import '../../index.css';
 
@@ -43,6 +45,21 @@ const loadMetricDocs = (query: DashDocQuery, projectId: string | null) =>
   new Promise<ReturnType<typeof fixtureDocs>>(resolve => setTimeout(() => resolve(fixtureDocs(buildDashboardFixture(DASH === 'flaky' || DASH === 'slow' ? 'bgd' : DASH), query, projectId)), 150));
 const loadDashboardAccess = () => Promise.resolve(DASH === 'error' || DASH === 'flaky' || DASH === 'slow' ? buildDashboardFixture('bgd').access : buildDashboardFixture(DASH).access);
 const at = (days: number, hour = 17) => new Date(2026, 9, 7 + days, hour, 0).toISOString();
+// Dòng chảy công việc: ?flow=bgd (mặc định) | head | lead | none | error | slow | flaky · ?flow=off: không có tab.
+// Số lần gọi và truy vấn cuối ghi ở window.__flowLoads / window.__flowQuery để kiểm "tải khi mở tab, lọc gọi lại máy chủ".
+const FLOW = params.get('flow') || 'bgd';
+let flowLoads = 0;
+const loadFlow = FLOW === 'off' ? undefined : (query: FlowQuery) => new Promise<FlowResult>((resolve, reject) => {
+  flowLoads += 1;
+  const w = window as unknown as { __flowLoads: number; __flowQuery: FlowQuery };
+  w.__flowLoads = flowLoads; w.__flowQuery = query;
+  setTimeout(() => {
+    if (FLOW === 'error' || (FLOW === 'flaky' && flowLoads > 1)) reject(new Error('Máy chủ bận, thử lại sau ít phút.'));
+    else if (FLOW === 'none') resolve({ access: false, reason: 'no_scope' });
+    else resolve(buildFlowFixture(FLOW === 'flaky' || FLOW === 'slow' ? 'bgd' : FLOW, query.range ?? 90, flowLoads > 1 ? '2026-10-07T08:31:00+07:00' : '2026-10-07T08:25:00+07:00'));
+  }, FLOW === 'slow' ? 1500 : 120);
+});
+const loadFlowAccess = () => Promise.resolve(FLOW === 'none' ? { access: false, scope: null } : { access: true, scope: buildFlowFixture(FLOW === 'error' || FLOW === 'flaky' || FLOW === 'slow' ? 'bgd' : FLOW).scope });
 
 const item = (partial: Partial<WorkItem> & Pick<WorkItem, 'source' | 'module' | 'kind' | 'id' | 'code' | 'title'>): WorkItem => ({
   who: null, whoId: null, meta: null, dueAt: null, status: null, ref: {}, ...partial,
@@ -311,6 +328,9 @@ const Fixture: React.FC = () => {
             loadDashboardAccess={loadDashboardAccess}
             loadMaterialMoves={loadMaterialMoves}
             loadMetricDocs={loadMetricDocs}
+            loadFlow={loadFlow}
+            loadFlowAccess={loadFlowAccess}
+            initialTab={params.get('view') === 'flow' ? 'flow' : null}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
             assistant={assistantHooks}

@@ -114,3 +114,18 @@ test("WebKit idle: 200 việc trong Chờ tôi", async ({ page }) => {
   await page.locator(".vcc-inbox .vcc-scroll").evaluate(node => node.scrollTo({ top: node.scrollHeight }));
   await measureIdle(page, "inbox-200");
 });
+
+// Dòng chảy công việc: sơ đồ SVG nhiều dải (820) và thanh theo phòng (iPhone) đứng yên không làm gì; hẹn giờ làm mới 60 giây đặt
+// trước khi "armed" nên không tính — trong 10 giây đo không có timer, animation hay thay đổi DOM nào.
+test("WebKit idle: Dòng chảy công việc (sơ đồ dải 820, thanh theo phòng 390)", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.goto(`${base}?inbox=empty`);
+  await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" }).click();
+  await expect(page.getByRole("img", { name: /Sơ đồ dòng chảy công việc/ })).toBeVisible();
+  await measureIdle(page, "flow-sankey");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("list", { name: "Nơi xử lý" })).toBeVisible();
+  await measureIdle(page, "flow-bars");
+});

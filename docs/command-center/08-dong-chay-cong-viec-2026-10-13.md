@@ -1,6 +1,6 @@
 # Dòng chảy công việc — mô hình điều hành trực quan cho Ban lãnh đạo (13/10/2026)
 
-Trạng thái: chủ SP **đồng ý cả 9 câu** (13/10) → **PR-1 #183 đã lên production 13/10** (mục 10): migration `20261013141500_center_flow_v1.sql` áp Cloud, smoke đạt trên prod. Bản xem thử v0 ở mục 8. Tiếp: PR-2 tab giao diện.
+Trạng thái: chủ SP **đồng ý cả 9 câu** (13/10) → **PR-1 #183 lên production + merged 13/10** (mục 10) → **PR-2 tab giao diện đã code** (mục 11), chờ duyệt merge. Quyền `center.flow.view` đã cấp cho 5 người Ban lãnh đạo 13/10. Bản xem thử v0 ở mục 8.
 
 Tệp đi kèm:
 
@@ -217,3 +217,30 @@ Sau khi lên production: bỏ `center.flow.view` khỏi `FRONTEND_AHEAD_OF_DB` t
 (`scripts/authorization-v2/export-permission-catalog.mjs`); chạy `center_flow_v1_grant_executive.sql` (COMMIT) để cấp cho 5 người Ban lãnh đạo.
 
 Tiếp: PR-2 tab "Dòng chảy công việc" trong Trung tâm (Sankey, dải chỉ số, ngăn Điểm nghẽn, chip nguồn, 3 khổ màn, làm mới mỗi phút).
+
+## 11. PR-2 — tab "Dòng chảy công việc" trong Trung tâm điều hành (13/10/2026)
+
+Tệp: `components/flow/FlowView.tsx` (màn), `FlowSankey.tsx` (SVG thuần, không thư viện), `FlowPanel.tsx` (ngăn Điểm nghẽn), `flow.css`;
+`lib/center/flowModel.ts` (bố cục dải, nhãn, bảng bấm xuống, thanh điện thoại — thuần, có test); nối `CenterShell` / `CenterPage`;
+fixture `tests/center/flowFixture.ts`, Playwright `tests/e2e/center-shell.spec.ts` (3 khổ) + `center-idle.spec.ts` (WebKit đứng yên).
+
+| Lớp | Có gì | Bấm vào → |
+|---|---|---|
+| Thanh công cụ | 7 / 30 / 90 ngày · chọn phòng (toàn công ty hoặc phòng mình quản lý) · chọn dự án · Cập nhật · "Số liệu lúc … · tự cập nhật mỗi phút khi đang mở" · chip phạm vi khi là trưởng phòng / giám đốc dự án | lọc gọi lại máy chủ (`p_range_days`, `p_unit_id`, `p_project_id`), số cũ vẫn hiện trong lúc chờ |
+| Chip nguồn | 19 nguồn đang chờ: số đang chờ (xanh) · đứng yên (đỏ) | ngăn "theo loại phiếu" của nguồn đó |
+| 6 ô chỉ số | Đang chờ · Đứng yên > 3 ngày · Quá hạn · Trung vị xử lý · Trả lại / từ chối · Lượt giao 30 ngày (đường xu hướng) | ngăn bấm xuống của Bảng điều khiển (DrillDrawer): theo phòng / theo người / kết quả / theo ngày, có dòng Tổng |
+| Sơ đồ dải | 3 cột Nơi phát sinh → Nơi xử lý → Kết quả, **kết quả theo từng phòng là số thật** (`unitOutcomes`); vạch đỏ cạnh phòng = phần đứng yên hôm nay; phòng "Chưa gắn phòng ban" vẽ xám nét đứt | phòng → ngăn phòng; dải → ngăn dải; kết quả → ngăn kết quả |
+| Người xử lý | bảng: nhận, xong, trung vị, % đúng hạn, trả lại, đang giữ — **không** gắn nhãn tốt nhất / chậm nhất (câu 5) | |
+| Ngăn Điểm nghẽn | ùn ở người (huy hiệu "ùn" từ 5 việc), tuổi việc, chưa giao người / phiếu chết / quá SLA mặc định, theo loại phiếu, chờ một vai, thông báo chưa đọc (toàn công ty), lỗ hổng dữ liệu | ngăn phòng: đang chờ / đứng yên / quá hạn, nhận / giao đi / nội bộ, kết quả, trao đổi với phòng khác, người đang giữ việc |
+| Điện thoại | ô chỉ số và chip cuộn ngang; sơ đồ dải thay bằng **thanh theo phòng**; ngăn nằm dưới | |
+
+Làm mới mỗi phút (câu 7): một `setTimeout` 60 giây chỉ khi tab Dòng chảy đang hiện và cửa sổ đang mở; tab ẩn hoặc cửa sổ ẩn thì không hẹn gì; không Realtime, không interval.
+Tab chỉ hiện khi `vcc_flow_v1(p_access_only)` trả có phạm vi; `/center?view=flow` mở thẳng tab.
+
+Kiểm (13/10): tsc, vitest 103 test Center (gồm 12 test `flowModel`), Playwright desktop 1440 / tablet 820 / iPhone WebKit: tab, 6 ô, chip, chọn phòng → ngăn,
+bấm xuống → dòng Tổng, đổi 30 ngày → gọi lại máy chủ, Người xử lý, trang đứng yên không animation; không có tab khi không có phạm vi; cập nhật lỗi vẫn giữ số cũ;
+trưởng phòng chỉ thấy phòng mình. WebKit đứng yên: 0 timer / animation / thay đổi DOM trong 10 giây ở cả sơ đồ dải (820) và thanh (390).
+Ảnh: `evidence/2026-10-13-flow-tab-{desktop,tablet,iphone,truong-phong}.png`.
+
+Chưa làm (đợt 2–3, theo lộ trình mục 7): Bản đồ công trường → phòng (máy chủ chưa trả dòng theo dự án), nút Nhắc / Xem phiếu / Chuyển người / Dọn việc cũ,
+trọng số theo loại phiếu, ngưỡng ở Thiết lập, chế độ trình chiếu 3D.
