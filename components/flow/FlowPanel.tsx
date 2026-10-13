@@ -1,34 +1,40 @@
 import React from 'react';
 import { ArrowUpRight, ChevronLeft } from 'lucide-react';
 import { FLOW_UNASSIGNED, type FlowDataset, type FlowWaitingPerson } from '../../lib/center/centerFlowService';
+import type { FlowItemsView } from './FlowItemsDrawer';
 import {
   AGE_LABEL, daysSince, ddmm, fmtInt, hoursText, outcomeColor, outcomeLabel, sourceLabel, unitName, unitSummary,
   type FlowSelection, type SankeyColors,
 } from '../../lib/center/flowModel';
 
 // Ngăn bên phải của Dòng chảy công việc: mặc định "Điểm nghẽn hôm nay"; bấm phòng / dải / kết quả / dự án thì đổi theo.
-// Chỉ số, tên người, tuổi việc — không có nút Nhắc / Xem phiếu (PR-3).
+// "Xem" mở danh sách phiếu (ngăn FlowItemsDrawer) — bấm phiếu mở thành tab, nút Nhắc nằm trong danh sách (PR-3).
 
 const Stat: React.FC<{ value: React.ReactNode; label: string; tone?: 'warn' | 'bad' }> = ({ value, label, tone }) => (
   <div className="vfl-stat" data-tone={tone}><b>{value}</b><small>{label}</small></div>
 );
 
-const Bars: React.FC<{ rows: Array<{ key: string; label: string; value: number; color: string; title?: string }>; max?: number }> = ({ rows, max }) => {
+const Bars: React.FC<{ rows: Array<{ key: string; label: string; value: number; color: string; title?: string; onClick?: () => void }>; max?: number }> = ({ rows, max }) => {
   const top = max ?? Math.max(1, ...rows.map(row => row.value));
   return (
     <div className="vfl-bars">
-      {rows.map(row => (
-        <div key={row.key} className="vfl-bar" title={row.title || row.label}>
-          <span className="vfl-bar-l">{row.label}</span>
-          <span className="vfl-bar-t"><i style={{ width: `${Math.min(100, (row.value / top) * 100)}%`, background: row.color }} /></span>
-          <span className="vfl-bar-v">{fmtInt(row.value)}</span>
-        </div>
-      ))}
+      {rows.map(row => {
+        const inner = (
+          <>
+            <span className="vfl-bar-l">{row.label}</span>
+            <span className="vfl-bar-t"><i style={{ width: `${Math.min(100, (row.value / top) * 100)}%`, background: row.color }} /></span>
+            <span className="vfl-bar-v">{fmtInt(row.value)}</span>
+          </>
+        );
+        return row.onClick
+          ? <button key={row.key} type="button" className="vfl-bar vfl-bar-btn" title={`${row.title || row.label} · bấm để xem phiếu`} onClick={row.onClick}>{inner}</button>
+          : <div key={row.key} className="vfl-bar" title={row.title || row.label}>{inner}</div>;
+      })}
     </div>
   );
 };
 
-const PersonRow: React.FC<{ person: FlowWaitingPerson; data: FlowDataset; now: Date }> = ({ person, data, now }) => {
+const PersonRow: React.FC<{ person: FlowWaitingPerson; data: FlowDataset; now: Date; onShowItems?: ShowItems }> = ({ person, data, now, onShowItems }) => {
   const age = daysSince(person.oldestAt, now);
   const dead = age >= data.thresholds.deadDays;
   return (
@@ -47,9 +53,17 @@ const PersonRow: React.FC<{ person: FlowWaitingPerson; data: FlowDataset; now: D
           {dead && <span data-tone="bad"> · {fmtInt(age)} ngày</span>}
         </div>
       </div>
+      {onShowItems && (
+        <span className="vfl-row-acts">
+          <button type="button" className="vfl-mini" title="Danh sách việc người này đang giữ; mở từng phiếu, gửi nhắc"
+            onClick={() => onShowItems({ title: `${person.name || 'Người dùng'} đang giữ`, filter: { holderUserId: person.userId } })}>Xem</button>
+        </span>
+      )}
     </div>
   );
 };
+
+type ShowItems = (view: FlowItemsView) => void;
 
 const Back: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <button type="button" className="vfl-back" onClick={onClick}><ChevronLeft size={14} /> Điểm nghẽn hôm nay</button>
@@ -63,7 +77,9 @@ export const FlowPanel: React.FC<{
   onSelect: (selection: FlowSelection | null) => void;
   onOpen: (route: string) => void;
   onShowPeople: () => void;
-}> = ({ data, colors, selection, now, onSelect, onOpen, onShowPeople }) => {
+  /** Mở danh sách phiếu theo lọc (không có = chưa nối danh sách). */
+  onShowItems?: ShowItems;
+}> = ({ data, colors, selection, now, onSelect, onOpen, onShowPeople, onShowItems }) => {
   const t = data.thresholds;
   const back = () => onSelect(null);
 
@@ -111,8 +127,15 @@ export const FlowPanel: React.FC<{
           </>
         )}
         <h4 className="vfl-h4">Người đang giữ việc</h4>
-        {u.holders.length > 0 ? u.holders.map(person => <PersonRow key={person.userId} person={person} data={data} now={now} />)
+        {u.holders.length > 0 ? u.holders.map(person => <PersonRow key={person.userId} person={person} data={data} now={now} onShowItems={onShowItems} />)
           : <p className="vfl-panel-sub">Không có việc đang chờ ở phòng này.</p>}
+        {onShowItems && u.waiting > 0 && (
+          <div className="vfl-actions">
+            <button type="button" className="vdb-pri" onClick={() => onShowItems({ title: `Việc đang chờ ở ${u.name}`, filter: { holderUnit: u.id } })}>
+              Mở {fmtInt(u.waiting)} việc đang chờ <ArrowUpRight size={14} />
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -131,7 +154,9 @@ export const FlowPanel: React.FC<{
             <Stat value={hoursText(link.medHours)} label="trung vị xử lý" />
           </div>
         )}
-        <div className="vfl-note">Danh sách phiếu trên dải này mở được ở đợt sau (PR-3).</div>
+        {onShowItems && link && link.waiting > 0
+          ? <div className="vfl-actions"><button type="button" className="vdb-pri" onClick={() => onShowItems({ title: `Việc đang chờ ở ${unitName(data, selection.to)}`, filter: { holderUnit: selection.to } })}>Xem việc đang chờ ở nơi nhận <ArrowUpRight size={14} /></button></div>
+          : <div className="vfl-note">Dải chỉ đếm lượt giao trong khoảng; việc đang chờ xem ở phòng nhận.</div>}
       </div>
     );
   }
@@ -151,6 +176,9 @@ export const FlowPanel: React.FC<{
             <Stat value={hoursText(row.avgHours)} label="trung bình" />
             <Stat value={fmtInt(row.n)} label="lượt" />
           </div>
+        )}
+        {selection.id === 'waiting' && onShowItems && (
+          <div className="vfl-actions"><button type="button" className="vdb-pri" onClick={() => onShowItems({ title: 'Việc đang chờ', filter: {} })}>Mở {fmtInt(data.waiting.total)} việc đang chờ <ArrowUpRight size={14} /></button></div>
         )}
         {selection.id === 'waiting' && (
           <>
@@ -195,7 +223,8 @@ export const FlowPanel: React.FC<{
         {project.mrAvgDays != null && <p className="vfl-panel-sub">Chờ cấp trung bình {project.mrAvgDays.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} ngày từ lúc lập.</p>}
         <div className="vfl-note">Đề xuất đã duyệt mà chưa cấp là điểm nghẽn ở Vật tư / Mua hàng, không phải ở người duyệt.</div>
         <div className="vfl-actions">
-          <button type="button" className="vdb-pri" onClick={() => onOpen(`/da?projectId=${encodeURIComponent(project.id)}&tab=material`)}>Mở Vật tư dự án <ArrowUpRight size={14} /></button>
+          {onShowItems && project.waiting > 0 && <button type="button" className="vdb-pri" onClick={() => onShowItems({ title: `Việc đang chờ · ${project.code}`, filter: { project: project.id } })}>Mở {fmtInt(project.waiting)} việc đang chờ <ArrowUpRight size={14} /></button>}
+          <button type="button" className={onShowItems && project.waiting > 0 ? 'vdb-btn' : 'vdb-pri'} onClick={() => onOpen(`/da?projectId=${encodeURIComponent(project.id)}&tab=material`)}>Vật tư dự án</button>
           <button type="button" className="vdb-btn" onClick={() => onOpen('/procurement')}>Mua hàng</button>
         </div>
       </div>
@@ -212,7 +241,7 @@ export const FlowPanel: React.FC<{
           {data.waiting.byPerson.length > 0 && (
             <>
               <h4 className="vfl-h4">Ùn ở người</h4>
-              {data.waiting.byPerson.slice(0, 5).map(person => <PersonRow key={person.userId} person={person} data={data} now={now} />)}
+              {data.waiting.byPerson.slice(0, 5).map(person => <PersonRow key={person.userId} person={person} data={data} now={now} onShowItems={onShowItems} />)}
               {data.waiting.byPerson.length > 5 && <button type="button" className="vdb-btn vfl-more" onClick={onShowPeople}>Xem cả {fmtInt(data.waiting.byPerson.length)} người</button>}
             </>
           )}
@@ -226,17 +255,34 @@ export const FlowPanel: React.FC<{
               <Stat value={fmtInt(data.waiting.overdueByDefaultSla)} label="quá SLA mặc định" tone={data.waiting.overdueByDefaultSla ? 'warn' : undefined} />
             </div>
           )}
+          {onShowItems && (data.waiting.dead > 0 || data.waiting.unassigned > 0) && (
+            <div className="vfl-actions">
+              {data.waiting.dead > 0 && (
+                <button type="button" className="vdb-pri" title={`Phiếu đã chờ trên ${t.deadDays} ngày: mở từng phiếu để hủy, bỏ qua bước hoặc nhắc`}
+                  onClick={() => onShowItems({ title: 'Dọn việc cũ', subtitle: `chờ trên ${t.deadDays} ngày — mở phiếu để hủy / bỏ qua, hoặc nhắc`, filter: { status: 'dead' } })}>
+                  Dọn {fmtInt(data.waiting.dead)} việc cũ <ArrowUpRight size={14} />
+                </button>
+              )}
+              {data.waiting.unassigned > 0 && (
+                <button type="button" className="vdb-btn" onClick={() => onShowItems({ title: 'Chưa giao người xử lý', filter: { status: 'unassigned' } })}>
+                  {fmtInt(data.waiting.unassigned)} việc chưa giao người
+                </button>
+              )}
+            </div>
+          )}
           {data.waiting.byKind.length > 0 && (
             <>
               <h4 className="vfl-h4">Theo loại phiếu</h4>
               <Bars rows={data.waiting.byKind.slice(0, 6).map(kind => ({ key: `${kind.source}:${kind.name}`, label: kind.name, value: kind.n, color: colors.waiting,
-                title: `${kind.name} · ${sourceLabel(kind.source)} · ${kind.stuck} đứng yên` }))} />
+                title: `${kind.name} · ${sourceLabel(kind.source)} · ${kind.stuck} đứng yên`,
+                onClick: onShowItems ? () => onShowItems({ title: kind.name, filter: { source: kind.source, kindName: kind.name } }) : undefined }))} />
             </>
           )}
           {roles.length > 0 && (
             <>
               <h4 className="vfl-h4">Chờ một vai, chưa gắn người</h4>
-              <Bars rows={roles.map(role => ({ key: role.role, label: role.role, value: role.n, color: colors.other, title: `${role.n} việc chờ ${role.role} · ${role.stuck} đứng yên` }))} />
+              <Bars rows={roles.map(role => ({ key: role.role, label: role.role, value: role.n, color: colors.other, title: `${role.n} việc chờ ${role.role} · ${role.stuck} đứng yên`,
+                onClick: onShowItems ? () => onShowItems({ title: `Việc chờ ${role.role}`, filter: { status: 'role', role: role.role } }) : undefined }))} />
             </>
           )}
         </>

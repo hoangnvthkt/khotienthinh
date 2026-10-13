@@ -3,7 +3,10 @@ import { AlertTriangle, Clock, Hourglass, RefreshCw, Timer, TrendingUp, Undo2 } 
 import { StateBox } from '../procurement/hub/hubUi';
 import type { DrillDown } from '../../lib/dashboard/dashboardModel';
 import { DashOpenContext, DataTable, DrillDrawer, Tile, dashColors } from '../dashboard/dashUi';
-import { FLOW_UNASSIGNED, type FlowDataset, type FlowQuery, type FlowRange } from '../../lib/center/centerFlowService';
+import { FLOW_UNASSIGNED, type FlowDataset, type FlowQuery, type FlowRange, type LoadFlowItems, type RemindFlow } from '../../lib/center/centerFlowService';
+import { moduleRouteFor } from '../../lib/center/drill';
+import type { WorkItem } from '../../lib/center/workItemsService';
+import FlowItemsDrawer, { type FlowItemsView } from './FlowItemsDrawer';
 import {
   drillDaily, drillKinds, drillOutcomes, drillOverdue, drillPeople, drillStuckByPerson, drillWaitingByUnit, fmtInt, hoursText, medianDoneHours,
   outcomeCount, sourceLabel, stampText, totalDaily, totalLinks, unitBars, unitName, type FlowSelection, type SankeyColors,
@@ -58,13 +61,27 @@ const FlowView: React.FC<{
   onRetry: () => void;
   /** Mở màn gốc thành tab của Center. */
   onOpen: (route: string) => void;
+  /** Danh sách phiếu đang chờ theo lọc (vcc_flow_items_v1); không có = chưa có nút Xem / Nhắc. */
+  loadItems?: LoadFlowItems;
+  /** Nhắc người đang giữ việc (vcc_flow_remind_v1). */
+  remind?: RemindFlow;
+  /** Mở một phiếu thành tab (Center); không có thì mở màn gốc theo route. */
+  onOpenItem?: (item: WorkItem) => void;
   now: Date;
-}> = ({ state, isDark, query, onQueryChange, refreshing = false, refreshNote = null, onRetry, onOpen, now }) => {
+}> = ({ state, isDark, query, onQueryChange, refreshing = false, refreshNote = null, onRetry, onOpen, loadItems, remind, onOpenItem, now }) => {
   const data = state.status === 'ready' ? state.data : null;
   const colors = useMemo(() => sankeyColors(isDark), [isDark]);
   const [selection, setSelection] = useState<FlowSelection | null>(null);
   const [view, setView] = useState<View>('flow');
   const [drill, setDrill] = useState<DrillDown | null>(null);
+  const [itemsView, setItemsView] = useState<FlowItemsView | null>(null);
+  // Danh sách phiếu luôn trong phạm vi đang xem (phòng / dự án đã chọn ở thanh công cụ).
+  const showItems = (view: FlowItemsView) => {
+    if (!loadItems) return;
+    setDrill(null);
+    setItemsView({ ...view, filter: { projectId: query.projectId ?? null, unitId: query.unitId ?? null, ...view.filter } });
+  };
+  const openItem = (item: WorkItem) => { setItemsView(null); if (onOpenItem) onOpenItem(item); else onOpen(moduleRouteFor(item)); };
   // Khung hẹp (điện thoại): dải thay bằng thanh theo phòng.
   const wrapRef = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
@@ -76,7 +93,7 @@ const FlowView: React.FC<{
     return () => observer.disconnect();
   }, [state.status]);
   // Đổi phạm vi (lọc / phòng / dự án) thì bỏ lựa chọn cũ.
-  useEffect(() => { setSelection(null); }, [query.range, query.unitId, query.projectId]);
+  useEffect(() => { setSelection(null); setItemsView(null); }, [query.range, query.unitId, query.projectId]);
   useEffect(() => {
     if (!drill) return undefined;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setDrill(null); };
@@ -145,7 +162,8 @@ const FlowView: React.FC<{
 
       <div className="vfl-chips" role="group" aria-label="Việc đang chờ theo nguồn">
         {waiting.bySource.map(source => (
-          <button key={source.source} type="button" className="vfl-chip" onClick={() => setDrill(drillKinds(data, source.source))}
+          <button key={source.source} type="button" className="vfl-chip"
+            onClick={() => (loadItems ? showItems({ title: sourceLabel(source.source), filter: { source: source.source } }) : setDrill(drillKinds(data, source.source)))}
             title={`${sourceLabel(source.source)}: ${source.n} việc đang chờ${source.stuck ? `, ${source.stuck} đứng yên` : ''}${source.withPerson < source.n ? ` · ${source.n - source.withPerson} việc chờ một vai, chưa gắn người` : ''}`}>
             {sourceLabel(source.source)} <b>{fmtInt(source.n)}</b>{source.stuck > 0 && <i>{fmtInt(source.stuck)}</i>}
           </button>
@@ -155,7 +173,8 @@ const FlowView: React.FC<{
 
       <div className="vfl-tiles" role="group" aria-label="Chỉ số dòng chảy">
         <Tile icon={Hourglass} label="Đang chờ xử lý" value={fmtInt(waiting.total)} tone="amber" onClick={() => setDrill(drillWaitingByUnit(data))} hint={`${waiting.byUnit.length} phòng đang giữ việc`} />
-        <Tile icon={AlertTriangle} label={`Đứng yên > ${data.thresholds.stuckBusinessDays} ngày`} value={fmtInt(waiting.stuck)} tone="rose" onClick={() => setDrill(drillStuckByPerson(data, now))}
+        <Tile icon={AlertTriangle} label={`Đứng yên > ${data.thresholds.stuckBusinessDays} ngày`} value={fmtInt(waiting.stuck)} tone="rose"
+          onClick={() => (loadItems ? showItems({ title: `Việc đứng yên > ${data.thresholds.stuckBusinessDays} ngày làm việc`, filter: { status: 'stuck' } }) : setDrill(drillStuckByPerson(data, now)))}
           hint={`${fmtInt(waiting.dead)} việc đã chờ trên ${data.thresholds.deadDays} ngày`} />
         <Tile icon={Clock} label="Quá hạn" value={fmtInt(waiting.overdue)} tone="rose" onClick={() => setDrill(drillOverdue(data))}
           hint={`${fmtInt(waiting.overdueByDefaultSla)} việc tính theo SLA mặc định ${data.thresholds.slaDefaultHours} giờ`} />
@@ -225,10 +244,11 @@ const FlowView: React.FC<{
         </section>
         <aside className="vdb-card vfl-panel" aria-label="Điểm nghẽn">
           <FlowPanel data={data} colors={colors} selection={selection} now={now} onSelect={setSelection} onOpen={open}
-            onShowPeople={() => setDrill(drillStuckByPerson(data, now))} />
+            onShowPeople={() => setDrill(drillStuckByPerson(data, now))} onShowItems={loadItems ? showItems : undefined} />
         </aside>
       </div>
       {drill && <DrillDrawer drill={drill} onClose={() => setDrill(null)} onOpen={open} />}
+      {itemsView && loadItems && <FlowItemsDrawer view={itemsView} now={now} loadItems={loadItems} remind={remind} onOpenItem={openItem} onClose={() => setItemsView(null)} />}
     </div>
     </DashOpenContext.Provider>
   );

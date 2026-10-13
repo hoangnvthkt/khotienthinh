@@ -102,3 +102,47 @@ export const buildFlowFixture = (mode: string, range: FlowRange = 90, generatedA
     gaps: { employeesWithoutUnit: 44, employeesActive: 87, assignmentsWithoutSla: 101, assignments: 366, unitsWithoutManager: 15 },
   };
 };
+
+// ── Danh sách phiếu đang chờ (PR-3): 12 phiếu minh họa gắn với người ở BY_PERSON; lọc như máy chủ ──────────
+import type { FlowItem, FlowItemsFilter, FlowItemsPage } from '../../lib/center/centerFlowService';
+import type { WorkItemSource } from '../../lib/center/workItemsService';
+type ItemSeed = [WorkItemSource, FlowItem['module'], string, string, string, string | null, string, string, boolean, boolean, boolean, Record<string, unknown>, string | null];
+const ITEM_SEEDS: ItemSeed[] = [
+  // source, module, id, code, title, holder userId, since, kindName, stuck, overdue, dead, ref, projectId
+  ['wf', 'workflow', 'wf-1', 'WF-2026-018', 'Cấp thép D16 móng xưởng 3', 'p-luat', '2026-06-16T03:10:00+07:00', 'Quy trình cấp vật tư công trường', true, true, true, { instanceId: 'wf-1' }, 'smb'],
+  ['wf', 'workflow', 'wf-2', 'WF-2026-021', 'Cấp xi măng PCB40 đợt 2', 'p-luat', '2026-06-20T08:00:00+07:00', 'Quy trình cấp vật tư công trường', true, true, true, { instanceId: 'wf-2' }, 'smb'],
+  ['wf', 'workflow', 'wf-3', 'WF-2026-044', 'Cấp cốp pha tầng 2', 'p-luat', '2026-09-28T08:00:00+07:00', 'Quy trình cấp vật tư công trường', true, false, false, { instanceId: 'wf-3' }, 'tnb'],
+  ['rq', 'request', 'rq-61', 'RQ-2026-000061', 'Bổ sung 2 kỹ sư hoàn thiện từ 13/10', 'p-luat', '2026-10-01T09:00:00+07:00', '[Request] Đề xuất trực tiếp', true, true, false, { requestId: 'rq-61' }, null],
+  ['mr', 'project', 'mr-2688', 'MR-2026-2688', 'Thép D16 + D10 móng nhà xưởng 3', 'p-luat', '2026-10-06T09:00:00+07:00', 'Đề xuất vật tư', true, false, false, { requestId: 'mr-2688', projectId: 'smb', requestOrigin: 'project', siteWarehouseId: 'wh' }, 'smb'],
+  ['wf', 'workflow', 'wf-5', 'WF-2026-050', 'Mua nóng máy đầm cóc', 'p-luat', '2026-10-07T07:30:00+07:00', 'Quy trình cấp vật tư công trường', true, false, false, { instanceId: 'wf-5' }, 'smb'],
+  ['wf', 'workflow', 'wf-6', 'WF-2026-019', 'Cấp gạch block đợt 1', 'p-linh', '2026-06-16T08:00:00+07:00', 'Quy trình cấp vật tư công trường', true, true, true, { instanceId: 'wf-6' }, 'tnb'],
+  ['po', 'procurement', 'po-1', 'PO-2026-0131', 'Thép Hòa Phát · 1,2 tỷ', 'p-chung', '2026-10-08T14:00:00+07:00', 'Đơn hàng', true, false, false, { poId: 'po-1', projectId: 'smb' }, 'smb'],
+  ['daily_log', 'project', 'dl-1', 'NK 11/10', 'Nhật ký 11/10 · Sơn Miền Bắc', 'p-do', '2026-10-12T15:00:00+07:00', 'Nhật ký thi công', false, false, false, { dailyLogId: 'dl-1', projectId: 'smb' }, 'smb'],
+  ['leave', 'hrm', 'np-41', 'NP-2026-041', 'Trần Văn Hải nghỉ phép năm 2 ngày 08/10', 'p-ha', '2026-10-12T09:00:00+07:00', 'Nghỉ phép', false, false, false, { requestId: 'np-41' }, null],
+  ['wf', 'workflow', 'wf-7', 'WF-2026-052', 'Thanh toán đợt 3 thầu phụ cơ điện', null, '2026-10-12T16:00:00+07:00', '[Request] Đề xuất trực tiếp', false, false, false, { instanceId: 'wf-7' }, null],
+  ['wms_tx', 'warehouse', 'tx-1', 'tx-po-delivery-9f1c2d3e4a5b', 'Phiếu nhập kho · Kho SMB', null, '2026-10-05T10:00:00+07:00', 'Phiếu kho', true, true, false, { transactionId: 'tx-1', type: 'IMPORT' }, 'smb'],
+];
+const PEOPLE_BY_ID = Object.fromEntries(BY_PERSON.map(([userId, name, unitId]) => [userId, { userId, name, unitId }]));
+const ALL_ITEMS: FlowItem[] = ITEM_SEEDS.map(([source, module, id, code, title, holderId, since, kindName, stuck, overdue, dead, ref, projectId]) => {
+  const holder = holderId ? PEOPLE_BY_ID[holderId] : null;
+  const role = !holder && source === 'wms_tx' ? 'Thủ kho' : null;
+  return {
+    source, module, kind: 'watch', id, code, title,
+    who: holder ? `${holder.name} đang giữ` : role ? `Chờ ${role}` : 'Chưa giao người', whoId: holder?.userId ?? null,
+    meta: kindName + (projectId ? ` · ${projectId.toUpperCase()}` : ''), dueAt: overdue ? '2026-10-10T17:00:00+07:00' : null, status: 'PENDING', ref,
+    holder, holderRole: role, sender: { userId: 'p-thao', name: 'Nguyễn Phương Thảo', unitId: U.pm }, since,
+    stuck, overdue, dead, slaDefault: !overdue, kindName, projectId, projectCode: projectId ? projectId.toUpperCase() : null,
+  };
+});
+export const buildFlowItemsFixture = (filter: FlowItemsFilter, limit = 50, offset = 0): FlowItemsPage => {
+  const rows = ALL_ITEMS.filter(item =>
+    (!filter.holderUserId || item.holder?.userId === filter.holderUserId)
+    && (!filter.holderUnit || item.holder?.unitId === filter.holderUnit)
+    && (!filter.source || item.source === filter.source)
+    && (!filter.kindName || item.kindName === filter.kindName)
+    && (!filter.project || item.projectId === filter.project)
+    && (!filter.role || item.holderRole === filter.role)
+    && (filter.status === 'stuck' ? item.stuck : filter.status === 'overdue' ? item.overdue : filter.status === 'dead' ? item.dead
+      : filter.status === 'unassigned' ? (!item.holder && !item.holderRole) : filter.status === 'role' ? (!item.holder && !!item.holderRole) : true));
+  return { access: true, generatedAt: '2026-10-07T08:25:00+07:00', total: rows.length, limit, offset, items: rows.slice(offset, offset + limit) };
+};

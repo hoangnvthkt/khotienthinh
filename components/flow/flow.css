@@ -100,3 +100,36 @@
 .vdb-pri:hover { opacity: .92; }
 .dark .vdb-pri { color: #111; }
 .vfl-spark { width: 84px; height: 26px; margin-left: auto; align-self: center; flex: none; }
+
+/* Ngăn danh sách phiếu (PR-3) */
+.vfl-items { width: min(720px, 100%); }
+.vfl-item-list { display: grid; gap: 4px; }
+.vfl-item { display: grid; grid-template-columns: 112px minmax(0, 1fr) 150px 92px; gap: 10px; align-items: center; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: 10px; border: 1px solid var(--vcc-border, #e5e5e5); background: var(--db-card); border-left-width: 3px; }
+.vfl-item:hover { background: var(--db-hover); }
+.vfl-item[data-tone="overdue"] { border-left-color: var(--t-amber-fg); }
+.vfl-item[data-tone="stuck"], .vfl-item[data-tone="dead"] { border-left-color: var(--t-rose-fg); }
+.vfl-item-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; font-weight: 600; color: var(--vcc-accent, #1f8a70); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vfl-item-main { min-width: 0; display: grid; gap: 1px; }
+.vfl-item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vfl-item-meta { font-size: 11.5px; color: var(--db-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vfl-item-holder { min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vfl-item-age { text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; display: grid; }
+.vfl-item-age small { font-size: 10.5px; font-weight: 500; color: var(--db-muted); }
+.vfl-item-age[data-tone="warn"] { color: var(--t-amber-fg); }
+.vfl-item-age[data-tone="bad"] { color: var(--t-rose-fg); }
+.vfl-items-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vfl-items-foot [data-tone="ok"] { color: var(--t-green-fg); font-weight: 600; }
+.vfl-items-foot [data-tone="bad"] { color: var(--t-rose-fg); font-weight: 600; }
+.vfl-remind { display: grid; gap: 8px; width: 100%; }
+.vfl-remind .vdb-select { max-width: none; width: 100%; }
+@container (max-width: 640px) {
+  .vfl-item { grid-template-columns: minmax(0, 1fr) 84px; }
+  .vfl-item-code { grid-column: 1; }
+  .vfl-item-main { grid-column: 1; }
+  .vfl-item-holder { grid-column: 1; }
+  .vfl-item-age { grid-column: 2; grid-row: 1 / span 3; }
+}
+.vfl-row-acts { display: flex; gap: 4px; flex: none; }
+.vfl-mini { height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vcc-border, #e5e5e5); font-size: 11.5px; font-weight: 600; color: var(--db-fg2); background: var(--db-card); }
+.vfl-mini:hover { background: var(--db-hover); }
