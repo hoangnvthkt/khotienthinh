@@ -291,3 +291,12 @@ Phòng ban là ô sàn (số người thật), công trường có cần cẩu; 
 90 ngày; phiếu chờ chất đống ở khay bàn nhận (cam = đang chờ, đỏ = đứng yên, số thật); người giữ nhiều việc có tên và huy hiệu đỏ; bấm ô → bảng số của phòng / công trường;
 Dừng / 1× 3× 10× / Tự xoay / Toàn cảnh; dòng thông báo "A giao phiếu → B" mỗi lần trao. Để lên sản phẩm cần: nguồn dữ liệu theo người (PR-3 đã có), người thật theo
 phòng, đo WebKit (three.js vẽ liên tục ~ GPU), và quyết định của chủ SP về vị trí (chế độ trình chiếu trong tab Dòng chảy hay màn riêng cho TV phòng họp).
+
+**Khuôn viên thật (v1, 13/10 tối):** chủ SP gửi ảnh văn phòng và ảnh chụp trên cao → `mockups/flow-3d-campus-v1.html` dựng theo ảnh: văn phòng 3 tầng mặt nan gỗ,
+hai mảng kính lệch, logo xanh "TIEN THINH", biển "VĂN PHÒNG THIẾT KẾ - KINH DOANH", mái hiên; nhà máy 3 khoang mái xanh có ô lấy sáng, khối trắng phía trước ghi
+"XÂY DỰNG & KẾT CẤU THÉP", khoang phụ; hồ nước với chòi lục giác và cầu gỗ; nhà mái đỏ; nhà bảo vệ và dãy nhà phụ mái xanh; hàng rào, cổng trượt, đường có vạch,
+hàng cau dọc đường; xe ở sân. Phòng ban đặt vào toà nhà (tầng là giả định, ghi rõ trên màn): T1 Tài chính - Kế toán, T2 Quản lý dự án, T3 Ban lãnh đạo + Hành chính -
+Nhân sự; Vật tư - Thiết bị ở kho đầu khoang tây, Văn phòng nhà máy ở khối trắng, 44 người chưa gắn phòng ở sân nhà máy. Nút "Nhìn vào trong" làm mờ mặt tiền để thấy
+từng tầng. Người đi theo đường thật: lõi thang → cửa → sân → cửa toà kia; 3 xe công trường (Sơn Miền Bắc, Thú nhồi bông GĐ2, G3) từ đường vào cổng, dừng ở sân,
+người xuống mang đề xuất vật tư tới Vật tư hoặc Quản lý dự án theo số thật. Góc nhìn: Toàn cảnh · Văn phòng · Nhà máy · Cổng. Ảnh `mockups/flow-3d-campus-v1-*.png`.
+Cần chủ SP xác nhận tầng thật của từng phòng và vị trí kho / văn phòng nhà máy.
