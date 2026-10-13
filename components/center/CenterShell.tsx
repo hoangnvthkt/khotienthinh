@@ -21,6 +21,8 @@ import { routeTitle } from '../../lib/dashboard/dashboardModel';
 import { registerCenterOpener } from '../../lib/center/centerOpen';
 import AvatarMenu from './AvatarMenu';
 import type { DashboardState } from '../dashboard/DashboardView';
+import type { FlowState } from '../flow/FlowView';
+import type { FlowQuery, FlowResult, FlowScope } from '../../lib/center/centerFlowService';
 import type { LoadMaterialMoves } from '../dashboard/StockTable';
 import './center.css';
 
@@ -42,6 +44,9 @@ const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: fal
 const DASHBOARD_TAB: CenterWorkTab = { id: 'dashboard', title: 'Bảng điều khiển', closable: false };
 const ALL_BOARDS: DashboardId[] = ['portfolio', 'cashflow', 'materials', 'debt'];
 const LazyDashboard = React.lazy(() => import('../dashboard/DashboardView'));
+const FLOW_TAB: CenterWorkTab = { id: 'flow', title: 'Dòng chảy công việc', closable: false };
+const LazyFlow = React.lazy(() => import('../flow/FlowView'));
+const FLOW_REFRESH_MS = 60_000;
 
 interface OpenTab extends CenterWorkTab { item: WorkItem | null; module: CenterModuleKey; target: ItemDrillTarget }
 
@@ -109,6 +114,12 @@ export interface CenterShellProps {
   userId?: string;
   /** Mở thẳng Bảng điều khiển ở một bảng (và dự án) — link từ module khác; nonce đổi = yêu cầu mới. */
   initialDashboard?: { board: DashboardId; projectId?: string | null; nonce: number } | null;
+  /** Dòng chảy công việc (vcc_flow_v1); không truyền = chưa có tab. */
+  loadFlow?: (query: FlowQuery) => Promise<FlowResult>;
+  /** Kiểm có phạm vi xem không trước khi hiện tab (nhẹ, không tính số); không truyền = có loadFlow là hiện tab. */
+  loadFlowAccess?: () => Promise<{ access: boolean; scope: FlowScope | null }>;
+  /** Mở thẳng tab Dòng chảy công việc (/center?view=flow). */
+  initialTab?: 'flow' | null;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -121,6 +132,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
+  loadFlow, loadFlowAccess, initialTab = null,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
@@ -277,6 +289,67 @@ const CenterShell: React.FC<CenterShellProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadDashboard, dashboardWanted, dashboardAttempt]);
 
+  // Dòng chảy công việc (chủ SP 13/10): tab chỉ hiện khi máy chủ xác nhận có phạm vi xem; số liệu tải khi mở tab lần đầu và giữ khi
+  // chuyển tab; đang xem tab + cửa sổ đang hiện thì mỗi phút lấy số mới (vẫn hiện số cũ trong lúc chờ). Tab ẩn: không hẹn giờ gì.
+  const [flowAccess, setFlowAccess] = useState<boolean | null>(loadFlow && !loadFlowAccess ? true : null);
+  useEffect(() => {
+    if (!loadFlow || !loadFlowAccess) return undefined;
+    let alive = true;
+    loadFlowAccess()
+      .then(result => { if (alive) setFlowAccess(result.access); })
+      .catch(error => { console.warn('Flow access check failed:', error); if (alive) setFlowAccess(false); });
+    return () => { alive = false; };
+  }, [loadFlow, loadFlowAccess]);
+  const hasFlow = !!loadFlow && flowAccess === true;
+  const [flowQuery, setFlowQuery] = useState<FlowQuery>({ range: 90, unitId: null, projectId: null });
+  const [flow, setFlow] = useState<FlowState | null>(null);
+  const [flowAttempt, setFlowAttempt] = useState(0);
+  const [flowBusy, setFlowBusy] = useState(false);
+  const [flowNote, setFlowNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (initialTab === 'flow' && loadFlow) { setActiveTab(FLOW_TAB.id); setMobilePane('today'); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
+  const flowWanted = activeTab === FLOW_TAB.id || flow !== null;
+  useEffect(() => {
+    if (!loadFlow || !flowWanted) return undefined;
+    let alive = true;
+    setFlowNote(null);
+    setFlowBusy(true);
+    setFlow(current => (current?.status === 'ready' ? current : { status: 'loading' }));
+    loadFlow(flowQuery)
+      .then(result => {
+        if (!alive) return;
+        if (result.access === false) {
+          setFlow({ status: 'error', message: result.reason === 'no_scope' ? 'Bạn chưa có phạm vi xem dòng chảy công việc.' : 'Chưa vào được Trung tâm điều hành.' });
+          return;
+        }
+        setFlow({ status: 'ready', data: result });
+      })
+      .catch(error => {
+        if (!alive) return;
+        const message = error instanceof Error ? error.message : 'Lỗi không xác định';
+        setFlow(current => (current?.status === 'ready' ? current : { status: 'error', message }));
+        setFlowNote(message);
+      })
+      .finally(() => { if (alive) setFlowBusy(false); });
+    return () => { alive = false; };
+    // flowWanted chỉ chuyển false → true một lần; tải lại theo flowQuery / flowAttempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadFlow, flowWanted, flowQuery, flowAttempt]);
+  const flowShowing = activeTab === FLOW_TAB.id && flow?.status === 'ready' && !(narrow && mobilePane !== 'today');
+  useEffect(() => {
+    if (!loadFlow || !flowShowing) return undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = document.visibilityState === 'visible' ? setTimeout(() => setFlowAttempt(value => value + 1), FLOW_REFRESH_MS) : null;
+    };
+    schedule();
+    document.addEventListener('visibilitychange', schedule);
+    return () => { if (timer) clearTimeout(timer); document.removeEventListener('visibilitychange', schedule); };
+  }, [loadFlow, flowShowing, flowAttempt, flowQuery]);
+
   const openItem = useCallback((item: WorkItem) => {
     openTab({ id: workItemKey(item), title: displayCode(item), closable: true, item, module: item.module, target: resolveDrillTarget(item) });
   }, [openTab]);
@@ -405,7 +478,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     onScroll: (event: React.UIEvent<HTMLDivElement>) => { scrollTops.current.set(id, event.currentTarget.scrollTop); },
   });
 
-  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...openTabs];
+  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...(hasFlow ? [FLOW_TAB] : []), ...openTabs];
   const current = openTabs.find(tab => tab.id === activeTab);
   // Lớp đang mở, từ dưới lên: hồ sơ mở trên điện thoại → thư mục thao tác → form.
   const mobileRecord = narrow && mobilePane === 'today' && !!current;
@@ -528,6 +601,14 @@ const CenterShell: React.FC<CenterShellProps> = ({
               <React.Suspense fallback={null}>
                 <LazyDashboard state={dashboard} isDark={isDark} refreshing={dashboardBusy} refreshNote={dashboardNote} loadMoves={loadMaterialMoves} loadDocs={loadMetricDocs} storageOwner={userId}
                   onRetry={() => setDashboardAttempt(value => value + 1)} onOpen={openDashboardRoute} focus={dashboardFocus} />
+              </React.Suspense>
+            </div>
+          )}
+          {hasFlow && flow && (
+            <div {...panelProps(FLOW_TAB.id)}>
+              <React.Suspense fallback={null}>
+                <LazyFlow state={flow} isDark={isDark} query={flowQuery} onQueryChange={setFlowQuery} refreshing={flowBusy} refreshNote={flowNote}
+                  onRetry={() => setFlowAttempt(value => value + 1)} onOpen={openDashboardRoute} now={now} />
               </React.Suspense>
             </div>
           )}

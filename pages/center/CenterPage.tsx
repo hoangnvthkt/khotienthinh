@@ -13,6 +13,7 @@ import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useCenterAccess } from '../../lib/center/centerService';
 import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves, fetchMetricDocs } from '../../lib/dashboard/dashboardService';
+import { fetchFlow, fetchFlowAccess, type FlowQuery } from '../../lib/center/centerFlowService';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -34,6 +35,10 @@ const Gate: React.FC<{ onOpenMenu?: () => void; onHome?: () => void; children: R
   </div>
 );
 
+// Dòng chảy công việc: hàm cố định (CenterShell tải lại khi hàm đổi); máy chủ tự cắt theo quyền người gọi.
+const loadFlow = (query: FlowQuery) => fetchFlow(query);
+const loadFlowAccess = () => fetchFlowAccess();
+
 const CenterPage: React.FC = () => {
   const { user, employees, appSettings } = useApp();
   const { isDark, toggleTheme } = useTheme();
@@ -46,6 +51,8 @@ const CenterPage: React.FC = () => {
     if (board !== 'portfolio' && board !== 'cashflow' && board !== 'materials' && board !== 'debt') return null;
     return { board, projectId: params.get('project'), nonce: Date.now() } as const;
   }, [location.search]);
+  // /center?view=flow: mở thẳng tab Dòng chảy công việc.
+  const initialTab = useMemo(() => (new URLSearchParams(location.search).get('view') === 'flow' ? 'flow' as const : null), [location.search]);
   const outlet = useOutletContext<LayoutOutletContext | undefined>();
   // Vừa bật giao diện Trung tâm điều hành → lời chào; chạy xong xoá cờ để tải lại trang không chạy lại.
   const playIntro = (location.state as { vccIntro?: boolean } | null)?.vccIntro === true;
@@ -103,6 +110,9 @@ const CenterPage: React.FC = () => {
         onLogout={onLogout}
         userId={user.id}
         initialDashboard={initialDashboard}
+        loadFlow={loadFlow}
+        loadFlowAccess={loadFlowAccess}
+        initialTab={initialTab}
       />
     </CenterEntrance>
   );
