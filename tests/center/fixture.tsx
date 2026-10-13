@@ -18,8 +18,8 @@ import type { CenterToday } from '../../lib/center/centerTodayService';
 import type { CenterActionFlags, CenterModal } from '../../lib/center/centerActions';
 import { parseCenterLayout, type CenterLayout, type CenterLayoutRecord } from '../../lib/center/centerLayout';
 import { buildDashboardFixture, fixtureDocs, fixtureMoves } from './dashboardFixture';
-import { buildFlowFixture } from './flowFixture';
-import type { FlowQuery, FlowResult } from '../../lib/center/centerFlowService';
+import { buildFlowFixture, buildFlowItemsFixture } from './flowFixture';
+import type { FlowItemsFilter, FlowQuery, FlowRemindOutcome, FlowResult } from '../../lib/center/centerFlowService';
 import type { DashDocQuery, DashMoveKind } from '../../lib/dashboard/dashboardTypes';
 import '../../index.css';
 
@@ -60,6 +60,17 @@ const loadFlow = FLOW === 'off' ? undefined : (query: FlowQuery) => new Promise<
   }, FLOW === 'slow' ? 1500 : 120);
 });
 const loadFlowAccess = () => Promise.resolve(FLOW === 'none' ? { access: false, scope: null } : { access: true, scope: buildFlowFixture(FLOW === 'error' || FLOW === 'flaky' || FLOW === 'slow' ? 'bgd' : FLOW).scope });
+// Danh sách phiếu + nhắc (PR-3): lọc cuối ghi ở window.__flowItemsFilter; nhắc ghi ở window.__flowReminds (không gửi gì thật).
+const loadFlowItems = (filter: FlowItemsFilter, limit?: number, offset?: number) => new Promise<ReturnType<typeof buildFlowItemsFixture>>(resolve => {
+  (window as unknown as { __flowItemsFilter: FlowItemsFilter }).__flowItemsFilter = filter;
+  setTimeout(() => resolve(buildFlowItemsFixture(filter, limit, offset)), 120);
+});
+const remindFlow = (filter: FlowItemsFilter, note?: string | null) => new Promise<FlowRemindOutcome>(resolve => {
+  const w = window as unknown as { __flowReminds: Array<{ filter: FlowItemsFilter; note: string | null }> };
+  w.__flowReminds = [...(w.__flowReminds || []), { filter, note: note || null }];
+  const holders = [...new Map(buildFlowItemsFixture(filter, 200).items.filter(item => item.holder).map(item => [item.holder!.userId, item.holder!])).values()];
+  setTimeout(() => resolve({ access: true, sent: holders.length, skipped: 0, holders: holders.map(h => ({ userId: h.userId, name: h.name, items: 1, status: 'sent' as const })) }), 150);
+});
 
 const item = (partial: Partial<WorkItem> & Pick<WorkItem, 'source' | 'module' | 'kind' | 'id' | 'code' | 'title'>): WorkItem => ({
   who: null, whoId: null, meta: null, dueAt: null, status: null, ref: {}, ...partial,
@@ -330,6 +341,8 @@ const Fixture: React.FC = () => {
             loadMetricDocs={loadMetricDocs}
             loadFlow={loadFlow}
             loadFlowAccess={loadFlowAccess}
+            loadFlowItems={FLOW === 'noitems' ? undefined : loadFlowItems}
+            remindFlow={FLOW === 'noitems' ? undefined : remindFlow}
             initialTab={params.get('view') === 'flow' ? 'flow' : null}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}

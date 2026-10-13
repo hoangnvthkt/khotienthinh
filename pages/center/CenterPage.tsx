@@ -13,7 +13,7 @@ import { canAccessRoute } from '../../lib/routeAccess';
 import { CENTER_ROUTE } from '../../lib/center/centerPermissions';
 import { useCenterAccess } from '../../lib/center/centerService';
 import { fetchDashboard, fetchDashboardAccess, fetchMaterialMoves, fetchMetricDocs } from '../../lib/dashboard/dashboardService';
-import { fetchFlow, fetchFlowAccess, type FlowQuery } from '../../lib/center/centerFlowService';
+import { fetchFlow, fetchFlowAccess, fetchFlowItems, remindFlow, type FlowItemsFilter, type FlowQuery } from '../../lib/center/centerFlowService';
 import type { LayoutOutletContext } from '../../lib/routeChrome';
 import '../../components/center/center.css';
 
@@ -38,6 +38,8 @@ const Gate: React.FC<{ onOpenMenu?: () => void; onHome?: () => void; children: R
 // Dòng chảy công việc: hàm cố định (CenterShell tải lại khi hàm đổi); máy chủ tự cắt theo quyền người gọi.
 const loadFlow = (query: FlowQuery) => fetchFlow(query);
 const loadFlowAccess = () => fetchFlowAccess();
+const loadFlowItems = (filter: FlowItemsFilter, limit?: number, offset?: number) => fetchFlowItems(filter, limit, offset);
+const remindFlowHolders = (filter: FlowItemsFilter, note?: string | null) => remindFlow(filter, note);
 
 const CenterPage: React.FC = () => {
   const { user, employees, appSettings } = useApp();
@@ -112,6 +114,8 @@ const CenterPage: React.FC = () => {
         initialDashboard={initialDashboard}
         loadFlow={loadFlow}
         loadFlowAccess={loadFlowAccess}
+        loadFlowItems={loadFlowItems}
+        remindFlow={remindFlowHolders}
         initialTab={initialTab}
       />
     </CenterEntrance>

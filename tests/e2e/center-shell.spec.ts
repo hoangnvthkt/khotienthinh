@@ -899,3 +899,56 @@ test("flow: hidden without scope, refresh failure keeps old numbers, deep link",
   await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" })).toHaveAttribute("aria-selected", "true");
   await page.screenshot({ path: `${shots}/desktop-flow-head.png` });
 });
+
+// Dòng chảy công việc PR-3: "Xem" → danh sách phiếu đang giữ (bấm phiếu mở thành tab), "Nhắc" gửi tới người giữ, "Dọn việc cũ", chip nguồn → danh sách.
+test("flow: item list, open record as tab, remind, clean up old items", async ({ page }, info) => {
+  const tag = info.project.name;
+  const narrow = page.viewportSize()!.width < 640;
+  await openFlow(page);
+  const panel = page.getByRole("complementary", { name: "Điểm nghẽn" });
+  // Xem việc Nguyễn Văn Luật đang giữ: 6 phiếu, phiếu chết lên đầu.
+  await panel.getByRole("button", { name: "Xem" }).first().click();
+  const list = page.getByRole("dialog", { name: "Nguyễn Văn Luật đang giữ" });
+  await expect(list).toContainText("6 phiếu");
+  await expect(list.getByRole("list").getByRole("button")).toHaveCount(6);
+  await expect(list.getByRole("list").getByRole("button").first()).toContainText("WF-2026-018");
+  expect(await page.evaluate(() => (window as unknown as { __flowItemsFilter: { holderUserId: string } }).__flowItemsFilter.holderUserId)).toBe("p-luat");
+  await page.screenshot({ path: `${shots}/${tag}-flow-items-person.png`, fullPage: narrow });
+  // Bấm phiếu → mở thành tab của Center (StubRenderer hiện route), tab Dòng chảy vẫn còn.
+  await list.getByRole("list").getByRole("button", { name: /MR-2026-2688/ }).click();
+  const workTabs = page.getByRole("tablist", { name: "Vùng làm việc" });
+  await expect(workTabs.getByRole("tab", { name: "MR-2026-2688" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("MR-2026-2688 · Thép D16 + D10 móng nhà xưởng 3");
+  await page.getByRole("button", { name: "Đóng MR-2026-2688" }).click();
+  if (narrow) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+  await workTabs.getByRole("tab", { name: "Dòng chảy công việc" }).click();
+  // Nhắc: xác nhận rồi gửi, kết quả hiện trong ngăn; máy chủ nhận đúng lọc + ghi chú.
+  await panel.getByRole("button", { name: "Xem" }).first().click();
+  await list.getByRole("button", { name: /^Nhắc 1 người/ }).click();
+  await list.getByRole("textbox", { name: "Ghi chú nhắc" }).fill("Xong trước thứ Sáu");
+  await list.getByRole("button", { name: /^Gửi nhắc tới 1 người/ }).click();
+  await expect(list.getByRole("status")).toContainText("Đã nhắc 1 người");
+  expect(await page.evaluate(() => (window as unknown as { __flowReminds: Array<{ filter: { holderUserId: string }; note: string }> }).__flowReminds)).toEqual([{ filter: { projectId: null, unitId: null, holderUserId: "p-luat" }, note: "Xong trước thứ Sáu" }]);
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  // Dọn việc cũ: phiếu chờ trên 30 ngày; chip nguồn → danh sách của nguồn đó; phiếu chưa giao người không có nút Nhắc.
+  await panel.getByRole("button", { name: /^Dọn \d+ việc cũ/ }).click();
+  const dead = page.getByRole("dialog", { name: "Dọn việc cũ" });
+  await expect(dead.getByRole("list").getByRole("button")).toHaveCount(3);
+  await page.keyboard.press("Escape");
+  await page.getByRole("group", { name: "Việc đang chờ theo nguồn" }).getByRole("button", { name: /^Phiếu kho/ }).click();
+  const wms = page.getByRole("dialog", { name: "Phiếu kho" });
+  await expect(wms.getByRole("list").getByRole("button")).toHaveCount(1);
+  await expect(wms).toContainText("Chờ Thủ kho");
+  await expect(wms.getByRole("button", { name: /^Nhắc/ })).toHaveCount(0);
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-flow-items.png`, fullPage: narrow });
+  await page.keyboard.press("Escape");
+  // Không nối danh sách (?flow=noitems): không có nút Xem / Dọn, chip mở bảng theo loại phiếu như PR-2.
+  if (tag === "desktop") {
+    await openFlow(page, "&flow=noitems");
+    await expect(page.getByRole("complementary", { name: "Điểm nghẽn" }).getByRole("button", { name: "Xem" })).toHaveCount(0);
+    await page.getByRole("group", { name: "Việc đang chờ theo nguồn" }).getByRole("button", { name: /^Quy trình/ }).click();
+    await expect(page.getByRole("dialog", { name: /việc đang chờ theo loại phiếu/ })).toBeVisible();
+  }
+});

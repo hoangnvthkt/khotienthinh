@@ -1,6 +1,6 @@
 # Dòng chảy công việc — mô hình điều hành trực quan cho Ban lãnh đạo (13/10/2026)
 
-Trạng thái: chủ SP **đồng ý cả 9 câu** (13/10) → **PR-1 #183 lên production + merged 13/10** (mục 10) → **PR-2 tab giao diện đã code** (mục 11), chờ duyệt merge. Quyền `center.flow.view` đã cấp cho 5 người Ban lãnh đạo 13/10. Bản xem thử v0 ở mục 8.
+Trạng thái: chủ SP **đồng ý cả 9 câu** (13/10) → **PR-1 #183** (mục 10) và **PR-2 #186** (mục 11) **lên production + merged 13/10** → **PR-3 danh sách phiếu + Nhắc đã code** (mục 12), chờ duyệt deploy migration + merge. Quyền `center.flow.view` đã cấp cho 5 người Ban lãnh đạo 13/10. Bản xem thử v0 ở mục 8.
 
 Tệp đi kèm:
 
@@ -244,3 +244,29 @@ trưởng phòng chỉ thấy phòng mình. WebKit đứng yên: 0 timer / anima
 
 Chưa làm (đợt 2–3, theo lộ trình mục 7): Bản đồ công trường → phòng (máy chủ chưa trả dòng theo dự án), nút Nhắc / Xem phiếu / Chuyển người / Dọn việc cũ,
 trọng số theo loại phiếu, ngưỡng ở Thiết lập, chế độ trình chiếu 3D.
+
+## 12. PR-3 — danh sách phiếu đang chờ, mở phiếu, Nhắc, Dọn việc cũ (13/10/2026)
+
+Tệp: `supabase/migrations/20261013180000_center_flow_items_v1.sql` · smoke `supabase/tests/center_flow_items_smoke.sql` · gỡ `center_flow_items_rollback.sql`
+· `components/flow/FlowItemsDrawer.tsx` · nối vào `FlowView` / `FlowPanel` / `CenterShell` / `CenterPage` · service + test `lib/center/centerFlowService.ts`, `__tests__/centerFlowItems.test.ts`.
+
+| Hàm máy chủ | Làm gì |
+|---|---|
+| `app_private.vcc_flow_thresholds_v1()` | ngưỡng dùng chung (đứng yên 3 ngày làm việc, phiếu chết 30 ngày, SLA mặc định 48 giờ, tuần 6 ngày) |
+| `app_private.vcc_flow_scope_v1(project, unit)` | phạm vi người gọi — cùng luật PR-1 (toàn công ty / phòng mình / dự án mình), ngoài phạm vi → `42501 FLOW_SCOPE_DENIED` |
+| `app_private.vcc_flow_waiting_rows_v1` | mọi việc đang chờ hôm nay trong phạm vi, 19 nguồn, có mã / tiêu đề / người gửi / người giữ / `ref` mở phiếu; bước quy trình tự nhận ra là phiếu Yêu cầu, đề xuất vật tư hay phiếu quy trình chung |
+| `public.vcc_flow_items_v1(filter, limit, offset)` | trang danh sách (≤ 200 dòng); lọc `holderUserId` · `holderUnit` · `source` · `kindName` · `status` (stuck / overdue / dead / unassigned / role) · `role` · `project`; xếp phiếu chết → đứng yên → quá hạn → cũ nhất; **mỗi dòng đúng khuôn `vcc_item` của "Việc của tôi"** nên Center mở phiếu thành tab bằng cơ chế sẵn có (`resolveDrillTarget`), nhãn tab "Đang theo dõi" |
+| `public.vcc_flow_remind_v1(filter, note)` | nhắc người đang giữ các việc khớp lọc: một thông báo mỗi người (tiêu đề "Nhắc: N việc đang chờ bạn xử lý", thân ghi mã phiếu + ghi chú, link `/center`), push điện thoại qua trigger sẵn có; **mỗi người tối đa 1 lần / 24 giờ / người nhắc**, không tự nhắc mình, việc chờ một vai (HR, Kế toán, Thủ kho…) không nhắc; `audit_trail` mỗi người |
+
+Giao diện: nút **Xem** cạnh mỗi người ở ngăn Điểm nghẽn và ngăn phòng; **Mở N việc đang chờ** ở ngăn phòng / dự án / kết quả "Đang chờ"; **Dọn N việc cũ** (chờ trên 30 ngày) và **N việc chưa giao người** ở tổng quan;
+chip nguồn, loại phiếu, vai chờ → danh sách. Ngăn danh sách: mã · tiêu đề · nguồn / loại / dự án / người gửi · người giữ · chờ bao lâu (vạch trái đỏ = đứng yên / phiếu chết, cam = quá hạn); bấm phiếu → tab;
+chân ngăn **Nhắc N người** → ô ghi chú + xác nhận → "Đã nhắc N người · M bỏ qua". Danh sách luôn nằm trong phạm vi đang xem (phòng / dự án ở thanh công cụ).
+
+Không có Zalo: hệ thống chưa có kênh gửi Zalo (chỉ phát hiện trình duyệt Zalo ở chấm công); nhắc = thông báo trong app + push. Chuyển người xử lý / hủy phiếu: mở phiếu và dùng thao tác gốc của module
+(đổi người ngay trên sơ đồ cần sửa động cơ quy trình, để đợt sau).
+
+Kiểm (13/10): smoke Cloud rollback (6 vai; danh sách, lọc từng loại, phân trang, kẹp 200, khuôn vcc_item, nhắc + audit + chống nhắc dồn + tự mình + người nhắc khác); tsc; vitest 3.542
+(gồm 4 test bộ đọc); Playwright 39 bài × 3 khổ (Xem → 6 phiếu, phiếu chết lên đầu, bấm phiếu mở tab, Nhắc với ghi chú → máy chủ nhận đúng lọc, Dọn việc cũ 3 phiếu, chip Phiếu kho → "Chờ Thủ kho"
+không có nút Nhắc, không nối danh sách thì về bảng PR-2); WebKit đứng yên 4 bài. Ảnh: `evidence/2026-10-13-flow-items-{desktop,iphone}.png`.
+
+Chạy lại smoke: `node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/20261013180000_center_flow_items_v1.sql --smoke supabase/tests/center_flow_items_smoke.sql`.

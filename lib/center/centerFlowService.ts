@@ -164,3 +164,80 @@ export const fetchFlowAccess = async (): Promise<{ access: boolean; scope: FlowS
   const parsed = parseFlowResult({ ...r, waiting: {}, gaps: {}, thresholds: {} });
   return { access: true, scope: parsed.access ? parsed.scope : null };
 };
+
+// ── Danh sách phiếu đang chờ (vcc_flow_items_v1) + nhắc người giữ việc (vcc_flow_remind_v1) — PR-3 ──
+import type { WorkItem, WorkItemKind, WorkItemSource } from './workItemsService';
+import type { CenterModuleKey } from './centerRegistry';
+
+/** Lọc danh sách; projectId / unitId là phạm vi (như vcc_flow_v1), còn lại lọc trong phạm vi đó. */
+export interface FlowItemsFilter {
+  projectId?: string | null; unitId?: string | null;
+  holderUserId?: string | null; holderUnit?: string | null; source?: string | null; kindName?: string | null;
+  status?: 'stuck' | 'overdue' | 'dead' | 'unassigned' | 'role' | null; role?: string | null; project?: string | null;
+}
+export interface FlowItemPerson { userId: string; name: string | null; unitId: string }
+/** Một phiếu đang chờ: đúng khuôn WorkItem của "Việc của tôi" (mở được thành tab) + thông tin dòng chảy. */
+export interface FlowItem extends WorkItem {
+  holder: FlowItemPerson | null;
+  holderRole: string | null;
+  sender: FlowItemPerson | null;
+  since: string;
+  stuck: boolean; overdue: boolean; dead: boolean; slaDefault: boolean;
+  kindName: string; projectId: string | null; projectCode: string | null;
+}
+export interface FlowItemsPage { access: true; generatedAt: string; total: number; limit: number; offset: number; items: FlowItem[] }
+export type FlowItemsResult = FlowItemsPage | FlowDenied;
+export interface FlowRemindHolder { userId: string; name: string | null; items: number; status: 'sent' | 'skipped' | 'self' }
+export interface FlowRemindResult { access: true; sent: number; skipped: number; holders: FlowRemindHolder[] }
+export type FlowRemindOutcome = FlowRemindResult | FlowDenied;
+
+const KINDS: WorkItemKind[] = ['approve', 'do', 'confirm', 'read', 'wait', 'watch'];
+const MODULES: CenterModuleKey[] = ['project', 'request', 'workflow', 'work', 'procurement', 'warehouse', 'finance', 'office', 'hrm', 'vehicle'];
+const person = (v: unknown): FlowItemPerson | null => {
+  if (!v || typeof v !== 'object') return null;
+  const p = obj(v);
+  return typeof p.userId === 'string' ? { userId: p.userId, name: strOrNull(p.name), unitId: str(p.unitId, FLOW_UNASSIGNED) } : null;
+};
+export const parseFlowItem = (raw: unknown): FlowItem | null => {
+  const r = obj(raw);
+  if (typeof r.id !== 'string' || typeof r.source !== 'string') return null;
+  return {
+    source: r.source as WorkItemSource,
+    module: (MODULES.includes(r.module as CenterModuleKey) ? r.module : 'work') as CenterModuleKey,
+    kind: (KINDS.includes(r.kind as WorkItemKind) ? r.kind : 'watch') as WorkItemKind,
+    id: r.id, code: str(r.code, r.id), title: str(r.title), who: strOrNull(r.who), whoId: strOrNull(r.whoId), meta: strOrNull(r.meta),
+    dueAt: strOrNull(r.dueAt), status: strOrNull(r.status), ref: obj(r.ref),
+    holder: person(r.holder), holderRole: strOrNull(r.holderRole), sender: person(r.sender), since: str(r.since),
+    stuck: r.stuck === true, overdue: r.overdue === true, dead: r.dead === true, slaDefault: r.slaDefault === true,
+    kindName: str(r.kindName), projectId: strOrNull(r.projectId), projectCode: strOrNull(r.projectCode),
+  };
+};
+export const parseFlowItemsResult = (raw: unknown): FlowItemsResult => {
+  const r = obj(raw);
+  if (r.access !== true) return { access: false, reason: str(r.reason, 'unknown') };
+  const items = list(r.items).map(parseFlowItem).filter((item): item is FlowItem => !!item);
+  return { access: true, generatedAt: str(r.generatedAt), total: Math.max(num(r.total), items.length), limit: num(r.limit) || items.length, offset: num(r.offset), items };
+};
+export const parseFlowRemindResult = (raw: unknown): FlowRemindOutcome => {
+  const r = obj(raw);
+  if (r.access !== true) return { access: false, reason: str(r.reason, 'unknown') };
+  return {
+    access: true, sent: num(r.sent), skipped: num(r.skipped),
+    holders: list(r.holders).map(h => ({ userId: str(h.userId), name: strOrNull(h.name), items: num(h.items), status: (h.status === 'sent' || h.status === 'self' ? h.status : 'skipped') as FlowRemindHolder['status'] })),
+  };
+};
+const cleanFilter = (filter: FlowItemsFilter): Record<string, string> =>
+  Object.fromEntries(Object.entries(filter).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== ''));
+
+export const fetchFlowItems = async (filter: FlowItemsFilter, limit = 50, offset = 0): Promise<FlowItemsResult> => {
+  const { data, error } = await supabase.rpc('vcc_flow_items_v1', { p_filter: cleanFilter(filter), p_limit: limit, p_offset: offset });
+  if (error) throw error;
+  return parseFlowItemsResult(data);
+};
+export const remindFlow = async (filter: FlowItemsFilter, note?: string | null): Promise<FlowRemindOutcome> => {
+  const { data, error } = await supabase.rpc('vcc_flow_remind_v1', { p_filter: cleanFilter(filter), p_note: note || null });
+  if (error) throw error;
+  return parseFlowRemindResult(data);
+};
+export type LoadFlowItems = (filter: FlowItemsFilter, limit?: number, offset?: number) => Promise<FlowItemsResult>;
+export type RemindFlow = (filter: FlowItemsFilter, note?: string | null) => Promise<FlowRemindOutcome>;

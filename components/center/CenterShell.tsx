@@ -23,7 +23,7 @@ import { registerCenterOpener } from '../../lib/center/centerOpen';
 import AvatarMenu from './AvatarMenu';
 import type { DashboardState } from '../dashboard/DashboardView';
 import type { FlowState } from '../flow/FlowView';
-import type { FlowQuery, FlowResult, FlowScope } from '../../lib/center/centerFlowService';
+import type { FlowQuery, FlowResult, FlowScope, LoadFlowItems, RemindFlow } from '../../lib/center/centerFlowService';
 import type { LoadMaterialMoves } from '../dashboard/StockTable';
 import './center.css';
 
@@ -125,6 +125,9 @@ export interface CenterShellProps {
   initialTab?: 'flow' | null;
   /** Tab Trợ lý: tình trạng + gọi cổng AI (mặc định lib/aiGateway); fixture truyền bản giả lập. */
   assistant?: AssistantHooks;
+  /** Danh sách phiếu đang chờ theo lọc + nhắc người giữ việc (Dòng chảy công việc PR-3). */
+  loadFlowItems?: LoadFlowItems;
+  remindFlow?: RemindFlow;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -137,7 +140,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   loadWorkItems, loadToday = fetchCenterToday,
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
-  loadFlow, loadFlowAccess, initialTab = null,
+  loadFlow, loadFlowAccess, initialTab = null, loadFlowItems, remindFlow,
   assistant,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
@@ -616,7 +619,8 @@ const CenterShell: React.FC<CenterShellProps> = ({
             <div {...panelProps(FLOW_TAB.id)}>
               <React.Suspense fallback={null}>
                 <LazyFlow state={flow} isDark={isDark} query={flowQuery} onQueryChange={setFlowQuery} refreshing={flowBusy} refreshNote={flowNote}
-                  onRetry={() => setFlowAttempt(value => value + 1)} onOpen={openDashboardRoute} now={now} />
+                  onRetry={() => setFlowAttempt(value => value + 1)} onOpen={openDashboardRoute} now={now}
+                  loadItems={loadFlowItems} remind={remindFlow} onOpenItem={openItem} />
               </React.Suspense>
             </div>
           )}
