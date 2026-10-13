@@ -50,9 +50,11 @@ const installProbe = (page: Page) => page.addInitScript(() => {
     .observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
 });
 
-const measureIdle = async (page: Page, label: string) => {
+const measureIdle = async (page: Page, label: string, cpuLimit = 5, allowAnimations = false) => {
   await page.mouse.move(0, 0);
-  await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => undefined))));
+  // Chờ transition ngắn (hover / focus) kết thúc; animation lặp vô hạn (khi cho phép) không bao giờ kết thúc nên bỏ qua.
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => undefined))));
   await page.waitForTimeout(1500);
   await page.evaluate(() => {
     const w = window as unknown as { __vccIdle: Record<string, number>; __vccArmed: boolean };
@@ -70,9 +72,9 @@ const measureIdle = async (page: Page, label: string) => {
   const baseline = baselinePercent();
   const overBaseline = baseline === null ? null : Math.round((cpuPercent - baseline) * 10) / 10;
   record(label, { ...activity, cpuPercent, overBaseline });
-  expect({ animations: activity.animations, timeout: activity.timeout, interval: activity.interval, raf: activity.raf, mutations: activity.mutations },
+  expect({ animations: allowAnimations ? 0 : activity.animations, timeout: activity.timeout, interval: activity.interval, raf: activity.raf, mutations: activity.mutations },
     `${label}: page must do nothing while idle`).toEqual({ animations: 0, timeout: 0, interval: 0, raf: 0, mutations: 0 });
-  expect(overBaseline ?? cpuPercent, `${label}: CPU % above blank-page baseline`).toBeLessThan(5);
+  expect(overBaseline ?? cpuPercent, `${label}: CPU % above blank-page baseline`).toBeLessThan(cpuLimit);
 };
 
 test.beforeEach(async ({ page }) => {
@@ -124,7 +126,14 @@ test("WebKit idle: Dòng chảy công việc (sơ đồ dải 820, thanh theo ph
   await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
   await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" }).click();
   await expect(page.getByRole("img", { name: /Sơ đồ dòng chảy công việc/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Chuyển động" })).toHaveAttribute("aria-pressed", "false");
   await measureIdle(page, "flow-sankey");
+  // Bật Chuyển động (keyframe transform thuần, bộ tổng hợp GPU): chuyển động người dùng tự bật, chấp nhận tới 10 điểm % CPU.
+  await page.getByRole("button", { name: "Chuyển động" }).click();
+  await expect(page.locator(".vfl-particle")).not.toHaveCount(0);
+  await measureIdle(page, "flow-motion", 10, true);
+  await page.getByRole("button", { name: "Chuyển động" }).click();
+  await page.evaluate(() => localStorage.removeItem("vfl_motion"));
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("list", { name: "Nơi xử lý" })).toBeVisible();
   await measureIdle(page, "flow-bars");

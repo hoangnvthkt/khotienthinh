@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { FlowDataset } from '../../lib/center/centerFlowService';
-import { fmtInt, sankeyLayout, type FlowSelection, type SankeyColors } from '../../lib/center/flowModel';
+import { flowParticles, fmtInt, sankeyLayout, type FlowSelection, type SankeyColors } from '../../lib/center/flowModel';
 
-// Sơ đồ dải ba cột (SVG thuần, không thư viện, không animation): Nơi phát sinh → Nơi xử lý → Kết quả.
+// Sơ đồ dải ba cột (SVG thuần, không thư viện): Nơi phát sinh → Nơi xử lý → Kết quả.
 // Độ rộng dải = số lượt giao; màu dải cột cuối = kết quả; vạch đỏ cạnh phòng = phần việc đứng yên hôm nay.
+// Chuyển động (tùy chọn, chủ SP 13/10): hạt là phần tử HTML đè lên sơ đồ, chạy bằng keyframe `transform` thuần (bộ tổng hợp GPU, không vẽ lại
+// sơ đồ, không setInterval / rAF). SMIL animateMotion và lớp SVG riêng đều đo 26–39% CPU WebKit nên không dùng. Bật sẵn chỉ trên máy tính.
 
 const W = 880;
 const H = 560;
@@ -13,9 +15,23 @@ export const FlowSankey: React.FC<{
   colors: SankeyColors;
   selection: FlowSelection | null;
   onSelect: (selection: FlowSelection | null) => void;
-}> = ({ data, colors, selection, onSelect }) => {
+  /** Hạt chạy dọc dải. */
+  motion?: boolean;
+}> = ({ data, colors, selection, onSelect, motion = false }) => {
   const layout = sankeyLayout(data, W, H, colors);
+  const particles = motion ? flowParticles(layout) : [];
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Tỷ lệ pixel / đơn vị viewBox để keyframe transform khớp sơ đồ ở mọi bề rộng.
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const element = wrapRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(([entry]) => setScale(entry.contentRect.width / W));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const keyframes = particles.map((particle, index) => `@keyframes vflp${index}{${particle.points.map((pt, i) =>
+    `${Math.round((i / (particle.points.length - 1)) * 1000) / 10}%{transform:translate(calc(${pt[0]} * var(--s) * 1px),calc(${pt[1]} * var(--s) * 1px))}`).join('')}}`).join('\n');
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   useEffect(() => { setTip(null); }, [data]);
   if (layout.empty) return <p className="vfl-empty">Chưa có lượt giao nào trong khoảng đã chọn.</p>;
@@ -98,6 +114,14 @@ export const FlowSankey: React.FC<{
           );
         })}
       </svg>
+      {particles.length > 0 && (
+        <div className="vfl-particles" style={{ '--s': scale } as React.CSSProperties} aria-hidden="true">
+          <style>{keyframes}</style>
+          {particles.map((particle, index) => (
+            <span key={`p:${particle.key}`} className="vfl-particle" style={{ background: particle.color, animation: `vflp${index} ${particle.dur}s linear -${particle.begin}s infinite` }} />
+          ))}
+        </div>
+      )}
       {tip && <div className="vfl-tip" style={{ left: tip.x, top: tip.y }} role="presentation">{tip.text}</div>}
     </div>
   );

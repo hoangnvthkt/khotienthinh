@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Clock, Hourglass, RefreshCw, Timer, TrendingUp, Undo2 } from 'lucide-react';
+import { AlertTriangle, Clock, Hourglass, Pause, Play, RefreshCw, Timer, TrendingUp, Undo2 } from 'lucide-react';
 import { StateBox } from '../procurement/hub/hubUi';
 import type { DrillDown } from '../../lib/dashboard/dashboardModel';
 import { DashOpenContext, DataTable, DrillDrawer, Tile, dashColors } from '../dashboard/dashUi';
@@ -27,6 +27,13 @@ export type FlowState =
 
 const RANGES: FlowRange[] = [7, 30, 90];
 type View = 'flow' | 'people';
+// Chuyển động trên dải: bật sẵn trên máy tính (≥ 1024px), tắt sẵn trên máy tính bảng / điện thoại và khi người dùng chọn giảm chuyển động;
+// nhớ lựa chọn trên máy này. Đo WebKit 13/10: hạt ở lớp riêng, bật ~ vài % CPU; tắt = 0.
+const MOTION_KEY = 'vfl_motion';
+const readMotion = (): boolean | null => { try { const v = localStorage.getItem(MOTION_KEY); return v === null ? null : v === '1'; } catch { return null; } };
+const writeMotion = (on: boolean) => { try { localStorage.setItem(MOTION_KEY, on ? '1' : '0'); } catch { /* chỉ là tiện ích */ } };
+const prefersReducedMotion = (): boolean => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const isDesktop = (): boolean => typeof window !== 'undefined' && window.innerWidth >= 1024;
 
 const sankeyColors = (isDark: boolean): SankeyColors => {
   const c = dashColors(isDark);
@@ -73,6 +80,7 @@ const FlowView: React.FC<{
   const colors = useMemo(() => sankeyColors(isDark), [isDark]);
   const [selection, setSelection] = useState<FlowSelection | null>(null);
   const [view, setView] = useState<View>('flow');
+  const [motionPref, setMotionPref] = useState<boolean | null>(() => readMotion());
   const [drill, setDrill] = useState<DrillDown | null>(null);
   const [itemsView, setItemsView] = useState<FlowItemsView | null>(null);
   // Danh sách phiếu luôn trong phạm vi đang xem (phòng / dự án đã chọn ở thanh công cụ).
@@ -85,6 +93,8 @@ const FlowView: React.FC<{
   // Khung hẹp (điện thoại): dải thay bằng thanh theo phòng.
   const wrapRef = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
+  const motion = !narrow && (motionPref ?? (isDesktop() && !prefersReducedMotion()));
+  const toggleMotion = () => { const next = !motion; setMotionPref(next); writeMotion(next); };
   useEffect(() => {
     const element = wrapRef.current;
     if (!element || typeof ResizeObserver === 'undefined') return undefined;
@@ -200,6 +210,12 @@ const FlowView: React.FC<{
               <button type="button" role="tab" aria-selected={view === 'people'} onClick={() => setView('people')}>Người xử lý</button>
             </div>
             {view === 'flow' && !narrow && (
+              <button type="button" className="vdb-btn vfl-motion" aria-pressed={motion} onClick={toggleMotion}
+                title={motion ? 'Tắt hạt chạy trên dải' : 'Bật hạt chạy trên dải (mô phỏng việc đang chảy giữa các phòng)'}>
+                {motion ? <Pause size={13} /> : <Play size={13} />} Chuyển động
+              </button>
+            )}
+            {view === 'flow' && !narrow && (
               <div className="vfl-legend" aria-hidden="true">
                 <span><i style={{ background: colors.done }} />Đã xử lý</span>
                 <span><i style={{ background: colors.waiting }} />Đang chờ</span>
@@ -210,7 +226,7 @@ const FlowView: React.FC<{
               </div>
             )}
           </div>
-          {view === 'flow' && !narrow && <FlowSankey data={data} colors={colors} selection={selection} onSelect={setSelection} />}
+          {view === 'flow' && !narrow && <FlowSankey data={data} colors={colors} selection={selection} onSelect={setSelection} motion={motion} />}
           {view === 'flow' && narrow && (
             <div className="vfl-unitbars" role="list" aria-label="Nơi xử lý">
               {unitBars(data).map(bar => (

@@ -270,3 +270,24 @@ Kiểm (13/10): smoke Cloud rollback (6 vai; danh sách, lọc từng loại, ph
 không có nút Nhắc, không nối danh sách thì về bảng PR-2); WebKit đứng yên 4 bài. Ảnh: `evidence/2026-10-13-flow-items-{desktop,iphone}.png`.
 
 Chạy lại smoke: `node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/20261013180000_center_flow_items_v1.sql --smoke supabase/tests/center_flow_items_smoke.sql`.
+
+## 13. Chuyển động trên dải + mô hình 3D thử (13/10/2026, chủ SP yêu cầu)
+
+**Chuyển động (sản phẩm):** chủ SP thấy thiếu phần "dữ liệu động" của bản xem thử v0. Đưa lại thành công tắc **Chuyển động** ở đầu sơ đồ: hạt chạy dọc 20 dải lớn nhất
+(dải to chạy nhanh hơn, dải "Đang chờ" màu cam). Bật sẵn trên máy tính (≥ 1024 px), tắt sẵn trên máy tính bảng / điện thoại và khi hệ điều hành chọn giảm chuyển động;
+nhớ lựa chọn trên máy. Cách làm và số đo WebKit (iPhone 13, 820 px):
+
+| Cách | CPU khi đứng yên | Kết luận |
+|---|---|---|
+| SMIL `animateMotion` trong SVG sơ đồ | 38,7 % | vẽ lại cả sơ đồ mỗi khung hình — loại |
+| SMIL ở lớp SVG riêng đè lên | 26,1 % | vẫn vẽ lại lớp lớn — loại |
+| **Phần tử HTML, keyframe `transform` thuần (17 mốc lấy mẫu dọc đường cong)** | **4,8 %** (tắt: 0,8 %) | bộ tổng hợp GPU dịch chuyển, không vẽ lại — dùng |
+
+Bài `webkit-idle` đo cả hai trạng thái: tắt (ngưỡng 5 điểm, như mọi màn) và bật (ngưỡng 10 điểm, chuyển động người dùng tự bật). Trình ghi vết Playwright và chờ
+"animation kết thúc" phải bỏ qua animation lặp vô hạn, nếu không bài đo treo.
+
+**Mô hình 3D thử (tham khảo, không phải sản phẩm):** `mockups/flow-3d-v0.html` (three.js từ CDN, mở qua launch `flow-mockup` cổng 5190; ảnh `mockups/flow-3d-v0-*.png`).
+Phòng ban là ô sàn (số người thật), công trường có cần cẩu; người đi lại trong phòng, mang phiếu (thẻ vàng) từ phòng gửi sang bàn nhận theo nhịp tỷ lệ với lượt giao
+90 ngày; phiếu chờ chất đống ở khay bàn nhận (cam = đang chờ, đỏ = đứng yên, số thật); người giữ nhiều việc có tên và huy hiệu đỏ; bấm ô → bảng số của phòng / công trường;
+Dừng / 1× 3× 10× / Tự xoay / Toàn cảnh; dòng thông báo "A giao phiếu → B" mỗi lần trao. Để lên sản phẩm cần: nguồn dữ liệu theo người (PR-3 đã có), người thật theo
+phòng, đo WebKit (three.js vẽ liên tục ~ GPU), và quyết định của chủ SP về vị trí (chế độ trình chiếu trong tab Dòng chảy hay màn riêng cho TV phòng họp).

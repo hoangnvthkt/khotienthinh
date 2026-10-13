@@ -77,6 +77,8 @@ export interface SankeyNode {
 }
 export interface SankeyLink {
   key: string; col: 0 | 1; from: string; to: string; value: number; d: string; color: string; opacity: number; title: string; outcome: string | null;
+  /** Đường giữa dải (để hạt chạy khi bật Chuyển động). */
+  mid: string;
 }
 export interface SankeyLayout { width: number; height: number; nodes: SankeyNode[]; links: SankeyLink[]; nodeWidth: number; empty: boolean }
 
@@ -150,6 +152,7 @@ export const sankeyLayout = (data: FlowDataset, width: number, height: number, c
       links.push({
         key: `${s.key}>${t.key}`, col: sc, from: row.from, to: row.to, value: row.value, color: row.color, opacity: row.opacity, outcome: row.outcome, title: row.title,
         d: `M${r(sx)},${r(sy0)} C${r(mx)},${r(sy0)} ${r(mx)},${r(ty0)} ${r(tx)},${r(ty0)} L${r(tx)},${r(ty1)} C${r(mx)},${r(ty1)} ${r(mx)},${r(sy1)} ${r(sx)},${r(sy1)} Z`,
+        mid: `M${r(sx)},${r((sy0 + sy1) / 2)} C${r(mx)},${r((sy0 + sy1) / 2)} ${r(mx)},${r((ty0 + ty1) / 2)} ${r(tx)},${r((ty0 + ty1) / 2)}`,
       });
     });
   };
@@ -288,3 +291,34 @@ export type FlowSelection =
   | { type: 'outcome'; id: string }
   | { type: 'link'; from: string; to: string }
   | { type: 'project'; id: string };
+
+/** Hạt chạy trên dải khi bật Chuyển động: dải lớn nhất, tối đa `max` hạt; dải to chạy nhanh hơn, dải đang chờ màu cam.
+ *  `points` = vị trí lấy mẫu dọc đường giữa dải (toạ độ viewBox) để làm keyframe transform — trình duyệt chỉ dịch chuyển, không vẽ lại. */
+export interface FlowParticle { key: string; path: string; points: Array<[number, number]>; color: string; dur: number; begin: number }
+const parseMid = (mid: string): [number, number][] | null => {
+  const m = mid.match(/^M([-\d.]+),([-\d.]+) C([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+) ([-\d.]+),([-\d.]+)$/);
+  if (!m) return null;
+  const n = m.slice(1).map(Number);
+  return [[n[0], n[1]], [n[2], n[3]], [n[4], n[5]], [n[6], n[7]]];
+};
+export const samplePath = (mid: string, steps = 16): Array<[number, number]> => {
+  const p = parseMid(mid);
+  if (!p) return [];
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps; const u = 1 - t;
+    const x = u * u * u * p[0][0] + 3 * u * u * t * p[1][0] + 3 * u * t * t * p[2][0] + t * t * t * p[3][0];
+    const y = u * u * u * p[0][1] + 3 * u * u * t * p[1][1] + 3 * u * t * t * p[2][1] + t * t * t * p[3][1];
+    out.push([Math.round(x * 10) / 10, Math.round(y * 10) / 10]);
+  }
+  return out;
+};
+export const flowParticles = (layout: SankeyLayout, max = 20): FlowParticle[] => {
+  const top = layout.links.filter(link => link.value >= 1).slice().sort((a, b) => b.value - a.value).slice(0, max);
+  const biggest = Math.max(1, ...top.map(link => link.value));
+  return top.map((link, index) => ({
+    key: link.key, path: link.mid, points: samplePath(link.mid), color: link.color,
+    dur: Math.round((7 - 4 * Math.min(1, link.value / biggest)) * 10) / 10,
+    begin: Math.round(((index * 0.37) % 3) * 10) / 10,
+  }));
+};
