@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BarChart3, Bell, Briefcase, FileText, GitBranch, LayoutDashboard, LogOut, Package, ShoppingCart, UserRound } from 'lucide-react';
 import CenterShell from '../../components/center/CenterShell';
+import type { AssistantHooks } from '../../components/center/AssistantView';
 import { CenterRailView } from '../../components/center/CenterRail';
 import { SIDEBAR_MODULES, type ModuleNavItem } from '../../components/Sidebar';
 import { MemoryRouter } from 'react-router-dom';
@@ -179,6 +180,31 @@ const saveLayout = (layout: CenterLayout): Promise<number> => new Promise(resolv
   resolve(layoutVersion);
 }, 30));
 
+// Tab Trợ lý: ?ai=gemini giả lập đã có khóa (hỏi tự do trả lời từ dòng số liệu, trích khóa); mặc định chưa có khóa (chỉ câu hỏi nhanh).
+// Câu hỏi đã gửi và chấm nhận ghi ở window.__aiCalls để kiểm thử.
+const AI = params.get('ai') || 'off';
+const aiCalls: Array<Record<string, unknown>> = [];
+(window as unknown as { __aiCalls: typeof aiCalls }).__aiCalls = aiCalls;
+const aiStatus = (configured: boolean) => ({
+  deployed: true, configured, provider: 'gemini' as const, providerSource: 'AI_PROVIDER' as const, models: { fast: 'gemini-2.5-flash', reasoning: 'gemini-2.5-pro' },
+  keysPresent: { anthropic: false, gemini: true, openai: false }, priceKnown: false, skills: ['center_question', 'morning_brief'],
+});
+const assistantHooks: AssistantHooks = {
+  status: () => new Promise(resolve => setTimeout(() => resolve(aiStatus(AI === 'gemini')), 40)),
+  ask: (question, facts, context) => new Promise(resolve => setTimeout(() => {
+    aiCalls.push({ skill: 'center_question', question, factLines: facts.split('\n').length, context });
+    const keys = facts.split('\n').map(line => line.split(' | ')[0]).filter(key => /^(project\.progress|supply\.requests|item\.po\.)/.test(key)).slice(0, 3);
+    resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 60, costUsd: null, durationMs: 640 },
+      result: { answer: `Bạn có 7 việc trễ trên tiến độ SMB-2026 và 4 đề xuất vật tư chờ Phòng vật tư duyệt; PO-116 đã quá hạn 2 ngày. (giả lập cho "${question}")`, sources: keys } });
+  }, 120)),
+  narrate: (facts, context) => new Promise(resolve => setTimeout(() => {
+    aiCalls.push({ skill: 'morning_brief', factLines: facts.split('\n').length, context });
+    resolve({ code: 'OK', runId: `run-${aiCalls.length}`, provider: 'gemini', model: 'gemini-2.5-flash', usage: { tokensIn: 900, tokensOut: 90, costUsd: null, durationMs: 700 },
+      result: { brief: 'Sáng nay bạn có 11 việc chờ, trong đó PO-116 quá hạn 2 ngày và MR-2026-2688 cần duyệt trước 13h. Tiến độ SMB-2026 đạt 81% nhưng 7 việc đã trễ; 4 đề xuất vật tư đang chờ Phòng vật tư. Bạn chưa chấm công hôm nay.' } });
+  }, 120)),
+  feedback: (runId, accepted) => { aiCalls.push({ feedback: { runId, accepted } }); },
+};
+
 const StubModalHost: React.FC<{ modal: CenterModal; onClose: () => void; onDone: () => void }> = ({ modal, onClose, onDone }) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-label={`Form ${modal}`}>
     <div className="vcc-card w-full max-w-sm p-4" data-testid="stub-modal">
@@ -287,6 +313,7 @@ const Fixture: React.FC = () => {
             loadMetricDocs={loadMetricDocs}
             Renderer={StubRenderer}
             ModalHost={StubModalHost}
+            assistant={assistantHooks}
           />
         </CenterEntrance>
       </main>

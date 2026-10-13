@@ -10,7 +10,7 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 |---|---|
 | **Việc của tôi** (cột trái) | **Chờ tôi**: việc bạn cần duyệt / làm / xác nhận. **Tôi gửi**: hồ sơ bạn lập đang chờ người khác. **Theo dõi**: hồ sơ bạn được thêm vào theo dõi. Việc gom theo module (Dự án, Yêu cầu, Mua hàng, Nhân sự, Office…), mặc định thu gọn — đầu nhóm có số việc và "N gấp"; bấm tên nhóm để mở. Hạn đỏ = quá hạn hoặc trong hôm nay, cam = sắp tới. |
 | **Vùng làm việc** (giữa) | Tab **Hôm nay** luôn ở đầu. Bấm một việc → mở thành tab riêng (có ✕ để đóng) với **màn xử lý của module ngay tại chỗ** (duyệt / từ chối / sửa như ở module). Nút **Mở ở màn … ↗** góc trên chỉ khi muốn sang hẳn module. |
-| **Trợ lý** (phải) | Đang chuẩn bị, chưa dùng được. |
+| **Trợ lý** (tab thứ ba, hoặc nút ✦ Trợ lý trên đầu trang) | **Bản tin hôm nay** từ đúng số liệu của Hôm nay và Việc của tôi, cùng ô **Hỏi Trợ lý**. Xem mục "Tab Trợ lý". |
 
 ## Tab "Hôm nay"
 
@@ -24,9 +24,16 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 - Ô **Dự án** chọn sẵn công trường bạn đang được điều động; thuộc nhiều dự án thì đổi ở góc ô.
 - **Tùy chỉnh** (phía trên các ô): đổi thứ tự (↑ ↓), ẩn ô ít dùng, thêm lại ở "Ô đã ẩn", **Xong** để lưu cho tài khoản của bạn.
 
+## Tab "Trợ lý"
+
+- **Bản tin hôm nay**: ô **Cần chú ý** (số đỏ, cam và việc quá hạn / trong hôm nay) đứng đầu, rồi **Việc chờ bạn** và các nhóm **Dự án · Nhân sự · Công việc · Hành chính · Mua hàng & Kho · Tài chính dự án**. Số lấy từ cùng nguồn với Hôm nay và cột Việc của tôi, nên luôn khớp; dòng chưa có quyền hiện khóa 🔒 kèm lý do, không hiện 0.
+- **Bấm một dòng** là mở đúng hồ sơ hoặc màn gốc thành tab (như bấm việc ở cột trái). Mũi tên ↗ ở góc nhóm mở màn đầy đủ của module. **Làm mới** tải lại số liệu.
+- **Hỏi Trợ lý**: các **câu hỏi nhanh** (Hôm nay cần chú ý gì? · Việc nào đang chờ tôi? · Dự án đang thế nào? …) trả lời ngay từ bản tin, không cần AI. Khi quản trị đã bật khóa AI (Cài đặt → Cổng AI), ô hỏi tự do mở ra: Trợ lý chỉ trả lời từ các dòng số liệu trên màn này, mỗi câu trả lời có nút mở chứng từ / màn gốc, và nút **Kể lại bằng lời** viết bản tin thành vài câu. Bấm 👍 / 👎 để chấm câu trả lời.
+- Trợ lý **chỉ đọc**: không có nút gửi, duyệt hay ghi sổ nào ở đây.
+
 ## Trên điện thoại
 
-Thanh dưới cùng có 3 nút: **Việc** · **Hôm nay** (hoặc **Hồ sơ** khi đang mở hồ sơ) · **Trợ lý**. Bấm một việc để mở; nút **Back** của điện thoại (hoặc "← Việc của tôi") quay về danh sách. Nút ☰ góc trái mở menu ứng dụng như thường.
+Thanh dưới cùng có 3 nút: **Việc** · **Hôm nay** (hoặc **Hồ sơ** khi đang mở hồ sơ) · **Trợ lý** (bản tin hôm nay). Bấm một việc để mở; nút **Back** của điện thoại (hoặc "← Việc của tôi") quay về danh sách. Nút ☰ góc trái mở menu ứng dụng như thường.
 
 ## Cần biết
 

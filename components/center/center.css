@@ -468,3 +468,40 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-addmenu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; text-align: left; font-size: 13px; }
 .vcc-addmenu button:hover, .vcc-addmenu button:focus-visible { background: var(--vcc-hover); outline: none; }
 @media (prefers-reduced-motion: reduce) { .vcc-addtile { transition: none; } }
+
+/* ── Tab Trợ lý: bản tin hôm nay + hỏi đáp (cùng số liệu Hôm nay / Việc của tôi) ── */
+.vcc-assist { max-width: 1120px; }
+.vcc-assist-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.vcc-assist-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
+@container (max-width: 760px) { .vcc-assist-grid { grid-template-columns: 1fr; } }
+.vcc-brief[data-section="attention"] { grid-column: 1 / -1; --mc: var(--vcc-danger); --mcs: rgba(180, 35, 24, .08); }
+.vcc-brief[data-section="mine"] { --mc: var(--vcc-accent); --mcs: var(--vcc-accent-soft); }
+.vcc-brief-lines { display: flex; flex-direction: column; }
+.vcc-brief-line { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 8px 12px; border-top: 1px solid var(--vcc-border); }
+.vcc-brief-line:first-child { border-top: 0; }
+.vcc-brief-line:hover:not(:disabled) { background: var(--vcc-hover); }
+.vcc-brief-line:disabled { cursor: default; }
+.vcc-brief-line:disabled[data-tone="muted"] { cursor: default; }
+.vcc-brief-label { font-size: 11px; font-weight: 600; color: var(--vcc-muted); text-transform: uppercase; letter-spacing: .02em; }
+.vcc-brief-text { font-size: 13.5px; font-weight: 600; color: var(--vcc-fg); line-height: 1.4; }
+.vcc-brief-line[data-tone="danger"] .vcc-brief-text { color: var(--vcc-danger); }
+.vcc-brief-line[data-tone="warn"] .vcc-brief-text { color: var(--vcc-warn); }
+.vcc-brief-line[data-tone="muted"] .vcc-brief-text { color: var(--vcc-muted); font-weight: 500; }
+.vcc-brief-hint { font-size: 12px; color: var(--vcc-muted); }
+.vcc-brief-compact { margin-top: 8px; }
+.vcc-narr { font-size: 14px; line-height: 1.55; padding: 12px 14px; border-left: 3px solid var(--vcc-accent); background: var(--vcc-card2); border-radius: 0 10px 10px 0; margin-bottom: 12px; }
+.vcc-narr-err { border-left-color: var(--vcc-warn); }
+.vcc-fb { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: middle; }
+.vcc-fb .vcc-iconbtn[aria-pressed="true"] { color: var(--vcc-accent); }
+.vcc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.vcc-ask-form { display: flex; gap: 8px; }
+.vcc-ask-input { flex: 1; min-width: 0; height: 36px; border: 1px solid var(--vcc-border); border-radius: 10px; padding: 0 12px; background: var(--vcc-card); color: var(--vcc-fg); font-size: 13.5px; }
+.vcc-ask-input:focus { outline: 2px solid var(--vcc-accent); outline-offset: 1px; }
+.vcc-ask-input:disabled { background: var(--vcc-card2); color: var(--vcc-muted); }
+.vcc-turns { display: flex; flex-direction: column; }
+.vcc-turn { border-top: 1px solid var(--vcc-border); padding: 10px 0 4px; }
+.vcc-turn-q { font-weight: 600; font-size: 13px; }
+.vcc-turn-q::before { content: "Bạn: "; color: var(--vcc-muted); font-weight: 500; }
+.vcc-turn-a { margin-top: 6px; font-size: 13.5px; line-height: 1.5; }
+.vcc-turn-src { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.vcc-fb .vcc-iconbtn { height: 26px; min-width: 26px; padding: 0 6px; }

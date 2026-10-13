@@ -109,7 +109,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   // Hồ sơ chưa tách view → trang module chạy ngay trong tab, đúng id (không qua bước "Mở ở màn …").
   await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toHaveAttribute("aria-current", "true");
   await inbox.getByRole("button", { name: /NK 05\/10/ }).click();
-  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "Bảng điều khiển", "RQ-2026-000061", "NK 05/10"]);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "Bảng điều khiển", "Trợ lý", "RQ-2026-000061", "NK 05/10"]);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("NK 05/10 · Nhật ký 05/10 · Sơn Miền Bắc");
   await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510"}');
   await expect(page.getByText("Hồ sơ này xử lý ở màn")).toHaveCount(0);
@@ -204,8 +204,11 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   await expect(shownRecord(page)).toContainText('route · {"path":"/work/my?create=1"}');
   await page.getByRole("button", { name: "Đóng Vioo Work" }).click();
 
+  // Nút Trợ lý trên đầu trang mở tab Trợ lý (bản tin), không còn khung "Sắp có".
   await page.getByRole("button", { name: "Trợ lý" }).click();
-  await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Trợ lý" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { level: 1, name: "Bản tin hôm nay" })).toBeVisible();
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" }).click();
   await page.getByRole("button", { name: "Chuyển nền tối" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await expectCalmPage(page);
@@ -363,8 +366,10 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
   await page.keyboard.press("Escape");
   await expect(folder).toHaveCount(0);
 
+  // Trợ lý là tab trong vùng làm việc (bản tin hôm nay), không còn khung "Sắp có".
   await nav.getByRole("tab", { name: "Trợ lý" }).click();
-  await expect(page.getByRole("complementary", { name: "Trợ lý Vioo" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Bản tin hôm nay" })).toBeVisible();
+  await expect(nav.getByRole("tab", { name: "Trợ lý" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "Mở menu ứng dụng" }).click();
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "menu");
 
