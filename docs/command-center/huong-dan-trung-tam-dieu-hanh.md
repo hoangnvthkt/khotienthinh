@@ -26,10 +26,13 @@ Trung tâm điều hành là **một màn để bắt đầu ngày làm việc**
 
 ## Tab "Trợ lý"
 
-- **Bản tin hôm nay**: ô **Cần chú ý** (số đỏ, cam và việc quá hạn / trong hôm nay) đứng đầu, rồi **Việc chờ bạn** và các nhóm **Dự án · Nhân sự · Công việc · Hành chính · Mua hàng & Kho · Tài chính dự án**. Số lấy từ cùng nguồn với Hôm nay và cột Việc của tôi, nên luôn khớp; dòng chưa có quyền hiện khóa 🔒 kèm lý do, không hiện 0.
-- **Bấm một dòng** là mở đúng hồ sơ hoặc màn gốc thành tab (như bấm việc ở cột trái). Mũi tên ↗ ở góc nhóm mở màn đầy đủ của module. **Làm mới** tải lại số liệu.
-- **Hỏi Trợ lý**: các **câu hỏi nhanh** (Hôm nay cần chú ý gì? · Việc nào đang chờ tôi? · Dự án đang thế nào? …) trả lời ngay từ bản tin, không cần AI. Khi quản trị đã bật khóa AI (Cài đặt → Cổng AI), ô hỏi tự do mở ra: Trợ lý chỉ trả lời từ các dòng số liệu trên màn này, mỗi câu trả lời có nút mở chứng từ / màn gốc, và nút **Kể lại bằng lời** viết bản tin thành vài câu. Bấm 👍 / 👎 để chấm câu trả lời.
-- Trợ lý **chỉ đọc**: không có nút gửi, duyệt hay ghi sổ nào ở đây.
+Bản tin sáng, gọn trong một màn — mở ra là biết hôm nay làm gì trước và có gì bất thường:
+
+- **Câu đầu**: tổng việc chờ và số việc phải xong hôm nay (quá hạn + tới hạn hôm nay).
+- **Làm trước**: tối đa 3 việc theo hạn gần nhất — mã, việc cần làm (Duyệt / Làm / Xác nhận…), hạn (đỏ = quá hạn, cam = trong hôm nay). Bấm **Mở** là mở hồ sơ thành tab. Dòng **+ N việc khác** mở cột Việc của tôi.
+- **Đáng lo**: tối đa 3 điều bất thường của dự án đang xem (trễ tiến độ, PO quá ngày hẹn giao, mũi chưa gửi phiếu, đề xuất vật tư chờ duyệt…). Bấm **Xem** mở đúng màn.
+- **Hỏi Trợ lý**: nút hỏi nhanh (Dự án · Vật tư, đơn hàng · Tiền của dự án · Công, phép) hiện số liệu của nhóm đó, không cần AI. Khi quản trị đã bật khóa AI (Cài đặt → Cổng AI) có thêm ô hỏi tự do — Trợ lý chỉ trả lời từ số liệu của bạn, kèm nút mở chứng từ gốc — và nút **Tóm tắt** viết bản tin thành vài câu. Bấm 👍 / 👎 để chấm câu trả lời.
+- Trợ lý **chỉ đọc**: không có nút gửi, duyệt hay ghi sổ.
 
 ## Trên điện thoại
 

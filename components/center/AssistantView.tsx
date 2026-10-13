@@ -1,17 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, Inbox, Lock, RefreshCcw, Send, Sparkles, ThumbsDown, ThumbsUp, type LucideIcon } from 'lucide-react';
-import { WIDGET_ICONS, type CenterPerson, type TodayState } from './TodayView';
+import { ArrowUpRight, ChevronRight, RefreshCcw, Send, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import type { CenterPerson, TodayState } from './TodayView';
 import type { DrillTarget } from '../../lib/center/drill';
-import type { CenterWidgetId } from '../../lib/center/centerRegistry';
 import type { InboxTab, WorkItem, WorkItemsPage } from '../../lib/center/workItemsService';
 import {
-  answerQuick, availableQuickQuestions, briefDateLabel, briefFacts, buildBrief, linesByKeys, type Brief, type BriefLine, type BriefSection,
+  answerQuick, availableQuickQuestions, briefDateLabel, briefFacts, buildBrief, linesByKeys, type BriefLine,
 } from '../../lib/center/assistantBrief';
-import { AI_PROVIDER_LABELS, aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult } from '../../lib/aiGateway';
+import { aiErrorMessage, aiGateway, type AiGatewayStatus, type AiRunResult } from '../../lib/aiGateway';
 
-// Tab Trợ lý (lộ trình A1, đợt đầu chỉ đọc): bản tin hôm nay dựng từ cùng số liệu Hôm nay + Việc của tôi; câu hỏi nhanh trả lời
-// không cần AI; có khóa AI thì hỏi tự do qua cổng AI (skill center_question) và kể lại bản tin (morning_brief) — AI chỉ đọc đúng các
-// dòng số liệu này, mỗi câu trả lời dẫn về chứng từ / màn gốc. Không có nút Gửi / Duyệt nào ở đây.
+// Tab Trợ lý — bản tin sáng gọn (chủ SP 13/10): một câu tóm tắt · Làm trước (≤ 3 việc) · Đáng lo (≤ 3 điều) · Hỏi.
+// Không lặp số liệu của Hôm nay / Bảng điều khiển; số theo nhóm chỉ hiện khi người dùng hỏi. Chỉ đọc, không nút Gửi / Duyệt.
 
 export interface CenterAnswer { answer: string; sources: string[] }
 export interface AssistantHooks {
@@ -31,9 +29,8 @@ interface Turn {
   id: number;
   question: string;
   state: 'pending' | 'done';
-  /** Câu hỏi nhanh: trả bằng các nhóm của bản tin. */
-  sections?: BriefSection[];
-  /** AI: câu trả lời + dòng số liệu đã dùng (chỉ khóa có thật). */
+  /** Hỏi nhanh: các dòng số liệu của nhóm. */
+  lines?: BriefLine[];
   answer?: string;
   sources?: BriefLine[];
   runId?: string;
@@ -41,39 +38,12 @@ interface Turn {
   feedback?: boolean | null;
 }
 
-const SECTION_ICONS: Partial<Record<string, LucideIcon>> = { attention: AlertTriangle, mine: Inbox };
-const hhmm = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-
-const Line: React.FC<{ line: BriefLine; onDrill: (target: DrillTarget) => void; onOpenItem: (item: WorkItem) => void }> = ({ line, onDrill, onOpenItem }) => {
-  const clickable = !line.locked && (line.item || line.target);
-  const open = () => { if (line.item) onOpenItem(line.item); else if (line.target) onDrill(line.target); };
-  return (
-    <button type="button" className="vcc-brief-line" data-tone={line.tone} data-key={line.key} disabled={!clickable} onClick={open}
-      title={line.locked || (line.item ? `Mở ${line.item.code}` : line.target?.title ? `Mở ${line.target.title}` : undefined)}>
-      <span className="vcc-brief-label">{line.label}</span>
-      <span className="vcc-brief-text">{line.locked && <Lock size={12} className="mr-1 inline-block align-[-1px]" />}{line.text}</span>
-      {(line.hint || line.locked) && <span className="vcc-brief-hint">{line.locked || line.hint}</span>}
-    </button>
-  );
-};
-
-const Section: React.FC<{ section: BriefSection; onDrill: (target: DrillTarget) => void; onOpenItem: (item: WorkItem) => void; compact?: boolean }> = ({ section, onDrill, onOpenItem, compact }) => {
-  const Icon = SECTION_ICONS[section.id] || WIDGET_ICONS[section.id as CenterWidgetId] || Sparkles;
-  return (
-    <section className={`vcc-card vcc-brief${compact ? ' vcc-brief-compact' : ''}`} data-section={section.id} aria-label={section.title}>
-      <header className="vcc-whead">
-        <span className="vcc-wicon"><Icon size={14} /></span>
-        <h3 className="vcc-wname vcc-ellipsis flex-1">{section.title}</h3>
-        {section.route && section.routeLabel && (
-          <button type="button" className="vcc-wlink" onClick={() => onDrill({ kind: 'route', path: section.route!, title: section.routeLabel! })} aria-label={section.routeLabel} title={section.routeLabel}>
-            <ArrowUpRight size={15} />
-          </button>
-        )}
-      </header>
-      <div className="vcc-brief-lines">{section.lines.map(line => <Line key={line.key} line={line} onDrill={onDrill} onOpenItem={onOpenItem} />)}</div>
-    </section>
-  );
-};
+const Feedback: React.FC<{ value: boolean | null | undefined; onPick: (accepted: boolean) => void; label: string }> = ({ value, onPick, label }) => (
+  <span className="vcc-fb">
+    <button type="button" className="vcc-iconbtn" aria-pressed={value === true} onClick={() => onPick(true)} aria-label={`${label} đúng`} title="Đúng"><ThumbsUp size={13} /></button>
+    <button type="button" className="vcc-iconbtn" aria-pressed={value === false} onClick={() => onPick(false)} aria-label={`${label} chưa đúng`} title="Chưa đúng"><ThumbsDown size={13} /></button>
+  </span>
+);
 
 const AssistantView: React.FC<{
   person: CenterPerson;
@@ -87,10 +57,10 @@ const AssistantView: React.FC<{
   onOpenItem: (item: WorkItem) => void;
   onRetry: () => void;
   hooks?: AssistantHooks;
-}> = ({ now, today, mineCount, active, loadWorkItems, onDrill, onOpenItem, onRetry, hooks = defaultAssistantHooks }) => {
-  const [items, setItems] = useState<WorkItem[] | null | 'error'>(null);
+}> = ({ person, now, today, active, loadWorkItems, onDrill, onOpenItem, onRetry, hooks = defaultAssistantHooks }) => {
+  const [items, setItems] = useState<WorkItem[] | 'loading' | 'error'>('loading');
   const [itemsAttempt, setItemsAttempt] = useState(0);
-  const [ai, setAi] = useState<AiGatewayStatus | null | 'error'>(null);
+  const [ai, setAi] = useState<AiGatewayStatus | null>(null);
   const [question, setQuestion] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [narration, setNarration] = useState<{ state: 'idle' | 'pending' | 'done' | 'error'; text?: string; runId?: string; feedback?: boolean | null }>({ state: 'idle' });
@@ -99,153 +69,177 @@ const AssistantView: React.FC<{
 
   useEffect(() => {
     if (!active) return;
-    if (!started.current) { started.current = true; hooks.status().then(setAi).catch(() => setAi('error')); }
+    if (!started.current) { started.current = true; hooks.status().then(setAi).catch(() => setAi(null)); }
     let alive = true;
     loadWorkItems('mine').then(page => { if (alive) setItems(page.items); }).catch(() => { if (alive) setItems('error'); });
     return () => { alive = false; };
   }, [active, loadWorkItems, hooks, itemsAttempt]);
 
-  const brief: Brief | null = useMemo(
-    () => (today.status === 'ready' ? buildBrief(today.data, items === 'error' ? null : items, now, mineCount) : null),
-    [today, items, now, mineCount],
+  const todayData = today.status === 'ready' ? today.data : null;
+  const brief = useMemo(
+    () => buildBrief(todayData, Array.isArray(items) ? items : null, now, person.gender),
+    [todayData, items, now, person.gender],
   );
-  const projectId = today.status === 'ready' ? today.data.project?.id || null : null;
-  const configured = ai !== null && ai !== 'error' && ai.configured;
-  const quick = brief ? availableQuickQuestions(brief) : [];
-
-  const refresh = () => { onRetry(); setItemsAttempt(value => value + 1); };
-
-  const askQuick = (id: string, text: string) => {
-    if (!brief) return;
-    setTurns(current => [{ id: ++seq.current, question: text, state: 'done', sections: answerQuick(brief, id) }, ...current]);
+  const configured = !!ai?.configured;
+  const quick = availableQuickQuestions(brief);
+  const context = { projectId: todayData?.project?.id || null, tab: 'assistant' };
+  const open = (line: Pick<BriefLine, 'item' | 'target' | 'locked'>) => {
+    if (line.locked) return;
+    if (line.item) onOpenItem(line.item); else if (line.target) onDrill(line.target);
   };
+  const refresh = () => { onRetry(); setItems('loading'); setItemsAttempt(value => value + 1); };
+
+  const askQuick = (id: string, text: string) =>
+    setTurns(current => [{ id: ++seq.current, question: text, state: 'done', lines: answerQuick(brief, id) }, ...current]);
 
   const askAi = useCallback(async () => {
     const text = question.trim();
-    if (!brief || !configured || text.length < 3) return;
+    if (!configured || text.length < 3) return;
     const id = ++seq.current;
     setQuestion('');
     setTurns(current => [{ id, question: text, state: 'pending' }, ...current]);
-    const result = await hooks.ask(text, briefFacts(brief), { projectId, tab: 'assistant' }).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
+    const result = await hooks.ask(text, briefFacts(brief), context).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
     setTurns(current => current.map(turn => turn.id !== id ? turn : result.code === 'OK'
       ? { ...turn, state: 'done', answer: result.result.answer, sources: linesByKeys(brief, result.result.sources || []), runId: result.runId, feedback: null }
       : { ...turn, state: 'done', error: aiErrorMessage(result) }));
-  }, [question, brief, configured, hooks, projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, brief, configured, hooks]);
 
   const narrate = async () => {
-    if (!brief || !configured) return;
     setNarration({ state: 'pending' });
-    const result = await hooks.narrate(briefFacts(brief), { projectId, tab: 'assistant' }).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
+    const result = await hooks.narrate(briefFacts(brief), context).catch(e => ({ code: 'AI_FAILED' as const, error: e instanceof Error ? e.message : String(e) }));
     setNarration(result.code === 'OK' ? { state: 'done', text: result.result.brief, runId: result.runId, feedback: null } : { state: 'error', text: aiErrorMessage(result) });
   };
-
-  const feedback = (runId: string | undefined, accepted: boolean, apply: () => void) => { if (runId) hooks.feedback(runId, accepted); apply(); };
+  const sendFeedback = (runId: string | undefined, accepted: boolean) => { if (runId) hooks.feedback(runId, accepted); };
 
   return (
-    <div className="vcc-page vcc-assist" data-testid="assistant">
-      <div className="vcc-assist-head">
+    <section className="vcc-page vcc-assist" data-testid="assistant" aria-label="Bản tin hôm nay">
+      <header className="vcc-brief-top">
         <div className="min-w-0">
-          <h1 className="vcc-hero-hi m-0 text-[22px] font-semibold leading-tight">Bản tin hôm nay</h1>
-          <p className="m-0 mt-1 text-xs vcc-muted">
-            {briefDateLabel(now)}
-            {today.status === 'ready' && hhmm(today.data.generatedAt) ? ` · số liệu lúc ${hhmm(today.data.generatedAt)}` : ''}
-            {brief ? ` · ${brief.attention} điểm cần chú ý` : ''}
-          </p>
+          <p className="vcc-brief-date">{briefDateLabel(now)}</p>
+          <h1 className="vcc-brief-head">{items === 'loading' ? 'Đang tải việc của bạn…' : brief.headline}</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {configured && brief && (
-            <button type="button" className="vcc-btn" onClick={narrate} disabled={narration.state === 'pending'} title="AI kể lại bản tin bằng vài câu (chỉ từ số liệu trên màn)">
-              <Sparkles size={14} /> {narration.state === 'pending' ? 'Đang viết…' : 'Kể lại bằng lời'}
+        <div className="vcc-brief-tools">
+          {configured && (
+            <button type="button" className="vcc-btn" onClick={narrate} disabled={narration.state === 'pending'} title="AI viết bản tin vài câu từ số liệu trên màn">
+              <Sparkles size={14} /> {narration.state === 'pending' ? 'Đang viết…' : 'Tóm tắt'}
             </button>
           )}
-          <button type="button" className="vcc-btn" onClick={refresh} title="Tải lại số liệu"><RefreshCcw size={14} /> Làm mới</button>
+          <button type="button" className="vcc-iconbtn" onClick={refresh} aria-label="Làm mới" title="Làm mới"><RefreshCcw size={15} /></button>
         </div>
-      </div>
-
-      {today.status === 'loading' && <p className="text-sm vcc-muted" role="status">Đang tải số liệu…</p>}
-      {today.status === 'error' && (
-        <div className="vcc-card p-4" role="alert">
-          <p className="m-0 font-semibold">Chưa dựng được bản tin</p>
-          <p className="m-0 mt-1 text-sm vcc-muted">{today.message}</p>
-          <button type="button" className="vcc-btn mt-3" onClick={refresh}>Thử lại</button>
-        </div>
-      )}
+      </header>
 
       {narration.state !== 'idle' && (
         <div className={`vcc-narr${narration.state === 'error' ? ' vcc-narr-err' : ''}`} data-testid="narration" aria-live="polite">
-          {narration.state === 'pending' ? 'Trợ lý đang viết bản tin…' : narration.text}
-          {narration.state === 'done' && (
-            <span className="vcc-fb">
-              <button type="button" className="vcc-iconbtn" aria-pressed={narration.feedback === true} onClick={() => feedback(narration.runId, true, () => setNarration(n => ({ ...n, feedback: true })))} aria-label="Bản tin đúng" title="Đúng ý"><ThumbsUp size={13} /></button>
-              <button type="button" className="vcc-iconbtn" aria-pressed={narration.feedback === false} onClick={() => feedback(narration.runId, false, () => setNarration(n => ({ ...n, feedback: false })))} aria-label="Bản tin chưa đúng" title="Chưa đúng"><ThumbsDown size={13} /></button>
-            </span>
-          )}
+          {narration.state === 'pending' ? 'Đang viết…' : narration.text}
+          {narration.state === 'done' && <Feedback label="Bản tin" value={narration.feedback} onPick={accepted => { sendFeedback(narration.runId, accepted); setNarration(n => ({ ...n, feedback: accepted })); }} />}
         </div>
       )}
 
-      {brief && (
-        <div className="vcc-assist-grid">
-          {brief.sections.map(section => <Section key={section.id} section={section} onDrill={onDrill} onOpenItem={onOpenItem} />)}
+      <section className="vcc-card" aria-label="Làm trước">
+        <div className="vcc-sec-head">
+          <h2 className="vcc-sec-title">Làm trước</h2>
+          {brief.total !== null && brief.total > 0 && <span className="vcc-sec-count">{brief.total} việc chờ</span>}
         </div>
-      )}
-
-      <section className="vcc-card vcc-ask" aria-label="Hỏi Trợ lý">
-        <header className="vcc-whead">
-          <span className="vcc-wicon"><Sparkles size={14} /></span>
-          <h3 className="vcc-wname flex-1">Hỏi Trợ lý</h3>
-          {ai !== null && (
-            <span className="vcc-badge" title={configured ? 'Hỏi tự do qua cổng AI; AI chỉ đọc các dòng số liệu trên màn này' : 'Admin bật khóa AI ở Cài đặt → Cổng AI'}>
-              {configured ? `AI · ${AI_PROVIDER_LABELS[(ai as AiGatewayStatus).provider]}` : 'Chưa có khóa AI'}
-            </span>
-          )}
-        </header>
-        <div className="vcc-wbody">
-          {quick.length > 0 && (
-            <div className="vcc-chips" role="group" aria-label="Hỏi nhanh">
-              {quick.map(item => <button key={item.id} type="button" className="vcc-chip" onClick={() => askQuick(item.id, item.text)}>{item.text}</button>)}
-            </div>
-          )}
-          <form className="vcc-ask-form" onSubmit={event => { event.preventDefault(); void askAi(); }}>
-            <input className="vcc-ask-input" value={question} onChange={event => setQuestion(event.target.value)} disabled={!configured || !brief} aria-label="Câu hỏi"
-              placeholder={configured ? 'Hỏi về việc, dự án, vật tư, tiền… của hôm nay' : 'Hỏi tự do cần khóa AI — chọn câu hỏi nhanh ở trên'} maxLength={500} />
-            <button type="submit" className="vcc-btn" data-pri="true" disabled={!configured || !brief || question.trim().length < 3}><Send size={14} /> Hỏi</button>
-          </form>
-          {turns.length > 0 && (
-            <div className="vcc-turns" aria-live="polite">
-              {turns.map(turn => (
-                <div key={turn.id} className="vcc-turn" data-testid="turn">
-                  <div className="vcc-turn-q">{turn.question}</div>
-                  <div className="vcc-turn-a">
-                    {turn.state === 'pending' && <span className="vcc-muted">Trợ lý đang trả lời…</span>}
-                    {turn.error && <span className="vcc-danger-text">{turn.error}</span>}
-                    {turn.answer && <p className="m-0">{turn.answer}</p>}
-                    {turn.sections && turn.sections.map(section => <Section key={section.id} section={section} onDrill={onDrill} onOpenItem={onOpenItem} compact />)}
-                    {turn.sources && turn.sources.length > 0 && (
-                      <div className="vcc-turn-src" role="group" aria-label="Chứng từ, màn gốc">
-                        {turn.sources.map(line => (
-                          <button key={line.key} type="button" className="vcc-chip" disabled={Boolean(line.locked) || !(line.item || line.target)}
-                            onClick={() => { if (line.item) onOpenItem(line.item); else if (line.target) onDrill(line.target); }} title={line.locked || line.text}>
-                            <ArrowUpRight size={12} /> {line.item ? line.item.code : line.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {turn.answer && (
-                      <span className="vcc-fb">
-                        <button type="button" className="vcc-iconbtn" aria-pressed={turn.feedback === true} aria-label="Trả lời đúng" title="Đúng"
-                          onClick={() => feedback(turn.runId, true, () => setTurns(c => c.map(t => t.id === turn.id ? { ...t, feedback: true } : t)))}><ThumbsUp size={13} /></button>
-                        <button type="button" className="vcc-iconbtn" aria-pressed={turn.feedback === false} aria-label="Trả lời chưa đúng" title="Chưa đúng"
-                          onClick={() => feedback(turn.runId, false, () => setTurns(c => c.map(t => t.id === turn.id ? { ...t, feedback: false } : t)))}><ThumbsDown size={13} /></button>
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {items === 'loading' && <p className="vcc-brief-empty" role="status">Đang tải…</p>}
+        {items === 'error' && (
+          <p className="vcc-brief-empty" role="alert">Chưa đọc được Việc của tôi · <button type="button" className="vcc-link" onClick={refresh}>Thử lại</button></p>
+        )}
+        {Array.isArray(items) && brief.tasks.length === 0 && <p className="vcc-brief-empty">Không có việc chờ</p>}
+        {brief.tasks.length > 0 && (
+          <ol className="m-0 list-none p-0">
+            {brief.tasks.map((task, index) => (
+              <li key={task.key}>
+                <button type="button" className="vcc-task" data-key={task.key} onClick={() => onOpenItem(task.item)} title={`Mở ${task.code}`}>
+                  <span className="vcc-task-num">{index + 1}</span>
+                  <span className="vcc-task-code">{task.code}</span>
+                  <span className="vcc-task-title"><i>{task.verb}</i> {task.title}</span>
+                  {task.due && <span className="vcc-task-due" data-tone={task.tone}>{task.due}</span>}
+                  <span className="vcc-open">Mở <ChevronRight size={13} /></span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+        {brief.more && (
+          <button type="button" className="vcc-more" onClick={() => onDrill({ kind: 'inbox', title: 'Việc của tôi' })}>{brief.more} <ChevronRight size={13} /></button>
+        )}
       </section>
-    </div>
+
+      <section className="vcc-card" aria-label="Đáng lo">
+        <div className="vcc-sec-head">
+          <h2 className="vcc-sec-title">Đáng lo</h2>
+          {todayData?.project && <span className="vcc-sec-count">{todayData.project.code}</span>}
+        </div>
+        {today.status === 'loading' && <p className="vcc-brief-empty" role="status">Đang tải…</p>}
+        {today.status === 'error' && (
+          <p className="vcc-brief-empty" role="alert">Chưa đọc được số liệu dự án · <button type="button" className="vcc-link" onClick={refresh}>Thử lại</button></p>
+        )}
+        {brief.worries && brief.worries.length === 0 && <p className="vcc-brief-empty">Không có gì bất thường</p>}
+        {brief.worries && brief.worries.length > 0 && (
+          <ul className="m-0 list-none p-0">
+            {brief.worries.map(worry => (
+              <li key={worry.key}>
+                <button type="button" className="vcc-worry" data-tone={worry.tone} data-key={worry.key} onClick={() => onDrill(worry.target)}>
+                  <span className="vcc-worry-text">{worry.text}</span>
+                  <span className="vcc-open">Xem <ChevronRight size={13} /></span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {(quick.length > 0 || configured) && (
+        <section className="vcc-card" aria-label="Hỏi Trợ lý">
+          <div className="vcc-sec-head"><h2 className="vcc-sec-title">Hỏi Trợ lý</h2></div>
+          <div className="vcc-ask">
+            {configured && (
+              <form className="vcc-ask-form" onSubmit={event => { event.preventDefault(); void askAi(); }}>
+                <input className="vcc-ask-input" value={question} onChange={event => setQuestion(event.target.value)} aria-label="Câu hỏi"
+                  placeholder="Hỏi về việc, dự án, vật tư, tiền… hôm nay" maxLength={500} />
+                <button type="submit" className="vcc-btn" data-pri="true" disabled={question.trim().length < 3}><Send size={14} /> Hỏi</button>
+              </form>
+            )}
+            {quick.length > 0 && (
+              <div className="vcc-chips" role="group" aria-label="Hỏi nhanh">
+                {quick.map(q => <button key={q.id} type="button" className="vcc-chip" onClick={() => askQuick(q.id, q.text)}>{q.text}</button>)}
+              </div>
+            )}
+            {turns.map(turn => (
+              <div key={turn.id} className="vcc-turn" data-testid="turn">
+                <div className="vcc-turn-q">{turn.question}</div>
+                {turn.state === 'pending' && <p className="m-0 mt-1 text-sm vcc-muted">Đang trả lời…</p>}
+                {turn.error && <p className="m-0 mt-1 text-sm vcc-danger-text">{turn.error}</p>}
+                {turn.answer && <p className="vcc-turn-a">{turn.answer}</p>}
+                {turn.lines && (
+                  <ul className="vcc-qlines">
+                    {turn.lines.map(line => (
+                      <li key={line.key}>
+                        <button type="button" className="vcc-qline" data-tone={line.tone} disabled={Boolean(line.locked) || !(line.item || line.target)} onClick={() => open(line)} title={line.locked || line.hint}>
+                          <span className="vcc-qline-label">{line.label}</span>
+                          <span className="vcc-qline-text">{line.text}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {turn.sources && turn.sources.length > 0 && (
+                  <div className="vcc-turn-src" role="group" aria-label="Chứng từ, màn gốc">
+                    {turn.sources.map(line => (
+                      <button key={line.key} type="button" className="vcc-chip" disabled={Boolean(line.locked) || !(line.item || line.target)} onClick={() => open(line)} title={line.locked || line.text}>
+                        <ArrowUpRight size={12} /> {line.item ? line.item.code : line.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {turn.answer && <Feedback label="Trả lời" value={turn.feedback} onPick={accepted => { sendFeedback(turn.runId, accepted); setTurns(c => c.map(t => t.id === turn.id ? { ...t, feedback: accepted } : t)); }} />}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </section>
   );
 };
 

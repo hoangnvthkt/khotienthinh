@@ -207,7 +207,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   // Nút Trợ lý trên đầu trang mở tab Trợ lý (bản tin), không còn khung "Sắp có".
   await page.getByRole("button", { name: "Trợ lý" }).click();
   await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Trợ lý" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { level: 1, name: "Bản tin hôm nay" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Bản tin hôm nay" })).toBeVisible();
   await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" }).click();
   await page.getByRole("button", { name: "Chuyển nền tối" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
@@ -368,7 +368,7 @@ test("tablet and phone: bottom tabs switch Việc / Hôm nay / Trợ lý and ope
 
   // Trợ lý là tab trong vùng làm việc (bản tin hôm nay), không còn khung "Sắp có".
   await nav.getByRole("tab", { name: "Trợ lý" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Bản tin hôm nay" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Bản tin hôm nay" })).toBeVisible();
   await expect(nav.getByRole("tab", { name: "Trợ lý" })).toHaveAttribute("aria-selected", "true");
   await page.getByRole("button", { name: "Mở menu ứng dụng" }).click();
   await expect(page.locator("[data-last-route]")).toHaveAttribute("data-last-route", "menu");
