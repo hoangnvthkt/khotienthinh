@@ -16,9 +16,10 @@ with targets as (
   returning user_id
 )
 insert into public.audit_trail(table_name, record_id, record_label, action, new_data, user_id, user_name, module, description, impact_level)
-select 'user_permission_grants', t.user_id::text, t.name, 'GRANT', jsonb_build_object('permissionCode', 'center.flow.view', 'scope', 'global'),
+select 'user_permission_grants', t.user_id::text, t.name, 'INSERT', jsonb_build_object('permissionCode', 'center.flow.view', 'scope', 'global'),
   null, 'center_flow_v1_grant_executive.sql', 'CENTER', 'Cấp quyền xem Dòng chảy công việc toàn công ty cho Ban lãnh đạo', 'normal'
 from targets t join ins on ins.user_id = t.user_id;
 select u.name, g.granted_at from public.user_permission_grants g join public.users u on u.id = g.user_id
 where g.permission_code = 'center.flow.view' and g.is_active order by u.name;
-rollback; -- đổi thành COMMIT để cấp thật
+-- đổi dòng dưới thành COMMIT để cấp thật
+rollback;

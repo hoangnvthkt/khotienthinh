@@ -109,7 +109,7 @@ test("desktop: inbox groups, tabs open records, light and dark", async ({ page }
   // Hồ sơ chưa tách view → trang module chạy ngay trong tab, đúng id (không qua bước "Mở ở màn …").
   await expect(inbox.getByRole("button", { name: /RQ-2026-000061/ })).toHaveAttribute("aria-current", "true");
   await inbox.getByRole("button", { name: /NK 05\/10/ }).click();
-  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "Bảng điều khiển", "RQ-2026-000061", "NK 05/10"]);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab")).toHaveText(["Hôm nay", "Bảng điều khiển", "Dòng chảy công việc", "RQ-2026-000061", "NK 05/10"]);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("NK 05/10 · Nhật ký 05/10 · Sơn Miền Bắc");
   await expect(shownRecord(page)).toContainText('route · {"path":"/da?projectId=smb&tab=dailylog&dailyLogId=dl-0510"}');
   await expect(page.getByText("Hồ sơ này xử lý ở màn")).toHaveCount(0);
@@ -815,4 +815,82 @@ test("money numbers go down to documents: project → documents → the document
   await profit.getByRole("tab", { name: "Doanh thu" }).click();
   await expect(profit.locator("tfoot")).toContainText("83.701");
   await expectCalmPage(page);
+});
+
+// Dòng chảy công việc (chủ SP 13/10): tab cho người có phạm vi xem; dải chỉ số bấm xuống; sơ đồ dải (điện thoại: thanh theo phòng);
+// ngăn Điểm nghẽn đổi theo phòng đang chọn; lọc khoảng thời gian gọi lại máy chủ, số cũ vẫn hiện trong lúc chờ. Dữ liệu minh họa ở tests/center/flowFixture.ts.
+const openFlow = async (page: Page, query = "") => {
+  await page.goto(`${base}?inbox=empty${query}`);
+  if (page.viewportSize()!.width < 1024) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+  await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" }).click();
+};
+const flowLoads = (page: Page) => page.evaluate(() => (window as unknown as { __flowLoads: number }).__flowLoads);
+
+test("flow: tiles, chart, bottleneck panel, drill-down, range filter", async ({ page }, info) => {
+  const tag = info.project.name;
+  const narrow = page.viewportSize()!.width < 640;
+  await openFlow(page);
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dòng chảy công việc");
+  await expect.poll(() => flowLoads(page)).toBe(1);
+  const tiles = page.getByRole("group", { name: "Chỉ số dòng chảy" }).getByRole("button");
+  await expect(tiles).toHaveText([/Đang chờ xử lý42/, /Đứng yên > 3 ngày31/, /Quá hạn14/, /Trung vị xử lý19,5 giờ/, /Trả lại \/ từ chối\d+/, /Lượt giao 30 ngày176/]);
+  // Chip nguồn: số đang chờ thật của từng nguồn; nguồn chờ một vai (Thủ kho) vẫn có số.
+  const chips = page.getByRole("group", { name: "Việc đang chờ theo nguồn" }).getByRole("button");
+  await expect(chips.first()).toHaveText(/Quy trình & Đề xuất\s*42\s*31/);
+  const panel = page.getByRole("complementary", { name: "Điểm nghẽn" });
+  await expect(panel).toContainText("Nguyễn Văn Luật");
+  await expect(panel).toContainText("Trên 30 ngày");
+  await expect(panel).toContainText("1.111");
+  // Chọn phòng Vật tư: trên sơ đồ (desktop / tablet) hoặc thanh theo phòng (điện thoại).
+  if (narrow) {
+    await expect(page.getByRole("img", { name: /Sơ đồ dòng chảy công việc/ })).toHaveCount(0);
+    await page.getByRole("list", { name: "Nơi xử lý" }).getByRole("listitem").filter({ hasText: "Phòng Vật tư - Thiết bị" }).click();
+  } else {
+    await page.getByRole("button", { name: /^Phòng Vật tư - Thiết bị: 82 nhận/ }).click();
+  }
+  await expect(panel).toContainText("Phòng Vật tư - Thiết bị");
+  await expect(panel.getByText("3 người")).toBeVisible();
+  await expect(panel).toContainText(/13\s*đang chờ/);
+  await expect(panel).toContainText("Bùi Quang Chung");
+  await panel.getByRole("button", { name: "Điểm nghẽn hôm nay" }).click();
+  await expect(panel).toContainText("Ùn ở người");
+  // Bấm xuống từ ô chỉ số: ngăn các dòng tạo nên con số, dòng Tổng khớp.
+  await tiles.first().click();
+  const drawer = page.getByRole("dialog", { name: "42 việc đang chờ theo phòng" });
+  await expect(drawer.locator("tfoot")).toContainText("42");
+  await expect(drawer).toContainText("Chờ Thủ kho");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  // Lọc 30 ngày → gọi lại máy chủ với khoảng mới; giờ số liệu đổi.
+  await page.getByRole("tablist", { name: "Khoảng thời gian" }).getByRole("tab", { name: "30 ngày" }).click();
+  await expect.poll(() => flowLoads(page)).toBe(2);
+  expect(await page.evaluate(() => (window as unknown as { __flowQuery: { range: number } }).__flowQuery.range)).toBe(30);
+  await expect(page.getByText(/Số liệu lúc 08:31/)).toBeVisible();
+  // Người xử lý: bảng trung vị / % đúng hạn, không gắn nhãn tốt nhất / chậm nhất (câu 5).
+  await page.getByRole("tablist", { name: "Cách nhìn" }).getByRole("tab", { name: "Người xử lý" }).click();
+  await expect(page.getByRole("region", { name: "Sơ đồ dòng chảy" }).getByRole("row")).toHaveCount(13);
+  await expect(page.getByText(/tốt nhất|chậm nhất/)).toHaveCount(0);
+  await page.getByRole("tablist", { name: "Cách nhìn" }).getByRole("tab", { name: "Dòng chảy" }).click();
+  await expectCalmPage(page);
+  await page.screenshot({ path: `${shots}/${tag}-flow.png`, fullPage: narrow });
+});
+
+test("flow: hidden without scope, refresh failure keeps old numbers, deep link", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop");
+  await page.goto(`${base}?inbox=empty&flow=none`);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Hôm nay" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" })).toHaveCount(0);
+  await openFlow(page, "&flow=flaky");
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dòng chảy công việc");
+  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await expect(page.getByRole("status")).toContainText("Chưa cập nhật được");
+  await expect(page.getByRole("group", { name: "Chỉ số dòng chảy" }).getByRole("button").first()).toContainText("42");
+  // Trưởng phòng: chỉ phòng mình, không có thống kê thông báo toàn công ty, không có ô chọn phòng khác.
+  await openFlow(page, "&flow=head");
+  await expect(page.getByText("Phạm vi: Phòng Vật tư - Thiết bị")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Lọc theo phòng ban" })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "Điểm nghẽn" })).not.toContainText("1.111");
+  await page.goto(`${base}?inbox=empty&view=flow`);
+  await expect(page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" })).toHaveAttribute("aria-selected", "true");
+  await page.screenshot({ path: `${shots}/desktop-flow-head.png` });
 });

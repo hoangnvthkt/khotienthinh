@@ -8,7 +8,9 @@ export default defineConfig({
     { name: "tablet", use: { browserName: "chromium", viewport: { width: 820, height: 1180 } }, testMatch: /center-shell\.spec\.ts/ },
     { name: "mobile-safari", use: { ...devices["iPhone 13"], browserName: "webkit" }, testMatch: /center-shell\.spec\.ts/ },
     // Đo CPU WebKit khi đứng yên: chạy riêng, tuần tự (npx playwright test -c tests/center/playwright.config.ts --project webkit-idle).
-    { name: "webkit-idle", use: { ...devices["iPhone 13"], browserName: "webkit" }, testMatch: /center-idle\.spec\.ts/ },
+    // trace: "off" — trình ghi vết của Playwright chụp màn liên tục, trang có SVG lớn (Dòng chảy) bị đội CPU lên ~18% dù trang không làm gì;
+    // tắt để số đo là của trang (13/10: Dòng chảy 1,3%, Hôm nay 0%).
+    { name: "webkit-idle", use: { ...devices["iPhone 13"], browserName: "webkit", trace: "off" }, testMatch: /center-idle\.spec\.ts/ },
   ],
   use: { baseURL: "http://127.0.0.1:4207", trace: "retain-on-failure" },
   outputDir: "../../.center-test-results/artifacts",
