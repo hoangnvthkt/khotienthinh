@@ -3,6 +3,7 @@ import { Inbox, LayoutDashboard, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOp
 import InboxPanel, { workItemKey, type LoadWorkItems } from './InboxPanel';
 import WorkTabs, { type CenterWorkTab } from './WorkTabs';
 import TodayView, { WIDGET_ICONS, type CenterPerson, type TodayCustomize, type TodayState } from './TodayView';
+import AssistantView, { type AssistantHooks } from './AssistantView';
 import ActionFolder from './ActionFolder';
 import WorkItemTab, { type RendererComponent } from './WorkItemTab';
 import { isEmbeddableRoute, moduleForRoute, resolveDrillTarget, type DrillTarget, type ItemDrillTarget } from '../../lib/center/drill';
@@ -42,6 +43,8 @@ const clampWidth = (value: number) => Math.min(INBOX_MAX, Math.max(INBOX_MIN, va
 
 const TODAY_TAB: CenterWorkTab = { id: 'today', title: 'Hôm nay', closable: false };
 const DASHBOARD_TAB: CenterWorkTab = { id: 'dashboard', title: 'Bảng điều khiển', closable: false };
+// Tab Trợ lý cố định cạnh Hôm nay / Bảng điều khiển (doc audit AI mục 8): bản tin + hỏi đáp, chỉ đọc.
+const ASSISTANT_TAB: CenterWorkTab = { id: 'assistant', title: 'Trợ lý', closable: false };
 const ALL_BOARDS: DashboardId[] = ['portfolio', 'cashflow', 'materials', 'debt'];
 const LazyDashboard = React.lazy(() => import('../dashboard/DashboardView'));
 const FLOW_TAB: CenterWorkTab = { id: 'flow', title: 'Dòng chảy công việc', closable: false };
@@ -120,6 +123,8 @@ export interface CenterShellProps {
   loadFlowAccess?: () => Promise<{ access: boolean; scope: FlowScope | null }>;
   /** Mở thẳng tab Dòng chảy công việc (/center?view=flow). */
   initialTab?: 'flow' | null;
+  /** Tab Trợ lý: tình trạng + gọi cổng AI (mặc định lib/aiGateway); fixture truyền bản giả lập. */
+  assistant?: AssistantHooks;
 }
 
 // Hàm / giá trị mặc định của props phải cố định, không tạo mới mỗi lần vẽ: effect phụ thuộc vào chúng sẽ chạy
@@ -133,6 +138,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
   loadActions = fetchCenterActions, Renderer = LazyRenderer, ModalHost = LazyModalHost,
   loadLayout = fetchCenterLayout, saveLayout = saveCenterLayout, loadDashboard, loadDashboardAccess, loadMaterialMoves, loadMetricDocs, titleForRoute, onLogout, userId, initialDashboard = null,
   loadFlow, loadFlowAccess, initialTab = null,
+  assistant,
 }) => {
   // "Bây giờ" cố định theo lần mở Center (hạn việc, lời chào); không tạo Date mới mỗi lần vẽ.
   const [mountedAt] = useState(() => new Date());
@@ -141,9 +147,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
   const [inboxHidden, setInboxHidden] = useState(() => readStorage(INBOX_HIDDEN_KEY, userId) === 'true');
   const [inboxWidth, setInboxWidth] = useState(() => clampWidth(Number(readStorage(INBOX_WIDTH_KEY, userId)) || 340));
   const [resizing, setResizing] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [openTabs, setOpenTabs] = useState<OpenTab[]>([]);
   const [activeTab, setActiveTabState] = useState(TODAY_TAB.id);
+  // Tab Trợ lý chỉ dựng khi mở lần đầu (như Bảng điều khiển): không tính bản tin / tải Việc của tôi khi chưa ai xem.
+  const [assistantMounted, setAssistantMounted] = useState(false);
+  useEffect(() => { if (activeTab === ASSISTANT_TAB.id) setAssistantMounted(true); }, [activeTab]);
   const [mineCount, setMineCount] = useState<number | null>(null);
   const [projectId, setProjectId] = useState<string | null>(() => readStorage(PROJECT_KEY, userId));
   const [today, setToday] = useState<TodayState>({ status: 'loading' });
@@ -478,7 +486,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
     onScroll: (event: React.UIEvent<HTMLDivElement>) => { scrollTops.current.set(id, event.currentTarget.scrollTop); },
   });
 
-  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...(hasFlow ? [FLOW_TAB] : []), ...openTabs];
+  const tabs: readonly CenterWorkTab[] = [TODAY_TAB, ...(loadDashboard && hasDashboards ? [DASHBOARD_TAB] : []), ...(hasFlow ? [FLOW_TAB] : []), ASSISTANT_TAB, ...openTabs];
   const current = openTabs.find(tab => tab.id === activeTab);
   // Lớp đang mở, từ dưới lên: hồ sơ mở trên điện thoại → thư mục thao tác → form.
   const mobileRecord = narrow && mobilePane === 'today' && !!current;
@@ -523,7 +531,7 @@ const CenterShell: React.FC<CenterShellProps> = ({
         <button type="button" className="vcc-iconbtn vcc-mobile-only" onClick={onToggleTheme} aria-label={isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'} title={isDark ? 'Nền sáng' : 'Nền tối'}>
           {isDark ? <Sun size={15} /> : <Moon size={15} />}
         </button>
-        <button type="button" className="vcc-iconbtn vcc-desktop-only" onClick={() => setAssistantOpen(open => !open)} aria-pressed={assistantOpen}>
+        <button type="button" className="vcc-iconbtn vcc-desktop-only" onClick={() => setActiveTab(ASSISTANT_TAB.id)} aria-pressed={activeTab === ASSISTANT_TAB.id}>
           <Sparkles size={15} /> Trợ lý
         </button>
         {mobileNotifications && <div className="vcc-mobile-only flex">{mobileNotifications}</div>}
@@ -612,6 +620,20 @@ const CenterShell: React.FC<CenterShellProps> = ({
               </React.Suspense>
             </div>
           )}
+          {assistantMounted && <div {...panelProps(ASSISTANT_TAB.id)}>
+            <AssistantView
+              person={person}
+              now={now}
+              today={today}
+              mineCount={mineCount}
+              active={activeTab === ASSISTANT_TAB.id && (!narrow || mobilePane === 'today')}
+              loadWorkItems={loadWorkItems}
+              onDrill={onDrill}
+              onOpenItem={openItem}
+              onRetry={() => setTodayAttempt(value => value + 1)}
+              hooks={assistant}
+            />
+          </div>}
           {openTabs.map(tab => (
             <div key={tab.id} {...panelProps(tab.id)}>
               <WorkItemTab
@@ -628,17 +650,6 @@ const CenterShell: React.FC<CenterShellProps> = ({
             </div>
           ))}
         </section>
-        <aside className="vcc-ai" data-open={assistantOpen} aria-label="Trợ lý Vioo">
-          <div className="flex items-center gap-2 border-b border-[color:var(--vcc-border)] px-4 py-2.5">
-            <b>Trợ lý Vioo</b>
-            <span className="vcc-badge">Sắp có</span>
-            <button type="button" className="vcc-desktop-only ml-auto text-xs vcc-muted" onClick={() => setAssistantOpen(false)}>Đóng</button>
-          </div>
-          <div className="space-y-3 p-4">
-            <p className="m-0">Trợ lý sẽ giúp tra số, điền sẵn phiếu và mở bản tóm tắt trước khi bạn bấm.</p>
-            <p className="m-0 text-xs vcc-muted">Nút Gửi, Duyệt luôn do bạn bấm. Trợ lý đang được chuẩn bị, chưa dùng được.</p>
-          </div>
-        </aside>
       </div>
 
       {folder && (
@@ -667,10 +678,11 @@ const CenterShell: React.FC<CenterShellProps> = ({
         <button type="button" role="tab" aria-selected={mobilePane === 'inbox'} onClick={() => setMobilePane('inbox')}>
           <Inbox size={18} /> Việc{mineCount ? ` ${mineCount}` : ''}
         </button>
-        <button type="button" role="tab" aria-selected={mobilePane === 'today'} onClick={() => setMobilePane('today')}>
+        <button type="button" role="tab" aria-selected={mobilePane === 'today' && activeTab !== ASSISTANT_TAB.id} onClick={() => { setMobilePane('today'); if (activeTab === ASSISTANT_TAB.id) setActiveTab(TODAY_TAB.id); }}>
           <LayoutDashboard size={18} /> {current ? 'Hồ sơ' : 'Hôm nay'}
         </button>
-        <button type="button" role="tab" aria-selected={mobilePane === 'assistant'} onClick={() => setMobilePane('assistant')}>
+        {/* Điện thoại: Trợ lý là tab trong vùng làm việc (không còn khung bên phải). */}
+        <button type="button" role="tab" aria-selected={mobilePane === 'today' && activeTab === ASSISTANT_TAB.id} onClick={() => { setMobilePane('today'); setActiveTab(ASSISTANT_TAB.id); }}>
           <Sparkles size={18} /> Trợ lý
         </button>
       </nav>

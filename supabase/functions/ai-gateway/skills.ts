@@ -57,4 +57,42 @@ const gatewayCheck: SkillDef = {
   summary: () => 'kiểm tra kết nối',
 };
 
-export const SKILLS: Record<string, SkillDef> = { [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck };
+// Tab Trợ lý: `facts` = các dòng số liệu của bản tin (mỗi dòng "khóa | nhóm · nhãn: giá trị"), màn hình dựng từ RPC Hôm nay / Việc của tôi
+// đã kiểm quyền của chính người hỏi. AI chỉ được trả lời từ đó và trích khóa — màn hình đổi khóa thành nút mở chứng từ / màn gốc.
+const factsInput = (raw: unknown) => {
+  const facts = clampText(asObject(raw).facts, 12000).trim();
+  if (facts.length < 10) throw new Error('AI_BAD_INPUT');
+  return facts;
+};
+
+const centerQuestion: SkillDef = {
+  code: 'center_question',
+  maxInputChars: 13000,
+  maxOutputTokens: 700,
+  parseInput: raw => {
+    const question = clampText(asObject(raw).question, 500).trim();
+    if (question.length < 3) throw new Error('AI_BAD_INPUT');
+    return { question, facts: factsInput(raw) };
+  },
+  system: 'Trả lời câu hỏi về công việc hôm nay của người dùng CHỈ từ các dòng số liệu được cung cấp (mỗi dòng bắt đầu bằng khóa, rồi "|"). Không suy đoán, không cộng trừ ngoài số đã có. Số liệu không có thì nói rõ "chưa có số trên màn này" và gợi ý mở nhóm nào. Trả lời tối đa 3 câu, tiếng Việt, xưng "bạn".',
+  user: input => `${wrapData('so_lieu', input.facts)}\n${wrapData('cau_hoi', input.question)}\nTrả JSON: {"answer": "<câu trả lời>", "sources": ["<khóa các dòng đã dùng, đúng nguyên văn>"]}. sources để rỗng nếu không dùng dòng nào.`,
+  schema: { type: 'object', additionalProperties: false, required: ['answer', 'sources'], properties: { answer: { type: 'string' }, sources: { type: 'array', items: { type: 'string' } } } },
+  parseOutput: raw => { const o = asObject(raw); return { answer: clampText(o.answer, 1200).trim(), sources: strings(o.sources, 8).map(s => s.replace(/\s+/g, '')) }; },
+  summary: (input, output) => `hỏi ${input.question.length} ký tự trên ${input.facts.split('\n').length} dòng số liệu → ${(output.sources as string[]).length} nguồn`,
+};
+
+const morningBrief: SkillDef = {
+  code: 'morning_brief',
+  maxInputChars: 12500,
+  maxOutputTokens: 600,
+  parseInput: raw => ({ facts: factsInput(raw) }),
+  system: 'Viết bản tin đầu ngày 3–5 câu cho người dùng từ các dòng số liệu được cung cấp: việc gấp và quá hạn trước, rồi dự án, vật tư, nhân sự, tiền. Chỉ dùng số đã có, không thêm, không khuyên chung chung. Tiếng Việt, xưng "bạn", giọng ngắn gọn.',
+  user: input => `${wrapData('so_lieu', input.facts)}\nTrả JSON: {"brief": "<bản tin 3–5 câu>"}`,
+  schema: { type: 'object', additionalProperties: false, required: ['brief'], properties: { brief: { type: 'string' } } },
+  parseOutput: raw => ({ brief: clampText(asObject(raw).brief, 1500).trim() }),
+  summary: (input, output) => `bản tin từ ${input.facts.split('\n').length} dòng → ${String(output.brief || '').length} ký tự`,
+};
+
+export const SKILLS: Record<string, SkillDef> = {
+  [textSummary.code]: textSummary, [gatewayCheck.code]: gatewayCheck, [centerQuestion.code]: centerQuestion, [morningBrief.code]: morningBrief,
+};

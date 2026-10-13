@@ -468,3 +468,58 @@ button.vcc-rail-item { position: relative; width: 100%; font: inherit; backgroun
 .vcc-addmenu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; text-align: left; font-size: 13px; }
 .vcc-addmenu button:hover, .vcc-addmenu button:focus-visible { background: var(--vcc-hover); outline: none; }
 @media (prefers-reduced-motion: reduce) { .vcc-addtile { transition: none; } }
+
+/* ── Tab Trợ lý: bản tin gọn — một câu · Làm trước · Đáng lo · Hỏi (chủ SP 13/10) ── */
+.vcc-assist { max-width: 920px; display: flex; flex-direction: column; gap: 12px; }
+.vcc-brief-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.vcc-brief-date { margin: 0; font-size: 12.5px; font-weight: 500; color: var(--vcc-muted); }
+.vcc-brief-head { margin: 2px 0 0; font-size: 21px; font-weight: 600; line-height: 1.3; color: var(--vcc-fg); }
+.vcc-brief-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.vcc-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 11px 14px 7px; }
+.vcc-sec-title { margin: 0; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--vcc-muted); }
+.vcc-sec-count { font-size: 12px; color: var(--vcc-muted); }
+.vcc-brief-empty { margin: 0; padding: 10px 14px 12px; font-size: 13px; color: var(--vcc-muted); border-top: 1px solid var(--vcc-border); }
+.vcc-task { display: grid; grid-template-columns: 22px 136px minmax(0, 1fr) auto auto; grid-template-areas: "num code title due open"; align-items: center; column-gap: 12px; row-gap: 2px;
+  width: 100%; text-align: left; padding: 10px 14px; border-top: 1px solid var(--vcc-border); }
+.vcc-task:hover, .vcc-worry:hover, .vcc-more:hover, .vcc-qline:hover:not(:disabled) { background: var(--vcc-hover); }
+.vcc-task-num { grid-area: num; width: 22px; height: 22px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--vcc-card2); color: var(--vcc-fg2); }
+.vcc-task-code { grid-area: code; font-size: 12.5px; font-weight: 600; color: var(--vcc-accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vcc-task-title { grid-area: title; font-size: 13.5px; color: var(--vcc-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vcc-task-title i { font-style: normal; font-weight: 600; }
+.vcc-task-due { grid-area: due; font-size: 12px; color: var(--vcc-muted); white-space: nowrap; }
+.vcc-task-due[data-tone="overdue"] { color: var(--vcc-danger); font-weight: 600; }
+.vcc-task-due[data-tone="today"] { color: var(--vcc-warn); font-weight: 600; }
+.vcc-open { grid-area: open; display: inline-flex; align-items: center; gap: 1px; font-size: 12px; font-weight: 600; color: var(--vcc-accent); white-space: nowrap; }
+.vcc-more { display: flex; align-items: center; gap: 2px; width: 100%; padding: 9px 14px 11px 48px; border-top: 1px solid var(--vcc-border); font-size: 12.5px; font-weight: 600; color: var(--vcc-accent); text-align: left; }
+.vcc-worry { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 14px; border-top: 1px solid var(--vcc-border); }
+.vcc-worry::before { content: ""; width: 8px; height: 8px; border-radius: 999px; background: var(--vcc-warn); flex: none; margin-left: 7px; margin-right: 7px; }
+.vcc-worry[data-tone="danger"]::before { background: var(--vcc-danger); }
+.vcc-worry-text { flex: 1; min-width: 0; font-size: 13.5px; color: var(--vcc-fg); }
+.vcc-ask { display: flex; flex-direction: column; gap: 10px; padding: 0 14px 14px; }
+.vcc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.vcc-ask-form { display: flex; gap: 8px; }
+.vcc-ask-input { flex: 1; min-width: 0; height: 36px; border: 1px solid var(--vcc-border); border-radius: 10px; padding: 0 12px; background: var(--vcc-card); color: var(--vcc-fg); font-size: 13.5px; }
+.vcc-ask-input:focus { outline: 2px solid var(--vcc-accent); outline-offset: 1px; }
+.vcc-turn { border-top: 1px solid var(--vcc-border); padding-top: 10px; }
+.vcc-turn-q { font-weight: 600; font-size: 13px; }
+.vcc-turn-a { margin: 6px 0 0; font-size: 13.5px; line-height: 1.5; }
+.vcc-turn-src { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.vcc-qlines { margin: 6px 0 0; padding: 0; list-style: none; }
+.vcc-qline { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; width: 100%; text-align: left; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.vcc-qline:disabled { cursor: default; }
+.vcc-qline-label { color: var(--vcc-muted); }
+.vcc-qline-text { color: var(--vcc-fg); font-weight: 500; }
+.vcc-qline[data-tone="danger"] .vcc-qline-text { color: var(--vcc-danger); }
+.vcc-qline[data-tone="muted"] .vcc-qline-text { color: var(--vcc-muted); }
+.vcc-narr { font-size: 14px; line-height: 1.55; padding: 12px 14px; border-left: 3px solid var(--vcc-accent); background: var(--vcc-card2); border-radius: 0 10px 10px 0; }
+.vcc-narr-err { border-left-color: var(--vcc-warn); }
+.vcc-fb { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: middle; }
+.vcc-fb .vcc-iconbtn { height: 26px; min-width: 26px; padding: 0 6px; }
+.vcc-fb .vcc-iconbtn[aria-pressed="true"] { color: var(--vcc-accent); border-color: var(--vcc-accent); }
+@container (max-width: 640px) {
+  .vcc-task { grid-template-columns: 22px minmax(0, 1fr) auto; grid-template-areas: "num code due" "num title open"; }
+  .vcc-task-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .vcc-more { padding-left: 48px; }
+  .vcc-qline { grid-template-columns: 1fr; gap: 0; }
+  .vcc-brief-head { font-size: 19px; }
+}

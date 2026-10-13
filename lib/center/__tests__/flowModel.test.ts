@@ -108,8 +108,9 @@ describe('formatting', () => {
     expect(shortUnitName('Ban chỉ huy công trình Sơn Miền Bắc', 10)).toBe('Sơn Miền …');
   });
   it('stamps today as time only, other days with the date', () => {
-    expect(stampText('2026-10-13T09:41:00+07:00', NOW)).toBe('09:41');
-    expect(stampText('2026-10-12T16:40:00+07:00', NOW)).toBe('16:40 12/10');
+    // Dựng mốc theo giờ máy chạy test: stampText in giờ địa phương, CI chạy UTC (13/10: +07:00 cố định ra 02:41 trên CI).
+    expect(stampText(new Date(2026, 9, 13, 9, 41).toISOString(), NOW)).toBe('09:41');
+    expect(stampText(new Date(2026, 9, 12, 16, 40).toISOString(), NOW)).toBe('16:40 12/10');
     expect(stampText('garbage', NOW)).toBeNull();
   });
 });
