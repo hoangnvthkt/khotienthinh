@@ -694,7 +694,8 @@ function showSite(key) {
     <div class="row"><span>Chờ cấp trung bình</span><b class="${s.avgDays > 30 ? 'bad' : 'wrn'}">${String(s.avgDays).replace('.', ',')} ngày</b></div>
     <div class="row"><span>Phiếu chờ ở ban chỉ huy</span><b class="${w ? 'wrn' : ''}">${w}${st ? ` · ${st} quá 3 ngày` : ''}</b></div>
     <div class="sec">Ban chỉ huy công trường</div>${peopleRows(key)}
-    <div class="sec">Chuyển với công ty · 90 ngày</div>${flowsOf([key]).map(([t, n]) => `<div class="row"><span>${esc(t)}</span><b>${n}</b></div>`).join('')}`;
+    <div class="sec">Chuyển với công ty · 90 ngày</div>${flowsOf([key]).map(([t, n]) => `<div class="row"><span>${esc(t)}</span><b>${n}</b></div>`).join('')}
+    ${key === 'SMB' ? '<div class="acts"><a class="pri" style="display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:8px;text-decoration:none;font-weight:600;font-size:12px" href="site-3d-smb.html">Mở công trường 3D theo tiến độ</a></div>' : ''}`;
   focusOn(V(s.cx, s.cz));
 }
 panel.addEventListener('click', e => {

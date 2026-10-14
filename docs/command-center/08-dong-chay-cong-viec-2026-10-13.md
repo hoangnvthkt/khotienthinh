@@ -323,3 +323,49 @@ xem được". Cùng tệp `mockups/flow-3d-campus-v1.html` đổi thành:
   phòng khác đặt tạm ở sân nhà máy. Công nhân mũ vàng là minh họa (không có trong Vioo).
 - Góc nhìn: Toàn cảnh · Văn phòng (thẳng mặt tiền, mặt nan / mái hiên mờ khi "Nhìn vào trong") · Nhà máy · CT Sơn Miền Bắc · CT Thú nhồi bông. Ảnh
   `mockups/flow-3d-campus-v1-{overview,office,phieu,smb,da29,factory}.png`. `window.campusDebug` (tua / đổi góc tức thì) chỉ để chụp ảnh tự động khi tab ẩn.
+
+## 14. Công trường 3D theo tiến độ hạng mục — Sơn Miền Bắc (14/10)
+
+Chủ SP gửi phối cảnh 3D công trình Sơn Miền Bắc, muốn "chia tiến độ đã thực hiện ra để mô hình hoá: làm xong phần móng thì thể hiện phần móng, tương tự các
+hạng mục khác", máy móc và vật tư giống thực tế. Trang `mockups/site-3d-smb.html` (three.js, không tải mô hình ngoài; máy, vật tư dựng bằng hình học), từ khuôn viên
+bấm công trường Sơn Miền Bắc → "Mở công trường 3D theo tiến độ".
+
+**Dữ liệu thật, đọc chỉ đọc 14/10** (nhúng ~65 KB): `project_tasks` SMB-2026 349 đầu việc (WBS 1–17, % hiện tại, ngày kế hoạch, ngày thực tế), khối lượng
+`project_work_boq_items` (kích thước nhà suy từ đây), `project_daily_task_progress` 564 điểm đổi % từ 01/07, `daily_logs` 186 ngày có người (công nhân, tổ đội theo việc,
+máy) và sổ `inventory_balances` Kho Sơn Miền Bắc 68 dòng.
+
+**Nhà và kích thước** (theo BOQ, không theo nhãn ảnh): NX1 = NX2 = 1.980 m² nền, 39,4 t thép mái, 1.946 m² tôn → 30 × 66 m; NX3 = 5.550 m², zone 1 + zone 2 mỗi zone
+2.750 m², 160 t thép, 6.174 m² tôn → nhà hai nhịp 66 × 83 m; nhà văn phòng ~400 m²/sàn, 4 tầng + tum. Vì vậy em hiểu: khối dài sau nhà 4 tầng là **NX2**, khối hai
+nhịp phía sau là **NX3** (ảnh ghi "Nhà xưởng 2 / 3" trên hai nhịp) — **cần chủ SP xác nhận**. Giả định thêm: zone 1 = nhịp tây; khu S2 (cos 3.5) và S1 (sàn deck) ở
+đầu nhà phía đường.
+
+**Quy tắc dựng theo %** (mỗi nhóm phần tử gắn đúng mã WBS; phần tử thứ i hiện khi i < số phần tử × %):
+- Móng: cọc → hố đào → đế móng → giằng; lấp đất xong thì móng khuất, hiện nền cát → base → nilong + lưới thép → bê tông nền.
+- Cột từng tầng / cos: cốt thép (lồng thép cam) → ván khuôn (ván ép) → bê tông. Sàn từng tầng: cây chống → ván khuôn → lưới thép → bê tông; "Tháo giáo" xoá cây chống.
+- Tường gạch nhà văn phòng theo tầng; tường ALC nhà xưởng; khung kèo thép (chữ I đỏ) + xà gồ C theo bước cột; tôn mái, tôn/panel bao; ống PCCC đỏ có ty treo;
+  giàn giáo ngoài; 4 tuyến đường (base → bê tông) và cống D400 dọc tuyến 1.
+- Hoàn thiện (kính mặt tiền, ốp, sơn ngoài, mái sảnh) mới 0% nên chưa hiện; hình hoàn thành của từng nhà (và hồ, vườn, bãi đỗ, nhà bảo vệ theo phối cảnh) là
+  bóng mờ, tắt được.
+- % tại một ngày: chuỗi % theo ngày (từ 01/07); trước 01/07 nội suy theo ngày bắt đầu / kết thúc thực tế (có dòng ngày thực tế bắt đầu sau ngày kết thúc — lỗi nhập
+  liệu, đã đảo lại). Kế hoạch tại ngày = nội suy theo ngày kế hoạch → thanh xám sau thanh thực tế, chậm hơn 5 điểm thì cam / đỏ.
+
+**Thanh thời gian 01/04 → 14/10**: tua hoặc Phát (0,3 s/ngày); nhà mọc theo đúng ngày. Ngày có đầu việc "Đổ bê tông …" tăng % → xe bơm cần + 2 xe bồn tới đúng nhà.
+Công nhân theo nhật ký ngày (gần nhất trong 7 ngày): tổ ghi việc ("Xây ALC 6", "Lắp dựng kc 8", "PCCC 7", "Tường rào 4", "Hạ tầng 3", "NVP, X1, X3 8", "Sơn bả 6"
+ngày 08/10) đứng đúng chỗ làm; nhật ký chỉ ghi "Tổ đội" thì chia cho các nhà có đầu việc tăng % trong 7 ngày. Máy theo nhật ký 7 ngày (máy cẩu, máy xúc, máy lu,
+máy ủi, đầm cóc, ô tô tải) — vị trí trên mô hình là minh hoạ.
+
+**Máy và vật tư dựng chi tiết**: máy xúc (xích rỗng, bánh sao, con lăn, đối trọng bo, cần cong, tay gầu, gầu răng, 4 xi lanh, đào theo chu kỳ), ô tô cẩu 25 t (4 trục,
+chân chống chữ H, cần ống lồng 4 đoạn, xi lanh nâng cần, móc cẩu treo dầm thép), xe lu rung, máy ủi, ô tô ben, xe bồn (bồn sọc quay), xe bơm cần (chân chữ X, cần 4
+khúc có xi lanh và ống bê tông), đầm cóc; bãi vật tư: thép cây theo đường kính, xà gồ C, thép hộp, lưới hàn, tấm ALC, gạch, xi măng bao PCB30, đống cát, đống base,
+cọc tre, cống D400, tấm cách nhiệt, nilong, phuy dầu, bu lông móng, Sika. Bấm đống vật tư → số tồn theo sổ kho; lưu ý sổ kho còn ghi cả vật tư đã dùng hết
+(bê tông 1.272 m³, base 1.861 m³) → cần đối soát xuất dùng.
+
+**Bấm được**: hạng mục (nhà) → % từng phần so với kế hoạch + đầu việc đang dở; đầu việc (trên cây hoặc bấm vào phần tử 3D) → % thực tế / kế hoạch, ngày, khối lượng
+BOQ, số phần tử 3D, % theo ngày; phần tử 3D của đầu việc nhấp nháy vàng.
+
+Ảnh: `mockups/site-3d-smb-{overview,office,nx1-task,yard,2026-07-15,2026-05-16-pour,crane,excavator}.jpg`. `window.siteDebug` (setDay, view, focus) chỉ để chụp ảnh tự động.
+
+**Còn thiếu / việc tiếp**: (1) chủ SP xác nhận NX2 / NX3 và vị trí zone, khu S1 / S2; (2) ảnh phối cảnh XinHai (DA29: 9 hạng mục — phần cọc, nhà văn phòng, nhà nghỉ ca,
+nhà xưởng 3 phân đoạn, WC + khí nén, trạm biến áp, hồ PCCC + cột cờ + nhà xe, hạ tầng, bàn giao) để dựng tương tự; (3) tường rào có trong nhật ký nhưng không có
+trong WBS; (4) lên sản phẩm cần bảng "hạng mục → mẫu 3D" cho mỗi dự án (mẫu: nhà khung BTCT n tầng, nhà xưởng khung thép k nhịp, đường, cống) thay cho mã WBS
+viết cứng trong bản thử.
