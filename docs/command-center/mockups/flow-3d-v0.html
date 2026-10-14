@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vioo · Dòng chảy công việc — mô hình 3D thử (13/10/2026)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--border:#e5e5e5;--fg:#1a1a1a;--fg2:#444;--muted:#737373;--accent:#1f8a70;--num:#2f7a2a;--steel:#2e6f80;--warn:#b45309;--danger:#b42318;--who:#7c3aed}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:13px;overflow:hidden}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block}
+.label{font-size:11.5px;font-weight:600;color:var(--fg);background:rgba(255,255,255,.88);border:1px solid var(--border);border-radius:8px;padding:3px 7px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.label small{display:block;font-weight:500;color:var(--muted);font-size:10.5px}
+.label .w{color:var(--warn);font-weight:700}.label .b{color:var(--danger);font-weight:700}
+.label.person{background:rgba(255,255,255,.92);color:var(--who);font-size:10.5px;padding:2px 6px}
+.label.person b{display:inline-grid;place-items:center;min-width:16px;height:16px;border-radius:999px;background:var(--danger);color:#fff;font-size:10px;margin-left:4px}
+.label.site{border-color:#e7b07a;color:#8a4b0a}
+.hud{position:fixed;left:16px;top:16px;width:320px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:14px 16px;z-index:5}
+.hud h1{font-size:15px;margin:0 0 2px}.hud .sub{color:var(--muted);font-size:12px;margin:0 0 10px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.kpi{border:1px solid var(--border);border-radius:9px;padding:6px 8px;text-align:center}
+.kpi b{display:block;font-size:17px;font-variant-numeric:tabular-nums}.kpi small{color:var(--muted);font-size:10.5px}
+.kpi.w b{color:var(--warn)}.kpi.b b{color:var(--danger)}
+.ctl{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+button{font:inherit;color:inherit;cursor:pointer;border:1px solid var(--border);background:var(--card);border-radius:8px;height:28px;padding:0 10px;font-weight:600;font-size:12px}
+button:hover{background:#f2f2f2}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:#e8f3ee}
+.legend{display:grid;gap:3px;font-size:11.5px;color:var(--fg2)}
+.legend span{display:flex;align-items:center;gap:6px}.legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.panel{position:fixed;right:16px;top:16px;width:300px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:14px 16px;z-index:5}
+.panel h2{font-size:14px;margin:0 0 4px;color:var(--accent)}.panel .sub{color:var(--muted);font-size:12px;margin:0 0 8px}
+.row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12.5px}
+.row:last-child{border:0}.row b{font-variant-numeric:tabular-nums}
+.who{color:var(--who);font-weight:600}.bad{color:var(--danger);font-weight:600}.wrn{color:var(--warn);font-weight:600}
+.note{position:fixed;left:16px;bottom:14px;color:var(--muted);font-size:11.5px;background:rgba(255,255,255,.85);padding:6px 10px;border-radius:8px;z-index:5;max-width:640px}
+.toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:6px 12px;border-radius:999px;font-size:12px;z-index:6;opacity:0;transition:opacity .2s}
+.toast.on{opacity:1}
+@media(max-width:900px){.hud{width:min(92vw,320px)}.panel{top:auto;bottom:60px;width:min(92vw,320px);right:16px}.note{display:none}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="hud">
+  <h1>Dòng chảy công việc · mô hình 3D thử</h1>
+  <p class="sub">Phòng ban là các ô sàn, người đi lại giao phiếu cho nhau theo số thật 13/10; phiếu chờ chất đống ở bàn nhận.</p>
+  <div class="kpis">
+    <div class="kpi w"><b>42</b><small>đang chờ</small></div>
+    <div class="kpi b"><b>31</b><small>đứng yên &gt; 3 ngày</small></div>
+    <div class="kpi"><b>366</b><small>lượt giao / 90 ngày</small></div>
+  </div>
+  <div class="ctl">
+    <button id="btnPlay" aria-pressed="true">⏸ Dừng</button>
+    <button data-speed="1" class="spd" aria-pressed="true">1×</button>
+    <button data-speed="3" class="spd">3×</button>
+    <button data-speed="10" class="spd">10×</button>
+    <button id="btnRotate" aria-pressed="true">Tự xoay</button>
+    <button id="btnOverview">Toàn cảnh</button>
+  </div>
+  <div class="legend">
+    <span><i style="background:#2e6f80"></i>Phòng ban · số = người</span>
+    <span><i style="background:#d97706"></i>Phiếu đang chờ ở bàn nhận · <i style="background:#b42318"></i>đứng yên &gt; 3 ngày</span>
+    <span><i style="background:#f5d27a;border:1px solid #c9a43d"></i>Phiếu đang được mang đi (người gửi → người nhận)</span>
+    <span><i style="background:#e7b07a"></i>Công trường · đề xuất vật tư đang mở</span>
+    <span><i style="background:#9ca3af"></i>Chưa gắn phòng ban (lỗ hổng dữ liệu)</span>
+  </div>
+</div>
+
+<div class="panel" id="panel">
+  <h2>Toàn công ty</h2>
+  <p class="sub">Bấm một ô phòng hoặc công trường để xem chi tiết.</p>
+  <div id="panelBody"></div>
+</div>
+<div class="note">Số ở cấp phòng, người đang giữ việc và đề xuất vật tư là số thật 13/10/2026; hình người, đường đi và nhịp giao phiếu là mô phỏng theo tỷ lệ lượt giao 90 ngày. Kéo để xoay, lăn chuột để phóng.</div>
+<div class="toast" id="toast"></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ───────── Số thật 13/10/2026 (cấp phòng) ───────── */
+const UNITS = [
+  { id:'PM',  name:'Phòng Quản lý dự án',       short:'QL dự án',     people:10, waiting:11, stuck:8, overdue:2, pos:[ 0, -1] },
+  { id:'VT',  name:'Phòng Vật tư - Thiết bị',   short:'Vật tư - TB',  people:3,  waiting:13, stuck:5, overdue:5, pos:[ 9,  5] },
+  { id:'HR',  name:'Phòng Hành chính - Nhân sự',short:'HC - Nhân sự', people:8,  waiting:6,  stuck:6, overdue:6, pos:[ 9, -7] },
+  { id:'BLD', name:'Ban lãnh đạo',              short:'Ban lãnh đạo', people:5,  waiting:7,  stuck:7, overdue:1, pos:[18, -1] },
+  { id:'TC',  name:'Phòng Tài chính - Kế toán', short:'Tài chính - KT',people:5, waiting:1,  stuck:1, overdue:0, pos:[ 0,  8] },
+  { id:'NM',  name:'Văn phòng nhà máy',         short:'VP nhà máy',   people:5,  waiting:1,  stuck:1, overdue:0, pos:[18,  7] },
+  { id:'UNK', name:'Chưa gắn phòng ban',        short:'Chưa gắn phòng',people:44,waiting:3,  stuck:3, overdue:0, pos:[ 0, -10], gap:true },
+];
+const FLOWS = [['PM','PM',155],['PM','VT',60],['HR','HR',26],['PM','UNK',24],['HR','BLD',15],['UNK','PM',15],['PM','HR',15],['UNK','VT',14],['UNK','HR',8],['HR','PM',7],['UNK','BLD',7],['VT','VT',6],['PM','BLD',2],['VT','PM',2],['HR','VT',2],['VT','UNK',1],['HR','UNK',1],['TC','PM',1],['BLD','BLD',1],['HR','NM',1]];
+const SITES = [
+  { id:'SMB', name:'Sơn Miền Bắc',        open:37, avgDays:53.5, pos:[-14, -8] },
+  { id:'TNB', name:'Thú nhồi bông GĐ2',   open:29, avgDays:37.8, pos:[-14,  0] },
+  { id:'G3',  name:'G3 BOQ',              open:5,  avgDays:20.6, pos:[-14,  8] },
+];
+const SITE_FLOWS = [['SMB','VT',33],['SMB','PM',4],['TNB','VT',21],['TNB','PM',8],['G3','VT',2],['G3','PM',3]];
+const HOLDERS = [['Nguyễn Văn Luật','PM',6,'16/06'],['Bùi Thuỳ Linh','UNK',6,'16/06'],['Admin Hoàng','HR',6,'04/06'],['Dương Xuân Thịnh','BLD',5,'07/09'],['Bùi Quang Chung','VT',5,'08/10'],['Nguyễn Thành Đô','PM',2,'12/10'],['Hoàng Công Minh','VT',1,'09/10']];
+const PARTNERS = id => FLOWS.filter(f => f[0] === id || f[1] === id).filter(f => f[0] !== f[1]);
+
+/* ───────── Khung cảnh ───────── */
+const stage = document.getElementById('stage');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#f4f5f7');
+scene.fog = new THREE.Fog('#f4f5f7', 60, 120);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 300);
+camera.position.set(14, 26, 34);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+const labels = new CSS2DRenderer();
+labels.setSize(innerWidth, innerHeight);
+Object.assign(labels.domElement.style, { position: 'absolute', top: '0', left: '0', pointerEvents: 'none' });
+stage.appendChild(labels.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(3, 0, 0); controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.47; controls.minDistance = 10; controls.maxDistance = 80;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.35;
+controls.addEventListener('start', () => { controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); });
+
+scene.add(new THREE.HemisphereLight('#ffffff', '#c9d2dc', 0.9));
+const sun = new THREE.DirectionalLight('#ffffff', 1.4);
+sun.position.set(20, 40, 15); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.left = -40; sun.shadow.camera.right = 40; sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 90), new THREE.MeshStandardMaterial({ color: '#eceef1', roughness: 1 }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(120, 60, '#dfe3e8', '#e6e9ed'); grid.position.y = 0.01; scene.add(grid);
+
+const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.75, ...extra });
+const M = {
+  slab: mat('#dde9ee'), slabGap: mat('#e6e7ea', { transparent: true, opacity: 0.75 }), edge: mat('#2e6f80'), edgeGap: mat('#9ca3af'),
+  desk: mat('#c9a27e'), tray: mat('#b7c4cb'), waiting: mat('#d97706'), stuck: mat('#b42318'), doc: mat('#f5d27a', { emissive: '#f1c45f', emissiveIntensity: 0.35 }),
+  skin: mat('#f1c9a5'), site: mat('#f3d9bd'), siteEdge: mat('#c98a3d'), crane: mat('#e0a040'),
+};
+const bodyColors = { PM: '#2e6f80', VT: '#1f8a70', HR: '#7c3aed', BLD: '#1d4290', TC: '#0f766e', NM: '#8a6d3b', UNK: '#9ca3af', SITE: '#c98a3d' };
+const bodyMats = Object.fromEntries(Object.entries(bodyColors).map(([k, c]) => [k, mat(c)]));
+
+function label(html, cls = '') { const el = document.createElement('div'); el.className = `label ${cls}`; el.innerHTML = html; return new CSS2DObject(el); }
+
+/* ───────── Phòng ban ───────── */
+const zones = {};
+const SLAB = [8, 5.6];
+for (const u of UNITS) {
+  const g = new THREE.Group(); g.position.set(u.pos[0], 0, u.pos[1]);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(SLAB[0], 0.25, SLAB[1]), u.gap ? M.slabGap : M.slab);
+  slab.position.y = 0.125; slab.receiveShadow = true; slab.userData.unit = u.id; g.add(slab);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(SLAB[0], 0.08, 0.18), u.gap ? M.edgeGap : M.edge); edge.position.set(0, 0.3, -SLAB[1] / 2 + 0.1); g.add(edge);
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 1.1), M.desk); desk.position.set(2, 0.95, -1.5); desk.castShadow = true; g.add(desk);
+  for (const [lx, lz] of [[-1.2, -0.45], [1.2, -0.45], [-1.2, 0.45], [1.2, 0.45]]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 0.08), M.desk); leg.position.set(2 + lx, 0.6, -1.5 + lz); g.add(leg); }
+  const tray = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.8), M.tray); tray.position.set(2.6, 1.04, -1.5); g.add(tray);
+  // Chồng phiếu đang chờ (số thật): đứng yên đỏ, còn lại cam; xếp 4 cột.
+  const pile = new THREE.Group(); pile.position.set(2.6, 1.07, -1.5); g.add(pile);
+  for (let i = 0; i < u.waiting; i += 1) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.3), i < u.stuck ? M.stuck : M.waiting);
+    box.position.set(-0.36 + (i % 4) * 0.24, 0.045 + Math.floor(i / 4) * 0.1, (Math.floor(i / 4) % 2) * 0.05); box.castShadow = true; pile.add(box);
+  }
+  const lab = label(`${u.short}<small>${u.people} người · <span class="${u.stuck ? 'b' : 'w'}">${u.waiting} đang chờ</span>${u.stuck ? ` · ${u.stuck} đứng yên` : ''}</small>`);
+  lab.position.set(0, 3.6, -SLAB[1] / 2 + 0.3); g.add(lab);
+  scene.add(g);
+  zones[u.id] = { unit: u, group: g, tray: new THREE.Vector3(u.pos[0] + 2.6, 0, u.pos[1] - 0.6), slab, people: [] };
+}
+/* ───────── Công trường ───────── */
+const sites = {};
+for (const s of SITES) {
+  const g = new THREE.Group(); g.position.set(s.pos[0], 0, s.pos[1]);
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(6, 0.25, 4.6), M.site); slab.position.y = 0.125; slab.receiveShadow = true; slab.userData.site = s.id; g.add(slab);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(6, 0.08, 0.18), M.siteEdge); edge.position.set(0, 0.3, -2.2); g.add(edge);
+  const build = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 1.6), mat('#d8c3a5')); build.position.set(-1.3, 1.05, 0.4); build.castShadow = true; g.add(build);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4.2, 8), M.crane); mast.position.set(1.4, 2.3, -1); g.add(mast);
+  const jib = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.1, 0.1), M.crane); jib.position.set(1.4, 4.4, -1); g.add(jib);
+  const lab = label(`${s.name}<small><span class="w">${s.open} đề xuất VT đang mở</span> · chờ cấp TB ${String(s.avgDays).replace('.', ',')} ngày</small>`, 'site');
+  lab.position.set(0, 5.2, -2.1); g.add(lab);
+  scene.add(g);
+  sites[s.id] = { site: s, group: g, slab, people: [] };
+}
+
+/* ───────── Người ───────── */
+const bodyGeo = new THREE.CapsuleGeometry(0.22, 0.55, 4, 10);
+const headGeo = new THREE.SphereGeometry(0.2, 12, 10);
+const docGeo = new THREE.BoxGeometry(0.42, 0.04, 0.3);
+const agents = [];
+function spawnPerson(home, color, unitId) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(bodyGeo, bodyMats[color] || bodyMats.UNK); body.position.y = 0.72; body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(headGeo, M.skin); head.position.y = 1.35; head.castShadow = true; g.add(head);
+  const doc = new THREE.Mesh(docGeo, M.doc); doc.position.set(0.3, 1.0, 0.25); doc.visible = false; g.add(doc);
+  g.position.copy(home.getPointWithin());
+  scene.add(g);
+  const a = { g, body, doc, home, unitId, state: 'idle', target: null, speed: 2.2 + Math.random() * 0.6, wait: Math.random() * 3, phase: Math.random() * 10, busy: false };
+  agents.push(a); home.people.push(a); return a;
+}
+const within = (center, w, d) => () => new THREE.Vector3(center[0] + (Math.random() - 0.5) * (w - 1.6), 0, center[1] + (Math.random() - 0.5) * (d - 1.6));
+for (const u of UNITS) { zones[u.id].getPointWithin = within(u.pos, SLAB[0], SLAB[1]); for (let i = 0; i < Math.min(u.people, u.gap ? 10 : 8); i += 1) spawnPerson(zones[u.id], u.id, u.id); }
+for (const s of SITES) { sites[s.id].getPointWithin = within(s.pos, 6, 4.6); for (let i = 0; i < 3; i += 1) spawnPerson(sites[s.id], 'SITE', s.id); }
+// Gắn tên người đang giữ nhiều việc (số thật) vào một người trong phòng.
+for (const [name, unit, n] of HOLDERS) {
+  const z = zones[unit]; const a = z.people.find(p => !p.named); if (!a) continue;
+  a.named = name; const lab = label(`${name}<b>${n}</b>`, 'person'); lab.position.set(0, 2.1, 0); a.g.add(lab);
+}
+
+/* ───────── Nhịp giao phiếu theo tỷ lệ lượt giao 90 ngày ───────── */
+const schedule = [];
+const addRoute = (from, to, n, kind) => schedule.push({ from, to, n, kind, next: Math.random() * 4, every: Math.max(1.2, 45 / n) });
+for (const [a, b, n] of FLOWS) addRoute(zones[a], zones[b], n, 'unit');
+for (const [a, b, n] of SITE_FLOWS) addRoute(sites[a], zones[b], n, 'site');
+const tmp = new THREE.Vector3();
+function dispatch(route) {
+  const carrier = route.from.people.find(p => !p.busy); if (!carrier) return;
+  carrier.busy = true; carrier.doc.visible = true;
+  const dest = route.to === route.from ? route.to.getPointWithin() : route.to.tray.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0, 0.9));
+  carrier.state = 'carry'; carrier.target = dest; carrier.route = route;
+}
+function handoff(a) {
+  // Trao phiếu: phiếu bay lên khay / người nhận, phòng nhận nhấp nháy nhẹ; rồi người quay về.
+  a.doc.visible = false;
+  const z = a.route.to;
+  const card = new THREE.Mesh(docGeo, M.doc); card.position.copy(a.g.position).add(new THREE.Vector3(0.3, 1.0, 0.25)); scene.add(card);
+  const end = z.tray.clone().add(new THREE.Vector3(0, 1.2 + Math.random() * 0.4, -0.9));
+  flights.push({ mesh: card, from: card.position.clone(), to: end, t: 0, zone: z });
+  const receiver = z.people.find(p => !p.busy && p !== a); if (receiver) { receiver.nod = 0.6; }
+  a.state = 'return'; a.target = a.home.getPointWithin(); a.route = null;
+  toast(`${a.named || 'Người ' + (a.home.unit ? a.home.unit.short : a.home.site.name)} giao phiếu → ${z.unit.short}`);
+}
+const flights = [];
+let toastT = null;
+function toast(text) { const el = document.getElementById('toast'); el.textContent = text; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 1600); }
+
+/* ───────── Chọn phòng / công trường ───────── */
+const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+const panelBody = document.getElementById('panelBody'); const panelH2 = document.querySelector('#panel h2'); const panelSub = document.querySelector('#panel .sub');
+const names = Object.fromEntries(UNITS.map(u => [u.id, u.short]));
+function showUnit(id) {
+  const u = UNITS.find(x => x.id === id);
+  panelH2.textContent = u.name; panelSub.textContent = `${u.people} người`;
+  const inn = FLOWS.filter(f => f[1] === id).reduce((s, f) => s + f[2], 0), out = FLOWS.filter(f => f[0] === id).reduce((s, f) => s + f[2], 0);
+  panelBody.innerHTML = `
+    <div class="row"><span>Đang chờ</span><b class="${u.waiting ? 'wrn' : ''}">${u.waiting}</b></div>
+    <div class="row"><span>Đứng yên &gt; 3 ngày</span><b class="${u.stuck ? 'bad' : ''}">${u.stuck}</b></div>
+    <div class="row"><span>Quá hạn</span><b class="${u.overdue ? 'bad' : ''}">${u.overdue}</b></div>
+    <div class="row"><span>Nhận / giao đi · 90 ngày</span><b>${inn} / ${out}</b></div>
+    ${PARTNERS(id).sort((a, b) => b[2] - a[2]).slice(0, 4).map(f => `<div class="row"><span>${f[0] === id ? '→ ' + names[f[1]] : '← ' + names[f[0]]}</span><b>${f[2]}</b></div>`).join('')}
+    ${HOLDERS.filter(h => h[1] === id).map(h => `<div class="row"><span class="who">${h[0]}</span><b class="bad">${h[2]} việc · từ ${h[3]}</b></div>`).join('')}
+    ${u.gap ? '<div class="row"><span class="bad">44 nhân viên chưa gắn phòng trong Nhân sự — gắn để sơ đồ đúng.</span></div>' : ''}`;
+  focusOn(zones[id].group.position);
+}
+function showSite(id) {
+  const s = SITES.find(x => x.id === id);
+  panelH2.textContent = s.name; panelSub.textContent = 'Công trường · đề xuất vật tư';
+  panelBody.innerHTML = `<div class="row"><span>Đề xuất đang mở</span><b class="wrn">${s.open}</b></div><div class="row"><span>Chờ cấp trung bình</span><b class="${s.avgDays > 30 ? 'bad' : 'wrn'}">${String(s.avgDays).replace('.', ',')} ngày</b></div>
+    ${SITE_FLOWS.filter(f => f[0] === id).map(f => `<div class="row"><span>→ ${names[f[1]]}</span><b>${f[2]}</b></div>`).join('')}
+    <div class="row"><span class="wrn">Đề xuất đã duyệt mà chưa cấp là nghẽn ở Vật tư / Mua hàng.</span></div>`;
+  focusOn(sites[id].group.position);
+}
+let focusTarget = null;
+function focusOn(p) { focusTarget = p.clone(); controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); }
+renderer.domElement.addEventListener('pointerdown', e => { mouse.set(e.clientX, e.clientY); });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) > 6) return;
+  const v = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(v, camera);
+  const hit = ray.intersectObjects([...Object.values(zones).map(z => z.slab), ...Object.values(sites).map(s => s.slab)])[0];
+  if (!hit) return;
+  if (hit.object.userData.unit) showUnit(hit.object.userData.unit); else showSite(hit.object.userData.site);
+});
+
+/* ───────── Điều khiển ───────── */
+let playing = true, speed = 1;
+const btnPlay = document.getElementById('btnPlay'); const btnRotate = document.getElementById('btnRotate');
+btnPlay.onclick = () => { playing = !playing; btnPlay.textContent = playing ? '⏸ Dừng' : '▶ Chạy'; btnPlay.setAttribute('aria-pressed', String(playing)); };
+document.querySelectorAll('.spd').forEach(b => { b.onclick = () => { speed = Number(b.dataset.speed); document.querySelectorAll('.spd').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }; });
+btnRotate.onclick = () => { controls.autoRotate = !controls.autoRotate; btnRotate.setAttribute('aria-pressed', String(controls.autoRotate)); };
+document.getElementById('btnOverview').onclick = () => { focusTarget = new THREE.Vector3(3, 0, 0); camera.position.set(14, 26, 34); panelH2.textContent = 'Toàn công ty'; panelSub.textContent = 'Bấm một ô phòng hoặc công trường để xem chi tiết.'; panelBody.innerHTML = ''; };
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight); });
+
+/* ───────── Vòng lặp ───────── */
+const clock = new THREE.Clock();
+function step(a, dt) {
+  if (a.nod > 0) { a.nod -= dt; a.body.scale.y = 1 + Math.sin(a.nod * 10) * 0.06; } else a.body.scale.y = 1;
+  if (a.state === 'idle') {
+    a.wait -= dt;
+    if (a.wait <= 0) { a.target = a.home.getPointWithin(); a.state = 'walk'; }
+    return;
+  }
+  if (!a.target) return;
+  tmp.subVectors(a.target, a.g.position); tmp.y = 0;
+  const dist = tmp.length();
+  if (dist < 0.15) {
+    if (a.state === 'carry') { handoff(a); return; }
+    if (a.state === 'return') { a.busy = false; }
+    a.state = 'idle'; a.wait = 1.5 + Math.random() * 4; a.target = null; return;
+  }
+  tmp.normalize();
+  const sp = (a.state === 'carry' ? a.speed * 1.25 : a.speed) * dt;
+  a.g.position.addScaledVector(tmp, Math.min(sp, dist));
+  a.g.rotation.y = Math.atan2(tmp.x, tmp.z);
+  a.phase += dt * 12; a.g.position.y = Math.abs(Math.sin(a.phase)) * 0.06;
+}
+function animate() {
+  requestAnimationFrame(animate);
+  const raw = Math.min(clock.getDelta(), 0.05);
+  const dt = playing ? raw * speed : 0;
+  if (dt > 0) {
+    for (const r of schedule) { r.next -= dt; if (r.next <= 0) { dispatch(r); r.next = r.every * (0.6 + Math.random() * 0.8); } }
+    for (const a of agents) step(a, dt);
+    for (let i = flights.length - 1; i >= 0; i -= 1) {
+      const f = flights[i]; f.t += dt * 1.6;
+      const t = Math.min(1, f.t); f.mesh.position.lerpVectors(f.from, f.to, t); f.mesh.position.y += Math.sin(t * Math.PI) * 1.2; f.mesh.rotation.y += dt * 4;
+      if (t >= 1) { f.mesh.scale.multiplyScalar(0.92); if (f.mesh.scale.x < 0.08) { scene.remove(f.mesh); flights.splice(i, 1); } }
+    }
+  }
+  if (focusTarget) { controls.target.lerp(focusTarget, 0.06); if (controls.target.distanceTo(focusTarget) < 0.05) focusTarget = null; }
+  controls.update();
+  renderer.render(scene, camera);
+  labels.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

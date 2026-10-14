@@ -871,6 +871,28 @@ test("flow: tiles, chart, bottleneck panel, drill-down, range filter", async ({ 
   await expect.poll(() => flowLoads(page)).toBe(2);
   expect(await page.evaluate(() => (window as unknown as { __flowQuery: { range: number } }).__flowQuery.range)).toBe(30);
   await expect(page.getByText(/Số liệu lúc 08:31/)).toBeVisible();
+  // Chuyển động (chủ SP 13/10): hạt chạy trên dải bật sẵn trên máy tính / máy tính bảng, tắt được và nhớ; điện thoại không có.
+  if (narrow) {
+    await expect(page.getByRole("button", { name: "Chuyển động" })).toHaveCount(0);
+  } else {
+    const motion = page.getByRole("button", { name: "Chuyển động" });
+    await expect(motion).toHaveAttribute("aria-pressed", page.viewportSize()!.width >= 1024 ? "true" : "false");
+    if (page.viewportSize()!.width < 1024) await motion.click();
+    expect(await page.locator(".vfl-particle").count()).toBeGreaterThan(5);
+    await motion.click();
+    await expect(motion).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".vfl-particle")).toHaveCount(0);
+    await page.reload();
+    if (page.viewportSize()!.width < 1024) await page.getByRole("tablist", { name: "Chọn vùng" }).getByRole("tab", { name: /Hôm nay/ }).click();
+    await page.getByRole("tablist", { name: "Vùng làm việc" }).getByRole("tab", { name: "Dòng chảy công việc" }).click();
+    await expect(page.getByRole("button", { name: "Chuyển động" })).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "Chuyển động" }).click();
+    await expect(page.locator(".vfl-particle")).not.toHaveCount(0);
+    // Tắt lại để phần kiểm "trang đứng yên" phía dưới đo đúng trang không chuyển động.
+    await page.getByRole("button", { name: "Chuyển động" }).click();
+    await expect(page.locator(".vfl-particle")).toHaveCount(0);
+    await page.evaluate(() => localStorage.removeItem("vfl_motion"));
+  }
   // Người xử lý: bảng trung vị / % đúng hạn, không gắn nhãn tốt nhất / chậm nhất (câu 5).
   await page.getByRole("tablist", { name: "Cách nhìn" }).getByRole("tab", { name: "Người xử lý" }).click();
   await expect(page.getByRole("region", { name: "Sơ đồ dòng chảy" }).getByRole("row")).toHaveCount(13);
@@ -905,6 +927,12 @@ test("flow: item list, open record as tab, remind, clean up old items", async ({
   const tag = info.project.name;
   const narrow = page.viewportSize()!.width < 640;
   await openFlow(page);
+  // Máy tính bật sẵn Chuyển động: tắt để phần kiểm trang đứng yên ở cuối đo đúng (bài này không kiểm chuyển động).
+  if (!narrow) {
+    const motionBtn = page.getByRole("button", { name: "Chuyển động" });
+    await motionBtn.waitFor();
+    if ((await motionBtn.getAttribute("aria-pressed")) === "true") { await motionBtn.click(); await expect(motionBtn).toHaveAttribute("aria-pressed", "false"); }
+  }
   const panel = page.getByRole("complementary", { name: "Điểm nghẽn" });
   // Xem việc Nguyễn Văn Luật đang giữ: 6 phiếu, phiếu chết lên đầu.
   await panel.getByRole("button", { name: "Xem" }).first().click();

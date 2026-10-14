@@ -270,3 +270,122 @@ Kiểm (13/10): smoke Cloud rollback (6 vai; danh sách, lọc từng loại, ph
 không có nút Nhắc, không nối danh sách thì về bảng PR-2); WebKit đứng yên 4 bài. Ảnh: `evidence/2026-10-13-flow-items-{desktop,iphone}.png`.
 
 Chạy lại smoke: `node scripts/run-supabase-cloud-transaction.mjs --expected-ref ftciqmqhmfvjtwoycswe --migration supabase/migrations/20261013180000_center_flow_items_v1.sql --smoke supabase/tests/center_flow_items_smoke.sql`.
+
+## 13. Chuyển động trên dải + mô hình 3D thử (13/10/2026, chủ SP yêu cầu)
+
+**Chuyển động (sản phẩm):** chủ SP thấy thiếu phần "dữ liệu động" của bản xem thử v0. Đưa lại thành công tắc **Chuyển động** ở đầu sơ đồ: hạt chạy dọc 20 dải lớn nhất
+(dải to chạy nhanh hơn, dải "Đang chờ" màu cam). Bật sẵn trên máy tính (≥ 1024 px), tắt sẵn trên máy tính bảng / điện thoại và khi hệ điều hành chọn giảm chuyển động;
+nhớ lựa chọn trên máy. Cách làm và số đo WebKit (iPhone 13, 820 px):
+
+| Cách | CPU khi đứng yên | Kết luận |
+|---|---|---|
+| SMIL `animateMotion` trong SVG sơ đồ | 38,7 % | vẽ lại cả sơ đồ mỗi khung hình — loại |
+| SMIL ở lớp SVG riêng đè lên | 26,1 % | vẫn vẽ lại lớp lớn — loại |
+| **Phần tử HTML, keyframe `transform` thuần (17 mốc lấy mẫu dọc đường cong)** | **4,8 %** (tắt: 0,8 %) | bộ tổng hợp GPU dịch chuyển, không vẽ lại — dùng |
+
+Bài `webkit-idle` đo cả hai trạng thái: tắt (ngưỡng 5 điểm, như mọi màn) và bật (ngưỡng 10 điểm, chuyển động người dùng tự bật). Trình ghi vết Playwright và chờ
+"animation kết thúc" phải bỏ qua animation lặp vô hạn, nếu không bài đo treo.
+
+**Mô hình 3D thử (tham khảo, không phải sản phẩm):** `mockups/flow-3d-v0.html` (three.js từ CDN, mở qua launch `flow-mockup` cổng 5190; ảnh `mockups/flow-3d-v0-*.png`).
+Phòng ban là ô sàn (số người thật), công trường có cần cẩu; người đi lại trong phòng, mang phiếu (thẻ vàng) từ phòng gửi sang bàn nhận theo nhịp tỷ lệ với lượt giao
+90 ngày; phiếu chờ chất đống ở khay bàn nhận (cam = đang chờ, đỏ = đứng yên, số thật); người giữ nhiều việc có tên và huy hiệu đỏ; bấm ô → bảng số của phòng / công trường;
+Dừng / 1× 3× 10× / Tự xoay / Toàn cảnh; dòng thông báo "A giao phiếu → B" mỗi lần trao. Để lên sản phẩm cần: nguồn dữ liệu theo người (PR-3 đã có), người thật theo
+phòng, đo WebKit (three.js vẽ liên tục ~ GPU), và quyết định của chủ SP về vị trí (chế độ trình chiếu trong tab Dòng chảy hay màn riêng cho TV phòng họp).
+
+**Khuôn viên thật (v1, 13/10 tối):** chủ SP gửi ảnh văn phòng và ảnh chụp trên cao → `mockups/flow-3d-campus-v1.html` dựng theo ảnh: văn phòng 3 tầng mặt nan gỗ,
+hai mảng kính lệch, logo xanh "TIEN THINH", biển "VĂN PHÒNG THIẾT KẾ - KINH DOANH", mái hiên; nhà máy 3 khoang mái xanh có ô lấy sáng, khối trắng phía trước ghi
+"XÂY DỰNG & KẾT CẤU THÉP", khoang phụ; hồ nước với chòi lục giác và cầu gỗ; nhà mái đỏ; nhà bảo vệ và dãy nhà phụ mái xanh; hàng rào, cổng trượt, đường có vạch,
+hàng cau dọc đường; xe ở sân. Phòng ban đặt vào toà nhà (tầng là giả định, ghi rõ trên màn): T1 Tài chính - Kế toán, T2 Quản lý dự án, T3 Ban lãnh đạo + Hành chính -
+Nhân sự; Vật tư - Thiết bị ở kho đầu khoang tây, Văn phòng nhà máy ở khối trắng, 44 người chưa gắn phòng ở sân nhà máy. Nút "Nhìn vào trong" làm mờ mặt tiền để thấy
+từng tầng. Người đi theo đường thật: lõi thang → cửa → sân → cửa toà kia; 3 xe công trường (Sơn Miền Bắc, Thú nhồi bông GĐ2, G3) từ đường vào cổng, dừng ở sân,
+người xuống mang đề xuất vật tư tới Vật tư hoặc Quản lý dự án theo số thật. Góc nhìn: Toàn cảnh · Văn phòng · Nhà máy · Cổng. Ảnh `mockups/flow-3d-campus-v1-*.png`.
+Cần chủ SP xác nhận tầng thật của từng phòng và vị trí kho / văn phòng nhà máy.
+
+**Khuôn viên v2 (14/10): tầng thật, hai công trường, phiếu thật bấm xem được.** Chủ SP xác nhận: T1 Hành chính - Nhân sự; T2 Kế toán + Ban lãnh đạo;
+T3 Vật tư - Thiết bị + Quản lý dự án + Thiết kế - Đấu thầu; VP nhà máy ở nhà máy kết cấu thép; công trường là hai khu bên ngoài công ty; "dữ liệu khi chuyển bấm vào
+xem được". Cùng tệp `mockups/flow-3d-campus-v1.html` đổi thành:
+
+- **Phát lại lượt chuyển thật**: đọc chỉ đọc 389 bước quy trình (`workflow_step_assignments` 90 ngày + mọi bước đang chờ) lúc 14/10 13:47, nhúng vào trang (~29 KB:
+  mã phiếu, tiêu đề, loại, bước, người gửi → người nhận, giờ giao, giờ xử lý, kết quả, quá hạn). Đồng hồ phát lại 22/09 → 14/10 (bắt đầu 06/10 07:00, thanh tua bấm được),
+  giờ làm việc 1 giờ = 3 giây, đêm và Chủ nhật tua nhanh. Mỗi bước là một người thật mang tờ phiếu thật tới bàn người nhận; bước kế của cùng phiếu chờ phiếu tới tay
+  mới đi tiếp; nhiều phiếu cùng người gửi, cùng nơi nhận trong ~20 phút gộp thành một chuyến ("9 phiếu" — Phạm Đức Thiện duyệt dồn 12/10). Người gửi đang bận thì
+  đồng nghiệp cùng phòng mang hộ. Tiêu đề loại "hồ sơ phòng HCNS" (thử việc, hoàn chi phí cá nhân) được ẩn.
+- **Chồng phiếu trên bàn = việc đang chờ tại thời điểm phát lại** (đã giao, chưa xử lý): vàng < 1 ngày, cam 1–3 ngày, đỏ > 3 ngày. Phát tới hiện tại thì tổng các chồng
+  đúng bằng 37 bước đang chờ thật.
+- **Bấm được dữ liệu**: nhãn vàng trên người / xe đang mang phiếu → thẻ phiếu (mã, tiêu đề, bước, người gửi, người nhận, giờ gửi, kết quả bước) + **hành trình phiếu**
+  (mọi bước của phiếu, chấm màu theo kết quả) + "Theo người mang" (camera bám người/xe) + "Mở phiếu" (trong Vioo sẽ mở tab). Bấm người → phiếu trên bàn + nhận / xử lý 90 ngày
+  + thời gian xử lý trung vị. Bấm phòng / công trường → người, chờ, quá 3 ngày, chuyển với nơi khác 90 ngày. Bảng phải mặc định là "Đang mang đi" + "Vừa chuyển".
+- **Hai công trường ngoài công ty** bên kia đường: Sơn Miền Bắc (SMB-2026, khung thép đang dựng, cẩu bánh lốp, máy xúc) và Thú nhồi bông GĐ2 (DA29, khung bê tông có
+  thép chờ, giàn giáo lưới xanh, cẩu tháp quay). Ban chỉ huy ngồi dưới mái che cạnh container: Luật, Sơn ở SMB; Thảo, Năm, Đoàn Văn Dương, Hoàng Công Minh,
+  Nguyễn Quang Huy ở DA29 — **suy từ dữ liệu** (người tạo / duyệt bước "BCH CT Duyệt" của đúng dự án đó). Phiếu đi giữa công trường và công ty bằng xe tải công trường
+  hoặc xe con công ty: người ra xe → xe chạy đường → đỗ ở sân → người lên đúng tầng giao phiếu → quay lại xe về.
+- **Lỗ hổng dữ liệu hiện ra**: Phạm Đức Thiện duyệt bước "Phòng TKĐT duyệt" 27 lần nhưng chưa gắn phòng → ngồi ở Thiết kế - Đấu thầu, thân màu xám; 4 người chưa gắn
+  phòng khác đặt tạm ở sân nhà máy. Công nhân mũ vàng là minh họa (không có trong Vioo).
+- Góc nhìn: Toàn cảnh · Văn phòng (thẳng mặt tiền, mặt nan / mái hiên mờ khi "Nhìn vào trong") · Nhà máy · CT Sơn Miền Bắc · CT Thú nhồi bông. Ảnh
+  `mockups/flow-3d-campus-v1-{overview,office,phieu,smb,da29,factory}.png`. `window.campusDebug` (tua / đổi góc tức thì) chỉ để chụp ảnh tự động khi tab ẩn.
+
+## 14. Công trường 3D theo tiến độ hạng mục — Sơn Miền Bắc (14/10)
+
+Chủ SP gửi phối cảnh 3D công trình Sơn Miền Bắc, muốn "chia tiến độ đã thực hiện ra để mô hình hoá: làm xong phần móng thì thể hiện phần móng, tương tự các
+hạng mục khác", máy móc và vật tư giống thực tế. Trang `mockups/site-3d.html?site=SMB` (three.js, không tải mô hình ngoài; máy, vật tư dựng bằng hình học), từ khuôn viên
+bấm công trường Sơn Miền Bắc → "Mở công trường 3D theo tiến độ".
+
+**Dữ liệu thật, đọc chỉ đọc 14/10** (nhúng ~65 KB): `project_tasks` SMB-2026 349 đầu việc (WBS 1–17, % hiện tại, ngày kế hoạch, ngày thực tế), khối lượng
+`project_work_boq_items` (kích thước nhà suy từ đây), `project_daily_task_progress` 564 điểm đổi % từ 01/07, `daily_logs` 186 ngày có người (công nhân, tổ đội theo việc,
+máy) và sổ `inventory_balances` Kho Sơn Miền Bắc 68 dòng.
+
+**Nhà và kích thước** (theo BOQ, không theo nhãn ảnh): NX1 = NX2 = 1.980 m² nền, 39,4 t thép mái, 1.946 m² tôn → 30 × 66 m; NX3 = 5.550 m², zone 1 + zone 2 mỗi zone
+2.750 m², 160 t thép, 6.174 m² tôn → nhà hai nhịp 66 × 83 m; nhà văn phòng ~400 m²/sàn, 4 tầng + tum. Vì vậy em hiểu: khối dài sau nhà 4 tầng là **NX2**, khối hai
+nhịp phía sau là **NX3** (ảnh ghi "Nhà xưởng 2 / 3" trên hai nhịp) — **cần chủ SP xác nhận**. Giả định thêm: zone 1 = nhịp tây; khu S2 (cos 3.5) và S1 (sàn deck) ở
+đầu nhà phía đường.
+
+**Quy tắc dựng theo %** (mỗi nhóm phần tử gắn đúng mã WBS; phần tử thứ i hiện khi i < số phần tử × %):
+- Móng: cọc → hố đào → đế móng → giằng; lấp đất xong thì móng khuất, hiện nền cát → base → nilong + lưới thép → bê tông nền.
+- Cột từng tầng / cos: cốt thép (lồng thép cam) → ván khuôn (ván ép) → bê tông. Sàn từng tầng: cây chống → ván khuôn → lưới thép → bê tông; "Tháo giáo" xoá cây chống.
+- Tường gạch nhà văn phòng theo tầng; tường ALC nhà xưởng; khung kèo thép (chữ I đỏ) + xà gồ C theo bước cột; tôn mái, tôn/panel bao; ống PCCC đỏ có ty treo;
+  giàn giáo ngoài; 4 tuyến đường (base → bê tông) và cống D400 dọc tuyến 1.
+- Hoàn thiện (kính mặt tiền, ốp, sơn ngoài, mái sảnh) mới 0% nên chưa hiện; hình hoàn thành của từng nhà (và hồ, vườn, bãi đỗ, nhà bảo vệ theo phối cảnh) là
+  bóng mờ, tắt được.
+- % tại một ngày: chuỗi % theo ngày (từ 01/07); trước 01/07 nội suy theo ngày bắt đầu / kết thúc thực tế (có dòng ngày thực tế bắt đầu sau ngày kết thúc — lỗi nhập
+  liệu, đã đảo lại). Kế hoạch tại ngày = nội suy theo ngày kế hoạch → thanh xám sau thanh thực tế, chậm hơn 5 điểm thì cam / đỏ.
+
+**Thanh thời gian 01/04 → 14/10**: tua hoặc Phát (0,3 s/ngày); nhà mọc theo đúng ngày. Ngày có đầu việc "Đổ bê tông …" tăng % → xe bơm cần + 2 xe bồn tới đúng nhà.
+Công nhân theo nhật ký ngày (gần nhất trong 7 ngày): tổ ghi việc ("Xây ALC 6", "Lắp dựng kc 8", "PCCC 7", "Tường rào 4", "Hạ tầng 3", "NVP, X1, X3 8", "Sơn bả 6"
+ngày 08/10) đứng đúng chỗ làm; nhật ký chỉ ghi "Tổ đội" thì chia cho các nhà có đầu việc tăng % trong 7 ngày. Máy theo nhật ký 7 ngày (máy cẩu, máy xúc, máy lu,
+máy ủi, đầm cóc, ô tô tải) — vị trí trên mô hình là minh hoạ.
+
+**Máy và vật tư dựng chi tiết**: máy xúc (xích rỗng, bánh sao, con lăn, đối trọng bo, cần cong, tay gầu, gầu răng, 4 xi lanh, đào theo chu kỳ), ô tô cẩu 25 t (4 trục,
+chân chống chữ H, cần ống lồng 4 đoạn, xi lanh nâng cần, móc cẩu treo dầm thép), xe lu rung, máy ủi, ô tô ben, xe bồn (bồn sọc quay), xe bơm cần (chân chữ X, cần 4
+khúc có xi lanh và ống bê tông), đầm cóc; bãi vật tư: thép cây theo đường kính, xà gồ C, thép hộp, lưới hàn, tấm ALC, gạch, xi măng bao PCB30, đống cát, đống base,
+cọc tre, cống D400, tấm cách nhiệt, nilong, phuy dầu, bu lông móng, Sika. Bấm đống vật tư → số tồn theo sổ kho; lưu ý sổ kho còn ghi cả vật tư đã dùng hết
+(bê tông 1.272 m³, base 1.861 m³) → cần đối soát xuất dùng.
+
+**Bấm được**: hạng mục (nhà) → % từng phần so với kế hoạch + đầu việc đang dở; đầu việc (trên cây hoặc bấm vào phần tử 3D) → % thực tế / kế hoạch, ngày, khối lượng
+BOQ, số phần tử 3D, % theo ngày; phần tử 3D của đầu việc nhấp nháy vàng.
+
+Ảnh: `mockups/site-3d-smb-{overview,office,nx1-task,yard,2026-07-15,2026-05-16-pour,crane,excavator}.jpg`. `window.siteDebug` (setDay, view, focus) chỉ để chụp ảnh tự động.
+
+**Còn thiếu / việc tiếp**: (1) chủ SP xác nhận NX2 / NX3 và vị trí zone, khu S1 / S2; (2) XinHai — đã làm, xem mục 15; (3) tường rào có trong nhật ký nhưng không có
+trong WBS; (4) lên sản phẩm cần bảng "hạng mục → mẫu 3D" cho mỗi dự án (mẫu: nhà khung BTCT n tầng, nhà xưởng khung thép k nhịp, đường, cống) thay cho mã WBS
+viết cứng trong bản thử.
+
+## 15. Công trường XinHai (DA29) 3D theo ảnh flycam (14/10)
+
+Chủ SP chưa có phối cảnh, gửi ảnh flycam thực tế; hình dạng nhà cho giống Sơn Miền Bắc. Cùng trang `mockups/site-3d.html?site=DA29` (nút **Sơn Miền Bắc | XinHai**
+trên đầu bảng trái; khuôn viên bấm công trường → "Mở công trường 3D theo tiến độ" mở đúng công trường). Dữ liệu thật đọc chỉ đọc 14/10: 363 đầu việc DA29, 317 chuỗi %
+theo ngày (31/08 → 02/10), 90 ngày nhật ký, 13 dòng sổ Kho Xin Hai Vina (cọc ly tâm D300, thép D6–D22, Base B, mũi cọc, thang giáo).
+
+**Bố cục theo ảnh**: đường nhựa 2 làn phía tây, ao cá bên kia đường, cổng + nhà bảo vệ mái đỏ phía tây, BCH là nhà dài mái tôn xanh trắng, khu gia công lưới xanh,
+bãi vật tư cạnh BCH, đường tạm đất chạy giữa, nhà xưởng hàng xóm mái đỏ phía đông. Chủ SP xác nhận (14/10): ngôi nhà cạnh BCH là **nhà nghỉ ca**
+(3 tầng + tum, 24 × 16 m: móng, lấp nền, cột tầng 1 xong; ảnh đã thấy ván phủ phim đen trên sàn tầng 2 nhưng Vioo còn 0%); **nhà văn phòng là ô cuối cùng phía xa**
+(2 tầng + tum ~48 × 24 m; móng đã đổ — ảnh có xe bồn ở đó — và đã lấp đất); **nhà xưởng chạy từ phía trước tới sát nhà văn phòng**: 66 × 150 m (theo ảnh; BOQ tôn mái
+3 × 2.567 m², sàn deck 7.462 m² nên nhà thật có thể hẹp hơn), khung thép 2 tầng sàn deck, 18 bước cột, chia 3 phân đoạn theo trục: **PĐ3 (trục 15–19) phía trước,
+PĐ2 (6–15) giữa, PĐ1 (1–5) phía xa** — khớp ảnh: phía trước đã lấp và lu nền, giữa đang buộc thép móng (30%), xa mới đào (30%).
+
+**Bổ sung chung cho cả hai công trường**: móng có thêm giai đoạn cốt thép (lồng thép cam ở đế và giằng) và ván khuôn trước bê tông; đầu việc đã xong có ngày thực tế thì
+dựng theo ngày thực tế (vì % theo ngày thường nhập muộn — ví dụ đổ bê tông cột tầng 1 nhà nghỉ ca ngày 28/09 nhưng % 100 ghi ngày 02/10); số công nhân lấy số lớn hơn
+giữa "số người" và tổng các tổ; nhật ký ghi nhiều máy trong một dòng được tách đủ loại; máy mới: **robot ép cọc tĩnh 260 t** (đối trọng khối bê tông, khung kẹp, cẩu phụ
+cầm cọc) và bàn gia công uốn / cắt thép; nhà khung bê tông n tầng dựng bằng một hàm chung. Bảng nhà có mục **"Cần kiểm tra số liệu"**: tầng trên có % khi cột tầng dưới
+chưa đổ (DA29: "2.4.2 ván khuôn cột tầng 2 14% nhưng 2.3.3 đổ bê tông cột tầng 1 0%") — phần tử tầng trên không vẽ lơ lửng.
+
+Ảnh: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong}.jpg`.

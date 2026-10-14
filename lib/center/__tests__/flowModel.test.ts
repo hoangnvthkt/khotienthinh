@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowDataset } from '../centerFlowService';
 import {
-  drillOutcomes, drillStuckByPerson, drillWaitingByUnit, hoursText, sankeyLayout, shortUnitName, stampText, unitBars, unitSummary, type SankeyColors,
+  drillOutcomes, drillStuckByPerson, drillWaitingByUnit, flowParticles, hoursText, sankeyLayout, shortUnitName, stampText, unitBars, unitSummary, type SankeyColors,
 } from '../flowModel';
 
 const COLORS: SankeyColors = { unit: 'u', gap: 'g', done: 'd', waiting: 'w', returned: 'r', rejected: 'x', other: 'o', stuck: 's' };
@@ -58,6 +58,19 @@ describe('sankeyLayout', () => {
       const ys = col(c).map(node => node.ly);
       ys.slice(1).forEach((y, i) => expect(y - ys[i]).toBeGreaterThanOrEqual(15));
     }
+  });
+
+  it('puts one particle on each of the biggest ribbons, faster on bigger ones, waiting ribbons in the waiting colour', () => {
+    const layout = sankeyLayout(DATA, 880, 560, COLORS);
+    const particles = flowParticles(layout, 4);
+    expect(particles).toHaveLength(4);
+    expect(particles[0].key).toBe('0:pm>1:pm');
+    expect(particles[0].dur).toBeLessThan(particles[3].dur);
+    expect(particles.every(p => p.path.startsWith('M') && p.path.includes('C'))).toBe(true);
+    expect(particles[0].points).toHaveLength(17);
+    expect(particles[0].points[0][0]).toBeLessThan(particles[0].points[16][0]);
+    expect(flowParticles(layout).find(p => p.key === '1:vt>2:waiting')?.color).toBe('w');
+    expect(flowParticles({ ...layout, links: [] })).toEqual([]);
   });
 
   it('reports an empty layout instead of drawing nothing', () => {
