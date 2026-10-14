@@ -45,6 +45,8 @@ describe('NCC giao một đơn nhiều lần', () => {
     const modal = read('components/TransactionDetailModal.tsx');
     expect(modal).toContain("continue: 'NCC giao tiếp phần còn lại'");
     expect(modal).toContain('purchaseReceiptService.continueDelivery(deliveryBatchId)');
-    expect(read('components/wms/KhoView.tsx')).toContain('purchaseReceiptService.continueDelivery(tx.sourceId!)');
+    // Nút NCC giao tiếp của phiếu đã ghi sổ nằm ở khối Tiến độ đơn (hiện cả khi nhận thiếu do sửa số nhận).
+    expect(modal).toContain('purchaseReceiptService.continueDelivery(poBatchId)');
+    expect(read('components/wms/PurchaseReceiptProgress.tsx')).toContain("shortNow && onContinue");
   });
 });
