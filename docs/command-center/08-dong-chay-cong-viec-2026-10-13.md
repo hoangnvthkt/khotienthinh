@@ -376,13 +376,11 @@ trên đầu bảng trái; khuôn viên bấm công trường → "Mở công tr
 theo ngày (31/08 → 02/10), 90 ngày nhật ký, 13 dòng sổ Kho Xin Hai Vina (cọc ly tâm D300, thép D6–D22, Base B, mũi cọc, thang giáo).
 
 **Bố cục theo ảnh**: đường nhựa 2 làn phía tây, ao cá bên kia đường, cổng + nhà bảo vệ mái đỏ phía tây, BCH là nhà dài mái tôn xanh trắng, khu gia công lưới xanh,
-bãi vật tư cạnh BCH, đường tạm đất chạy giữa, nhà xưởng hàng xóm mái đỏ phía đông. Nhà xưởng 66 × 117 m (tôn mái 3 × 2.567 m², sàn deck 7.462 m²), khung thép 2 tầng
-sàn deck, chia 3 phân đoạn theo trục: **PĐ3 (trục 15–19) gần cổng, PĐ2 (6–15) giữa, PĐ1 (1–5) phía xa** — khớp ảnh: phía trước đã lấp và lu nền, giữa đang buộc thép
-móng (30%), xa mới đào (30%). Nhà văn phòng 2 tầng + tum (~48 × 24 m, sàn ~1.000 m²) đặt trước nhà xưởng; nhà nghỉ ca 3 tầng + tum (24 × 16 m).
-
-**Điểm cần chủ SP xác nhận**: ngôi nhà ảnh ghi "Nhà văn phòng" khớp số liệu **Nhà nghỉ ca** (móng, lấp nền, cột tầng 1 xong; đang ván khuôn sàn tầng 2 — ảnh đã thấy
-ván phủ phim đen trên sàn tầng 2 nhưng Vioo còn 0%), còn nhà văn phòng trong Vioo mới xong móng 92%. Em đặt ngôi nhà trong ảnh là nhà nghỉ ca; nhà văn phòng đặt tạm
-trước nhà xưởng.
+bãi vật tư cạnh BCH, đường tạm đất chạy giữa, nhà xưởng hàng xóm mái đỏ phía đông. Chủ SP xác nhận (14/10): ngôi nhà cạnh BCH là **nhà nghỉ ca**
+(3 tầng + tum, 24 × 16 m: móng, lấp nền, cột tầng 1 xong; ảnh đã thấy ván phủ phim đen trên sàn tầng 2 nhưng Vioo còn 0%); **nhà văn phòng là ô cuối cùng phía xa**
+(2 tầng + tum ~48 × 24 m; móng đã đổ — ảnh có xe bồn ở đó — và đã lấp đất); **nhà xưởng chạy từ phía trước tới sát nhà văn phòng**: 66 × 150 m (theo ảnh; BOQ tôn mái
+3 × 2.567 m², sàn deck 7.462 m² nên nhà thật có thể hẹp hơn), khung thép 2 tầng sàn deck, 18 bước cột, chia 3 phân đoạn theo trục: **PĐ3 (trục 15–19) phía trước,
+PĐ2 (6–15) giữa, PĐ1 (1–5) phía xa** — khớp ảnh: phía trước đã lấp và lu nền, giữa đang buộc thép móng (30%), xa mới đào (30%).
 
 **Bổ sung chung cho cả hai công trường**: móng có thêm giai đoạn cốt thép (lồng thép cam ở đế và giằng) và ván khuôn trước bê tông; đầu việc đã xong có ngày thực tế thì
 dựng theo ngày thực tế (vì % theo ngày thường nhập muộn — ví dụ đổ bê tông cột tầng 1 nhà nghỉ ca ngày 28/09 nhưng % 100 ghi ngày 02/10); số công nhân lấy số lớn hơn

@@ -248,10 +248,10 @@ const BLD = SITE_KEY === 'SMB' ? {
   NX3: { name: 'Nhà xưởng 3', short: 'Xưởng 3', x0: -38, x1: 28, z0: -160, z1: -77, roots: ['13', '14', '15', '16'] },
   HT: { name: 'Hạ tầng', short: 'Hạ tầng', x0: SITE.x0, x1: SITE.x1, z0: SITE.z0, z1: SITE.z1, roots: ['17'] },
 } : {
-  COC: { name: 'Phần cọc', short: 'Cọc', x0: 10, x1: 76, z0: -110, z1: 7, roots: kidsOf('1'), noLabel: true },
-  NVP: { name: 'Nhà văn phòng', short: 'Văn phòng', x0: 10, x1: 58, z0: 16, z1: 40, roots: kidsOf('2') },
+  COC: { name: 'Phần cọc', short: 'Cọc', x0: 10, x1: 76, z0: -112, z1: 38, roots: kidsOf('1'), noLabel: true },
+  NVP: { name: 'Nhà văn phòng', short: 'Văn phòng', x0: 10, x1: 58, z0: -140, z1: -116, roots: kidsOf('2') },
   NNC: { name: 'Nhà nghỉ ca', short: 'Nghỉ ca', x0: -26, x1: -2, z0: 10, z1: 26, roots: kidsOf('3') },
-  NX: { name: 'Nhà xưởng', short: 'Xưởng', x0: 10, x1: 76, z0: -110, z1: 7, roots: kidsOf('4') },
+  NX: { name: 'Nhà xưởng', short: 'Xưởng', x0: 10, x1: 76, z0: -112, z1: 38, roots: kidsOf('4') },
   PHU: { name: 'WC + khí nén, trạm biến áp, hồ PCCC, nhà xe', short: 'Hạng mục phụ', x0: -60, x1: 78, z0: -140, z1: -10, roots: ['5', '6', '7'], noLabel: true },
   HT: { name: 'Hạ tầng, cây xanh, bàn giao', short: 'Hạ tầng', x0: SITE.x0, x1: SITE.x1, z0: SITE.z0, z1: SITE.z1, roots: ['8', '9'], noLabel: true },
 };
@@ -810,9 +810,9 @@ function frameBuilding(b, { key, nx, nz, fh, floors, found, ground, tum, ghostH 
 }
 // Nhà xưởng khung thép 2 tầng (sàn deck), chia phân đoạn theo trục.
 function steelFactoryDA(b, segs) {
-  const xs = [10, 21, 32, 43, 54, 65, 76], BAY = 6.5;
+  const xs = [10, 21, 32, 43, 54, 65, 76], BAY = 150 / 18;
   for (const sg of segs) {
-    const frameZ = []; for (let z = sg.z1; z >= sg.z0 - 0.01; z -= BAY) frameZ.push(z);
+    const frameZ = []; for (let z = sg.z1; z >= sg.z0 - 0.5; z -= BAY) frameZ.push(Math.round(z * 100) / 100);
     const pos = []; frameZ.forEach(z => xs.forEach(x => pos.push([x, z])));
     const r = { x0: b.x0, x1: b.x1, z0: sg.z0, z1: sg.z1 }, c = sg.c;
     foundation(pos, { pile: '1.2.1', dig: c.dig, reb: c.reb, form: c.form, pad: c.conc, tie: c.conc, tieReb: c.reb, tieForm: c.form, backfill: c.fill }, { xs, zs: frameZ });
@@ -870,12 +870,12 @@ if (SITE_KEY === 'DA29') {
       { col: { reb: '3.5.1', form: '3.5.2', conc: '3.5.3' }, slab: { form: '3.5.4', reb: '3.5.5', conc: '3.5.8' }, wall: '3.7.3' }],
     tum: { col: { reb: '3.6.1', form: '3.6.2', conc: '3.6.3' }, slab: { form: '3.6.4', reb: '3.6.5', conc: '3.6.8' }, wall: '3.7.4' } });
   steelFactoryDA(BLD.NX, [
-    { name: 'Phân đoạn 3 (trục 15–19)', z0: -19, z1: 7, c: { dig: '4.1.3.1', reb: '4.1.3.4', form: '4.1.3.5', conc: '4.1.3.6', fill: '4.1.3.7', plinth: '4.1.3.11', base: '4.2.9', floorReb: '4.8.5', floor: '4.8.6', deckReb: '4.7.5', deck: '4.7.6', wall: '4.4.3', roof: '4.5.3', clad: '4.6.3' } },
-    { name: 'Phân đoạn 2 (trục 6–15)', z0: -84, z1: -19, c: { dig: '4.1.2.1', reb: '4.1.2.4', form: '4.1.2.5', conc: '4.1.2.6', fill: '4.2.5', plinth: '4.1.2.9', base: '4.2.6', floorReb: '4.8.3', floor: '4.8.4', deckReb: '4.7.3', deck: '4.7.4', wall: '4.4.2', roof: '4.5.2', clad: '4.6.2' } },
-    { name: 'Phân đoạn 1 (trục 1–5)', z0: -110, z1: -84, c: { dig: '4.1.1.1', reb: '4.1.1.4', form: '4.1.1.5', conc: '4.1.1.6', fill: '4.1.1.7', plinth: '4.1.1.9', base: '4.2.3', floorReb: '4.8.1', floor: '4.8.2', deckReb: '4.7.1', deck: '4.7.2', wall: '4.4.1', roof: '4.5.1', clad: '4.6.1' } },
+    { name: 'Phân đoạn 3 (trục 15–19)', z0: 38 - 4 * 150 / 18, z1: 38, c: { dig: '4.1.3.1', reb: '4.1.3.4', form: '4.1.3.5', conc: '4.1.3.6', fill: '4.1.3.7', plinth: '4.1.3.11', base: '4.2.9', floorReb: '4.8.5', floor: '4.8.6', deckReb: '4.7.5', deck: '4.7.6', wall: '4.4.3', roof: '4.5.3', clad: '4.6.3' } },
+    { name: 'Phân đoạn 2 (trục 6–15)', z0: 38 - 14 * 150 / 18, z1: 38 - 4 * 150 / 18, c: { dig: '4.1.2.1', reb: '4.1.2.4', form: '4.1.2.5', conc: '4.1.2.6', fill: '4.2.5', plinth: '4.1.2.9', base: '4.2.6', floorReb: '4.8.3', floor: '4.8.4', deckReb: '4.7.3', deck: '4.7.4', wall: '4.4.2', roof: '4.5.2', clad: '4.6.2' } },
+    { name: 'Phân đoạn 1 (trục 1–5)', z0: -112, z1: 38 - 14 * 150 / 18, c: { dig: '4.1.1.1', reb: '4.1.1.4', form: '4.1.1.5', conc: '4.1.1.6', fill: '4.1.1.7', plinth: '4.1.1.9', base: '4.2.3', floorReb: '4.8.1', floor: '4.8.2', deckReb: '4.7.1', deck: '4.7.2', wall: '4.4.1', roof: '4.5.1', clad: '4.6.1' } },
   ]);
   // Hạng mục chưa làm (0%): chỉ hiện bóng mờ.
-  ghostBox(16, 4, 12, 70, 2, -134); ghostBox(12, 4, 10, -54, 2, -55); ghostBox(20, 0.4, 15, -45, 0.2, -92); ghostBox(25, 3.5, 6, -48, 1.75, -15); ghostBox(0.3, 12, 0.3, -20, 6, 44);
+  ghostBox(14, 4, 10, 70, 2, -134); ghostBox(12, 4, 10, -54, 2, -55); ghostBox(20, 0.4, 15, -45, 0.2, -92); ghostBox(25, 3.5, 6, -48, 1.75, -15); ghostBox(0.3, 12, 0.3, -20, 6, 44);
   // Rào, cổng, nhà bảo vệ mái đỏ, đường tạm, BCH (nhà dài mái tôn xanh trắng), khu gia công lưới xanh, bãi vật tư.
   const fence = []; for (let z = SITE.z1; z > SITE.z0; z -= 3) { if (!(z < 16 && z > 0)) fence.push([SITE.x0, z, SITE.x0, z - 3]); fence.push([SITE.x1, z, SITE.x1, z - 3]); }
   for (let x = SITE.x0; x < SITE.x1; x += 3) { fence.push([x, SITE.z0, x + 3, SITE.z0]); fence.push([x, SITE.z1, x + 3, SITE.z1]); }
@@ -903,8 +903,8 @@ function worker(x, y, z, helmet = M.helmetY) { const g = new THREE.Group(); g.po
 const TEAM_PLACES = SITE_KEY === 'DA29' ? [
   { re: /nghỉ/i, at: () => [-14, 3.75, 18], name: 'Nhà nghỉ ca' },
   { re: /bch/i, at: () => [-44, 0, 34], name: 'BCH' },
-  { re: /đào|lấp đất/i, at: () => [43, 0, -97], name: 'Phân đoạn 1' },
-  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [43, 0, -50], name: 'Nhà xưởng PĐ2' },
+  { re: /đào|lấp đất/i, at: () => [43, 0, -96], name: 'Phân đoạn 1' },
+  { re: /văn phòng|xưởng|cốt thép|ván khuôn|móng/i, at: () => [43, 0, -37], name: 'Nhà xưởng PĐ2' },
 ] : [
   { re: /alc|xây tường bao|xây alc/i, at: () => [-10.6, 0, -20], name: 'Xây ALC' },
   { re: /kc|kết cấu|lắp dựng/i, at: () => [15, 11.6, -10], name: 'Lắp dựng kết cấu', up: true },
@@ -915,9 +915,9 @@ const TEAM_PLACES = SITE_KEY === 'DA29' ? [
   { re: /văn phòng|nvp|cốt thép|vk|ván|bt|bê tông/i, at: () => [-28, 4 * FH + 0.1, 16], name: 'BT, cốt thép, ván khuôn' },
 ];
 const MACH_PLACES = SITE_KEY === 'DA29'
-  ? { crane: [-14, 0, 36, Math.PI / 2], excavator: [40, 0, -97, 0.6], roller: [43, 0, -5, Math.PI / 2], dozer: [30, 0, 30, 1.2], rammer: [30, 0, -60, 0], truck: [3, 0, -30, 0], pilepress: [30, 0, -45, 0], bender: [-58, 0, 43, 0] }
+  ? { crane: [-14, 0, 36, Math.PI / 2], excavator: [40, 0, -96, 0.6], roller: [43, 0, 21, Math.PI / 2], dozer: [30, 0, 30, 1.2], rammer: [30, 0, -45, 0], truck: [3, 0, -30, 0], pilepress: [30, 0, -20, 0], bender: [-58, 0, 43, 0] }
   : { crane: [34.5, 0, -12, -Math.PI / 2], excavator: [45, 0, -70, 0.4], roller: [40.5, 0, -110, 0], dozer: [-25, 0, -95, 1.2], rammer: [44.2, 0, -48, 0], truck: [20, 0, 46, Math.PI / 2] };
-const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['x', 43, 22, 0.25], dozer: ['x', 30, 8, 0.2] } : { roller: ['z', -110, 22, 0.25], dozer: ['x', -25, 9, 0.2] };
+const MACH_MOVE = SITE_KEY === 'DA29' ? { roller: ['x', 43, 24, 0.25], dozer: ['x', 30, 8, 0.2] } : { roller: ['z', -110, 22, 0.25], dozer: ['x', -25, 9, 0.2] };
 const machines = {}; const machLabels = {};
 const BUILDERS = { crane: () => mobileCrane(12), excavator, roller, dozer, rammer, truck: () => dumpTruck(M.blue), pilepress: pilePress, bender: rebarBench };
 for (const [k2, place2] of Object.entries(MACH_PLACES)) {
@@ -934,8 +934,8 @@ function machinesNear(d) { const set = new Map(); for (const l of DATA.logs) if 
 function pourOn(d) { // Đổ bê tông có % tăng trong ngày d → xe bơm + 2 xe bồn tới nhà đó.
   let best = null; for (const t of Object.values(TASK)) { if (!/^Đổ bê tông/.test(t.name) || t.kids.length) continue; const a = pAt(t.wbs, d - 1), b = pAt(t.wbs, d); if (b - a > 0.5 && (!best || b - a > best.gain)) best = { t, gain: b - a }; } return best; }
 const bldOf = wbs => Object.entries(BLD).find(([, b]) => b.roots.some(r => wbs === r || wbs.startsWith(r + '.')))?.[0];
-const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [62, 30, 0], NNC: [-14, 34, Math.PI / 2], NX: [82 - 4, -50, 0], COC: [3, -50, 0], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-28, 31, Math.PI / 2], NX1: [36, -17, 0], NX2: [-46, -27, 0], NX3: [-46, -118, 0], HT: [30, 40, 0] };
-const BCENTER = SITE_KEY === 'DA29' ? { NVP: [34, 0, 28], NNC: [-14, 3.75, 18], NX: [43, 0, -50], COC: [43, 0, -50], PHU: [-50, 0, -55], HT: [3, 0, -50] } : { NVP: [-28, 0, 27.5], NX1: [15, 0, 17.5], NX2: [-25, 0, -61.5], NX3: [-5, 0, -75.5], HT: [44, 0, -60] };
+const POUR_AT = SITE_KEY === 'DA29' ? { NVP: [64, -128, 0], NNC: [-14, 34, Math.PI / 2], NX: [78, -37, 0], COC: [3, -37, 0], PHU: [0, 0, 0], HT: [0, 0, 0] } : { NVP: [-28, 31, Math.PI / 2], NX1: [36, -17, 0], NX2: [-46, -27, 0], NX3: [-46, -118, 0], HT: [30, 40, 0] };
+const BCENTER = SITE_KEY === 'DA29' ? { NVP: [34, 0, -128], NNC: [-14, 3.75, 18], NX: [43, 0, -37], COC: [43, 0, -37], PHU: [-50, 0, -55], HT: [3, 0, -50] } : { NVP: [-28, 0, 27.5], NX1: [15, 0, 17.5], NX2: [-25, 0, -61.5], NX3: [-5, 0, -75.5], HT: [44, 0, -60] };
 function activeBuildings(d) { const g = {}; for (const t of Object.values(TASK)) { if (t.kids.length) continue; const gain = pAt(t.wbs, d) - pAt(t.wbs, d - 7); if (gain > 0.5) { const b = bldOf(t.wbs); if (b) g[b] = (g[b] || 0) + gain; } } return Object.entries(g).sort((a, b) => b[1] - a[1]).map(([b]) => b); }
 function cluster(x, y, z, count, text) { for (let i = 0; i < Math.min(count, 16); i += 1) worker(x + (i % 4) * 1.3 - 2, y, z + Math.floor(i / 4) * 1.3 - 1.5, i === 0 ? M.helmetW : M.helmetY);
   const l = label(text, 'team'); l.position.set(x, y + 3.2, z); scene.add(l); teamLabels.push(l); }
@@ -1005,7 +1005,7 @@ function showDay() {
     <div class="sec">Tiến triển 7 ngày qua</div>${recent.length ? recent.map(({ t, gain }) => `<button type="button" class="task" data-task="${t.wbs}"><span>${esc(t.wbs)} · ${esc(t.name)}</span><span class="pct ok">+${Math.round(gain)}%</span></button>`).join('') : '<p class="sub">Không có đầu việc tăng %.</p>'}`;
 }
 info.addEventListener('click', e => { const tk = e.target.closest('[data-task]'); if (tk) selectTask(tk.dataset.task); const bk = e.target.closest('[data-back]'); if (bk) { selTask = null; selBld = null; clearHL(); showDay(); } });
-const CENTER = SITE_KEY === 'DA29' ? { NVP: [34, 4, 28, 70], NNC: [-14, 5, 18, 45], NX: [43, 4, -50, 150], COC: [43, 4, -50, 150], PHU: [0, 0, -60, 200], HT: [5, 0, -50, 230] } : { NVP: [-28, 6, 16, 55], NX1: [15, 6, -17, 80], NX2: [-25, 6, -27, 80], NX3: [-5, 6, -118, 120], HT: [0, 0, -50, 230] };
+const CENTER = SITE_KEY === 'DA29' ? { NVP: [34, 4, -128, 70], NNC: [-14, 5, 18, 45], NX: [43, 4, -37, 180], COC: [43, 4, -37, 180], PHU: [0, 0, -60, 200], HT: [5, 0, -50, 230] } : { NVP: [-28, 6, 16, 55], NX1: [15, 6, -17, 80], NX2: [-25, 6, -27, 80], NX3: [-5, 6, -118, 120], HT: [0, 0, -50, 230] };
 function selectBuilding(key, fly = true) {
   selBld = key; const b = BLD[key], ts = b.roots.map(r => TASK[r]);
   info.innerHTML = `<button type="button" data-back style="border:0;background:none;padding:0;height:auto;color:#737373;font-weight:500">← Ngày đang xem</button><h2>${b.name}</h2><p class="sub">${dd(DAY)} · thực tế so với kế hoạch</p>
@@ -1031,7 +1031,7 @@ function selectTask(wbs) {
 }
 
 /* ───────── Camera, chọn trong cảnh, thời gian ───────── */
-const VIEWS = SITE_KEY === 'DA29' ? { overview: [[-10, 205, 175], [8, 0, -45]], NNC: [[6, 17, 50], [-14, 3, 18]], NVP: [[48, 26, 90], [34, 4, 28]], NX: [[125, 70, 20], [43, 3, -50]], NX_PD2: [[95, 30, -10], [43, 1, -50]], yard: [[-26, 22, 82], [-34, 1, 40]] } : { overview: [[-150, 120, 140], [-5, 0, -55]], NVP: [[-62, 22, 62], [-28, 6, 16]], NX1: [[62, 30, 40], [15, 5, -17]], NX2: [[-82, 30, 20], [-25, 5, -27]], NX3: [[-110, 55, -40], [-5, 5, -118]], yard: [[40, 18, 58], [18, 1, 28]] };
+const VIEWS = SITE_KEY === 'DA29' ? { overview: [[-10, 215, 185], [8, 0, -50]], NNC: [[6, 17, 50], [-14, 3, 18]], NVP: [[62, 30, -82], [34, 3, -128]], NX: [[135, 80, 40], [43, 3, -37]], NX_PD2: [[95, 30, 5], [43, 1, -37]], yard: [[-26, 22, 82], [-34, 1, 40]] } : { overview: [[-150, 120, 140], [-5, 0, -55]], NVP: [[-62, 22, 62], [-28, 6, 16]], NX1: [[62, 30, 40], [15, 5, -17]], NX2: [[-82, 30, 20], [-25, 5, -27]], NX3: [[-110, 55, -40], [-5, 5, -118]], yard: [[40, 18, 58], [18, 1, 28]] };
 let camFrom = null, camTo = null, camT = 1;
 function flyTo(target, dist) { const dir = camera.position.clone().sub(controls.target).normalize(); camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: target.clone().add(dir.multiplyScalar(dist)), t: target.clone() }; camT = 0; }
 function goView(v) { const [p, t] = VIEWS[v]; camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: v3(...p), t: v3(...t) }; camT = 0; document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v))); }
