@@ -327,7 +327,7 @@ xem được". Cùng tệp `mockups/flow-3d-campus-v1.html` đổi thành:
 ## 14. Công trường 3D theo tiến độ hạng mục — Sơn Miền Bắc (14/10)
 
 Chủ SP gửi phối cảnh 3D công trình Sơn Miền Bắc, muốn "chia tiến độ đã thực hiện ra để mô hình hoá: làm xong phần móng thì thể hiện phần móng, tương tự các
-hạng mục khác", máy móc và vật tư giống thực tế. Trang `mockups/site-3d-smb.html` (three.js, không tải mô hình ngoài; máy, vật tư dựng bằng hình học), từ khuôn viên
+hạng mục khác", máy móc và vật tư giống thực tế. Trang `mockups/site-3d.html?site=SMB` (three.js, không tải mô hình ngoài; máy, vật tư dựng bằng hình học), từ khuôn viên
 bấm công trường Sơn Miền Bắc → "Mở công trường 3D theo tiến độ".
 
 **Dữ liệu thật, đọc chỉ đọc 14/10** (nhúng ~65 KB): `project_tasks` SMB-2026 349 đầu việc (WBS 1–17, % hiện tại, ngày kế hoạch, ngày thực tế), khối lượng
@@ -365,7 +365,29 @@ BOQ, số phần tử 3D, % theo ngày; phần tử 3D của đầu việc nhấ
 
 Ảnh: `mockups/site-3d-smb-{overview,office,nx1-task,yard,2026-07-15,2026-05-16-pour,crane,excavator}.jpg`. `window.siteDebug` (setDay, view, focus) chỉ để chụp ảnh tự động.
 
-**Còn thiếu / việc tiếp**: (1) chủ SP xác nhận NX2 / NX3 và vị trí zone, khu S1 / S2; (2) ảnh phối cảnh XinHai (DA29: 9 hạng mục — phần cọc, nhà văn phòng, nhà nghỉ ca,
-nhà xưởng 3 phân đoạn, WC + khí nén, trạm biến áp, hồ PCCC + cột cờ + nhà xe, hạ tầng, bàn giao) để dựng tương tự; (3) tường rào có trong nhật ký nhưng không có
+**Còn thiếu / việc tiếp**: (1) chủ SP xác nhận NX2 / NX3 và vị trí zone, khu S1 / S2; (2) XinHai — đã làm, xem mục 15; (3) tường rào có trong nhật ký nhưng không có
 trong WBS; (4) lên sản phẩm cần bảng "hạng mục → mẫu 3D" cho mỗi dự án (mẫu: nhà khung BTCT n tầng, nhà xưởng khung thép k nhịp, đường, cống) thay cho mã WBS
 viết cứng trong bản thử.
+
+## 15. Công trường XinHai (DA29) 3D theo ảnh flycam (14/10)
+
+Chủ SP chưa có phối cảnh, gửi ảnh flycam thực tế; hình dạng nhà cho giống Sơn Miền Bắc. Cùng trang `mockups/site-3d.html?site=DA29` (nút **Sơn Miền Bắc | XinHai**
+trên đầu bảng trái; khuôn viên bấm công trường → "Mở công trường 3D theo tiến độ" mở đúng công trường). Dữ liệu thật đọc chỉ đọc 14/10: 363 đầu việc DA29, 317 chuỗi %
+theo ngày (31/08 → 02/10), 90 ngày nhật ký, 13 dòng sổ Kho Xin Hai Vina (cọc ly tâm D300, thép D6–D22, Base B, mũi cọc, thang giáo).
+
+**Bố cục theo ảnh**: đường nhựa 2 làn phía tây, ao cá bên kia đường, cổng + nhà bảo vệ mái đỏ phía tây, BCH là nhà dài mái tôn xanh trắng, khu gia công lưới xanh,
+bãi vật tư cạnh BCH, đường tạm đất chạy giữa, nhà xưởng hàng xóm mái đỏ phía đông. Nhà xưởng 66 × 117 m (tôn mái 3 × 2.567 m², sàn deck 7.462 m²), khung thép 2 tầng
+sàn deck, chia 3 phân đoạn theo trục: **PĐ3 (trục 15–19) gần cổng, PĐ2 (6–15) giữa, PĐ1 (1–5) phía xa** — khớp ảnh: phía trước đã lấp và lu nền, giữa đang buộc thép
+móng (30%), xa mới đào (30%). Nhà văn phòng 2 tầng + tum (~48 × 24 m, sàn ~1.000 m²) đặt trước nhà xưởng; nhà nghỉ ca 3 tầng + tum (24 × 16 m).
+
+**Điểm cần chủ SP xác nhận**: ngôi nhà ảnh ghi "Nhà văn phòng" khớp số liệu **Nhà nghỉ ca** (móng, lấp nền, cột tầng 1 xong; đang ván khuôn sàn tầng 2 — ảnh đã thấy
+ván phủ phim đen trên sàn tầng 2 nhưng Vioo còn 0%), còn nhà văn phòng trong Vioo mới xong móng 92%. Em đặt ngôi nhà trong ảnh là nhà nghỉ ca; nhà văn phòng đặt tạm
+trước nhà xưởng.
+
+**Bổ sung chung cho cả hai công trường**: móng có thêm giai đoạn cốt thép (lồng thép cam ở đế và giằng) và ván khuôn trước bê tông; đầu việc đã xong có ngày thực tế thì
+dựng theo ngày thực tế (vì % theo ngày thường nhập muộn — ví dụ đổ bê tông cột tầng 1 nhà nghỉ ca ngày 28/09 nhưng % 100 ghi ngày 02/10); số công nhân lấy số lớn hơn
+giữa "số người" và tổng các tổ; nhật ký ghi nhiều máy trong một dòng được tách đủ loại; máy mới: **robot ép cọc tĩnh 260 t** (đối trọng khối bê tông, khung kẹp, cẩu phụ
+cầm cọc) và bàn gia công uốn / cắt thép; nhà khung bê tông n tầng dựng bằng một hàm chung. Bảng nhà có mục **"Cần kiểm tra số liệu"**: tầng trên có % khi cột tầng dưới
+chưa đổ (DA29: "2.4.2 ván khuôn cột tầng 2 14% nhưng 2.3.3 đổ bê tông cột tầng 1 0%") — phần tử tầng trên không vẽ lơ lửng.
+
+Ảnh: `mockups/site-3d-xinhai-{overview,nha-nghi-ca,mong-pd2,2026-09-15,bai-vat-tu,nha-van-phong}.jpg`.
