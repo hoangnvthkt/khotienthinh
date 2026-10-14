@@ -3,22 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vioo · Dòng chảy công việc — khuôn viên Tiến Thịnh 3D (thử, 13/10/2026)</title>
+<title>Khuôn viên Tiến Thịnh 3D</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#eef2f5;--card:#fff;--border:#e5e5e5;--fg:#1a1a1a;--fg2:#444;--muted:#737373;--accent:#1f8a70;--num:#2f7a2a;--warn:#b45309;--danger:#b42318;--who:#7c3aed}
+:root{--bg:#eef2f5;--card:#fff;--border:#e5e5e5;--fg:#1a1a1a;--fg2:#444;--muted:#737373;--accent:#1f8a70;--num:#2f7a2a;--warn:#b45309;--danger:#b42318;--who:#7c3aed;--doc:#f5d27a}
 *{box-sizing:border-box}html,body{height:100%;margin:0}
 body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:13px;overflow:hidden}
 #stage{position:fixed;inset:0}#stage canvas{display:block}
-.label{font-size:11.5px;font-weight:600;color:var(--fg);background:rgba(255,255,255,.9);border:1px solid var(--border);border-radius:8px;padding:3px 7px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.label{font-size:11.5px;font-weight:600;color:var(--fg);background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:8px;padding:3px 7px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 2px rgba(0,0,0,.06)}
 .label small{display:block;font-weight:500;color:var(--muted);font-size:10.5px}
 .label .w{color:var(--warn);font-weight:700}.label .b{color:var(--danger);font-weight:700}
-.label.person{background:rgba(255,255,255,.94);color:var(--who);font-size:10.5px;padding:2px 6px}
-.label.person b{display:inline-grid;place-items:center;min-width:16px;height:16px;border-radius:999px;background:var(--danger);color:#fff;font-size:10px;margin-left:4px}
-.label.site{border-color:#e7b07a;color:#8a4b0a}.label.bld{font-size:12.5px;font-weight:800;color:#1f8a70;background:rgba(255,255,255,.95)}
-.hud{position:fixed;left:16px;top:16px;width:330px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:14px 16px;z-index:5}
-.hud h1{font-size:15px;margin:0 0 2px}.hud .sub{color:var(--muted);font-size:12px;margin:0 0 10px}
+.label.person,.chip{z-index:100000!important}
+.label.click{pointer-events:auto;cursor:pointer}.label.click:hover{border-color:var(--accent)}
+.label.person{color:var(--who);font-size:10.5px;padding:2px 6px}
+.label.person b{display:inline-grid;place-items:center;min-width:16px;height:16px;border-radius:999px;background:var(--danger);color:#fff;font-size:10px;margin-left:4px;padding:0 4px}
+.label.site{border-color:#e7b07a;color:#8a4b0a;font-size:12.5px}.label.bld{font-size:12.5px;font-weight:800;color:#1f8a70}
+.chip{font:700 10.5px Inter,system-ui,sans-serif;background:var(--doc);border:1px solid #c9a43d;color:#5a4300;border-radius:999px;padding:2px 8px;pointer-events:auto;cursor:pointer;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.chip:hover{background:#ffe08a}
+.hud{position:fixed;left:16px;top:16px;width:318px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:14px 16px;z-index:5;max-height:calc(100vh - 32px);overflow:auto}
+.hud h1{font-size:15px;margin:0 0 8px}
+.clock{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:10px}
+.clock b{font-size:15px;font-variant-numeric:tabular-nums}.clock span{color:var(--muted);font-size:11.5px;margin-left:6px}
+.bar{position:relative;height:8px;border-radius:999px;background:#eef0f2;margin-top:7px;cursor:pointer}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--accent)}
+.ends{display:flex;justify-content:space-between;color:var(--muted);font-size:10.5px;margin-top:3px}
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
 .kpi{border:1px solid var(--border);border-radius:9px;padding:6px 8px;text-align:center}
 .kpi b{display:block;font-size:17px;font-variant-numeric:tabular-nums}.kpi small{color:var(--muted);font-size:10.5px}
@@ -26,30 +35,50 @@ body{font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--fg)
 .ctl{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 button{font:inherit;color:inherit;cursor:pointer;border:1px solid var(--border);background:var(--card);border-radius:8px;height:28px;padding:0 10px;font-weight:600;font-size:12px}
 button:hover{background:#f2f2f2}button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:#e8f3ee}
-.legend{display:grid;gap:3px;font-size:11.5px;color:var(--fg2)}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff}button.pri:hover{background:#1a7660}
+.legend{display:grid;gap:4px;font-size:11.5px;color:var(--fg2)}
 .legend span{display:flex;align-items:center;gap:6px}.legend i{width:11px;height:11px;border-radius:3px;display:inline-block;flex:none}
-.panel{position:fixed;right:16px;top:16px;width:300px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:14px 16px;z-index:5}
-.panel h2{font-size:14px;margin:0 0 4px;color:var(--accent)}.panel .sub{color:var(--muted);font-size:12px;margin:0 0 8px}
-.row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12.5px}
-.row:last-child{border:0}.row b{font-variant-numeric:tabular-nums}
-.who{color:var(--who);font-weight:600}.bad{color:var(--danger);font-weight:600}.wrn{color:var(--warn);font-weight:600}
-.note{position:fixed;left:16px;bottom:14px;color:var(--muted);font-size:11.5px;background:rgba(255,255,255,.88);padding:6px 10px;border-radius:8px;z-index:5;max-width:720px}
-.toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:6px 12px;border-radius:999px;font-size:12px;z-index:6;opacity:0;transition:opacity .2s}
+.panel{position:fixed;right:16px;top:16px;width:320px;background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);padding:14px 16px;z-index:5;max-height:calc(100vh - 32px);overflow:auto}
+.panel h2{font-size:14px;margin:0 0 2px;color:var(--accent)}.panel .sub{color:var(--muted);font-size:12px;margin:0 0 8px}
+.panel .back{border:0;background:none;padding:0;height:auto;color:var(--muted);font-weight:500;margin-bottom:6px}
+.panel .back:hover{color:var(--accent);background:none}
+.doc-title{font-weight:700;font-size:13.5px;line-height:1.35;margin:2px 0 8px}
+.row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12.5px}
+.row:last-child{border:0}.row b{font-variant-numeric:tabular-nums;text-align:right}.row span{color:var(--fg2)}
+.sec{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin:12px 0 4px}
+.list{display:grid;gap:2px}
+.item{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:baseline;text-align:left;height:auto;padding:6px 8px;border:1px solid transparent;border-radius:8px;background:none;font-weight:500;width:100%}
+.item:hover{background:#f6f7f8;border-color:var(--border)}
+.item .code{font-weight:700;font-size:11.5px;color:#5a4300;background:var(--doc);border-radius:6px;padding:1px 6px}
+.item .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.item .m{grid-column:1/-1;color:var(--muted);font-size:11px}
+.item .code{white-space:nowrap}
+.item[data-current]{border-color:var(--accent);background:#e8f3ee}
+.step{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:5px 0;font-size:12px}
+.step i{width:10px;height:10px;border-radius:50%;margin-top:3px;background:#cbd5e1}
+.step[data-st=A] i{background:#1f8a70}.step[data-st=P] i{background:#d97706}.step[data-st=R] i,.step[data-st=X] i{background:#b42318}
+.step[data-current] {background:#f6f7f8;border-radius:8px}
+.step small{display:block;color:var(--muted);font-size:11px}
+.who{color:var(--who);font-weight:600}.bad{color:var(--danger);font-weight:600}.wrn{color:var(--warn);font-weight:600}.ok{color:var(--accent);font-weight:600}
+.gap{display:inline-block;font-size:10.5px;font-weight:600;color:#6b7280;background:#f1f2f3;border-radius:6px;padding:0 5px;margin-left:4px}
+.acts{display:flex;gap:6px;margin-top:10px}
+.note{position:fixed;left:16px;bottom:14px;color:var(--muted);font-size:11.5px;background:rgba(255,255,255,.9);padding:6px 10px;border-radius:8px;z-index:5;max-width:760px}
+.toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:6px 12px;border-radius:999px;font-size:12px;z-index:6;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
-@media(max-width:900px){.hud{width:min(92vw,330px)}.panel{top:auto;bottom:60px;width:min(92vw,300px)}.note{display:none}}
+@media(max-width:900px){.hud{width:min(92vw,318px);max-height:40vh;padding:10px 12px}.hud h1{font-size:13px}.hud .kpis,.hud .legend{display:none}.panel{top:auto;bottom:12px;width:min(92vw,320px);max-height:30vh;padding:10px 12px}.panel .sub{display:none}.note{display:none}}
 </style>
 </head>
 <body>
 <div id="stage"></div>
 
 <div class="hud">
-  <h1>Khuôn viên Tiến Thịnh · dòng chảy công việc 3D</h1>
-  <p class="sub">Văn phòng 3 tầng, nhà máy kết cấu thép, hồ, cổng — dựng theo ảnh. Người đi lại giao phiếu theo số thật 13/10; xe từ công trường chở đề xuất vật tư về.</p>
-  <div class="kpis">
-    <div class="kpi w"><b>42</b><small>đang chờ</small></div>
-    <div class="kpi b"><b>31</b><small>đứng yên &gt; 3 ngày</small></div>
-    <div class="kpi"><b>366</b><small>lượt giao / 90 ngày</small></div>
+  <h1>Khuôn viên Tiến Thịnh · dòng chảy công việc</h1>
+  <div class="clock">
+    <b id="clockText">—</b><span id="clockNote">phát lại lượt chuyển phiếu thật</span>
+    <div class="bar" id="bar" title="Bấm để nhảy tới ngày khác"><i id="barFill"></i></div>
+    <div class="ends"><span id="endA"></span><span id="endB"></span></div>
   </div>
+  <div class="kpis" id="kpis"></div>
   <div class="ctl">
     <button id="btnPlay" aria-pressed="true">⏸ Dừng</button>
     <button data-speed="1" class="spd" aria-pressed="true">1×</button>
@@ -61,23 +90,20 @@ button:hover{background:#f2f2f2}button[aria-pressed=true]{border-color:var(--acc
     <button data-view="overview" class="cam" aria-pressed="true">Toàn cảnh</button>
     <button data-view="office" class="cam">Văn phòng</button>
     <button data-view="factory" class="cam">Nhà máy</button>
-    <button data-view="gate" class="cam">Cổng</button>
-    <button id="btnRotate" aria-pressed="true">Tự xoay</button>
+    <button data-view="SMB" class="cam">CT Sơn Miền Bắc</button>
+    <button data-view="DA29" class="cam">CT Thú nhồi bông</button>
+    <button id="btnRotate" aria-pressed="false">Tự xoay</button>
   </div>
   <div class="legend">
-    <span><i style="background:#d97706"></i>Phiếu đang chờ ở bàn nhận · <i style="background:#b42318"></i>đứng yên &gt; 3 ngày</span>
-    <span><i style="background:#f5d27a;border:1px solid #c9a43d"></i>Phiếu đang được mang đi (người gửi → người nhận)</span>
-    <span><i style="background:#9ca3af"></i>Người chưa gắn phòng ban (44, lỗ hổng dữ liệu)</span>
-    <span><i style="background:#c98a3d"></i>Xe từ công trường mang đề xuất vật tư về</span>
+    <span><i style="background:#f5d27a;border:1px solid #c9a43d"></i>Phiếu đang được mang đi — bấm nhãn vàng để xem</span>
+    <span><i style="background:#f5d27a"></i><i style="background:#d97706"></i><i style="background:#b42318"></i>Phiếu chờ trên bàn: &lt; 1 ngày · 1–3 ngày · &gt; 3 ngày</span>
+    <span><i style="background:#9ca3af"></i>Người chưa gắn phòng ban trong Nhân sự</span>
+    <span><i style="background:#facc15;border-radius:50%"></i>Công nhân (minh họa, không có trong Vioo)</span>
   </div>
 </div>
 
-<div class="panel" id="panel">
-  <h2>Toàn công ty</h2>
-  <p class="sub">Bấm một phòng (tầng văn phòng, khu nhà máy) hoặc xe công trường để xem chi tiết.</p>
-  <div id="panelBody"></div>
-</div>
-<div class="note">Vị trí phòng theo tầng là giả định (em chưa biết tầng thật): T1 Tài chính - Kế toán · T2 Quản lý dự án · T3 Ban lãnh đạo + Hành chính - Nhân sự; Vật tư - Thiết bị ở kho đầu nhà máy, Văn phòng nhà máy ở khối trắng phía trước. Số liệu cấp phòng, người giữ việc, đề xuất vật tư là số thật 13/10/2026.</div>
+<div class="panel" id="panel"></div>
+<div class="note">Phát lại các bước quy trình thật 22/09 → 14/10 (đọc chỉ đọc từ Vioo). Tầng phòng ban theo anh xác nhận 14/10. Người ở công trường suy từ bước "BCH CT Duyệt". Tiêu đề hồ sơ nhân sự được ẩn.</div>
 <div class="toast" id="toast"></div>
 
 <script type="importmap">
@@ -88,31 +114,61 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
-/* ───────── Số thật 13/10/2026 ───────── */
+/* ───────── Dữ liệu thật: bước quy trình (workflow_step_assignments) 90 ngày + mọi bước đang chờ, đọc 14/10/2026 ───────── */
+const D = {"base":1780246800,"now":195223,"people":[["Admin Hoàng","HR","HR",0],["Bùi Thuỳ Linh","VT","VT",0],["Nguyễn Văn Luật","PM","SMB",0],["Phạm Ngọc Sơn","PM","SMB",0],["Vũ Trọng Hiệp","PM","PM",0],["Nguyễn Hồng Quân","NM","NM",0],["Nguyễn Quang Thuận","BLD","BLD",0],["Nguyễn Thành Đô","PM","PM",0],["Đặng Thị Thu Hà","VT","VT",0],["Nguyễn Phương Thảo","PM","DA29",0],["Bùi Quang Chung","VT","VT",0],["Nguyễn Thị Mơ","BLD","BLD",0],["Lưu Công Danh","PM","PM",0],["Hà Thị Hải Hồng","HR","HR",0],["Nguyễn Văn Năm","PM","DA29",0],["Nguyễn Văn Biểu","UNK","UNK",1],["Nguyễn Thị Giang","HR","HR",0],["Đặng Thị Hương","HR","HR",0],["Trần Thị Tươi","HR","HR",0],["Nguyễn Thị Thu Hồng","HR","HR",0],["Nguyễn Văn Thanh","PM","PM",0],["Nguyễn Quang Huy","UNK","DA29",1],["Đoàn Văn Dương","UNK","DA29",1],["Phạm Bích Phương","UNK","UNK",1],["Dương Xuân Thịnh","BLD","BLD",0],["Phạm Thị Thủy","TC","TC",0],["Giang Xuân Kiên","UNK","UNK",1],["Nguyễn Thị Thu Hà","UNK","UNK",1],["Phạm Đức Thiện","UNK","TK",1],["Hoàng Công Minh","UNK","DA29",1],["Hà Thị Tuyết Minh","TK","TK",0]],"steps":["Tạo đề xuất","Phòng vật tư duyệt","BCH CT Duyệt","Phòng QLDA duyệt","giám đốc","Phòng HCSN duyệt","Quản lý trực tiếp","Cán bộ hành chính","Phòng HCNS duyệt","Khối người duyệt","GIÁM ĐỐC VẬT TƯ","Ban Giám đốc","Người duyệt được chọn khi gửi","Phòng TKĐT duyệt","Duyệt yêu cầu điều động"],"kinds":["Quy trình cấp vật tư công trường","test1","Đề xuất cấp phát VPP V2","Đề xuất cấp VPP","Đề xuất cấp phát bảo hộ lao động","Đề xuất trực tiếp","Đề xuất cấp phát thiết bị văn phòng","Đề xuất phê duyệt hồ sơ phòng Hành chính Nhân sự","Yêu cầu điều động công trường"],"docs":{"WF-2026-016":["MR-2026-1779 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-023":["MR-2026-5780 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-025":["MR-2026-2026 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-022":["MR-2026-6564 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-028":["MR-2026-7461 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-024":["MR-2026-2899 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-029":["MR-2026-2581 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-039":["MR-2026-7545 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-072":["MR-2026-9720 - Đề xuất vật tư",0,"DA29"],"WF-2026-074":["MR-2026-9723 - Đề xuất vật tư",0,"SMB-2026"],"MR-2026-9727":["xà gồ mái",0,"26062026/TT-AIAK"],"WF-2026-080":["MR-2026-9732 - Đề xuất vật tư",0,"SMB-2026"],"WF-2026-087":["MR-2026-9746 - Đề xuất vật tư",0,"DA29"],"WF-2026-090":["MR-2026-9747 - Đề xuất vật tư",0,"SMB-2026"],"MR-2026-9750":["Dầu thủy lực 68 cho máy xúc 120",0,"SMB-2026"],"WF-2026-093":["MR-2026-9749 - Đề xuất vật tư",0,"SMB-2026"],"MR-2026-9748":["Thép buộc 1 ly tháng 07.2026",0,"SMB-2026"],"MR-2026-9752":["Áo lưới vàng",0,"SMB-2026"],"MR-2026-9753":["SIka tắng cứng nền Tầng 2 nhà xưởng 3",0,"SMB-2026"],"MR-2026-9755":["Đề xuất thép các hạng mục lần 4",0,"SMB-2026"],"MR-2026-9756":["Dây thừng cứu sinh D14",0,"SMB-2026"],"WF-2026-106":["MR-2026-9757 - Đề xuất vật tư",0,"SMB-2026"],"MR-2026-9759":["Tấm vách ALC bê tông xây tường nhà xưởng",0,"SMB-2026"],"WF-2026-110":["MR-2026-9761 - Đề xuất vật tư",0,"tt-nmkct"],"MR-2026-9774":["Vật tư thi công đường nội bộ",0,"DA29"],"MR-2026-9775":["Đề xuất cống D300, D400, D500, D600",0,"SMB-2026"],"MR-2026-9776":["Đề xuất vật tư các hạng mục (ni lông, con kê, lưới thép hàn, sika tăng cứng nền...)",0,"SMB-2026"],"MR-2026-9778":["Đề xuất mua dầu diezel cấp cho xe cẩu 89A 833.84",0,"SMB-2026"],"MR-2026-9779":["Đề xuất dầu cấp cho máy xúc thi công tại công trường",0,"SMB-2026"],"RQ-2026-000010":["1",1,""],"RQ-2026-000014":["test 2",2,""],"MR-2026-9781":["Đề xuất đinh bê tông 4cm",0,"SMB-2026"],"MR-2026-9783":["1",0,"SMB-2026"],"MR-2026-9784":["Vật tư cấp cho xe cẩu 89A 83384",0,"SMB-2026"],"MR-2026-9785":["Đề xuất que hàn 2,5 ly",0,"SMB-2026"],"MR-2026-9786":["Đề xuất sika xám",0,"SMB-2026"],"MR-2026-9787":["Đề xuất vật tư xây tường bê tông ALC",0,"SMB-2026"],"MR-2026-9790":["Base B (cấp phối đá dăm loại 2)",0,"DA29"],"MR-2026-9791":["Đề xuất sikadur dùng cấy râu thép",0,"SMB-2026"],"MR-2026-9793":["Đề nghị vật tư thép xây dựng lần 1 công trình Xin Hai (Phần móng nhà xưởng, nhà nghỉ ca, n",0,"DA29"],"MR-2026-9794":["Base B (cấp phối đá dăm loại II)",0,"DA29"],"MR-2026-9795":["Đề xuất thép sàn nhà Văn Phòng và phần thân nhà xưởng",0,"SMB-2026"],"MR-2026-9796":["Vật tư thi công cấp nước phục vụ thi công",0,"DA29"],"RQ-2026-000015":["Cung cấp vật tư văn phòng phẩm cho Ban điều hành dự án Xin Hai",3,""],"RQ-2026-000016":["Đề nghị cấp đồ bảo hộ lao động cho dự án Xin Hai",4,""],"MR-2026-9797":["Đề xuất sika rót chân cột kết cấu",0,"SMB-2026"],"MR-2026-9798":["Đề xuất thép buộc 1 ly phục vụ làm thép các hạng mục",0,"SMB-2026"],"MR-2026-9799":["Đề nghị cung cấp cấu kiện cọc phục vụ thi công",0,"DA29"],"MR-2026-9800":["Đề nghị bổ sung cấu kiện cọc phục vụ thi công",0,"DA29"],"RQ-2026-000017":["CẤP BẢO HỘ LAO ĐỘNG",4,""],"RQ-2026-000018":["BẢO HỘ LAO ĐỘNG - BĐH DỰ ÁN",4,""],"MR-2026-9801":["Đề xuất dầu diezel cấp cho xe cẩu 89A 833 84",0,"SMB-2026"],"MR-2026-9802":["Đề xuất cọc tre 2m - ép móng hàng rào",0,"SMB-2026"],"MR-2026-9803":["Đề xuất mực máy in HP LaserJet MFP M440DN",0,"SMB-2026"],"RQ-2026-000019":["Đề xuất VPP tháng 9/2026",3,""],"MR-2026-9804":["Đề xuất vật tư thi công di chuyển đường ống thoát nước thải và thi công đường cống thoát n",0,"DA29"],"RQ-2026-000020":["Đề xuất danh mục kiểm tra hộp cứu thương công trình Xin Hai",4,""],"MR-2026-9805":["Đề xuất vật tư thi công nền nhà xưởng GĐ1",0,"DA29"],"MR-2026-9806":["Đề xuất giờ máy thi công",0,"DA29"],"MR-2026-9807":["Đề xuất cấp dầu diezel cho xe cẩu",0,"SMB-2026"],"MR-2026-9808":["Đề xuất thép tấm tạo mặt bằng di chuyển di chuyển tại các vị trí sình lầy",0,"DA29"],"MR-2026-9809":["Đề xuất nilon phục vụ công tác che phủ bê tông trong trường hợp đổ bê tông bị mưa",0,"DA29"],"MR-2026-9810":["Đề xuất vật tư dầu máy",0,"DA29"],"MR-2026-9811":["Đề xuất xốp bo nền EPS loại dày 1cm và 2 cm",0,"SMB-2026"],"MR-2026-9812":["Đề xuất vật tư phục vụ thi công lần 6",0,"DA29"],"MR-2026-9813":["Đề xuất mực",0,"DA29"],"MR-2026-9814":["Đề xuất thép bổ sung Tháng 9/2026",0,"SMB-2026"],"MR-2026-9815":["Đề xuất ống bạt nhựa phục vụ thi công",0,"DA29"],"MR-2026-9816":["Đề xuất Sika xám cho sàn tầng 2 nhà xưởng 1",0,"SMB-2026"],"RQ-2026-000021":["Đề xuất thuê ngoài một số hạng mục Truyền thông – Thương hiệu phục vụ ra mắt Tiến Thịnh Ho",5,""],"RQ-2026-000022":["Bê tông tươi trạm trộn - 1/ Bê tông M300R7 độ Sụt 14+_2 số lượng 100 m3. Và bê tông M3",5,""],"MR-2026-9818":["Đề xuất dầu diezel cho máy xúc lốp 140 và xe cẩu",0,"SMB-2026"],"MR-2026-9819":["Chuyển kho vật tư từ RICO về XINHAI",0,"DA29"],"RQ-2026-000023":["Đề xuất mua bộ phát wifi 4G CT SMB",3,""],"RQ-2026-000024":["Đề xuất mua mới thiết bị phát wifi NM KCT",3,""],"MR-2026-9820":["Đề xuất cấp vật tư thi công di chuyển đường thoát nước thải",0,"DA29"],"MR-2026-9821":["Đề xuất ca cẩu để vận chuyển thép xây dựng tại công trường",0,"DA29"],"RQ-2026-000025":["P.HCNS đề xuất mua máy hút bụi công nghiệp phục vụ cho công tác vệ sinh",5,""],"RQ-2026-000026":["P.HCNS đề xuất mua máy hút bụi công nghiệp phục vụ cho công tác vệ sinh",6,""],"RQ-2026-000027":["P.HCNS đề xuất mua máy hút bụi công nghiệp phục vụ cho công tác vệ sinh",6,""],"RQ-2026-000028":["2026",6,""],"RQ-2026-000029":["1",6,""],"MR-2026-9822":["Đề xuất vật tư, thiết bị lần 10",0,"DA29"],"MR-2026-9823":["Đề xuất vật tư lần thứ 11",0,"DA29"],"MR-2026-9825":["Đề xuất vật tư lần thứ 12",0,"DA29"],"RQ-2026-000030":["Hồ sơ nhân sự (ẩn tiêu đề trên bản thử)",7,""],"RQ-2026-000031":["Đề xuất cấp phát BHLD cho nhân sự mới - Đ/c Đoàn Văn Dương - QS/QC CT Xinhai Vina",4,""],"MR-2026-9826":["Đề xuất vật tư lần thứ 12",0,"DA29"],"MR-2026-9827":["Đề xuất vật tư, thiết bị phục vụ thi công",0,"DA29"],"RQ-2026-000032":["Đề xuất về việc điều chuyển xe chuyển tải BKS 17C-087.52",5,""],"RQ-2026-000033":["Đề xuất mua tài khoản ChatGPT Plus",5,""],"MR-2026-9828":["Đề xuất nắp cống U800 (cống U 800 chuyển từ Rico sang)",0,"SMB-2026"],"RQ-2026-000034":["ĐX cấp phát đồng phục đ/c Nguyễn Thị Giang - TP HCNS",4,""],"MR-2026-9829":["Đề xuất vật tư, vật liệu thi công lần thứ 14",0,"DA29"],"MR-2026-9830":["Máy in màu: Lần thứ 15",0,"DA29"],"MR-2026-9831":["Đề xuất dây cáp điện và dây điện",0,"SMB-2026"],"MR-2026-9832":["Đề xuất ống thoát nước làm âm để làm bể phốt, nước mưa nhà xưởng",0,"SMB-2026"],"RQ-2026-000035":["Đè xuất nhập thuốc cho toàn Công ty",6,""],"MR-2026-9833":["test",0,"SMB-2026"],"MR-2026-9834":["test2",0,"SMB-2026"],"MR-2026-9837":["(Đề xuất vật tư lần thứ 16 (gạch xi cát)",0,"DA29"],"RQ-2026-000036":["In tờ rơi tuyển dụng",5,""],"MR-2026-9838":["Đề xuất cống thoát nước",0,"SMB-2026"],"MR-2026-9839":["Đề xuất vật tư làm lán để xe BCHCT lần 16 ( Vật tư cũ tận dụng )",0,"DA29"],"RQ-2026-000037":["Đề xuất bộ máy tính cho nhân sự mới_Đoàn Văn Dương QS/QC_Xinhai Vina",6,""],"MR-2026-9840":["Vật tư thi công Lần 17",0,"DA29"],"RQ-2026-000038":["Hồ sơ nhân sự (ẩn tiêu đề trên bản thử)",7,""],"RQ-2026-000039":["Hồ sơ nhân sự (ẩn tiêu đề trên bản thử)",7,""],"MR-2026-9841":["Đề xuất vật tư thi công lần 17 (cọc tre +xốp chèn khe lún)",0,"DA29"],"MR-2026-9842":["Đề xuất vật tư thi công lần 18 (Hộp ubot cho sàn phẳng)",0,"DA29"],"MR-2026-9844":["Đề xuất vật tư thi công lần thứ 19",0,"DA29"],"MR-2026-9845":["Đề xuất vật tư thi công dự án Xinhai Lần 20",0,"DA29"],"RQ-2026-000048":["Điều động Nguyễn Văn Thanh · RICO → Sơn Miền Bắc · 05/10/2026",8,""],"RQ-2026-000052":["mua máy tính mới",6,""],"RQ-2026-000093":["Đề xuất chi phí chạy quảng cáo Facebook",5,""],"RQ-2026-000094":["Đề xuất cấp phát bộ máy tính cho nhân sự mới",6,""],"RQ-2026-000095":["Đề xuất cấp phát bảo hộ lao động cho nhân sự mới",4,""],"MR-2026-9846":["Mua tấm alc dày 20cm xây vách nhà tắm văn phòng",0,"SMB-2026"],"MR-2026-9847":["Đề xuất điều hòa 18.000 BTU cho Phòng ở CBNV",0,"SMB-2026"],"MR-2026-9848":["Đề xuất mua vật tư sử dụng máy xúc và oto tại công trường",0,"DA29"],"RQ-2026-000096":["Đề xuất giày bảo hộ cán bộ công ty",4,""],"MR-2026-9849":["Đề xuất định đạn nở M6 (vách ALC)",0,"SMB-2026"],"MR-2026-9850":["Mực in cho máy in A3 HP",0,"SMB-2026"],"MR-2026-9851":["Sika xám tăng cứng nền nhà xưởng",0,"SMB-2026"],"MR-2026-9852":["Đề xuất vật tư phục vụ cho thi công lần 21",0,"DA29"],"MR-2026-9854":["Đề xuất thép biện pháp lắp đặt bulong móng(L19)",0,"DA29"],"MR-2026-9855":["Đề xuất Vật tư nước cho wc nhà văn phòng tầng 1 và nhà xưởng",0,"SMB-2026"],"RQ-2026-000097":["Đề xuất cấp phát VPP Nhà máy Tháng 10/2026",3,""],"MR-2026-9856":["Đề xuất vật tư điện (máng cáp, ống cứng luồn dây, ruột gà, phụ kiện...)",0,"SMB-2026"],"RQ-2026-000098":["Đề xuất cấp chăn đông và văn phòng phẩm cho Sơn Miền Bắc",3,""],"MR-2026-9857":["Đề xuất mua dầu diezel cho amys xúc 140 và xe chuyển tải",0,"SMB-2026"],"RQ-2026-000099":["P.HCNS đề xuất mua điện thoại di động cấp cho đồng chí Lê Văn Sinh",6,""],"MR-2026-9858":["Đề xuất thép xây dựng lần 2",0,"DA29"],"RQ-2026-000100":["Đề xuất cấp phát bảo hộ lao động: Trần Xuân Thành - Thợ điện - Nhà máy KCT",4,""],"RQ-2026-000101":["Đề xuất cấp phát bộ máy tính: Bùi Công Toàn - Chuyên viên quay dựng - Phòng THTH",6,""],"RQ-2026-000102":["Đề xuất gia vị nhà bếp Tháng 10/2026",5,""],"MR-2026-9860":["Đề xuất gạch ốp lát các hạng mục",0,"SMB-2026"],"RQ-2026-000103":["Đề xuất áo bảo hộ zile và mũ trắng",4,""]},"rows":[["WF-2026-016",0,0,0,5241,null,3166,"P",1],["WF-2026-023",1,0,0,21071,null,2903,"P",1],["WF-2026-025",2,0,0,21465,null,2896,"P",1],["WF-2026-022",1,0,1,22244,null,2883,"P",1],["WF-2026-028",1,0,1,22246,null,2883,"P",1],["WF-2026-024",1,0,2,22247,null,2883,"P",0],["WF-2026-029",1,0,1,22315,null,2882,"P",1],["WF-2026-039",2,0,0,23040,null,2870,"P",1],["WF-2026-072",1,0,0,38071,null,2619,"P",1],["WF-2026-074",2,3,4,38258,null,2616,"P",1],["MR-2026-9727",0,5,5,41336,null,2565,"P",0],["WF-2026-080",2,0,3,47499,null,2462,"P",1],["WF-2026-087",2,6,6,53872,null,2356,"P",0],["WF-2026-090",2,0,0,60292,null,2249,"P",1],["MR-2026-9750",2,2,3,65684,67104,24,"A",0],["MR-2026-9750",3,3,7,67104,67207,2,"A",0],["WF-2026-093",3,3,7,67105,67210,2,"R",0],["MR-2026-9748",3,3,7,67105,67207,2,"A",0],["MR-2026-9748",1,7,8,67207,71158,66,"A",1],["MR-2026-9750",1,7,1,67207,74128,115,"A",1],["WF-2026-093",3,7,2,67210,74107,115,"A",0],["MR-2026-9752",2,2,3,72558,80090,126,"A",1],["WF-2026-093",3,2,9,74107,74114,0,"A",0],["WF-2026-093",1,9,1,74114,74245,2,"R",0],["WF-2026-093",1,1,2,74245,null,2016,"P",0],["MR-2026-9753",2,2,7,76983,78435,24,"A",1],["MR-2026-9753",3,7,7,78435,78436,0,"A",0],["MR-2026-9753",1,7,10,78436,78448,0,"A",0],["MR-2026-9752",3,3,7,80090,81165,18,"S",0],["MR-2026-9752",3,0,9,81165,81167,0,"A",0],["MR-2026-9752",1,9,10,81167,81552,6,"S",0],["MR-2026-9752",1,9,1,81167,81552,6,"A",0],["MR-2026-9752",1,9,11,81167,81552,6,"S",0],["MR-2026-9752",1,9,8,81167,81552,6,"S",0],["MR-2026-9755",2,2,3,81269,81272,0,"A",0],["MR-2026-9755",3,3,7,81272,82573,22,"A",0],["MR-2026-9756",2,2,3,81284,81285,0,"A",0],["MR-2026-9756",3,3,7,81285,82569,21,"A",0],["WF-2026-106",2,2,3,81645,83110,24,"R",1],["MR-2026-9756",1,7,1,82569,82643,1,"A",0],["MR-2026-9755",1,7,1,82573,121656,651,"A",1],["WF-2026-106",2,3,2,83110,null,1869,"P",0],["MR-2026-9759",2,2,3,83188,84021,14,"A",0],["MR-2026-9759",3,3,7,84021,84032,0,"A",0],["MR-2026-9759",1,7,10,84032,84218,3,"A",0],["WF-2026-110",2,0,6,84068,null,1853,"P",1],["MR-2026-9774",2,4,4,84238,84239,0,"A",0],["MR-2026-9774",3,4,12,84239,87291,51,"A",1],["MR-2026-9775",2,2,3,85572,85587,0,"A",0],["MR-2026-9775",3,3,7,85587,86985,23,"A",0],["MR-2026-9776",2,2,3,85630,85803,3,"A",0],["MR-2026-9776",3,3,7,85803,86985,20,"A",0],["MR-2026-9776",1,7,10,86985,87112,2,"A",0],["MR-2026-9775",1,7,10,86985,87112,2,"A",0],["MR-2026-9778",2,2,3,86986,86994,0,"A",0],["MR-2026-9778",3,3,7,86994,86998,0,"A",0],["MR-2026-9778",1,7,1,86998,95604,143,"A",1],["MR-2026-9779",2,2,3,87001,87015,0,"A",0],["MR-2026-9779",3,3,7,87015,87016,0,"A",0],["MR-2026-9779",1,7,10,87016,95604,143,"S",1],["MR-2026-9779",1,7,8,87016,95604,143,"S",1],["MR-2026-9779",1,7,1,87016,95604,143,"A",1],["MR-2026-9774",1,12,10,87291,95529,137,"A",1],["RQ-2026-000010",4,0,11,90255,90263,0,"A",0],["RQ-2026-000014",5,0,13,90654,90671,0,"C",0],["RQ-2026-000014",5,0,11,90671,90671,0,"C",0],["MR-2026-9781",2,2,3,92788,95506,45,"A",1],["MR-2026-9783",2,2,3,93175,95506,39,"X",1],["MR-2026-9784",2,2,3,94144,95505,23,"A",0],["MR-2026-9784",3,3,7,95505,95513,0,"A",0],["MR-2026-9781",3,3,7,95506,95514,0,"A",0],["MR-2026-9784",1,7,1,95513,95603,1,"A",0],["MR-2026-9781",1,7,8,95514,95603,1,"S",0],["MR-2026-9781",1,7,1,95514,95603,1,"A",0],["MR-2026-9785",2,2,3,96951,102784,97,"A",1],["MR-2026-9786",2,2,3,96953,102784,97,"A",1],["MR-2026-9786",3,3,7,102784,103240,8,"A",0],["MR-2026-9785",3,3,7,102784,103241,8,"A",0],["MR-2026-9787",2,2,3,103142,103295,3,"A",0],["MR-2026-9786",1,7,10,103240,105969,45,"A",1],["MR-2026-9785",1,7,10,103241,114691,191,"A",1],["MR-2026-9787",3,3,7,103295,108794,92,"A",1],["MR-2026-9790",2,12,14,105762,105766,0,"A",0],["MR-2026-9790",3,14,7,105766,107235,24,"R",1],["MR-2026-9791",2,2,3,107125,107132,0,"A",0],["MR-2026-9791",3,3,7,107132,108793,28,"A",1],["MR-2026-9790",3,7,12,107235,null,1466,"P",0],["MR-2026-9793",2,9,14,107439,107446,0,"A",0],["MR-2026-9793",3,14,7,107446,107457,0,"A",0],["MR-2026-9793",1,7,8,107457,114652,120,"A",1],["MR-2026-9794",2,12,14,107497,107501,0,"A",0],["MR-2026-9794",3,14,7,107501,107501,0,"A",0],["MR-2026-9794",1,7,10,107501,113138,94,"A",1],["MR-2026-9791",1,7,8,108793,111737,49,"S",1],["MR-2026-9791",1,7,10,108793,111737,49,"A",1],["MR-2026-9791",1,7,1,108793,111737,49,"S",1],["MR-2026-9787",1,7,10,108794,114691,98,"A",1],["MR-2026-9795",2,2,3,108958,108994,1,"A",0],["MR-2026-9795",3,3,7,108994,108997,0,"A",0],["MR-2026-9795",1,7,8,108997,112846,64,"A",1],["MR-2026-9796",2,9,14,111405,111430,0,"A",0],["MR-2026-9796",3,14,7,111430,113040,27,"A",1],["RQ-2026-000015",6,9,15,111451,111459,0,"C",0],["RQ-2026-000015",6,0,14,111459,111492,1,"A",0],["RQ-2026-000016",6,9,16,111469,111478,0,"A",0],["MR-2026-9797",2,2,3,111473,111713,4,"A",0],["RQ-2026-000016",7,16,17,111478,111539,1,"A",0],["RQ-2026-000015",8,14,17,111492,111853,6,"A",0],["MR-2026-9797",3,3,7,111713,112806,18,"A",0],["MR-2026-9797",1,7,10,112806,114691,31,"A",1],["MR-2026-9798",2,2,3,112843,112862,0,"A",0],["MR-2026-9798",3,3,7,112862,114172,22,"A",0],["MR-2026-9796",1,7,1,113040,113296,4,"A",0],["MR-2026-9799",2,9,14,113172,113225,1,"X",0],["MR-2026-9800",2,9,14,113230,113289,1,"A",0],["MR-2026-9800",3,14,7,113289,114733,24,"A",1],["MR-2026-9798",1,7,8,114172,118663,75,"A",1],["MR-2026-9800",1,7,10,114733,118653,65,"A",1],["RQ-2026-000017",6,12,18,117585,117587,0,"C",0],["RQ-2026-000017",6,12,17,117585,117587,0,"C",0],["RQ-2026-000017",6,12,19,117585,117587,0,"C",0],["RQ-2026-000018",6,12,13,117602,117622,0,"C",0],["RQ-2026-000018",6,12,17,117602,123352,96,"A",0],["RQ-2026-000018",6,12,18,117602,128802,187,"A",0],["RQ-2026-000018",6,0,14,117622,117660,1,"A",0],["MR-2026-9801",2,2,3,121493,122956,24,"A",1],["MR-2026-9802",2,2,3,121861,122956,18,"R",0],["MR-2026-9802",2,3,2,122956,122958,0,"A",0],["MR-2026-9801",3,3,7,122956,124828,31,"A",1],["MR-2026-9802",2,2,3,122958,122959,0,"A",0],["MR-2026-9802",3,3,7,122959,124827,31,"A",1],["MR-2026-9803",2,2,3,122995,124463,24,"A",1],["RQ-2026-000019",6,2,17,123374,131867,142,"A",1],["RQ-2026-000019",6,2,3,123374,135911,209,"A",1],["MR-2026-9804",2,9,14,123433,124377,16,"A",0],["MR-2026-9804",3,14,7,124377,126199,30,"A",1],["MR-2026-9803",3,3,7,124463,124827,6,"A",0],["RQ-2026-000020",6,9,20,124724,124859,2,"A",0],["RQ-2026-000020",6,9,16,124724,128800,68,"A",0],["RQ-2026-000020",6,9,14,124724,124844,2,"A",0],["MR-2026-9805",2,9,14,124768,124845,1,"A",0],["MR-2026-9803",1,7,1,124827,137681,214,"A",1],["MR-2026-9802",1,7,10,124827,135920,185,"A",1],["MR-2026-9801",1,7,1,124828,137680,214,"A",1],["MR-2026-9805",3,14,7,124845,126198,23,"A",0],["MR-2026-9806",2,9,14,125991,128536,42,"A",1],["MR-2026-9805",1,7,10,126198,131572,90,"A",1],["MR-2026-9804",1,7,10,126199,131572,90,"A",1],["MR-2026-9804",1,7,1,126199,131572,90,"S",1],["MR-2026-9806",3,14,7,128536,129980,24,"A",1],["RQ-2026-000020",7,16,17,128800,136243,124,"A",0],["RQ-2026-000018",7,18,17,128802,137593,147,"A",0],["MR-2026-9806",1,7,10,129980,136220,104,"A",1],["MR-2026-9807",2,2,3,130141,130235,2,"A",0],["MR-2026-9807",3,3,7,130235,130236,0,"A",0],["MR-2026-9807",1,7,1,130236,137679,124,"A",1],["MR-2026-9808",2,9,14,131935,132017,1,"A",0],["MR-2026-9809",2,9,14,131939,132018,1,"A",0],["MR-2026-9810",2,9,14,131983,132011,0,"R",0],["MR-2026-9810",2,14,9,132011,132012,0,"A",0],["MR-2026-9810",2,9,14,132012,132017,0,"A",0],["MR-2026-9810",3,14,7,132017,132022,0,"A",0],["MR-2026-9808",3,14,7,132017,132022,0,"A",0],["MR-2026-9809",3,14,7,132018,132022,0,"A",0],["MR-2026-9810",1,7,1,132022,137302,88,"A",1],["MR-2026-9809",1,7,1,132022,144904,215,"S",1],["MR-2026-9809",1,7,10,132022,144904,215,"A",1],["MR-2026-9808",1,7,8,132022,137309,88,"A",1],["RQ-2026-000019",8,3,17,135911,137592,28,"A",1],["MR-2026-9811",2,2,3,137339,137352,0,"A",0],["MR-2026-9811",3,3,7,137352,137752,7,"A",0],["MR-2026-9812",2,9,14,137599,137624,0,"A",0],["MR-2026-9812",3,14,7,137624,137751,2,"A",0],["MR-2026-9812",1,7,1,137751,144542,113,"A",1],["MR-2026-9811",1,7,10,137752,138913,19,"A",0],["MR-2026-9813",2,21,14,137807,139038,21,"A",0],["MR-2026-9813",3,14,7,139038,140138,18,"A",0],["MR-2026-9813",1,7,1,140138,144517,73,"A",1],["MR-2026-9814",2,2,3,140652,140687,1,"A",0],["MR-2026-9814",3,3,7,140687,141545,14,"A",0],["MR-2026-9814",1,7,8,141545,141788,4,"A",0],["MR-2026-9815",2,22,14,141688,142177,8,"A",0],["MR-2026-9816",2,2,3,141729,141762,1,"A",0],["MR-2026-9816",3,3,7,141762,142968,20,"A",0],["RQ-2026-000021",9,23,24,142096,null,885,"P",0],["MR-2026-9815",3,14,7,142177,143275,18,"A",0],["MR-2026-9816",1,7,10,142968,146063,52,"A",1],["MR-2026-9815",1,7,1,143275,144516,21,"A",0],["RQ-2026-000022",9,22,24,143603,null,860,"P",0],["MR-2026-9818",2,2,3,144503,144515,0,"A",0],["MR-2026-9818",3,3,7,144515,145961,24,"A",1],["MR-2026-9819",2,25,14,144910,144912,0,"A",0],["MR-2026-9819",3,14,7,144912,146008,18,"R",0],["MR-2026-9818",1,7,1,145961,147767,30,"A",1],["MR-2026-9819",3,7,25,146008,null,820,"P",0],["RQ-2026-000023",6,0,16,147388,149824,41,"A",1],["RQ-2026-000024",6,0,16,147389,149825,41,"A",1],["MR-2026-9820",2,9,14,147894,147904,0,"A",0],["MR-2026-9820",3,14,7,147904,148992,18,"A",0],["MR-2026-9820",1,7,1,148992,151797,47,"A",1],["MR-2026-9821",2,9,14,149313,149323,0,"A",0],["MR-2026-9821",3,14,7,149323,150411,18,"A",0],["RQ-2026-000023",8,16,17,149824,176210,440,"A",1],["RQ-2026-000024",8,16,17,149825,176210,440,"A",1],["MR-2026-9821",1,7,10,150411,192161,696,"A",1],["RQ-2026-000025",9,17,24,151838,151839,0,"C",0],["RQ-2026-000026",6,17,16,151878,151883,0,"C",0],["RQ-2026-000027",6,17,16,151882,151908,0,"A",0],["RQ-2026-000027",10,16,11,151908,169297,290,"A",0],["RQ-2026-000028",6,0,16,152001,186889,581,"X",0],["RQ-2026-000029",6,0,16,152085,165067,216,"C",0],["MR-2026-9822",2,9,14,157505,157578,1,"A",0],["MR-2026-9822",3,14,7,157578,158793,20,"A",0],["MR-2026-9822",1,7,10,158793,186326,459,"S",1],["MR-2026-9822",1,7,1,158793,186326,459,"A",1],["MR-2026-9823",2,9,14,159317,160412,18,"A",0],["MR-2026-9823",3,14,7,160412,162296,31,"A",1],["MR-2026-9825",2,9,14,162179,162187,0,"X",0],["MR-2026-9823",1,7,1,162296,186326,401,"A",1],["MR-2026-9823",1,7,10,162296,186326,401,"S",1],["RQ-2026-000030",9,18,16,163267,163365,2,"A",0],["RQ-2026-000031",6,18,16,163349,163365,0,"A",0],["RQ-2026-000030",11,16,26,163365,null,531,"P",0],["RQ-2026-000030",11,16,24,163365,null,531,"P",0],["RQ-2026-000031",7,16,17,163365,167582,70,"A",0],["MR-2026-9826",2,22,14,163692,163705,0,"X",0],["MR-2026-9827",2,22,14,163713,163716,0,"A",0],["MR-2026-9827",3,14,7,163716,165995,38,"A",1],["RQ-2026-000032",12,18,11,165059,166180,19,"C",0],["RQ-2026-000032",12,18,16,165059,165061,0,"A",0],["RQ-2026-000033",12,27,11,165146,165148,0,"C",0],["RQ-2026-000033",12,27,16,165146,165148,0,"C",0],["RQ-2026-000033",12,27,16,165148,165223,1,"A",0],["RQ-2026-000033",12,27,11,165148,192475,455,"A",0],["MR-2026-9828",2,2,3,165180,166506,22,"A",0],["MR-2026-9827",1,7,1,165995,186327,339,"A",1],["RQ-2026-000032",12,18,11,166180,192475,438,"A",0],["RQ-2026-000032",12,18,16,166180,166194,0,"A",0],["RQ-2026-000034",6,18,16,166314,172401,101,"A",0],["MR-2026-9828",3,3,7,166506,168994,41,"A",1],["MR-2026-9829",2,22,14,167676,167934,4,"A",0],["MR-2026-9830",2,22,14,167680,170748,51,"A",1],["MR-2026-9831",2,2,3,167910,167972,1,"A",0],["MR-2026-9829",3,14,7,167934,176696,146,"A",1],["MR-2026-9831",3,3,7,167972,173303,89,"A",1],["MR-2026-9832",2,2,3,167973,167973,0,"A",0],["MR-2026-9832",3,3,7,167973,169007,17,"S",0],["MR-2026-9828",1,7,10,168994,188225,321,"A",1],["MR-2026-9832",3,0,9,169007,169480,8,"A",0],["RQ-2026-000035",6,17,16,169450,172185,46,"A",0],["MR-2026-9832",13,9,28,169480,169597,2,"A",0],["MR-2026-9832",1,28,10,169597,171845,37,"S",1],["MR-2026-9833",2,0,3,169599,169600,0,"A",0],["MR-2026-9833",3,3,9,169600,169601,0,"A",0],["MR-2026-9833",13,9,28,169601,187766,303,"S",0],["MR-2026-9834",2,28,3,169604,169605,0,"A",0],["MR-2026-9834",3,3,9,169605,169633,0,"A",0],["MR-2026-9834",13,9,28,169633,169918,5,"A",0],["MR-2026-9834",1,28,1,169918,176254,106,"A",1],["MR-2026-9837",2,9,14,170633,170747,2,"A",0],["MR-2026-9837",3,14,7,170747,176692,99,"A",1],["MR-2026-9830",3,14,7,170748,173302,43,"A",1],["MR-2026-9832",1,10,1,171845,176253,73,"A",1],["RQ-2026-000036",12,27,11,171907,192475,343,"A",0],["RQ-2026-000036",12,27,16,171907,172224,5,"A",0],["RQ-2026-000035",10,16,11,172185,175195,50,"C",0],["RQ-2026-000034",7,16,17,172401,176213,64,"A",0],["MR-2026-9830",13,7,28,173302,192228,315,"A",0],["MR-2026-9831",13,7,28,173303,187766,241,"S",0],["MR-2026-9838",2,2,3,173463,173464,0,"A",0],["MR-2026-9838",3,3,7,173464,186361,215,"A",1],["MR-2026-9839",2,22,14,173686,174915,20,"A",0],["RQ-2026-000037",6,27,16,173691,173693,0,"A",0],["RQ-2026-000037",10,16,11,173693,192475,313,"A",0],["MR-2026-9839",3,14,7,174915,176694,30,"A",1],["MR-2026-9840",2,22,14,175046,175236,3,"A",0],["RQ-2026-000035",6,17,16,175195,186778,193,"C",0],["RQ-2026-000038",9,18,16,175207,175241,1,"C",0],["MR-2026-9840",3,14,7,175236,176691,24,"R",1],["RQ-2026-000038",9,18,14,175241,175242,0,"A",0],["RQ-2026-000038",11,14,16,175242,185196,166,"A",0],["RQ-2026-000038",11,14,14,175242,175242,0,"A",0],["RQ-2026-000038",11,14,11,175242,192475,287,"A",0],["RQ-2026-000039",9,18,16,176626,185196,143,"A",0],["MR-2026-9840",3,7,22,176691,null,309,"P",0],["MR-2026-9837",13,7,28,176692,192229,259,"A",0],["MR-2026-9839",13,7,28,176694,192229,259,"A",0],["MR-2026-9829",13,7,28,176696,188024,189,"S",0],["MR-2026-9841",2,9,14,176702,176827,2,"A",0],["MR-2026-9841",3,14,7,176827,176827,0,"A",0],["MR-2026-9841",13,7,28,176827,192230,257,"A",0],["MR-2026-9842",2,9,14,179610,180846,21,"A",0],["MR-2026-9842",3,14,7,180846,182291,24,"A",1],["MR-2026-9844",2,22,14,180884,181103,4,"A",0],["MR-2026-9844",3,14,7,181103,181179,1,"A",0],["MR-2026-9844",13,7,28,181179,192228,184,"A",0],["MR-2026-9845",2,22,14,181963,183378,24,"A",0],["RQ-2026-000048",14,20,0,182023,182027,0,"A",0],["RQ-2026-000052",6,0,24,182139,182140,0,"A",0],["RQ-2026-000052",10,24,11,182140,182140,0,"A",0],["MR-2026-9842",13,7,28,182291,188012,95,"S",0],["MR-2026-9845",3,14,7,183378,185117,29,"A",1],["RQ-2026-000093",12,27,11,183541,188025,75,"A",0],["RQ-2026-000093",12,27,24,183541,null,195,"P",0],["RQ-2026-000093",12,27,16,183541,185195,28,"A",0],["RQ-2026-000094",6,27,16,183721,185194,25,"A",0],["RQ-2026-000095",6,27,17,183725,186373,44,"C",0],["RQ-2026-000095",6,27,16,183725,185194,24,"A",0],["MR-2026-9846",2,2,3,183790,183803,0,"A",0],["MR-2026-9847",2,2,3,183793,183803,0,"A",0],["MR-2026-9846",3,3,7,183803,189158,89,"A",1],["MR-2026-9847",3,3,7,183803,186361,43,"A",1],["MR-2026-9848",2,29,14,183842,185425,26,"A",1],["MR-2026-9845",13,7,28,185117,186740,27,"A",0],["RQ-2026-000096",6,7,16,185176,185194,0,"A",0],["RQ-2026-000096",7,16,17,185194,186369,20,"A",0],["RQ-2026-000094",10,16,11,185194,192475,121,"A",0],["RQ-2026-000039",11,16,14,185196,185423,4,"A",0],["RQ-2026-000039",11,16,24,185196,null,167,"P",0],["MR-2026-9849",2,2,3,185225,185234,0,"A",0],["MR-2026-9850",2,2,3,185225,185235,0,"A",0],["MR-2026-9849",3,3,7,185234,188137,48,"S",1],["MR-2026-9850",3,3,7,185235,186360,19,"A",0],["MR-2026-9851",2,2,3,185278,187662,40,"A",1],["MR-2026-9848",3,14,7,185425,187608,36,"A",1],["MR-2026-9852",2,22,14,186295,186375,1,"A",0],["MR-2026-9850",13,7,28,186360,187011,11,"S",0],["MR-2026-9847",13,7,28,186361,186739,6,"A",0],["MR-2026-9838",13,7,28,186361,187682,22,"R",0],["MR-2026-9852",3,14,7,186375,187608,21,"A",0],["MR-2026-9847",1,28,10,186739,null,141,"P",1],["MR-2026-9845",1,28,10,186740,192160,90,"A",1],["RQ-2026-000035",6,17,16,186778,186806,0,"A",0],["RQ-2026-000035",10,16,11,186806,188024,20,"A",0],["MR-2026-9850",1,0,10,187011,187767,13,"R",0],["MR-2026-9852",13,7,28,187608,187687,1,"A",0],["MR-2026-9848",13,7,28,187608,187685,1,"R",0],["MR-2026-9851",3,3,7,187662,189155,25,"A",1],["MR-2026-9838",13,28,2,187682,null,126,"P",0],["MR-2026-9848",13,28,29,187685,null,126,"P",0],["MR-2026-9852",1,28,10,187687,192160,75,"A",1],["MR-2026-9833",1,10,10,187766,193468,95,"A",1],["MR-2026-9831",1,10,10,187766,188139,6,"A",0],["MR-2026-9850",1,10,2,187767,null,124,"P",0],["MR-2026-9854",2,9,14,187788,189082,22,"A",0],["MR-2026-9855",2,2,3,187799,187804,0,"A",0],["MR-2026-9855",3,3,7,187804,189155,23,"A",0],["RQ-2026-000097",6,13,5,187820,192324,75,"A",1],["MR-2026-9856",2,2,3,187843,187846,0,"A",0],["MR-2026-9856",3,3,7,187846,189154,22,"A",0],["MR-2026-9842",1,10,10,188012,188028,0,"A",0],["MR-2026-9829",1,10,10,188024,192161,69,"A",1],["MR-2026-9849",13,10,28,188137,188138,0,"S",0],["MR-2026-9849",1,10,10,188138,188200,1,"A",0],["MR-2026-9854",3,14,7,189082,189085,0,"A",0],["MR-2026-9854",13,7,28,189085,192227,52,"A",0],["MR-2026-9856",13,7,28,189154,192096,49,"R",1],["MR-2026-9855",13,7,28,189155,192226,51,"A",1],["MR-2026-9851",13,7,28,189155,192222,51,"A",1],["MR-2026-9846",13,7,28,189158,192223,51,"A",1],["RQ-2026-000098",6,2,3,189492,190626,19,"A",0],["RQ-2026-000098",8,3,17,190626,192201,26,"A",1],["MR-2026-9857",2,2,3,192067,192112,1,"A",0],["MR-2026-9856",13,28,2,192096,null,52,"P",0],["MR-2026-9857",3,3,7,192112,195048,49,"A",1],["MR-2026-9842",1,0,10,192190,193671,25,"A",1],["RQ-2026-000099",6,17,16,192200,192431,4,"A",0],["MR-2026-9851",1,28,10,192222,192531,5,"A",0],["MR-2026-9846",1,28,10,192223,192534,5,"A",0],["MR-2026-9855",1,28,1,192226,193903,28,"A",1],["MR-2026-9854",1,28,8,192227,193797,26,"A",1],["MR-2026-9844",1,28,1,192228,193794,26,"A",1],["MR-2026-9830",1,28,1,192228,193795,26,"A",1],["MR-2026-9837",1,28,10,192229,193771,26,"A",1],["MR-2026-9839",1,28,8,192229,193790,26,"A",1],["MR-2026-9841",1,28,10,192230,193488,21,"A",0],["RQ-2026-000097",8,5,17,192324,192413,1,"A",0],["RQ-2026-000099",10,16,11,192431,192474,1,"A",0],["MR-2026-9858",2,9,14,192542,192568,0,"A",0],["MR-2026-9858",3,14,7,192568,193879,22,"A",0],["RQ-2026-000100",6,27,16,193508,null,29,"P",0],["RQ-2026-000101",6,27,16,193511,null,29,"P",0],["RQ-2026-000102",12,13,18,193566,193579,0,"A",0],["RQ-2026-000102",12,13,16,193566,null,28,"P",0],["MR-2026-9858",13,7,30,193879,193887,0,"A",0],["MR-2026-9858",1,30,8,193887,193890,0,"A",0],["MR-2026-9860",2,2,3,193889,null,22,"P",0],["RQ-2026-000103",6,7,16,195046,null,3,"P",0],["MR-2026-9857",13,7,28,195048,null,3,"P",0]]};
+const BASE_MS = D.base * 1000, NOW = D.now;
+const PEOPLE = D.people.map(([name, unit, place, gap], i) => ({ i, name, unit, place, gap: !!gap }));
+const ROWS = D.rows.map(([code, step, from, to, at, acted, hours, st, late], i) => ({ i, code, step: D.steps[step], from, to, at, acted, hours, st, late: !!late }));
+{ const last = n => n.split(' ').pop(); const count = {}; for (const p of PEOPLE) count[last(p.name)] = (count[last(p.name)] || 0) + 1; for (const p of PEOPLE) p.short = count[last(p.name)] > 1 ? p.name.split(' ').slice(-2).join(' ') : last(p.name); }
+const ACTED = ROWS.filter(r => r.acted != null).sort((a, b) => a.acted - b.acted);
+const byCode = {}; for (const r of ROWS) (byCode[r.code] ||= []).push(r);
+const docOf = code => { const [title, kind, project] = D.docs[code]; return { title, kind: D.kinds[kind], project }; };
+const dayMin = (mo, d) => Math.round((Date.UTC(2026, mo - 1, d) - Date.UTC(2026, 5, 1)) / 60000);
+const START = dayMin(9, 22) + 7 * 60, INIT = dayMin(10, 6) + 7 * 60, D90 = NOW - 90 * 1440;
+const WD = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+const hn = m => new Date(BASE_MS + (m + 420) * 60000);
+const pad = n => String(n).padStart(2, '0');
+const fmtDT = m => { const d = hn(m); return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; };
+const fmtDay = m => { const d = hn(m); return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}`; };
+const fmtClock = m => { const d = hn(m); return `${WD[d.getUTCDay()]} ${fmtDay(m)} · ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; };
+const dur = h => (h < 1 ? 'dưới 1 giờ' : h < 48 ? `${h} giờ` : `${Math.round(h / 24)} ngày`);
+const RESULT = { P: h => `Đang chờ ${dur(h)}`, A: h => `Duyệt sau ${dur(h)}`, R: h => `Trả lại sau ${dur(h)}`, X: h => `Từ chối sau ${dur(h)}`, S: () => 'Bỏ qua bước', C: () => 'Đã hủy' };
+const RESULT_CLS = { P: 'wrn', A: 'ok', R: 'bad', X: 'bad', S: '', C: '' };
+// Phút phát lại cho mỗi giây thật ở 1×: giờ làm việc chậm để nhìn kịp, đêm và Chủ nhật tua nhanh.
+const rate = t => { const d = hn(t), h = d.getUTCHours(); return d.getUTCDay() !== 0 && h >= 7 && h < 19 ? 20 : 240; };
+
 const UNITS = {
-  TC:  { name:'Phòng Tài chính - Kế toán', short:'Tài chính - KT', people:5,  waiting:1,  stuck:1, overdue:0, where:'office', floor:0 },
-  PM:  { name:'Phòng Quản lý dự án',       short:'QL dự án',       people:10, waiting:11, stuck:8, overdue:2, where:'office', floor:1 },
-  BLD: { name:'Ban lãnh đạo',              short:'Ban lãnh đạo',   people:5,  waiting:7,  stuck:7, overdue:1, where:'office', floor:2, side:-1 },
-  HR:  { name:'Phòng Hành chính - Nhân sự',short:'HC - Nhân sự',   people:8,  waiting:6,  stuck:6, overdue:6, where:'office', floor:2, side:1 },
-  VT:  { name:'Phòng Vật tư - Thiết bị',   short:'Vật tư - TB',    people:3,  waiting:13, stuck:5, overdue:5, where:'factory', spot:'kho' },
-  NM:  { name:'Văn phòng nhà máy',         short:'VP nhà máy',     people:5,  waiting:1,  stuck:1, overdue:0, where:'factory', spot:'office' },
-  UNK: { name:'Chưa gắn phòng ban',        short:'Chưa gắn phòng', people:44, waiting:3,  stuck:3, overdue:0, where:'factory', spot:'yard', gap:true },
+  HR: { name: 'Phòng Hành chính - Nhân sự', short: 'HC - Nhân sự', people: 8 }, TC: { name: 'Phòng Tài chính - Kế toán', short: 'Kế toán', people: 5 },
+  BLD: { name: 'Ban lãnh đạo', short: 'Ban lãnh đạo', people: 5 }, PM: { name: 'Phòng Quản lý dự án', short: 'QL dự án', people: 10 },
+  TK: { name: 'Phòng Thiết kế - Đấu thầu', short: 'TK - Đấu thầu', people: 3 }, VT: { name: 'Phòng Vật tư - Thiết bị', short: 'Vật tư - TB', people: 3 },
+  NM: { name: 'Văn phòng nhà máy', short: 'VP nhà máy', people: 5 }, UNK: { name: 'Chưa gắn phòng ban', short: 'Chưa gắn phòng', people: 44 },
 };
-const FLOWS = [['PM','PM',155],['PM','VT',60],['HR','HR',26],['PM','UNK',24],['HR','BLD',15],['UNK','PM',15],['PM','HR',15],['UNK','VT',14],['UNK','HR',8],['HR','PM',7],['UNK','BLD',7],['VT','VT',6],['PM','BLD',2],['VT','PM',2],['HR','VT',2],['VT','UNK',1],['HR','UNK',1],['TC','PM',1],['BLD','BLD',1],['HR','NM',1]];
-const SITES = [
-  { id:'SMB', name:'Sơn Miền Bắc',      open:37, avgDays:53.5, x:-72, flows:[['VT',33],['PM',4]] },
-  { id:'TNB', name:'Thú nhồi bông GĐ2', open:29, avgDays:37.8, x:-58, flows:[['VT',21],['PM',8]] },
-  { id:'G3',  name:'G3 BOQ',            open:5,  avgDays:20.6, x: 74, flows:[['VT',2],['PM',3]] },
-];
-const HOLDERS = [['Nguyễn Văn Luật','PM',6,'16/06'],['Bùi Thuỳ Linh','UNK',6,'16/06'],['Admin Hoàng','HR',6,'04/06'],['Dương Xuân Thịnh','BLD',5,'07/09'],['Bùi Quang Chung','VT',5,'08/10'],['Nguyễn Thành Đô','PM',2,'12/10'],['Hoàng Công Minh','VT',1,'09/10']];
-const bodyColors = { PM:'#2e6f80', VT:'#1f8a70', HR:'#7c3aed', BLD:'#1d4290', TC:'#0f766e', NM:'#8a6d3b', UNK:'#9ca3af', SITE:'#c98a3d', TK:'#5b8fa8', TKY:'#a06cb8' };
+const SITES = {
+  SMB: { name: 'Công trường Sơn Miền Bắc', code: 'SMB-2026', full: 'Dự án Sơn Miền Bắc', cx: -46, cz: 102, open: 37, avgDays: 53.5, type: 'steel' },
+  DA29: { name: 'Công trường Thú nhồi bông GĐ2', code: 'DA29', full: 'Nhà máy sản xuất thú nhồi bông GĐ2 (Xinhai)', cx: 56, cz: 102, open: 29, avgDays: 37.8, type: 'concrete' },
+};
+// Nơi ngồi: tầng theo anh xác nhận 14/10. Tọa độ văn phòng là tọa độ trong toà (gốc giữa toà).
+const PLACES = {
+  HR: { kind: 'office', floor: 0, cx: 1.2, cz: -0.4, w: 13, d: 9, unit: 'HR', where: 'Văn phòng · tầng 1' },
+  TC: { kind: 'office', floor: 1, cx: -2.8, cz: -0.4, w: 6.4, d: 9, unit: 'TC', where: 'Văn phòng · tầng 2' },
+  BLD: { kind: 'office', floor: 1, cx: 4.6, cz: -0.4, w: 7, d: 9, unit: 'BLD', where: 'Văn phòng · tầng 2' },
+  PM: { kind: 'office', floor: 2, cx: -3.2, cz: -0.4, w: 6.2, d: 9, unit: 'PM', where: 'Văn phòng · tầng 3' },
+  TK: { kind: 'office', floor: 2, cx: 2.0, cz: -0.4, w: 4, d: 9, unit: 'TK', where: 'Văn phòng · tầng 3' },
+  VT: { kind: 'office', floor: 2, cx: 6.2, cz: -0.4, w: 4, d: 9, unit: 'VT', where: 'Văn phòng · tầng 3' },
+  NM: { kind: 'factory', cx: 22, cz: 9.5, w: 11, d: 5.5, unit: 'NM', where: 'Nhà máy kết cấu thép' },
+  UNK: { kind: 'yard', cx: 2, cz: 19, w: 20, d: 8, unit: 'UNK', where: 'Chưa biết ngồi đâu · đặt tạm ở sân nhà máy' },
+  SMB: { kind: 'site', site: 'SMB', w: 9, d: 5.5, where: 'Ban chỉ huy công trường' },
+  DA29: { kind: 'site', site: 'DA29', w: 9, d: 5.5, where: 'Ban chỉ huy công trường' },
+  PARK: { kind: 'yard', hidden: true },
+};
+const bodyColors = { PM: '#2e6f80', VT: '#1f8a70', HR: '#7c3aed', BLD: '#1d4290', TC: '#0f766e', NM: '#8a6d3b', TK: '#5b8fa8', UNK: '#9ca3af', WORK: '#e07b1f' };
 
 /* ───────── Khung cảnh ───────── */
 const stage = document.getElementById('stage');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#dfe9f3');
-scene.fog = new THREE.Fog('#dfe9f3', 160, 320);
-const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.5, 600);
+scene.fog = new THREE.Fog('#dfe9f3', 300, 620);
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.5, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -120,13 +176,12 @@ stage.appendChild(renderer.domElement);
 const labels = new CSS2DRenderer(); labels.setSize(innerWidth, innerHeight);
 Object.assign(labels.domElement.style, { position: 'absolute', top: '0', left: '0', pointerEvents: 'none' }); stage.appendChild(labels.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 12; controls.maxDistance = 220;
-controls.autoRotate = true; controls.autoRotateSpeed = 0.25;
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.48; controls.minDistance = 8; controls.maxDistance = 360;
+controls.autoRotateSpeed = 0.25;
 const btnRotate = document.getElementById('btnRotate');
-controls.addEventListener('start', () => { controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); });
 scene.add(new THREE.HemisphereLight('#ffffff', '#b9c6d0', 0.95));
-const sun = new THREE.DirectionalLight('#fff6e5', 1.5); sun.position.set(60, 90, 40); sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096); Object.assign(sun.shadow.camera, { left: -120, right: 120, top: 120, bottom: -120, far: 300 }); scene.add(sun);
+const sun = new THREE.DirectionalLight('#fff6e5', 1.5); sun.position.set(70, 120, 60); sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096); Object.assign(sun.shadow.camera, { left: -160, right: 160, top: 160, bottom: -160, far: 420 }); scene.add(sun);
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...extra });
 const M = {
@@ -134,18 +189,25 @@ const M = {
   dark: mat('#2a2b2e'), slat: mat('#9a6a40'), glass: new THREE.MeshStandardMaterial({ color: '#3b7bd6', roughness: 0.15, metalness: 0.6, transparent: true, opacity: 0.85 }),
   glassIn: new THREE.MeshStandardMaterial({ color: '#8fb8e8', roughness: 0.2, metalness: 0.3, transparent: true, opacity: 0.25 }),
   white: mat('#f1f2f3'), blueWall: mat('#2f7fdc'), blueRoof: mat('#3b8fe8'), skylight: mat('#bfe1ff', { transparent: true, opacity: 0.9 }), doorDark: mat('#1e3a5f'),
-  pond: new THREE.MeshStandardMaterial({ color: '#4f8aa3', roughness: 0.2, metalness: 0.3 }), wood: mat('#8b5a2b'), roofRed: mat('#c0392b'), roofNavy: mat('#2c3e6b'), tile: mat('#c7b8a6'),
+  pond: new THREE.MeshStandardMaterial({ color: '#4f8aa3', roughness: 0.2, metalness: 0.3 }), wood: mat('#8b5a2b'), roofRed: mat('#c0392b'), roofNavy: mat('#2c3e6b'),
   trunk: mat('#6b4a2b'), leaf: mat('#3f8f3a'), leaf2: mat('#5aa84a'), palmLeaf: mat('#3c8a3c', { side: THREE.DoubleSide }), green: mat('#18a34a', { emissive: '#0b5e2a', emissiveIntensity: 0.25 }),
-  desk: mat('#c9a27e'), tray: mat('#b7c4cb'), waiting: mat('#d97706'), stuck: mat('#b42318'), doc: mat('#f5d27a', { emissive: '#f1c45f', emissiveIntensity: 0.35 }), skin: mat('#f1c9a5'),
-  car: mat('#2b2f36'), carLight: mat('#e5e7eb'), truck: mat('#c98a3d'), tyre: mat('#1a1a1a'), floor: mat('#e9ecef'), wallIn: mat('#f7f7f7'),
+  desk: mat('#c9a27e'), deskGrey: mat('#c4c8cc'), monitor: mat('#1f2937'), fresh: mat('#f5d27a'), waiting: mat('#d97706'), stuck: mat('#b42318'),
+  doc: mat('#f5d27a', { emissive: '#f1c45f', emissiveIntensity: 0.35 }), skin: mat('#f1c9a5'), helmetY: mat('#facc15'), helmetW: mat('#f8fafc'),
+  car: mat('#2b2f36'), carWhite: mat('#e5e7eb'), truck: mat('#c98a3d'), truckBed: mat('#8b5e34'), tyre: mat('#1a1a1a'), floor: mat('#e9ecef'), wallIn: mat('#f7f7f7'),
+  dirt: mat('#cdb68a'), dirtRoad: mat('#8a7f6a'), hoard: mat('#2f6fb3'), steel: mat('#7d8590', { metalness: 0.4, roughness: 0.5 }), concrete: mat('#b5b0aa'),
+  rebar: mat('#b45309'), scaffold: mat('#9ca3af'), net: new THREE.MeshStandardMaterial({ color: '#2f9e44', transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+  crane: mat('#f2b705'), canopy: new THREE.MeshStandardMaterial({ color: '#3b8fe8', transparent: true, opacity: 0.32, depthWrite: false }), canopyWhite: new THREE.MeshStandardMaterial({ color: '#f1f2f3', transparent: true, opacity: 0.3, depthWrite: false }), brick: mat('#b5523b'), container: mat('#f4f6f8'), stripe: mat('#1d4ed8'), hit: new THREE.MeshBasicMaterial({ visible: false }),
 };
 const bodyMats = Object.fromEntries(Object.entries(bodyColors).map(([k, c]) => [k, mat(c)]));
-const box = (w, h, d, material, x, y, z, parent = scene) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
-function label(html, cls = '') { const el = document.createElement('div'); el.className = `label ${cls}`; el.innerHTML = html; return new CSS2DObject(el); }
-function textPlane(text, w, h, { color = '#1f8a70', bg = null, font = 'bold 110px Inter, Arial', align = 'center' } = {}) {
+const rugMats = Object.fromEntries(Object.entries(bodyColors).map(([k, c]) => [k, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: k === 'UNK' ? 0.28 : 0.13, depthWrite: false })]));
+const V = (x, z, y = 0) => new THREE.Vector3(x, y, z);
+const box = (w, h, d, material, x, y, z, parent = scene, shadow = true) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material); m.position.set(x, y, z); m.castShadow = shadow; m.receiveShadow = true; parent.add(m); return m; };
+const plane = (w, d, material, x, y, z, parent = scene) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), material); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; parent.add(m); return m; };
+function label(html, cls = '', onClick = null) { const el = document.createElement('div'); el.className = `label ${cls}${onClick ? ' click' : ''}`; el.innerHTML = html; if (onClick) el.addEventListener('click', onClick); return new CSS2DObject(el); }
+function textPlane(text, w, h, { color = '#1f8a70', bg = null, font = 'bold 110px Inter, Arial' } = {}) {
   const c = document.createElement('canvas'); c.width = 1024; c.height = Math.round(1024 * h / w); const g = c.getContext('2d');
   if (bg) { g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height); }
-  g.fillStyle = color; g.font = font; g.textAlign = align; g.textBaseline = 'middle'; g.fillText(text, align === 'center' ? c.width / 2 : 20, c.height / 2);
+  g.fillStyle = color; g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, c.width / 2, c.height / 2);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
 }
@@ -155,70 +217,66 @@ function gable(width, length, wallH, roofH, wallMat, roofMat, x, z, skylights = 
   const shape = new THREE.Shape(); shape.moveTo(-width / 2, 0); shape.lineTo(width / 2, 0); shape.lineTo(0, roofH); shape.closePath();
   const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false }), roofMat);
   roof.position.set(0, wallH, -length / 2); roof.castShadow = true; roof.receiveShadow = true; g.add(roof);
-  if (skylights) for (let i = -length / 2 + 6; i < length / 2 - 4; i += 8) { const s = box(2.2, 0.3, 4, M.skylight, 0, wallH + roofH + 0.1, i, g); s.castShadow = false; }
+  if (skylights) for (let i = -length / 2 + 6; i < length / 2 - 4; i += 8) box(2.2, 0.3, 4, M.skylight, 0, wallH + roofH + 0.1, i, g, false);
   scene.add(g); return g;
 }
+const wheels = (g, xs, zs, r) => { for (const wx of xs) for (const wz of zs) { const t = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.35, 12), M.tyre); t.rotation.z = Math.PI / 2; t.position.set(wx, r, wz); g.add(t); } };
+function carModel(body = M.car) { const c = new THREE.Group(); box(2, 1.1, 4.4, body, 0, 0.9, 0, c); box(1.7, 0.8, 2.4, M.glass, 0, 1.8, -0.2, c); wheels(c, [-1, 1], [-1.4, 1.4], 0.4); return c; }
+function truckModel() { const g = new THREE.Group(); box(2.3, 1.4, 5.6, M.truck, 0, 1.2, 0, g); box(2.1, 1.1, 2.2, M.glass, 0, 2.3, 1.4, g); box(2.3, 1.2, 3.2, M.truckBed, 0, 2.2, -1.1, g); wheels(g, [-1.1, 1.1], [-1.8, 1.8], 0.5); return g; }
 
-/* ───────── Đất, đường, hàng rào ───────── */
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), M.field); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-const yard = new THREE.Mesh(new THREE.PlaneGeometry(130, 85), M.yard); yard.rotation.x = -Math.PI / 2; yard.position.set(-5, 0.02, 12); yard.receiveShadow = true; scene.add(yard);
-const road = new THREE.Mesh(new THREE.PlaneGeometry(600, 10), M.road); road.rotation.x = -Math.PI / 2; road.position.set(0, 0.03, 64); road.receiveShadow = true; scene.add(road);
-for (let x = -300; x < 300; x += 8) { const l = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.3), M.roadLine); l.rotation.x = -Math.PI / 2; l.position.set(x, 0.04, 64); scene.add(l); }
-const verge = new THREE.Mesh(new THREE.PlaneGeometry(600, 6), M.grass); verge.rotation.x = -Math.PI / 2; verge.position.set(0, 0.025, 56); scene.add(verge);
-// Hàng rào + cổng trượt + nhà bảo vệ mái xanh.
-box(140, 1.6, 0.2, M.fence, -5, 0.8, 53); box(0.3, 2.2, 0.3, M.dark, -42, 1.1, 53); box(0.3, 2.2, 0.3, M.dark, 12, 1.1, 53);
-const gate = box(9, 1.5, 0.25, M.fence, 7.5, 0.8, 53); gate.material = mat('#9ca3af');
-const guard = new THREE.Group(); guard.position.set(20, 0, 47); box(9, 3, 4.5, M.white, 0, 1.5, 0, guard); const groof = box(10.5, 0.3, 5.5, M.blueRoof, 0, 3.15, 0, guard); box(1.2, 1.8, 0.1, M.glass, -2, 1.4, 2.3, guard); box(1.2, 1.8, 0.1, M.glass, 2, 1.4, 2.3, guard); scene.add(guard);
-box(40, 3.2, 4, M.white, 48, 1.6, 48); box(41, 0.3, 5, M.blueRoof, 48, 3.35, 48); // dãy nhà phụ mái xanh dọc hàng rào (ảnh 2)
+/* ───────── Đất, đường, hàng rào, cổng ───────── */
+plane(1000, 1000, M.field, 0, 0, 0);
+plane(130, 85, M.yard, -5, 0.02, 12);
+plane(1000, 10, M.road, 0, 0.03, 64);
+for (let x = -480; x < 480; x += 8) plane(4, 0.3, M.roadLine, x, 0.04, 64);
+plane(1000, 6, M.grass, 0, 0.025, 56);
+box(78, 1.6, 0.2, M.fence, -36, 0.8, 53); box(53, 1.6, 0.2, M.fence, 38.5, 0.8, 53);
+box(0.4, 2.4, 0.4, M.dark, 3, 1.2, 53); box(0.4, 2.4, 0.4, M.dark, 12, 1.2, 53);
+box(4.5, 1.5, 0.25, mat('#9ca3af'), 0.6, 0.8, 53.4); // cổng trượt đang mở
+const guard = new THREE.Group(); guard.position.set(20, 0, 47); box(9, 3, 4.5, M.white, 0, 1.5, 0, guard); box(10.5, 0.3, 5.5, M.blueRoof, 0, 3.15, 0, guard); box(1.2, 1.8, 0.1, M.glass, -2, 1.4, 2.3, guard); box(1.2, 1.8, 0.1, M.glass, 2, 1.4, 2.3, guard); scene.add(guard);
+box(40, 3.2, 4, M.white, 48, 1.6, 48); box(41, 0.3, 5, M.blueRoof, 48, 3.35, 48);
 
-/* ───────── Văn phòng 3 tầng (ảnh 1) ───────── */
+/* ───────── Văn phòng 3 tầng ───────── */
 const OFFICE = { x: -36, z: 30, w: 18, d: 13, floorH: 4.2 };
 const office = new THREE.Group(); office.position.set(OFFICE.x, 0, OFFICE.z); scene.add(office);
-const facade = []; // vật liệu có thể làm mờ để nhìn vào trong
+const OW = (lx, lz, y = 0) => V(OFFICE.x + lx, OFFICE.z + lz, y);
+const floorY = f => f * OFFICE.floorH + 0.25;
+const facade = [];
 const body = box(OFFICE.w, 12.6, OFFICE.d, M.dark, 0, 6.3, 0, office); facade.push(body);
-for (let f = 0; f < 3; f += 1) { const slab = box(OFFICE.w - 0.6, 0.25, OFFICE.d - 0.6, M.floor, 0, f * OFFICE.floorH + 0.12, 0, office); slab.receiveShadow = true; }
+for (let f = 0; f < 3; f += 1) box(OFFICE.w - 0.6, 0.25, OFFICE.d - 0.6, M.floor, 0, f * OFFICE.floorH + 0.12, 0, office);
 box(OFFICE.w - 0.6, 12.4, 0.2, M.wallIn, 0, 6.3, -OFFICE.d / 2 + 0.4, office); box(0.2, 12.4, OFFICE.d - 0.6, M.wallIn, OFFICE.w / 2 - 0.4, 6.3, 0, office);
-// Nan gỗ dọc mặt trước (nam) và mặt tây.
-for (let x = -OFFICE.w / 2 + 0.4; x <= OFFICE.w / 2 - 0.4; x += 0.75) { const s = box(0.32, 12.8, 0.28, M.slat, x, 6.4, OFFICE.d / 2 + 0.2, office); facade.push(s); }
-for (let z = -OFFICE.d / 2 + 0.4; z <= OFFICE.d / 2 - 0.4; z += 0.75) { const s = box(0.28, 12.8, 0.32, M.slat, -OFFICE.w / 2 - 0.2, 6.4, z, office); facade.push(s); }
-// Hai mảng kính lớn lệch nhau (tầng 2–3), ốp đen quanh kính.
-const g1 = box(11, 3.6, 0.5, M.glass, 1.2, 9.4, OFFICE.d / 2 + 0.45, office); facade.push(g1); const f1 = box(11.6, 4.1, 0.2, M.dark, 1.2, 9.4, OFFICE.d / 2 + 0.6, office); facade.push(f1);
-const g2 = box(12.5, 3.6, 0.5, M.glass, 0.4, 5.2, OFFICE.d / 2 + 0.75, office); facade.push(g2); const f2 = box(13.1, 4.1, 0.2, M.dark, 0.4, 5.2, OFFICE.d / 2 + 0.9, office); facade.push(f2);
-// Tầng trệt: kính + mái hiên + biển "VĂN PHÒNG THIẾT KẾ - KINH DOANH".
-const g0 = box(9, 3.2, 0.3, M.glass, 1, 1.7, OFFICE.d / 2 + 0.35, office); facade.push(g0);
-box(10, 0.25, 2.4, M.white, 1, 3.6, OFFICE.d / 2 + 1.4, office);
+for (let x = -OFFICE.w / 2 + 0.4; x <= OFFICE.w / 2 - 0.4; x += 0.75) facade.push(box(0.32, 12.8, 0.28, M.slat, x, 6.4, OFFICE.d / 2 + 0.2, office));
+for (let z = -OFFICE.d / 2 + 0.4; z <= OFFICE.d / 2 - 0.4; z += 0.75) facade.push(box(0.28, 12.8, 0.32, M.slat, -OFFICE.w / 2 - 0.2, 6.4, z, office));
+const g1 = box(11, 3.6, 0.5, M.glass, 1.2, 9.4, OFFICE.d / 2 + 0.45, office); const f1 = box(11.6, 4.1, 0.2, M.dark, 1.2, 9.4, OFFICE.d / 2 + 0.6, office);
+const g2 = box(12.5, 3.6, 0.5, M.glass, 0.4, 5.2, OFFICE.d / 2 + 0.75, office); const f2 = box(13.1, 4.1, 0.2, M.dark, 0.4, 5.2, OFFICE.d / 2 + 0.9, office);
+const g0 = box(9, 3.2, 0.3, M.glass, 1, 1.7, OFFICE.d / 2 + 0.35, office); facade.push(g1, f1, g2, f2, g0);
+const awning = box(10, 0.25, 2.4, M.white, 1, 3.6, OFFICE.d / 2 + 1.4, office);
 const sign = textPlane('VĂN PHÒNG THIẾT KẾ - KINH DOANH', 8.6, 0.9, { color: '#1f8a70', bg: '#ffffff', font: 'bold 52px Inter, Arial' }); sign.position.set(1, 3.0, OFFICE.d / 2 + 0.75); office.add(sign);
-// Logo xanh + chữ TIEN THINH trên đỉnh mặt trước.
 const logo = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.3, 6), M.green); logo.rotation.x = Math.PI / 2; logo.position.set(-6, 12.6, OFFICE.d / 2 + 0.6); office.add(logo);
 const brand = textPlane('TIEN THINH', 11, 2.2, { color: '#18a34a', font: '900 150px Inter, Arial' }); brand.position.set(1.5, 12.6, OFFICE.d / 2 + 0.6); office.add(brand);
-// Khối phụ bên phải (đông) thấp hơn + mái đua (ảnh 1).
 box(7, 8.6, 9, M.dark, OFFICE.w / 2 + 3.4, 4.3, -1, office); box(9, 0.3, 11, M.white, OFFICE.w / 2 + 3.8, 8.75, -1, office);
-const officeLabel = label('Văn phòng Tiến Thịnh<small>3 tầng · thiết kế, kinh doanh, điều hành</small>', 'bld'); officeLabel.position.set(0, 15.2, 0); office.add(officeLabel);
-// Cầu thang / thang máy ở góc tây-bắc (người lên xuống tầng ở đây).
-box(2.6, 12.6, 2.6, M.wallIn, -OFFICE.w / 2 + 1.6, 6.3, -OFFICE.d / 2 + 1.6, office);
-const CORE = new THREE.Vector3(OFFICE.x - OFFICE.w / 2 + 3.4, 0, OFFICE.z - OFFICE.d / 2 + 3.2);
-const OFFICE_DOOR = new THREE.Vector3(OFFICE.x + 1, 0, OFFICE.z + OFFICE.d / 2 + 2.2);
-// Xe ở sân bên phải văn phòng (ảnh 1).
-for (let i = 0; i < 3; i += 1) { const c = new THREE.Group(); c.position.set(-10 + i * 4.2, 0, 44); box(2, 1.1, 4.4, M.car, 0, 0.9, 0, c); box(1.7, 0.8, 2.4, M.glass, 0, 1.8, -0.2, c); for (const [wx, wz] of [[-1, -1.4], [1, -1.4], [-1, 1.4], [1, 1.4]]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 12), M.tyre); t.rotation.z = Math.PI / 2; t.position.set(wx, 0.4, wz); c.add(t); } scene.add(c); }
+const officeLabel = label('Văn phòng Tiến Thịnh<small>T1 HC - Nhân sự · T2 Kế toán, BLĐ · T3 QLDA, TK - ĐT, Vật tư</small>', 'bld'); officeLabel.position.set(0, 15.4, 0); office.add(officeLabel);
+box(2.6, 12.6, 2.6, M.wallIn, -OFFICE.w / 2 + 1.6, 6.3, -OFFICE.d / 2 + 1.6, office); // lõi thang
+const CORE = OW(-5.6, -3.3), OFFICE_IN = OW(1, 5.3), OFFICE_DOOR = OW(1, 8.9);
+const F0 = floorY(0);
+const parkedCars = [];
+for (let i = 0; i < 3; i += 1) { const c = carModel(i === 2 ? M.carWhite : M.car); c.position.set(-10 + i * 4.2, 0, 44); scene.add(c); parkedCars.push(c); }
 
-/* ───────── Nhà máy kết cấu thép (ảnh 2) ───────── */
+/* ───────── Nhà máy kết cấu thép ───────── */
 const FACTORY = { x: 10, zFront: -2, len: 78 };
-const bays = [[-22, 20, 9, 4.5], [0, 24, 10, 5], [24, 24, 10, 5]];
-for (const [bx, w, h, r] of bays) gable(w, FACTORY.len, h, r, M.blueWall, M.blueRoof, FACTORY.x + bx, FACTORY.zFront - FACTORY.len / 2);
+for (const [bx, w, h, r] of [[-22, 20, 9, 4.5], [0, 24, 10, 5], [24, 24, 10, 5]]) gable(w, FACTORY.len, h, r, M.blueWall, M.blueRoof, FACTORY.x + bx, FACTORY.zFront - FACTORY.len / 2);
 gable(12, 30, 6, 3, M.blueWall, M.blueRoof, FACTORY.x + 42, FACTORY.zFront - 15, false);
-// Khối văn phòng trắng phía trước + chữ trên tường.
-const front = box(50, 9.5, 8, M.white, FACTORY.x + 12, 4.75, FACTORY.zFront + 1); front.castShadow = true;
+box(50, 9.5, 8, M.white, FACTORY.x + 12, 4.75, FACTORY.zFront + 1);
 const ftext = textPlane('XÂY DỰNG & KẾT CẤU THÉP', 34, 2.6, { color: '#1d4290', font: '900 74px Inter, Arial' }); ftext.position.set(FACTORY.x + 12, 8.2, FACTORY.zFront + 5.05); scene.add(ftext);
 const fl = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.2, 6), M.green); fl.rotation.x = Math.PI / 2; fl.position.set(FACTORY.x + 12, 10.5, FACTORY.zFront + 5); scene.add(fl);
 for (let i = 0; i < 8; i += 1) { box(1.4, 1.6, 0.15, M.glass, FACTORY.x - 10 + i * 6, 6.2, FACTORY.zFront + 5.05); box(1.4, 1.6, 0.15, M.glass, FACTORY.x - 10 + i * 6, 2.6, FACTORY.zFront + 5.05); }
-// Cửa kho (khoang tây) mở ra sân: Vật tư - Thiết bị.
 box(7, 6, 0.3, M.doorDark, FACTORY.x - 22, 3, FACTORY.zFront + 0.2);
-const factoryLabel = label('Nhà máy kết cấu thép<small>3 khoang mái xanh · kho vật tư đầu khoang tây</small>', 'bld'); factoryLabel.position.set(FACTORY.x + 2, 17.5, FACTORY.zFront - 20); scene.add(factoryLabel);
-const KHO_DOOR = new THREE.Vector3(FACTORY.x - 22, 0, FACTORY.zFront + 3);
-const NM_DOOR = new THREE.Vector3(FACTORY.x + 2, 0, FACTORY.zFront + 6.5);
+box(12, 0.2, 6.5, M.canopyWhite, 22, 3.3, 9.5, scene, false); for (const [px, pz] of [[16.3, 12.5], [27.7, 12.5]]) box(0.2, 3.3, 0.2, M.fence, px, 1.65, pz); // mái che VP nhà máy
+const factoryLabel = label('Nhà máy kết cấu thép<small>VP nhà máy dưới mái che phía trước</small>', 'bld'); factoryLabel.position.set(FACTORY.x + 2, 17.5, FACTORY.zFront - 20); scene.add(factoryLabel);
+const NM_DOOR = V(22, 14);
 
-/* ───────── Hồ, chòi, cầu, nhà mái đỏ, cây ───────── */
-const pond = new THREE.Mesh(new THREE.PlaneGeometry(34, 24), M.pond); pond.rotation.x = -Math.PI / 2; pond.position.set(42, 0.05, 24); scene.add(pond);
+/* ───────── Hồ, chòi, nhà mái đỏ, cây ───────── */
+plane(34, 24, M.pond, 42, 0.05, 24);
 const gaz = new THREE.Group(); gaz.position.set(42, 0, 24);
 for (let i = 0; i < 6; i += 1) { const a = (i / 6) * Math.PI * 2; box(0.25, 3.2, 0.25, M.wood, Math.cos(a) * 2.4, 1.6, Math.sin(a) * 2.4, gaz); }
 box(6, 0.2, 6, M.wood, 0, 0.35, 0, gaz); const gr = new THREE.Mesh(new THREE.ConeGeometry(4.2, 2.4, 6), M.roofNavy); gr.position.y = 4.3; gr.castShadow = true; gaz.add(gr); scene.add(gaz);
@@ -230,203 +288,500 @@ function tree(x, z, s = 1) { const g = new THREE.Group(); g.position.set(x, 0, z
   const c2 = new THREE.Mesh(new THREE.SphereGeometry(1.4 * s, 10, 8), M.leaf2); c2.position.set(0.9 * s, 4.1 * s, 0.4 * s); g.add(c2); scene.add(g); }
 function palm(x, z) { const g = new THREE.Group(); g.position.set(x, 0, z); const t = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 7.5, 7), M.trunk); t.position.y = 3.75; g.add(t);
   for (let i = 0; i < 7; i += 1) { const f = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 3.4), M.palmLeaf); f.position.y = 7.5; f.rotation.y = (i / 7) * Math.PI * 2; f.rotation.x = -0.9; f.translateZ(1.6); g.add(f); } scene.add(g); }
-for (let x = -60; x < 60; x += 9) palm(x, 55.5);
-for (let x = -60; x < 60; x += 9) tree(x + 4, 73, 0.6);
-[[22, 10], [62, 10], [62, 38], [22, 38], [30, 42], [54, 42], [-52, 20], [-52, 36], [-56, 44], [-20, 20]].forEach(([x, z]) => tree(x, z, 1.1));
+for (let x = -60; x < 60; x += 9) if (Math.abs(x - 7.5) > 6 && Math.abs(x - OFFICE.x) > 9) palm(x, 55.5); // chừa tầm nhìn vào mặt tiền văn phòng
+for (let x = -60; x < 60; x += 9) if (Object.values(SITES).every(s => Math.abs(x + 4 - s.cx) > 6)) tree(x + 4, 73, 0.6);
+[[34, 9], [62, 10], [62, 38], [22, 38], [30, 42], [54, 42], [-52, 20], [-52, 36], [-56, 44], [-20, 20]].forEach(([x, z]) => tree(x, z, 1.1));
 for (let z = -70; z < 20; z += 10) palm(-40, z);
 
-/* ───────── Vị trí phòng ban ───────── */
-const zones = {};
-function zoneAt(id, center, w, d, y, parent, doorOut, doorIn) {
-  const u = UNITS[id];
-  const g = new THREE.Group(); g.position.copy(center); parent.add(g);
-  const desk = box(2.4, 0.1, 1, M.desk, 1.2, 0.9, -d / 2 + 1.2, g); for (const [lx, lz] of [[-1.1, -0.4], [1.1, -0.4], [-1.1, 0.4], [1.1, 0.4]]) box(0.08, 0.7, 0.08, M.desk, 1.2 + lx, 0.5, -d / 2 + 1.2 + lz, g);
-  box(1, 0.05, 0.7, M.tray, 1.7, 0.98, -d / 2 + 1.2, g);
-  const pile = new THREE.Group(); pile.position.set(1.7, 1.0, -d / 2 + 1.2); g.add(pile);
-  for (let i = 0; i < u.waiting; i += 1) { const b = box(0.2, 0.08, 0.28, i < u.stuck ? M.stuck : M.waiting, -0.33 + (i % 4) * 0.22, 0.04 + Math.floor(i / 4) * 0.09, (Math.floor(i / 4) % 2) * 0.05, pile); b.castShadow = false; }
-  const lab = label(`${u.short}<small>${u.people} người · <span class="${u.stuck ? 'b' : 'w'}">${u.waiting} đang chờ</span>${u.stuck ? ` · ${u.stuck} đứng yên` : ''}</small>`);
-  lab.position.set(0, 2.9, 0); g.add(lab);
-  const hit = box(w, 0.6, d, new THREE.MeshBasicMaterial({ visible: false }), 0, 0.3, 0, g); hit.userData.unit = id;
-  const world = new THREE.Vector3(); g.getWorldPosition(world);
-  zones[id] = { unit: u, group: g, w, d, y, people: [], doorOut, doorIn: doorIn || doorOut,
-    tray: () => world.clone().add(new THREE.Vector3(1.7, 0, -d / 2 + 2)), within: () => world.clone().add(new THREE.Vector3((Math.random() - 0.5) * (w - 1.5), 0, (Math.random() - 0.5) * (d - 1.5))) };
+/* ───────── Hai công trường bên ngoài công ty ───────── */
+const STATIC = { campus: { g: parkedCars[2], spot: V(-1.6, 44), rotY: 0 } };
+const SLOTS = { campus: [V(1.5, 38), V(6, 38), V(10.5, 38), V(15, 38)].map(p => ({ p, used: false })) };
+const cranes = [];
+function buildSite(key, s) {
+  const g = new THREE.Group(); g.position.set(s.cx, 0, s.cz); scene.add(g);
+  const W = 50, DD = 30;
+  const ground = plane(W, DD, M.dirt, 0, 0.04, 0, g); ground.userData.site = key;
+  plane(6, s.cz - DD / 2 - 69, M.dirtRoad, s.cx, 0.035, (69 + s.cz - DD / 2) / 2);
+  // Rào tôn xanh, cổng phía bắc nhìn ra đường.
+  box(W / 2 - 4, 2.2, 0.15, M.hoard, -W / 4 - 2, 1.1, -DD / 2, g); box(W / 2 - 4, 2.2, 0.15, M.hoard, W / 4 + 2, 1.1, -DD / 2, g);
+  box(W, 2.2, 0.15, M.hoard, 0, 1.1, DD / 2, g); box(0.15, 2.2, DD, M.hoard, -W / 2, 1.1, 0, g); box(0.15, 2.2, DD, M.hoard, W / 2, 1.1, 0, g);
+  // Ban chỉ huy: container văn phòng + mái che bàn làm việc.
+  box(6, 2.6, 2.4, M.container, -19, 1.3, -11, g); box(6, 0.25, 2.45, M.stripe, -19, 2.0, -11, g); box(6, 2.6, 2.4, M.container, -19, 3.9, -11, g); box(6, 0.25, 2.45, M.stripe, -19, 4.6, -11, g);
+  box(10, 0.15, 6.2, M.canopy, -17, 3.0, -4, g, false); for (const [px, pz] of [[-21.8, -6.9], [-12.2, -6.9], [-21.8, -1.1], [-12.2, -1.1]]) box(0.15, 3, 0.15, M.fence, px, 1.5, pz, g);
+  PLACES[key].cx = s.cx - 17; PLACES[key].cz = s.cz - 4;
+  // Công trình đang dựng.
+  const bx = 8, bz = 3;
+  if (s.type === 'steel') {
+    for (let x = -10; x <= 10; x += 5) for (let z = -8; z <= 8; z += 4) box(0.35, 7, 0.35, M.steel, bx + x, 3.5, bz + z, g);
+    for (let z = -8; z <= 8; z += 4) { for (const side of [-1, 1]) { const r = box(11.4, 0.35, 0.3, M.steel, bx + side * 5.3, 8, bz + z, g); r.rotation.z = side * -0.17; } }
+    for (let x = -9; x <= 9; x += 3) { const p = box(0.15, 0.15, 16.5, M.steel, bx + x, 7.4 + (10 - Math.abs(x)) * 0.17, bz, g); p.castShadow = false; }
+    const roofA = box(10.6, 0.12, 8.5, M.blueRoof, bx - 5.2, 8.1, bz - 4, g); roofA.rotation.z = 0.17;
+    box(20, 0.15, 16.5, M.concrete, bx, 0.08, bz, g);
+    // Cẩu bánh lốp + máy xúc.
+    const mc = new THREE.Group(); mc.position.set(-6, 0, 9); mc.rotation.y = Math.PI / 2; box(3, 1.6, 7, M.crane, 0, 1.2, 0, mc); box(2.4, 1.6, 2.4, M.crane, 0, 2.6, -1.5, mc);
+    const boom = box(0.6, 0.6, 18, M.crane, 0, 9, 4.5, mc); boom.rotation.x = -0.75; g.add(mc);
+    const ex = new THREE.Group(); ex.position.set(-14, 0, 8); box(3, 1.2, 3.6, M.crane, 0, 1.3, 0, ex); box(1.4, 1.3, 1.4, M.glass, -0.6, 2.5, 0.6, ex); box(3.4, 0.8, 4, M.tyre, 0, 0.4, 0, ex);
+    const arm = box(0.4, 0.4, 4.5, M.crane, 0.6, 2.8, 3, ex); arm.rotation.x = 0.5; g.add(ex);
+    for (let k = 0; k < 5; k += 1) box(9, 0.3, 0.3, M.steel, -16, 0.2 + k * 0.32, 0 + (k % 2) * 0.35, g); // dầm thép chờ lắp
+  } else {
+    for (let x = -10; x <= 10; x += 5) for (let z = -8; z <= 8; z += 4) box(0.5, 4.5, 0.5, M.concrete, bx + x, 2.25, bz + z, g);
+    box(21, 0.35, 17, M.concrete, bx, 4.6, bz, g);
+    for (let x = -10; x <= 0; x += 5) for (let z = -8; z <= 8; z += 4) { box(0.5, 2.6, 0.5, M.concrete, bx + x, 6.1, bz + z, g); for (const o of [-0.15, 0.15]) box(0.05, 1.4, 0.05, M.rebar, bx + x + o, 8.1, bz + z, g, false); }
+    for (let x = -10.5; x <= 10.5; x += 1.5) box(0.08, 8.5, 0.08, M.scaffold, bx + x, 4.25, bz + 9.2, g, false);
+    for (let y = 1.5; y <= 8.5; y += 1.8) box(21.5, 0.08, 0.08, M.scaffold, bx, y, bz + 9.2, g, false);
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(21.5, 8.5), M.net); net.position.set(bx, 4.25, bz + 9.35); g.add(net);
+    // Cẩu tháp, cần quay chậm.
+    const tc = new THREE.Group(); tc.position.set(22, 0, -11); box(1.3, 26, 1.3, M.crane, 0, 13, 0, tc); g.add(tc);
+    const jib = new THREE.Group(); jib.position.set(22, 26.3, -11); jib.rotation.y = 2.4; box(30, 0.9, 0.9, M.crane, 10, 0, 0, jib); box(9, 0.9, 0.9, M.crane, -4.5, 0, 0, jib); box(2.4, 1.6, 2, M.concrete, -8, -0.4, 0, jib); box(1.6, 1.6, 1.6, M.glass, 0.9, -1, 0, jib);
+    const hook = box(0.08, 9, 0.08, M.dark, 16, -4.5, 0, jib, false); g.add(jib); cranes.push({ g: jib, s: 0.07 });
+    for (let k = 0; k < 4; k += 1) box(1.2, 1, 1.2, M.brick, -17 + k * 1.6, 0.5, 6, g); // pallet gạch
+  }
+  // Xe tải công trường đậu cạnh cổng (đi về công ty mang phiếu).
+  const truck = truckModel(); truck.position.set(s.cx - 5, 0, s.cz - 10); truck.rotation.y = Math.PI; scene.add(truck);
+  STATIC[key] = { g: truck, spot: V(s.cx - 5, s.cz - 10), rotY: Math.PI };
+  SLOTS[key] = [V(s.cx - 9.5, s.cz - 10), V(s.cx - 13.5, s.cz - 9)].map(p => ({ p, used: false }));
+  const lab = label(`${s.name}<small>${s.code} · <span class="w">${s.open} đề xuất vật tư đang mở</span> · chờ cấp TB ${String(s.avgDays).replace('.', ',')} ngày</small>`, 'site', () => showSite(key));
+  lab.position.set(0, 16, 0); g.add(lab);
 }
-// Văn phòng: mỗi tầng một hoặc hai phòng (giả định tầng).
-const floorY = f => f * OFFICE.floorH + 0.25;
-zoneAt('TC',  new THREE.Vector3(0, floorY(0), -0.5), 13, 9, floorY(0), office, OFFICE_DOOR);
-zoneAt('PM',  new THREE.Vector3(0, floorY(1), -0.5), 13, 9, floorY(1), office, OFFICE_DOOR);
-zoneAt('BLD', new THREE.Vector3(-4, floorY(2), -0.5), 7, 9, floorY(2), office, OFFICE_DOOR);
-zoneAt('HR',  new THREE.Vector3(4.5, floorY(2), -0.5), 7, 9, floorY(2), office, OFFICE_DOOR);
-// Nhà máy: kho ở khoang tây, VP nhà máy ở khối trắng, người chưa gắn phòng ở sân trước nhà máy.
-zoneAt('VT',  new THREE.Vector3(FACTORY.x - 22, 0, FACTORY.zFront + 6), 9, 7, 0, scene, KHO_DOOR);
-zoneAt('NM',  new THREE.Vector3(FACTORY.x + 12, 0, FACTORY.zFront + 10), 9, 6, 0, scene, NM_DOOR);
-zoneAt('UNK', new THREE.Vector3(FACTORY.x - 4, 0, FACTORY.zFront + 18), 26, 9, 0, scene, new THREE.Vector3(FACTORY.x - 4, 0, FACTORY.zFront + 24));
-// Người làm nhà máy thêm (không có số): vài công nhân mũ vàng ở cửa khoang.
-const YARD = new THREE.Vector3(-14, 0, 32);
+for (const [k, s] of Object.entries(SITES)) buildSite(k, s);
+
+/* ───────── Nơi ngồi, bàn, chồng phiếu ───────── */
+const deskGeo = new THREE.BoxGeometry(1.5, 0.08, 0.75), sideGeo = new THREE.BoxGeometry(0.06, 0.74, 0.7), monGeo = new THREE.BoxGeometry(0.55, 0.36, 0.05), pileGeo = new THREE.BoxGeometry(0.22, 0.05, 0.3);
+const placeLabels = {};
+for (const [key, p] of Object.entries(PLACES)) {
+  if (p.hidden) continue;
+  p.key = key;
+  if (p.kind === 'office') { p.y = floorY(p.floor); const c = OW(p.cx, p.cz); p.wx = c.x; p.wz = c.z; } else { p.y = p.kind === 'site' ? 0.05 : 0; p.wx = p.cx; p.wz = p.cz; }
+  const unitKey = p.unit || 'PM';
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(p.w - 0.3, p.d - 0.3), rugMats[unitKey]); rug.rotation.x = -Math.PI / 2; rug.position.set(p.wx, p.y + 0.04, p.wz); scene.add(rug);
+  const hit = box(p.w, 0.5, p.d, M.hit, p.wx, p.y + 0.25, p.wz, scene, false); hit.userData.place = key;
+  p.desks = 0; p.rect = { x0: p.wx - p.w / 2 + 0.6, x1: p.wx + p.w / 2 - 0.6, z0: p.wz - p.d / 2 + 0.6, z1: p.wz + p.d / 2 - 0.6 };
+  const l = label('', '', () => (p.kind === 'site' ? showSite(key) : showPlace(key))); l.position.set(p.wx, p.y + (p.kind === 'office' ? 3.85 : 3.2), p.kind === 'office' ? p.wz + p.d / 2 + 0.2 : p.wz - p.d / 2 + 0.6); scene.add(l);
+  placeLabels[key] = { obj: l, max: p.kind === 'office' ? 105 : p.kind === 'site' ? 150 : 160 };
+}
+const named = PEOPLE.reduce((m, p) => { (m[p.place] ||= []).push(p); return m; }, {});
+// Số người trong phòng (Nhân sự 13/10) trừ người có tên đang ngồi ở chỗ khác → người không tên để không gian đúng quy mô.
+const extra = { HR: 2, TC: 4, BLD: 2, PM: 2, TK: 2, VT: 0, NM: 4 };
+function deskSpot(p, i, n) {
+  const cols = Math.max(1, Math.floor((p.w - 0.6) / 1.9)), useCols = Math.min(cols, n), c = i % cols, r = Math.floor(i / cols);
+  return { x: p.wx - (useCols - 1) * 0.95 + c * 1.9, z: p.wz - p.d / 2 + 1.7 + r * 2.2, r };
+}
+function makeDesk(p, x, z, personIdx) {
+  const g = new THREE.Group(); g.position.set(x, p.y, z); scene.add(g);
+  const top = new THREE.Mesh(deskGeo, p.kind === 'yard' ? M.deskGrey : M.desk); top.position.y = 0.78; top.castShadow = true; top.receiveShadow = true; g.add(top);
+  for (const sx of [-0.7, 0.7]) { const s = new THREE.Mesh(sideGeo, top.material); s.position.set(sx, 0.4, 0); g.add(s); }
+  const mon = new THREE.Mesh(monGeo, M.monitor); mon.position.set(-0.3, 1.02, 0.15); g.add(mon);
+  const pile = new THREE.Group(); pile.position.set(0.4, 0.82, 0.05); g.add(pile);
+  if (personIdx != null) { top.userData.person = personIdx; }
+  return { x, z, y: p.y, g, pile, items: [], seat: V(x, z - 0.8, p.y), visit: V(x, z + 0.95, p.y) };
+}
 
 /* ───────── Người ───────── */
-const bodyGeo = new THREE.CapsuleGeometry(0.22, 0.55, 4, 10), headGeo = new THREE.SphereGeometry(0.2, 12, 10), docGeo = new THREE.BoxGeometry(0.42, 0.04, 0.3);
+const bodyGeo = new THREE.CapsuleGeometry(0.22, 0.55, 4, 10), headGeo = new THREE.SphereGeometry(0.2, 12, 10), docGeo = new THREE.BoxGeometry(0.42, 0.05, 0.3);
+const helmetGeo = new THREE.SphereGeometry(0.235, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
 const agents = [];
-function spawnPerson(zone, colorKey) {
+function makeAgent({ person = null, place, colorKey, helmet = null, home, wander = null, temp = false }) {
   const g = new THREE.Group();
   const bodyM = new THREE.Mesh(bodyGeo, bodyMats[colorKey] || bodyMats.UNK); bodyM.position.y = 0.72; bodyM.castShadow = true; g.add(bodyM);
   const head = new THREE.Mesh(headGeo, M.skin); head.position.y = 1.35; g.add(head);
-  const doc = new THREE.Mesh(docGeo, M.doc); doc.position.set(0.3, 1.0, 0.25); doc.visible = false; g.add(doc);
-  const p = zone.within(); g.position.set(p.x, zone.y, p.z); scene.add(g);
-  const a = { g, body: bodyM, doc, zone, state: 'idle', path: [], wait: Math.random() * 3, speed: 2.1 + Math.random() * 0.6, phase: Math.random() * 9, busy: false, y: zone.y };
-  agents.push(a); zone.people.push(a); return a;
+  if (helmet) { const h = new THREE.Mesh(helmetGeo, helmet === 'y' ? M.helmetY : M.helmetW); h.position.y = 1.4; g.add(h); }
+  const doc = new THREE.Mesh(docGeo, M.doc); doc.position.set(0.28, 1.0, 0.22); doc.visible = false; g.add(doc);
+  g.position.copy(home); scene.add(g);
+  const a = { g, body: bodyM, doc, person, place, home: home.clone(), wander, temp, path: [], wait: 3 + Math.random() * 20, speed: 2.7 + Math.random() * 0.4, phase: Math.random() * 9, trip: null, chip: null, plabel: null, vehicle: null, riding: null, nod: 0, cur: { place, y: home.y } };
+  g.traverse(o => { if (o.isMesh) o.userData.agent = a; });
+  agents.push(a); return a;
 }
-for (const [id, u] of Object.entries(UNITS)) for (let i = 0; i < Math.min(u.people, u.gap ? 12 : 8); i += 1) spawnPerson(zones[id], id);
-for (const [name, unit, n] of HOLDERS) { const a = zones[unit].people.find(p => !p.named); if (!a) continue; a.named = name; const lab = label(`${name}<b>${n}</b>`, 'person'); lab.position.set(0, 2.0, 0); a.g.add(lab); }
+function removeAgent(a) { scene.remove(a.g); agents.splice(agents.indexOf(a), 1); }
+const helmetFor = p => (PLACES[p].kind === 'site' ? 'w' : null);
+for (const [key, p] of Object.entries(PLACES)) {
+  if (p.hidden) continue;
+  const list = named[key] || [], n = list.length + (extra[key] || 0);
+  list.forEach((person, i) => {
+    const s = deskSpot(p, i, n); person.desk = makeDesk(p, s.x, s.z, person.i);
+    person.agent = makeAgent({ person, place: key, colorKey: person.gap ? 'UNK' : person.unit, helmet: helmetFor(key), home: person.desk.seat });
+    const pl = label('', 'person', () => showPerson(person.i)); pl.position.set(0, 2.05 + s.r * 0.45, 0); person.agent.g.add(pl); person.agent.plabel = pl; pl.visible = false;
+  });
+  for (let k = list.length; k < n; k += 1) { const s = deskSpot(p, k, n); const d = makeDesk(p, s.x, s.z, null); makeAgent({ place: key, colorKey: p.unit, home: d.seat, wander: p.rect }); }
+}
+// Công nhân (minh họa) ở hai công trường và sân nhà máy.
+for (const s of Object.values(SITES)) { const rect = { x0: s.cx - 6, x1: s.cx + 20, z0: s.cz - 7, z1: s.cz + 13 }; for (let k = 0; k < 7; k += 1) makeAgent({ place: s === SITES.SMB ? 'SMB' : 'DA29', colorKey: 'WORK', helmet: 'y', home: V(rect.x0 + Math.random() * 26, rect.z0 + Math.random() * 20), wander: rect }); }
+{ const p = PLACES.UNK; for (let k = 0; k < 9; k += 1) makeAgent({ place: 'UNK', colorKey: 'UNK', helmet: k % 3 ? 'y' : null, home: V(p.rect.x0 + Math.random() * (p.w - 1.2), p.rect.z0 + 2.5 + Math.random() * 4.5), wander: p.rect }); }
 
-/* Đường đi: trong cùng toà → đi thẳng; khác tầng → ra lõi thang → xuống/lên → cửa → sân → cửa toà kia → chỗ nhận. */
-function routeTo(a, zone, target) {
-  const from = a.zone, pts = [];
-  const sameBuilding = from.unit.where === zone.unit.where;
-  if (from.unit.where === 'office') {
-    if (sameBuilding && from.y === zone.y) { pts.push({ p: target, y: zone.y }); return pts; }
-    pts.push({ p: new THREE.Vector3(CORE.x, 0, CORE.z), y: from.y }); pts.push({ p: new THREE.Vector3(CORE.x, 0, CORE.z), y: 0, lift: true });
-    if (sameBuilding) { pts.push({ p: new THREE.Vector3(CORE.x, 0, CORE.z), y: zone.y, lift: true }); pts.push({ p: target, y: zone.y }); return pts; }
-    pts.push({ p: from.doorOut, y: 0 }, { p: YARD, y: 0 });
-  } else {
-    if (sameBuilding) { pts.push({ p: target, y: 0 }); return pts; }
-    pts.push({ p: from.doorOut, y: 0 }, { p: YARD, y: 0 });
+/* ───────── Thời gian phát lại, chồng phiếu ───────── */
+let T = INIT, iAt = 0, iActed = 0, lastAgeHour = -1, labelsDirty = true;
+function renderPile(p) {
+  const g = p.desk.pile; g.clear();
+  const items = p.desk.items, n = Math.min(items.length, 18);
+  for (let k = 0; k < n; k += 1) { const r = items[k], age = (T - r.at) / 60; const m = new THREE.Mesh(pileGeo, age >= 72 ? M.stuck : age >= 24 ? M.waiting : M.fresh); m.position.set((k % 2) * 0.24 - 0.12, 0.03 + Math.floor(k / 2) * 0.06, 0); m.rotation.y = ((k * 0.37) % 0.3) - 0.15; m.userData.person = p.i; g.add(m); }
+}
+const pileTop = p => { const v = new THREE.Vector3(); p.desk.pile.getWorldPosition(v); v.y += 0.1 + Math.floor(p.desk.items.length / 2) * 0.06; return v; };
+function addToPile(r) { const p = PEOPLE[r.to]; if (!p.desk.items.includes(r)) { p.desk.items.push(r); renderPile(p); labelsDirty = true; } }
+function removeFromPile(r) { const p = PEOPLE[r.to], k = p.desk.items.indexOf(r); if (k >= 0) { p.desk.items.splice(k, 1); renderPile(p); labelsDirty = true; } }
+
+/* ───────── Chuyến mang phiếu ───────── */
+const trips = [], vehicles = [], flights = [], feed = [];
+const areaOf = key => (PLACES[key].kind === 'site' ? key : 'campus');
+function campusLegs(fk, fy, tk, tpos, ty) {
+  const f = PLACES[fk], t = PLACES[tk], out = [];
+  if (fk === tk || (f.kind === 'yard' && t.kind === 'yard')) return [{ t: 'walk', p: tpos, y: ty }];
+  if (f.kind === 'office' && t.kind === 'office') { if (Math.abs(fy - ty) > 0.1) out.push({ t: 'walk', p: CORE, y: fy }, { t: 'lift', y: ty }); out.push({ t: 'walk', p: tpos, y: ty }); return out; }
+  if (f.kind === 'office') { if (fy > F0 + 0.1) out.push({ t: 'walk', p: CORE, y: fy }, { t: 'lift', y: F0 }); out.push({ t: 'walk', p: OFFICE_IN, y: F0 }, { t: 'walk', p: OFFICE_DOOR, y: 0 }); }
+  else if (f.kind === 'factory') out.push({ t: 'walk', p: NM_DOOR, y: 0 });
+  if (f.kind === 'office' || t.kind === 'office') out.push({ t: 'walk', p: V(-14, 34), y: 0 });
+  if (t.kind === 'office') { out.push({ t: 'walk', p: OFFICE_DOOR, y: 0 }, { t: 'walk', p: OFFICE_IN, y: F0 }); if (ty > F0 + 0.1) out.push({ t: 'walk', p: CORE, y: F0 }, { t: 'lift', y: ty }); out.push({ t: 'walk', p: tpos, y: ty }); }
+  else if (t.kind === 'factory') out.push({ t: 'walk', p: NM_DOOR, y: 0 }, { t: 'walk', p: tpos, y: ty });
+  else out.push({ t: 'walk', p: tpos, y: ty });
+  return out;
+}
+const side = (v, d = 1.9) => { const p = v.g.position.clone(); const a = v.g.rotation.y; return p.add(new THREE.Vector3(Math.cos(a) * d, 0, -Math.sin(a) * d)); };
+function boardPoint(a, area) { if (a.vehicle && a.vehicle.area === area) return side(a.vehicle); const st = STATIC[area]; return st.spot.clone().add(new THREE.Vector3(area === 'campus' ? 1.9 : -1.9, 0, 0)); }
+function legs(a, fk, fy, tk, tpos, ty) {
+  const fa = areaOf(fk), ta = areaOf(tk);
+  if (fa === ta) return fa === 'campus' ? campusLegs(fk, fy, tk, tpos, ty) : [{ t: 'walk', p: tpos, y: ty }];
+  const out = [], bp = boardPoint(a, fa);
+  if (fa === 'campus') out.push(...campusLegs(fk, fy, 'PARK', bp, 0)); else out.push({ t: 'walk', p: bp, y: 0.05 });
+  out.push({ t: 'ride', from: fa, to: ta });
+  if (ta === 'campus') out.push(...campusLegs('PARK', 0, tk, tpos, ty)); else out.push({ t: 'walk', p: tpos, y: ty });
+  return out;
+}
+function roadPath(from, to) {
+  const out = [], sx = from === 'campus' ? 7.5 : SITES[from].cx, ex = to === 'campus' ? 7.5 : SITES[to].cx, dir = Math.sign(ex - sx) || 1, lane = dir < 0 ? 62 : 66;
+  if (from === 'campus') out.push(V(6, 49), V(6, 57), V(6 + dir * 3, lane));
+  else { const s = SITES[from]; out.push(V(s.cx + 1.5, s.cz - 13), V(s.cx + 1.5, s.cz - 16), V(s.cx + 1.5, 70), V(s.cx + 1.5 + dir * 3, lane)); }
+  if (to === 'campus') out.push(V(9 - dir * 3, lane), V(9, 57), V(9, 49));
+  else { const s = SITES[to]; out.push(V(s.cx - 1.5 - dir * 3, lane), V(s.cx - 1.5, 70), V(s.cx - 1.5, s.cz - 16), V(s.cx - 1.5, s.cz - 13)); }
+  return out;
+}
+function takeSlot(area) { const list = SLOTS[area]; const s = list.find(x => !x.used) || list[list.length - 1]; s.used = true; return s; }
+function startRide(a, seg) {
+  let v = a.vehicle;
+  if (!v) {
+    const st = STATIC[seg.from]; v = { g: seg.from === 'campus' ? carModel(M.carWhite) : truckModel(), origin: seg.from, usedStatic: false, slot: null };
+    if (st.g.visible) { st.g.visible = false; v.usedStatic = true; }
+    v.g.position.copy(st.spot); v.g.rotation.y = st.rotY; v.g.traverse(o => { if (o.isMesh) o.userData.vehicle = v; }); scene.add(v.g); vehicles.push(v);
+  } else if (v.slot) { v.slot.used = false; v.slot = null; }
+  v.route = roadPath(seg.from, seg.to); v.returning = seg.to === v.origin;
+  if (v.returning) v.route.push(STATIC[seg.to].spot.clone()); else { v.slot = takeSlot(seg.to); v.route.push(v.slot.p.clone()); }
+  v.i = 0; v.state = 'drive'; v.rider = a; v.area = seg.to;
+  a.riding = v; a.g.visible = false; if (a.chip) { v.g.add(a.chip); a.chip.position.set(0, 3.6, 0); } if (a.plabel) a.plabel.visible = false;
+}
+function arriveVehicle(v) {
+  const a = v.rider; v.state = 'parked'; v.rider = null;
+  a.g.position.copy(side(v)); a.g.position.y = v.area === 'campus' ? 0 : 0.05; a.g.visible = true; a.riding = null; a.path.shift();
+  a.cur = { place: v.area === 'campus' ? 'PARK' : v.area, y: a.g.position.y };
+  if (a.chip) { a.g.add(a.chip); a.chip.position.set(0, 2.2, 0); }
+  if (v.returning) { if (v.usedStatic) STATIC[v.origin].g.visible = true; scene.remove(v.g); vehicles.splice(vehicles.indexOf(v), 1); a.vehicle = null; } else a.vehicle = v;
+}
+function makeChip(trip) {
+  const el = document.createElement('button'); el.type = 'button'; el.className = 'chip'; el.addEventListener('click', () => showTrip(trip));
+  const o = new CSS2DObject(el); o.position.set(0, 2.2, 0); trip.carrier.g.add(o); trip.carrier.chip = o; trip.chipEl = el; updateChip(trip);
+}
+function updateChip(trip) { trip.chipEl.textContent = trip.rows.length === 1 ? trip.rows[0].code : `${trip.rows.length} phiếu`; }
+function dropChip(trip) { const a = trip.carrier; if (a.chip) { a.chip.parent?.remove(a.chip); a.chip.element.remove(); a.chip = null; } }
+function pickCarrier(person) {
+  const a = person.agent;
+  if (a && !a.trip) return a;
+  const mate = agents.find(x => x.place === person.place && !x.person && !x.trip && !x.temp && !x.riding);
+  if (mate) return mate;
+  return makeAgent({ place: person.place, colorKey: person.gap ? 'UNK' : person.unit, helmet: helmetFor(person.place), home: person.desk.seat, temp: true });
+}
+function pushFeed(r) { feed.unshift(r); if (feed.length > 8) feed.pop(); if (panelMode === 'home') renderHome(); }
+function dispatchRow(r) {
+  if (r.st === 'S' || r.st === 'C') return;
+  if (r.from < 0 || r.from === r.to) { if (!r.processed) addToPile(r); pushFeed(r); return; }
+  const prev = trips.find(t => !t.done && t.rows.some(x => x.code === r.code && x.to === r.from && !x.delivered));
+  if (prev) { prev.after.push(r); return; }
+  pushFeed(r);
+  const to = PEOPLE[r.to], from = PEOPLE[r.from];
+  const same = trips.find(t => t.sender === r.from && t.state === 'prep' && t.destPlace === to.place);
+  if (same) { same.rows.push(r); same.left += 1; updateChip(same); return; }
+  const carrier = pickCarrier(from);
+  const trip = { sender: r.from, rows: [r], left: 1, destPlace: to.place, carrier, state: 'prep', prep: 0.5, after: [], done: false };
+  carrier.trip = trip; carrier.path = []; carrier.doc.visible = true; makeChip(trip); trips.push(trip);
+}
+function planTrip(trip) {
+  const a = trip.carrier, dest = PLACES[trip.destPlace]; trip.state = 'go';
+  const recv = [...new Set(trip.rows.map(r => r.to))].map(i => PEOPLE[i]).sort((p, q) => p.desk.x - q.desk.x);
+  const path = legs(a, a.cur.place, a.cur.y, trip.destPlace, recv[0].desk.visit, dest.y);
+  path.push({ t: 'drop', person: recv[0].i });
+  for (let k = 1; k < recv.length; k += 1) path.push({ t: 'walk', p: recv[k].desk.visit, y: dest.y }, { t: 'drop', person: recv[k].i });
+  path.push({ t: 'home' }); a.path = path;
+}
+function doDrop(a, pi) {
+  const trip = a.trip, p = PEOPLE[pi]; a.cur = { place: trip.destPlace, y: a.g.position.y }; a.g.rotation.y = Math.PI;
+  for (const r of trip.rows.filter(x => x.to === pi)) {
+    const card = new THREE.Mesh(docGeo, M.doc); card.position.copy(a.g.position).add(new THREE.Vector3(0, 1.05, -0.25)); scene.add(card);
+    flights.push({ mesh: card, from: card.position.clone(), to: pileTop(p), t: 0, row: r });
+    trip.left -= 1;
   }
-  if (zone.unit.where === 'office') { pts.push({ p: zone.doorIn, y: 0 }, { p: new THREE.Vector3(CORE.x, 0, CORE.z), y: 0 }); if (zone.y > 0) pts.push({ p: new THREE.Vector3(CORE.x, 0, CORE.z), y: zone.y, lift: true }); pts.push({ p: target, y: zone.y }); }
-  else pts.push({ p: zone.doorIn, y: 0 }, { p: target, y: 0 });
-  return pts;
+  if (p.agent && !p.agent.trip) p.agent.nod = 0.7;
+  const next = trip.after.filter(r => r.from === pi); trip.after = trip.after.filter(r => r.from !== pi); next.forEach(dispatchRow);
+  if (trip.left <= 0) { trip.done = true; a.doc.visible = false; dropChip(trip); }
 }
-const schedule = [];
-for (const [a, b, n] of FLOWS) schedule.push({ from: zones[a], to: zones[b], n, next: Math.random() * 5, every: Math.max(1.5, 50 / n) });
-function dispatch(route) {
-  const carrier = route.from.people.find(p => !p.busy); if (!carrier) return;
-  carrier.busy = true; carrier.doc.visible = true; carrier.route = route;
-  const target = route.to === route.from ? route.to.within() : route.to.tray().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0, 0.8));
-  carrier.path = routeTo(carrier, route.to, target); carrier.state = 'carry';
-}
-const flights = [];
-function handoff(a) {
-  a.doc.visible = false; const z = a.route.to;
-  const card = new THREE.Mesh(docGeo, M.doc); card.position.copy(a.g.position).add(new THREE.Vector3(0.3, 1.0, 0.25)); scene.add(card);
-  const end = z.tray().setY(z.y + 1.2); flights.push({ mesh: card, from: card.position.clone(), to: end, t: 0 });
-  const receiver = z.people.find(p => !p.busy && p !== a); if (receiver) receiver.nod = 0.6;
-  toast(`${a.named || 'Người ' + a.zone.unit.short} giao phiếu → ${z.unit.short}`);
-  a.state = 'return'; a.path = routeTo(a, a.zone, a.zone.within()); a.route = null;
-}
-/* Xe từ công trường chở đề xuất vật tư về (số thật: đề xuất đang mở). */
-const trucks = [];
-for (const s of SITES) {
-  const g = new THREE.Group(); box(2.3, 1.4, 5.6, M.truck, 0, 1.2, 0, g); box(2.1, 1.1, 2.2, M.glass, 0, 2.3, 1.4, g); box(2.3, 1.2, 3.2, mat('#8b5e34'), 0, 2.2, -1.1, g);
-  for (const [wx, wz] of [[-1.1, -1.8], [1.1, -1.8], [-1.1, 1.8], [1.1, 1.8]]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12), M.tyre); t.rotation.z = Math.PI / 2; t.position.set(wx, 0.5, wz); g.add(t); }
-  const lab = label(`${s.name}<small><span class="w">${s.open} đề xuất VT đang mở</span> · chờ cấp TB ${String(s.avgDays).replace('.', ',')} ngày</small>`, 'site'); lab.position.set(0, 3.6, 0); g.add(lab);
-  const hit = box(3, 3, 6, new THREE.MeshBasicMaterial({ visible: false }), 0, 1.5, 0, g); hit.userData.site = s.id;
-  const home = new THREE.Vector3(s.x, 0, 66); g.position.copy(home); scene.add(g);
-  trucks.push({ site: s, g, home, state: 'wait', next: 6 + Math.random() * 10, every: Math.max(8, 400 / s.open), path: [], t: 0 });
-}
-const TRUCK_PATH = [new THREE.Vector3(8, 0, 66), new THREE.Vector3(7, 0, 56), new THREE.Vector3(-2, 0, 44), new THREE.Vector3(-12, 0, 36)];
-function truckGo(tr) { tr.state = 'in'; tr.path = [...TRUCK_PATH]; tr.i = 0; }
-function truckArrive(tr) {
-  tr.state = 'unload'; tr.t = 2.5;
-  // Người công trường xuống xe mang đề xuất tới Vật tư (33/21/2) hoặc QL dự án (4/8/3).
-  const [unitId] = tr.site.flows.sort(() => Math.random() - 0.5)[0];
-  const zone = zones[unitId]; const a = spawnPerson({ unit: { where: 'factory', short: tr.site.name }, y: 0, people: [], doorOut: YARD, doorIn: YARD, within: () => tr.g.position.clone().add(new THREE.Vector3(2, 0, 0)), tray: () => tr.g.position.clone() }, 'SITE');
-  a.busy = true; a.doc.visible = true; a.temp = true; a.route = { to: zone, from: a.zone }; a.path = routeTo(a, zone, zone.tray().add(new THREE.Vector3(0, 0, 0.8))); a.state = 'carry';
-  toast(`Xe ${tr.site.name} về · mang đề xuất vật tư → ${zone.unit.short}`);
+function landFlight(f) { const r = f.row; r.delivered = true; if (!r.processed) addToPile(r); }
+function endTrip(a) {
+  const trip = a.trip; if (!trip) return;
+  trips.splice(trips.indexOf(trip), 1); trip.after.forEach(dispatchRow); trip.after = [];
+  if (!trip.done) { trip.done = true; dropChip(trip); }
+  a.trip = null; a.doc.visible = false; if (follow === a) follow = null;
 }
 
-/* ───────── Chọn / HUD ───────── */
-const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2();
-const panelBody = document.getElementById('panelBody'), panelH2 = document.querySelector('#panel h2'), panelSub = document.querySelector('#panel .sub');
-const names = Object.fromEntries(Object.entries(UNITS).map(([k, u]) => [k, u.short]));
-function showUnit(id) {
-  const u = UNITS[id]; panelH2.textContent = u.name; panelSub.textContent = `${u.people} người · ${u.where === 'office' ? `văn phòng tầng ${u.floor + 1}` : 'nhà máy'}`;
-  const inn = FLOWS.filter(f => f[1] === id).reduce((s, f) => s + f[2], 0), out = FLOWS.filter(f => f[0] === id).reduce((s, f) => s + f[2], 0);
-  panelBody.innerHTML = `<div class="row"><span>Đang chờ</span><b class="${u.waiting ? 'wrn' : ''}">${u.waiting}</b></div><div class="row"><span>Đứng yên &gt; 3 ngày</span><b class="${u.stuck ? 'bad' : ''}">${u.stuck}</b></div>
-    <div class="row"><span>Quá hạn</span><b class="${u.overdue ? 'bad' : ''}">${u.overdue}</b></div><div class="row"><span>Nhận / giao đi · 90 ngày</span><b>${inn} / ${out}</b></div>
-    ${FLOWS.filter(f => (f[0] === id || f[1] === id) && f[0] !== f[1]).sort((a, b) => b[2] - a[2]).slice(0, 4).map(f => `<div class="row"><span>${f[0] === id ? '→ ' + names[f[1]] : '← ' + names[f[0]]}</span><b>${f[2]}</b></div>`).join('')}
-    ${HOLDERS.filter(h => h[1] === id).map(h => `<div class="row"><span class="who">${h[0]}</span><b class="bad">${h[2]} việc · từ ${h[3]}</b></div>`).join('')}
-    ${u.gap ? '<div class="row"><span class="bad">44 nhân viên chưa gắn phòng trong Nhân sự — phần lớn có thể là công nhân nhà máy.</span></div>' : ''}`;
-  const w = new THREE.Vector3(); zones[id].group.getWorldPosition(w); focusOn(w);
+/* ───────── Bước di chuyển ───────── */
+const tmp = new THREE.Vector3();
+const rnd = r => V(r.x0 + Math.random() * (r.x1 - r.x0), r.z0 + Math.random() * (r.z1 - r.z0));
+function stepAgent(a, dt) {
+  if (a.nod > 0) { a.nod -= dt; a.body.scale.y = 1 + Math.sin(a.nod * 12) * 0.07; } else if (a.body.scale.y !== 1) a.body.scale.y = 1;
+  if (a.riding) return;
+  if (a.trip && a.trip.state === 'prep') { a.trip.prep -= dt; if (a.trip.prep > 0) return; planTrip(a.trip); }
+  const seg = a.path[0];
+  if (!seg) {
+    if (a.trip || !a.wander) return;
+    a.wait -= dt; if (a.wait > 0) return;
+    const y = a.home.y, pt = rnd(a.wander).setY(y);
+    if (a.person == null && a.home && !a.temp && PLACES[a.place].kind !== 'site' && a.place !== 'UNK') { a.path = [{ t: 'walk', p: pt, y }, { t: 'pause', d: 2 + Math.random() * 3 }, { t: 'walk', p: a.home, y }, { t: 'face' }]; a.wait = 18 + Math.random() * 30; }
+    else { a.path = [{ t: 'walk', p: pt, y }]; a.wait = 2 + Math.random() * 6; }
+    return;
+  }
+  if (seg.t === 'walk') {
+    tmp.set(seg.p.x - a.g.position.x, 0, seg.p.z - a.g.position.z); const dist = tmp.length();
+    if (dist < 0.15) { a.g.position.y = seg.y; a.path.shift(); return; }
+    tmp.normalize(); const sp = (a.trip ? a.speed * 1.25 : a.speed) * dt;
+    a.g.position.x += tmp.x * Math.min(sp, dist); a.g.position.z += tmp.z * Math.min(sp, dist);
+    a.g.rotation.y = Math.atan2(tmp.x, tmp.z); a.phase += dt * 12; a.g.position.y = seg.y + Math.abs(Math.sin(a.phase)) * 0.05;
+  } else if (seg.t === 'lift') {
+    const dy = seg.y - a.g.position.y; a.g.position.y += Math.sign(dy) * Math.min(Math.abs(dy), 3 * dt);
+    if (Math.abs(seg.y - a.g.position.y) < 0.02) { a.g.position.y = seg.y; a.path.shift(); }
+  } else if (seg.t === 'pause') { seg.d -= dt; if (seg.d <= 0) a.path.shift(); }
+  else if (seg.t === 'face') { a.g.rotation.y = 0; a.path.shift(); }
+  else if (seg.t === 'drop') { a.path.shift(); doDrop(a, seg.person); a.path.unshift({ t: 'pause', d: 0.6 }); }
+  else if (seg.t === 'ride') startRide(a, seg);
+  else if (seg.t === 'home') { a.path = [...legs(a, a.cur.place, a.cur.y, a.place, a.home, a.home.y), { t: 'end' }]; }
+  else if (seg.t === 'end') { a.path.shift(); endTrip(a); a.cur = { place: a.place, y: a.home.y }; a.g.rotation.y = 0; if (a.temp) removeAgent(a); }
 }
-function showSite(id) {
-  const s = SITES.find(x => x.id === id); panelH2.textContent = s.name; panelSub.textContent = 'Công trường · đề xuất vật tư gửi về công ty';
-  panelBody.innerHTML = `<div class="row"><span>Đề xuất đang mở</span><b class="wrn">${s.open}</b></div><div class="row"><span>Chờ cấp trung bình</span><b class="${s.avgDays > 30 ? 'bad' : 'wrn'}">${String(s.avgDays).replace('.', ',')} ngày</b></div>
-    ${s.flows.map(f => `<div class="row"><span>→ ${names[f[0]]}</span><b>${f[1]}</b></div>`).join('')}<div class="row"><span class="wrn">Đề xuất đã duyệt mà chưa cấp là nghẽn ở Vật tư / Mua hàng.</span></div>`;
-  focusOn(trucks.find(t => t.site.id === id).g.position);
+function stepVehicle(v, dt) {
+  if (v.state !== 'drive') return;
+  const target = v.route[v.i]; tmp.subVectors(target, v.g.position); tmp.y = 0; const dist = tmp.length();
+  if (dist < 0.3) { v.i += 1; if (v.i >= v.route.length) arriveVehicle(v); return; }
+  tmp.normalize(); v.g.position.addScaledVector(tmp, Math.min(16 * dt, dist)); v.g.rotation.y = Math.atan2(tmp.x, tmp.z);
 }
-let focusTarget = null;
-function focusOn(p) { focusTarget = p.clone(); controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); }
-renderer.domElement.addEventListener('pointerdown', e => mouse.set(e.clientX, e.clientY));
-renderer.domElement.addEventListener('pointerup', e => {
-  if (Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) > 6) return;
-  ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
-  const hits = ray.intersectObjects(scene.children, true).filter(h => h.object.userData.unit || h.object.userData.site);
-  if (!hits.length) return; const o = hits[0].object.userData; if (o.unit) showUnit(o.unit); else showSite(o.site);
+
+/* ───────── Đặt lại theo thời điểm (đầu phát / tua) ───────── */
+function resetTo(t) {
+  T = t; follow = null;
+  for (const tr of trips) dropChip(tr); trips.length = 0;
+  for (let k = agents.length - 1; k >= 0; k -= 1) { const a = agents[k]; if (a.temp) { removeAgent(a); continue; } a.trip = null; a.path = []; a.doc.visible = false; a.g.visible = true; a.riding = null; a.vehicle = null; a.g.position.copy(a.home); a.g.rotation.y = 0; a.cur = { place: a.place, y: a.home.y }; }
+  for (const v of vehicles) scene.remove(v.g); vehicles.length = 0; for (const s of Object.values(STATIC)) s.g.visible = true; for (const l of Object.values(SLOTS)) l.forEach(s => { s.used = false; });
+  for (const f of flights) scene.remove(f.mesh); flights.length = 0; feed.length = 0;
+  for (const p of PEOPLE) p.desk.items.length = 0;
+  for (const r of ROWS) { r.delivered = false; r.processed = r.acted != null && r.acted <= t; if (r.at <= t && !r.processed && r.st !== 'S' && r.st !== 'C') PEOPLE[r.to].desk.items.push(r); }
+  iAt = ROWS.findIndex(r => r.at > t); if (iAt < 0) iAt = ROWS.length;
+  iActed = ACTED.findIndex(r => r.acted > t); if (iActed < 0) iActed = ACTED.length;
+  for (const p of PEOPLE) renderPile(p);
+  lastAgeHour = Math.floor(t / 60); labelsDirty = true; renderHome();
+}
+function advance(dtReal) {
+  if (T >= NOW) return;
+  T = Math.min(NOW, T + dtReal * rate(T));
+  while (iAt < ROWS.length && ROWS[iAt].at <= T) dispatchRow(ROWS[iAt++]);
+  while (iActed < ACTED.length && ACTED[iActed].acted <= T) { const r = ACTED[iActed++]; r.processed = true; removeFromPile(r); }
+  const hour = Math.floor(T / 60); if (hour !== lastAgeHour) { lastAgeHour = hour; for (const p of PEOPLE) if (p.desk.items.length) renderPile(p); }
+  if (T >= NOW) { btnPlay.textContent = '↺ Phát lại'; btnPlay.setAttribute('aria-pressed', 'false'); }
+}
+
+/* ───────── Nhãn ───────── */
+function placeWaiting(key) { const list = named[key] || []; let w = 0, s = 0; for (const p of list) for (const r of p.desk.items) { w += 1; if (T - r.at >= 72 * 60) s += 1; } return { w, s }; }
+function refreshLabels() {
+  for (const p of PEOPLE) { const n = p.desk.items.length; p.agent.plabel.element.innerHTML = `${esc(p.short)}${n ? `<b>${n}</b>` : ''}`; p.agent.plabel.element.title = p.name; }
+  for (const [key, L] of Object.entries(placeLabels)) {
+    const p = PLACES[key], { w, s } = placeWaiting(key);
+    const title = p.kind === 'site' ? 'Ban chỉ huy CT' : UNITS[p.unit].short;
+    const where = p.kind === 'office' ? ` · T${p.floor + 1}` : p.kind === 'site' ? ` · ${SITES[key].code}` : '';
+    L.obj.element.innerHTML = `${title}${where}<small>${w ? `<span class="${s ? 'b' : 'w'}">${w} chờ</span>${s ? ` · ${s} quá 3 ngày` : ''}` : 'không có phiếu chờ'}${key === 'UNK' ? ' · lỗ hổng dữ liệu' : ''}</small>`;
+  }
+  labelsDirty = false;
+}
+const lodV = new THREE.Vector3();
+function lod() {
+  for (const p of PEOPLE) { const a = p.agent, l = a.plabel; if (a.riding) { l.visible = false; continue; } a.g.getWorldPosition(lodV); l.visible = p.desk.items.length > 0 && camera.position.distanceTo(lodV) < 72; }
+  for (const L of Object.values(placeLabels)) { L.obj.getWorldPosition(lodV); L.obj.visible = camera.position.distanceTo(lodV) < L.max; }
+}
+
+/* ───────── Bảng bên phải ───────── */
+const panel = document.getElementById('panel');
+let panelMode = 'home', follow = null;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const who = i => (i < 0 ? 'Hệ thống' : PEOPLE[i].name);
+const placeName = i => { if (i < 0) return ''; const p = PEOPLE[i], pl = PLACES[p.place]; return pl.kind === 'site' ? SITES[p.place].name : pl.kind === 'office' ? `${UNITS[pl.unit].short} · T${pl.floor + 1}` : UNITS[pl.unit].short; };
+const gapTag = i => (i >= 0 && PEOPLE[i].gap ? '<span class="gap">chưa gắn phòng</span>' : '');
+const itemBtn = (r, meta, current = false) => `<button type="button" class="item" data-row="${r.i}"${current ? ' data-current' : ''}><span class="code">${esc(r.code)}</span><span class="t">${esc(docOf(r.code).title)}</span><span class="m">${meta}</span></button>`;
+let lastHome = '';
+function renderHome() {
+  if (panelMode !== 'home') return;
+  const live = trips.filter(t => !t.done);
+  const html = `<h2>Toàn công ty</h2><p class="sub">Bấm nhãn vàng trên người đang đi để xem phiếu; bấm người, phòng, công trường để xem việc đang chờ.</p>
+    <div class="sec">Đang mang đi · ${live.length}</div>
+    <div class="list">${live.length ? live.map(t => itemBtn(t.rows[0], `${esc(who(t.sender))} → ${esc(placeName(t.rows[0].to))}${t.rows.length > 1 ? ` · +${t.rows.length - 1}` : ''}`)).join('') : '<p class="sub">Chưa có ai đang mang phiếu.</p>'}</div>
+    <div class="sec">Vừa chuyển</div>
+    <div class="list">${feed.length ? feed.map(r => itemBtn(r, `${fmtDT(r.at).slice(6)} · ${esc(who(r.from))} → ${esc(who(r.to))}`)).join('') : '<p class="sub">Chờ lượt chuyển kế tiếp…</p>'}</div>`;
+  if (html !== lastHome || !panel.querySelector('.list')) { panel.innerHTML = html; lastHome = html; }
+}
+function showHome() { panelMode = 'home'; follow = null; lastHome = ''; renderHome(); }
+function header(title, sub) { return `<button type="button" class="back" data-home>← Toàn công ty</button><h2>${title}</h2><p class="sub">${sub}</p>`; }
+function showDoc(ri) {
+  const r = ROWS[ri], d = docOf(r.code), chain = byCode[r.code];
+  const trip = trips.find(t => !t.done && t.rows.includes(r));
+  panelMode = 'doc';
+  panel.innerHTML = `${header(esc(r.code), `${esc(d.kind)}${d.project ? ` · ${esc(d.project)}` : ''}`)}
+    <div class="doc-title">${esc(d.title)}</div>
+    <div class="row"><span>Bước</span><b>${esc(r.step)}</b></div>
+    <div class="row"><span>Người gửi</span><b><span class="who" data-person="${r.from}">${esc(who(r.from))}</span>${gapTag(r.from)}<br><small>${esc(placeName(r.from))}</small></b></div>
+    <div class="row"><span>Người nhận</span><b><span class="who" data-person="${r.to}">${esc(who(r.to))}</span>${gapTag(r.to)}<br><small>${esc(placeName(r.to))}</small></b></div>
+    <div class="row"><span>Gửi lúc</span><b>${fmtDT(r.at)}</b></div>
+    <div class="row"><span>Kết quả bước</span><b class="${RESULT_CLS[r.st]}">${RESULT[r.st](r.hours)}${r.late ? ' · quá hạn' : ''}</b></div>
+    <div class="sec">Hành trình phiếu · ${chain.length} bước</div>
+    ${chain.map(c => `<div class="step" data-st="${c.st}"${c === r ? ' data-current' : ''}><i></i><div>${esc(c.step)} · <b>${esc(who(c.from))}</b> → <b>${esc(who(c.to))}</b><small>${fmtDT(c.at)} · <span class="${RESULT_CLS[c.st]}">${RESULT[c.st](c.hours)}</span>${c.late ? ' · quá hạn' : ''}</small></div></div>`).join('')}
+    <div class="acts">${trip ? `<button type="button" class="pri" data-follow>Theo người mang</button>` : ''}<button type="button" data-open="${esc(r.code)}">Mở phiếu</button></div>`;
+  panel._trip = trip || null;
+}
+function showTrip(trip) {
+  if (trip.rows.length === 1) { showDoc(trip.rows[0].i); return; }
+  panelMode = 'trip'; panel._trip = trip;
+  panel.innerHTML = `${header(`${trip.rows.length} phiếu`, `${esc(who(trip.sender))} mang tới ${esc(placeName(trip.rows[0].to))}`)}
+    <div class="list">${trip.rows.map(r => itemBtn(r, `→ ${esc(who(r.to))}`)).join('')}</div>
+    <div class="acts"><button type="button" class="pri" data-follow>Theo người mang</button></div>`;
+}
+function personStats(p) {
+  const got = ROWS.filter(r => r.to === p.i && r.from !== r.to && r.at >= D90 && r.st !== 'S' && r.st !== 'C');
+  const done = got.filter(r => r.acted != null).map(r => r.hours).sort((x, y) => x - y);
+  return { got: got.length, done: done.length, med: done.length ? done[Math.floor(done.length / 2)] : null, sent: ROWS.filter(r => r.from === p.i && r.to !== p.i && r.at >= D90).length };
+}
+function showPerson(pi) {
+  const p = PEOPLE[pi], s = personStats(p), items = [...p.desk.items].sort((x, y) => x.at - y.at);
+  panelMode = 'person';
+  panel.innerHTML = `${header(`<span class="who">${esc(p.name)}</span>${gapTag(pi)}`, `${esc(UNITS[p.unit].name)} · ${esc(placeName(pi))}`)}
+    <div class="row"><span>Đang giữ (lúc ${fmtClock(T)})</span><b class="${items.length ? 'wrn' : ''}">${items.length} phiếu</b></div>
+    <div class="row"><span>Nhận 90 ngày · đã xử lý</span><b>${s.got} · ${s.done}</b></div>
+    <div class="row"><span>Thời gian xử lý trung vị</span><b>${s.med == null ? '—' : dur(s.med)}</b></div>
+    <div class="row"><span>Đã chuyển đi 90 ngày</span><b>${s.sent}</b></div>
+    ${p.gap ? '<p class="sub" style="margin-top:8px">Người này chưa gắn phòng ban trong Nhân sự; vị trí suy từ bước duyệt họ làm.</p>' : ''}
+    <div class="sec">Phiếu trên bàn</div>
+    <div class="list">${items.length ? items.map(r => itemBtn(r, `chờ ${dur(Math.round((T - r.at) / 60))}`)).join('') : '<p class="sub">Bàn trống.</p>'}</div>`;
+  const w = p.agent.g.position.clone(); focusOn(w);
+}
+function flowsOf(keys) {
+  const inn = {}, out = {};
+  for (const r of ROWS) { if (r.at < D90 || r.from < 0 || r.st === 'S' || r.st === 'C') continue; const fp = PEOPLE[r.from].place, tp = PEOPLE[r.to].place; if (fp === tp) continue; if (keys.includes(tp)) inn[fp] = (inn[fp] || 0) + 1; if (keys.includes(fp)) out[tp] = (out[tp] || 0) + 1; }
+  const nm = k => (PLACES[k].kind === 'site' ? SITES[k].name : UNITS[PLACES[k].unit].short);
+  return [...Object.entries(inn).map(([k, n]) => [`← ${nm(k)}`, n]), ...Object.entries(out).map(([k, n]) => [`→ ${nm(k)}`, n])].sort((a, b) => b[1] - a[1]).slice(0, 5);
+}
+function peopleRows(key) { return (named[key] || []).map(p => `<div class="row"><span class="who" data-person="${p.i}" style="cursor:pointer">${esc(p.name)}${gapTag(p.i)}</span><b class="${p.desk.items.length ? 'wrn' : ''}">${p.desk.items.length ? `${p.desk.items.length} chờ` : '—'}</b></div>`).join(''); }
+function showPlace(key) {
+  const p = PLACES[key], u = UNITS[p.unit], { w, s } = placeWaiting(key), here = (named[key] || []).length + (extra[key] || 0);
+  panelMode = 'place';
+  panel.innerHTML = `${header(esc(u.name), `${esc(p.where)} · ${key === 'UNK' ? '44 nhân viên chưa gắn phòng' : `${here} người ngồi đây · phòng có ${u.people} người`}`)}
+    <div class="row"><span>Đang chờ (lúc ${fmtClock(T)})</span><b class="${w ? 'wrn' : ''}">${w}</b></div>
+    <div class="row"><span>Chờ quá 3 ngày</span><b class="${s ? 'bad' : ''}">${s}</b></div>
+    <div class="sec">Người</div>${peopleRows(key)}
+    <div class="sec">Chuyển với nơi khác · 90 ngày</div>${flowsOf([key]).map(([t, n]) => `<div class="row"><span>${esc(t)}</span><b>${n}</b></div>`).join('') || '<p class="sub">Chưa có.</p>'}
+    ${key === 'PM' ? '<p class="sub" style="margin-top:8px">4 người của phòng ngồi ở hai công trường (ban chỉ huy).</p>' : ''}`;
+  focusOn(V(p.wx, p.wz, p.y));
+}
+function showSite(key) {
+  const s = SITES[key], { w, st } = (() => { const r = placeWaiting(key); return { w: r.w, st: r.s }; })();
+  panelMode = 'site';
+  panel.innerHTML = `${header(esc(s.name), esc(s.full))}
+    <div class="row"><span>Đề xuất vật tư đang mở (13/10)</span><b class="wrn">${s.open}</b></div>
+    <div class="row"><span>Chờ cấp trung bình</span><b class="${s.avgDays > 30 ? 'bad' : 'wrn'}">${String(s.avgDays).replace('.', ',')} ngày</b></div>
+    <div class="row"><span>Phiếu chờ ở ban chỉ huy</span><b class="${w ? 'wrn' : ''}">${w}${st ? ` · ${st} quá 3 ngày` : ''}</b></div>
+    <div class="sec">Ban chỉ huy công trường</div>${peopleRows(key)}
+    <div class="sec">Chuyển với công ty · 90 ngày</div>${flowsOf([key]).map(([t, n]) => `<div class="row"><span>${esc(t)}</span><b>${n}</b></div>`).join('')}`;
+  focusOn(V(s.cx, s.cz));
+}
+panel.addEventListener('click', e => {
+  const el = e.target.closest('[data-row],[data-person],[data-follow],[data-open],[data-home]'); if (!el) return;
+  if (el.dataset.home !== undefined) showHome();
+  else if (el.dataset.row) showDoc(Number(el.dataset.row));
+  else if (el.dataset.person && Number(el.dataset.person) >= 0) showPerson(Number(el.dataset.person));
+  else if (el.dataset.follow !== undefined && panel._trip) { follow = panel._trip.carrier; controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); toast('Đang theo người mang phiếu · kéo màn hình để thôi'); }
+  else if (el.dataset.open) toast(`Trong Vioo: mở ${el.dataset.open} thành tab ở Trung tâm điều hành`);
 });
-const VIEWS = { overview: [[-70, 70, 120], [0, 0, 10]], office: [[-52, 14, 70], [-34, 5, 30]], factory: [[40, 28, 50], [8, 4, -10]], gate: [[26, 12, 90], [5, 2, 50]] };
+
+/* ───────── Chọn trong cảnh, camera, nút ───────── */
+const ray = new THREE.Raycaster(); const down = new THREE.Vector2();
+renderer.domElement.addEventListener('pointerdown', e => down.set(e.clientX, e.clientY));
+renderer.domElement.addEventListener('pointerup', e => {
+  if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+  ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+  for (const h of ray.intersectObjects(scene.children, true)) {
+    const u = h.object.userData;
+    if (u.agent) { const a = u.agent; if (a.trip) { showTrip(a.trip); return; } if (a.person) { showPerson(a.person.i); return; } continue; }
+    if (u.vehicle) { const a = u.vehicle.rider; if (a?.trip) { showTrip(a.trip); return; } continue; }
+    if (u.person != null) { showPerson(u.person); return; }
+    if (u.place) { showPlace(u.place); return; }
+    if (u.site) { showSite(u.site); return; }
+  }
+});
+let focusTarget = null;
+function focusOn(p) { focusTarget = p.clone(); follow = null; controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); }
+controls.addEventListener('start', () => { controls.autoRotate = false; btnRotate.setAttribute('aria-pressed', 'false'); follow = null; focusTarget = null; });
+const VIEWS = {
+  overview: [[-6, 182, 232], [0, 0, 30]], office: [[-30, 11, 70], [-34.5, 6.2, 30]], factory: [[45, 32, 55], [10, 3, -5]],
+  SMB: [[-56, 40, 150], [-53, 0, 101]], DA29: [[46, 40, 150], [49, 0, 101]],
+};
 let camFrom = null, camTo = null, camT = 1;
-function goView(v) { const [p, t] = VIEWS[v]; camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: new THREE.Vector3(...p), t: new THREE.Vector3(...t) }; camT = 0; focusTarget = null; document.querySelectorAll('.cam').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v))); }
+function goView(v) { const [p, t] = VIEWS[v]; camFrom = { p: camera.position.clone(), t: controls.target.clone() }; camTo = { p: V(p[0], p[2], p[1]), t: V(t[0], t[2], t[1]) }; camT = 0; focusTarget = null; follow = null; document.querySelectorAll('.cam').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v))); }
 camera.position.set(...VIEWS.overview[0]); controls.target.set(...VIEWS.overview[1]);
 document.querySelectorAll('.cam').forEach(b => { b.onclick = () => goView(b.dataset.view); });
 let playing = true, speed = 1;
 const btnPlay = document.getElementById('btnPlay');
-btnPlay.onclick = () => { playing = !playing; btnPlay.textContent = playing ? '⏸ Dừng' : '▶ Chạy'; btnPlay.setAttribute('aria-pressed', String(playing)); };
+btnPlay.onclick = () => {
+  if (T >= NOW) { resetTo(INIT); playing = true; } else playing = !playing;
+  btnPlay.textContent = playing ? '⏸ Dừng' : '▶ Chạy'; btnPlay.setAttribute('aria-pressed', String(playing));
+};
 document.querySelectorAll('.spd').forEach(b => { b.onclick = () => { speed = Number(b.dataset.speed); document.querySelectorAll('.spd').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }; });
 btnRotate.onclick = () => { controls.autoRotate = !controls.autoRotate; btnRotate.setAttribute('aria-pressed', String(controls.autoRotate)); };
 const btnInside = document.getElementById('btnInside'); let inside = true;
 const slatFaded = mat('#9a6a40', { transparent: true, opacity: 0.3 }), darkFaded = new THREE.MeshStandardMaterial({ color: '#2a2b2e', transparent: true, opacity: 0.15 });
-function applyInside() {
-  for (const m of facade) { if (m === g0 || m === g1 || m === g2) m.material = inside ? M.glassIn : M.glass; else if (m === body || m === f1 || m === f2) m.material = inside ? darkFaded : M.dark; else m.material = inside ? slatFaded : M.slat; }
-}
+function applyInside() { awning.material = inside ? M.canopyWhite : M.white; sign.visible = !inside; for (const m of facade) { if (m === g0 || m === g1 || m === g2) m.material = inside ? M.glassIn : M.glass; else if (m === body || m === f1 || m === f2) m.material = inside ? darkFaded : M.dark; else m.material = inside ? slatFaded : M.slat; } }
 btnInside.onclick = () => { inside = !inside; btnInside.setAttribute('aria-pressed', String(inside)); applyInside(); };
 applyInside();
-let toastT = null; function toast(text) { const el = document.getElementById('toast'); el.textContent = text; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 1800); }
+document.getElementById('bar').addEventListener('click', e => { const r = e.currentTarget.getBoundingClientRect(); resetTo(Math.round(START + ((e.clientX - r.left) / r.width) * (NOW - START))); playing = true; btnPlay.textContent = '⏸ Dừng'; btnPlay.setAttribute('aria-pressed', 'true'); });
+document.getElementById('endA').textContent = fmtDay(START); document.getElementById('endB').textContent = `${fmtDay(NOW)} (hiện tại)`;
+let toastT = null; function toast(text) { const el = document.getElementById('toast'); el.textContent = text; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2200); }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); labels.setSize(innerWidth, innerHeight); });
+{ // Chỉ số hiện tại (không đổi khi tua).
+  const pend = ROWS.filter(r => r.st === 'P'), old = pend.filter(r => r.hours >= 72).length, n90 = ROWS.filter(r => r.at >= D90 && r.st !== 'S' && r.st !== 'C' && r.from !== r.to).length;
+  document.getElementById('kpis').innerHTML = `<div class="kpi w"><b>${pend.length}</b><small>đang chờ hôm nay</small></div><div class="kpi b"><b>${old}</b><small>chờ quá 3 ngày</small></div><div class="kpi"><b>${n90}</b><small>lượt chuyển 90 ngày</small></div>`;
+}
 
 /* ───────── Vòng lặp ───────── */
-const clock = new THREE.Clock(); const tmp = new THREE.Vector3();
-function stepAgent(a, dt) {
-  if (a.nod > 0) { a.nod -= dt; a.body.scale.y = 1 + Math.sin(a.nod * 10) * 0.06; } else a.body.scale.y = 1;
-  if (a.state === 'idle') { a.wait -= dt; if (a.wait <= 0 && !a.temp) { a.path = [{ p: a.zone.within(), y: a.zone.y }]; a.state = 'walk'; } return; }
-  const seg = a.path[0]; if (!seg) { a.state = 'idle'; a.wait = 2; return; }
-  if (seg.lift) { // thang máy: chỉ đổi độ cao
-    const dy = seg.y - a.g.position.y; const step = Math.sign(dy) * Math.min(Math.abs(dy), 2.5 * dt); a.g.position.y += step;
-    if (Math.abs(seg.y - a.g.position.y) < 0.02) { a.g.position.y = seg.y; a.path.shift(); }
-    return;
-  }
-  tmp.set(seg.p.x - a.g.position.x, 0, seg.p.z - a.g.position.z); const dist = tmp.length();
-  if (dist < 0.2) {
-    a.path.shift();
-    if (a.path.length === 0) {
-      if (a.state === 'carry') { handoff(a); return; }
-      if (a.state === 'return') { a.busy = false; }
-      if (a.temp) { scene.remove(a.g); agents.splice(agents.indexOf(a), 1); return; }
-      a.state = 'idle'; a.wait = 1.5 + Math.random() * 4;
-    }
-    return;
-  }
-  tmp.normalize(); const sp = (a.state === 'carry' ? a.speed * 1.3 : a.speed) * dt;
-  a.g.position.x += tmp.x * Math.min(sp, dist); a.g.position.z += tmp.z * Math.min(sp, dist);
-  a.g.rotation.y = Math.atan2(tmp.x, tmp.z); a.phase += dt * 12; a.g.position.y = seg.y + Math.abs(Math.sin(a.phase)) * 0.05;
+const clock = new THREE.Clock(); const clockText = document.getElementById('clockText'), clockNote = document.getElementById('clockNote'), barFill = document.getElementById('barFill');
+let frame = 0, lastClock = '';
+resetTo(INIT); showHome();
+function simulate(dt) {
+  advance(dt);
+  for (let i = agents.length - 1; i >= 0; i -= 1) stepAgent(agents[i], dt);
+  for (let i = vehicles.length - 1; i >= 0; i -= 1) stepVehicle(vehicles[i], dt);
+  for (let i = flights.length - 1; i >= 0; i -= 1) { const f = flights[i]; f.t += dt * 2; const t = Math.min(1, f.t); f.mesh.position.lerpVectors(f.from, f.to, t); f.mesh.position.y += Math.sin(t * Math.PI) * 0.8; if (t >= 1) { scene.remove(f.mesh); flights.splice(i, 1); landFlight(f); } }
+  for (const c of cranes) c.g.rotation.y += dt * c.s;
 }
-function stepTruck(tr, dt) {
-  if (tr.state === 'wait') { tr.next -= dt; if (tr.next <= 0) truckGo(tr); return; }
-  if (tr.state === 'unload') { tr.t -= dt; if (tr.t <= 0) { tr.state = 'out'; tr.path = [...TRUCK_PATH].reverse().concat([tr.home]); tr.i = 0; } return; }
-  const target = tr.path[tr.i]; if (!target) { tr.state = 'wait'; tr.next = tr.every * (0.7 + Math.random() * 0.6); return; }
-  tmp.subVectors(target, tr.g.position); tmp.y = 0; const dist = tmp.length();
-  if (dist < 0.4) { tr.i += 1; if (tr.state === 'in' && tr.i >= tr.path.length) truckArrive(tr); return; }
-  tmp.normalize(); const sp = 9 * dt; tr.g.position.addScaledVector(tmp, Math.min(sp, dist)); tr.g.rotation.y = Math.atan2(tmp.x, tmp.z);
-}
+// Dùng khi chụp ảnh tự động (tab ẩn không chạy requestAnimationFrame): tua mô phỏng N giây thật.
+window.campusDebug = {
+  step(sec) { for (let s = 0; s < sec; s += 0.05) simulate(0.05 * speed); refreshLabels(); lod(); if (panelMode === 'home') renderHome(); return this.info(); },
+  info: () => ({ clock: fmtClock(T), trips: trips.length, vehicles: vehicles.length, riding: agents.filter(a => a.riding).length, agents: agents.length }),
+  seek(mo, d, h) { resetTo(dayMin(mo, d) + h * 60); return this.info(); },
+  view(v) { goView(v); camT = 1; camera.position.copy(camTo.p); controls.target.copy(camTo.t); controls.update(); lod(); renderer.render(scene, camera); labels.render(scene, camera); },
+};
 function animate() {
   requestAnimationFrame(animate);
-  const raw = Math.min(clock.getDelta(), 0.05); const dt = playing ? raw * speed : 0;
-  if (dt > 0) {
-    for (const r of schedule) { r.next -= dt; if (r.next <= 0) { dispatch(r); r.next = r.every * (0.6 + Math.random() * 0.8); } }
-    for (let i = agents.length - 1; i >= 0; i -= 1) stepAgent(agents[i], dt);
-    for (const tr of trucks) stepTruck(tr, dt);
-    for (let i = flights.length - 1; i >= 0; i -= 1) { const f = flights[i]; f.t += dt * 1.6; const t = Math.min(1, f.t); f.mesh.position.lerpVectors(f.from, f.to, t); f.mesh.position.y += Math.sin(t * Math.PI) * 1.2; f.mesh.rotation.y += dt * 4;
-      if (t >= 1) { f.mesh.scale.multiplyScalar(0.9); if (f.mesh.scale.x < 0.08) { scene.remove(f.mesh); flights.splice(i, 1); } } }
-  }
+  const raw = Math.min(clock.getDelta(), 0.05), dt = playing ? raw * speed : 0;
+  if (dt > 0) simulate(dt);
+  frame += 1;
+  if (labelsDirty && frame % 10 === 0) refreshLabels();
+  if (frame % 6 === 0) lod();
+  if (frame % 30 === 0 && panelMode === 'home') renderHome();
+  const ct = T >= NOW ? `Hiện tại · ${fmtClock(NOW)}` : fmtClock(T); if (ct !== lastClock) { clockText.textContent = ct; lastClock = ct; clockNote.textContent = T >= NOW ? 'hết phát lại' : 'phát lại'; barFill.style.width = `${((T - START) / (NOW - START)) * 100}%`; }
+  if (follow) { const src = follow.riding ? follow.riding.g.position : follow.g.position; tmp.copy(src).setY(src.y + 1).sub(controls.target).multiplyScalar(0.12); controls.target.add(tmp); camera.position.add(tmp); if (!follow.trip) follow = null; }
   if (camT < 1) { camT = Math.min(1, camT + raw * 0.9); const e = camT < 0.5 ? 2 * camT * camT : -1 + (4 - 2 * camT) * camT; camera.position.lerpVectors(camFrom.p, camTo.p, e); controls.target.lerpVectors(camFrom.t, camTo.t, e); }
   if (focusTarget) { controls.target.lerp(focusTarget, 0.06); if (controls.target.distanceTo(focusTarget) < 0.05) focusTarget = null; }
   controls.update(); renderer.render(scene, camera); labels.render(scene, camera);

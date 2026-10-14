@@ -300,3 +300,26 @@ Nhân sự; Vật tư - Thiết bị ở kho đầu khoang tây, Văn phòng nh�
 từng tầng. Người đi theo đường thật: lõi thang → cửa → sân → cửa toà kia; 3 xe công trường (Sơn Miền Bắc, Thú nhồi bông GĐ2, G3) từ đường vào cổng, dừng ở sân,
 người xuống mang đề xuất vật tư tới Vật tư hoặc Quản lý dự án theo số thật. Góc nhìn: Toàn cảnh · Văn phòng · Nhà máy · Cổng. Ảnh `mockups/flow-3d-campus-v1-*.png`.
 Cần chủ SP xác nhận tầng thật của từng phòng và vị trí kho / văn phòng nhà máy.
+
+**Khuôn viên v2 (14/10): tầng thật, hai công trường, phiếu thật bấm xem được.** Chủ SP xác nhận: T1 Hành chính - Nhân sự; T2 Kế toán + Ban lãnh đạo;
+T3 Vật tư - Thiết bị + Quản lý dự án + Thiết kế - Đấu thầu; VP nhà máy ở nhà máy kết cấu thép; công trường là hai khu bên ngoài công ty; "dữ liệu khi chuyển bấm vào
+xem được". Cùng tệp `mockups/flow-3d-campus-v1.html` đổi thành:
+
+- **Phát lại lượt chuyển thật**: đọc chỉ đọc 389 bước quy trình (`workflow_step_assignments` 90 ngày + mọi bước đang chờ) lúc 14/10 13:47, nhúng vào trang (~29 KB:
+  mã phiếu, tiêu đề, loại, bước, người gửi → người nhận, giờ giao, giờ xử lý, kết quả, quá hạn). Đồng hồ phát lại 22/09 → 14/10 (bắt đầu 06/10 07:00, thanh tua bấm được),
+  giờ làm việc 1 giờ = 3 giây, đêm và Chủ nhật tua nhanh. Mỗi bước là một người thật mang tờ phiếu thật tới bàn người nhận; bước kế của cùng phiếu chờ phiếu tới tay
+  mới đi tiếp; nhiều phiếu cùng người gửi, cùng nơi nhận trong ~20 phút gộp thành một chuyến ("9 phiếu" — Phạm Đức Thiện duyệt dồn 12/10). Người gửi đang bận thì
+  đồng nghiệp cùng phòng mang hộ. Tiêu đề loại "hồ sơ phòng HCNS" (thử việc, hoàn chi phí cá nhân) được ẩn.
+- **Chồng phiếu trên bàn = việc đang chờ tại thời điểm phát lại** (đã giao, chưa xử lý): vàng < 1 ngày, cam 1–3 ngày, đỏ > 3 ngày. Phát tới hiện tại thì tổng các chồng
+  đúng bằng 37 bước đang chờ thật.
+- **Bấm được dữ liệu**: nhãn vàng trên người / xe đang mang phiếu → thẻ phiếu (mã, tiêu đề, bước, người gửi, người nhận, giờ gửi, kết quả bước) + **hành trình phiếu**
+  (mọi bước của phiếu, chấm màu theo kết quả) + "Theo người mang" (camera bám người/xe) + "Mở phiếu" (trong Vioo sẽ mở tab). Bấm người → phiếu trên bàn + nhận / xử lý 90 ngày
+  + thời gian xử lý trung vị. Bấm phòng / công trường → người, chờ, quá 3 ngày, chuyển với nơi khác 90 ngày. Bảng phải mặc định là "Đang mang đi" + "Vừa chuyển".
+- **Hai công trường ngoài công ty** bên kia đường: Sơn Miền Bắc (SMB-2026, khung thép đang dựng, cẩu bánh lốp, máy xúc) và Thú nhồi bông GĐ2 (DA29, khung bê tông có
+  thép chờ, giàn giáo lưới xanh, cẩu tháp quay). Ban chỉ huy ngồi dưới mái che cạnh container: Luật, Sơn ở SMB; Thảo, Năm, Đoàn Văn Dương, Hoàng Công Minh,
+  Nguyễn Quang Huy ở DA29 — **suy từ dữ liệu** (người tạo / duyệt bước "BCH CT Duyệt" của đúng dự án đó). Phiếu đi giữa công trường và công ty bằng xe tải công trường
+  hoặc xe con công ty: người ra xe → xe chạy đường → đỗ ở sân → người lên đúng tầng giao phiếu → quay lại xe về.
+- **Lỗ hổng dữ liệu hiện ra**: Phạm Đức Thiện duyệt bước "Phòng TKĐT duyệt" 27 lần nhưng chưa gắn phòng → ngồi ở Thiết kế - Đấu thầu, thân màu xám; 4 người chưa gắn
+  phòng khác đặt tạm ở sân nhà máy. Công nhân mũ vàng là minh họa (không có trong Vioo).
+- Góc nhìn: Toàn cảnh · Văn phòng (thẳng mặt tiền, mặt nan / mái hiên mờ khi "Nhìn vào trong") · Nhà máy · CT Sơn Miền Bắc · CT Thú nhồi bông. Ảnh
+  `mockups/flow-3d-campus-v1-{overview,office,phieu,smb,da29,factory}.png`. `window.campusDebug` (tua / đổi góc tức thì) chỉ để chụp ảnh tự động khi tab ẩn.
